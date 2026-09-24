@@ -135,7 +135,7 @@ func TestUnsupportedAndSeedDiagnostics(t *testing.T) {
 		{"large project seed", "seed 4294967296", "CICADA-SEED"},
 		{"large pattern seed", "", "CICADA-SEED"},
 		{"effect", "fx echo {}", "CICADA-UNSUPPORTED"},
-		{"mixer value", "track bass acid { send_a = 0.5 }", "CICADA-UNSUPPORTED"},
+		{"mixer value", "track bass acid { send_b = 0.5 }", "CICADA-UNSUPPORTED"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -144,10 +144,12 @@ func TestUnsupportedAndSeedDiagnostics(t *testing.T) {
 				pattern = "pattern a acid steps=1 seed=4294967296 { 1 }"
 			}
 			track := "track bass acid {}"
+			prefix := tc.source
 			if tc.name == "mixer value" {
 				track = tc.source
+				prefix = ""
 			}
-			src := []byte("cicada 1\n" + tc.source + "\n" + track + "\n" + pattern + "\nscene main { bass=a }\nsong { main }\n")
+			src := []byte("cicada 1\n" + prefix + "\n" + track + "\n" + pattern + "\nscene main { bass=a }\nsong { main }\n")
 			_, ds := Parse(src)
 			for _, d := range ds {
 				if d.Code == tc.code && d.Position.Line > 0 {

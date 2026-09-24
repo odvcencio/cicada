@@ -29,6 +29,10 @@ func TestAudioWASMDriveInsertSampleParity(t *testing.T) {
 	compareWASMFixture(t, "fx/drive-insert.cicada", 1)
 }
 
+func TestAudioWASMDelaySendSampleParity(t *testing.T) {
+	compareWASMFixture(t, "fx/delay-send.cicada", 1)
+}
+
 func compareWASMFixture(t *testing.T, fixture string, bars int) {
 	t.Helper()
 	wasm, err := os.ReadFile(wasmModulePath())

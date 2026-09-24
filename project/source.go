@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -68,7 +69,7 @@ func ToSource(p *Project) ([]byte, error) {
 	for _, track := range p.Tracks {
 		var out strings.Builder
 		out.WriteString("track " + track.ID + " " + track.Kind)
-		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0 || track.Mixer.Insert != "none"
+		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0 || track.Mixer.Insert != "none" || track.Mixer.SendA != 0 || track.Mixer.SendPre
 		if len(track.Params) == 0 && !hasMixer {
 			out.WriteString(" {}")
 		} else {
@@ -83,6 +84,12 @@ func ToSource(p *Project) ([]byte, error) {
 			}
 			if track.Mixer.Insert != "none" {
 				out.WriteString("  insert = " + track.Mixer.Insert + "\n")
+			}
+			if track.Mixer.SendA != 0 {
+				out.WriteString("  send_a = " + decimal(track.Mixer.SendA) + "\n")
+			}
+			if track.Mixer.SendPre {
+				out.WriteString("  send_pre = true\n")
 			}
 			for _, key := range sortedKeys(track.Params) {
 				value, err := valueSource(track.Params[key])
@@ -466,6 +473,11 @@ func absolutePitch(note uint8) string {
 func valueSource(value Value) (string, error) {
 	if value.Number != nil {
 		return typedNumber(*value.Number, instrument.Type(value.Unit))
+	}
+	if value.Unit == "enum" {
+		if division, err := fx.ParseDelayDivision(value.Text); err == nil && division != fx.FreeDelay {
+			return value.Text, nil
+		}
 	}
 	if validID(value.Text) {
 		return value.Text, nil

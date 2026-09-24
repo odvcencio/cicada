@@ -30,15 +30,25 @@ func ValidateProject(p *Project) error {
 	}
 	effects := map[string]bool{}
 	for _, effect := range p.Effects {
-		if effect.ID != "drive" {
+		if effect.ID != "drive" && effect.ID != "delay" {
 			return fmt.Errorf("effect %s is not implemented", effect.ID)
 		}
 		if effects[effect.ID] || effect.Params == nil {
 			return fmt.Errorf("duplicate or incomplete effect %s", effect.ID)
 		}
 		effects[effect.ID] = true
-		if _, err := DriveParamsFromValues(effect.Params); err != nil {
-			return fmt.Errorf("effect %s: %w", effect.ID, err)
+		if effect.ID == "drive" {
+			if _, err := DriveParamsFromValues(effect.Params); err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
+		} else {
+			params, err := DelayParamsFromValues(effect.Params)
+			if err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
+			if err := params.ValidateTempo(int64(p.TempoMilli)); err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
 		}
 	}
 	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 || len(p.Song) == 0 {
@@ -145,6 +155,9 @@ func ValidateProject(p *Project) error {
 		}
 		if track.Mixer.Insert != "none" && !effects[track.Mixer.Insert] {
 			return fmt.Errorf("track %s references undeclared insert %s", track.ID, track.Mixer.Insert)
+		}
+		if track.Mixer.SendA > 0 && !effects["delay"] {
+			return fmt.Errorf("track %s requires a declared delay for send_a", track.ID)
 		}
 	}
 	allocatedVoices := 0

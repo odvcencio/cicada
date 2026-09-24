@@ -14,7 +14,7 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 4 // drive insert routing; version 3 added authored kits
+const imageVersion = 5 // delay send A routing; version 4 added drive inserts
 
 type Error string
 
@@ -87,7 +87,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 4. The decoded Config is separately
+// Encode writes project image version 5. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -115,6 +115,21 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w.u16(uint16(len(cfg.Scenes)))
 	w.u16(uint16(len(cfg.Song)))
 	w.u16(0)
+	if cfg.DelayA == nil {
+		w.byte(0)
+	} else {
+		if err := cfg.DelayA.ValidateTempo(cfg.BPMMilli); err != nil {
+			return nil, err
+		}
+		w.byte(1)
+		w.byte(byte(cfg.DelayA.Division))
+		w.f64(cfg.DelayA.TimeMs)
+		w.f64(cfg.DelayA.Feedback)
+		w.f64(cfg.DelayA.DampHz)
+		w.byte(boolByte(cfg.DelayA.PingPong))
+		w.f64(cfg.DelayA.Width)
+		w.f64(cfg.DelayA.Mix)
+	}
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		w.byte(byte(spec.Kind))
@@ -123,6 +138,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		w.byte(0)
 		w.f64(spec.GainDB)
 		w.f64(spec.Pan)
+		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && cfg.DelayA == nil {
+			return nil, Error("invalid track send A")
+		}
+		w.f64(spec.SendA)
+		w.byte(boolByte(spec.SendPre))
 		if spec.InsertDrive == nil {
 			w.byte(0)
 		} else {
@@ -271,6 +291,41 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		Scenes:   make([]engine.Scene, int(scenes)),
 		Song:     make([]engine.SongEntry, int(entries)),
 	}
+	delayPresent, err := r.byte()
+	if err != nil || delayPresent > 1 {
+		return Error("invalid delay image flag")
+	}
+	if delayPresent == 1 {
+		division, err := r.byte()
+		if err != nil {
+			return err
+		}
+		params := &fx.DelayParams{Division: fx.DelayDivision(division)}
+		if params.TimeMs, err = r.f64(); err != nil {
+			return err
+		}
+		if params.Feedback, err = r.f64(); err != nil {
+			return err
+		}
+		if params.DampHz, err = r.f64(); err != nil {
+			return err
+		}
+		pingpong, err := r.byte()
+		if err != nil || pingpong > 1 {
+			return Error("invalid delay pingpong flag")
+		}
+		params.PingPong = pingpong == 1
+		if params.Width, err = r.f64(); err != nil {
+			return err
+		}
+		if params.Mix, err = r.f64(); err != nil {
+			return err
+		}
+		if err := params.ValidateTempo(int64(tempo)); err != nil {
+			return err
+		}
+		cfg.DelayA = params
+	}
 	for track := 0; track < int(tracks); track++ {
 		spec := &cfg.Track[track]
 		kind, err := r.byte()
@@ -296,6 +351,14 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		if spec.Pan, err = r.f64(); err != nil {
 			return err
 		}
+		if spec.SendA, err = r.f64(); err != nil {
+			return err
+		}
+		sendPre, err := r.byte()
+		if err != nil || sendPre > 1 {
+			return Error("invalid track send-pre flag")
+		}
+		spec.SendPre = sendPre == 1
 		insertPresent, err := r.byte()
 		if err != nil || insertPresent > 1 {
 			return Error("invalid drive insert image flag")
