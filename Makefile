@@ -28,4 +28,4 @@ build-kernel-wasm:
 	GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm
 
 test-kernel-wasm: build-kernel-wasm
-	go test -tags wasm_integration ./cmd/cicada-kernel-wasm -run TestAudioWASMABI -count=1
+	go test -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1

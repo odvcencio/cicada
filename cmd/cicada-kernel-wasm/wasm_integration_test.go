@@ -132,7 +132,16 @@ func TestAudioWASMABI(t *testing.T) {
 		{Op: cmd.OpSetPatternLen, Track: 0, Index: 1, Arg1: 2},
 		{Op: cmd.OpSetStep, Track: 0, Index: 0, Arg0: step, Arg1: 2},
 		{Op: cmd.OpSelectPattern, Track: 0, Index: 2, Arg0: 2},
+		{Op: cmd.OpSetPatternLen, Track: 1, Index: 1, Arg1: 3},
 	}
+	for lane := uint8(0); lane < 6; lane++ {
+		drumStep, err := seq.PackStep(seq.Step{Note: lane, Gate: true, Ratchet: 1, Probability: 100, Velocity: 110})
+		if err != nil {
+			t.Fatal(err)
+		}
+		patternBatch = append(patternBatch, cmd.Command{Op: cmd.OpSetStep, Track: 1, Index: 0, Arg0: drumStep, Arg1: 3})
+	}
+	patternBatch = append(patternBatch, cmd.Command{Op: cmd.OpSelectPattern, Track: 1, Index: 3, Arg0: 2})
 	for i, c := range patternBatch {
 		record, err := cmd.EncodeCommand(c, 2)
 		if err != nil || !module.Memory().Write(command+uint32(i*cmd.CommandSize), record[:]) {
@@ -153,6 +162,7 @@ func TestAudioWASMABI(t *testing.T) {
 	}
 	count := int(call("gosx_audio_msg_drain"))
 	var switched, sounded bool
+	var drumHits [6]bool
 	patternWASM := make([]cmd.Message, 0, count)
 	for i := 0; i < count; i++ {
 		data, ok := module.Memory().Read(message+uint32(i*cmd.MessageSize), cmd.MessageSize)
@@ -166,12 +176,20 @@ func TestAudioWASMABI(t *testing.T) {
 		patternWASM = append(patternWASM, decoded)
 		switched = switched || decoded.Kind == cmd.Switched && decoded.A == 2 && decoded.Tick == seq.TicksPerBar
 		sounded = sounded || decoded.Kind == cmd.NoteOn && decoded.A == 60 && decoded.Tick == seq.TicksPerBar
+		if decoded.Kind == cmd.NoteOn && decoded.Track == 1 && decoded.Tick == seq.TicksPerBar && decoded.A < 6 {
+			drumHits[decoded.A] = true
+		}
 		if decoded.Kind == cmd.Fault {
 			t.Fatalf("pattern playback fault %d", decoded.A)
 		}
 	}
 	if !switched || !sounded {
 		t.Fatalf("WASM pattern boundary not observed: switched=%v sounded=%v", switched, sounded)
+	}
+	for lane, hit := range drumHits {
+		if !hit {
+			t.Fatalf("WASM drum lane %d did not sound at the shared step", lane)
+		}
 	}
 	compareMusicalMessages(t, patternWASM, drainNativeMessages(native))
 	bad := [cmd.CommandSize]byte{byte(cmd.OpPlay), 0xff}
@@ -187,6 +205,120 @@ func TestAudioWASMABI(t *testing.T) {
 		if !ok || sample != 0 {
 			t.Fatalf("faulted engine output at frame %d: %g", frame, sample)
 		}
+	}
+}
+
+func TestAudioWASMArrangement(t *testing.T) {
+	wasm, err := os.ReadFile(filepath.Join("..", "..", "build", "cicada-kernel.wasm"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	runtime := wazero.NewRuntime(ctx)
+	t.Cleanup(func() { _ = runtime.Close(ctx) })
+	module, err := runtime.Instantiate(ctx, wasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(name string, args ...uint64) uint64 {
+		t.Helper()
+		fn := module.ExportedFunction(name)
+		if fn == nil {
+			t.Fatalf("missing WASM export %s", name)
+		}
+		result, err := fn.Call(ctx, args...)
+		if err != nil {
+			t.Fatalf("WASM %s: %v", name, err)
+		}
+		if len(result) == 0 {
+			return 0
+		}
+		return result[0]
+	}
+	call("_initialize")
+	if call("gosx_audio_arrangement_alloc", 2, 2) != 0 {
+		t.Fatal("arrangement allocation failed")
+	}
+	scenePtr := uint32(call("gosx_audio_scene_ptr"))
+	songPtr := uint32(call("gosx_audio_song_ptr"))
+	if scenePtr == 0 || songPtr == 0 || !module.Memory().WriteByte(scenePtr, 2) || !module.Memory().WriteByte(scenePtr+16, 3) {
+		t.Fatal("scene buffer is unavailable")
+	}
+	if !module.Memory().Write(songPtr, []byte{0, 0, 1, 0, 1, 0, 1, 0}) {
+		t.Fatal("song buffer is unavailable")
+	}
+	if call("gosx_audio_init", 48_000, 128, 2) != 0 {
+		t.Fatal("arrangement init failed")
+	}
+	commandPtr := uint32(call("gosx_audio_cmd_ptr"))
+	messagePtr := uint32(call("gosx_audio_msg_ptr"))
+	stepA, _ := seq.PackStep(seq.Step{Note: 45, Gate: true, Ratchet: 1, Probability: 100, Velocity: 100})
+	stepB, _ := seq.PackStep(seq.Step{Note: 52, Gate: true, Ratchet: 1, Probability: 100, Velocity: 100})
+	batch := []cmd.Command{
+		{Op: cmd.OpSetPatternLen, Track: 0, Index: 1, Arg1: 0},
+		{Op: cmd.OpSetStep, Track: 0, Index: 0, Arg0: stepA, Arg1: 0},
+		{Op: cmd.OpSetPatternLen, Track: 0, Index: 1, Arg1: 1},
+		{Op: cmd.OpSetStep, Track: 0, Index: 0, Arg0: stepB, Arg1: 1},
+		{Op: cmd.OpPlay, Track: 0xff},
+	}
+	for i, command := range batch {
+		record, err := cmd.EncodeCommand(command, 1)
+		if err != nil || !module.Memory().Write(commandPtr+uint32(i*cmd.CommandSize), record[:]) {
+			t.Fatalf("write arrangement command %d: %v", i, err)
+		}
+	}
+	call("gosx_audio_cmd_commit", uint64(len(batch)))
+	nativeConfig := engine.Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 1,
+		Scenes: []engine.Scene{
+			{Track: [16]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 0}}},
+			{Track: [16]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 1}}},
+		},
+		Song: []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}},
+	}
+	nativeConfig.Track[0].Kind = engine.VoiceAcid
+	native, err := engine.New(nativeConfig)
+	if err != nil || !native.PushBatch(batch) {
+		t.Fatalf("native arrangement setup: %v", err)
+	}
+	drainWASM := func() []cmd.Message {
+		t.Helper()
+		count := int(call("gosx_audio_msg_drain"))
+		messages := make([]cmd.Message, 0, count)
+		for i := 0; i < count; i++ {
+			data, ok := module.Memory().Read(messagePtr+uint32(i*cmd.MessageSize), cmd.MessageSize)
+			if !ok {
+				t.Fatal("arrangement message pointer out of bounds")
+			}
+			message, err := cmd.DecodeMessage(data)
+			if err != nil || message.Kind == cmd.Fault {
+				t.Fatalf("arrangement message: %+v %v", message, err)
+			}
+			messages = append(messages, message)
+		}
+		return messages
+	}
+	memoryBytes := module.Memory().Size()
+	var nativeL, nativeR [128]float32
+	var wasmMessages, nativeMessages []cmd.Message
+	for block := 0; block < 1600; block++ {
+		call("gosx_audio_render", 128)
+		native.Render(nativeL[:], nativeR[:])
+		if block%64 == 63 {
+			wasmMessages = append(wasmMessages, drainWASM()...)
+			nativeMessages = append(nativeMessages, drainNativeMessages(native)...)
+		}
+	}
+	if module.Memory().Size() != memoryBytes {
+		t.Fatal("WASM memory grew during song playback")
+	}
+	compareMusicalMessages(t, wasmMessages, nativeMessages)
+	var switched, sounded bool
+	for _, message := range wasmMessages {
+		switched = switched || message.Kind == cmd.Switched && message.A == 1 && message.Tick == seq.TicksPerBar
+		sounded = sounded || message.Kind == cmd.NoteOn && message.A == 52 && message.Tick == seq.TicksPerBar
+	}
+	if !switched || !sounded {
+		t.Fatalf("song boundary missing: switched=%v sounded=%v", switched, sounded)
 	}
 }
 

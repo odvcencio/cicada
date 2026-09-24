@@ -36,6 +36,13 @@ type TrackConfig struct {
 	Mute    bool
 }
 
+// PatternBank is immutable project data copied into the engine by New.
+// Drum slots hold an independent pattern for each synthesized lane.
+type PatternBank struct {
+	Slots [16]seq.Pattern
+	Drums *[16][drum.LaneCount]seq.Pattern
+}
+
 type Config struct {
 	SampleRate int
 	MaxBlock   int
@@ -44,6 +51,10 @@ type Config struct {
 	BPMMilli   int64
 	Seed       uint32
 	Track      [16]TrackConfig
+	Patterns   []PatternBank
+	Scenes     []Scene
+	Song       []SongEntry
+	LoopSong   bool
 }
 
 type voiceSlot struct {
@@ -76,6 +87,11 @@ type Engine struct {
 	patterns                     [16]patternTrack
 	eventScratch                 [128]seq.Event
 	renderFrame, renderFrames    int
+	scenes                       []Scene
+	song                         []SongEntry
+	loopSong, songMode           bool
+	songIndex                    int
+	songEndTick                  int64
 }
 
 func New(cfg Config) (*Engine, error) {
@@ -121,6 +137,12 @@ func New(cfg Config) (*Engine, error) {
 			}
 		case VoiceDrums:
 			voices += int(drum.LaneCount)
+			e.patterns[i].drumSlots = new([16][drum.LaneCount]seq.Pattern)
+			for slot := range e.patterns[i].drumSlots {
+				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+					e.patterns[i].drumSlots[slot][lane] = e.patterns[i].slots[slot]
+				}
+			}
 			v.drums, err = drum.New(cfg.SampleRate, cfg.Seed)
 			if err == nil {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
@@ -145,6 +167,65 @@ func New(cfg Config) (*Engine, error) {
 	if voices > cfg.MaxVoices {
 		return nil, Error("engine exceeds maximum voices")
 	}
+	if len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
+		return nil, Error("pattern bank count must match tracks")
+	}
+	for track, bank := range cfg.Patterns {
+		isDrum := e.voices[track].kind == VoiceDrums
+		if isDrum != (bank.Drums != nil) {
+			return nil, Error("pattern bank kind differs from track")
+		}
+		for slot, pattern := range bank.Slots {
+			if pattern.Len == 0 {
+				if isDrum {
+					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+						if bank.Drums[slot][lane].Len != 0 {
+							return nil, Error("unused drum slot contains lane data")
+						}
+					}
+				}
+				continue
+			}
+			if pattern.Validate() != nil {
+				return nil, Error("invalid preloaded pattern")
+			}
+			e.patterns[track].slots[slot] = pattern
+			if !isDrum {
+				continue
+			}
+			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+				lanePattern := bank.Drums[slot][lane]
+				if lanePattern.Len != pattern.Len || lanePattern.SwingPermille != pattern.SwingPermille || lanePattern.GatePercent != pattern.GatePercent || lanePattern.Seed != pattern.Seed || lanePattern.Transpose != 0 || lanePattern.Validate() != nil {
+					return nil, Error("invalid preloaded drum lane")
+				}
+				for step := uint8(0); step < lanePattern.Len; step++ {
+					decoded, _ := seq.UnpackStep(lanePattern.Steps[step])
+					if decoded.Gate && (decoded.Tie || decoded.Note != uint8(lane)) {
+						return nil, Error("drum lane step has wrong routing")
+					}
+				}
+				e.patterns[track].drumSlots[slot][lane] = lanePattern
+			}
+		}
+	}
+	if len(cfg.Scenes) > 1<<16 || len(cfg.Song) > 1<<16 {
+		return nil, Error("arrangement exceeds the wire index range")
+	}
+	for _, scene := range cfg.Scenes {
+		for track, binding := range scene.Track {
+			if binding.Mode > SceneSlot || track >= cfg.Tracks && binding.Mode != SceneKeep || binding.Mode == SceneSlot && binding.Slot >= 16 {
+				return nil, Error("scene binding is out of range")
+			}
+		}
+	}
+	for _, entry := range cfg.Song {
+		if int(entry.Scene) >= len(cfg.Scenes) || entry.Bars < 1 || entry.Bars > 999 {
+			return nil, Error("song entry is out of range")
+		}
+	}
+	e.scenes = append([]Scene(nil), cfg.Scenes...)
+	e.song = append([]SongEntry(nil), cfg.Song...)
+	e.loopSong = cfg.LoopSong
 	return e, nil
 }
 
@@ -209,6 +290,7 @@ func (e *Engine) Reset() {
 	e.pendingLen, e.meterBlock = 0, 0
 	e.renderFrame, e.renderFrames = 0, 0
 	e.layerMask = (1 << e.tracks) - 1
+	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
 	e.faulted = false
 }
 
@@ -243,6 +325,12 @@ func (e *Engine) Render(outL, outR []float32) {
 			scheduledTempo = e.transport.BPMMilli()
 		}
 		e.processPatternEvents(seq.NoteOff)
+		e.advanceSong()
+		if e.faulted {
+			clear(outL[frame:])
+			clear(outR[frame:])
+			return
+		}
 		e.applyPending()
 		if e.faulted {
 			clear(outL[frame:])
@@ -367,6 +455,9 @@ func (e *Engine) apply(c cmd.Command) {
 	switch c.Op {
 	case cmd.OpPlay:
 		e.transport.Play()
+		if len(e.song) > 0 && !e.songMode {
+			e.startSong()
+		}
 		if e.renderFrames > 0 {
 			e.scheduleAll()
 		}
@@ -390,6 +481,9 @@ func (e *Engine) apply(c cmd.Command) {
 		for i := 0; i < e.tracks; i++ {
 			e.patterns[i].playingNote = 0
 			e.patterns[i].heldValid = false
+		}
+		if e.songMode {
+			e.startSong()
 		}
 		if e.renderFrames > 0 {
 			e.scheduleAll()
@@ -432,6 +526,8 @@ func (e *Engine) apply(c cmd.Command) {
 		e.emit(cmd.Message{Kind: cmd.NoteOff, Track: c.Track, Tick: e.transport.Tick()})
 	case cmd.OpSetStep, cmd.OpSetPatternLen, cmd.OpSetPatternMeta, cmd.OpSelectPattern:
 		e.applyPatternCommand(c)
+	case cmd.OpLaunchScene:
+		e.applySceneCommand(c)
 	case cmd.OpSetLayerMask:
 		e.layerMask = c.Arg0
 	case cmd.OpMeterRate:

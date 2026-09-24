@@ -16,6 +16,47 @@ var output [8192]float32
 var commandBytes [512 * cmd.CommandSize]byte
 var decoded [512]cmd.Command
 var messageBytes [256 * cmd.MessageSize]byte
+var sceneBytes, songBytes []byte
+var arrangementPrepared, songLoop bool
+
+// Scene bytes are sixteen bindings per scene: 0=keep, 1=off, 2..17=slot 0..15.
+// Song bytes are four per entry: little-endian scene index and bar count.
+//
+//go:wasmexport gosx_audio_arrangement_alloc
+func arrangementAlloc(scenes, entries int32) int32 {
+	if audioEngine != nil || arrangementPrepared || scenes < 0 || scenes > 65535 || entries < 0 || entries > 65535 || entries > 0 && scenes == 0 {
+		return -1
+	}
+	sceneBytes = make([]byte, int(scenes)*16)
+	songBytes = make([]byte, int(entries)*4)
+	arrangementPrepared = true
+	return 0
+}
+
+//go:wasmexport gosx_audio_scene_ptr
+func scenePtr() uint32 {
+	if len(sceneBytes) == 0 {
+		return 0
+	}
+	return uint32(uintptr(unsafe.Pointer(&sceneBytes[0])))
+}
+
+//go:wasmexport gosx_audio_song_ptr
+func songPtr() uint32 {
+	if len(songBytes) == 0 {
+		return 0
+	}
+	return uint32(uintptr(unsafe.Pointer(&songBytes[0])))
+}
+
+//go:wasmexport gosx_audio_song_loop
+func songLoopMode(enabled int32) int32 {
+	if audioEngine != nil || enabled < 0 || enabled > 1 {
+		return -1
+	}
+	songLoop = enabled == 1
+	return 0
+}
 
 //go:wasmexport gosx_audio_track_kind
 func trackKind(index, kind int32) int32 {
@@ -38,6 +79,30 @@ func initAudio(sampleRate, maxBlock, channels int32) int32 {
 	for i := 0; i < trackCount; i++ {
 		cfg.Track[i].Kind = trackKinds[i]
 	}
+	cfg.Scenes = make([]engine.Scene, len(sceneBytes)/16)
+	for i := range cfg.Scenes {
+		for track := 0; track < 16; track++ {
+			binding := sceneBytes[i*16+track]
+			switch {
+			case binding == 0:
+			case binding == 1:
+				cfg.Scenes[i].Track[track].Mode = engine.SceneOff
+			case binding <= 17:
+				cfg.Scenes[i].Track[track] = engine.SceneBinding{Mode: engine.SceneSlot, Slot: binding - 2}
+			default:
+				return -1
+			}
+		}
+	}
+	cfg.Song = make([]engine.SongEntry, len(songBytes)/4)
+	for i := range cfg.Song {
+		base := i * 4
+		cfg.Song[i] = engine.SongEntry{
+			Scene: uint16(songBytes[base]) | uint16(songBytes[base+1])<<8,
+			Bars:  uint16(songBytes[base+2]) | uint16(songBytes[base+3])<<8,
+		}
+	}
+	cfg.LoopSong = songLoop
 	created, err := engine.New(cfg)
 	if err != nil {
 		return -1

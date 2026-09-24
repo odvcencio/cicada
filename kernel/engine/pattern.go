@@ -13,6 +13,7 @@ type patternEvent struct {
 
 type patternTrack struct {
 	slots       [16]seq.Pattern
+	drumSlots   *[16][drum.LaneCount]seq.Pattern
 	active      int8 // -1 until a slot is selected
 	startStep   int64
 	generation  uint32
@@ -23,7 +24,7 @@ type patternTrack struct {
 	heldStart   int64
 	heldGen     uint32
 	heldValid   bool
-	events      [128]patternEvent
+	events      [256]patternEvent
 	eventCount  int
 	eventIndex  int
 }
@@ -90,8 +91,26 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 	switch c.Op {
 	case cmd.OpSetStep:
 		step, err := seq.UnpackStep(c.Arg0)
-		if err != nil || e.voices[track].kind == VoiceDrums && step.Gate && !step.Tie && step.Note >= uint8(drum.LaneCount) {
+		if err != nil {
 			e.fault(15)
+			return
+		}
+		if p.drumSlots != nil {
+			if step.Note >= uint8(drum.LaneCount) || step.Tie {
+				e.fault(15)
+				return
+			}
+			lane := drum.Lane(step.Note)
+			lanePattern := p.drumSlots[slot][lane]
+			lanePattern.Steps[c.Index] = c.Arg0
+			if lanePattern.Validate() != nil {
+				e.fault(15)
+				return
+			}
+			p.drumSlots[slot][lane] = lanePattern
+			if p.active == int8(slot) && e.renderFrames > 0 {
+				e.scheduleTrack(track)
+			}
 			return
 		}
 		updated.Steps[c.Index] = c.Arg0
@@ -118,6 +137,16 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		p.generation++
 	}
 	p.slots[slot] = updated
+	if p.drumSlots != nil {
+		for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+			lanePattern := p.drumSlots[slot][lane]
+			lanePattern.Len = updated.Len
+			lanePattern.SwingPermille = updated.SwingPermille
+			lanePattern.Transpose = updated.Transpose
+			lanePattern.GatePercent = updated.GatePercent
+			p.drumSlots[slot][lane] = lanePattern
+		}
+	}
 	if p.active == int8(slot) && e.renderFrames > 0 {
 		e.scheduleTrack(track)
 	}
@@ -142,17 +171,27 @@ func (e *Engine) scheduleTrack(track int) {
 		var n int
 		var overflow bool
 		if e.voices[track].kind == VoiceDrums {
-			n, overflow = seq.EventsOffsetInBlock(&p.slots[p.active], clock, uint8(track), uint8(p.active), p.startStep, startSample, frames, e.eventScratch[:])
+			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+				n, overflow = seq.EventsOffsetInBlock(&p.drumSlots[p.active][lane], clock, uint8(track), uint8(p.active), p.startStep, startSample, frames, e.eventScratch[:])
+				if overflow || p.eventCount+n > len(p.events) {
+					e.fault(16)
+					return
+				}
+				for _, event := range e.eventScratch[:n] {
+					p.events[p.eventCount] = patternEvent{event: event, generation: p.generation}
+					p.eventCount++
+				}
+			}
 		} else {
 			n, overflow = seq.EventsWithGatesOffsetInBlock(&p.slots[p.active], clock, uint8(track), uint8(p.active), p.startStep, startSample, frames, e.eventScratch[:])
-		}
-		if overflow {
-			e.fault(16)
-			return
-		}
-		for _, event := range e.eventScratch[:n] {
-			p.events[p.eventCount] = patternEvent{event: event, generation: p.generation}
-			p.eventCount++
+			if overflow || p.eventCount+n > len(p.events) {
+				e.fault(16)
+				return
+			}
+			for _, event := range e.eventScratch[:n] {
+				p.events[p.eventCount] = patternEvent{event: event, generation: p.generation}
+				p.eventCount++
+			}
 		}
 	}
 	if p.heldValid && p.playingNote != 0 {
@@ -176,7 +215,7 @@ func (e *Engine) scheduleTrack(track int) {
 	for i := 1; i < p.eventCount; i++ {
 		current := p.events[i]
 		j := i
-		for j > 0 && patternEventBefore(current, p.events[j-1]) {
+		for j > 0 && patternEventBefore(current, p.events[j-1], p.drumSlots != nil) {
 			p.events[j] = p.events[j-1]
 			j--
 		}
@@ -184,12 +223,24 @@ func (e *Engine) scheduleTrack(track int) {
 	}
 }
 
-func patternEventBefore(a, b patternEvent) bool {
+func patternEventBefore(a, b patternEvent, isDrum bool) bool {
 	if a.event.Sample != b.event.Sample {
 		return a.event.Sample < b.event.Sample
 	}
 	if a.event.Kind != b.event.Kind {
 		return a.event.Kind == seq.NoteOff
+	}
+	if isDrum && a.event.Note != b.event.Note {
+		priority := func(lane uint8) uint8 {
+			if lane == uint8(drum.CH) {
+				return uint8(drum.OH)
+			}
+			if lane == uint8(drum.OH) {
+				return uint8(drum.CH)
+			}
+			return lane
+		}
+		return priority(a.event.Note) < priority(b.event.Note)
 	}
 	return a.event.NoteID < b.event.NoteID
 }
