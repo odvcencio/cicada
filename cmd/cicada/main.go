@@ -220,18 +220,33 @@ func writeAtomic(path string, data []byte) error {
 }
 
 func renderFile(score *notation.Score, path string) error {
-	file, err := os.Create(path)
+	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-render-*")
 	if err != nil {
 		return err
 	}
+	defer os.Remove(file.Name())
+	if info, err := os.Stat(path); err == nil {
+		if err := file.Chmod(info.Mode().Perm()); err != nil {
+			file.Close()
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		file.Close()
+		return err
+	}
 	report, renderErr := render.WAV(score, render.Options{SampleRate: 48_000, TailSec: 1}, file)
+	if renderErr == nil {
+		renderErr = file.Sync()
+	}
 	closeErr := file.Close()
 	if renderErr != nil {
-		os.Remove(path)
 		return renderErr
 	}
 	if closeErr != nil {
 		return closeErr
+	}
+	if err := os.Rename(file.Name(), path); err != nil {
+		return err
 	}
 	fmt.Printf("%s: %d bars, %d frames at %d Hz, peak %.3f\n", path, report.Bars, report.Frames, report.SampleRate, report.Peak)
 	return nil

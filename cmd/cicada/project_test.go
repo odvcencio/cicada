@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"m31labs.dev/cicada/notation"
 )
 
 func TestProjectCLI(t *testing.T) {
@@ -53,5 +55,27 @@ func TestProjectCLI(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Fatal("empty conversion output")
+	}
+}
+
+func TestFailedRenderPreservesOutput(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	if len(diagnostics) != 0 {
+		t.Fatalf("parse: %+v", diagnostics)
+	}
+	path := filepath.Join(t.TempDir(), "existing.wav")
+	if err := os.WriteFile(path, []byte("keep"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := renderFile(score, path); err == nil {
+		t.Fatal("expected unsupported acid renderer error")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil || string(data) != "keep" {
+		t.Fatalf("render replaced existing output: %q, %v", data, err)
 	}
 }
