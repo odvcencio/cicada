@@ -4,8 +4,36 @@ import (
 	"math"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/seq"
 )
+
+func TestDriveCompensationStaysWithinOneDecibel(t *testing.T) {
+	voice, err := New(48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const amplitude = 0.251188643150958
+	inputRMS := amplitude / math.Sqrt2
+	for i := 0; i <= 64; i++ {
+		params := voice.Params()
+		params.Drive = float64(i) / 64
+		if err := voice.SetParams(params); err != nil {
+			t.Fatal(err)
+		}
+		var power float64
+		for sample := 0; sample < 1024; sample++ {
+			x := amplitude * math.Sin(2*math.Pi*float64(sample)/1024)
+			y := fastmath.Tanh(voice.drivePre*x) * voice.drivePost
+			power += y * y
+		}
+		rms := math.Sqrt(power / 1024)
+		deltaDB := 20 * math.Log10(rms/inputRMS)
+		if math.Abs(deltaDB) > 1 {
+			t.Fatalf("drive %.4f changed sine RMS by %.3f dB", params.Drive, deltaDB)
+		}
+	}
+}
 
 func TestAccentChargeReferenceVector(t *testing.T) {
 	voice, err := New(48_000)
