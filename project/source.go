@@ -313,6 +313,12 @@ func patternSource(pattern Pattern) (string, error) {
 	out.WriteString(" {\n")
 	if pattern.Kind == "drums" {
 		for _, lane := range laneOrder {
+			if unsupportedDrumSteps(lane, pattern.Lanes[lane]) {
+				return "", fmt.Errorf("drum lane %s is reserved for M1", lane)
+			}
+			if _, supported := drumLane(lane); !supported {
+				continue
+			}
 			var hits []string
 			for _, step := range pattern.Lanes[lane] {
 				hit, err := drumStepSource(step, lane)

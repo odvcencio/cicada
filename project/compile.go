@@ -121,6 +121,9 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 	}
 	compiled := make([]CompiledPattern, 0, len(source.Lanes))
 	for _, lane := range source.Lanes {
+		if _, ok := drumLane(lane.Name); !ok {
+			return nil, fmt.Errorf("unsupported drum lane %s", lane.Name)
+		}
 		note, ok := drumNotes[lane.Name]
 		if !ok {
 			return nil, fmt.Errorf("unknown drum lane %s", lane.Name)

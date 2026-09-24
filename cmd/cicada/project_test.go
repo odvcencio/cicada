@@ -67,12 +67,13 @@ func TestFailedRenderPreservesOutput(t *testing.T) {
 	if len(diagnostics) != 0 {
 		t.Fatalf("parse: %+v", diagnostics)
 	}
+	score.Song = nil // exercise an error after the temporary output file is opened
 	path := filepath.Join(t.TempDir(), "existing.wav")
 	if err := os.WriteFile(path, []byte("keep"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if err := renderFile(score, path); err == nil {
-		t.Fatal("expected unsupported acid renderer error")
+		t.Fatal("expected missing arrangement error")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil || string(data) != "keep" {

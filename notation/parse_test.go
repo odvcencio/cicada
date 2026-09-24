@@ -136,6 +136,25 @@ func TestUnsupportedAndSeedDiagnostics(t *testing.T) {
 	}
 }
 
+func TestM1DrumLanesAreRejectedUntilImplemented(t *testing.T) {
+	for _, body := range []string{
+		"track kit drums { lt_tune = 1 }\npattern beat drums steps=4 { bd: x...; }",
+		"track kit drums {}\npattern beat drums steps=4 { lt: x...; }",
+	} {
+		source := "cicada 1\ntempo 120\nkey a minor\n" + body + "\nscene main { kit=beat }\nsong { main }\n"
+		_, diagnostics := Parse([]byte(source))
+		found := false
+		for _, d := range diagnostics {
+			if d.Code == "CICADA-UNSUPPORTED" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("M1 lane accepted: %s, diagnostics=%+v", body, diagnostics)
+		}
+	}
+}
+
 func TestPentatonicMissingDegreeDiagnostic(t *testing.T) {
 	src := []byte("cicada 1\nkey a pent\ntrack bass acid {}\npattern a acid steps=1 { 2 }\nscene main { bass=a }\nsong { main }\n")
 	_, ds := Parse(src)

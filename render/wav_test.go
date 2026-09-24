@@ -130,3 +130,33 @@ song { main }
 		t.Fatalf("invalid acid render: report=%+v bytes=%d", report, len(first.Bytes()))
 	}
 }
+
+func TestBuiltInDrumsRenderDeterministically(t *testing.T) {
+	const source = `cicada 1
+tempo 120
+key a minor
+seed 42
+track kit drums { bd_tune = 55hz bd_decay = 400ms ch_metal = on }
+pattern beat drums steps=4 { bd: X...; sd: .x..; ch: ..x.; oh: x...; cp: .x..; rs: ...x; }
+scene main { kit=beat }
+song { main }
+`
+	score, diagnostics := notation.Parse([]byte(source))
+	if len(diagnostics) != 0 {
+		t.Fatalf("score diagnostics: %+v", diagnostics)
+	}
+	var first, second bytes.Buffer
+	report, err := WAV(score, Options{SampleRate: 48_000}, &first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WAV(score, Options{SampleRate: 48_000}, &second); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.Bytes(), second.Bytes()) {
+		t.Fatal("same drum score produced different PCM")
+	}
+	if report.Peak < .001 || len(first.Bytes()) != 44+int(report.Frames)*6 {
+		t.Fatalf("invalid drum render: %+v", report)
+	}
+}

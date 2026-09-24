@@ -109,6 +109,8 @@ func Validate(s *Score) []Diagnostic {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
 			} else if mixerParams[param.Name] {
 				add("CICADA-UNSUPPORTED", "mixer parameter "+param.Name+" is not implemented", "error", param.Position)
+			} else if t.Kind == "drums" && unsupportedDrumLane(strings.SplitN(param.Name, "_", 2)[0]) {
+				add("CICADA-UNSUPPORTED", "drum lane parameter "+param.Name+" is reserved for M1", "error", param.Position)
 			}
 		}
 	}
@@ -181,6 +183,8 @@ func Validate(s *Score) []Diagnostic {
 			for _, lane := range p.Lanes {
 				if _, ok := drumParams[lane.Name]; !ok {
 					add("CICADA-LANE", "unknown drum lane "+lane.Name, "error", lane.Position)
+				} else if unsupportedDrumLane(lane.Name) {
+					add("CICADA-UNSUPPORTED", "drum lane "+lane.Name+" is reserved for M1", "error", lane.Position)
 				}
 				if seenLanes[lane.Name] {
 					add("CICADA-DUPLICATE", "duplicate drum lane "+lane.Name, "error", lane.Position)
@@ -236,6 +240,14 @@ func Validate(s *Score) []Diagnostic {
 		add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
 	}
 	return ds
+}
+
+func unsupportedDrumLane(name string) bool {
+	switch name {
+	case "lt", "mt", "ht", "cb", "cy":
+		return true
+	}
+	return false
 }
 
 func validTrackParam(kind, name string, instruments map[string]Instrument) bool {

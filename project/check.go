@@ -33,6 +33,11 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 				})
 			}
 		}
+		if track.Kind == "drums" {
+			if _, err := CompileDrumParams(track); err != nil {
+				diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: track.Position})
+			}
+		}
 		program := programs[track.Kind]
 		if program == nil {
 			continue

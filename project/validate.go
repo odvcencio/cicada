@@ -79,6 +79,11 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
+		if track.Kind == "drums" {
+			if _, err := drumParamsFromValues(track.Params); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
+		}
 		for name, value := range track.Params {
 			if !validID(name) || !validValue(value) {
 				return fmt.Errorf("track %s has invalid parameter %s", track.ID, name)
@@ -111,6 +116,9 @@ func ValidateProject(p *Project) error {
 				}
 				if err := validateSteps(steps); err != nil {
 					return fmt.Errorf("drum pattern %s lane %s: %w", pattern.ID, lane, err)
+				}
+				if unsupportedDrumSteps(lane, steps) {
+					return fmt.Errorf("drum lane %s is reserved for M1", lane)
 				}
 			}
 		} else if pattern.Kind == "acid" || pattern.Kind == "notes" {
@@ -193,6 +201,18 @@ func ValidateProject(p *Project) error {
 		}
 	}
 	return nil
+}
+
+func unsupportedDrumSteps(lane string, steps []*Step) bool {
+	if _, supported := drumLane(lane); supported {
+		return false
+	}
+	for _, step := range steps {
+		if step != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func validID(id string) bool {

@@ -1,5 +1,4 @@
-// Package render contains the offline PCM24 WAV target for custom mono graphs
-// and the developing built-in acid voice.
+// Package render contains the offline PCM24 WAV target.
 package render
 
 import (
@@ -13,6 +12,7 @@ import (
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
+	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -32,6 +32,9 @@ type Report struct {
 type trackRuntime struct {
 	name           string
 	voice          monoVoice
+	drums          *drum.Kit
+	drumPatterns   map[string][drum.LaneCount]*seq.Pattern
+	activeDrums    [drum.LaneCount]*seq.Pattern
 	patterns       map[string]seq.Pattern
 	currentName    string
 	current        seq.Pattern
@@ -64,12 +67,12 @@ func (voice acidVoice) NoteOn(note, velocity uint8, accent, slide bool) {
 
 type scheduled struct {
 	track      int
+	lane       drum.Lane
 	generation uint64
 	event      seq.Event
 }
 
-// WAV renders the song arrangement from a valid score. Built-in drum DSP and
-// the full workstation engine remain M0 work.
+// WAV renders the song arrangement from a valid score.
 func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) {
 	var report Report
 	if score == nil {
@@ -129,6 +132,21 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 				}
 				events = events[:0]
 				for ti := range tracks {
+					if tracks[ti].drums != nil {
+						for lane, pattern := range tracks[ti].activeDrums {
+							if pattern == nil {
+								continue
+							}
+							n, overflow := seq.EventsInBlock(pattern, clock, uint8(ti), uint8(lane), position, frames, eventBuf[:])
+							if overflow {
+								return report, fmt.Errorf("too many drum events in render block")
+							}
+							for _, event := range eventBuf[:n] {
+								events = append(events, scheduled{track: ti, lane: drum.Lane(lane), event: event})
+							}
+						}
+						continue
+					}
 					if tracks[ti].active == nil {
 						continue
 					}
@@ -161,6 +179,18 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 					if events[i].track != events[j].track {
 						return events[i].track < events[j].track
 					}
+					if events[i].lane != events[j].lane {
+						priority := func(lane drum.Lane) int {
+							if lane == drum.OH {
+								return int(drum.CH)
+							}
+							if lane == drum.CH {
+								return int(drum.OH)
+							}
+							return int(lane)
+						}
+						return priority(events[i].lane) < priority(events[j].lane)
+					}
 					return events[i].event.NoteID < events[j].event.NoteID
 				})
 				if err := renderBlock(writer, tracks, events, position, frames, block, &report); err != nil {
@@ -172,7 +202,13 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		}
 	}
 	for ti := range tracks {
-		tracks[ti].voice.NoteOff()
+		if tracks[ti].drums != nil {
+			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+				tracks[ti].drums.NoteOff(lane)
+			}
+		} else {
+			tracks[ti].voice.NoteOff()
+		}
 		tracks[ti].activeGen = 0
 	}
 	for position < report.Frames {
@@ -199,6 +235,44 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 	}
 	tracks := make([]trackRuntime, 0, len(score.Tracks))
 	for _, source := range score.Tracks {
+		if source.Kind == "drums" {
+			params, err := project.CompileDrumParams(source)
+			if err != nil {
+				return nil, fmt.Errorf("track %s: %w", source.Name, err)
+			}
+			kit, err := drum.New(sampleRate, uint32(score.Seed))
+			if err != nil {
+				return nil, err
+			}
+			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+				if err := kit.SetParams(lane, params[lane]); err != nil {
+					return nil, err
+				}
+			}
+			track := trackRuntime{name: source.Name, drums: kit, drumPatterns: map[string][drum.LaneCount]*seq.Pattern{}}
+			for _, pattern := range score.Patterns {
+				if pattern.Kind != "drums" {
+					continue
+				}
+				compiled, err := project.CompilePattern(score, pattern, source)
+				if err != nil {
+					return nil, err
+				}
+				var lanes [drum.LaneCount]*seq.Pattern
+				for _, part := range compiled {
+					for lane, name := range drum.Names {
+						if part.Lane == name {
+							p := part.Pattern
+							lanes[lane] = &p
+							break
+						}
+					}
+				}
+				track.drumPatterns[pattern.Name] = lanes
+			}
+			tracks = append(tracks, track)
+			continue
+		}
 		if source.Kind == "acid" {
 			params, err := project.CompileAcidParams(source)
 			if err != nil {
@@ -278,6 +352,14 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 			switch binding.Pattern {
 			case "keep":
 			case "off":
+				if tracks[ti].drums != nil {
+					tracks[ti].activeDrums = [drum.LaneCount]*seq.Pattern{}
+					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+						tracks[ti].drums.NoteOff(lane)
+					}
+					tracks[ti].currentName = ""
+					continue
+				}
 				tracks[ti].active = nil
 				tracks[ti].currentName = ""
 				tracks[ti].hasPendingGate = false
@@ -285,6 +367,15 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 				tracks[ti].voice.NoteOff()
 			default:
 				if tracks[ti].currentName == binding.Pattern {
+					continue
+				}
+				if tracks[ti].drums != nil {
+					lanes, ok := tracks[ti].drumPatterns[binding.Pattern]
+					if !ok {
+						return fmt.Errorf("track %s cannot play pattern %s", binding.Track, binding.Pattern)
+					}
+					tracks[ti].activeDrums = lanes
+					tracks[ti].currentName = binding.Pattern
 					continue
 				}
 				pattern, ok := tracks[ti].patterns[binding.Pattern]
@@ -313,6 +404,11 @@ func renderBlock(w io.Writer, tracks []trackRuntime, events []scheduled, start i
 		for eventIndex < len(events) && events[eventIndex].event.Sample == sample {
 			event := events[eventIndex]
 			track := &tracks[event.track]
+			if track.drums != nil {
+				track.drums.Hit(event.lane, event.event.Velocity, event.event.Accent)
+				eventIndex++
+				continue
+			}
 			if event.event.Kind == seq.NoteOff {
 				if track.activeGen == event.generation && track.activeNoteID == event.event.NoteID {
 					track.voice.NoteOff()
@@ -327,21 +423,32 @@ func renderBlock(w io.Writer, tracks []trackRuntime, events []scheduled, start i
 			}
 			eventIndex++
 		}
-		var mixed float32
+		var left, right float32
 		for ti := range tracks {
-			mixed += tracks[ti].voice.Next() * 0.28
+			if tracks[ti].drums != nil {
+				l, r := tracks[ti].drums.NextStereo()
+				left += l * .28
+				right += r * .28
+				if tracks[ti].drums.Fault() {
+					return fmt.Errorf("drum DSP fault on %s", tracks[ti].name)
+				}
+			} else {
+				mono := tracks[ti].voice.Next() * .28
+				left += mono
+				right += mono
+			}
 		}
-		if abs := float32(math.Abs(float64(mixed))); abs > report.Peak {
+		if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {
 			report.Peak = abs
 		}
-		if mixed > 0.999 {
-			mixed = 0.999
-		} else if mixed < -0.999 {
-			mixed = -0.999
-		}
-		pcm := int32(math.Round(float64(mixed) * 8388607))
 		index := frame * 6
-		for channel := 0; channel < 2; channel++ {
+		for channel, mixed := range [...]float32{left, right} {
+			if mixed > .999 {
+				mixed = .999
+			} else if mixed < -.999 {
+				mixed = -.999
+			}
+			pcm := int32(math.Round(float64(mixed) * 8388607))
 			buffer[index+channel*3] = byte(pcm)
 			buffer[index+channel*3+1] = byte(pcm >> 8)
 			buffer[index+channel*3+2] = byte(pcm >> 16)

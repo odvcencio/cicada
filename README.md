@@ -1,6 +1,6 @@
 # Cicada: programmable music notation
 
-Cicada is an experimental music language for people, agents, and a future extensible DAW. A `.cicada` file describes music and can define the instruments that play it. [Grammargen](language/cicada.grammar) compiles the grammar into a parser blob consumed by gotreesitter; the compiler builds a typed score, deterministic note events, and bounded DSP graphs. The offline renderer writes stereo 24-bit WAV from custom mono instruments and the developing built-in acid voice.
+Cicada is an experimental music language for people, agents, and a future extensible DAW. A `.cicada` file describes music and can define the instruments that play it. [Grammargen](language/cicada.grammar) compiles the grammar into a parser blob consumed by gotreesitter; the compiler builds a typed score, deterministic note events, and bounded DSP graphs. The offline renderer writes stereo 24-bit WAV from custom mono instruments, the built-in acid voice, and six synthesized drum lanes.
 
 Render the [circuit kit score](examples/circuit-kit.cicada). Its bass, kick, snare, and hat are all defined in the score:
 
@@ -17,7 +17,7 @@ Render the [acid voice study](examples/acid-voice.cicada) to hear the built-in s
 go run ./cmd/cicada render examples/acid-voice.cicada -o acid-voice.wav
 ```
 
-The [first acid score](examples/first-acid.cicada) exercises the broader notation, including drum lanes, phrase reuse, and scenes:
+The [first acid score](examples/first-acid.cicada) renders sixteen bars of acid, six available drum lanes, phrase reuse, and scenes:
 
 ```sh
 go run ./cmd/cicada ast examples/first-acid.cicada
@@ -38,6 +38,6 @@ go run ./cmd/cicada compare --semantic examples/first-acid.cicada first-acid-rou
 
 `fmt` also accepts `--check` before the filename and formats project JSON. Source conversion expands phrases and normalizes pitch spelling; semantic comparison checks the resulting project rather than source text. An unedited source document can be printed byte for byte, including comments.
 
-The render path supports custom **mono** instruments with graph expressions and a provisional built-in acid voice. The acid filter response, aliasing and cost gates, subjective listening review, drum DSP, polyphony, complete scene-switch behavior, and the DAW UI remain open work. The current Go module targets Go 1.25. This is an implementation slice, not a completed workstation.
+The render path supports custom **mono** instruments with graph expressions and provisional built-in acid and six-lane drum voices (`bd sd ch oh cp rs`). The five remaining drum lanes produce explicit unsupported diagnostics until M1. Filter response, aliasing and cost gates, drum fidelity, the dry stereo mixer and limiter, subjective listening review, polyphony, complete scene-switch behavior, and the DAW UI remain open work. The current Go module targets Go 1.25. This is an implementation slice, not a completed workstation.
 
 Read the [language direction](docs/grammar-first.md) for the architecture and decisions still needed.
