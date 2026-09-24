@@ -1,6 +1,7 @@
 package notation
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -170,6 +171,65 @@ func TestAllDrumLanesParse(t *testing.T) {
 				t.Fatalf("drum lane rejected: %s, diagnostics=%+v", body, diagnostics)
 			}
 		}
+	}
+}
+
+func TestAuthoredKitKeepsBindingsAndFailsExplicitly(t *testing.T) {
+	source, err := os.ReadFile("../testdata/invalid/authored-kit-unsupported.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := ParseDocument(source)
+	if err != nil || !bytes.Equal(Print(document), source) {
+		t.Fatalf("kit CST print changed source: %v", err)
+	}
+	formatted, err := Format(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reparsed, err := ParseDocument(formatted)
+	if err != nil {
+		t.Fatalf("formatted kit is not grammar-valid: %v\n%s", err, formatted)
+	}
+	again, err := Format(reparsed)
+	if err != nil || !bytes.Equal(formatted, again) {
+		t.Fatalf("kit formatting is not stable: %v\n%s\n%s", err, formatted, again)
+	}
+	score, diagnostics := Parse(source)
+	if score == nil || len(score.Kits) != 1 || len(score.Kits[0].Bindings) != 2 {
+		t.Fatalf("kit bindings were not lowered: %+v, diagnostics=%+v", score, diagnostics)
+	}
+	if kit := score.Kits[0]; kit.Name != "steel" || kit.Bindings[0].Lane != "bd" || kit.Bindings[0].Target != "kick" || kit.Bindings[1].Lane != "ch" || kit.Bindings[1].Target != "builtin.ch" {
+		t.Fatalf("kit binding changed: %+v", kit)
+	}
+	if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-UNSUPPORTED" || diagnostics[0].Position.Line != 3 {
+		t.Fatalf("kit must fail only at its unimplemented render boundary: %+v", diagnostics)
+	}
+}
+
+func TestAuthoredKitRejectsInvalidBindings(t *testing.T) {
+	source, err := os.ReadFile("../testdata/invalid/authored-kit-unsupported.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, bindings, code string
+	}{
+		{"duplicate lane", "bd=kick; bd=builtin.bd;", "CICADA-DUPLICATE"},
+		{"unknown instrument", "bd=missing; ch=builtin.ch;", "CICADA-REFERENCE"},
+		{"unknown built-in", "bd=kick; ch=builtin.zz;", "CICADA-REFERENCE"},
+		{"unknown lane", "zz=kick; ch=builtin.ch;", "CICADA-REFERENCE"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			changed := strings.Replace(string(source), "bd=kick; ch=builtin.ch;", test.bindings, 1)
+			_, diagnostics := Parse([]byte(changed))
+			for _, diagnostic := range diagnostics {
+				if diagnostic.Code == test.code && diagnostic.Position.Line == 3 {
+					return
+				}
+			}
+			t.Fatalf("want %s at kit line, got %+v", test.code, diagnostics)
+		})
 	}
 }
 

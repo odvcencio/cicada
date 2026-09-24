@@ -70,6 +70,8 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 			s.Seed, _ = strconv.ParseUint(s.SeedLiteral, 10, 64)
 		case "instrument_decl":
 			s.Instruments = append(s.Instruments, parseInstrument(w, n))
+		case "kit_decl":
+			s.Kits = append(s.Kits, parseKit(w, n))
 		case "track_decl":
 			s.Tracks = append(s.Tracks, parseTrack(w, n))
 		case "phrase_decl":
@@ -104,6 +106,20 @@ func parseTrack(w *walk.Walker, n *gts.Node) Track {
 		}
 	}
 	return t
+}
+
+func parseKit(w *walk.Walker, n *gts.Node) Kit {
+	k := Kit{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+	for i := 0; i < n.NamedChildCount(); i++ {
+		binding := n.NamedChild(i)
+		if w.Type(binding) != "kit_binding" {
+			continue
+		}
+		k.Bindings = append(k.Bindings, KitBinding{
+			Lane: w.Text(w.Field(binding, "lane")), Target: w.Text(w.Field(binding, "target")), Position: pos(w, binding),
+		})
+	}
+	return k
 }
 
 func parseEffect(w *walk.Walker, n *gts.Node) Effect {
