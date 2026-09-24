@@ -319,3 +319,42 @@ func TestQuantizedManualSelectionTakesOverChain(t *testing.T) {
 		}
 	}
 }
+
+func TestChainSwitchPrecedesParameterFaultAtSameTick(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices = 1, 1
+	cfg.Patterns = []PatternBank{{}}
+	for slot, note := range []uint8{45, 127} {
+		cfg.Patterns[0].Slots[slot] = seq.Pattern{Len: 1, GatePercent: 55, Seed: cfg.Seed}
+		cfg.Patterns[0].Slots[slot].Steps[0] = packedNote(t, note)
+	}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.meterRate = 0
+	if !e.PushBatch([]cmd.Command{
+		chainCommand(0, 0, 0, 1),
+		chainCommand(0, 1, 1, 1),
+		{Op: cmd.OpSetPatternMeta, Track: 0, Arg0: 1 << 16, Arg1: 1, Tick: seq.TicksPerStep},
+		{Op: cmd.OpPlay, Track: 0xff},
+	}) {
+		t.Fatal("chain setup rejected")
+	}
+	var left, right [128]float32
+	var relevant []cmd.Message
+	for block := 0; block < 50 && !e.faulted; block++ {
+		e.Render(left[:], right[:])
+		var message cmd.Message
+		for e.Poll(&message) {
+			if message.Kind == cmd.Switched || message.Kind == cmd.Fault {
+				relevant = append(relevant, message)
+			}
+		}
+	}
+	if len(relevant) != 3 || relevant[0].Kind != cmd.Switched || relevant[0].Tick != 0 ||
+		relevant[1].Kind != cmd.Switched || relevant[1].A != 1 || relevant[1].Tick != seq.TicksPerStep ||
+		relevant[2].Kind != cmd.Fault || relevant[2].Tick != seq.TicksPerStep {
+		t.Fatalf("structural switch did not precede the same-tick parameter fault: %+v", relevant)
+	}
+}

@@ -340,12 +340,6 @@ func (e *Engine) Render(outL, outR []float32) {
 			clear(outR[frame:])
 			return
 		}
-		e.advanceChains()
-		if e.faulted {
-			clear(outL[frame:])
-			clear(outR[frame:])
-			return
-		}
 		e.processPatternEvents(seq.NoteOn)
 		if e.faulted {
 			clear(outL[frame:])
@@ -427,6 +421,7 @@ func (e *Engine) drainCommands() {
 }
 
 func (e *Engine) applyPending() {
+	chainPhase := false
 	for {
 		best, priority := -1, 5
 		for i := 0; i < e.pendingLen; i++ {
@@ -435,7 +430,15 @@ func (e *Engine) applyPending() {
 			}
 		}
 		if best < 0 {
+			e.advanceChains()
 			return
+		}
+		if priority > 1 && !chainPhase {
+			e.advanceChains() // automatic switches precede same-tick parameter changes
+			if e.faulted {
+				return
+			}
+			chainPhase = true
 		}
 		c := e.pending[best]
 		copy(e.pending[best:], e.pending[best+1:e.pendingLen])
