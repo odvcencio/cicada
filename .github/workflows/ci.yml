@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cicada-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  m0:
+    name: M0 language and kernel
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, buildbox, linux, x64]
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'false'
+      - name: Tool versions
+        run: |
+          go version
+          tinygo version
+      - name: Grammar and Go
+        run: |
+          set -euo pipefail
+          make grammar-check
+          make test
+          make test-kernel
+          go vet ./...
+          make test-golden | tee build/golden-report.txt
+          make test-alloc test-timing | tee build/realtime-report.txt
+      - name: Audio WASM and size gate
+        run: |
+          set -euo pipefail
+          make probe-wasm
+          make test-kernel-wasm | tee build/kernel-wasm-report.txt
+      - name: M0 CLI acceptance
+        run: |
+          set -euo pipefail
+          make build
+          {
+            ./build/cicada validate examples/first-acid.cicada
+            ./build/cicada render examples/first-acid.cicada -o build/first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s
+            ./build/cicada verify-wav build/first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60
+            ./build/cicada fmt --check examples/first-acid.cicada
+            ./build/cicada convert examples/first-acid.cicada -o build/first-acid.cicada.json
+            ./build/cicada convert build/first-acid.cicada.json -o build/first-acid-roundtrip.cicada
+            ./build/cicada compare --semantic examples/first-acid.cicada build/first-acid-roundtrip.cicada
+          } | tee build/m0-cli-report.txt
+      - name: Save M0 gate reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: m0-gate-reports
+          if-no-files-found: error
+          path: |
+            build/grammar-doctor.txt
+            build/golden-report.txt
+            build/realtime-report.txt
+            build/kernel-wasm-report.txt
+            build/m0-cli-report.txt
+            build/first-acid.wav

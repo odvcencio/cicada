@@ -1,0 +1,31 @@
+cicada 1
+
+title "Acid voice study"
+
+tempo 130
+
+key a minor
+
+seed 4242
+
+track bass acid {
+  cutoff = 620hz
+  reso = 0.7
+  envmod = 0.65
+  decay = 380ms
+  accent = 0.8
+  drive = 0.25
+  filter = diode
+}
+
+pattern riff acid steps = 16 swing = 54 gate = 55 {
+  1^ . 1~ 5 . 1 7, . | 1^ . 1'~ 1 5^ 3 1 .
+}
+
+scene main {
+  bass = riff
+}
+
+song {
+  main*4
+}

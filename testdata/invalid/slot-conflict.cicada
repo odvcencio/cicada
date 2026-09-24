@@ -1,0 +1,7 @@
+cicada 1
+track bass acid {}
+pattern a acid steps=1 slot=0 { 1 }
+pattern b acid steps=1 slot=0 { 3 }
+scene first { bass=a }
+scene second { bass=b }
+song { first second }

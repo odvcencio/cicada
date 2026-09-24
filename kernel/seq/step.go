@@ -86,8 +86,12 @@ func (p *Pattern) Validate() error {
 		return Error("gate must be 10 to 100 percent")
 	}
 	for i := uint8(0); i < p.Len; i++ {
-		if _, err := UnpackStep(p.Steps[i]); err != nil {
+		step, err := UnpackStep(p.Steps[i])
+		if err != nil {
 			return err
+		}
+		if step.Gate && !step.Tie && (int(step.Note)+int(p.Transpose) < 0 || int(step.Note)+int(p.Transpose) > 127) {
+			return Error("transposed note is out of range")
 		}
 	}
 	return nil
