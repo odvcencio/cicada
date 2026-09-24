@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
+	"m31labs.dev/cicada/kernel/graph"
 )
 
 type Lane uint8
@@ -26,6 +27,9 @@ const (
 )
 
 var Names = [LaneCount]string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
+
+// MIDINotes are the fixed drum trigger pitches used by source pattern lowering.
+var MIDINotes = [LaneCount]uint8{36, 38, 42, 46, 39, 37, 45, 47, 50, 56, 49}
 
 // The synthesis recipes have different native amplitudes. These fixed
 // trims put a full-velocity hit with default params in the same pre-master
@@ -163,6 +167,11 @@ type laneVoice struct {
 	panL, panR, level float64
 	recipe            Lane
 	enabled           bool
+	custom, customOld *graph.Voice
+	customActive      bool
+	customChoke       int
+	customAccent      float64
+	customOldAccent   float64
 }
 
 type Kit struct {
@@ -217,10 +226,41 @@ func (k *Kit) SetRecipe(lane, recipe Lane) error {
 	v := &k.lanes[lane]
 	v.recipe = recipe
 	v.enabled = true
+	v.custom, v.customOld = nil, nil
+	v.customActive = false
+	v.customChoke = 0
 	v.current = state{noise: k.seed ^ uint32(lane+1)*0x9e3779b9}
 	v.old = state{}
 	v.fadeRemaining = 0
 	return k.SetParams(lane, DefaultParams(recipe))
+}
+
+// SetGraph binds one compiled mono graph to a source lane. A drum hit gives
+// the graph that lane's fixed MIDI trigger pitch and velocity; authors can
+// ignore or shape pitch in their instrument code. The lane retains one current
+// voice and a single old state for the 1 ms retrigger fade.
+func (k *Kit) SetGraph(lane Lane, program graph.Program) error {
+	if lane >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	current, err := graph.NewVoice(program, int(k.rate))
+	if err != nil {
+		return err
+	}
+	old, err := graph.NewVoice(program, int(k.rate))
+	if err != nil {
+		return err
+	}
+	v := &k.lanes[lane]
+	v.recipe = lane
+	v.custom, v.customOld = current, old
+	v.customActive = false
+	v.customChoke = 0
+	v.current.active, v.old.active = false, false
+	v.fadeRemaining = 0
+	v.enabled = true
+	p := DefaultParams(lane)
+	return k.SetParams(lane, p)
 }
 
 // Disable silences an omitted source lane without affecting other lanes.
@@ -233,6 +273,8 @@ func (k *Kit) Disable(lane Lane) error {
 	v.enabled = false
 	v.current.active = false
 	v.old.active = false
+	v.customActive = false
+	v.customChoke = 0
 	v.fadeRemaining = 0
 	return nil
 }
@@ -247,6 +289,12 @@ func (k *Kit) Reset() {
 		v.current = state{noise: k.seed ^ uint32(lane+1)*0x9e3779b9}
 		v.old = state{}
 		v.fadeRemaining = 0
+		v.customActive = false
+		v.customChoke = 0
+		if v.custom != nil {
+			v.custom.Reset()
+			v.customOld.Reset()
+		}
 	}
 }
 
@@ -261,6 +309,23 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 		k.NoteOff(OH)
 	}
 	v := &k.lanes[lane]
+	if v.custom != nil {
+		if v.customActive {
+			*v.customOld = *v.custom
+			v.customOldAccent = v.customAccent
+			v.fadeRemaining = max(1, int(k.rate/1000))
+		}
+		if accent {
+			velocity = 127
+			v.customAccent = math.Sqrt2
+		} else {
+			v.customAccent = 1
+		}
+		v.custom.NoteOn(MIDINotes[lane], velocity, false)
+		v.customActive = true
+		v.customChoke = 0
+		return
+	}
 	recipe := v.recipe
 	if v.current.active {
 		v.old = v.current
@@ -288,6 +353,13 @@ func (k *Kit) NoteOff(lane Lane) {
 	if lane >= LaneCount {
 		return
 	}
+	if v := &k.lanes[lane]; v.custom != nil {
+		if v.customActive {
+			v.custom.NoteOff()
+			v.customChoke = max(1, int(k.rate*.005))
+		}
+		return
+	}
 	v := &k.lanes[lane].current
 	if v.active {
 		v.chokeRemaining = max(1, int(k.rate*.005))
@@ -302,6 +374,26 @@ func (k *Kit) NextStereo() (left, right float32) {
 	for lane := Lane(0); lane < LaneCount; lane++ {
 		v := &k.lanes[lane]
 		if !v.enabled {
+			continue
+		}
+		if v.custom != nil {
+			output := 0.0
+			if v.customActive {
+				output = float64(v.custom.Next()) * v.customAccent
+			}
+			if v.customActive && v.customChoke > 0 {
+				output *= float64(v.customChoke) / max(1, k.rate*.005)
+				v.customChoke--
+				if v.customChoke == 0 {
+					v.customActive = false
+				}
+			}
+			if v.fadeRemaining > 0 {
+				output += float64(v.customOld.Next()) * v.customOldAccent * float64(v.fadeRemaining) / max(1, k.rate/1000)
+				v.fadeRemaining--
+			}
+			l += output * v.level * v.panL
+			r += output * v.level * v.panR
 			continue
 		}
 		output := k.nextState(v.recipe, &v.current, v.params)

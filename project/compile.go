@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -22,10 +23,13 @@ var scaleIntervals = map[string][7]int{
 }
 
 var chromatic = map[byte]int{'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11}
-var drumNotes = map[string]uint8{
-	"bd": 36, "sd": 38, "ch": 42, "oh": 46, "cp": 39, "rs": 37,
-	"lt": 45, "mt": 47, "ht": 50, "cb": 56, "cy": 49,
-}
+var drumNotes = func() map[string]uint8 {
+	notes := make(map[string]uint8, drum.LaneCount)
+	for lane, name := range drum.Names {
+		notes[name] = drum.MIDINotes[lane]
+	}
+	return notes
+}()
 
 type CompiledPattern struct {
 	Name    string

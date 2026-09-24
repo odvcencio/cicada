@@ -174,8 +174,8 @@ func TestAllDrumLanesParse(t *testing.T) {
 	}
 }
 
-func TestAuthoredKitKeepsBindingsAndFailsExplicitly(t *testing.T) {
-	source, err := os.ReadFile("../testdata/invalid/authored-kit-unsupported.cicada")
+func TestAuthoredKitKeepsBindingsAndParses(t *testing.T) {
+	source, err := os.ReadFile("../examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,13 +202,13 @@ func TestAuthoredKitKeepsBindingsAndFailsExplicitly(t *testing.T) {
 	if kit := score.Kits[0]; kit.Name != "steel" || kit.Bindings[0].Lane != "bd" || kit.Bindings[0].Target != "kick" || kit.Bindings[1].Lane != "ch" || kit.Bindings[1].Target != "builtin.ch" {
 		t.Fatalf("kit binding changed: %+v", kit)
 	}
-	if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-UNSUPPORTED" || diagnostics[0].Position.Line != 3 {
-		t.Fatalf("kit must fail only at its unimplemented render boundary: %+v", diagnostics)
+	if len(diagnostics) != 0 {
+		t.Fatalf("valid authored kit has diagnostics: %+v", diagnostics)
 	}
 }
 
 func TestAuthoredKitRejectsInvalidBindings(t *testing.T) {
-	source, err := os.ReadFile("../testdata/invalid/authored-kit-unsupported.cicada")
+	source, err := os.ReadFile("../examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}

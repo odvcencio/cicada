@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -19,7 +20,6 @@ func TestInvalidSourceFixtures(t *testing.T) {
 		"unknown-symbol.cicada":             {"CICADA-REFERENCE", 2},
 		"invalid-unit.cicada":               {"CICADA-PARAM", 2},
 		"unsupported-effect.cicada":         {"CICADA-UNSUPPORTED", 2},
-		"authored-kit-unsupported.cicada":   {"CICADA-UNSUPPORTED", 3},
 		"seed-64-bit.cicada":                {"CICADA-SEED", 2},
 		"duplicate-id.cicada":               {"CICADA-DUPLICATE", 3},
 		"slot-conflict.cicada":              {"CICADA-DUPLICATE", 4},
@@ -93,8 +93,8 @@ func TestSlideIntoRestWarningFixture(t *testing.T) {
 	}
 }
 
-func TestAuthoredKitCannotLowerAsBuiltinKit(t *testing.T) {
-	source, err := os.ReadFile("../testdata/invalid/authored-kit-unsupported.cicada")
+func TestAuthoredKitLowersAndLoads(t *testing.T) {
+	source, err := os.ReadFile("../examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,11 +103,55 @@ func TestAuthoredKitCannotLowerAsBuiltinKit(t *testing.T) {
 		t.Fatal("grammar rejected authored kit fixture")
 	}
 	compiled, diagnostics := FromScore(score)
-	if compiled != nil {
-		t.Fatal("authored kit was silently lowered to built-in drums")
+	if compiled == nil || len(diagnostics) != 0 || len(compiled.Kits) != 1 || compiled.Kits[0].Lanes["bd"] != "kick" {
+		t.Fatalf("authored kit did not lower: project=%+v diagnostics=%+v", compiled, diagnostics)
 	}
-	if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-UNSUPPORTED" || diagnostics[0].Position.Line != 3 {
-		t.Fatalf("wrong authored kit lowering diagnostics: %+v", diagnostics)
+	cfg, err := CompileEngine(compiled, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Track[0].Kind != engine.VoiceDrums || cfg.Track[0].Kit == nil || cfg.Track[0].Kit[0].Kind != engine.KitLaneGraph {
+		t.Fatal("authored kit did not produce a graph lane")
+	}
+	if _, err := engine.New(cfg); err != nil {
+		t.Fatalf("authored kit could not load into engine: %v", err)
+	}
+	text, err := ToSource(compiled)
+	if err != nil {
+		t.Fatalf("authored kit cannot round-trip to source: %v", err)
+	}
+	reparsed, diagnostics := notation.Parse(text)
+	if reparsed == nil || len(diagnostics) != 0 {
+		t.Fatalf("round-tripped authored kit cannot parse: %+v", diagnostics)
+	}
+}
+
+func TestSemanticKitRejectsInvalidRouting(t *testing.T) {
+	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*Project)
+	}{
+		{"unknown lane", func(p *Project) { p.Kits[0].Lanes["zz"] = "builtin.bd" }},
+		{"unknown recipe", func(p *Project) { p.Kits[0].Lanes["ch"] = "builtin.zz" }},
+		{"kit to kit", func(p *Project) { p.Kits[0].Lanes["bd"] = "steel" }},
+		{"incomplete lane map", func(p *Project) { p.Kits[0].Lanes = nil }},
+		{"unroutable track parameter", func(p *Project) { p.Tracks[0].Params["bd_tune"] = Value{Unit: "enum", Text: "on"} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			score, _ := notation.Parse(source)
+			p, diagnostics := FromScore(score)
+			if p == nil {
+				t.Fatalf("valid kit failed to lower: %+v", diagnostics)
+			}
+			test.edit(p)
+			if err := ValidateProject(p); err == nil {
+				t.Fatal("invalid semantic kit was accepted")
+			}
+		})
 	}
 }
 

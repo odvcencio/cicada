@@ -35,6 +35,20 @@ func ToSource(p *Project) ([]byte, error) {
 		}
 		sections = append(sections, source)
 	}
+	for _, kit := range p.Kits {
+		var out strings.Builder
+		out.WriteString("kit " + kit.ID + " {")
+		for _, lane := range laneOrder {
+			if target, ok := kit.Lanes[lane]; ok {
+				out.WriteString("\n  " + lane + " = " + target + ";")
+			}
+		}
+		if len(kit.Lanes) > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteByte('}')
+		sections = append(sections, out.String())
+	}
 	for _, track := range p.Tracks {
 		var out strings.Builder
 		out.WriteString("track " + track.ID + " " + track.Kind)
@@ -339,12 +353,6 @@ func patternSource(pattern Pattern, slot int, assigned bool) (string, error) {
 	out.WriteString(" {\n")
 	if pattern.Kind == "drums" {
 		for _, lane := range laneOrder {
-			if unsupportedDrumSteps(lane, pattern.Lanes[lane]) {
-				return "", fmt.Errorf("drum lane %s is reserved for M1", lane)
-			}
-			if _, supported := drumLane(lane); !supported {
-				continue
-			}
 			var hits []string
 			for _, step := range pattern.Lanes[lane] {
 				hit, err := drumStepSource(step, lane)

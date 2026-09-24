@@ -131,7 +131,6 @@ func Validate(s *Score) []Diagnostic {
 				add("CICADA-REFERENCE", "unknown kit instrument "+binding.Target, "error", binding.Position)
 			}
 		}
-		add("CICADA-UNSUPPORTED", "authored kit rendering is not implemented", "error", kit.Position)
 	}
 	trackByName := make(map[string]Track, len(s.Tracks))
 	for _, t := range s.Tracks {

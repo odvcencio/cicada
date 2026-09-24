@@ -13,7 +13,7 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 2 // eleven drum lanes; version 1 carried six
+const imageVersion = 3 // authored kit routing; version 2 carried only built-in lanes
 
 type Error string
 
@@ -86,7 +86,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 2. The decoded Config is separately
+// Encode writes project image version 3. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -130,19 +130,30 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				writeDrum(&w, spec.Drums[lane])
 			}
-		case engine.VoiceGraph:
-			if spec.Graph.Len == 0 || spec.Graph.Len > graph.MaxNodes {
-				return nil, Error("invalid graph program length")
+			w.byte(boolByte(spec.Kit != nil))
+			if spec.Kit != nil {
+				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+					binding := spec.Kit[lane]
+					w.byte(byte(binding.Kind))
+					switch binding.Kind {
+					case engine.KitLaneOff:
+					case engine.KitLaneBuiltin:
+						if binding.Recipe >= drum.LaneCount {
+							return nil, Error("invalid kit recipe")
+						}
+						w.byte(byte(binding.Recipe))
+					case engine.KitLaneGraph:
+						if err := writeGraph(&w, binding.Program); err != nil {
+							return nil, err
+						}
+					default:
+						return nil, Error("invalid kit lane kind")
+					}
+				}
 			}
-			w.byte(spec.Graph.Len)
-			w.byte(spec.Graph.Output)
-			for i := uint8(0); i < spec.Graph.Len; i++ {
-				node := spec.Graph.Nodes[i]
-				w.byte(byte(node.Op))
-				w.byte(node.A)
-				w.byte(node.B)
-				w.byte(node.C)
-				w.f32(node.Value)
+		case engine.VoiceGraph:
+			if err := writeGraph(&w, spec.Graph); err != nil {
+				return nil, err
 			}
 		default:
 			return nil, Error("invalid track voice kind")
@@ -285,37 +296,39 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					return err
 				}
 			}
+			kitPresent, err := r.byte()
+			if err != nil || kitPresent > 1 {
+				return Error("invalid kit image flag")
+			}
+			if kitPresent == 1 {
+				spec.Kit = new([drum.LaneCount]engine.KitLaneBinding)
+				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+					kind, err := r.byte()
+					if err != nil {
+						return err
+					}
+					binding := &spec.Kit[lane]
+					binding.Kind = engine.KitLaneKind(kind)
+					switch binding.Kind {
+					case engine.KitLaneOff:
+					case engine.KitLaneBuiltin:
+						recipe, err := r.byte()
+						if err != nil || recipe >= byte(drum.LaneCount) {
+							return Error("invalid kit recipe image")
+						}
+						binding.Recipe = drum.Lane(recipe)
+					case engine.KitLaneGraph:
+						if binding.Program, err = readGraph(&r); err != nil {
+							return err
+						}
+					default:
+						return Error("invalid kit lane image kind")
+					}
+				}
+			}
 		case engine.VoiceGraph:
-			length, err := r.byte()
-			if err != nil || length == 0 || length > graph.MaxNodes {
-				return Error("invalid graph image length")
-			}
-			spec.Graph.Len = length
-			if spec.Graph.Output, err = r.byte(); err != nil {
+			if spec.Graph, err = readGraph(&r); err != nil {
 				return err
-			}
-			for i := uint8(0); i < length; i++ {
-				op, err := r.byte()
-				if err != nil {
-					return err
-				}
-				a, err := r.byte()
-				if err != nil {
-					return err
-				}
-				b, err := r.byte()
-				if err != nil {
-					return err
-				}
-				c, err := r.byte()
-				if err != nil {
-					return err
-				}
-				value, err := r.f32()
-				if err != nil {
-					return err
-				}
-				spec.Graph.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
 			}
 		default:
 			return Error("invalid track image kind")
@@ -399,6 +412,59 @@ func boolByte(value bool) byte {
 		return 1
 	}
 	return 0
+}
+
+func writeGraph(w *writer, program graph.Program) error {
+	if program.Len == 0 || program.Len > graph.MaxNodes || program.Output >= program.Len {
+		return Error("invalid graph program length or output")
+	}
+	w.byte(program.Len)
+	w.byte(program.Output)
+	for i := uint8(0); i < program.Len; i++ {
+		node := program.Nodes[i]
+		w.byte(byte(node.Op))
+		w.byte(node.A)
+		w.byte(node.B)
+		w.byte(node.C)
+		w.f32(node.Value)
+	}
+	return nil
+}
+
+func readGraph(r *reader) (graph.Program, error) {
+	var program graph.Program
+	length, err := r.byte()
+	if err != nil || length == 0 || length > graph.MaxNodes {
+		return program, Error("invalid graph image length")
+	}
+	program.Len = length
+	if program.Output, err = r.byte(); err != nil || program.Output >= length {
+		return program, Error("invalid graph image output")
+	}
+	for i := uint8(0); i < length; i++ {
+		op, err := r.byte()
+		if err != nil {
+			return program, err
+		}
+		a, err := r.byte()
+		if err != nil {
+			return program, err
+		}
+		b, err := r.byte()
+		if err != nil {
+			return program, err
+		}
+		c, err := r.byte()
+		if err != nil {
+			return program, err
+		}
+		value, err := r.f32()
+		if err != nil {
+			return program, err
+		}
+		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
+	}
+	return program, nil
 }
 
 func writeAcid(w *writer, p acid.Params) {

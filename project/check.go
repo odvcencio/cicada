@@ -130,16 +130,20 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			diagnostics = append(diagnostics, patternCompileDiagnostic(err, pattern.Position))
 		}
 	}
-	diagnostics = append(diagnostics, checkSourceVoiceBudget(score, tracks, patterns)...)
+	diagnostics = append(diagnostics, checkSourceVoiceBudget(score, tracks)...)
 	return programs, diagnostics
 }
 
 // The typed project has the same ceiling. Check it here as well so source
 // validation can point to the song entry that activates too many voices.
-func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Track, patterns map[string]notation.Pattern) []notation.Diagnostic {
+func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Track) []notation.Diagnostic {
 	scenes := make(map[string]notation.Scene, len(score.Scenes))
 	for _, scene := range score.Scenes {
 		scenes[scene.Name] = scene
+	}
+	kitVoices := make(map[string]int, len(score.Kits))
+	for _, kit := range score.Kits {
+		kitVoices[kit.Name] = len(kit.Bindings)
 	}
 	active := make(map[string]string, len(tracks))
 	for _, entry := range score.Song {
@@ -157,18 +161,14 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 			}
 		}
 		voices := 0
-		for trackID, patternID := range active {
-			if tracks[trackID].Kind != "drums" {
+		for trackID := range active {
+			kind := tracks[trackID].Kind
+			if kind == "drums" {
+				voices += len(laneOrder)
+			} else if count, ok := kitVoices[kind]; ok {
+				voices += count
+			} else {
 				voices++
-				continue
-			}
-			for _, lane := range patterns[patternID].Lanes {
-				for _, hit := range lane.Hits {
-					if hit.Text != "." {
-						voices++
-						break
-					}
-				}
 			}
 		}
 		if voices > 32 {

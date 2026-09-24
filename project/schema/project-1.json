@@ -92,7 +92,11 @@
       "type": "object", "additionalProperties": false, "required": ["id", "lanes"],
       "properties": {
         "id": {"$ref": "#/$defs/id"},
-        "lanes": {"type": "object", "additionalProperties": {"$ref": "#/$defs/id"}}
+        "lanes": {
+          "type": "object",
+          "propertyNames": {"enum": ["bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"]},
+          "additionalProperties": {"type": "string", "pattern": "^(?:[a-z_][a-z0-9_-]*|builtin\\.(?:bd|sd|ch|oh|cp|rs|lt|mt|ht|cb|cy))$"}
+        }
       }
     },
     "mixer": {
