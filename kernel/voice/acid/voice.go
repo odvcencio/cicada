@@ -190,8 +190,16 @@ func (v *Voice) Next() float32 {
 	if v.fault {
 		return 0
 	}
+	// Stop decays far below audibility before denormals slow the audio thread.
+	const envelopeFloor = 1e-18
 	v.cap *= v.capDecay
+	if v.cap < envelopeFloor {
+		v.cap = 0
+	}
 	v.meg *= v.megDecay
+	if v.meg < envelopeFloor {
+		v.meg = 0
+	}
 	v.pitchLog += (v.targetLog - v.pitchLog) * v.pitchAlpha
 	v.accentGain += (v.accentTarget - v.accentGain) * v.accentAlpha
 	filterTarget := 0.0
@@ -221,6 +229,9 @@ func (v *Voice) Next() float32 {
 		}
 	} else {
 		v.vca *= v.releaseDecay
+	}
+	if v.vca < envelopeFloor {
+		v.vca = 0
 	}
 	if !v.pitchCached || v.pitchLog != v.lastPitchLog {
 		v.pitchDelta = min(fastmath.Exp2(v.pitchLog)/v.sampleRate, .49)
