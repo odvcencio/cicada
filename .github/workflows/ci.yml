@@ -71,3 +71,4 @@ jobs:
             build/realtime-report.txt
             build/kernel-wasm-report.txt
             build/m0-cli-report.txt
+            build/first-acid.wav

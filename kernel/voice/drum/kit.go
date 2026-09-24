@@ -22,6 +22,11 @@ const (
 
 var Names = [LaneCount]string{"bd", "sd", "ch", "oh", "cp", "rs"}
 
+// The six synthesis recipes have different native amplitudes. These fixed
+// trims put a full-velocity hit with default params in the same pre-master
+// peak range at each supported sample rate, before authored lane level/pan.
+var nominalTrim = [LaneCount]float64{1.6, 1.7, 4.9, 4.9, 5.7, 1.5}
+
 type Error string
 
 func (e Error) Error() string { return string(e) }
@@ -234,7 +239,7 @@ func (k *Kit) NextStereo() (left, right float32) {
 			output += old * float64(v.fadeRemaining) / max(1, k.rate/1000)
 			v.fadeRemaining--
 		}
-		output *= v.level
+		output *= nominalTrim[lane] * v.level
 		l += output * v.panL
 		r += output * v.panR
 	}
