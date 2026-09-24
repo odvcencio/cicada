@@ -35,6 +35,14 @@ func main() {
 		formatCommand(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "highlight" {
+		highlightCommand(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "symbols" {
+		symbolsCommand(os.Args[2:])
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "verify-wav" {
 		verifyWAVCommand(os.Args[2:])
 		return
@@ -230,7 +238,15 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: cicada gen --seed N --key a --scale minor [-o out.cicada] [--trace] | validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --dither=true --normalize=false --block 4096] | stems <file.cicada> -o <dir> [--rate 48000 --from 0 --bars 16 --tail 3s] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
+	fmt.Fprintln(os.Stderr, "usage: cicada "+
+		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+
+		"validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | "+
+		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --dither=true --normalize=false --block 4096] | "+
+		"stems <file.cicada> -o <dir> [--rate 48000 --from 0 --bars 16 --tail 3s] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
+		"midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | "+
+		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | "+
+		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | "+
+		"convert <in> -o <out> | compare --semantic <a> <b> | highlight [--html|--spans] <file.cicada> | symbols [--refs] [--json] <file.cicada>")
 	os.Exit(2)
 }
 

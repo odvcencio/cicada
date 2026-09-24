@@ -48,6 +48,39 @@ func TestSourcePrintAndFormat(t *testing.T) {
 	}
 }
 
+func TestFormatKeepsOctaveMarksAndGroupingParens(t *testing.T) {
+	source := []byte("cicada 1\ninstrument sub {\n  voice mono {\n    let shape = env(gate, 90ms);\n    out = saw(pitch)*( shape * velocity );\n  }\n}\ntrack low sub {}\npattern a notes steps=4 { 7,~ 5,,^*2 3, ~%50 c2, }\nscene main { low=a }\nsong { main }\n")
+	document, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"out = saw(pitch) * (shape * velocity);",
+		"pattern a notes steps = 4 {\n  7,~ 5,,^*2 3,~%50 c2,\n}",
+	} {
+		if !strings.Contains(string(formatted), want) {
+			t.Fatalf("formatted score lacks %q:\n%s", want, formatted)
+		}
+	}
+	original, ds := Parse(source)
+	if len(ds) != 0 {
+		t.Fatalf("source diagnostics: %+v", ds)
+	}
+	reparsed, ds := Parse(formatted)
+	if len(ds) != 0 {
+		t.Fatalf("formatted diagnostics: %+v\n%s", ds, formatted)
+	}
+	for i, step := range original.Patterns[0].Steps {
+		if got := reparsed.Patterns[0].Steps[i].Text; got != strings.ReplaceAll(step.Text, " ", "") {
+			t.Fatalf("step %d = %q, want %q", i, got, step.Text)
+		}
+	}
+}
+
 func TestFormatKeepsAcidOctaveCommasAttached(t *testing.T) {
 	source := []byte("cicada 1\ntrack bass acid {}\npattern a acid steps=4 { 7,^ 7,,~ 7, . }\nscene main { bass=a }\nsong { main }\n")
 	document, err := ParseDocument(source)
@@ -67,7 +100,7 @@ func TestFormatKeepsAcidOctaveCommasAttached(t *testing.T) {
 }
 
 func TestExamplesRemainValidAfterFormat(t *testing.T) {
-	for _, name := range []string{"first-acid", "glassbass", "circuit-kit", "acid-voice"} {
+	for _, name := range []string{"first-acid", "glassbass", "circuit-kit", "acid-voice", "cicada-chorus"} {
 		t.Run(name, func(t *testing.T) {
 			source, err := os.ReadFile("../examples/" + name + ".cicada")
 			if err != nil {

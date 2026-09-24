@@ -4,20 +4,20 @@ The `.cicada` score is source code for music. Its compiler parses notation, expa
 
 ```text
 .cicada source
-  -> Grammargen grammar + gotreesitter CST
+  -> grammargen Go DSL grammar + gotreesitter CST
   -> typed score with source positions
   -> phrase expansion + semantic checks
   -> packed patterns + deterministic timed events
   -> instrument DSP graphs + shared audio kernel
   -> WAV (custom mono, acid, and eleven drum lanes)
-  -> live workstation / game / MIDI (planned)
+  -> MIDI export, live engine, and future workstation views
 ```
 
 This grammar-first prototype broadens an acid-focused music engine toward an extensible DAW. The grammar and examples implement the first syntax slice; the wider workstation design remains a proposal.
 
 ## Core language
 
-The parser accepts tracks, note and drum patterns, scenes, song arrangements, named phrases, and custom instrument declarations. Braces make the syntax independent of indentation. `//` comments are named CST nodes, so editor tooling can retain them. Every syntax node has a source span.
+The parser accepts tracks, authored drum kits, note and drum patterns, scenes, song arrangements, named phrases, and custom instrument declarations. Braces make the syntax independent of indentation. `//` comments are named CST nodes, so editor tooling can retain them. Every syntax node has a source span.
 
 ```cicada
 cicada 1
@@ -77,6 +77,6 @@ The next implementation boundary is a host-independent engine contract for instr
 - Phrase expansion and instrument graphs have static size limits.
 - Syntax and semantic diagnostics carry line, column, and stable codes.
 - JSON is typed interchange for workstation and collaboration state. Text/JSON/text conversion preserves semantic meaning; an unedited CST prints the original bytes, including spelling and comments.
-- The CST and generated highlight query give editors an incremental parsing path. The formatter works; source patches that preserve unaffected text are still planned.
+- The CST and the [editor queries](editor-tooling.md) give editors an incremental parsing path: highlights, locals, tags, folds, and indents, with one capture for every token. The formatter works; source patches that preserve unaffected text are still planned.
 
 The current implementation compiles scores to note events and instrument graph IR, and renders custom mono graphs, acid, eleven drum lanes, authored kits, a drive insert, delay and reverb returns, music and SFX buses, and an optional music-bus compressor to WAV. Track compressor inserts, the worklet, and the workstation remain open.
