@@ -71,3 +71,33 @@ func TestWAVRejectsShortWrite(t *testing.T) {
 		t.Fatalf("want short write, got %v", err)
 	}
 }
+
+func TestWAVAppliesStepGate(t *testing.T) {
+	const source = `cicada 1
+tempo 120
+key a minor
+instrument tone { voice mono { let shape = env(gate, 30000ms); out = sine(pitch) * shape; } }
+track lead tone {}
+pattern one notes steps=4 gate=50 { 1 . . . }
+scene main { lead=one }
+song { main }
+`
+	score, diagnostics := notation.Parse([]byte(source))
+	if len(diagnostics) != 0 {
+		t.Fatalf("score diagnostics: %+v", diagnostics)
+	}
+	var wav bytes.Buffer
+	if _, err := WAV(score, Options{SampleRate: 48_000}, &wav); err != nil {
+		t.Fatal(err)
+	}
+	data := wav.Bytes()
+	frame := func(index int) []byte { return data[44+index*6 : 44+(index+1)*6] }
+	if bytes.Equal(frame(100), make([]byte, 6)) {
+		t.Fatal("note onset is silent")
+	}
+	for _, index := range []int{9000, 10000, 12000} {
+		if !bytes.Equal(frame(index), make([]byte, 6)) {
+			t.Fatalf("gate remained open at frame %d: %v", index, frame(index))
+		}
+	}
+}

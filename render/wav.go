@@ -29,16 +29,24 @@ type Report struct {
 }
 
 type trackRuntime struct {
-	name     string
-	voice    *graph.Voice
-	patterns map[string]seq.Pattern
-	current  seq.Pattern
-	active   *seq.Pattern
+	name           string
+	voice          *graph.Voice
+	patterns       map[string]seq.Pattern
+	currentName    string
+	current        seq.Pattern
+	active         *seq.Pattern
+	generation     uint64
+	activeGen      uint64
+	activeNoteID   int64
+	pending        seq.Pattern
+	pendingGen     uint64
+	hasPendingGate bool
 }
 
 type scheduled struct {
-	track int
-	event seq.Event
+	track      int
+	generation uint64
+	event      seq.Event
 }
 
 // WAV renders the song arrangement from a valid score. This first audio path
@@ -105,19 +113,36 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 					if tracks[ti].active == nil {
 						continue
 					}
-					n, overflow := seq.EventsInBlock(tracks[ti].active, clock, uint8(ti), 0, position, frames, eventBuf[:])
+					n, overflow := seq.EventsWithGatesInBlock(tracks[ti].active, clock, uint8(ti), 0, position, frames, eventBuf[:])
 					if overflow {
 						return report, fmt.Errorf("too many events in render block")
 					}
 					for _, event := range eventBuf[:n] {
-						events = append(events, scheduled{track: ti, event: event})
+						events = append(events, scheduled{track: ti, generation: tracks[ti].generation, event: event})
+					}
+					if tracks[ti].hasPendingGate {
+						n, overflow = seq.EventsWithGatesInBlock(&tracks[ti].pending, clock, uint8(ti), 0, position, frames, eventBuf[:])
+						if overflow {
+							return report, fmt.Errorf("too many pending gate events in render block")
+						}
+						for _, event := range eventBuf[:n] {
+							if event.Kind == seq.NoteOff {
+								events = append(events, scheduled{track: ti, generation: tracks[ti].pendingGen, event: event})
+							}
+						}
 					}
 				}
 				sort.Slice(events, func(i, j int) bool {
 					if events[i].event.Sample != events[j].event.Sample {
 						return events[i].event.Sample < events[j].event.Sample
 					}
-					return events[i].track < events[j].track
+					if events[i].event.Kind != events[j].event.Kind {
+						return events[i].event.Kind == seq.NoteOff
+					}
+					if events[i].track != events[j].track {
+						return events[i].track < events[j].track
+					}
+					return events[i].event.NoteID < events[j].event.NoteID
 				})
 				if err := renderBlock(writer, tracks, events, position, frames, block, &report); err != nil {
 					return report, err
@@ -126,6 +151,10 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 			}
 			bar++
 		}
+	}
+	for ti := range tracks {
+		tracks[ti].voice.NoteOff()
+		tracks[ti].activeGen = 0
 	}
 	for position < report.Frames {
 		frames := 4096
@@ -205,12 +234,25 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 			case "keep":
 			case "off":
 				tracks[ti].active = nil
+				tracks[ti].currentName = ""
+				tracks[ti].hasPendingGate = false
+				tracks[ti].activeGen = 0
+				tracks[ti].voice.NoteOff()
 			default:
+				if tracks[ti].currentName == binding.Pattern {
+					continue
+				}
 				pattern, ok := tracks[ti].patterns[binding.Pattern]
 				if !ok {
 					return fmt.Errorf("track %s cannot play pattern %s", binding.Track, binding.Pattern)
 				}
-				// The pattern value lives in the map; copy it into a stable field.
+				if tracks[ti].active != nil && tracks[ti].activeGen == tracks[ti].generation {
+					tracks[ti].pending = tracks[ti].current
+					tracks[ti].pendingGen = tracks[ti].generation
+					tracks[ti].hasPendingGate = true
+				}
+				tracks[ti].generation++
+				tracks[ti].currentName = binding.Pattern
 				tracks[ti].current = pattern
 				tracks[ti].active = &tracks[ti].current
 			}
@@ -225,7 +267,19 @@ func renderBlock(w io.Writer, tracks []trackRuntime, events []scheduled, start i
 		sample := start + int64(frame)
 		for eventIndex < len(events) && events[eventIndex].event.Sample == sample {
 			event := events[eventIndex]
-			tracks[event.track].voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Slide)
+			track := &tracks[event.track]
+			if event.event.Kind == seq.NoteOff {
+				if track.activeGen == event.generation && track.activeNoteID == event.event.NoteID {
+					track.voice.NoteOff()
+					track.activeGen = 0
+					track.hasPendingGate = false
+				}
+			} else {
+				track.voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Slide)
+				track.activeGen = event.generation
+				track.activeNoteID = event.event.NoteID
+				track.hasPendingGate = false
+			}
 			eventIndex++
 		}
 		var mixed float32
