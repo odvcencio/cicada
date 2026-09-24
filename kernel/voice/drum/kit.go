@@ -161,6 +161,8 @@ type laneVoice struct {
 	current, old      state
 	fadeRemaining     int
 	panL, panR, level float64
+	recipe            Lane
+	enabled           bool
 }
 
 type Kit struct {
@@ -176,6 +178,8 @@ func New(sampleRate int, seed uint32) (*Kit, error) {
 	}
 	k := &Kit{rate: float64(sampleRate), seed: seed}
 	for lane := Lane(0); lane < LaneCount; lane++ {
+		k.lanes[lane].recipe = lane
+		k.lanes[lane].enabled = true
 		if err := k.SetParams(lane, DefaultParams(lane)); err != nil {
 			return nil, err
 		}
@@ -185,7 +189,10 @@ func New(sampleRate int, seed uint32) (*Kit, error) {
 }
 
 func (k *Kit) SetParams(lane Lane, params Params) error {
-	if err := params.Validate(lane); err != nil {
+	if lane >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	if err := params.Validate(k.lanes[lane].recipe); err != nil {
 		return err
 	}
 	v := &k.lanes[lane]
@@ -197,6 +204,36 @@ func (k *Kit) SetParams(lane Lane, params Params) error {
 	} else {
 		v.level = math.Pow(10, params.LevelDB/20)
 	}
+	return nil
+}
+
+// SetRecipe binds a source lane to a built-in drum recipe. Call this while
+// configuring the kit, before audio rendering starts. Each source lane keeps
+// its own voice and noise state even when multiple lanes share one recipe.
+func (k *Kit) SetRecipe(lane, recipe Lane) error {
+	if lane >= LaneCount || recipe >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	v := &k.lanes[lane]
+	v.recipe = recipe
+	v.enabled = true
+	v.current = state{noise: k.seed ^ uint32(lane+1)*0x9e3779b9}
+	v.old = state{}
+	v.fadeRemaining = 0
+	return k.SetParams(lane, DefaultParams(recipe))
+}
+
+// Disable silences an omitted source lane without affecting other lanes.
+// Like SetRecipe, this configures the kit outside the audio callback.
+func (k *Kit) Disable(lane Lane) error {
+	if lane >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	v := &k.lanes[lane]
+	v.enabled = false
+	v.current.active = false
+	v.old.active = false
+	v.fadeRemaining = 0
 	return nil
 }
 
@@ -217,10 +254,14 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 	if lane >= LaneCount {
 		return
 	}
+	if !k.lanes[lane].enabled {
+		return
+	}
 	if lane == CH {
 		k.NoteOff(OH)
 	}
 	v := &k.lanes[lane]
+	recipe := v.recipe
 	if v.current.active {
 		v.old = v.current
 		v.fadeRemaining = max(1, int(k.rate/1000))
@@ -235,8 +276,8 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 	}
 	v.current.velocity = float64(velocity) / 127
 	v.current.noiseVelocity = math.Pow(v.current.velocity, 1.5)
-	v.current.band.configure(k.bandCutoff(lane), k.bandQ(lane), k.rate)
-	if lane == CY {
+	v.current.band.configure(k.bandCutoff(recipe, v.params), k.bandQ(recipe), k.rate)
+	if recipe == CY {
 		v.current.high1.configure(9000*v.params.Tone, 2, k.rate)
 	} else {
 		v.current.high1.configure(8000, 0.707, k.rate)
@@ -260,13 +301,16 @@ func (k *Kit) NextStereo() (left, right float32) {
 	var l, r float64
 	for lane := Lane(0); lane < LaneCount; lane++ {
 		v := &k.lanes[lane]
-		output := k.nextState(lane, &v.current, v.params)
+		if !v.enabled {
+			continue
+		}
+		output := k.nextState(v.recipe, &v.current, v.params)
 		if v.fadeRemaining > 0 {
-			old := k.nextState(lane, &v.old, v.params)
+			old := k.nextState(v.recipe, &v.old, v.params)
 			output += old * float64(v.fadeRemaining) / max(1, k.rate/1000)
 			v.fadeRemaining--
 		}
-		output *= nominalTrim[lane] * v.level
+		output *= nominalTrim[v.recipe] * v.level
 		l += output * v.panL
 		r += output * v.panR
 	}
@@ -277,8 +321,7 @@ func (k *Kit) NextStereo() (left, right float32) {
 	return float32(l), float32(r)
 }
 
-func (k *Kit) bandCutoff(lane Lane) float64 {
-	p := k.lanes[lane].params
+func (k *Kit) bandCutoff(lane Lane, p Params) float64 {
 	switch lane {
 	case SD:
 		return 1800 * p.Tone
