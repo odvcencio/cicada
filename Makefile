@@ -22,7 +22,7 @@ test-alloc:
 	go test ./kernel/... -run 'Test.*(Allocate|Allocs|AllocationFree)' -count=1 -v
 
 test-timing:
-	go test ./kernel/seq ./kernel/engine -run 'Test.*(Clock|Timing|Tick|Tempo|Quantize|Gate|Slide|Chain|Block|Swing|Ratchet|Tie|Probability|Restart|Scene)' -count=1 -v
+	go test ./kernel/seq ./kernel/engine -run 'Test.*(Clock|Timing|Tick|Tempo|Quantize|Gate|Slide|Chain|Mask|Block|Swing|Ratchet|Tie|Probability|Restart|Scene)' -count=1 -v
 
 test-golden:
 	go run ./cmd/cicada golden

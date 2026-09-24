@@ -403,6 +403,124 @@ func TestInvalidRenderBlockFaults(t *testing.T) {
 	}
 }
 
+func TestMaskedLayerContinuesVoiceRelease(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices = 1, 1
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.meterRate = 0
+	if !e.PushBatch([]cmd.Command{
+		{Op: cmd.OpPlay, Track: 0xff},
+		{Op: cmd.OpNoteOn, Track: 0, Arg0: 45 | 100<<8},
+	}) {
+		t.Fatal("note setup rejected")
+	}
+	var left, right [128]float32
+	for block := 0; block < 20; block++ {
+		e.Render(left[:], right[:])
+	}
+	if !e.voices[0].acid.Active() {
+		t.Fatal("acid note was not active before mask")
+	}
+	tick := e.transport.Tick()
+	if !e.PushBatch([]cmd.Command{
+		{Op: cmd.OpNoteOff, Track: 0, Tick: tick},
+		{Op: cmd.OpSetLayerMask, Track: 0xff, Arg0: 0, Tick: tick},
+	}) {
+		t.Fatal("mask and note-off rejected")
+	}
+	for block := 0; block < 80; block++ {
+		e.Render(left[:], right[:])
+		for _, sample := range left {
+			if block > 1 && sample != 0 {
+				t.Fatal("masked layer reached the output after limiter lookahead")
+			}
+		}
+	}
+	if e.voices[0].acid.Active() {
+		t.Fatal("masked acid envelope stopped advancing")
+	}
+	if !e.Push(cmd.Command{Op: cmd.OpSetLayerMask, Track: 0xff, Arg0: 1, Tick: e.transport.Tick()}) {
+		t.Fatal("unmask rejected")
+	}
+	e.Render(left[:], right[:])
+	var message cmd.Message
+	for e.Poll(&message) {
+		if message.Kind == cmd.Fault {
+			t.Fatalf("layer transition fault %d", message.A)
+		}
+	}
+}
+
+func TestMaskedDrumLayerKeepsSynthesisTime(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices = 1, 6
+	cfg.Track[0].Kind = VoiceDrums
+	masked, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, engine := range []*Engine{masked, reference} {
+		engine.meterRate = 0
+		if !engine.PushBatch([]cmd.Command{
+			{Op: cmd.OpPlay, Track: 0xff},
+			{Op: cmd.OpNoteOn, Track: 0, Index: 0, Arg0: 36 | 110<<8},
+		}) {
+			t.Fatal("drum setup rejected")
+		}
+	}
+	var left, right [128]float32
+	for block := 0; block < 20; block++ {
+		masked.Render(left[:], right[:])
+		reference.Render(left[:], right[:])
+	}
+	if !masked.Push(cmd.Command{Op: cmd.OpSetLayerMask, Track: 0xff, Arg0: 0, Tick: masked.transport.Tick()}) {
+		t.Fatal("drum mask rejected")
+	}
+	for block := 0; block < 60; block++ {
+		masked.Render(left[:], right[:])
+		reference.Render(left[:], right[:])
+	}
+	leftMasked, rightMasked := masked.voices[0].drums.NextStereo()
+	leftReference, rightReference := reference.voices[0].drums.NextStereo()
+	if leftMasked != leftReference || rightMasked != rightReference {
+		t.Fatalf("masked drum synthesis time diverged: (%g, %g), want (%g, %g)", leftMasked, rightMasked, leftReference, rightReference)
+	}
+}
+
+func TestLayerMaskAppliesAtNextBar(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices = 1, 1
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := e.transport.SeekTick(seq.TicksPerBar - 10); err != nil {
+		t.Fatal(err)
+	}
+	if !e.PushBatch([]cmd.Command{
+		{Op: cmd.OpPlay, Track: 0xff},
+		{Op: cmd.OpSetLayerMask, Track: 0xff, Arg0: 0},
+	}) {
+		t.Fatal("layer mask setup rejected")
+	}
+	var left, right [128]float32
+	e.Render(left[:], right[:])
+	if e.layerMask != 1 {
+		t.Fatalf("mask applied before the bar boundary at tick %d", e.transport.Tick())
+	}
+	e.Render(left[:], right[:])
+	if e.layerMask != 0 {
+		t.Fatalf("mask missed the bar boundary at tick %d", e.transport.Tick())
+	}
+}
+
 func TestRestartAndNextBarPatternEdit(t *testing.T) {
 	cfg := testConfig()
 	cfg.Tracks, cfg.MaxVoices = 1, 1
