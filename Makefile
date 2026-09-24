@@ -1,4 +1,4 @@
-.PHONY: test test-kernel grammar-check probe-wasm build build-kernel-wasm test-kernel-wasm
+.PHONY: test test-kernel test-golden grammar-check probe-wasm build build-kernel-wasm test-kernel-wasm
 
 test:
 	go test ./... -count=1
@@ -17,6 +17,9 @@ build:
 
 test-kernel:
 	go test ./kernel/... -count=1
+
+test-golden:
+	go run ./cmd/cicada golden
 
 # This builds only the sequencer probe, not the eventual audio kernel.
 probe-wasm:

@@ -37,5 +37,6 @@ jobs:
           make grammar-check
           go test ./... -count=1
           go vet ./...
+          make test-golden
       - name: Audio WASM and size gate
         run: make test-kernel-wasm
