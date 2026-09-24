@@ -117,6 +117,54 @@ func TestJSONDiagnosticLocations(t *testing.T) {
 	}
 }
 
+func TestJSONFieldPaths(t *testing.T) {
+	p, diagnostics := FromScore(firstScore(t))
+	if p == nil {
+		t.Fatalf("project compilation: %+v", diagnostics)
+	}
+	encoded, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name, pointer string
+		change        func(map[string]any)
+	}{
+		{"missing step field", "/patterns/0/data/0/velocity", func(root map[string]any) {
+			pattern := root["patterns"].([]any)[0].(map[string]any)
+			delete(pattern["data"].([]any)[0].(map[string]any), "velocity")
+		}},
+		{"unknown track field", "/tracks/0/mystery", func(root map[string]any) {
+			root["tracks"].([]any)[0].(map[string]any)["mystery"] = true
+		}},
+		{"unknown root field", "/mystery", func(root map[string]any) {
+			root["mystery"] = true
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var root map[string]any
+			if err := json.Unmarshal(encoded, &root); err != nil {
+				t.Fatal(err)
+			}
+			test.change(root)
+			data, err := json.Marshal(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for attempt := 0; attempt < 32; attempt++ {
+				_, err := DecodeJSON(data)
+				var diagnostic *JSONError
+				if !errors.As(err, &diagnostic) || diagnostic.Code != "CICADA-PARAM" || diagnostic.Pointer != test.pointer {
+					t.Fatalf("attempt %d: expected %s, got %v", attempt, test.pointer, err)
+				}
+				if strings.HasPrefix(test.name, "unknown") && (diagnostic.Line != 1 || diagnostic.Column < 2) {
+					t.Fatalf("attempt %d: unknown field lost its key position: %d:%d", attempt, diagnostic.Line, diagnostic.Column)
+				}
+			}
+		})
+	}
+}
+
 func TestJSONRejectsUncompilableCustomInstrumentOverride(t *testing.T) {
 	score := firstScore(t)
 	p, diagnostics := FromScore(score)

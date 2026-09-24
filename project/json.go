@@ -256,7 +256,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 		if p.Format == FormatID {
 			field = "version"
 		}
-		return nil, jsonError(data, "CICADA-VERSION", "/"+field, jsonRootFieldOffset(data, field), fmt.Errorf("unsupported project format or version"))
+		return nil, jsonError(data, "CICADA-VERSION", "/"+field, 0, fmt.Errorf("unsupported project format or version"))
 	}
 	if err := ValidateProject(&p); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
@@ -351,61 +351,61 @@ func checkRequiredFields(data []byte) error {
 	if err := decoder.Decode(&raw); err != nil {
 		return err
 	}
-	root, err := requiredObject(raw, "project", "format", "version", "title", "tempo_milli", "key", "seed", "instruments", "kits", "tracks", "patterns", "scenes", "song", "effects")
+	root, err := requiredObject(raw, "project", "", "format", "version", "title", "tempo_milli", "key", "seed", "instruments", "kits", "tracks", "patterns", "scenes", "song", "effects")
 	if err != nil {
 		return err
 	}
-	if _, err := requiredObject(root["key"], "key", "root", "scale"); err != nil {
+	if _, err := requiredObject(root["key"], "key", "/key", "root", "scale"); err != nil {
 		return err
 	}
-	if err := checkObjectArray(root["instruments"], "instruments", func(value any) error {
-		object, err := requiredObject(value, "instrument", "id", "mode", "params", "lets", "out")
+	if err := checkObjectArray(root["instruments"], "instruments", "/instruments", func(value any, pointer string) error {
+		object, err := requiredObject(value, "instrument", pointer, "id", "mode", "params", "lets", "out")
 		if err != nil {
 			return err
 		}
-		if err := checkObjectArray(object["params"], "instrument params", func(value any) error {
-			_, err := requiredObject(value, "instrument param", "id", "unit", "default")
+		if err := checkObjectArray(object["params"], "instrument params", pointer+"/params", func(value any, child string) error {
+			_, err := requiredObject(value, "instrument param", child, "id", "unit", "default")
 			return err
 		}); err != nil {
 			return err
 		}
-		return checkObjectArray(object["lets"], "instrument lets", func(value any) error {
-			_, err := requiredObject(value, "binding", "id", "value")
+		return checkObjectArray(object["lets"], "instrument lets", pointer+"/lets", func(value any, child string) error {
+			_, err := requiredObject(value, "binding", child, "id", "value")
 			return err
 		})
 	}); err != nil {
 		return err
 	}
-	if err := checkObjectArray(root["kits"], "kits", func(value any) error {
-		_, err := requiredObject(value, "kit", "id", "lanes")
+	if err := checkObjectArray(root["kits"], "kits", "/kits", func(value any, pointer string) error {
+		_, err := requiredObject(value, "kit", pointer, "id", "lanes")
 		return err
 	}); err != nil {
 		return err
 	}
-	if err := checkObjectArray(root["tracks"], "tracks", func(value any) error {
-		object, err := requiredObject(value, "track", "id", "kind", "params", "mixer", "slots")
+	if err := checkObjectArray(root["tracks"], "tracks", "/tracks", func(value any, pointer string) error {
+		object, err := requiredObject(value, "track", pointer, "id", "kind", "params", "mixer", "slots")
 		if err != nil {
 			return err
 		}
-		_, err = requiredObject(object["mixer"], "mixer", "gain_db", "pan", "send_a", "send_b", "send_pre", "mute", "solo", "insert", "bus")
+		_, err = requiredObject(object["mixer"], "mixer", pointer+"/mixer", "gain_db", "pan", "send_a", "send_b", "send_pre", "mute", "solo", "insert", "bus")
 		return err
 	}); err != nil {
 		return err
 	}
-	if err := checkObjectArray(root["patterns"], "patterns", func(value any) error {
-		object, err := requiredObject(value, "pattern", "id", "kind", "steps", "swing_percent100", "gate_percent", "transpose", "seed", "data", "lanes")
+	if err := checkObjectArray(root["patterns"], "patterns", "/patterns", func(value any, pointer string) error {
+		object, err := requiredObject(value, "pattern", pointer, "id", "kind", "steps", "swing_percent100", "gate_percent", "transpose", "seed", "data", "lanes")
 		if err != nil {
 			return err
 		}
-		if err := checkStepArray(object["data"]); err != nil {
+		if err := checkStepArray(object["data"], pointer+"/data"); err != nil {
 			return err
 		}
 		lanes, ok := object["lanes"].(map[string]any)
 		if !ok {
-			return fmt.Errorf("pattern lanes must be an object")
+			return &jsonFieldError{pointer + "/lanes", fmt.Errorf("pattern lanes must be an object")}
 		}
-		for _, cells := range lanes {
-			if err := checkStepArray(cells); err != nil {
+		for _, lane := range sortedKeys(lanes) {
+			if err := checkStepArray(lanes[lane], jsonPointer(pointer+"/lanes", lane)); err != nil {
 				return err
 			}
 		}
@@ -413,56 +413,63 @@ func checkRequiredFields(data []byte) error {
 	}); err != nil {
 		return err
 	}
-	if err := checkObjectArray(root["scenes"], "scenes", func(value any) error {
-		_, err := requiredObject(value, "scene", "id", "bindings")
+	if err := checkObjectArray(root["scenes"], "scenes", "/scenes", func(value any, pointer string) error {
+		_, err := requiredObject(value, "scene", pointer, "id", "bindings")
 		return err
 	}); err != nil {
 		return err
 	}
-	if err := checkObjectArray(root["song"], "song", func(value any) error {
-		_, err := requiredObject(value, "song entry", "scene", "bars")
+	if err := checkObjectArray(root["song"], "song", "/song", func(value any, pointer string) error {
+		_, err := requiredObject(value, "song entry", pointer, "scene", "bars")
 		return err
 	}); err != nil {
 		return err
 	}
-	return checkObjectArray(root["effects"], "effects", func(value any) error {
-		_, err := requiredObject(value, "effect", "id", "params")
+	return checkObjectArray(root["effects"], "effects", "/effects", func(value any, pointer string) error {
+		_, err := requiredObject(value, "effect", pointer, "id", "params")
 		return err
 	})
 }
 
-func requiredObject(value any, name string, fields ...string) (map[string]any, error) {
+func requiredObject(value any, name, pointer string, fields ...string) (map[string]any, error) {
 	object, ok := value.(map[string]any)
 	if !ok {
-		return nil, fmt.Errorf("%s must be an object", name)
+		return nil, &jsonFieldError{pointer, fmt.Errorf("%s must be an object", name)}
 	}
+	allowed := make(map[string]bool, len(fields))
 	for _, field := range fields {
+		allowed[field] = true
 		if _, exists := object[field]; !exists {
-			return nil, fmt.Errorf("%s is missing %s", name, field)
+			return nil, &jsonFieldError{jsonPointer(pointer, field), fmt.Errorf("%s is missing %s", name, field)}
+		}
+	}
+	for _, field := range sortedKeys(object) {
+		if !allowed[field] {
+			return nil, &jsonFieldError{jsonPointer(pointer, field), fmt.Errorf("%s has unknown field %s", name, field)}
 		}
 	}
 	return object, nil
 }
 
-func checkObjectArray(value any, name string, check func(any) error) error {
+func checkObjectArray(value any, name, pointer string, check func(any, string) error) error {
 	array, ok := value.([]any)
 	if !ok {
-		return fmt.Errorf("%s must be an array", name)
+		return &jsonFieldError{pointer, fmt.Errorf("%s must be an array", name)}
 	}
-	for _, item := range array {
-		if err := check(item); err != nil {
+	for index, item := range array {
+		if err := check(item, jsonPointer(pointer, strconv.Itoa(index))); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func checkStepArray(value any) error {
-	return checkObjectArray(value, "pattern cells", func(value any) error {
+func checkStepArray(value any, pointer string) error {
+	return checkObjectArray(value, "pattern cells", pointer, func(value any, child string) error {
 		if value == nil {
 			return nil
 		}
-		_, err := requiredObject(value, "step", "note", "accent", "slide", "tie", "ratchet", "probability", "velocity")
+		_, err := requiredObject(value, "step", child, "note", "accent", "slide", "tie", "ratchet", "probability", "velocity")
 		return err
 	})
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"unicode/utf8"
 )
 
@@ -20,10 +21,26 @@ type JSONError struct {
 func (e *JSONError) Error() string { return e.Cause.Error() }
 func (e *JSONError) Unwrap() error { return e.Cause }
 
+type jsonFieldError struct {
+	Pointer string
+	Cause   error
+}
+
+func (e *jsonFieldError) Error() string { return e.Cause.Error() }
+func (e *jsonFieldError) Unwrap() error { return e.Cause }
+
 func jsonError(data []byte, code, pointer string, offset int, cause error) error {
+	var field *jsonFieldError
+	if pointer == "" && errors.As(cause, &field) {
+		pointer = field.Pointer
+	}
 	var syntax *json.SyntaxError
 	if errors.As(cause, &syntax) {
 		offset = int(syntax.Offset)
+	} else if pointer != "" && offset == 0 {
+		if located, ok := jsonPointerOffset(data, pointer); ok {
+			offset = located
+		}
 	}
 	if offset < 0 {
 		offset = 0
@@ -85,23 +102,46 @@ func jsonKeyOffset(data []byte, end int) int {
 	return end
 }
 
-func jsonRootFieldOffset(data []byte, field string) int {
+func jsonPointerOffset(data []byte, target string) (int, bool) {
 	decoder := json.NewDecoder(bytes.NewReader(data))
-	if _, err := decoder.Token(); err != nil {
-		return 0
-	}
-	for decoder.More() {
-		key, err := decoder.Token()
+	var walk func(string) (int, bool)
+	walk = func(pointer string) (int, bool) {
+		token, err := decoder.Token()
 		if err != nil {
-			return 0
+			return 0, false
 		}
-		if key == field {
-			return jsonKeyOffset(data, int(decoder.InputOffset()))
+		delim, ok := token.(json.Delim)
+		if !ok {
+			return 0, false
 		}
-		var value json.RawMessage
-		if err := decoder.Decode(&value); err != nil {
-			return 0
+		switch delim {
+		case '{':
+			for decoder.More() {
+				key, err := decoder.Token()
+				if err != nil {
+					return 0, false
+				}
+				child := jsonPointer(pointer, key.(string))
+				if child == target {
+					return jsonKeyOffset(data, int(decoder.InputOffset())), true
+				}
+				if offset, found := walk(child); found {
+					return offset, true
+				}
+			}
+			decoder.Token()
+		case '[':
+			index := 0
+			for decoder.More() {
+				child := jsonPointer(pointer, strconv.Itoa(index))
+				if offset, found := walk(child); found {
+					return offset, true
+				}
+				index++
+			}
+			decoder.Token()
 		}
+		return 0, false
 	}
-	return 0
+	return walk("")
 }
