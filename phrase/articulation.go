@@ -62,6 +62,50 @@ func addAccents(notes []noteState, density uint8) {
 	}
 }
 
+// repairDefaultAccents keeps generated default 16-step bars inside the
+// distribution gate after structure mutations without changing their draws.
+// The structure mutation retains its unrestricted accent toggle.
+func repairDefaultAccents(notes []noteState) {
+	var order []int
+	accents := 0
+	for index, note := range notes {
+		if !note.active || note.tie {
+			continue
+		}
+		order = append(order, index)
+		if note.accent {
+			accents++
+		}
+	}
+	sort.Slice(order, func(i, j int) bool {
+		a, b := order[i], order[j]
+		strengthA, strengthB := metricStrength[a%metricPeriod], metricStrength[b%metricPeriod]
+		if strengthA != strengthB {
+			return strengthA > strengthB
+		}
+		if (notes[a].class == classOctave) != (notes[b].class == classOctave) {
+			return notes[a].class == classOctave
+		}
+		return a < b
+	})
+	for _, index := range order {
+		if accents >= 2 {
+			break
+		}
+		if !notes[index].accent {
+			notes[index].accent = true
+			accents++
+		}
+	}
+	for i := len(order) - 1; i >= 0 && accents > 6; i-- {
+		index := order[i]
+		if notes[index].accent && index != 0 {
+			notes[index].accent = false
+			accents--
+		}
+	}
+}
+
 func hasAccentTriple(notes []noteState, onsets []int) bool {
 	for index := 2; index < len(onsets); index++ {
 		if notes[onsets[index-2]].accent && notes[onsets[index-1]].accent && notes[onsets[index]].accent {
