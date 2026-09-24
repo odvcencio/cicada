@@ -1,10 +1,13 @@
-// Package halfband implements the fixed 31-tap Kaiser FIR used on both sides
+// Package halfband implements the 43-tap Kaiser FIR used on both sides
 // of Cicada's 2x acid filter section.
 package halfband
 
 import "math"
 
-const Taps = 31
+const Taps = 43
+
+const center = (Taps - 1) / 2
+const beta = 6.5
 
 type FIR struct {
 	coefficients [Taps]float64
@@ -12,13 +15,13 @@ type FIR struct {
 	position     int
 }
 
-// New generates the specified half-band kernel once, outside the audio loop.
+// New generates the decision-0002 half-band kernel once, outside the audio loop.
 func New() FIR {
 	var f FIR
-	denominator := besselI0(7)
+	denominator := besselI0(beta)
 	var sum float64
 	for n := 0; n < Taps; n++ {
-		m := n - 15
+		m := n - center
 		if m != 0 && m%2 == 0 {
 			continue
 		}
@@ -30,8 +33,8 @@ func New() FIR {
 			}
 			sinc = sign / (math.Pi * float64(m) / 2)
 		}
-		ratio := float64(m) / 15
-		window := besselI0(7*math.Sqrt(1-ratio*ratio)) / denominator
+		ratio := float64(m) / center
+		window := besselI0(beta*math.Sqrt(1-ratio*ratio)) / denominator
 		f.coefficients[n] = sinc * window
 		sum += f.coefficients[n]
 	}

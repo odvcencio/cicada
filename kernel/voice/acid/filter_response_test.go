@@ -1,9 +1,7 @@
 package acid
 
 import (
-	"fmt"
 	"math"
-	"strings"
 	"testing"
 )
 
@@ -14,7 +12,7 @@ func TestFilterStabilityGrid(t *testing.T) {
 			for _, savage := range []float64{0, 1} {
 				for cutoffIndex := 0; cutoffIndex < 64; cutoffIndex++ {
 					cutoff := 20 * math.Pow(400, float64(cutoffIndex)/63)
-					g := math.Tan(math.Pi * cutoff / (2 * rate))
+					g := calibratedFilterG(math.Tan(math.Pi*cutoff/(2*rate)), model)
 					G := g / (1 + g)
 					for resonanceIndex := 0; resonanceIndex < 64; resonanceIndex++ {
 						resonance := float64(resonanceIndex) / 63
@@ -125,28 +123,22 @@ func TestFilterSelfOscillation(t *testing.T) {
 }
 
 func TestDecision0002AcidFilterCutoffGate(t *testing.T) {
-	const sampleRate, requestedCutoff = 48_000.0, 2_000.0
-	measurements := []struct {
-		name  string
-		model FilterModel
-	}{
-		{name: "Ladder", model: Ladder},
-		{name: "Diode", model: Diode},
-	}
-	cutoffs := make([]float64, len(measurements))
-	var failures []string
-	for i, filter := range measurements {
-		cutoffs[i] = measureFilterCutoff(filter.model, sampleRate, requestedCutoff)
-		errorPercent := math.Abs(cutoffs[i]/requestedCutoff-1) * 100
-		if errorPercent > 2 {
-			failures = append(failures, fmt.Sprintf("%s measures %.2f Hz (%.1f%% from %.0f Hz)", filter.name, cutoffs[i], errorPercent, requestedCutoff))
+	for _, sampleRate := range []float64{44_100, 48_000, 96_000} {
+		for _, requestedCutoff := range []float64{100, 600, 2_000, 8_000} {
+			for _, filter := range []struct {
+				name  string
+				model FilterModel
+			}{{"Ladder", Ladder}, {"Diode", Diode}} {
+				measured := measureFilterCutoff(filter.model, sampleRate, requestedCutoff)
+				errorPercent := math.Abs(measured/requestedCutoff-1) * 100
+				if sampleRate == 48_000 && requestedCutoff == 2_000 {
+					t.Logf("%s 2 kHz cutoff: %.2f Hz (%.3f%% error)", filter.name, measured, errorPercent)
+				}
+				if errorPercent > 2 {
+					t.Errorf("%s at %.0f Hz sample rate measures %.2f Hz (%.1f%% from %.0f Hz)", filter.name, sampleRate, measured, errorPercent, requestedCutoff)
+				}
+			}
 		}
-	}
-	if math.Abs(cutoffs[0]-869.35) < 0.1 && math.Abs(cutoffs[1]-149.22) < 0.1 {
-		t.Skipf("known failure under decision 0002: Ladder measures %.2f Hz and Diode measures %.2f Hz for a %.0f Hz setting; keep the 2%% cutoff calibration gate and revise the filter design", cutoffs[0], cutoffs[1], requestedCutoff)
-	}
-	if len(failures) != 0 {
-		t.Fatalf("acid filter cutoff violates decision 0002: %s; keep the 2%% calibration gate", strings.Join(failures, "; "))
 	}
 }
 
@@ -165,21 +157,18 @@ func measureFilterCutoff(model FilterModel, sampleRate, requestedCutoff float64)
 
 func filterResponseDB(model FilterModel, sampleRate, cutoff, frequency float64) float64 {
 	oversampledRate := 2 * sampleRate
-	g := math.Tan(math.Pi * cutoff / oversampledRate)
-	G := g / (1 + g)
-	var state filterState
+	baseG := math.Tan(math.Pi * cutoff / oversampledRate)
+	voice := Voice{params: Params{Filter: model}}
+	if model == Ladder {
+		voice.filterBlend = 1
+	}
 	var outputSin, outputCos float64
 	var sinSquared, cosSquared, sinCos float64
 	const amplitude, warmup, measured = 0.001, 8192, 16384
 	for sample := 0; sample < warmup+measured; sample++ {
 		phase := 2 * math.Pi * frequency * float64(sample) / oversampledRate
 		input := amplitude * math.Sin(phase)
-		var output float64
-		if model == Diode {
-			output = state.processDiode(input, G, g, 0, 0)
-		} else {
-			output = state.processLadder(input, G, g, 0, 0)
-		}
+		output := voice.filter(input, baseG)
 		if sample >= warmup {
 			sine, cosine := math.Sin(phase), math.Cos(phase)
 			outputSin += output * sine

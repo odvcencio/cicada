@@ -265,21 +265,38 @@ func (v *Voice) cutoffHz() float64 {
 	return max(20, min(v.params.Cutoff*fastmath.Exp2(cv), .45*v.sampleRate))
 }
 
-func (v *Voice) filter(input, g float64) float64 {
-	G := g / (1 + g)
+func (v *Voice) filter(input, baseG float64) float64 {
 	kDiode := 17 * v.params.Resonance * (1 + .25*v.savageBlend)
 	kLadder := 4 * v.params.Resonance * (1 + .25*v.savageBlend)
 	if v.filterBlend == 0 {
-		return v.diode.processDiode(input, G, g, kDiode, v.savageBlend) * (1 + .35*v.params.Resonance*(1-v.savageBlend))
+		g := calibratedFilterG(baseG, Diode)
+		return v.diode.processDiode(input, g/(1+g), g, kDiode, v.savageBlend) * (1 + .35*v.params.Resonance*(1-v.savageBlend))
 	}
 	if v.filterBlend == 1 {
-		return v.ladder.processLadder(input, G, g, kLadder, v.savageBlend) * (1 + .5*kLadder*(1-v.savageBlend))
+		g := calibratedFilterG(baseG, Ladder)
+		return v.ladder.processLadder(input, g/(1+g), g, kLadder, v.savageBlend) * (1 + .5*kLadder*(1-v.savageBlend))
 	}
-	diode := v.diode.processDiode(input, G, g, kDiode, v.savageBlend)
-	ladder := v.ladder.processLadder(input, G, g, kLadder, v.savageBlend)
+	gDiode := calibratedFilterG(baseG, Diode)
+	gLadder := calibratedFilterG(baseG, Ladder)
+	diode := v.diode.processDiode(input, gDiode/(1+gDiode), gDiode, kDiode, v.savageBlend)
+	ladder := v.ladder.processLadder(input, gLadder/(1+gLadder), gLadder, kLadder, v.savageBlend)
 	diode *= 1 + .35*v.params.Resonance*(1-v.savageBlend)
 	ladder *= 1 + .5*kLadder*(1-v.savageBlend)
 	return diode*(1-v.filterBlend) + ladder*v.filterBlend
+}
+
+const ladderCutoffRatio = 0.43497944204608224
+const diodeCutoffRatio = 0.07467815580279147
+
+// At zero resonance, the ladder's four cascaded TPT poles reach -3 dB when
+// tan(pi*f/fso)/g is sqrt(2^(1/4)-1). Solving the diode's coupled four-stage
+// transfer function gives its ratio above. Applying these maps to the user's
+// cutoff keeps the measured -3 dB point at that frequency across rates.
+func calibratedFilterG(baseG float64, model FilterModel) float64 {
+	if model == Ladder {
+		return baseG / ladderCutoffRatio
+	}
+	return baseG / diodeCutoffRatio
 }
 
 func fraction(value float64) float64 {
