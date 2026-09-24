@@ -2,6 +2,7 @@ package instrument
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -14,6 +15,22 @@ func Lower(program *Program, overrides map[string]string) (graph.Program, error)
 	var out graph.Program
 	if program == nil || len(program.Nodes) == 0 || len(program.Nodes) > graph.MaxNodes || program.Output < 0 {
 		return out, fmt.Errorf("invalid instrument program")
+	}
+	declared := make(map[string]bool)
+	for _, node := range program.Nodes {
+		if node.Op == "param" {
+			declared[node.Name] = true
+		}
+	}
+	keys := make([]string, 0, len(overrides))
+	for name := range overrides {
+		keys = append(keys, name)
+	}
+	sort.Strings(keys)
+	for _, name := range keys {
+		if !declared[name] {
+			return out, fmt.Errorf("unknown instrument parameter %s", name)
+		}
 	}
 	out.Len = uint8(len(program.Nodes))
 	out.Output = uint8(program.Output)

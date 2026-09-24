@@ -17,6 +17,8 @@ var scaleIntervals = map[string][7]int{
 	"phrygian": {0, 1, 3, 5, 7, 8, 10},
 	"harmonic": {0, 2, 3, 5, 7, 8, 11},
 	"mixo":     {0, 2, 4, 5, 7, 9, 10},
+	"pent":     {0, 0, 3, 5, 7, 0, 10},
+	"blues":    {0, 0, 3, 5, 7, 0, 10},
 }
 
 var chromatic = map[byte]int{'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11}
@@ -31,6 +33,14 @@ type CompiledPattern struct {
 	Lane    string // set for drums
 	Pattern seq.Pattern
 }
+
+type patternCompileError struct {
+	position notation.Position
+	err      error
+}
+
+func (e *patternCompileError) Error() string { return e.err.Error() }
+func (e *patternCompileError) Unwrap() error { return e.err }
 
 // CompilePattern lowers one validated source pattern. Drum lanes become one
 // kernel pattern each, so the engine can assign a voice to each lane.
@@ -52,6 +62,17 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		return nil, fmt.Errorf("project seed exceeds 32-bit kernel seed")
 	}
 	base := seq.Pattern{Len: uint8(count), GatePercent: 55, Seed: uint32(score.Seed)}
+	if track.Kind == "acid" {
+		for _, param := range track.Params {
+			if param.Name == "gate" {
+				value, err := strconv.Atoi(param.Value)
+				if err != nil || value < 10 || value > 100 {
+					return nil, fmt.Errorf("invalid track gate %q", param.Value)
+				}
+				base.GatePercent = uint8(value)
+			}
+		}
+	}
 	for _, attr := range source.Attrs {
 		switch attr.Name {
 		case "swing":
@@ -97,17 +118,20 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		for i, token := range source.Steps {
 			step, err := acidStep(score, token.Text, octave, token.Transpose)
 			if err != nil {
-				return nil, fmt.Errorf("%d:%d: %w", token.Position.Line, token.Position.Column, err)
+				return nil, &patternCompileError{position: token.Position, err: err}
 			}
 			base.Steps[i], err = seq.PackStep(step)
 			if err != nil {
-				return nil, err
+				return nil, &patternCompileError{position: token.Position, err: err}
 			}
 		}
 		return []CompiledPattern{{Name: source.Name, Kind: source.Kind, Pattern: base}}, nil
 	}
 	compiled := make([]CompiledPattern, 0, len(source.Lanes))
 	for _, lane := range source.Lanes {
+		if _, ok := drumLane(lane.Name); !ok {
+			return nil, fmt.Errorf("unsupported drum lane %s", lane.Name)
+		}
 		note, ok := drumNotes[lane.Name]
 		if !ok {
 			return nil, fmt.Errorf("unknown drum lane %s", lane.Name)
@@ -116,11 +140,11 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		for i, token := range lane.Hits {
 			step, err := drumStep(token.Text, note)
 			if err != nil {
-				return nil, fmt.Errorf("%d:%d: %w", token.Position.Line, token.Position.Column, err)
+				return nil, &patternCompileError{position: token.Position, err: err}
 			}
 			p.Steps[i], err = seq.PackStep(step)
 			if err != nil {
-				return nil, err
+				return nil, &patternCompileError{position: token.Position, err: err}
 			}
 		}
 		compiled = append(compiled, CompiledPattern{Name: source.Name, Kind: "drums", Lane: lane.Name, Pattern: p})
@@ -199,6 +223,9 @@ func parsePitch(score *notation.Score, token string, octave int) (note, consumed
 		intervals, ok := scaleIntervals[score.Scale]
 		if !ok {
 			return 0, 0, fmt.Errorf("unknown scale %q", score.Scale)
+		}
+		if (score.Scale == "pent" || score.Scale == "blues") && (first == '2' || first == '6') {
+			return 0, 0, fmt.Errorf("scale %s has no degree %c", score.Scale, first)
 		}
 		root := chromatic[score.KeyRoot[0]]
 		if len(score.KeyRoot) == 2 {

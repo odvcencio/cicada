@@ -1,0 +1,5 @@
+cicada 1
+track bass acid { cutoff = 50ms }
+pattern p acid steps=1 { 1 }
+scene main { bass=p }
+song { main }

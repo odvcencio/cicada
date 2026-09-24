@@ -1,0 +1,6 @@
+cicada 1
+key a pent
+track bass acid {}
+pattern p acid steps=1 { 2 }
+scene main { bass=p }
+song { main }

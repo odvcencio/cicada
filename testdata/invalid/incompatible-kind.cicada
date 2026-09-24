@@ -1,0 +1,5 @@
+cicada 1
+track bass acid {}
+pattern beat drums steps=1 { bd: x; }
+scene main { bass=beat }
+song { main }

@@ -1,0 +1,17 @@
+cicada 1
+track kit drums {}
+pattern beat drums steps=1 {
+  bd: x;
+  sd: x;
+  ch: x;
+  oh: x;
+  cp: x;
+  rs: x;
+  lt: x;
+  mt: x;
+  ht: x;
+  cb: x;
+  cy: x;
+}
+scene main { kit=beat }
+song { main }

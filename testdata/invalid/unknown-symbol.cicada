@@ -1,0 +1,6 @@
+cicada 1
+instrument tone { voice mono { out = sine(missing); } }
+track lead tone {}
+pattern p notes steps=1 { 1 }
+scene main { lead=p }
+song { main }

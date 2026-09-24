@@ -1,6 +1,6 @@
 # Cicada language direction
 
-The `.cicada` score is source code for music. Its compiler parses notation, expands phrases, checks instrument code, resolves tracks and scenes, and creates timestamped events. The first audio kernel renders custom mono instruments to WAV. The same event and instrument model is intended to serve live output, games, and stems.
+The `.cicada` score is source code for music. Its compiler parses notation, expands phrases, checks instrument code, resolves tracks and scenes, and creates timestamped events. The audio kernel renders custom mono instruments, the built-in acid voice, and six synthesized drum lanes to WAV. The same event and instrument model is intended to serve live output, games, and stems.
 
 ```text
 .cicada source
@@ -9,7 +9,7 @@ The `.cicada` score is source code for music. Its compiler parses notation, expa
   -> phrase expansion + semantic checks
   -> packed patterns + deterministic timed events
   -> instrument DSP graphs + shared audio kernel
-  -> WAV (working for custom mono instruments)
+  -> WAV (custom mono, acid, and six drum lanes)
   -> live workstation / game / MIDI (planned)
 ```
 
@@ -62,7 +62,7 @@ The full language should give every sound source the same contract: timestamped 
 
 To support sounds that have not been invented yet, a later language profile needs user-defined DSP functions with bounded loops, delays and state, and explicit memory and CPU limits. It should compile ahead of the audio callback, prohibit allocation and blocking operations there, and state whether its output is deterministic across targets. Versioned libraries and content-addressed assets can then carry reusable instruments without hiding their dependencies. This is design direction; the current grammar implements only the typed graph profile.
 
-Drums use the same event and instrument model. The working [circuit kit](../examples/circuit-kit.cicada) defines independent tracks for code-generated kick, snare, and hat voices. The current built-in drum lanes map to notes for the sequencer but are not yet connected to the audio renderer. A future `kit` declaration should map named lanes to instrument programs so that one `pattern drums` can drive an authored kit. Sample-based instruments and audio clips need explicit asset and portability rules.
+Drums use the same event and instrument model. The working [circuit kit](../examples/circuit-kit.cicada) defines independent tracks for code-generated kick, snare, and hat voices. Six built-in drum lanes render through the current audio kernel. A future `kit` declaration should map named lanes to instrument programs so that one `pattern drums` can drive an authored kit. Sample-based instruments and audio clips need explicit asset and portability rules.
 
 ## Workstation scope
 
@@ -76,7 +76,7 @@ The next implementation boundary is a host-independent engine contract for instr
 - Random operations use explicit seeds and fixed algorithms.
 - Phrase expansion and instrument graphs have static size limits.
 - Syntax and semantic diagnostics carry line, column, and stable codes.
-- JSON is typed interchange for workstation and collaboration state. Source spelling and comments need preservation metadata for byte-identical text/JSON/text conversion; semantic equivalence is the current viable contract.
-- The CST and generated highlight query give editors an incremental parsing path. A source-preserving formatter is the next language-tooling task.
+- JSON is typed interchange for workstation and collaboration state. Text/JSON/text conversion preserves semantic meaning; an unedited CST prints the original bytes, including spelling and comments.
+- The CST and generated highlight query give editors an incremental parsing path. The formatter works; source patches that preserve unaffected text are still planned.
 
-The current implementation compiles scores to note events and instrument graph IR, and renders custom mono graphs to WAV. Next are gate-off and polyphonic voice scheduling, built-in acid and drum synthesis, and a single kit declaration; those make the current notation and renderer meet before the wider workstation layer grows.
+The current implementation compiles scores to note events and instrument graph IR, and renders custom mono graphs, acid, and six drum lanes to WAV. Next are the remaining drum lanes, an authored kit declaration, effects, the worklet, and the workstation.

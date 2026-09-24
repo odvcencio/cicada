@@ -1,0 +1,6 @@
+cicada 1
+seed 4294967296
+track bass acid {}
+pattern p acid steps=1 { 1 }
+scene main { bass=p }
+song { main }

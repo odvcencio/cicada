@@ -2,10 +2,15 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"sort"
+	"time"
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/seq"
@@ -15,7 +20,26 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 3 || len(os.Args) > 5 {
+	if len(os.Args) > 1 && (os.Args[1] == "convert" || os.Args[1] == "compare") {
+		projectCommand(os.Args[1:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "fmt" {
+		formatCommand(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "verify-wav" {
+		verifyWAVCommand(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "golden" {
+		if err := goldenCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) < 3 || (os.Args[1] != "render" && len(os.Args) > 5) {
 		usage()
 	}
 	command := os.Args[1]
@@ -28,8 +52,10 @@ func main() {
 	if command == "graph" && len(os.Args) != 4 {
 		usage()
 	}
-	if command == "render" && (len(os.Args) != 5 || os.Args[3] != "-o") {
-		usage()
+	var renderPath string
+	var renderOptions render.Options
+	if command == "render" {
+		renderPath, renderOptions = renderArgs(os.Args[3:])
 	}
 	if command != "validate" && command != "ast" && command != "events" && command != "graph" && command != "render" {
 		usage()
@@ -41,16 +67,43 @@ func main() {
 		os.Exit(1)
 	}
 	score, diagnostics := notation.Parse(src)
-	programs := make(map[string]*instrument.Program)
-	if score != nil {
-		for _, definition := range score.Instruments {
-			program, ds := instrument.Compile(definition)
-			diagnostics = append(diagnostics, ds...)
-			if program != nil {
-				programs[definition.Name] = program
-			}
+	var programs map[string]*instrument.Program
+	parseHasError := false
+	for _, d := range diagnostics {
+		if d.Severity == "error" {
+			parseHasError = true
 		}
 	}
+	if !parseHasError {
+		// Conversion and the live engine use the typed project. Validate through
+		// that same gate so a source file cannot pass here and fail to load.
+		semantic, projectDiagnostics := project.FromScore(score)
+		diagnostics = appendUniqueDiagnostics(diagnostics, projectDiagnostics)
+		if semantic != nil {
+			if _, err := project.CompileEngine(semantic, 48_000, 128); err != nil {
+				diagnostics = append(diagnostics, notation.Diagnostic{
+					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(),
+					Position: notation.Position{Line: 1, Column: 1},
+				})
+			}
+		}
+		if command == "graph" && !hasDiagnosticErrors(diagnostics) {
+			programs, _ = project.Check(score)
+		}
+	}
+	sort.SliceStable(diagnostics, func(i, j int) bool {
+		a, b := diagnostics[i], diagnostics[j]
+		if a.Position.Line != b.Position.Line {
+			return a.Position.Line < b.Position.Line
+		}
+		if a.Position.Column != b.Position.Column {
+			return a.Position.Column < b.Position.Column
+		}
+		if a.Severity != b.Severity {
+			return a.Severity == "error"
+		}
+		return a.Code < b.Code
+	})
 	hasErrors := false
 	for _, d := range diagnostics {
 		fmt.Fprintf(os.Stderr, "%s:%d:%d: %s %s: %s\n", path, d.Position.Line, d.Position.Column, d.Severity, d.Code, d.Message)
@@ -79,34 +132,221 @@ func main() {
 		}
 		writeJSON(program)
 	case "render":
-		if err := renderFile(score, os.Args[4]); err != nil {
+		if err := renderFile(score, renderPath, renderOptions); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	}
 }
 
+func hasDiagnosticErrors(diagnostics []notation.Diagnostic) bool {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			return true
+		}
+	}
+	return false
+}
+
+func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.Diagnostic {
+	seen := make(map[notation.Diagnostic]bool, len(existing)+len(extra))
+	for _, diagnostic := range existing {
+		seen[diagnostic] = true
+	}
+	for _, diagnostic := range extra {
+		if !seen[diagnostic] {
+			existing = append(existing, diagnostic)
+			seen[diagnostic] = true
+		}
+	}
+	return existing
+}
+
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: cicada validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav>")
+	fmt.Fprintln(os.Stderr, "usage: cicada validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 24 --bars 16 --tail 3s] | verify-wav <file.wav> --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
 	os.Exit(2)
 }
 
-func renderFile(score *notation.Score, path string) error {
-	file, err := os.Create(path)
+func formatCommand(args []string) {
+	mode := "stdout"
+	if len(args) == 2 {
+		if args[0] == "--check" || args[0] == "-w" {
+			mode, args = args[0], args[1:]
+		} else {
+			mode, args = args[1], args[:1]
+		}
+	}
+	if len(args) != 1 || (mode != "stdout" && mode != "--check" && mode != "-w") {
+		usage()
+	}
+	path := args[0]
+	source, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	var formatted []byte
+	if filepath.Ext(path) == ".json" {
+		var p *project.Project
+		p, err = project.DecodeJSON(source)
+		if err == nil {
+			formatted, err = project.CanonicalJSON(p)
+		}
+	} else if filepath.Ext(path) == ".cicada" {
+		var document *notation.Document
+		document, err = notation.ParseDocument(source)
+		if err == nil {
+			formatted, err = notation.Format(document)
+		}
+	} else {
+		usage()
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	switch mode {
+	case "--check":
+		if !bytes.Equal(source, formatted) {
+			fmt.Fprintln(os.Stderr, "--- "+path)
+			fmt.Fprintln(os.Stderr, "+++ "+path+" (formatted)")
+			fmt.Fprint(os.Stderr, simpleDiff(source, formatted))
+			os.Exit(1)
+		}
+	case "-w":
+		if !bytes.Equal(source, formatted) {
+			if err := writeAtomic(path, formatted); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
+	default:
+		if _, err := os.Stdout.Write(formatted); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+}
+
+func simpleDiff(before, after []byte) string {
+	oldLines := bytes.Split(bytes.TrimSuffix(before, []byte("\n")), []byte("\n"))
+	newLines := bytes.Split(bytes.TrimSuffix(after, []byte("\n")), []byte("\n"))
+	var out bytes.Buffer
+	fmt.Fprintf(&out, "@@ -1,%d +1,%d @@\n", len(oldLines), len(newLines))
+	for _, line := range oldLines {
+		fmt.Fprintf(&out, "-%s\n", line)
+	}
+	for _, line := range newLines {
+		fmt.Fprintf(&out, "+%s\n", line)
+	}
+	return out.String()
+}
+
+func writeAtomic(path string, data []byte) error {
+	info, err := os.Stat(path)
 	if err != nil {
 		return err
 	}
-	report, renderErr := render.WAV(score, render.Options{SampleRate: 48_000, TailSec: 1}, file)
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".cicada-format-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temporary.Name())
+	if err := temporary.Chmod(info.Mode().Perm()); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary.Name(), path)
+}
+
+func renderFile(score *notation.Score, path string, opts render.Options) error {
+	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-render-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if info, err := os.Stat(path); err == nil {
+		if err := file.Chmod(info.Mode().Perm()); err != nil {
+			file.Close()
+			return err
+		}
+	} else if !os.IsNotExist(err) {
+		file.Close()
+		return err
+	}
+	report, renderErr := render.WAV(score, opts, file)
+	if renderErr == nil {
+		renderErr = file.Sync()
+	}
 	closeErr := file.Close()
 	if renderErr != nil {
-		os.Remove(path)
 		return renderErr
 	}
 	if closeErr != nil {
 		return closeErr
 	}
-	fmt.Printf("%s: %d bars, %d frames at %d Hz, peak %.3f\n", path, report.Bars, report.Frames, report.SampleRate, report.Peak)
+	if err := os.Rename(file.Name(), path); err != nil {
+		return err
+	}
+	fmt.Printf("%s: %d bars, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d\n", path, report.Bars, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples)
 	return nil
+}
+
+func renderArgs(args []string) (string, render.Options) {
+	flags := flag.NewFlagSet("render", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	output := flags.String("o", "", "output WAV")
+	rate := flags.Int("rate", 48_000, "sample rate")
+	bits := flags.Int("bits", 24, "PCM bit depth")
+	bars := flags.Int("bars", 0, "bars to render; 0 is the full song")
+	tail := flags.String("tail", "3s", "tail duration")
+	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || *bits != 24 {
+		usage()
+	}
+	duration, err := time.ParseDuration(*tail)
+	if err != nil || duration < 0 {
+		usage()
+	}
+	return *output, render.Options{SampleRate: *rate, Bars: *bars, TailSec: duration.Seconds()}
+}
+
+func verifyWAVCommand(args []string) {
+	if len(args) < 1 {
+		usage()
+	}
+	path := args[0]
+	flags := flag.NewFlagSet("verify-wav", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	rate := flags.Int("rate", 48_000, "sample rate")
+	bits := flags.Int("bits", 24, "PCM bit depth")
+	bars := flags.Int("bars", 0, "expected bars")
+	tail := flags.String("tail", "3s", "expected tail")
+	peak := flags.Float64("peak-max-db", -.3, "peak ceiling in dBFS")
+	dc := flags.Float64("dc-max-db", -60, "DC ceiling in dBFS")
+	if err := flags.Parse(args[1:]); err != nil || len(flags.Args()) != 0 || *bars == 0 {
+		usage()
+	}
+	duration, err := time.ParseDuration(*tail)
+	if err != nil || duration < 0 {
+		usage()
+	}
+	report, err := render.VerifyWAV(path, render.VerifyOptions{SampleRate: *rate, Bits: *bits, Bars: *bars, TailSec: duration.Seconds(), PeakMaxDB: *peak, DCMaxDB: *dc})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("%s: %d frames, peak %.2f dBFS, DC %.2f dBFS\n", path, report.Frames, report.PeakDB, report.DCDB)
 }
 
 func writeJSON(v any) {
