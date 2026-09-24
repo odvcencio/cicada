@@ -49,7 +49,7 @@ func TestSourcePrintAndFormat(t *testing.T) {
 }
 
 func TestExamplesRemainValidAfterFormat(t *testing.T) {
-	for _, name := range []string{"first-acid", "glassbass", "circuit-kit"} {
+	for _, name := range []string{"first-acid", "glassbass", "circuit-kit", "acid-voice"} {
 		t.Run(name, func(t *testing.T) {
 			source, err := os.ReadFile("../examples/" + name + ".cicada")
 			if err != nil {

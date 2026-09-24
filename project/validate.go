@@ -74,6 +74,11 @@ func ValidateProject(p *Project) error {
 		if track.Params == nil {
 			return fmt.Errorf("track %s params must be explicit", track.ID)
 		}
+		if track.Kind == "acid" {
+			if _, err := acidParamsFromValues(track.Params); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
+		}
 		for name, value := range track.Params {
 			if !validID(name) || !validValue(value) {
 				return fmt.Errorf("track %s has invalid parameter %s", track.ID, name)

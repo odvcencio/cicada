@@ -54,6 +54,17 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		return nil, fmt.Errorf("project seed exceeds 32-bit kernel seed")
 	}
 	base := seq.Pattern{Len: uint8(count), GatePercent: 55, Seed: uint32(score.Seed)}
+	if track.Kind == "acid" {
+		for _, param := range track.Params {
+			if param.Name == "gate" {
+				value, err := strconv.Atoi(param.Value)
+				if err != nil || value < 10 || value > 100 {
+					return nil, fmt.Errorf("invalid track gate %q", param.Value)
+				}
+				base.GatePercent = uint8(value)
+			}
+		}
+	}
 	for _, attr := range source.Attrs {
 		switch attr.Name {
 		case "swing":

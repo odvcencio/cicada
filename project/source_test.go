@@ -9,7 +9,7 @@ import (
 )
 
 func TestSourceRoundTripExamples(t *testing.T) {
-	for _, name := range []string{"first-acid", "circuit-kit", "glassbass"} {
+	for _, name := range []string{"first-acid", "circuit-kit", "glassbass", "acid-voice"} {
 		t.Run(name, func(t *testing.T) {
 			source, err := os.ReadFile(filepath.Join("..", "examples", name+".cicada"))
 			if err != nil {

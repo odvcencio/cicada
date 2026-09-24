@@ -101,3 +101,32 @@ song { main }
 		}
 	}
 }
+
+func TestBuiltInAcidRendersDeterministically(t *testing.T) {
+	const source = `cicada 1
+tempo 130
+key a minor
+track bass acid { cutoff = 620hz reso = 0.7 envmod = 0.6 decay = 380ms filter = diode }
+pattern riff acid steps=16 gate=55 { 1^ . 1~ 5 . 1 7, . | 1^ . 1'~ 1 5^ 3 1 . }
+scene main { bass=riff }
+song { main }
+`
+	score, diagnostics := notation.Parse([]byte(source))
+	if len(diagnostics) != 0 {
+		t.Fatalf("score diagnostics: %+v", diagnostics)
+	}
+	var first, second bytes.Buffer
+	report, err := WAV(score, Options{SampleRate: 48_000}, &first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WAV(score, Options{SampleRate: 48_000}, &second); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.Bytes(), second.Bytes()) {
+		t.Fatal("built-in acid render changed between runs")
+	}
+	if report.Peak < .001 || report.Peak > 4 || len(first.Bytes()) != 44+int(report.Frames)*6 {
+		t.Fatalf("invalid acid render: report=%+v bytes=%d", report, len(first.Bytes()))
+	}
+}

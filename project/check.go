@@ -26,6 +26,13 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	tracks := make(map[string]notation.Track, len(score.Tracks))
 	for _, track := range score.Tracks {
 		tracks[track.Name] = track
+		if track.Kind == "acid" {
+			if _, err := CompileAcidParams(track); err != nil {
+				diagnostics = append(diagnostics, notation.Diagnostic{
+					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: track.Position,
+				})
+			}
+		}
 		program := programs[track.Kind]
 		if program == nil {
 			continue

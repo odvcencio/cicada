@@ -1,5 +1,5 @@
-// Package render contains the first offline target for Cicada scores. This
-// prototype renders custom mono instrument graphs as stereo PCM24 WAV.
+// Package render contains the offline PCM24 WAV target for custom mono graphs
+// and the developing built-in acid voice.
 package render
 
 import (
@@ -12,6 +12,7 @@ import (
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -30,7 +31,7 @@ type Report struct {
 
 type trackRuntime struct {
 	name           string
-	voice          *graph.Voice
+	voice          monoVoice
 	patterns       map[string]seq.Pattern
 	currentName    string
 	current        seq.Pattern
@@ -43,14 +44,32 @@ type trackRuntime struct {
 	hasPendingGate bool
 }
 
+type monoVoice interface {
+	NoteOn(note, velocity uint8, accent, slide bool)
+	NoteOff()
+	Next() float32
+}
+
+type customVoice struct{ *graph.Voice }
+
+func (voice customVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
+	voice.Voice.NoteOn(note, velocity, slide)
+}
+
+type acidVoice struct{ *acid.Voice }
+
+func (voice acidVoice) NoteOn(note, velocity uint8, accent, slide bool) {
+	voice.Voice.NoteOn(note, accent, slide, velocity)
+}
+
 type scheduled struct {
 	track      int
 	generation uint64
 	event      seq.Event
 }
 
-// WAV renders the song arrangement from a valid score. This first audio path
-// supports custom mono instruments; built-in acid and drum DSP remains M0 work.
+// WAV renders the song arrangement from a valid score. Built-in drum DSP and
+// the full workstation engine remain M0 work.
 func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) {
 	var report Report
 	if score == nil {
@@ -180,6 +199,32 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 	}
 	tracks := make([]trackRuntime, 0, len(score.Tracks))
 	for _, source := range score.Tracks {
+		if source.Kind == "acid" {
+			params, err := project.CompileAcidParams(source)
+			if err != nil {
+				return nil, fmt.Errorf("track %s: %w", source.Name, err)
+			}
+			voice, err := acid.New(sampleRate)
+			if err != nil {
+				return nil, err
+			}
+			if err := voice.SetParams(params); err != nil {
+				return nil, err
+			}
+			track := trackRuntime{name: source.Name, voice: acidVoice{voice}, patterns: map[string]seq.Pattern{}}
+			for _, pattern := range score.Patterns {
+				if pattern.Kind != "acid" && pattern.Kind != "notes" {
+					continue
+				}
+				compiled, err := project.CompilePattern(score, pattern, source)
+				if err != nil {
+					return nil, err
+				}
+				track.patterns[pattern.Name] = compiled[0].Pattern
+			}
+			tracks = append(tracks, track)
+			continue
+		}
 		program := programs[source.Kind]
 		if program == nil {
 			return nil, fmt.Errorf("audio renderer does not yet implement %s track %s", source.Kind, source.Name)
@@ -199,7 +244,7 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 		if err != nil {
 			return nil, err
 		}
-		track := trackRuntime{name: source.Name, voice: voice, patterns: map[string]seq.Pattern{}}
+		track := trackRuntime{name: source.Name, voice: customVoice{voice}, patterns: map[string]seq.Pattern{}}
 		for _, pattern := range score.Patterns {
 			if pattern.Kind != "notes" {
 				continue
@@ -275,7 +320,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, events []scheduled, start i
 					track.hasPendingGate = false
 				}
 			} else {
-				track.voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Slide)
+				track.voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Accent, event.event.Slide)
 				track.activeGen = event.generation
 				track.activeNoteID = event.event.NoteID
 				track.hasPendingGate = false
