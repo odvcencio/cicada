@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"testing"
 
 	"m31labs.dev/cicada/host/kernelimage"
@@ -77,5 +78,28 @@ func TestProjectImageRejectsCorruption(t *testing.T) {
 	corrupt = append(append([]byte(nil), encoded...), 0)
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
 		t.Fatal("trailing bytes were accepted")
+	}
+}
+
+func TestProjectImageRejectsValuesThatOverflowWireFields(t *testing.T) {
+	wireOverflow := uint64(1) << 32
+	for _, change := range []struct {
+		name string
+		edit func(*engine.Config)
+	}{
+		{"sample rate", func(cfg *engine.Config) { cfg.SampleRate += int(wireOverflow) }},
+		{"tempo", func(cfg *engine.Config) { cfg.BPMMilli += 1 << 32 }},
+		{"negative tempo", func(cfg *engine.Config) { cfg.BPMMilli = -1<<32 + cfg.BPMMilli }},
+	} {
+		t.Run(change.name, func(t *testing.T) {
+			if change.name == "sample rate" && strconv.IntSize < 64 {
+				t.Skip("int cannot represent a sample rate above the wire range")
+			}
+			cfg := firstAcidConfig(t)
+			change.edit(&cfg)
+			if _, err := kernelimage.Encode(cfg); err == nil {
+				t.Fatal("out-of-range configuration was encoded as a different value")
+			}
+		})
 	}
 }

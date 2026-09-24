@@ -88,7 +88,12 @@ func (r *reader) f64() (float64, error) {
 // Encode writes project image version 1. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
-	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 || cfg.SampleRate < 1 || cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 || len(cfg.Scenes) > 65535 || len(cfg.Song) > 65535 || len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
+	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
+		cfg.SampleRate < 1 || uint64(cfg.SampleRate) > math.MaxUint32 ||
+		cfg.BPMMilli < 0 || uint64(cfg.BPMMilli) > math.MaxUint32 ||
+		cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 ||
+		len(cfg.Scenes) > 65535 || len(cfg.Song) > 65535 ||
+		len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
 		return nil, Error("project image configuration is out of range")
 	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
@@ -206,6 +211,7 @@ func Decode(data []byte, sampleRate, maxBlock int) (engine.Config, error) {
 }
 
 // DecodeInto avoids copying the large config on each decoder error path.
+//
 //go:noinline
 func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error {
 	if cfg == nil {
