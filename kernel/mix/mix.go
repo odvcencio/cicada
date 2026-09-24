@@ -4,6 +4,7 @@ package mix
 import "math"
 
 const MusicGainDB = -3.0
+const MusicGain = .7079457843841379
 const CeilingDB = -.3
 
 type Track struct{ Left, Right float32 }
@@ -35,8 +36,7 @@ func (d *Dry) AddSFX(left, right float32, track Track) {
 }
 
 func (d Dry) Music() (float32, float32) {
-	const musicGain = .7079457843841379 // -3 dB
-	return d.Left * musicGain, d.Right * musicGain
+	return d.Left * MusicGain, d.Right * MusicGain
 }
 
 func (d Dry) SFX() (float32, float32) { return d.SFXLeft, d.SFXRight }

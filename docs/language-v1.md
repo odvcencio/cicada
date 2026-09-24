@@ -182,6 +182,8 @@ cicada convert score.cicada -o score.cicada.json
 cicada convert score.cicada.json -o normalized.cicada
 cicada compare --semantic score.cicada normalized.cicada
 cicada render score.cicada -o score.wav --rate 48000 --bits 24
+cicada stems score.cicada -o stems/ --rate 48000 --bars 16 --tail 3s
+cicada verify-stems score.cicada stems/ --tap pre-comp --residual-max-db -80
 ```
 
 Source is the authoring form. Canonical JSON is the typed semantic
