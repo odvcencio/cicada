@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/render"
 )
 
 func TestProjectCLI(t *testing.T) {
@@ -56,6 +57,17 @@ func TestProjectCLI(t *testing.T) {
 	if len(data) == 0 {
 		t.Fatal("empty conversion output")
 	}
+	wavPath := filepath.Join(t.TempDir(), "first-acid.wav")
+	if output := run(0, "render", first, "-o", wavPath, "--rate", "48000", "--bits", "24", "--bars", "16", "--tail", "3s"); !strings.Contains(output, "clipped samples") {
+		t.Fatalf("render report omitted clipping count: %q", output)
+	}
+	if output := run(0, "verify-wav", wavPath, "--rate", "48000", "--bits", "24", "--bars", "16", "--tail", "3s", "--peak-max-db", "-0.3", "--dc-max-db", "-60"); !strings.Contains(output, "1479653 frames") {
+		t.Fatalf("unexpected WAV verification: %q", output)
+	}
+	if output := run(1, "verify-wav", wavPath, "--rate", "48000", "--bits", "24", "--bars", "16", "--tail", "3s", "--peak-max-db", "-80", "--dc-max-db", "-60"); !strings.Contains(output, "exceeds") {
+		t.Fatalf("strict peak ceiling was not enforced: %q", output)
+	}
+	run(2, "render", first, "-o", wavPath, "--bits", "16")
 }
 
 func TestFailedRenderPreservesOutput(t *testing.T) {
@@ -72,7 +84,7 @@ func TestFailedRenderPreservesOutput(t *testing.T) {
 	if err := os.WriteFile(path, []byte("keep"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := renderFile(score, path); err == nil {
+	if err := renderFile(score, path, render.Options{SampleRate: 48_000, TailSec: 3}); err == nil {
 		t.Fatal("expected missing arrangement error")
 	}
 	data, err := os.ReadFile(path)

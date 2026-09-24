@@ -19,14 +19,17 @@ import (
 
 type Options struct {
 	SampleRate int
-	TailSec    int
+	Bars       int // zero renders the full arrangement
+	TailSec    float64
 }
 
 type Report struct {
-	SampleRate int
-	Bars       int
-	Frames     int64
-	Peak       float32
+	SampleRate     int
+	Bars           int
+	Frames         int64
+	Peak           float32
+	ClippedSamples int64
+	TailFrames     int64
 }
 
 type trackRuntime struct {
@@ -81,7 +84,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	if opts.SampleRate == 0 {
 		opts.SampleRate = 48_000
 	}
-	if opts.TailSec < 0 || opts.TailSec > 10 {
+	if math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || opts.TailSec < 0 || opts.TailSec > 10 {
 		return report, fmt.Errorf("tail must be 0 to 10 seconds")
 	}
 	clock, err := seq.NewClock(opts.SampleRate, score.TempoMilli)
@@ -94,13 +97,20 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	for _, entry := range score.Song {
 		report.Bars += entry.Bars
 	}
+	if opts.Bars < 0 || opts.Bars > report.Bars {
+		return report, fmt.Errorf("requested bars must be 0 to song length")
+	}
+	if opts.Bars > 0 {
+		report.Bars = opts.Bars
+	}
 	if report.Bars < 1 || report.Bars > 256 {
 		return report, fmt.Errorf("render supports 1 to 256 bars")
 	}
 	report.SampleRate = opts.SampleRate
-	report.Frames = clock.SampleAtTick(int64(report.Bars)*seq.TicksPerBar) + int64(opts.TailSec*opts.SampleRate)
+	report.TailFrames = int64(math.Round(opts.TailSec * float64(opts.SampleRate)))
+	report.Frames = clock.SampleAtTick(int64(report.Bars)*seq.TicksPerBar) + report.TailFrames
 	dataBytes := report.Frames * 6
-	if dataBytes > int64(^uint32(0))-36 {
+	if dataBytes > int64(^uint32(0))-60 {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
 	tracks, err := compileTracks(score, opts.SampleRate)
@@ -116,11 +126,17 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	var position int64
 	bar := 0
 	for _, entry := range score.Song {
+		if bar >= report.Bars {
+			break
+		}
 		scene := findScene(score, entry.Scene)
 		if scene == nil {
 			return report, fmt.Errorf("unknown scene %s", entry.Scene)
 		}
 		for range entry.Bars {
+			if bar >= report.Bars {
+				break
+			}
 			if err := applyScene(tracks, scene); err != nil {
 				return report, err
 			}
@@ -220,6 +236,9 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 			return report, err
 		}
 		position += int64(frames)
+	}
+	if err := writeMetadata(writer, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames)); err != nil {
+		return report, err
 	}
 	return report, nil
 }
@@ -443,6 +462,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, events []scheduled, start i
 		}
 		index := frame * 6
 		for channel, mixed := range [...]float32{left, right} {
+			if mixed > .999 || mixed < -.999 {
+				report.ClippedSamples++
+			}
 			if mixed > .999 {
 				mixed = .999
 			} else if mixed < -.999 {
@@ -467,7 +489,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, events []scheduled, start i
 func writeHeader(w io.Writer, sampleRate int, dataBytes uint32) error {
 	var header [44]byte
 	copy(header[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(header[4:8], dataBytes+36)
+	binary.LittleEndian.PutUint32(header[4:8], dataBytes+60)
 	copy(header[8:12], "WAVE")
 	copy(header[12:16], "fmt ")
 	binary.LittleEndian.PutUint32(header[16:20], 16)
@@ -484,6 +506,26 @@ func writeHeader(w io.Writer, sampleRate int, dataBytes uint32) error {
 		return err
 	}
 	if n != len(header) {
+		return io.ErrShortWrite
+	}
+	return nil
+}
+
+// The trailing cica chunk makes musical duration independently verifiable.
+// Standard WAV readers skip this private chunk after the PCM data.
+func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32) error {
+	var chunk [24]byte
+	copy(chunk[:4], "cica")
+	binary.LittleEndian.PutUint32(chunk[4:8], 16)
+	binary.LittleEndian.PutUint32(chunk[8:12], 1)
+	binary.LittleEndian.PutUint32(chunk[12:16], tempoMilli)
+	binary.LittleEndian.PutUint32(chunk[16:20], bars)
+	binary.LittleEndian.PutUint32(chunk[20:24], tailFrames)
+	n, err := w.Write(chunk[:])
+	if err != nil {
+		return err
+	}
+	if n != len(chunk) {
 		return io.ErrShortWrite
 	}
 	return nil

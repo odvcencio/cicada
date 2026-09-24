@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"m31labs.dev/cicada/notation"
@@ -41,7 +43,7 @@ func TestWAVDeterministicAndPlayable(t *testing.T) {
 		t.Fatal("same score produced different PCM")
 	}
 	data := first.Bytes()
-	if report.Bars != 1 || report.Frames != 96_000 || len(data) != 44+int(report.Frames)*6 || report.Peak < 0.01 {
+	if report.Bars != 1 || report.Frames != 96_000 || len(data) != 68+int(report.Frames)*6 || report.Peak < 0.01 {
 		t.Fatalf("unexpected report or size: %+v, %d bytes", report, len(data))
 	}
 	if string(data[:4]) != "RIFF" || string(data[8:12]) != "WAVE" || string(data[36:40]) != "data" {
@@ -53,7 +55,7 @@ func TestWAVDeterministicAndPlayable(t *testing.T) {
 	if got := binary.LittleEndian.Uint32(data[24:28]); got != 48_000 {
 		t.Fatalf("sample rate is %d", got)
 	}
-	if bytes.Equal(data[44:], make([]byte, len(data)-44)) {
+	if bytes.Equal(data[44:44+int(report.Frames)*6], make([]byte, int(report.Frames)*6)) {
 		t.Fatal("audio is silent")
 	}
 }
@@ -126,7 +128,7 @@ song { main }
 	if !bytes.Equal(first.Bytes(), second.Bytes()) {
 		t.Fatal("built-in acid render changed between runs")
 	}
-	if report.Peak < .001 || report.Peak > 4 || len(first.Bytes()) != 44+int(report.Frames)*6 {
+	if report.Peak < .001 || report.Peak > 4 || len(first.Bytes()) != 68+int(report.Frames)*6 {
 		t.Fatalf("invalid acid render: report=%+v bytes=%d", report, len(first.Bytes()))
 	}
 }
@@ -156,7 +158,58 @@ song { main }
 	if !bytes.Equal(first.Bytes(), second.Bytes()) {
 		t.Fatal("same drum score produced different PCM")
 	}
-	if report.Peak < .001 || len(first.Bytes()) != 44+int(report.Frames)*6 {
+	if report.Peak < .001 || len(first.Bytes()) != 68+int(report.Frames)*6 {
 		t.Fatalf("invalid drum render: %+v", report)
+	}
+}
+
+func TestVerifyWAVChecksMusicalDurationAndSignal(t *testing.T) {
+	score, diagnostics := notation.Parse([]byte(testScore))
+	if len(diagnostics) != 0 {
+		t.Fatalf("score diagnostics: %+v", diagnostics)
+	}
+	var output bytes.Buffer
+	report, err := WAV(score, Options{SampleRate: 48_000, Bars: 1, TailSec: .25}, &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "test.wav")
+	if err := os.WriteFile(path, output.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+	options := VerifyOptions{SampleRate: 48_000, Bits: 24, Bars: 1, TailSec: .25, PeakMaxDB: 0, DCMaxDB: 0}
+	verified, err := VerifyWAV(path, options)
+	if err != nil || verified.Frames != report.Frames {
+		t.Fatalf("verify: %+v, %v", verified, err)
+	}
+	tooStrict := options
+	tooStrict.PeakMaxDB = -80
+	if _, err := VerifyWAV(path, tooStrict); err == nil {
+		t.Fatal("accepted a peak above the requested ceiling")
+	}
+	wrongBars := options
+	wrongBars.Bars = 2
+	if _, err := VerifyWAV(path, wrongBars); err == nil {
+		t.Fatal("accepted wrong bar count")
+	}
+	data := output.Bytes()
+	data[44+report.Frames*6+16] = 2 // change the stored bar count
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyWAV(path, options); err == nil {
+		t.Fatal("accepted corrupt timing metadata")
+	}
+	data[44+report.Frames*6+16] = 1
+	for frame := 0; frame < 10_000; frame++ {
+		copy(data[44+frame*6:], []byte{0xff, 0xff, 0x7f})
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		t.Fatal(err)
+	}
+	tooMuchDC := options
+	tooMuchDC.DCMaxDB = -60
+	if _, err := VerifyWAV(path, tooMuchDC); err == nil {
+		t.Fatal("accepted a DC offset above the requested ceiling")
 	}
 }

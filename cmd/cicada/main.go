@@ -4,10 +4,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
+	"time"
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/seq"
@@ -25,7 +28,11 @@ func main() {
 		formatCommand(os.Args[2:])
 		return
 	}
-	if len(os.Args) < 3 || len(os.Args) > 5 {
+	if len(os.Args) > 1 && os.Args[1] == "verify-wav" {
+		verifyWAVCommand(os.Args[2:])
+		return
+	}
+	if len(os.Args) < 3 || (os.Args[1] != "render" && len(os.Args) > 5) {
 		usage()
 	}
 	command := os.Args[1]
@@ -38,8 +45,10 @@ func main() {
 	if command == "graph" && len(os.Args) != 4 {
 		usage()
 	}
-	if command == "render" && (len(os.Args) != 5 || os.Args[3] != "-o") {
-		usage()
+	var renderPath string
+	var renderOptions render.Options
+	if command == "render" {
+		renderPath, renderOptions = renderArgs(os.Args[3:])
 	}
 	if command != "validate" && command != "ast" && command != "events" && command != "graph" && command != "render" {
 		usage()
@@ -104,7 +113,7 @@ func main() {
 		}
 		writeJSON(program)
 	case "render":
-		if err := renderFile(score, os.Args[4]); err != nil {
+		if err := renderFile(score, renderPath, renderOptions); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -112,7 +121,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: cicada validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
+	fmt.Fprintln(os.Stderr, "usage: cicada validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 24 --bars 16 --tail 3s] | verify-wav <file.wav> --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
 	os.Exit(2)
 }
 
@@ -219,7 +228,7 @@ func writeAtomic(path string, data []byte) error {
 	return os.Rename(temporary.Name(), path)
 }
 
-func renderFile(score *notation.Score, path string) error {
+func renderFile(score *notation.Score, path string, opts render.Options) error {
 	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-render-*")
 	if err != nil {
 		return err
@@ -234,7 +243,7 @@ func renderFile(score *notation.Score, path string) error {
 		file.Close()
 		return err
 	}
-	report, renderErr := render.WAV(score, render.Options{SampleRate: 48_000, TailSec: 1}, file)
+	report, renderErr := render.WAV(score, opts, file)
 	if renderErr == nil {
 		renderErr = file.Sync()
 	}
@@ -248,8 +257,54 @@ func renderFile(score *notation.Score, path string) error {
 	if err := os.Rename(file.Name(), path); err != nil {
 		return err
 	}
-	fmt.Printf("%s: %d bars, %d frames at %d Hz, peak %.3f\n", path, report.Bars, report.Frames, report.SampleRate, report.Peak)
+	fmt.Printf("%s: %d bars, %d frames at %d Hz, pre-limiter peak %.3f, clipped samples %d\n", path, report.Bars, report.Frames, report.SampleRate, report.Peak, report.ClippedSamples)
 	return nil
+}
+
+func renderArgs(args []string) (string, render.Options) {
+	flags := flag.NewFlagSet("render", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	output := flags.String("o", "", "output WAV")
+	rate := flags.Int("rate", 48_000, "sample rate")
+	bits := flags.Int("bits", 24, "PCM bit depth")
+	bars := flags.Int("bars", 0, "bars to render; 0 is the full song")
+	tail := flags.String("tail", "3s", "tail duration")
+	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || *bits != 24 {
+		usage()
+	}
+	duration, err := time.ParseDuration(*tail)
+	if err != nil || duration < 0 {
+		usage()
+	}
+	return *output, render.Options{SampleRate: *rate, Bars: *bars, TailSec: duration.Seconds()}
+}
+
+func verifyWAVCommand(args []string) {
+	if len(args) < 1 {
+		usage()
+	}
+	path := args[0]
+	flags := flag.NewFlagSet("verify-wav", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	rate := flags.Int("rate", 48_000, "sample rate")
+	bits := flags.Int("bits", 24, "PCM bit depth")
+	bars := flags.Int("bars", 0, "expected bars")
+	tail := flags.String("tail", "3s", "expected tail")
+	peak := flags.Float64("peak-max-db", -.3, "peak ceiling in dBFS")
+	dc := flags.Float64("dc-max-db", -60, "DC ceiling in dBFS")
+	if err := flags.Parse(args[1:]); err != nil || len(flags.Args()) != 0 || *bars == 0 {
+		usage()
+	}
+	duration, err := time.ParseDuration(*tail)
+	if err != nil || duration < 0 {
+		usage()
+	}
+	report, err := render.VerifyWAV(path, render.VerifyOptions{SampleRate: *rate, Bits: *bits, Bars: *bars, TailSec: duration.Seconds(), PeakMaxDB: *peak, DCMaxDB: *dc})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("%s: %d frames, peak %.2f dBFS, DC %.2f dBFS\n", path, report.Frames, report.PeakDB, report.DCDB)
 }
 
 func writeJSON(v any) {

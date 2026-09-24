@@ -9,7 +9,7 @@ go run ./cmd/cicada validate examples/circuit-kit.cicada
 go run ./cmd/cicada render examples/circuit-kit.cicada -o circuit-kit.wav
 ```
 
-The repository includes the [rendered 8.5-second circuit kit](circuit-kit.wav) and a [longer glassbass study](glassbass.wav), both generated from Cicada source.
+The repository includes a [rendered circuit kit](circuit-kit.wav) and a [longer glassbass study](glassbass.wav), both generated from Cicada source.
 
 Render the [acid voice study](examples/acid-voice.cicada) to hear the built-in synthesizer path:
 
@@ -23,9 +23,13 @@ The [first acid score](examples/first-acid.cicada) renders sixteen bars of acid,
 go run ./cmd/cicada ast examples/first-acid.cicada
 go run ./cmd/cicada graph examples/first-acid.cicada glassbass
 go run ./cmd/cicada events examples/first-acid.cicada lead lead-a
+go run ./cmd/cicada render examples/first-acid.cicada -o first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s
+go run ./cmd/cicada verify-wav first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60
 ```
 
 `validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar-check` verifies the generated parser and highlighting query, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
+
+The PCM24 renderer defaults to a three-second tail and reports its pre-clamp peak and the number of samples clamped at the output. `verify-wav` reads the PCM and Cicada timing chunk to check format, exact bar and tail duration, peak, and DC offset.
 
 The typed [project format](project/schema/project-1.json) supports canonical JSON interchange and semantic comparison:
 
