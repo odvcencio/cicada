@@ -1,0 +1,75 @@
+# Editor tooling
+
+Five tree-sitter queries sit beside the [grammar](../language/cicada.grammar). They run on gotreesitter against the generated parser blob, and they follow Neovim's query conventions, so other tree-sitter hosts can load them as well.
+
+| Query | Purpose |
+| --- | --- |
+| [`highlights.scm`](../language/highlights.scm) | One capture for every token, plus whole-note style layers |
+| [`locals.scm`](../language/locals.scm) | Instrument scopes: parameter and `let` references take their definition's capture |
+| [`tags.scm`](../language/tags.scm) | Definitions and references with musical kinds, for outlines and navigation |
+| [`folds.scm`](../language/folds.scm) | Every braced body folds |
+| [`indents.scm`](../language/indents.scm) | Braces indent one level, as `cicada fmt` does |
+
+```sh
+cicada highlight examples/cicada-chorus.cicada           # 24-bit ANSI color
+cicada highlight --html examples/cicada-chorus.cicada    # standalone HTML page
+cicada highlight --spans examples/cicada-chorus.cicada   # line:column, capture, text
+cicada symbols examples/cicada-chorus.cicada             # definitions
+cicada symbols --refs --json examples/cicada-chorus.cicada
+```
+
+`highlight` honors `NO_COLOR`. Both commands also work on a score that does not parse: they report its syntax errors and exit 1, and `highlight` covers the unparsed text with `error` spans. The [cicada chorus](../examples/cicada-chorus.cicada) example uses every construct the renderer plays; [`ahead.cicada`](../language/testdata/ahead.cicada) holds the syntax the grammar accepts before the renderer supports it.
+
+## Captures
+
+Each token receives exactly one capture. When one token means different things in different places, its parent decides: `-` is a tie in a pattern and subtraction in an expression, and `,` lowers an octave in a step and separates arguments in a call. Predicates split built-in names from user names. As a result, editors that let the first matching pattern win and editors that let the last one win produce the same colors. Musical meaning is carried by dotted suffixes, so an editor that does not know `@constant.pitch.degree` falls back to `@constant.pitch`, then `@constant`.
+
+| Construct | Example | Capture |
+| --- | --- | --- |
+| Version directive | `cicada 1` | `@keyword.directive`, `@number.version` |
+| Title | `title "Night circuit"` | `@keyword`, `@markup.heading` |
+| Key root and scale | `key c# dorian` | `@constant.pitch.root`, `@type.builtin` (an unknown scale is `@type`) |
+| Seed | `seed 4242` | `@number.seed` |
+| Instrument | `instrument glassbass` | `@keyword.type`, `@type.definition` |
+| Parameter | `param cutoff: hz = 720hz;` | `@variable.parameter`, unit `@type.builtin` |
+| Voice | `voice mono` | `@keyword.function`, `@keyword.modifier` |
+| Let and out | `let osc = ...;` `out = ...;` | `@keyword` and `@variable`; `@keyword.return` |
+| Voice input | `pitch gate velocity sample_rate` | `@variable.builtin` |
+| Graph primitive | `saw` ... `clamp` | `@function.builtin` (any other call is `@function.call`) |
+| Track | `track lead glassbass` | `@variable.member`; the voice is `@type.builtin` for `acid` and `drums`, otherwise `@type` |
+| Track parameter | `cutoff = 900hz` | `@property` |
+| Enum and boolean values | `filter = diode` `savage = on` | `@constant`, `@boolean` |
+| Effect | `fx echo { ... }` | `@keyword.type`, `@type.definition` |
+| Phrase | `phrase hook acid` | `@keyword.directive.define`, `@function.macro` |
+| Phrase use | `use hook*2 transpose = 12` | `@keyword.import`, `@function.macro`, `@operator.repeat`, `@number.repeat`, `@attribute.builtin` |
+| Pattern | `pattern bass-a acid` | `@keyword.function`, `@function`, `@type.builtin` |
+| Pattern attribute | `steps = 16` | `@attribute` |
+| Scale degree | `1` ... `7`, `4#` | `@constant.pitch.degree` |
+| Letter pitch | `c#3`, `bb1`, `e` | `@constant.pitch.letter` |
+| Octave marks | `'` `,` | `@operator.octave.up`, `@operator.octave.down` |
+| Accent and slide | `^` `~` | `@operator.accent`, `@operator.slide` |
+| Ratchet | `*2` | `@operator.ratchet`, `@number.ratchet` |
+| Probability | `%50` | `@operator.probability`, `@number.probability` |
+| Rest, tie, bar | `.` `-` `\|` | `@punctuation.special.rest`, `@punctuation.special.tie`, `@punctuation.delimiter.bar` |
+| Drum lane | `bd:` | `@tag.builtin` for `bd sd ch oh cp rs`, otherwise `@tag` |
+| Drum hits | `x` `X` `x1`-`x9` | `@constant.hit`, `@constant.hit.accent`, `@constant.hit.velocity` |
+| Scene | `scene main { bass = bass-a }` | `@label`; track `@variable.member`; pattern `@function`, or `@constant.builtin` for `off` and `keep` |
+| Song | `song { main*8 }` | `@label`, `@operator.repeat`, `@number.bars` |
+| Numbers | `620hz` `380ms` `3s` `-6db` `50%` `1/8t` | `@number.frequency`, `@number.duration`, `@number.decibel`, `@number.percent`, `@number.fraction`; unitless numbers are `@number` or `@number.float` |
+
+Three captures style a whole note or hit over its tokens: an accented note or `X` hit is `@markup.strong`, a slide is `@markup.italic`, and a ratchet is `@markup.underline`. Editors combine them with the token colors, so an accented tonic is bold and gold.
+
+## The Night theme
+
+`cicada highlight` draws with `language.Night`. Keywords are amber and graph primitives are teal. Scale degrees follow the circle of fifths around the hue wheel: the tonic is gold, the dominant and subdominant sit beside it, and the leading tone lands farthest away. Letter pitches take the hue of their pitch class the same way, with C in gold, and grow lighter by octave. Drum hits glow from a dim ember at `x1` to a bright flame at `X`. A probability fades toward the background as its chance drops, and rests recede.
+
+## Go API
+
+Package [`language`](../language) embeds the queries and runs them on gotreesitter:
+
+- `Highlight(src)` returns nested spans, with parameter and `let` references resolved through `locals.scm`.
+- `WriteANSI`, `WriteHTML`, and `WriteSpans` draw spans with a `Theme`.
+- `Symbols(src)` lists definitions and references from `tags.scm`. Kinds keep namespaces apart, so a track named `bass` and a pattern named `bass` stay distinct.
+- `NewHighlighter` and `NewTagger` return gotreesitter's `Highlighter` and `Tagger` for hosts that paint flat ranges or index tags themselves.
+
+The language tests hold the contract. Every token in the grammar appears in a fixture, every token in every fixture has exactly one capture, and only the three layers capture larger nodes. The tests also lock each fixture's captures in `language/testdata/*.spans`. After an intended query change, run `go test ./language -update` and review the diff. `make grammar-check` runs these tests against the regenerated parser.
