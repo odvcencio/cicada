@@ -4,12 +4,14 @@ The host compiles a validated Cicada project outside the audio callback. `projec
 
 ## TinyGo startup
 
-Call `_initialize` before any `gosx_audio_*` export. Before `gosx_audio_init`, choose up to sixteen track kinds with `gosx_audio_track_kind(index, kind)` (`0` off, `1` acid, `2` drums). Call `gosx_audio_arrangement_alloc(sceneCount, songEntryCount)` once if an arrangement is present. It returns `0` on success. Then write the two arrays through `gosx_audio_scene_ptr` and `gosx_audio_song_ptr`:
+Call `_initialize` before any `gosx_audio_*` export. For a complete project, parse and typecheck the score in the host, call `project.CompileEngine`, then encode its configuration with `kernelimage.Encode`. Call `gosx_audio_project_alloc(imageLength)` once, copy the returned image bytes to that pointer, and call `gosx_audio_init(sampleRate, maxBlock, 2)`. The image has a versioned little-endian header and contains track mixer settings, acid/drum parameters, custom graph programs, sixteen pattern slots per track, all six drum lanes, scenes, and song entries. Allocation accepts 32 bytes through 2 MiB and must happen before initialization. A new module instance is required to load another project.
+
+The older setup exports remain available for direct host control. Before `gosx_audio_init`, choose up to sixteen track kinds with `gosx_audio_track_kind(index, kind)` (`0` off, `1` acid, `2` drums). Call `gosx_audio_arrangement_alloc(sceneCount, songEntryCount)` once if an arrangement is present. It returns `0` on success. Then write the two arrays through `gosx_audio_scene_ptr` and `gosx_audio_song_ptr`:
 
 - Each scene is sixteen bytes in track order. A binding is `0` keep, `1` off, or `2..17` for slot `0..15`. Unused tracks must be `keep`.
 - Each song entry is four little-endian bytes: `uint16 sceneIndex`, then `uint16 bars` (1–999). `gosx_audio_song_loop(1)` enables looping; the default is stop at the song end.
 
-`gosx_audio_init(sampleRate, maxBlock, 2)` then validates the configuration. Its return is `0` on success and `-1` on failure. The current module requires a new instance to load a different arrangement.
+`gosx_audio_init(sampleRate, maxBlock, 2)` validates the configuration. Its return is `0` on success and `-1` on failure. Project-image and older setup exports cannot be mixed before initialization.
 
 ## Audio and commands
 
@@ -17,4 +19,4 @@ Call `_initialize` before any `gosx_audio_*` export. Before `gosx_audio_init`, c
 
 For a drum track, `OpSetStep` uses the packed step's note field as a lane index (`0..5` for `bd sd ch oh cp rs`). Send one record per lane and step; several lanes can fire at the same step. A rest record with that lane index clears only that lane. `OpSetPatternLen` and `OpSetPatternMeta` apply to every lane in the slot. `OpLaunchScene` switches a loaded scene at the requested quantization; `keep` retains a slot and `off` releases it. Pattern-end scene quantization currently requires active patterns of the same length and no restart offset; unsupported combinations fault explicitly.
 
-The module currently loads acid and drum voices through this ABI. Native `engine.Config` can also preload custom mono graphs and complete pattern banks. Equivalent WASM graph and typed-project loading, chain commands, full cross-switch slide behavior, and whole-engine parity and soak gates remain to be implemented.
+Chain commands, full cross-switch slide behavior, and whole-engine parity and soak gates remain to be implemented.

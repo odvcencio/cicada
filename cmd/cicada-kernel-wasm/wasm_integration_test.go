@@ -10,13 +10,153 @@ import (
 	"testing"
 
 	"github.com/tetratelabs/wazero"
+	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 )
 
+func wasmModulePath() string {
+	if path := os.Getenv("CICADA_WASM_PATH"); path != "" {
+		return path
+	}
+	return filepath.Join("..", "..", "build", "cicada-kernel.wasm")
+}
+
+func TestAudioWASMProjectImage(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("parse: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wasm, err := os.ReadFile(wasmModulePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	runtime := wazero.NewRuntime(ctx)
+	t.Cleanup(func() { _ = runtime.Close(ctx) })
+	module, err := runtime.Instantiate(ctx, wasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(name string, args ...uint64) uint64 {
+		t.Helper()
+		fn := module.ExportedFunction(name)
+		if fn == nil {
+			t.Fatalf("missing WASM export %s", name)
+		}
+		result, err := fn.Call(ctx, args...)
+		if err != nil {
+			t.Fatalf("WASM %s: %v", name, err)
+		}
+		if len(result) == 0 {
+			return 0
+		}
+		return result[0]
+	}
+	call("_initialize")
+	projectPtr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
+	if projectPtr == 0 || !module.Memory().Write(projectPtr, image) {
+		t.Fatal("project image buffer unavailable")
+	}
+	if call("gosx_audio_track_kind", 0, 1) == 0 {
+		t.Fatal("legacy track setup accepted after project image allocation")
+	}
+	if got := call("gosx_audio_init", 48_000, 128, 2); got != 0 {
+		t.Fatalf("project image init failed: %d", got)
+	}
+	native, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	play := cmd.Command{Op: cmd.OpPlay, Track: 0xff}
+	record, err := cmd.EncodeCommand(play, uint8(cfg.Tracks))
+	if err != nil || !module.Memory().Write(uint32(call("gosx_audio_cmd_ptr")), record[:]) {
+		t.Fatalf("write play command: %v", err)
+	}
+	call("gosx_audio_cmd_commit", 1)
+	if !native.Push(play) {
+		t.Fatal("native play command rejected")
+	}
+	messagePtr := uint32(call("gosx_audio_msg_ptr"))
+	drainWASM := func() []cmd.Message {
+		t.Helper()
+		count := int(call("gosx_audio_msg_drain"))
+		messages := make([]cmd.Message, 0, count)
+		for i := 0; i < count; i++ {
+			data, ok := module.Memory().Read(messagePtr+uint32(i*cmd.MessageSize), cmd.MessageSize)
+			if !ok {
+				t.Fatal("message pointer out of bounds")
+			}
+			message, err := cmd.DecodeMessage(data)
+			if err != nil || message.Kind == cmd.Fault {
+				t.Fatalf("WASM project message: %+v %v", message, err)
+			}
+			messages = append(messages, message)
+		}
+		return messages
+	}
+	initialMemory := module.Memory().Size()
+	output := uint32(call("gosx_audio_out_ptr"))
+	var nativeL, nativeR [128]float32
+	var wasmMessages, nativeMessages []cmd.Message
+	var sounded bool
+	for block := 0; block < 1600; block++ {
+		call("gosx_audio_render", 128)
+		native.Render(nativeL[:], nativeR[:])
+		if block == 0 {
+			for frame := uint32(0); frame < 256; frame++ {
+				sample, ok := module.Memory().ReadFloat32Le(output + frame*4)
+				if !ok || math.IsNaN(float64(sample)) || math.IsInf(float64(sample), 0) {
+					t.Fatalf("invalid first-acid sample %d", frame)
+				}
+				sounded = sounded || sample != 0
+			}
+		}
+		if block%64 == 63 {
+			wasmMessages = append(wasmMessages, drainWASM()...)
+			nativeMessages = append(nativeMessages, drainNativeMessages(native)...)
+		}
+	}
+	if !sounded || module.Memory().Size() != initialMemory {
+		t.Fatalf("first-acid rendered silence or grew memory: sounded=%v", sounded)
+	}
+	compareMusicalMessages(t, wasmMessages, nativeMessages)
+	var tracks [3]bool
+	for _, message := range wasmMessages {
+		if message.Kind == cmd.NoteOn && message.Tick == 0 && message.Track < 3 {
+			tracks[message.Track] = true
+		}
+	}
+	for track, hit := range tracks {
+		if !hit {
+			t.Fatalf("first-acid track %d did not sound at tick zero", track)
+		}
+	}
+}
+
 func TestAudioWASMABI(t *testing.T) {
-	wasm, err := os.ReadFile(filepath.Join("..", "..", "build", "cicada-kernel.wasm"))
+	wasm, err := os.ReadFile(wasmModulePath())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +349,7 @@ func TestAudioWASMABI(t *testing.T) {
 }
 
 func TestAudioWASMArrangement(t *testing.T) {
-	wasm, err := os.ReadFile(filepath.Join("..", "..", "build", "cicada-kernel.wasm"))
+	wasm, err := os.ReadFile(wasmModulePath())
 	if err != nil {
 		t.Fatal(err)
 	}
