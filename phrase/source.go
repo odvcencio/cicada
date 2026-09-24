@@ -11,21 +11,41 @@ var scaleNames = [...]string{"minor", "phrygian", "dorian", "harmonic", "pent", 
 var classNames = [...]string{"1", "3", "4", "5", "7", "1"}
 
 func sourceForBar(notes []noteState, p normalizedParams) (string, error) {
+	return sourceForBars(map[byte][]noteState{'a': notes}, []byte{'a'}, p)
+}
+
+func sourceForBars(bars map[byte][]noteState, order []byte, p normalizedParams) (string, error) {
 	var source strings.Builder
 	fmt.Fprintf(&source, "cicada 1\n\ntitle \"Generated phrase\"\ntempo 130\nkey %s %s\nseed %d\n\n", keyNames[p.Key], scaleNames[p.Scale], uint32(p.Seed))
 	source.WriteString("track bass acid {}\n\n")
-	fmt.Fprintf(&source, "pattern bass-a acid steps=%d swing=%s gate=%d {\n  ", len(notes), strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), p.GatePercent)
-	for index, note := range notes {
-		if index > 0 {
-			source.WriteByte(' ')
+	for _, letter := range []byte{'a', 'b', 'c'} {
+		notes, ok := bars[letter]
+		if !ok {
+			continue
 		}
-		token, err := noteToken(note, p)
-		if err != nil {
-			return "", fmt.Errorf("step %d: %w", index, err)
+		fmt.Fprintf(&source, "pattern bass-%c acid steps=%d swing=%s gate=%d {\n  ", letter, len(notes), strconv.FormatFloat(float64(p.SwingPercent100)/100, 'f', -1, 64), p.GatePercent)
+		for index, note := range notes {
+			if index > 0 {
+				source.WriteByte(' ')
+			}
+			token, err := noteToken(note, p)
+			if err != nil {
+				return "", fmt.Errorf("bar %c step %d: %w", letter, index, err)
+			}
+			source.WriteString(token)
 		}
-		source.WriteString(token)
+		source.WriteString("\n}\n\n")
 	}
-	source.WriteString("\n}\n\nscene main { bass=bass-a }\nsong { main }\n")
+	for _, letter := range []byte{'a', 'b', 'c'} {
+		if _, ok := bars[letter]; ok {
+			fmt.Fprintf(&source, "scene %c { bass=bass-%c }\n", letter, letter)
+		}
+	}
+	source.WriteString("song {\n")
+	for _, letter := range order {
+		fmt.Fprintf(&source, "  %c\n", letter)
+	}
+	source.WriteString("}\n")
 	return source.String(), nil
 }
 
@@ -71,6 +91,9 @@ func noteToken(note noteState, p normalizedParams) (string, error) {
 	}
 	if note.slide {
 		name += "~"
+	}
+	if note.ratchet > 1 {
+		name += fmt.Sprintf("*%d", note.ratchet)
 	}
 	return name, nil
 }

@@ -40,6 +40,7 @@ type noteState struct {
 	active, accent, slide, tie, raised bool
 	class                              pitchClass
 	note                               int
+	ratchet                            uint8
 }
 
 func generateDegrees(s *stream, onsets []bool, p normalizedParams) ([]noteState, error) {

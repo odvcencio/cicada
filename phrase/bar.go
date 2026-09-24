@@ -123,6 +123,9 @@ func encodeBar(notes []noteState, p normalizedParams) (seq.Pattern, error) {
 				step.Note = uint8(note.note)
 				step.Accent = note.accent
 				step.Slide = note.slide
+				if note.ratchet > 1 {
+					step.Ratchet = note.ratchet
+				}
 			}
 		}
 		pattern.Steps[index], err = seq.PackStep(step)

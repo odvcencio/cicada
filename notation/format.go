@@ -73,6 +73,8 @@ func Format(document *Document) ([]byte, error) {
 type formatToken struct {
 	text    string
 	comment bool
+	start   int
+	end     int
 }
 
 func lexFormat(source []byte) []formatToken {
@@ -89,7 +91,7 @@ func lexFormat(source []byte) []formatToken {
 			for i < len(source) && source[i] != '\n' {
 				i++
 			}
-			tokens = append(tokens, formatToken{text: string(source[start:i]), comment: true})
+			tokens = append(tokens, formatToken{text: string(source[start:i]), comment: true, start: start, end: i})
 			continue
 		}
 		if c == '"' {
@@ -104,12 +106,12 @@ func lexFormat(source []byte) []formatToken {
 					i++
 				}
 			}
-			tokens = append(tokens, formatToken{text: string(source[start:i])})
+			tokens = append(tokens, formatToken{text: string(source[start:i]), start: start, end: i})
 			continue
 		}
 		if strings.ContainsRune("{}:;=(),|", rune(c)) {
 			i++
-			tokens = append(tokens, formatToken{text: string(c)})
+			tokens = append(tokens, formatToken{text: string(c), start: start, end: i})
 			continue
 		}
 		for i < len(source) {
@@ -118,7 +120,7 @@ func lexFormat(source []byte) []formatToken {
 			}
 			i++
 		}
-		tokens = append(tokens, formatToken{text: string(source[start:i])})
+		tokens = append(tokens, formatToken{text: string(source[start:i]), start: start, end: i})
 	}
 	return tokens
 }
@@ -135,6 +137,7 @@ func formatDeclaration(source []byte) string {
 	var line string
 	var frames []formatFrame
 	indent := 0
+	attachedComma := false
 	flush := func() {
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" {
@@ -143,10 +146,11 @@ func formatDeclaration(source []byte) string {
 		line = ""
 	}
 	word := func(value string) {
-		if line != "" && !strings.HasSuffix(line, " ") && !strings.HasSuffix(line, "(") {
+		if line != "" && !strings.HasSuffix(line, " ") && !strings.HasSuffix(line, "(") && !attachedComma {
 			line += " "
 		}
 		line += value
+		attachedComma = false
 	}
 	for i := 0; i < len(tokens); i++ {
 		token := tokens[i]
@@ -214,7 +218,12 @@ func formatDeclaration(source []byte) string {
 		case ")":
 			line = strings.TrimRight(line, " ") + ")"
 		case ",":
-			line = strings.TrimRight(line, " ") + ", "
+			if len(frames) > 0 && frames[len(frames)-1].kind == "pattern" && i > 0 && tokens[i-1].end == token.start {
+				line = strings.TrimRight(line, " ") + ","
+				attachedComma = i+1 < len(tokens) && token.end == tokens[i+1].start
+			} else {
+				line = strings.TrimRight(line, " ") + ", "
+			}
 		case "|":
 			line = strings.TrimRight(line, " ") + " | "
 		default:

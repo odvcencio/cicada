@@ -4,6 +4,8 @@ package phrase
 import (
 	"fmt"
 	"math"
+
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 type Scale uint8
@@ -46,10 +48,35 @@ type Params struct {
 }
 
 type Draw struct {
-	Pass   string
-	Step   int
-	Raw    uint32
-	Choice int
+	Pass   string `json:"pass"`
+	Step   int    `json:"step"`
+	Raw    uint32 `json:"raw"`
+	Choice int    `json:"choice"`
+}
+
+type OpKind uint8
+
+const (
+	NudgeDegree OpKind = iota + 1
+	ToggleAccent
+	ToggleSlide
+	OctaveFlip
+	RotateRhythm
+	SwapSteps
+	FillRest
+	Thin
+	Ratchet
+)
+
+type Op struct {
+	Kind OpKind
+	Arg  int
+}
+
+type Result struct {
+	Bars     []seq.Pattern
+	Notation string
+	Trace    []Draw
 }
 
 type normalizedParams struct {
