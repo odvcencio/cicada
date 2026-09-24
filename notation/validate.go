@@ -175,7 +175,11 @@ func Validate(s *Score) []Diagnostic {
 					add("CICADA-SCALE-DEGREE", "scale "+s.Scale+" has no degree "+token.Text[:1], "error", token.Position)
 				}
 				if strings.Contains(token.Text, "~") && p.Steps[(i+1)%len(p.Steps)].Text == "." {
-					add("CICADA-SLIDE-REST", "slide into a rest has no effect", "warning", token.Position)
+					message := "slide has no target in this pattern; a pattern or scene switch may supply one"
+					if i+1 < len(p.Steps) {
+						message = "slide into the next rest has no effect unless the pattern switches"
+					}
+					add("CICADA-SLIDE-REST", message, "warning", token.Position)
 				}
 			}
 		} else {

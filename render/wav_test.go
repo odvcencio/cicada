@@ -7,9 +7,14 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 )
 
 const testScore = `cicada 1
@@ -101,6 +106,99 @@ song { main }
 	for _, index := range []int{9000, 10000, 12000} {
 		if !bytes.Equal(frame(index), make([]byte, 6)) {
 			t.Fatalf("gate remained open at frame %d: %v", index, frame(index))
+		}
+	}
+}
+
+func TestWAVSceneSwitchSlideAndRestGate(t *testing.T) {
+	for _, tc := range []struct {
+		name, oldFirst, targetFirst string
+		wantSlideDifference         bool
+	}{
+		{name: "carry", oldFirst: ".", targetFirst: "5", wantSlideDifference: true},
+		{name: "rest", oldFirst: "1", targetFirst: ".", wantSlideDifference: false},
+		{name: "probability miss", oldFirst: "1", targetFirst: "5%1", wantSlideDifference: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			oldSteps := append([]string{tc.oldFirst}, strings.Fields(strings.Repeat(". ", 14))...)
+			oldSteps = append(oldSteps, "1~")
+			targetSteps := append([]string{tc.targetFirst}, strings.Fields(strings.Repeat(". ", 15))...)
+			source := "cicada 1\ntempo 120\nkey a minor\nseed 42\n" +
+				"instrument tone { voice mono { let shape = env(gate, 30000ms); out = sine(pitch) * shape; } }\n" +
+				"track lead tone {}\n" +
+				"pattern old notes steps=16 gate=55 { " + strings.Join(oldSteps, " ") + " }\n" +
+				"pattern next notes steps=16 gate=55 { " + strings.Join(targetSteps, " ") + " }\n" +
+				"scene first { lead=old }\nscene second { lead=next }\n" +
+				"song { first second }\n"
+			score, diagnostics := notation.Parse([]byte(source))
+			for _, diagnostic := range diagnostics {
+				if diagnostic.Severity != "warning" || diagnostic.Code != "CICADA-SLIDE-REST" || tc.name != "carry" {
+					t.Fatalf("score diagnostics: %+v", diagnostics)
+				}
+			}
+			var withSlide bytes.Buffer
+			if _, err := WAV(score, Options{SampleRate: 48_000}, &withSlide); err != nil {
+				t.Fatal(err)
+			}
+			reference, diagnostics := notation.Parse([]byte(strings.Replace(source, "1~ }", "1 }", 1)))
+			if len(diagnostics) != 0 {
+				t.Fatalf("reference diagnostics: %+v", diagnostics)
+			}
+			var withoutSlide bytes.Buffer
+			if _, err := WAV(reference, Options{SampleRate: 48_000}, &withoutSlide); err != nil {
+				t.Fatal(err)
+			}
+			start, end := 44+93_300*6, 44+96_000*6
+			different := !bytes.Equal(withSlide.Bytes()[start:end], withoutSlide.Bytes()[start:end])
+			if different != tc.wantSlideDifference {
+				t.Fatalf("slide changed late first-bar PCM=%v, want %v", different, tc.wantSlideDifference)
+			}
+			assertLiveSceneBoundaryMatchesWAV(t, score, withSlide.Bytes())
+		})
+	}
+}
+
+func assertLiveSceneBoundaryMatchesWAV(t *testing.T, score *notation.Score, wav []byte) {
+	t.Helper()
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project diagnostics: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !live.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		t.Fatal("play command rejected")
+	}
+	limiter, err := mix.NewLimiter(48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	latency := limiter.LatencyFrames()
+	const first, last = 90_000, 99_000
+	var left, right [128]float32
+	for position := 0; position < last+latency; position += len(left) {
+		live.Render(left[:], right[:])
+		for i := range left {
+			frame := position + i - latency
+			if frame < first || frame >= last {
+				continue
+			}
+			for channel, value := range [...]float32{left[i], right[i]} {
+				index := 44 + frame*6 + channel*3
+				pcm := int32(uint32(wav[index]) | uint32(wav[index+1])<<8 | uint32(wav[index+2])<<16)
+				if pcm&(1<<23) != 0 {
+					pcm |= ^int32(0xffffff)
+				}
+				if delta := math.Abs(float64(value) - float64(pcm)/8388607); delta > 2e-7 {
+					t.Fatalf("offline/live mismatch at frame %d channel %d: %.8f vs %.8f (delta %.8f)", frame, channel, float64(pcm)/8388607, value, delta)
+				}
+			}
 		}
 	}
 }

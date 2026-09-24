@@ -58,6 +58,14 @@ func TestSlideIntoRestWarning(t *testing.T) {
 	}
 }
 
+func TestPatternEndSlideWarningAllowsSceneTarget(t *testing.T) {
+	src := []byte("cicada 1\ntrack bass acid {}\npattern a acid steps=2 { . 1~ }\npattern b acid steps=2 { 5 . }\nscene first { bass=a }\nscene second { bass=b }\nsong { first second }\n")
+	_, ds := Parse(src)
+	if len(ds) != 1 || ds[0].Code != "CICADA-SLIDE-REST" || !strings.Contains(ds[0].Message, "switch may supply one") {
+		t.Fatalf("expected scene-aware slide warning, got %+v", ds)
+	}
+}
+
 func TestSyntaxErrorPosition(t *testing.T) {
 	src := []byte("cicada 1\ntrack bass acid {\n  cutoff = 620hz\n")
 	_, ds := Parse(src)

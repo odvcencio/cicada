@@ -54,6 +54,17 @@ type trackRuntime struct {
 	pending        seq.Pattern
 	pendingGen     uint64
 	hasPendingGate bool
+	transition     sceneTransition
+	slideFrom      int64
+	slideAt        int64
+}
+
+type sceneTransition struct {
+	valid, carry   bool
+	sourceNoteID   int64
+	boundarySample int64
+	targetSample   int64
+	release        seq.Event
 }
 
 type monoVoice interface {
@@ -150,6 +161,11 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 			if err := applyScene(tracks, scene); err != nil {
 				return report, err
 			}
+			var nextScene *notation.Scene
+			if bar+1 < report.Bars {
+				nextScene = sceneAtBar(score, bar+1)
+			}
+			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock)
 			end := clock.SampleAtTick(int64(bar+1) * seq.TicksPerBar)
 			for position < end {
 				frames := 4096
@@ -180,8 +196,18 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 					if overflow {
 						return report, fmt.Errorf("too many events in render block")
 					}
+					transition := tracks[ti].transition
 					for _, event := range eventBuf[:n] {
+						if transition.valid && event.Kind == seq.NoteOff && event.NoteID == transition.sourceNoteID {
+							continue
+						}
+						if event.Kind == seq.NoteOn && tracks[ti].slideFrom != 0 && tracks[ti].activeNoteID == tracks[ti].slideFrom && event.Sample == tracks[ti].slideAt {
+							event.Slide = true
+						}
 						events = append(events, scheduled{track: ti, generation: tracks[ti].generation, event: event})
+					}
+					if transition.valid && !transition.carry && transition.release.Sample >= position && transition.release.Sample < position+int64(frames) {
+						events = append(events, scheduled{track: ti, generation: tracks[ti].generation, event: transition.release})
 					}
 					if tracks[ti].hasPendingGate {
 						n, overflow = seq.EventsWithGatesInBlock(&tracks[ti].pending, clock, uint8(ti), 0, position, frames, eventBuf[:])
@@ -386,6 +412,69 @@ func findScene(score *notation.Score, name string) *notation.Scene {
 	return nil
 }
 
+func sceneAtBar(score *notation.Score, bar int) *notation.Scene {
+	for _, entry := range score.Song {
+		if bar < entry.Bars {
+			return findScene(score, entry.Scene)
+		}
+		bar -= entry.Bars
+	}
+	return nil
+}
+
+func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryTick int64, clock seq.Clock) {
+	for ti := range tracks {
+		track := &tracks[ti]
+		track.transition = sceneTransition{}
+		if next == nil || track.active == nil || track.drums != nil {
+			continue
+		}
+		for _, binding := range next.Bindings {
+			if binding.Track != track.name || binding.Pattern == "keep" || binding.Pattern == "off" || binding.Pattern == track.currentName {
+				continue
+			}
+			target, ok := track.patterns[binding.Pattern]
+			if !ok {
+				continue // applyScene reports the invalid binding at the boundary
+			}
+			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), boundaryTick, clock)
+			break
+		}
+	}
+}
+
+func sceneTransitionFor(source, target *seq.Pattern, track uint8, boundaryTick int64, clock seq.Clock) sceneTransition {
+	if boundaryTick < seq.TicksPerStep || boundaryTick%seq.TicksPerStep != 0 {
+		return sceneTransition{}
+	}
+	lastStep := boundaryTick/seq.TicksPerStep - 1
+	index := uint8(lastStep % int64(source.Len))
+	step, err := seq.UnpackStep(source.Steps[index])
+	if err != nil || !step.Gate || !step.Slide || !seq.ProbabilityHit(step.Probability, source.Seed, track, 0, lastStep/int64(source.Len), index) {
+		return sceneTransition{}
+	}
+	startTick := lastStep * seq.TicksPerStep
+	if lastStep&1 != 0 {
+		startTick += seq.SwingDelayTicks(source.SwingPermille)
+	}
+	onset := seq.RatchetTick(startTick, boundaryTick, step.Ratchet, step.Ratchet-1)
+	gateTicks := (boundaryTick - onset) * int64(source.GatePercent) / 100
+	if gateTicks < 30 {
+		gateTicks = 30
+	}
+	offTick := onset + gateTicks
+	sourceNoteID := lastStep*8 + int64(step.Ratchet)
+	targetStep := boundaryTick / seq.TicksPerStep
+	targetIndex := uint8(targetStep % int64(target.Len))
+	next, err := seq.UnpackStep(target.Steps[targetIndex])
+	carry := err == nil && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, track, 0, targetStep/int64(target.Len), targetIndex)
+	return sceneTransition{
+		valid: true, carry: carry, sourceNoteID: sourceNoteID,
+		boundarySample: clock.SampleAtTick(boundaryTick), targetSample: clock.SampleAtTick(boundaryTick),
+		release: seq.Event{Kind: seq.NoteOff, NoteID: sourceNoteID, Tick: offTick, Sample: clock.SampleAtTick(offTick), Track: track},
+	}
+}
+
 func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 	for _, binding := range scene.Bindings {
 		for ti := range tracks {
@@ -424,6 +513,15 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 				pattern, ok := tracks[ti].patterns[binding.Pattern]
 				if !ok {
 					return fmt.Errorf("track %s cannot play pattern %s", binding.Track, binding.Pattern)
+				}
+				transition := tracks[ti].transition
+				if transition.valid && tracks[ti].activeNoteID == transition.sourceNoteID && tracks[ti].activeGen == tracks[ti].generation {
+					if transition.carry {
+						tracks[ti].slideFrom, tracks[ti].slideAt = transition.sourceNoteID, transition.targetSample
+					} else if transition.release.Sample <= transition.boundarySample {
+						tracks[ti].voice.NoteOff()
+						tracks[ti].activeGen = 0
+					}
 				}
 				if tracks[ti].active != nil && tracks[ti].activeGen == tracks[ti].generation {
 					tracks[ti].pending = tracks[ti].current
@@ -464,6 +562,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, limiter *mix.Limiter, event
 				track.activeGen = event.generation
 				track.activeNoteID = event.event.NoteID
 				track.hasPendingGate = false
+				track.slideFrom, track.slideAt = 0, 0
 			}
 			eventIndex++
 		}

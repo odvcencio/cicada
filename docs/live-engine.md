@@ -21,4 +21,6 @@ For a drum track, `OpSetStep` uses the packed step's note field as a lane index 
 
 A sliding note on the outgoing pattern carries into a playable first step of a quantized pattern, scene, or song switch. The incoming note changes pitch without retriggering the acid accent envelope. A rest or failed probability check in the incoming slot leaves the outgoing note at its ordinary gate length, including when swing puts that gate end after the switch boundary.
 
+The offline PCM24 WAV renderer applies the same carry and normal-gate rule at song scene boundaries. Its boundary output is checked against the native live engine for a custom mono instrument with a playable target, a rest, and a missed probability step.
+
 Chain commands and whole-engine parity and soak gates remain to be implemented.
