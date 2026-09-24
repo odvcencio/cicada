@@ -17,7 +17,7 @@ func NewTrack(gainDB, pan float64, mute bool) Track {
 	return Track{Left: float32(gain * math.Cos(angle)), Right: float32(gain * math.Sin(angle))}
 }
 
-type Dry struct{ Left, Right float32 }
+type Dry struct{ Left, Right, SFXLeft, SFXRight float32 }
 
 func (d *Dry) Add(left, right float32, track Track) {
 	d.Left += left * track.Left
@@ -29,10 +29,17 @@ func (d *Dry) AddReturn(left, right float32) {
 	d.Right += right
 }
 
+func (d *Dry) AddSFX(left, right float32, track Track) {
+	d.SFXLeft += left * track.Left
+	d.SFXRight += right * track.Right
+}
+
 func (d Dry) Music() (float32, float32) {
 	const musicGain = .7079457843841379 // -3 dB
 	return d.Left * musicGain, d.Right * musicGain
 }
+
+func (d Dry) SFX() (float32, float32) { return d.SFXLeft, d.SFXRight }
 
 type stereo struct{ left, right float32 }
 type peakItem struct {

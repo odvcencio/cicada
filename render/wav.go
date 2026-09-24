@@ -50,6 +50,7 @@ type trackRuntime struct {
 	sendB          float32
 	sendPre        bool
 	muted          bool
+	busSFX         bool
 	drums          *drum.Kit
 	drumPatterns   map[string][drum.LaneCount]*seq.Pattern
 	activeDrums    [drum.LaneCount]*seq.Pattern
@@ -214,7 +215,9 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 				return report, err
 			}
 			compMusic.Reset()
-			if sidechain != "" && sidechain != "music" {
+			if sidechain == "sfx" {
+				compSidechainTrack = engine.SFXSidechain
+			} else if sidechain != "" && sidechain != "music" {
 				for index, track := range semantic.Tracks {
 					if track.ID == sidechain {
 						compSidechainTrack = index + 1
@@ -511,7 +514,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 		}
 		overrides := make(map[string]string, len(source.Params))
 		for _, param := range source.Params {
-			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" {
+			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
 				continue
 			}
 			overrides[param.Name] = param.Value
@@ -542,6 +545,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 		tracks[i].sendB = float32(semantic.Tracks[i].Mixer.SendB)
 		tracks[i].sendPre = semantic.Tracks[i].Mixer.SendPre
 		tracks[i].muted = semantic.Tracks[i].Mixer.Mute
+		tracks[i].busSFX = semantic.Tracks[i].Mixer.Bus == "sfx"
 	}
 	var driveParams *fx.DriveParams
 	for _, effect := range semantic.Effects {
@@ -788,7 +792,11 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 					sendBR += r * tracks[ti].mixer.Right * tracks[ti].sendB
 				}
 			}
-			dry.Add(l, r, tracks[ti].mixer)
+			if tracks[ti].busSFX {
+				dry.AddSFX(l, r, tracks[ti].mixer)
+			} else {
+				dry.Add(l, r, tracks[ti].mixer)
+			}
 			if compSidechainTrack == ti+1 {
 				sideL, sideR = l*tracks[ti].mixer.Left, r*tracks[ti].mixer.Right
 			}
@@ -808,9 +816,12 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			dry.AddReturn(returnL, returnR)
 		}
 		left, right := dry.Music()
+		sfxL, sfxR := dry.SFX()
 		if compMusic != nil {
 			if compSidechainTrack == 0 {
 				left, right = compMusic.Process(left, right)
+			} else if compSidechainTrack == engine.SFXSidechain {
+				left, right = compMusic.ProcessSidechain(left, right, sfxL, sfxR)
 			} else {
 				left, right = compMusic.ProcessSidechain(left, right, sideL, sideR)
 			}
@@ -818,6 +829,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				return fmt.Errorf("music compressor DSP fault")
 			}
 		}
+		left, right = left+sfxL, right+sfxR
 		if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {
 			report.Peak = abs
 		}

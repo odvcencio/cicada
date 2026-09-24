@@ -65,6 +65,10 @@ without it, the music bus detects itself. The external sidechain has an
 -18 dB, 4:1, 6 dB, 10 ms, 100 ms, auto, and fully wet. Track compressor
 inserts and authored effect graphs are not implemented yet.
 
+`bus = sfx` places a track on the SFX bus, which joins the music bus after
+music compression. `sidechain = sfx` uses the post-fader SFX bus as the
+compressor detector. Sends from an SFX track still return to the music bus.
+
 A scene assigns patterns to tracks. `off` stops a track, and `keep`
 retains its previous pattern. A song lists scenes in order; `main*16`
 repeats a scene for 16 bars. Each entry can last 1–999 bars.

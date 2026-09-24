@@ -14,7 +14,7 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 7 // music-bus compressor; version 6 added reverb send B
+const imageVersion = 8 // SFX bus routing; version 7 added music-bus compressor
 
 type Error string
 
@@ -87,7 +87,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 7. The decoded Config is separately
+// Encode writes project image version 8. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -153,7 +153,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		if err := cfg.CompMusic.Validate(); err != nil {
 			return nil, err
 		}
-		if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks {
+		if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks && cfg.CompSidechainTrack != engine.SFXSidechain {
 			return nil, Error("invalid compressor sidechain track")
 		}
 		w.byte(1)
@@ -173,7 +173,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		w.byte(byte(spec.Kind))
 		w.byte(boolByte(spec.Mute))
 		w.byte(boolByte(spec.GainSet))
-		w.byte(0)
+		w.byte(boolByte(spec.BusSFX))
 		w.f64(spec.GainDB)
 		w.f64(spec.Pan)
 		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && cfg.DelayA == nil {
@@ -434,7 +434,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return err
 		}
 		sidechain, err := r.byte()
-		if err != nil || int(sidechain) > int(tracks) {
+		if err != nil || int(sidechain) > int(tracks) && int(sidechain) != engine.SFXSidechain {
 			return Error("invalid compressor sidechain track")
 		}
 		if err := params.Validate(); err != nil {
@@ -456,11 +456,11 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		if err != nil {
 			return err
 		}
-		padding, err := r.byte()
-		if err != nil || mute > 1 || gainSet > 1 || padding != 0 {
+		busSFX, err := r.byte()
+		if err != nil || mute > 1 || gainSet > 1 || busSFX > 1 {
 			return Error("invalid track image header")
 		}
-		spec.Kind, spec.Mute, spec.GainSet = engine.VoiceKind(kind), mute == 1, gainSet == 1
+		spec.Kind, spec.Mute, spec.GainSet, spec.BusSFX = engine.VoiceKind(kind), mute == 1, gainSet == 1, busSFX == 1
 		if spec.GainDB, err = r.f64(); err != nil {
 			return err
 		}

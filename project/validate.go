@@ -173,7 +173,7 @@ func ValidateProject(p *Project) error {
 			return fmt.Errorf("track %s requires a declared reverb for send_b", track.ID)
 		}
 	}
-	if compSidechain != "" && compSidechain != "music" {
+	if compSidechain != "" && compSidechain != "music" && compSidechain != "sfx" {
 		if _, ok := tracks[compSidechain]; !ok {
 			return fmt.Errorf("compressor sidechain references unknown track %s", compSidechain)
 		}

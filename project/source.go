@@ -69,7 +69,7 @@ func ToSource(p *Project) ([]byte, error) {
 	for _, track := range p.Tracks {
 		var out strings.Builder
 		out.WriteString("track " + track.ID + " " + track.Kind)
-		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0 || track.Mixer.Insert != "none" || track.Mixer.SendA != 0 || track.Mixer.SendB != 0 || track.Mixer.SendPre
+		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0 || track.Mixer.Insert != "none" || track.Mixer.SendA != 0 || track.Mixer.SendB != 0 || track.Mixer.SendPre || track.Mixer.Bus != "music"
 		if len(track.Params) == 0 && !hasMixer {
 			out.WriteString(" {}")
 		} else {
@@ -93,6 +93,9 @@ func ToSource(p *Project) ([]byte, error) {
 			}
 			if track.Mixer.SendPre {
 				out.WriteString("  send_pre = true\n")
+			}
+			if track.Mixer.Bus != "music" {
+				out.WriteString("  bus = " + track.Mixer.Bus + "\n")
 			}
 			for _, key := range sortedKeys(track.Params) {
 				value, err := valueSource(track.Params[key])

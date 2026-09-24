@@ -56,7 +56,11 @@ type TrackConfig struct {
 	SendA       float64
 	SendB       float64
 	SendPre     bool
+	BusSFX      bool
 }
+
+// SFXSidechain selects the post-fader SFX bus as the music compressor detector.
+const SFXSidechain = 17
 
 // PatternBank is immutable project data copied into the engine by New.
 // Drum slots hold an independent pattern for each synthesized lane.
@@ -80,7 +84,8 @@ type Config struct {
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
 	CompMusic  *fx.CompParams
-	// CompSidechainTrack is zero for self-detection or a one-based track index.
+	// CompSidechainTrack is zero for self-detection, a one-based track index,
+	// or SFXSidechain for the post-fader SFX bus.
 	CompSidechainTrack int
 }
 
@@ -96,6 +101,7 @@ type voiceSlot struct {
 	sendB   float32
 	sendPre bool
 	muted   bool
+	busSFX  bool
 }
 
 // Engine has fixed command and message rings. The host owns cross-thread
@@ -167,7 +173,7 @@ func New(cfg Config) (*Engine, error) {
 		}
 		e.reverbB.Reset()
 	}
-	if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks || cfg.CompMusic == nil && cfg.CompSidechainTrack != 0 {
+	if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks && cfg.CompSidechainTrack != SFXSidechain || cfg.CompMusic == nil && cfg.CompSidechainTrack != 0 {
 		return nil, Error("invalid compressor sidechain track")
 	}
 	if cfg.CompMusic != nil {
@@ -211,6 +217,7 @@ func New(cfg Config) (*Engine, error) {
 		v.kind = spec.Kind
 		v.mix = mix.NewTrack(gain, spec.Pan, spec.Mute)
 		v.sendA, v.sendB, v.sendPre, v.muted = float32(spec.SendA), float32(spec.SendB), spec.SendPre, spec.Mute
+		v.busSFX = spec.BusSFX
 		if spec.InsertDrive != nil {
 			if spec.Kind == VoiceOff {
 				return nil, Error("silent track cannot have a drive insert")
@@ -537,7 +544,11 @@ func (e *Engine) Render(outL, outR []float32) {
 						sendBR += right * v.mix.Right * v.sendB
 					}
 				}
-				dry.Add(left, right, v.mix)
+				if v.busSFX {
+					dry.AddSFX(left, right, v.mix)
+				} else {
+					dry.Add(left, right, v.mix)
+				}
 				if e.compSidechainTrack == track+1 {
 					sideL, sideR = left*v.mix.Left, right*v.mix.Right
 				}
@@ -564,9 +575,12 @@ func (e *Engine) Render(outL, outR []float32) {
 			dry.AddReturn(returnL, returnR)
 		}
 		left, right := dry.Music()
+		sfxL, sfxR := dry.SFX()
 		if e.compMusic != nil {
 			if e.compSidechainTrack == 0 {
 				left, right = e.compMusic.Process(left, right)
+			} else if e.compSidechainTrack == SFXSidechain {
+				left, right = e.compMusic.ProcessSidechain(left, right, sfxL, sfxR)
 			} else {
 				left, right = e.compMusic.ProcessSidechain(left, right, sideL, sideR)
 			}
@@ -577,6 +591,7 @@ func (e *Engine) Render(outL, outR []float32) {
 				return
 			}
 		}
+		left, right = left+sfxL, right+sfxR
 		outL[frame], outR[frame], _ = e.limiter.Process(left, right)
 		if e.limiter.Fault() {
 			e.fault(4)

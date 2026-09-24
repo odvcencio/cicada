@@ -220,7 +220,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		}
 		track.Mixer = mixer
 		for _, param := range source.Params {
-			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" {
+			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
 				continue
 			}
 			value, err := projectValue(param.Value)

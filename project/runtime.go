@@ -77,7 +77,9 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		}
 	}
 	cfg.CompMusic = compParams
-	if compSidechain != "" && compSidechain != "music" {
+	if compSidechain == "sfx" {
+		cfg.CompSidechainTrack = engine.SFXSidechain
+	} else if compSidechain != "" && compSidechain != "music" {
 		for index, track := range p.Tracks {
 			if track.ID == compSidechain {
 				cfg.CompSidechainTrack = index + 1
@@ -99,6 +101,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		config := &cfg.Track[ti]
 		config.GainDB, config.GainSet, config.Pan, config.Mute = track.Mixer.GainDB, true, track.Mixer.Pan, track.Mixer.Mute
 		config.SendA, config.SendB, config.SendPre = track.Mixer.SendA, track.Mixer.SendB, track.Mixer.SendPre
+		config.BusSFX = track.Mixer.Bus == "sfx"
 		if track.Mixer.Insert == "drive" {
 			config.InsertDrive = driveParams
 		}

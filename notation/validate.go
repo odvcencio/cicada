@@ -156,7 +156,7 @@ func Validate(s *Score) []Diagnostic {
 			seen[param.Name] = true
 			if !validTrackParam(t.Kind, param.Name, instruments) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
-			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" && param.Name != "insert" && param.Name != "send_a" && param.Name != "send_b" && param.Name != "send_pre" {
+			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" && param.Name != "insert" && param.Name != "send_a" && param.Name != "send_b" && param.Name != "send_pre" && param.Name != "bus" {
 				add("CICADA-UNSUPPORTED", "mixer parameter "+param.Name+" is not implemented", "error", param.Position)
 			}
 		}
@@ -368,7 +368,7 @@ func Validate(s *Score) []Diagnostic {
 						reference = decoded
 					}
 				}
-				if reference != "music" {
+				if reference != "music" && reference != "sfx" {
 					if _, ok := trackByName[reference]; !ok {
 						add("CICADA-REFERENCE", "compressor sidechain references unknown track "+reference, "error", param.ValuePosition)
 					}
