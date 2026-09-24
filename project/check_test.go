@@ -36,7 +36,7 @@ song { main }
 func TestCheckRejectsBadInstrumentOverride(t *testing.T) {
 	src := []byte(`cicada 1
 instrument tone { param cutoff: hz = 200hz; voice mono { out = sine(cutoff); } }
-track lead tone { cutoff = 50ms }
+track lead tone { level = -3db cutoff = 50ms }
 pattern p notes steps=1 { 1 }
 scene main { lead=p }
 song { main }
@@ -46,8 +46,36 @@ song { main }
 		t.Fatalf("parse diagnostics: %+v", parseDiagnostics)
 	}
 	_, diagnostics := Check(score)
-	if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-UNIT" {
+	if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-UNIT" || diagnostics[0].Position != (notation.Position{Line: 3, Column: 41}) {
 		t.Fatalf("want unit error, got %+v", diagnostics)
+	}
+}
+
+func TestCheckPointsToInvalidTrackParameterValue(t *testing.T) {
+	for _, tc := range []struct {
+		name, track string
+		column      int
+	}{
+		{"acid", "track bass acid {\n  cutoff = 50ms\n}", 12},
+		{"drum", "track bass drums {\n  bd_tune = 2ms\n}", 13},
+		{"mixer", "track bass acid {\n  pan = 2\n}", 9},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			patternKind := "acid"
+			pattern := "1"
+			if tc.name == "drum" {
+				patternKind, pattern = "drums", "bd: x;"
+			}
+			source := "cicada 1\n" + tc.track + "\npattern p " + patternKind + " steps=1 { " + pattern + " }\nscene main { bass=p }\nsong { main }\n"
+			score, parseDiagnostics := notation.Parse([]byte(source))
+			if len(parseDiagnostics) != 0 {
+				t.Fatalf("parse: %+v", parseDiagnostics)
+			}
+			_, diagnostics := Check(score)
+			if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-PARAM" || diagnostics[0].Position != (notation.Position{Line: 3, Column: tc.column}) {
+				t.Fatalf("want parameter value at 3:%d, got %+v", tc.column, diagnostics)
+			}
+		})
 	}
 }
 

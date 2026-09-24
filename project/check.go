@@ -28,18 +28,30 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	for _, track := range score.Tracks {
 		tracks[track.Name] = track
 		if _, err := CompileMixerParams(track); err != nil {
-			diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: track.Position})
+			position := parameterErrorPosition(track, func(single notation.Track) error {
+				_, err := CompileMixerParams(single)
+				return err
+			})
+			diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: position})
 		}
 		if track.Kind == "acid" {
 			if _, err := CompileAcidParams(track); err != nil {
+				position := parameterErrorPosition(track, func(single notation.Track) error {
+					_, err := CompileAcidParams(single)
+					return err
+				})
 				diagnostics = append(diagnostics, notation.Diagnostic{
-					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: track.Position,
+					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: position,
 				})
 			}
 		}
 		if track.Kind == "drums" {
 			if _, err := CompileDrumParams(track); err != nil {
-				diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: track.Position})
+				position := parameterErrorPosition(track, func(single notation.Track) error {
+					_, err := CompileDrumParams(single)
+					return err
+				})
+				diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: position})
 			}
 		}
 		program := programs[track.Kind]
@@ -54,8 +66,16 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			overrides[param.Name] = param.Value
 		}
 		if _, err := instrument.Lower(program, overrides); err != nil {
+			position := parameterErrorPosition(track, func(single notation.Track) error {
+				param := single.Params[0]
+				if param.Name == "level" || param.Name == "pan" {
+					return nil
+				}
+				_, err := instrument.Lower(program, map[string]string{param.Name: param.Value})
+				return err
+			})
 			diagnostics = append(diagnostics, notation.Diagnostic{
-				Code: "CICADA-UNIT", Severity: "error", Message: err.Error(), Position: track.Position,
+				Code: "CICADA-UNIT", Severity: "error", Message: err.Error(), Position: position,
 			})
 		}
 	}
@@ -111,6 +131,20 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 	}
 	return programs, diagnostics
+}
+
+// Parameter compilers report the first invalid value but do not carry source
+// spans. Retry only after a failure to locate the authored value. A failure
+// caused by the combination of otherwise valid values stays on the track.
+func parameterErrorPosition(track notation.Track, check func(notation.Track) error) notation.Position {
+	for _, param := range track.Params {
+		single := track
+		single.Params = []notation.Param{param}
+		if check(single) != nil {
+			return param.ValuePosition
+		}
+	}
+	return track.Position
 }
 
 func patternCompileDiagnostic(err error, position notation.Position) notation.Diagnostic {

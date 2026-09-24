@@ -47,6 +47,14 @@ func TestProjectCLI(t *testing.T) {
 	if output := run(1, "compare", "--semantic", first, other); !strings.Contains(output, "different") {
 		t.Fatalf("difference output: %q", output)
 	}
+	badPath := filepath.Join(t.TempDir(), "bad-parameter.cicada")
+	badSource := "cicada 1\ntrack bass acid {\n  cutoff = 50ms\n}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n"
+	if err := os.WriteFile(badPath, []byte(badSource), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if output := run(1, "validate", badPath); !strings.Contains(output, badPath+":3:12: error CICADA-PARAM:") {
+		t.Fatalf("validation did not point to the invalid value: %q", output)
+	}
 	if output := run(2, "convert", first, jsonPath); !strings.Contains(output, "usage:") {
 		t.Fatalf("usage output: %q", output)
 	}
