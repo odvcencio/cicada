@@ -29,6 +29,8 @@ go run ./cmd/cicada verify-wav first-acid.wav --rate 48000 --bits 24 --bars 16 -
 
 `validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar-check` verifies the generated parser and highlighting query, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
 
+The bounded live engine can audition acid and six-lane drums from 24-byte commands, render through the dry mixer and limiter, and emit 16-byte status messages. Build and exercise its actual TinyGo audio module with `make test-kernel-wasm`. A host must call the module's `_initialize` export before `gosx_audio_track_kind` or `gosx_audio_init`. Configure track kinds before init; `gosx_audio_out_ptr` exposes planar float32 stereo with the right channel starting `maxBlock` frames after the left. Invalid wire input emits a fault and silences rendering. Pattern, scene, song, custom graph loading, and DAW integration are still pending for this live engine.
+
 The PCM24 renderer defaults to a three-second tail and reports its pre-limiter peak, limiter input overs, ceiling samples, and clipped output samples. `verify-wav` reads the PCM and Cicada timing chunk to check format, exact bar and tail duration, peak, and DC offset. Tracks accept `level` in dB (or `off`) and `pan` from -1 to +1. The dry music bus feeds a linked stereo master limiter with 1.5 ms lookahead and a -0.3 dBFS ceiling.
 
 The typed [project format](project/schema/project-1.json) supports canonical JSON interchange and semantic comparison:

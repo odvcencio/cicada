@@ -64,6 +64,13 @@ func (l *Limiter) LatencyFrames() int { return l.lookahead }
 func (l *Limiter) Ceiling() float64   { return l.ceiling }
 func (l *Limiter) Fault() bool        { return l.fault }
 
+func (l *Limiter) Reset() {
+	l.ring = [145]stereo{}
+	l.peaks = [145]peakItem{}
+	l.head, l.length, l.position = 0, 0, 0
+	l.gain, l.fault = 1, false
+}
+
 func (l *Limiter) Process(left, right float32) (float32, float32, bool) {
 	if l.fault {
 		return 0, 0, false
