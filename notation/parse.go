@@ -25,14 +25,36 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 		return nil, []Diagnostic{syntaxDiagnostic(err)}
 	}
 	s := &Score{TempoMilli: 130_000, KeyRoot: "a", Scale: "minor"}
+	var diagnostics []Diagnostic
+	seenDeclarations := map[string]bool{}
 	for i := 0; i < root.NamedChildCount(); i++ {
 		n := root.NamedChild(i)
-		switch w.Type(n) {
+		kind := w.Type(n)
+		switch kind {
+		case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl":
+			if seenDeclarations[kind] {
+				diagnostics = append(diagnostics, Diagnostic{
+					Code: "CICADA-DUPLICATE", Severity: "error",
+					Message:  "duplicate " + strings.TrimSuffix(kind, "_decl") + " declaration",
+					Position: pos(w, n),
+				})
+			}
+			seenDeclarations[kind] = true
+		}
+		switch kind {
 		case "integer":
 			s.Version, _ = strconv.Atoi(w.Text(n))
 		case "title_decl":
 			v := childText(w, n, "string")
-			s.Title, _ = strconv.Unquote(v)
+			s.TitlePosition = pos(w, n)
+			var unquoteErr error
+			s.Title, unquoteErr = strconv.Unquote(v)
+			if unquoteErr != nil {
+				diagnostics = append(diagnostics, Diagnostic{
+					Code: "CICADA-SYNTAX", Severity: "error",
+					Message: "invalid title string", Position: s.TitlePosition,
+				})
+			}
 		case "tempo_decl":
 			value := childText(w, n, "number")
 			s.TempoMilli = parseMilli(value)
@@ -55,6 +77,7 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 		case "scene_decl":
 			s.Scenes = append(s.Scenes, parseScene(w, n))
 		case "song_decl":
+			s.SongPosition = pos(w, n)
 			for j := 0; j < n.NamedChildCount(); j++ {
 				entry := n.NamedChild(j)
 				if w.Type(entry) == "song_entry" {
@@ -65,7 +88,7 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 			s.Effects = append(s.Effects, parseEffect(w, n))
 		}
 	}
-	diagnostics := expandPhrases(s)
+	diagnostics = append(diagnostics, expandPhrases(s)...)
 	diagnostics = append(diagnostics, Validate(s)...)
 	return s, diagnostics
 }

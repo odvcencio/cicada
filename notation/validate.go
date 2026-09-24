@@ -3,6 +3,7 @@ package notation
 import (
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 var acidParams = map[string]bool{
@@ -43,11 +44,19 @@ func Validate(s *Score) []Diagnostic {
 	add := func(code, message, severity string, p Position) {
 		ds = append(ds, Diagnostic{Code: code, Message: message, Severity: severity, Position: p})
 	}
+	checkID := func(id string, p Position) {
+		if len(id) < 1 || len(id) > 64 {
+			add("CICADA-LIMIT", "identifier must contain 1 to 64 bytes", "error", p)
+		}
+	}
 	if s.Version != 1 {
 		add("CICADA-VERSION", "only cicada 1 is supported", "error", Position{1, 1})
 	}
 	if s.TempoMilli < 20_000 || s.TempoMilli > 300_000 {
 		add("CICADA-TEMPO", "tempo must be 20 to 300 BPM with at most three decimals", "error", Position{1, 1})
+	}
+	if !utf8.ValidString(s.Title) || utf8.RuneCountInString(s.Title) > 120 {
+		add("CICADA-LIMIT", "title must contain at most 120 Unicode characters", "error", s.TitlePosition)
 	}
 	if !validKeyRoot(s.KeyRoot) || !scales[s.Scale] {
 		add("CICADA-KEY", "unknown key or scale", "error", Position{1, 1})
@@ -62,6 +71,7 @@ func Validate(s *Score) []Diagnostic {
 	}
 	instruments := make(map[string]Instrument, len(s.Instruments))
 	for _, inst := range s.Instruments {
+		checkID(inst.Name, inst.Position)
 		if inst.Name == "acid" || inst.Name == "drums" {
 			add("CICADA-INSTRUMENT", "instrument name is reserved: "+inst.Name, "error", inst.Position)
 		}
@@ -79,6 +89,7 @@ func Validate(s *Score) []Diagnostic {
 		}
 		seen := map[string]bool{}
 		for _, param := range inst.Params {
+			checkID(param.Name, param.Position)
 			if seen[param.Name] {
 				add("CICADA-DUPLICATE", "duplicate instrument parameter "+param.Name, "error", param.Position)
 			}
@@ -87,9 +98,14 @@ func Validate(s *Score) []Diagnostic {
 				add("CICADA-UNIT", "instrument parameter unit must be hz, ms, unit, or db", "error", param.Position)
 			}
 		}
+		for _, let := range inst.Lets {
+			checkID(let.Name, let.Position)
+		}
 	}
 	trackByName := make(map[string]Track, len(s.Tracks))
 	for _, t := range s.Tracks {
+		checkID(t.Name, t.Position)
+		checkID(t.Kind, t.Position)
 		if _, exists := trackByName[t.Name]; exists {
 			add("CICADA-DUPLICATE", "duplicate track "+t.Name, "error", t.Position)
 		}
@@ -101,6 +117,7 @@ func Validate(s *Score) []Diagnostic {
 		}
 		seen := map[string]bool{}
 		for _, param := range t.Params {
+			checkID(param.Name, param.Position)
 			if seen[param.Name] {
 				add("CICADA-DUPLICATE", "duplicate parameter "+param.Name, "error", param.Position)
 			}
@@ -114,6 +131,9 @@ func Validate(s *Score) []Diagnostic {
 			}
 		}
 	}
+	for _, phrase := range s.Phrases {
+		checkID(phrase.Name, phrase.Position)
+	}
 	if len(s.Patterns) == 0 {
 		add("CICADA-PATTERNS", "score needs at least one pattern", "error", Position{1, 1})
 	}
@@ -123,6 +143,7 @@ func Validate(s *Score) []Diagnostic {
 		position Position
 	})
 	for _, p := range s.Patterns {
+		checkID(p.Name, p.Position)
 		if _, exists := patterns[p.Name]; exists {
 			add("CICADA-DUPLICATE", "duplicate pattern "+p.Name, "error", p.Position)
 		}
@@ -214,12 +235,15 @@ func Validate(s *Score) []Diagnostic {
 	}
 	scenes := make(map[string]bool, len(s.Scenes))
 	for _, scene := range s.Scenes {
+		checkID(scene.Name, scene.Position)
 		if scenes[scene.Name] {
 			add("CICADA-DUPLICATE", "duplicate scene "+scene.Name, "error", scene.Position)
 		}
 		scenes[scene.Name] = true
 		seenTracks := map[string]bool{}
 		for _, b := range scene.Bindings {
+			checkID(b.Track, b.Position)
+			checkID(b.Pattern, b.Position)
 			track, trackOK := trackByName[b.Track]
 			if !trackOK {
 				add("CICADA-REFERENCE", "scene references unknown track "+b.Track, "error", b.Position)
@@ -275,6 +299,7 @@ func Validate(s *Score) []Diagnostic {
 		}
 	}
 	for _, entry := range s.Song {
+		checkID(entry.Scene, entry.Position)
 		if !scenes[entry.Scene] {
 			add("CICADA-REFERENCE", "song references unknown scene "+entry.Scene, "error", entry.Position)
 		}
@@ -282,7 +307,15 @@ func Validate(s *Score) []Diagnostic {
 			add("CICADA-BARS", "song entry must be 1 to 999 bars", "error", entry.Position)
 		}
 	}
+	if len(s.Song) == 0 {
+		position := s.SongPosition
+		if position.Line == 0 {
+			position = Position{1, 1}
+		}
+		add("CICADA-LIMIT", "song must contain at least one scene entry", "error", position)
+	}
 	for _, effect := range s.Effects {
+		checkID(effect.Name, effect.Position)
 		add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
 	}
 	return ds

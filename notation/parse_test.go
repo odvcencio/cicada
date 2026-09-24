@@ -166,3 +166,92 @@ func TestPentatonicMissingDegreeDiagnostic(t *testing.T) {
 		t.Fatalf("wrong pentatonic diagnostics: %+v", ds)
 	}
 }
+
+func TestSongMustHaveAnEntryBeforeValidationSucceeds(t *testing.T) {
+	for _, tc := range []struct {
+		name, ending string
+		line         int
+	}{
+		{"missing declaration", "", 1},
+		{"empty declaration", "song {}\n", 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := []byte("cicada 1\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\n" + tc.ending)
+			_, diagnostics := Parse(src)
+			for _, d := range diagnostics {
+				if d.Code == "CICADA-LIMIT" && d.Severity == "error" && d.Position.Line == tc.line {
+					return
+				}
+			}
+			t.Fatalf("empty song was accepted: %+v", diagnostics)
+		})
+	}
+}
+
+func TestDuplicateSingletonDeclarationsAreRejected(t *testing.T) {
+	body := "track bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\n"
+	for _, tc := range []struct {
+		name, source string
+		line         int
+	}{
+		{"title", "title \"first\"\ntitle \"second\"\n" + body + "song { main }\n", 3},
+		{"tempo", "tempo 120\ntempo 130\n" + body + "song { main }\n", 3},
+		{"key", "key a minor\nkey c major\n" + body + "song { main }\n", 3},
+		{"seed", "seed 1\nseed 2\n" + body + "song { main }\n", 3},
+		{"song", body + "song { main }\nsong { main }\n", 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diagnostics := Parse([]byte("cicada 1\n" + tc.source))
+			for _, d := range diagnostics {
+				if d.Code == "CICADA-DUPLICATE" && d.Position.Line == tc.line {
+					return
+				}
+			}
+			t.Fatalf("duplicate %s accepted: %+v", tc.name, diagnostics)
+		})
+	}
+}
+
+func TestSourceRecordLimitsMatchProjectFormat(t *testing.T) {
+	long := strings.Repeat("a", 65)
+	for _, tc := range []struct {
+		name, source string
+		line         int
+	}{
+		{"title", "title \"" + strings.Repeat("🎵", 121) + "\"\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n", 2},
+		{"track ID", "track " + long + " acid {}\npattern p acid steps=1 { 1 }\nscene main { " + long + "=p }\nsong { main }\n", 2},
+		{"pattern ID", "track bass acid {}\npattern " + long + " acid steps=1 { 1 }\nscene main { bass=" + long + " }\nsong { main }\n", 3},
+		{"scene ID", "track bass acid {}\npattern p acid steps=1 { 1 }\nscene " + long + " { bass=p }\nsong { " + long + " }\n", 4},
+		{"instrument ID", "instrument " + long + " { voice mono { out = saw(pitch); } }\ntrack bass " + long + " {}\npattern p notes steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n", 2},
+		{"phrase ID", "track bass acid {}\nphrase " + long + " acid { 1 }\npattern p acid steps=1 { use " + long + " }\nscene main { bass=p }\nsong { main }\n", 3},
+		{"instrument parameter", "instrument tone { param " + long + ": hz = 200hz; voice mono { out = saw(pitch); } }\ntrack bass tone {}\npattern p notes steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n", 2},
+		{"instrument binding", "instrument tone { voice mono { let " + long + " = saw(pitch); out = " + long + "; } }\ntrack bass tone {}\npattern p notes steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n", 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diagnostics := Parse([]byte("cicada 1\n" + tc.source))
+			for _, d := range diagnostics {
+				if d.Code == "CICADA-LIMIT" && d.Position.Line == tc.line {
+					return
+				}
+			}
+			t.Fatalf("source limit was accepted: %+v", diagnostics)
+		})
+	}
+	valid := []byte("cicada 1\ntitle \"" + strings.Repeat("🎵", 120) + "\"\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n")
+	if _, diagnostics := Parse(valid); len(diagnostics) != 0 {
+		t.Fatalf("120 Unicode-scalar title was rejected: %+v", diagnostics)
+	}
+	id := strings.Repeat("a", 64)
+	validID := []byte("cicada 1\ntrack " + id + " acid {}\npattern p acid steps=1 { 1 }\nscene main { " + id + "=p }\nsong { main }\n")
+	if _, diagnostics := Parse(validID); len(diagnostics) != 0 {
+		t.Fatalf("64-byte identifier was rejected: %+v", diagnostics)
+	}
+	badEscape := []byte("cicada 1\ntitle \"\\q\"\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n")
+	_, diagnostics := Parse(badEscape)
+	for _, d := range diagnostics {
+		if d.Code == "CICADA-SYNTAX" && d.Position.Line == 2 {
+			return
+		}
+	}
+	t.Fatalf("invalid title escape was accepted: %+v", diagnostics)
+}
