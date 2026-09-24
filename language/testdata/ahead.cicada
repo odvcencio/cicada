@@ -1,0 +1,43 @@
+cicada 1
+
+// Syntax the grammar accepts ahead of the renderer: effects, fractions,
+// string values, poly voices, reserved drum lanes, and unknown names.
+key c lydian
+
+fx echo {
+  time = 1/8.
+  swing = 1/16t
+  mode = "ping-pong"
+  wet = 25%
+}
+
+instrument pad {
+  param spread: db = -6db;
+  voice poly {
+    let wobble = lfo(pitch - 2hz);
+    out = wobble;
+  }
+}
+
+track keys pad {
+  level = off
+  send_a = true
+}
+
+pattern stab notes steps = 4 {
+  c3 e,~ g'^ -
+}
+
+pattern toms drums steps = 4 {
+  lt: x.x.;
+  cy: X...;
+  zz: ..x9.;
+}
+
+scene intro {
+  keys = stab
+}
+
+song {
+  intro
+}

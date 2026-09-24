@@ -1,6 +1,6 @@
 # Cicada: programmable music notation
 
-Cicada is an experimental music language for people, agents, and a future extensible DAW. A `.cicada` file describes music and can define the instruments that play it. [Grammargen](language/cicada.grammar) compiles the grammar into a parser blob consumed by gotreesitter; the compiler builds a typed score, deterministic note events, and bounded DSP graphs. The offline renderer writes stereo 24-bit WAV from custom mono instruments, the built-in acid voice, and eleven synthesized drum lanes. The [Cicada 1 language reference](docs/language-v1.md) describes the supported notation.
+Cicada is an experimental music language for people, agents, and a future extensible DAW. A `.cicada` file describes music and can define the instruments that play it. The [grammar](language/grammar/grammar.go) is written in the grammargen Go DSL and compiles into a parser blob consumed by gotreesitter; the compiler builds a typed score, deterministic note events, and bounded DSP graphs. The offline renderer writes stereo 24-bit WAV from custom mono instruments, the built-in acid voice, and eleven synthesized drum lanes. The [Cicada 1 language reference](docs/language-v1.md) describes the supported notation.
 
 Render the [circuit kit score](examples/circuit-kit.cicada). Its bass, kick, snare, and hat are all defined in the score:
 
@@ -31,7 +31,16 @@ go run ./cmd/cicada midi examples/first-acid.cicada -o first-acid.mid
 go run ./cmd/cicada verify-midi first-acid.mid --ppq 960 --type 1
 ```
 
-`validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar-check` verifies the generated parser and highlighting query, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
+`validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar` regenerates the parser blob from the Go DSL grammar, `make grammar-check` verifies the blob and the editor queries, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
+
+The [cicada chorus](examples/cicada-chorus.cicada) tours a noise-and-ring tymbal voice, thirteen graph primitives, degrees and letter pitches, step modifiers, dense drum rows, phrases, and scenes. `highlight` draws a score in color, and `symbols` lists the names a score defines and where each is used. Both run the [editor queries](docs/editor-tooling.md) in `language/` on gotreesitter, including the authored-kit constructs:
+
+```sh
+go run ./cmd/cicada highlight examples/cicada-chorus.cicada
+go run ./cmd/cicada highlight --html examples/cicada-chorus.cicada > cicada-chorus.html
+go run ./cmd/cicada symbols --refs examples/cicada-chorus.cicada
+go run ./cmd/cicada render examples/cicada-chorus.cicada -o cicada-chorus.wav
+```
 
 `make test-golden` renders eight bars of the compiled first-acid project through the native float32 engine and compares its 100 ms, 64-band spectral fingerprint with `testdata/golden/first-acid.fp`. `go run ./cmd/cicada golden --update` regenerates it and reports drift from the previous fixture; review an audio preview and record a listening note before accepting a changed golden. The [fingerprint format](docs/golden.md) defines the comparison and same-platform sample hash.
 
