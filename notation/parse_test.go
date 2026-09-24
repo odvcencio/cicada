@@ -170,3 +170,48 @@ func TestPentatonicMissingDegreeDiagnostic(t *testing.T) {
 		t.Fatalf("wrong pentatonic diagnostics: %+v", ds)
 	}
 }
+
+func TestSongMustHaveAnEntryBeforeValidationSucceeds(t *testing.T) {
+	for _, tc := range []struct {
+		name, ending string
+		line         int
+	}{
+		{"missing declaration", "", 1},
+		{"empty declaration", "song {}\n", 5},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			src := []byte("cicada 1\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\n" + tc.ending)
+			_, diagnostics := Parse(src)
+			for _, d := range diagnostics {
+				if d.Code == "CICADA-LIMIT" && d.Severity == "error" && d.Position.Line == tc.line {
+					return
+				}
+			}
+			t.Fatalf("empty song was accepted: %+v", diagnostics)
+		})
+	}
+}
+
+func TestDuplicateSingletonDeclarationsAreRejected(t *testing.T) {
+	body := "track bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\n"
+	for _, tc := range []struct {
+		name, source string
+		line         int
+	}{
+		{"title", "title \"first\"\ntitle \"second\"\n" + body + "song { main }\n", 3},
+		{"tempo", "tempo 120\ntempo 130\n" + body + "song { main }\n", 3},
+		{"key", "key a minor\nkey c major\n" + body + "song { main }\n", 3},
+		{"seed", "seed 1\nseed 2\n" + body + "song { main }\n", 3},
+		{"song", body + "song { main }\nsong { main }\n", 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diagnostics := Parse([]byte("cicada 1\n" + tc.source))
+			for _, d := range diagnostics {
+				if d.Code == "CICADA-DUPLICATE" && d.Position.Line == tc.line {
+					return
+				}
+			}
+			t.Fatalf("duplicate %s accepted: %+v", tc.name, diagnostics)
+		})
+	}
+}

@@ -30,6 +30,7 @@ type Score struct {
 	Patterns     []Pattern
 	Scenes       []Scene
 	Song         []SongEntry
+	SongPosition Position
 	Effects      []Effect
 }
 

@@ -240,6 +240,13 @@ func Validate(s *Score) []Diagnostic {
 			add("CICADA-BARS", "song entry must be 1 to 999 bars", "error", entry.Position)
 		}
 	}
+	if len(s.Song) == 0 {
+		position := s.SongPosition
+		if position.Line == 0 {
+			position = Position{1, 1}
+		}
+		add("CICADA-LIMIT", "song must contain at least one scene entry", "error", position)
+	}
 	for _, effect := range s.Effects {
 		add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
 	}
