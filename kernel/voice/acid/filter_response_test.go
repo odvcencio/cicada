@@ -126,16 +126,27 @@ func TestFilterSelfOscillation(t *testing.T) {
 
 func TestDecision0002AcidFilterCutoffGate(t *testing.T) {
 	const sampleRate, requestedCutoff = 48_000.0, 2_000.0
+	measurements := []struct {
+		name  string
+		model FilterModel
+	}{
+		{name: "Ladder", model: Ladder},
+		{name: "Diode", model: Diode},
+	}
+	cutoffs := make([]float64, len(measurements))
 	var failures []string
-	for _, model := range []FilterModel{Ladder, Diode} {
-		measured := measureFilterCutoff(model, sampleRate, requestedCutoff)
-		errorPercent := math.Abs(measured/requestedCutoff-1) * 100
+	for i, filter := range measurements {
+		cutoffs[i] = measureFilterCutoff(filter.model, sampleRate, requestedCutoff)
+		errorPercent := math.Abs(cutoffs[i]/requestedCutoff-1) * 100
 		if errorPercent > 2 {
-			failures = append(failures, fmt.Sprintf("model %d measures %.2f Hz (%.1f%% from %.0f Hz)", model, measured, errorPercent, requestedCutoff))
+			failures = append(failures, fmt.Sprintf("%s measures %.2f Hz (%.1f%% from %.0f Hz)", filter.name, cutoffs[i], errorPercent, requestedCutoff))
 		}
 	}
+	if math.Abs(cutoffs[0]-869.35) < 0.1 && math.Abs(cutoffs[1]-149.22) < 0.1 {
+		t.Skipf("known failure under decision 0002: Ladder measures %.2f Hz and Diode measures %.2f Hz for a %.0f Hz setting; keep the 2%% cutoff calibration gate and revise the filter design", cutoffs[0], cutoffs[1], requestedCutoff)
+	}
 	if len(failures) != 0 {
-		t.Skipf("known failure under decision 0002: %s; keep the 2%% cutoff calibration gate and revise the filter design", strings.Join(failures, "; "))
+		t.Fatalf("acid filter cutoff violates decision 0002: %s; keep the 2%% calibration gate", strings.Join(failures, "; "))
 	}
 }
 
