@@ -1,4 +1,4 @@
-.PHONY: test test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm test-kernel-wasm
+.PHONY: test test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm test-kernel-wasm build-phrase-wasm test-phrase-wasm
 
 test:
 	go test ./... -count=1
@@ -39,3 +39,10 @@ build-kernel-wasm:
 
 test-kernel-wasm: build-kernel-wasm
 	go test -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
+
+build-phrase-wasm:
+	mkdir -p build
+	GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=conservative -scheduler=none -o build/cicada-phrase.wasm ./cmd/cicada-phrase-wasm
+
+test-phrase-wasm: build-phrase-wasm
+	go test -tags wasm_integration ./cmd/cicada-phrase-wasm -run '^TestPhraseWASMParity$$' -count=1

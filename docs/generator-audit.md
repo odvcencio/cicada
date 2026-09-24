@@ -4,6 +4,13 @@ The reference set in [`examples/gen`](../examples/gen/) contains 24 fixed
 A-minor sources and the seed-4242 PCG draw trace. The first eight raw draws
 match Hyphae spec 04. `TestSeedFixturesAndReferenceTrace` checks byte equality.
 
+`make test-phrase-wasm` builds the generator with TinyGo and runs it in Wazero.
+For 24 fixed seeds, all eight scales, all five structures, and all four step
+counts with alternate densities, the WASM source and serialized draw trace
+match native Go byte for byte. TinyGo warns that one gotreesitter diagnostic
+function has a large parameter list; Wazero accepts the module, while other
+WASM runtimes have not been checked.
+
 `TestGenerateDefaultSeedPopulation` examines 10,000 seeds in each of the eight
 scales with default AABA settings: 80,000 generated phrases and 320,000 bars.
 The current code passes pitch range, slide target, interval, root presence,
