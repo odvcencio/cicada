@@ -47,6 +47,7 @@ type trackRuntime struct {
 	insert         *fx.Drive
 	align          *mix.Delay
 	sendA          float32
+	sendB          float32
 	sendPre        bool
 	muted          bool
 	drums          *drum.Kit
@@ -152,6 +153,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		return report, err
 	}
 	var delayA *fx.Delay
+	var reverbB *fx.Reverb
 	for _, track := range tracks {
 		if track.sendA > 0 {
 			for _, effect := range semantic.Effects {
@@ -168,6 +170,28 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 						return report, err
 					}
 					delayA.Reset()
+					break
+				}
+			}
+			break
+		}
+	}
+	for _, track := range tracks {
+		if track.sendB > 0 {
+			for _, effect := range semantic.Effects {
+				if effect.ID == "reverb" {
+					params, err := project.ReverbParamsFromValues(effect.Params)
+					if err != nil {
+						return report, err
+					}
+					reverbB, err = fx.NewReverb(opts.SampleRate)
+					if err != nil {
+						return report, err
+					}
+					if err := reverbB.SetParams(params); err != nil {
+						return report, err
+					}
+					reverbB.Reset()
 					break
 				}
 			}
@@ -293,7 +317,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 					}
 					return events[i].event.NoteID < events[j].event.NoteID
 				})
-				if err := renderBlock(writer, tracks, delayA, limiter, events, position, frames, block, &report); err != nil {
+				if err := renderBlock(writer, tracks, delayA, reverbB, limiter, events, position, frames, block, &report); err != nil {
 					return report, err
 				}
 				position += int64(frames)
@@ -316,7 +340,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		if position+int64(frames) > report.Frames {
 			frames = int(report.Frames - position)
 		}
-		if err := renderBlock(writer, tracks, delayA, limiter, nil, position, frames, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, limiter, nil, position, frames, block, &report); err != nil {
 			return report, err
 		}
 		position += int64(frames)
@@ -325,7 +349,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		// Drive and the aligned dry tracks have the same 15-frame latency.
 		// Drain it, then omit the initial 15 silent output frames so the WAV
 		// remains aligned to the score and has exactly report.Frames frames.
-		if err := renderBlock(writer, tracks, delayA, limiter, nil, position, insertLatency, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, limiter, nil, position, insertLatency, block, &report); err != nil {
 			return report, err
 		}
 	}
@@ -460,7 +484,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 		}
 		overrides := make(map[string]string, len(source.Params))
 		for _, param := range source.Params {
-			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_pre" {
+			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" {
 				continue
 			}
 			overrides[param.Name] = param.Value
@@ -488,6 +512,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 	}
 	for i := range tracks {
 		tracks[i].sendA = float32(semantic.Tracks[i].Mixer.SendA)
+		tracks[i].sendB = float32(semantic.Tracks[i].Mixer.SendB)
 		tracks[i].sendPre = semantic.Tracks[i].Mixer.SendPre
 		tracks[i].muted = semantic.Tracks[i].Mixer.Mute
 	}
@@ -669,7 +694,7 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 	return nil
 }
 
-func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, limiter *mix.Limiter, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
+func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, limiter *mix.Limiter, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
 	outFrames := 0
 	for frame := 0; frame < frames; frame++ {
@@ -698,7 +723,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, limiter *
 			eventIndex++
 		}
 		var dry mix.Dry
-		var sendL, sendR float32
+		var sendAL, sendAR, sendBL, sendBR float32
 		for ti := range tracks {
 			var l, r float32
 			if tracks[ti].drums != nil {
@@ -720,19 +745,35 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, limiter *
 			}
 			if tracks[ti].sendA > 0 && !tracks[ti].muted {
 				if tracks[ti].sendPre {
-					sendL += l * tracks[ti].sendA
-					sendR += r * tracks[ti].sendA
+					sendAL += l * tracks[ti].sendA
+					sendAR += r * tracks[ti].sendA
 				} else {
-					sendL += l * tracks[ti].mixer.Left * tracks[ti].sendA
-					sendR += r * tracks[ti].mixer.Right * tracks[ti].sendA
+					sendAL += l * tracks[ti].mixer.Left * tracks[ti].sendA
+					sendAR += r * tracks[ti].mixer.Right * tracks[ti].sendA
+				}
+			}
+			if tracks[ti].sendB > 0 && !tracks[ti].muted {
+				if tracks[ti].sendPre {
+					sendBL += l * tracks[ti].sendB
+					sendBR += r * tracks[ti].sendB
+				} else {
+					sendBL += l * tracks[ti].mixer.Left * tracks[ti].sendB
+					sendBR += r * tracks[ti].mixer.Right * tracks[ti].sendB
 				}
 			}
 			dry.Add(l, r, tracks[ti].mixer)
 		}
 		if delayA != nil {
-			returnL, returnR := delayA.Process(sendL, sendR)
+			returnL, returnR := delayA.Process(sendAL, sendAR)
 			if delayA.Fault() {
 				return fmt.Errorf("delay return DSP fault")
+			}
+			dry.AddReturn(returnL, returnR)
+		}
+		if reverbB != nil {
+			returnL, returnR := reverbB.Process(sendBL, sendBR)
+			if reverbB.Fault() {
+				return fmt.Errorf("reverb return DSP fault")
 			}
 			dry.AddReturn(returnL, returnR)
 		}

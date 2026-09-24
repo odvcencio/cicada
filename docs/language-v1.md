@@ -47,11 +47,16 @@ The score can also declare `fx delay` and route a track with `send_a = 0.4`.
 post-fader send follows level and pan. Delay `time` accepts 1–2000 ms or
 `1/32`, `1/16`, `1/16T`, `1/16.`, `1/8`, `1/8T`, `1/8.`, `3/16`, `1/4`,
 `1/4.`, and `1/2`. Feedback is 0–0.95, damp 1–16 kHz, pingpong is
-`true` or `false`, and width and mix are 0–1. Send B, reverb, compressor,
-and authored effect graphs are not implemented yet.
-Defaults are `1/8`, feedback 0.35, damp 6 kHz, pingpong false, width 1,
-and fully wet. A synced division must fit the four-second delay buffer at
-the current tempo; for example, `1/2` is rejected below 30 BPM.
+`true` or `false`, and width and mix are 0–1. Defaults are `1/8`, feedback
+0.35, damp 6 kHz, pingpong false, width 1, and fully wet. A synced division
+must fit the four-second delay buffer at the current tempo; for example,
+`1/2` is rejected below 30 BPM.
+
+`fx reverb` routes through `send_b = 0.4`; `send_pre` selects pre-fader input for both sends. Reverb
+accepts `size` 0.5–1.5, `decay` 0.3–12 s, `damp` 2–16 kHz, `highpass`
+40–400 Hz, `predelay` 0–200 ms, and `mix` 0–1. Defaults are size 1,
+decay 2.4 s, damp 8 kHz, highpass 120 Hz, zero predelay, and fully wet.
+Compressor and authored effect graphs are not implemented yet.
 
 A scene assigns patterns to tracks. `off` stops a track, and `keep`
 retains its previous pattern. A song lists scenes in order; `main*16`

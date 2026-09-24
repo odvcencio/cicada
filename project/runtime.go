@@ -46,6 +46,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	}
 	var driveParams *fx.DriveParams
 	var delayParams *fx.DelayParams
+	var reverbParams *fx.ReverbParams
 	for _, effect := range p.Effects {
 		if effect.ID == "drive" {
 			params, err := DriveParamsFromValues(effect.Params)
@@ -59,12 +60,20 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				return cfg, err
 			}
 			delayParams = &params
+		} else if effect.ID == "reverb" {
+			params, err := ReverbParamsFromValues(effect.Params)
+			if err != nil {
+				return cfg, err
+			}
+			reverbParams = &params
 		}
 	}
 	for _, track := range p.Tracks {
 		if track.Mixer.SendA > 0 {
 			cfg.DelayA = delayParams
-			break
+		}
+		if track.Mixer.SendB > 0 {
+			cfg.ReverbB = reverbParams
 		}
 	}
 	trackIndex := make(map[string]int, len(p.Tracks))
@@ -72,7 +81,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		trackIndex[track.ID] = ti
 		config := &cfg.Track[ti]
 		config.GainDB, config.GainSet, config.Pan, config.Mute = track.Mixer.GainDB, true, track.Mixer.Pan, track.Mixer.Mute
-		config.SendA, config.SendPre = track.Mixer.SendA, track.Mixer.SendPre
+		config.SendA, config.SendB, config.SendPre = track.Mixer.SendA, track.Mixer.SendB, track.Mixer.SendPre
 		if track.Mixer.Insert == "drive" {
 			config.InsertDrive = driveParams
 		}

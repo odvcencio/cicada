@@ -30,7 +30,7 @@ func ValidateProject(p *Project) error {
 	}
 	effects := map[string]bool{}
 	for _, effect := range p.Effects {
-		if effect.ID != "drive" && effect.ID != "delay" {
+		if effect.ID != "drive" && effect.ID != "delay" && effect.ID != "reverb" {
 			return fmt.Errorf("effect %s is not implemented", effect.ID)
 		}
 		if effects[effect.ID] || effect.Params == nil {
@@ -41,12 +41,16 @@ func ValidateProject(p *Project) error {
 			if _, err := DriveParamsFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
-		} else {
+		} else if effect.ID == "delay" {
 			params, err := DelayParamsFromValues(effect.Params)
 			if err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
 			if err := params.ValidateTempo(int64(p.TempoMilli)); err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
+		} else {
+			if _, err := ReverbParamsFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
 		}
@@ -158,6 +162,9 @@ func ValidateProject(p *Project) error {
 		}
 		if track.Mixer.SendA > 0 && !effects["delay"] {
 			return fmt.Errorf("track %s requires a declared delay for send_a", track.ID)
+		}
+		if track.Mixer.SendB > 0 && !effects["reverb"] {
+			return fmt.Errorf("track %s requires a declared reverb for send_b", track.ID)
 		}
 	}
 	allocatedVoices := 0

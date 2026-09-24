@@ -14,7 +14,7 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 5 // delay send A routing; version 4 added drive inserts
+const imageVersion = 6 // reverb send B routing; version 5 added delay send A
 
 type Error string
 
@@ -87,7 +87,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 5. The decoded Config is separately
+// Encode writes project image version 6. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -130,6 +130,20 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		w.f64(cfg.DelayA.Width)
 		w.f64(cfg.DelayA.Mix)
 	}
+	if cfg.ReverbB == nil {
+		w.byte(0)
+	} else {
+		if err := cfg.ReverbB.Validate(); err != nil {
+			return nil, err
+		}
+		w.byte(1)
+		w.f64(cfg.ReverbB.Size)
+		w.f64(cfg.ReverbB.DecaySec)
+		w.f64(cfg.ReverbB.DampHz)
+		w.f64(cfg.ReverbB.HighpassHz)
+		w.f64(cfg.ReverbB.PredelayMs)
+		w.f64(cfg.ReverbB.Mix)
+	}
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		w.byte(byte(spec.Kind))
@@ -142,6 +156,10 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			return nil, Error("invalid track send A")
 		}
 		w.f64(spec.SendA)
+		if math.IsNaN(spec.SendB) || math.IsInf(spec.SendB, 0) || spec.SendB < 0 || spec.SendB > 1 || spec.SendB > 0 && cfg.ReverbB == nil {
+			return nil, Error("invalid track send B")
+		}
+		w.f64(spec.SendB)
 		w.byte(boolByte(spec.SendPre))
 		if spec.InsertDrive == nil {
 			w.byte(0)
@@ -326,6 +344,35 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		cfg.DelayA = params
 	}
+	reverbPresent, err := r.byte()
+	if err != nil || reverbPresent > 1 {
+		return Error("invalid reverb image flag")
+	}
+	if reverbPresent == 1 {
+		params := &fx.ReverbParams{}
+		if params.Size, err = r.f64(); err != nil {
+			return err
+		}
+		if params.DecaySec, err = r.f64(); err != nil {
+			return err
+		}
+		if params.DampHz, err = r.f64(); err != nil {
+			return err
+		}
+		if params.HighpassHz, err = r.f64(); err != nil {
+			return err
+		}
+		if params.PredelayMs, err = r.f64(); err != nil {
+			return err
+		}
+		if params.Mix, err = r.f64(); err != nil {
+			return err
+		}
+		if err := params.Validate(); err != nil {
+			return err
+		}
+		cfg.ReverbB = params
+	}
 	for track := 0; track < int(tracks); track++ {
 		spec := &cfg.Track[track]
 		kind, err := r.byte()
@@ -352,6 +399,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return err
 		}
 		if spec.SendA, err = r.f64(); err != nil {
+			return err
+		}
+		if spec.SendB, err = r.f64(); err != nil {
 			return err
 		}
 		sendPre, err := r.byte()
