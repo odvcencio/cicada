@@ -14,15 +14,15 @@ func TestCoefficientsAndPairedStopband(t *testing.T) {
 		if math.Abs(value-coefficients[Taps-1-n]) > 1e-15 {
 			t.Fatalf("asymmetric tap %d", n)
 		}
-		if n != 15 && (n-15)%2 == 0 && value != 0 {
+		if n != center && (n-center)%2 == 0 && value != 0 {
 			t.Fatalf("nonzero half-band tap %d", n)
 		}
 	}
 	if math.Abs(sum-1) > 1e-14 {
 		t.Fatalf("coefficient sum %g", sum)
 	}
-	if coefficients[15] < 0.49 || coefficients[15] > 0.51 {
-		t.Fatalf("center tap %g", coefficients[15])
+	if coefficients[center] < 0.49 || coefficients[center] > 0.51 {
+		t.Fatalf("center tap %g", coefficients[center])
 	}
 	pairedDB := func(frequency float64) float64 {
 		var real, imaginary float64
@@ -40,7 +40,7 @@ func TestCoefficientsAndPairedStopband(t *testing.T) {
 	if db := pairedDB(0.3); db > -60 {
 		t.Fatalf("paired stopband response %g dB", db)
 	}
-	if checksum := f.Checksum(); checksum != 0x725f7eec0a3d8976 {
+	if checksum := f.Checksum(); checksum != 0xe5362dfc9652158e {
 		t.Fatalf("coefficient checksum changed: %016x", checksum)
 	}
 }
@@ -78,10 +78,16 @@ func TestDecision0002HalfbandResponseGate(t *testing.T) {
 	passbandDB := responseDB(0.2)
 	stopbandEdgeDB := responseDB(0.3)
 	stopbandDB := responseDB(0.35)
-	if math.Abs(passbandDB+0.272058) < 0.001 && math.Abs(stopbandEdgeDB+30.234794) < 0.001 && math.Abs(stopbandDB+73.220366) < 0.001 {
-		t.Skipf("known failure under decision 0002: 31-tap half-band response is %.3f dB at 0.2 fso, %.3f dB at 0.3 fso, and %.3f dB at 0.35 fso; keep the limits (<= 0.1 dB ripple and <= -60 dB stopband) and revise the filter design", passbandDB, stopbandEdgeDB, stopbandDB)
-	}
+	t.Logf("half-band response: 0.2 fso %.3f dB, 0.3 fso %.3f dB, 0.35 fso %.3f dB", passbandDB, stopbandEdgeDB, stopbandDB)
 	if math.Abs(passbandDB) > 0.1 || stopbandEdgeDB > -60 || stopbandDB > -60 {
 		t.Fatalf("half-band response violates decision 0002: %.3f dB at 0.2 fso, %.3f dB at 0.3 fso, and %.3f dB at 0.35 fso", passbandDB, stopbandEdgeDB, stopbandDB)
+	}
+	for step := 0; step <= 400; step++ {
+		if frequency := .2 * float64(step) / 400; math.Abs(responseDB(frequency)) > .1 {
+			t.Fatalf("passband ripple exceeds 0.1 dB at %.5f fso", frequency)
+		}
+		if frequency := .3 + .2*float64(step)/400; responseDB(frequency) > -60 {
+			t.Fatalf("stopband attenuation is below 60 dB at %.5f fso", frequency)
+		}
 	}
 }
