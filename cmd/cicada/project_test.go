@@ -142,6 +142,20 @@ func TestProjectCLI(t *testing.T) {
 	if len(data) == 0 {
 		t.Fatal("empty conversion output")
 	}
+	duplicateJSON := filepath.Join(t.TempDir(), "duplicate.json")
+	if err := os.WriteFile(duplicateJSON, []byte(`{"tracks":[{"id":"a","id":"b"}]}`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if output := run(1, "convert", duplicateJSON, "-o", filepath.Join(t.TempDir(), "duplicate.cicada")); !strings.Contains(output, duplicateJSON+"#/tracks/0/id:1:22: error CICADA-DUPLICATE:") {
+		t.Fatalf("duplicate JSON key lost its pointer and position: %q", output)
+	}
+	invalidVersion := filepath.Join(t.TempDir(), "future.json")
+	if err := os.WriteFile(invalidVersion, []byte(strings.Replace(string(data), `"version": 1`, `"version": 2`, 1)), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if output := run(1, "convert", invalidVersion, "-o", filepath.Join(t.TempDir(), "future.cicada")); !strings.Contains(output, invalidVersion+"#/version:") || !strings.Contains(output, ":3: error CICADA-VERSION:") {
+		t.Fatalf("future JSON version lost its diagnostic code: %q", output)
+	}
 	wavPath := filepath.Join(t.TempDir(), "first-acid.wav")
 	if output := run(0, "render", first, "-o", wavPath, "--rate", "48000", "--bits", "24", "--bars", "16", "--tail", "3s"); !strings.Contains(output, "clipped samples") {
 		t.Fatalf("render report omitted clipping count: %q", output)

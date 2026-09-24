@@ -71,6 +71,49 @@ func TestJSONBodySizeBoundary(t *testing.T) {
 	}
 	if _, err := DecodeJSON(append(boundary, ' ')); err == nil || !strings.Contains(err.Error(), "2 MiB") {
 		t.Fatalf("decoder accepted a body above 2 MiB: %v", err)
+	} else {
+		var diagnostic *JSONError
+		if !errors.As(err, &diagnostic) || diagnostic.Code != "CICADA-LIMIT" {
+			t.Fatalf("size error lost its diagnostic code: %v", err)
+		}
+	}
+}
+
+func TestJSONDiagnosticLocations(t *testing.T) {
+	for _, test := range []struct {
+		name, input, code, pointer string
+		line, column               int
+	}{
+		{"duplicate nested key", `{"a/b~c":{"x":1,"x":2}}`, "CICADA-DUPLICATE", "/a~1b~0c/x", 1, 17},
+		{"syntax after unicode", "{\n  \"title\": \"🎵\",\n  \"x\": }\n", "CICADA-SYNTAX", "/x", 3, 8},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := DecodeJSON([]byte(test.input))
+			var diagnostic *JSONError
+			if !errors.As(err, &diagnostic) {
+				t.Fatalf("missing JSON diagnostic: %v", err)
+			}
+			if diagnostic.Code != test.code || diagnostic.Pointer != test.pointer || diagnostic.Line != test.line || diagnostic.Column != test.column {
+				t.Fatalf("diagnostic = %s %s %d:%d (%v), want %s %s %d:%d", diagnostic.Code, diagnostic.Pointer, diagnostic.Line, diagnostic.Column, diagnostic.Cause, test.code, test.pointer, test.line, test.column)
+			}
+		})
+	}
+	p, diagnostics := FromScore(firstScore(t))
+	if p == nil {
+		t.Fatalf("project compilation: %+v", diagnostics)
+	}
+	encoded, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	invalidVersion := bytes.Replace(encoded, []byte(`"version": 1`), []byte(`"version": 2`), 1)
+	if bytes.Equal(invalidVersion, encoded) {
+		t.Fatal("canonical JSON did not include a version field")
+	}
+	_, err = DecodeJSON(invalidVersion)
+	var diagnostic *JSONError
+	if !errors.As(err, &diagnostic) || diagnostic.Code != "CICADA-VERSION" || diagnostic.Pointer != "/version" || diagnostic.Line < 2 || diagnostic.Column != 3 {
+		t.Fatalf("future version diagnostic: %v", err)
 	}
 }
 
@@ -179,6 +222,15 @@ func TestCanonicalJSONLimitMatchesSourceValidation(t *testing.T) {
 	}
 	if _, err := CanonicalJSON(p); !errors.Is(err, errCanonicalJSONLimit) {
 		t.Fatalf("writer accepted project its decoder cannot read: %v", err)
+	}
+	compact, err := json.Marshal(p)
+	if err != nil || len(compact) > maxJSONBytes {
+		t.Fatalf("dense compact JSON must fit the input bound: %d bytes, %v", len(compact), err)
+	}
+	_, err = DecodeJSON(compact)
+	var sizeDiagnostic *JSONError
+	if !errors.As(err, &sizeDiagnostic) || sizeDiagnostic.Code != "CICADA-LIMIT" {
+		t.Fatalf("compact project with oversized canonical form: %v", err)
 	}
 	tooLarge := strings.ReplaceAll(source.String(), "steps=32", "steps=64")
 	// Build the 64-cell source from the same valid layout.

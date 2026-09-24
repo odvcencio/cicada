@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -80,6 +81,14 @@ func loadProject(path string) (*project.Project, error) {
 	if strings.HasSuffix(path, ".json") {
 		p, err := project.DecodeJSON(data)
 		if err != nil {
+			var diagnostic *project.JSONError
+			if errors.As(err, &diagnostic) {
+				location := path
+				if diagnostic.Pointer != "" {
+					location += "#" + diagnostic.Pointer
+				}
+				return nil, fmt.Errorf("%s:%d:%d: error %s: %w", location, diagnostic.Line, diagnostic.Column, diagnostic.Code, err)
+			}
 			return nil, fmt.Errorf("%s:1:1: error CICADA-PARAM: %w", path, err)
 		}
 		return p, nil

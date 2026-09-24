@@ -234,31 +234,42 @@ func writeCanonical(output *bytes.Buffer, value any, depth int) error {
 // it. Structural and musical cross-reference checks are separate stages.
 func DecodeJSON(data []byte) (*Project, error) {
 	if len(data) > maxJSONBytes {
-		return nil, fmt.Errorf("project JSON exceeds 2 MiB")
+		return nil, jsonError(data, "CICADA-LIMIT", "", 0, fmt.Errorf("project JSON exceeds 2 MiB"))
 	}
 	if !utf8.Valid(data) {
-		return nil, fmt.Errorf("project JSON is not UTF-8")
+		return nil, jsonError(data, "CICADA-PARAM", "", 0, fmt.Errorf("project JSON is not UTF-8"))
 	}
 	if err := checkJSONStructure(data); err != nil {
 		return nil, err
 	}
 	if err := checkRequiredFields(data); err != nil {
-		return nil, err
+		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var p Project
 	if err := decoder.Decode(&p); err != nil {
-		return nil, err
+		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
 	if p.Format != FormatID || p.Version != 1 {
-		return nil, fmt.Errorf("unsupported project format or version")
+		field := "format"
+		if p.Format == FormatID {
+			field = "version"
+		}
+		return nil, jsonError(data, "CICADA-VERSION", "/"+field, jsonRootFieldOffset(data, field), fmt.Errorf("unsupported project format or version"))
 	}
 	if err := ValidateProject(&p); err != nil {
-		return nil, err
+		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
+	}
+	if _, err := canonicalProjectBytes(&p); err != nil {
+		code := "CICADA-PARAM"
+		if errors.Is(err, errCanonicalJSONLimit) {
+			code = "CICADA-LIMIT"
+		}
+		return nil, jsonError(data, code, "", 0, err)
 	}
 	if _, err := ToSource(&p); err != nil {
-		return nil, fmt.Errorf("project cannot be represented by source v1: %w", err)
+		return nil, jsonError(data, "CICADA-PARAM", "", 0, fmt.Errorf("project cannot be represented by source v1: %w", err))
 	}
 	return &p, nil
 }
@@ -266,14 +277,14 @@ func DecodeJSON(data []byte) (*Project, error) {
 func checkJSONStructure(data []byte) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
-	var walk func(int) error
-	walk = func(depth int) error {
+	var walk func(int, string) error
+	walk = func(depth int, pointer string) error {
 		if depth > maxJSONDepth {
-			return fmt.Errorf("project JSON exceeds depth 64")
+			return jsonError(data, "CICADA-LIMIT", pointer, int(decoder.InputOffset()), fmt.Errorf("project JSON exceeds depth 64"))
 		}
 		token, err := decoder.Token()
 		if err != nil {
-			return err
+			return jsonError(data, "CICADA-SYNTAX", pointer, int(decoder.InputOffset()), err)
 		}
 		delim, ok := token.(json.Delim)
 		if !ok {
@@ -285,41 +296,50 @@ func checkJSONStructure(data []byte) error {
 			for decoder.More() {
 				keyToken, err := decoder.Token()
 				if err != nil {
-					return err
+					return jsonError(data, "CICADA-SYNTAX", pointer, int(decoder.InputOffset()), err)
 				}
 				key, ok := keyToken.(string)
 				if !ok {
-					return fmt.Errorf("invalid JSON object key")
+					return jsonError(data, "CICADA-SYNTAX", pointer, int(decoder.InputOffset()), fmt.Errorf("invalid JSON object key"))
 				}
+				child := jsonPointer(pointer, key)
 				if seen[key] {
-					return fmt.Errorf("duplicate JSON key %q", key)
+					return jsonError(data, "CICADA-DUPLICATE", child, jsonKeyOffset(data, int(decoder.InputOffset())), fmt.Errorf("duplicate JSON key %q", key))
 				}
 				seen[key] = true
-				if err := walk(depth + 1); err != nil {
+				if err := walk(depth+1, child); err != nil {
 					return err
 				}
 			}
 			_, err := decoder.Token()
-			return err
+			if err != nil {
+				return jsonError(data, "CICADA-SYNTAX", pointer, int(decoder.InputOffset()), err)
+			}
+			return nil
 		case '[':
+			index := 0
 			for decoder.More() {
-				if err := walk(depth + 1); err != nil {
+				if err := walk(depth+1, jsonPointer(pointer, strconv.Itoa(index))); err != nil {
 					return err
 				}
+				index++
 			}
 			_, err := decoder.Token()
-			return err
+			if err != nil {
+				return jsonError(data, "CICADA-SYNTAX", pointer, int(decoder.InputOffset()), err)
+			}
+			return nil
 		}
-		return fmt.Errorf("unexpected JSON delimiter")
+		return jsonError(data, "CICADA-SYNTAX", pointer, int(decoder.InputOffset()), fmt.Errorf("unexpected JSON delimiter"))
 	}
-	if err := walk(0); err != nil {
+	if err := walk(0, ""); err != nil {
 		return err
 	}
 	if _, err := decoder.Token(); err != io.EOF {
 		if err == nil {
-			return fmt.Errorf("extra JSON value")
+			return jsonError(data, "CICADA-SYNTAX", "", int(decoder.InputOffset()), fmt.Errorf("extra JSON value"))
 		}
-		return err
+		return jsonError(data, "CICADA-SYNTAX", "", int(decoder.InputOffset()), err)
 	}
 	return nil
 }
