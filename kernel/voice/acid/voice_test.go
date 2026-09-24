@@ -164,3 +164,16 @@ func BenchmarkAcidNext(b *testing.B) {
 	}
 	benchmarkOutput = output
 }
+
+func BenchmarkAcidNextRetrigger(b *testing.B) {
+	voice, _ := New(48_000)
+	var output float32
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if i%4800 == 0 {
+			voice.NoteOn(45, true, false, 127)
+		}
+		output = voice.Next()
+	}
+	benchmarkOutput = output
+}
