@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 
@@ -63,6 +64,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		patterns[pattern.Name] = pattern
 	}
 	checked := make(map[[2]string]bool)
+	reached := make(map[string]bool, len(score.Patterns))
 	compiledByPattern := make(map[string][]CompiledPattern)
 	firstTrack := make(map[string]string)
 	for _, scene := range score.Scenes {
@@ -80,17 +82,10 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			if !trackOK || !patternOK {
 				continue // reference validation reports these errors
 			}
+			reached[pattern.Name] = true
 			compiled, err := CompilePattern(score, pattern, track)
 			if err != nil {
-				code := "CICADA-PARAM"
-				if strings.Contains(err.Error(), "seed") {
-					code = "CICADA-SEED"
-				} else if strings.Contains(err.Error(), "has no degree") {
-					code = "CICADA-SCALE-DEGREE"
-				}
-				diagnostics = append(diagnostics, notation.Diagnostic{
-					Code: code, Severity: "error", Message: err.Error(), Position: binding.Position,
-				})
+				diagnostics = append(diagnostics, patternCompileDiagnostic(err, binding.Position))
 				continue
 			}
 			if previous, exists := compiledByPattern[pattern.Name]; exists {
@@ -107,5 +102,27 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			}
 		}
 	}
+	for _, pattern := range score.Patterns {
+		if reached[pattern.Name] {
+			continue
+		}
+		if _, err := CompilePattern(score, pattern, representativeTrack(score, pattern)); err != nil {
+			diagnostics = append(diagnostics, patternCompileDiagnostic(err, pattern.Position))
+		}
+	}
 	return programs, diagnostics
+}
+
+func patternCompileDiagnostic(err error, position notation.Position) notation.Diagnostic {
+	var stepError *patternCompileError
+	if errors.As(err, &stepError) {
+		position = stepError.position
+	}
+	code := "CICADA-PARAM"
+	if strings.Contains(err.Error(), "seed") {
+		code = "CICADA-SEED"
+	} else if strings.Contains(err.Error(), "has no degree") {
+		code = "CICADA-SCALE-DEGREE"
+	}
+	return notation.Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: position}
 }

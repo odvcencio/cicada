@@ -67,3 +67,24 @@ song { main }
 		t.Fatalf("want ratchet compile error, got %+v", diagnostics)
 	}
 }
+
+func TestCheckRejectsUnrenderableUnusedPattern(t *testing.T) {
+	src := []byte(`cicada 1
+track bass acid {}
+pattern used acid steps=1 { 1 }
+pattern unused acid steps=1 { 1*9 }
+scene main { bass=used }
+song { main }
+`)
+	score, parseDiagnostics := notation.Parse(src)
+	if len(parseDiagnostics) != 0 {
+		t.Fatalf("parse diagnostics: %+v", parseDiagnostics)
+	}
+	_, diagnostics := Check(score)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == "CICADA-PARAM" && diagnostic.Position.Line == 4 && diagnostic.Position.Column == 31 {
+			return
+		}
+	}
+	t.Fatalf("unused invalid pattern was accepted: %+v", diagnostics)
+}
