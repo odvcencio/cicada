@@ -11,7 +11,7 @@ const beta = 6.5
 
 type FIR struct {
 	coefficients [Taps]float64
-	history      [Taps]float64
+	history      [2 * Taps]float64
 	position     int
 }
 
@@ -56,7 +56,7 @@ func besselI0(x float64) float64 {
 func (f *FIR) Coefficients() [Taps]float64 { return f.coefficients }
 
 func (f *FIR) Reset() {
-	f.history = [Taps]float64{}
+	f.history = [2 * Taps]float64{}
 	f.position = 0
 }
 
@@ -64,26 +64,18 @@ func (f *FIR) Reset() {
 // tap and the 22 nonzero side taps; no allocation or coefficient work occurs.
 func (f *FIR) Push(input float64) float64 {
 	f.history[f.position] = input
+	f.history[f.position+Taps] = input
 	var output float64
-	// Every noncentral odd tap is exactly zero. Keep the same increasing-tap
-	// accumulation order so skipping those taps does not change the samples.
+	// The mirrored history removes wrap branches while keeping the same
+	// increasing-tap accumulation order and exact sample values.
 	for tap := 0; tap < center; tap += 2 {
-		index := f.position - tap
-		if index < 0 {
-			index += Taps
-		}
+		index := f.position + Taps - tap
 		output += f.coefficients[tap] * f.history[index]
 	}
-	index := f.position - center
-	if index < 0 {
-		index += Taps
-	}
+	index := f.position + Taps - center
 	output += f.coefficients[center] * f.history[index]
 	for tap := center + 1; tap < Taps; tap += 2 {
-		index := f.position - tap
-		if index < 0 {
-			index += Taps
-		}
+		index := f.position + Taps - tap
 		output += f.coefficients[tap] * f.history[index]
 	}
 	f.position++
