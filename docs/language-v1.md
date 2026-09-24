@@ -144,6 +144,12 @@ Canonical JSON and JSON input are limited to 2 MiB; source validation reports
 `CICADA-LIMIT` when its canonical project would exceed that bound.
 JSON conversion reports stable diagnostic codes, with a `#` JSON Pointer for
 located fields (for example, `score.json#/patterns/0/data/3/velocity`).
+Source positions use one-based Unicode scalar columns. The v1 diagnostic codes
+are `CICADA-SYNTAX`, `CICADA-VERSION`, `CICADA-KEY`,
+`CICADA-SCALE-DEGREE`, `CICADA-SEED`, `CICADA-PARAM`, `CICADA-UNIT`,
+`CICADA-REFERENCE`, `CICADA-DUPLICATE`, `CICADA-EXPANSION`, `CICADA-USE`,
+`CICADA-UNSUPPORTED`, `CICADA-LIMIT`, `CICADA-SLIDE-REST`, `CICADA-IO`,
+and `CICADA-AUDIO`.
 An unedited CST can print the original bytes, including comments and pitch
 spelling. See [first-acid.cicada](../examples/first-acid.cicada) for a full
 score and the [live engine contract](live-engine.md) for playback boundaries.

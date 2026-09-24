@@ -11,7 +11,7 @@ func expandPhrases(s *Score) []Diagnostic {
 		}
 		phrases[phrase.Name] = phrase
 		if len(phrase.Steps) < 1 || len(phrase.Steps) > 64 {
-			ds = append(ds, Diagnostic{"CICADA-PHRASE", "phrase must have 1 to 64 steps", "error", phrase.Position})
+			ds = append(ds, Diagnostic{"CICADA-LIMIT", "phrase must have 1 to 64 steps", "error", phrase.Position})
 		}
 	}
 	for pi := range s.Patterns {

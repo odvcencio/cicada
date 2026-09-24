@@ -113,7 +113,7 @@ func TestTrackAndPatternLengthBoundaries(t *testing.T) {
 		if steps == 65 {
 			found := false
 			for _, d := range diagnostics {
-				if d.Code == "CICADA-STEPS" || d.Code == "CICADA-EXPANSION" {
+				if d.Code == "CICADA-PARAM" || d.Code == "CICADA-EXPANSION" {
 					found = true
 				}
 			}
@@ -143,7 +143,7 @@ func TestTrackAndPatternLengthBoundaries(t *testing.T) {
 	source.WriteString("pattern p acid steps=1 { 1 }\nscene s { t0=p }\nsong { s }\n")
 	_, diagnostics := notation.Parse([]byte(source.String()))
 	for _, d := range diagnostics {
-		if d.Code == "CICADA-TRACKS" {
+		if d.Code == "CICADA-LIMIT" {
 			return
 		}
 	}

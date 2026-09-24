@@ -17,7 +17,7 @@ func TestInvalidSourceFixtures(t *testing.T) {
 		code string
 		line int
 	}{
-		"unknown-symbol.cicada":             {"CICADA-SYMBOL", 2},
+		"unknown-symbol.cicada":             {"CICADA-REFERENCE", 2},
 		"invalid-unit.cicada":               {"CICADA-PARAM", 2},
 		"unsupported-effect.cicada":         {"CICADA-UNSUPPORTED", 2},
 		"seed-64-bit.cicada":                {"CICADA-SEED", 2},
@@ -25,11 +25,12 @@ func TestInvalidSourceFixtures(t *testing.T) {
 		"slot-conflict.cicada":              {"CICADA-DUPLICATE", 4},
 		"expansion-65.cicada":               {"CICADA-EXPANSION", 4},
 		"unknown-scene.cicada":              {"CICADA-REFERENCE", 5},
-		"incompatible-kind.cicada":          {"CICADA-KIND", 4},
+		"incompatible-kind.cicada":          {"CICADA-PARAM", 4},
 		"unsupported-poly.cicada":           {"CICADA-UNSUPPORTED", 2},
 		"reserved-drum-lanes.cicada":        {"CICADA-UNSUPPORTED", 10},
 		"over-32-voices.cicada":             {"CICADA-LIMIT", 10},
 		"unsupported-drum-transpose.cicada": {"CICADA-UNSUPPORTED", 3},
+		"invalid-scale-degree.cicada":       {"CICADA-SCALE-DEGREE", 4},
 	}
 	paths, err := filepath.Glob("../testdata/invalid/*.cicada")
 	if err != nil {
@@ -84,6 +85,25 @@ func TestInvalidSourceFixtures(t *testing.T) {
 			}
 			t.Fatalf("want %s at line %d, got %+v", expected.code, expected.line, diagnostics)
 		})
+	}
+}
+
+func TestSlideIntoRestWarningFixture(t *testing.T) {
+	path := "../testdata/warnings/slide-into-rest.cicada"
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := notation.ParseDocument(source)
+	if err != nil || !bytes.Equal(notation.Print(document), source) {
+		t.Fatalf("warning fixture must parse and print unchanged: %v", err)
+	}
+	score, diagnostics := notation.Parse(source)
+	if score == nil || len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-SLIDE-REST" || diagnostics[0].Severity != "warning" || diagnostics[0].Position.Line != 3 {
+		t.Fatalf("expected one positioned slide warning, got %+v", diagnostics)
+	}
+	if compiled, extra := FromScore(score); compiled == nil || hasErrors(extra) {
+		t.Fatalf("warning fixture cannot compile: %+v", extra)
 	}
 }
 

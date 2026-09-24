@@ -58,19 +58,19 @@ func Compile(src notation.Instrument) (*Program, []notation.Diagnostic) {
 	for _, param := range src.Params {
 		typ := Type(param.Unit)
 		if _, exists := c.symbols[param.Name]; exists {
-			c.errorAt("CICADA-SYMBOL", "duplicate or reserved symbol "+param.Name, param.Position)
+			c.errorAt("CICADA-DUPLICATE", "duplicate or reserved symbol "+param.Name, param.Position)
 			continue
 		}
 		literalType, err := literalType(param.Default)
 		if err != nil || literalType != typ {
-			c.errorAt("CICADA-TYPE", fmt.Sprintf("default for %s must have unit %s", param.Name, typ), param.Position)
+			c.errorAt("CICADA-UNIT", fmt.Sprintf("default for %s must have unit %s", param.Name, typ), param.Position)
 			continue
 		}
 		c.symbols[param.Name] = c.emit(Node{Op: "param", Name: param.Name, Type: typ, Literal: param.Default, Position: param.Position})
 	}
 	for _, let := range src.Lets {
 		if _, exists := c.symbols[let.Name]; exists {
-			c.errorAt("CICADA-SYMBOL", "duplicate or reserved symbol "+let.Name, let.Position)
+			c.errorAt("CICADA-DUPLICATE", "duplicate or reserved symbol "+let.Name, let.Position)
 			continue
 		}
 		index, _ := c.expr(let.Value)
@@ -80,14 +80,14 @@ func Compile(src notation.Instrument) (*Program, []notation.Diagnostic) {
 	}
 	output, typ := c.expr(src.Output)
 	if output < 0 || typ != Audio {
-		c.errorAt("CICADA-OUTPUT", "out expression must produce audio", src.Position)
+		c.errorAt("CICADA-UNIT", "out expression must produce audio", src.Position)
 	}
 	c.program.Output = output
 	if len(c.program.Nodes) > 128 {
-		c.errorAt("CICADA-BUDGET", "voice graph exceeds 128 nodes", src.Position)
+		c.errorAt("CICADA-LIMIT", "voice graph exceeds 128 nodes", src.Position)
 	}
 	if c.program.StatefulNodes > 32 {
-		c.errorAt("CICADA-BUDGET", "voice graph exceeds 32 stateful nodes", src.Position)
+		c.errorAt("CICADA-LIMIT", "voice graph exceeds 32 stateful nodes", src.Position)
 	}
 	if len(c.ds) > 0 {
 		return nil, c.ds
@@ -103,14 +103,14 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 	case "number":
 		typ, err := literalType(e.Text)
 		if err != nil {
-			c.errorAt("CICADA-LITERAL", err.Error(), e.Position)
+			c.errorAt("CICADA-PARAM", err.Error(), e.Position)
 			return -1, ""
 		}
 		return c.emit(Node{Op: "literal", Type: typ, Literal: e.Text, Position: e.Position}), typ
 	case "name":
 		index, ok := c.symbols[e.Text]
 		if !ok {
-			c.errorAt("CICADA-SYMBOL", "unknown symbol "+e.Text, e.Position)
+			c.errorAt("CICADA-REFERENCE", "unknown symbol "+e.Text, e.Position)
 			return -1, ""
 		}
 		return index, c.program.Nodes[index].Type
@@ -122,7 +122,7 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 		}
 		result, ok := binaryResult(e.Text, leftType, rightType)
 		if !ok {
-			c.errorAt("CICADA-TYPE", fmt.Sprintf("cannot apply %s to %s and %s", e.Text, leftType, rightType), e.Position)
+			c.errorAt("CICADA-UNIT", fmt.Sprintf("cannot apply %s to %s and %s", e.Text, leftType, rightType), e.Position)
 			return -1, ""
 		}
 		return c.emit(Node{Op: e.Text, Type: result, Inputs: []int{left, right}, Position: e.Position}), result
@@ -139,7 +139,7 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 		}
 		result, stateful, ok := callResult(e.Text, types)
 		if !ok {
-			c.errorAt("CICADA-CALL", fmt.Sprintf("unknown function or wrong argument types: %s", e.Text), e.Position)
+			c.errorAt("CICADA-PARAM", fmt.Sprintf("unknown function or wrong argument types: %s", e.Text), e.Position)
 			return -1, ""
 		}
 		if stateful {
@@ -147,7 +147,7 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 		}
 		return c.emit(Node{Op: e.Text, Type: result, Inputs: inputs, Position: e.Position}), result
 	default:
-		c.errorAt("CICADA-EXPR", "invalid expression", e.Position)
+		c.errorAt("CICADA-PARAM", "invalid expression", e.Position)
 		return -1, ""
 	}
 }

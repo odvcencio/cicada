@@ -35,7 +35,7 @@ func TestUndefinedSymbol(t *testing.T) {
 		t.Fatalf("score diagnostics: %+v", ds)
 	}
 	_, ds = Compile(score.Instruments[0])
-	if len(ds) == 0 || ds[0].Code != "CICADA-SYMBOL" {
+	if len(ds) == 0 || ds[0].Code != "CICADA-REFERENCE" {
 		t.Fatalf("expected unknown symbol error, got %+v", ds)
 	}
 }
@@ -47,7 +47,7 @@ func TestWrongArgumentType(t *testing.T) {
 		t.Fatalf("score diagnostics: %+v", ds)
 	}
 	_, ds = Compile(score.Instruments[0])
-	if len(ds) == 0 || ds[0].Code != "CICADA-CALL" {
+	if len(ds) == 0 || ds[0].Code != "CICADA-PARAM" {
 		t.Fatalf("expected function type error, got %+v", ds)
 	}
 }

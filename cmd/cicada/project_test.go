@@ -79,11 +79,11 @@ func TestProjectCLI(t *testing.T) {
 	if output := run(1, "validate", drumTranspose); !strings.Contains(output, drumTranspose+":3:") || !strings.Contains(output, "CICADA-UNSUPPORTED") {
 		t.Fatalf("validation accepted drum transpose: %q", output)
 	}
-	warningPath := filepath.Join(t.TempDir(), "slide-warning.cicada")
-	warningSource := "cicada 1\ntrack bass acid {}\npattern p acid steps=2 { 1~ . }\nscene main { bass=p }\nsong { main }\n"
-	if err := os.WriteFile(warningPath, []byte(warningSource), 0644); err != nil {
-		t.Fatal(err)
+	invalidScale := filepath.Join("..", "..", "testdata", "invalid", "invalid-scale-degree.cicada")
+	if output := run(1, "validate", invalidScale); !strings.Contains(output, invalidScale+":4:") || !strings.Contains(output, "CICADA-SCALE-DEGREE") {
+		t.Fatalf("invalid scale fixture did not report its degree: %q", output)
 	}
+	warningPath := filepath.Join("..", "..", "testdata", "warnings", "slide-into-rest.cicada")
 	if output := run(0, "validate", warningPath); strings.Count(output, "CICADA-SLIDE-REST") != 1 {
 		t.Fatalf("validation repeated a source warning: %q", output)
 	}
