@@ -230,7 +230,7 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: cicada gen --seed N --key a --scale minor [-o out.cicada] [--trace] | validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 24 --bars 16 --tail 3s] | stems <file.cicada> -o <dir> [--rate 48000 --bars 16 --tail 3s] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | verify-wav <file.wav> --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
+	fmt.Fprintln(os.Stderr, "usage: cicada gen --seed N --key a --scale minor [-o out.cicada] [--trace] | validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --bars 16 --tail 3s --dither=true --normalize=false --block 4096] | stems <file.cicada> -o <dir> [--rate 48000 --bars 16 --tail 3s] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | verify-wav <file.wav> --rate 48000 --bits 16|24|32 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
 	os.Exit(2)
 }
 
@@ -378,14 +378,17 @@ func renderArgs(args []string, wantBits int) (string, render.Options) {
 	bits := flags.Int("bits", wantBits, "WAV bit depth")
 	bars := flags.Int("bars", 0, "bars to render; 0 is the full song")
 	tail := flags.String("tail", "3s", "tail duration")
-	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || *bits != wantBits {
+	dither := flags.Bool("dither", true, "deterministic TPDF dither for integer PCM")
+	normalize := flags.Bool("normalize", false, "peak normalize output to -1 dBFS")
+	block := flags.Int("block", 4096, "offline render block size")
+	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits == 32 && *bits != 32) {
 		usage()
 	}
 	duration, err := time.ParseDuration(*tail)
 	if err != nil || duration < 0 {
 		usage()
 	}
-	return *output, render.Options{SampleRate: *rate, Bars: *bars, TailSec: duration.Seconds()}
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block}
 }
 
 func verifyWAVCommand(args []string) {

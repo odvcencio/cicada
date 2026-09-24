@@ -122,8 +122,15 @@ song { main }
 		t.Fatal("note onset is silent")
 	}
 	for _, index := range []int{9000, 10000, 12000} {
-		if !bytes.Equal(frame(index), make([]byte, 6)) {
-			t.Fatalf("gate remained open at frame %d: %v", index, frame(index))
+		for channel := 0; channel < 2; channel++ {
+			value := frame(index)[channel*3 : channel*3+3]
+			pcm := int32(value[0]) | int32(value[1])<<8 | int32(value[2])<<16
+			if pcm&0x800000 != 0 {
+				pcm |= ^int32(0xffffff)
+			}
+			if pcm < -1 || pcm > 1 {
+				t.Fatalf("gate remained open at frame %d: %v", index, frame(index))
+			}
 		}
 	}
 }
@@ -397,12 +404,19 @@ func TestDryMixerPansTrackLeft(t *testing.T) {
 	}
 	data := output.Bytes()
 	leftAudible := false
+	decode24 := func(data []byte) int32 {
+		value := int32(data[0]) | int32(data[1])<<8 | int32(data[2])<<16
+		if value&0x800000 != 0 {
+			value |= ^int32(0xffffff)
+		}
+		return value
+	}
 	for frame := 0; frame < 10_000; frame++ {
 		index := 44 + frame*6
-		if data[index] != 0 || data[index+1] != 0 || data[index+2] != 0 {
+		if left := decode24(data[index : index+3]); left > 100 || left < -100 {
 			leftAudible = true
 		}
-		if data[index+3] != 0 || data[index+4] != 0 || data[index+5] != 0 {
+		if right := decode24(data[index+3 : index+6]); right > 1 || right < -1 {
 			t.Fatalf("right channel audible at frame %d", frame)
 		}
 	}
