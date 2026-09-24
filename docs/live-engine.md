@@ -19,4 +19,6 @@ The older setup exports remain available for direct host control. Before `gosx_a
 
 For a drum track, `OpSetStep` uses the packed step's note field as a lane index (`0..5` for `bd sd ch oh cp rs`). Send one record per lane and step; several lanes can fire at the same step. A rest record with that lane index clears only that lane. `OpSetPatternLen` and `OpSetPatternMeta` apply to every lane in the slot. `OpLaunchScene` switches a loaded scene at the requested quantization; `keep` retains a slot and `off` releases it. Pattern-end scene quantization currently requires active patterns of the same length and no restart offset; unsupported combinations fault explicitly.
 
-Chain commands, full cross-switch slide behavior, and whole-engine parity and soak gates remain to be implemented.
+A sliding note on the outgoing pattern carries into a playable first step of a quantized pattern, scene, or song switch. The incoming note changes pitch without retriggering the acid accent envelope. A rest or failed probability check in the incoming slot leaves the outgoing note at its ordinary gate length, including when swing puts that gate end after the switch boundary.
+
+Chain commands and whole-engine parity and soak gates remain to be implemented.

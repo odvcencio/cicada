@@ -19,6 +19,11 @@ type patternTrack struct {
 	generation  uint32
 	playingNote int64
 	playingGen  uint32
+	slideFrom   int64
+	slideAt     int64
+	forceOff    seq.Event
+	forceGen    uint32
+	forceValid  bool
 	held        seq.Pattern
 	heldSlot    uint8
 	heldStart   int64
@@ -74,6 +79,14 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			p.heldStart = p.startStep
 			p.heldGen = p.generation
 			p.heldValid = true
+		}
+		p.slideFrom, p.slideAt = 0, 0
+		p.forceValid = false
+		if p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 && e.switchSlideTarget(track, slot, e.transport.Tick(), c.Arg1 == 1) {
+			p.slideFrom = p.playingNote
+			p.slideAt = e.switchOnsetSample(track, slot, e.transport.Tick())
+		} else if release, ok := e.normalSlideRelease(track, e.transport.Tick(), e.transport.Clock()); ok && p.playingNote == release.NoteID && release.Sample >= e.transport.Sample() {
+			p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
 		}
 		p.active = int8(slot)
 		p.generation++
@@ -189,6 +202,9 @@ func (e *Engine) scheduleTrack(track int) {
 				return
 			}
 			for _, event := range e.eventScratch[:n] {
+				if event.Kind == seq.NoteOn && event.Sample == p.slideAt && p.playingNote == p.slideFrom && p.slideFrom != 0 {
+					event.Slide = true
+				}
 				p.events[p.eventCount] = patternEvent{event: event, generation: p.generation}
 				p.eventCount++
 			}
@@ -212,6 +228,15 @@ func (e *Engine) scheduleTrack(track int) {
 			p.eventCount++
 		}
 	}
+	if p.forceValid && p.playingNote == p.forceOff.NoteID && p.forceOff.Sample >= startSample && p.forceOff.Sample < startSample+int64(frames) {
+		if p.eventCount == len(p.events) {
+			e.fault(16)
+			return
+		}
+		p.events[p.eventCount] = patternEvent{event: p.forceOff, generation: p.forceGen}
+		p.eventCount++
+	}
+	e.scheduleSwitchRelease(track, clock, startSample, frames)
 	for i := 1; i < p.eventCount; i++ {
 		current := p.events[i]
 		j := i
@@ -245,6 +270,182 @@ func patternEventBefore(a, b patternEvent, isDrum bool) bool {
 	return a.event.NoteID < b.event.NoteID
 }
 
+func (e *Engine) switchOnsetSample(track, slot int, tick int64) int64 {
+	step := tick / seq.TicksPerStep
+	if step&1 != 0 {
+		tick += seq.SwingDelayTicks(e.patterns[track].slots[slot].SwingPermille)
+	}
+	return e.transport.Clock().SampleAtTick(tick)
+}
+
+func (e *Engine) switchSlideTarget(track, slot int, tick int64, restart bool) bool {
+	p := &e.patterns[track]
+	if p.playingNote == 0 || p.playingGen != p.generation || (p.playingNote-1)/8+1 != tick/seq.TicksPerStep {
+		return false
+	}
+	return e.switchWouldSlide(track, slot, tick, restart)
+}
+
+func (e *Engine) switchWouldSlide(track, slot int, tick int64, restart bool) bool {
+	p := &e.patterns[track]
+	if p.active < 0 || slot < 0 || slot >= len(p.slots) || tick%seq.TicksPerStep != 0 {
+		return false
+	}
+	targetStep := tick / seq.TicksPerStep
+	sourceStep := targetStep - 1
+	if sourceStep < p.startStep {
+		return false
+	}
+	source := &p.slots[p.active]
+	sourceIndex := (sourceStep - p.startStep) % int64(source.Len)
+	old, err := seq.UnpackStep(source.Steps[sourceIndex])
+	if err != nil || !old.Gate || !old.Slide || !seq.ProbabilityHit(old.Probability, source.Seed, uint8(track), uint8(p.active), (sourceStep-p.startStep)/int64(source.Len), uint8(sourceIndex)) {
+		return false
+	}
+	target := &p.slots[slot]
+	localStep := targetStep
+	if restart {
+		localStep = 0
+	}
+	targetIndex := uint8(localStep % int64(target.Len))
+	next, err := seq.UnpackStep(target.Steps[targetIndex])
+	return err == nil && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, uint8(track), uint8(slot), localStep/int64(target.Len), targetIndex)
+}
+
+func (e *Engine) scheduleSwitchRelease(track int, clock seq.Clock, startSample int64, frames int) {
+	p := &e.patterns[track]
+	if p.active < 0 || p.drumSlots != nil {
+		return
+	}
+	for i := 0; i < e.pendingLen; i++ {
+		c := e.pending[i]
+		slot, restart := -1, false
+		switch c.Op {
+		case cmd.OpSelectPattern:
+			if int(c.Track) != track {
+				continue
+			}
+			slot, restart = int(c.Index), c.Arg1 == 1
+		case cmd.OpLaunchScene:
+			if int(c.Index) >= len(e.scenes) {
+				continue
+			}
+			binding := e.scenes[c.Index].Track[track]
+			if binding.Mode != SceneSlot || p.active == int8(binding.Slot) {
+				continue
+			}
+			slot = int(binding.Slot)
+		default:
+			continue
+		}
+		e.scheduleNormalRelease(track, slot, c.Tick, restart, clock, startSample, frames)
+	}
+	if e.songMode && (e.songIndex+1 < len(e.song) || e.loopSong) {
+		next := (e.songIndex + 1) % len(e.song)
+		binding := e.scenes[e.song[next].Scene].Track[track]
+		if binding.Mode == SceneSlot && p.active != int8(binding.Slot) {
+			e.scheduleNormalRelease(track, int(binding.Slot), e.songEndTick, false, clock, startSample, frames)
+		}
+	}
+}
+
+func (e *Engine) scheduleNormalRelease(track, slot int, switchTick int64, restart bool, clock seq.Clock, startSample int64, frames int) {
+	p := &e.patterns[track]
+	if e.switchWouldSlide(track, slot, switchTick, restart) {
+		return
+	}
+	release, ok := e.normalSlideRelease(track, switchTick, clock)
+	if !ok {
+		return
+	}
+	offSample := release.Sample
+	if offSample < startSample && p.playingNote == release.NoteID && startSample < clock.SampleAtTick(switchTick) {
+		offSample = startSample
+		release.Sample = offSample
+		release.Tick = clock.TickAtSample(startSample)
+	}
+	if offSample < startSample || offSample >= startSample+int64(frames) {
+		return
+	}
+	if p.eventCount == len(p.events) {
+		e.fault(16)
+		return
+	}
+	p.events[p.eventCount] = patternEvent{event: release, generation: p.generation}
+	p.eventCount++
+}
+
+func (e *Engine) normalSlideRelease(track int, switchTick int64, clock seq.Clock) (seq.Event, bool) {
+	p := &e.patterns[track]
+	if p.active < 0 || switchTick < seq.TicksPerStep || switchTick%seq.TicksPerStep != 0 {
+		return seq.Event{}, false
+	}
+	step := switchTick/seq.TicksPerStep - 1
+	local := step - p.startStep
+	source := &p.slots[p.active]
+	if local < 0 {
+		return seq.Event{}, false
+	}
+	index := uint8(local % int64(source.Len))
+	old, err := seq.UnpackStep(source.Steps[index])
+	if err != nil || !old.Gate || !old.Slide || !seq.ProbabilityHit(old.Probability, source.Seed, uint8(track), uint8(p.active), local/int64(source.Len), index) {
+		return seq.Event{}, false
+	}
+	startTick := step * seq.TicksPerStep
+	endTick := switchTick
+	if step&1 != 0 {
+		startTick += seq.SwingDelayTicks(source.SwingPermille)
+	}
+	if (step+1)&1 != 0 {
+		endTick += seq.SwingDelayTicks(source.SwingPermille)
+	}
+	last := old.Ratchet - 1
+	onset := seq.RatchetTick(startTick, endTick, old.Ratchet, last)
+	gateTicks := (endTick - onset) * int64(source.GatePercent) / 100
+	if gateTicks < 30 {
+		gateTicks = 30
+	}
+	offTick := onset + gateTicks
+	offSample := clock.SampleAtTick(offTick)
+	noteID := step*8 + int64(last) + 1
+	return seq.Event{Kind: seq.NoteOff, NoteID: noteID, Tick: offTick, Sample: offSample, Track: uint8(track), Slot: uint8(p.active), StepIndex: index}, true
+}
+
+// pendingSwitchSlides decides before the outgoing gate closes. The scene or
+// pattern command is already quantized in the pending queue by this point.
+func (e *Engine) pendingSwitchSlides(track int, off seq.Event) bool {
+	p := &e.patterns[track]
+	if p.active < 0 || p.playingNote != off.NoteID {
+		return false
+	}
+	switchTick := ((off.NoteID-1)/8 + 1) * seq.TicksPerStep
+	for i := 0; i < e.pendingLen; i++ {
+		c := e.pending[i]
+		if c.Tick != switchTick {
+			continue
+		}
+		switch c.Op {
+		case cmd.OpSelectPattern:
+			if int(c.Track) == track {
+				return e.switchSlideTarget(track, int(c.Index), switchTick, c.Arg1 == 1)
+			}
+		case cmd.OpLaunchScene:
+			if int(c.Index) < len(e.scenes) {
+				binding := e.scenes[c.Index].Track[track]
+				if binding.Mode == SceneSlot && p.active != int8(binding.Slot) {
+					return e.switchSlideTarget(track, int(binding.Slot), switchTick, false)
+				}
+			}
+		}
+	}
+	if e.songMode && e.songEndTick == switchTick && (e.songIndex+1 < len(e.song) || e.loopSong) {
+		next := (e.songIndex + 1) % len(e.song)
+		binding := e.scenes[e.song[next].Scene].Track[track]
+		return binding.Mode == SceneSlot && p.active != int8(binding.Slot) && e.switchSlideTarget(track, int(binding.Slot), switchTick, false)
+	}
+	return false
+}
+
 func (e *Engine) processPatternEvents(kind seq.EventKind) {
 	if !e.transport.Playing() || e.faulted {
 		return
@@ -263,9 +464,13 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			}
 			if kind == seq.NoteOff {
 				if p.playingNote == item.event.NoteID && p.playingGen == item.generation {
+					if p.slideFrom == item.event.NoteID && sample <= p.slideAt || e.pendingSwitchSlides(track, item.event) {
+						continue
+					}
 					e.noteOff(track, 0xffff)
 					p.playingNote = 0
 					p.heldValid = false
+					p.forceValid = false
 					e.emit(cmd.Message{Kind: cmd.NoteOff, Track: uint8(track), Tick: item.event.Tick})
 				}
 				continue
@@ -292,6 +497,8 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			if e.voices[track].kind != VoiceDrums {
 				p.playingNote, p.playingGen = event.NoteID, item.generation
 				p.heldValid = false
+				p.slideFrom, p.slideAt = 0, 0
+				p.forceValid = false
 			}
 			e.emit(cmd.Message{Kind: cmd.NoteOn, Track: uint8(track), A: uint16(event.Note), Tick: event.Tick})
 		}
