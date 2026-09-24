@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -93,6 +94,43 @@ func TestProjectCLI(t *testing.T) {
 	}
 	if output := run(1, "convert", badWithWarning, "-o", filepath.Join(t.TempDir(), "bad.json")); !strings.Contains(output, badWithWarning+":4:14: error CICADA-REFERENCE:") || strings.Contains(output, "warning CICADA-SLIDE-REST") {
 		t.Fatalf("conversion reported a warning instead of the error: %q", output)
+	}
+	var dense strings.Builder
+	dense.WriteString("cicada 1\n")
+	for track := 0; track < 16; track++ {
+		fmt.Fprintf(&dense, "track t%d acid {}\n", track)
+	}
+	denseSteps := strings.TrimSpace(strings.Repeat("1 ", 64))
+	for track := 0; track < 16; track++ {
+		for slot := 0; slot < 16; slot++ {
+			fmt.Fprintf(&dense, "pattern p%d_%d acid steps=64 slot=%d { %s }\n", track, slot, slot, denseSteps)
+		}
+	}
+	for slot := 0; slot < 16; slot++ {
+		fmt.Fprintf(&dense, "scene s%d {", slot)
+		for track := 0; track < 16; track++ {
+			fmt.Fprintf(&dense, " t%d=p%d_%d", track, track, slot)
+		}
+		dense.WriteString(" }\n")
+	}
+	dense.WriteString("song {")
+	for slot := 0; slot < 16; slot++ {
+		fmt.Fprintf(&dense, " s%d", slot)
+	}
+	dense.WriteString(" }\n")
+	densePath := filepath.Join(t.TempDir(), "dense.cicada")
+	if err := os.WriteFile(densePath, []byte(dense.String()), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if output := run(1, "validate", densePath); !strings.Contains(output, "CICADA-LIMIT: canonical project JSON exceeds 2 MiB") {
+		t.Fatalf("validation accepted unroundtrippable JSON: %q", output)
+	}
+	denseJSON := filepath.Join(t.TempDir(), "dense.json")
+	if output := run(1, "convert", densePath, "-o", denseJSON); !strings.Contains(output, "CICADA-LIMIT: canonical project JSON exceeds 2 MiB") {
+		t.Fatalf("conversion emitted unroundtrippable JSON: %q", output)
+	}
+	if _, err := os.Stat(denseJSON); !os.IsNotExist(err) {
+		t.Fatalf("failed conversion left a JSON file: %v", err)
 	}
 	if output := run(2, "convert", first, jsonPath); !strings.Contains(output, "usage:") {
 		t.Fatalf("usage output: %q", output)

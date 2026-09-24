@@ -3,6 +3,7 @@ package project
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -14,6 +15,8 @@ import (
 
 const maxJSONBytes = 2 << 20
 const maxJSONDepth = 64
+
+var errCanonicalJSONLimit = errors.New("canonical project JSON exceeds 2 MiB")
 
 func (e Expr) MarshalJSON() ([]byte, error) {
 	switch {
@@ -125,9 +128,19 @@ func CanonicalJSON(p *Project) ([]byte, error) {
 	if err := ValidateProject(p); err != nil {
 		return nil, err
 	}
+	encoded, err := canonicalProjectBytes(p)
+	if err != nil {
+		return nil, err
+	}
 	if _, err := ToSource(p); err != nil {
 		return nil, fmt.Errorf("project cannot be represented by source v1: %w", err)
 	}
+	return encoded, nil
+}
+
+// canonicalProjectBytes also runs during source lowering. Every project that
+// validates must fit the same canonical body that DecodeJSON can accept.
+func canonicalProjectBytes(p *Project) ([]byte, error) {
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return nil, err
@@ -143,6 +156,9 @@ func CanonicalJSON(p *Project) ([]byte, error) {
 		return nil, err
 	}
 	output.WriteByte('\n')
+	if output.Len() > maxJSONBytes {
+		return nil, errCanonicalJSONLimit
+	}
 	return output.Bytes(), nil
 }
 

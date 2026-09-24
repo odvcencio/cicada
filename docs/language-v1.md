@@ -140,6 +140,8 @@ cicada render score.cicada -o score.wav --rate 48000 --bits 24
 
 Source is the authoring form. Canonical JSON is the typed semantic
 interchange form; conversion back to source must preserve semantic meaning.
+Canonical JSON and JSON input are limited to 2 MiB; source validation reports
+`CICADA-LIMIT` when its canonical project would exceed that bound.
 An unedited CST can print the original bytes, including comments and pitch
 spelling. See [first-acid.cicada](../examples/first-acid.cicada) for a full
 score and the [live engine contract](live-engine.md) for playback boundaries.

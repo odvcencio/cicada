@@ -1,6 +1,7 @@
 package project
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -239,6 +240,13 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 	}
 	if err := ValidateProject(p); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
+	}
+	if _, err := canonicalProjectBytes(p); err != nil {
+		code := "CICADA-PARAM"
+		if errors.Is(err, errCanonicalJSONLimit) {
+			code = "CICADA-LIMIT"
+		}
+		return nil, append(diagnostics, notation.Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	return p, diagnostics
 }
