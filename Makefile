@@ -26,6 +26,7 @@ probe-wasm:
 build-kernel-wasm:
 	mkdir -p build
 	GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm
+	go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm
 
 test-kernel-wasm: build-kernel-wasm
 	go test -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
