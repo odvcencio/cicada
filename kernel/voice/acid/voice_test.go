@@ -55,6 +55,29 @@ func TestSlidePreservesPhaseAndEnvelope(t *testing.T) {
 	}
 }
 
+func TestEnvelopeCanOpenCutoffAboveEightKilohertz(t *testing.T) {
+	voice, err := New(48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	params := voice.Params()
+	params.Cutoff, params.EnvMod = 600, 1
+	if err := voice.SetParams(params); err != nil {
+		t.Fatal(err)
+	}
+	voice.meg = 1
+	if got := voice.cutoffHz(); math.Abs(got-19_200) > .02 {
+		t.Fatalf("full envelope cutoff = %g Hz, want 19200 Hz", got)
+	}
+	params.Cutoff = 8000
+	if err := voice.SetParams(params); err != nil {
+		t.Fatal(err)
+	}
+	if got := voice.cutoffHz(); got != 21_600 {
+		t.Fatalf("swept cutoff = %g Hz, want 0.45*sampleRate", got)
+	}
+}
+
 func TestAcidVoiceFiniteAndRelease(t *testing.T) {
 	for _, rate := range []int{44_100, 48_000, 96_000} {
 		for _, model := range []FilterModel{Diode, Ladder} {

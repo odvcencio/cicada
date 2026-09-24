@@ -61,14 +61,24 @@ func Tanh(x float64) float64 {
 		(135135 + x2*(62370+x2*(3150+28*x2)))
 }
 
-// TanSmall approximates tan(x) for |x| <= 0.3, the coefficient range of
-// Cicada's oversampled acid filters at supported rates and cutoffs.
+// TanSmall approximates tan(x) through the acid filter's 0.45*sampleRate
+// cutoff limit. Half-angle reduction keeps the polynomial in its accurate
+// central range when the envelope opens the filter above 8 kHz.
 func TanSmall(x float64) float64 {
-	if x < -0.3 {
-		x = -0.3
-	} else if x > 0.3 {
-		x = 0.3
+	const limit = 0.45 * math.Pi / 2
+	if x < -limit {
+		x = -limit
+	} else if x > limit {
+		x = limit
 	}
+	if x < -0.3 || x > 0.3 {
+		half := tanCentral(x * .5)
+		return 2 * half / (1 - half*half)
+	}
+	return tanCentral(x)
+}
+
+func tanCentral(x float64) float64 {
 	x2 := x * x
 	return x * (1 + x2*(1.0/3+x2*(2.0/15+x2*(17.0/315+x2*(62.0/2835)))))
 }

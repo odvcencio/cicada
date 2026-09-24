@@ -46,13 +46,13 @@ func TestTanhGridAndAnchor(t *testing.T) {
 func TestTanSmallCoefficientRange(t *testing.T) {
 	maxError := 0.0
 	for i := 0; i <= 100_000; i++ {
-		x := -0.3 + 0.6*float64(i)/100_000
+		x := -.45*math.Pi/2 + .45*math.Pi*float64(i)/100_000
 		err := math.Abs(TanSmall(x) - math.Tan(x))
 		if err > maxError {
 			maxError = err
 		}
 	}
-	if maxError > 2e-8 {
+	if maxError > 1e-6 {
 		t.Fatalf("tan coefficient max error %g", maxError)
 	}
 }

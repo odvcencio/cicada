@@ -14,8 +14,7 @@ func feedback(value, savage float64) float64 {
 func (f *filterState) processLadder(input, G, g, k, savage float64) float64 {
 	inv := 1 / (1 + g)
 	s1, s2, s3, s4 := f.state[0]*inv, f.state[1]*inv, f.state[2]*inv, f.state[3]*inv
-	g2, g3, g4 := G*G, G*G*G, G*G*G*G
-	sigma := g3*s1 + g2*s2 + G*s3 + s4
+	g4 := G * G * G * G
 	denominator := 1 + k*g4
 	u := fastmath.Tanh((input - k*feedback(f.last, savage)) / (denominator))
 	var y1, y2, y3, y4 float64
@@ -25,7 +24,9 @@ func (f *filterState) processLadder(input, G, g, k, savage float64) float64 {
 		y3 = G*y2 + s3
 		y4 = G*y3 + s4
 		if pass == 0 {
-			u = fastmath.Tanh((input - k*feedback(y4, savage) - k*sigma) / (denominator))
+			// The current estimate already contains the saved stage states.
+			// Subtracting their sum again overdrives the feedback loop.
+			u = fastmath.Tanh((input - k*feedback(y4, savage)) / denominator)
 		}
 	}
 	f.state[0] = flush(2*y1 - f.state[0])

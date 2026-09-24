@@ -237,9 +237,7 @@ func (v *Voice) Next() float32 {
 	}
 	pre := fastmath.Tanh(v.drivePre*osc) * v.drivePost
 	first, second := v.up.Upsample(pre)
-	cv := v.params.EnvMod*5*v.meg + v.sweepStrength*v.meg*2.5*v.params.Accent
-	cutoff := v.params.Cutoff * fastmath.Exp2(cv)
-	cutoff = max(20, min(cutoff, min(8000, .45*v.sampleRate)))
+	cutoff := v.cutoffHz()
 	g := fastmath.TanSmall(math.Pi * cutoff / (2 * v.sampleRate))
 	first = v.filter(first, g)
 	second = v.filter(second, g)
@@ -260,6 +258,11 @@ func (v *Voice) Next() float32 {
 		y = -4
 	}
 	return float32(y)
+}
+
+func (v *Voice) cutoffHz() float64 {
+	cv := v.params.EnvMod*5*v.meg + v.sweepStrength*v.meg*2.5*v.params.Accent
+	return max(20, min(v.params.Cutoff*fastmath.Exp2(cv), .45*v.sampleRate))
 }
 
 func (v *Voice) filter(input, g float64) float64 {
