@@ -54,6 +54,7 @@ type TrackConfig struct {
 	Mute        bool
 	InsertDrive *fx.DriveParams
 	SendA       float64
+	SendB       float64
 	SendPre     bool
 }
 
@@ -77,6 +78,7 @@ type Config struct {
 	Song       []SongEntry
 	LoopSong   bool
 	DelayA     *fx.DelayParams
+	ReverbB    *fx.ReverbParams
 }
 
 type voiceSlot struct {
@@ -88,6 +90,7 @@ type voiceSlot struct {
 	insert  *fx.Drive
 	align   *mix.Delay
 	sendA   float32
+	sendB   float32
 	sendPre bool
 	muted   bool
 }
@@ -101,6 +104,7 @@ type Engine struct {
 	transport                    seq.Transport
 	limiter                      *mix.Limiter
 	delayA                       *fx.Delay
+	reverbB                      *fx.Reverb
 	commands                     [512]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [256]cmd.Message
@@ -148,6 +152,16 @@ func New(cfg Config) (*Engine, error) {
 		}
 		e.delayA.Reset()
 	}
+	if cfg.ReverbB != nil {
+		e.reverbB, err = fx.NewReverb(cfg.SampleRate)
+		if err == nil {
+			err = e.reverbB.SetParams(*cfg.ReverbB)
+		}
+		if err != nil {
+			return nil, err
+		}
+		e.reverbB.Reset()
+	}
 	voices := 0
 	hasDrive := false
 	for i := 0; i < cfg.Tracks; i++ {
@@ -171,10 +185,13 @@ func New(cfg Config) (*Engine, error) {
 		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && e.delayA == nil {
 			return nil, Error("track send A is invalid or has no delay return")
 		}
+		if math.IsNaN(spec.SendB) || math.IsInf(spec.SendB, 0) || spec.SendB < 0 || spec.SendB > 1 || spec.SendB > 0 && e.reverbB == nil {
+			return nil, Error("track send B is invalid or has no reverb return")
+		}
 		v := &e.voices[i]
 		v.kind = spec.Kind
 		v.mix = mix.NewTrack(gain, spec.Pan, spec.Mute)
-		v.sendA, v.sendPre, v.muted = float32(spec.SendA), spec.SendPre, spec.Mute
+		v.sendA, v.sendB, v.sendPre, v.muted = float32(spec.SendA), float32(spec.SendB), spec.SendPre, spec.Mute
 		if spec.InsertDrive != nil {
 			if spec.Kind == VoiceOff {
 				return nil, Error("silent track cannot have a drive insert")
@@ -373,6 +390,9 @@ func (e *Engine) Reset() {
 	if e.delayA != nil {
 		e.delayA.Reset()
 	}
+	if e.reverbB != nil {
+		e.reverbB.Reset()
+	}
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0
@@ -439,7 +459,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			return
 		}
 		var dry mix.Dry
-		var sendL, sendR float32
+		var sendAL, sendAR, sendBL, sendBR float32
 		for track := 0; track < e.tracks; track++ {
 			v := &e.voices[track]
 			var left, right float32
@@ -479,20 +499,39 @@ func (e *Engine) Render(outL, outR []float32) {
 			if e.layerMask&(1<<track) != 0 && v.kind != VoiceOff {
 				if v.sendA > 0 && !v.muted {
 					if v.sendPre {
-						sendL += left * v.sendA
-						sendR += right * v.sendA
+						sendAL += left * v.sendA
+						sendAR += right * v.sendA
 					} else {
-						sendL += left * v.mix.Left * v.sendA
-						sendR += right * v.mix.Right * v.sendA
+						sendAL += left * v.mix.Left * v.sendA
+						sendAR += right * v.mix.Right * v.sendA
+					}
+				}
+				if v.sendB > 0 && !v.muted {
+					if v.sendPre {
+						sendBL += left * v.sendB
+						sendBR += right * v.sendB
+					} else {
+						sendBL += left * v.mix.Left * v.sendB
+						sendBR += right * v.mix.Right * v.sendB
 					}
 				}
 				dry.Add(left, right, v.mix)
 			}
 		}
 		if e.delayA != nil {
-			returnL, returnR := e.delayA.Process(sendL, sendR)
+			returnL, returnR := e.delayA.Process(sendAL, sendAR)
 			if e.delayA.Fault() {
 				e.fault(14)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return
+			}
+			dry.AddReturn(returnL, returnR)
+		}
+		if e.reverbB != nil {
+			returnL, returnR := e.reverbB.Process(sendBL, sendBR)
+			if e.reverbB.Fault() {
+				e.fault(15)
 				clear(outL[frame:])
 				clear(outR[frame:])
 				return
@@ -615,6 +654,9 @@ func (e *Engine) apply(c cmd.Command) {
 		e.limiter.Reset()
 		if e.delayA != nil {
 			e.delayA.Reset()
+		}
+		if e.reverbB != nil {
+			e.reverbB.Reset()
 		}
 		for i := 0; i < e.tracks; i++ {
 			e.patterns[i].playingNote = 0
@@ -752,6 +794,9 @@ func (e *Engine) emit(message cmd.Message) {
 			if e.delayA != nil {
 				e.delayA.Reset()
 			}
+			if e.reverbB != nil {
+				e.reverbB.Reset()
+			}
 			return
 		}
 	}
@@ -772,6 +817,9 @@ func (e *Engine) fault(code uint16) {
 	e.limiter.Reset()
 	if e.delayA != nil {
 		e.delayA.Reset()
+	}
+	if e.reverbB != nil {
+		e.reverbB.Reset()
 	}
 	e.emit(cmd.Message{Kind: cmd.Fault, Track: 0xff, A: code, Tick: e.transport.Tick()})
 }

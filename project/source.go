@@ -69,7 +69,7 @@ func ToSource(p *Project) ([]byte, error) {
 	for _, track := range p.Tracks {
 		var out strings.Builder
 		out.WriteString("track " + track.ID + " " + track.Kind)
-		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0 || track.Mixer.Insert != "none" || track.Mixer.SendA != 0 || track.Mixer.SendPre
+		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0 || track.Mixer.Insert != "none" || track.Mixer.SendA != 0 || track.Mixer.SendB != 0 || track.Mixer.SendPre
 		if len(track.Params) == 0 && !hasMixer {
 			out.WriteString(" {}")
 		} else {
@@ -87,6 +87,9 @@ func ToSource(p *Project) ([]byte, error) {
 			}
 			if track.Mixer.SendA != 0 {
 				out.WriteString("  send_a = " + decimal(track.Mixer.SendA) + "\n")
+			}
+			if track.Mixer.SendB != 0 {
+				out.WriteString("  send_b = " + decimal(track.Mixer.SendB) + "\n")
 			}
 			if track.Mixer.SendPre {
 				out.WriteString("  send_pre = true\n")

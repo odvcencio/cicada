@@ -200,6 +200,10 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 				if _, err := DelayParamsFromValues(map[string]Value{param.Name: value}); err != nil {
 					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 				}
+			} else if source.Name == "reverb" {
+				if _, err := ReverbParamsFromValues(map[string]Value{param.Name: value}); err != nil {
+					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
+				}
 			}
 		}
 		p.Effects = append(p.Effects, effect)
@@ -212,7 +216,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		}
 		track.Mixer = mixer
 		for _, param := range source.Params {
-			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_pre" {
+			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" {
 				continue
 			}
 			value, err := projectValue(param.Value)

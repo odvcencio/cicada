@@ -15,7 +15,7 @@ func CompileDrumParams(track notation.Track) ([drum.LaneCount]drum.Params, error
 		values[lane] = drum.DefaultParams(lane)
 	}
 	for _, source := range track.Params {
-		if source.Name == "level" || source.Name == "pan" || source.Name == "insert" || source.Name == "send_a" || source.Name == "send_pre" {
+		if source.Name == "level" || source.Name == "pan" || source.Name == "insert" || source.Name == "send_a" || source.Name == "send_b" || source.Name == "send_pre" {
 			continue
 		}
 		parts := strings.SplitN(source.Name, "_", 2)
