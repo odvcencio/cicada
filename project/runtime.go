@@ -5,6 +5,7 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
 )
@@ -43,11 +44,24 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	for _, kit := range p.Kits {
 		kits[kit.ID] = kit
 	}
+	var driveParams *fx.DriveParams
+	for _, effect := range p.Effects {
+		if effect.ID == "drive" {
+			params, err := DriveParamsFromValues(effect.Params)
+			if err != nil {
+				return cfg, err
+			}
+			driveParams = &params
+		}
+	}
 	trackIndex := make(map[string]int, len(p.Tracks))
 	for ti, track := range p.Tracks {
 		trackIndex[track.ID] = ti
 		config := &cfg.Track[ti]
 		config.GainDB, config.GainSet, config.Pan, config.Mute = track.Mixer.GainDB, true, track.Mixer.Pan, track.Mixer.Mute
+		if track.Mixer.Insert == "drive" {
+			config.InsertDrive = driveParams
+		}
 		switch track.Kind {
 		case "acid":
 			config.Kind = engine.VoiceAcid

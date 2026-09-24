@@ -28,8 +28,18 @@ func ValidateProject(p *Project) error {
 	if p.Instruments == nil || p.Kits == nil || p.Tracks == nil || p.Patterns == nil || p.Scenes == nil || p.Song == nil || p.Effects == nil {
 		return fmt.Errorf("project arrays must be explicit")
 	}
-	if len(p.Effects) != 0 {
-		return fmt.Errorf("effects are not implemented in M1")
+	effects := map[string]bool{}
+	for _, effect := range p.Effects {
+		if effect.ID != "drive" {
+			return fmt.Errorf("effect %s is not implemented", effect.ID)
+		}
+		if effects[effect.ID] || effect.Params == nil {
+			return fmt.Errorf("duplicate or incomplete effect %s", effect.ID)
+		}
+		effects[effect.ID] = true
+		if _, err := DriveParamsFromValues(effect.Params); err != nil {
+			return fmt.Errorf("effect %s: %w", effect.ID, err)
+		}
 	}
 	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 || len(p.Song) == 0 {
 		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
@@ -130,8 +140,11 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
-		if err := validateDryMixer(track.Mixer); err != nil {
+		if err := validateMixer(track.Mixer); err != nil {
 			return fmt.Errorf("track %s: %w", track.ID, err)
+		}
+		if track.Mixer.Insert != "none" && !effects[track.Mixer.Insert] {
+			return fmt.Errorf("track %s references undeclared insert %s", track.ID, track.Mixer.Insert)
 		}
 	}
 	allocatedVoices := 0

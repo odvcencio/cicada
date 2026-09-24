@@ -60,7 +60,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 		overrides := make(map[string]string, len(track.Params))
 		for _, param := range track.Params {
-			if param.Name == "level" || param.Name == "pan" {
+			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" {
 				continue
 			}
 			overrides[param.Name] = param.Value
@@ -68,7 +68,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		if _, err := instrument.Lower(program, overrides); err != nil {
 			position := parameterErrorPosition(track, func(single notation.Track) error {
 				param := single.Params[0]
-				if param.Name == "level" || param.Name == "pan" {
+				if param.Name == "level" || param.Name == "pan" || param.Name == "insert" {
 					return nil
 				}
 				_, err := instrument.Lower(program, map[string]string{param.Name: param.Value})

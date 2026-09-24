@@ -10,6 +10,7 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
@@ -36,12 +37,15 @@ type Report struct {
 	ClippedSamples  int64
 	TailFrames      int64
 	writtenFrames   int64
+	skipFrames      int
 }
 
 type trackRuntime struct {
 	name           string
 	voice          monoVoice
 	mixer          mix.Track
+	insert         *fx.Drive
+	align          *mix.Delay
 	drums          *drum.Kit
 	drumPatterns   map[string][drum.LaneCount]*seq.Pattern
 	activeDrums    [drum.LaneCount]*seq.Pattern
@@ -124,7 +128,8 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	if report.Bars < 1 || report.Bars > 256 {
 		return report, fmt.Errorf("render supports 1 to 256 bars")
 	}
-	if compiled, diagnostics := project.FromScore(score); compiled == nil {
+	semantic, diagnostics := project.FromScore(score)
+	if semantic == nil {
 		for _, diagnostic := range diagnostics {
 			if diagnostic.Severity == "error" {
 				return report, fmt.Errorf("%s: %s", diagnostic.Code, diagnostic.Message)
@@ -139,9 +144,17 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	if dataBytes > int64(^uint32(0))-60 {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
-	tracks, err := compileTracks(score, opts.SampleRate)
+	tracks, err := compileTracks(score, semantic, opts.SampleRate)
 	if err != nil {
 		return report, err
+	}
+	insertLatency := 0
+	for i := range tracks {
+		if tracks[i].insert != nil {
+			insertLatency = tracks[i].insert.LatencyFrames()
+			report.skipFrames = insertLatency
+			break
+		}
 	}
 	limiter, err := mix.NewLimiter(opts.SampleRate)
 	if err != nil {
@@ -282,6 +295,14 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		}
 		position += int64(frames)
 	}
+	if insertLatency != 0 {
+		// Drive and the aligned dry tracks have the same 15-frame latency.
+		// Drain it, then omit the initial 15 silent output frames so the WAV
+		// remains aligned to the score and has exactly report.Frames frames.
+		if err := renderBlock(writer, tracks, limiter, nil, position, insertLatency, block, &report); err != nil {
+			return report, err
+		}
+	}
 	if err := flushLimiter(writer, limiter, block, &report); err != nil {
 		return report, err
 	}
@@ -294,7 +315,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	return report, nil
 }
 
-func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error) {
+func compileTracks(score *notation.Score, semantic *project.Project, sampleRate int) ([]trackRuntime, error) {
 	programs := make(map[string]*instrument.Program, len(score.Instruments))
 	for _, definition := range score.Instruments {
 		program, ds := instrument.Compile(definition)
@@ -413,7 +434,7 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 		}
 		overrides := make(map[string]string, len(source.Params))
 		for _, param := range source.Params {
-			if param.Name == "level" || param.Name == "pan" {
+			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" {
 				continue
 			}
 			overrides[param.Name] = param.Value
@@ -438,6 +459,46 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 			track.patterns[pattern.Name] = compiled[0].Pattern
 		}
 		tracks = append(tracks, track)
+	}
+	var driveParams *fx.DriveParams
+	for _, effect := range semantic.Effects {
+		if effect.ID == "drive" {
+			params, err := project.DriveParamsFromValues(effect.Params)
+			if err != nil {
+				return nil, err
+			}
+			driveParams = &params
+		}
+	}
+	if driveParams != nil {
+		hasInsert := false
+		for _, track := range semantic.Tracks {
+			if track.Mixer.Insert == "drive" {
+				hasInsert = true
+				break
+			}
+		}
+		if hasInsert {
+			for i := range tracks {
+				if semantic.Tracks[i].Mixer.Insert == "drive" {
+					insert, err := fx.NewDrive(sampleRate)
+					if err != nil {
+						return nil, err
+					}
+					if err := insert.SetParams(*driveParams); err != nil {
+						return nil, err
+					}
+					insert.Reset()
+					tracks[i].insert = insert
+				} else {
+					align, err := mix.NewDelay(15)
+					if err != nil {
+						return nil, err
+					}
+					tracks[i].align = align
+				}
+			}
+		}
 	}
 	return tracks, nil
 }
@@ -607,16 +668,25 @@ func renderBlock(w io.Writer, tracks []trackRuntime, limiter *mix.Limiter, event
 		}
 		var dry mix.Dry
 		for ti := range tracks {
+			var l, r float32
 			if tracks[ti].drums != nil {
-				l, r := tracks[ti].drums.NextStereo()
-				dry.Add(l, r, tracks[ti].mixer)
+				l, r = tracks[ti].drums.NextStereo()
 				if tracks[ti].drums.Fault() {
 					return fmt.Errorf("drum DSP fault on %s", tracks[ti].name)
 				}
 			} else {
 				mono := tracks[ti].voice.Next()
-				dry.Add(mono, mono, tracks[ti].mixer)
+				l, r = mono, mono
 			}
+			if tracks[ti].insert != nil {
+				l, r = tracks[ti].insert.Process(l, r)
+				if tracks[ti].insert.Fault() {
+					return fmt.Errorf("drive DSP fault on %s", tracks[ti].name)
+				}
+			} else if tracks[ti].align != nil {
+				l, r = tracks[ti].align.Process(l, r)
+			}
+			dry.Add(l, r, tracks[ti].mixer)
 		}
 		left, right := dry.Music()
 		if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {
@@ -633,6 +703,10 @@ func renderBlock(w io.Writer, tracks []trackRuntime, limiter *mix.Limiter, event
 			return fmt.Errorf("non-finite master input")
 		}
 		if !ready {
+			continue
+		}
+		if report.skipFrames > 0 {
+			report.skipFrames--
 			continue
 		}
 		writePCMFrame(buffer[outFrames*6:], outL, outR, limiter.Ceiling(), report)

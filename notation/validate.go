@@ -156,7 +156,7 @@ func Validate(s *Score) []Diagnostic {
 			seen[param.Name] = true
 			if !validTrackParam(t.Kind, param.Name, instruments) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
-			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" {
+			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" && param.Name != "insert" {
 				add("CICADA-UNSUPPORTED", "mixer parameter "+param.Name+" is not implemented", "error", param.Position)
 			}
 		}
@@ -345,9 +345,30 @@ func Validate(s *Score) []Diagnostic {
 		}
 		add("CICADA-LIMIT", "song must contain at least one scene entry", "error", position)
 	}
+	declaredEffects := map[string]bool{}
 	for _, effect := range s.Effects {
 		checkID(effect.Name, effect.Position)
-		add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
+		if declaredEffects[effect.Name] {
+			add("CICADA-DUPLICATE", "duplicate effect "+effect.Name, "error", effect.Position)
+		}
+		declaredEffects[effect.Name] = true
+		if effect.Name != "drive" {
+			add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
+		}
+		seen := map[string]bool{}
+		for _, param := range effect.Params {
+			if seen[param.Name] {
+				add("CICADA-DUPLICATE", "duplicate effect parameter "+param.Name, "error", param.Position)
+			}
+			seen[param.Name] = true
+		}
+	}
+	for _, track := range s.Tracks {
+		for _, param := range track.Params {
+			if param.Name == "insert" && param.Value != "none" && !declaredEffects[param.Value] {
+				add("CICADA-REFERENCE", "track references undeclared insert "+param.Value, "error", param.ValuePosition)
+			}
+		}
 	}
 	return ds
 }
