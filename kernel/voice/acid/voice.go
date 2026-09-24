@@ -251,12 +251,15 @@ func (v *Voice) Next() float32 {
 	}
 	delta := v.pitchDelta
 	saw := v.oscA.saw(v.phaseA)
-	shiftedPhase := v.phaseA - v.params.PulseWidth
-	if shiftedPhase < 0 {
-		shiftedPhase++
+	osc := saw
+	if v.params.Wave != 0 {
+		shiftedPhase := v.phaseA - v.params.PulseWidth
+		if shiftedPhase < 0 {
+			shiftedPhase++
+		}
+		square := v.oscA.saw(shiftedPhase) - saw + 2*v.params.PulseWidth - 1
+		osc = saw*(1-v.params.Wave) + square*v.params.Wave
 	}
-	square := v.oscA.saw(shiftedPhase) - saw + 2*v.params.PulseWidth - 1
-	osc := saw*(1-v.params.Wave) + square*v.params.Wave
 	v.phaseA = fraction(v.phaseA + delta)
 	if v.params.Detune > 0 {
 		secondDelta := min(delta*v.detuneRatio, .49)
