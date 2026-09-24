@@ -121,8 +121,6 @@ func compiledScenePattern(score *notation.Score, sceneName string) (seq.Pattern,
 
 func TestGenerateDefaultSeedPopulation(t *testing.T) {
 	rootOnsets, totalOnsets := 0, 0
-	accentGateFailures := 0
-	firstAccentFailure := ""
 	for scale := Minor; scale <= Blues; scale++ {
 		for seed := uint64(0); seed < 10_000; seed++ {
 			params := DefaultParams()
@@ -178,10 +176,7 @@ func TestGenerateDefaultSeedPopulation(t *testing.T) {
 					t.Fatalf("distribution gate: scale=%d seed=%d bar=%d active cells=%d root=%t", scale, seed, index, activeCells, rootSeen)
 				}
 				if accents < 2 || accents > 6 {
-					accentGateFailures++
-					if firstAccentFailure == "" {
-						firstAccentFailure = fmt.Sprintf("scale=%d seed=%d bar=%d accents=%d", scale, seed, index, accents)
-					}
+					t.Fatalf("accent distribution: scale=%d seed=%d bar=%d accents=%d", scale, seed, index, accents)
 				}
 			}
 			base, _, err := buildBaseBar(p)
@@ -202,5 +197,52 @@ func TestGenerateDefaultSeedPopulation(t *testing.T) {
 	if rootShare < .30 || rootShare > .45 {
 		t.Fatalf("root class share %.3f outside 30–45%% over %d onsets", rootShare, totalOnsets)
 	}
-	t.Logf("root-class share: %.3f; accent gate failures: %d/320000 bars; first: %s", rootShare, accentGateFailures, firstAccentFailure)
+	t.Logf("root-class share: %.3f; all 320000 bars have 2–6 accents", rootShare)
+}
+
+func TestDefaultStructureAccentRepairPreservesDrawTrace(t *testing.T) {
+	params := DefaultParams()
+	params.Seed, params.Scale = 97, Minor
+	p, err := normalize(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base, baseTrace, err := buildBaseBar(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawB, mutateTrace, err := mutateNotes(base, p.Seed^0xB, []Op{{Kind: NudgeDegree}, {Kind: ToggleAccent}, {Kind: ToggleSlide}}, 0, p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rawAccents := 0
+	for _, note := range rawB {
+		if note.active && !note.tie && note.accent {
+			rawAccents++
+		}
+	}
+	if rawAccents != 1 {
+		t.Fatalf("seed 97 raw B accents = %d, want 1", rawAccents)
+	}
+	result, err := Generate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantTrace := append(baseTrace, mutateTrace...)
+	if !reflect.DeepEqual(result.Trace, wantTrace) {
+		t.Fatal("accent repair changed the seeded draw trace")
+	}
+	accents := 0
+	for stepIndex := uint8(0); stepIndex < result.Bars[2].Len; stepIndex++ {
+		step, err := seq.UnpackStep(result.Bars[2].Steps[stepIndex])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if step.Gate && !step.Tie && step.Accent {
+			accents++
+		}
+	}
+	if accents != 2 {
+		t.Fatalf("seed 97 repaired B accents = %d, want 2", accents)
+	}
 }
