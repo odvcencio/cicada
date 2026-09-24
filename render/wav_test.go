@@ -1,0 +1,73 @@
+package render
+
+import (
+	"bytes"
+	"encoding/binary"
+	"io"
+	"testing"
+
+	"m31labs.dev/cicada/notation"
+)
+
+const testScore = `cicada 1
+tempo 120
+key a minor
+instrument tone {
+  voice mono {
+    let shape = env(gate, 120ms);
+    out = sine(pitch) * shape;
+  }
+}
+track lead tone {}
+pattern one notes steps=4 { 1 . . . }
+scene main { lead=one }
+song { main }
+`
+
+func TestWAVDeterministicAndPlayable(t *testing.T) {
+	score, ds := notation.Parse([]byte(testScore))
+	if len(ds) != 0 {
+		t.Fatalf("score diagnostics: %+v", ds)
+	}
+	var first, second bytes.Buffer
+	report, err := WAV(score, Options{SampleRate: 48_000}, &first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WAV(score, Options{SampleRate: 48_000}, &second); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.Bytes(), second.Bytes()) {
+		t.Fatal("same score produced different PCM")
+	}
+	data := first.Bytes()
+	if report.Bars != 1 || report.Frames != 96_000 || len(data) != 44+int(report.Frames)*6 || report.Peak < 0.01 {
+		t.Fatalf("unexpected report or size: %+v, %d bytes", report, len(data))
+	}
+	if string(data[:4]) != "RIFF" || string(data[8:12]) != "WAVE" || string(data[36:40]) != "data" {
+		t.Fatal("invalid WAV header")
+	}
+	if got := binary.LittleEndian.Uint32(data[40:44]); got != uint32(report.Frames)*6 {
+		t.Fatalf("data chunk is %d bytes", got)
+	}
+	if got := binary.LittleEndian.Uint32(data[24:28]); got != 48_000 {
+		t.Fatalf("sample rate is %d", got)
+	}
+	if bytes.Equal(data[44:], make([]byte, len(data)-44)) {
+		t.Fatal("audio is silent")
+	}
+}
+
+type shortWriter struct{}
+
+func (shortWriter) Write(p []byte) (int, error) { return len(p) / 2, nil }
+
+func TestWAVRejectsShortWrite(t *testing.T) {
+	score, ds := notation.Parse([]byte(testScore))
+	if len(ds) != 0 {
+		t.Fatalf("score diagnostics: %+v", ds)
+	}
+	if _, err := WAV(score, Options{}, shortWriter{}); err != io.ErrShortWrite {
+		t.Fatalf("want short write, got %v", err)
+	}
+}

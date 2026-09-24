@@ -1,0 +1,61 @@
+cicada 1
+title "First acid"
+tempo 138
+key a minor
+seed 4242
+
+track bass acid {
+  cutoff = 620hz
+  reso = 0.62
+  envmod = 0.7
+  decay = 380ms
+  accent = 0.8
+  drive = 0.25
+  filter = diode
+}
+
+track drums drums {
+  bd_tune = 55hz
+  bd_decay = 400ms
+  ch_decay = 60ms
+}
+
+instrument glassbass {
+  param cutoff: hz = 720hz;
+  param bite: unit = 0.65;
+  voice mono {
+    let osc = saw(pitch);
+    let sub = square(pitch / 2);
+    let tone = mix(osc, sub, 0.25);
+    let shape = env(gate, 380ms);
+    out = ladder(tone, cutoff * exp2(shape * 3), bite) * shape;
+  }
+}
+
+track lead glassbass { cutoff = 900hz }
+
+phrase hook acid { 1^ . 1~ 5 . 1 7, . }
+
+pattern bass-a acid steps=16 swing=54 gate=55 {
+  1^ . 1~ 5 . 1 7, . | 1^ . 1'~ 1 5^ 3 1 .
+}
+
+pattern bass-b acid steps=16 swing=54 gate=55 {
+  use hook
+  use hook transpose=12
+}
+
+pattern lead-a notes steps=16 {
+  5 . . . 3 . . . | 1' . . . 7 . . .
+}
+
+pattern beat-a drums steps=16 {
+  bd: X...x...X...x.x.;
+  sd: ....X.......X..x;
+  ch: x.x.x.x.x.x.x.x.;
+  oh: ..x...x...x...x.;
+}
+
+scene main { bass=bass-a drums=beat-a lead=lead-a }
+scene outro { bass=bass-b drums=beat-a lead=lead-a }
+song { main*8 outro*8 }
