@@ -32,6 +32,33 @@ func TestSixLanesDeterministicAndFinite(t *testing.T) {
 	}
 }
 
+func TestDefaultLanePeakAndDC(t *testing.T) {
+	for _, rate := range []int{44_100, 48_000, 96_000} {
+		for lane := Lane(0); lane < LaneCount; lane++ {
+			kit, err := New(rate, 4242)
+			if err != nil {
+				t.Fatal(err)
+			}
+			kit.Hit(lane, 127, false)
+			peak, sum := 0.0, 0.0
+			frames := 3 * rate
+			for sample := 0; sample < frames; sample++ {
+				left, right := kit.NextStereo()
+				// Undo the equal-power center pan to measure the lane's
+				// pre-master level without counting pan as attenuation.
+				mono := (float64(left) + float64(right)) / math.Sqrt2
+				peak = math.Max(peak, math.Abs(mono))
+				sum += mono
+			}
+			peakDB := 20 * math.Log10(peak)
+			dcDB := 20 * math.Log10(math.Abs(sum/float64(frames)))
+			if peakDB < -6 || peakDB > -1 || dcDB > -60 || kit.Fault() {
+				t.Errorf("%d Hz %s: peak %.2f dBFS, DC %.2f dBFS, fault=%v", rate, Names[lane], peakDB, dcDB, kit.Fault())
+			}
+		}
+	}
+}
+
 func TestClosedHatChokesOpenHat(t *testing.T) {
 	kit, err := New(48_000, 7)
 	if err != nil {
