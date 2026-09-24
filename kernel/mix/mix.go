@@ -24,6 +24,11 @@ func (d *Dry) Add(left, right float32, track Track) {
 	d.Right += right * track.Right
 }
 
+func (d *Dry) AddReturn(left, right float32) {
+	d.Left += left
+	d.Right += right
+}
+
 func (d Dry) Music() (float32, float32) {
 	const musicGain = .7079457843841379 // -3 dB
 	return d.Left * musicGain, d.Right * musicGain

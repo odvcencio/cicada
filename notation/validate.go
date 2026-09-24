@@ -156,7 +156,7 @@ func Validate(s *Score) []Diagnostic {
 			seen[param.Name] = true
 			if !validTrackParam(t.Kind, param.Name, instruments) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
-			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" && param.Name != "insert" {
+			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" && param.Name != "insert" && param.Name != "send_a" && param.Name != "send_pre" {
 				add("CICADA-UNSUPPORTED", "mixer parameter "+param.Name+" is not implemented", "error", param.Position)
 			}
 		}
@@ -352,7 +352,7 @@ func Validate(s *Score) []Diagnostic {
 			add("CICADA-DUPLICATE", "duplicate effect "+effect.Name, "error", effect.Position)
 		}
 		declaredEffects[effect.Name] = true
-		if effect.Name != "drive" {
+		if effect.Name != "drive" && effect.Name != "delay" {
 			add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
 		}
 		seen := map[string]bool{}
@@ -367,6 +367,12 @@ func Validate(s *Score) []Diagnostic {
 		for _, param := range track.Params {
 			if param.Name == "insert" && param.Value != "none" && !declaredEffects[param.Value] {
 				add("CICADA-REFERENCE", "track references undeclared insert "+param.Value, "error", param.ValuePosition)
+			}
+			if param.Name == "send_a" {
+				value, err := strconv.ParseFloat(param.Value, 64)
+				if err == nil && value > 0 && !declaredEffects["delay"] {
+					add("CICADA-REFERENCE", "send_a requires a declared delay effect", "error", param.ValuePosition)
+				}
 			}
 		}
 	}

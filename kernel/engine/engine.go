@@ -53,6 +53,8 @@ type TrackConfig struct {
 	Pan         float64
 	Mute        bool
 	InsertDrive *fx.DriveParams
+	SendA       float64
+	SendPre     bool
 }
 
 // PatternBank is immutable project data copied into the engine by New.
@@ -74,16 +76,20 @@ type Config struct {
 	Scenes     []Scene
 	Song       []SongEntry
 	LoopSong   bool
+	DelayA     *fx.DelayParams
 }
 
 type voiceSlot struct {
-	kind   VoiceKind
-	acid   *acid.Voice
-	drums  *drum.Kit
-	graph  *graph.Voice
-	mix    mix.Track
-	insert *fx.Drive
-	align  *mix.Delay
+	kind    VoiceKind
+	acid    *acid.Voice
+	drums   *drum.Kit
+	graph   *graph.Voice
+	mix     mix.Track
+	insert  *fx.Drive
+	align   *mix.Delay
+	sendA   float32
+	sendPre bool
+	muted   bool
 }
 
 // Engine has fixed command and message rings. The host owns cross-thread
@@ -94,6 +100,7 @@ type Engine struct {
 	voices                       [16]voiceSlot
 	transport                    seq.Transport
 	limiter                      *mix.Limiter
+	delayA                       *fx.Delay
 	commands                     [512]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [256]cmd.Message
@@ -131,6 +138,16 @@ func New(cfg Config) (*Engine, error) {
 		return nil, err
 	}
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4}
+	if cfg.DelayA != nil {
+		e.delayA, err = fx.NewDelay(cfg.SampleRate, cfg.BPMMilli)
+		if err == nil {
+			err = e.delayA.SetParams(*cfg.DelayA)
+		}
+		if err != nil {
+			return nil, err
+		}
+		e.delayA.Reset()
+	}
 	voices := 0
 	hasDrive := false
 	for i := 0; i < cfg.Tracks; i++ {
@@ -151,9 +168,13 @@ func New(cfg Config) (*Engine, error) {
 		if math.IsNaN(gain) || math.IsInf(gain, 0) || gain < -60 || gain > 6 || math.IsNaN(spec.Pan) || math.IsInf(spec.Pan, 0) || spec.Pan < -1 || spec.Pan > 1 {
 			return nil, Error("track mixer parameter is out of range")
 		}
+		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && e.delayA == nil {
+			return nil, Error("track send A is invalid or has no delay return")
+		}
 		v := &e.voices[i]
 		v.kind = spec.Kind
 		v.mix = mix.NewTrack(gain, spec.Pan, spec.Mute)
+		v.sendA, v.sendPre, v.muted = float32(spec.SendA), spec.SendPre, spec.Mute
 		if spec.InsertDrive != nil {
 			if spec.Kind == VoiceOff {
 				return nil, Error("silent track cannot have a drive insert")
@@ -349,6 +370,9 @@ func (e *Engine) Reset() {
 		e.patterns[i].chainRepeat = 0
 	}
 	e.limiter.Reset()
+	if e.delayA != nil {
+		e.delayA.Reset()
+	}
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0
@@ -386,6 +410,12 @@ func (e *Engine) Render(outL, outR []float32) {
 	for frame := range outL {
 		e.renderFrame = frame
 		if e.transport.BPMMilli() != scheduledTempo {
+			if e.delayA != nil && e.delayA.SetTempo(e.transport.BPMMilli()) != nil {
+				e.fault(13)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return
+			}
 			e.scheduleAll()
 			scheduledTempo = e.transport.BPMMilli()
 		}
@@ -409,6 +439,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			return
 		}
 		var dry mix.Dry
+		var sendL, sendR float32
 		for track := 0; track < e.tracks; track++ {
 			v := &e.voices[track]
 			var left, right float32
@@ -446,8 +477,27 @@ func (e *Engine) Render(outL, outR []float32) {
 				left, right = v.align.Process(left, right)
 			}
 			if e.layerMask&(1<<track) != 0 && v.kind != VoiceOff {
+				if v.sendA > 0 && !v.muted {
+					if v.sendPre {
+						sendL += left * v.sendA
+						sendR += right * v.sendA
+					} else {
+						sendL += left * v.mix.Left * v.sendA
+						sendR += right * v.mix.Right * v.sendA
+					}
+				}
 				dry.Add(left, right, v.mix)
 			}
+		}
+		if e.delayA != nil {
+			returnL, returnR := e.delayA.Process(sendL, sendR)
+			if e.delayA.Fault() {
+				e.fault(14)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return
+			}
+			dry.AddReturn(returnL, returnR)
 		}
 		left, right := dry.Music()
 		outL[frame], outR[frame], _ = e.limiter.Process(left, right)
@@ -563,6 +613,9 @@ func (e *Engine) apply(c cmd.Command) {
 			e.resetVoice(i)
 		}
 		e.limiter.Reset()
+		if e.delayA != nil {
+			e.delayA.Reset()
+		}
 		for i := 0; i < e.tracks; i++ {
 			e.patterns[i].playingNote = 0
 			e.patterns[i].heldValid = false
@@ -696,6 +749,9 @@ func (e *Engine) emit(message cmd.Message) {
 				e.resetVoice(track)
 			}
 			e.limiter.Reset()
+			if e.delayA != nil {
+				e.delayA.Reset()
+			}
 			return
 		}
 	}
@@ -714,5 +770,8 @@ func (e *Engine) fault(code uint16) {
 		e.resetVoice(i)
 	}
 	e.limiter.Reset()
+	if e.delayA != nil {
+		e.delayA.Reset()
+	}
 	e.emit(cmd.Message{Kind: cmd.Fault, Track: 0xff, A: code, Tick: e.transport.Tick()})
 }

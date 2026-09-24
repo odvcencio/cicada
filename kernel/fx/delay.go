@@ -74,6 +74,26 @@ func (p DelayParams) Validate() error {
 	return nil
 }
 
+// ValidateTempo catches synced divisions that cannot fit the portable
+// four-second buffer at a project's current BPM.
+func (p DelayParams) ValidateTempo(bpmMilli int64) error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	if bpmMilli < 20_000 || bpmMilli > 300_000 {
+		return Error("delay tempo must be 20 to 300 BPM")
+	}
+	seconds := p.TimeMs / 1000
+	if p.Division != FreeDelay {
+		beats := [...]float64{0, .125, .25, 1.0 / 6, .375, .5, 1.0 / 3, .75, .75, 1, 1.5, 2}
+		seconds = beats[p.Division] * 60_000 / float64(bpmMilli)
+	}
+	if seconds < .001 || seconds > 4 {
+		return Error("delay time exceeds the 4-second buffer or 1 ms minimum")
+	}
+	return nil
+}
+
 type Delay struct {
 	sampleRate, bpmMilli     float64
 	params                   DelayParams
@@ -152,6 +172,9 @@ func (d *Delay) SetParams(p DelayParams) error {
 }
 
 func (d *Delay) timeFrames(p DelayParams, bpmMilli float64) (float64, error) {
+	if err := p.ValidateTempo(int64(bpmMilli)); err != nil {
+		return 0, err
+	}
 	var frames float64
 	if p.Division == FreeDelay {
 		frames = p.TimeMs * d.sampleRate / 1000

@@ -192,8 +192,14 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 			}
 			effect.Params[param.Name] = value
-			if _, err := DriveParamsFromValues(map[string]Value{param.Name: value}); err != nil && source.Name == "drive" {
-				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
+			if source.Name == "drive" {
+				if _, err := DriveParamsFromValues(map[string]Value{param.Name: value}); err != nil {
+					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
+				}
+			} else if source.Name == "delay" {
+				if _, err := DelayParamsFromValues(map[string]Value{param.Name: value}); err != nil {
+					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
+				}
 			}
 		}
 		p.Effects = append(p.Effects, effect)
@@ -206,7 +212,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		}
 		track.Mixer = mixer
 		for _, param := range source.Params {
-			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" {
+			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_pre" {
 				continue
 			}
 			value, err := projectValue(param.Value)

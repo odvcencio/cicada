@@ -40,8 +40,18 @@ track bass acid { insert = drive }
 
 Drive shapes are `soft`, `hard`, `fold`, and `diode`. Gain is 0–36 dB, tone
 is 1–20 kHz, and mix is 0–1. Unset fields default to soft, 0 dB, 12 kHz,
-and fully wet. The insert runs before track level and pan. Other effects
-and sends are not implemented yet.
+and fully wet. The insert runs before track level and pan.
+
+The score can also declare `fx delay` and route a track with `send_a = 0.4`.
+`send_pre = true` taps after the insert and before level/pan; the default
+post-fader send follows level and pan. Delay `time` accepts 1–2000 ms or
+`1/32`, `1/16`, `1/16T`, `1/16.`, `1/8`, `1/8T`, `1/8.`, `3/16`, `1/4`,
+`1/4.`, and `1/2`. Feedback is 0–0.95, damp 1–16 kHz, pingpong is
+`true` or `false`, and width and mix are 0–1. Send B, reverb, compressor,
+and authored effect graphs are not implemented yet.
+Defaults are `1/8`, feedback 0.35, damp 6 kHz, pingpong false, width 1,
+and fully wet. A synced division must fit the four-second delay buffer at
+the current tempo; for example, `1/2` is rejected below 30 BPM.
 
 A scene assigns patterns to tracks. `off` stops a track, and `keep`
 retains its previous pattern. A song lists scenes in order; `main*16`
