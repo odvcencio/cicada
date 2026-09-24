@@ -7,7 +7,6 @@ import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
-	"m31labs.dev/cicada/notation"
 )
 
 // CompileEngine lowers a validated semantic project into immutable engine
@@ -32,29 +31,13 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	for _, pattern := range p.Patterns {
 		patterns[pattern.ID] = pattern
 	}
-	var programs map[string]*instrument.Program
-	var sourceTracks map[string]notation.Track
-	if len(p.Instruments) > 0 {
-		source, err := ToSource(p)
+	programs := make(map[string]*instrument.Program, len(p.Instruments))
+	for _, inst := range p.Instruments {
+		program, err := compileInstrument(inst)
 		if err != nil {
-			return cfg, fmt.Errorf("instrument source: %w", err)
+			return cfg, fmt.Errorf("instrument %s: %w", inst.ID, err)
 		}
-		score, diagnostics := notation.Parse(source)
-		for _, diagnostic := range diagnostics {
-			if diagnostic.Severity == "error" {
-				return cfg, fmt.Errorf("instrument source: %s", diagnostic.Message)
-			}
-		}
-		programs, diagnostics = Check(score)
-		for _, diagnostic := range diagnostics {
-			if diagnostic.Severity == "error" {
-				return cfg, fmt.Errorf("instrument compile: %s", diagnostic.Message)
-			}
-		}
-		sourceTracks = make(map[string]notation.Track, len(score.Tracks))
-		for _, track := range score.Tracks {
-			sourceTracks[track.Name] = track
-		}
+		programs[inst.ID] = program
 	}
 	trackIndex := make(map[string]int, len(p.Tracks))
 	for ti, track := range p.Tracks {
@@ -84,8 +67,12 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				return cfg, fmt.Errorf("track %s has no compiled instrument", track.ID)
 			}
 			overrides := map[string]string{}
-			for _, param := range sourceTracks[track.ID].Params {
-				overrides[param.Name] = param.Value
+			for name, value := range track.Params {
+				literal, err := valueSource(value)
+				if err != nil {
+					return cfg, fmt.Errorf("track %s parameter %s: %w", track.ID, name, err)
+				}
+				overrides[name] = literal
 			}
 			graph, err := instrument.Lower(program, overrides)
 			if err != nil {

@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"unicode/utf8"
+
+	"m31labs.dev/cicada/instrument"
 )
 
 var acceptedScales = map[string]bool{
@@ -32,9 +34,10 @@ func ValidateProject(p *Project) error {
 	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 || len(p.Song) == 0 {
 		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
 	}
-	instruments := map[string]bool{}
+	instruments := map[string]*instrument.Program{}
+	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
-		if err := uniqueID(inst.ID, instruments); err != nil {
+		if err := uniqueID(inst.ID, seenInstruments); err != nil {
 			return fmt.Errorf("instrument: %w", err)
 		}
 		if inst.Mode != "mono" || inst.Params == nil || inst.Lets == nil {
@@ -61,6 +64,11 @@ func ValidateProject(p *Project) error {
 		if _, err := validateExpr(inst.Out, 0); err != nil {
 			return fmt.Errorf("instrument %s output: %w", inst.ID, err)
 		}
+		program, err := compileInstrument(inst)
+		if err != nil {
+			return fmt.Errorf("instrument %s: %w", inst.ID, err)
+		}
+		instruments[inst.ID] = program
 	}
 	tracks := map[string]Track{}
 	for _, track := range p.Tracks {
@@ -68,7 +76,7 @@ func ValidateProject(p *Project) error {
 			return fmt.Errorf("duplicate or invalid track ID %q", track.ID)
 		}
 		tracks[track.ID] = track
-		if track.Kind != "acid" && track.Kind != "drums" && !instruments[track.Kind] {
+		if track.Kind != "acid" && track.Kind != "drums" && instruments[track.Kind] == nil {
 			return fmt.Errorf("track %s has unknown instrument %s", track.ID, track.Kind)
 		}
 		if track.Params == nil {
@@ -90,6 +98,19 @@ func ValidateProject(p *Project) error {
 			}
 			if !validID(name) || !validValue(value) {
 				return fmt.Errorf("track %s has invalid parameter %s", track.ID, name)
+			}
+		}
+		if program := instruments[track.Kind]; program != nil {
+			overrides := make(map[string]string, len(track.Params))
+			for name, value := range track.Params {
+				literal, err := valueSource(value)
+				if err != nil {
+					return fmt.Errorf("track %s parameter %s: %w", track.ID, name, err)
+				}
+				overrides[name] = literal
+			}
+			if _, err := instrument.Lower(program, overrides); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
 		if err := validateDryMixer(track.Mixer); err != nil {
