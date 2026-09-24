@@ -11,6 +11,9 @@ import (
 	"github.com/odvcencio/gotreesitter/taproot/walk"
 )
 
+// cicada.bin is generated from the grammargen DSL in language/grammar.
+//
+//go:generate go run ../cmd/cicada-grammar -bin cicada.bin
 //go:embed cicada.bin
 var grammarBlob []byte
 
