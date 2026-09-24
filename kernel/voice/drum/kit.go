@@ -328,7 +328,9 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		s.phase[1] = wrap(s.phase[1] + 440*p.Tune/k.rate)
 		triangle := 4*math.Abs(s.phase[0]-.5) - 1
 		_, high := s.high1.next(nextNoise(&s.noise))
-		output = (triangle*math.Exp(-age/.004) + math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/p.Decay) + high*math.Exp(-age/.001)) * .45 * s.velocity
+		body := (triangle*math.Exp(-age/.004) + math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/p.Decay)) * s.velocity
+		noise := high * math.Exp(-age/.001) * s.noiseVelocity
+		output = (body + noise) * .45
 	}
 	if s.chokeRemaining > 0 {
 		output *= float64(s.chokeRemaining) / max(1, k.rate*.005)
