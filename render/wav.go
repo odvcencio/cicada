@@ -104,6 +104,10 @@ type scheduled struct {
 
 // WAV renders the song arrangement from a valid score.
 func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) {
+	return renderWAV(score, opts, writer, "")
+}
+
+func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir string) (Report, error) {
 	var report Report
 	if score == nil {
 		return report, fmt.Errorf("nil score")
@@ -152,6 +156,14 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	tracks, err := compileTracks(score, semantic, opts.SampleRate)
 	if err != nil {
 		return report, err
+	}
+	var stems *stemOutput
+	if stemsDir != "" {
+		stems, err = newStemOutput(stemsDir, semantic, report)
+		if err != nil {
+			return report, err
+		}
+		defer stems.abort()
 	}
 	var delayA *fx.Delay
 	var reverbB *fx.Reverb
@@ -235,6 +247,9 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 			report.skipFrames = insertLatency
 			break
 		}
+	}
+	if stems != nil {
+		stems.skipFrames = int64(insertLatency)
 	}
 	limiter, err := mix.NewLimiter(opts.SampleRate)
 	if err != nil {
@@ -347,7 +362,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 					}
 					return events[i].event.NoteID < events[j].event.NoteID
 				})
-				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, events, position, frames, block, &report); err != nil {
+				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, events, position, frames, block, &report); err != nil {
 					return report, err
 				}
 				position += int64(frames)
@@ -370,7 +385,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		if position+int64(frames) > report.Frames {
 			frames = int(report.Frames - position)
 		}
-		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, nil, position, frames, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, nil, position, frames, block, &report); err != nil {
 			return report, err
 		}
 		position += int64(frames)
@@ -379,11 +394,11 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		// Drive and the aligned dry tracks have the same 15-frame latency.
 		// Drain it, then omit the initial 15 silent output frames so the WAV
 		// remains aligned to the score and has exactly report.Frames frames.
-		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, nil, position, insertLatency, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, nil, position, insertLatency, block, &report); err != nil {
 			return report, err
 		}
 	}
-	if err := flushLimiter(writer, limiter, block, &report); err != nil {
+	if err := flushLimiter(writer, limiter, stems, block, &report); err != nil {
 		return report, err
 	}
 	if report.writtenFrames != report.Frames {
@@ -391,6 +406,11 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	}
 	if err := writeMetadata(writer, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames)); err != nil {
 		return report, err
+	}
+	if stems != nil {
+		if err := stems.finish(uint32(score.TempoMilli)); err != nil {
+			return report, err
+		}
 	}
 	return report, nil
 }
@@ -725,7 +745,7 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 	return nil
 }
 
-func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, limiter *mix.Limiter, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
+func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, limiter *mix.Limiter, stems *stemOutput, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
 	outFrames := 0
 	for frame := 0; frame < frames; frame++ {
@@ -797,6 +817,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			} else {
 				dry.Add(l, r, tracks[ti].mixer)
 			}
+			if stems != nil {
+				stems.track(ti, l, r, tracks[ti].mixer, tracks[ti].busSFX)
+			}
 			if compSidechainTrack == ti+1 {
 				sideL, sideR = l*tracks[ti].mixer.Left, r*tracks[ti].mixer.Right
 			}
@@ -807,6 +830,11 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				return fmt.Errorf("delay return DSP fault")
 			}
 			dry.AddReturn(returnL, returnR)
+			if stems != nil {
+				stems.returnA(returnL, returnR)
+			}
+		} else if stems != nil {
+			stems.returnA(0, 0)
 		}
 		if reverbB != nil {
 			returnL, returnR := reverbB.Process(sendBL, sendBR)
@@ -814,9 +842,18 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				return fmt.Errorf("reverb return DSP fault")
 			}
 			dry.AddReturn(returnL, returnR)
+			if stems != nil {
+				stems.returnB(returnL, returnR)
+			}
+		} else if stems != nil {
+			stems.returnB(0, 0)
 		}
 		left, right := dry.Music()
 		sfxL, sfxR := dry.SFX()
+		if stems != nil {
+			stems.buses(left, right, sfxL, sfxR)
+			stems.appendMixFrame(sample)
+		}
 		if compMusic != nil {
 			if compSidechainTrack == 0 {
 				left, right = compMusic.Process(left, right)
@@ -850,10 +887,16 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			report.skipFrames--
 			continue
 		}
+		if stems != nil {
+			stems.appendMaster(outL, outR)
+		}
 		writePCMFrame(buffer[outFrames*6:], outL, outR, limiter.Ceiling(), report)
 		outFrames++
 	}
 	if outFrames == 0 {
+		if stems != nil {
+			return stems.flush()
+		}
 		return nil
 	}
 	n, err := w.Write(buffer[:outFrames*6])
@@ -864,10 +907,13 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		return io.ErrShortWrite
 	}
 	report.writtenFrames += int64(outFrames)
+	if stems != nil {
+		return stems.flush()
+	}
 	return nil
 }
 
-func flushLimiter(w io.Writer, limiter *mix.Limiter, buffer []byte, report *Report) error {
+func flushLimiter(w io.Writer, limiter *mix.Limiter, stems *stemOutput, buffer []byte, report *Report) error {
 	frames := limiter.LatencyFrames()
 	for i := 0; i < frames; i++ {
 		left, right, ready := limiter.Process(0, 0)
@@ -875,6 +921,9 @@ func flushLimiter(w io.Writer, limiter *mix.Limiter, buffer []byte, report *Repo
 			return fmt.Errorf("master limiter failed while flushing")
 		}
 		writePCMFrame(buffer[i*6:], left, right, limiter.Ceiling(), report)
+		if stems != nil {
+			stems.appendMaster(left, right)
+		}
 	}
 	n, err := w.Write(buffer[:frames*6])
 	if err != nil {
@@ -884,6 +933,9 @@ func flushLimiter(w io.Writer, limiter *mix.Limiter, buffer []byte, report *Repo
 		return io.ErrShortWrite
 	}
 	report.writtenFrames += int64(frames)
+	if stems != nil {
+		return stems.flush()
+	}
 	return nil
 }
 

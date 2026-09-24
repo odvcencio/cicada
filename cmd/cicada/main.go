@@ -46,7 +46,7 @@ func main() {
 		}
 		return
 	}
-	if len(os.Args) < 3 || (os.Args[1] != "render" && len(os.Args) > 5) {
+	if len(os.Args) < 3 || (os.Args[1] != "render" && os.Args[1] != "stems" && os.Args[1] != "verify-stems" && len(os.Args) > 5) {
 		usage()
 	}
 	command := os.Args[1]
@@ -62,9 +62,11 @@ func main() {
 	var renderPath string
 	var renderOptions render.Options
 	if command == "render" {
-		renderPath, renderOptions = renderArgs(os.Args[3:])
+		renderPath, renderOptions = renderArgs(os.Args[3:], 24)
+	} else if command == "stems" {
+		renderPath, renderOptions = renderArgs(os.Args[3:], 32)
 	}
-	if command != "validate" && command != "ast" && command != "events" && command != "graph" && command != "render" {
+	if command != "validate" && command != "ast" && command != "events" && command != "graph" && command != "render" && command != "stems" && command != "verify-stems" {
 		usage()
 	}
 	path := os.Args[2]
@@ -143,6 +145,30 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "stems":
+		report, err := render.Stems(score, renderOptions, renderPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("%s: %d stems, %d bars, %d frames at %d Hz\n", renderPath, len(score.Tracks)+5, report.Bars, report.Frames, report.SampleRate)
+	case "verify-stems":
+		if len(os.Args) < 4 {
+			usage()
+		}
+		flags := flag.NewFlagSet("verify-stems", flag.ContinueOnError)
+		flags.SetOutput(io.Discard)
+		tap := flags.String("tap", "pre-comp", "tap to verify")
+		residual := flags.Float64("residual-max-db", -80, "maximum bus sum residual in dBFS")
+		if err := flags.Parse(os.Args[4:]); err != nil || len(flags.Args()) != 0 || *tap != "pre-comp" {
+			usage()
+		}
+		report, err := render.VerifyStems(score, os.Args[3], render.VerifyStemsOptions{ResidualMaxDB: *residual})
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("%s: %d float32 stems, %d frames, pre-comp residual %.2f dBFS\n", os.Args[3], report.Files, report.Frames, report.ResidualPeakDB)
 	}
 }
 
@@ -170,7 +196,7 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: cicada gen --seed N --key a --scale minor [-o out.cicada] [--trace] | validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 24 --bars 16 --tail 3s] | verify-wav <file.wav> --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
+	fmt.Fprintln(os.Stderr, "usage: cicada gen --seed N --key a --scale minor [-o out.cicada] [--trace] | validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 24 --bars 16 --tail 3s] | stems <file.cicada> -o <dir> [--rate 48000 --bars 16 --tail 3s] | verify-stems <file.cicada> <dir> [--tap pre-comp --residual-max-db -80] | verify-wav <file.wav> --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
 	os.Exit(2)
 }
 
@@ -310,15 +336,15 @@ func renderFile(score *notation.Score, path string, opts render.Options) error {
 	return nil
 }
 
-func renderArgs(args []string) (string, render.Options) {
+func renderArgs(args []string, wantBits int) (string, render.Options) {
 	flags := flag.NewFlagSet("render", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	output := flags.String("o", "", "output WAV")
 	rate := flags.Int("rate", 48_000, "sample rate")
-	bits := flags.Int("bits", 24, "PCM bit depth")
+	bits := flags.Int("bits", wantBits, "WAV bit depth")
 	bars := flags.Int("bars", 0, "bars to render; 0 is the full song")
 	tail := flags.String("tail", "3s", "tail duration")
-	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || *bits != 24 {
+	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || *bits != wantBits {
 		usage()
 	}
 	duration, err := time.ParseDuration(*tail)
