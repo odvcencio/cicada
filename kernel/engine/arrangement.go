@@ -92,6 +92,7 @@ func (e *Engine) launchScene(index uint16) {
 		case SceneKeep:
 		case SceneOff:
 			if p.active < 0 {
+				p.chainArmed = false
 				continue
 			}
 			e.noteOff(track, 0xffff)
@@ -99,6 +100,7 @@ func (e *Engine) launchScene(index uint16) {
 				e.emit(cmd.Message{Kind: cmd.NoteOff, Track: uint8(track), Tick: e.transport.Tick()})
 			}
 			p.active = -1
+			p.chainArmed = false
 			p.generation++
 			p.playingNote = 0
 			p.heldValid = false
@@ -106,6 +108,7 @@ func (e *Engine) launchScene(index uint16) {
 			e.emit(cmd.Message{Kind: cmd.Switched, Track: uint8(track), A: 0xffff, Tick: e.transport.Tick()})
 		case SceneSlot:
 			if p.active == int8(binding.Slot) {
+				p.chainArmed = false
 				continue
 			}
 			e.applyPatternCommand(cmd.Command{Op: cmd.OpSelectPattern, Track: uint8(track), Index: uint16(binding.Slot)})

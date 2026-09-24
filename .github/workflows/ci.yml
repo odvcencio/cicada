@@ -38,5 +38,6 @@ jobs:
           go test ./... -count=1
           go vet ./...
           make test-golden
+          make test-alloc test-timing
       - name: Audio WASM and size gate
         run: make test-kernel-wasm

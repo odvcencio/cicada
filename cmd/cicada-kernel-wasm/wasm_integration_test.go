@@ -274,6 +274,14 @@ func TestAudioWASMABI(t *testing.T) {
 		{Op: cmd.OpSelectPattern, Track: 0, Index: 2, Arg0: 2},
 		{Op: cmd.OpSetPatternLen, Track: 1, Index: 1, Arg1: 3},
 	}
+	chainNote, err := seq.PackStep(seq.Step{Note: 65, Gate: true, Ratchet: 1, Probability: 100, Velocity: 110})
+	if err != nil {
+		t.Fatal(err)
+	}
+	patternBatch = append(patternBatch,
+		cmd.Command{Op: cmd.OpSetPatternLen, Track: 0, Index: 3, Arg1: 4},
+		cmd.Command{Op: cmd.OpSetStep, Track: 0, Index: 0, Arg0: chainNote, Arg1: 4},
+	)
 	for lane := uint8(0); lane < 6; lane++ {
 		drumStep, err := seq.PackStep(seq.Step{Note: lane, Gate: true, Ratchet: 1, Probability: 100, Velocity: 110})
 		if err != nil {
@@ -332,6 +340,59 @@ func TestAudioWASMABI(t *testing.T) {
 		}
 	}
 	compareMusicalMessages(t, patternWASM, drainNativeMessages(native))
+	chainBatch := []cmd.Command{
+		{Op: cmd.OpSetChain, Track: 0, Index: 0, Arg0: 2 | 2<<8},
+		{Op: cmd.OpSetChain, Track: 0, Index: 1, Arg0: 4 | 1<<8},
+	}
+	for i, c := range chainBatch {
+		record, err := cmd.EncodeCommand(c, 2)
+		if err != nil || !module.Memory().Write(command+uint32(i*cmd.CommandSize), record[:]) {
+			t.Fatalf("write chain command %d: %v", i, err)
+		}
+	}
+	call("gosx_audio_cmd_commit", uint64(len(chainBatch)))
+	if !native.PushBatch(chainBatch) {
+		t.Fatal("native chain batch rejected")
+	}
+	for block := 0; block < 200; block++ {
+		call("gosx_audio_render", 128)
+		native.Render(nativeL[:], nativeR[:])
+		for channel := 0; channel < 2; channel++ {
+			for frame := 0; frame < 128; frame++ {
+				got, ok := module.Memory().ReadFloat32Le(out + uint32((channel*128+frame)*4))
+				want := nativeL[frame]
+				if channel == 1 {
+					want = nativeR[frame]
+				}
+				if !ok || math.Abs(float64(got-want)) > 1e-6 {
+					t.Fatalf("chain native/WASM sample differs at block %d channel %d frame %d: %g / %g", block, channel, frame, want, got)
+				}
+			}
+		}
+	}
+	if got := module.Memory().Size(); got != memoryBytes {
+		t.Fatalf("WASM memory grew during chain playback: %d -> %d", memoryBytes, got)
+	}
+	count = int(call("gosx_audio_msg_drain"))
+	var chainWASM []cmd.Message
+	var chainSwitch, chainSound bool
+	for i := 0; i < count; i++ {
+		data, ok := module.Memory().Read(message+uint32(i*cmd.MessageSize), cmd.MessageSize)
+		if !ok {
+			t.Fatal("chain message pointer out of bounds")
+		}
+		decoded, err := cmd.DecodeMessage(data)
+		if err != nil || decoded.Kind == cmd.Fault {
+			t.Fatalf("chain playback fault: %+v %v", decoded, err)
+		}
+		chainWASM = append(chainWASM, decoded)
+		chainSwitch = chainSwitch || decoded.Kind == cmd.Switched && decoded.Track == 0 && decoded.A == 4 && decoded.Tick == 4800
+		chainSound = chainSound || decoded.Kind == cmd.NoteOn && decoded.Track == 0 && decoded.A == 65 && decoded.Tick == 4800
+	}
+	if !chainSwitch || !chainSound {
+		t.Fatalf("WASM chain transition missing: switch=%v note=%v", chainSwitch, chainSound)
+	}
+	compareMusicalMessages(t, chainWASM, drainNativeMessages(native))
 	bad := [cmd.CommandSize]byte{byte(cmd.OpPlay), 0xff}
 	bad[12] = 1 // Invalid reserved padding must fault the whole batch.
 	if !module.Memory().Write(command, bad[:]) {

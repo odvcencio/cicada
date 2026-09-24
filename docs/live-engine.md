@@ -19,8 +19,10 @@ The older setup exports remain available for direct host control. Before `gosx_a
 
 For a drum track, `OpSetStep` uses the packed step's note field as a lane index (`0..5` for `bd sd ch oh cp rs`). Send one record per lane and step; several lanes can fire at the same step. A rest record with that lane index clears only that lane. `OpSetPatternLen` and `OpSetPatternMeta` apply to every lane in the slot. `OpLaunchScene` switches a loaded scene at the requested quantization; `keep` retains a slot and `off` releases it. Pattern-end scene quantization currently requires active patterns of the same length and no restart offset; unsupported combinations fault explicitly.
 
+`OpSetChain` builds a per-track list of up to 32 `(slot, repeats)` entries. `Index` is the list position, `Arg0` is `slot | repeats<<8`, and `Arg1` is zero. Position zero replaces and arms the list; later positions append contiguously or replace an existing entry. An active pattern finishes before the first entry starts. Each entry begins at its first step, plays for `repeats` complete cycles of its own length, and advances; the list loops. A direct pattern selection or scene slot/off binding takes over the track. Seek restarts a configured chain from its first entry.
+
 A sliding note on the outgoing pattern carries into a playable first step of a quantized pattern, scene, or song switch. The incoming note changes pitch without retriggering the acid accent envelope. A rest or failed probability check in the incoming slot leaves the outgoing note at its ordinary gate length, including when swing puts that gate end after the switch boundary.
 
 The offline PCM24 WAV renderer applies the same carry and normal-gate rule at song scene boundaries. Its boundary output is checked against the native live engine for a custom mono instrument with a playable target, a rest, and a missed probability step.
 
-Chain commands and whole-engine parity and soak gates remain to be implemented.
+`make test-timing` checks exact musical boundaries and block-size invariance; `make test-alloc` checks render allocations, including a sixteen-track chain. Reference-host callback P99 and long soak gates remain for M2.

@@ -67,6 +67,15 @@ func TestCommandRejectsMalformedRecords(t *testing.T) {
 	if _, err := EncodeCommand(Command{Op: OpSelectPattern, Track: 0, Arg1: 2}, 1); err == nil {
 		t.Fatal("accepted invalid restart flag")
 	}
+	for _, chain := range []Command{
+		{Op: OpSetChain, Track: 0, Index: 32, Arg0: 1 << 8},
+		{Op: OpSetChain, Track: 0, Index: 0, Arg0: 0},
+		{Op: OpSetChain, Track: 0, Index: 0, Arg0: 1 << 8, Arg1: 1},
+	} {
+		if _, err := EncodeCommand(chain, 1); err == nil {
+			t.Fatalf("accepted invalid chain record: %+v", chain)
+		}
+	}
 	invalidTie := uint32(1<<9 | 1<<10 | 1<<11 | 100<<14)
 	if _, err := EncodeCommand(Command{Op: OpSetStep, Track: 0, Arg0: invalidTie}, 1); err == nil {
 		t.Fatal("accepted ratcheted tie")

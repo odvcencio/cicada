@@ -174,7 +174,7 @@ func (c Command) Validate(tracks uint8) error {
 			return Error("quantize is out of range")
 		}
 	case OpSetChain:
-		if c.Index >= 32 || c.Arg0>>16 != 0 || c.Arg0&0xff >= 16 || c.Arg0>>8&0xff == 0 {
+		if c.Index >= 32 || c.Arg0>>16 != 0 || c.Arg0&0xff >= 16 || c.Arg0>>8&0xff == 0 || c.Arg1 != 0 {
 			return Error("chain entry is out of range")
 		}
 	case OpNoteOn:

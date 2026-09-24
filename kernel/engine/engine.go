@@ -282,6 +282,9 @@ func (e *Engine) Reset() {
 		e.patterns[i].eventCount, e.patterns[i].eventIndex = 0, 0
 		e.patterns[i].heldValid = false
 		e.patterns[i].playingNote = 0
+		e.patterns[i].chainLen = 0
+		e.patterns[i].chainArmed = false
+		e.patterns[i].chainRepeat = 0
 	}
 	e.limiter.Reset()
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
@@ -332,6 +335,12 @@ func (e *Engine) Render(outL, outR []float32) {
 			return
 		}
 		e.applyPending()
+		if e.faulted {
+			clear(outL[frame:])
+			clear(outR[frame:])
+			return
+		}
+		e.advanceChains()
 		if e.faulted {
 			clear(outL[frame:])
 			clear(outR[frame:])
@@ -481,6 +490,12 @@ func (e *Engine) apply(c cmd.Command) {
 		for i := 0; i < e.tracks; i++ {
 			e.patterns[i].playingNote = 0
 			e.patterns[i].heldValid = false
+			if e.patterns[i].chainLen != 0 {
+				e.patterns[i].chainNext = 0
+				e.patterns[i].chainRepeat = 0
+				e.patterns[i].chainDue = ((e.transport.Tick() + seq.TicksPerStep - 1) / seq.TicksPerStep) * seq.TicksPerStep
+				e.patterns[i].chainArmed = true
+			}
 		}
 		if e.songMode {
 			e.startSong()
@@ -526,6 +541,8 @@ func (e *Engine) apply(c cmd.Command) {
 		e.emit(cmd.Message{Kind: cmd.NoteOff, Track: c.Track, Tick: e.transport.Tick()})
 	case cmd.OpSetStep, cmd.OpSetPatternLen, cmd.OpSetPatternMeta, cmd.OpSelectPattern:
 		e.applyPatternCommand(c)
+	case cmd.OpSetChain:
+		e.applyChainCommand(c)
 	case cmd.OpLaunchScene:
 		e.applySceneCommand(c)
 	case cmd.OpSetLayerMask:

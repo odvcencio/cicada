@@ -11,6 +11,10 @@ type patternEvent struct {
 	generation uint32
 }
 
+type chainEntry struct {
+	slot, repeats uint8
+}
+
 type patternTrack struct {
 	slots       [16]seq.Pattern
 	drumSlots   *[16][drum.LaneCount]seq.Pattern
@@ -24,6 +28,13 @@ type patternTrack struct {
 	forceOff    seq.Event
 	forceGen    uint32
 	forceValid  bool
+	chain       [32]chainEntry
+	chainLen    uint8
+	chainNext   uint8
+	chainDue    int64
+	chainArmed  bool
+	chainStart  int64
+	chainRepeat uint8
 	held        seq.Pattern
 	heldSlot    uint8
 	heldStart   int64
@@ -73,31 +84,8 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			e.pendingLen++
 			return
 		}
-		if p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 {
-			p.held = p.slots[p.active]
-			p.heldSlot = uint8(p.active)
-			p.heldStart = p.startStep
-			p.heldGen = p.generation
-			p.heldValid = true
-		}
-		p.slideFrom, p.slideAt = 0, 0
-		p.forceValid = false
-		if p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 && e.switchSlideTarget(track, slot, e.transport.Tick(), c.Arg1 == 1) {
-			p.slideFrom = p.playingNote
-			p.slideAt = e.switchOnsetSample(track, slot, e.transport.Tick())
-		} else if release, ok := e.normalSlideRelease(track, e.transport.Tick(), e.transport.Clock()); ok && p.playingNote == release.NoteID && release.Sample >= e.transport.Sample() {
-			p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
-		}
-		p.active = int8(slot)
-		p.generation++
-		p.startStep = 0
-		if c.Arg1 == 1 {
-			p.startStep = (e.transport.Tick() + seq.TicksPerStep - 1) / seq.TicksPerStep
-		}
-		if e.renderFrames > 0 {
-			e.scheduleTrack(track)
-		}
-		e.emit(cmd.Message{Kind: cmd.Switched, Track: c.Track, A: uint16(slot), Tick: e.transport.Tick()})
+		p.chainArmed = false // a direct selection or scene takes over the track
+		e.selectPatternNow(track, slot, c.Arg1 == 1)
 		return
 	}
 	updated := p.slots[slot]
@@ -150,6 +138,13 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		p.generation++
 	}
 	p.slots[slot] = updated
+	if c.Op == cmd.OpSetPatternLen && p.active == int8(slot) && p.chainArmed {
+		if p.chainRepeat != 0 {
+			p.chainDue = p.chainStart + int64(updated.Len)*seq.TicksPerStep*int64(p.chainRepeat)
+		} else {
+			p.chainDue = chainStartTick(p, e.transport.Tick())
+		}
+	}
 	if p.drumSlots != nil {
 		for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 			lanePattern := p.drumSlots[slot][lane]
@@ -163,6 +158,35 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 	if p.active == int8(slot) && e.renderFrames > 0 {
 		e.scheduleTrack(track)
 	}
+}
+
+func (e *Engine) selectPatternNow(track, slot int, restart bool) {
+	p := &e.patterns[track]
+	if p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 {
+		p.held = p.slots[p.active]
+		p.heldSlot = uint8(p.active)
+		p.heldStart = p.startStep
+		p.heldGen = p.generation
+		p.heldValid = true
+	}
+	p.slideFrom, p.slideAt = 0, 0
+	p.forceValid = false
+	if p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 && e.switchSlideTarget(track, slot, e.transport.Tick(), restart) {
+		p.slideFrom = p.playingNote
+		p.slideAt = e.switchOnsetSample(track, slot, e.transport.Tick())
+	} else if release, ok := e.normalSlideRelease(track, e.transport.Tick(), e.transport.Clock()); ok && p.playingNote == release.NoteID && release.Sample >= e.transport.Sample() {
+		p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
+	}
+	p.active = int8(slot)
+	p.generation++
+	p.startStep = 0
+	if restart {
+		p.startStep = (e.transport.Tick() + seq.TicksPerStep - 1) / seq.TicksPerStep
+	}
+	if e.renderFrames > 0 {
+		e.scheduleTrack(track)
+	}
+	e.emit(cmd.Message{Kind: cmd.Switched, Track: uint8(track), A: uint16(slot), Tick: e.transport.Tick()})
 }
 
 func (e *Engine) scheduleAll() {
@@ -347,6 +371,9 @@ func (e *Engine) scheduleSwitchRelease(track int, clock seq.Clock, startSample i
 			e.scheduleNormalRelease(track, int(binding.Slot), e.songEndTick, false, clock, startSample, frames)
 		}
 	}
+	if slot, ok := e.chainTargetAt(track, p.chainDue); ok {
+		e.scheduleNormalRelease(track, slot, p.chainDue, true, clock, startSample, frames)
+	}
 }
 
 func (e *Engine) scheduleNormalRelease(track, slot int, switchTick int64, restart bool, clock seq.Clock, startSample int64, frames int) {
@@ -442,6 +469,9 @@ func (e *Engine) pendingSwitchSlides(track int, off seq.Event) bool {
 		next := (e.songIndex + 1) % len(e.song)
 		binding := e.scenes[e.song[next].Scene].Track[track]
 		return binding.Mode == SceneSlot && p.active != int8(binding.Slot) && e.switchSlideTarget(track, int(binding.Slot), switchTick, false)
+	}
+	if slot, ok := e.chainTargetAt(track, switchTick); ok {
+		return e.switchSlideTarget(track, slot, switchTick, true)
 	}
 	return false
 }
