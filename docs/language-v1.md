@@ -30,7 +30,18 @@ A track chooses the built-in `acid` or `drums` voice, or a declared
 instrument. An acid track plays `acid` or `notes` patterns. A custom
 instrument plays `notes` patterns. A drum track plays `drums` patterns.
 Track parameters are checked for the selected voice. `level` (dB or `off`)
-and `pan` (-1 to 1) control the dry stereo mixer.
+and `pan` (-1 to 1) control the stereo mixer. A track can set `insert = drive`
+when the score declares `fx drive`:
+
+```cicada
+fx drive { shape = hard gain = 18db tone = 12khz mix = 0.75 }
+track bass acid { insert = drive }
+```
+
+Drive shapes are `soft`, `hard`, `fold`, and `diode`. Gain is 0–36 dB, tone
+is 1–20 kHz, and mix is 0–1. Unset fields default to soft, 0 dB, 12 kHz,
+and fully wet. The insert runs before track level and pan. Other effects
+and sends are not implemented yet.
 
 A scene assigns patterns to tracks. `off` stops a track, and `keep`
 retains its previous pattern. A song lists scenes in order; `main*16`

@@ -18,7 +18,7 @@
     "patterns": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/pattern"}},
     "scenes": {"type": "array", "items": {"$ref": "#/$defs/scene"}},
     "song": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/song_entry"}},
-    "effects": {"type": "array", "items": {"$ref": "#/$defs/effect"}}
+    "effects": {"type": "array", "maxItems": 1, "items": {"$ref": "#/$defs/effect"}}
   },
   "$defs": {
     "id": {"type": "string", "pattern": "^[a-z_][a-z0-9_-]{0,63}$"},
@@ -107,7 +107,7 @@
         "pan": {"type": "number", "minimum": -1, "maximum": 1},
         "send_a": {"const": 0}, "send_b": {"const": 0},
         "send_pre": {"const": false}, "mute": {"type": "boolean"},
-        "solo": {"const": false}, "insert": {"const": "none"}, "bus": {"const": "music"}
+        "solo": {"const": false}, "insert": {"enum": ["none", "drive"]}, "bus": {"const": "music"}
       }
     },
     "track": {
@@ -179,8 +179,28 @@
     "effect": {
       "type": "object", "additionalProperties": false, "required": ["id", "params"],
       "properties": {
-        "id": {"$ref": "#/$defs/id"},
-        "params": {"type": "object", "additionalProperties": {"$ref": "#/$defs/value"}}
+        "id": {"const": "drive"},
+        "params": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "shape": {
+              "type": "object", "additionalProperties": false, "required": ["unit", "text"],
+              "properties": {"unit": {"const": "enum"}, "text": {"enum": ["soft", "hard", "fold", "diode"]}}
+            },
+            "gain": {
+              "type": "object", "additionalProperties": false, "required": ["unit", "number"],
+              "properties": {"unit": {"const": "db"}, "number": {"type": "number", "minimum": 0, "maximum": 36}}
+            },
+            "tone": {
+              "type": "object", "additionalProperties": false, "required": ["unit", "number"],
+              "properties": {"unit": {"const": "hz"}, "number": {"type": "number", "minimum": 1000, "maximum": 20000}}
+            },
+            "mix": {
+              "type": "object", "additionalProperties": false, "required": ["unit", "number"],
+              "properties": {"unit": {"const": "unit"}, "number": {"type": "number", "minimum": 0, "maximum": 1}}
+            }
+          }
+        }
       }
     }
   }
