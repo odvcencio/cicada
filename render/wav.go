@@ -154,6 +154,8 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	}
 	var delayA *fx.Delay
 	var reverbB *fx.Reverb
+	var compMusic *fx.Compressor
+	var compSidechainTrack int
 	for _, track := range tracks {
 		if track.sendA > 0 {
 			for _, effect := range semantic.Effects {
@@ -193,6 +195,31 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 					}
 					reverbB.Reset()
 					break
+				}
+			}
+			break
+		}
+	}
+	for _, effect := range semantic.Effects {
+		if effect.ID == "comp" {
+			params, sidechain, err := project.CompSpecFromValues(effect.Params)
+			if err != nil {
+				return report, err
+			}
+			compMusic, err = fx.NewCompressor(opts.SampleRate)
+			if err != nil {
+				return report, err
+			}
+			if err := compMusic.SetParams(params); err != nil {
+				return report, err
+			}
+			compMusic.Reset()
+			if sidechain != "" && sidechain != "music" {
+				for index, track := range semantic.Tracks {
+					if track.ID == sidechain {
+						compSidechainTrack = index + 1
+						break
+					}
 				}
 			}
 			break
@@ -317,7 +344,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 					}
 					return events[i].event.NoteID < events[j].event.NoteID
 				})
-				if err := renderBlock(writer, tracks, delayA, reverbB, limiter, events, position, frames, block, &report); err != nil {
+				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, events, position, frames, block, &report); err != nil {
 					return report, err
 				}
 				position += int64(frames)
@@ -340,7 +367,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		if position+int64(frames) > report.Frames {
 			frames = int(report.Frames - position)
 		}
-		if err := renderBlock(writer, tracks, delayA, reverbB, limiter, nil, position, frames, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, nil, position, frames, block, &report); err != nil {
 			return report, err
 		}
 		position += int64(frames)
@@ -349,7 +376,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		// Drive and the aligned dry tracks have the same 15-frame latency.
 		// Drain it, then omit the initial 15 silent output frames so the WAV
 		// remains aligned to the score and has exactly report.Frames frames.
-		if err := renderBlock(writer, tracks, delayA, reverbB, limiter, nil, position, insertLatency, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, nil, position, insertLatency, block, &report); err != nil {
 			return report, err
 		}
 	}
@@ -694,7 +721,7 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 	return nil
 }
 
-func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, limiter *mix.Limiter, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
+func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, limiter *mix.Limiter, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
 	outFrames := 0
 	for frame := 0; frame < frames; frame++ {
@@ -723,7 +750,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			eventIndex++
 		}
 		var dry mix.Dry
-		var sendAL, sendAR, sendBL, sendBR float32
+		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
 		for ti := range tracks {
 			var l, r float32
 			if tracks[ti].drums != nil {
@@ -762,6 +789,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				}
 			}
 			dry.Add(l, r, tracks[ti].mixer)
+			if compSidechainTrack == ti+1 {
+				sideL, sideR = l*tracks[ti].mixer.Left, r*tracks[ti].mixer.Right
+			}
 		}
 		if delayA != nil {
 			returnL, returnR := delayA.Process(sendAL, sendAR)
@@ -778,6 +808,16 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			dry.AddReturn(returnL, returnR)
 		}
 		left, right := dry.Music()
+		if compMusic != nil {
+			if compSidechainTrack == 0 {
+				left, right = compMusic.Process(left, right)
+			} else {
+				left, right = compMusic.ProcessSidechain(left, right, sideL, sideR)
+			}
+			if compMusic.Fault() {
+				return fmt.Errorf("music compressor DSP fault")
+			}
+		}
 		if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {
 			report.Peak = abs
 		}

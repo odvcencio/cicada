@@ -206,6 +206,41 @@ func TestReverbSendImageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCompressorBusImageRoundTrip(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx", "compressor-bus.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("source: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) || decoded.CompMusic == nil || decoded.CompSidechainTrack != 2 {
+		t.Fatal("compressor changed in the project image")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProjectImageRejectsCorruption(t *testing.T) {
 	encoded, err := kernelimage.Encode(firstAcidConfig(t))
 	if err != nil {
@@ -224,7 +259,7 @@ func TestProjectImageRejectsCorruption(t *testing.T) {
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
 		t.Fatal("bad magic was accepted")
 	}
-	for _, oldVersion := range []byte{1, 2, 3, 4, 5} {
+	for _, oldVersion := range []byte{1, 2, 3, 4, 5, 6} {
 		corrupt = append([]byte(nil), encoded...)
 		corrupt[4] = oldVersion
 		if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {

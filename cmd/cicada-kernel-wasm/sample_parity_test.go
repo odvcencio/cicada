@@ -37,6 +37,10 @@ func TestAudioWASMReverbSendSampleParity(t *testing.T) {
 	compareWASMFixture(t, "fx-bus.cicada", 1)
 }
 
+func TestAudioWASMCompressorBusSampleParity(t *testing.T) {
+	compareWASMFixture(t, "fx/compressor-bus.cicada", 1)
+}
+
 func compareWASMFixture(t *testing.T, fixture string, bars int) {
 	t.Helper()
 	wasm, err := os.ReadFile(wasmModulePath())

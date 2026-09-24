@@ -7,11 +7,13 @@ import (
 	"m31labs.dev/cicada/kernel/fx"
 )
 
-func TestEffectSendRenderAllocationFree(t *testing.T) {
+func TestEffectRoutingRenderAllocationFree(t *testing.T) {
 	cfg := testConfig()
 	delay := fx.DefaultDelayParams()
 	reverb := fx.DefaultReverbParams()
+	comp := fx.DefaultCompParams()
 	cfg.DelayA, cfg.ReverbB = &delay, &reverb
+	cfg.CompMusic, cfg.CompSidechainTrack = &comp, 2
 	cfg.Track[0].SendA, cfg.Track[0].SendB = .4, .4
 	cfg.Track[1].SendB = .3
 	e, err := New(cfg)

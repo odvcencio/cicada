@@ -47,6 +47,8 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	var driveParams *fx.DriveParams
 	var delayParams *fx.DelayParams
 	var reverbParams *fx.ReverbParams
+	var compParams *fx.CompParams
+	var compSidechain string
 	for _, effect := range p.Effects {
 		if effect.ID == "drive" {
 			params, err := DriveParamsFromValues(effect.Params)
@@ -66,6 +68,21 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				return cfg, err
 			}
 			reverbParams = &params
+		} else if effect.ID == "comp" {
+			params, sidechain, err := CompSpecFromValues(effect.Params)
+			if err != nil {
+				return cfg, err
+			}
+			compParams, compSidechain = &params, sidechain
+		}
+	}
+	cfg.CompMusic = compParams
+	if compSidechain != "" && compSidechain != "music" {
+		for index, track := range p.Tracks {
+			if track.ID == compSidechain {
+				cfg.CompSidechainTrack = index + 1
+				break
+			}
 		}
 	}
 	for _, track := range p.Tracks {

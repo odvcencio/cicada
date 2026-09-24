@@ -204,6 +204,10 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 				if _, err := ReverbParamsFromValues(map[string]Value{param.Name: value}); err != nil {
 					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 				}
+			} else if source.Name == "comp" {
+				if _, _, err := CompSpecFromValues(map[string]Value{param.Name: value}); err != nil {
+					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
+				}
 			}
 		}
 		p.Effects = append(p.Effects, effect)

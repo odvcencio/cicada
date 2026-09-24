@@ -29,8 +29,9 @@ func ValidateProject(p *Project) error {
 		return fmt.Errorf("project arrays must be explicit")
 	}
 	effects := map[string]bool{}
+	var compSidechain string
 	for _, effect := range p.Effects {
-		if effect.ID != "drive" && effect.ID != "delay" && effect.ID != "reverb" {
+		if effect.ID != "drive" && effect.ID != "delay" && effect.ID != "reverb" && effect.ID != "comp" {
 			return fmt.Errorf("effect %s is not implemented", effect.ID)
 		}
 		if effects[effect.ID] || effect.Params == nil {
@@ -49,8 +50,13 @@ func ValidateProject(p *Project) error {
 			if err := params.ValidateTempo(int64(p.TempoMilli)); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
-		} else {
+		} else if effect.ID == "reverb" {
 			if _, err := ReverbParamsFromValues(effect.Params); err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
+		} else {
+			var err error
+			if _, compSidechain, err = CompSpecFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
 		}
@@ -165,6 +171,11 @@ func ValidateProject(p *Project) error {
 		}
 		if track.Mixer.SendB > 0 && !effects["reverb"] {
 			return fmt.Errorf("track %s requires a declared reverb for send_b", track.ID)
+		}
+	}
+	if compSidechain != "" && compSidechain != "music" {
+		if _, ok := tracks[compSidechain]; !ok {
+			return fmt.Errorf("compressor sidechain references unknown track %s", compSidechain)
 		}
 	}
 	allocatedVoices := 0

@@ -352,7 +352,7 @@ func Validate(s *Score) []Diagnostic {
 			add("CICADA-DUPLICATE", "duplicate effect "+effect.Name, "error", effect.Position)
 		}
 		declaredEffects[effect.Name] = true
-		if effect.Name != "drive" && effect.Name != "delay" && effect.Name != "reverb" {
+		if effect.Name != "drive" && effect.Name != "delay" && effect.Name != "reverb" && effect.Name != "comp" {
 			add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
 		}
 		seen := map[string]bool{}
@@ -361,6 +361,19 @@ func Validate(s *Score) []Diagnostic {
 				add("CICADA-DUPLICATE", "duplicate effect parameter "+param.Name, "error", param.Position)
 			}
 			seen[param.Name] = true
+			if effect.Name == "comp" && param.Name == "sidechain" {
+				reference := param.Value
+				if strings.HasPrefix(reference, "\"") {
+					if decoded, err := strconv.Unquote(reference); err == nil {
+						reference = decoded
+					}
+				}
+				if reference != "music" {
+					if _, ok := trackByName[reference]; !ok {
+						add("CICADA-REFERENCE", "compressor sidechain references unknown track "+reference, "error", param.ValuePosition)
+					}
+				}
+			}
 		}
 	}
 	for _, track := range s.Tracks {

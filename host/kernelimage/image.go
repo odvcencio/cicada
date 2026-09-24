@@ -14,7 +14,7 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 6 // reverb send B routing; version 5 added delay send A
+const imageVersion = 7 // music-bus compressor; version 6 added reverb send B
 
 type Error string
 
@@ -87,7 +87,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 6. The decoded Config is separately
+// Encode writes project image version 7. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -143,6 +143,30 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		w.f64(cfg.ReverbB.HighpassHz)
 		w.f64(cfg.ReverbB.PredelayMs)
 		w.f64(cfg.ReverbB.Mix)
+	}
+	if cfg.CompMusic == nil {
+		if cfg.CompSidechainTrack != 0 {
+			return nil, Error("compressor sidechain without compressor")
+		}
+		w.byte(0)
+	} else {
+		if err := cfg.CompMusic.Validate(); err != nil {
+			return nil, err
+		}
+		if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks {
+			return nil, Error("invalid compressor sidechain track")
+		}
+		w.byte(1)
+		w.byte(byte(cfg.CompMusic.Detect))
+		w.f64(cfg.CompMusic.Threshold)
+		w.f64(cfg.CompMusic.Ratio)
+		w.f64(cfg.CompMusic.Knee)
+		w.f64(cfg.CompMusic.AttackMs)
+		w.f64(cfg.CompMusic.ReleaseMs)
+		w.byte(boolByte(cfg.CompMusic.MakeupAuto))
+		w.f64(cfg.CompMusic.MakeupDB)
+		w.f64(cfg.CompMusic.Mix)
+		w.byte(byte(cfg.CompSidechainTrack))
 	}
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
@@ -372,6 +396,51 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return err
 		}
 		cfg.ReverbB = params
+	}
+	compPresent, err := r.byte()
+	if err != nil || compPresent > 1 {
+		return Error("invalid compressor image flag")
+	}
+	if compPresent == 1 {
+		detect, err := r.byte()
+		if err != nil {
+			return err
+		}
+		params := &fx.CompParams{Detect: fx.CompDetector(detect)}
+		if params.Threshold, err = r.f64(); err != nil {
+			return err
+		}
+		if params.Ratio, err = r.f64(); err != nil {
+			return err
+		}
+		if params.Knee, err = r.f64(); err != nil {
+			return err
+		}
+		if params.AttackMs, err = r.f64(); err != nil {
+			return err
+		}
+		if params.ReleaseMs, err = r.f64(); err != nil {
+			return err
+		}
+		makeupAuto, err := r.byte()
+		if err != nil || makeupAuto > 1 {
+			return Error("invalid compressor makeup flag")
+		}
+		params.MakeupAuto = makeupAuto == 1
+		if params.MakeupDB, err = r.f64(); err != nil {
+			return err
+		}
+		if params.Mix, err = r.f64(); err != nil {
+			return err
+		}
+		sidechain, err := r.byte()
+		if err != nil || int(sidechain) > int(tracks) {
+			return Error("invalid compressor sidechain track")
+		}
+		if err := params.Validate(); err != nil {
+			return err
+		}
+		cfg.CompMusic, cfg.CompSidechainTrack = params, int(sidechain)
 	}
 	for track := 0; track < int(tracks); track++ {
 		spec := &cfg.Track[track]
