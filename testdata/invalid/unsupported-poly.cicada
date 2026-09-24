@@ -1,0 +1,6 @@
+cicada 1
+instrument tone { voice poly { out = sine(pitch); } }
+track lead tone {}
+pattern p notes steps=1 { 1 }
+scene main { lead=p }
+song { main }

@@ -1,0 +1,6 @@
+cicada 1
+track bass acid {}
+phrase long acid { 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 1 }
+pattern p acid { use long*2 }
+scene main { bass=p }
+song { main }
