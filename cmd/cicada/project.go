@@ -110,18 +110,20 @@ func loadProject(path string) (*project.Project, error) {
 		}
 		return diagnostics[i].Code < diagnostics[j].Code
 	})
-	if len(diagnostics) == 0 {
-		return nil, fmt.Errorf("%s:1:1: error CICADA-PARAM: project cannot compile", path)
+	for _, d := range diagnostics {
+		if d.Severity != "error" {
+			continue
+		}
+		line, column := d.Position.Line, d.Position.Column
+		if line < 1 {
+			line = 1
+		}
+		if column < 1 {
+			column = 1
+		}
+		return nil, fmt.Errorf("%s:%d:%d: %s %s: %s", path, line, column, d.Severity, d.Code, d.Message)
 	}
-	d := diagnostics[0]
-	line, column := d.Position.Line, d.Position.Column
-	if line < 1 {
-		line = 1
-	}
-	if column < 1 {
-		column = 1
-	}
-	return nil, fmt.Errorf("%s:%d:%d: %s %s: %s", path, line, column, d.Severity, d.Code, d.Message)
+	return nil, fmt.Errorf("%s:1:1: error CICADA-PARAM: project cannot compile", path)
 }
 
 func writeNewAtomic(path string, data []byte) error {

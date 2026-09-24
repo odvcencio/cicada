@@ -78,6 +78,14 @@ func TestProjectCLI(t *testing.T) {
 	if output := run(0, "validate", warningPath); strings.Count(output, "CICADA-SLIDE-REST") != 1 {
 		t.Fatalf("validation repeated a source warning: %q", output)
 	}
+	badWithWarning := filepath.Join(t.TempDir(), "warning-before-error.cicada")
+	badWithWarningSource := "cicada 1\ntrack bass acid {}\npattern p acid steps=2 { 1~ . }\nscene main { ghost=p }\nsong { main }\n"
+	if err := os.WriteFile(badWithWarning, []byte(badWithWarningSource), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if output := run(1, "convert", badWithWarning, "-o", filepath.Join(t.TempDir(), "bad.json")); !strings.Contains(output, badWithWarning+":4:14: error CICADA-REFERENCE:") || strings.Contains(output, "warning CICADA-SLIDE-REST") {
+		t.Fatalf("conversion reported a warning instead of the error: %q", output)
+	}
 	if output := run(2, "convert", first, jsonPath); !strings.Contains(output, "usage:") {
 		t.Fatalf("usage output: %q", output)
 	}
