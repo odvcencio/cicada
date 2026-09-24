@@ -2,6 +2,7 @@ package smf
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -147,6 +148,41 @@ func TestPatternExportAndMIDIValidation(t *testing.T) {
 	file.Tracks[1].Notes[0].Dur = 0
 	if err := Encode(file, &bytes.Buffer{}); err == nil {
 		t.Fatal("zero duration MIDI note accepted")
+	}
+}
+
+func TestPatternExportPreservesProbabilityIdentity(t *testing.T) {
+	for _, sourceSlot := range []int{0, 7} {
+		t.Run(fmt.Sprintf("slot-%d", sourceSlot), func(t *testing.T) {
+			p := firstAcidProject(t)
+			for i := range p.Patterns {
+				if p.Patterns[i].ID == "beat-a" {
+					p.Patterns[i].Lanes["bd"][0].Probability = 50
+				}
+			}
+			if p.Tracks[1].Slots[0] == nil || *p.Tracks[1].Slots[0] != "beat-a" {
+				t.Fatal("expected beat-a in drums slot zero")
+			}
+			if sourceSlot != 0 {
+				p.Tracks[1].Slots[sourceSlot] = p.Tracks[1].Slots[0]
+				p.Tracks[1].Slots[0] = nil
+			}
+			full, err := FromProject(p, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			single, err := FromPattern(p, "beat-a")
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := slices.Clone(full.Tracks[2].Notes)
+			for i := range want {
+				want[i].Track = 1
+			}
+			if !slices.Equal(want, single.Tracks[1].Notes) {
+				t.Fatalf("pattern notes differ from arrangement drums: want %+v, got %+v", want, single.Tracks[1].Notes)
+			}
+		})
 	}
 }
 

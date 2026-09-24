@@ -16,9 +16,18 @@ type heldNote struct {
 	valid bool
 }
 
+type probabilityIdentity struct {
+	track uint8
+	slot  uint8
+}
+
 // FromProject compiles the first pass of a song into type 1 MIDI. The
 // probability hash always uses iteration zero, as specified for interchange.
 func FromProject(p *project.Project, bars int) (File, error) {
+	return fromProject(p, bars, nil)
+}
+
+func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (File, error) {
 	var file File
 	cfg, err := project.CompileEngine(p, 48_000, 128)
 	if err != nil {
@@ -93,17 +102,21 @@ func FromProject(p *project.Project, bars int) (File, error) {
 					if slot < 0 {
 						continue
 					}
+					probabilityTrack, probabilitySlot := uint8(ti), uint8(slot)
+					if identity != nil {
+						probabilityTrack, probabilitySlot = identity.track, identity.slot
+					}
 					if cfg.Track[ti].Kind == engine.VoiceDrums {
 						for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 							pattern := &cfg.Patterns[ti].Drums[slot][lane]
 							if pattern.Len != 0 {
-								appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), uint8(slot), uint8(lane), drum.MIDINotes[lane], true, channels[ti], &held[ti][lane])
+								appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, drum.MIDINotes[lane], true, channels[ti], &held[ti][lane])
 							}
 						}
 					} else {
 						pattern := &cfg.Patterns[ti].Slots[slot]
 						if pattern.Len != 0 {
-							appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), uint8(slot), 0, 0, false, channels[ti], &held[ti][0])
+							appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, 0, false, channels[ti], &held[ti][0])
 						}
 					}
 				}
@@ -134,10 +147,12 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 		return File{}, fmt.Errorf("unknown pattern %s", patternID)
 	}
 	selected := -1
+	selectedSlot := 0
 	for i, track := range p.Tracks {
-		for _, slot := range track.Slots {
+		for slotIndex, slot := range track.Slots {
 			if slot != nil && *slot == patternID {
 				selected = i
+				selectedSlot = slotIndex
 				break
 			}
 		}
@@ -169,13 +184,13 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 	bars := int(pattern.Steps+15) / 16
 	clone.Song = []project.SongEntry{{Scene: "midi-pattern", Bars: uint16(bars)}}
 	clone.Title = patternID
-	return FromProject(&clone, bars)
+	return fromProject(&clone, bars, &probabilityIdentity{track: uint8(selected), slot: uint8(selectedSlot)})
 }
 
-func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, trackIndex, slot, lane, drumPitch uint8, isDrum bool, channel uint8, held *heldNote) {
+func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, trackIndex, probabilityTrack, probabilitySlot, drumPitch uint8, isDrum bool, channel uint8, held *heldNote) {
 	index := uint8(absoluteStep % int64(pattern.Len))
 	step, err := seq.UnpackStep(pattern.Steps[index])
-	if err != nil || !step.Gate || !seq.ProbabilityHit(step.Probability, pattern.Seed, trackIndex, slot, 0, index) {
+	if err != nil || !step.Gate || !seq.ProbabilityHit(step.Probability, pattern.Seed, probabilityTrack, probabilitySlot, 0, index) {
 		return
 	}
 	start := absoluteStep * seq.TicksPerStep
