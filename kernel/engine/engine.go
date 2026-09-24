@@ -348,9 +348,6 @@ func (e *Engine) Render(outL, outR []float32) {
 		}
 		var dry mix.Dry
 		for track := 0; track < e.tracks; track++ {
-			if e.layerMask&(1<<track) == 0 {
-				continue
-			}
 			v := &e.voices[track]
 			switch v.kind {
 			case VoiceAcid:
@@ -361,7 +358,9 @@ func (e *Engine) Render(outL, outR []float32) {
 					clear(outR[frame:])
 					return
 				}
-				dry.Add(sample, sample, v.mix)
+				if e.layerMask&(1<<track) != 0 {
+					dry.Add(sample, sample, v.mix)
+				}
 			case VoiceDrums:
 				left, right := v.drums.NextStereo()
 				if v.drums.Fault() {
@@ -370,10 +369,14 @@ func (e *Engine) Render(outL, outR []float32) {
 					clear(outR[frame:])
 					return
 				}
-				dry.Add(left, right, v.mix)
+				if e.layerMask&(1<<track) != 0 {
+					dry.Add(left, right, v.mix)
+				}
 			case VoiceGraph:
 				sample := v.graph.Next()
-				dry.Add(sample, sample, v.mix)
+				if e.layerMask&(1<<track) != 0 {
+					dry.Add(sample, sample, v.mix)
+				}
 			}
 		}
 		left, right := dry.Music()

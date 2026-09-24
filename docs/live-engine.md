@@ -23,6 +23,8 @@ For a drum track, `OpSetStep` uses the packed step's note field as a lane index 
 
 A sliding note on the outgoing pattern carries into a playable first step of a quantized pattern, scene, or song switch. The incoming note changes pitch without retriggering the acid accent envelope. A rest or failed probability check in the incoming slot leaves the outgoing note at its ordinary gate length, including when swing puts that gate end after the switch boundary.
 
+`OpSetLayerMask` excludes disabled tracks from the dry mix at its scheduled bar boundary. Their sequencers and voices keep advancing while muted, so an envelope release or drum tail does not freeze and reappear when a layer returns. The master limiter can still emit audio already in its lookahead buffer immediately after a mask change.
+
 The offline PCM24 WAV renderer applies the same carry and normal-gate rule at song scene boundaries. Its boundary output is checked against the native live engine for a custom mono instrument with a playable target, a rest, and a missed probability step.
 
 `make test-timing` checks exact musical boundaries and block-size invariance; `make test-alloc` checks render allocations, including a sixteen-track chain. Reference-host callback P99 and long soak gates remain for M2.
