@@ -72,6 +72,78 @@ func TestInvalidArrangementRejected(t *testing.T) {
 	}
 }
 
+func TestPatternEndSceneWaitsForDifferentTrackLengths(t *testing.T) {
+	cfg := testConfig()
+	cfg.Track[1].Kind = VoiceAcid
+	cfg.MaxVoices = 2
+	cfg.Patterns = []PatternBank{{}, {}}
+	for track, length := range []uint8{2, 3} {
+		cfg.Patterns[track].Slots[0] = seq.Pattern{Len: length, GatePercent: 55, Seed: cfg.Seed}
+		cfg.Patterns[track].Slots[1] = seq.Pattern{Len: 1, GatePercent: 55, Seed: cfg.Seed}
+	}
+	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}, {Mode: SceneSlot, Slot: 1}}}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.meterRate = 0
+	if !e.PushBatch([]cmd.Command{
+		{Op: cmd.OpSelectPattern, Track: 0, Index: 0},
+		{Op: cmd.OpSelectPattern, Track: 1, Index: 0},
+		{Op: cmd.OpPlay, Track: 0xff},
+	}) {
+		t.Fatal("pattern setup rejected")
+	}
+	var left, right [128]float32
+	e.Render(left[:], right[:])
+	if !e.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 0, Arg0: 3}) {
+		t.Fatal("pattern-end scene launch rejected")
+	}
+	var switched [2]int64
+	for i := range switched {
+		switched[i] = -1
+	}
+	for block := 0; block < 310; block++ {
+		e.Render(left[:], right[:])
+		var message cmd.Message
+		for e.Poll(&message) {
+			if message.Kind == cmd.Fault {
+				t.Fatalf("pattern-end scene fault %d at tick %d", message.A, message.Tick)
+			}
+			if message.Kind == cmd.Switched && message.A == 1 {
+				switched[message.Track] = message.Tick
+			}
+		}
+	}
+	for track, tick := range switched {
+		if tick != 6*seq.TicksPerStep {
+			t.Fatalf("track %d switched at tick %d, want %d", track, tick, 6*seq.TicksPerStep)
+		}
+	}
+}
+
+func TestScenePatternEndUsesRestartOffsetsAndRejectsNoSharedEnd(t *testing.T) {
+	e, err := New(testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.patterns[0].active = 0
+	e.patterns[0].slots[0].Len = 2
+	e.patterns[1].active = 0
+	e.patterns[1].slots[0].Len = 3
+	e.patterns[1].startStep = 1
+	if err := e.transport.SeekTick(500); err != nil {
+		t.Fatal(err)
+	}
+	if tick, ok := e.scenePatternEndTick(); !ok || tick != 4*seq.TicksPerStep {
+		t.Fatalf("offset pattern end = %d, %v; want tick %d", tick, ok, 4*seq.TicksPerStep)
+	}
+	e.patterns[1].slots[0].Len = 4
+	if tick, ok := e.scenePatternEndTick(); ok {
+		t.Fatalf("incompatible pattern ends accepted at tick %d", tick)
+	}
+}
+
 func TestSimultaneousDrumLanesShareOneStep(t *testing.T) {
 	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 6}
 	cfg.Track[0].Kind = VoiceDrums

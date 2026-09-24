@@ -1,6 +1,8 @@
 package engine
 
 import (
+	"math"
+
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/seq"
 )
@@ -34,19 +36,21 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 		e.fault(17)
 		return
 	}
-	length := uint8(16)
+	var at int64
 	if c.Arg0 == 3 {
 		var ok bool
-		length, ok = e.commonPatternLength()
+		at, ok = e.scenePatternEndTick()
 		if !ok {
 			e.fault(18)
 			return
 		}
-	}
-	at, err := seq.QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), length)
-	if err != nil {
-		e.fault(14)
-		return
+	} else {
+		var err error
+		at, err = seq.QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), 16)
+		if err != nil {
+			e.fault(14)
+			return
+		}
 	}
 	if at > e.transport.Tick() {
 		if e.pendingLen == len(e.pending) {
@@ -61,26 +65,65 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 	e.launchScene(c.Index)
 }
 
-func (e *Engine) commonPatternLength() (uint8, bool) {
-	length := uint8(0)
+// scenePatternEndTick finds the first shared end of the active patterns,
+// including restart offsets. Their lengths are at most 64 steps, so each
+// congruence can be combined in bounded time without allocating.
+func (e *Engine) scenePatternEndTick() (int64, bool) {
+	const maxSteps = math.MaxInt64 / seq.TicksPerStep
+	period, residue := int64(1), int64(0)
+	active := false
 	for track := 0; track < e.tracks; track++ {
 		p := &e.patterns[track]
 		if p.active < 0 {
 			continue
 		}
-		if p.startStep != 0 {
+		active = true
+		length := int64(p.slots[p.active].Len)
+		target := p.startStep % length
+		g := gcd(period, length)
+		if (target-residue)%g != 0 {
 			return 0, false
 		}
-		current := p.slots[p.active].Len
-		if length != 0 && length != current {
+		cycles := length / g
+		if period > maxSteps/cycles {
 			return 0, false
 		}
-		length = current
+		for k := int64(0); k < cycles; k++ {
+			candidate := residue + period*k
+			if candidate%length == target {
+				residue = candidate
+				break
+			}
+		}
+		period *= cycles
 	}
-	if length == 0 {
-		length = 16
+	if !active {
+		period = 16
 	}
-	return length, true
+	tick := e.transport.Tick()
+	step := tick / seq.TicksPerStep
+	if tick%seq.TicksPerStep != 0 {
+		step++
+	}
+	if step > residue {
+		delta := step - residue
+		cycles := delta / period
+		if delta%period != 0 {
+			cycles++
+		}
+		if cycles > (maxSteps-residue)/period {
+			return 0, false
+		}
+		residue += cycles * period
+	}
+	return residue * seq.TicksPerStep, true
+}
+
+func gcd(a, b int64) int64 {
+	for b != 0 {
+		a, b = b, a%b
+	}
+	return a
 }
 
 func (e *Engine) launchScene(index uint16) {
