@@ -75,9 +75,21 @@ func main() {
 		}
 	}
 	if !parseHasError {
-		var compileDiagnostics []notation.Diagnostic
-		programs, compileDiagnostics = project.Check(score)
-		diagnostics = append(diagnostics, compileDiagnostics...)
+		// Conversion and the live engine use the typed project. Validate through
+		// that same gate so a source file cannot pass here and fail to load.
+		semantic, projectDiagnostics := project.FromScore(score)
+		diagnostics = appendUniqueDiagnostics(diagnostics, projectDiagnostics)
+		if semantic != nil {
+			if _, err := project.CompileEngine(semantic, 48_000, 128); err != nil {
+				diagnostics = append(diagnostics, notation.Diagnostic{
+					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(),
+					Position: notation.Position{Line: 1, Column: 1},
+				})
+			}
+		}
+		if command == "graph" && !hasDiagnosticErrors(diagnostics) {
+			programs, _ = project.Check(score)
+		}
 	}
 	sort.SliceStable(diagnostics, func(i, j int) bool {
 		a, b := diagnostics[i], diagnostics[j]
@@ -125,6 +137,29 @@ func main() {
 			os.Exit(1)
 		}
 	}
+}
+
+func hasDiagnosticErrors(diagnostics []notation.Diagnostic) bool {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			return true
+		}
+	}
+	return false
+}
+
+func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.Diagnostic {
+	seen := make(map[notation.Diagnostic]bool, len(existing)+len(extra))
+	for _, diagnostic := range existing {
+		seen[diagnostic] = true
+	}
+	for _, diagnostic := range extra {
+		if !seen[diagnostic] {
+			existing = append(existing, diagnostic)
+			seen[diagnostic] = true
+		}
+	}
+	return existing
 }
 
 func usage() {

@@ -66,6 +66,9 @@ func TestFirstAcidCompilesIntoLiveEngine(t *testing.T) {
 			break
 		}
 	}
+	if err := ValidateProject(project); err == nil {
+		t.Fatal("semantic project accepted unsupported drum transpose")
+	}
 	if _, err := CompileEngine(project, 48_000, 128); err == nil {
 		t.Fatal("unsupported drum transpose was silently accepted")
 	}

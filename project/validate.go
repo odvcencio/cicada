@@ -130,6 +130,9 @@ func ValidateProject(p *Project) error {
 			return fmt.Errorf("pattern %s needs explicit data and lanes", pattern.ID)
 		}
 		if pattern.Kind == "drums" {
+			if pattern.Transpose != 0 {
+				return fmt.Errorf("drum pattern %s cannot transpose lanes", pattern.ID)
+			}
 			if len(pattern.Data) != 0 || len(pattern.Lanes) != len(laneOrder) {
 				return fmt.Errorf("drum pattern %s needs all eleven lane arrays", pattern.ID)
 			}

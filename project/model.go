@@ -138,7 +138,7 @@ func defaultMixer() Mixer { return Mixer{GainDB: -6, Insert: "none", Bus: "music
 // It does not silently omit a source declaration that has no v1 representation.
 func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 	if score == nil {
-		return nil, []notation.Diagnostic{{Code: "CICADA-SYNTAX", Severity: "error", Message: "nil score"}}
+		return nil, []notation.Diagnostic{{Code: "CICADA-SYNTAX", Severity: "error", Message: "nil score", Position: notation.Position{Line: 1, Column: 1}}}
 	}
 	diagnostics := notation.Validate(score)
 	_, compiledDiagnostics := Check(score)
@@ -149,11 +149,11 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		}
 	}
 	if utf8.RuneCountInString(score.Title) > 120 {
-		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: "title exceeds 120 characters"})
+		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: "title exceeds 120 characters", Position: score.TitlePosition})
 	}
 	root, err := rootPitchClass(score.KeyRoot)
 	if err != nil {
-		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-KEY", Severity: "error", Message: err.Error()})
+		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-KEY", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	p := &Project{
 		Format: FormatID, Version: 1, Title: score.Title, TempoMilli: int(score.TempoMilli),
@@ -235,10 +235,10 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		p.Song = append(p.Song, SongEntry{Scene: entry.Scene, Bars: uint16(entry.Bars)})
 	}
 	if err := assignSlots(p, score); err != nil {
-		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: err.Error()})
+		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	if err := ValidateProject(p); err != nil {
-		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error()})
+		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	return p, diagnostics
 }

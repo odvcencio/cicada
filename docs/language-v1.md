@@ -53,7 +53,8 @@ supplied by the next pattern iteration or a scene switch.
 Pattern attributes include `steps`, `swing`, `gate`, `transpose`,
 and `seed`. `steps` must equal the expanded cell count. Swing ranges
 from 50 to 75 percent; gate from 10 to 100 percent; transpose from -24 to
-24 semitones. Defaults are 50, 55, and 0 respectively. A pattern without
+24 semitones for note patterns. Drum patterns cannot transpose lanes.
+Defaults are 50, 55, and 0 respectively. A pattern without
 its own seed inherits the project seed.
 
 The supported scales are `minor`, `major`, `dorian`, `phrygian`,

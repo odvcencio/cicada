@@ -1,6 +1,8 @@
 package project
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/notation"
@@ -30,6 +32,45 @@ song { main }
 	}
 	if !found {
 		t.Fatalf("expected track-dependent pattern error, got %+v", diagnostics)
+	}
+}
+
+func TestSourceAndProjectAgreeAtVoiceCeiling(t *testing.T) {
+	for _, acidTracks := range []int{2, 3} {
+		var source strings.Builder
+		source.WriteString("cicada 1\n")
+		for i := 0; i < 5; i++ {
+			fmt.Fprintf(&source, "track d%d drums {}\n", i)
+		}
+		for i := 0; i < acidTracks; i++ {
+			fmt.Fprintf(&source, "track a%d acid {}\n", i)
+		}
+		source.WriteString("pattern beat drums steps=1 { bd: x; sd: x; ch: x; oh: x; cp: x; rs: x; }\n")
+		source.WriteString("pattern note acid steps=1 { 1 }\nscene all {")
+		for i := 0; i < 5; i++ {
+			fmt.Fprintf(&source, " d%d=beat", i)
+		}
+		for i := 0; i < acidTracks; i++ {
+			fmt.Fprintf(&source, " a%d=note", i)
+		}
+		source.WriteString(" }\nsong { all }\n")
+		score, diagnostics := notation.Parse([]byte(source.String()))
+		if len(diagnostics) != 0 {
+			t.Fatalf("%d acid tracks parse: %+v", acidTracks, diagnostics)
+		}
+		p, diagnostics := FromScore(score)
+		if acidTracks == 3 {
+			if p != nil || len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-LIMIT" || diagnostics[0].Position.Line == 0 {
+				t.Fatalf("33 voices were not rejected at the song entry: %+v", diagnostics)
+			}
+			continue
+		}
+		if p == nil || len(diagnostics) != 0 {
+			t.Fatalf("32 voices were rejected: %+v", diagnostics)
+		}
+		if _, err := CompileEngine(p, 48_000, 128); err != nil {
+			t.Fatalf("32-voice project could not load: %v", err)
+		}
 	}
 }
 

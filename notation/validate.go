@@ -187,6 +187,8 @@ func Validate(s *Score) []Diagnostic {
 				n, err := strconv.Atoi(a.Value)
 				if err != nil || n < -24 || n > 24 {
 					add("CICADA-PARAM", "transpose must be -24 to 24 semitones", "error", a.ValuePosition)
+				} else if p.Kind == "drums" && n != 0 {
+					add("CICADA-UNSUPPORTED", "drum patterns cannot transpose lanes", "error", a.ValuePosition)
 				}
 			case "slot":
 				n, err := strconv.Atoi(a.Value)

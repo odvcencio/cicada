@@ -130,7 +130,55 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			diagnostics = append(diagnostics, patternCompileDiagnostic(err, pattern.Position))
 		}
 	}
+	diagnostics = append(diagnostics, checkSourceVoiceBudget(score, tracks, patterns)...)
 	return programs, diagnostics
+}
+
+// The typed project has the same ceiling. Check it here as well so source
+// validation can point to the song entry that activates too many voices.
+func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Track, patterns map[string]notation.Pattern) []notation.Diagnostic {
+	scenes := make(map[string]notation.Scene, len(score.Scenes))
+	for _, scene := range score.Scenes {
+		scenes[scene.Name] = scene
+	}
+	active := make(map[string]string, len(tracks))
+	for _, entry := range score.Song {
+		scene, ok := scenes[entry.Scene]
+		if !ok {
+			continue // reference validation reports this error
+		}
+		for _, binding := range scene.Bindings {
+			switch binding.Pattern {
+			case "off":
+				delete(active, binding.Track)
+			case "keep":
+			default:
+				active[binding.Track] = binding.Pattern
+			}
+		}
+		voices := 0
+		for trackID, patternID := range active {
+			if tracks[trackID].Kind != "drums" {
+				voices++
+				continue
+			}
+			for _, lane := range patterns[patternID].Lanes {
+				for _, hit := range lane.Hits {
+					if hit.Text != "." {
+						voices++
+						break
+					}
+				}
+			}
+		}
+		if voices > 32 {
+			return []notation.Diagnostic{{
+				Code: "CICADA-LIMIT", Severity: "error", Position: entry.Position,
+				Message: "scene " + scene.Name + " exceeds 32 simultaneous voices",
+			}}
+		}
+	}
+	return nil
 }
 
 // Parameter compilers report the first invalid value but do not carry source

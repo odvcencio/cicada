@@ -55,6 +55,29 @@ func TestProjectCLI(t *testing.T) {
 	if output := run(1, "validate", badPath); !strings.Contains(output, badPath+":3:12: error CICADA-PARAM:") {
 		t.Fatalf("validation did not point to the invalid value: %q", output)
 	}
+	voiceLimit := filepath.Join("..", "..", "testdata", "invalid", "over-32-voices.cicada")
+	if output := run(1, "validate", voiceLimit); !strings.Contains(output, voiceLimit+":10:8: error CICADA-LIMIT:") {
+		t.Fatalf("validation accepted a score above the voice ceiling: %q", output)
+	}
+	voiceWAV := filepath.Join(t.TempDir(), "over-32-voices.wav")
+	if output := run(1, "render", voiceLimit, "-o", voiceWAV, "--bars", "1"); !strings.Contains(output, "CICADA-LIMIT") {
+		t.Fatalf("render accepted a score above the voice ceiling: %q", output)
+	}
+	if _, err := os.Stat(voiceWAV); !os.IsNotExist(err) {
+		t.Fatalf("invalid render left an output file: %v", err)
+	}
+	drumTranspose := filepath.Join("..", "..", "testdata", "invalid", "unsupported-drum-transpose.cicada")
+	if output := run(1, "validate", drumTranspose); !strings.Contains(output, drumTranspose+":3:") || !strings.Contains(output, "CICADA-UNSUPPORTED") {
+		t.Fatalf("validation accepted drum transpose: %q", output)
+	}
+	warningPath := filepath.Join(t.TempDir(), "slide-warning.cicada")
+	warningSource := "cicada 1\ntrack bass acid {}\npattern p acid steps=2 { 1~ . }\nscene main { bass=p }\nsong { main }\n"
+	if err := os.WriteFile(warningPath, []byte(warningSource), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if output := run(0, "validate", warningPath); strings.Count(output, "CICADA-SLIDE-REST") != 1 {
+		t.Fatalf("validation repeated a source warning: %q", output)
+	}
 	if output := run(2, "convert", first, jsonPath); !strings.Contains(output, "usage:") {
 		t.Fatalf("usage output: %q", output)
 	}

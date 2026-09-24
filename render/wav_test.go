@@ -80,6 +80,24 @@ func TestWAVRejectsShortWrite(t *testing.T) {
 	}
 }
 
+func TestWAVRejectsOverVoiceBudgetBeforeWriting(t *testing.T) {
+	source, err := os.ReadFile("../testdata/invalid/over-32-voices.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	if len(diagnostics) != 0 {
+		t.Fatalf("source diagnostics: %+v", diagnostics)
+	}
+	var output bytes.Buffer
+	if _, err := WAV(score, Options{SampleRate: 48_000, Bars: 1}, &output); err == nil || !strings.Contains(err.Error(), "32 simultaneous voices") {
+		t.Fatalf("voice limit was not enforced: %v", err)
+	}
+	if output.Len() != 0 {
+		t.Fatal("invalid render wrote a partial WAV")
+	}
+}
+
 func TestWAVAppliesStepGate(t *testing.T) {
 	const source = `cicada 1
 tempo 120

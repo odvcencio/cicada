@@ -1,0 +1,5 @@
+cicada 1
+track kit drums {}
+pattern beat drums steps=1 transpose=12 { bd: x; }
+scene main { kit=beat }
+song { main }

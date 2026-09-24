@@ -17,17 +17,19 @@ func TestInvalidSourceFixtures(t *testing.T) {
 		code string
 		line int
 	}{
-		"unknown-symbol.cicada":      {"CICADA-SYMBOL", 2},
-		"invalid-unit.cicada":        {"CICADA-PARAM", 2},
-		"unsupported-effect.cicada":  {"CICADA-UNSUPPORTED", 2},
-		"seed-64-bit.cicada":         {"CICADA-SEED", 2},
-		"duplicate-id.cicada":        {"CICADA-DUPLICATE", 3},
-		"slot-conflict.cicada":       {"CICADA-DUPLICATE", 4},
-		"expansion-65.cicada":        {"CICADA-EXPANSION", 4},
-		"unknown-scene.cicada":       {"CICADA-REFERENCE", 5},
-		"incompatible-kind.cicada":   {"CICADA-KIND", 4},
-		"unsupported-poly.cicada":    {"CICADA-UNSUPPORTED", 2},
-		"reserved-drum-lanes.cicada": {"CICADA-UNSUPPORTED", 10},
+		"unknown-symbol.cicada":             {"CICADA-SYMBOL", 2},
+		"invalid-unit.cicada":               {"CICADA-PARAM", 2},
+		"unsupported-effect.cicada":         {"CICADA-UNSUPPORTED", 2},
+		"seed-64-bit.cicada":                {"CICADA-SEED", 2},
+		"duplicate-id.cicada":               {"CICADA-DUPLICATE", 3},
+		"slot-conflict.cicada":              {"CICADA-DUPLICATE", 4},
+		"expansion-65.cicada":               {"CICADA-EXPANSION", 4},
+		"unknown-scene.cicada":              {"CICADA-REFERENCE", 5},
+		"incompatible-kind.cicada":          {"CICADA-KIND", 4},
+		"unsupported-poly.cicada":           {"CICADA-UNSUPPORTED", 2},
+		"reserved-drum-lanes.cicada":        {"CICADA-UNSUPPORTED", 10},
+		"over-32-voices.cicada":             {"CICADA-LIMIT", 10},
+		"unsupported-drum-transpose.cicada": {"CICADA-UNSUPPORTED", 3},
 	}
 	paths, err := filepath.Glob("../testdata/invalid/*.cicada")
 	if err != nil {

@@ -123,6 +123,14 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 	if report.Bars < 1 || report.Bars > 256 {
 		return report, fmt.Errorf("render supports 1 to 256 bars")
 	}
+	if compiled, diagnostics := project.FromScore(score); compiled == nil {
+		for _, diagnostic := range diagnostics {
+			if diagnostic.Severity == "error" {
+				return report, fmt.Errorf("%s: %s", diagnostic.Code, diagnostic.Message)
+			}
+		}
+		return report, fmt.Errorf("score cannot compile to a Cicada project")
+	}
 	report.SampleRate = opts.SampleRate
 	report.TailFrames = int64(math.Round(opts.TailSec * float64(opts.SampleRate)))
 	report.Frames = clock.SampleAtTick(int64(report.Bars)*seq.TicksPerBar) + report.TailFrames
