@@ -25,6 +25,10 @@ func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
 	compareWASMFixture(t, "authored-kit.cicada", 1)
 }
 
+func TestAudioWASMDriveInsertSampleParity(t *testing.T) {
+	compareWASMFixture(t, "fx/drive-insert.cicada", 1)
+}
+
 func compareWASMFixture(t *testing.T, fixture string, bars int) {
 	t.Helper()
 	wasm, err := os.ReadFile(wasmModulePath())

@@ -49,10 +49,26 @@ func ToSource(p *Project) ([]byte, error) {
 		out.WriteByte('}')
 		sections = append(sections, out.String())
 	}
+	for _, effect := range p.Effects {
+		var out strings.Builder
+		out.WriteString("fx " + effect.ID + " {")
+		for _, key := range sortedKeys(effect.Params) {
+			value, err := valueSource(effect.Params[key])
+			if err != nil {
+				return nil, err
+			}
+			out.WriteString("\n  " + key + " = " + value)
+		}
+		if len(effect.Params) > 0 {
+			out.WriteByte('\n')
+		}
+		out.WriteByte('}')
+		sections = append(sections, out.String())
+	}
 	for _, track := range p.Tracks {
 		var out strings.Builder
 		out.WriteString("track " + track.ID + " " + track.Kind)
-		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0
+		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0 || track.Mixer.Insert != "none"
 		if len(track.Params) == 0 && !hasMixer {
 			out.WriteString(" {}")
 		} else {
@@ -64,6 +80,9 @@ func ToSource(p *Project) ([]byte, error) {
 			}
 			if track.Mixer.Pan != 0 {
 				out.WriteString("  pan = " + decimal(track.Mixer.Pan) + "\n")
+			}
+			if track.Mixer.Insert != "none" {
+				out.WriteString("  insert = " + track.Mixer.Insert + "\n")
 			}
 			for _, key := range sortedKeys(track.Params) {
 				value, err := valueSource(track.Params[key])

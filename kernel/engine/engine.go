@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
@@ -42,15 +43,16 @@ type KitLaneBinding struct {
 }
 
 type TrackConfig struct {
-	Kind    VoiceKind
-	Acid    acid.Params
-	Drums   [drum.LaneCount]drum.Params
-	Kit     *[drum.LaneCount]KitLaneBinding
-	Graph   graph.Program
-	GainDB  float64
-	GainSet bool
-	Pan     float64
-	Mute    bool
+	Kind        VoiceKind
+	Acid        acid.Params
+	Drums       [drum.LaneCount]drum.Params
+	Kit         *[drum.LaneCount]KitLaneBinding
+	Graph       graph.Program
+	GainDB      float64
+	GainSet     bool
+	Pan         float64
+	Mute        bool
+	InsertDrive *fx.DriveParams
 }
 
 // PatternBank is immutable project data copied into the engine by New.
@@ -75,11 +77,13 @@ type Config struct {
 }
 
 type voiceSlot struct {
-	kind  VoiceKind
-	acid  *acid.Voice
-	drums *drum.Kit
-	graph *graph.Voice
-	mix   mix.Track
+	kind   VoiceKind
+	acid   *acid.Voice
+	drums  *drum.Kit
+	graph  *graph.Voice
+	mix    mix.Track
+	insert *fx.Drive
+	align  *mix.Delay
 }
 
 // Engine has fixed command and message rings. The host owns cross-thread
@@ -128,6 +132,12 @@ func New(cfg Config) (*Engine, error) {
 	}
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4}
 	voices := 0
+	hasDrive := false
+	for i := 0; i < cfg.Tracks; i++ {
+		if cfg.Track[i].InsertDrive != nil {
+			hasDrive = true
+		}
+	}
 	for i := 0; i < cfg.Tracks; i++ {
 		e.patterns[i].active = -1
 		for slot := range e.patterns[i].slots {
@@ -144,6 +154,24 @@ func New(cfg Config) (*Engine, error) {
 		v := &e.voices[i]
 		v.kind = spec.Kind
 		v.mix = mix.NewTrack(gain, spec.Pan, spec.Mute)
+		if spec.InsertDrive != nil {
+			if spec.Kind == VoiceOff {
+				return nil, Error("silent track cannot have a drive insert")
+			}
+			v.insert, err = fx.NewDrive(cfg.SampleRate)
+			if err == nil {
+				err = v.insert.SetParams(*spec.InsertDrive)
+			}
+			if err != nil {
+				return nil, err
+			}
+			v.insert.Reset()
+		} else if hasDrive {
+			v.align, err = mix.NewDelay(15)
+			if err != nil {
+				return nil, err
+			}
+		}
 		switch spec.Kind {
 		case VoiceOff:
 		case VoiceAcid:
@@ -383,6 +411,7 @@ func (e *Engine) Render(outL, outR []float32) {
 		var dry mix.Dry
 		for track := 0; track < e.tracks; track++ {
 			v := &e.voices[track]
+			var left, right float32
 			switch v.kind {
 			case VoiceAcid:
 				sample := v.acid.Next()
@@ -392,25 +421,32 @@ func (e *Engine) Render(outL, outR []float32) {
 					clear(outR[frame:])
 					return
 				}
-				if e.layerMask&(1<<track) != 0 {
-					dry.Add(sample, sample, v.mix)
-				}
+				left, right = sample, sample
 			case VoiceDrums:
-				left, right := v.drums.NextStereo()
+				left, right = v.drums.NextStereo()
 				if v.drums.Fault() {
 					e.fault(3)
 					clear(outL[frame:])
 					clear(outR[frame:])
 					return
 				}
-				if e.layerMask&(1<<track) != 0 {
-					dry.Add(left, right, v.mix)
-				}
 			case VoiceGraph:
 				sample := v.graph.Next()
-				if e.layerMask&(1<<track) != 0 {
-					dry.Add(sample, sample, v.mix)
+				left, right = sample, sample
+			}
+			if v.insert != nil {
+				left, right = v.insert.Process(left, right)
+				if v.insert.Fault() {
+					e.fault(12)
+					clear(outL[frame:])
+					clear(outR[frame:])
+					return
 				}
+			} else if v.align != nil {
+				left, right = v.align.Process(left, right)
+			}
+			if e.layerMask&(1<<track) != 0 && v.kind != VoiceOff {
+				dry.Add(left, right, v.mix)
 			}
 		}
 		left, right := dry.Music()
@@ -614,6 +650,12 @@ func (e *Engine) noteOff(track int, lane uint16) {
 
 func (e *Engine) resetVoice(track int) {
 	v := &e.voices[track]
+	if v.insert != nil {
+		v.insert.Reset()
+	}
+	if v.align != nil {
+		v.align.Reset()
+	}
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.Reset()

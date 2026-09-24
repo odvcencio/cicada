@@ -94,6 +94,45 @@ func TestAuthoredKitImageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestDriveInsertImageRoundTrip(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx", "drive-insert.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("source: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) || decoded.Track[0].InsertDrive == nil {
+		t.Fatal("drive insert was lost in the project image")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Track[0].InsertDrive.Mix = 2
+	if _, err := kernelimage.Encode(cfg); err == nil {
+		t.Fatal("invalid drive mix was encoded")
+	}
+}
+
 func TestProjectImageRejectsCorruption(t *testing.T) {
 	encoded, err := kernelimage.Encode(firstAcidConfig(t))
 	if err != nil {
@@ -112,11 +151,11 @@ func TestProjectImageRejectsCorruption(t *testing.T) {
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
 		t.Fatal("bad magic was accepted")
 	}
-	for _, oldVersion := range []byte{1, 2} {
+	for _, oldVersion := range []byte{1, 2, 3} {
 		corrupt = append([]byte(nil), encoded...)
 		corrupt[4] = oldVersion
 		if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
-			t.Fatalf("old image version %d was accepted with a new kit layout", oldVersion)
+			t.Fatalf("old image version %d was accepted with a new track layout", oldVersion)
 		}
 	}
 	corrupt = append(append([]byte(nil), encoded...), 0)

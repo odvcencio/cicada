@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
@@ -13,7 +14,7 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 3 // authored kit routing; version 2 carried only built-in lanes
+const imageVersion = 4 // drive insert routing; version 3 added authored kits
 
 type Error string
 
@@ -86,7 +87,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 3. The decoded Config is separately
+// Encode writes project image version 4. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -122,6 +123,18 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		w.byte(0)
 		w.f64(spec.GainDB)
 		w.f64(spec.Pan)
+		if spec.InsertDrive == nil {
+			w.byte(0)
+		} else {
+			if err := spec.InsertDrive.Validate(); err != nil {
+				return nil, err
+			}
+			w.byte(1)
+			w.byte(byte(spec.InsertDrive.Shape))
+			w.f64(spec.InsertDrive.GainDB)
+			w.f64(spec.InsertDrive.ToneHz)
+			w.f64(spec.InsertDrive.Mix)
+		}
 		switch spec.Kind {
 		case engine.VoiceOff:
 		case engine.VoiceAcid:
@@ -282,6 +295,30 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		if spec.Pan, err = r.f64(); err != nil {
 			return err
+		}
+		insertPresent, err := r.byte()
+		if err != nil || insertPresent > 1 {
+			return Error("invalid drive insert image flag")
+		}
+		if insertPresent == 1 {
+			shape, err := r.byte()
+			if err != nil {
+				return err
+			}
+			params := &fx.DriveParams{Shape: fx.DriveShape(shape)}
+			if params.GainDB, err = r.f64(); err != nil {
+				return err
+			}
+			if params.ToneHz, err = r.f64(); err != nil {
+				return err
+			}
+			if params.Mix, err = r.f64(); err != nil {
+				return err
+			}
+			if err := params.Validate(); err != nil {
+				return err
+			}
+			spec.InsertDrive = params
 		}
 		switch spec.Kind {
 		case engine.VoiceOff:
