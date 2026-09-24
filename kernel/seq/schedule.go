@@ -1,8 +1,17 @@
 package seq
 
-// Event is one note onset with both musical and absolute sample positions.
-// Gate-off scheduling and voice rendering are later M0 work.
+// Event is one note transition with both musical and absolute sample positions.
+// On is zero so the original onset-only API remains compatible.
+type EventKind uint8
+
+const (
+	NoteOn EventKind = iota
+	NoteOff
+)
+
 type Event struct {
+	Kind         EventKind
+	NoteID       int64
 	Tick         int64
 	Sample       int64
 	Offset       int32
@@ -102,6 +111,7 @@ func EventsInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64
 				continue
 			}
 			dst[written] = Event{
+				Kind: NoteOn, NoteID: absoluteStep*8 + int64(r) + 1,
 				Tick: tick, Sample: sample, Offset: int32(sample - startSample),
 				Track: track, Slot: slot, StepIndex: stepIndex, RatchetIndex: r,
 				Note: step.Note, Velocity: step.Velocity, Accent: step.Accent, Slide: incomingSlide && r == 0,
@@ -110,6 +120,117 @@ func EventsInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64
 		}
 	}
 	return written, overflow
+}
+
+// EventsWithGatesInBlock emits note-on and note-off transitions into dst.
+// It derives each event from absolute step position, so the result does not
+// depend on the caller's block size or a previous call. A later voice engine
+// can ignore an old NoteOff after a slide has started a newer note.
+func EventsWithGatesInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64, frames int, dst []Event) (written int, overflow bool) {
+	if p == nil || p.Len == 0 || frames <= 0 {
+		return 0, false
+	}
+	written, overflow = EventsInBlock(p, clock, track, slot, startSample, frames, dst)
+	startTick := clock.TickAtSample(startSample)
+	endTick := clock.TickAtSample(startSample + int64(frames))
+	firstStep := startTick/TicksPerStep - int64(p.Len) - 2
+	if firstStep < 0 {
+		firstStep = 0
+	}
+	lastStep := endTick/TicksPerStep + 1
+	for absoluteStep := firstStep; absoluteStep <= lastStep; absoluteStep++ {
+		stepIndex := uint8(absoluteStep % int64(p.Len))
+		step, err := UnpackStep(p.Steps[stepIndex])
+		if err != nil || !step.Gate || step.Tie {
+			continue
+		}
+		iteration := absoluteStep / int64(p.Len)
+		if !ProbabilityHit(step.Probability, p.Seed, track, slot, iteration, stepIndex) {
+			continue
+		}
+		start := absoluteStep*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep)
+		end := (absoluteStep+1)*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep+1)
+		for r := uint8(0); r < step.Ratchet; r++ {
+			onset := RatchetTick(start, end, step.Ratchet, r)
+			segmentEnd := end
+			if r+1 < step.Ratchet {
+				segmentEnd = RatchetTick(start, end, step.Ratchet, r+1)
+			}
+			gateTicks := (segmentEnd - onset) * int64(p.GatePercent) / 100
+			if gateTicks < 30 {
+				gateTicks = 30
+			}
+			offTick := onset + gateTicks
+			offSample := clock.SampleAtTick(offTick)
+			if r+1 == step.Ratchet {
+				offTick, offSample = extendedGateEnd(p, clock, track, slot, absoluteStep, step, offTick)
+			}
+			if offSample < startSample || offSample >= startSample+int64(frames) {
+				continue
+			}
+			if written == len(dst) {
+				overflow = true
+				continue
+			}
+			dst[written] = Event{
+				Kind: NoteOff, NoteID: absoluteStep*8 + int64(r) + 1,
+				Tick: offTick, Sample: offSample, Offset: int32(offSample - startSample),
+				Track: track, Slot: slot, StepIndex: stepIndex, RatchetIndex: r,
+				Note: step.Note,
+			}
+			written++
+		}
+	}
+	// The fixed destination buffer keeps this sort allocation free.
+	for i := 1; i < written; i++ {
+		current := dst[i]
+		j := i
+		for j > 0 && eventBefore(current, dst[j-1]) {
+			dst[j] = dst[j-1]
+			j--
+		}
+		dst[j] = current
+	}
+	return written, overflow
+}
+
+func extendedGateEnd(p *Pattern, clock Clock, track, slot uint8, absoluteStep int64, step Step, normalEnd int64) (int64, int64) {
+	lastEnd := normalEnd
+	for offset := int64(1); offset <= int64(p.Len); offset++ {
+		nextAbsolute := absoluteStep + offset
+		nextIndex := uint8(nextAbsolute % int64(p.Len))
+		next, err := UnpackStep(p.Steps[nextIndex])
+		if err != nil || !next.Gate || !ProbabilityHit(next.Probability, p.Seed, track, slot, nextAbsolute/int64(p.Len), nextIndex) {
+			break
+		}
+		nextOnset := nextAbsolute*TicksPerStep + swingDelay(p.SwingPermille, nextAbsolute)
+		if next.Tie {
+			lastEnd = (nextAbsolute+1)*TicksPerStep + swingDelay(p.SwingPermille, nextAbsolute+1)
+			continue
+		}
+		if offset == 1 && step.Slide {
+			offSample := clock.SampleAtTick(nextOnset) + (clock.SampleRate+199)/200
+			return clock.TickAtSample(offSample), offSample
+		}
+		break
+	}
+	if lastEnd > normalEnd {
+		return lastEnd, clock.SampleAtTick(lastEnd)
+	}
+	return normalEnd, clock.SampleAtTick(normalEnd)
+}
+
+func eventBefore(a, b Event) bool {
+	if a.Sample != b.Sample {
+		return a.Sample < b.Sample
+	}
+	if a.Kind != b.Kind {
+		return a.Kind == NoteOff
+	}
+	if a.Track != b.Track {
+		return a.Track < b.Track
+	}
+	return a.NoteID < b.NoteID
 }
 
 func swingDelay(permille uint16, absoluteStep int64) int64 {
