@@ -185,3 +185,81 @@ func TestRenderSampleDoesNotAllocate(t *testing.T) {
 		t.Fatalf("NextStereo allocated %.2f objects per sample", allocs)
 	}
 }
+
+func TestMappedRecipeMatchesNativeVoice(t *testing.T) {
+	const seed = uint32(73)
+	mapped, err := New(48_000, seed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Match the per-source noise seeds so this compares the recipe itself.
+	nativeLane := SD
+	nativeSeed := seed ^ uint32(BD+1)*0x9e3779b9 ^ uint32(nativeLane+1)*0x9e3779b9
+	native, err := New(48_000, nativeSeed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := mapped.SetRecipe(BD, SD); err != nil {
+		t.Fatal(err)
+	}
+	if mapped.Params(BD) != DefaultParams(SD) {
+		t.Fatal("mapped lane did not receive recipe defaults")
+	}
+	mapped.Hit(BD, 107, false)
+	native.Hit(SD, 107, false)
+	for i := 0; i < 2000; i++ {
+		left, right := mapped.NextStereo()
+		nativeLeft, nativeRight := native.NextStereo()
+		if left != nativeLeft || right != nativeRight {
+			t.Fatalf("mapped snare differs from native snare at sample %d", i)
+		}
+	}
+}
+
+func TestMappedLanesRemainIndependentAndCanBeDisabled(t *testing.T) {
+	kit, err := New(48_000, 73)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for lane := Lane(0); lane < LaneCount; lane++ {
+		if err := kit.Disable(lane); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := kit.SetRecipe(BD, SD); err != nil {
+		t.Fatal(err)
+	}
+	if err := kit.SetRecipe(CP, SD); err != nil {
+		t.Fatal(err)
+	}
+	kit.Hit(BD, 100, false)
+	kit.Hit(CP, 110, false)
+	if !kit.lanes[BD].current.active || !kit.lanes[CP].current.active {
+		t.Fatal("source lanes sharing one recipe did not get independent voices")
+	}
+	if err := kit.Disable(BD); err != nil {
+		t.Fatal(err)
+	}
+	if kit.lanes[BD].current.active || !kit.lanes[CP].current.active {
+		t.Fatal("disabling one source lane affected another")
+	}
+	energy := 0.0
+	for i := 0; i < 1000; i++ {
+		left, right := kit.NextStereo()
+		energy += float64(left*left + right*right)
+	}
+	if energy == 0 || kit.Fault() {
+		t.Fatal("remaining mapped lane was silent or faulted")
+	}
+	if err := kit.Disable(CP); err != nil {
+		t.Fatal(err)
+	}
+	kit.Hit(CP, 127, false)
+	left, right := kit.NextStereo()
+	if left != 0 || right != 0 {
+		t.Fatal("omitted lane produced sound")
+	}
+	if err := kit.SetRecipe(BD, LaneCount); err == nil {
+		t.Fatal("invalid recipe was accepted")
+	}
+}
