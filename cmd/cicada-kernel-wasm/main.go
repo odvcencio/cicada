@@ -13,8 +13,8 @@ var maxFrames int
 var trackKinds = [16]engine.VoiceKind{engine.VoiceAcid}
 var trackCount = 1
 var output [8192]float32
-var commandBytes [256 * cmd.CommandSize]byte
-var decoded [256]cmd.Command
+var commandBytes [512 * cmd.CommandSize]byte
+var decoded [512]cmd.Command
 var messageBytes [256 * cmd.MessageSize]byte
 
 //go:wasmexport gosx_audio_track_kind
@@ -76,7 +76,7 @@ func render(frames int32) {
 	if audioEngine == nil {
 		return
 	}
-	if frames < 0 || int(frames) > maxFrames {
+	if frames < 1 || int(frames) > maxFrames {
 		clear(output[:maxFrames*2])
 		audioEngine.InjectFault(13)
 		return

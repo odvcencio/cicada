@@ -62,15 +62,20 @@ type Engine struct {
 	voices                       [16]voiceSlot
 	transport                    seq.Transport
 	limiter                      *mix.Limiter
-	commands                     [256]cmd.Command
+	commands                     [512]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [256]cmd.Message
 	messageRead, messageWrite    uint16
-	pending                      [256]cmd.Command
+	overflowMessages             [2]cmd.Message
+	overflowRead, overflowLen    uint8
+	pending                      [512]cmd.Command
 	pendingLen                   int
 	layerMask                    uint32
 	meterRate, meterBlock        uint32
 	faulted                      bool
+	patterns                     [16]patternTrack
+	eventScratch                 [128]seq.Event
+	renderFrame, renderFrames    int
 }
 
 func New(cfg Config) (*Engine, error) {
@@ -91,6 +96,10 @@ func New(cfg Config) (*Engine, error) {
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4}
 	voices := 0
 	for i := 0; i < cfg.Tracks; i++ {
+		e.patterns[i].active = -1
+		for slot := range e.patterns[i].slots {
+			e.patterns[i].slots[slot] = seq.Pattern{Len: 16, GatePercent: 55, Seed: cfg.Seed}
+		}
 		spec := cfg.Track[i]
 		gain := spec.GainDB
 		if !spec.GainSet {
@@ -169,28 +178,42 @@ func (e *Engine) PushBatch(commands []cmd.Command) bool {
 func (e *Engine) InjectFault(code uint16) { e.fault(code) }
 
 func (e *Engine) Poll(m *cmd.Message) bool {
-	if m == nil || e.messageRead == e.messageWrite {
+	if m == nil {
 		return false
 	}
-	*m = e.messages[e.messageRead%uint16(len(e.messages))]
-	e.messageRead++
-	return true
+	if e.messageRead != e.messageWrite {
+		*m = e.messages[e.messageRead%uint16(len(e.messages))]
+		e.messageRead++
+		return true
+	}
+	if e.overflowRead < e.overflowLen {
+		*m = e.overflowMessages[e.overflowRead]
+		e.overflowRead++
+		return true
+	}
+	return false
 }
 
 func (e *Engine) Reset() {
 	for i := 0; i < e.tracks; i++ {
 		e.resetVoice(i)
+		e.patterns[i].active = -1
+		e.patterns[i].eventCount, e.patterns[i].eventIndex = 0, 0
+		e.patterns[i].heldValid = false
+		e.patterns[i].playingNote = 0
 	}
 	e.limiter.Reset()
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
+	e.overflowRead, e.overflowLen = 0, 0
 	e.pendingLen, e.meterBlock = 0, 0
+	e.renderFrame, e.renderFrames = 0, 0
 	e.layerMask = (1 << e.tracks) - 1
 	e.faulted = false
 }
 
 func (e *Engine) Render(outL, outR []float32) {
-	if len(outL) != len(outR) || len(outL) > e.maxBlock {
+	if len(outL) != len(outR) || len(outL) < 1 || len(outL) > e.maxBlock {
 		clear(outL)
 		clear(outR)
 		e.fault(1)
@@ -205,9 +228,28 @@ func (e *Engine) Render(outL, outR []float32) {
 	if e.faulted {
 		return
 	}
+	e.renderFrames = len(outL)
+	e.renderFrame = 0
+	e.scheduleAll()
+	if e.faulted {
+		return
+	}
+	scheduledTempo := e.transport.BPMMilli()
 	var blockPeak float32
 	for frame := range outL {
+		e.renderFrame = frame
+		if e.transport.BPMMilli() != scheduledTempo {
+			e.scheduleAll()
+			scheduledTempo = e.transport.BPMMilli()
+		}
+		e.processPatternEvents(seq.NoteOff)
 		e.applyPending()
+		if e.faulted {
+			clear(outL[frame:])
+			clear(outR[frame:])
+			return
+		}
+		e.processPatternEvents(seq.NoteOn)
 		if e.faulted {
 			clear(outL[frame:])
 			clear(outR[frame:])
@@ -254,6 +296,7 @@ func (e *Engine) Render(outL, outR []float32) {
 		blockPeak = max(blockPeak, float32(math.Max(math.Abs(float64(outL[frame])), math.Abs(float64(outR[frame])))))
 		e.transport.Advance(1)
 	}
+	e.renderFrames = 0
 	e.meterBlock++
 	if e.meterRate != 0 && e.meterBlock%e.meterRate == 0 {
 		e.emit(cmd.Message{Kind: cmd.Meter, Track: 0xff, B: math.Float32bits(blockPeak), Tick: e.transport.Tick()})
@@ -267,30 +310,38 @@ func (e *Engine) drainCommands() {
 		if c.Op == cmd.OpSetLayerMask && c.Tick == 0 {
 			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
 		}
-		if c.Tick > e.transport.Tick() {
-			if e.pendingLen == len(e.pending) {
-				e.fault(5)
-				return
-			}
-			e.pending[e.pendingLen] = c
-			e.pendingLen++
-		} else {
-			e.apply(c)
-			if e.faulted {
-				return
-			}
+		if e.transport.Playing() && c.Tick == 0 && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
+			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
+		}
+		if e.pendingLen == len(e.pending) {
+			e.fault(5)
+			return
+		}
+		if c.Tick > 0 && c.Tick < e.transport.Tick() {
+			e.emit(cmd.Message{Kind: cmd.Late, Track: c.Track, A: uint16(c.Op), Tick: c.Tick})
+		}
+		e.pending[e.pendingLen] = c
+		e.pendingLen++
+		if e.faulted {
+			return
 		}
 	}
+	e.applyPending()
 }
 
 func (e *Engine) applyPending() {
-	for i := 0; i < e.pendingLen; {
-		if e.pending[i].Tick > e.transport.Tick() {
-			i++
-			continue
+	for {
+		best, priority := -1, 5
+		for i := 0; i < e.pendingLen; i++ {
+			if e.pending[i].Tick <= e.transport.Tick() && commandPriority(e.pending[i].Op) < priority {
+				best, priority = i, commandPriority(e.pending[i].Op)
+			}
 		}
-		c := e.pending[i]
-		copy(e.pending[i:], e.pending[i+1:e.pendingLen])
+		if best < 0 {
+			return
+		}
+		c := e.pending[best]
+		copy(e.pending[best:], e.pending[best+1:e.pendingLen])
 		e.pendingLen--
 		e.apply(c)
 		if e.faulted {
@@ -299,15 +350,33 @@ func (e *Engine) applyPending() {
 	}
 }
 
+func commandPriority(op cmd.Op) int {
+	switch op {
+	case cmd.OpNoteOff, cmd.OpStop, cmd.OpSeek:
+		return 0
+	case cmd.OpSelectPattern, cmd.OpLaunchScene, cmd.OpSetChain:
+		return 1
+	case cmd.OpNoteOn, cmd.OpPlay:
+		return 3
+	default:
+		return 2
+	}
+}
+
 func (e *Engine) apply(c cmd.Command) {
 	switch c.Op {
 	case cmd.OpPlay:
 		e.transport.Play()
+		if e.renderFrames > 0 {
+			e.scheduleAll()
+		}
 		e.emit(cmd.Message{Kind: cmd.Playhead, Track: 0xff, Tick: e.transport.Tick()})
 	case cmd.OpStop:
 		e.transport.Stop()
 		for i := 0; i < e.tracks; i++ {
 			e.noteOff(i, 0xffff)
+			e.patterns[i].playingNote = 0
+			e.patterns[i].heldValid = false
 		}
 	case cmd.OpSeek:
 		if e.transport.SeekTick(int64(c.Arg0)*seq.TicksPerBar+int64(c.Arg1)) != nil {
@@ -318,6 +387,13 @@ func (e *Engine) apply(c cmd.Command) {
 			e.resetVoice(i)
 		}
 		e.limiter.Reset()
+		for i := 0; i < e.tracks; i++ {
+			e.patterns[i].playingNote = 0
+			e.patterns[i].heldValid = false
+		}
+		if e.renderFrames > 0 {
+			e.scheduleAll()
+		}
 	case cmd.OpSetTempo:
 		if e.transport.QueueTempo(int64(c.Arg0)) != nil {
 			e.fault(7)
@@ -327,6 +403,8 @@ func (e *Engine) apply(c cmd.Command) {
 		note, velocity := uint8(c.Arg0), uint8(c.Arg0>>8)
 		accent, slide := c.Arg0&(1<<16) != 0, c.Arg0&(1<<17) != 0
 		v := &e.voices[track]
+		e.patterns[track].playingNote = 0
+		e.patterns[track].heldValid = false
 		switch v.kind {
 		case VoiceAcid:
 			v.acid.NoteOn(note, accent, slide, velocity)
@@ -349,7 +427,11 @@ func (e *Engine) apply(c cmd.Command) {
 			return
 		}
 		e.noteOff(int(c.Track), c.Index)
+		e.patterns[c.Track].playingNote = 0
+		e.patterns[c.Track].heldValid = false
 		e.emit(cmd.Message{Kind: cmd.NoteOff, Track: c.Track, Tick: e.transport.Tick()})
+	case cmd.OpSetStep, cmd.OpSetPatternLen, cmd.OpSetPatternMeta, cmd.OpSelectPattern:
+		e.applyPatternCommand(c)
 	case cmd.OpSetLayerMask:
 		e.layerMask = c.Arg0
 	case cmd.OpMeterRate:
@@ -394,10 +476,33 @@ func (e *Engine) emit(message cmd.Message) {
 		if message.Kind == cmd.Meter {
 			return
 		}
-		e.messageRead++
-		e.messages[(e.messageWrite-1)%uint16(len(e.messages))] = cmd.Message{Kind: cmd.Fault, Track: 0xff, A: 11, Tick: e.transport.Tick()}
-		e.faulted = true
-		return
+		for i := e.messageRead; i != e.messageWrite; i++ {
+			if e.messages[i%uint16(len(e.messages))].Kind != cmd.Meter {
+				continue
+			}
+			for j := i; j != e.messageWrite-1; j++ {
+				e.messages[j%uint16(len(e.messages))] = e.messages[(j+1)%uint16(len(e.messages))]
+			}
+			e.messageWrite--
+			break
+		}
+		if e.messageWrite-e.messageRead >= uint16(len(e.messages)) {
+			if e.overflowLen == 0 {
+				e.overflowMessages[0] = message
+				e.overflowLen = 1
+				if message.Kind != cmd.Fault {
+					e.overflowMessages[1] = cmd.Message{Kind: cmd.Fault, Track: 0xff, A: 11, Tick: e.transport.Tick()}
+					e.overflowLen = 2
+				}
+			}
+			e.faulted = true
+			e.transport.Stop()
+			for track := 0; track < e.tracks; track++ {
+				e.resetVoice(track)
+			}
+			e.limiter.Reset()
+			return
+		}
 	}
 	e.messages[e.messageWrite%uint16(len(e.messages))] = message
 	e.messageWrite++
@@ -408,6 +513,7 @@ func (e *Engine) fault(code uint16) {
 		return
 	}
 	e.faulted = true
+	e.renderFrames = 0
 	e.transport.Stop()
 	for i := 0; i < e.tracks; i++ {
 		e.resetVoice(i)

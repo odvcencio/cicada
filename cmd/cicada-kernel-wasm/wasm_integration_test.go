@@ -11,6 +11,8 @@ import (
 
 	"github.com/tetratelabs/wazero"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 func TestAudioWASMABI(t *testing.T) {
@@ -84,12 +86,13 @@ func TestAudioWASMABI(t *testing.T) {
 	if !nonzero {
 		t.Fatal("WASM engine rendered silence after acid and drum notes")
 	}
-	assertMessages := func(wantFault bool) {
+	assertMessages := func(wantFault bool) []cmd.Message {
 		t.Helper()
 		count := int(call("gosx_audio_msg_drain"))
 		if count == 0 {
 			t.Fatal("WASM engine emitted no messages")
 		}
+		messages := make([]cmd.Message, 0, count)
 		fault := false
 		for i := 0; i < count; i++ {
 			data, ok := module.Memory().Read(message+uint32(i*cmd.MessageSize), cmd.MessageSize)
@@ -100,20 +103,77 @@ func TestAudioWASMABI(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			messages = append(messages, decoded)
 			fault = fault || decoded.Kind == cmd.Fault
 		}
 		if fault != wantFault {
 			t.Fatalf("fault message = %v, want %v", fault, wantFault)
 		}
+		return messages
 	}
-	assertMessages(false)
+	initialWASM := assertMessages(false)
+	nativeConfig := engine.Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 2, MaxVoices: 32}
+	nativeConfig.Track[0].Kind = engine.VoiceAcid
+	nativeConfig.Track[1].Kind = engine.VoiceDrums
+	native, err := engine.New(nativeConfig)
+	if err != nil || !native.PushBatch(batch) {
+		t.Fatalf("native parity setup: %v", err)
+	}
+	var nativeL, nativeR [128]float32
+	for range 16 {
+		native.Render(nativeL[:], nativeR[:])
+	}
+	compareMusicalMessages(t, initialWASM, drainNativeMessages(native))
+	step, err := seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100, Velocity: 110})
+	if err != nil {
+		t.Fatal(err)
+	}
+	patternBatch := []cmd.Command{
+		{Op: cmd.OpSetPatternLen, Track: 0, Index: 1, Arg1: 2},
+		{Op: cmd.OpSetStep, Track: 0, Index: 0, Arg0: step, Arg1: 2},
+		{Op: cmd.OpSelectPattern, Track: 0, Index: 2, Arg0: 2},
+	}
+	for i, c := range patternBatch {
+		record, err := cmd.EncodeCommand(c, 2)
+		if err != nil || !module.Memory().Write(command+uint32(i*cmd.CommandSize), record[:]) {
+			t.Fatalf("write pattern command %d: %v", i, err)
+		}
+	}
+	call("gosx_audio_cmd_commit", uint64(len(patternBatch)))
+	if !native.PushBatch(patternBatch) {
+		t.Fatal("native pattern batch rejected")
+	}
 	memoryBytes := module.Memory().Size()
-	for range 200 {
+	for range 800 {
 		call("gosx_audio_render", 128)
+		native.Render(nativeL[:], nativeR[:])
 	}
 	if got := module.Memory().Size(); got != memoryBytes {
 		t.Fatalf("WASM memory grew during steady render: %d -> %d bytes", memoryBytes, got)
 	}
+	count := int(call("gosx_audio_msg_drain"))
+	var switched, sounded bool
+	patternWASM := make([]cmd.Message, 0, count)
+	for i := 0; i < count; i++ {
+		data, ok := module.Memory().Read(message+uint32(i*cmd.MessageSize), cmd.MessageSize)
+		if !ok {
+			t.Fatal("pattern message pointer out of bounds")
+		}
+		decoded, err := cmd.DecodeMessage(data)
+		if err != nil {
+			t.Fatal(err)
+		}
+		patternWASM = append(patternWASM, decoded)
+		switched = switched || decoded.Kind == cmd.Switched && decoded.A == 2 && decoded.Tick == seq.TicksPerBar
+		sounded = sounded || decoded.Kind == cmd.NoteOn && decoded.A == 60 && decoded.Tick == seq.TicksPerBar
+		if decoded.Kind == cmd.Fault {
+			t.Fatalf("pattern playback fault %d", decoded.A)
+		}
+	}
+	if !switched || !sounded {
+		t.Fatalf("WASM pattern boundary not observed: switched=%v sounded=%v", switched, sounded)
+	}
+	compareMusicalMessages(t, patternWASM, drainNativeMessages(native))
 	bad := [cmd.CommandSize]byte{byte(cmd.OpPlay), 0xff}
 	bad[12] = 1 // Invalid reserved padding must fault the whole batch.
 	if !module.Memory().Write(command, bad[:]) {
@@ -126,6 +186,37 @@ func TestAudioWASMABI(t *testing.T) {
 		sample, ok := module.Memory().ReadFloat32Le(out + frame*4)
 		if !ok || sample != 0 {
 			t.Fatalf("faulted engine output at frame %d: %g", frame, sample)
+		}
+	}
+}
+
+func drainNativeMessages(e *engine.Engine) []cmd.Message {
+	var messages []cmd.Message
+	var message cmd.Message
+	for e.Poll(&message) {
+		messages = append(messages, message)
+	}
+	return messages
+}
+
+func compareMusicalMessages(t *testing.T, wasm, native []cmd.Message) {
+	t.Helper()
+	filter := func(messages []cmd.Message) []cmd.Message {
+		var musical []cmd.Message
+		for _, message := range messages {
+			if message.Kind != cmd.Meter {
+				musical = append(musical, message)
+			}
+		}
+		return musical
+	}
+	wasm, native = filter(wasm), filter(native)
+	if len(wasm) != len(native) {
+		t.Fatalf("native/WASM event count differs: %d / %d", len(native), len(wasm))
+	}
+	for i := range wasm {
+		if wasm[i] != native[i] {
+			t.Fatalf("native/WASM event %d differs: %+v / %+v", i, native[i], wasm[i])
 		}
 	}
 }

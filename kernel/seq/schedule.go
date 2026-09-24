@@ -68,6 +68,12 @@ func ProbabilityHit(probability uint8, seed uint32, track, slot uint8, iteration
 // It never allocates. overflow is true if dst could not hold every event.
 // The caller must retry with a larger preallocated buffer before rendering.
 func EventsInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64, frames int, dst []Event) (written int, overflow bool) {
+	return EventsOffsetInBlock(p, clock, track, slot, 0, startSample, frames, dst)
+}
+
+// EventsOffsetInBlock starts step zero at startStep. It supports a pattern
+// restart without changing the stored pattern or allocating in the callback.
+func EventsOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, startSample int64, frames int, dst []Event) (written int, overflow bool) {
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
 	}
@@ -79,18 +85,22 @@ func EventsInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64
 	}
 	lastStep := endTick/TicksPerStep + 1
 	for absoluteStep := firstStep; absoluteStep <= lastStep; absoluteStep++ {
-		stepIndex := uint8(absoluteStep % int64(p.Len))
+		localStep := absoluteStep - startStep
+		if localStep < 0 {
+			continue
+		}
+		stepIndex := uint8(localStep % int64(p.Len))
 		step, err := UnpackStep(p.Steps[stepIndex])
 		if err != nil || !step.Gate || step.Tie {
 			continue
 		}
-		iteration := absoluteStep / int64(p.Len)
+		iteration := localStep / int64(p.Len)
 		if !ProbabilityHit(step.Probability, p.Seed, track, slot, iteration, stepIndex) {
 			continue
 		}
 		incomingSlide := false
-		if absoluteStep > 0 {
-			previous := absoluteStep - 1
+		if localStep > 0 {
+			previous := localStep - 1
 			previousIndex := uint8(previous % int64(p.Len))
 			previousStep, err := UnpackStep(p.Steps[previousIndex])
 			if err == nil && previousStep.Gate && previousStep.Slide {
@@ -114,7 +124,7 @@ func EventsInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64
 				Kind: NoteOn, NoteID: absoluteStep*8 + int64(r) + 1,
 				Tick: tick, Sample: sample, Offset: int32(sample - startSample),
 				Track: track, Slot: slot, StepIndex: stepIndex, RatchetIndex: r,
-				Note: step.Note, Velocity: step.Velocity, Accent: step.Accent, Slide: incomingSlide && r == 0,
+				Note: uint8(int(step.Note) + int(p.Transpose)), Velocity: step.Velocity, Accent: step.Accent, Slide: incomingSlide && r == 0,
 			}
 			written++
 		}
@@ -127,10 +137,16 @@ func EventsInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64
 // depend on the caller's block size or a previous call. A later voice engine
 // can ignore an old NoteOff after a slide has started a newer note.
 func EventsWithGatesInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64, frames int, dst []Event) (written int, overflow bool) {
+	return EventsWithGatesOffsetInBlock(p, clock, track, slot, 0, startSample, frames, dst)
+}
+
+// EventsWithGatesOffsetInBlock emits notes and releases for a restarted
+// pattern whose step zero is at startStep in the global transport grid.
+func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, startSample int64, frames int, dst []Event) (written int, overflow bool) {
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
 	}
-	written, overflow = EventsInBlock(p, clock, track, slot, startSample, frames, dst)
+	written, overflow = EventsOffsetInBlock(p, clock, track, slot, startStep, startSample, frames, dst)
 	startTick := clock.TickAtSample(startSample)
 	endTick := clock.TickAtSample(startSample + int64(frames))
 	firstStep := startTick/TicksPerStep - int64(p.Len) - 2
@@ -139,12 +155,16 @@ func EventsWithGatesInBlock(p *Pattern, clock Clock, track, slot uint8, startSam
 	}
 	lastStep := endTick/TicksPerStep + 1
 	for absoluteStep := firstStep; absoluteStep <= lastStep; absoluteStep++ {
-		stepIndex := uint8(absoluteStep % int64(p.Len))
+		localStep := absoluteStep - startStep
+		if localStep < 0 {
+			continue
+		}
+		stepIndex := uint8(localStep % int64(p.Len))
 		step, err := UnpackStep(p.Steps[stepIndex])
 		if err != nil || !step.Gate || step.Tie {
 			continue
 		}
-		iteration := absoluteStep / int64(p.Len)
+		iteration := localStep / int64(p.Len)
 		if !ProbabilityHit(step.Probability, p.Seed, track, slot, iteration, stepIndex) {
 			continue
 		}
@@ -163,7 +183,7 @@ func EventsWithGatesInBlock(p *Pattern, clock Clock, track, slot uint8, startSam
 			offTick := onset + gateTicks
 			offSample := clock.SampleAtTick(offTick)
 			if r+1 == step.Ratchet {
-				offTick, offSample = extendedGateEnd(p, clock, track, slot, absoluteStep, step, offTick)
+				offTick, offSample = extendedGateEnd(p, clock, track, slot, absoluteStep, startStep, step, offTick)
 			}
 			if offSample < startSample || offSample >= startSample+int64(frames) {
 				continue
@@ -194,13 +214,14 @@ func EventsWithGatesInBlock(p *Pattern, clock Clock, track, slot uint8, startSam
 	return written, overflow
 }
 
-func extendedGateEnd(p *Pattern, clock Clock, track, slot uint8, absoluteStep int64, step Step, normalEnd int64) (int64, int64) {
+func extendedGateEnd(p *Pattern, clock Clock, track, slot uint8, absoluteStep, startStep int64, step Step, normalEnd int64) (int64, int64) {
 	lastEnd := normalEnd
 	for offset := int64(1); offset <= int64(p.Len); offset++ {
 		nextAbsolute := absoluteStep + offset
-		nextIndex := uint8(nextAbsolute % int64(p.Len))
+		nextLocal := nextAbsolute - startStep
+		nextIndex := uint8(nextLocal % int64(p.Len))
 		next, err := UnpackStep(p.Steps[nextIndex])
-		if err != nil || !next.Gate || !ProbabilityHit(next.Probability, p.Seed, track, slot, nextAbsolute/int64(p.Len), nextIndex) {
+		if err != nil || !next.Gate || !ProbabilityHit(next.Probability, p.Seed, track, slot, nextLocal/int64(p.Len), nextIndex) {
 			break
 		}
 		nextOnset := nextAbsolute*TicksPerStep + swingDelay(p.SwingPermille, nextAbsolute)

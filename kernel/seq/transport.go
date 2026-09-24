@@ -25,6 +25,7 @@ func (t *Transport) Tick() int64     { return t.tick }
 func (t *Transport) Sample() int64   { return t.sample }
 func (t *Transport) Playing() bool   { return t.playing }
 func (t *Transport) BPMMilli() int64 { return t.clock.BPMMilli }
+func (t *Transport) Clock() Clock    { return t.clock }
 func (t *Transport) PendingTempo() (int64, int64) {
 	return t.pendingTempo, t.applyTick
 }
