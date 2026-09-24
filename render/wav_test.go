@@ -171,12 +171,12 @@ func TestWAVSceneSwitchSlideAndRestGate(t *testing.T) {
 			if different != tc.wantSlideDifference {
 				t.Fatalf("slide changed late first-bar PCM=%v, want %v", different, tc.wantSlideDifference)
 			}
-			assertLiveSceneBoundaryMatchesWAV(t, score, withSlide.Bytes())
+			assertLiveRangeMatchesWAV(t, score, withSlide.Bytes(), 90_000, 99_000)
 		})
 	}
 }
 
-func assertLiveSceneBoundaryMatchesWAV(t *testing.T, score *notation.Score, wav []byte) {
+func assertLiveRangeMatchesWAV(t *testing.T, score *notation.Score, wav []byte, first, last int) {
 	t.Helper()
 	p, diagnostics := project.FromScore(score)
 	if p == nil {
@@ -198,7 +198,6 @@ func assertLiveSceneBoundaryMatchesWAV(t *testing.T, score *notation.Score, wav 
 		t.Fatal(err)
 	}
 	latency := limiter.LatencyFrames()
-	const first, last = 90_000, 99_000
 	var left, right [128]float32
 	for position := 0; position < last+latency; position += len(left) {
 		live.Render(left[:], right[:])
@@ -278,6 +277,60 @@ song { main }
 	if report.Peak < .001 || len(first.Bytes()) != 68+int(report.Frames)*6 {
 		t.Fatalf("invalid drum render: %+v", report)
 	}
+}
+
+func TestAuthoredKitRendersAndOmitsUnboundLanes(t *testing.T) {
+	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	if len(diagnostics) != 0 {
+		t.Fatalf("authored kit parse: %+v", diagnostics)
+	}
+	var first, second bytes.Buffer
+	report, err := WAV(score, Options{SampleRate: 48_000}, &first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WAV(score, Options{SampleRate: 48_000}, &second); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.Bytes(), second.Bytes()) || report.Peak < .001 {
+		t.Fatalf("authored kit was silent or nondeterministic: %+v", report)
+	}
+	withOmittedHit := strings.Replace(string(source), "bd: x...; ch: ..x.;", "bd: x...; sd: ...X; ch: ..x.;", 1)
+	if withOmittedHit == string(source) {
+		t.Fatal("authored kit fixture changed")
+	}
+	changed, diagnostics := notation.Parse([]byte(withOmittedHit))
+	if len(diagnostics) != 0 {
+		t.Fatalf("omitted lane parse: %+v", diagnostics)
+	}
+	var omitted bytes.Buffer
+	if _, err := WAV(changed, Options{SampleRate: 48_000}, &omitted); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.Bytes(), omitted.Bytes()) {
+		t.Fatal("hit on unbound kit lane produced sound")
+	}
+	for _, changedBinding := range []struct{ old, new string }{
+		{"bd=kick", "bd=builtin.bd"},
+		{"ch=builtin.ch", "ch=builtin.cy"},
+	} {
+		changed, diagnostics := notation.Parse([]byte(strings.Replace(string(source), changedBinding.old, changedBinding.new, 1)))
+		if len(diagnostics) != 0 {
+			t.Fatalf("remapped kit parse: %+v", diagnostics)
+		}
+		var remapped bytes.Buffer
+		if _, err := WAV(changed, Options{SampleRate: 48_000}, &remapped); err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Equal(first.Bytes(), remapped.Bytes()) {
+			t.Fatalf("changing %s did not change the sound", changedBinding.old)
+		}
+	}
+	assertLiveRangeMatchesWAV(t, score, first.Bytes(), 0, 8_000)
 }
 
 func TestVerifyWAVChecksMusicalDurationAndSignal(t *testing.T) {

@@ -96,11 +96,15 @@ All eleven built-in lanes render: `bd`, `sd`, `ch`, `oh`, `cp`, `rs`,
 `lt`, `mt`, `ht`, `cb`, and `cy`. The [drum kit example](../examples/drums-kit.cicada)
 plays each lane.
 
-The grammar also recognizes `kit steel { bd=kick; ch=builtin.ch; }` and
-`track drums steel {}`. Kit bindings retain their lane, target, and source
-position in the typed score. Validation reports `CICADA-UNSUPPORTED` until
-authored kit audio routing is implemented; it never substitutes the built-in
-kit for an authored one.
+An authored kit uses `kit steel { bd=kick; ch=builtin.ch; }` and
+`track drums steel {}`. Each lane binds one declared mono instrument or one
+`builtin.<lane>` recipe. Omitted lanes stay silent. A graph instrument receives
+the lane's fixed MIDI trigger pitch and hit velocity. The binding is retained
+in the typed project and plays in native, offline, and WASM renderers. See the
+[authored kit example](../examples/authored-kit.cicada).
+An authored graph should shape its one-shot decay with `env`; its gate remains
+high after a hit until a choke or scene stop. A retrigger restarts the graph
+with a 1 ms fade of the prior state.
 
 ## Code-defined instruments
 

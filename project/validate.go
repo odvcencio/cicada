@@ -28,8 +28,8 @@ func ValidateProject(p *Project) error {
 	if p.Instruments == nil || p.Kits == nil || p.Tracks == nil || p.Patterns == nil || p.Scenes == nil || p.Song == nil || p.Effects == nil {
 		return fmt.Errorf("project arrays must be explicit")
 	}
-	if len(p.Kits) != 0 || len(p.Effects) != 0 {
-		return fmt.Errorf("kits and effects are not implemented in M0")
+	if len(p.Effects) != 0 {
+		return fmt.Errorf("effects are not implemented in M1")
 	}
 	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 || len(p.Song) == 0 {
 		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
@@ -70,13 +70,27 @@ func ValidateProject(p *Project) error {
 		}
 		instruments[inst.ID] = program
 	}
+	kits := map[string]Kit{}
+	for _, kit := range p.Kits {
+		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || instruments[kit.ID] != nil {
+			return fmt.Errorf("kit %s has an invalid or reserved ID", kit.ID)
+		}
+		if _, exists := kits[kit.ID]; exists {
+			return fmt.Errorf("duplicate kit %s", kit.ID)
+		}
+		if _, err := CompileKit(kit, instruments); err != nil {
+			return err
+		}
+		kits[kit.ID] = kit
+	}
 	tracks := map[string]Track{}
 	for _, track := range p.Tracks {
 		if _, exists := tracks[track.ID]; exists || !validID(track.ID) {
 			return fmt.Errorf("duplicate or invalid track ID %q", track.ID)
 		}
 		tracks[track.ID] = track
-		if track.Kind != "acid" && track.Kind != "drums" && instruments[track.Kind] == nil {
+		_, isKit := kits[track.Kind]
+		if track.Kind != "acid" && track.Kind != "drums" && !isKit && instruments[track.Kind] == nil {
 			return fmt.Errorf("track %s has unknown instrument %s", track.ID, track.Kind)
 		}
 		if track.Params == nil {
@@ -91,6 +105,9 @@ func ValidateProject(p *Project) error {
 			if _, err := drumParamsFromValues(track.Params); err != nil {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
+		}
+		if isKit && len(track.Params) != 0 {
+			return fmt.Errorf("kit track %s does not accept drum or instrument parameters", track.ID)
 		}
 		for name, value := range track.Params {
 			if name == "level" || name == "pan" {
@@ -116,6 +133,19 @@ func ValidateProject(p *Project) error {
 		if err := validateDryMixer(track.Mixer); err != nil {
 			return fmt.Errorf("track %s: %w", track.ID, err)
 		}
+	}
+	allocatedVoices := 0
+	for _, track := range p.Tracks {
+		if track.Kind == "drums" {
+			allocatedVoices += len(laneOrder)
+		} else if kit, ok := kits[track.Kind]; ok {
+			allocatedVoices += len(kit.Lanes)
+		} else {
+			allocatedVoices++
+		}
+	}
+	if allocatedVoices > 32 {
+		return fmt.Errorf("project exceeds 32 allocated voices")
 	}
 	patterns := map[string]Pattern{}
 	for _, pattern := range p.Patterns {
@@ -144,9 +174,6 @@ func ValidateProject(p *Project) error {
 				if err := validateSteps(steps); err != nil {
 					return fmt.Errorf("drum pattern %s lane %s: %w", pattern.ID, lane, err)
 				}
-				if unsupportedDrumSteps(lane, steps) {
-					return fmt.Errorf("drum lane %s is reserved for M1", lane)
-				}
 			}
 		} else if pattern.Kind == "acid" || pattern.Kind == "notes" {
 			if len(pattern.Data) != int(pattern.Steps) || len(pattern.Lanes) != 0 {
@@ -166,7 +193,7 @@ func ValidateProject(p *Project) error {
 				continue
 			}
 			pattern, ok := patterns[*slot]
-			if !ok || seen[*slot] || !compatible(track.Kind, pattern.Kind) {
+			if !ok || seen[*slot] || !compatible(track.Kind, pattern.Kind, kits) {
 				return fmt.Errorf("track %s has invalid or duplicate slot %s", track.ID, *slot)
 			}
 			seen[*slot] = true
@@ -187,7 +214,7 @@ func ValidateProject(p *Project) error {
 				continue
 			}
 			pattern, ok := patterns[patternID]
-			if !ok || !compatible(track.Kind, pattern.Kind) || !hasSlot(track, patternID) {
+			if !ok || !compatible(track.Kind, pattern.Kind, kits) || !hasSlot(track, patternID) {
 				return fmt.Errorf("scene %s cannot bind %s to %s", scene.ID, trackID, patternID)
 			}
 		}
@@ -209,16 +236,12 @@ func ValidateProject(p *Project) error {
 			}
 		}
 		voices := 0
-		for trackID, patternID := range active {
-			if tracks[trackID].Kind == "drums" {
-				for _, steps := range patterns[patternID].Lanes {
-					for _, step := range steps {
-						if step != nil {
-							voices++
-							break
-						}
-					}
-				}
+		for trackID := range active {
+			kind := tracks[trackID].Kind
+			if kind == "drums" {
+				voices += len(laneOrder)
+			} else if kit, ok := kits[kind]; ok {
+				voices += len(kit.Lanes)
 			} else {
 				voices++
 			}
@@ -228,18 +251,6 @@ func ValidateProject(p *Project) error {
 		}
 	}
 	return nil
-}
-
-func unsupportedDrumSteps(lane string, steps []*Step) bool {
-	if _, supported := drumLane(lane); supported {
-		return false
-	}
-	for _, step := range steps {
-		if step != nil {
-			return true
-		}
-	}
-	return false
 }
 
 func validID(id string) bool {
@@ -340,8 +351,8 @@ func validateSteps(steps []*Step) error {
 	return nil
 }
 
-func compatible(trackKind, patternKind string) bool {
-	if trackKind == "drums" {
+func compatible(trackKind, patternKind string, kits map[string]Kit) bool {
+	if trackKind == "drums" || kits[trackKind].Lanes != nil {
 		return patternKind == "drums"
 	}
 	if trackKind == "acid" {

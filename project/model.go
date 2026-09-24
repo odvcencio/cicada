@@ -177,6 +177,13 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		inst.Out = projectExpr(source.Output)
 		p.Instruments = append(p.Instruments, inst)
 	}
+	for _, source := range score.Kits {
+		kit := Kit{ID: source.Name, Lanes: map[string]string{}}
+		for _, binding := range source.Bindings {
+			kit.Lanes[binding.Lane] = binding.Target
+		}
+		p.Kits = append(p.Kits, kit)
+	}
 	for _, source := range score.Tracks {
 		track := Track{ID: source.Name, Kind: source.Kind, Params: map[string]Value{}, Mixer: defaultMixer()}
 		mixer, err := CompileMixerParams(source)

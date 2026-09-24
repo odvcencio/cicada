@@ -39,6 +39,10 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		}
 		programs[inst.ID] = program
 	}
+	kits := make(map[string]Kit, len(p.Kits))
+	for _, kit := range p.Kits {
+		kits[kit.ID] = kit
+	}
 	trackIndex := make(map[string]int, len(p.Tracks))
 	for ti, track := range p.Tracks {
 		trackIndex[track.ID] = ti
@@ -61,6 +65,16 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			config.Drums = params
 			cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
 		default:
+			if kit, ok := kits[track.Kind]; ok {
+				config.Kind = engine.VoiceDrums
+				bindings, err := CompileKit(kit, programs)
+				if err != nil {
+					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+				}
+				config.Kit = bindings
+				cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
+				break
+			}
 			config.Kind = engine.VoiceGraph
 			program := programs[track.Kind]
 			if program == nil {
@@ -89,7 +103,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			if err != nil {
 				return cfg, fmt.Errorf("pattern %s: %w", pattern.ID, err)
 			}
-			if track.Kind == "drums" {
+			if config.Kind == engine.VoiceDrums {
 				if pattern.Transpose != 0 {
 					return cfg, fmt.Errorf("drum pattern %s cannot transpose lanes", pattern.ID)
 				}

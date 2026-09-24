@@ -9,6 +9,8 @@ import (
 
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -57,6 +59,41 @@ func TestFirstAcidProjectImageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAuthoredKitImageRoundTrip(t *testing.T) {
+	cfg := firstAcidConfig(t)
+	var track int
+	for cfg.Track[track].Kind != engine.VoiceDrums {
+		track++
+		if track == cfg.Tracks {
+			t.Fatal("first-acid fixture has no drum track")
+		}
+	}
+	kit := new([drum.LaneCount]engine.KitLaneBinding)
+	kit[drum.BD] = engine.KitLaneBinding{Kind: engine.KitLaneBuiltin, Recipe: drum.SD}
+	kit[drum.CH] = engine.KitLaneBinding{Kind: engine.KitLaneGraph, Program: graph.Program{
+		Len: 1, Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Gate}},
+	}}
+	cfg.Track[track].Kit = kit
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) {
+		t.Fatal("authored kit changed across project image")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatalf("decoded authored kit cannot play: %v", err)
+	}
+	kit[drum.BD].Recipe = drum.LaneCount
+	if _, err := kernelimage.Encode(cfg); err == nil {
+		t.Fatal("invalid kit recipe was encoded")
+	}
+}
+
 func TestProjectImageRejectsCorruption(t *testing.T) {
 	encoded, err := kernelimage.Encode(firstAcidConfig(t))
 	if err != nil {
@@ -75,10 +112,12 @@ func TestProjectImageRejectsCorruption(t *testing.T) {
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
 		t.Fatal("bad magic was accepted")
 	}
-	corrupt = append([]byte(nil), encoded...)
-	corrupt[4] = 1 // the six-lane image layout must not decode as eleven lanes
-	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
-		t.Fatal("old image version was accepted with a new lane layout")
+	for _, oldVersion := range []byte{1, 2} {
+		corrupt = append([]byte(nil), encoded...)
+		corrupt[4] = oldVersion
+		if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
+			t.Fatalf("old image version %d was accepted with a new kit layout", oldVersion)
+		}
 	}
 	corrupt = append(append([]byte(nil), encoded...), 0)
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {

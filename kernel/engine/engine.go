@@ -25,10 +25,27 @@ const (
 	VoiceGraph
 )
 
+type KitLaneKind uint8
+
+const (
+	KitLaneOff KitLaneKind = iota
+	KitLaneBuiltin
+	KitLaneGraph
+)
+
+// KitLaneBinding selects one voice for a named drum source lane. Zero means
+// the lane is omitted and silent. Programs are compiled before Engine.New.
+type KitLaneBinding struct {
+	Kind    KitLaneKind
+	Recipe  drum.Lane
+	Program graph.Program
+}
+
 type TrackConfig struct {
 	Kind    VoiceKind
 	Acid    acid.Params
 	Drums   [drum.LaneCount]drum.Params
+	Kit     *[drum.LaneCount]KitLaneBinding
 	Graph   graph.Program
 	GainDB  float64
 	GainSet bool
@@ -136,7 +153,9 @@ func New(cfg Config) (*Engine, error) {
 				err = v.acid.SetParams(spec.Acid)
 			}
 		case VoiceDrums:
-			voices += int(drum.LaneCount)
+			if spec.Kit == nil {
+				voices += int(drum.LaneCount)
+			}
 			e.patterns[i].drumSlots = new([16][drum.LaneCount]seq.Pattern)
 			for slot := range e.patterns[i].drumSlots {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
@@ -146,11 +165,26 @@ func New(cfg Config) (*Engine, error) {
 			v.drums, err = drum.New(cfg.SampleRate, cfg.Seed)
 			if err == nil {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-					if spec.Drums[lane] != (drum.Params{}) {
-						err = v.drums.SetParams(lane, spec.Drums[lane])
-						if err != nil {
-							break
+					if spec.Kit != nil {
+						binding := spec.Kit[lane]
+						switch binding.Kind {
+						case KitLaneOff:
+							err = v.drums.Disable(lane)
+						case KitLaneBuiltin:
+							err = v.drums.SetRecipe(lane, binding.Recipe)
+						case KitLaneGraph:
+							err = v.drums.SetGraph(lane, binding.Program)
+						default:
+							return nil, Error("unknown kit lane kind")
 						}
+						if binding.Kind != KitLaneOff {
+							voices++
+						}
+					} else if spec.Drums[lane] != (drum.Params{}) {
+						err = v.drums.SetParams(lane, spec.Drums[lane])
+					}
+					if err != nil {
+						break
 					}
 				}
 			}

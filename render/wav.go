@@ -9,6 +9,7 @@ import (
 	"sort"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
@@ -302,6 +303,14 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 		}
 		programs[definition.Name] = program
 	}
+	authoredKits := make(map[string]project.Kit, len(score.Kits))
+	for _, definition := range score.Kits {
+		kit := project.Kit{ID: definition.Name, Lanes: map[string]string{}}
+		for _, binding := range definition.Bindings {
+			kit.Lanes[binding.Lane] = binding.Target
+		}
+		authoredKits[kit.ID] = kit
+	}
 	tracks := make([]trackRuntime, 0, len(score.Tracks))
 	for _, source := range score.Tracks {
 		mixerParams, err := project.CompileMixerParams(source)
@@ -309,18 +318,40 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 			return nil, fmt.Errorf("track %s: %w", source.Name, err)
 		}
 		trackMix := mix.NewTrack(mixerParams.GainDB, mixerParams.Pan, mixerParams.Mute)
-		if source.Kind == "drums" {
-			params, err := project.CompileDrumParams(source)
-			if err != nil {
-				return nil, fmt.Errorf("track %s: %w", source.Name, err)
-			}
+		kitDefinition, isAuthoredKit := authoredKits[source.Kind]
+		if source.Kind == "drums" || isAuthoredKit {
 			kit, err := drum.New(sampleRate, uint32(score.Seed))
 			if err != nil {
 				return nil, err
 			}
-			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-				if err := kit.SetParams(lane, params[lane]); err != nil {
+			if isAuthoredKit {
+				bindings, err := project.CompileKit(kitDefinition, programs)
+				if err != nil {
 					return nil, err
+				}
+				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+					binding := bindings[lane]
+					switch binding.Kind {
+					case engine.KitLaneOff:
+						err = kit.Disable(lane)
+					case engine.KitLaneBuiltin:
+						err = kit.SetRecipe(lane, binding.Recipe)
+					case engine.KitLaneGraph:
+						err = kit.SetGraph(lane, binding.Program)
+					}
+					if err != nil {
+						return nil, fmt.Errorf("track %s lane %s: %w", source.Name, drum.Names[lane], err)
+					}
+				}
+			} else {
+				params, err := project.CompileDrumParams(source)
+				if err != nil {
+					return nil, fmt.Errorf("track %s: %w", source.Name, err)
+				}
+				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+					if err := kit.SetParams(lane, params[lane]); err != nil {
+						return nil, err
+					}
 				}
 			}
 			track := trackRuntime{name: source.Name, mixer: trackMix, drums: kit, drumPatterns: map[string][drum.LaneCount]*seq.Pattern{}}

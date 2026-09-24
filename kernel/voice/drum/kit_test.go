@@ -3,6 +3,8 @@ package drum
 import (
 	"math"
 	"testing"
+
+	"m31labs.dev/cicada/kernel/graph"
 )
 
 func TestElevenLanesDeterministicAndFinite(t *testing.T) {
@@ -261,5 +263,96 @@ func TestMappedLanesRemainIndependentAndCanBeDisabled(t *testing.T) {
 	}
 	if err := kit.SetRecipe(BD, LaneCount); err == nil {
 		t.Fatal("invalid recipe was accepted")
+	}
+}
+
+func TestAuthoredGraphLaneRendersAndChokes(t *testing.T) {
+	program := graph.Program{Len: 1, Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Gate}}}
+	kit, err := New(48_000, 73)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for lane := Lane(0); lane < LaneCount; lane++ {
+		if err := kit.Disable(lane); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := kit.SetGraph(OH, program); err != nil {
+		t.Fatal(err)
+	}
+	if err := kit.SetGraph(CH, program); err != nil {
+		t.Fatal(err)
+	}
+	kit.Hit(OH, 100, false)
+	left, right := kit.NextStereo()
+	if left <= 0 || right <= 0 || left != right {
+		t.Fatalf("authored open-hat graph did not render in stereo: %g %g", left, right)
+	}
+	kit.Hit(CH, 100, false)
+	for i := 0; i < 240; i++ {
+		kit.NextStereo()
+	}
+	if kit.lanes[OH].customActive {
+		t.Fatal("closed hat did not choke authored open hat within 5 ms")
+	}
+	if err := kit.Disable(CH); err != nil {
+		t.Fatal(err)
+	}
+	left, right = kit.NextStereo()
+	if left != 0 || right != 0 {
+		t.Fatal("authored lanes produced sound after choke and disable")
+	}
+}
+
+func TestAuthoredGraphLaneRetriggerAndAllocationFree(t *testing.T) {
+	program := graph.Program{Len: 1, Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Gate}}}
+	kit, err := New(48_000, 73)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for lane := Lane(0); lane < LaneCount; lane++ {
+		if err := kit.Disable(lane); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := kit.SetGraph(BD, program); err != nil {
+		t.Fatal(err)
+	}
+	kit.Hit(BD, 100, false)
+	kit.NextStereo()
+	kit.Hit(BD, 127, true)
+	if kit.lanes[BD].fadeRemaining != 48 {
+		t.Fatal("authored graph retrigger did not fade prior state")
+	}
+	allocs := testing.AllocsPerRun(1000, func() { kit.NextStereo() })
+	if allocs != 0 {
+		t.Fatalf("authored graph allocated %.2f objects per sample", allocs)
+	}
+	if err := kit.SetGraph(BD, graph.Program{}); err == nil {
+		t.Fatal("invalid graph was accepted")
+	}
+}
+
+func TestAuthoredGraphLaneReceivesSourcePitch(t *testing.T) {
+	program := graph.Program{Len: 1, Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Pitch}}}
+	for _, lane := range []Lane{BD, CY} {
+		kit, err := New(48_000, 73)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for other := Lane(0); other < LaneCount; other++ {
+			if err := kit.Disable(other); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := kit.SetGraph(lane, program); err != nil {
+			t.Fatal(err)
+		}
+		kit.Hit(lane, 100, false)
+		left, right := kit.NextStereo()
+		want := float32(440*math.Exp2((float64(MIDINotes[lane])-69)/12)) * float32(math.Pow(10, -6.0/20)/math.Sqrt2)
+		if math.Abs(float64(left-want)) > 1e-5 || left != right {
+			t.Fatalf("lane %s graph pitch: left=%g right=%g want=%g", Names[lane], left, right, want)
+		}
 	}
 }

@@ -18,11 +18,20 @@ import (
 )
 
 func TestAudioWASMFirstAcidSampleParity(t *testing.T) {
+	compareWASMFixture(t, "first-acid.cicada", 8)
+}
+
+func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
+	compareWASMFixture(t, "authored-kit.cicada", 1)
+}
+
+func compareWASMFixture(t *testing.T, fixture string, bars int) {
+	t.Helper()
 	wasm, err := os.ReadFile(wasmModulePath())
 	if err != nil {
 		t.Fatal(err)
 	}
-	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", fixture))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +101,7 @@ func TestAudioWASMFirstAcidSampleParity(t *testing.T) {
 			}
 			outputPtr := uint32(call("gosx_audio_out_ptr"))
 			messagePtr := uint32(call("gosx_audio_msg_ptr"))
-			frames := int(math.Round(float64(8*4*60*rate*1000) / float64(cfg.BPMMilli)))
+			frames := int(math.Round(float64(bars*4*60*rate*1000) / float64(cfg.BPMMilli)))
 			var nativeL, nativeR [blockSize]float32
 			var wasmEvents, nativeEvents []cmd.Message
 			var peakDifference float64
@@ -138,12 +147,12 @@ func TestAudioWASMFirstAcidSampleParity(t *testing.T) {
 					}
 					nativeEvents = append(nativeEvents, drainNativeMessages(native)...)
 				}
-				if block == 1000 {
+				if block == 10 {
 					stableMemory = module.Memory().Size()
 				}
 			}
 			if !nonzero {
-				t.Fatal("first-acid rendered silence")
+				t.Fatalf("%s rendered silence", fixture)
 			}
 			if stableMemory == 0 || module.Memory().Size() != stableMemory {
 				t.Fatalf("WASM memory grew after warm-up: %d -> %d", stableMemory, module.Memory().Size())
@@ -152,7 +161,7 @@ func TestAudioWASMFirstAcidSampleParity(t *testing.T) {
 			if peakDifference > 1e-6 {
 				t.Fatalf("native/WASM peak sample difference %.9g at frame %d channel %d exceeds 1e-6", peakDifference, peakSample, peakChannel)
 			}
-			t.Logf("8 bars at %d Hz: %d frames, peak native/WASM sample difference %.9g", rate, frames, peakDifference)
+			t.Logf("%s: %d bars at %d Hz, peak native/WASM sample difference %.9g", fixture, bars, rate, peakDifference)
 		})
 	}
 }

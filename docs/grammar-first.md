@@ -62,7 +62,7 @@ The full language should give every sound source the same contract: timestamped 
 
 To support sounds that have not been invented yet, a later language profile needs user-defined DSP functions with bounded loops, delays and state, and explicit memory and CPU limits. It should compile ahead of the audio callback, prohibit allocation and blocking operations there, and state whether its output is deterministic across targets. Versioned libraries and content-addressed assets can then carry reusable instruments without hiding their dependencies. This is design direction; the current grammar implements only the typed graph profile.
 
-Drums use the same event and instrument model. The working [circuit kit](../examples/circuit-kit.cicada) defines independent tracks for code-generated kick, snare, and hat voices. Eleven built-in drum lanes render through the current audio kernel. The grammar now parses `kit` declarations that map named lanes to instrument programs, but validation keeps them unsupported until their audio routing is implemented. Sample-based instruments and audio clips need explicit asset and portability rules.
+Drums use the same event and instrument model. The working [circuit kit](../examples/circuit-kit.cicada) defines independent tracks for code-generated kick, snare, and hat voices. Eleven built-in drum lanes render through the current audio kernel. An [authored kit](../examples/authored-kit.cicada) binds any of those lanes to a built-in recipe or a compiled mono instrument graph. Unbound lanes are silent, and each bound lane owns one voice. Sample-based instruments and audio clips need explicit asset and portability rules.
 
 ## Workstation scope
 
@@ -79,4 +79,4 @@ The next implementation boundary is a host-independent engine contract for instr
 - JSON is typed interchange for workstation and collaboration state. Text/JSON/text conversion preserves semantic meaning; an unedited CST prints the original bytes, including spelling and comments.
 - The CST and generated highlight query give editors an incremental parsing path. The formatter works; source patches that preserve unaffected text are still planned.
 
-The current implementation compiles scores to note events and instrument graph IR, and renders custom mono graphs, acid, and eleven drum lanes to WAV. Next are an authored kit declaration, effects, the worklet, and the workstation.
+The current implementation compiles scores to note events and instrument graph IR, and renders custom mono graphs, acid, eleven drum lanes, and authored kits to WAV. Next are effects, the worklet, and the workstation.
