@@ -1,6 +1,11 @@
 package phrase
 
 import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"testing"
 
@@ -8,6 +13,48 @@ import (
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
+
+func TestSeedFixturesAndReferenceTrace(t *testing.T) {
+	for seed := uint64(0); seed < 24; seed++ {
+		params := DefaultParams()
+		params.Seed, params.Key, params.Scale = seed, 9, Minor
+		result, err := Generate(params)
+		if err != nil {
+			t.Fatalf("seed %d: %v", seed, err)
+		}
+		path := filepath.Join("..", "examples", "gen", fmt.Sprintf("seed-%04d.cicada", seed))
+		fixture, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal([]byte(result.Notation), fixture) {
+			t.Fatalf("seed %d changed from its checked-in source fixture", seed)
+		}
+	}
+	params := DefaultParams()
+	params.Seed, params.Key, params.Scale = 4242, 9, Minor
+	result, err := Generate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join("..", "examples", "gen", "seed-4242.trace.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var trace []Draw
+	if err := json.Unmarshal(data, &trace); err != nil {
+		t.Fatal(err)
+	}
+	if len(trace) < 8 || !reflect.DeepEqual(trace, result.Trace) {
+		t.Fatal("seed 4242 draw trace changed")
+	}
+	wantRaw := [...]uint32{744572222, 3209802928, 3019347011, 1444383813, 3602554767, 1236057910, 546096739, 2432106775}
+	for index, raw := range wantRaw {
+		if trace[index].Raw != raw {
+			t.Fatalf("PCG draw %d: got %d want %d", index, trace[index].Raw, raw)
+		}
+	}
+}
 
 func TestGenerateStructuresCompileBackToSameBars(t *testing.T) {
 	for _, structure := range []Structure{A, AABA, ABAB, ABAC, AAAB} {
@@ -73,10 +120,17 @@ func compiledScenePattern(score *notation.Score, sceneName string) (seq.Pattern,
 }
 
 func TestGenerateDefaultSeedPopulation(t *testing.T) {
+	rootOnsets, totalOnsets := 0, 0
+	accentGateFailures := 0
+	firstAccentFailure := ""
 	for scale := Minor; scale <= Blues; scale++ {
 		for seed := uint64(0); seed < 10_000; seed++ {
 			params := DefaultParams()
 			params.Scale, params.Seed = scale, seed
+			p, err := normalize(params)
+			if err != nil {
+				t.Fatal(err)
+			}
 			result, err := Generate(params)
 			if err != nil {
 				t.Fatalf("scale=%d seed=%d: %v", scale, seed, err)
@@ -88,7 +142,65 @@ func TestGenerateDefaultSeedPopulation(t *testing.T) {
 				if err := result.Bars[index].Validate(); err != nil {
 					t.Fatalf("invalid bar %d: scale=%d seed=%d: %v", index, scale, seed, err)
 				}
+				bar := result.Bars[index]
+				activeCells, accents, rootSeen := 0, 0, false
+				previousPitch := -1
+				for stepIndex := uint8(0); stepIndex < bar.Len; stepIndex++ {
+					step, err := seq.UnpackStep(bar.Steps[stepIndex])
+					if err != nil {
+						t.Fatalf("bar %d step %d: %v", index, stepIndex, err)
+					}
+					if step.Slide {
+						next, err := seq.UnpackStep(bar.Steps[(stepIndex+1)%bar.Len])
+						if err != nil || !next.Gate {
+							t.Fatalf("slide into rest: scale=%d seed=%d bar=%d step=%d", scale, seed, index, stepIndex)
+						}
+					}
+					if !step.Gate {
+						continue
+					}
+					activeCells++
+					if step.Tie {
+						continue
+					}
+					if step.Accent {
+						accents++
+					}
+					if step.Note%12 == params.Key {
+						rootSeen = true
+					}
+					if previousPitch >= 0 && abs(int(step.Note)-previousPitch) > 12 {
+						t.Fatalf("wide interval: scale=%d seed=%d bar=%d step=%d", scale, seed, index, stepIndex)
+					}
+					previousPitch = int(step.Note)
+				}
+				if delta := activeCells - onsetTarget(int(p.Steps), int(p.density)); delta < -1 || delta > 1 || !rootSeen {
+					t.Fatalf("distribution gate: scale=%d seed=%d bar=%d active cells=%d root=%t", scale, seed, index, activeCells, rootSeen)
+				}
+				if accents < 2 || accents > 6 {
+					accentGateFailures++
+					if firstAccentFailure == "" {
+						firstAccentFailure = fmt.Sprintf("scale=%d seed=%d bar=%d accents=%d", scale, seed, index, accents)
+					}
+				}
+			}
+			base, _, err := buildBaseBar(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, note := range base {
+				if note.active && !note.tie {
+					totalOnsets++
+					if note.class == classRoot {
+						rootOnsets++
+					}
+				}
 			}
 		}
 	}
+	rootShare := float64(rootOnsets) / float64(totalOnsets)
+	if rootShare < .30 || rootShare > .45 {
+		t.Fatalf("root class share %.3f outside 30–45%% over %d onsets", rootShare, totalOnsets)
+	}
+	t.Logf("root-class share: %.3f; accent gate failures: %d/320000 bars; first: %s", rootShare, accentGateFailures, firstAccentFailure)
 }
