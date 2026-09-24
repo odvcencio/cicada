@@ -27,7 +27,16 @@ go run ./cmd/cicada render examples/first-acid.cicada -o first-acid.wav --rate 4
 go run ./cmd/cicada verify-wav first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60
 ```
 
-`validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar-check` verifies the generated parser and highlighting query, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
+`validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar-check` verifies the generated parser and the editor queries, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
+
+The [cicada chorus](examples/cicada-chorus.cicada) uses every construct the renderer plays: a noise-and-ring tymbal voice, all thirteen graph primitives, degrees and letter pitches, every step modifier, dense drum rows, phrases, and scenes. `highlight` draws a score in color, and `symbols` lists the names a score defines and where each is used. Both run the [editor queries](docs/editor-tooling.md) in `language/` on gotreesitter, and those queries give every construct its own capture:
+
+```sh
+go run ./cmd/cicada highlight examples/cicada-chorus.cicada
+go run ./cmd/cicada highlight --html examples/cicada-chorus.cicada > cicada-chorus.html
+go run ./cmd/cicada symbols --refs examples/cicada-chorus.cicada
+go run ./cmd/cicada render examples/cicada-chorus.cicada -o cicada-chorus.wav
+```
 
 `make test-golden` renders eight bars of the compiled first-acid project through the native float32 engine and compares its 100 ms, 64-band spectral fingerprint with `testdata/golden/first-acid.fp`. `go run ./cmd/cicada golden --update` regenerates it and reports drift from the previous fixture; review an audio preview and record a listening note before accepting a changed golden. The [fingerprint format](docs/golden.md) defines the comparison and same-platform sample hash.
 
