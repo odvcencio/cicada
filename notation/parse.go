@@ -46,7 +46,15 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 			s.Version, _ = strconv.Atoi(w.Text(n))
 		case "title_decl":
 			v := childText(w, n, "string")
-			s.Title, _ = strconv.Unquote(v)
+			s.TitlePosition = pos(w, n)
+			var unquoteErr error
+			s.Title, unquoteErr = strconv.Unquote(v)
+			if unquoteErr != nil {
+				diagnostics = append(diagnostics, Diagnostic{
+					Code: "CICADA-SYNTAX", Severity: "error",
+					Message: "invalid title string", Position: s.TitlePosition,
+				})
+			}
 		case "tempo_decl":
 			value := childText(w, n, "number")
 			s.TempoMilli = parseMilli(value)
