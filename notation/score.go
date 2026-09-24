@@ -1,6 +1,6 @@
 package notation
 
-// Position refers to the source file, with one-based line and column.
+// Position refers to the source file, with one-based line and Unicode scalar column.
 type Position struct {
 	Line   int
 	Column int

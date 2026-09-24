@@ -74,6 +74,24 @@ func TestSyntaxErrorPosition(t *testing.T) {
 	}
 }
 
+func TestUnicodeScalarDiagnosticColumns(t *testing.T) {
+	duplicate := []byte("cicada 1\ntitle \"🎵\" title \"second\"\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n")
+	_, diagnostics := Parse(duplicate)
+	found := false
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == "CICADA-DUPLICATE" && diagnostic.Position == (Position{Line: 2, Column: 11}) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("semantic column counted UTF-8 bytes: %+v", diagnostics)
+	}
+	_, diagnostics = Parse([]byte("cicada 1\ntitle \"🎵\" @\n"))
+	if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-SYNTAX" || diagnostics[0].Position != (Position{Line: 2, Column: 11}) || strings.Contains(diagnostics[0].Message, "2:14:") {
+		t.Fatalf("syntax column counted UTF-8 bytes: %+v", diagnostics)
+	}
+}
+
 func TestSharpKeyAndModifiers(t *testing.T) {
 	src := []byte("cicada 1 key c# minor track bass acid {} pattern a acid steps=2 { 1^~*2%50 c#3 } scene main { bass=a } song { main }")
 	s, ds := Parse(src)

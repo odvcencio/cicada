@@ -1,9 +1,11 @@
 package notation
 
 import (
+	"bytes"
 	_ "embed"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
@@ -22,7 +24,7 @@ func ParseTree(src []byte) (*gts.Node, *walk.Walker, error) {
 func Parse(src []byte) (*Score, []Diagnostic) {
 	root, w, err := ParseTree(src)
 	if err != nil {
-		return nil, []Diagnostic{syntaxDiagnostic(err)}
+		return nil, []Diagnostic{syntaxDiagnostic(err, src)}
 	}
 	s := &Score{TempoMilli: 130_000, KeyRoot: "a", Scale: "minor"}
 	var diagnostics []Diagnostic
@@ -272,18 +274,52 @@ func childText(w *walk.Walker, n *gts.Node, typ string) string {
 }
 
 func pos(w *walk.Walker, n *gts.Node) Position {
-	line, col := w.Pos(n)
-	return Position{Line: line, Column: col}
+	if w == nil || n == nil {
+		return Position{Line: 1, Column: 1}
+	}
+	line, byteColumn := w.Pos(n)
+	start := int(n.StartByte())
+	lineStart := start - byteColumn + 1
+	if lineStart < 0 || start > len(w.Src) {
+		return Position{Line: line, Column: byteColumn}
+	}
+	return Position{Line: line, Column: utf8.RuneCount(w.Src[lineStart:start]) + 1}
 }
 
-func syntaxDiagnostic(err error) Diagnostic {
-	d := Diagnostic{Code: "CICADA-SYNTAX", Severity: "error", Message: err.Error()}
+func syntaxDiagnostic(err error, src []byte) Diagnostic {
+	d := Diagnostic{Code: "CICADA-SYNTAX", Severity: "error", Message: err.Error(), Position: Position{Line: 1, Column: 1}}
 	parts := strings.SplitN(err.Error(), ":", 3)
 	if len(parts) == 3 {
-		d.Position.Line, _ = strconv.Atoi(parts[0])
-		d.Position.Column, _ = strconv.Atoi(parts[1])
+		line, lineErr := strconv.Atoi(parts[0])
+		byteColumn, columnErr := strconv.Atoi(parts[1])
+		if lineErr == nil && columnErr == nil && line > 0 && byteColumn > 0 {
+			d.Position = Position{Line: line, Column: scalarColumn(src, line, byteColumn)}
+			d.Message = strings.TrimSpace(parts[2])
+		}
 	}
 	return d
+}
+
+// gotreesitter columns are byte offsets; Cicada diagnostics use Unicode
+// scalar columns. Syntax errors arrive as line:byte-column strings.
+func scalarColumn(src []byte, line, byteColumn int) int {
+	start := 0
+	for row := 1; row < line; row++ {
+		next := bytes.IndexByte(src[start:], '\n')
+		if next < 0 {
+			return byteColumn
+		}
+		start += next + 1
+	}
+	end := len(src)
+	if next := bytes.IndexByte(src[start:], '\n'); next >= 0 {
+		end = start + next
+	}
+	offset := start + byteColumn - 1
+	if offset > end {
+		offset = end
+	}
+	return utf8.RuneCount(src[start:offset]) + 1
 }
 
 // parseMilli accepts up to three BPM decimal places without floating point.
