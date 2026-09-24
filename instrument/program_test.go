@@ -51,3 +51,18 @@ func TestWrongArgumentType(t *testing.T) {
 		t.Fatalf("expected function type error, got %+v", ds)
 	}
 }
+
+func TestLowerRejectsUnknownOverride(t *testing.T) {
+	src := []byte("cicada 1 instrument x { param cutoff: hz = 200hz; voice mono { out = saw(cutoff); } } track t x {} pattern p notes steps=1 { 1 } scene s { t=p } song { s }")
+	score, diagnostics := notation.Parse(src)
+	if len(diagnostics) != 0 {
+		t.Fatalf("score diagnostics: %+v", diagnostics)
+	}
+	program, diagnostics := Compile(score.Instruments[0])
+	if program == nil || len(diagnostics) != 0 {
+		t.Fatalf("instrument diagnostics: %+v", diagnostics)
+	}
+	if _, err := Lower(program, map[string]string{"ghost": "300hz"}); err == nil {
+		t.Fatal("unknown instrument override was silently ignored")
+	}
+}

@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
@@ -48,5 +49,60 @@ func TestFirstAcidCanonicalJSON(t *testing.T) {
 func TestRejectsDuplicateJSONKey(t *testing.T) {
 	if _, err := DecodeJSON([]byte(`{"format":"cicada.project/1","format":"cicada.project/1"}`)); err == nil || !strings.Contains(err.Error(), "duplicate JSON key") {
 		t.Fatalf("want duplicate-key error, got %v", err)
+	}
+}
+
+func TestJSONRejectsUncompilableCustomInstrumentOverride(t *testing.T) {
+	score := firstScore(t)
+	p, diagnostics := FromScore(score)
+	if p == nil {
+		t.Fatalf("project compilation: %+v", diagnostics)
+	}
+	value := 300.0
+	p.Tracks[2].Params["ghost"] = Value{Unit: "hz", Number: &value}
+	if _, err := CanonicalJSON(p); err == nil {
+		t.Fatal("canonical writer accepted an unrenderable custom parameter")
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeJSON(raw); err == nil {
+		t.Fatal("JSON decoder accepted an unrenderable custom parameter")
+	}
+}
+
+func TestJSONRejectsUnboundInstrumentSymbol(t *testing.T) {
+	score := firstScore(t)
+	p, diagnostics := FromScore(score)
+	if p == nil {
+		t.Fatalf("project compilation: %+v", diagnostics)
+	}
+	p.Instruments[0].Out = Expr{Op: "saw", Args: []Expr{{Name: "missing"}}}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeJSON(raw); err == nil {
+		t.Fatal("JSON decoder accepted an unbound graph symbol")
+	}
+}
+
+func TestJSONRejectsStepThatSourceCannotRepresent(t *testing.T) {
+	score := firstScore(t)
+	p, diagnostics := FromScore(score)
+	if p == nil {
+		t.Fatalf("project compilation: %+v", diagnostics)
+	}
+	p.Patterns[0].Data[0].Probability = 0
+	if _, err := CanonicalJSON(p); err == nil {
+		t.Fatal("canonical writer accepted a step with no source v1 spelling")
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeJSON(raw); err == nil {
+		t.Fatal("JSON decoder accepted a step with no source v1 spelling")
 	}
 }
