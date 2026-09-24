@@ -306,7 +306,7 @@ func TestAuthoredKitRendersAndOmitsUnboundLanes(t *testing.T) {
 	if !bytes.Equal(first.Bytes(), second.Bytes()) || report.Peak < .001 {
 		t.Fatalf("authored kit was silent or nondeterministic: %+v", report)
 	}
-	withOmittedHit := strings.Replace(string(source), "bd: x...; ch: ..x.;", "bd: x...; sd: ...X; ch: ..x.;", 1)
+	withOmittedHit := strings.Replace(string(source), "  bd: x...;\n  ch: ..x.;", "  bd: x...;\n  sd: ...X;\n  ch: ..x.;", 1)
 	if withOmittedHit == string(source) {
 		t.Fatal("authored kit fixture changed")
 	}
@@ -322,10 +322,14 @@ func TestAuthoredKitRendersAndOmitsUnboundLanes(t *testing.T) {
 		t.Fatal("hit on unbound kit lane produced sound")
 	}
 	for _, changedBinding := range []struct{ old, new string }{
-		{"bd=kick", "bd=builtin.bd"},
-		{"ch=builtin.ch", "ch=builtin.cy"},
+		{"bd = kick", "bd = builtin.bd"},
+		{"ch = builtin.ch", "ch = builtin.cy"},
 	} {
-		changed, diagnostics := notation.Parse([]byte(strings.Replace(string(source), changedBinding.old, changedBinding.new, 1)))
+		remappedSource := strings.Replace(string(source), changedBinding.old, changedBinding.new, 1)
+		if remappedSource == string(source) {
+			t.Fatalf("authored kit fixture lacks %q", changedBinding.old)
+		}
+		changed, diagnostics := notation.Parse([]byte(remappedSource))
 		if len(diagnostics) != 0 {
 			t.Fatalf("remapped kit parse: %+v", diagnostics)
 		}
