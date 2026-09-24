@@ -1,14 +1,16 @@
-.PHONY: test test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm test-kernel-wasm
+.PHONY: test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm test-kernel-wasm
 
 test:
 	go test ./... -count=1
 
+grammar:
+	go generate ./notation
+
 grammar-check:
 	mkdir -p build
-	go run github.com/odvcencio/gotreesitter/cmd/grammargen doctor -grammar language/cicada.grammar -sample examples/first-acid.cicada > build/grammar-doctor.txt
-	go run github.com/odvcencio/gotreesitter/cmd/grammargen emit -grammar language/cicada.grammar -bin build/cicada.bin
+	go run ./cmd/cicada-grammar -bin build/cicada.bin -sample examples/first-acid.cicada > build/grammar-doctor.txt
 	cmp build/cicada.bin notation/cicada.bin
-	go test ./language -count=1
+	go test ./language/... -count=1
 
 build:
 	mkdir -p build
