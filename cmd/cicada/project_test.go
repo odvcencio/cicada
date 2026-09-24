@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/phrase"
 	"m31labs.dev/cicada/render"
 )
 
@@ -36,6 +38,21 @@ func TestProjectCLI(t *testing.T) {
 			}
 		}
 		return string(output)
+	}
+	generated := filepath.Join(t.TempDir(), "generated.cicada")
+	var draws []phrase.Draw
+	if err := json.Unmarshal([]byte(run(0, "gen", "--seed", "4242", "--key", "a", "--scale", "minor", "--trace", "-o", generated)), &draws); err != nil {
+		t.Fatalf("generator trace is not JSON: %v", err)
+	}
+	if len(draws) == 0 || draws[0].Raw != 744572222 || draws[0].Pass != "rhythm" {
+		t.Fatalf("generator trace lost the fixed stream vector: %+v", draws)
+	}
+	if output := run(0, "validate", generated); output != generated+"\n" {
+		t.Fatalf("generated source failed validation: %q", output)
+	}
+	run(0, "fmt", "--check", generated)
+	if output := run(1, "gen", "--density", "NaN", "-o", filepath.Join(t.TempDir(), "invalid.cicada")); !strings.Contains(output, "CICADA-PARAM") {
+		t.Fatalf("invalid generator density was accepted: %q", output)
 	}
 	if output := run(0, "convert", first, "-o", jsonPath); output != jsonPath+"\n" {
 		t.Fatalf("convert output: %q", output)

@@ -20,6 +20,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "gen" {
+		if err := generatorCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "convert" || os.Args[1] == "compare") {
 		projectCommand(os.Args[1:])
 		return
@@ -163,7 +170,7 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: cicada validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 24 --bars 16 --tail 3s] | verify-wav <file.wav> --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
+	fmt.Fprintln(os.Stderr, "usage: cicada gen --seed N --key a --scale minor [-o out.cicada] [--trace] | validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 24 --bars 16 --tail 3s] | verify-wav <file.wav> --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
 	os.Exit(2)
 }
 
