@@ -12,6 +12,8 @@
 "seed" @keyword
 "track" @keyword
 "instrument" @keyword
+"kit" @keyword
+"builtin" @keyword
 "param" @keyword
 "voice" @keyword
 "let" @keyword
@@ -28,13 +30,13 @@
 "song" @keyword
 
 ; Operators
-":" @operator
 "=" @operator
+"." @operator
+":" @operator
 "+" @operator
 "-" @operator
 "*" @operator
 "/" @operator
-"." @operator
 "|" @operator
 "^" @operator
 "~" @operator

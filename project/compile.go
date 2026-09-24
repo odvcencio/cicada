@@ -45,9 +45,16 @@ func (e *patternCompileError) Unwrap() error { return e.err }
 // CompilePattern lowers one validated source pattern. Drum lanes become one
 // kernel pattern each, so the engine can assign a voice to each lane.
 func CompilePattern(score *notation.Score, source notation.Pattern, track notation.Track) ([]CompiledPattern, error) {
-	compatible := (track.Kind == "drums" && source.Kind == "drums") ||
+	kitTrack := false
+	for _, kit := range score.Kits {
+		if kit.Name == track.Kind {
+			kitTrack = true
+			break
+		}
+	}
+	compatible := ((track.Kind == "drums" || kitTrack) && source.Kind == "drums") ||
 		(track.Kind == "acid" && (source.Kind == "acid" || source.Kind == "notes")) ||
-		(track.Kind != "acid" && track.Kind != "drums" && source.Kind == "notes")
+		(track.Kind != "acid" && track.Kind != "drums" && !kitTrack && source.Kind == "notes")
 	if !compatible {
 		return nil, fmt.Errorf("pattern %s kind differs from track %s", source.Name, track.Name)
 	}

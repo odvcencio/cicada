@@ -19,6 +19,7 @@ func TestInvalidSourceFixtures(t *testing.T) {
 		"unknown-symbol.cicada":             {"CICADA-REFERENCE", 2},
 		"invalid-unit.cicada":               {"CICADA-PARAM", 2},
 		"unsupported-effect.cicada":         {"CICADA-UNSUPPORTED", 2},
+		"authored-kit-unsupported.cicada":   {"CICADA-UNSUPPORTED", 3},
 		"seed-64-bit.cicada":                {"CICADA-SEED", 2},
 		"duplicate-id.cicada":               {"CICADA-DUPLICATE", 3},
 		"slot-conflict.cicada":              {"CICADA-DUPLICATE", 4},
@@ -89,6 +90,24 @@ func TestSlideIntoRestWarningFixture(t *testing.T) {
 	}
 	if compiled, extra := FromScore(score); compiled == nil || hasErrors(extra) {
 		t.Fatalf("warning fixture cannot compile: %+v", extra)
+	}
+}
+
+func TestAuthoredKitCannotLowerAsBuiltinKit(t *testing.T) {
+	source, err := os.ReadFile("../testdata/invalid/authored-kit-unsupported.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, _ := notation.Parse(source)
+	if score == nil {
+		t.Fatal("grammar rejected authored kit fixture")
+	}
+	compiled, diagnostics := FromScore(score)
+	if compiled != nil {
+		t.Fatal("authored kit was silently lowered to built-in drums")
+	}
+	if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-UNSUPPORTED" || diagnostics[0].Position.Line != 3 {
+		t.Fatalf("wrong authored kit lowering diagnostics: %+v", diagnostics)
 	}
 }
 

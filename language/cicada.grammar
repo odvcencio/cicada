@@ -3,13 +3,16 @@ extras = [ /[ \t\r\n]+/, comment ]
 word = identifier
 
 rule source_file = seq("cicada", integer, repeat(_declaration))
-rule _declaration = choice(title_decl, tempo_decl, key_decl, seed_decl, instrument_decl, track_decl, phrase_decl, acid_pattern, note_pattern, drum_pattern, scene_decl, song_decl, fx_decl)
+rule _declaration = choice(title_decl, tempo_decl, key_decl, seed_decl, instrument_decl, kit_decl, track_decl, phrase_decl, acid_pattern, note_pattern, drum_pattern, scene_decl, song_decl, fx_decl)
 rule title_decl = seq("title", string)
 rule tempo_decl = seq("tempo", number)
 rule key_decl = seq("key", key_root, identifier)
 rule seed_decl = seq("seed", integer)
 rule track_decl = seq("track", field("name", identifier), field("kind", identifier), "{", repeat(param_decl), "}")
 rule instrument_decl = seq("instrument", field("name", identifier), "{", repeat(instrument_param), voice_decl, "}")
+rule kit_decl = seq("kit", field("name", identifier), "{", repeat(kit_binding), "}")
+rule kit_binding = seq(field("lane", identifier), "=", field("target", kit_target), ";")
+rule kit_target = choice(identifier, seq("builtin", ".", identifier))
 rule instrument_param = seq("param", field("name", identifier), ":", field("unit", identifier), "=", field("default", number), ";")
 rule voice_decl = seq("voice", field("mode", identifier), "{", repeat(let_stmt), out_stmt, "}")
 rule let_stmt = seq("let", field("name", identifier), "=", field("value", expression), ";")

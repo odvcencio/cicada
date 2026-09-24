@@ -102,6 +102,37 @@ func Validate(s *Score) []Diagnostic {
 			checkID(let.Name, let.Position)
 		}
 	}
+	kits := make(map[string]Kit, len(s.Kits))
+	for _, kit := range s.Kits {
+		checkID(kit.Name, kit.Position)
+		_, instrumentNameTaken := instruments[kit.Name]
+		if kit.Name == "acid" || kit.Name == "drums" || instrumentNameTaken {
+			add("CICADA-DUPLICATE", "kit name is reserved or already declared: "+kit.Name, "error", kit.Position)
+		}
+		if _, exists := kits[kit.Name]; exists {
+			add("CICADA-DUPLICATE", "duplicate kit "+kit.Name, "error", kit.Position)
+		}
+		kits[kit.Name] = kit
+		seenLanes := map[string]bool{}
+		for _, binding := range kit.Bindings {
+			if drumParams[binding.Lane] == nil {
+				add("CICADA-REFERENCE", "unknown kit lane "+binding.Lane, "error", binding.Position)
+			}
+			if seenLanes[binding.Lane] {
+				add("CICADA-DUPLICATE", "kit binds lane twice: "+binding.Lane, "error", binding.Position)
+			}
+			seenLanes[binding.Lane] = true
+			if strings.HasPrefix(binding.Target, "builtin.") {
+				lane := strings.TrimPrefix(binding.Target, "builtin.")
+				if drumParams[lane] == nil {
+					add("CICADA-REFERENCE", "unknown built-in drum "+lane, "error", binding.Position)
+				}
+			} else if _, exists := instruments[binding.Target]; !exists {
+				add("CICADA-REFERENCE", "unknown kit instrument "+binding.Target, "error", binding.Position)
+			}
+		}
+		add("CICADA-UNSUPPORTED", "authored kit rendering is not implemented", "error", kit.Position)
+	}
 	trackByName := make(map[string]Track, len(s.Tracks))
 	for _, t := range s.Tracks {
 		checkID(t.Name, t.Position)
@@ -111,8 +142,10 @@ func Validate(s *Score) []Diagnostic {
 		}
 		trackByName[t.Name] = t
 		if t.Kind != "acid" && t.Kind != "drums" {
-			if _, ok := instruments[t.Kind]; !ok {
-				add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
+			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
+				if _, kitOK := kits[t.Kind]; !kitOK {
+					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
+				}
 			}
 		}
 		seen := map[string]bool{}
@@ -257,9 +290,10 @@ func Validate(s *Score) []Diagnostic {
 			if !patternOK {
 				add("CICADA-REFERENCE", "scene references unknown pattern "+b.Pattern, "error", b.Position)
 			} else if trackOK {
-				compatible := (track.Kind == "drums" && pattern.Kind == "drums") ||
+				_, kitTrack := kits[track.Kind]
+				compatible := ((track.Kind == "drums" || kitTrack) && pattern.Kind == "drums") ||
 					(track.Kind == "acid" && (pattern.Kind == "acid" || pattern.Kind == "notes")) ||
-					(track.Kind != "acid" && track.Kind != "drums" && pattern.Kind == "notes")
+					(track.Kind != "acid" && track.Kind != "drums" && !kitTrack && pattern.Kind == "notes")
 				if !compatible {
 					add("CICADA-PARAM", "pattern kind differs from track instrument", "error", b.Position)
 				}

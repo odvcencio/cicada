@@ -96,6 +96,12 @@ All eleven built-in lanes render: `bd`, `sd`, `ch`, `oh`, `cp`, `rs`,
 `lt`, `mt`, `ht`, `cb`, and `cy`. The [drum kit example](../examples/drums-kit.cicada)
 plays each lane.
 
+The grammar also recognizes `kit steel { bd=kick; ch=builtin.ch; }` and
+`track drums steel {}`. Kit bindings retain their lane, target, and source
+position in the typed score. Validation reports `CICADA-UNSUPPORTED` until
+authored kit audio routing is implemented; it never substitutes the built-in
+kit for an authored one.
+
 ## Code-defined instruments
 
 An instrument declares typed parameters and one `voice mono` block.
