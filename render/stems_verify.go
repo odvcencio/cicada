@@ -24,6 +24,7 @@ type VerifyStemsReport struct {
 	Frames         int64
 	SampleRate     int
 	Bars           int
+	From           int
 	MusicResidual  float64
 	SFXResidual    float64
 	ResidualPeakDB float64
@@ -45,7 +46,7 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 		return report, err
 	}
 	var manifest stemManifest
-	if len(manifestData) > 8192 || json.Unmarshal(manifestData, &manifest) != nil || manifest.Version != 1 || len(manifest.Tracks) < 1 || len(manifest.Tracks) > 16 {
+	if len(manifestData) > 8192 || json.Unmarshal(manifestData, &manifest) != nil || manifest.Version != 1 || manifest.From < 0 || manifest.From > 255 || len(manifest.Tracks) < 1 || len(manifest.Tracks) > 16 {
 		return report, fmt.Errorf("invalid stem manifest")
 	}
 	seen := map[string]bool{}
@@ -126,11 +127,11 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 		currentTiming := [2]uint32{binary.LittleEndian.Uint32(metadata[12:16]), binary.LittleEndian.Uint32(metadata[20:24])}
 		if i == 0 {
 			reference, timing = current, currentTiming
-			if current[0] != 44_100 && current[0] != 48_000 && current[0] != 96_000 || current[2] < 1 || current[2] > 256 || int(current[2]) > songBars || score != nil && currentTiming[0] != uint32(score.TempoMilli) || currentTiming[1] > current[0]*10 {
+			if current[0] != 44_100 && current[0] != 48_000 && current[0] != 96_000 || current[2] < 1 || current[2] > 256 || manifest.From+int(current[2]) > songBars || score != nil && currentTiming[0] != uint32(score.TempoMilli) || currentTiming[1] > current[0]*10 {
 				return report, fmt.Errorf("%s: invalid rate, bars, tempo, or tail", name)
 			}
 			clock, err := seq.NewClock(int(current[0]), int64(currentTiming[0]))
-			if err != nil || clock.SampleAtTick(int64(current[2])*seq.TicksPerBar)+int64(currentTiming[1]) != int64(current[1]) {
+			if err != nil || clock.SampleAtTick(int64(manifest.From+int(current[2]))*seq.TicksPerBar)-clock.SampleAtTick(int64(manifest.From)*seq.TicksPerBar)+int64(currentTiming[1]) != int64(current[1]) {
 				return report, fmt.Errorf("%s: frame count differs from musical duration", name)
 			}
 		} else if current != reference || currentTiming != timing {
@@ -145,7 +146,7 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 	if len(entries) != len(names)+1 {
 		return report, fmt.Errorf("stem directory contains %d entries, expected %d", len(entries), len(names)+1)
 	}
-	report.Files, report.Frames, report.SampleRate, report.Bars = len(names), int64(reference[1]), int(reference[0]), int(reference[2])
+	report.Files, report.Frames, report.SampleRate, report.Bars, report.From = len(names), int64(reference[1]), int(reference[0]), int(reference[2]), manifest.From
 	var data [8]byte
 	var samples [21]stemPair
 	for frame := int64(0); frame < report.Frames; frame++ {

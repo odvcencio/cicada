@@ -45,6 +45,7 @@ type stemOutput struct {
 
 type stemManifest struct {
 	Version int              `json:"version"`
+	From    int              `json:"from,omitempty"`
 	Tracks  []stemTrackRoute `json:"tracks"`
 }
 
@@ -73,7 +74,7 @@ func newStemOutput(dir string, p *project.Project, report Report) (*stemOutput, 
 	if err != nil {
 		return nil, err
 	}
-	stems := &stemOutput{dir: dir, temporary: temporary, report: report, manifest: stemManifest{Version: 1}}
+	stems := &stemOutput{dir: dir, temporary: temporary, report: report, manifest: stemManifest{Version: 1, From: report.From}}
 	defer func() {
 		if err != nil {
 			stems.abort()
