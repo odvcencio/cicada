@@ -1,6 +1,6 @@
 # Cicada: programmable music notation
 
-Cicada is an experimental music language for people, agents, and a future extensible DAW. A `.cicada` file describes music and can define the instruments that play it. [Grammargen](language/cicada.grammar) compiles the grammar into a parser blob consumed by gotreesitter; the compiler builds a typed score, deterministic note events, and bounded DSP graphs. The offline renderer writes stereo 24-bit WAV from custom mono instruments, the built-in acid voice, and six synthesized drum lanes.
+Cicada is an experimental music language for people, agents, and a future extensible DAW. A `.cicada` file describes music and can define the instruments that play it. [Grammargen](language/cicada.grammar) compiles the grammar into a parser blob consumed by gotreesitter; the compiler builds a typed score, deterministic note events, and bounded DSP graphs. The offline renderer writes stereo 24-bit WAV from custom mono instruments, the built-in acid voice, and six synthesized drum lanes. The [Cicada 1 language reference](docs/language-v1.md) describes the supported notation.
 
 Render the [circuit kit score](examples/circuit-kit.cicada). Its bass, kick, snare, and hat are all defined in the score:
 
