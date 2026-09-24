@@ -72,7 +72,7 @@ type Voice struct {
 	accentGain, accentTarget                    float64
 	megDecay, capDecay, releaseDecay, holdDecay float64
 	pitchAlpha, accentAlpha, switchAlpha        float64
-	filterBlend, savageBlend                    float64
+	filterBlend, savageBlend, restingFilterG    float64
 	drivePre, drivePost, level                  float64
 	driveTable                                  [33]float64
 	up, down                                    halfband.FIR
@@ -119,6 +119,7 @@ func (v *Voice) SetParams(p Params) error {
 	frac := table - float64(index)
 	v.drivePost = v.driveTable[index]*(1-frac) + v.driveTable[index+1]*frac
 	v.level = math.Pow(10, p.LevelDB/20)
+	v.restingFilterG = fastmath.TanSmall(math.Pi * p.Cutoff / (2 * v.sampleRate))
 	return nil
 }
 
@@ -256,10 +257,12 @@ func (v *Voice) Next() float32 {
 	}
 	pre := fastmath.Tanh(v.drivePre*osc) * v.drivePost
 	first, second := v.up.Upsample(pre)
-	cutoff := v.cutoffHz()
-	g := fastmath.TanSmall(math.Pi * cutoff / (2 * v.sampleRate))
-	first = v.filter(first, g)
-	second = v.filter(second, g)
+	g := v.restingFilterG
+	if v.meg != 0 {
+		cutoff := v.cutoffHz()
+		g = fastmath.TanSmall(math.Pi * cutoff / (2 * v.sampleRate))
+	}
+	first, second = v.filterPair(first, second, g)
 	y := v.down.Downsample(first, second)
 	y *= v.vca * v.accentGain * v.level
 	if v.savageBlend > 0 {
@@ -302,6 +305,49 @@ func (v *Voice) filter(input, baseG float64) float64 {
 	diode *= 1 + .35*v.params.Resonance*(1-v.savageBlend)
 	ladder *= 1 + .5*kLadder*(1-v.savageBlend)
 	return diode*(1-v.filterBlend) + ladder*v.filterBlend
+}
+
+// filterPair shares the per-sample coefficients between the two oversampled
+// phases. Filter state still advances once for each phase, in the same order.
+func (v *Voice) filterPair(first, second, baseG float64) (float64, float64) {
+	savage := v.savageBlend
+	if v.filterBlend == 0 {
+		g := calibratedFilterG(baseG, Diode)
+		G := g / (1 + g)
+		k := 17 * v.params.Resonance * (1 + .25*savage)
+		gain := 1 + .35*v.params.Resonance*(1-savage)
+		first = v.diode.processDiode(first, G, g, k, savage) * gain
+		second = v.diode.processDiode(second, G, g, k, savage) * gain
+		return first, second
+	}
+	if v.filterBlend == 1 {
+		g := calibratedFilterG(baseG, Ladder)
+		G := g / (1 + g)
+		k := 4 * v.params.Resonance * (1 + .25*savage)
+		gain := 1 + .5*k*(1-savage)
+		first = v.ladder.processLadder(first, G, g, k, savage) * gain
+		second = v.ladder.processLadder(second, G, g, k, savage) * gain
+		return first, second
+	}
+	gDiode := calibratedFilterG(baseG, Diode)
+	GDiode := gDiode / (1 + gDiode)
+	kDiode := 17 * v.params.Resonance * (1 + .25*savage)
+	diodeGain := 1 + .35*v.params.Resonance*(1-savage)
+	gLadder := calibratedFilterG(baseG, Ladder)
+	GLadder := gLadder / (1 + gLadder)
+	kLadder := 4 * v.params.Resonance * (1 + .25*savage)
+	ladderGain := 1 + .5*kLadder*(1-savage)
+	d1 := v.diode.processDiode(first, GDiode, gDiode, kDiode, savage)
+	l1 := v.ladder.processLadder(first, GLadder, gLadder, kLadder, savage)
+	d1 *= diodeGain
+	l1 *= ladderGain
+	first = d1*(1-v.filterBlend) + l1*v.filterBlend
+	d2 := v.diode.processDiode(second, GDiode, gDiode, kDiode, savage)
+	l2 := v.ladder.processLadder(second, GLadder, gLadder, kLadder, savage)
+	d2 *= diodeGain
+	l2 *= ladderGain
+	second = d2*(1-v.filterBlend) + l2*v.filterBlend
+	return first, second
 }
 
 const ladderCutoffRatio = 0.43497944204608224
