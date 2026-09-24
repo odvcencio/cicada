@@ -199,7 +199,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		track := representativeTrack(score, source)
 		compiled, err := CompilePattern(score, source, track)
 		if err != nil {
-			return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Position})
+			return nil, append(diagnostics, patternCompileDiagnostic(err, source.Position))
 		}
 		pattern := Pattern{
 			ID: source.Name, Kind: source.Kind, Steps: compiled[0].Pattern.Len,

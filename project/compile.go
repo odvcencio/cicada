@@ -34,6 +34,14 @@ type CompiledPattern struct {
 	Pattern seq.Pattern
 }
 
+type patternCompileError struct {
+	position notation.Position
+	err      error
+}
+
+func (e *patternCompileError) Error() string { return e.err.Error() }
+func (e *patternCompileError) Unwrap() error { return e.err }
+
 // CompilePattern lowers one validated source pattern. Drum lanes become one
 // kernel pattern each, so the engine can assign a voice to each lane.
 func CompilePattern(score *notation.Score, source notation.Pattern, track notation.Track) ([]CompiledPattern, error) {
@@ -110,11 +118,11 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		for i, token := range source.Steps {
 			step, err := acidStep(score, token.Text, octave, token.Transpose)
 			if err != nil {
-				return nil, fmt.Errorf("%d:%d: %w", token.Position.Line, token.Position.Column, err)
+				return nil, &patternCompileError{position: token.Position, err: err}
 			}
 			base.Steps[i], err = seq.PackStep(step)
 			if err != nil {
-				return nil, err
+				return nil, &patternCompileError{position: token.Position, err: err}
 			}
 		}
 		return []CompiledPattern{{Name: source.Name, Kind: source.Kind, Pattern: base}}, nil
@@ -132,11 +140,11 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		for i, token := range lane.Hits {
 			step, err := drumStep(token.Text, note)
 			if err != nil {
-				return nil, fmt.Errorf("%d:%d: %w", token.Position.Line, token.Position.Column, err)
+				return nil, &patternCompileError{position: token.Position, err: err}
 			}
 			p.Steps[i], err = seq.PackStep(step)
 			if err != nil {
-				return nil, err
+				return nil, &patternCompileError{position: token.Position, err: err}
 			}
 		}
 		compiled = append(compiled, CompiledPattern{Name: source.Name, Kind: "drums", Lane: lane.Name, Pattern: p})
