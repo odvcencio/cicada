@@ -8,8 +8,7 @@ grammar-check:
 	go run github.com/odvcencio/gotreesitter/cmd/grammargen doctor -grammar language/cicada.grammar -sample examples/first-acid.cicada > build/grammar-doctor.txt
 	go run github.com/odvcencio/gotreesitter/cmd/grammargen emit -grammar language/cicada.grammar -bin build/cicada.bin
 	cmp build/cicada.bin notation/cicada.bin
-	go run github.com/odvcencio/gotreesitter/cmd/grammargen emit -grammar language/cicada.grammar -highlight > build/highlights.scm
-	cmp build/highlights.scm language/highlights.scm
+	go test ./language -count=1
 
 build:
 	mkdir -p build
