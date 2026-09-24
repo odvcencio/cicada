@@ -1,6 +1,6 @@
 # Editor tooling
 
-Five tree-sitter queries sit beside the [grammar](../language/cicada.grammar). They run on gotreesitter against the generated parser blob, and they follow Neovim's query conventions, so other tree-sitter hosts can load them as well.
+Five tree-sitter queries sit beside the [grammar](../language/grammar/grammar.go). They run on gotreesitter against the generated parser blob, and they follow Neovim's query conventions, so other tree-sitter hosts can load them as well.
 
 | Query | Purpose |
 | --- | --- |
