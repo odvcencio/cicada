@@ -52,6 +52,11 @@ func Validate(s *Score) []Diagnostic {
 	if !validKeyRoot(s.KeyRoot) || !scales[s.Scale] {
 		add("CICADA-KEY", "unknown key or scale", "error", Position{1, 1})
 	}
+	if s.SeedLiteral != "" {
+		if _, err := strconv.ParseUint(s.SeedLiteral, 10, 32); err != nil {
+			add("CICADA-SEED", "seed must be 0 to 4294967295", "error", s.SeedPosition)
+		}
+	}
 	if len(s.Tracks) == 0 || len(s.Tracks) > 16 {
 		add("CICADA-TRACKS", "score must have 1 to 16 tracks", "error", Position{1, 1})
 	}
@@ -66,6 +71,8 @@ func Validate(s *Score) []Diagnostic {
 		instruments[inst.Name] = inst
 		if inst.Mode != "mono" && inst.Mode != "poly" {
 			add("CICADA-VOICE", "voice mode must be mono or poly", "error", inst.Position)
+		} else if inst.Mode == "poly" {
+			add("CICADA-UNSUPPORTED", "poly voices are not implemented", "error", inst.Position)
 		}
 		if inst.Output == nil {
 			add("CICADA-VOICE", "voice needs an out expression", "error", inst.Position)
@@ -100,6 +107,8 @@ func Validate(s *Score) []Diagnostic {
 			seen[param.Name] = true
 			if !validTrackParam(t.Kind, param.Name, instruments) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
+			} else if mixerParams[param.Name] {
+				add("CICADA-UNSUPPORTED", "mixer parameter "+param.Name+" is not implemented", "error", param.Position)
 			}
 		}
 	}
@@ -143,14 +152,26 @@ func Validate(s *Score) []Diagnostic {
 				if err != nil || n < 10 || n > 100 {
 					add("CICADA-GATE", "gate must be 10 to 100 percent", "error", a.Position)
 				}
-			case "seed", "slot", "transpose":
-				// Numeric domains are checked during compilation to packed fields.
+			case "seed":
+				if _, err := strconv.ParseUint(a.Value, 10, 32); err != nil {
+					add("CICADA-SEED", "pattern seed must be 0 to 4294967295", "error", a.ValuePosition)
+				}
+			case "transpose":
+				n, err := strconv.Atoi(a.Value)
+				if err != nil || n < -24 || n > 24 {
+					add("CICADA-PARAM", "transpose must be -24 to 24 semitones", "error", a.ValuePosition)
+				}
+			case "slot":
+				add("CICADA-UNSUPPORTED", "explicit pattern slots are not implemented", "error", a.Position)
 			default:
 				add("CICADA-ATTRIBUTE", "unknown pattern attribute "+a.Name, "error", a.Position)
 			}
 		}
 		if p.Kind == "acid" || p.Kind == "notes" {
 			for i, token := range p.Steps {
+				if (s.Scale == "pent" || s.Scale == "blues") && len(token.Text) > 0 && (token.Text[0] == '2' || token.Text[0] == '6') {
+					add("CICADA-SCALE-DEGREE", "scale "+s.Scale+" has no degree "+token.Text[:1], "error", token.Position)
+				}
 				if strings.Contains(token.Text, "~") && p.Steps[(i+1)%len(p.Steps)].Text == "." {
 					add("CICADA-SLIDE-REST", "slide into a rest has no effect", "warning", token.Position)
 				}
@@ -210,6 +231,9 @@ func Validate(s *Score) []Diagnostic {
 		if entry.Bars < 1 || entry.Bars > 999 {
 			add("CICADA-BARS", "song entry must be 1 to 999 bars", "error", entry.Position)
 		}
+	}
+	for _, effect := range s.Effects {
+		add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
 	}
 	return ds
 }

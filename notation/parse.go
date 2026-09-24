@@ -40,7 +40,10 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 			s.KeyRoot = childText(w, n, "key_root")
 			s.Scale = childText(w, n, "identifier")
 		case "seed_decl":
-			s.Seed, _ = strconv.ParseUint(childText(w, n, "integer"), 10, 64)
+			seed := w.ChildByType(n, "integer")
+			s.SeedLiteral = w.Text(seed)
+			s.SeedPosition = pos(w, seed)
+			s.Seed, _ = strconv.ParseUint(s.SeedLiteral, 10, 64)
 		case "instrument_decl":
 			s.Instruments = append(s.Instruments, parseInstrument(w, n))
 		case "track_decl":
@@ -155,7 +158,8 @@ func parseExpr(w *walk.Walker, n *gts.Node) *Expr {
 }
 
 func parseParam(w *walk.Walker, n *gts.Node) Param {
-	return Param{Name: w.Text(w.Field(n, "name")), Value: w.Text(w.Field(n, "value")), Position: pos(w, n)}
+	value := w.Field(n, "value")
+	return Param{Name: w.Text(w.Field(n, "name")), Value: w.Text(value), Position: pos(w, n), ValuePosition: pos(w, value)}
 }
 
 func parsePattern(w *walk.Walker, n *gts.Node) Pattern {

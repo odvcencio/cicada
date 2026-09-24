@@ -17,6 +17,8 @@ var scaleIntervals = map[string][7]int{
 	"phrygian": {0, 1, 3, 5, 7, 8, 10},
 	"harmonic": {0, 2, 3, 5, 7, 8, 11},
 	"mixo":     {0, 2, 4, 5, 7, 9, 10},
+	"pent":     {0, 0, 3, 5, 7, 0, 10},
+	"blues":    {0, 0, 3, 5, 7, 0, 10},
 }
 
 var chromatic = map[byte]int{'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11}
@@ -199,6 +201,9 @@ func parsePitch(score *notation.Score, token string, octave int) (note, consumed
 		intervals, ok := scaleIntervals[score.Scale]
 		if !ok {
 			return 0, 0, fmt.Errorf("unknown scale %q", score.Scale)
+		}
+		if (score.Scale == "pent" || score.Scale == "blues") && (first == '2' || first == '6') {
+			return 0, 0, fmt.Errorf("scale %s has no degree %c", score.Scale, first)
 		}
 		root := chromatic[score.KeyRoot[0]]
 		if len(score.KeyRoot) == 2 {

@@ -100,3 +100,46 @@ func TestCommentsAndHighlightQuery(t *testing.T) {
 		t.Fatalf("highlight query: %v", err)
 	}
 }
+
+func TestUnsupportedAndSeedDiagnostics(t *testing.T) {
+	cases := []struct {
+		name, source, code string
+	}{
+		{"large project seed", "seed 4294967296", "CICADA-SEED"},
+		{"large pattern seed", "", "CICADA-SEED"},
+		{"effect", "fx echo {}", "CICADA-UNSUPPORTED"},
+		{"mixer value", "track bass acid { pan = 0.5 }", "CICADA-UNSUPPORTED"},
+		{"explicit slot", "", "CICADA-UNSUPPORTED"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			pattern := "pattern a acid steps=1 { 1 }"
+			if tc.name == "large pattern seed" {
+				pattern = "pattern a acid steps=1 seed=4294967296 { 1 }"
+			}
+			if tc.name == "explicit slot" {
+				pattern = "pattern a acid steps=1 slot=1 { 1 }"
+			}
+			track := "track bass acid {}"
+			if tc.name == "mixer value" {
+				track = tc.source
+			}
+			src := []byte("cicada 1\n" + tc.source + "\n" + track + "\n" + pattern + "\nscene main { bass=a }\nsong { main }\n")
+			_, ds := Parse(src)
+			for _, d := range ds {
+				if d.Code == tc.code && d.Position.Line > 0 {
+					return
+				}
+			}
+			t.Fatalf("want %s with position, got %+v", tc.code, ds)
+		})
+	}
+}
+
+func TestPentatonicMissingDegreeDiagnostic(t *testing.T) {
+	src := []byte("cicada 1\nkey a pent\ntrack bass acid {}\npattern a acid steps=1 { 2 }\nscene main { bass=a }\nsong { main }\n")
+	_, ds := Parse(src)
+	if len(ds) != 1 || ds[0].Code != "CICADA-SCALE-DEGREE" || ds[0].Position.Line != 4 {
+		t.Fatalf("wrong pentatonic diagnostics: %+v", ds)
+	}
+}

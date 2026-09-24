@@ -21,6 +21,17 @@ go run ./cmd/cicada events examples/first-acid.cicada lead lead-a
 
 `validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar-check` verifies the generated parser and highlighting query, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
 
-The render path currently supports custom **mono** instruments with graph expressions. Built-in acid and drum DSP, polyphony, note-off and complete slide behavior, sample assets, audio clips, a source-preserving formatter, and the DAW UI remain open work. The current Go module targets Go 1.25. This is an implementation slice, not a completed workstation.
+The typed [project format](project/schema/project-1.json) supports canonical JSON interchange and semantic comparison:
+
+```sh
+go run ./cmd/cicada fmt examples/first-acid.cicada --check
+go run ./cmd/cicada convert examples/first-acid.cicada -o first-acid.cicada.json
+go run ./cmd/cicada convert first-acid.cicada.json -o first-acid-roundtrip.cicada
+go run ./cmd/cicada compare --semantic examples/first-acid.cicada first-acid-roundtrip.cicada
+```
+
+`fmt` also accepts `--check` before the filename and formats project JSON. Source conversion expands phrases and normalizes pitch spelling; semantic comparison checks the resulting project rather than source text. An unedited source document can be printed byte for byte, including comments.
+
+The render path currently supports custom **mono** instruments with graph expressions. Built-in acid and drum DSP, polyphony, note-off and complete slide behavior, sample assets, audio clips, and the DAW UI remain open work. The current Go module targets Go 1.25. This is an implementation slice, not a completed workstation.
 
 Read the [language direction](docs/grammar-first.md) for the architecture and decisions still needed.

@@ -1,7 +1,11 @@
 cicada 1
+
 title "Glassbass study"
+
 tempo 128
+
 key a minor
+
 seed 4242
 
 instrument glassbass {
@@ -16,17 +20,34 @@ instrument glassbass {
   }
 }
 
-track lead glassbass { cutoff = 680hz }
-
-phrase hook acid { 1^ . 1~ 5 . 1 7, . }
-pattern lead-a notes steps=16 swing=54 gate=55 {
-  use hook
-  use hook transpose=12
+track lead glassbass {
+  cutoff = 680hz
 }
-pattern lead-b notes steps=16 swing=54 gate=55 {
+
+phrase hook acid {
+  1^ . 1~ 5 . 1 7, .
+}
+
+pattern lead-a notes steps = 16 swing = 54 gate = 55 {
+  use hook
+  use hook transpose = 12
+}
+
+pattern lead-b notes steps = 16 swing = 54 gate = 55 {
   1^ . 5 . 3 . 7, . | 1' . 5 . 4 . 3 .
 }
 
-scene main { lead=lead-a }
-scene reply { lead=lead-b }
-song { main*4 reply*4 main*4 reply*4 }
+scene main {
+  lead = lead-a
+}
+
+scene reply {
+  lead = lead-b
+}
+
+song {
+  main*4
+  reply*4
+  main*4
+  reply*4
+}

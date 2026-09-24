@@ -2,9 +2,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"m31labs.dev/cicada/instrument"
@@ -15,6 +17,14 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && (os.Args[1] == "convert" || os.Args[1] == "compare") {
+		projectCommand(os.Args[1:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "fmt" {
+		formatCommand(os.Args[2:])
+		return
+	}
 	if len(os.Args) < 3 || len(os.Args) > 5 {
 		usage()
 	}
@@ -41,16 +51,31 @@ func main() {
 		os.Exit(1)
 	}
 	score, diagnostics := notation.Parse(src)
-	programs := make(map[string]*instrument.Program)
-	if score != nil {
-		for _, definition := range score.Instruments {
-			program, ds := instrument.Compile(definition)
-			diagnostics = append(diagnostics, ds...)
-			if program != nil {
-				programs[definition.Name] = program
-			}
+	var programs map[string]*instrument.Program
+	parseHasError := false
+	for _, d := range diagnostics {
+		if d.Severity == "error" {
+			parseHasError = true
 		}
 	}
+	if !parseHasError {
+		var compileDiagnostics []notation.Diagnostic
+		programs, compileDiagnostics = project.Check(score)
+		diagnostics = append(diagnostics, compileDiagnostics...)
+	}
+	sort.SliceStable(diagnostics, func(i, j int) bool {
+		a, b := diagnostics[i], diagnostics[j]
+		if a.Position.Line != b.Position.Line {
+			return a.Position.Line < b.Position.Line
+		}
+		if a.Position.Column != b.Position.Column {
+			return a.Position.Column < b.Position.Column
+		}
+		if a.Severity != b.Severity {
+			return a.Severity == "error"
+		}
+		return a.Code < b.Code
+	})
 	hasErrors := false
 	for _, d := range diagnostics {
 		fmt.Fprintf(os.Stderr, "%s:%d:%d: %s %s: %s\n", path, d.Position.Line, d.Position.Column, d.Severity, d.Code, d.Message)
@@ -87,8 +112,111 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: cicada validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav>")
+	fmt.Fprintln(os.Stderr, "usage: cicada validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b>")
 	os.Exit(2)
+}
+
+func formatCommand(args []string) {
+	mode := "stdout"
+	if len(args) == 2 {
+		if args[0] == "--check" || args[0] == "-w" {
+			mode, args = args[0], args[1:]
+		} else {
+			mode, args = args[1], args[:1]
+		}
+	}
+	if len(args) != 1 || (mode != "stdout" && mode != "--check" && mode != "-w") {
+		usage()
+	}
+	path := args[0]
+	source, err := os.ReadFile(path)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	var formatted []byte
+	if filepath.Ext(path) == ".json" {
+		var p *project.Project
+		p, err = project.DecodeJSON(source)
+		if err == nil {
+			formatted, err = project.CanonicalJSON(p)
+		}
+	} else if filepath.Ext(path) == ".cicada" {
+		var document *notation.Document
+		document, err = notation.ParseDocument(source)
+		if err == nil {
+			formatted, err = notation.Format(document)
+		}
+	} else {
+		usage()
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	switch mode {
+	case "--check":
+		if !bytes.Equal(source, formatted) {
+			fmt.Fprintln(os.Stderr, "--- "+path)
+			fmt.Fprintln(os.Stderr, "+++ "+path+" (formatted)")
+			fmt.Fprint(os.Stderr, simpleDiff(source, formatted))
+			os.Exit(1)
+		}
+	case "-w":
+		if !bytes.Equal(source, formatted) {
+			if err := writeAtomic(path, formatted); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
+		}
+	default:
+		if _, err := os.Stdout.Write(formatted); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+}
+
+func simpleDiff(before, after []byte) string {
+	oldLines := bytes.Split(bytes.TrimSuffix(before, []byte("\n")), []byte("\n"))
+	newLines := bytes.Split(bytes.TrimSuffix(after, []byte("\n")), []byte("\n"))
+	var out bytes.Buffer
+	fmt.Fprintf(&out, "@@ -1,%d +1,%d @@\n", len(oldLines), len(newLines))
+	for _, line := range oldLines {
+		fmt.Fprintf(&out, "-%s\n", line)
+	}
+	for _, line := range newLines {
+		fmt.Fprintf(&out, "+%s\n", line)
+	}
+	return out.String()
+}
+
+func writeAtomic(path string, data []byte) error {
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	temporary, err := os.CreateTemp(filepath.Dir(path), ".cicada-format-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(temporary.Name())
+	if err := temporary.Chmod(info.Mode().Perm()); err != nil {
+		temporary.Close()
+		return err
+	}
+	if _, err := temporary.Write(data); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Sync(); err != nil {
+		temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporary.Name(), path)
 }
 
 func renderFile(score *notation.Score, path string) error {

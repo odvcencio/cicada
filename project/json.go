@@ -1,0 +1,426 @@
+package project
+
+import (
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"io"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
+	"unicode/utf8"
+)
+
+const maxJSONBytes = 2 << 20
+const maxJSONDepth = 64
+
+func (e Expr) MarshalJSON() ([]byte, error) {
+	switch {
+	case e.Literal != nil && e.Name == "" && e.Op == "" && len(e.Args) == 0:
+		return json.Marshal(struct {
+			Literal float64 `json:"literal"`
+		}{*e.Literal})
+	case e.Name != "" && e.Literal == nil && e.Op == "" && len(e.Args) == 0:
+		return json.Marshal(struct {
+			Name string `json:"name"`
+		}{e.Name})
+	case e.Op != "" && e.Literal == nil && e.Name == "" && e.Args != nil:
+		return json.Marshal(struct {
+			Op   string `json:"op"`
+			Args []Expr `json:"args"`
+		}{e.Op, e.Args})
+	default:
+		return nil, fmt.Errorf("expression must be exactly one of literal, name, or op with args")
+	}
+}
+
+func (e *Expr) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if fields == nil {
+		return fmt.Errorf("expression must be an object")
+	}
+	*e = Expr{}
+	if literal, ok := fields["literal"]; ok && len(fields) == 1 {
+		var number float64
+		if err := json.Unmarshal(literal, &number); err != nil || math.IsNaN(number) || math.IsInf(number, 0) {
+			return fmt.Errorf("invalid expression literal")
+		}
+		e.Literal = &number
+		return nil
+	}
+	if name, ok := fields["name"]; ok && len(fields) == 1 {
+		if err := json.Unmarshal(name, &e.Name); err != nil || e.Name == "" {
+			return fmt.Errorf("invalid expression name")
+		}
+		return nil
+	}
+	if op, ok := fields["op"]; ok && len(fields) == 2 {
+		args, hasArgs := fields["args"]
+		if !hasArgs {
+			return fmt.Errorf("expression operation needs args")
+		}
+		if err := json.Unmarshal(op, &e.Op); err != nil || e.Op == "" {
+			return fmt.Errorf("invalid expression operation")
+		}
+		if err := json.Unmarshal(args, &e.Args); err != nil || e.Args == nil {
+			return fmt.Errorf("invalid expression arguments")
+		}
+		return nil
+	}
+	return fmt.Errorf("expression must be exactly one of literal, name, or op with args")
+}
+
+func (v Value) MarshalJSON() ([]byte, error) {
+	if v.Number != nil && v.Unit != "enum" && v.Text == "" {
+		return json.Marshal(struct {
+			Unit   string  `json:"unit"`
+			Number float64 `json:"number"`
+		}{v.Unit, *v.Number})
+	}
+	if v.Number == nil && v.Unit == "enum" && v.Text != "" {
+		return json.Marshal(struct {
+			Unit string `json:"unit"`
+			Text string `json:"text"`
+		}{v.Unit, v.Text})
+	}
+	return nil, fmt.Errorf("value must have a number or enum text")
+}
+
+func (v *Value) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	if fields == nil || len(fields) != 2 {
+		return fmt.Errorf("value must have unit and one payload")
+	}
+	if err := json.Unmarshal(fields["unit"], &v.Unit); err != nil || v.Unit == "" {
+		return fmt.Errorf("invalid value unit")
+	}
+	if number, ok := fields["number"]; ok && v.Unit != "enum" {
+		var parsed float64
+		if err := json.Unmarshal(number, &parsed); err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+			return fmt.Errorf("invalid numeric value")
+		}
+		v.Number, v.Text = &parsed, ""
+		return nil
+	}
+	if text, ok := fields["text"]; ok && v.Unit == "enum" {
+		if err := json.Unmarshal(text, &v.Text); err != nil || v.Text == "" {
+			return fmt.Errorf("invalid enum value")
+		}
+		v.Number = nil
+		return nil
+	}
+	return fmt.Errorf("value must have a number or enum text")
+}
+
+// CanonicalJSON writes sorted object keys, two-space indentation, LF, and a
+// final LF. It expands exponent-form JSON numbers to decimal notation.
+func CanonicalJSON(p *Project) ([]byte, error) {
+	if err := ValidateProject(p); err != nil {
+		return nil, err
+	}
+	raw, err := json.Marshal(p)
+	if err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.UseNumber()
+	var value any
+	if err := decoder.Decode(&value); err != nil {
+		return nil, err
+	}
+	var output bytes.Buffer
+	if err := writeCanonical(&output, value, 0); err != nil {
+		return nil, err
+	}
+	output.WriteByte('\n')
+	return output.Bytes(), nil
+}
+
+func writeCanonical(output *bytes.Buffer, value any, depth int) error {
+	switch v := value.(type) {
+	case map[string]any:
+		if len(v) == 0 {
+			output.WriteString("{}")
+			return nil
+		}
+		keys := make([]string, 0, len(v))
+		for key := range v {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		output.WriteString("{\n")
+		for i, key := range keys {
+			output.WriteString(strings.Repeat("  ", depth+1))
+			encoded, _ := json.Marshal(key)
+			output.Write(encoded)
+			output.WriteString(": ")
+			if err := writeCanonical(output, v[key], depth+1); err != nil {
+				return err
+			}
+			if i+1 < len(keys) {
+				output.WriteByte(',')
+			}
+			output.WriteByte('\n')
+		}
+		output.WriteString(strings.Repeat("  ", depth))
+		output.WriteByte('}')
+	case []any:
+		if len(v) == 0 {
+			output.WriteString("[]")
+			return nil
+		}
+		output.WriteString("[\n")
+		for i, item := range v {
+			output.WriteString(strings.Repeat("  ", depth+1))
+			if err := writeCanonical(output, item, depth+1); err != nil {
+				return err
+			}
+			if i+1 < len(v) {
+				output.WriteByte(',')
+			}
+			output.WriteByte('\n')
+		}
+		output.WriteString(strings.Repeat("  ", depth))
+		output.WriteByte(']')
+	case json.Number:
+		parsed, err := strconv.ParseFloat(string(v), 64)
+		if err != nil || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+			return fmt.Errorf("nonfinite JSON number")
+		}
+		if parsed == 0 {
+			output.WriteByte('0')
+		} else {
+			output.WriteString(strconv.FormatFloat(parsed, 'f', -1, 64))
+		}
+	case string, bool, nil:
+		encoded, err := json.Marshal(v)
+		if err != nil {
+			return err
+		}
+		output.Write(encoded)
+	default:
+		return fmt.Errorf("unsupported JSON value %T", v)
+	}
+	return nil
+}
+
+// DecodeJSON rejects malformed interchange before the project compiler sees
+// it. Structural and musical cross-reference checks are separate stages.
+func DecodeJSON(data []byte) (*Project, error) {
+	if len(data) > maxJSONBytes {
+		return nil, fmt.Errorf("project JSON exceeds 2 MiB")
+	}
+	if !utf8.Valid(data) {
+		return nil, fmt.Errorf("project JSON is not UTF-8")
+	}
+	if err := checkJSONStructure(data); err != nil {
+		return nil, err
+	}
+	if err := checkRequiredFields(data); err != nil {
+		return nil, err
+	}
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	var p Project
+	if err := decoder.Decode(&p); err != nil {
+		return nil, err
+	}
+	if p.Format != FormatID || p.Version != 1 {
+		return nil, fmt.Errorf("unsupported project format or version")
+	}
+	if err := ValidateProject(&p); err != nil {
+		return nil, err
+	}
+	return &p, nil
+}
+
+func checkJSONStructure(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var walk func(int) error
+	walk = func(depth int) error {
+		if depth > maxJSONDepth {
+			return fmt.Errorf("project JSON exceeds depth 64")
+		}
+		token, err := decoder.Token()
+		if err != nil {
+			return err
+		}
+		delim, ok := token.(json.Delim)
+		if !ok {
+			return nil
+		}
+		switch delim {
+		case '{':
+			seen := map[string]bool{}
+			for decoder.More() {
+				keyToken, err := decoder.Token()
+				if err != nil {
+					return err
+				}
+				key, ok := keyToken.(string)
+				if !ok {
+					return fmt.Errorf("invalid JSON object key")
+				}
+				if seen[key] {
+					return fmt.Errorf("duplicate JSON key %q", key)
+				}
+				seen[key] = true
+				if err := walk(depth + 1); err != nil {
+					return err
+				}
+			}
+			_, err := decoder.Token()
+			return err
+		case '[':
+			for decoder.More() {
+				if err := walk(depth + 1); err != nil {
+					return err
+				}
+			}
+			_, err := decoder.Token()
+			return err
+		}
+		return fmt.Errorf("unexpected JSON delimiter")
+	}
+	if err := walk(0); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("extra JSON value")
+		}
+		return err
+	}
+	return nil
+}
+
+func checkRequiredFields(data []byte) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	var raw any
+	if err := decoder.Decode(&raw); err != nil {
+		return err
+	}
+	root, err := requiredObject(raw, "project", "format", "version", "title", "tempo_milli", "key", "seed", "instruments", "kits", "tracks", "patterns", "scenes", "song", "effects")
+	if err != nil {
+		return err
+	}
+	if _, err := requiredObject(root["key"], "key", "root", "scale"); err != nil {
+		return err
+	}
+	if err := checkObjectArray(root["instruments"], "instruments", func(value any) error {
+		object, err := requiredObject(value, "instrument", "id", "mode", "params", "lets", "out")
+		if err != nil {
+			return err
+		}
+		if err := checkObjectArray(object["params"], "instrument params", func(value any) error {
+			_, err := requiredObject(value, "instrument param", "id", "unit", "default")
+			return err
+		}); err != nil {
+			return err
+		}
+		return checkObjectArray(object["lets"], "instrument lets", func(value any) error {
+			_, err := requiredObject(value, "binding", "id", "value")
+			return err
+		})
+	}); err != nil {
+		return err
+	}
+	if err := checkObjectArray(root["kits"], "kits", func(value any) error {
+		_, err := requiredObject(value, "kit", "id", "lanes")
+		return err
+	}); err != nil {
+		return err
+	}
+	if err := checkObjectArray(root["tracks"], "tracks", func(value any) error {
+		object, err := requiredObject(value, "track", "id", "kind", "params", "mixer", "slots")
+		if err != nil {
+			return err
+		}
+		_, err = requiredObject(object["mixer"], "mixer", "gain_db", "pan", "send_a", "send_b", "send_pre", "mute", "solo", "insert", "bus")
+		return err
+	}); err != nil {
+		return err
+	}
+	if err := checkObjectArray(root["patterns"], "patterns", func(value any) error {
+		object, err := requiredObject(value, "pattern", "id", "kind", "steps", "swing_percent100", "gate_percent", "transpose", "seed", "data", "lanes")
+		if err != nil {
+			return err
+		}
+		if err := checkStepArray(object["data"]); err != nil {
+			return err
+		}
+		lanes, ok := object["lanes"].(map[string]any)
+		if !ok {
+			return fmt.Errorf("pattern lanes must be an object")
+		}
+		for _, cells := range lanes {
+			if err := checkStepArray(cells); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	if err := checkObjectArray(root["scenes"], "scenes", func(value any) error {
+		_, err := requiredObject(value, "scene", "id", "bindings")
+		return err
+	}); err != nil {
+		return err
+	}
+	if err := checkObjectArray(root["song"], "song", func(value any) error {
+		_, err := requiredObject(value, "song entry", "scene", "bars")
+		return err
+	}); err != nil {
+		return err
+	}
+	return checkObjectArray(root["effects"], "effects", func(value any) error {
+		_, err := requiredObject(value, "effect", "id", "params")
+		return err
+	})
+}
+
+func requiredObject(value any, name string, fields ...string) (map[string]any, error) {
+	object, ok := value.(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("%s must be an object", name)
+	}
+	for _, field := range fields {
+		if _, exists := object[field]; !exists {
+			return nil, fmt.Errorf("%s is missing %s", name, field)
+		}
+	}
+	return object, nil
+}
+
+func checkObjectArray(value any, name string, check func(any) error) error {
+	array, ok := value.([]any)
+	if !ok {
+		return fmt.Errorf("%s must be an array", name)
+	}
+	for _, item := range array {
+		if err := check(item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func checkStepArray(value any) error {
+	return checkObjectArray(value, "pattern cells", func(value any) error {
+		if value == nil {
+			return nil
+		}
+		_, err := requiredObject(value, "step", "note", "accent", "slide", "tie", "ratchet", "probability", "velocity")
+		return err
+	})
+}

@@ -90,11 +90,22 @@ func TestCustomInstrumentNotePattern(t *testing.T) {
 	}
 }
 
-func TestUnspecifiedPentatonicDegreeIsRejected(t *testing.T) {
+func TestPentatonicAndBluesScaleDegrees(t *testing.T) {
 	s := firstScore(t)
-	s.Scale = "pent"
-	_, err := CompilePattern(s, s.Patterns[0], s.Tracks[0])
-	if err == nil {
-		t.Fatal("expected undefined degree mapping for pent scale")
+	for _, scale := range []string{"pent", "blues"} {
+		s.Scale = scale
+		compiled, err := CompilePattern(s, s.Patterns[0], s.Tracks[0])
+		if err != nil {
+			t.Fatalf("%s: %v", scale, err)
+		}
+		first, _ := seq.UnpackStep(compiled[0].Pattern.Steps[0])
+		if first.Note != 45 {
+			t.Fatalf("%s degree 1 = %d, want 45", scale, first.Note)
+		}
+		s.Patterns[0].Steps[0].Text = "2"
+		if _, err := CompilePattern(s, s.Patterns[0], s.Tracks[0]); err == nil {
+			t.Fatalf("%s accepted missing degree 2", scale)
+		}
+		s.Patterns[0].Steps[0].Text = "1^"
 	}
 }

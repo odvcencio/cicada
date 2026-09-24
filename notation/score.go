@@ -16,19 +16,21 @@ type Diagnostic struct {
 // Score is the typed source model. Runtime project compilation is a separate
 // stage, so pitch spelling and source positions remain available to tools.
 type Score struct {
-	Version     int
-	Title       string
-	TempoMilli  int64
-	KeyRoot     string
-	Scale       string
-	Seed        uint64
-	Instruments []Instrument
-	Tracks      []Track
-	Phrases     []Phrase
-	Patterns    []Pattern
-	Scenes      []Scene
-	Song        []SongEntry
-	Effects     []Effect
+	Version      int
+	Title        string
+	TempoMilli   int64
+	KeyRoot      string
+	Scale        string
+	Seed         uint64
+	SeedLiteral  string
+	SeedPosition Position
+	Instruments  []Instrument
+	Tracks       []Track
+	Phrases      []Phrase
+	Patterns     []Pattern
+	Scenes       []Scene
+	Song         []SongEntry
+	Effects      []Effect
 }
 
 type Track struct {
@@ -72,9 +74,10 @@ type Expr struct {
 }
 
 type Param struct {
-	Name     string
-	Value    string
-	Position Position
+	Name          string
+	Value         string
+	Position      Position
+	ValuePosition Position
 }
 
 type Pattern struct {
