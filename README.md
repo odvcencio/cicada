@@ -1,6 +1,6 @@
 # Cicada: programmable music notation
 
-Cicada is an experimental music language for people, agents, and a future extensible DAW. A `.cicada` file describes music and can define the instruments that play it. [Grammargen](language/cicada.grammar) compiles the grammar into a parser blob consumed by gotreesitter; the compiler builds a typed score, deterministic note events, and bounded DSP graphs. The offline renderer writes stereo 24-bit WAV from custom mono instruments, the built-in acid voice, and six synthesized drum lanes. The [Cicada 1 language reference](docs/language-v1.md) describes the supported notation.
+Cicada is an experimental music language for people, agents, and a future extensible DAW. A `.cicada` file describes music and can define the instruments that play it. The [grammar](language/grammar/grammar.go) is written in the grammargen Go DSL and compiles into a parser blob consumed by gotreesitter; the compiler builds a typed score, deterministic note events, and bounded DSP graphs. The offline renderer writes stereo 24-bit WAV from custom mono instruments, the built-in acid voice, and six synthesized drum lanes. The [Cicada 1 language reference](docs/language-v1.md) describes the supported notation.
 
 Render the [circuit kit score](examples/circuit-kit.cicada). Its bass, kick, snare, and hat are all defined in the score:
 
@@ -27,7 +27,7 @@ go run ./cmd/cicada render examples/first-acid.cicada -o first-acid.wav --rate 4
 go run ./cmd/cicada verify-wav first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60
 ```
 
-`validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar-check` verifies the generated parser and the editor queries, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
+`validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar` regenerates the parser blob from the Go DSL grammar, `make grammar-check` verifies the blob and the editor queries, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
 
 The [cicada chorus](examples/cicada-chorus.cicada) uses every construct the renderer plays: a noise-and-ring tymbal voice, all thirteen graph primitives, degrees and letter pitches, every step modifier, dense drum rows, phrases, and scenes. `highlight` draws a score in color, and `symbols` lists the names a score defines and where each is used. Both run the [editor queries](docs/editor-tooling.md) in `language/` on gotreesitter, and those queries give every construct its own capture:
 

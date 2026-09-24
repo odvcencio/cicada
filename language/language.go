@@ -1,5 +1,5 @@
 // Package language is Cicada's editor tooling. The tree-sitter queries next
-// to cicada.grammar classify every construct in a score; this package runs
+// to the grammar classify every construct in a score; this package runs
 // them with gotreesitter to highlight, outline, and render scores.
 package language
 
@@ -14,7 +14,7 @@ import (
 )
 
 // Query sources in Neovim's query formats. Editors that read queries from
-// disk can use the .scm files next to cicada.grammar.
+// disk can use the .scm files in this directory.
 var (
 	//go:embed highlights.scm
 	HighlightsQuery string

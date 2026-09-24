@@ -2,7 +2,7 @@
 
 A `.cicada` file is a text score. The first declaration is `cicada 1`.
 Declarations can be separated by spaces or newlines; braces delimit bodies.
-`//` starts a comment. The [Grammargen grammar](../language/cicada.grammar)
+`//` starts a comment. The [grammargen grammar](../language/grammar/grammar.go)
 defines the syntax, and `cicada validate` checks names, units, ranges, and
 render support.
 
