@@ -14,6 +14,7 @@ type VerifyOptions struct {
 	SampleRate int
 	Bits       int
 	Bars       int
+	From       int
 	TailSec    float64
 	PeakMaxDB  float64
 	DCMaxDB    float64
@@ -35,8 +36,8 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 	if opts.SampleRate != 44_100 && opts.SampleRate != 48_000 && opts.SampleRate != 96_000 {
 		return report, fmt.Errorf("unsupported sample rate")
 	}
-	if opts.Bits != 16 && opts.Bits != 24 && opts.Bits != 32 || opts.Bars < 1 || opts.Bars > 256 {
-		return report, fmt.Errorf("verify-wav requires 16, 24, or 32 float bits and 1 to 256 bars")
+	if opts.Bits != 16 && opts.Bits != 24 && opts.Bits != 32 || opts.Bars < 1 || opts.Bars > 256 || opts.From < 0 || opts.From+opts.Bars > 256 {
+		return report, fmt.Errorf("verify-wav requires 16, 24, or 32 float bits and a bar range within 256 bars")
 	}
 	if math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || opts.TailSec < 0 || opts.TailSec > 10 {
 		return report, fmt.Errorf("tail must be 0 to 10 seconds")
@@ -93,7 +94,7 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 	if err != nil {
 		return report, fmt.Errorf("invalid WAV tempo metadata: %w", err)
 	}
-	wantFrames := clock.SampleAtTick(int64(bars)*seq.TicksPerBar) + int64(tailFrames)
+	wantFrames := clock.SampleAtTick(int64(opts.From+int(bars))*seq.TicksPerBar) - clock.SampleAtTick(int64(opts.From)*seq.TicksPerBar) + int64(tailFrames)
 	if report.Frames != wantFrames {
 		return report, fmt.Errorf("WAV duration: got %d frames, want %d", report.Frames, wantFrames)
 	}

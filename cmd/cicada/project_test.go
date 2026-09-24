@@ -205,6 +205,10 @@ func TestProjectCLI(t *testing.T) {
 		run(0, "render", first, "-o", formatPath, "--bits", bits, "--bars", "1", "--tail", "0s")
 		run(0, "verify-wav", formatPath, "--rate", "48000", "--bits", bits, "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0")
 	}
+	rangedPath := filepath.Join(t.TempDir(), "first-acid-range.wav")
+	run(0, "render", first, "-o", rangedPath, "--from", "1", "--bars", "1", "--tail", "0s")
+	run(0, "verify-wav", rangedPath, "--from", "1", "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0")
+	run(1, "render", first, "-o", wavPath, "--from", "16", "--bars", "1")
 	run(2, "render", first, "-o", wavPath, "--bits", "8")
 }
 

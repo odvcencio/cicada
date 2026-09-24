@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -100,5 +101,110 @@ func TestVerifyStemsDetectsBrokenBusSum(t *testing.T) {
 	}
 	if _, err := VerifyStems(score, dir, VerifyStemsOptions{ResidualMaxDB: -80}); err == nil || !strings.Contains(err.Error(), "residual") {
 		t.Fatalf("broken sum accepted: %v", err)
+	}
+}
+
+func TestStemsBarRangeMatchesFullRender(t *testing.T) {
+	source := strings.Replace(testScore, "tempo 120", "tempo 137", 1)
+	source = strings.Replace(source, "song { main }", "song { main*3 }", 1)
+	score, diagnostics := notation.Parse([]byte(source))
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("parse: %+v", diagnostic)
+		}
+	}
+	clock, err := seq.NewClock(48_000, score.TempoMilli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := clock.SampleAtTick(2 * seq.TicksPerBar)
+	end := clock.SampleAtTick(3 * seq.TicksPerBar)
+	root := t.TempDir()
+	fullDir, partDir := filepath.Join(root, "full"), filepath.Join(root, "part")
+	if _, err := Stems(score, Options{SampleRate: 48_000, Bits: 32}, fullDir); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Stems(score, Options{SampleRate: 48_000, Bits: 32, From: 2, Bars: 1}, partDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.From != 2 || report.Frames != end-start {
+		t.Fatalf("stem range: %+v", report)
+	}
+	verified, err := VerifyStems(score, partDir, VerifyStemsOptions{ResidualMaxDB: -80})
+	if err != nil || verified.From != 2 || verified.Frames != report.Frames {
+		t.Fatalf("verify ranged stems: %+v %v", verified, err)
+	}
+	if _, err := VerifyStems(nil, partDir, VerifyStemsOptions{ResidualMaxDB: -80}); err != nil {
+		t.Fatalf("standalone ranged stem verification: %v", err)
+	}
+	for _, name := range []string{"01-lead.wav", "return-a.wav", "return-b.wav", "music.wav", "sfx.wav", "master.wav"} {
+		full, err := os.ReadFile(filepath.Join(fullDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		part, err := os.ReadFile(filepath.Join(partDir, name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := full[44+int(start)*8 : 44+int(end)*8]
+		got := part[44 : 44+int(report.Frames)*8]
+		if !bytes.Equal(want, got) {
+			t.Fatalf("%s differs from full render", name)
+		}
+	}
+}
+
+func TestStemsBarRangeWithDriveAlignment(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "examples", "fx", "drive-insert.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("parse: %+v", diagnostic)
+		}
+	}
+	clock, err := seq.NewClock(48_000, score.TempoMilli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := clock.SampleAtTick(seq.TicksPerBar)
+	end := clock.SampleAtTick(3 * seq.TicksPerBar)
+	root := t.TempDir()
+	fullDir, partDir := filepath.Join(root, "full"), filepath.Join(root, "part")
+	if _, err := Stems(score, Options{SampleRate: 48_000, Bits: 32, Bars: 3}, fullDir); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Stems(score, Options{SampleRate: 48_000, Bits: 32, From: 1, Bars: 2}, partDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Frames != end-start {
+		t.Fatalf("stem range frame count: %+v", report)
+	}
+	if _, err := VerifyStems(nil, partDir, VerifyStemsOptions{ResidualMaxDB: -80}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(partDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if filepath.Ext(entry.Name()) != ".wav" {
+			continue
+		}
+		full, err := os.ReadFile(filepath.Join(fullDir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		part, err := os.ReadFile(filepath.Join(partDir, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(full[44+int(start)*8:44+int(end)*8], part[44:44+int(report.Frames)*8]) {
+			t.Fatalf("%s differs from prefix render after drive alignment", entry.Name())
+		}
 	}
 }

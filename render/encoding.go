@@ -52,6 +52,17 @@ func newWAVEncoder(bits int, dither bool, seed uint64, gain float32) (wavEncoder
 
 func (encoder *wavEncoder) frameBytes() int { return encoder.bits / 4 }
 
+// advanceDither keeps a range render's noise aligned with a full-song render.
+func (encoder *wavEncoder) advanceDither() {
+	if !encoder.dither {
+		return
+	}
+	for channel := range encoder.rng {
+		encoder.rng[channel].next()
+		encoder.rng[channel].next()
+	}
+}
+
 func (encoder *wavEncoder) writeFrame(dst []byte, left, right float32, ceiling float64, report *Report) {
 	for channel, value := range [...]float32{left, right} {
 		value *= encoder.gain

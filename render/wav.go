@@ -23,7 +23,8 @@ import (
 type Options struct {
 	SampleRate int
 	Bits       int // 16, 24, or 32-bit IEEE float; zero defaults to 24
-	Bars       int // zero renders the full arrangement
+	Bars       int // zero renders from From through the song end
+	From       int // zero-based start bar; zero starts at the song beginning
 	TailSec    float64
 	Dither     *bool // nil enables deterministic TPDF on integer formats
 	Normalize  bool  // peak normalize the post-limiter output to -1 dBFS
@@ -33,6 +34,7 @@ type Options struct {
 type Report struct {
 	SampleRate      int
 	Bars            int
+	From            int
 	Frames          int64
 	Peak            float32
 	OutputPeak      float32
@@ -42,6 +44,9 @@ type Report struct {
 	TailFrames      int64
 	writtenFrames   int64
 	skipFrames      int
+	rangeSkip       int64
+	metricStart     int64
+	metricEnd       int64
 }
 
 type trackRuntime struct {
@@ -162,15 +167,23 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	for _, entry := range score.Song {
 		report.Bars += entry.Bars
 	}
-	if opts.Bars < 0 || opts.Bars > report.Bars {
-		return report, fmt.Errorf("requested bars must be 0 to song length")
+	songBars := report.Bars
+	if opts.From < 0 || opts.From >= songBars {
+		return report, fmt.Errorf("start bar must be within the song arrangement")
 	}
-	if opts.Bars > 0 {
+	if opts.Bars < 0 || opts.Bars > songBars-opts.From {
+		return report, fmt.Errorf("requested bars must fit between the start bar and song end")
+	}
+	report.From = opts.From
+	if opts.Bars == 0 {
+		report.Bars -= opts.From
+	} else {
 		report.Bars = opts.Bars
 	}
 	if report.Bars < 1 || report.Bars > 256 {
 		return report, fmt.Errorf("render supports 1 to 256 bars")
 	}
+	renderBars := report.From + report.Bars
 	semantic, diagnostics := project.FromScore(score)
 	if semantic == nil {
 		for _, diagnostic := range diagnostics {
@@ -182,7 +195,10 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	report.SampleRate = opts.SampleRate
 	report.TailFrames = int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))
-	report.Frames = clock.SampleAtTick(int64(report.Bars)*seq.TicksPerBar) + report.TailFrames
+	fromFrame := clock.SampleAtTick(int64(report.From) * seq.TicksPerBar)
+	renderFrames := clock.SampleAtTick(int64(renderBars)*seq.TicksPerBar) + report.TailFrames
+	report.Frames = renderFrames - fromFrame
+	report.rangeSkip = fromFrame
 	dataBytes := report.Frames * int64(encoder.frameBytes())
 	if dataBytes > int64(^uint32(0))-60 {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
@@ -283,8 +299,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	if stems != nil {
-		stems.skipFrames = int64(insertLatency)
+		stems.skipFrames = fromFrame + int64(insertLatency)
 	}
+	report.metricStart = fromFrame + int64(insertLatency)
+	if report.From == 0 {
+		report.metricStart = 0
+	}
+	report.metricEnd = renderFrames + int64(insertLatency)
 	limiter, err := mix.NewLimiter(opts.SampleRate)
 	if err != nil {
 		return report, err
@@ -298,7 +319,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	var position int64
 	bar := 0
 	for _, entry := range score.Song {
-		if bar >= report.Bars {
+		if bar >= renderBars {
 			break
 		}
 		scene := findScene(score, entry.Scene)
@@ -306,14 +327,14 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			return report, fmt.Errorf("unknown scene %s", entry.Scene)
 		}
 		for range entry.Bars {
-			if bar >= report.Bars {
+			if bar >= renderBars {
 				break
 			}
 			if err := applyScene(tracks, scene); err != nil {
 				return report, err
 			}
 			var nextScene *notation.Scene
-			if bar+1 < report.Bars {
+			if bar+1 < renderBars {
 				nextScene = sceneAtBar(score, bar+1)
 			}
 			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock)
@@ -414,10 +435,10 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 		tracks[ti].activeGen = 0
 	}
-	for position < report.Frames {
+	for position < renderFrames {
 		frames := opts.Block
-		if position+int64(frames) > report.Frames {
-			frames = int(report.Frames - position)
+		if position+int64(frames) > renderFrames {
+			frames = int(renderFrames - position)
 		}
 		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, &encoder, nil, position, frames, block, &report); err != nil {
 			return report, err
@@ -901,14 +922,16 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			}
 		}
 		left, right = left+sfxL, right+sfxR
-		if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {
-			report.Peak = abs
-		}
-		if math.Abs(float64(left)) > limiter.Ceiling() {
-			report.PreLimiterOvers++
-		}
-		if math.Abs(float64(right)) > limiter.Ceiling() {
-			report.PreLimiterOvers++
+		if sample >= report.metricStart && sample < report.metricEnd {
+			if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {
+				report.Peak = abs
+			}
+			if math.Abs(float64(left)) > limiter.Ceiling() {
+				report.PreLimiterOvers++
+			}
+			if math.Abs(float64(right)) > limiter.Ceiling() {
+				report.PreLimiterOvers++
+			}
 		}
 		outL, outR, ready := limiter.Process(left, right)
 		if limiter.Fault() {
@@ -919,6 +942,11 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		}
 		if report.skipFrames > 0 {
 			report.skipFrames--
+			continue
+		}
+		if report.rangeSkip > 0 {
+			encoder.advanceDither()
+			report.rangeSkip--
 			continue
 		}
 		if stems != nil {
@@ -949,24 +977,35 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 
 func flushLimiter(w io.Writer, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, buffer []byte, report *Report) error {
 	frames := limiter.LatencyFrames()
+	outFrames := 0
 	for i := 0; i < frames; i++ {
 		left, right, ready := limiter.Process(0, 0)
 		if !ready || limiter.Fault() {
 			return fmt.Errorf("master limiter failed while flushing")
 		}
-		encoder.writeFrame(buffer[i*encoder.frameBytes():], left, right, limiter.Ceiling(), report)
+		if report.skipFrames > 0 {
+			report.skipFrames--
+			continue
+		}
+		if report.rangeSkip > 0 {
+			encoder.advanceDither()
+			report.rangeSkip--
+			continue
+		}
+		encoder.writeFrame(buffer[outFrames*encoder.frameBytes():], left, right, limiter.Ceiling(), report)
 		if stems != nil {
 			stems.appendMaster(left*encoder.gain, right*encoder.gain)
 		}
+		outFrames++
 	}
-	n, err := w.Write(buffer[:frames*encoder.frameBytes()])
+	n, err := w.Write(buffer[:outFrames*encoder.frameBytes()])
 	if err != nil {
 		return err
 	}
-	if n != frames*encoder.frameBytes() {
+	if n != outFrames*encoder.frameBytes() {
 		return io.ErrShortWrite
 	}
-	report.writtenFrames += int64(frames)
+	report.writtenFrames += int64(outFrames)
 	if stems != nil {
 		return stems.flush()
 	}
