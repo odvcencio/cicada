@@ -79,6 +79,9 @@ type Config struct {
 	LoopSong   bool
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
+	CompMusic  *fx.CompParams
+	// CompSidechainTrack is zero for self-detection or a one-based track index.
+	CompSidechainTrack int
 }
 
 type voiceSlot struct {
@@ -105,6 +108,8 @@ type Engine struct {
 	limiter                      *mix.Limiter
 	delayA                       *fx.Delay
 	reverbB                      *fx.Reverb
+	compMusic                    *fx.Compressor
+	compSidechainTrack           int
 	commands                     [512]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [256]cmd.Message
@@ -161,6 +166,20 @@ func New(cfg Config) (*Engine, error) {
 			return nil, err
 		}
 		e.reverbB.Reset()
+	}
+	if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks || cfg.CompMusic == nil && cfg.CompSidechainTrack != 0 {
+		return nil, Error("invalid compressor sidechain track")
+	}
+	if cfg.CompMusic != nil {
+		e.compMusic, err = fx.NewCompressor(cfg.SampleRate)
+		if err == nil {
+			err = e.compMusic.SetParams(*cfg.CompMusic)
+		}
+		if err != nil {
+			return nil, err
+		}
+		e.compMusic.Reset()
+		e.compSidechainTrack = cfg.CompSidechainTrack
 	}
 	voices := 0
 	hasDrive := false
@@ -393,6 +412,9 @@ func (e *Engine) Reset() {
 	if e.reverbB != nil {
 		e.reverbB.Reset()
 	}
+	if e.compMusic != nil {
+		e.compMusic.Reset()
+	}
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0
@@ -459,7 +481,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			return
 		}
 		var dry mix.Dry
-		var sendAL, sendAR, sendBL, sendBR float32
+		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
 		for track := 0; track < e.tracks; track++ {
 			v := &e.voices[track]
 			var left, right float32
@@ -516,6 +538,9 @@ func (e *Engine) Render(outL, outR []float32) {
 					}
 				}
 				dry.Add(left, right, v.mix)
+				if e.compSidechainTrack == track+1 {
+					sideL, sideR = left*v.mix.Left, right*v.mix.Right
+				}
 			}
 		}
 		if e.delayA != nil {
@@ -539,6 +564,19 @@ func (e *Engine) Render(outL, outR []float32) {
 			dry.AddReturn(returnL, returnR)
 		}
 		left, right := dry.Music()
+		if e.compMusic != nil {
+			if e.compSidechainTrack == 0 {
+				left, right = e.compMusic.Process(left, right)
+			} else {
+				left, right = e.compMusic.ProcessSidechain(left, right, sideL, sideR)
+			}
+			if e.compMusic.Fault() {
+				e.fault(16)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return
+			}
+		}
 		outL[frame], outR[frame], _ = e.limiter.Process(left, right)
 		if e.limiter.Fault() {
 			e.fault(4)
@@ -657,6 +695,9 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		if e.reverbB != nil {
 			e.reverbB.Reset()
+		}
+		if e.compMusic != nil {
+			e.compMusic.Reset()
 		}
 		for i := 0; i < e.tracks; i++ {
 			e.patterns[i].playingNote = 0
@@ -797,6 +838,9 @@ func (e *Engine) emit(message cmd.Message) {
 			if e.reverbB != nil {
 				e.reverbB.Reset()
 			}
+			if e.compMusic != nil {
+				e.compMusic.Reset()
+			}
 			return
 		}
 	}
@@ -820,6 +864,9 @@ func (e *Engine) fault(code uint16) {
 	}
 	if e.reverbB != nil {
 		e.reverbB.Reset()
+	}
+	if e.compMusic != nil {
+		e.compMusic.Reset()
 	}
 	e.emit(cmd.Message{Kind: cmd.Fault, Track: 0xff, A: code, Tick: e.transport.Tick()})
 }

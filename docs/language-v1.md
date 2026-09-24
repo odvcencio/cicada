@@ -56,7 +56,14 @@ must fit the four-second delay buffer at the current tempo; for example,
 accepts `size` 0.5–1.5, `decay` 0.3–12 s, `damp` 2–16 kHz, `highpass`
 40–400 Hz, `predelay` 0–200 ms, and `mix` 0–1. Defaults are size 1,
 decay 2.4 s, damp 8 kHz, highpass 120 Hz, zero predelay, and fully wet.
-Compressor and authored effect graphs are not implemented yet.
+`fx comp` processes the music bus after both returns and before the master
+limiter. `sidechain = beat` detects a named track's post-fader stereo output;
+without it, the music bus detects itself. The external sidechain has an
+80 Hz highpass. `detect` is `peak` or `rms`; `threshold` is -40–0 dB,
+`ratio` 1–20, `knee` 0–12 dB, `attack` 0.1–100 ms, `release` 10–1000 ms,
+`makeup` is `auto` or -24–24 dB, and `mix` is 0–1. Defaults are peak,
+-18 dB, 4:1, 6 dB, 10 ms, 100 ms, auto, and fully wet. Track compressor
+inserts and authored effect graphs are not implemented yet.
 
 A scene assigns patterns to tracks. `off` stops a track, and `keep`
 retains its previous pattern. A song lists scenes in order; `main*16`

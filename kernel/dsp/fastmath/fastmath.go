@@ -4,6 +4,19 @@ package fastmath
 
 import "math"
 
+// Log2 evaluates log2(x) for positive normal float64 values. The mantissa
+// uses an odd atanh series with |z| <= 1/3, so its absolute error is below
+// 3e-8 across the compressor detector range.
+func Log2(x float64) float64 {
+	bits := math.Float64bits(x)
+	exponent := int((bits>>52)&0x7ff) - 1023
+	mantissa := math.Float64frombits((bits & ((uint64(1) << 52) - 1)) | (uint64(1023) << 52))
+	z := (mantissa - 1) / (mantissa + 1)
+	z2 := z * z
+	series := 1 + z2*(1.0/3+z2*(1.0/5+z2*(1.0/7+z2*(1.0/9+z2*(1.0/11+z2*(1.0/13))))))
+	return float64(exponent) + 2*z*series*math.Log2E
+}
+
 // Exp2 evaluates 2^x over [-32,32]. The fractional part uses a degree-five
 // Chebyshev expansion on [-0.5,0.5]; the integer scale is assembled exactly.
 func Exp2(x float64) float64 {

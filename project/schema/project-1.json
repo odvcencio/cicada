@@ -18,7 +18,7 @@
     "patterns": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/pattern"}},
     "scenes": {"type": "array", "items": {"$ref": "#/$defs/scene"}},
     "song": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/song_entry"}},
-    "effects": {"type": "array", "maxItems": 3, "items": {"$ref": "#/$defs/effect"}}
+    "effects": {"type": "array", "maxItems": 4, "items": {"$ref": "#/$defs/effect"}}
   },
   "$defs": {
     "id": {"type": "string", "pattern": "^[a-z_][a-z0-9_-]{0,63}$"},
@@ -253,6 +253,39 @@
         }
       }
     },
-    "effect": {"oneOf": [{"$ref": "#/$defs/drive_effect"}, {"$ref": "#/$defs/delay_effect"}, {"$ref": "#/$defs/reverb_effect"}]}
+    "comp_effect": {
+      "type": "object", "additionalProperties": false, "required": ["id", "params"],
+      "properties": {
+        "id": {"const": "comp"},
+        "params": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "detect": {"type": "object", "additionalProperties": false, "required": ["unit", "text"],
+              "properties": {"unit": {"const": "enum"}, "text": {"enum": ["peak", "rms"]}}},
+            "threshold": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
+              "properties": {"unit": {"const": "db"}, "number": {"type": "number", "minimum": -40, "maximum": 0}}},
+            "ratio": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
+              "properties": {"unit": {"const": "unit"}, "number": {"type": "number", "minimum": 1, "maximum": 20}}},
+            "knee": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
+              "properties": {"unit": {"const": "db"}, "number": {"type": "number", "minimum": 0, "maximum": 12}}},
+            "attack": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
+              "properties": {"unit": {"const": "ms"}, "number": {"type": "number", "minimum": 0.1, "maximum": 100}}},
+            "release": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
+              "properties": {"unit": {"const": "ms"}, "number": {"type": "number", "minimum": 10, "maximum": 1000}}},
+            "makeup": {"oneOf": [
+              {"type": "object", "additionalProperties": false, "required": ["unit", "text"],
+                "properties": {"unit": {"const": "enum"}, "text": {"const": "auto"}}},
+              {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
+                "properties": {"unit": {"const": "db"}, "number": {"type": "number", "minimum": -24, "maximum": 24}}}
+            ]},
+            "sidechain": {"type": "object", "additionalProperties": false, "required": ["unit", "text"],
+              "properties": {"unit": {"const": "enum"}, "text": {"$ref": "#/$defs/id"}}},
+            "mix": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
+              "properties": {"unit": {"const": "unit"}, "number": {"type": "number", "minimum": 0, "maximum": 1}}}
+          }
+        }
+      }
+    },
+    "effect": {"oneOf": [{"$ref": "#/$defs/drive_effect"}, {"$ref": "#/$defs/delay_effect"}, {"$ref": "#/$defs/reverb_effect"}, {"$ref": "#/$defs/comp_effect"}]}
   }
 }
