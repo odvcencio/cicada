@@ -1,0 +1,57 @@
+cicada 1
+
+title "SFX sidechain"
+
+tempo 120
+
+key a minor
+
+seed 4242
+
+fx reverb {
+  size = 1
+  decay = 1.2s
+  damp = 8khz
+  highpass = 120hz
+  predelay = 15ms
+  mix = 1
+}
+
+fx comp {
+  detect = peak
+  threshold = -24db
+  ratio = 4
+  knee = 6db
+  attack = 5ms
+  release = 150ms
+  makeup = 0db
+  sidechain = sfx
+  mix = 1
+}
+
+track bass acid {
+  cutoff = 620hz
+}
+
+track beat drums {
+  bus = sfx
+  send_b = 0.2
+}
+
+pattern riff acid steps = 16 {
+  1 . . . | 5 . . . | 1 . . . | 3 . . .
+}
+
+pattern beat-a drums steps = 16 {
+  bd: X...x...X...x...;
+  sd: ....X.......X...;
+}
+
+scene main {
+  bass = riff
+  beat = beat-a
+}
+
+song {
+  main*4
+}

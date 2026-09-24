@@ -107,7 +107,7 @@
         "pan": {"type": "number", "minimum": -1, "maximum": 1},
         "send_a": {"type": "number", "minimum": 0, "maximum": 1}, "send_b": {"type": "number", "minimum": 0, "maximum": 1},
         "send_pre": {"type": "boolean"}, "mute": {"type": "boolean"},
-        "solo": {"const": false}, "insert": {"enum": ["none", "drive"]}, "bus": {"const": "music"}
+        "solo": {"const": false}, "insert": {"enum": ["none", "drive"]}, "bus": {"enum": ["music", "sfx"]}
       }
     },
     "track": {

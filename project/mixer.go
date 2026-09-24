@@ -51,7 +51,12 @@ func CompileMixerParams(track notation.Track) (Mixer, error) {
 				return mixer, fmt.Errorf("send_pre requires true or false")
 			}
 			mixer.SendPre = param.Value == "true"
-		case "mute", "solo", "bus":
+		case "bus":
+			if param.Value != "music" && param.Value != "sfx" {
+				return mixer, fmt.Errorf("bus requires music or sfx")
+			}
+			mixer.Bus = param.Value
+		case "mute", "solo":
 			return mixer, fmt.Errorf("mixer parameter %s is reserved for M1", param.Name)
 		}
 	}
@@ -71,8 +76,8 @@ func validateMixer(mixer Mixer) error {
 	if math.IsNaN(mixer.SendB) || math.IsInf(mixer.SendB, 0) || mixer.SendB < 0 || mixer.SendB > 1 {
 		return fmt.Errorf("send_b must be 0 to 1")
 	}
-	if mixer.Solo || mixer.Bus != "music" {
-		return fmt.Errorf("solo and non-music buses are reserved for M1")
+	if mixer.Solo || mixer.Bus != "music" && mixer.Bus != "sfx" {
+		return fmt.Errorf("solo is reserved and bus must be music or sfx")
 	}
 	if mixer.SendPre && mixer.SendA == 0 && mixer.SendB == 0 {
 		return fmt.Errorf("send_pre requires a nonzero send")
