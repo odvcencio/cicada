@@ -2,6 +2,7 @@ package render
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -35,10 +36,21 @@ type stemOutput struct {
 	dir, temporary string
 	files          []stemFile
 	frame          []stemPair
+	manifest       stemManifest
 	report         Report
 	mixFrames      int64
 	skipFrames     int64
 	committed      bool
+}
+
+type stemManifest struct {
+	Version int              `json:"version"`
+	Tracks  []stemTrackRoute `json:"tracks"`
+}
+
+type stemTrackRoute struct {
+	ID  string `json:"id"`
+	Bus string `json:"bus"`
 }
 
 func newStemOutput(dir string, p *project.Project, report Report) (*stemOutput, error) {
@@ -61,7 +73,7 @@ func newStemOutput(dir string, p *project.Project, report Report) (*stemOutput, 
 	if err != nil {
 		return nil, err
 	}
-	stems := &stemOutput{dir: dir, temporary: temporary, report: report}
+	stems := &stemOutput{dir: dir, temporary: temporary, report: report, manifest: stemManifest{Version: 1}}
 	defer func() {
 		if err != nil {
 			stems.abort()
@@ -74,6 +86,7 @@ func newStemOutput(dir string, p *project.Project, report Report) (*stemOutput, 
 			return nil, err
 		}
 		names = append(names, fmt.Sprintf("%02d-%s.wav", index+1, track.ID))
+		stems.manifest.Tracks = append(stems.manifest.Tracks, stemTrackRoute{ID: track.ID, Bus: track.Mixer.Bus})
 	}
 	names = append(names, "return-a.wav", "return-b.wav", "music.wav", "sfx.wav", "master.wav")
 	stems.frame = make([]stemPair, len(names)-1)
@@ -173,6 +186,14 @@ func (s *stemOutput) finish(tempoMilli uint32) error {
 			return err
 		}
 		f.file = nil
+	}
+	manifest, err := json.MarshalIndent(s.manifest, "", "  ")
+	if err != nil {
+		return err
+	}
+	manifest = append(manifest, '\n')
+	if err := os.WriteFile(filepath.Join(s.temporary, "manifest.json"), manifest, 0644); err != nil {
+		return err
 	}
 	if _, err := os.Stat(s.dir); err == nil {
 		return fmt.Errorf("stem output directory already exists: %s", s.dir)

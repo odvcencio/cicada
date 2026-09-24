@@ -3,6 +3,7 @@ package render
 import (
 	"bufio"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -39,21 +40,47 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 	if opts.ResidualMaxDB == 0 {
 		opts.ResidualMaxDB = -80
 	}
-	p, diagnostics := project.FromScore(score)
-	if p == nil {
-		for _, diagnostic := range diagnostics {
-			if diagnostic.Severity == "error" {
-				return report, fmt.Errorf("%s: %s", diagnostic.Code, diagnostic.Message)
+	manifestData, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		return report, err
+	}
+	var manifest stemManifest
+	if len(manifestData) > 8192 || json.Unmarshal(manifestData, &manifest) != nil || manifest.Version != 1 || len(manifest.Tracks) < 1 || len(manifest.Tracks) > 16 {
+		return report, fmt.Errorf("invalid stem manifest")
+	}
+	seen := map[string]bool{}
+	for _, track := range manifest.Tracks {
+		if track.ID == "" || track.ID == "." || track.ID == ".." || filepath.Base(track.ID) != track.ID || seen[track.ID] || track.Bus != "music" && track.Bus != "sfx" {
+			return report, fmt.Errorf("invalid stem manifest track")
+		}
+		seen[track.ID] = true
+	}
+	songBars := 256
+	if score != nil {
+		p, diagnostics := project.FromScore(score)
+		if p == nil {
+			for _, diagnostic := range diagnostics {
+				if diagnostic.Severity == "error" {
+					return report, fmt.Errorf("%s: %s", diagnostic.Code, diagnostic.Message)
+				}
+			}
+			return report, fmt.Errorf("score cannot compile to a Cicada project")
+		}
+		if len(p.Tracks) != len(manifest.Tracks) {
+			return report, fmt.Errorf("stem manifest differs from score")
+		}
+		for i, track := range p.Tracks {
+			if track.ID != manifest.Tracks[i].ID || track.Mixer.Bus != manifest.Tracks[i].Bus {
+				return report, fmt.Errorf("stem manifest differs from score")
 			}
 		}
-		return report, fmt.Errorf("score cannot compile to a Cicada project")
+		songBars = 0
+		for _, entry := range p.Song {
+			songBars += int(entry.Bars)
+		}
 	}
-	songBars := 0
-	for _, entry := range p.Song {
-		songBars += int(entry.Bars)
-	}
-	names := make([]string, 0, len(p.Tracks)+5)
-	for index, track := range p.Tracks {
+	names := make([]string, 0, len(manifest.Tracks)+5)
+	for index, track := range manifest.Tracks {
 		names = append(names, fmt.Sprintf("%02d-%s.wav", index+1, track.ID))
 	}
 	names = append(names, "return-a.wav", "return-b.wav", "music.wav", "sfx.wav", "master.wav")
@@ -99,7 +126,7 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 		currentTiming := [2]uint32{binary.LittleEndian.Uint32(metadata[12:16]), binary.LittleEndian.Uint32(metadata[20:24])}
 		if i == 0 {
 			reference, timing = current, currentTiming
-			if current[0] != 44_100 && current[0] != 48_000 && current[0] != 96_000 || current[2] < 1 || current[2] > 256 || int(current[2]) > songBars || currentTiming[0] != uint32(score.TempoMilli) || currentTiming[1] > current[0]*10 {
+			if current[0] != 44_100 && current[0] != 48_000 && current[0] != 96_000 || current[2] < 1 || current[2] > 256 || int(current[2]) > songBars || score != nil && currentTiming[0] != uint32(score.TempoMilli) || currentTiming[1] > current[0]*10 {
 				return report, fmt.Errorf("%s: invalid rate, bars, tempo, or tail", name)
 			}
 			clock, err := seq.NewClock(int(current[0]), int64(currentTiming[0]))
@@ -115,8 +142,8 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 	if err != nil {
 		return report, err
 	}
-	if len(entries) != len(names) {
-		return report, fmt.Errorf("stem directory contains %d files, expected %d", len(entries), len(names))
+	if len(entries) != len(names)+1 {
+		return report, fmt.Errorf("stem directory contains %d entries, expected %d", len(entries), len(names)+1)
 	}
 	report.Files, report.Frames, report.SampleRate, report.Bars = len(names), int64(reference[1]), int(reference[0]), int(reference[2])
 	var data [8]byte
@@ -134,8 +161,8 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 			samples[i] = stemPair{left, right}
 		}
 		var musicL, musicR, sfxL, sfxR float64
-		for i, track := range p.Tracks {
-			if track.Mixer.Bus == "sfx" {
+		for i, track := range manifest.Tracks {
+			if track.Bus == "sfx" {
 				sfxL += float64(samples[i].left)
 				sfxR += float64(samples[i].right)
 			} else {
@@ -143,7 +170,7 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 				musicR += float64(samples[i].right)
 			}
 		}
-		n := len(p.Tracks)
+		n := len(manifest.Tracks)
 		musicL += float64(samples[n].left) + float64(samples[n+1].left)
 		musicR += float64(samples[n].right) + float64(samples[n+1].right)
 		report.MusicResidual = max(report.MusicResidual, math.Abs(musicL-float64(samples[n+2].left)), math.Abs(musicR-float64(samples[n+2].right)))

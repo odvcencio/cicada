@@ -26,7 +26,9 @@ go run ./cmd/cicada events examples/first-acid.cicada lead lead-a
 go run ./cmd/cicada render examples/first-acid.cicada -o first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s
 go run ./cmd/cicada verify-wav first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60
 go run ./cmd/cicada stems examples/sfx-bus.cicada -o sfx-stems --bars 1 --tail 0s
-go run ./cmd/cicada verify-stems examples/sfx-bus.cicada sfx-stems --tap pre-comp --residual-max-db -80
+go run ./cmd/cicada verify-stems sfx-stems --tap pre-comp --residual-max-db -80
+go run ./cmd/cicada midi examples/first-acid.cicada -o first-acid.mid
+go run ./cmd/cicada verify-midi first-acid.mid --ppq 960 --type 1
 ```
 
 `validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar-check` verifies the generated parser and highlighting query, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
@@ -37,7 +39,9 @@ The bounded live engine plays packed patterns with gate releases, all eleven dru
 
 The PCM24 renderer defaults to a three-second tail and reports its pre-limiter peak, limiter input overs, ceiling samples, and clipped output samples. `verify-wav` reads the PCM and Cicada timing chunk to check format, exact bar and tail duration, peak, and DC offset. Tracks accept `level` in dB (or `off`), `pan` from -1 to +1, and `bus = music|sfx`. The music bus sums its tracks and both effect returns before optional compression; the SFX bus joins at master before the linked stereo limiter with 1.5 ms lookahead and a -0.3 dBFS ceiling.
 
-`stems` creates a new directory of stereo float32 WAV files in one render pass: `01-<track>.wav` onward, `return-a.wav`, `return-b.wav`, `music.wav`, `sfx.wav`, and `master.wav`. Track and return taps include the music bus's -3 dB gain where applicable. `music.wav` is the pre-compressor tap; `master.wav` includes compression and limiting. `verify-stems` checks timing, finite samples, and that the pre-compressor music and SFX taps equal their component stems within the requested residual threshold. The output directory must not already exist.
+`stems` creates a new directory of stereo float32 WAV files in one render pass: `01-<track>.wav` onward, `return-a.wav`, `return-b.wav`, `music.wav`, `sfx.wav`, and `master.wav`. `manifest.json` records the track routing so the directory can be verified on its own. Track and return taps include the music bus's -3 dB gain where applicable. `music.wav` is the pre-compressor tap; `master.wav` includes compression and limiting. `verify-stems` checks timing, finite samples, and that the pre-compressor music and SFX taps equal their component stems within the requested residual threshold. The output directory must not already exist.
+
+`midi` exports the arrangement as SMF type 1 at 960 PPQ, with tempo, meter, key signature, one track per Cicada track, GM drum notes, swing and ratchets in tick positions, and one-tick overlap for slides. `--pattern <name>` exports a single loop instead. Probability uses the first seeded pass on every repetition. `verify-midi` decodes, re-encodes, and compares normalized tempo and note events. `compare-midi <a.mid> <b.mid>` compares those events across files; [first-acid.mid](testdata/golden/first-acid.mid) pins the encoder's reference output. `import-midi` reports that pattern import is scheduled for M6.
 
 The [eleven-lane drum kit](examples/drums-kit.cicada) uses every built-in voice: `bd sd ch oh cp rs lt mt ht cb cy`. Render it with `go run ./cmd/cicada render examples/drums-kit.cicada -o drums-kit.wav --bars 1 --tail 0s`. The [authored kit](examples/authored-kit.cicada) maps `bd` to instrument code and `ch` to a built-in recipe; omitted lanes are silent. Render it with `go run ./cmd/cicada render examples/authored-kit.cicada -o authored-kit.wav --bars 1 --tail 0s`.
 
