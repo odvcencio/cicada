@@ -76,6 +76,8 @@ type Voice struct {
 	drivePre, drivePost, level                  float64
 	driveTable                                  [33]float64
 	up, down                                    halfband.FIR
+	oscillator                                  *oscillatorBank
+	oscA, oscB, oscSub                          oscillatorSelection
 	diode, ladder                               filterState
 	fault                                       bool
 }
@@ -84,7 +86,7 @@ func New(sampleRate int) (*Voice, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
 		return nil, Error("acid sample rate must be 44100, 48000, or 96000")
 	}
-	v := &Voice{sampleRate: float64(sampleRate), up: halfband.New(), down: halfband.New()}
+	v := &Voice{sampleRate: float64(sampleRate), up: halfband.New(), down: halfband.New(), oscillator: bankForSampleRate(sampleRate)}
 	v.buildDriveTable()
 	if err := v.SetParams(DefaultParams()); err != nil {
 		return nil, err
@@ -110,6 +112,7 @@ func (v *Voice) SetParams(p Params) error {
 	v.switchAlpha = 1 - math.Exp(-1/(.02*v.sampleRate))
 	v.drivePre = math.Pow(10, p.Drive*36/20)
 	v.detuneRatio = fastmath.Exp2(p.Detune / 1200)
+	v.pitchCached = false
 	table := p.Drive * 32
 	index := int(table)
 	if index >= 32 {
@@ -235,23 +238,34 @@ func (v *Voice) Next() float32 {
 	}
 	if !v.pitchCached || v.pitchLog != v.lastPitchLog {
 		v.pitchDelta = min(fastmath.Exp2(v.pitchLog)/v.sampleRate, .49)
+		v.oscA = v.oscillator.selectTables(v.pitchLog)
+		if v.params.Detune > 0 {
+			v.oscB = v.oscillator.selectTables(v.pitchLog + v.params.Detune/1200)
+		}
+		if v.params.Sub > 0 {
+			v.oscSub = v.oscillator.selectTables(v.pitchLog - 1)
+		}
 		v.lastPitchLog = v.pitchLog
 		v.pitchCached = true
 	}
 	delta := v.pitchDelta
-	saw := 2*v.phaseA - 1 - polyBLEP(v.phaseA, delta)
-	square := pulse(v.phaseA, delta, v.params.PulseWidth)
+	saw := v.oscA.saw(v.phaseA)
+	shiftedPhase := v.phaseA - v.params.PulseWidth
+	if shiftedPhase < 0 {
+		shiftedPhase++
+	}
+	square := v.oscA.saw(shiftedPhase) - saw + 2*v.params.PulseWidth - 1
 	osc := saw*(1-v.params.Wave) + square*v.params.Wave
 	v.phaseA = fraction(v.phaseA + delta)
 	if v.params.Detune > 0 {
 		secondDelta := min(delta*v.detuneRatio, .49)
-		second := pulse(v.phaseB, secondDelta, v.params.PulseWidth)
+		second := v.oscB.pulse(v.phaseB, v.params.PulseWidth)
 		osc += .5 * second
 		v.phaseB = fraction(v.phaseB + secondDelta)
 	}
 	if v.params.Sub > 0 {
 		subDelta := delta * .5
-		osc += v.params.Sub * .5 * pulse(v.phaseSub, subDelta, .5)
+		osc += v.params.Sub * .5 * v.oscSub.pulse(v.phaseSub, .5)
 		v.phaseSub = fraction(v.phaseSub + subDelta)
 	}
 	pre := fastmath.Tanh(v.drivePre*osc) * v.drivePost
@@ -323,24 +337,4 @@ func fraction(value float64) float64 {
 		return value - 1
 	}
 	return value
-}
-
-func polyBLEP(phase, delta float64) float64 {
-	if phase < delta {
-		t := phase / delta
-		return 2*t - t*t - 1
-	}
-	if phase > 1-delta {
-		t := (phase - 1) / delta
-		return t*t + 2*t + 1
-	}
-	return 0
-}
-
-func pulse(phase, delta, width float64) float64 {
-	value := -1.0
-	if phase < width {
-		value = 1
-	}
-	return value + polyBLEP(phase, delta) - polyBLEP(fraction(phase+1-width), delta)
 }
