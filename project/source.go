@@ -62,8 +62,22 @@ func ToSource(p *Project) ([]byte, error) {
 		}
 		sections = append(sections, out.String())
 	}
+	slots := make(map[string]int)
+	automatic := make(map[string]bool)
+	for _, track := range p.Tracks {
+		for index, id := range track.Slots {
+			if id == nil {
+				continue
+			}
+			if previous, exists := slots[*id]; exists && previous != index {
+				automatic[*id] = true
+			}
+			slots[*id] = index
+		}
+	}
 	for _, pattern := range p.Patterns {
-		source, err := patternSource(pattern)
+		slot, assigned := slots[pattern.ID]
+		source, err := patternSource(pattern, slot, assigned && !automatic[pattern.ID])
 		if err != nil {
 			return nil, err
 		}
@@ -311,7 +325,7 @@ func callOutputType(op string) instrument.Type {
 	return ""
 }
 
-func patternSource(pattern Pattern) (string, error) {
+func patternSource(pattern Pattern, slot int, assigned bool) (string, error) {
 	var out strings.Builder
 	out.WriteString("pattern " + pattern.ID + " " + pattern.Kind)
 	out.WriteString(" steps = " + strconv.Itoa(int(pattern.Steps)))
@@ -319,6 +333,9 @@ func patternSource(pattern Pattern) (string, error) {
 	out.WriteString(" gate = " + strconv.Itoa(int(pattern.GatePercent)))
 	out.WriteString(" transpose = " + strconv.Itoa(int(pattern.Transpose)))
 	out.WriteString(" seed = " + strconv.FormatUint(uint64(pattern.Seed), 10))
+	if assigned {
+		out.WriteString(" slot = " + strconv.Itoa(slot))
+	}
 	out.WriteString(" {\n")
 	if pattern.Kind == "drums" {
 		for _, lane := range laneOrder {

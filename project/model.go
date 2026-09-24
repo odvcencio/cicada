@@ -234,7 +234,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 	for _, entry := range score.Song {
 		p.Song = append(p.Song, SongEntry{Scene: entry.Scene, Bars: uint16(entry.Bars)})
 	}
-	if err := assignSlots(p); err != nil {
+	if err := assignSlots(p, score); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: err.Error()})
 	}
 	if err := ValidateProject(p); err != nil {
@@ -280,8 +280,20 @@ func projectSteps(source seq.Pattern) []*Step {
 	return steps
 }
 
-func assignSlots(p *Project) error {
+func assignSlots(p *Project, score *notation.Score) error {
 	used := make(map[string]map[string]bool, len(p.Tracks))
+	explicit := make(map[string]int, len(score.Patterns))
+	for _, pattern := range score.Patterns {
+		for _, attr := range pattern.Attrs {
+			if attr.Name == "slot" {
+				slot, err := strconv.Atoi(attr.Value)
+				if err != nil || slot < 0 || slot >= 16 {
+					return fmt.Errorf("pattern %s has invalid slot %q", pattern.Name, attr.Value)
+				}
+				explicit[pattern.Name] = slot
+			}
+		}
+	}
 	for _, scene := range p.Scenes {
 		for track, pattern := range scene.Bindings {
 			if pattern == "off" || pattern == "keep" {
@@ -294,16 +306,37 @@ func assignSlots(p *Project) error {
 		}
 	}
 	for ti := range p.Tracks {
-		next := 0
+		track := &p.Tracks[ti]
 		for _, pattern := range p.Patterns {
-			if !used[p.Tracks[ti].ID][pattern.ID] {
+			if !used[track.ID][pattern.ID] {
 				continue
 			}
-			if next == len(p.Tracks[ti].Slots) {
-				return fmt.Errorf("track %s uses more than 16 patterns", p.Tracks[ti].ID)
+			slot, hasSlot := explicit[pattern.ID]
+			if !hasSlot {
+				continue
+			}
+			if prior := track.Slots[slot]; prior != nil {
+				return fmt.Errorf("track %s slot %d is assigned to both %s and %s", track.ID, slot, *prior, pattern.ID)
 			}
 			id := pattern.ID
-			p.Tracks[ti].Slots[next] = &id
+			track.Slots[slot] = &id
+		}
+		next := 0
+		for _, pattern := range p.Patterns {
+			if !used[track.ID][pattern.ID] {
+				continue
+			}
+			if _, hasSlot := explicit[pattern.ID]; hasSlot {
+				continue
+			}
+			for next < len(track.Slots) && track.Slots[next] != nil {
+				next++
+			}
+			if next == len(track.Slots) {
+				return fmt.Errorf("track %s uses more than 16 patterns", track.ID)
+			}
+			id := pattern.ID
+			track.Slots[next] = &id
 			next++
 		}
 	}
