@@ -14,6 +14,11 @@ import (
 //go:embed cicada.bin
 var grammarBlob []byte
 
+// Language returns the Cicada grammar loaded from the generated parser blob.
+func Language() (*gts.Language, error) {
+	return walk.LanguageFromBlob("cicada", grammarBlob)
+}
+
 // ParseTree returns the lossless gotreesitter CST for editor and query tools.
 // It returns a partial tree alongside syntax errors where possible.
 func ParseTree(src []byte) (*gts.Node, *walk.Walker, error) {
