@@ -99,10 +99,11 @@
       "type": "object", "additionalProperties": false,
       "required": ["gain_db", "pan", "send_a", "send_b", "send_pre", "mute", "solo", "insert", "bus"],
       "properties": {
-        "gain_db": {"type": "number"}, "pan": {"type": "number"},
-        "send_a": {"type": "number"}, "send_b": {"type": "number"},
-        "send_pre": {"type": "boolean"}, "mute": {"type": "boolean"},
-        "solo": {"type": "boolean"}, "insert": {"type": "string"}, "bus": {"type": "string"}
+        "gain_db": {"type": "number", "minimum": -60, "maximum": 6},
+        "pan": {"type": "number", "minimum": -1, "maximum": 1},
+        "send_a": {"const": 0}, "send_b": {"const": 0},
+        "send_pre": {"const": false}, "mute": {"type": "boolean"},
+        "solo": {"const": false}, "insert": {"const": "none"}, "bus": {"const": "music"}
       }
     },
     "track": {

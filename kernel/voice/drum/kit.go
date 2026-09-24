@@ -61,7 +61,7 @@ func (p Params) Validate(lane Lane) error {
 			return Error("drum parameter must be finite")
 		}
 	}
-	if p.LevelDB > 6 || p.Pan < -1 || p.Pan > 1 {
+	if (p.LevelDB != -1000 && p.LevelDB < -60) || p.LevelDB > 6 || p.Pan < -1 || p.Pan > 1 {
 		return Error("drum level or pan is out of range")
 	}
 	switch lane {
@@ -164,7 +164,11 @@ func (k *Kit) SetParams(lane Lane, params Params) error {
 	v.params = params
 	angle := (params.Pan + 1) * math.Pi / 4
 	v.panL, v.panR = math.Cos(angle), math.Sin(angle)
-	v.level = math.Pow(10, params.LevelDB/20)
+	if params.LevelDB == -1000 {
+		v.level = 0
+	} else {
+		v.level = math.Pow(10, params.LevelDB/20)
+	}
 	return nil
 }
 

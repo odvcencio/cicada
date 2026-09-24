@@ -178,7 +178,15 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 	}
 	for _, source := range score.Tracks {
 		track := Track{ID: source.Name, Kind: source.Kind, Params: map[string]Value{}, Mixer: defaultMixer()}
+		mixer, err := CompileMixerParams(source)
+		if err != nil {
+			return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Position})
+		}
+		track.Mixer = mixer
 		for _, param := range source.Params {
+			if param.Name == "level" || param.Name == "pan" {
+				continue
+			}
 			value, err := projectValue(param.Value)
 			if err != nil {
 				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})

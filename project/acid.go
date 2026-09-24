@@ -14,6 +14,9 @@ import (
 func CompileAcidParams(track notation.Track) (acid.Params, error) {
 	params := acid.DefaultParams()
 	for _, source := range track.Params {
+		if source.Name == "level" || source.Name == "pan" {
+			continue
+		}
 		if source.Name == "octave" {
 			value, err := strconv.Atoi(source.Value)
 			if err != nil || value < 0 || value > 6 {

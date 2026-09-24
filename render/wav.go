@@ -10,6 +10,7 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
@@ -24,17 +25,22 @@ type Options struct {
 }
 
 type Report struct {
-	SampleRate     int
-	Bars           int
-	Frames         int64
-	Peak           float32
-	ClippedSamples int64
-	TailFrames     int64
+	SampleRate      int
+	Bars            int
+	Frames          int64
+	Peak            float32
+	OutputPeak      float32
+	PreLimiterOvers int64
+	CeilingSamples  int64
+	ClippedSamples  int64
+	TailFrames      int64
+	writtenFrames   int64
 }
 
 type trackRuntime struct {
 	name           string
 	voice          monoVoice
+	mixer          mix.Track
 	drums          *drum.Kit
 	drumPatterns   map[string][drum.LaneCount]*seq.Pattern
 	activeDrums    [drum.LaneCount]*seq.Pattern
@@ -114,6 +120,10 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
 	tracks, err := compileTracks(score, opts.SampleRate)
+	if err != nil {
+		return report, err
+	}
+	limiter, err := mix.NewLimiter(opts.SampleRate)
 	if err != nil {
 		return report, err
 	}
@@ -209,7 +219,7 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 					}
 					return events[i].event.NoteID < events[j].event.NoteID
 				})
-				if err := renderBlock(writer, tracks, events, position, frames, block, &report); err != nil {
+				if err := renderBlock(writer, tracks, limiter, events, position, frames, block, &report); err != nil {
 					return report, err
 				}
 				position += int64(frames)
@@ -232,10 +242,16 @@ func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) 
 		if position+int64(frames) > report.Frames {
 			frames = int(report.Frames - position)
 		}
-		if err := renderBlock(writer, tracks, nil, position, frames, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, limiter, nil, position, frames, block, &report); err != nil {
 			return report, err
 		}
 		position += int64(frames)
+	}
+	if err := flushLimiter(writer, limiter, block, &report); err != nil {
+		return report, err
+	}
+	if report.writtenFrames != report.Frames {
+		return report, fmt.Errorf("limiter wrote %d frames, expected %d", report.writtenFrames, report.Frames)
 	}
 	if err := writeMetadata(writer, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames)); err != nil {
 		return report, err
@@ -254,6 +270,11 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 	}
 	tracks := make([]trackRuntime, 0, len(score.Tracks))
 	for _, source := range score.Tracks {
+		mixerParams, err := project.CompileMixerParams(source)
+		if err != nil {
+			return nil, fmt.Errorf("track %s: %w", source.Name, err)
+		}
+		trackMix := mix.NewTrack(mixerParams.GainDB, mixerParams.Pan, mixerParams.Mute)
 		if source.Kind == "drums" {
 			params, err := project.CompileDrumParams(source)
 			if err != nil {
@@ -268,7 +289,7 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 					return nil, err
 				}
 			}
-			track := trackRuntime{name: source.Name, drums: kit, drumPatterns: map[string][drum.LaneCount]*seq.Pattern{}}
+			track := trackRuntime{name: source.Name, mixer: trackMix, drums: kit, drumPatterns: map[string][drum.LaneCount]*seq.Pattern{}}
 			for _, pattern := range score.Patterns {
 				if pattern.Kind != "drums" {
 					continue
@@ -304,7 +325,7 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 			if err := voice.SetParams(params); err != nil {
 				return nil, err
 			}
-			track := trackRuntime{name: source.Name, voice: acidVoice{voice}, patterns: map[string]seq.Pattern{}}
+			track := trackRuntime{name: source.Name, mixer: trackMix, voice: acidVoice{voice}, patterns: map[string]seq.Pattern{}}
 			for _, pattern := range score.Patterns {
 				if pattern.Kind != "acid" && pattern.Kind != "notes" {
 					continue
@@ -327,6 +348,9 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 		}
 		overrides := make(map[string]string, len(source.Params))
 		for _, param := range source.Params {
+			if param.Name == "level" || param.Name == "pan" {
+				continue
+			}
 			overrides[param.Name] = param.Value
 		}
 		kernelProgram, err := instrument.Lower(program, overrides)
@@ -337,7 +361,7 @@ func compileTracks(score *notation.Score, sampleRate int) ([]trackRuntime, error
 		if err != nil {
 			return nil, err
 		}
-		track := trackRuntime{name: source.Name, voice: customVoice{voice}, patterns: map[string]seq.Pattern{}}
+		track := trackRuntime{name: source.Name, mixer: trackMix, voice: customVoice{voice}, patterns: map[string]seq.Pattern{}}
 		for _, pattern := range score.Patterns {
 			if pattern.Kind != "notes" {
 				continue
@@ -416,8 +440,9 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 	return nil
 }
 
-func renderBlock(w io.Writer, tracks []trackRuntime, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
+func renderBlock(w io.Writer, tracks []trackRuntime, limiter *mix.Limiter, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
+	outFrames := 0
 	for frame := 0; frame < frames; frame++ {
 		sample := start + int64(frame)
 		for eventIndex < len(events) && events[eventIndex].event.Sample == sample {
@@ -442,39 +467,61 @@ func renderBlock(w io.Writer, tracks []trackRuntime, events []scheduled, start i
 			}
 			eventIndex++
 		}
-		var left, right float32
+		var dry mix.Dry
 		for ti := range tracks {
 			if tracks[ti].drums != nil {
 				l, r := tracks[ti].drums.NextStereo()
-				left += l * .28
-				right += r * .28
+				dry.Add(l, r, tracks[ti].mixer)
 				if tracks[ti].drums.Fault() {
 					return fmt.Errorf("drum DSP fault on %s", tracks[ti].name)
 				}
 			} else {
-				mono := tracks[ti].voice.Next() * .28
-				left += mono
-				right += mono
+				mono := tracks[ti].voice.Next()
+				dry.Add(mono, mono, tracks[ti].mixer)
 			}
 		}
+		left, right := dry.Music()
 		if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {
 			report.Peak = abs
 		}
-		index := frame * 6
-		for channel, mixed := range [...]float32{left, right} {
-			if mixed > .999 || mixed < -.999 {
-				report.ClippedSamples++
-			}
-			if mixed > .999 {
-				mixed = .999
-			} else if mixed < -.999 {
-				mixed = -.999
-			}
-			pcm := int32(math.Round(float64(mixed) * 8388607))
-			buffer[index+channel*3] = byte(pcm)
-			buffer[index+channel*3+1] = byte(pcm >> 8)
-			buffer[index+channel*3+2] = byte(pcm >> 16)
+		if math.Abs(float64(left)) > limiter.Ceiling() {
+			report.PreLimiterOvers++
 		}
+		if math.Abs(float64(right)) > limiter.Ceiling() {
+			report.PreLimiterOvers++
+		}
+		outL, outR, ready := limiter.Process(left, right)
+		if limiter.Fault() {
+			return fmt.Errorf("non-finite master input")
+		}
+		if !ready {
+			continue
+		}
+		writePCMFrame(buffer[outFrames*6:], outL, outR, limiter.Ceiling(), report)
+		outFrames++
+	}
+	if outFrames == 0 {
+		return nil
+	}
+	n, err := w.Write(buffer[:outFrames*6])
+	if err != nil {
+		return err
+	}
+	if n != outFrames*6 {
+		return io.ErrShortWrite
+	}
+	report.writtenFrames += int64(outFrames)
+	return nil
+}
+
+func flushLimiter(w io.Writer, limiter *mix.Limiter, buffer []byte, report *Report) error {
+	frames := limiter.LatencyFrames()
+	for i := 0; i < frames; i++ {
+		left, right, ready := limiter.Process(0, 0)
+		if !ready || limiter.Fault() {
+			return fmt.Errorf("master limiter failed while flushing")
+		}
+		writePCMFrame(buffer[i*6:], left, right, limiter.Ceiling(), report)
 	}
 	n, err := w.Write(buffer[:frames*6])
 	if err != nil {
@@ -483,7 +530,28 @@ func renderBlock(w io.Writer, tracks []trackRuntime, events []scheduled, start i
 	if n != frames*6 {
 		return io.ErrShortWrite
 	}
+	report.writtenFrames += int64(frames)
 	return nil
+}
+
+func writePCMFrame(dst []byte, left, right float32, ceiling float64, report *Report) {
+	for channel, value := range [...]float32{left, right} {
+		abs := math.Abs(float64(value))
+		if abs > float64(report.OutputPeak) {
+			report.OutputPeak = float32(abs)
+		}
+		if abs >= ceiling-1e-7 {
+			report.CeilingSamples++
+		}
+		if abs > 1 {
+			report.ClippedSamples++
+		}
+		pcm := int32(math.Round(float64(value) * 8388607))
+		index := channel * 3
+		dst[index] = byte(pcm)
+		dst[index+1] = byte(pcm >> 8)
+		dst[index+2] = byte(pcm >> 16)
+	}
 }
 
 func writeHeader(w io.Writer, sampleRate int, dataBytes uint32) error {

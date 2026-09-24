@@ -85,12 +85,15 @@ func ValidateProject(p *Project) error {
 			}
 		}
 		for name, value := range track.Params {
+			if name == "level" || name == "pan" {
+				return fmt.Errorf("track %s must store %s in mixer", track.ID, name)
+			}
 			if !validID(name) || !validValue(value) {
 				return fmt.Errorf("track %s has invalid parameter %s", track.ID, name)
 			}
 		}
-		if track.Mixer != defaultMixer() {
-			return fmt.Errorf("track %s uses unsupported mixer settings", track.ID)
+		if err := validateDryMixer(track.Mixer); err != nil {
+			return fmt.Errorf("track %s: %w", track.ID, err)
 		}
 	}
 	patterns := map[string]Pattern{}

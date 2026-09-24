@@ -38,10 +38,19 @@ func ToSource(p *Project) ([]byte, error) {
 	for _, track := range p.Tracks {
 		var out strings.Builder
 		out.WriteString("track " + track.ID + " " + track.Kind)
-		if len(track.Params) == 0 {
+		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0
+		if len(track.Params) == 0 && !hasMixer {
 			out.WriteString(" {}")
 		} else {
 			out.WriteString(" {\n")
+			if track.Mixer.Mute {
+				out.WriteString("  level = off\n")
+			} else if track.Mixer.GainDB != defaultMixer().GainDB {
+				out.WriteString("  level = " + decimal(track.Mixer.GainDB) + "db\n")
+			}
+			if track.Mixer.Pan != 0 {
+				out.WriteString("  pan = " + decimal(track.Mixer.Pan) + "\n")
+			}
 			for _, key := range sortedKeys(track.Params) {
 				value, err := valueSource(track.Params[key])
 				if err != nil {

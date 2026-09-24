@@ -108,7 +108,7 @@ func TestUnsupportedAndSeedDiagnostics(t *testing.T) {
 		{"large project seed", "seed 4294967296", "CICADA-SEED"},
 		{"large pattern seed", "", "CICADA-SEED"},
 		{"effect", "fx echo {}", "CICADA-UNSUPPORTED"},
-		{"mixer value", "track bass acid { pan = 0.5 }", "CICADA-UNSUPPORTED"},
+		{"mixer value", "track bass acid { send_a = 0.5 }", "CICADA-UNSUPPORTED"},
 		{"explicit slot", "", "CICADA-UNSUPPORTED"},
 	}
 	for _, tc := range cases {

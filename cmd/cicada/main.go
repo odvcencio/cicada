@@ -257,7 +257,7 @@ func renderFile(score *notation.Score, path string, opts render.Options) error {
 	if err := os.Rename(file.Name(), path); err != nil {
 		return err
 	}
-	fmt.Printf("%s: %d bars, %d frames at %d Hz, pre-limiter peak %.3f, clipped samples %d\n", path, report.Bars, report.Frames, report.SampleRate, report.Peak, report.ClippedSamples)
+	fmt.Printf("%s: %d bars, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d\n", path, report.Bars, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples)
 	return nil
 }
 

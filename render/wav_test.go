@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -211,5 +212,49 @@ func TestVerifyWAVChecksMusicalDurationAndSignal(t *testing.T) {
 	tooMuchDC.DCMaxDB = -60
 	if _, err := VerifyWAV(path, tooMuchDC); err == nil {
 		t.Fatal("accepted a DC offset above the requested ceiling")
+	}
+}
+
+func TestDryMixerPansTrackLeft(t *testing.T) {
+	source := bytes.Replace([]byte(testScore), []byte("track lead tone {}"), []byte("track lead tone { level = -12db pan = -1 }"), 1)
+	score, diagnostics := notation.Parse(source)
+	if len(diagnostics) != 0 {
+		t.Fatalf("parse: %+v", diagnostics)
+	}
+	var output bytes.Buffer
+	_, err := WAV(score, Options{SampleRate: 48_000}, &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := output.Bytes()
+	leftAudible := false
+	for frame := 0; frame < 10_000; frame++ {
+		index := 44 + frame*6
+		if data[index] != 0 || data[index+1] != 0 || data[index+2] != 0 {
+			leftAudible = true
+		}
+		if data[index+3] != 0 || data[index+4] != 0 || data[index+5] != 0 {
+			t.Fatalf("right channel audible at frame %d", frame)
+		}
+	}
+	if !leftAudible {
+		t.Fatal("left channel was silent")
+	}
+}
+
+func TestMasterLimiterReducesHotSignalWithoutClipping(t *testing.T) {
+	source := bytes.Replace([]byte(testScore), []byte("out = sine(pitch) * shape;"), []byte("out = sine(pitch) * shape * 8;"), 1)
+	score, diagnostics := notation.Parse(source)
+	if len(diagnostics) != 0 {
+		t.Fatalf("parse: %+v", diagnostics)
+	}
+	var output bytes.Buffer
+	report, err := WAV(score, Options{SampleRate: 48_000}, &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ceiling := math.Pow(10, -.3/20)
+	if report.Peak <= 1 || report.PreLimiterOvers == 0 || report.ClippedSamples != 0 || float64(report.OutputPeak) > ceiling+1e-6 {
+		t.Fatalf("limiter did not contain hot signal: %+v", report)
 	}
 }

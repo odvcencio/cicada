@@ -107,7 +107,7 @@ func Validate(s *Score) []Diagnostic {
 			seen[param.Name] = true
 			if !validTrackParam(t.Kind, param.Name, instruments) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
-			} else if mixerParams[param.Name] {
+			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" {
 				add("CICADA-UNSUPPORTED", "mixer parameter "+param.Name+" is not implemented", "error", param.Position)
 			} else if t.Kind == "drums" && unsupportedDrumLane(strings.SplitN(param.Name, "_", 2)[0]) {
 				add("CICADA-UNSUPPORTED", "drum lane parameter "+param.Name+" is reserved for M1", "error", param.Position)
@@ -259,6 +259,9 @@ func validTrackParam(kind, name string, instruments map[string]Instrument) bool 
 	}
 	if kind == "drums" {
 		parts := strings.SplitN(name, "_", 2)
+		if len(parts) == 2 && drumParams[parts[0]] != nil && (parts[1] == "level" || parts[1] == "pan") {
+			return true
+		}
 		return len(parts) == 2 && drumParams[parts[0]][parts[1]]
 	}
 	if inst, ok := instruments[kind]; ok {

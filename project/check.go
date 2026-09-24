@@ -26,6 +26,9 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	tracks := make(map[string]notation.Track, len(score.Tracks))
 	for _, track := range score.Tracks {
 		tracks[track.Name] = track
+		if _, err := CompileMixerParams(track); err != nil {
+			diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: track.Position})
+		}
 		if track.Kind == "acid" {
 			if _, err := CompileAcidParams(track); err != nil {
 				diagnostics = append(diagnostics, notation.Diagnostic{
@@ -44,6 +47,9 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 		overrides := make(map[string]string, len(track.Params))
 		for _, param := range track.Params {
+			if param.Name == "level" || param.Name == "pan" {
+				continue
+			}
 			overrides[param.Name] = param.Value
 		}
 		if _, err := instrument.Lower(program, overrides); err != nil {

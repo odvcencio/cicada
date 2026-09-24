@@ -12,12 +12,14 @@ func TestCompileDrumParamsUnitsAndBounds(t *testing.T) {
 		{Name: "bd_tune", Value: "72hz"},
 		{Name: "bd_decay", Value: "520ms"},
 		{Name: "ch_metal", Value: "on"},
+		{Name: "bd_pan", Value: "1"},
+		{Name: "oh_level", Value: "off"},
 	}}
 	params, err := CompileDrumParams(track)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if params[drum.BD].Tune != 72 || params[drum.BD].Decay != .52 || !params[drum.CH].Metal {
+	if params[drum.BD].Tune != 72 || params[drum.BD].Decay != .52 || params[drum.BD].Pan != 1 || !params[drum.CH].Metal || params[drum.OH].LevelDB != -1000 {
 		t.Fatalf("unexpected drum params: %+v", params)
 	}
 	for _, source := range []notation.Param{
@@ -26,6 +28,7 @@ func TestCompileDrumParamsUnitsAndBounds(t *testing.T) {
 		{Name: "lt_tune", Value: "1"},
 		{Name: "ch_sweep", Value: "2"},
 		{Name: "bd_metal", Value: "on"},
+		{Name: "bd_level", Value: "-1000db"},
 	} {
 		_, err := CompileDrumParams(notation.Track{Kind: "drums", Params: []notation.Param{source}})
 		if err == nil {

@@ -94,6 +94,40 @@ func TestMetalModeChangesHatSound(t *testing.T) {
 	}
 }
 
+func TestLanePanAndOffLevel(t *testing.T) {
+	kit, err := New(48_000, 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := kit.Params(BD)
+	p.Pan = 1
+	if err := kit.SetParams(BD, p); err != nil {
+		t.Fatal(err)
+	}
+	kit.Hit(BD, 127, false)
+	leftEnergy, rightEnergy := 0.0, 0.0
+	for i := 0; i < 1000; i++ {
+		l, r := kit.NextStereo()
+		leftEnergy += float64(l * l)
+		rightEnergy += float64(r * r)
+	}
+	if leftEnergy > 1e-12 || rightEnergy < 1e-8 {
+		t.Fatalf("pan did not isolate right channel: %g %g", leftEnergy, rightEnergy)
+	}
+	kit.Reset()
+	p.LevelDB = -1000
+	if err := kit.SetParams(BD, p); err != nil {
+		t.Fatal(err)
+	}
+	kit.Hit(BD, 127, false)
+	for i := 0; i < 1000; i++ {
+		l, r := kit.NextStereo()
+		if l != 0 || r != 0 {
+			t.Fatal("off lane produced output")
+		}
+	}
+}
+
 func TestRenderSampleDoesNotAllocate(t *testing.T) {
 	kit, err := New(48_000, 42)
 	if err != nil {

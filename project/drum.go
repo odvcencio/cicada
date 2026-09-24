@@ -15,6 +15,9 @@ func CompileDrumParams(track notation.Track) ([drum.LaneCount]drum.Params, error
 		values[lane] = drum.DefaultParams(lane)
 	}
 	for _, source := range track.Params {
+		if source.Name == "level" || source.Name == "pan" {
+			continue
+		}
 		parts := strings.SplitN(source.Name, "_", 2)
 		if len(parts) != 2 {
 			return values, fmt.Errorf("invalid drum parameter %s", source.Name)
@@ -25,6 +28,10 @@ func CompileDrumParams(track notation.Track) ([drum.LaneCount]drum.Params, error
 		}
 		if !validDrumParam(lane, parts[1]) {
 			return values, fmt.Errorf("unsupported drum parameter %s", source.Name)
+		}
+		if parts[1] == "level" && source.Value == "off" {
+			values[lane].LevelDB = -1000
+			continue
 		}
 		if parts[1] == "metal" {
 			switch source.Value {
@@ -71,6 +78,10 @@ func drumParamsFromValues(source map[string]Value) ([drum.LaneCount]drum.Params,
 			return values, fmt.Errorf("unsupported drum parameter %s", name)
 		}
 		value := source[name]
+		if parts[1] == "level" && value.Unit == "enum" && value.Text == "off" {
+			values[lane].LevelDB = -1000
+			continue
+		}
 		if parts[1] == "metal" {
 			if value.Unit != "enum" {
 				return values, fmt.Errorf("%s requires on or off", name)
@@ -110,6 +121,9 @@ func drumLane(name string) (drum.Lane, bool) {
 }
 
 func validDrumParam(lane drum.Lane, name string) bool {
+	if name == "level" || name == "pan" {
+		return true
+	}
 	switch lane {
 	case drum.BD:
 		switch name {
@@ -143,6 +157,8 @@ func validDrumParam(lane drum.Lane, name string) bool {
 func applyDrumParam(p *drum.Params, lane drum.Lane, name string, number float64, unit string) error {
 	want := "unit"
 	switch name {
+	case "level":
+		want = "db"
 	case "tune":
 		if lane == drum.BD {
 			want = "hz"
@@ -153,14 +169,21 @@ func applyDrumParam(p *drum.Params, lane drum.Lane, name string, number float64,
 		}
 	case "decay", "sweep_time", "snappy", "spread":
 		want = "ms"
-	case "sweep", "click", "drive", "mix":
+	case "sweep", "click", "drive", "mix", "pan":
 	default:
 		return fmt.Errorf("unknown drum parameter %s", name)
 	}
 	if unit != want {
 		return fmt.Errorf("requires %s, got %s", want, unit)
 	}
+	if name == "level" && (number < -60 || number > 6) {
+		return fmt.Errorf("requires -60..+6 dB or off")
+	}
 	switch name {
+	case "level":
+		p.LevelDB = number
+	case "pan":
+		p.Pan = number
 	case "tune":
 		p.Tune = number
 	case "tone":
