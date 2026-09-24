@@ -264,6 +264,15 @@ func TestAuthoredKitRejectsInvalidBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	kitStart := strings.Index(string(source), "kit steel {")
+	if kitStart < 0 {
+		t.Fatal("authored-kit fixture has no steel kit")
+	}
+	kitEnd := strings.IndexByte(string(source[kitStart:]), '}')
+	if kitEnd < 0 {
+		t.Fatal("authored-kit fixture has no kit close brace")
+	}
+	kitLine := strings.Count(string(source[:kitStart]), "\n") + 1
 	for _, test := range []struct {
 		name, bindings, code string
 	}{
@@ -273,10 +282,10 @@ func TestAuthoredKitRejectsInvalidBindings(t *testing.T) {
 		{"unknown lane", "zz=kick; ch=builtin.ch;", "CICADA-REFERENCE"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			changed := strings.Replace(string(source), "bd=kick; ch=builtin.ch;", test.bindings, 1)
+			changed := string(source[:kitStart]) + "kit steel { " + test.bindings + " }" + string(source[kitStart+kitEnd+1:])
 			_, diagnostics := Parse([]byte(changed))
 			for _, diagnostic := range diagnostics {
-				if diagnostic.Code == test.code && diagnostic.Position.Line == 3 {
+				if diagnostic.Code == test.code && diagnostic.Position.Line == kitLine {
 					return
 				}
 			}

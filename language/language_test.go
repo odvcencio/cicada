@@ -351,10 +351,10 @@ func TestAuthoredKitSymbols(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]bool{
-		"2:12 definition instrument kick": false,
-		"3:5 definition kit steel":        false,
-		"3:16 reference instrument kick":  false,
-		"4:13 reference kit steel":        false,
+		"3:12 definition instrument kick": false,
+		"9:5 definition kit steel":        false,
+		"10:8 reference instrument kick":  false,
+		"14:13 reference kit steel":       false,
 	}
 	for _, symbol := range symbols {
 		key := fmt.Sprintf("%d:%d %s %s %s", symbol.Position.Line, symbol.Position.Column, symbol.Role, symbol.Kind, symbol.Name)
