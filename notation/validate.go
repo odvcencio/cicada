@@ -118,6 +118,10 @@ func Validate(s *Score) []Diagnostic {
 		add("CICADA-PATTERNS", "score needs at least one pattern", "error", Position{1, 1})
 	}
 	patterns := make(map[string]Pattern, len(s.Patterns))
+	explicitSlots := make(map[string]struct {
+		index    int
+		position Position
+	})
 	for _, p := range s.Patterns {
 		if _, exists := patterns[p.Name]; exists {
 			add("CICADA-DUPLICATE", "duplicate pattern "+p.Name, "error", p.Position)
@@ -164,7 +168,15 @@ func Validate(s *Score) []Diagnostic {
 					add("CICADA-PARAM", "transpose must be -24 to 24 semitones", "error", a.ValuePosition)
 				}
 			case "slot":
-				add("CICADA-UNSUPPORTED", "explicit pattern slots are not implemented", "error", a.Position)
+				n, err := strconv.Atoi(a.Value)
+				if err != nil || n < 0 || n > 15 {
+					add("CICADA-PARAM", "slot must be an integer from 0 to 15", "error", a.ValuePosition)
+				} else {
+					explicitSlots[p.Name] = struct {
+						index    int
+						position Position
+					}{n, a.ValuePosition}
+				}
 			default:
 				add("CICADA-ATTRIBUTE", "unknown pattern attribute "+a.Name, "error", a.Position)
 			}
@@ -229,6 +241,36 @@ func Validate(s *Score) []Diagnostic {
 				if !compatible {
 					add("CICADA-KIND", "pattern kind differs from track instrument", "error", b.Position)
 				}
+			}
+		}
+	}
+	usedPatterns := make(map[string]map[string]bool)
+	for _, scene := range s.Scenes {
+		for _, binding := range scene.Bindings {
+			if binding.Pattern == "off" || binding.Pattern == "keep" {
+				continue
+			}
+			if usedPatterns[binding.Track] == nil {
+				usedPatterns[binding.Track] = make(map[string]bool)
+			}
+			usedPatterns[binding.Track][binding.Pattern] = true
+		}
+	}
+	for _, track := range s.Tracks {
+		used := usedPatterns[track.Name]
+		if len(used) > 16 {
+			add("CICADA-LIMIT", "track "+track.Name+" uses more than 16 patterns", "error", track.Position)
+		}
+		slots := make(map[int]string)
+		for _, pattern := range s.Patterns {
+			if !used[pattern.Name] {
+				continue
+			}
+			if slot, ok := explicitSlots[pattern.Name]; ok {
+				if previous, taken := slots[slot.index]; taken && previous != pattern.Name {
+					add("CICADA-DUPLICATE", "track "+track.Name+" slot is assigned to both "+previous+" and "+pattern.Name, "error", slot.position)
+				}
+				slots[slot.index] = pattern.Name
 			}
 		}
 	}

@@ -117,16 +117,12 @@ func TestUnsupportedAndSeedDiagnostics(t *testing.T) {
 		{"large pattern seed", "", "CICADA-SEED"},
 		{"effect", "fx echo {}", "CICADA-UNSUPPORTED"},
 		{"mixer value", "track bass acid { send_a = 0.5 }", "CICADA-UNSUPPORTED"},
-		{"explicit slot", "", "CICADA-UNSUPPORTED"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			pattern := "pattern a acid steps=1 { 1 }"
 			if tc.name == "large pattern seed" {
 				pattern = "pattern a acid steps=1 seed=4294967296 { 1 }"
-			}
-			if tc.name == "explicit slot" {
-				pattern = "pattern a acid steps=1 slot=1 { 1 }"
 			}
 			track := "track bass acid {}"
 			if tc.name == "mixer value" {
