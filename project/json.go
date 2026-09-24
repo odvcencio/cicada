@@ -125,6 +125,9 @@ func CanonicalJSON(p *Project) ([]byte, error) {
 	if err := ValidateProject(p); err != nil {
 		return nil, err
 	}
+	if _, err := ToSource(p); err != nil {
+		return nil, fmt.Errorf("project cannot be represented by source v1: %w", err)
+	}
 	raw, err := json.Marshal(p)
 	if err != nil {
 		return nil, err
@@ -237,6 +240,9 @@ func DecodeJSON(data []byte) (*Project, error) {
 	}
 	if err := ValidateProject(&p); err != nil {
 		return nil, err
+	}
+	if _, err := ToSource(&p); err != nil {
+		return nil, fmt.Errorf("project cannot be represented by source v1: %w", err)
 	}
 	return &p, nil
 }

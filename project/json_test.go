@@ -88,22 +88,21 @@ func TestJSONRejectsUnboundInstrumentSymbol(t *testing.T) {
 	}
 }
 
-func TestJSONCustomInstrumentRendersZeroProbabilityStep(t *testing.T) {
+func TestJSONRejectsStepThatSourceCannotRepresent(t *testing.T) {
 	score := firstScore(t)
 	p, diagnostics := FromScore(score)
 	if p == nil {
 		t.Fatalf("project compilation: %+v", diagnostics)
 	}
 	p.Patterns[0].Data[0].Probability = 0
-	encoded, err := CanonicalJSON(p)
+	if _, err := CanonicalJSON(p); err == nil {
+		t.Fatal("canonical writer accepted a step with no source v1 spelling")
+	}
+	raw, err := json.Marshal(p)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := DecodeJSON(encoded)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := CompileEngine(decoded, 48_000, 256); err != nil {
-		t.Fatalf("schema-valid project could not compile: %v", err)
+	if _, err := DecodeJSON(raw); err == nil {
+		t.Fatal("JSON decoder accepted a step with no source v1 spelling")
 	}
 }
