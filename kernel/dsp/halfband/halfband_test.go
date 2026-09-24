@@ -63,6 +63,25 @@ func TestUpsampleDownsampleConstant(t *testing.T) {
 	}
 }
 
+func TestUpsampleMatchesTwoFilteredPhases(t *testing.T) {
+	for _, mixed := range []bool{false, true} {
+		optimized, reference := New(), New()
+		if mixed {
+			if got, want := optimized.Push(.25), reference.Push(.25); math.Float64bits(got) != math.Float64bits(want) {
+				t.Fatal("mixed FIR prelude differs")
+			}
+		}
+		for i := 0; i < 1024; i++ {
+			input := math.Sin(float64(i)*.13) * .7
+			first, second := optimized.Upsample(input)
+			wantFirst, wantSecond := 2*reference.Push(input), 2*reference.Push(0)
+			if math.Float64bits(first) != math.Float64bits(wantFirst) || math.Float64bits(second) != math.Float64bits(wantSecond) {
+				t.Fatalf("phase %d differs after mixed=%v", i, mixed)
+			}
+		}
+	}
+}
+
 func TestDecision0002HalfbandResponseGate(t *testing.T) {
 	filter := New()
 	coefficients := filter.Coefficients()
