@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func TestSixLanesDeterministicAndFinite(t *testing.T) {
+func TestElevenLanesDeterministicAndFinite(t *testing.T) {
 	for lane := Lane(0); lane < LaneCount; lane++ {
 		first, err := New(48_000, 4242)
 		if err != nil {
@@ -118,6 +118,25 @@ func TestMetalModeChangesHatSound(t *testing.T) {
 	}
 	if !different {
 		t.Fatal("metal mode did not change hat output")
+	}
+}
+
+func TestCymbalDecayIsNotCutAtFourSeconds(t *testing.T) {
+	kit, err := New(48_000, 7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := kit.Params(CY)
+	p.Decay = 4
+	if err := kit.SetParams(CY, p); err != nil {
+		t.Fatal(err)
+	}
+	kit.Hit(CY, 100, false)
+	for i := 0; i < 4*48_000+1; i++ {
+		kit.NextStereo()
+	}
+	if !kit.lanes[CY].current.active {
+		t.Fatal("long cymbal decay was cut at four seconds")
 	}
 }
 

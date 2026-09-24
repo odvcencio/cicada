@@ -92,10 +92,9 @@ pattern beat drums steps=8 {
 }
 ```
 
-The rendered M0 lanes are `bd`, `sd`, `ch`, `oh`, `cp`, and `rs`.
-The remaining lane names `lt`, `mt`, `ht`, `cb`, and `cy` are
-reserved for a later milestone and produce an unsupported diagnostic when
-used.
+All eleven built-in lanes render: `bd`, `sd`, `ch`, `oh`, `cp`, `rs`,
+`lt`, `mt`, `ht`, `cb`, and `cy`. The [drum kit example](../examples/drums-kit.cicada)
+plays each lane.
 
 ## Code-defined instruments
 

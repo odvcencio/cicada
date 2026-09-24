@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -59,6 +60,43 @@ func TestCompileDrumLanes(t *testing.T) {
 	step, err := seq.UnpackStep(compiled[0].Pattern.Steps[0])
 	if err != nil || step.Note != 36 || step.Velocity != 127 || !step.Accent {
 		t.Fatalf("wrong kick: %+v, %v", step, err)
+	}
+}
+
+func TestElevenLaneDrumKitCompiles(t *testing.T) {
+	source, err := os.ReadFile("../examples/drums-kit.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	if len(diagnostics) != 0 {
+		t.Fatalf("drum kit source diagnostics: %+v", diagnostics)
+	}
+	if compiled, diagnostics := FromScore(score); compiled == nil {
+		t.Fatalf("drum kit project diagnostics: %+v", diagnostics)
+	}
+	lanes, err := CompilePattern(score, score.Patterns[0], score.Tracks[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lanes) != int(drum.LaneCount) {
+		t.Fatalf("compiled %d drum lanes, want %d", len(lanes), drum.LaneCount)
+	}
+	for index, lane := range lanes {
+		if lane.Lane != drum.Names[index] {
+			t.Fatalf("lane %d compiled as %q, want %q", index, lane.Lane, drum.Names[index])
+		}
+		active := false
+		for step := 0; step < int(lane.Pattern.Len); step++ {
+			hit, err := seq.UnpackStep(lane.Pattern.Steps[step])
+			if err != nil {
+				t.Fatal(err)
+			}
+			active = active || hit.Gate
+		}
+		if !active {
+			t.Fatalf("lane %s has no playable hit", lane.Lane)
+		}
 	}
 }
 

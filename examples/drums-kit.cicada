@@ -1,0 +1,36 @@
+cicada 1
+
+title "Eleven drum lanes"
+
+tempo 120
+
+track kit drums {
+  lt_tune = 1
+  mt_decay = 300ms
+  ht_sweep = 0.4
+  cb_tune = 1
+  cy_decay = 1500ms
+  cy_tone = 1
+}
+
+pattern beat drums steps = 16 {
+  bd: x...x...x...x...;
+  sd: ....x.......x...;
+  ch: x.x.x.x.x.x.x.x.;
+  oh: ......x.........;
+  cp: ............x...;
+  rs: ...x............;
+  lt: ..........x.....;
+  mt: ......x.........;
+  ht: ..x.............;
+  cb: .........x......;
+  cy: x...............;
+}
+
+scene main {
+  kit = beat
+}
+
+song {
+  main*4
+}
