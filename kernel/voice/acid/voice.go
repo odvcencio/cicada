@@ -65,6 +65,8 @@ type Voice struct {
 	params                                      Params
 	phaseA, phaseB, phaseSub                    float64
 	pitchLog, targetLog                         float64
+	lastPitchLog, pitchDelta, detuneRatio       float64
+	pitchCached                                 bool
 	gate, attacking, accented                   bool
 	meg, vca, cap, sweepStrength                float64
 	accentGain, accentTarget                    float64
@@ -107,6 +109,7 @@ func (v *Voice) SetParams(p Params) error {
 	v.accentAlpha = 1 - math.Exp(-1/(.0015*v.sampleRate))
 	v.switchAlpha = 1 - math.Exp(-1/(.02*v.sampleRate))
 	v.drivePre = math.Pow(10, p.Drive*36/20)
+	v.detuneRatio = fastmath.Exp2(p.Detune / 1200)
 	table := p.Drive * 32
 	index := int(table)
 	if index >= 32 {
@@ -167,6 +170,7 @@ func (v *Voice) Active() bool { return v.gate || v.vca > 1e-5 }
 func (v *Voice) Reset() {
 	v.phaseA, v.phaseB, v.phaseSub = 0, 0, 0
 	v.pitchLog, v.targetLog = 0, 0
+	v.lastPitchLog, v.pitchDelta, v.pitchCached = 0, 0, false
 	v.gate, v.attacking, v.accented, v.fault = false, false, false, false
 	v.meg, v.vca, v.cap, v.sweepStrength = 0, 0, 0, 0
 	v.accentGain, v.accentTarget = 1, 1
@@ -218,14 +222,18 @@ func (v *Voice) Next() float32 {
 	} else {
 		v.vca *= v.releaseDecay
 	}
-	frequency := fastmath.Exp2(v.pitchLog)
-	delta := min(frequency/v.sampleRate, .49)
+	if !v.pitchCached || v.pitchLog != v.lastPitchLog {
+		v.pitchDelta = min(fastmath.Exp2(v.pitchLog)/v.sampleRate, .49)
+		v.lastPitchLog = v.pitchLog
+		v.pitchCached = true
+	}
+	delta := v.pitchDelta
 	saw := 2*v.phaseA - 1 - polyBLEP(v.phaseA, delta)
 	square := pulse(v.phaseA, delta, v.params.PulseWidth)
 	osc := saw*(1-v.params.Wave) + square*v.params.Wave
 	v.phaseA = fraction(v.phaseA + delta)
 	if v.params.Detune > 0 {
-		secondDelta := min(delta*fastmath.Exp2(v.params.Detune/1200), .49)
+		secondDelta := min(delta*v.detuneRatio, .49)
 		second := pulse(v.phaseB, secondDelta, v.params.PulseWidth)
 		osc += .5 * second
 		v.phaseB = fraction(v.phaseB + secondDelta)
