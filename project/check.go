@@ -1,6 +1,7 @@
 package project
 
 import (
+	"reflect"
 	"strings"
 
 	"m31labs.dev/cicada/instrument"
@@ -44,6 +45,8 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		patterns[pattern.Name] = pattern
 	}
 	checked := make(map[[2]string]bool)
+	compiledByPattern := make(map[string][]CompiledPattern)
+	firstTrack := make(map[string]string)
 	for _, scene := range score.Scenes {
 		for _, binding := range scene.Bindings {
 			if binding.Pattern == "off" || binding.Pattern == "keep" {
@@ -59,7 +62,8 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			if !trackOK || !patternOK {
 				continue // reference validation reports these errors
 			}
-			if _, err := CompilePattern(score, pattern, track); err != nil {
+			compiled, err := CompilePattern(score, pattern, track)
+			if err != nil {
 				code := "CICADA-PARAM"
 				if strings.Contains(err.Error(), "seed") {
 					code = "CICADA-SEED"
@@ -69,6 +73,19 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 				diagnostics = append(diagnostics, notation.Diagnostic{
 					Code: code, Severity: "error", Message: err.Error(), Position: binding.Position,
 				})
+				continue
+			}
+			if previous, exists := compiledByPattern[pattern.Name]; exists {
+				if !reflect.DeepEqual(previous, compiled) {
+					diagnostics = append(diagnostics, notation.Diagnostic{
+						Code: "CICADA-USE", Severity: "error",
+						Message:  "pattern " + pattern.Name + " resolves to different notes on tracks " + firstTrack[pattern.Name] + " and " + track.Name,
+						Position: binding.Position,
+					})
+				}
+			} else {
+				compiledByPattern[pattern.Name] = compiled
+				firstTrack[pattern.Name] = track.Name
 			}
 		}
 	}

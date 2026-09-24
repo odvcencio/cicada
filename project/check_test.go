@@ -6,6 +6,33 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+func TestRejectsPatternWithTrackDependentPitch(t *testing.T) {
+	source := []byte(`cicada 1
+tempo 120
+key c minor
+seed 1
+track low acid { octave = 2 }
+track high acid { octave = 3 }
+pattern shared acid steps = 4 { 1 . 3 . }
+scene main { low = shared high = shared }
+song { main }
+`)
+	score, diagnostics := notation.Parse(source)
+	if len(diagnostics) != 0 {
+		t.Fatalf("parse: %+v", diagnostics)
+	}
+	_, diagnostics = Check(score)
+	found := false
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Code == "CICADA-USE" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected track-dependent pattern error, got %+v", diagnostics)
+	}
+}
+
 func TestCheckRejectsBadInstrumentOverride(t *testing.T) {
 	src := []byte(`cicada 1
 instrument tone { param cutoff: hz = 200hz; voice mono { out = sine(cutoff); } }
