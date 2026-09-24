@@ -61,19 +61,30 @@ func (f *FIR) Reset() {
 }
 
 // Push filters one sample at the oversampled rate. It evaluates the center
-// tap and the 16 nonzero side taps; no allocation or coefficient work occurs.
+// tap and the 22 nonzero side taps; no allocation or coefficient work occurs.
 func (f *FIR) Push(input float64) float64 {
 	f.history[f.position] = input
 	var output float64
-	for tap, coefficient := range f.coefficients {
-		if coefficient == 0 {
-			continue
-		}
+	// Every noncentral odd tap is exactly zero. Keep the same increasing-tap
+	// accumulation order so skipping those taps does not change the samples.
+	for tap := 0; tap < center; tap += 2 {
 		index := f.position - tap
 		if index < 0 {
 			index += Taps
 		}
-		output += coefficient * f.history[index]
+		output += f.coefficients[tap] * f.history[index]
+	}
+	index := f.position - center
+	if index < 0 {
+		index += Taps
+	}
+	output += f.coefficients[center] * f.history[index]
+	for tap := center + 1; tap < Taps; tap += 2 {
+		index := f.position - tap
+		if index < 0 {
+			index += Taps
+		}
+		output += f.coefficients[tap] * f.history[index]
 	}
 	f.position++
 	if f.position == Taps {
