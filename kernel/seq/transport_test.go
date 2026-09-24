@@ -55,6 +55,26 @@ func TestTempoChangeAtBarBoundary(t *testing.T) {
 	}
 }
 
+func TestTempoAtAlreadyEnteredBoundaryDoesNotRewind(t *testing.T) {
+	transport, _ := NewTransport(48_000, 120_000)
+	transport.Play()
+	transport.Advance(96_001)
+	if transport.Tick() != TicksPerBar {
+		t.Fatalf("expected bar boundary tick, got %d", transport.Tick())
+	}
+	if err := transport.QueueTempo(240_000); err != nil {
+		t.Fatal(err)
+	}
+	_, end := transport.Advance(12)
+	if end != TicksPerBar {
+		t.Fatalf("tempo change rewound one sample and reached tick %d", end)
+	}
+	_, end = transport.Advance(1)
+	if end != TicksPerBar+1 {
+		t.Fatalf("new tempo did not advance from block start: %d", end)
+	}
+}
+
 func TestQuantizeBoundaries(t *testing.T) {
 	for _, tc := range []struct {
 		q          cmd.Quantize

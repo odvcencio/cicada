@@ -76,6 +76,9 @@ func (t *Transport) Advance(frames int) (startTick, endTick int64) {
 	}
 	if t.pendingTempo != 0 && t.applyTick >= t.tick {
 		boundarySample := t.clock.SampleAtTick(t.applyTick)
+		if boundarySample < t.sample {
+			boundarySample = t.sample
+		}
 		if boundarySample <= endSample {
 			t.clock.AnchorSample = boundarySample
 			t.clock.AnchorTick = t.applyTick
