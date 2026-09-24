@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/notation"
@@ -27,7 +26,6 @@ func TestInvalidSourceFixtures(t *testing.T) {
 		"unknown-scene.cicada":              {"CICADA-REFERENCE", 5},
 		"incompatible-kind.cicada":          {"CICADA-PARAM", 4},
 		"unsupported-poly.cicada":           {"CICADA-UNSUPPORTED", 2},
-		"reserved-drum-lanes.cicada":        {"CICADA-UNSUPPORTED", 10},
 		"over-32-voices.cicada":             {"CICADA-LIMIT", 10},
 		"unsupported-drum-transpose.cicada": {"CICADA-UNSUPPORTED", 3},
 		"invalid-scale-degree.cicada":       {"CICADA-SCALE-DEGREE", 4},
@@ -64,19 +62,6 @@ func TestInvalidSourceFixtures(t *testing.T) {
 			if !hasErrors(diagnostics) {
 				_, compiledDiagnostics := Check(score)
 				diagnostics = append(diagnostics, compiledDiagnostics...)
-			}
-			if name == "reserved-drum-lanes.cicada" {
-				for line, lane := range []string{"lt", "mt", "ht", "cb", "cy"} {
-					found := false
-					for _, diagnostic := range diagnostics {
-						if diagnostic.Code == "CICADA-UNSUPPORTED" && diagnostic.Position.Line == line+10 && strings.Contains(diagnostic.Message, "lane "+lane) {
-							found = true
-						}
-					}
-					if !found {
-						t.Fatalf("M1 lane %s was not rejected at line %d: %+v", lane, line+10, diagnostics)
-					}
-				}
 			}
 			for _, diagnostic := range diagnostics {
 				if diagnostic.Code == expected.code && diagnostic.Severity == "error" && diagnostic.Position.Line == expected.line && diagnostic.Position.Column > 0 {

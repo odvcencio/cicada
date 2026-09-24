@@ -145,7 +145,7 @@ func TestScenePatternEndUsesRestartOffsetsAndRejectsNoSharedEnd(t *testing.T) {
 }
 
 func TestSimultaneousDrumLanesShareOneStep(t *testing.T) {
-	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 6}
+	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 11}
 	cfg.Track[0].Kind = VoiceDrums
 	e, err := New(cfg)
 	if err != nil {

@@ -75,6 +75,11 @@ func TestProjectImageRejectsCorruption(t *testing.T) {
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
 		t.Fatal("bad magic was accepted")
 	}
+	corrupt = append([]byte(nil), encoded...)
+	corrupt[4] = 1 // the six-lane image layout must not decode as eleven lanes
+	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
+		t.Fatal("old image version was accepted with a new lane layout")
+	}
 	corrupt = append(append([]byte(nil), encoded...), 0)
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
 		t.Fatal("trailing bytes were accepted")

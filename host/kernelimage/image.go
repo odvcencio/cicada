@@ -13,6 +13,7 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
+const imageVersion = 2 // eleven drum lanes; version 1 carried six
 
 type Error string
 
@@ -85,7 +86,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 1. The decoded Config is separately
+// Encode writes project image version 2. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -98,7 +99,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
-	w.u16(1)
+	w.u16(imageVersion)
 	w.byte(byte(cfg.Tracks))
 	w.byte(byte(cfg.MaxVoices))
 	if cfg.LoopSong {
@@ -236,7 +237,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if version != 1 || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if version != imageVersion || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
