@@ -183,6 +183,23 @@ func TestProjectCLI(t *testing.T) {
 	if output := run(1, "verify-wav", wavPath, "--rate", "48000", "--bits", "24", "--bars", "16", "--tail", "3s", "--peak-max-db", "-80", "--dc-max-db", "-60"); !strings.Contains(output, "exceeds") {
 		t.Fatalf("strict peak ceiling was not enforced: %q", output)
 	}
+	stemDir := filepath.Join(t.TempDir(), "stems")
+	if output := run(0, "stems", first, "-o", stemDir, "--bars", "1", "--tail", "0s"); !strings.Contains(output, "stems") {
+		t.Fatalf("stem export: %q", output)
+	}
+	if output := run(0, "verify-stems", stemDir, "--tap", "pre-comp", "--residual-max-db", "-80"); !strings.Contains(output, "residual") {
+		t.Fatalf("stem verification: %q", output)
+	}
+	midiPath := filepath.Join(t.TempDir(), "first-acid.mid")
+	if output := run(0, "midi", first, "-o", midiPath); !strings.Contains(output, "552 notes") {
+		t.Fatalf("MIDI export: %q", output)
+	}
+	if output := run(0, "verify-midi", midiPath, "--ppq", "960", "--type", "1"); !strings.Contains(output, "SMF type 1") {
+		t.Fatalf("MIDI verification: %q", output)
+	}
+	if output := run(1, "verify-midi", midiPath, "--ppq", "480", "--type", "1"); !strings.Contains(output, "differs") {
+		t.Fatalf("incorrect MIDI PPQ accepted: %q", output)
+	}
 	run(2, "render", first, "-o", wavPath, "--bits", "16")
 }
 

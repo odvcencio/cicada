@@ -35,6 +35,10 @@ func TestStemsSinglePassBusEquationsAndMasterAlignment(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			standalone, err := VerifyStems(nil, dir, VerifyStemsOptions{ResidualMaxDB: -80})
+			if err != nil || standalone != verified {
+				t.Fatalf("directory-only verification differs: %+v, %v", standalone, err)
+			}
 			if verified.Frames != stemReport.Frames || verified.Files != len(score.Tracks)+5 {
 				t.Fatalf("stems report mismatch: %+v %+v", stemReport, verified)
 			}
