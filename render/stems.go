@@ -21,7 +21,7 @@ func Stems(score *notation.Score, opts Options, dir string) (Report, error) {
 	if dir == "" {
 		return Report{}, fmt.Errorf("stem output directory is required")
 	}
-	return renderWAV(score, opts, io.Discard, filepath.Clean(dir))
+	return renderWithOptions(score, opts, io.Discard, filepath.Clean(dir))
 }
 
 type stemFile struct {

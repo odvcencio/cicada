@@ -25,7 +25,8 @@ func TestStemsSinglePassBusEquationsAndMasterAlignment(t *testing.T) {
 					t.Fatalf("%+v", diagnostic)
 				}
 			}
-			options := Options{SampleRate: 48_000, Bars: 1, TailSec: 0.1}
+			noDither := false
+			options := Options{SampleRate: 48_000, Bars: 1, TailSec: 0.1, Dither: &noDither}
 			dir := filepath.Join(t.TempDir(), "stems")
 			stemReport, err := Stems(score, options, dir)
 			if err != nil {

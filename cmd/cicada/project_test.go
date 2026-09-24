@@ -200,7 +200,12 @@ func TestProjectCLI(t *testing.T) {
 	if output := run(1, "verify-midi", midiPath, "--ppq", "480", "--type", "1"); !strings.Contains(output, "differs") {
 		t.Fatalf("incorrect MIDI PPQ accepted: %q", output)
 	}
-	run(2, "render", first, "-o", wavPath, "--bits", "16")
+	for _, bits := range []string{"16", "32"} {
+		formatPath := filepath.Join(t.TempDir(), "first-acid-"+bits+".wav")
+		run(0, "render", first, "-o", formatPath, "--bits", bits, "--bars", "1", "--tail", "0s")
+		run(0, "verify-wav", formatPath, "--rate", "48000", "--bits", bits, "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0")
+	}
+	run(2, "render", first, "-o", wavPath, "--bits", "8")
 }
 
 func TestFailedRenderPreservesOutput(t *testing.T) {

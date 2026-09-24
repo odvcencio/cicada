@@ -1,4 +1,4 @@
-// Package render contains the offline PCM24 WAV target.
+// Package render contains the offline WAV and stems targets.
 package render
 
 import (
@@ -22,8 +22,12 @@ import (
 
 type Options struct {
 	SampleRate int
+	Bits       int // 16, 24, or 32-bit IEEE float; zero defaults to 24
 	Bars       int // zero renders the full arrangement
 	TailSec    float64
+	Dither     *bool // nil enables deterministic TPDF on integer formats
+	Normalize  bool  // peak normalize the post-limiter output to -1 dBFS
+	Block      int   // zero selects 4096 frames
 }
 
 type Report struct {
@@ -104,16 +108,46 @@ type scheduled struct {
 
 // WAV renders the song arrangement from a valid score.
 func WAV(score *notation.Score, opts Options, writer io.Writer) (Report, error) {
-	return renderWAV(score, opts, writer, "")
+	return renderWithOptions(score, opts, writer, "")
 }
 
-func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir string) (Report, error) {
+func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, stemsDir string) (Report, error) {
+	gain := float32(1)
+	if opts.Normalize {
+		preview := opts
+		preview.Normalize = false
+		report, err := renderWAV(score, preview, io.Discard, "", 1)
+		if err != nil {
+			return report, err
+		}
+		if report.OutputPeak > 0 {
+			gain = float32(math.Pow(10, -1.0/20) / float64(report.OutputPeak))
+		}
+	}
+	return renderWAV(score, opts, writer, stemsDir, gain)
+}
+
+func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir string, outputGain float32) (Report, error) {
 	var report Report
 	if score == nil {
 		return report, fmt.Errorf("nil score")
 	}
 	if opts.SampleRate == 0 {
 		opts.SampleRate = 48_000
+	}
+	if opts.Bits == 0 {
+		opts.Bits = 24
+	}
+	if opts.Block == 0 {
+		opts.Block = 4096
+	}
+	if opts.Block < 1 || opts.Block > 4096 {
+		return report, fmt.Errorf("WAV block must be 1 to 4096 frames")
+	}
+	dither := opts.Dither == nil || *opts.Dither
+	encoder, err := newWAVEncoder(opts.Bits, dither, score.Seed, outputGain)
+	if err != nil {
+		return report, err
 	}
 	if math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || opts.TailSec < 0 || opts.TailSec > 10 {
 		return report, fmt.Errorf("tail must be 0 to 10 seconds")
@@ -147,9 +181,9 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, fmt.Errorf("score cannot compile to a Cicada project")
 	}
 	report.SampleRate = opts.SampleRate
-	report.TailFrames = int64(math.Round(opts.TailSec * float64(opts.SampleRate)))
+	report.TailFrames = int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))
 	report.Frames = clock.SampleAtTick(int64(report.Bars)*seq.TicksPerBar) + report.TailFrames
-	dataBytes := report.Frames * 6
+	dataBytes := report.Frames * int64(encoder.frameBytes())
 	if dataBytes > int64(^uint32(0))-60 {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
@@ -255,11 +289,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
-	if err := writeHeader(writer, opts.SampleRate, uint32(dataBytes)); err != nil {
+	if err := writeWAVHeader(writer, opts.SampleRate, opts.Bits, uint32(dataBytes)); err != nil {
 		return report, err
 	}
 	var eventBuf [128]seq.Event
-	block := make([]byte, 4096*6)
+	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
 	var events []scheduled
 	var position int64
 	bar := 0
@@ -285,7 +319,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock)
 			end := clock.SampleAtTick(int64(bar+1) * seq.TicksPerBar)
 			for position < end {
-				frames := 4096
+				frames := opts.Block
 				if position+int64(frames) > end {
 					frames = int(end - position)
 				}
@@ -362,7 +396,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 					}
 					return events[i].event.NoteID < events[j].event.NoteID
 				})
-				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, events, position, frames, block, &report); err != nil {
+				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
 					return report, err
 				}
 				position += int64(frames)
@@ -381,11 +415,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		tracks[ti].activeGen = 0
 	}
 	for position < report.Frames {
-		frames := 4096
+		frames := opts.Block
 		if position+int64(frames) > report.Frames {
 			frames = int(report.Frames - position)
 		}
-		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, nil, position, frames, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, &encoder, nil, position, frames, block, &report); err != nil {
 			return report, err
 		}
 		position += int64(frames)
@@ -394,11 +428,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		// Drive and the aligned dry tracks have the same 15-frame latency.
 		// Drain it, then omit the initial 15 silent output frames so the WAV
 		// remains aligned to the score and has exactly report.Frames frames.
-		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, nil, position, insertLatency, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, &encoder, nil, position, insertLatency, block, &report); err != nil {
 			return report, err
 		}
 	}
-	if err := flushLimiter(writer, limiter, stems, block, &report); err != nil {
+	if err := flushLimiter(writer, limiter, stems, &encoder, block, &report); err != nil {
 		return report, err
 	}
 	if report.writtenFrames != report.Frames {
@@ -745,7 +779,7 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
 	return nil
 }
 
-func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, limiter *mix.Limiter, stems *stemOutput, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
+func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
 	outFrames := 0
 	for frame := 0; frame < frames; frame++ {
@@ -888,9 +922,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			continue
 		}
 		if stems != nil {
-			stems.appendMaster(outL, outR)
+			stems.appendMaster(outL*encoder.gain, outR*encoder.gain)
 		}
-		writePCMFrame(buffer[outFrames*6:], outL, outR, limiter.Ceiling(), report)
+		encoder.writeFrame(buffer[outFrames*encoder.frameBytes():], outL, outR, limiter.Ceiling(), report)
 		outFrames++
 	}
 	if outFrames == 0 {
@@ -899,11 +933,11 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		}
 		return nil
 	}
-	n, err := w.Write(buffer[:outFrames*6])
+	n, err := w.Write(buffer[:outFrames*encoder.frameBytes()])
 	if err != nil {
 		return err
 	}
-	if n != outFrames*6 {
+	if n != outFrames*encoder.frameBytes() {
 		return io.ErrShortWrite
 	}
 	report.writtenFrames += int64(outFrames)
@@ -913,73 +947,28 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 	return nil
 }
 
-func flushLimiter(w io.Writer, limiter *mix.Limiter, stems *stemOutput, buffer []byte, report *Report) error {
+func flushLimiter(w io.Writer, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, buffer []byte, report *Report) error {
 	frames := limiter.LatencyFrames()
 	for i := 0; i < frames; i++ {
 		left, right, ready := limiter.Process(0, 0)
 		if !ready || limiter.Fault() {
 			return fmt.Errorf("master limiter failed while flushing")
 		}
-		writePCMFrame(buffer[i*6:], left, right, limiter.Ceiling(), report)
+		encoder.writeFrame(buffer[i*encoder.frameBytes():], left, right, limiter.Ceiling(), report)
 		if stems != nil {
-			stems.appendMaster(left, right)
+			stems.appendMaster(left*encoder.gain, right*encoder.gain)
 		}
 	}
-	n, err := w.Write(buffer[:frames*6])
+	n, err := w.Write(buffer[:frames*encoder.frameBytes()])
 	if err != nil {
 		return err
 	}
-	if n != frames*6 {
+	if n != frames*encoder.frameBytes() {
 		return io.ErrShortWrite
 	}
 	report.writtenFrames += int64(frames)
 	if stems != nil {
 		return stems.flush()
-	}
-	return nil
-}
-
-func writePCMFrame(dst []byte, left, right float32, ceiling float64, report *Report) {
-	for channel, value := range [...]float32{left, right} {
-		abs := math.Abs(float64(value))
-		if abs > float64(report.OutputPeak) {
-			report.OutputPeak = float32(abs)
-		}
-		if abs >= ceiling-1e-7 {
-			report.CeilingSamples++
-		}
-		if abs > 1 {
-			report.ClippedSamples++
-		}
-		pcm := int32(math.Round(float64(value) * 8388607))
-		index := channel * 3
-		dst[index] = byte(pcm)
-		dst[index+1] = byte(pcm >> 8)
-		dst[index+2] = byte(pcm >> 16)
-	}
-}
-
-func writeHeader(w io.Writer, sampleRate int, dataBytes uint32) error {
-	var header [44]byte
-	copy(header[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(header[4:8], dataBytes+60)
-	copy(header[8:12], "WAVE")
-	copy(header[12:16], "fmt ")
-	binary.LittleEndian.PutUint32(header[16:20], 16)
-	binary.LittleEndian.PutUint16(header[20:22], 1)
-	binary.LittleEndian.PutUint16(header[22:24], 2)
-	binary.LittleEndian.PutUint32(header[24:28], uint32(sampleRate))
-	binary.LittleEndian.PutUint32(header[28:32], uint32(sampleRate*6))
-	binary.LittleEndian.PutUint16(header[32:34], 6)
-	binary.LittleEndian.PutUint16(header[34:36], 24)
-	copy(header[36:40], "data")
-	binary.LittleEndian.PutUint32(header[40:44], dataBytes)
-	n, err := w.Write(header[:])
-	if err != nil {
-		return err
-	}
-	if n != len(header) {
-		return io.ErrShortWrite
 	}
 	return nil
 }
