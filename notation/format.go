@@ -73,8 +73,6 @@ func Format(document *Document) ([]byte, error) {
 type formatToken struct {
 	text    string
 	comment bool
-	start   int
-	end     int
 }
 
 func lexFormat(source []byte) []formatToken {
@@ -91,7 +89,7 @@ func lexFormat(source []byte) []formatToken {
 			for i < len(source) && source[i] != '\n' {
 				i++
 			}
-			tokens = append(tokens, formatToken{text: string(source[start:i]), comment: true, start: start, end: i})
+			tokens = append(tokens, formatToken{text: string(source[start:i]), comment: true})
 			continue
 		}
 		if c == '"' {
@@ -106,12 +104,12 @@ func lexFormat(source []byte) []formatToken {
 					i++
 				}
 			}
-			tokens = append(tokens, formatToken{text: string(source[start:i]), start: start, end: i})
+			tokens = append(tokens, formatToken{text: string(source[start:i])})
 			continue
 		}
 		if strings.ContainsRune("{}:;=(),|", rune(c)) {
 			i++
-			tokens = append(tokens, formatToken{text: string(c), start: start, end: i})
+			tokens = append(tokens, formatToken{text: string(c)})
 			continue
 		}
 		for i < len(source) {
@@ -120,7 +118,7 @@ func lexFormat(source []byte) []formatToken {
 			}
 			i++
 		}
-		tokens = append(tokens, formatToken{text: string(source[start:i]), start: start, end: i})
+		tokens = append(tokens, formatToken{text: string(source[start:i])})
 	}
 	return tokens
 }
@@ -137,7 +135,6 @@ func formatDeclaration(source []byte) string {
 	var line string
 	var frames []formatFrame
 	indent := 0
-	attachedComma := false
 	flush := func() {
 		trimmed := strings.TrimSpace(line)
 		if trimmed != "" {
@@ -145,12 +142,13 @@ func formatDeclaration(source []byte) string {
 		}
 		line = ""
 	}
+	glue := false // the next word continues the current step, as in 7,~
 	word := func(value string) {
-		if line != "" && !strings.HasSuffix(line, " ") && !strings.HasSuffix(line, "(") && !attachedComma {
+		if line != "" && !glue && !strings.HasSuffix(line, " ") && !strings.HasSuffix(line, "(") {
 			line += " "
 		}
 		line += value
-		attachedComma = false
+		glue = false
 	}
 	for i := 0; i < len(tokens); i++ {
 		token := tokens[i]
@@ -214,13 +212,22 @@ func formatDeclaration(source []byte) string {
 		case ":":
 			line = strings.TrimRight(line, " ") + ": "
 		case "(":
-			line = strings.TrimRight(line, " ") + "("
+			// A call's parenthesis follows its function name; a grouping
+			// parenthesis keeps its space after an operator: a * (b + c).
+			trimmed := strings.TrimRight(line, " ")
+			if trimmed == "" || strings.HasSuffix(trimmed, "(") || endsWithName(trimmed) {
+				line = trimmed + "("
+			} else {
+				line = trimmed + " ("
+			}
 		case ")":
 			line = strings.TrimRight(line, " ") + ")"
 		case ",":
-			if len(frames) > 0 && frames[len(frames)-1].kind == "pattern" && i > 0 && tokens[i-1].end == token.start {
+			if len(frames) > 0 && (frames[len(frames)-1].kind == "pattern" || frames[len(frames)-1].kind == "phrase") {
+				// In steps a comma lowers the octave of the note before it, and
+				// any further octave marks or modifiers belong to the same step.
 				line = strings.TrimRight(line, " ") + ","
-				attachedComma = i+1 < len(tokens) && token.end == tokens[i+1].start
+				glue = i+1 < len(tokens) && strings.ContainsAny(tokens[i+1].text[:1], "'^~*%")
 			} else {
 				line = strings.TrimRight(line, " ") + ", "
 			}
@@ -241,4 +248,9 @@ func formatDeclaration(source []byte) string {
 	}
 	flush()
 	return strings.Join(lines, "\n")
+}
+
+func endsWithName(line string) bool {
+	c := line[len(line)-1]
+	return c == '_' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
 }

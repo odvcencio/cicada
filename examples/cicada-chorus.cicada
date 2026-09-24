@@ -1,0 +1,132 @@
+cicada 1
+
+// Every construct Cicada renders today, in one summer-night score.
+// `cicada highlight examples/cicada-chorus.cicada` shows each one in color.
+title "Cicada chorus"
+
+tempo 126.5
+
+key e minor
+
+seed 1717
+
+// A cicada buzzes a ribbed tymbal against a hollow body: noise through a
+// highpass, a short click envelope, and a ring eight times the note pitch.
+instrument tymbal {
+  param body: hz = 5200hz;
+  param snap: ms = 18ms;
+  param grit: unit = 0.4;
+  voice mono {
+    let buzz = highpass(noise(), body);
+    let click = env(gate, snap);
+    let ring = sine(pitch * 8 - 30hz) * click;
+    out = tanh(mix(buzz, ring, grit) * clamp(velocity * 2, 0, 1)) * click;
+  }
+}
+
+instrument nightbass {
+  param cutoff: hz = 480hz;
+  param decay: ms = 0.3s;
+  param bite: unit = 60%;
+  voice mono {
+    let body = mix(saw(pitch), square(pitch / 2), 0.3);
+    let shape = env(gate, decay);
+    let sweep = cutoff * exp2(shape * 2.5);
+    let dark = lowpass(ladder(body, sweep, bite), sample_rate / 4);
+    out = highpass(diode(dark, sweep + 120hz, 0.2), 30hz) * (shape * velocity);
+  }
+}
+
+track bass acid {
+  cutoff = 540hz
+  reso = 0.66
+  envmod = 0.7
+  decay = 320ms
+  accent = 0.85
+  drive = 0.3
+  filter = diode
+  savage = off
+  level = -2db
+}
+
+track drums drums {
+  bd_tune = 55hz
+  bd_decay = 400ms
+  ch_decay = 45ms
+  level = -1.5db
+}
+
+track buzz tymbal {
+  body = 6khz
+  level = -9db
+  pan = 0.35
+}
+
+track low nightbass {
+  cutoff = 360hz
+  pan = -0.2
+}
+
+// Phrases expand before scheduling; `use` splices their steps in place.
+phrase chirp acid {
+  1^ 1*2 . 5~ | 7, 1' - .
+}
+
+phrase trill acid {
+  1*3 . 1%50 .
+}
+
+pattern bass-a acid steps = 16 swing = 56 gate = 60 seed = 7 {
+  1^ . 1~ 3 . 1 4# 5 | 1 . 7,~ 1 5^*2 3%70 1 -
+}
+
+pattern bass-b acid steps = 16 swing = 56 gate = 60 {
+  use chirp
+  use chirp transpose = 7
+}
+
+pattern chorus notes steps = 16 gate = 30 transpose = 12 {
+  use trill*4
+}
+
+pattern low-a notes steps = 8 swing = 54 {
+  e2 . g b1 | e2'^ d~ c#2 bb1
+}
+
+// Drum rows are grids: x hits, X accents, x1-x9 set the velocity.
+pattern beat drums steps = 16 {
+  bd: X..x..x.X..x.x..;
+  sd: ....X.......Xx3..;
+  ch: xx.xxx.xx*2x.xxx%60xx;
+  oh: ..x...x...x...x.;
+  cp: ....x1.......X...;
+  rs: ..x5.......x2.....;
+}
+
+scene dusk {
+  bass = bass-a
+  drums = beat
+  low = low-a
+  buzz = off
+}
+
+scene chorus {
+  bass = bass-b
+  drums = keep
+  low = keep
+  buzz = chorus
+}
+
+scene hush {
+  bass = off
+  drums = off
+  low = keep
+  buzz = keep
+}
+
+song {
+  dusk*4
+  chorus*8
+  hush
+  chorus*4
+}
