@@ -122,6 +122,7 @@
 "pattern" @keyword.function
 "use" @keyword.import
 "transpose" @attribute.builtin
+(phrase_use "+" @operator.transpose)
 
 [
   "acid"
@@ -160,12 +161,12 @@
 (probability (integer) @number.probability)
 
 ; ---------------------------------------------------------------------------
-; Drum grids: one `lane: hits;` row per voice.
+; Drum grids: one `lane: hits` row per voice.
 
-((drum_lane name: (identifier) @tag.builtin)
-  (#any-of? @tag.builtin "bd" "sd" "ch" "oh" "cp" "rs" "lt" "mt" "ht" "cb" "cy"))
-((drum_lane name: (identifier) @tag)
-  (#not-any-of? @tag "bd" "sd" "ch" "oh" "cp" "rs" "lt" "mt" "ht" "cb" "cy"))
+((drum_lane name: (drum_lane_label) @tag.builtin)
+  (#any-of? @tag.builtin "bd:" "sd:" "ch:" "oh:" "cp:" "rs:" "lt:" "mt:" "ht:" "cb:" "cy:"))
+((drum_lane name: (drum_lane_label) @tag)
+  (#not-any-of? @tag "bd:" "sd:" "ch:" "oh:" "cp:" "rs:" "lt:" "mt:" "ht:" "cb:" "cy:"))
 
 (drum_hit "." @punctuation.special.rest)
 (hit) @constant.hit

@@ -1,0 +1,21 @@
+instrument click {
+  param pitch: hz = 720Hz
+  voice mono {
+    let wave = sine(pitch)
+    out = wave
+  }
+}
+kit live {
+  bd = click
+  ch = builtin.ch
+}
+track drums live {}
+track bass acid {}
+phrase hook { 1 . }
+pattern bass-a { use hook +7 }
+pattern beat drums {
+  bd: x?70.
+  ch: .x
+}
+scene main { drums = beat bass = bass-a }
+song { main }

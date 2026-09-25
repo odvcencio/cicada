@@ -234,7 +234,7 @@ func parsePattern(w *walk.Walker, n *gts.Node) Pattern {
 			use := parsePhraseUse(w, c)
 			p.Parts = append(p.Parts, PatternPart{Use: &use})
 		case "drum_lane":
-			lane := Lane{Name: w.Text(w.Field(c, "name")), Position: pos(w, c)}
+			lane := Lane{Name: strings.TrimSuffix(w.Text(w.Field(c, "name")), ":"), Position: pos(w, c)}
 			for j := 0; j < c.NamedChildCount(); j++ {
 				hit := c.NamedChild(j)
 				if w.Type(hit) == "drum_hit" {

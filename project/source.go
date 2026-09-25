@@ -41,7 +41,7 @@ func ToSource(p *Project) ([]byte, error) {
 		out.WriteString("kit " + kit.ID + " {")
 		for _, lane := range laneOrder {
 			if target, ok := kit.Lanes[lane]; ok {
-				out.WriteString("\n  " + lane + " = " + target + ";")
+				out.WriteString("\n  " + lane + " = " + target)
 			}
 		}
 		if len(kit.Lanes) > 0 {
@@ -186,7 +186,7 @@ func instrumentSource(inst Instrument) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		out.WriteString("  param " + param.ID + ": " + param.Unit + " = " + value + ";\n")
+		out.WriteString("  param " + param.ID + ": " + param.Unit + " = " + value + "\n")
 	}
 	out.WriteString("  voice " + inst.Mode + " {\n")
 	for _, binding := range inst.Lets {
@@ -201,14 +201,14 @@ func instrumentSource(inst Instrument) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		out.WriteString("    let " + binding.ID + " = " + value + ";\n")
+		out.WriteString("    let " + binding.ID + " = " + value + "\n")
 		symbols[binding.ID] = typ
 	}
 	value, err := exprSource(inst.Out, instrument.Audio, symbols, bindings)
 	if err != nil {
 		return "", err
 	}
-	out.WriteString("    out = " + value + ";\n  }\n}")
+	out.WriteString("    out = " + value + "\n  }\n}")
 	return out.String(), nil
 }
 
@@ -393,7 +393,7 @@ func patternSource(pattern Pattern, slot int, assigned bool) (string, error) {
 				}
 				hits = append(hits, hit)
 			}
-			out.WriteString("  " + lane + ": " + strings.Join(hits, " ") + ";\n")
+			out.WriteString("  " + lane + ": " + strings.Join(hits, " ") + "\n")
 		}
 	} else {
 		var notes []string
