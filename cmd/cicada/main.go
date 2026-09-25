@@ -27,6 +27,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "play" {
+		if err := playCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "fields" {
 		data, err := project.FieldsJSON()
 		if err != nil {
@@ -277,7 +284,7 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: cicada "+
-		"new <name> | "+
+		"new <name> | play [score.cicada] | "+
 		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+
 		"validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | "+
 		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --dither=true --normalize=false --block 4096] | "+
