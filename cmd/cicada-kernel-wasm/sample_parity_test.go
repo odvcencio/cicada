@@ -25,6 +25,14 @@ func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
 	compareWASMFixture(t, "authored-kit.cicada", 1)
 }
 
+func TestAudioWASMLegacyThreeDrumTracksSampleParity(t *testing.T) {
+	compareWASMFixture(t, "../testdata/compat/three-drums.cicada", 1)
+}
+
+func TestAudioWASMElevenLaneKitSampleParity(t *testing.T) {
+	compareWASMFixture(t, "drums-kit.cicada", 1)
+}
+
 func TestAudioWASMDriveInsertSampleParity(t *testing.T) {
 	compareWASMFixture(t, "fx/drive-insert.cicada", 1)
 }

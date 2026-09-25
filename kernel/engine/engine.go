@@ -245,9 +245,6 @@ func New(cfg Config) (*Engine, error) {
 				err = v.acid.SetParams(spec.Acid)
 			}
 		case VoiceDrums:
-			if spec.Kit == nil {
-				voices += int(drum.LaneCount)
-			}
 			e.patterns[i].drumSlots = new([16][drum.LaneCount]seq.Pattern)
 			for slot := range e.patterns[i].drumSlots {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
@@ -272,8 +269,15 @@ func New(cfg Config) (*Engine, error) {
 						if binding.Kind != KitLaneOff {
 							voices++
 						}
-					} else if spec.Drums[lane] != (drum.Params{}) {
-						err = v.drums.SetParams(lane, spec.Drums[lane])
+					} else if lane >= drum.LT && spec.Drums[lane] == (drum.Params{}) {
+						// Zero params leave added lanes off. Legacy lanes retain
+						// their defaults for direct host configurations.
+						err = v.drums.Disable(lane)
+					} else {
+						voices++
+						if spec.Drums[lane] != (drum.Params{}) {
+							err = v.drums.SetParams(lane, spec.Drums[lane])
+						}
 					}
 					if err != nil {
 						break
