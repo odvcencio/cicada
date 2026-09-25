@@ -58,6 +58,8 @@ Chance can be written `1?70` or `x?50`: the note or hit plays with that percenta
 
 Frequency and level literals accept `Hz`, `kHz`, and `dB` (`720Hz`, `2kHz`, `-6dB`). Lowercase legacy spellings still parse. `cicada fmt` prints the SI spellings for numeric literals; internal project units remain canonical.
 
+Pattern settings may live inside the braces: `pattern riff { swing = 56% gate = 60% 1 . 3 . }`. The formatter places each setting on its own line before the steps. Header attributes remain valid for older scores, and a percent sign is optional on legacy swing and gate values.
+
 ## Instrument code
 
 Custom instruments are first-class declarations. A `voice` contains parameters, sequential `let` bindings, and one `out` expression. The current compiler lowers expressions to a typed acyclic graph with a maximum of 128 nodes and 32 stateful nodes per voice. Names must refer to parameters, built-in inputs, or earlier bindings. The type checker understands audio, hertz, milliseconds, dB, unit values, and gates. Its first primitives cover oscillators, noise, envelopes, filters, shaping, mixing, and arithmetic.

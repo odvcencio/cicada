@@ -101,11 +101,11 @@ func Cicada() *grammargen.Grammar {
 	))
 	g.Define("acid_pattern", seq(
 		str("pattern"), field("name", sym("identifier")), str("acid"), repeat(sym("pattern_attr")),
-		str("{"), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
 	))
 	g.Define("note_pattern", seq(
 		str("pattern"), field("name", sym("identifier")), optional(str("notes")), repeat(sym("pattern_attr")),
-		str("{"), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
 	))
 	g.Define("phrase_use", seq(
 		str("use"), field("name", sym("identifier")),
@@ -114,7 +114,7 @@ func Cicada() *grammargen.Grammar {
 	))
 	g.Define("drum_pattern", seq(
 		str("pattern"), field("name", sym("identifier")), str("drums"), repeat(sym("pattern_attr")),
-		str("{"), repeat(sym("drum_lane")), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(sym("drum_lane")), str("}"),
 	))
 	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", sym("number"))))
 
@@ -174,6 +174,7 @@ func Cicada() *grammargen.Grammar {
 	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
 	g.Test("default notes", "phrase hook { 1 . } pattern p { use hook 5 . }", "")
 	g.Test("SI units", "track bass acid { cutoff = 2kHz level = -6dB } instrument i { param cutoff: hz = 720Hz; voice mono { out = saw(440Hz); } }", "")
+	g.Test("pattern settings inside braces", "pattern p { swing = 56% gate = 60% seed = 7 1 . } pattern beat drums { swing = 54% bd: x.; }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
 	return g
