@@ -524,8 +524,14 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 				if err != nil {
 					return nil, fmt.Errorf("track %s: %w", source.Name, err)
 				}
+				lanes := project.BuiltinDrumLanes(score, source)
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-					if err := kit.SetParams(lane, params[lane]); err != nil {
+					if lanes[lane] {
+						err = kit.SetParams(lane, params[lane])
+					} else {
+						err = kit.Disable(lane)
+					}
+					if err != nil {
 						return nil, err
 					}
 				}
