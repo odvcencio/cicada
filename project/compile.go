@@ -193,7 +193,7 @@ func acidStep(score *notation.Score, token string, octave, transpose int) (seq.S
 		case '~':
 			s.Slide = true
 			consumed++
-		case '*', '%':
+		case '*', '%', '?':
 			kind := token[consumed]
 			consumed++
 			start := consumed
@@ -289,7 +289,7 @@ func drumStep(token string, note uint8) (seq.Step, error) {
 	}
 	for i < len(token) {
 		kind := token[i]
-		if kind != '*' && kind != '%' {
+		if kind != '*' && kind != '%' && kind != '?' {
 			return s, fmt.Errorf("invalid drum modifier in %q", token)
 		}
 		i++

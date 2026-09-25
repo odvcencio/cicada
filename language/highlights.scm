@@ -156,6 +156,7 @@
 (ratchet "*" @operator.ratchet)
 (ratchet (integer) @number.ratchet)
 (probability "%" @operator.probability)
+(probability "?" @operator.probability)
 (probability (integer) @number.probability)
 
 ; ---------------------------------------------------------------------------
