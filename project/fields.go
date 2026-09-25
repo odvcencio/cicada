@@ -10,29 +10,40 @@ import (
 // Field describes one serialized field of the typed semantic project model.
 // The JSON and cicada tags on model.go are its source of truth.
 type Field struct {
-	Construct  string `json:"construct"`
-	Name       string `json:"name"`
-	Required   bool   `json:"required"`
-	Type       string `json:"type"`
-	Unit       string `json:"unit"`
-	Range      string `json:"range"`
-	Default    string `json:"default"`
-	Meaning    string `json:"meaning"`
-	Order      int    `json:"order"`
-	Introduced string `json:"introduced"`
-	Profile    string `json:"profile"`
-	Variant    string `json:"variant,omitempty"`
+	Construct  string  `json:"construct"`
+	Name       string  `json:"name"`
+	Required   bool    `json:"required"`
+	Type       string  `json:"type"`
+	Unit       *string `json:"unit"`
+	Range      *string `json:"range"`
+	Default    *string `json:"default"`
+	Meaning    string  `json:"meaning"`
+	Order      int     `json:"order"`
+	Introduced string  `json:"introduced"`
+	Profile    string  `json:"profile"`
+	Layer      string  `json:"layer"`
+	Variant    string  `json:"variant,omitempty"`
+}
+
+type ConstructRecord struct {
+	Name       string   `json:"name"`
+	ChildRoles []string `json:"child_roles"`
+	Variants   []string `json:"variants"`
+	Introduced string   `json:"introduced"`
+	Profile    string   `json:"profile"`
+	Layer      string   `json:"layer"`
 }
 
 type FieldCatalog struct {
-	Format string  `json:"format"`
-	Fields []Field `json:"fields"`
+	Format     string            `json:"format"`
+	Constructs []ConstructRecord `json:"constructs"`
+	Fields     []Field           `json:"fields"`
 }
 
 // Fields returns a stable, exhaustive catalog of the semantic interchange IR.
 // Source-language constructs will be added as they acquire typed IR fields.
 func Fields() (FieldCatalog, error) {
-	catalog := FieldCatalog{Format: "cicada.fields/1", Fields: []Field{}}
+	catalog := FieldCatalog{Format: "cicada.fields/1", Constructs: []ConstructRecord{}, Fields: []Field{}}
 	seen := map[reflect.Type]bool{}
 	var visit func(reflect.Type) error
 	visit = func(typ reflect.Type) error {
@@ -44,6 +55,8 @@ func Fields() (FieldCatalog, error) {
 		}
 		seen[typ] = true
 		construct := snakeCaseName(typ.Name())
+		record := ConstructRecord{Name: construct, ChildRoles: []string{}, Variants: []string{}, Introduced: "cicada.project/1", Profile: "M0", Layer: "semantic"}
+		variantSeen := map[string]bool{}
 		for i := 0; i < typ.NumField(); i++ {
 			field := typ.Field(i)
 			if !field.IsExported() {
@@ -58,13 +71,25 @@ func Fields() (FieldCatalog, error) {
 			if field.Tag.Get("variant") != "" && valueType.Kind() == reflect.Pointer {
 				valueType = valueType.Elem()
 			}
+			if field.Tag.Get("default") != "" {
+				return fmt.Errorf("%s.%s is required and cannot declare a default", typ.Name(), field.Name)
+			}
+			if repeatable(field.Type) {
+				record.ChildRoles = append(record.ChildRoles, name)
+			}
+			variant := field.Tag.Get("variant")
+			if variant != "" && !variantSeen[variant] {
+				variantSeen[variant] = true
+				record.Variants = append(record.Variants, variant)
+			}
 			catalog.Fields = append(catalog.Fields, Field{
 				Construct: construct, Name: name, Required: true,
-				Type: fieldType(valueType), Unit: field.Tag.Get("unit"), Range: field.Tag.Get("range"),
-				Default: field.Tag.Get("default"), Meaning: meaning, Order: i + 1,
-				Introduced: "cicada.project/1", Profile: "semantic", Variant: field.Tag.Get("variant"),
+				Type: fieldType(valueType), Unit: nonemptyTag(field.Tag.Get("unit")), Range: nonemptyTag(field.Tag.Get("range")),
+				Default: nil, Meaning: meaning, Order: i + 1,
+				Introduced: "cicada.project/1", Profile: "M0", Layer: "semantic", Variant: variant,
 			})
 		}
+		catalog.Constructs = append(catalog.Constructs, record)
 		for i := 0; i < typ.NumField(); i++ {
 			if err := visit(typ.Field(i).Type); err != nil {
 				return err
@@ -76,6 +101,17 @@ func Fields() (FieldCatalog, error) {
 		return FieldCatalog{}, err
 	}
 	return catalog, nil
+}
+
+func repeatable(typ reflect.Type) bool {
+	return typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array || typ.Kind() == reflect.Map
+}
+
+func nonemptyTag(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return &value
 }
 
 func FieldsJSON() ([]byte, error) {
