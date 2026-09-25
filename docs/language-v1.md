@@ -80,7 +80,8 @@ the prior note, and `|` separates groups visually without taking a step.
 A pitch is a scale degree `1`–`7` or a letter note such as `c#3`.
 `'` raises a pitch one octave; `,` lowers it one octave. C4 is MIDI note
 60. Notes without an explicit octave use their instrument's home octave,
-which defaults to 2 in edition 1. A track may override it with `octave = 3`.
+which defaults to 2 in edition 1. A track may override it with `octave = 3`
+unless its instrument declares a synthesis parameter named `octave`.
 Explicit pitches such as `c#3` stay absolute. Steps can sit side by side
 (`1^.5-`), except that a letter pitch needs a space before a tie or another
 letter pitch: `c3 - e3`, not `c3-e3`, which would read as one name.
@@ -172,6 +173,9 @@ pattern lead-a notes steps=4 { 5 . 3 . }
 
 `octave` is a register setting from 0 to 6, separate from synthesis
 parameters. A track can override it without passing it into the DSP graph.
+An explicit synthesis parameter named `octave` keeps its legacy meaning.
+For that instrument, track values named `octave` control the parameter;
+the instrument declaration sets the home octave.
 Parameter units are `unit`, `hz`, `ms`, and `db`. The expression
 type checker also tracks `gate` and `audio`. The current graph primitives
 are `saw`, `square`, `sine`, `noise`, `env`, `ladder`, `diode`,
