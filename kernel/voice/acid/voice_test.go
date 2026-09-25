@@ -152,6 +152,37 @@ func TestAcidRenderDoesNotAllocate(t *testing.T) {
 	}
 }
 
+func TestRestingDiodeCacheMatchesDynamicFilterBits(t *testing.T) {
+	for _, rate := range []int{44_100, 48_000, 96_000} {
+		for _, settings := range []struct{ cutoff, resonance float64 }{{20, 0}, {600, .55}, {8000, 1}} {
+			cached, err := New(rate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			params := cached.Params()
+			params.Cutoff, params.Resonance = settings.cutoff, settings.resonance
+			if err := cached.SetParams(params); err != nil {
+				t.Fatal(err)
+			}
+			dynamic := *cached
+			for sample := 0; sample < 4096; sample++ {
+				first := math.Sin(float64(sample) * .017)
+				second := math.Cos(float64(sample) * .011)
+				gotFirst, gotSecond := cached.filterRestingDiodePair(first, second)
+				wantFirst, wantSecond := dynamic.filterPair(first, second, dynamic.restingFilterG)
+				if math.Float64bits(gotFirst) != math.Float64bits(wantFirst) || math.Float64bits(gotSecond) != math.Float64bits(wantSecond) {
+					t.Fatalf("%d Hz cutoff %g resonance %g sample %d changed filter bits: (%g, %g) vs (%g, %g)", rate, settings.cutoff, settings.resonance, sample, gotFirst, gotSecond, wantFirst, wantSecond)
+				}
+				for stage := range cached.diode.state {
+					if math.Float64bits(cached.diode.state[stage]) != math.Float64bits(dynamic.diode.state[stage]) {
+						t.Fatalf("%d Hz cutoff %g resonance %g sample %d changed stage %d", rate, settings.cutoff, settings.resonance, sample, stage)
+					}
+				}
+			}
+		}
+	}
+}
+
 var benchmarkOutput float32
 
 func BenchmarkAcidNext(b *testing.B) {

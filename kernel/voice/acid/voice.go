@@ -60,6 +60,10 @@ type filterState struct {
 	last  float64
 }
 
+type restingDiodeShape struct {
+	G, k, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen, gain float64
+}
+
 type Voice struct {
 	sampleRate                                  float64
 	params                                      Params
@@ -73,6 +77,7 @@ type Voice struct {
 	megDecay, capDecay, releaseDecay, holdDecay float64
 	pitchAlpha, accentAlpha, switchAlpha        float64
 	filterBlend, savageBlend, restingFilterG    float64
+	restingDiode                                restingDiodeShape
 	drivePre, drivePost, level                  float64
 	driveTable                                  [33]float64
 	up, down                                    halfband.FIR
@@ -123,7 +128,26 @@ func (v *Voice) SetParams(p Params) error {
 	v.drivePost = v.driveTable[index]*(1-frac) + v.driveTable[index+1]*frac
 	v.level = math.Pow(10, p.LevelDB/20)
 	v.restingFilterG = fastmath.TanSmall(math.Pi * p.Cutoff / (2 * v.sampleRate))
+	v.prepareRestingDiode()
 	return nil
+}
+
+func (v *Voice) prepareRestingDiode() {
+	g := calibratedFilterG(v.restingFilterG, Diode)
+	G := g / (1 + g)
+	k := 17 * v.params.Resonance
+	invDen3 := 1 / (1 - G*G/2)
+	a3 := (G / 2) * invDen3
+	invDen2 := 1 / (1 - G*a3/2)
+	a2 := (G / 2) * invDen2
+	c := G * a3 * a2
+	v.restingDiode = restingDiodeShape{
+		G: G, k: k, inv: 1 / (1 + g), a3: a3, a2: a2,
+		invDen3: invDen3, invDen2: invDen2,
+		invFirstDen:   1 / (1 - G*a2/2 + G*k*c/2),
+		invRefinedDen: 1 / (1 - G*a2/2),
+		gain:          1 + .35*v.params.Resonance,
+	}
 }
 
 func (v *Voice) buildDriveTable() {
@@ -279,7 +303,11 @@ func (v *Voice) Next() float32 {
 		cutoff := v.cutoffHz()
 		g = fastmath.TanSmall(math.Pi * cutoff / (2 * v.sampleRate))
 	}
-	first, second = v.filterPair(first, second, g)
+	if v.meg == 0 && v.filterBlend == 0 && v.savageBlend == 0 {
+		first, second = v.filterRestingDiodePair(first, second)
+	} else {
+		first, second = v.filterPair(first, second, g)
+	}
 	y := v.down.Downsample(first, second)
 	y *= v.vca * v.accentGain * v.level
 	if v.savageBlend > 0 {
@@ -372,6 +400,13 @@ func (v *Voice) filterPair(first, second, baseG float64) (float64, float64) {
 	d2 *= diodeGain
 	l2 *= ladderGain
 	second = d2*(1-v.filterBlend) + l2*v.filterBlend
+	return first, second
+}
+
+func (v *Voice) filterRestingDiodePair(first, second float64) (float64, float64) {
+	c := &v.restingDiode
+	first = v.diode.processDiodeShaped(first, c.G, c.k, 0, c.inv, c.a3, c.a2, c.invDen3, c.invDen2, c.invFirstDen, c.invRefinedDen) * c.gain
+	second = v.diode.processDiodeShaped(second, c.G, c.k, 0, c.inv, c.a3, c.a2, c.invDen3, c.invDen2, c.invFirstDen, c.invRefinedDen) * c.gain
 	return first, second
 }
 
