@@ -83,10 +83,10 @@ type Value struct {
 }
 
 type Mixer struct {
-	GainDB  float64 `cicada:"Track gain in decibels" unit:"dB" range:"-60..6" default:"-6" json:"gain_db"`
-	Pan     float64 `cicada:"Stereo pan position" range:"-1..1" default:"0" json:"pan"`
-	SendA   float64 `cicada:"Send A gain" range:"0..1" default:"0" json:"send_a"`
-	SendB   float64 `cicada:"Send B gain" range:"0..1" default:"0" json:"send_b"`
+	GainDB  float64 `cicada:"Track gain in decibels" unit:"dB" range:"-60..6" json:"gain_db"`
+	Pan     float64 `cicada:"Stereo pan position" range:"-1..1" json:"pan"`
+	SendA   float64 `cicada:"Send A gain" range:"0..1" json:"send_a"`
+	SendB   float64 `cicada:"Send B gain" range:"0..1" json:"send_b"`
 	SendPre bool    `cicada:"Pre fader send switch" json:"send_pre"`
 	Mute    bool    `cicada:"Mute switch" json:"mute"`
 	Solo    bool    `cicada:"Solo switch" json:"solo"`
@@ -98,9 +98,9 @@ type Pattern struct {
 	ID              string             `cicada:"Pattern identifier" json:"id"`
 	Kind            string             `cicada:"Melodic or drum pattern kind" json:"kind"`
 	Steps           uint8              `cicada:"Number of steps" range:"1..64" json:"steps"`
-	SwingPercent100 uint16             `cicada:"Swing percentage scaled by one hundred" unit:"percent/100" range:"5000..7500" default:"5000" json:"swing_percent100"`
+	SwingPercent100 uint16             `cicada:"Swing percentage scaled by one hundred" unit:"percent/100" range:"5000..7500" json:"swing_percent100"`
 	GatePercent     uint8              `cicada:"Note gate percentage" unit:"percent" range:"10..100" json:"gate_percent"`
-	Transpose       int8               `cicada:"Semitone transposition" unit:"semitone" range:"-24..24" default:"0" json:"transpose"`
+	Transpose       int8               `cicada:"Semitone transposition" unit:"semitone" range:"-24..24" json:"transpose"`
 	Seed            uint32             `cicada:"Pattern random seed" json:"seed"`
 	Data            []*Step            `cicada:"Melodic steps" json:"data"`
 	Lanes           map[string][]*Step `cicada:"Drum lane steps" json:"lanes"`
