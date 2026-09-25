@@ -27,6 +27,14 @@ func TestFixPreservesScoreAndIsIdempotent(t *testing.T) {
 	if !bytes.Contains(fixed, []byte("octave = 2")) {
 		t.Fatal("instrument home octave is missing")
 	}
+	for _, old := range [][]byte{[]byte("phrase hook acid"), []byte("pattern lead-a notes"), []byte("steps ="), []byte("use hook transpose =")} {
+		if bytes.Contains(fixed, old) {
+			t.Fatalf("legacy spelling remains: %s", old)
+		}
+	}
+	if !bytes.Contains(fixed, []byte("use hook +12")) {
+		t.Fatal("phrase transpose was not shortened")
+	}
 	again, changed, err := fixSource(fixed)
 	if err != nil || changed || !bytes.Equal(fixed, again) {
 		t.Fatalf("second fix changed the score: %v", err)
@@ -80,6 +88,26 @@ func TestFixKeepsCRLF(t *testing.T) {
 	}
 }
 
+func TestFixChanceAndTerminatorsPreserveComments(t *testing.T) {
+	source := []byte("cicada 1\n// keep 2%70; literally\ninstrument bass { param amount = 50%; param cutoff = 720hz; voice mono { out = saw(pitch) * amount; } }\ntrack low bass { level = -6db }\npattern p notes steps=1 { c%70 }\nscene main { low=p }\nsong { main }\n")
+	fixed, changed, err := fixSource(source)
+	if err != nil || !changed {
+		t.Fatalf("fix: %v", err)
+	}
+	if !bytes.Contains(fixed, []byte("c?70")) || bytes.Contains(fixed, []byte("c%70")) {
+		t.Fatalf("chance not migrated: %s", fixed)
+	}
+	if !bytes.Contains(fixed, []byte("// keep 2%70; literally")) {
+		t.Fatal("comment changed")
+	}
+	if !bytes.Contains(fixed, []byte("720Hz")) || !bytes.Contains(fixed, []byte("-6dB")) {
+		t.Fatal("SI unit spelling was not applied")
+	}
+	if bytes.Contains(fixed, []byte("50%;")) || bytes.Contains(fixed, []byte("amount;")) {
+		t.Fatal("terminator remains")
+	}
+}
+
 func TestFixRollsBackManifestWhenScoreWriteFails(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "failed.cicada")
@@ -98,5 +126,31 @@ func TestFixRollsBackManifestWhenScoreWriteFails(t *testing.T) {
 	current, err := os.ReadFile(path)
 	if err != nil || !bytes.Equal(current, source) {
 		t.Fatalf("score changed after failed migration: %v", err)
+	}
+}
+
+func TestFixPublishedExamplesPreservesSemantics(t *testing.T) {
+	paths, err := filepath.Glob("../../examples/*.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(paths) == 0 {
+		t.Fatal("published examples missing")
+	}
+	for _, path := range paths {
+		t.Run(filepath.Base(path), func(t *testing.T) {
+			source, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixed, _, err := fixSource(source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, changed, err := fixSource(fixed)
+			if err != nil || changed {
+				t.Fatalf("fix is not stable: %v", err)
+			}
+		})
 	}
 }
