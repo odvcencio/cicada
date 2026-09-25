@@ -162,6 +162,15 @@ func formatDeclaration(source []byte) string {
 		value := canonicalNumericUnit(token.text)
 		if len(frames) > 0 {
 			frame := &frames[len(frames)-1]
+			next := i + 1
+			for next < len(tokens) && tokens[next].comment {
+				next++
+			}
+			if (frame.kind == "instrument" && (value == "param" || value == "voice") ||
+				frame.kind == "voice" && (value == "let" || value == "out") ||
+				frame.kind == "pattern" && next < len(tokens) && tokens[next].text == ":") && strings.TrimSpace(line) != "" {
+				flush()
+			}
 			if frame.kind == "pattern" && frame.assignment == 3 && value != "}" {
 				flush()
 				frame.assignment = 0
@@ -169,7 +178,7 @@ func formatDeclaration(source []byte) string {
 			if frame.kind == "pattern" && i+1 < len(tokens) && tokens[i+1].text == "=" && strings.TrimSpace(line) != "" && !strings.HasPrefix(strings.TrimSpace(line), "use ") {
 				flush()
 			}
-			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene") && frame.assignment == 3 && value != "}" {
+			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "kit") && frame.assignment == 3 && value != "}" {
 				flush()
 				frame.assignment = 0
 			}
@@ -207,13 +216,12 @@ func formatDeclaration(source []byte) string {
 			line = "}"
 			flush()
 		case ";":
-			line = strings.TrimRight(line, " ") + ";"
 			flush()
 		case "=":
 			line = strings.TrimRight(line, " ") + " = "
 			if len(frames) > 0 {
 				frame := &frames[len(frames)-1]
-				if frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" {
+				if frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit" {
 					frame.assignment = 2
 				}
 			}
@@ -245,7 +253,7 @@ func formatDeclaration(source []byte) string {
 			word(value)
 			if len(frames) > 0 {
 				frame := &frames[len(frames)-1]
-				if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern") && frame.assignment == 2 {
+				if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit") && frame.assignment == 2 {
 					frame.assignment = 3
 				}
 				if frame.kind == "song" {
