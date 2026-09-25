@@ -80,6 +80,7 @@ type scoreView struct {
 	Studio                        bool
 	LineNumbers                   []int
 	Tracks                        []viewTrack
+	Voices                        []viewVoice
 	Patterns                      []viewPattern
 	Song                          []viewSongEntry
 }
@@ -147,6 +148,7 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 	for _, track := range p.Tracks {
 		view.Tracks = append(view.Tracks, viewTrack{ID: track.ID, Kind: track.Kind, Gain: strconv.FormatFloat(track.Mixer.GainDB, 'f', -1, 64) + " dB", Muted: track.Mixer.Mute})
 	}
+	view.Voices = scoreVoices(p)
 	for _, pattern := range p.Patterns {
 		card := viewPattern{
 			ID: pattern.ID, Kind: pattern.Kind, Steps: int(pattern.Steps), Drums: pattern.Kind == "drums",
