@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sync/atomic"
 
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
@@ -25,6 +26,13 @@ type Score struct {
 type Event struct {
 	Bar  int64 // one-based bar that has just begun
 	Name string
+}
+
+// Position is the most recently rendered musical location. Step is one-based
+// within a 16-step bar; the audio device may still be playing buffered frames.
+type Position struct {
+	Bar  int64 `json:"bar"`
+	Step int64 `json:"step"`
 }
 
 // Player implements io.Reader for interleaved stereo float32 little-endian PCM.
@@ -47,6 +55,7 @@ type Player struct {
 	buffered      int
 	read          int
 	fault         error
+	position      atomic.Uint64
 }
 
 func New(initial Score, rate int) (*Player, error) {
@@ -65,6 +74,7 @@ func New(initial Score, rate int) (*Player, error) {
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
 		offers:        make(chan Score, 1), events: make(chan Event, 16),
 	}
+	p.position.Store(1<<8 | 1)
 	return p, nil
 }
 
@@ -90,6 +100,12 @@ func (p *Player) Offer(score Score) error {
 }
 
 func (p *Player) Events() <-chan Event { return p.events }
+
+// Position can be read safely by a UI thread while Read renders audio.
+func (p *Player) Position() Position {
+	packed := p.position.Load()
+	return Position{Bar: int64(packed >> 8), Step: int64(packed & 0xff)}
+}
 
 func (p *Player) Read(out []byte) (int, error) {
 	if len(out) == 0 {
@@ -146,6 +162,8 @@ func (p *Player) renderBlock() {
 		p.fault = fmt.Errorf("live transport did not advance at bar %d", p.bar+1)
 		return
 	}
+	tick := p.clock.TickAtSample(p.sample)
+	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
 	p.current.Engine.Render(p.left[:frames], p.right[:frames])
 	var message cmd.Message
 	for p.current.Engine.Poll(&message) {
