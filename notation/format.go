@@ -290,7 +290,7 @@ func formatDrumRows(section string, pattern *gts.Node, walker *walk.Walker) stri
 		if walker.Type(lane) != "drum_lane" {
 			continue
 		}
-		label := walker.Text(walker.Field(lane, "name"))
+		label := strings.TrimSuffix(walker.Text(walker.Field(lane, "name")), ":") + ":"
 		for lineIndex < len(lines) {
 			line := lines[lineIndex]
 			trimmed := strings.TrimSpace(line)
