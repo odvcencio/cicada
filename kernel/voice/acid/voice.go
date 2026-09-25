@@ -60,6 +60,10 @@ type filterState struct {
 	last  float64
 }
 
+type restingDiodeShape struct {
+	G, k, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen, gain float64
+}
+
 type Voice struct {
 	sampleRate                                  float64
 	params                                      Params
@@ -73,9 +77,12 @@ type Voice struct {
 	megDecay, capDecay, releaseDecay, holdDecay float64
 	pitchAlpha, accentAlpha, switchAlpha        float64
 	filterBlend, savageBlend, restingFilterG    float64
+	restingDiode                                restingDiodeShape
 	drivePre, drivePost, level                  float64
 	driveTable                                  [33]float64
 	up, down                                    halfband.FIR
+	oscillator                                  *oscillatorBank
+	oscA, oscB, oscSub                          oscillatorSelection
 	diode, ladder                               filterState
 	fault                                       bool
 }
@@ -84,7 +91,7 @@ func New(sampleRate int) (*Voice, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
 		return nil, Error("acid sample rate must be 44100, 48000, or 96000")
 	}
-	v := &Voice{sampleRate: float64(sampleRate), up: halfband.New(), down: halfband.New()}
+	v := &Voice{sampleRate: float64(sampleRate), up: halfband.New(), down: halfband.New(), oscillator: bankForSampleRate(sampleRate)}
 	v.buildDriveTable()
 	if err := v.SetParams(DefaultParams()); err != nil {
 		return nil, err
@@ -110,6 +117,7 @@ func (v *Voice) SetParams(p Params) error {
 	v.switchAlpha = 1 - math.Exp(-1/(.02*v.sampleRate))
 	v.drivePre = math.Pow(10, p.Drive*36/20)
 	v.detuneRatio = fastmath.Exp2(p.Detune / 1200)
+	v.pitchCached = false
 	table := p.Drive * 32
 	index := int(table)
 	if index >= 32 {
@@ -120,7 +128,26 @@ func (v *Voice) SetParams(p Params) error {
 	v.drivePost = v.driveTable[index]*(1-frac) + v.driveTable[index+1]*frac
 	v.level = math.Pow(10, p.LevelDB/20)
 	v.restingFilterG = fastmath.TanSmall(math.Pi * p.Cutoff / (2 * v.sampleRate))
+	v.prepareRestingDiode()
 	return nil
+}
+
+func (v *Voice) prepareRestingDiode() {
+	g := calibratedFilterG(v.restingFilterG, Diode)
+	G := g / (1 + g)
+	k := 17 * v.params.Resonance
+	invDen3 := 1 / (1 - G*G/2)
+	a3 := (G / 2) * invDen3
+	invDen2 := 1 / (1 - G*a3/2)
+	a2 := (G / 2) * invDen2
+	c := G * a3 * a2
+	v.restingDiode = restingDiodeShape{
+		G: G, k: k, inv: 1 / (1 + g), a3: a3, a2: a2,
+		invDen3: invDen3, invDen2: invDen2,
+		invFirstDen:   1 / (1 - G*a2/2 + G*k*c/2),
+		invRefinedDen: 1 / (1 - G*a2/2),
+		gain:          1 + .35*v.params.Resonance,
+	}
 }
 
 func (v *Voice) buildDriveTable() {
@@ -236,23 +263,37 @@ func (v *Voice) Next() float32 {
 	}
 	if !v.pitchCached || v.pitchLog != v.lastPitchLog {
 		v.pitchDelta = min(fastmath.Exp2(v.pitchLog)/v.sampleRate, .49)
+		v.oscA = v.oscillator.selectTables(v.pitchLog)
+		if v.params.Detune > 0 {
+			v.oscB = v.oscillator.selectTables(v.pitchLog + v.params.Detune/1200)
+		}
+		if v.params.Sub > 0 {
+			v.oscSub = v.oscillator.selectTables(v.pitchLog - 1)
+		}
 		v.lastPitchLog = v.pitchLog
 		v.pitchCached = true
 	}
 	delta := v.pitchDelta
-	saw := 2*v.phaseA - 1 - polyBLEP(v.phaseA, delta)
-	square := pulse(v.phaseA, delta, v.params.PulseWidth)
-	osc := saw*(1-v.params.Wave) + square*v.params.Wave
+	saw := v.oscA.saw(v.phaseA)
+	osc := saw
+	if v.params.Wave != 0 {
+		shiftedPhase := v.phaseA - v.params.PulseWidth
+		if shiftedPhase < 0 {
+			shiftedPhase++
+		}
+		square := v.oscA.saw(shiftedPhase) - saw + 2*v.params.PulseWidth - 1
+		osc = saw*(1-v.params.Wave) + square*v.params.Wave
+	}
 	v.phaseA = fraction(v.phaseA + delta)
 	if v.params.Detune > 0 {
 		secondDelta := min(delta*v.detuneRatio, .49)
-		second := pulse(v.phaseB, secondDelta, v.params.PulseWidth)
+		second := v.oscB.pulse(v.phaseB, v.params.PulseWidth)
 		osc += .5 * second
 		v.phaseB = fraction(v.phaseB + secondDelta)
 	}
 	if v.params.Sub > 0 {
 		subDelta := delta * .5
-		osc += v.params.Sub * .5 * pulse(v.phaseSub, subDelta, .5)
+		osc += v.params.Sub * .5 * v.oscSub.pulse(v.phaseSub, .5)
 		v.phaseSub = fraction(v.phaseSub + subDelta)
 	}
 	pre := fastmath.Tanh(v.drivePre*osc) * v.drivePost
@@ -262,7 +303,11 @@ func (v *Voice) Next() float32 {
 		cutoff := v.cutoffHz()
 		g = fastmath.TanSmall(math.Pi * cutoff / (2 * v.sampleRate))
 	}
-	first, second = v.filterPair(first, second, g)
+	if v.meg == 0 && v.filterBlend == 0 && v.savageBlend == 0 {
+		first, second = v.filterRestingDiodePair(first, second)
+	} else {
+		first, second = v.filterPair(first, second, g)
+	}
 	y := v.down.Downsample(first, second)
 	y *= v.vca * v.accentGain * v.level
 	if v.savageBlend > 0 {
@@ -316,16 +361,21 @@ func (v *Voice) filterPair(first, second, baseG float64) (float64, float64) {
 		G := g / (1 + g)
 		k := 17 * v.params.Resonance * (1 + .25*savage)
 		gain := 1 + .35*v.params.Resonance*(1-savage)
-		den3 := 1 - G*G/2
-		a3 := (G / 2) / den3
-		den2 := 1 - G*a3/2
-		a2 := (G / 2) / den2
+		invDen3 := 1 / (1 - G*G/2)
+		a3 := (G / 2) * invDen3
+		invDen2 := 1 / (1 - G*a3/2)
+		a2 := (G / 2) * invDen2
 		c := G * a3 * a2
 		inv := 1 / (1 + g)
-		firstDen := 1 - G*a2/2 + G*k*c/2
-		refinedDen := 1 - G*a2/2
-		first = v.diode.processDiodeShaped(first, G, k, savage, inv, a3, a2, den3, den2, firstDen, refinedDen) * gain
-		second = v.diode.processDiodeShaped(second, G, k, savage, inv, a3, a2, den3, den2, firstDen, refinedDen) * gain
+		invFirstDen := 1 / (1 - G*a2/2 + G*k*c/2)
+		invRefinedDen := 1 / (1 - G*a2/2)
+		if savage == 0 {
+			first = v.diode.processDiodeShapedNormal(first, G, k, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
+			second = v.diode.processDiodeShapedNormal(second, G, k, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
+			return first, second
+		}
+		first = v.diode.processDiodeShaped(first, G, k, savage, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
+		second = v.diode.processDiodeShaped(second, G, k, savage, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
 		return first, second
 	}
 	if v.filterBlend == 1 {
@@ -358,6 +408,13 @@ func (v *Voice) filterPair(first, second, baseG float64) (float64, float64) {
 	return first, second
 }
 
+func (v *Voice) filterRestingDiodePair(first, second float64) (float64, float64) {
+	c := &v.restingDiode
+	first = v.diode.processDiodeShapedNormal(first, c.G, c.k, c.inv, c.a3, c.a2, c.invDen3, c.invDen2, c.invFirstDen, c.invRefinedDen) * c.gain
+	second = v.diode.processDiodeShapedNormal(second, c.G, c.k, c.inv, c.a3, c.a2, c.invDen3, c.invDen2, c.invFirstDen, c.invRefinedDen) * c.gain
+	return first, second
+}
+
 const ladderCutoffRatio = 0.43497944204608224
 const diodeCutoffRatio = 0.07467815580279147
 
@@ -377,24 +434,4 @@ func fraction(value float64) float64 {
 		return value - 1
 	}
 	return value
-}
-
-func polyBLEP(phase, delta float64) float64 {
-	if phase < delta {
-		t := phase / delta
-		return 2*t - t*t - 1
-	}
-	if phase > 1-delta {
-		t := (phase - 1) / delta
-		return t*t + 2*t + 1
-	}
-	return 0
-}
-
-func pulse(phase, delta, width float64) float64 {
-	value := -1.0
-	if phase < width {
-		value = 1
-	}
-	return value + polyBLEP(phase, delta) - polyBLEP(fraction(phase+1-width), delta)
 }

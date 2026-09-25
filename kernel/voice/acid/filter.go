@@ -53,17 +53,41 @@ func (f *filterState) processDiode(input, G, g, k, savage float64) float64 {
 
 // processDiodeShaped reuses terms that depend only on G across the two
 // oversampled phases. The state-dependent terms are still solved in order.
-func (f *filterState) processDiodeShaped(input, G, k, savage, inv, a3, a2, den3, den2, firstDen, refinedDen float64) float64 {
+func (f *filterState) processDiodeShaped(input, G, k, savage, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen float64) float64 {
 	s1, s2, s3, s4 := f.state[0]*inv, f.state[1]*inv, f.state[2]*inv, f.state[3]*inv
-	b3 := ((G/2)*s4 + s3) / den3
-	b2 := ((G/2)*b3 + s2) / den2
+	b3 := ((G/2)*s4 + s3) * invDen3
+	b2 := ((G/2)*b3 + s2) * invDen2
 	d := G*(a3*b2+b3) + s4
-	y1 := ((G/2)*(input-k*d+b2) + s1) / firstDen
+	y1 := ((G/2)*(input-k*d+b2) + s1) * invFirstDen
 	y2 := a2*y1 + b2
 	y3 := a3*y2 + b3
 	y4 := G*y3 + s4
 	refinedInput := input - k*feedback(y4, savage)
-	y1 = ((G/2)*(refinedInput+b2) + s1) / refinedDen
+	y1 = ((G/2)*(refinedInput+b2) + s1) * invRefinedDen
+	y2 = a2*y1 + b2
+	y3 = a3*y2 + b3
+	y4 = G*y3 + s4
+	f.state[0] = flush(2*y1 - f.state[0])
+	f.state[1] = flush(2*y2 - f.state[1])
+	f.state[2] = flush(2*y3 - f.state[2])
+	f.state[3] = flush(2*y4 - f.state[3])
+	f.last = flush(y4)
+	return y4
+}
+
+// processDiodeShapedNormal keeps the arithmetic of processDiodeShaped but
+// skips the Savage feedback branch for the default diode voice.
+func (f *filterState) processDiodeShapedNormal(input, G, k, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen float64) float64 {
+	s1, s2, s3, s4 := f.state[0]*inv, f.state[1]*inv, f.state[2]*inv, f.state[3]*inv
+	b3 := ((G/2)*s4 + s3) * invDen3
+	b2 := ((G/2)*b3 + s2) * invDen2
+	d := G*(a3*b2+b3) + s4
+	y1 := ((G/2)*(input-k*d+b2) + s1) * invFirstDen
+	y2 := a2*y1 + b2
+	y3 := a3*y2 + b3
+	y4 := G*y3 + s4
+	refinedInput := input - k*fastmath.Tanh(y4)
+	y1 = ((G/2)*(refinedInput+b2) + s1) * invRefinedDen
 	y2 = a2*y1 + b2
 	y3 = a3*y2 + b3
 	y4 = G*y3 + s4
