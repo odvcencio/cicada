@@ -19,6 +19,9 @@ func ValidateProject(p *Project) error {
 	if p == nil || p.Format != FormatID || p.Version != 1 {
 		return fmt.Errorf("unsupported project format or version")
 	}
+	if p.Edition != 1 {
+		return fmt.Errorf("CICADA-VERSION: only cicada 1 is supported")
+	}
 	if !utf8.ValidString(p.Title) || utf8.RuneCountInString(p.Title) > 120 {
 		return fmt.Errorf("title must contain at most 120 UTF-8 characters")
 	}
