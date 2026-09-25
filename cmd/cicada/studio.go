@@ -240,6 +240,7 @@ type studioEdit struct {
 	Lane     string `json:"lane"`
 	Step     int    `json:"step"`
 	Pitch    *int   `json:"pitch,omitempty"`
+	Modifier string `json:"modifier,omitempty"`
 }
 
 func studioRequest(w http.ResponseWriter, r *http.Request) (studioEdit, bool) {
@@ -286,9 +287,19 @@ func (s *studio) toggleStep(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if edit.Pitch != nil && edit.Modifier != "" {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "choose one grid edit per request"})
+		return
+	}
 	if edit.Pitch != nil {
 		s.apply(w, edit, func(source []byte) ([]byte, error) {
 			return pitchedSource(source, edit.Pattern, edit.Lane, edit.Step, *edit.Pitch)
+		})
+		return
+	}
+	if edit.Modifier != "" {
+		s.apply(w, edit, func(source []byte) ([]byte, error) {
+			return toggledModifierSource(source, edit.Pattern, edit.Lane, edit.Step, edit.Modifier)
 		})
 		return
 	}
