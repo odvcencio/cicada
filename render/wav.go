@@ -589,6 +589,9 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 		}
 		overrides := make(map[string]string, len(source.Params))
 		for _, param := range source.Params {
+			if param.Name == "octave" && !program.HasParameter("octave") {
+				continue
+			}
 			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
 				continue
 			}
