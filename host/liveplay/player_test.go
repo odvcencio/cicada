@@ -332,3 +332,100 @@ func TestMultipleTracksKeepLatestSlotPerTrack(t *testing.T) {
 		t.Fatalf("wrong launches: %+v", seen)
 	}
 }
+
+func liveSongScore(t *testing.T, name string, firstBars uint16) Score {
+	t.Helper()
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000, LoopSong: true}
+	cfg.Track[0].Kind = engine.VoiceAcid
+	cfg.Scenes = []engine.Scene{{Track: [16]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 0}}}, {Track: [16]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 1}}}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: firstBars}, {Scene: 1, Bars: 2}}
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name, Song: []SongEntry{{Scene: "dusk", StartBar: 1}, {Scene: "chorus", StartBar: uint32(firstBars) + 1}}}
+}
+
+func TestSongEntryStartsAtItsBarAndReanchorsTransport(t *testing.T) {
+	p, err := New(liveSongScore(t, "song", 2), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.StartSongEntry(1, "chorus"); err != nil {
+		t.Fatal(err)
+	}
+	var frame [8]byte
+	if _, err := p.Read(frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "song" || event.Bar != 3 || event.Name != "chorus" {
+		t.Fatalf("wrong song start: %+v", event)
+	}
+	if got := p.Position(); got != (Position{Bar: 3, Step: 1}) {
+		t.Fatalf("start position: %+v", got)
+	}
+	if _, err := io.CopyN(io.Discard, p, (96_000-1)*8); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Read(frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Position(); got.Bar != 4 {
+		t.Fatalf("song clock did not advance: %+v", got)
+	}
+}
+
+func TestSongEntryUsesOfferedScoreAndDiscardsBufferedOldAudio(t *testing.T) {
+	p, err := New(liveSongScore(t, "old", 2), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frame [8]byte
+	if _, err := p.Read(frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Offer(liveSongScore(t, "new", 4)); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.StartSongEntry(1, "chorus"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := p.Read(frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "edit" || event.Name != "new" || event.Bar != 5 {
+		t.Fatalf("edit did not lead jump: %+v", event)
+	}
+	if event := <-p.Events(); event.Kind != "song" || event.Bar != 5 {
+		t.Fatalf("jump used old song bar: %+v", event)
+	}
+	if got := p.Position(); got != (Position{Bar: 5, Step: 1}) {
+		t.Fatalf("jump position: %+v", got)
+	}
+}
+
+func TestMissingSongEntryDoesNotConsumePendingEdit(t *testing.T) {
+	p, err := New(liveSongScore(t, "old", 2), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Offer(liveSongScore(t, "new", 4)); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.StartSongEntry(1, "missing"); err != nil {
+		t.Fatal(err)
+	}
+	var frame [8]byte
+	if _, err := p.Read(frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "song-error" {
+		t.Fatalf("missing song entry: %+v", event)
+	}
+	if _, err := io.CopyN(io.Discard, p, (96_000-1)*8+1); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "edit" || event.Name != "new" {
+		t.Fatalf("pending edit lost after invalid request: %+v", event)
+	}
+}
