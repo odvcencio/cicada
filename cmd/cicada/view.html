@@ -38,6 +38,10 @@ h2 { font-size:1.42rem; margin:0 0 14px; letter-spacing:-.025em; }
 .song-block { min-width:135px; border:1px solid #756643; border-radius:11px; background:linear-gradient(130deg,#3b3220,#29291c); padding:12px 16px; }
 .song-block strong { display:block; overflow-wrap:anywhere; color:var(--amber); }
 .song-block span { color:#e2d5b7; font-size:.85rem; }
+.scene-pads { display:flex; flex-wrap:wrap; gap:9px; margin:0 0 15px; }
+.scene-pad { min-width:130px; min-height:44px; border:1px solid #527863; border-radius:10px; background:#21382d; color:var(--mint); padding:9px 14px; font:700 .83rem/1.2 system-ui,sans-serif; cursor:pointer; }
+.scene-pad:hover, .scene-pad[data-state="queued"] { border-color:var(--amber); color:var(--amber); }
+.scene-pad[data-state="launched"] { background:#3b3220; border-color:var(--amber); color:var(--amber); }
 .patterns { display:grid; gap:18px; }
 .pattern { border:1px solid var(--border); background:var(--panel); border-radius:16px; overflow:hidden; }
 .pattern summary { cursor:pointer; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px 18px; align-items:baseline; padding:18px 22px; background:var(--panel-raised); list-style:none; }
@@ -182,7 +186,12 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     {{if .Studio}}<div class="editor-shell" id="editor-shell" hidden><label class="sr-only" for="source-editor">Cicada source</label><textarea id="source-editor" class="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off">{{.SourceText}}</textarea></div>{{end}}
   </aside>
   <div class="projection">
-    <div id="session" class="projection-heading"><span class="eyebrow">{{if .Studio}}Session{{else}}Projection{{end}}</span><p>{{if .Studio}}Set pitches, shape notes with Accent and Slide, cycle Ratchet and Chance, and toggle drum hits. Each edit writes the score on disk.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
+    <div id="session" class="projection-heading"><span class="eyebrow">{{if .Studio}}Session{{else}}Projection{{end}}</span><p>{{if .Studio}}Launch scenes on the next bar. Shape notes and drums in the grids; those edits write the score on disk.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
+    {{if .Studio}}<section id="arrangement" aria-labelledby="arrangement-heading">
+      <h2 id="arrangement-heading">Scenes and song</h2>
+      {{if .Scenes}}<div class="scene-pads" role="group" aria-label="Scenes">{{range .Scenes}}<button type="button" class="scene-pad" data-scene="{{.ID}}" aria-label="Launch scene {{.ID}} at the next bar">▶ {{.ID}}</button>{{end}}</div>{{end}}
+      <div class="song">{{range .Song}}<div class="song-block"><strong>{{.Scene}}</strong><span>{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span></div>{{end}}</div>
+    </section>{{end}}
     <section id="patterns" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
       <div class="patterns">{{range .Patterns}}{{$pattern := .}}
@@ -208,10 +217,11 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
       <h2 id="tracks-heading">Tracks</h2>
       <div class="track-list">{{range .Tracks}}<div class="track{{if .Muted}} muted{{end}}"><span class="kind">{{.Kind}}</span><strong>{{.ID}}</strong><span class="gain">{{.Gain}}{{if .Muted}} · muted{{end}}</span></div>{{end}}</div>
     </section>
-    <section id="arrangement" aria-labelledby="arrangement-heading">
+    {{if not .Studio}}<section id="arrangement" aria-labelledby="arrangement-heading">
       <h2 id="arrangement-heading">Scenes and song</h2>
+      {{if .Scenes}}<div class="scene-pads" role="group" aria-label="Scenes">{{range .Scenes}}<span class="scene-pad">{{.ID}}</span>{{end}}</div>{{end}}
       <div class="song">{{range .Song}}<div class="song-block"><strong>{{.Scene}}</strong><span>{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span></div>{{end}}</div>
-    </section>
+    </section>{{end}}
     {{if .Studio}}<section id="history" aria-labelledby="history-heading">
       <h2 id="history-heading">History</h2>
       <p class="section-note">Edits in this Studio session, grouped by transport bar. The score file and Git keep the durable history.</p>
@@ -249,6 +259,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   const transportButton = document.getElementById('transport-button');
   const transportPosition = document.getElementById('transport-position');
   const transportPending = document.getElementById('transport-pending');
+  const scenePads = [...document.querySelectorAll('.scene-pad[data-scene]')];
   const historyList = document.getElementById('history-list');
   let original = editor.value;
   let busy = false;
@@ -290,7 +301,11 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     playing = state.playing;
     transportButton.textContent = playing ? 'Stop' : 'Play';
     transportPosition.textContent = `Bar ${state.bar} · step ${state.step}`;
-    transportPending.textContent = state.pending ? 'Edit queued for next bar' : state.landedBar ? `Landed at bar ${state.landedBar}` : '';
+    transportPending.textContent = state.pendingScene ? `${state.pendingScene} queued for next bar` : state.pending ? 'Edit queued for next bar' : state.landedBar ? `Landed at bar ${state.landedBar}` : '';
+    for (const pad of scenePads) {
+      pad.dataset.state = state.pendingScene === pad.dataset.scene ? 'queued' : state.scene === pad.dataset.scene ? 'launched' : '';
+      pad.title = pad.dataset.state === 'launched' ? 'Last manually launched scene' : '';
+    }
     if (state.error) setStatus(state.error, 'error');
   }
   transportButton.addEventListener('click', async () => {
@@ -303,6 +318,16 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     } catch (error) { setStatus('Transport connection lost: ' + error.message, 'error'); }
     finally { transportButton.disabled = false; }
   });
+  scenePads.forEach(pad => pad.addEventListener('click', async () => {
+    pad.disabled = true;
+    try {
+      const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'launch', scene:pad.dataset.scene, revision:revision()})});
+      const state = await response.json();
+      if (!response.ok) { setStatus(state.error || 'Scene launch failed', 'error'); return; }
+      showTransport(state);
+    } catch (error) { setStatus('Transport connection lost: ' + error.message, 'error'); }
+    finally { pad.disabled = false; }
+  }));
   function connectTransport() {
     const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/transport/ws`);
     socket.onmessage = event => { try { showTransport(JSON.parse(event.data)); } catch {} };

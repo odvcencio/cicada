@@ -135,6 +135,7 @@ type Engine struct {
 	loopSong, songMode           bool
 	songIndex                    int
 	songEndTick                  int64
+	manualSceneTick              int64
 }
 
 func New(cfg Config) (*Engine, error) {
@@ -429,6 +430,7 @@ func (e *Engine) Reset() {
 	e.renderFrame, e.renderFrames = 0, 0
 	e.layerMask = (1 << e.tracks) - 1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
+	e.manualSceneTick = -1
 	e.faulted = false
 }
 
