@@ -333,16 +333,16 @@ func (v *Voice) filterPair(first, second, baseG float64) (float64, float64) {
 		G := g / (1 + g)
 		k := 17 * v.params.Resonance * (1 + .25*savage)
 		gain := 1 + .35*v.params.Resonance*(1-savage)
-		den3 := 1 - G*G/2
-		a3 := (G / 2) / den3
-		den2 := 1 - G*a3/2
-		a2 := (G / 2) / den2
+		invDen3 := 1 / (1 - G*G/2)
+		a3 := (G / 2) * invDen3
+		invDen2 := 1 / (1 - G*a3/2)
+		a2 := (G / 2) * invDen2
 		c := G * a3 * a2
 		inv := 1 / (1 + g)
-		firstDen := 1 - G*a2/2 + G*k*c/2
-		refinedDen := 1 - G*a2/2
-		first = v.diode.processDiodeShaped(first, G, k, savage, inv, a3, a2, den3, den2, firstDen, refinedDen) * gain
-		second = v.diode.processDiodeShaped(second, G, k, savage, inv, a3, a2, den3, den2, firstDen, refinedDen) * gain
+		invFirstDen := 1 / (1 - G*a2/2 + G*k*c/2)
+		invRefinedDen := 1 / (1 - G*a2/2)
+		first = v.diode.processDiodeShaped(first, G, k, savage, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
+		second = v.diode.processDiodeShaped(second, G, k, savage, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
 		return first, second
 	}
 	if v.filterBlend == 1 {
