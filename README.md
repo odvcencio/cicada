@@ -37,6 +37,14 @@ The [cicada chorus](examples/cicada-chorus.cicada) tours a noise-and-ring tymbal
 
 Start a project with `go run ./cmd/cicada new night-circuit`. It creates `night-circuit/cicada.mod` and a headerless, eight-bar `main.cicada`. The nearest manifest supplies edition 1; existing files with a `cicada 1` header still work. Semantic JSON exports record the source edition separately from the project format version. Older JSON without that field reads as edition 1. The owner's [language direction](docs/design/cicada-meet-in-the-middle.md) and [Cicada Live concept](docs/design/cicada-live.pdf) guide the ongoing notation and editor work.
 
+Play a score through the native engine and keep editing its source:
+
+```sh
+go run ./cmd/cicada play examples/first-acid.cicada
+```
+
+`play` loops the song at 48 kHz. It validates each saved score outside the audio stream and lands the latest valid edit at the next bar with a five-millisecond crossfade. A score that fails to parse or compile leaves the last good version playing and prints the diagnostic. From inside a project, `cicada play` defaults to `main.cicada`; Ctrl-C stops playback.
+
 ```sh
 go run ./cmd/cicada highlight examples/cicada-chorus.cicada
 go run ./cmd/cicada highlight --html examples/cicada-chorus.cicada > cicada-chorus.html
