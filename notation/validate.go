@@ -200,12 +200,12 @@ func Validate(s *Score) []Diagnostic {
 					add("CICADA-PARAM", "steps attribute must equal the number of cells", "error", a.Position)
 				}
 			case "swing":
-				n := parseMilli(a.Value)
+				n := parseMilli(strings.TrimSuffix(a.Value, "%"))
 				if n < 50_000 || n > 75_000 {
 					add("CICADA-PARAM", "swing must be 50 to 75 percent", "error", a.Position)
 				}
 			case "gate":
-				n, err := strconv.Atoi(a.Value)
+				n, err := strconv.Atoi(strings.TrimSuffix(a.Value, "%"))
 				if err != nil || n < 10 || n > 100 {
 					add("CICADA-PARAM", "gate must be 10 to 100 percent", "error", a.Position)
 				}
