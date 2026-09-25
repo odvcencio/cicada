@@ -169,7 +169,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 <header class="hero">
   <div class="brand">Cicada / {{if .Studio}}studio{{else}}score view{{end}}</div>
   <h1>{{.Title}}</h1>
-  <p class="lede">{{if .Studio}}Edit the score or click a step. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
+  <p class="lede">{{if .Studio}}Edit the score, click a pitch row to set a note, or click a drum cell to toggle a hit. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
 <nav class="nav" aria-label="Score sections">{{if .Studio}}<a href="#notation">Code</a><a href="#session">Session</a><a href="#history">History</a><a href="#voice">Voice</a>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}{{if .Studio}}<div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span></div>{{end}}</nav>
@@ -181,7 +181,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     {{if .Studio}}<div class="editor-shell" id="editor-shell" hidden><label class="sr-only" for="source-editor">Cicada source</label><textarea id="source-editor" class="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off">{{.SourceText}}</textarea></div>{{end}}
   </aside>
   <div class="projection">
-    <div id="session" class="projection-heading"><span class="eyebrow">{{if .Studio}}Session{{else}}Projection{{end}}</span><p>{{if .Studio}}The grid follows the score on disk. Click a note or drum cell to toggle it, or edit the source directly.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
+    <div id="session" class="projection-heading"><span class="eyebrow">{{if .Studio}}Session{{else}}Projection{{end}}</span><p>{{if .Studio}}Click a pitch row to set or clear a note, or a drum cell to toggle a hit. Each edit writes the score on disk.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
     <section id="patterns" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
       <div class="patterns">{{range .Patterns}}{{$pattern := .}}
@@ -192,7 +192,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
             {{if .Drums}}
               {{range .Lanes}}{{$lane := .}}<div class="grid-line" style="--steps:{{len .Cells}}"><span class="row-label">{{.Name}}</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell drum-cell step-edit{{if .Accent}} accent{{end}}" data-pattern="{{$pattern.ID}}" data-lane="{{$lane.ID}}" data-step="{{.Index}}" aria-label="Toggle {{$pattern.ID}} {{$lane.Name}} {{.Label}}">{{if .Active}}<span class="fill" style="--velocity:{{.FillPercent}}%"></span><span class="glyph">●</span>{{else}}·{{end}}</button>{{else}}<span class="cell drum-cell{{if .Accent}} accent{{end}}" aria-label="{{.Label}}">{{if .Active}}<span class="fill" style="--velocity:{{.FillPercent}}%"></span><span class="glyph">●</span>{{else}}·{{end}}</span>{{end}}{{end}}</div>{{end}}
             {{else}}
-              {{range .PitchRows}}<div class="grid-line pitch-row" style="--steps:{{len .Cells}}"><span class="row-label pitch-label">{{.Name}}</span>{{range .Cells}}<span class="cell pitch-cell{{if .On}} on{{end}}{{if .Accent}} accent{{end}}"{{if .On}} aria-label="{{.Label}}"{{end}}>{{if .On}}●{{end}}</span>{{end}}</div>{{end}}
+              {{range .PitchRows}}{{$row := .}}<div class="grid-line pitch-row" style="--steps:{{len .Cells}}"><span class="row-label pitch-label">{{.Name}}</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell pitch-cell step-edit{{if .On}} on{{end}}{{if .Accent}} accent{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-pitch="{{$row.Note}}" aria-label="{{if .On}}Clear{{else}}Set{{end}} {{$pattern.ID}} step {{.Number}} {{if .On}}at{{else}}to{{end}} {{$row.Name}}">{{if .On}}●{{end}}</button>{{else}}<span class="cell pitch-cell{{if .On}} on{{end}}{{if .Accent}} accent{{end}}"{{if .On}} aria-label="{{.Label}}"{{end}}>{{if .On}}●{{end}}</span>{{end}}{{end}}</div>{{end}}
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Note</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell note step-edit{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" aria-label="Toggle {{$pattern.ID}} {{.Label}}">{{.Note}}</button>{{else}}<span class="cell note{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" aria-label="{{.Label}}">{{.Note}}</span>{{end}}{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Accent</span>{{range .Cells}}<span class="cell flag{{if .Accent}} on{{end}}">{{if .Accent}}◆{{else}}·{{end}}</span>{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Slide</span>{{range .Cells}}<span class="cell flag slide{{if .Slide}} on{{end}}">{{if .Slide}}↗{{else if .Tie}}━{{else}}·{{end}}</span>{{end}}</div>
@@ -279,7 +279,9 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   editor.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); save.click(); } });
   document.querySelectorAll('.step-edit').forEach(cell => cell.addEventListener('click', () => {
     if (dirty()) { setStatus('Save or discard source edits before changing the grid', 'error'); return; }
-    send('/api/toggle', {pattern:cell.dataset.pattern, lane:cell.dataset.lane || '', step:Number(cell.dataset.step)});
+    const edit = {pattern:cell.dataset.pattern, lane:cell.dataset.lane || '', step:Number(cell.dataset.step)};
+    if (cell.dataset.pitch !== undefined) edit.pitch = Number(cell.dataset.pitch);
+    send('/api/toggle', edit);
   }));
   let playing = false;
   function showTransport(state) {
