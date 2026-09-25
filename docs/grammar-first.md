@@ -20,32 +20,32 @@ This grammar-first prototype broadens an acid-focused music engine toward an ext
 The parser accepts tracks, authored drum kits, note and drum patterns, scenes, song arrangements, named phrases, and custom instrument declarations. Braces make the syntax independent of indentation. `//` comments are named CST nodes, so editor tooling can retain them. Every syntax node has a source span.
 
 ```cicada
-cicada 1
 tempo 138
 key a minor
 seed 4242
 
-phrase hook acid { 1^ . 1~ 5 . 1 7, . }
+phrase hook { 1^ . 1~ 5 . 1 7, . }
 
-pattern bass-b acid steps=16 swing=54 {
+pattern bass-b {
+  swing = 54%
   use hook
-  use hook transpose=12
+  use hook +12
 }
 
 instrument glassbass {
-  param cutoff: hz = 720hz;
-  param bite: unit = 0.65;
+  param cutoff = 720Hz
+  param bite = 0.65
   voice mono {
-    let osc = saw(pitch);
-    let sub = square(pitch / 2);
-    let tone = mix(osc, sub, 0.25);
-    let shape = env(gate, 380ms);
-    out = ladder(tone, cutoff * exp2(shape * 3), bite) * shape;
+    let osc = saw(pitch)
+    let sub = square(pitch / 2)
+    let tone = mix(osc, sub, 0.25)
+    let shape = env(gate, 380ms)
+    out = ladder(tone, cutoff * exp2(shape * 3), bite) * shape
   }
 }
 
-track lead glassbass { cutoff = 900hz }
-pattern lead-a notes steps=16 { 5 . . . 3 . . . | 1' . . . 7 . . . }
+track lead glassbass { cutoff = 900Hz }
+pattern lead-a { 5 . . . 3 . . . | 1' . . . 7 . . . }
 scene main { lead=lead-a }
 song { main*16 }
 ```
@@ -61,6 +61,8 @@ Frequency and level literals accept `Hz`, `kHz`, and `dB` (`720Hz`, `2kHz`, `-6d
 Pattern settings may live inside the braces: `pattern riff { swing = 56% gate = 60% 1 . 3 . }`. The formatter places each setting on its own line before the steps. Header attributes remain valid for older scores, and a percent sign is optional on legacy swing and gate values.
 
 Statement terminators are optional in instruments, authored kits, and drum rows. `cicada fmt` removes legacy semicolons and places each statement or drum lane on its own line. Drum labels include their colon as one token (`bd:`), so `bd :` with a space is not a label. Phrase uses can say `use hook +7` for seven semitones up; `use hook transpose=7` remains accepted.
+
+An instrument parameter can infer its unit from its default: `param cutoff = 720Hz`, `param decay = 0.3s`, and `param bite = 0.65`. Explicit types such as `param cutoff: hz = 720Hz` remain accepted. Project conversion prints the concise form.
 
 ## Instrument code
 
