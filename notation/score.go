@@ -59,12 +59,15 @@ type KitBinding struct {
 // Instrument is source code for a custom voice. Expressions are compiled to
 // a bounded DSP graph in package instrument; they are not executed by Parse.
 type Instrument struct {
-	Name     string
-	Params   []InstrumentParam
-	Mode     string
-	Lets     []Let
-	Output   *Expr
-	Position Position
+	Name           string
+	Octave         int // home register for notes without an explicit octave
+	OctaveSet      bool
+	OctavePosition Position
+	Params         []InstrumentParam
+	Mode           string
+	Lets           []Let
+	Output         *Expr
+	Position       Position
 }
 
 type InstrumentParam struct {

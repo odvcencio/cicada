@@ -79,6 +79,9 @@ func Validate(s *Score) []Diagnostic {
 			add("CICADA-DUPLICATE", "duplicate instrument "+inst.Name, "error", inst.Position)
 		}
 		instruments[inst.Name] = inst
+		if inst.Octave < 0 || inst.Octave > 6 {
+			add("CICADA-PARAM", "instrument octave must be 0 to 6", "error", inst.OctavePosition)
+		}
 		if inst.Mode != "mono" && inst.Mode != "poly" {
 			add("CICADA-PARAM", "voice mode must be mono or poly", "error", inst.Position)
 		} else if inst.Mode == "poly" {
@@ -90,6 +93,9 @@ func Validate(s *Score) []Diagnostic {
 		seen := map[string]bool{}
 		for _, param := range inst.Params {
 			checkID(param.Name, param.Position)
+			if param.Name == "octave" {
+				add("CICADA-PARAM", "octave is an instrument setting, not a synthesis parameter", "error", param.Position)
+			}
 			if seen[param.Name] {
 				add("CICADA-DUPLICATE", "duplicate instrument parameter "+param.Name, "error", param.Position)
 			}
@@ -413,6 +419,9 @@ func validTrackParam(kind, name string, instruments map[string]Instrument) bool 
 		return len(parts) == 2 && drumParams[parts[0]][parts[1]]
 	}
 	if inst, ok := instruments[kind]; ok {
+		if name == "octave" {
+			return true
+		}
 		for _, param := range inst.Params {
 			if param.Name == name {
 				return true
