@@ -136,6 +136,7 @@ type Engine struct {
 	songIndex                    int
 	songEndTick                  int64
 	manualSceneTick              int64
+	manualPatternTick            [16]int64
 }
 
 func New(cfg Config) (*Engine, error) {
@@ -153,7 +154,10 @@ func New(cfg Config) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4}
+	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1}
+	for i := range e.manualPatternTick {
+		e.manualPatternTick[i] = -1
+	}
 	if cfg.DelayA != nil {
 		e.delayA, err = fx.NewDelay(cfg.SampleRate, cfg.BPMMilli)
 		if err == nil {
@@ -431,6 +435,9 @@ func (e *Engine) Reset() {
 	e.layerMask = (1 << e.tracks) - 1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
 	e.manualSceneTick = -1
+	for i := range e.manualPatternTick {
+		e.manualPatternTick[i] = -1
+	}
 	e.faulted = false
 }
 
@@ -769,6 +776,9 @@ func (e *Engine) apply(c cmd.Command) {
 		e.patterns[c.Track].heldValid = false
 		e.emit(cmd.Message{Kind: cmd.NoteOff, Track: c.Track, Tick: e.transport.Tick()})
 	case cmd.OpSetStep, cmd.OpSetPatternLen, cmd.OpSetPatternMeta, cmd.OpSelectPattern:
+		if c.Op == cmd.OpSelectPattern && c.Arg0 == 0 {
+			e.manualPatternTick[c.Track] = e.transport.Tick()
+		}
 		e.applyPatternCommand(c)
 	case cmd.OpSetChain:
 		e.applyChainCommand(c)
