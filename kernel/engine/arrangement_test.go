@@ -128,6 +128,26 @@ func TestManualPatternWinsOnlyItsTrackAtSongBoundary(t *testing.T) {
 	}
 }
 
+func TestSeekThenPlayStartsContainingSongEntry(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices = 1, 1
+	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}}, {Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}}}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 2}, {Scene: 1, Bars: 2}}
+	cfg.LoopSong = true
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.PushBatch([]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: 2}, {Op: cmd.OpPlay, Track: 0xff}}) {
+		t.Fatal("song start commands rejected")
+	}
+	var left, right [128]float32
+	e.Render(left[:], right[:])
+	if !e.songMode || e.songIndex != 1 || e.patterns[0].active != 1 || e.transport.Tick() < 2*seq.TicksPerBar {
+		t.Fatalf("song did not start at second entry: mode=%v index=%d slot=%d tick=%d", e.songMode, e.songIndex, e.patterns[0].active, e.transport.Tick())
+	}
+}
+
 func TestInvalidArrangementRejected(t *testing.T) {
 	cfg := testConfig()
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}}

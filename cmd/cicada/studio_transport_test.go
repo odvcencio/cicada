@@ -3,10 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -251,5 +253,80 @@ func TestStudioQueuesNewlySavedSlotAfterScoreOffer(t *testing.T) {
 	}
 	if event := <-stream.Events(); event.Kind != "slot" || event.Bar != 3 || event.Name != "riff" {
 		t.Fatalf("newly saved slot did not launch: %+v", event)
+	}
+}
+
+func TestStudioPlayFromSongBlockUsesActiveScore(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "song.cicada")
+	if err := os.WriteFile(path, []byte(studioSongScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	initial, err := compileLiveScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := liveplay.New(initial, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint, err := playSourceHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	project, err := compileStudioSource(path, []byte(studioSongScore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := newStudioTransport(path)
+	transport.stream, transport.playing, transport.last = stream, true, fingerprint
+	transport.history = newStudioHistory([]byte(studioSongScore))
+	studio := &studio{path: path, lastGoodSource: []byte(studioSongScore), lastGoodProject: project, transport: transport}
+	command := func(source, scene string, index int) *httptest.ResponseRecorder {
+		t.Helper()
+		body := fmt.Sprintf(`{"action":"playFrom","entry":%d,"scene":%q,"revision":%q}`, index, scene, studioRevision([]byte(source)))
+		response := httptest.NewRecorder()
+		studio.transportCommand(response, httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(body)))
+		return response
+	}
+	if response := command(studioSongScore, "dusk", 2); response.Code != http.StatusOK || transport.snapshot().PendingSong != "dusk" {
+		t.Fatalf("song start: %d %s", response.Code, response.Body.String())
+	}
+	var frame [8]byte
+	if _, err := stream.Read(frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-stream.Events():
+		if event.Kind != "song" || event.Bar != 4 {
+			t.Fatalf("wrong song start: %+v", event)
+		}
+		transport.markLanded(event)
+	default:
+		t.Fatal("song did not start")
+	}
+	if state := transport.snapshot(); state.PendingSong != "" || state.Bar != 4 || state.Scene != "dusk" {
+		t.Fatalf("song state: %+v", state)
+	}
+	if response := command(studioSongScore, "chorus", 2); response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("wrong song block accepted: %d", response.Code)
+	}
+	updated := strings.Replace(studioSongScore, "dusk*2", "dusk*5", 1)
+	if err := os.WriteFile(path, []byte(updated), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if response := command(updated, "dusk", 2); response.Code != http.StatusOK {
+		t.Fatalf("edited song start: %d %s", response.Code, response.Body.String())
+	}
+	if _, err := stream.Read(frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-stream.Events(); event.Kind != "edit" || event.Bar != 7 {
+		t.Fatalf("edit did not lead song jump: %+v", event)
+	}
+	if event := <-stream.Events(); event.Kind != "song" || event.Bar != 7 {
+		t.Fatalf("edited song started at old bar: %+v", event)
+	}
+	if got := stream.Position(); got.Bar != 7 {
+		t.Fatalf("edited song position: %+v", got)
 	}
 }

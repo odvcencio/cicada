@@ -71,6 +71,30 @@ func TestSongEditsPreserveCRLFAndMultiplierSpacing(t *testing.T) {
 	}
 }
 
+func TestStudioSongLaneOffersPlayFromEachBlock(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "song.cicada")
+	if err := os.WriteFile(path, []byte(studioSongScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := studioHandler(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := studioCall(t, handler, "/", nil)
+	if page.Code != http.StatusOK {
+		t.Fatalf("studio page: %d", page.Code)
+	}
+	for _, label := range []string{
+		"Play song from dusk, bar 1",
+		"Play song from chorus, bar 3",
+		"Play song from dusk, bar 4",
+	} {
+		if !strings.Contains(page.Body.String(), `aria-label="`+label+`"`) {
+			t.Fatalf("missing song play control %q", label)
+		}
+	}
+}
+
 func TestStudioSongRouteUpdatesFileAndRejectsStaleRevision(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "score.cicada")
 	if err := os.WriteFile(path, []byte(studioSongScore), 0600); err != nil {

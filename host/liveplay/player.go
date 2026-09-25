@@ -23,6 +23,12 @@ type Score struct {
 	Name       string
 	SceneIDs   []string     // engine scene indices in source order
 	Tracks     []TrackSlots // engine track and slot indices in source order
+	Song       []SongEntry  // song entries with one-based start bars
+}
+
+type SongEntry struct {
+	Scene    string
+	StartBar uint32
 }
 
 type TrackSlots struct {
@@ -41,6 +47,11 @@ type SlotRequest struct {
 	Track, Pattern string
 }
 
+type StartRequest struct {
+	Index int
+	Scene string
+}
+
 type slotBatch struct{ requests [16]SlotRequest }
 
 // Position is the most recently rendered musical location. Step is one-based
@@ -53,26 +64,28 @@ type Position struct {
 // Player implements io.Reader for interleaved stereo float32 little-endian PCM.
 // Read is owned by the audio device; Offer may be called from a file watcher.
 type Player struct {
-	current       Score
-	previous      *engine.Engine
-	clock         seq.Clock
-	rate          int
-	sample        int64
-	bar           int64
-	nextBarSample int64
-	fadeTotal     int
-	fadeRemaining int
-	offers        chan Score
-	launches      chan string
-	slotLaunches  atomic.Pointer[slotBatch]
-	events        chan Event
-	left, right   [blockFrames]float32
-	oldL, oldR    [blockFrames]float32
-	pcm           [blockFrames * 8]byte
-	buffered      int
-	read          int
-	fault         error
-	position      atomic.Uint64
+	current           Score
+	previous          *engine.Engine
+	clock             seq.Clock
+	rate              int
+	sample            int64
+	bar               int64
+	nextBarSample     int64
+	fadeTotal         int
+	fadeRemaining     int
+	offers            chan Score
+	launches          chan string
+	starts            chan StartRequest
+	slotLaunches      atomic.Pointer[slotBatch]
+	events            chan Event
+	left, right       [blockFrames]float32
+	oldL, oldR        [blockFrames]float32
+	pcm               [blockFrames * 8]byte
+	buffered          int
+	read              int
+	fault             error
+	jumpFadeRemaining int
+	position          atomic.Uint64
 }
 
 func New(initial Score, rate int) (*Player, error) {
@@ -89,7 +102,7 @@ func New(initial Score, rate int) (*Player, error) {
 	p := &Player{
 		current: initial, clock: clock, rate: rate,
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
-		offers:        make(chan Score, 1), launches: make(chan string, 1), events: make(chan Event, 32),
+		offers:        make(chan Score, 1), launches: make(chan string, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
 	}
 	p.position.Store(1<<8 | 1)
 	return p, nil
@@ -145,6 +158,33 @@ func (p *Player) CancelScene() {
 	}
 }
 
+// StartSongEntry requests an immediate transport jump to a named song block.
+// The audio reader resolves it against the score it will render next.
+func (p *Player) StartSongEntry(index int, scene string) error {
+	if index < 0 || scene == "" {
+		return fmt.Errorf("song entry index and scene are required")
+	}
+	request := StartRequest{Index: index, Scene: scene}
+	for {
+		select {
+		case p.starts <- request:
+			return nil
+		default:
+			select {
+			case <-p.starts:
+			default:
+			}
+		}
+	}
+}
+
+func (p *Player) CancelStart() {
+	select {
+	case <-p.starts:
+	default:
+	}
+}
+
 // SelectPattern queues the latest launch per track in an immutable snapshot.
 // The audio reader takes that snapshot at a bar boundary without locking.
 func (p *Player) SelectPattern(track, pattern string) error {
@@ -193,6 +233,7 @@ func (p *Player) Read(out []byte) (int, error) {
 	}
 	written := 0
 	for written < len(out) {
+		p.beginRequestedSong()
 		if p.read == p.buffered {
 			if p.fault != nil {
 				if written > 0 {
@@ -210,6 +251,55 @@ func (p *Player) Read(out []byte) (int, error) {
 		p.read += n
 	}
 	return written, nil
+}
+
+func (p *Player) beginRequestedSong() {
+	select {
+	case request := <-p.starts:
+		var next Score
+		hasOffer := false
+		select {
+		case next = <-p.offers:
+			hasOffer = true
+		default:
+		}
+		selected := p.current
+		if hasOffer {
+			selected = next
+		}
+		if request.Index >= len(selected.Song) || selected.Song[request.Index].Scene != request.Scene || selected.Song[request.Index].StartBar == 0 {
+			if hasOffer {
+				select {
+				case p.offers <- next:
+				default:
+				}
+			}
+			p.emit(Event{Kind: "song-error", Name: request.Scene})
+			return
+		}
+		start := selected.Song[request.Index].StartBar
+		p.read, p.buffered = 0, 0
+		p.previous, p.fadeRemaining = nil, 0
+		if hasOffer {
+			p.previous = p.current.Engine
+			p.current = next
+			p.fadeTotal, p.fadeRemaining = p.rate/200, p.rate/200
+			p.emit(Event{Bar: int64(start), Name: next.Name, Kind: "edit"})
+			p.jumpFadeRemaining = 0
+		} else {
+			p.jumpFadeRemaining = p.rate / 200
+		}
+		if !p.current.Engine.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: start - 1}) || !p.current.Engine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+			p.fault = fmt.Errorf("live engine rejected song start at bar %d", start)
+			return
+		}
+		p.bar = int64(start) - 1
+		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.BPMMilli, AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
+		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
+		p.position.Store(uint64(start)<<8 | 1)
+		p.emit(Event{Bar: int64(start), Name: request.Scene, Kind: "song"})
+	default:
+	}
 }
 
 func (p *Player) renderBlock() {
@@ -323,6 +413,15 @@ func (p *Player) renderBlock() {
 		if p.fadeRemaining == 0 {
 			p.previous = nil
 		}
+	}
+	if p.jumpFadeRemaining > 0 {
+		fadeFrames := min(frames, p.jumpFadeRemaining)
+		for i := 0; i < fadeFrames; i++ {
+			gain := float32(p.rate/200-p.jumpFadeRemaining+i+1) / float32(p.rate/200)
+			p.left[i] *= gain
+			p.right[i] *= gain
+		}
+		p.jumpFadeRemaining -= fadeFrames
 	}
 	for i := 0; i < frames; i++ {
 		binary.LittleEndian.PutUint32(p.pcm[i*8:], math.Float32bits(p.left[i]))
