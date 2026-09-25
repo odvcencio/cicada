@@ -1,5 +1,11 @@
 # Live engine and WASM host contract
 
+## Native score playback
+
+`cicada play [score.cicada]` opens the system audio device at 48 kHz and streams stereo float32 from the native engine. The command watches the score and its nearest `cicada.mod`. Parsing, validation, graph compilation, and engine construction run outside the audio reader. On a valid save, the newest compiled engine replaces the old one at the exact next bar sample; a five-millisecond crossfade joins their output. Invalid edits leave the previous score running. The song loops until Ctrl-C.
+
+The native reader accepts arbitrary byte sizes from the audio driver while keeping complete stereo frames in order. Its clock follows the engine's integer tick-to-sample mapping; a tempo edit reanchors at the landing bar. The host unit tests cover exact bar-frame landing, superseded edits, tempo changes, and last-good-score recovery without requiring an audio device.
+
 The host compiles a validated Cicada project outside the audio callback. `project.CompileEngine` returns native `engine.Config` with owned track, pattern, scene, and song data; `engine.New` validates and copies those tables. `Render` accepts 1–4096 equal-length float32 stereo frames and allocates nothing after `New`. A fault silences the remaining block and stops transport.
 
 ## TinyGo startup
