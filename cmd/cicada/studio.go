@@ -149,6 +149,7 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
+	mux.HandleFunc("POST /api/song", s.editSong)
 	mux.HandleFunc("POST /api/transport", s.transportCommand)
 	mux.HandleFunc("GET /api/transport", s.transportState)
 	mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
@@ -235,12 +236,30 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 
 type studioEdit struct {
 	Revision string `json:"revision"`
+	Action   string `json:"action,omitempty"`
+	Index    int    `json:"index,omitempty"`
+	Target   int    `json:"target,omitempty"`
+	Bars     int    `json:"bars,omitempty"`
 	Source   string `json:"source"`
 	Pattern  string `json:"pattern"`
 	Lane     string `json:"lane"`
 	Step     int    `json:"step"`
 	Pitch    *int   `json:"pitch,omitempty"`
 	Modifier string `json:"modifier,omitempty"`
+}
+
+func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
+	edit, ok := studioRequest(w, r)
+	if !ok {
+		return
+	}
+	if edit.Action != "move" && edit.Action != "bars" {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "song action must be move or bars"})
+		return
+	}
+	s.apply(w, edit, func(source []byte) ([]byte, error) {
+		return editedSongSource(source, edit.Action, edit.Index, edit.Target, edit.Bars)
+	})
 }
 
 func studioRequest(w http.ResponseWriter, r *http.Request) (studioEdit, bool) {
