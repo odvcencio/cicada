@@ -116,6 +116,10 @@ func TestStudioSceneLaunchUsesNativeTransport(t *testing.T) {
 	}
 	transport := newStudioTransport(path)
 	transport.stream, transport.playing = stream, true
+	transport.last, err = playSourceHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	transport.history = newStudioHistory([]byte(studioScore))
 	// Exercise the HTTP command against an active stream without opening an audio device.
 	p, err := compileStudioSource(path, []byte(studioScore))
@@ -156,10 +160,96 @@ func TestStudioSceneLaunchUsesNativeTransport(t *testing.T) {
 	if response.Code != http.StatusConflict {
 		t.Fatalf("stale scene page: %d", response.Code)
 	}
+	response = httptest.NewRecorder()
+	studio.transportCommand(response, httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(`{"action":"slot","track":"bass","pattern":"pulse","revision":"`+revision+`"}`)))
+	if response.Code != http.StatusOK || transport.snapshot().PendingSlots["bass"] != "pulse" {
+		t.Fatalf("slot command: %d %s", response.Code, response.Body.String())
+	}
+	if _, err := io.CopyN(io.Discard, stream, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-stream.Events():
+		if event.Kind != "slot" || event.Bar != 3 || event.Track != "bass" || event.Name != "pulse" {
+			t.Fatalf("wrong slot event: %+v", event)
+		}
+		transport.markLanded(event)
+	default:
+		t.Fatal("slot did not land")
+	}
+	if len(transport.snapshot().PendingSlots) != 0 {
+		t.Fatal("landed slot remained pending")
+	}
+	response = httptest.NewRecorder()
+	studio.transportCommand(response, httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(`{"action":"slot","track":"drums","pattern":"beat","revision":"`+revision+`"}`)))
+	if response.Code != http.StatusOK {
+		t.Fatalf("second-track slot: %d %s", response.Code, response.Body.String())
+	}
+	if _, err := io.CopyN(io.Discard, stream, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-stream.Events():
+		if event.Kind != "slot" || event.Bar != 4 || event.Track != "drums" || event.Name != "beat" {
+			t.Fatalf("wrong second-track event: %+v", event)
+		}
+	default:
+		t.Fatal("second-track slot did not land")
+	}
+	response = httptest.NewRecorder()
+	studio.transportCommand(response, httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(`{"action":"slot","track":"bass","pattern":"missing","revision":"`+revision+`"}`)))
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("unknown slot: %d", response.Code)
+	}
 	transport.playing = false
 	response = httptest.NewRecorder()
 	studio.transportCommand(response, httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(`{"action":"launch","scene":"main","revision":"`+revision+`"}`)))
 	if response.Code != http.StatusConflict {
 		t.Fatalf("stopped transport launch: %d", response.Code)
+	}
+}
+
+func TestStudioQueuesNewlySavedSlotAfterScoreOffer(t *testing.T) {
+	_, path := studioTestHandler(t)
+	initial, err := compileLiveScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := liveplay.New(initial, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fingerprint, err := playSourceHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := newStudioTransport(path)
+	transport.stream, transport.playing, transport.last = stream, true, fingerprint
+	p, err := compileStudioSource(path, []byte(studioScore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	studio := &studio{path: path, lastGoodSource: []byte(studioScore), lastGoodProject: p, transport: transport}
+	updated := strings.ReplaceAll(studioScore, "pulse", "riff")
+	if err := os.WriteFile(path, []byte(updated), 0600); err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(`{"action":"slot","track":"bass","pattern":"riff","revision":"`+studioRevision([]byte(updated))+`"}`))
+	response := httptest.NewRecorder()
+	studio.transportCommand(response, request)
+	if response.Code != http.StatusOK || !transport.snapshot().Pending || transport.snapshot().PendingSlots["bass"] != "riff" {
+		t.Fatalf("new score/slot queue: %d %s", response.Code, response.Body.String())
+	}
+	if _, err := io.CopyN(io.Discard, stream, 96_000*8+1); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-stream.Events(); event.Kind != "edit" || event.Bar != 2 {
+		t.Fatalf("edit did not precede slot: %+v", event)
+	}
+	if _, err := io.CopyN(io.Discard, stream, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-stream.Events(); event.Kind != "slot" || event.Bar != 3 || event.Name != "riff" {
+		t.Fatalf("newly saved slot did not launch: %+v", event)
 	}
 }

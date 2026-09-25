@@ -79,6 +79,16 @@ type viewScene struct {
 	ID string
 }
 
+type viewSceneCell struct {
+	Scene, Track, Pattern, Label string
+	Launchable                   bool
+}
+
+type viewSceneRow struct {
+	Track string
+	Cells []viewSceneCell
+}
+
 type scoreView struct {
 	Title, Tempo, Key, SourceName string
 	SourceHTML                    template.HTML
@@ -90,6 +100,7 @@ type scoreView struct {
 	Voices                        []viewVoice
 	Patterns                      []viewPattern
 	Scenes                        []viewScene
+	SceneRows                     []viewSceneRow
 	Song                          []viewSongEntry
 }
 
@@ -200,6 +211,21 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 	}
 	for _, scene := range p.Scenes {
 		view.Scenes = append(view.Scenes, viewScene{ID: scene.ID})
+	}
+	for _, track := range p.Tracks {
+		row := viewSceneRow{Track: track.ID, Cells: make([]viewSceneCell, 0, len(p.Scenes))}
+		for _, scene := range p.Scenes {
+			binding := scene.Bindings[track.ID]
+			if binding == "" {
+				binding = "keep"
+			}
+			label := binding
+			if label == "off" {
+				label = "stop"
+			}
+			row.Cells = append(row.Cells, viewSceneCell{Scene: scene.ID, Track: track.ID, Pattern: binding, Label: label, Launchable: binding != "keep" && binding != "stop" && binding != "off"})
+		}
+		view.SceneRows = append(view.SceneRows, row)
 	}
 	page, err := template.New("view").Parse(scoreViewTemplate)
 	if err != nil {

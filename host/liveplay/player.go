@@ -21,14 +21,27 @@ type Score struct {
 	SampleRate int
 	BPMMilli   int64
 	Name       string
-	SceneIDs   []string // engine scene indices in source order
+	SceneIDs   []string     // engine scene indices in source order
+	Tracks     []TrackSlots // engine track and slot indices in source order
+}
+
+type TrackSlots struct {
+	ID    string
+	Slots [16]string
 }
 
 type Event struct {
-	Bar  int64 // one-based bar that has just begun
-	Name string
-	Kind string // edit, scene, or scene-error
+	Bar   int64 // one-based bar that has just begun
+	Name  string
+	Kind  string // edit, scene, or scene-error
+	Track string // set for one-track slot events
 }
+
+type SlotRequest struct {
+	Track, Pattern string
+}
+
+type slotBatch struct{ requests [16]SlotRequest }
 
 // Position is the most recently rendered musical location. Step is one-based
 // within a 16-step bar; the audio device may still be playing buffered frames.
@@ -51,6 +64,7 @@ type Player struct {
 	fadeRemaining int
 	offers        chan Score
 	launches      chan string
+	slotLaunches  atomic.Pointer[slotBatch]
 	events        chan Event
 	left, right   [blockFrames]float32
 	oldL, oldR    [blockFrames]float32
@@ -75,7 +89,7 @@ func New(initial Score, rate int) (*Player, error) {
 	p := &Player{
 		current: initial, clock: clock, rate: rate,
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
-		offers:        make(chan Score, 1), launches: make(chan string, 1), events: make(chan Event, 16),
+		offers:        make(chan Score, 1), launches: make(chan string, 1), events: make(chan Event, 32),
 	}
 	p.position.Store(1<<8 | 1)
 	return p, nil
@@ -129,6 +143,42 @@ func (p *Player) CancelScene() {
 	case <-p.launches:
 	default:
 	}
+}
+
+// SelectPattern queues the latest launch per track in an immutable snapshot.
+// The audio reader takes that snapshot at a bar boundary without locking.
+func (p *Player) SelectPattern(track, pattern string) error {
+	if track == "" || pattern == "" {
+		return fmt.Errorf("track and pattern are required")
+	}
+	for {
+		old := p.slotLaunches.Load()
+		next := &slotBatch{}
+		if old != nil {
+			*next = *old
+		}
+		index := -1
+		for i, request := range next.requests {
+			if request.Track == track {
+				index = i
+				break
+			}
+			if request.Track == "" && index < 0 {
+				index = i
+			}
+		}
+		if index < 0 {
+			return fmt.Errorf("too many tracks have queued patterns")
+		}
+		next.requests[index] = SlotRequest{Track: track, Pattern: pattern}
+		if p.slotLaunches.CompareAndSwap(old, next) {
+			return nil
+		}
+	}
+}
+
+func (p *Player) CancelPatterns() {
+	p.slotLaunches.Swap(nil)
 }
 
 // Position can be read safely by a UI thread while Read renders audio.
@@ -208,6 +258,39 @@ func (p *Player) renderBlock() {
 					p.emit(Event{Bar: p.bar + 1, Name: name, Kind: "scene"})
 				}
 			default:
+			}
+			if batch := p.slotLaunches.Swap(nil); batch != nil {
+				for _, request := range batch.requests {
+					if request.Track == "" {
+						continue
+					}
+					track := -1
+					for i, candidate := range p.current.Tracks {
+						if candidate.ID == request.Track {
+							track = i
+							break
+						}
+					}
+					if track < 0 || track >= 16 {
+						p.emit(Event{Bar: p.bar + 1, Name: request.Pattern, Track: request.Track, Kind: "slot-error"})
+						continue
+					}
+					slot := -1
+					for j, name := range p.current.Tracks[track].Slots {
+						if name == request.Pattern {
+							slot = j
+							break
+						}
+					}
+					if slot < 0 {
+						p.emit(Event{Bar: p.bar + 1, Name: request.Pattern, Track: request.Track, Kind: "slot-error"})
+					} else if !p.current.Engine.Push(cmd.Command{Op: cmd.OpSelectPattern, Track: uint8(track), Index: uint16(slot), Arg0: 0}) {
+						p.fault = fmt.Errorf("live engine rejected pattern %q on track %q", request.Pattern, request.Track)
+						return
+					} else {
+						p.emit(Event{Bar: p.bar + 1, Name: request.Pattern, Track: request.Track, Kind: "slot"})
+					}
+				}
 			}
 		}
 		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
