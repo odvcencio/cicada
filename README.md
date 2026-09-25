@@ -37,6 +37,8 @@ The [cicada chorus](examples/cicada-chorus.cicada) tours a noise-and-ring tymbal
 
 Start a project with `go run ./cmd/cicada new night-circuit`. It creates `night-circuit/cicada.mod` and a headerless, eight-bar `main.cicada`. The nearest manifest supplies edition 1; existing files with a `cicada 1` header still work. Semantic JSON exports record the source edition separately from the project format version. Older JSON without that field reads as edition 1. The owner's [language direction](docs/design/cicada-meet-in-the-middle.md) and [Cicada Live concept](docs/design/cicada-live.pdf) guide the ongoing notation and editor work.
 
+`go run ./cmd/cicada fix score.cicada` moves a standalone legacy header into `cicada.mod`, writes missing instrument octaves, removes redundant `steps`, phrase `acid`, and pattern `notes` tags, moves pattern settings inside their braces, shortens positive phrase transposes, uses `?` for note chance, writes SI unit case, and removes statement terminators. It preserves comments and checks that the semantic project stays identical. Use `--check` to see whether this migration is needed without writing files. Further spelling migrations remain in the rollout.
+
 Play a score through the native engine and keep editing its source:
 
 ```sh
