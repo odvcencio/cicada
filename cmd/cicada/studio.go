@@ -105,7 +105,29 @@ func studioHandler(path string) (http.Handler, error) {
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
-	return mux, nil
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !studioLoopbackHost(r.Host) {
+			http.Error(w, "Studio requires a loopback host", http.StatusForbidden)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}), nil
+}
+
+func studioLoopbackHost(address string) bool {
+	host := address
+	if strings.Contains(address, ":") {
+		var err error
+		host, _, err = net.SplitHostPort(address)
+		if err != nil {
+			return false
+		}
+	}
+	if strings.EqualFold(host, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }
 
 func studioRevision(source []byte) string {
