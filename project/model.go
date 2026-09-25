@@ -18,6 +18,7 @@ const FormatID = "cicada.project/1"
 type Project struct {
 	Format      string       `cicada:"Semantic format identifier" json:"format"`
 	Version     int          `cicada:"Semantic format version" json:"version"`
+	Edition     int          `cicada:"Source language edition" default:"1" json:"edition,omitempty"`
 	Title       string       `cicada:"Project title" json:"title"`
 	TempoMilli  int          `cicada:"Tempo in thousandths of a beat per minute" unit:"milli-BPM" range:"20000..300000" json:"tempo_milli"`
 	Key         Key          `cicada:"Tonal root and scale" json:"key"`
@@ -157,7 +158,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-KEY", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	p := &Project{
-		Format: FormatID, Version: 1, Title: score.Title, TempoMilli: int(score.TempoMilli),
+		Format: FormatID, Version: 1, Edition: 1, Title: score.Title, TempoMilli: int(score.TempoMilli),
 		Key: Key{Root: root, Scale: score.Scale}, Seed: uint32(score.Seed),
 		Instruments: []Instrument{}, Kits: []Kit{}, Tracks: []Track{}, Patterns: []Pattern{},
 		Scenes: []Scene{}, Song: []SongEntry{}, Effects: []Effect{},

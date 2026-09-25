@@ -34,7 +34,7 @@ func TestFirstAcidCanonicalJSON(t *testing.T) {
 	if !bytes.HasSuffix(encoded, []byte("\n")) || bytes.Contains(encoded, []byte("\r")) || bytes.ContainsAny(encoded, "eE+") && strings.Contains(string(encoded), "1e-") {
 		t.Fatal("unexpected JSON number or line ending")
 	}
-	if !bytes.HasPrefix(encoded, []byte("{\n  \"effects\": []")) {
+	if !bytes.HasPrefix(encoded, []byte("{\n  \"edition\": 1,\n  \"effects\": []")) {
 		t.Fatalf("object keys are not sorted:\n%s", encoded[:min(len(encoded), 120)])
 	}
 	decoded, err := DecodeJSON(encoded)
@@ -47,6 +47,48 @@ func TestFirstAcidCanonicalJSON(t *testing.T) {
 	again, err := CanonicalJSON(decoded)
 	if err != nil || !bytes.Equal(encoded, again) {
 		t.Fatalf("canonical JSON is not stable: %v", err)
+	}
+}
+
+func TestProjectJSONRecordsSourceEditionAndReadsLegacyJSON(t *testing.T) {
+	p, diagnostics := FromScore(firstScore(t))
+	if p == nil || len(diagnostics) != 0 {
+		t.Fatalf("project compilation: %+v", diagnostics)
+	}
+	encoded, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encoded, []byte(`"edition": 1`)) {
+		t.Fatal("canonical JSON omitted source edition")
+	}
+	var legacy map[string]any
+	if err := json.Unmarshal(encoded, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "edition")
+	oldJSON, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeJSON(oldJSON)
+	if err != nil || decoded.Edition != 1 {
+		t.Fatalf("legacy project edition = %v, %v", decoded, err)
+	}
+	if !reflect.DeepEqual(p, decoded) {
+		t.Fatal("legacy JSON changed musical meaning")
+	}
+	for _, edition := range []any{0, 2, nil} {
+		legacy["edition"] = edition
+		invalid, err := json.Marshal(legacy)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = DecodeJSON(invalid)
+		var diagnostic *JSONError
+		if !errors.As(err, &diagnostic) || diagnostic.Code != "CICADA-VERSION" || diagnostic.Pointer != "/edition" {
+			t.Fatalf("accepted unsupported edition %v: %v", edition, err)
+		}
 	}
 }
 

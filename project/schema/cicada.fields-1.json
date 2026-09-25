@@ -185,6 +185,20 @@
     },
     {
       "construct": "project",
+      "name": "edition",
+      "required": false,
+      "type": "integer",
+      "unit": null,
+      "range": null,
+      "default": "1",
+      "meaning": "Source language edition",
+      "order": 3,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "project",
       "name": "title",
       "required": true,
       "type": "string",
@@ -192,7 +206,7 @@
       "range": null,
       "default": null,
       "meaning": "Project title",
-      "order": 3,
+      "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -206,7 +220,7 @@
       "range": "20000..300000",
       "default": null,
       "meaning": "Tempo in thousandths of a beat per minute",
-      "order": 4,
+      "order": 5,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -220,7 +234,7 @@
       "range": null,
       "default": null,
       "meaning": "Tonal root and scale",
-      "order": 5,
+      "order": 6,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -234,7 +248,7 @@
       "range": null,
       "default": null,
       "meaning": "Project random seed",
-      "order": 6,
+      "order": 7,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -248,7 +262,7 @@
       "range": null,
       "default": null,
       "meaning": "Programmable sound generators",
-      "order": 7,
+      "order": 8,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -262,7 +276,7 @@
       "range": null,
       "default": null,
       "meaning": "Drum instrument assignments",
-      "order": 8,
+      "order": 9,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -276,7 +290,7 @@
       "range": null,
       "default": null,
       "meaning": "Mixer tracks",
-      "order": 9,
+      "order": 10,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -290,7 +304,7 @@
       "range": null,
       "default": null,
       "meaning": "Reusable step patterns",
-      "order": 10,
+      "order": 11,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -304,7 +318,7 @@
       "range": null,
       "default": null,
       "meaning": "Pattern arrangements",
-      "order": 11,
+      "order": 12,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -318,7 +332,7 @@
       "range": null,
       "default": null,
       "meaning": "Ordered scene playback",
-      "order": 12,
+      "order": 13,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -332,7 +346,7 @@
       "range": null,
       "default": null,
       "meaning": "Project effects",
-      "order": 13,
+      "order": 14,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
