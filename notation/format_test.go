@@ -131,7 +131,7 @@ func TestFormatKeepsOctaveMarksAndGroupingParens(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"out = saw(pitch) * (shape * velocity);",
+		"out = saw(pitch) * (shape * velocity)",
 		"pattern a notes steps = 4 {\n  7,~ 5,,^*2 3,~%50 c2,\n}",
 	} {
 		if !strings.Contains(string(formatted), want) {

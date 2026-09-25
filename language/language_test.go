@@ -225,7 +225,7 @@ song { main*8 }
 		{4, 46, "-", []string{"punctuation.special.tie"}},
 		{4, 48, "|", []string{"punctuation.delimiter.bar"}},
 		{4, 50, ".", []string{"punctuation.special.rest"}},
-		{5, 32, "bd", []string{"tag.builtin"}},
+		{5, 32, "bd:", []string{"tag.builtin"}},
 		{5, 36, "x", []string{"constant.hit"}},
 		{5, 37, "X", []string{"markup.strong", "constant.hit.accent"}},
 		{5, 38, ".", []string{"punctuation.special.rest"}},
