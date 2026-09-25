@@ -14,12 +14,24 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "lsp" {
+		if len(os.Args) != 2 {
+			fmt.Fprintln(os.Stderr, "usage: cicada lsp")
+			os.Exit(2)
+		}
+		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "new" {
 		if err := newCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -291,7 +303,7 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: cicada "+
-		"new <name> | fix <score.cicada> [--check] | play [score.cicada] | "+
+		"new <name> | fix <score.cicada> [--check] | play [score.cicada] | lsp | "+
 		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+
 		"validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | "+
 		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --dither=true --normalize=false --block 4096] | "+
