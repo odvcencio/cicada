@@ -75,16 +75,30 @@ func (f *FIR) push(input float64) float64 {
 	var output float64
 	// The mirrored history removes wrap branches while keeping the same
 	// increasing-tap accumulation order and exact sample values.
-	for tap := 0; tap < center; tap += 2 {
-		index := f.position + Taps - tap
-		output += f.coefficients[tap] * f.history[index]
-	}
-	index := f.position + Taps - center
-	output += f.coefficients[center] * f.history[index]
-	for tap := center + 1; tap < Taps; tap += 2 {
-		index := f.position + Taps - tap
-		output += f.coefficients[tap] * f.history[index]
-	}
+	base := f.position + Taps
+	output += f.coefficients[0] * f.history[base]
+	output += f.coefficients[2] * f.history[base-2]
+	output += f.coefficients[4] * f.history[base-4]
+	output += f.coefficients[6] * f.history[base-6]
+	output += f.coefficients[8] * f.history[base-8]
+	output += f.coefficients[10] * f.history[base-10]
+	output += f.coefficients[12] * f.history[base-12]
+	output += f.coefficients[14] * f.history[base-14]
+	output += f.coefficients[16] * f.history[base-16]
+	output += f.coefficients[18] * f.history[base-18]
+	output += f.coefficients[20] * f.history[base-20]
+	output += f.coefficients[center] * f.history[base-center]
+	output += f.coefficients[22] * f.history[base-22]
+	output += f.coefficients[24] * f.history[base-24]
+	output += f.coefficients[26] * f.history[base-26]
+	output += f.coefficients[28] * f.history[base-28]
+	output += f.coefficients[30] * f.history[base-30]
+	output += f.coefficients[32] * f.history[base-32]
+	output += f.coefficients[34] * f.history[base-34]
+	output += f.coefficients[36] * f.history[base-36]
+	output += f.coefficients[38] * f.history[base-38]
+	output += f.coefficients[40] * f.history[base-40]
+	output += f.coefficients[42] * f.history[base-42]
 	f.position++
 	if f.position == Taps {
 		f.position = 0
