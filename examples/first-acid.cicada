@@ -25,8 +25,8 @@ track drums drums {
 }
 
 instrument glassbass {
-  param cutoff: hz = 720Hz
-  param bite: unit = 0.65
+  param cutoff = 720Hz
+  param bite = 0.65
   voice mono {
     let osc = saw(pitch)
     let sub = square(pitch / 2)
