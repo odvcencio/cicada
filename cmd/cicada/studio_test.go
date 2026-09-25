@@ -55,7 +55,7 @@ func TestStudioProjectsAndTogglesSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := studioCall(t, handler, "/", nil)
-	if page.Code != 200 || !strings.Contains(page.Body.String(), `id="source-editor"`) || !strings.Contains(page.Body.String(), `data-pattern="pulse"`) || !strings.Contains(page.Body.String(), `data-lane="bd"`) {
+	if page.Code != 200 || !strings.Contains(page.Body.String(), `id="source-editor"`) || !strings.Contains(page.Body.String(), `data-pattern="pulse"`) || !strings.Contains(page.Body.String(), `data-lane="bd"`) || !strings.Contains(page.Body.String(), `href="#session">Session</a>`) || !strings.Contains(page.Body.String(), `href="#notation">Code</a>`) {
 		t.Fatalf("studio page: %d %s", page.Code, page.Body.String())
 	}
 	revision := studioRevision([]byte(studioScore))
@@ -180,6 +180,31 @@ func TestStudioEditsSymlinkTargetWithoutReplacingLink(t *testing.T) {
 	content, err := os.ReadFile(target)
 	if err != nil || string(content) != updated {
 		t.Fatalf("target not updated: %q, %v", content, err)
+	}
+}
+
+func TestStudioEditorStartsWithInvalidScoreAndRecovers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, []byte("title \"unfinished\"\npattern x {"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newStudio(path); err == nil {
+		t.Fatal("ordinary Studio accepted invalid startup score")
+	}
+	s, err := newStudioWithInvalid(path, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := studioCall(t, s.routes(), "/", nil)
+	if page.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("invalid startup page: %d", page.Code)
+	}
+	if err := os.WriteFile(path, []byte(studioScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	page = studioCall(t, s.routes(), "/", nil)
+	if page.Code != http.StatusOK || !strings.Contains(page.Body.String(), "Studio") {
+		t.Fatalf("recovered page: %d %s", page.Code, page.Body.String())
 	}
 }
 

@@ -21,6 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -37,14 +38,19 @@ type studio struct {
 func studioCommand(args []string) error {
 	path, address := "main.cicada", "127.0.0.1:0"
 	seenPath := false
+	lspStdio := false
 	for i := 0; i < len(args); i++ {
+		if args[i] == "--lsp-stdio" {
+			lspStdio = true
+			continue
+		}
 		if args[i] == "--listen" && i+1 < len(args) {
 			address = args[i+1]
 			i++
 			continue
 		}
 		if strings.HasPrefix(args[i], "-") || seenPath {
-			return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port]")
+			return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--lsp-stdio]")
 		}
 		path = args[i]
 		seenPath = true
@@ -56,7 +62,7 @@ func studioCommand(args []string) error {
 	if err != nil || host != "127.0.0.1" && host != "localhost" && host != "::1" {
 		return fmt.Errorf("studio listen address must be loopback host:port")
 	}
-	studio, err := newStudio(path)
+	studio, err := newStudioWithInvalid(path, lspStdio)
 	if err != nil {
 		return err
 	}
@@ -70,10 +76,25 @@ func studioCommand(args []string) error {
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if lspStdio {
+		// Stdout is the LSP wire in this mode. The extension reads the Studio
+		// address from stderr and shows the same views as the browser frame.
+		go func() {
+			if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, "Cicada LSP:", err)
+			}
+			stop()
+		}()
+	}
 	go studio.watchHistory(ctx)
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
-	fmt.Printf("Cicada Studio: http://%s/\n", listener.Addr().String())
+	addressLine := fmt.Sprintf("Cicada Studio: http://%s/\n", listener.Addr().String())
+	if lspStdio {
+		fmt.Fprint(os.Stderr, addressLine)
+	} else {
+		fmt.Print(addressLine)
+	}
 	select {
 	case err = <-finished:
 		if errors.Is(err, http.ErrServerClosed) {
@@ -96,6 +117,10 @@ func studioHandler(path string) (http.Handler, error) {
 }
 
 func newStudio(path string) (*studio, error) {
+	return newStudioWithInvalid(path, false)
+}
+
+func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -109,7 +134,7 @@ func newStudio(path string) (*studio, error) {
 		return nil, err
 	}
 	p, err := compileStudioSource(absolute, source)
-	if err != nil {
+	if err != nil && !allowInvalid {
 		return nil, err
 	}
 	history := newStudioHistory(source)
@@ -177,6 +202,10 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if p == nil {
+		http.Error(w, "Score has errors. Save a valid score to open Studio.", http.StatusUnprocessableEntity)
 		return
 	}
 	var page bytes.Buffer
