@@ -129,8 +129,8 @@ func numericLiteral(text string) (float32, error) {
 		suffix string
 		scale  float64
 	}{{"khz", 1000}, {"hz", 1}, {"ms", 1}, {"db", 1}, {"s", 1000}, {"%", 0.01}} {
-		if strings.HasSuffix(text, suffix.suffix) {
-			text = strings.TrimSuffix(text, suffix.suffix)
+		if strings.HasSuffix(strings.ToLower(text), suffix.suffix) {
+			text = text[:len(text)-len(suffix.suffix)]
 			scale = suffix.scale
 			break
 		}

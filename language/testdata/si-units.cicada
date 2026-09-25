@@ -1,0 +1,8 @@
+instrument tone {
+  param cutoff: hz = 720Hz;
+  voice mono { out = saw(440Hz); }
+}
+track lead tone { cutoff = 2kHz level = -6dB }
+pattern riff { 1 . }
+scene main { lead = riff }
+song { main }
