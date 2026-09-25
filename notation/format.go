@@ -268,9 +268,13 @@ func formatDeclaration(source []byte) string {
 // FormatDrumHits prints four cells per beat. Each string is one parsed hit,
 // so ratchets and chance suffixes stay attached to their cell.
 func FormatDrumHits(hits []string) string {
+	return formatDrumSegment(hits, 0)
+}
+
+func formatDrumSegment(hits []string, firstCell int) string {
 	var out strings.Builder
 	for i, hit := range hits {
-		if i > 0 && i%4 == 0 {
+		if i > 0 && (firstCell+i)%4 == 0 {
 			out.WriteByte(' ')
 		}
 		out.WriteString(hit)
@@ -283,29 +287,58 @@ func formatDrumRows(section string, pattern *gts.Node, walker *walk.Walker) stri
 	lineIndex := 0
 	for i := 0; i < pattern.NamedChildCount(); i++ {
 		lane := pattern.NamedChild(i)
-		if walker.Type(lane) != "drum_lane" || strings.Contains(walker.Text(lane), "//") {
+		if walker.Type(lane) != "drum_lane" {
 			continue
 		}
 		label := walker.Text(walker.Field(lane, "name"))
-		var hits []string
-		for j := 0; j < lane.NamedChildCount(); j++ {
-			hit := lane.NamedChild(j)
-			if walker.Type(hit) == "drum_hit" {
-				hits = append(hits, strings.Join(strings.Fields(walker.Text(hit)), ""))
-			}
-		}
 		for lineIndex < len(lines) {
 			line := lines[lineIndex]
-			lineIndex++
 			trimmed := strings.TrimSpace(line)
 			if strings.HasPrefix(trimmed, label+" ") || trimmed == label {
 				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-				lines[lineIndex-1] = indent + label + " " + FormatDrumHits(hits)
+				replacement := formatDrumLaneLines(lane, walker, label, indent)
+				end := lineIndex + len(replacement)
+				if end > len(lines) {
+					return section
+				}
+				updated := make([]string, 0, len(lines)-end+lineIndex+len(replacement))
+				updated = append(updated, lines[:lineIndex]...)
+				updated = append(updated, replacement...)
+				lines = append(updated, lines[end:]...)
+				lineIndex += len(replacement)
 				break
 			}
+			lineIndex++
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func formatDrumLaneLines(lane *gts.Node, walker *walk.Walker, label, indent string) []string {
+	segments := [][]string{{}}
+	var comments []string
+	for i := 0; i < lane.NamedChildCount(); i++ {
+		child := lane.NamedChild(i)
+		switch walker.Type(child) {
+		case "drum_hit":
+			last := len(segments) - 1
+			segments[last] = append(segments[last], strings.Join(strings.Fields(walker.Text(child)), ""))
+		case "comment":
+			comments = append(comments, walker.Text(child))
+			segments = append(segments, nil)
+		}
+	}
+	lines := []string{indent + label + " " + FormatDrumHits(segments[0])}
+	cell := len(segments[0])
+	for i, comment := range comments {
+		lines = append(lines, indent+comment)
+		hits := segments[i+1]
+		if len(hits) > 0 {
+			lines = append(lines, indent+strings.Repeat(" ", len(label)+1)+formatDrumSegment(hits, cell))
+			cell += len(hits)
+		}
+	}
+	return lines
 }
 
 func canonicalNumericUnit(value string) string {
