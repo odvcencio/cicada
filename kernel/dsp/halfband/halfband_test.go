@@ -82,6 +82,28 @@ func TestUpsampleMatchesTwoFilteredPhases(t *testing.T) {
 	}
 }
 
+func TestUnrolledPushMatchesTapLoopBits(t *testing.T) {
+	optimized, reference := New(), New()
+	for i := 0; i < 1024; i++ {
+		input := math.Sin(float64(i)*.17) * .7
+		got := optimized.Push(input)
+		reference.history[reference.position] = input
+		reference.history[reference.position+Taps] = input
+		var want float64
+		for tap := 0; tap < center; tap += 2 {
+			want += reference.coefficients[tap] * reference.history[reference.position+Taps-tap]
+		}
+		want += reference.coefficients[center] * reference.history[reference.position+Taps-center]
+		for tap := center + 1; tap < Taps; tap += 2 {
+			want += reference.coefficients[tap] * reference.history[reference.position+Taps-tap]
+		}
+		reference.position = (reference.position + 1) % Taps
+		if math.Float64bits(got) != math.Float64bits(want) || optimized.position != reference.position {
+			t.Fatalf("sample %d differs from tap loop: got %.17g, want %.17g", i, got, want)
+		}
+	}
+}
+
 func TestDecision0002HalfbandResponseGate(t *testing.T) {
 	filter := New()
 	coefficients := filter.Coefficients()
