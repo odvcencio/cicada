@@ -47,6 +47,8 @@ go run ./cmd/cicada play examples/first-acid.cicada
 
 `play` loops the song at 48 kHz. It validates each saved score outside the audio stream and lands the latest valid edit at the next bar with a five-millisecond crossfade. A score that fails to parse or compile leaves the last good version playing and prints the diagnostic. From inside a project, `cicada play` defaults to `main.cicada`; Ctrl-C stops playback.
 
+Run `go run ./cmd/cicada lsp` as an editor's stdio language server. It publishes parser and compiler diagnostics as the score changes, explains pitches, chance, and drum velocity on hover, shows pattern length and song position inlays, provides semantic tokens, and supports definition lookup and scoped rename. Documents use full-text synchronization and UTF-16 positions.
+
 ```sh
 go run ./cmd/cicada highlight examples/cicada-chorus.cicada
 go run ./cmd/cicada highlight --html examples/cicada-chorus.cicada > cicada-chorus.html

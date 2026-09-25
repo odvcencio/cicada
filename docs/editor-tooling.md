@@ -54,7 +54,7 @@ Each token receives exactly one capture. When one token means different things i
 | Octave marks | `'` `,` | `@operator.octave.up`, `@operator.octave.down` |
 | Accent and slide | `^` `~` | `@operator.accent`, `@operator.slide` |
 | Ratchet | `*2` | `@operator.ratchet`, `@number.ratchet` |
-| Probability | `%50` | `@operator.probability`, `@number.probability` |
+| Probability | `?50` (legacy `%50`) | `@operator.probability`, `@number.probability` |
 | Rest, tie, bar | `.` `-` `\|` | `@punctuation.special.rest`, `@punctuation.special.tie`, `@punctuation.delimiter.bar` |
 | Drum lane | `bd:` | `@tag.builtin` for the eleven built-in lanes, otherwise `@tag` |
 | Drum hits | `x` `X` `x1`-`x9` | `@constant.hit`, `@constant.hit.accent`, `@constant.hit.velocity` |
@@ -69,6 +69,8 @@ Three captures style a whole note or hit over its tokens: an accented note or `X
 `cicada highlight` draws with `language.Night`. Keywords are amber and graph primitives are teal. Scale degrees follow the circle of fifths around the hue wheel: the tonic is gold, the dominant and subdominant sit beside it, and the leading tone lands farthest away. Letter pitches take the hue of their pitch class the same way, with C in gold, and grow lighter by octave. Drum hits glow from a dim ember at `x1` to a bright flame at `X`. A probability fades toward the background as its chance drops, and rests recede.
 
 ## Go API
+
+`cicada lsp` serves these queries and the score validator over stdio JSON-RPC. It supports full-document change notifications, diagnostics, pitch/chance/drum hover, pattern and song inlays, semantic tokens, definition lookup, and rename. Parameter and `let` renames stay within their instrument. The server validates a renamed score before returning edits. Clients should register `.cicada` as the Cicada language and launch the CLI with `lsp`.
 
 Package [`language`](../language) embeds the queries and runs them on gotreesitter:
 
