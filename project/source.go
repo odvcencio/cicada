@@ -3,7 +3,6 @@ package project
 import (
 	"bytes"
 	"fmt"
-	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -163,7 +162,9 @@ func ToSource(p *Project) ([]byte, error) {
 	if recompiled == nil {
 		return nil, fmt.Errorf("generated source cannot compile: %+v", diagnostics)
 	}
-	if !reflect.DeepEqual(p, recompiled) {
+	before, beforeErr := canonicalProjectBytes(p)
+	after, afterErr := canonicalProjectBytes(recompiled)
+	if beforeErr != nil || afterErr != nil || !bytes.Equal(before, after) {
 		return nil, fmt.Errorf("project cannot be represented by Cicada source v1 without changing its meaning")
 	}
 	return result, nil
