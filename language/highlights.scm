@@ -97,6 +97,15 @@
   (#not-any-of? @type "acid" "drums"))
 (fx_decl name: (identifier) @type.definition)
 
+; Authored kits bind each drum lane to instrument code or a built-in voice.
+"kit" @keyword.type
+"builtin" @keyword.builtin
+(kit_decl name: (identifier) @type.definition)
+(kit_binding lane: (identifier) @tag.builtin)
+(kit_target instrument: (identifier) @type)
+(kit_target voice: (identifier) @tag.builtin)
+(kit_target "." @punctuation.delimiter)
+
 (param_decl name: (identifier) @property)
 ((value (identifier) @boolean)
   (#any-of? @boolean "on" "off" "true" "false"))
@@ -153,9 +162,9 @@
 ; Drum grids: one `lane: hits;` row per voice.
 
 ((drum_lane name: (identifier) @tag.builtin)
-  (#any-of? @tag.builtin "bd" "sd" "ch" "oh" "cp" "rs"))
+  (#any-of? @tag.builtin "bd" "sd" "ch" "oh" "cp" "rs" "lt" "mt" "ht" "cb" "cy"))
 ((drum_lane name: (identifier) @tag)
-  (#not-any-of? @tag "bd" "sd" "ch" "oh" "cp" "rs"))
+  (#not-any-of? @tag "bd" "sd" "ch" "oh" "cp" "rs" "lt" "mt" "ht" "cb" "cy"))
 
 (drum_hit "." @punctuation.special.rest)
 (hit) @constant.hit

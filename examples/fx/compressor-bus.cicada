@@ -1,0 +1,44 @@
+cicada 1
+
+title "Sidechain compressor"
+
+tempo 120
+
+key a minor
+
+seed 4242
+
+fx comp {
+  detect = peak
+  threshold = -24db
+  ratio = 4
+  knee = 6db
+  attack = 5ms
+  release = 150ms
+  makeup = 0db
+  sidechain = beat
+  mix = 1
+}
+
+track bass acid {
+  cutoff = 620hz
+}
+
+track beat drums {}
+
+pattern riff acid steps = 16 {
+  1 . . . | 5 . . . | 1 . . . | 3 . . .
+}
+
+pattern beat-a drums steps = 16 {
+  bd: X...x...X...x...;
+}
+
+scene main {
+  bass = riff
+  beat = beat-a
+}
+
+song {
+  main*4
+}

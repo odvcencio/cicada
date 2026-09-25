@@ -2,6 +2,7 @@
 
 [
   (instrument_decl)
+  (kit_decl)
   (voice_decl)
   (track_decl)
   (fx_decl)

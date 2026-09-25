@@ -102,6 +102,36 @@ func Validate(s *Score) []Diagnostic {
 			checkID(let.Name, let.Position)
 		}
 	}
+	kits := make(map[string]Kit, len(s.Kits))
+	for _, kit := range s.Kits {
+		checkID(kit.Name, kit.Position)
+		_, instrumentNameTaken := instruments[kit.Name]
+		if kit.Name == "acid" || kit.Name == "drums" || instrumentNameTaken {
+			add("CICADA-DUPLICATE", "kit name is reserved or already declared: "+kit.Name, "error", kit.Position)
+		}
+		if _, exists := kits[kit.Name]; exists {
+			add("CICADA-DUPLICATE", "duplicate kit "+kit.Name, "error", kit.Position)
+		}
+		kits[kit.Name] = kit
+		seenLanes := map[string]bool{}
+		for _, binding := range kit.Bindings {
+			if drumParams[binding.Lane] == nil {
+				add("CICADA-REFERENCE", "unknown kit lane "+binding.Lane, "error", binding.Position)
+			}
+			if seenLanes[binding.Lane] {
+				add("CICADA-DUPLICATE", "kit binds lane twice: "+binding.Lane, "error", binding.Position)
+			}
+			seenLanes[binding.Lane] = true
+			if strings.HasPrefix(binding.Target, "builtin.") {
+				lane := strings.TrimPrefix(binding.Target, "builtin.")
+				if drumParams[lane] == nil {
+					add("CICADA-REFERENCE", "unknown built-in drum "+lane, "error", binding.Position)
+				}
+			} else if _, exists := instruments[binding.Target]; !exists {
+				add("CICADA-REFERENCE", "unknown kit instrument "+binding.Target, "error", binding.Position)
+			}
+		}
+	}
 	trackByName := make(map[string]Track, len(s.Tracks))
 	for _, t := range s.Tracks {
 		checkID(t.Name, t.Position)
@@ -111,8 +141,10 @@ func Validate(s *Score) []Diagnostic {
 		}
 		trackByName[t.Name] = t
 		if t.Kind != "acid" && t.Kind != "drums" {
-			if _, ok := instruments[t.Kind]; !ok {
-				add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
+			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
+				if _, kitOK := kits[t.Kind]; !kitOK {
+					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
+				}
 			}
 		}
 		seen := map[string]bool{}
@@ -124,10 +156,8 @@ func Validate(s *Score) []Diagnostic {
 			seen[param.Name] = true
 			if !validTrackParam(t.Kind, param.Name, instruments) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
-			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" {
+			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" && param.Name != "insert" && param.Name != "send_a" && param.Name != "send_b" && param.Name != "send_pre" && param.Name != "bus" {
 				add("CICADA-UNSUPPORTED", "mixer parameter "+param.Name+" is not implemented", "error", param.Position)
-			} else if t.Kind == "drums" && unsupportedDrumLane(strings.SplitN(param.Name, "_", 2)[0]) {
-				add("CICADA-UNSUPPORTED", "drum lane parameter "+param.Name+" is reserved for M1", "error", param.Position)
 			}
 		}
 	}
@@ -222,8 +252,6 @@ func Validate(s *Score) []Diagnostic {
 			for _, lane := range p.Lanes {
 				if _, ok := drumParams[lane.Name]; !ok {
 					add("CICADA-REFERENCE", "unknown drum lane "+lane.Name, "error", lane.Position)
-				} else if unsupportedDrumLane(lane.Name) {
-					add("CICADA-UNSUPPORTED", "drum lane "+lane.Name+" is reserved for M1", "error", lane.Position)
 				}
 				if seenLanes[lane.Name] {
 					add("CICADA-DUPLICATE", "duplicate drum lane "+lane.Name, "error", lane.Position)
@@ -261,9 +289,10 @@ func Validate(s *Score) []Diagnostic {
 			if !patternOK {
 				add("CICADA-REFERENCE", "scene references unknown pattern "+b.Pattern, "error", b.Position)
 			} else if trackOK {
-				compatible := (track.Kind == "drums" && pattern.Kind == "drums") ||
+				_, kitTrack := kits[track.Kind]
+				compatible := ((track.Kind == "drums" || kitTrack) && pattern.Kind == "drums") ||
 					(track.Kind == "acid" && (pattern.Kind == "acid" || pattern.Kind == "notes")) ||
-					(track.Kind != "acid" && track.Kind != "drums" && pattern.Kind == "notes")
+					(track.Kind != "acid" && track.Kind != "drums" && !kitTrack && pattern.Kind == "notes")
 				if !compatible {
 					add("CICADA-PARAM", "pattern kind differs from track instrument", "error", b.Position)
 				}
@@ -316,19 +345,57 @@ func Validate(s *Score) []Diagnostic {
 		}
 		add("CICADA-LIMIT", "song must contain at least one scene entry", "error", position)
 	}
+	declaredEffects := map[string]bool{}
 	for _, effect := range s.Effects {
 		checkID(effect.Name, effect.Position)
-		add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
+		if declaredEffects[effect.Name] {
+			add("CICADA-DUPLICATE", "duplicate effect "+effect.Name, "error", effect.Position)
+		}
+		declaredEffects[effect.Name] = true
+		if effect.Name != "drive" && effect.Name != "delay" && effect.Name != "reverb" && effect.Name != "comp" {
+			add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
+		}
+		seen := map[string]bool{}
+		for _, param := range effect.Params {
+			if seen[param.Name] {
+				add("CICADA-DUPLICATE", "duplicate effect parameter "+param.Name, "error", param.Position)
+			}
+			seen[param.Name] = true
+			if effect.Name == "comp" && param.Name == "sidechain" {
+				reference := param.Value
+				if strings.HasPrefix(reference, "\"") {
+					if decoded, err := strconv.Unquote(reference); err == nil {
+						reference = decoded
+					}
+				}
+				if reference != "music" && reference != "sfx" {
+					if _, ok := trackByName[reference]; !ok {
+						add("CICADA-REFERENCE", "compressor sidechain references unknown track "+reference, "error", param.ValuePosition)
+					}
+				}
+			}
+		}
+	}
+	for _, track := range s.Tracks {
+		for _, param := range track.Params {
+			if param.Name == "insert" && param.Value != "none" && !declaredEffects[param.Value] {
+				add("CICADA-REFERENCE", "track references undeclared insert "+param.Value, "error", param.ValuePosition)
+			}
+			if param.Name == "send_a" {
+				value, err := strconv.ParseFloat(param.Value, 64)
+				if err == nil && value > 0 && !declaredEffects["delay"] {
+					add("CICADA-REFERENCE", "send_a requires a declared delay effect", "error", param.ValuePosition)
+				}
+			}
+			if param.Name == "send_b" {
+				value, err := strconv.ParseFloat(param.Value, 64)
+				if err == nil && value > 0 && !declaredEffects["reverb"] {
+					add("CICADA-REFERENCE", "send_b requires a declared reverb effect", "error", param.ValuePosition)
+				}
+			}
+		}
 	}
 	return ds
-}
-
-func unsupportedDrumLane(name string) bool {
-	switch name {
-	case "lt", "mt", "ht", "cb", "cy":
-		return true
-	}
-	return false
 }
 
 func validTrackParam(kind, name string, instruments map[string]Instrument) bool {

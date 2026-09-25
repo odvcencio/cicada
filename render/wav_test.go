@@ -122,8 +122,15 @@ song { main }
 		t.Fatal("note onset is silent")
 	}
 	for _, index := range []int{9000, 10000, 12000} {
-		if !bytes.Equal(frame(index), make([]byte, 6)) {
-			t.Fatalf("gate remained open at frame %d: %v", index, frame(index))
+		for channel := 0; channel < 2; channel++ {
+			value := frame(index)[channel*3 : channel*3+3]
+			pcm := int32(value[0]) | int32(value[1])<<8 | int32(value[2])<<16
+			if pcm&0x800000 != 0 {
+				pcm |= ^int32(0xffffff)
+			}
+			if pcm < -1 || pcm > 1 {
+				t.Fatalf("gate remained open at frame %d: %v", index, frame(index))
+			}
 		}
 	}
 }
@@ -171,12 +178,12 @@ func TestWAVSceneSwitchSlideAndRestGate(t *testing.T) {
 			if different != tc.wantSlideDifference {
 				t.Fatalf("slide changed late first-bar PCM=%v, want %v", different, tc.wantSlideDifference)
 			}
-			assertLiveSceneBoundaryMatchesWAV(t, score, withSlide.Bytes())
+			assertLiveRangeMatchesWAV(t, score, withSlide.Bytes(), 90_000, 99_000)
 		})
 	}
 }
 
-func assertLiveSceneBoundaryMatchesWAV(t *testing.T, score *notation.Score, wav []byte) {
+func assertLiveRangeMatchesWAV(t *testing.T, score *notation.Score, wav []byte, first, last int) {
 	t.Helper()
 	p, diagnostics := project.FromScore(score)
 	if p == nil {
@@ -198,7 +205,6 @@ func assertLiveSceneBoundaryMatchesWAV(t *testing.T, score *notation.Score, wav 
 		t.Fatal(err)
 	}
 	latency := limiter.LatencyFrames()
-	const first, last = 90_000, 99_000
 	var left, right [128]float32
 	for position := 0; position < last+latency; position += len(left) {
 		live.Render(left[:], right[:])
@@ -280,6 +286,64 @@ song { main }
 	}
 }
 
+func TestAuthoredKitRendersAndOmitsUnboundLanes(t *testing.T) {
+	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	if len(diagnostics) != 0 {
+		t.Fatalf("authored kit parse: %+v", diagnostics)
+	}
+	var first, second bytes.Buffer
+	report, err := WAV(score, Options{SampleRate: 48_000}, &first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := WAV(score, Options{SampleRate: 48_000}, &second); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.Bytes(), second.Bytes()) || report.Peak < .001 {
+		t.Fatalf("authored kit was silent or nondeterministic: %+v", report)
+	}
+	withOmittedHit := strings.Replace(string(source), "  bd: x...;\n  ch: ..x.;", "  bd: x...;\n  sd: ...X;\n  ch: ..x.;", 1)
+	if withOmittedHit == string(source) {
+		t.Fatal("authored kit fixture changed")
+	}
+	changed, diagnostics := notation.Parse([]byte(withOmittedHit))
+	if len(diagnostics) != 0 {
+		t.Fatalf("omitted lane parse: %+v", diagnostics)
+	}
+	var omitted bytes.Buffer
+	if _, err := WAV(changed, Options{SampleRate: 48_000}, &omitted); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first.Bytes(), omitted.Bytes()) {
+		t.Fatal("hit on unbound kit lane produced sound")
+	}
+	for _, changedBinding := range []struct{ old, new string }{
+		{"bd = kick", "bd = builtin.bd"},
+		{"ch = builtin.ch", "ch = builtin.cy"},
+	} {
+		remappedSource := strings.Replace(string(source), changedBinding.old, changedBinding.new, 1)
+		if remappedSource == string(source) {
+			t.Fatalf("authored kit fixture lacks %q", changedBinding.old)
+		}
+		changed, diagnostics := notation.Parse([]byte(remappedSource))
+		if len(diagnostics) != 0 {
+			t.Fatalf("remapped kit parse: %+v", diagnostics)
+		}
+		var remapped bytes.Buffer
+		if _, err := WAV(changed, Options{SampleRate: 48_000}, &remapped); err != nil {
+			t.Fatal(err)
+		}
+		if bytes.Equal(first.Bytes(), remapped.Bytes()) {
+			t.Fatalf("changing %s did not change the sound", changedBinding.old)
+		}
+	}
+	assertLiveRangeMatchesWAV(t, score, first.Bytes(), 0, 8_000)
+}
+
 func TestVerifyWAVChecksMusicalDurationAndSignal(t *testing.T) {
 	score, diagnostics := notation.Parse([]byte(testScore))
 	if len(diagnostics) != 0 {
@@ -344,12 +408,19 @@ func TestDryMixerPansTrackLeft(t *testing.T) {
 	}
 	data := output.Bytes()
 	leftAudible := false
+	decode24 := func(data []byte) int32 {
+		value := int32(data[0]) | int32(data[1])<<8 | int32(data[2])<<16
+		if value&0x800000 != 0 {
+			value |= ^int32(0xffffff)
+		}
+		return value
+	}
 	for frame := 0; frame < 10_000; frame++ {
 		index := 44 + frame*6
-		if data[index] != 0 || data[index+1] != 0 || data[index+2] != 0 {
+		if left := decode24(data[index : index+3]); left > 100 || left < -100 {
 			leftAudible = true
 		}
-		if data[index+3] != 0 || data[index+4] != 0 || data[index+5] != 0 {
+		if right := decode24(data[index+3 : index+6]); right > 1 || right < -1 {
 			t.Fatalf("right channel audible at frame %d", frame)
 		}
 	}

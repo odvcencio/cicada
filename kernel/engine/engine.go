@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
@@ -25,16 +26,41 @@ const (
 	VoiceGraph
 )
 
-type TrackConfig struct {
-	Kind    VoiceKind
-	Acid    acid.Params
-	Drums   [drum.LaneCount]drum.Params
-	Graph   graph.Program
-	GainDB  float64
-	GainSet bool
-	Pan     float64
-	Mute    bool
+type KitLaneKind uint8
+
+const (
+	KitLaneOff KitLaneKind = iota
+	KitLaneBuiltin
+	KitLaneGraph
+)
+
+// KitLaneBinding selects one voice for a named drum source lane. Zero means
+// the lane is omitted and silent. Programs are compiled before Engine.New.
+type KitLaneBinding struct {
+	Kind    KitLaneKind
+	Recipe  drum.Lane
+	Program graph.Program
 }
+
+type TrackConfig struct {
+	Kind        VoiceKind
+	Acid        acid.Params
+	Drums       [drum.LaneCount]drum.Params
+	Kit         *[drum.LaneCount]KitLaneBinding
+	Graph       graph.Program
+	GainDB      float64
+	GainSet     bool
+	Pan         float64
+	Mute        bool
+	InsertDrive *fx.DriveParams
+	SendA       float64
+	SendB       float64
+	SendPre     bool
+	BusSFX      bool
+}
+
+// SFXSidechain selects the post-fader SFX bus as the music compressor detector.
+const SFXSidechain = 17
 
 // PatternBank is immutable project data copied into the engine by New.
 // Drum slots hold an independent pattern for each synthesized lane.
@@ -55,14 +81,27 @@ type Config struct {
 	Scenes     []Scene
 	Song       []SongEntry
 	LoopSong   bool
+	DelayA     *fx.DelayParams
+	ReverbB    *fx.ReverbParams
+	CompMusic  *fx.CompParams
+	// CompSidechainTrack is zero for self-detection, a one-based track index,
+	// or SFXSidechain for the post-fader SFX bus.
+	CompSidechainTrack int
 }
 
 type voiceSlot struct {
-	kind  VoiceKind
-	acid  *acid.Voice
-	drums *drum.Kit
-	graph *graph.Voice
-	mix   mix.Track
+	kind    VoiceKind
+	acid    *acid.Voice
+	drums   *drum.Kit
+	graph   *graph.Voice
+	mix     mix.Track
+	insert  *fx.Drive
+	align   *mix.Delay
+	sendA   float32
+	sendB   float32
+	sendPre bool
+	muted   bool
+	busSFX  bool
 }
 
 // Engine has fixed command and message rings. The host owns cross-thread
@@ -73,6 +112,10 @@ type Engine struct {
 	voices                       [16]voiceSlot
 	transport                    seq.Transport
 	limiter                      *mix.Limiter
+	delayA                       *fx.Delay
+	reverbB                      *fx.Reverb
+	compMusic                    *fx.Compressor
+	compSidechainTrack           int
 	commands                     [512]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [256]cmd.Message
@@ -110,7 +153,47 @@ func New(cfg Config) (*Engine, error) {
 		return nil, err
 	}
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4}
+	if cfg.DelayA != nil {
+		e.delayA, err = fx.NewDelay(cfg.SampleRate, cfg.BPMMilli)
+		if err == nil {
+			err = e.delayA.SetParams(*cfg.DelayA)
+		}
+		if err != nil {
+			return nil, err
+		}
+		e.delayA.Reset()
+	}
+	if cfg.ReverbB != nil {
+		e.reverbB, err = fx.NewReverb(cfg.SampleRate)
+		if err == nil {
+			err = e.reverbB.SetParams(*cfg.ReverbB)
+		}
+		if err != nil {
+			return nil, err
+		}
+		e.reverbB.Reset()
+	}
+	if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks && cfg.CompSidechainTrack != SFXSidechain || cfg.CompMusic == nil && cfg.CompSidechainTrack != 0 {
+		return nil, Error("invalid compressor sidechain track")
+	}
+	if cfg.CompMusic != nil {
+		e.compMusic, err = fx.NewCompressor(cfg.SampleRate)
+		if err == nil {
+			err = e.compMusic.SetParams(*cfg.CompMusic)
+		}
+		if err != nil {
+			return nil, err
+		}
+		e.compMusic.Reset()
+		e.compSidechainTrack = cfg.CompSidechainTrack
+	}
 	voices := 0
+	hasDrive := false
+	for i := 0; i < cfg.Tracks; i++ {
+		if cfg.Track[i].InsertDrive != nil {
+			hasDrive = true
+		}
+	}
 	for i := 0; i < cfg.Tracks; i++ {
 		e.patterns[i].active = -1
 		for slot := range e.patterns[i].slots {
@@ -124,9 +207,35 @@ func New(cfg Config) (*Engine, error) {
 		if math.IsNaN(gain) || math.IsInf(gain, 0) || gain < -60 || gain > 6 || math.IsNaN(spec.Pan) || math.IsInf(spec.Pan, 0) || spec.Pan < -1 || spec.Pan > 1 {
 			return nil, Error("track mixer parameter is out of range")
 		}
+		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && e.delayA == nil {
+			return nil, Error("track send A is invalid or has no delay return")
+		}
+		if math.IsNaN(spec.SendB) || math.IsInf(spec.SendB, 0) || spec.SendB < 0 || spec.SendB > 1 || spec.SendB > 0 && e.reverbB == nil {
+			return nil, Error("track send B is invalid or has no reverb return")
+		}
 		v := &e.voices[i]
 		v.kind = spec.Kind
 		v.mix = mix.NewTrack(gain, spec.Pan, spec.Mute)
+		v.sendA, v.sendB, v.sendPre, v.muted = float32(spec.SendA), float32(spec.SendB), spec.SendPre, spec.Mute
+		v.busSFX = spec.BusSFX
+		if spec.InsertDrive != nil {
+			if spec.Kind == VoiceOff {
+				return nil, Error("silent track cannot have a drive insert")
+			}
+			v.insert, err = fx.NewDrive(cfg.SampleRate)
+			if err == nil {
+				err = v.insert.SetParams(*spec.InsertDrive)
+			}
+			if err != nil {
+				return nil, err
+			}
+			v.insert.Reset()
+		} else if hasDrive {
+			v.align, err = mix.NewDelay(fx.DriveLatencyFrames)
+			if err != nil {
+				return nil, err
+			}
+		}
 		switch spec.Kind {
 		case VoiceOff:
 		case VoiceAcid:
@@ -136,7 +245,6 @@ func New(cfg Config) (*Engine, error) {
 				err = v.acid.SetParams(spec.Acid)
 			}
 		case VoiceDrums:
-			voices += int(drum.LaneCount)
 			e.patterns[i].drumSlots = new([16][drum.LaneCount]seq.Pattern)
 			for slot := range e.patterns[i].drumSlots {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
@@ -146,11 +254,33 @@ func New(cfg Config) (*Engine, error) {
 			v.drums, err = drum.New(cfg.SampleRate, cfg.Seed)
 			if err == nil {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-					if spec.Drums[lane] != (drum.Params{}) {
-						err = v.drums.SetParams(lane, spec.Drums[lane])
-						if err != nil {
-							break
+					if spec.Kit != nil {
+						binding := spec.Kit[lane]
+						switch binding.Kind {
+						case KitLaneOff:
+							err = v.drums.Disable(lane)
+						case KitLaneBuiltin:
+							err = v.drums.SetRecipe(lane, binding.Recipe)
+						case KitLaneGraph:
+							err = v.drums.SetGraph(lane, binding.Program)
+						default:
+							return nil, Error("unknown kit lane kind")
 						}
+						if binding.Kind != KitLaneOff {
+							voices++
+						}
+					} else if lane >= drum.LT && spec.Drums[lane] == (drum.Params{}) {
+						// Zero params leave added lanes off. Legacy lanes retain
+						// their defaults for direct host configurations.
+						err = v.drums.Disable(lane)
+					} else {
+						voices++
+						if spec.Drums[lane] != (drum.Params{}) {
+							err = v.drums.SetParams(lane, spec.Drums[lane])
+						}
+					}
+					if err != nil {
+						break
 					}
 				}
 			}
@@ -287,6 +417,15 @@ func (e *Engine) Reset() {
 		e.patterns[i].chainRepeat = 0
 	}
 	e.limiter.Reset()
+	if e.delayA != nil {
+		e.delayA.Reset()
+	}
+	if e.reverbB != nil {
+		e.reverbB.Reset()
+	}
+	if e.compMusic != nil {
+		e.compMusic.Reset()
+	}
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0
@@ -324,6 +463,12 @@ func (e *Engine) Render(outL, outR []float32) {
 	for frame := range outL {
 		e.renderFrame = frame
 		if e.transport.BPMMilli() != scheduledTempo {
+			if e.delayA != nil && e.delayA.SetTempo(e.transport.BPMMilli()) != nil {
+				e.fault(13)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return
+			}
 			e.scheduleAll()
 			scheduledTempo = e.transport.BPMMilli()
 		}
@@ -347,8 +492,10 @@ func (e *Engine) Render(outL, outR []float32) {
 			return
 		}
 		var dry mix.Dry
+		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
 		for track := 0; track < e.tracks; track++ {
 			v := &e.voices[track]
+			var left, right float32
 			switch v.kind {
 			case VoiceAcid:
 				sample := v.acid.Next()
@@ -358,28 +505,97 @@ func (e *Engine) Render(outL, outR []float32) {
 					clear(outR[frame:])
 					return
 				}
-				if e.layerMask&(1<<track) != 0 {
-					dry.Add(sample, sample, v.mix)
-				}
+				left, right = sample, sample
 			case VoiceDrums:
-				left, right := v.drums.NextStereo()
+				left, right = v.drums.NextStereo()
 				if v.drums.Fault() {
 					e.fault(3)
 					clear(outL[frame:])
 					clear(outR[frame:])
 					return
 				}
-				if e.layerMask&(1<<track) != 0 {
-					dry.Add(left, right, v.mix)
-				}
 			case VoiceGraph:
 				sample := v.graph.Next()
-				if e.layerMask&(1<<track) != 0 {
-					dry.Add(sample, sample, v.mix)
+				left, right = sample, sample
+			}
+			if v.insert != nil {
+				left, right = v.insert.Process(left, right)
+				if v.insert.Fault() {
+					e.fault(12)
+					clear(outL[frame:])
+					clear(outR[frame:])
+					return
+				}
+			} else if v.align != nil {
+				left, right = v.align.Process(left, right)
+			}
+			if e.layerMask&(1<<track) != 0 && v.kind != VoiceOff {
+				if v.sendA > 0 && !v.muted {
+					if v.sendPre {
+						sendAL += left * v.sendA
+						sendAR += right * v.sendA
+					} else {
+						sendAL += left * v.mix.Left * v.sendA
+						sendAR += right * v.mix.Right * v.sendA
+					}
+				}
+				if v.sendB > 0 && !v.muted {
+					if v.sendPre {
+						sendBL += left * v.sendB
+						sendBR += right * v.sendB
+					} else {
+						sendBL += left * v.mix.Left * v.sendB
+						sendBR += right * v.mix.Right * v.sendB
+					}
+				}
+				if v.busSFX {
+					dry.AddSFX(left, right, v.mix)
+				} else {
+					dry.Add(left, right, v.mix)
+				}
+				if e.compSidechainTrack == track+1 {
+					sideL, sideR = left*v.mix.Left, right*v.mix.Right
 				}
 			}
 		}
+		if e.delayA != nil {
+			returnL, returnR := e.delayA.Process(sendAL, sendAR)
+			if e.delayA.Fault() {
+				e.fault(14)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return
+			}
+			dry.AddReturn(returnL, returnR)
+		}
+		if e.reverbB != nil {
+			returnL, returnR := e.reverbB.Process(sendBL, sendBR)
+			if e.reverbB.Fault() {
+				e.fault(15)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return
+			}
+			dry.AddReturn(returnL, returnR)
+		}
 		left, right := dry.Music()
+		sfxL, sfxR := dry.SFX()
+		if e.compMusic != nil {
+			if e.compSidechainTrack == 0 {
+				left, right = e.compMusic.Process(left, right)
+			} else if e.compSidechainTrack == SFXSidechain {
+				left, right = e.compMusic.ProcessSidechain(left, right, sfxL, sfxR)
+			} else {
+				left, right = e.compMusic.ProcessSidechain(left, right, sideL, sideR)
+			}
+			if e.compMusic.Fault() {
+				e.fault(16)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return
+			}
+		}
+		left, right = left+sfxL, right+sfxR
 		outL[frame], outR[frame], _ = e.limiter.Process(left, right)
 		if e.limiter.Fault() {
 			e.fault(4)
@@ -493,6 +709,15 @@ func (e *Engine) apply(c cmd.Command) {
 			e.resetVoice(i)
 		}
 		e.limiter.Reset()
+		if e.delayA != nil {
+			e.delayA.Reset()
+		}
+		if e.reverbB != nil {
+			e.reverbB.Reset()
+		}
+		if e.compMusic != nil {
+			e.compMusic.Reset()
+		}
 		for i := 0; i < e.tracks; i++ {
 			e.patterns[i].playingNote = 0
 			e.patterns[i].heldValid = false
@@ -580,6 +805,12 @@ func (e *Engine) noteOff(track int, lane uint16) {
 
 func (e *Engine) resetVoice(track int) {
 	v := &e.voices[track]
+	if v.insert != nil {
+		v.insert.Reset()
+	}
+	if v.align != nil {
+		v.align.Reset()
+	}
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.Reset()
@@ -620,6 +851,15 @@ func (e *Engine) emit(message cmd.Message) {
 				e.resetVoice(track)
 			}
 			e.limiter.Reset()
+			if e.delayA != nil {
+				e.delayA.Reset()
+			}
+			if e.reverbB != nil {
+				e.reverbB.Reset()
+			}
+			if e.compMusic != nil {
+				e.compMusic.Reset()
+			}
 			return
 		}
 	}
@@ -638,5 +878,14 @@ func (e *Engine) fault(code uint16) {
 		e.resetVoice(i)
 	}
 	e.limiter.Reset()
+	if e.delayA != nil {
+		e.delayA.Reset()
+	}
+	if e.reverbB != nil {
+		e.reverbB.Reset()
+	}
+	if e.compMusic != nil {
+		e.compMusic.Reset()
+	}
 	e.emit(cmd.Message{Kind: cmd.Fault, Track: 0xff, A: code, Tick: e.transport.Tick()})
 }

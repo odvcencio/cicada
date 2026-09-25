@@ -26,6 +26,7 @@ type Score struct {
 	SeedLiteral   string
 	SeedPosition  Position
 	Instruments   []Instrument
+	Kits          []Kit
 	Tracks        []Track
 	Phrases       []Phrase
 	Patterns      []Pattern
@@ -39,6 +40,19 @@ type Track struct {
 	Name     string
 	Kind     string
 	Params   []Param
+	Position Position
+}
+
+// Kit binds drum lanes to built-in voices or declared mono instruments.
+type Kit struct {
+	Name     string
+	Bindings []KitBinding
+	Position Position
+}
+
+type KitBinding struct {
+	Lane     string
+	Target   string
 	Position Position
 }
 

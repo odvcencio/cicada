@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -27,7 +27,6 @@ func TestInvalidSourceFixtures(t *testing.T) {
 		"unknown-scene.cicada":              {"CICADA-REFERENCE", 5},
 		"incompatible-kind.cicada":          {"CICADA-PARAM", 4},
 		"unsupported-poly.cicada":           {"CICADA-UNSUPPORTED", 2},
-		"reserved-drum-lanes.cicada":        {"CICADA-UNSUPPORTED", 10},
 		"over-32-voices.cicada":             {"CICADA-LIMIT", 10},
 		"unsupported-drum-transpose.cicada": {"CICADA-UNSUPPORTED", 3},
 		"invalid-scale-degree.cicada":       {"CICADA-SCALE-DEGREE", 4},
@@ -65,19 +64,6 @@ func TestInvalidSourceFixtures(t *testing.T) {
 				_, compiledDiagnostics := Check(score)
 				diagnostics = append(diagnostics, compiledDiagnostics...)
 			}
-			if name == "reserved-drum-lanes.cicada" {
-				for line, lane := range []string{"lt", "mt", "ht", "cb", "cy"} {
-					found := false
-					for _, diagnostic := range diagnostics {
-						if diagnostic.Code == "CICADA-UNSUPPORTED" && diagnostic.Position.Line == line+10 && strings.Contains(diagnostic.Message, "lane "+lane) {
-							found = true
-						}
-					}
-					if !found {
-						t.Fatalf("M1 lane %s was not rejected at line %d: %+v", lane, line+10, diagnostics)
-					}
-				}
-			}
 			for _, diagnostic := range diagnostics {
 				if diagnostic.Code == expected.code && diagnostic.Severity == "error" && diagnostic.Position.Line == expected.line && diagnostic.Position.Column > 0 {
 					return
@@ -104,6 +90,68 @@ func TestSlideIntoRestWarningFixture(t *testing.T) {
 	}
 	if compiled, extra := FromScore(score); compiled == nil || hasErrors(extra) {
 		t.Fatalf("warning fixture cannot compile: %+v", extra)
+	}
+}
+
+func TestAuthoredKitLowersAndLoads(t *testing.T) {
+	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, _ := notation.Parse(source)
+	if score == nil {
+		t.Fatal("grammar rejected authored kit fixture")
+	}
+	compiled, diagnostics := FromScore(score)
+	if compiled == nil || len(diagnostics) != 0 || len(compiled.Kits) != 1 || compiled.Kits[0].Lanes["bd"] != "kick" {
+		t.Fatalf("authored kit did not lower: project=%+v diagnostics=%+v", compiled, diagnostics)
+	}
+	cfg, err := CompileEngine(compiled, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Track[0].Kind != engine.VoiceDrums || cfg.Track[0].Kit == nil || cfg.Track[0].Kit[0].Kind != engine.KitLaneGraph {
+		t.Fatal("authored kit did not produce a graph lane")
+	}
+	if _, err := engine.New(cfg); err != nil {
+		t.Fatalf("authored kit could not load into engine: %v", err)
+	}
+	text, err := ToSource(compiled)
+	if err != nil {
+		t.Fatalf("authored kit cannot round-trip to source: %v", err)
+	}
+	reparsed, diagnostics := notation.Parse(text)
+	if reparsed == nil || len(diagnostics) != 0 {
+		t.Fatalf("round-tripped authored kit cannot parse: %+v", diagnostics)
+	}
+}
+
+func TestSemanticKitRejectsInvalidRouting(t *testing.T) {
+	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		edit func(*Project)
+	}{
+		{"unknown lane", func(p *Project) { p.Kits[0].Lanes["zz"] = "builtin.bd" }},
+		{"unknown recipe", func(p *Project) { p.Kits[0].Lanes["ch"] = "builtin.zz" }},
+		{"kit to kit", func(p *Project) { p.Kits[0].Lanes["bd"] = "steel" }},
+		{"incomplete lane map", func(p *Project) { p.Kits[0].Lanes = nil }},
+		{"unroutable track parameter", func(p *Project) { p.Tracks[0].Params["bd_tune"] = Value{Unit: "enum", Text: "on"} }},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			score, _ := notation.Parse(source)
+			p, diagnostics := FromScore(score)
+			if p == nil {
+				t.Fatalf("valid kit failed to lower: %+v", diagnostics)
+			}
+			test.edit(p)
+			if err := ValidateProject(p); err == nil {
+				t.Fatal("invalid semantic kit was accepted")
+			}
+		})
 	}
 }
 

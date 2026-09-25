@@ -1,4 +1,4 @@
-// Package drum implements Cicada's six M0 synthesized drum lanes. Each lane
+// Package drum implements Cicada's eleven synthesized drum lanes. Each lane
 // owns one bounded voice and one deterministic noise stream.
 package drum
 
@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
+	"m31labs.dev/cicada/kernel/graph"
 )
 
 type Lane uint8
@@ -17,15 +18,23 @@ const (
 	OH
 	CP
 	RS
+	LT
+	MT
+	HT
+	CB
+	CY
 	LaneCount
 )
 
-var Names = [LaneCount]string{"bd", "sd", "ch", "oh", "cp", "rs"}
+var Names = [LaneCount]string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
 
-// The six synthesis recipes have different native amplitudes. These fixed
+// MIDINotes are the fixed drum trigger pitches used by source pattern lowering.
+var MIDINotes = [LaneCount]uint8{36, 38, 42, 46, 39, 37, 45, 47, 50, 56, 49}
+
+// The synthesis recipes have different native amplitudes. These fixed
 // trims put a full-velocity hit with default params in the same pre-master
 // peak range at each supported sample rate, before authored lane level/pan.
-var nominalTrim = [LaneCount]float64{1.6, 1.7, 4.9, 4.9, 5.7, 1.5}
+var nominalTrim = [LaneCount]float64{1.6, 1.7, 4.9, 4.9, 5.7, 1.5, 1, 1, 1, 1, 1}
 
 type Error string
 
@@ -53,6 +62,12 @@ func DefaultParams(lane Lane) Params {
 		p.Tone, p.Decay, p.Spread = 1100, .12, .01
 	case RS:
 		p.Tune, p.Decay = 1, .012
+	case LT, MT, HT:
+		p.Tune, p.Decay, p.Sweep = 1, .25, .4
+	case CB:
+		p.Tune, p.Decay = 1, .12
+	case CY:
+		p.Tune, p.Decay, p.Tone = 1, 1.5, 1
 	}
 	return p
 }
@@ -93,6 +108,18 @@ func (p Params) Validate(lane Lane) error {
 	case RS:
 		if p.Tune < .7 || p.Tune > 1.4 || p.Decay < .004 || p.Decay > .05 {
 			return Error("rimshot parameter is out of range")
+		}
+	case LT, MT, HT:
+		if p.Tune < math.Exp2(-7.0/12) || p.Tune > math.Exp2(7.0/12) || p.Decay < .08 || p.Decay > 1 || p.Sweep < 0 || p.Sweep > 2 {
+			return Error("tom parameter is out of range")
+		}
+	case CB:
+		if p.Tune < .7 || p.Tune > 1.4 || p.Decay < .04 || p.Decay > .4 {
+			return Error("cowbell parameter is out of range")
+		}
+	case CY:
+		if p.Tune < .8 || p.Tune > 1.25 || p.Decay < .5 || p.Decay > 4 || p.Tone < .5 || p.Tone > 2 {
+			return Error("cymbal parameter is out of range")
 		}
 	}
 	return nil
@@ -138,6 +165,13 @@ type laneVoice struct {
 	current, old      state
 	fadeRemaining     int
 	panL, panR, level float64
+	recipe            Lane
+	enabled           bool
+	custom, customOld *graph.Voice
+	customActive      bool
+	customChoke       int
+	customAccent      float64
+	customOldAccent   float64
 }
 
 type Kit struct {
@@ -153,6 +187,8 @@ func New(sampleRate int, seed uint32) (*Kit, error) {
 	}
 	k := &Kit{rate: float64(sampleRate), seed: seed}
 	for lane := Lane(0); lane < LaneCount; lane++ {
+		k.lanes[lane].recipe = lane
+		k.lanes[lane].enabled = true
 		if err := k.SetParams(lane, DefaultParams(lane)); err != nil {
 			return nil, err
 		}
@@ -162,7 +198,10 @@ func New(sampleRate int, seed uint32) (*Kit, error) {
 }
 
 func (k *Kit) SetParams(lane Lane, params Params) error {
-	if err := params.Validate(lane); err != nil {
+	if lane >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	if err := params.Validate(k.lanes[lane].recipe); err != nil {
 		return err
 	}
 	v := &k.lanes[lane]
@@ -177,6 +216,69 @@ func (k *Kit) SetParams(lane Lane, params Params) error {
 	return nil
 }
 
+// SetRecipe binds a source lane to a built-in drum recipe. Call this while
+// configuring the kit, before audio rendering starts. Each source lane keeps
+// its own voice and noise state even when multiple lanes share one recipe.
+func (k *Kit) SetRecipe(lane, recipe Lane) error {
+	if lane >= LaneCount || recipe >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	v := &k.lanes[lane]
+	v.recipe = recipe
+	v.enabled = true
+	v.custom, v.customOld = nil, nil
+	v.customActive = false
+	v.customChoke = 0
+	v.current = state{noise: k.seed ^ uint32(lane+1)*0x9e3779b9}
+	v.old = state{}
+	v.fadeRemaining = 0
+	return k.SetParams(lane, DefaultParams(recipe))
+}
+
+// SetGraph binds one compiled mono graph to a source lane. A drum hit gives
+// the graph that lane's fixed MIDI trigger pitch and velocity; authors can
+// ignore or shape pitch in their instrument code. The lane retains one current
+// voice and a single old state for the 1 ms retrigger fade.
+func (k *Kit) SetGraph(lane Lane, program graph.Program) error {
+	if lane >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	current, err := graph.NewVoice(program, int(k.rate))
+	if err != nil {
+		return err
+	}
+	old, err := graph.NewVoice(program, int(k.rate))
+	if err != nil {
+		return err
+	}
+	v := &k.lanes[lane]
+	v.recipe = lane
+	v.custom, v.customOld = current, old
+	v.customActive = false
+	v.customChoke = 0
+	v.current.active, v.old.active = false, false
+	v.fadeRemaining = 0
+	v.enabled = true
+	p := DefaultParams(lane)
+	return k.SetParams(lane, p)
+}
+
+// Disable silences an omitted source lane without affecting other lanes.
+// Like SetRecipe, this configures the kit outside the audio callback.
+func (k *Kit) Disable(lane Lane) error {
+	if lane >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	v := &k.lanes[lane]
+	v.enabled = false
+	v.current.active = false
+	v.old.active = false
+	v.customActive = false
+	v.customChoke = 0
+	v.fadeRemaining = 0
+	return nil
+}
+
 func (k *Kit) Params(lane Lane) Params { return k.lanes[lane].params }
 func (k *Kit) Fault() bool             { return k.fault }
 
@@ -187,6 +289,12 @@ func (k *Kit) Reset() {
 		v.current = state{noise: k.seed ^ uint32(lane+1)*0x9e3779b9}
 		v.old = state{}
 		v.fadeRemaining = 0
+		v.customActive = false
+		v.customChoke = 0
+		if v.custom != nil {
+			v.custom.Reset()
+			v.customOld.Reset()
+		}
 	}
 }
 
@@ -194,10 +302,31 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 	if lane >= LaneCount {
 		return
 	}
+	if !k.lanes[lane].enabled {
+		return
+	}
 	if lane == CH {
 		k.NoteOff(OH)
 	}
 	v := &k.lanes[lane]
+	if v.custom != nil {
+		if v.customActive {
+			*v.customOld = *v.custom
+			v.customOldAccent = v.customAccent
+			v.fadeRemaining = max(1, int(k.rate/1000))
+		}
+		if accent {
+			velocity = 127
+			v.customAccent = math.Sqrt2
+		} else {
+			v.customAccent = 1
+		}
+		v.custom.NoteOn(MIDINotes[lane], velocity, false)
+		v.customActive = true
+		v.customChoke = 0
+		return
+	}
+	recipe := v.recipe
 	if v.current.active {
 		v.old = v.current
 		v.fadeRemaining = max(1, int(k.rate/1000))
@@ -212,12 +341,23 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 	}
 	v.current.velocity = float64(velocity) / 127
 	v.current.noiseVelocity = math.Pow(v.current.velocity, 1.5)
-	v.current.band.configure(k.bandCutoff(lane), k.bandQ(lane), k.rate)
-	v.current.high1.configure(8000, 0.707, k.rate)
+	v.current.band.configure(k.bandCutoff(recipe, v.params), k.bandQ(recipe), k.rate)
+	if recipe == CY {
+		v.current.high1.configure(9000*v.params.Tone, 2, k.rate)
+	} else {
+		v.current.high1.configure(8000, 0.707, k.rate)
+	}
 }
 
 func (k *Kit) NoteOff(lane Lane) {
 	if lane >= LaneCount {
+		return
+	}
+	if v := &k.lanes[lane]; v.custom != nil {
+		if v.customActive {
+			v.custom.NoteOff()
+			v.customChoke = max(1, int(k.rate*.005))
+		}
 		return
 	}
 	v := &k.lanes[lane].current
@@ -233,13 +373,36 @@ func (k *Kit) NextStereo() (left, right float32) {
 	var l, r float64
 	for lane := Lane(0); lane < LaneCount; lane++ {
 		v := &k.lanes[lane]
-		output := k.nextState(lane, &v.current, v.params)
+		if !v.enabled {
+			continue
+		}
+		if v.custom != nil {
+			output := 0.0
+			if v.customActive {
+				output = float64(v.custom.Next()) * v.customAccent
+			}
+			if v.customActive && v.customChoke > 0 {
+				output *= float64(v.customChoke) / max(1, k.rate*.005)
+				v.customChoke--
+				if v.customChoke == 0 {
+					v.customActive = false
+				}
+			}
+			if v.fadeRemaining > 0 {
+				output += float64(v.customOld.Next()) * v.customOldAccent * float64(v.fadeRemaining) / max(1, k.rate/1000)
+				v.fadeRemaining--
+			}
+			l += output * v.level * v.panL
+			r += output * v.level * v.panR
+			continue
+		}
+		output := k.nextState(v.recipe, &v.current, v.params)
 		if v.fadeRemaining > 0 {
-			old := k.nextState(lane, &v.old, v.params)
+			old := k.nextState(v.recipe, &v.old, v.params)
 			output += old * float64(v.fadeRemaining) / max(1, k.rate/1000)
 			v.fadeRemaining--
 		}
-		output *= nominalTrim[lane] * v.level
+		output *= nominalTrim[v.recipe] * v.level
 		l += output * v.panL
 		r += output * v.panR
 	}
@@ -250,8 +413,7 @@ func (k *Kit) NextStereo() (left, right float32) {
 	return float32(l), float32(r)
 }
 
-func (k *Kit) bandCutoff(lane Lane) float64 {
-	p := k.lanes[lane].params
+func (k *Kit) bandCutoff(lane Lane, p Params) float64 {
 	switch lane {
 	case SD:
 		return 1800 * p.Tone
@@ -261,6 +423,12 @@ func (k *Kit) bandCutoff(lane Lane) float64 {
 		return p.Tone
 	case RS:
 		return 1700 * p.Tune
+	case LT, MT, HT:
+		return 2800
+	case CB:
+		return 2600
+	case CY:
+		return 3500 * p.Tone
 	}
 	return 1000
 }
@@ -270,6 +438,12 @@ func (k *Kit) bandQ(lane Lane) float64 {
 		return 2
 	case CP, SD:
 		return 1.2
+	case LT, MT, HT:
+		return 1.2
+	case CB:
+		return 3
+	case CY:
+		return 1.5
 	}
 	return 1
 }
@@ -340,6 +514,46 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		body := (triangle*math.Exp(-age/.004) + math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/p.Decay)) * s.velocity
 		noise := high * math.Exp(-age/.001) * s.noiseVelocity
 		output = (body + noise) * .45
+	case LT, MT, HT:
+		base := 90.0
+		if lane == MT {
+			base = 130
+		} else if lane == HT {
+			base = 190
+		}
+		frequency := base * p.Tune * (1 + p.Sweep*math.Exp(-age/.04))
+		s.phase[0] = wrap(s.phase[0] + frequency/k.rate)
+		body := math.Sin(2*math.Pi*s.phase[0]) * math.Exp(-age/p.Decay) * s.velocity
+		band, _ := s.band.next(nextNoise(&s.noise))
+		noise := band * math.Exp(-age/.005) * s.noiseVelocity
+		output = body + noise*.3
+	case CB:
+		s.phase[0] = wrap(s.phase[0] + 540*p.Tune/k.rate)
+		s.phase[1] = wrap(s.phase[1] + 800*p.Tune/k.rate)
+		bank := -1.0
+		if s.phase[0] < .5 {
+			bank += 1
+		}
+		if s.phase[1] < .5 {
+			bank += 1
+		}
+		band, _ := s.band.next(bank)
+		attack := 1 - math.Exp(-age/.002)
+		output = band * attack * math.Exp(-age/p.Decay) * s.velocity
+	case CY:
+		bank := 0.0
+		for i, frequency := range [...]float64{205.3, 304.4, 369.6, 522.7, 540, 800} {
+			s.phase[i] = wrap(s.phase[i] + 1.3*frequency*p.Tune/k.rate)
+			if s.phase[i] < .5 {
+				bank += 1
+			} else {
+				bank -= 1
+			}
+		}
+		bank /= 6
+		low, _ := s.band.next(bank)
+		high, _ := s.high1.next(bank)
+		output = (low + high*(.5+math.Exp(-age/.06))) * math.Exp(-age/p.Decay) * s.velocity
 	}
 	if s.chokeRemaining > 0 {
 		output *= float64(s.chokeRemaining) / max(1, k.rate*.005)
@@ -350,7 +564,11 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 	}
 	output *= s.accentGain
 	s.age++
-	if s.amp < 1e-6 && lane == BD || age > 4 || (lane != BD && age > 12*p.Decay) {
+	lifetime := math.Min(4, 12*p.Decay)
+	if lane == CY {
+		lifetime = 12 * p.Decay
+	}
+	if lane == BD && s.amp < 1e-6 || age > lifetime {
 		s.active = false
 	}
 	return output

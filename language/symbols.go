@@ -13,7 +13,7 @@ import (
 // Symbol is a definition or reference that tags.scm finds in a score.
 type Symbol struct {
 	Role     string            `json:"role"` // definition or reference
-	Kind     string            `json:"kind"` // instrument, parameter, binding, track, effect, phrase, pattern, or scene
+	Kind     string            `json:"kind"` // instrument, kit, parameter, binding, track, effect, phrase, pattern, or scene
 	Name     string            `json:"name"`
 	Position notation.Position `json:"position"`
 }
@@ -34,11 +34,22 @@ func Symbols(src []byte) ([]Symbol, error) {
 	}
 	tags := tagger.TagTree(tree)
 	sort.SliceStable(tags, func(i, j int) bool { return tags[i].NameRange.StartByte < tags[j].NameRange.StartByte })
+	kits := make(map[string]bool)
+	for _, tag := range tags {
+		if tag.Kind == "definition.kit" {
+			kits[tag.Name] = true
+		}
+	}
 	symbols := make([]Symbol, 0, len(tags))
 	for i, tag := range tags {
 		role, kind, _ := strings.Cut(tag.Kind, ".")
 		if tag.Kind == "reference.binding" {
 			kind = resolveBinding(tags, i)
+		} else if tag.Kind == "reference.voice" {
+			kind = "instrument"
+			if kits[tag.Name] {
+				kind = "kit"
+			}
 		}
 		line, column := position(src, int(tag.NameRange.StartByte))
 		symbols = append(symbols, Symbol{Role: role, Kind: kind, Name: tag.Name, Position: notation.Position{Line: line, Column: column}})
