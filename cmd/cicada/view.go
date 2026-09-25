@@ -73,6 +73,7 @@ type viewSongEntry struct {
 type scoreView struct {
 	Title, Tempo, Key, SourceName string
 	SourceHTML                    template.HTML
+	LineNumbers                   []int
 	Tracks                        []viewTrack
 	Patterns                      []viewPattern
 	Song                          []viewSongEntry
@@ -126,6 +127,13 @@ func writeScoreView(w io.Writer, p *project.Project, source, sourceName string) 
 	}
 	// WriteHTMLFragment escapes source bytes and emits only theme-defined CSS.
 	view.SourceHTML = template.HTML(highlighted.String())
+	lineCount := strings.Count(source, "\n") + 1
+	if strings.HasSuffix(source, "\n") {
+		lineCount--
+	}
+	for line := 1; line <= lineCount; line++ {
+		view.LineNumbers = append(view.LineNumbers, line)
+	}
 	for _, track := range p.Tracks {
 		view.Tracks = append(view.Tracks, viewTrack{ID: track.ID, Kind: track.Kind, Gain: strconv.FormatFloat(track.Mixer.GainDB, 'f', -1, 64) + " dB", Muted: track.Mixer.Mute})
 	}
