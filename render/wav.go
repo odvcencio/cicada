@@ -207,6 +207,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
+	stopIsAction := true
+	for _, pattern := range score.Patterns {
+		if pattern.Name == "stop" {
+			stopIsAction = false
+			break
+		}
+	}
 	var stems *stemOutput
 	if stemsDir != "" {
 		stems, err = newStemOutput(stemsDir, semantic, report)
@@ -330,14 +337,14 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			if bar >= renderBars {
 				break
 			}
-			if err := applyScene(tracks, scene); err != nil {
+			if err := applyScene(tracks, scene, stopIsAction); err != nil {
 				return report, err
 			}
 			var nextScene *notation.Scene
 			if bar+1 < renderBars {
 				nextScene = sceneAtBar(score, bar+1)
 			}
-			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock)
+			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock, stopIsAction)
 			end := clock.SampleAtTick(int64(bar+1) * seq.TicksPerBar)
 			for position < end {
 				frames := opts.Block
@@ -684,7 +691,7 @@ func sceneAtBar(score *notation.Score, bar int) *notation.Scene {
 	return nil
 }
 
-func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryTick int64, clock seq.Clock) {
+func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryTick int64, clock seq.Clock, stopIsAction bool) {
 	for ti := range tracks {
 		track := &tracks[ti]
 		track.transition = sceneTransition{}
@@ -692,7 +699,7 @@ func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryT
 			continue
 		}
 		for _, binding := range next.Bindings {
-			if binding.Track != track.name || binding.Pattern == "keep" || binding.Pattern == "off" || binding.Pattern == track.currentName {
+			if binding.Track != track.name || binding.Pattern == "keep" || binding.Pattern == "off" || binding.Pattern == "stop" && stopIsAction || binding.Pattern == track.currentName {
 				continue
 			}
 			target, ok := track.patterns[binding.Pattern]
@@ -737,11 +744,14 @@ func sceneTransitionFor(source, target *seq.Pattern, track uint8, boundaryTick i
 	}
 }
 
-func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
+func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool) error {
 	for _, binding := range scene.Bindings {
 		for ti := range tracks {
 			if tracks[ti].name != binding.Track {
 				continue
+			}
+			if binding.Pattern == "stop" && stopIsAction {
+				binding.Pattern = "off"
 			}
 			switch binding.Pattern {
 			case "keep":
