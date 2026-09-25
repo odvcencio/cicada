@@ -62,6 +62,8 @@ Pattern settings may live inside the braces: `pattern riff { swing = 56% gate = 
 
 Statement terminators are optional in instruments, authored kits, and drum rows. `cicada fmt` removes legacy semicolons and places each statement or drum lane on its own line. Drum labels include their colon as one token (`bd:`), so `bd :` with a space is not a label. Phrase uses can say `use hook +7` for seven semitones up; `use hook transpose=7` remains accepted.
 
+The formatter groups drum cells into four-step beats: `bd: X... x... X... x.x.`. Ratchets and chance marks stay attached to their hit, so `x*2` and `x?50` each count as one cell. Generated project source uses the same grouping.
+
 An instrument parameter can infer its unit from its default: `param cutoff = 720Hz`, `param decay = 0.3s`, and `param bite = 0.65`. Explicit types such as `param cutoff: hz = 720Hz` remain accepted. Project conversion prints the concise form.
 
 In a scene, `bass = stop` releases the playing voice and prevents new notes on that track. Legacy `bass = off` has the same behavior in edition 1; project conversion prints `stop`. Omit a track line to keep its current pattern running. An explicit `bass = keep` remains accepted. If an older score already declares a pattern named `stop`, that name still launches the pattern in edition 1, and `off` remains the stop action for that score until migration renames the pattern.

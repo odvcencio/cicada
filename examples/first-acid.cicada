@@ -58,10 +58,10 @@ pattern lead-a notes steps = 16 {
 }
 
 pattern beat-a drums steps = 16 {
-  bd: X...x...X...x.x.
-  sd: ....X.......X..x
-  ch: x.x.x.x.x.x.x.x.
-  oh: ..x...x...x...x.
+  bd: X... x... X... x.x.
+  sd: .... X... .... X..x
+  ch: x.x. x.x. x.x. x.x.
+  oh: ..x. ..x. ..x. ..x.
 }
 
 scene main {

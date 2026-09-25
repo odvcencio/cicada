@@ -58,6 +58,9 @@ func Format(document *Document) ([]byte, error) {
 				return nil, fmt.Errorf("invalid syntax span")
 			}
 			section = formatDeclaration(document.source[start:end])
+			if kind == "drum_pattern" {
+				section = formatDrumRows(section, node, document.Walker)
+			}
 		}
 		if len(comments) > 0 {
 			section = strings.Join(comments, "\n") + "\n" + section
@@ -259,6 +262,49 @@ func formatDeclaration(source []byte) string {
 		}
 	}
 	flush()
+	return strings.Join(lines, "\n")
+}
+
+// FormatDrumHits prints four cells per beat. Each string is one parsed hit,
+// so ratchets and chance suffixes stay attached to their cell.
+func FormatDrumHits(hits []string) string {
+	var out strings.Builder
+	for i, hit := range hits {
+		if i > 0 && i%4 == 0 {
+			out.WriteByte(' ')
+		}
+		out.WriteString(hit)
+	}
+	return out.String()
+}
+
+func formatDrumRows(section string, pattern *gts.Node, walker *walk.Walker) string {
+	lines := strings.Split(section, "\n")
+	lineIndex := 0
+	for i := 0; i < pattern.NamedChildCount(); i++ {
+		lane := pattern.NamedChild(i)
+		if walker.Type(lane) != "drum_lane" || strings.Contains(walker.Text(lane), "//") {
+			continue
+		}
+		label := walker.Text(walker.Field(lane, "name"))
+		var hits []string
+		for j := 0; j < lane.NamedChildCount(); j++ {
+			hit := lane.NamedChild(j)
+			if walker.Type(hit) == "drum_hit" {
+				hits = append(hits, strings.Join(strings.Fields(walker.Text(hit)), ""))
+			}
+		}
+		for lineIndex < len(lines) {
+			line := lines[lineIndex]
+			lineIndex++
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, label+" ") || trimmed == label {
+				indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+				lines[lineIndex-1] = indent + label + " " + FormatDrumHits(hits)
+				break
+			}
+		}
+	}
 	return strings.Join(lines, "\n")
 }
 
