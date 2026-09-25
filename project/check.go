@@ -145,6 +145,12 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 	for _, kit := range score.Kits {
 		kitVoices[kit.Name] = len(kit.Bindings)
 	}
+	drumVoices := make(map[string]int, len(tracks))
+	for id, track := range tracks {
+		if track.Kind == "drums" {
+			drumVoices[id] = drumVoiceCount(BuiltinDrumLanes(score, track))
+		}
+	}
 	active := make(map[string]string, len(tracks))
 	for _, entry := range score.Song {
 		scene, ok := scenes[entry.Scene]
@@ -170,7 +176,7 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 		for trackID := range active {
 			kind := tracks[trackID].Kind
 			if kind == "drums" {
-				voices += len(laneOrder)
+				voices += drumVoices[trackID]
 			} else if count, ok := kitVoices[kind]; ok {
 				voices += count
 			} else {
