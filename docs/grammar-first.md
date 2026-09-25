@@ -56,6 +56,8 @@ Chance can be written `1?70` or `x?50`: the note or hit plays with that percenta
 
 `pattern riff { ... }` now defaults to a notes pattern, and `phrase hook { ... }` is shorthand for an acid phrase. Cicada infers the step count from the expanded cells; `steps = N` remains available as an explicit check. `drums` stays explicit because its lane grid has a different structure.
 
+Frequency and level literals accept `Hz`, `kHz`, and `dB` (`720Hz`, `2kHz`, `-6dB`). Lowercase legacy spellings still parse. `cicada fmt` prints the SI spellings for numeric literals; internal project units remain canonical.
+
 ## Instrument code
 
 Custom instruments are first-class declarations. A `voice` contains parameters, sequential `let` bindings, and one `out` expression. The current compiler lowers expressions to a typed acyclic graph with a maximum of 128 nodes and 32 stateful nodes per voice. Names must refer to parameters, built-in inputs, or earlier bindings. The type checker understands audio, hertz, milliseconds, dB, unit values, and gates. Its first primitives cover oscillators, noise, envelopes, filters, shaping, mixing, and arithmetic.
