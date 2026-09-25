@@ -63,7 +63,7 @@ func Cicada() *grammargen.Grammar {
 		str("{"), repeat(sym("kit_binding")), str("}"),
 	))
 	g.Define("kit_binding", seq(
-		field("lane", sym("identifier")), str("="), field("target", sym("kit_target")), str(";"),
+		field("lane", sym("identifier")), str("="), field("target", sym("kit_target")), optional(str(";")),
 	))
 	g.Define("kit_target", choice(
 		field("instrument", sym("identifier")),
@@ -71,14 +71,14 @@ func Cicada() *grammargen.Grammar {
 	))
 	g.Define("instrument_param", seq(
 		str("param"), field("name", sym("identifier")), str(":"), field("unit", sym("identifier")),
-		str("="), field("default", sym("number")), str(";"),
+		str("="), field("default", sym("number")), optional(str(";")),
 	))
 	g.Define("voice_decl", seq(
 		str("voice"), field("mode", sym("identifier")),
 		str("{"), repeat(sym("let_stmt")), sym("out_stmt"), str("}"),
 	))
-	g.Define("let_stmt", seq(str("let"), field("name", sym("identifier")), str("="), field("value", sym("expression")), str(";")))
-	g.Define("out_stmt", seq(str("out"), str("="), field("value", sym("expression")), str(";")))
+	g.Define("let_stmt", seq(str("let"), field("name", sym("identifier")), str("="), field("value", sym("expression")), optional(str(";"))))
+	g.Define("out_stmt", seq(str("out"), str("="), field("value", sym("expression")), optional(str(";"))))
 	g.Define("expression", choice(
 		precLeft(1, seq(field("left", sym("expression")), choice(str("+"), str("-")), field("right", sym("expression")))),
 		precLeft(2, seq(field("left", sym("expression")), choice(str("*"), str("/")), field("right", sym("expression")))),
@@ -110,7 +110,10 @@ func Cicada() *grammargen.Grammar {
 	g.Define("phrase_use", seq(
 		str("use"), field("name", sym("identifier")),
 		optional(seq(str("*"), field("repeat", sym("integer")))),
-		optional(seq(str("transpose"), str("="), field("transpose", sym("number")))),
+		optional(choice(
+			seq(str("transpose"), str("="), field("transpose", sym("number"))),
+			seq(str("+"), field("transpose", sym("number"))),
+		)),
 	))
 	g.Define("drum_pattern", seq(
 		str("pattern"), field("name", sym("identifier")), str("drums"), repeat(sym("pattern_attr")),
@@ -129,8 +132,10 @@ func Cicada() *grammargen.Grammar {
 	g.Define("octave_shift", choice(str("'"), str(",")))
 	g.Define("modifier", choice(str("^"), str("~"), sym("ratchet"), sym("probability")))
 
-	// A drum lane is one row of a grid: `bd: X...x...;`.
-	g.Define("drum_lane", seq(field("name", sym("identifier")), str(":"), repeat(sym("drum_hit")), str(";")))
+	// The label includes its colon so the lexer can distinguish a new lane
+	// from adjacent x/X hit tokens when row semicolons are omitted.
+	g.Define("drum_lane", seq(field("name", sym("drum_lane_label")), repeat(sym("drum_hit")), optional(str(";"))))
+	g.Define("drum_lane_label", token(pat(`[a-z][a-z0-9_-]*:`)))
 	g.Define("drum_hit", seq(choice(str("."), sym("hit"), sym("accent_hit"), sym("velocity_hit")), optional(sym("ratchet")), optional(sym("probability"))))
 	// A hit also admits x1-x9 so keyword extraction never claims it. A keyword
 	// in a drum row would bring the identifier word token with it and swallow
@@ -164,7 +169,7 @@ func Cicada() *grammargen.Grammar {
 	g.SetWord("identifier")
 
 	g.Test("dense drum rows", "cicada 1 pattern beat drums { bd: Xx..x1x9*2%50; }",
-		"(source_file (integer) (drum_pattern (identifier) (drum_lane (identifier) (drum_hit (accent_hit)) (drum_hit (hit)) (drum_hit) (drum_hit) (drum_hit (velocity_hit)) (drum_hit (velocity_hit) (ratchet (integer)) (probability (integer))))))")
+		"(source_file (integer) (drum_pattern (identifier) (drum_lane (drum_lane_label) (drum_hit (accent_hit)) (drum_hit (hit)) (drum_hit) (drum_hit) (drum_hit (velocity_hit)) (drum_hit (velocity_hit) (ratchet (integer)) (probability (integer))))))")
 	g.Test("note divisions", "cicada 1 fx echo { time = 1/8. swing = 1/16t div = 3/4 }",
 		"(source_file (integer) (fx_decl (identifier) (param_decl (identifier) (value (fraction))) (param_decl (identifier) (value (fraction))) (param_decl (identifier) (value (fraction)))))")
 	g.Test("uppercase triplet", "cicada 1 fx delay { time = 1/16T }", "")
@@ -175,6 +180,8 @@ func Cicada() *grammargen.Grammar {
 	g.Test("default notes", "phrase hook { 1 . } pattern p { use hook 5 . }", "")
 	g.Test("SI units", "track bass acid { cutoff = 2kHz level = -6dB } instrument i { param cutoff: hz = 720Hz; voice mono { out = saw(440Hz); } }", "")
 	g.Test("pattern settings inside braces", "pattern p { swing = 56% gate = 60% seed = 7 1 . } pattern beat drums { swing = 54% bd: x.; }", "")
+	g.Test("line-based statements", "instrument i { param cutoff: hz = 720Hz voice mono { let osc = saw(pitch) out = osc } } kit k { bd = i ch = builtin.ch } pattern b drums { bd: x... sd: .x.. }", "")
+	g.Test("short transpose", "phrase hook { 1 . } pattern p { use hook +7 }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
 	return g
