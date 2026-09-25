@@ -71,8 +71,11 @@ type viewTrack struct {
 }
 
 type viewSongEntry struct {
-	Scene string
-	Bars  uint16
+	Scene    string
+	Bars     uint16
+	Index    int
+	StartBar int
+	EndBar   int
 }
 
 type viewScene struct {
@@ -206,8 +209,11 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 		}
 		view.Patterns = append(view.Patterns, card)
 	}
-	for _, entry := range p.Song {
-		view.Song = append(view.Song, viewSongEntry{Scene: entry.Scene, Bars: entry.Bars})
+	bar := 1
+	for index, entry := range p.Song {
+		end := bar + int(entry.Bars) - 1
+		view.Song = append(view.Song, viewSongEntry{Scene: entry.Scene, Bars: entry.Bars, Index: index, StartBar: bar, EndBar: end})
+		bar = end + 1
 	}
 	for _, scene := range p.Scenes {
 		view.Scenes = append(view.Scenes, viewScene{ID: scene.ID})

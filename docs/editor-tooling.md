@@ -72,6 +72,8 @@ Three captures style a whole note or hit over its tokens: an accented note or `X
 
 `cicada lsp` serves these queries and the score validator over stdio JSON-RPC. It supports full-document change notifications, diagnostics, pitch/chance/drum hover, pattern and song inlays, semantic tokens, definition lookup, rename, and a notation quick fix. Parameter and `let` renames stay within their instrument. The server validates a renamed score before returning edits. The quick fix shares `cicada fix`'s meaning-preserving rewrite, uses a document-versioned edit, and creates `cicada.mod` when removing a legacy header from a loose score. It is offered only when the client supports the needed workspace edit operations. Clients should register `.cicada` as the Cicada language and launch the CLI with `lsp`.
 
+Studio's song lane shows each scene's bar span and lets a user reorder blocks or change their duration with pointer handles or buttons. These actions patch only the song entries in the source file, validate the whole score, and reject stale file revisions. A reorder that would move entries across comments in the song block is refused so the comments keep their intended attachment; the source editor remains available for that case.
+
 Package [`language`](../language) embeds the queries and runs them on gotreesitter:
 
 - `Highlight(src)` returns nested spans, with parameter and `let` references resolved through `locals.scm`.

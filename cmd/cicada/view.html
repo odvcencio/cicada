@@ -38,6 +38,18 @@ h2 { font-size:1.42rem; margin:0 0 14px; letter-spacing:-.025em; }
 .song-block { min-width:135px; border:1px solid #756643; border-radius:11px; background:linear-gradient(130deg,#3b3220,#29291c); padding:12px 16px; }
 .song-block strong { display:block; overflow-wrap:anywhere; color:var(--amber); }
 .song-block span { color:#e2d5b7; font-size:.85rem; }
+.song.timeline { align-items:stretch; }
+.song.timeline .song-block { position:relative; flex:0 0 max(155px,calc(var(--bars) * 26px)); min-height:110px; padding:10px 15px 34px; }
+.song-block-head { display:flex; align-items:center; gap:5px; }
+.song-grip, .song-controls button, .song-resize { border:1px solid #796949; border-radius:5px; background:#473b22; color:var(--amber); cursor:pointer; font:700 .72rem/1 system-ui,sans-serif; }
+.song-grip { min-width:27px; min-height:27px; touch-action:none; }
+.song-block .song-range { display:block; margin-top:5px; font-size:.7rem; color:#b9aa88; }
+.song-controls { display:flex; gap:3px; margin-top:8px; }
+.song-controls button { min-width:26px; min-height:25px; }
+.song-controls button:disabled { opacity:.4; cursor:default; }
+.song-resize { position:absolute; right:0; top:0; bottom:0; width:13px; border-radius:0 10px 10px 0; touch-action:none; }
+.song-block[data-dragging] { border-color:var(--mint); box-shadow:0 0 0 2px #88d9bb44; }
+@media (pointer:coarse) { .song.timeline .song-block { min-width:230px; } .song-grip, .song-controls button { min-width:44px; min-height:44px; } .song-resize { width:44px; } }
 .scene-pads { display:flex; flex-wrap:wrap; gap:9px; margin:0 0 15px; }
 .scene-pad { min-width:130px; min-height:44px; border:1px solid #527863; border-radius:10px; background:#21382d; color:var(--mint); padding:9px 14px; font:700 .83rem/1.2 system-ui,sans-serif; cursor:pointer; }
 .scene-pad:hover, .scene-pad[data-state="queued"] { border-color:var(--amber); color:var(--amber); }
@@ -201,7 +213,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     {{if .Studio}}<section id="arrangement" aria-labelledby="arrangement-heading">
       <h2 id="arrangement-heading">Scenes and song</h2>
       {{if .Scenes}}<div class="scene-matrix-scroll"><table class="scene-matrix" aria-label="Scene launch matrix"><thead><tr><th scope="col">Track</th>{{range .Scenes}}<th scope="col"><button type="button" class="scene-pad" data-scene="{{.ID}}" aria-label="Launch scene {{.ID}} at the next bar">▶ {{.ID}}</button></th>{{end}}</tr></thead><tbody>{{range .SceneRows}}<tr><th scope="row">{{.Track}}</th>{{range .Cells}}<td>{{if .Launchable}}<button type="button" class="scene-slot" data-track="{{.Track}}" data-pattern="{{.Pattern}}" aria-label="Launch {{.Pattern}} on {{.Track}} at the next bar">{{.Label}}</button>{{else}}<span class="scene-slot {{.Label}}">{{.Label}}</span>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>{{end}}
-      <div class="song">{{range .Song}}<div class="song-block"><strong>{{.Scene}}</strong><span>{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span></div>{{end}}</div>
+      <div class="song timeline" aria-label="Song lane">{{range .Song}}<div class="song-block" style="--bars:{{.Bars}}" data-index="{{.Index}}" data-bars="{{.Bars}}"><div class="song-block-head"><button type="button" class="song-grip" aria-label="Drag {{.Scene}} to reorder">↔</button><strong>{{.Scene}}</strong></div><span class="song-duration">{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span><span class="song-range">Bars {{.StartBar}}–{{.EndBar}}</span><div class="song-controls"><button type="button" data-song-action="left" aria-label="Move {{.Scene}} earlier">←</button><button type="button" data-song-action="right" aria-label="Move {{.Scene}} later">→</button><button type="button" data-song-action="shorter" aria-label="Shorten {{.Scene}} by one bar">−</button><button type="button" data-song-action="longer" aria-label="Lengthen {{.Scene}} by one bar">+</button></div><button type="button" class="song-resize" aria-label="Drag to change {{.Scene}} duration">⋮</button></div>{{end}}</div>
     </section>{{end}}
     <section id="patterns" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
@@ -231,7 +243,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     {{if not .Studio}}<section id="arrangement" aria-labelledby="arrangement-heading">
       <h2 id="arrangement-heading">Scenes and song</h2>
       {{if .Scenes}}<div class="scene-pads" role="group" aria-label="Scenes">{{range .Scenes}}<span class="scene-pad">{{.ID}}</span>{{end}}</div>{{end}}
-      <div class="song">{{range .Song}}<div class="song-block"><strong>{{.Scene}}</strong><span>{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span></div>{{end}}</div>
+      <div class="song">{{range .Song}}<div class="song-block" style="--bars:{{.Bars}}"><strong>{{.Scene}}</strong><span>{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}} · bars {{.StartBar}}–{{.EndBar}}</span></div>{{end}}</div>
     </section>{{end}}
     {{if .Studio}}<section id="history" aria-labelledby="history-heading">
       <h2 id="history-heading">History</h2>
@@ -288,15 +300,16 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   discard.addEventListener('click', () => { editor.value = original; showEditor(false); setStatus('Changes discarded'); });
   editor.addEventListener('input', () => setStatus('Unsaved source edits'));
   async function send(path, payload) {
-    if (busy) return;
+    if (busy) return false;
     busy = true; save.disabled = true;
     try {
       const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...payload, revision:revision()}) });
       const result = await response.json();
-      if (!response.ok) { setStatus(result.error || 'Edit failed', 'error'); return; }
+      if (!response.ok) { setStatus(result.error || 'Edit failed', 'error'); return false; }
       setStatus('Saved; refreshing projection', 'success');
       location.reload();
-    } catch (error) { setStatus('Connection lost: ' + error.message, 'error'); }
+      return true;
+    } catch (error) { setStatus('Connection lost: ' + error.message, 'error'); return false; }
     finally { busy = false; save.disabled = false; }
   }
   save.addEventListener('click', () => send('/api/source', {source:editor.value}));
@@ -308,6 +321,64 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     if (cell.dataset.modifier !== undefined) edit.modifier = cell.dataset.modifier;
     send('/api/toggle', edit);
   }));
+  const songBlocks = [...document.querySelectorAll('.song.timeline .song-block')];
+  const songEdit = payload => {
+    if (busy) return Promise.resolve(false);
+    if (dirty()) { setStatus('Save or discard source edits before changing the song', 'error'); return Promise.resolve(false); }
+    return send('/api/song', payload);
+  };
+  songBlocks.forEach(block => {
+    const index = Number(block.dataset.index);
+    const initialBars = Number(block.dataset.bars);
+    for (const control of block.querySelectorAll('[data-song-action]')) {
+      const action = control.dataset.songAction;
+      control.disabled = action === 'left' && index === 0 || action === 'right' && index === songBlocks.length - 1 || action === 'shorter' && initialBars === 1 || action === 'longer' && initialBars === 999;
+      control.addEventListener('click', () => {
+        if (action === 'left' || action === 'right') songEdit({action:'move', index, target:index + (action === 'left' ? -1 : 1)});
+        else songEdit({action:'bars', index, bars:initialBars + (action === 'shorter' ? -1 : 1)});
+      });
+    }
+    const grip = block.querySelector('.song-grip');
+    let moving = false;
+    grip.addEventListener('pointerdown', event => {
+      if (busy || dirty()) { setStatus('Finish the current source edit before changing the song', 'error'); return; }
+      moving = true; block.dataset.dragging = ''; grip.setPointerCapture(event.pointerId); event.preventDefault();
+    });
+    grip.addEventListener('pointercancel', () => { moving = false; delete block.dataset.dragging; });
+    grip.addEventListener('pointerup', event => {
+      if (!moving) return;
+      moving = false; delete block.dataset.dragging;
+      let target = index;
+      for (const candidate of songBlocks) {
+        const rect = candidate.getBoundingClientRect();
+        if (event.clientX >= rect.left && event.clientX <= rect.right) { target = Number(candidate.dataset.index); break; }
+      }
+      if (event.clientX < songBlocks[0].getBoundingClientRect().left) target = 0;
+      if (event.clientX > songBlocks.at(-1).getBoundingClientRect().right) target = songBlocks.length - 1;
+      if (target !== index) songEdit({action:'move', index, target});
+    });
+    const resize = block.querySelector('.song-resize');
+    const duration = block.querySelector('.song-duration');
+    let resizing = false, startX = 0, previewBars = initialBars;
+    const restore = () => { block.style.setProperty('--bars', initialBars); duration.textContent = `${initialBars} ${initialBars === 1 ? 'bar' : 'bars'}`; delete block.dataset.dragging; };
+    resize.addEventListener('pointerdown', event => {
+      if (busy || dirty()) { setStatus('Finish the current source edit before changing the song', 'error'); return; }
+      resizing = true; startX = event.clientX; previewBars = initialBars; block.dataset.dragging = ''; resize.setPointerCapture(event.pointerId); event.preventDefault();
+    });
+    resize.addEventListener('pointermove', event => {
+      if (!resizing) return;
+      previewBars = Math.max(1, Math.min(999, initialBars + Math.round((event.clientX - startX) / 26)));
+      block.style.setProperty('--bars', previewBars);
+      duration.textContent = `${previewBars} ${previewBars === 1 ? 'bar' : 'bars'}`;
+    });
+    resize.addEventListener('pointercancel', () => { resizing = false; restore(); });
+    resize.addEventListener('pointerup', async () => {
+      if (!resizing) return;
+      resizing = false; delete block.dataset.dragging;
+      if (previewBars !== initialBars) { if (!await songEdit({action:'bars', index, bars:previewBars})) restore(); }
+      else restore();
+    });
+  });
   let playing = false;
   function showTransport(state) {
     playing = state.playing;
