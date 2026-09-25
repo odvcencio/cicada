@@ -186,7 +186,13 @@ func instrumentSource(inst Instrument) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		out.WriteString("  param " + param.ID + ": " + param.Unit + " = " + value + "\n")
+		switch param.Unit {
+		case "hz":
+			value = strings.TrimSuffix(value, "hz") + "Hz"
+		case "db":
+			value = strings.TrimSuffix(value, "db") + "dB"
+		}
+		out.WriteString("  param " + param.ID + " = " + value + "\n")
 	}
 	out.WriteString("  voice " + inst.Mode + " {\n")
 	for _, binding := range inst.Lets {

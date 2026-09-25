@@ -94,7 +94,7 @@ func Validate(s *Score) []Diagnostic {
 				add("CICADA-DUPLICATE", "duplicate instrument parameter "+param.Name, "error", param.Position)
 			}
 			seen[param.Name] = true
-			if param.Unit != "hz" && param.Unit != "ms" && param.Unit != "unit" && param.Unit != "db" {
+			if param.Unit != "" && param.Unit != "hz" && param.Unit != "ms" && param.Unit != "unit" && param.Unit != "db" {
 				add("CICADA-UNIT", "instrument parameter unit must be hz, ms, unit, or db", "error", param.Position)
 			}
 		}

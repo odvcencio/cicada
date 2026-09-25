@@ -70,7 +70,7 @@ func Cicada() *grammargen.Grammar {
 		seq(str("builtin"), str("."), field("voice", sym("identifier"))),
 	))
 	g.Define("instrument_param", seq(
-		str("param"), field("name", sym("identifier")), str(":"), field("unit", sym("identifier")),
+		str("param"), field("name", sym("identifier")), optional(seq(str(":"), field("unit", sym("identifier")))),
 		str("="), field("default", sym("number")), optional(str(";")),
 	))
 	g.Define("voice_decl", seq(
@@ -180,6 +180,7 @@ func Cicada() *grammargen.Grammar {
 	g.Test("steps", "cicada 1 pattern p notes { 1^.5,~*2%70 - | c#3' use hook*2 transpose = -12 }",
 		"(source_file (integer) (note_pattern (identifier) (acid_step (acid_note (pitch (degree)) (modifier))) (acid_step) (acid_step (acid_note (pitch (degree)) (octave_shift) (modifier) (modifier (ratchet (integer))) (modifier (probability (integer))))) (acid_step) (acid_step) (acid_step (acid_note (pitch (letter_pitch)) (octave_shift))) (phrase_use (identifier) (integer) (number))))")
 	g.Test("instrument", "cicada 1 instrument i { param c: hz = 1hz; voice mono { let s = env(gate, 9ms); out = saw(pitch - c) * (s * 2); } }", "")
+	g.Test("inferred instrument units", "instrument i { param cutoff = 720Hz param decay = 0.3s param level = -6dB param amount = 50% voice mono { out = saw(cutoff) * amount } }", "")
 	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
 	g.Test("default notes", "phrase hook { 1 . } pattern p { use hook 5 . }", "")
 	g.Test("SI units", "track bass acid { cutoff = 2kHz level = -6dB } instrument i { param cutoff: hz = 720Hz; voice mono { out = saw(440Hz); } }", "")

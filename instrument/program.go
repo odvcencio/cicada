@@ -57,6 +57,9 @@ func Compile(src notation.Instrument) (*Program, []notation.Diagnostic) {
 	}
 	for _, param := range src.Params {
 		typ := Type(param.Unit)
+		if typ == "" {
+			typ, _ = literalType(param.Default)
+		}
 		if _, exists := c.symbols[param.Name]; exists {
 			c.errorAt("CICADA-DUPLICATE", "duplicate or reserved symbol "+param.Name, param.Position)
 			continue
