@@ -29,6 +29,13 @@ func main() {
 		fmt.Println(string(data))
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "view" {
+		if err := viewCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "explain" {
 		if len(os.Args) < 3 || len(os.Args) > 4 || (len(os.Args) == 4 && os.Args[3] != "--json") {
 			fmt.Fprintln(os.Stderr, "usage: cicada explain <construct[.field]> [--json]")
@@ -266,7 +273,7 @@ func usage() {
 		"midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | "+
 		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | "+
 		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | "+
-		"convert <in> -o <out> | compare --semantic <a> <b> | fields | explain <construct[.field]> [--json] | highlight [--html|--spans] <file.cicada> | symbols [--refs] [--json] <file.cicada>")
+		"convert <in> -o <out> | compare --semantic <a> <b> | view <in.cicada|in.json> -o <out.html> | fields | explain <construct[.field]> [--json] | highlight [--html|--spans] <file.cicada> | symbols [--refs] [--json] <file.cicada>")
 	os.Exit(2)
 }
 
