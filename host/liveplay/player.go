@@ -246,7 +246,13 @@ func (p *Player) Read(out []byte) (int, error) {
 				continue
 			}
 		}
-		n := copy(out[written:], p.pcm[p.read:p.buffered])
+		available := p.buffered - p.read
+		// If the driver asks for a partial frame, finish that frame before
+		// accepting a jump. A new block must begin on a stereo-frame boundary.
+		if remainder := p.read % 8; remainder != 0 && available > 8-remainder {
+			available = 8 - remainder
+		}
+		n := copy(out[written:], p.pcm[p.read:p.read+available])
 		written += n
 		p.read += n
 	}
@@ -254,6 +260,9 @@ func (p *Player) Read(out []byte) (int, error) {
 }
 
 func (p *Player) beginRequestedSong() {
+	if p.read%8 != 0 {
+		return
+	}
 	select {
 	case request := <-p.starts:
 		var next Score
@@ -279,6 +288,13 @@ func (p *Player) beginRequestedSong() {
 		}
 		start := selected.Song[request.Index].StartBar
 		p.read, p.buffered = 0, 0
+		// A song-position request supersedes manual launches queued for the
+		// old transport position.
+		select {
+		case <-p.launches:
+		default:
+		}
+		p.slotLaunches.Swap(nil)
 		p.previous, p.fadeRemaining = nil, 0
 		if hasOffer {
 			p.previous = p.current.Engine
@@ -289,7 +305,8 @@ func (p *Player) beginRequestedSong() {
 		} else {
 			p.jumpFadeRemaining = p.rate / 200
 		}
-		if !p.current.Engine.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: start - 1}) || !p.current.Engine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: start - 1}, {Op: cmd.OpPlay, Track: 0xff}}
+		if !p.current.Engine.PushBatch(commands[:]) {
 			p.fault = fmt.Errorf("live engine rejected song start at bar %d", start)
 			return
 		}

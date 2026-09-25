@@ -332,6 +332,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     const index = Number(block.dataset.index);
     const initialBars = Number(block.dataset.bars);
     block.querySelector('.song-play').addEventListener('click', async event => {
+      if (busy) { setStatus('Finish the current source edit before starting the song', 'error'); return; }
       if (dirty()) { setStatus('Save or discard source edits before starting the song', 'error'); return; }
       const button = event.currentTarget;
       button.disabled = true;
