@@ -133,17 +133,21 @@ func Cicada() *grammargen.Grammar {
 	g.Define("octave_shift", choice(str("'"), str(",")))
 	g.Define("modifier", choice(str("^"), str("~"), sym("ratchet"), sym("probability")))
 
-	// The label includes its colon so the lexer can distinguish a new lane
-	// from adjacent x/X hit tokens when row semicolons are omitted.
-	g.Define("drum_lane", seq(field("name", sym("drum_lane_label")), repeat(sym("drum_hit")), optional(str(";"))))
-	g.Define("drum_lane_label", token(pat(`[a-z][a-z0-9_-]*:`)))
+	// Joined labels outrank adjacent hit tokens when semicolons are omitted.
+	// The identifier form keeps legacy whitespace and comments before the colon.
+	g.Define("drum_lane", seq(
+		choice(field("name", sym("drum_lane_label")), seq(field("name", sym("identifier")), str(":"))),
+		repeat(sym("drum_hit")), optional(str(";")),
+	))
+	g.Define("drum_lane_label", token(prec(3, pat(`[a-z][a-z0-9_-]*:`))))
 	g.Define("drum_hit", seq(choice(str("."), sym("hit"), sym("accent_hit"), sym("velocity_hit")), optional(sym("ratchet")), optional(sym("probability"))))
 	// A hit also admits x1-x9 so keyword extraction never claims it. A keyword
 	// in a drum row would bring the identifier word token with it and swallow
-	// rows like xx.. whole. velocity_hit wins x1-x9 by lexical precedence.
-	g.Define("hit", token(prec(-1, pat(`x[1-9]?`))))
+	// rows like xx.. whole. Hits outrank identifiers, and velocity_hit wins
+	// x1-x9 by lexical precedence. Joined labels outrank both forms.
+	g.Define("hit", token(prec(1, pat(`x[1-9]?`))))
 	g.Define("accent_hit", token(pat(`X`)))
-	g.Define("velocity_hit", token(pat(`x[1-9]`)))
+	g.Define("velocity_hit", token(prec(2, pat(`x[1-9]`))))
 	g.Define("ratchet", seq(str("*"), sym("integer")))
 	g.Define("probability", seq(choice(str("?"), str("%")), sym("integer")))
 

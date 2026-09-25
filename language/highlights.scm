@@ -170,6 +170,11 @@
 ((drum_lane name: (drum_lane_label) @tag)
   (#not-any-of? @tag "bd:" "sd:" "ch:" "oh:" "cp:" "rs:" "lt:" "mt:" "ht:" "cb:" "cy:"))
 
+((drum_lane name: (identifier) @tag.builtin)
+  (#any-of? @tag.builtin "bd" "sd" "ch" "oh" "cp" "rs" "lt" "mt" "ht" "cb" "cy"))
+((drum_lane name: (identifier) @tag)
+  (#not-any-of? @tag "bd" "sd" "ch" "oh" "cp" "rs" "lt" "mt" "ht" "cb" "cy"))
+
 (drum_hit "." @punctuation.special.rest)
 (hit) @constant.hit
 (accent_hit) @constant.hit.accent

@@ -4,8 +4,36 @@ import (
 	"math"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/seq"
 )
+
+func TestDriveCompensationStaysWithinOneDecibel(t *testing.T) {
+	voice, err := New(48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const amplitude = 0.251188643150958
+	inputRMS := amplitude / math.Sqrt2
+	for i := 0; i <= 64; i++ {
+		params := voice.Params()
+		params.Drive = float64(i) / 64
+		if err := voice.SetParams(params); err != nil {
+			t.Fatal(err)
+		}
+		var power float64
+		for sample := 0; sample < 1024; sample++ {
+			x := amplitude * math.Sin(2*math.Pi*float64(sample)/1024)
+			y := fastmath.Tanh(voice.drivePre*x) * voice.drivePost
+			power += y * y
+		}
+		rms := math.Sqrt(power / 1024)
+		deltaDB := 20 * math.Log10(rms/inputRMS)
+		if math.Abs(deltaDB) > 1 {
+			t.Fatalf("drive %.4f changed sine RMS by %.3f dB", params.Drive, deltaDB)
+		}
+	}
+}
 
 func TestAccentChargeReferenceVector(t *testing.T) {
 	voice, err := New(48_000)
@@ -124,6 +152,37 @@ func TestAcidRenderDoesNotAllocate(t *testing.T) {
 	}
 }
 
+func TestRestingDiodeCacheMatchesDynamicFilterBits(t *testing.T) {
+	for _, rate := range []int{44_100, 48_000, 96_000} {
+		for _, settings := range []struct{ cutoff, resonance float64 }{{20, 0}, {600, .55}, {8000, 1}} {
+			cached, err := New(rate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			params := cached.Params()
+			params.Cutoff, params.Resonance = settings.cutoff, settings.resonance
+			if err := cached.SetParams(params); err != nil {
+				t.Fatal(err)
+			}
+			dynamic := *cached
+			for sample := 0; sample < 4096; sample++ {
+				first := math.Sin(float64(sample) * .017)
+				second := math.Cos(float64(sample) * .011)
+				gotFirst, gotSecond := cached.filterRestingDiodePair(first, second)
+				wantFirst, wantSecond := dynamic.filterPair(first, second, dynamic.restingFilterG)
+				if math.Float64bits(gotFirst) != math.Float64bits(wantFirst) || math.Float64bits(gotSecond) != math.Float64bits(wantSecond) {
+					t.Fatalf("%d Hz cutoff %g resonance %g sample %d changed filter bits: (%g, %g) vs (%g, %g)", rate, settings.cutoff, settings.resonance, sample, gotFirst, gotSecond, wantFirst, wantSecond)
+				}
+				for stage := range cached.diode.state {
+					if math.Float64bits(cached.diode.state[stage]) != math.Float64bits(dynamic.diode.state[stage]) {
+						t.Fatalf("%d Hz cutoff %g resonance %g sample %d changed stage %d", rate, settings.cutoff, settings.resonance, sample, stage)
+					}
+				}
+			}
+		}
+	}
+}
+
 var benchmarkOutput float32
 
 func BenchmarkAcidNext(b *testing.B) {
@@ -132,6 +191,19 @@ func BenchmarkAcidNext(b *testing.B) {
 	var output float32
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
+		output = voice.Next()
+	}
+	benchmarkOutput = output
+}
+
+func BenchmarkAcidNextRetrigger(b *testing.B) {
+	voice, _ := New(48_000)
+	var output float32
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if i%4800 == 0 {
+			voice.NoteOn(45, true, false, 127)
+		}
 		output = voice.Next()
 	}
 	benchmarkOutput = output
