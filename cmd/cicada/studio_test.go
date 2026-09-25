@@ -113,6 +113,68 @@ func TestStudioValidatesSourceAndKeepsLastGoodProjection(t *testing.T) {
 	}
 }
 
+func TestStudioCommitRestoresExternalSaveDuringValidation(t *testing.T) {
+	_, path := studioTestHandler(t)
+	p, err := compileStudioSource(path, []byte(studioScore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &studio{path: path, lastGoodSource: []byte(studioScore), lastGoodProject: p}
+	outside := strings.Replace(studioScore, "Studio", "Outside editor", 1)
+	wanted := strings.Replace(studioScore, "Studio", "Studio edit", 1)
+	recorder := httptest.NewRecorder()
+	s.applyWithHook(recorder, studioEdit{Revision: studioRevision([]byte(studioScore)), Source: wanted}, func([]byte) ([]byte, error) {
+		return []byte(wanted), nil
+	}, func() {
+		staged := path + ".outside"
+		if err := os.WriteFile(staged, []byte(outside), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(staged, path); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if recorder.Code != http.StatusConflict {
+		t.Fatalf("external save was overwritten: %d %s", recorder.Code, recorder.Body.String())
+	}
+	content, err := os.ReadFile(path)
+	if err != nil || string(content) != outside {
+		t.Fatalf("external score not restored: %q, %v", content, err)
+	}
+	if files, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".cicada-studio-*")); err != nil || len(files) != 0 {
+		t.Fatalf("transaction files left behind: %v, %v", files, err)
+	}
+}
+
+func TestStudioEditsSymlinkTargetWithoutReplacingLink(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target.cicada")
+	link := filepath.Join(dir, "linked.cicada")
+	if err := os.WriteFile(target, []byte(studioScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	handler, err := studioHandler(link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(studioScore, "Studio", "Linked Studio", 1)
+	response := studioCall(t, handler, "/api/source", studioEdit{Revision: studioRevision([]byte(studioScore)), Source: updated})
+	if response.Code != http.StatusOK {
+		t.Fatalf("symlink edit: %d %s", response.Code, response.Body.String())
+	}
+	info, err := os.Lstat(link)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		t.Fatalf("score link replaced: %v, %v", info, err)
+	}
+	content, err := os.ReadFile(target)
+	if err != nil || string(content) != updated {
+		t.Fatalf("target not updated: %q, %v", content, err)
+	}
+}
+
 func TestStudioRejectsCrossOriginEdits(t *testing.T) {
 	handler, path := studioTestHandler(t)
 	request := httptest.NewRequest(http.MethodPost, "/api/source", strings.NewReader(`{"revision":"bad","source":"x"}`))
