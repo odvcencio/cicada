@@ -60,6 +60,8 @@ Frequency and level literals accept `Hz`, `kHz`, and `dB` (`720Hz`, `2kHz`, `-6d
 
 Pattern settings may live inside the braces: `pattern riff { swing = 56% gate = 60% 1 . 3 . }`. The formatter places each setting on its own line before the steps. Header attributes remain valid for older scores, and a percent sign is optional on legacy swing and gate values.
 
+Statement terminators are optional in instruments, authored kits, and drum rows. `cicada fmt` removes legacy semicolons and places each statement or drum lane on its own line. Drum labels include their colon as one token (`bd:`), so `bd :` with a space is not a label. Phrase uses can say `use hook +7` for seven semitones up; `use hook transpose=7` remains accepted.
+
 ## Instrument code
 
 Custom instruments are first-class declarations. A `voice` contains parameters, sequential `let` bindings, and one `out` expression. The current compiler lowers expressions to a typed acyclic graph with a maximum of 128 nodes and 32 stateful nodes per voice. Names must refer to parameters, built-in inputs, or earlier bindings. The type checker understands audio, hertz, milliseconds, dB, unit values, and gates. Its first primitives cover oscillators, noise, envelopes, filters, shaping, mixing, and arithmetic.
