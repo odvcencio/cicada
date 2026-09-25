@@ -182,9 +182,9 @@
 (scene_decl name: (identifier) @label)
 (scene_assignment track: (identifier) @variable.member)
 ((scene_assignment pattern: (identifier) @constant.builtin)
-  (#any-of? @constant.builtin "off" "keep"))
+  (#any-of? @constant.builtin "off" "keep" "stop"))
 ((scene_assignment pattern: (identifier) @function)
-  (#not-any-of? @function "off" "keep"))
+  (#not-any-of? @function "off" "keep" "stop"))
 
 (song_entry scene: (identifier) @label)
 (song_entry "*" @operator.repeat)

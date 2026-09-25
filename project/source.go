@@ -133,7 +133,11 @@ func ToSource(p *Project) ([]byte, error) {
 		var out strings.Builder
 		out.WriteString("scene " + scene.ID + " {")
 		for _, track := range sortedKeys(scene.Bindings) {
-			out.WriteString("\n  " + track + " = " + scene.Bindings[track])
+			pattern := scene.Bindings[track]
+			if pattern == "off" && !projectHasPattern(p, "stop") {
+				pattern = "stop"
+			}
+			out.WriteString("\n  " + track + " = " + pattern)
 		}
 		out.WriteString("\n}")
 		sections = append(sections, out.String())
@@ -163,6 +167,15 @@ func ToSource(p *Project) ([]byte, error) {
 		return nil, fmt.Errorf("project cannot be represented by Cicada source v1 without changing its meaning")
 	}
 	return result, nil
+}
+
+func projectHasPattern(p *Project, name string) bool {
+	for _, pattern := range p.Patterns {
+		if pattern.ID == name {
+			return true
+		}
+	}
+	return false
 }
 
 func instrumentSource(inst Instrument) (string, error) {
