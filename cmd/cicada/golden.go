@@ -27,6 +27,9 @@ func goldenCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	if err := checkScoreEdition(*scorePath); err != nil {
+		return err
+	}
 	score, diagnostics := notation.Parse(source)
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Severity == "error" {
