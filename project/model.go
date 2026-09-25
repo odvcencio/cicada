@@ -267,7 +267,11 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 	for _, source := range score.Scenes {
 		scene := Scene{ID: source.Name, Bindings: map[string]string{}}
 		for _, binding := range source.Bindings {
-			scene.Bindings[binding.Track] = binding.Pattern
+			pattern := binding.Pattern
+			if pattern == "stop" && !scoreHasPattern(score, "stop") {
+				pattern = "off" // canonical project-1 action; source spelling is stop
+			}
+			scene.Bindings[binding.Track] = pattern
 		}
 		p.Scenes = append(p.Scenes, scene)
 	}
@@ -309,6 +313,15 @@ func representativeTrack(score *notation.Score, pattern notation.Pattern) notati
 		kind = "unused_notes"
 	}
 	return notation.Track{Kind: kind}
+}
+
+func scoreHasPattern(score *notation.Score, name string) bool {
+	for _, pattern := range score.Patterns {
+		if pattern.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func projectSteps(source seq.Pattern) []*Step {

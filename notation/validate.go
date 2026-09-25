@@ -282,7 +282,7 @@ func Validate(s *Score) []Diagnostic {
 				add("CICADA-DUPLICATE", "scene assigns track twice: "+b.Track, "error", b.Position)
 			}
 			seenTracks[b.Track] = true
-			if b.Pattern == "keep" || b.Pattern == "off" {
+			if b.Pattern == "keep" || b.Pattern == "off" || b.Pattern == "stop" && patterns["stop"].Name == "" {
 				continue
 			}
 			pattern, patternOK := patterns[b.Pattern]
@@ -302,7 +302,7 @@ func Validate(s *Score) []Diagnostic {
 	usedPatterns := make(map[string]map[string]bool)
 	for _, scene := range s.Scenes {
 		for _, binding := range scene.Bindings {
-			if binding.Pattern == "off" || binding.Pattern == "keep" {
+			if binding.Pattern == "off" || binding.Pattern == "keep" || binding.Pattern == "stop" && patterns["stop"].Name == "" {
 				continue
 			}
 			if usedPatterns[binding.Track] == nil {
