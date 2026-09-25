@@ -21,19 +21,26 @@ type projectFormatEdit struct {
 // directory when no manifest exists. It prepares every score before writing
 // any, so a malformed score cannot leave a partly formatted project.
 func formatProjectCommand(check bool, stdout, stderr io.Writer) error {
-	cwd, err := os.Getwd()
+	root, err := projectRoot()
 	if err != nil {
 		return err
+	}
+	return formatProject(root, check, stdout, stderr)
+}
+
+func projectRoot() (string, error) {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
 	}
 	_, manifest, err := scoreEdition(filepath.Join(cwd, "main.cicada"))
 	if err != nil {
-		return err
+		return "", err
 	}
-	root := cwd
 	if manifest != "" {
-		root = filepath.Dir(manifest)
+		return filepath.Dir(manifest), nil
 	}
-	return formatProject(root, check, stdout, stderr)
+	return cwd, nil
 }
 
 func formatProject(root string, check bool, stdout, stderr io.Writer) error {
@@ -60,7 +67,33 @@ func formatProject(root string, check bool, stdout, stderr io.Writer) error {
 }
 
 func collectProjectFormatEdits(root string) ([]projectFormatEdit, error) {
+	paths, err := projectScorePaths(root)
+	if err != nil {
+		return nil, err
+	}
 	var edits []projectFormatEdit
+	for _, path := range paths {
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		document, err := notation.ParseDocument(source)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		formatted, err := notation.Format(document)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		if !bytes.Equal(source, formatted) {
+			edits = append(edits, projectFormatEdit{path: path, before: source, formatted: formatted})
+		}
+	}
+	return edits, nil
+}
+
+func projectScorePaths(root string) ([]string, error) {
+	var paths []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
@@ -82,22 +115,8 @@ func collectProjectFormatEdits(root string) ([]projectFormatEdit, error) {
 		if filepath.Ext(path) != ".cicada" || !entry.Type().IsRegular() {
 			return nil
 		}
-		source, err := os.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		document, err := notation.ParseDocument(source)
-		if err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		formatted, err := notation.Format(document)
-		if err != nil {
-			return fmt.Errorf("%s: %w", path, err)
-		}
-		if !bytes.Equal(source, formatted) {
-			edits = append(edits, projectFormatEdit{path: path, before: source, formatted: formatted})
-		}
+		paths = append(paths, path)
 		return nil
 	})
-	return edits, err
+	return paths, err
 }
