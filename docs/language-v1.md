@@ -2,7 +2,7 @@
 
 A `.cicada` file is a text score. The first declaration is `cicada 1`.
 Declarations can be separated by spaces or newlines; braces delimit bodies.
-`//` starts a comment. The [Grammargen grammar](../language/cicada.grammar)
+`//` starts a comment. The [grammargen grammar](../language/grammar/grammar.go)
 defines the syntax, and `cicada validate` checks names, units, ranges, and
 render support.
 
@@ -30,7 +30,10 @@ A track chooses the built-in `acid` or `drums` voice, or a declared
 instrument. An acid track plays `acid` or `notes` patterns. A custom
 instrument plays `notes` patterns. A drum track plays `drums` patterns.
 Track parameters are checked for the selected voice. `level` (dB or `off`)
-and `pan` (-1 to 1) control the dry stereo mixer.
+and `pan` (-1 to 1) control the dry stereo mixer. The grammar also accepts
+`fx` blocks and note-division values such as `1/8`, `1/8t` (triplet), and
+`1/8.` (dotted); effects report `CICADA-UNSUPPORTED` until they are
+implemented.
 
 A scene assigns patterns to tracks. `off` stops a track, and `keep`
 retains its previous pattern. A song lists scenes in order; `main*16`
@@ -42,7 +45,9 @@ repeats a scene for 16 bars. Each entry can last 1–999 bars.
 the prior note, and `|` separates groups visually without taking a step.
 A pitch is a scale degree `1`–`7` or a letter note such as `c#3`.
 `'` raises a pitch one octave; `,` lowers it one octave. C4 is MIDI note
-60. Notes without an explicit octave use octave 2.
+60. Notes without an explicit octave use octave 2. Steps can sit side by side
+(`1^.5-`), except that a letter pitch needs a space before a tie or another
+letter pitch: `c3 - e3`, not `c3-e3`, which would read as one name.
 
 Note modifiers are `^` for accent, `~` for slide, `*2`–`*8` for
 ratchet, and `%1`–`%99` for hit probability. A plain note has probability
@@ -81,7 +86,8 @@ stores the expanded notes.
 A drum pattern has one semicolon-terminated row per lane. `x` is a hit
 at velocity 100, `X` is an accented hit at velocity 127, and `x1`
 through `x9` choose stepped velocities. Hits can use ratchet and
-probability modifiers. Omitted rows are rests.
+probability modifiers. Omitted rows are rests. Hits may be written side by
+side or apart: `xxX.` and `x x X .` are the same row.
 
 ```cicada
 track kit drums { bd_tune = 55hz }
@@ -136,7 +142,12 @@ cicada convert score.cicada -o score.cicada.json
 cicada convert score.cicada.json -o normalized.cicada
 cicada compare --semantic score.cicada normalized.cicada
 cicada render score.cicada -o score.wav --rate 48000 --bits 24
+cicada highlight score.cicada
+cicada symbols --refs score.cicada
 ```
+
+`highlight` and `symbols` run the [editor queries](editor-tooling.md), which
+give every construct in this reference its own highlight capture.
 
 Source is the authoring form. Canonical JSON is the typed semantic
 interchange form; conversion back to source must preserve semantic meaning.
