@@ -128,8 +128,15 @@ func gcd(a, b int64) int64 {
 }
 
 func (e *Engine) launchScene(index uint16) {
+	e.launchSceneWithSkip(index, false)
+}
+
+func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
 	scene := &e.scenes[index]
 	for track := 0; track < e.tracks && !e.faulted; track++ {
+		if skipManualPatterns && e.manualPatternTick[track] == e.transport.Tick() {
+			continue
+		}
 		binding := scene.Track[track]
 		p := &e.patterns[track]
 		switch binding.Mode {
@@ -211,6 +218,6 @@ func (e *Engine) advanceSong() {
 	entry := e.song[e.songIndex]
 	e.songEndTick += int64(entry.Bars) * seq.TicksPerBar
 	if e.manualSceneTick != e.transport.Tick() {
-		e.launchScene(entry.Scene)
+		e.launchSceneWithSkip(entry.Scene, true)
 	}
 }
