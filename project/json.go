@@ -141,7 +141,27 @@ func CanonicalJSON(p *Project) ([]byte, error) {
 // canonicalProjectBytes also runs during source lowering. Every project that
 // validates must fit the same canonical body that DecodeJSON can accept.
 func canonicalProjectBytes(p *Project) ([]byte, error) {
-	raw, err := json.Marshal(p)
+	// Project-1 accepts explicit acid/note kinds and keep actions for older
+	// data. Canonical output drops distinctions that the current track and scene
+	// already imply, matching headerless source after a round trip.
+	normalized := *p
+	normalized.Patterns = append([]Pattern(nil), p.Patterns...)
+	for i := range normalized.Patterns {
+		if normalized.Patterns[i].Kind == "notes" && projectPatternUsedOnlyByAcid(p, normalized.Patterns[i].ID) {
+			normalized.Patterns[i].Kind = "acid"
+		}
+	}
+	normalized.Scenes = append([]Scene(nil), p.Scenes...)
+	for i := range normalized.Scenes {
+		bindings := make(map[string]string, len(p.Scenes[i].Bindings))
+		for track, pattern := range p.Scenes[i].Bindings {
+			if pattern != "keep" {
+				bindings[track] = pattern
+			}
+		}
+		normalized.Scenes[i].Bindings = bindings
+	}
+	raw, err := json.Marshal(&normalized)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +180,27 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 		return nil, errCanonicalJSONLimit
 	}
 	return output.Bytes(), nil
+}
+
+func projectPatternUsedOnlyByAcid(p *Project, patternID string) bool {
+	used := false
+	for _, scene := range p.Scenes {
+		for trackID, assigned := range scene.Bindings {
+			if assigned != patternID {
+				continue
+			}
+			for _, track := range p.Tracks {
+				if track.ID != trackID {
+					continue
+				}
+				if track.Kind != "acid" {
+					return false
+				}
+				used = true
+			}
+		}
+	}
+	return used
 }
 
 func writeCanonical(output *bytes.Buffer, value any, depth int) error {
