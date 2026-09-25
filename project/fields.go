@@ -71,7 +71,8 @@ func Fields() (FieldCatalog, error) {
 			if field.Tag.Get("variant") != "" && valueType.Kind() == reflect.Pointer {
 				valueType = valueType.Elem()
 			}
-			if field.Tag.Get("default") != "" {
+			required := !strings.Contains(field.Tag.Get("json"), ",omitempty")
+			if required && field.Tag.Get("default") != "" {
 				return fmt.Errorf("%s.%s is required and cannot declare a default", typ.Name(), field.Name)
 			}
 			if repeatable(field.Type) {
@@ -83,9 +84,9 @@ func Fields() (FieldCatalog, error) {
 				record.Variants = append(record.Variants, variant)
 			}
 			catalog.Fields = append(catalog.Fields, Field{
-				Construct: construct, Name: name, Required: true,
+				Construct: construct, Name: name, Required: required,
 				Type: fieldType(valueType), Unit: nonemptyTag(field.Tag.Get("unit")), Range: nonemptyTag(field.Tag.Get("range")),
-				Default: nil, Meaning: meaning, Order: i + 1,
+				Default: nonemptyTag(field.Tag.Get("default")), Meaning: meaning, Order: i + 1,
 				Introduced: "cicada.project/1", Profile: "M0", Layer: "semantic", Variant: variant,
 			})
 		}

@@ -8,6 +8,7 @@
   "properties": {
     "format": {"const": "cicada.project/1"},
     "version": {"const": 1},
+    "edition": {"const": 1, "description": "Source language edition; absent in legacy project JSON means 1"},
     "title": {"type": "string", "maxLength": 120},
     "tempo_milli": {"type": "integer", "minimum": 20000, "maximum": 300000},
     "key": {"$ref": "#/$defs/key"},

@@ -45,6 +45,7 @@ func TestSemanticIRFieldsMatchProjectSchema(t *testing.T) {
 			}
 		}
 		want := map[string]bool{}
+		wantRequired := map[string]bool{}
 		for index := 0; index < typ.NumField(); index++ {
 			field := typ.Field(index)
 			if !field.IsExported() {
@@ -56,6 +57,9 @@ func TestSemanticIRFieldsMatchProjectSchema(t *testing.T) {
 				continue
 			}
 			want[name] = true
+			if !strings.Contains(field.Tag.Get("json"), ",omitempty") {
+				wantRequired[name] = true
+			}
 			visit(field.Type)
 		}
 		got := schemaProperties(definition, defs)
@@ -71,8 +75,8 @@ func TestSemanticIRFieldsMatchProjectSchema(t *testing.T) {
 					}
 				}
 			}
-			if !reflect.DeepEqual(sortedFields(want), sortedFields(required)) {
-				t.Errorf("%s required fields: IR %v, schema %v", typ.Name(), sortedFields(want), sortedFields(required))
+			if !reflect.DeepEqual(sortedFields(wantRequired), sortedFields(required)) {
+				t.Errorf("%s required fields: IR %v, schema %v", typ.Name(), sortedFields(wantRequired), sortedFields(required))
 			}
 		}
 	}

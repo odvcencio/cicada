@@ -35,7 +35,7 @@ go run ./cmd/cicada verify-midi first-acid.mid --ppq 960 --type 1
 
 The [cicada chorus](examples/cicada-chorus.cicada) tours a noise-and-ring tymbal voice, thirteen graph primitives, degrees and letter pitches, step modifiers, dense drum rows, phrases, and scenes. `highlight` draws a score in color, and `symbols` lists the names a score defines and where each is used. Both run the [editor queries](docs/editor-tooling.md) in `language/` on gotreesitter, including the authored-kit constructs:
 
-Start a project with `go run ./cmd/cicada new night-circuit`. It creates `night-circuit/cicada.mod` and a headerless, eight-bar `main.cicada`. The nearest manifest supplies edition 1; existing files with a `cicada 1` header still work.
+Start a project with `go run ./cmd/cicada new night-circuit`. It creates `night-circuit/cicada.mod` and a headerless, eight-bar `main.cicada`. The nearest manifest supplies edition 1; existing files with a `cicada 1` header still work. Semantic JSON exports record the source edition separately from the project format version. Older JSON without that field reads as edition 1. The owner's [language direction](docs/design/cicada-meet-in-the-middle.md) and [Cicada Live concept](docs/design/cicada-live.pdf) guide the ongoing notation and editor work.
 
 ```sh
 go run ./cmd/cicada highlight examples/cicada-chorus.cicada
