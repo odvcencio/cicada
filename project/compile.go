@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -22,10 +23,13 @@ var scaleIntervals = map[string][7]int{
 }
 
 var chromatic = map[byte]int{'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11}
-var drumNotes = map[string]uint8{
-	"bd": 36, "sd": 38, "ch": 42, "oh": 46, "cp": 39, "rs": 37,
-	"lt": 45, "mt": 47, "ht": 50, "cb": 56, "cy": 49,
-}
+var drumNotes = func() map[string]uint8 {
+	notes := make(map[string]uint8, drum.LaneCount)
+	for lane, name := range drum.Names {
+		notes[name] = drum.MIDINotes[lane]
+	}
+	return notes
+}()
 
 type CompiledPattern struct {
 	Name    string
@@ -45,9 +49,16 @@ func (e *patternCompileError) Unwrap() error { return e.err }
 // CompilePattern lowers one validated source pattern. Drum lanes become one
 // kernel pattern each, so the engine can assign a voice to each lane.
 func CompilePattern(score *notation.Score, source notation.Pattern, track notation.Track) ([]CompiledPattern, error) {
-	compatible := (track.Kind == "drums" && source.Kind == "drums") ||
+	kitTrack := false
+	for _, kit := range score.Kits {
+		if kit.Name == track.Kind {
+			kitTrack = true
+			break
+		}
+	}
+	compatible := ((track.Kind == "drums" || kitTrack) && source.Kind == "drums") ||
 		(track.Kind == "acid" && (source.Kind == "acid" || source.Kind == "notes")) ||
-		(track.Kind != "acid" && track.Kind != "drums" && source.Kind == "notes")
+		(track.Kind != "acid" && track.Kind != "drums" && !kitTrack && source.Kind == "notes")
 	if !compatible {
 		return nil, fmt.Errorf("pattern %s kind differs from track %s", source.Name, track.Name)
 	}

@@ -5,6 +5,7 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
 )
@@ -39,11 +40,71 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		}
 		programs[inst.ID] = program
 	}
+	kits := make(map[string]Kit, len(p.Kits))
+	for _, kit := range p.Kits {
+		kits[kit.ID] = kit
+	}
+	var driveParams *fx.DriveParams
+	var delayParams *fx.DelayParams
+	var reverbParams *fx.ReverbParams
+	var compParams *fx.CompParams
+	var compSidechain string
+	for _, effect := range p.Effects {
+		if effect.ID == "drive" {
+			params, err := DriveParamsFromValues(effect.Params)
+			if err != nil {
+				return cfg, err
+			}
+			driveParams = &params
+		} else if effect.ID == "delay" {
+			params, err := DelayParamsFromValues(effect.Params)
+			if err != nil {
+				return cfg, err
+			}
+			delayParams = &params
+		} else if effect.ID == "reverb" {
+			params, err := ReverbParamsFromValues(effect.Params)
+			if err != nil {
+				return cfg, err
+			}
+			reverbParams = &params
+		} else if effect.ID == "comp" {
+			params, sidechain, err := CompSpecFromValues(effect.Params)
+			if err != nil {
+				return cfg, err
+			}
+			compParams, compSidechain = &params, sidechain
+		}
+	}
+	cfg.CompMusic = compParams
+	if compSidechain == "sfx" {
+		cfg.CompSidechainTrack = engine.SFXSidechain
+	} else if compSidechain != "" && compSidechain != "music" {
+		for index, track := range p.Tracks {
+			if track.ID == compSidechain {
+				cfg.CompSidechainTrack = index + 1
+				break
+			}
+		}
+	}
+	for _, track := range p.Tracks {
+		if track.Mixer.SendA > 0 {
+			cfg.DelayA = delayParams
+		}
+		if track.Mixer.SendB > 0 {
+			cfg.ReverbB = reverbParams
+		}
+	}
 	trackIndex := make(map[string]int, len(p.Tracks))
 	for ti, track := range p.Tracks {
 		trackIndex[track.ID] = ti
 		config := &cfg.Track[ti]
 		config.GainDB, config.GainSet, config.Pan, config.Mute = track.Mixer.GainDB, true, track.Mixer.Pan, track.Mixer.Mute
+		config.SendA, config.SendB, config.SendPre = track.Mixer.SendA, track.Mixer.SendB, track.Mixer.SendPre
+		config.BusSFX = track.Mixer.Bus == "sfx"
+		if track.Mixer.Insert == "drive" {
+			config.InsertDrive = driveParams
+		}
 		switch track.Kind {
 		case "acid":
 			config.Kind = engine.VoiceAcid
@@ -59,8 +120,23 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 			}
 			config.Drums = params
+			for lane, enabled := range projectDrumLanes(p, track) {
+				if !enabled {
+					config.Drums[lane] = drum.Params{}
+				}
+			}
 			cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
 		default:
+			if kit, ok := kits[track.Kind]; ok {
+				config.Kind = engine.VoiceDrums
+				bindings, err := CompileKit(kit, programs)
+				if err != nil {
+					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+				}
+				config.Kit = bindings
+				cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
+				break
+			}
 			config.Kind = engine.VoiceGraph
 			program := programs[track.Kind]
 			if program == nil {
@@ -89,7 +165,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			if err != nil {
 				return cfg, fmt.Errorf("pattern %s: %w", pattern.ID, err)
 			}
-			if track.Kind == "drums" {
+			if config.Kind == engine.VoiceDrums {
 				if pattern.Transpose != 0 {
 					return cfg, fmt.Errorf("drum pattern %s cannot transpose lanes", pattern.ID)
 				}

@@ -341,6 +341,34 @@ func TestSymbols(t *testing.T) {
 	}
 }
 
+func TestAuthoredKitSymbols(t *testing.T) {
+	src, err := os.ReadFile("../examples/authored-kit.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	symbols, err := Symbols(src)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{
+		"3:12 definition instrument kick": false,
+		"9:5 definition kit steel":        false,
+		"10:8 reference instrument kick":  false,
+		"14:13 reference kit steel":       false,
+	}
+	for _, symbol := range symbols {
+		key := fmt.Sprintf("%d:%d %s %s %s", symbol.Position.Line, symbol.Position.Column, symbol.Role, symbol.Kind, symbol.Name)
+		if _, ok := want[key]; ok {
+			want[key] = true
+		}
+	}
+	for key, found := range want {
+		if !found {
+			t.Errorf("missing %s in %+v", key, symbols)
+		}
+	}
+}
+
 func TestFoldsAndIndents(t *testing.T) {
 	src, err := os.ReadFile("../examples/cicada-chorus.cicada")
 	if err != nil {

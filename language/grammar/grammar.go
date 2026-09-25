@@ -33,7 +33,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("source_file", seq(str("cicada"), sym("integer"), repeat(sym("_declaration"))))
 	g.Define("_declaration", choice(
 		sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
-		sym("instrument_decl"), sym("track_decl"), sym("phrase_decl"),
+		sym("instrument_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
 		sym("scene_decl"), sym("song_decl"), sym("fx_decl"),
 	))
@@ -56,6 +56,18 @@ func Cicada() *grammargen.Grammar {
 	g.Define("instrument_decl", seq(
 		str("instrument"), field("name", sym("identifier")),
 		str("{"), repeat(sym("instrument_param")), sym("voice_decl"), str("}"),
+	))
+	// A kit binds drum lanes to instruments or built-in drum voices.
+	g.Define("kit_decl", seq(
+		str("kit"), field("name", sym("identifier")),
+		str("{"), repeat(sym("kit_binding")), str("}"),
+	))
+	g.Define("kit_binding", seq(
+		field("lane", sym("identifier")), str("="), field("target", sym("kit_target")), str(";"),
+	))
+	g.Define("kit_target", choice(
+		field("instrument", sym("identifier")),
+		seq(str("builtin"), str("."), field("voice", sym("identifier"))),
 	))
 	g.Define("instrument_param", seq(
 		str("param"), field("name", sym("identifier")), str(":"), field("unit", sym("identifier")),
@@ -137,10 +149,10 @@ func Cicada() *grammargen.Grammar {
 	g.Define("song_entry", seq(field("scene", sym("identifier")), optional(seq(str("*"), field("bars", sym("integer"))))))
 
 	// Literals. A number carries its unit; a fraction is a note division such
-	// as 1/8, 1/8t (triplet), or 1/8. (dotted), lexed as one token so the
+	// as 1/8, 1/8T (triplet), or 1/8. (dotted), lexed as one token so the
 	// longest match beats a plain number.
 	g.Define("value", choice(sym("number"), sym("identifier"), sym("string"), sym("fraction")))
-	g.Define("fraction", token(pat(`[0-9]+\/[0-9]+[t.]?`)))
+	g.Define("fraction", token(pat(`[0-9]+\/[0-9]+[tT.]?`)))
 	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(hz|khz|ms|s|db|%)?`)))
 	g.Define("integer", token(pat(`[0-9]+`)))
 	g.Define("key_root", token(pat(`[a-g][#b]?`)))
@@ -155,9 +167,11 @@ func Cicada() *grammargen.Grammar {
 		"(source_file (integer) (drum_pattern (identifier) (drum_lane (identifier) (drum_hit (accent_hit)) (drum_hit (hit)) (drum_hit) (drum_hit) (drum_hit (velocity_hit)) (drum_hit (velocity_hit) (ratchet (integer)) (probability (integer))))))")
 	g.Test("note divisions", "cicada 1 fx echo { time = 1/8. swing = 1/16t div = 3/4 }",
 		"(source_file (integer) (fx_decl (identifier) (param_decl (identifier) (value (fraction))) (param_decl (identifier) (value (fraction))) (param_decl (identifier) (value (fraction)))))")
+	g.Test("uppercase triplet", "cicada 1 fx delay { time = 1/16T }", "")
 	g.Test("steps", "cicada 1 pattern p notes { 1^.5,~*2%70 - | c#3' use hook*2 transpose = -12 }",
 		"(source_file (integer) (note_pattern (identifier) (acid_step (acid_note (pitch (degree)) (modifier))) (acid_step) (acid_step (acid_note (pitch (degree)) (octave_shift) (modifier) (modifier (ratchet (integer))) (modifier (probability (integer))))) (acid_step) (acid_step) (acid_step (acid_note (pitch (letter_pitch)) (octave_shift))) (phrase_use (identifier) (integer) (number))))")
 	g.Test("instrument", "cicada 1 instrument i { param c: hz = 1hz; voice mono { let s = env(gate, 9ms); out = saw(pitch - c) * (s * 2); } }", "")
+	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
 	return g
 }

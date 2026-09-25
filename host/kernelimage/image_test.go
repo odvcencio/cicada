@@ -9,6 +9,8 @@ import (
 
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -57,6 +59,223 @@ func TestFirstAcidProjectImageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAuthoredKitImageRoundTrip(t *testing.T) {
+	cfg := firstAcidConfig(t)
+	var track int
+	for cfg.Track[track].Kind != engine.VoiceDrums {
+		track++
+		if track == cfg.Tracks {
+			t.Fatal("first-acid fixture has no drum track")
+		}
+	}
+	kit := new([drum.LaneCount]engine.KitLaneBinding)
+	kit[drum.BD] = engine.KitLaneBinding{Kind: engine.KitLaneBuiltin, Recipe: drum.SD}
+	kit[drum.CH] = engine.KitLaneBinding{Kind: engine.KitLaneGraph, Program: graph.Program{
+		Len: 1, Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Gate}},
+	}}
+	cfg.Track[track].Kit = kit
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) {
+		t.Fatal("authored kit changed across project image")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatalf("decoded authored kit cannot play: %v", err)
+	}
+	kit[drum.BD].Recipe = drum.LaneCount
+	if _, err := kernelimage.Encode(cfg); err == nil {
+		t.Fatal("invalid kit recipe was encoded")
+	}
+}
+
+func TestDriveInsertImageRoundTrip(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx", "drive-insert.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("source: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) || decoded.Track[0].InsertDrive == nil {
+		t.Fatal("drive insert was lost in the project image")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Track[0].InsertDrive.Mix = 2
+	if _, err := kernelimage.Encode(cfg); err == nil {
+		t.Fatal("invalid drive mix was encoded")
+	}
+}
+
+func TestDelaySendImageRoundTrip(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx", "delay-send.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("source: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DelayA == nil || cfg.Track[0].SendA == 0 {
+		t.Fatal("delay route was not compiled")
+	}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) {
+		t.Fatal("delay send changed in the project image")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestReverbSendImageRoundTrip(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx-bus.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("source: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) || decoded.ReverbB == nil || decoded.Track[0].SendB == 0 {
+		t.Fatal("reverb send changed in the project image")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompressorBusImageRoundTrip(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx", "compressor-bus.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("source: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) || decoded.CompMusic == nil || decoded.CompSidechainTrack != 2 {
+		t.Fatal("compressor changed in the project image")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSFXBusImageRoundTrip(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "sfx-bus.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("source: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) || !decoded.Track[1].BusSFX || decoded.CompSidechainTrack != engine.SFXSidechain {
+		t.Fatal("SFX route changed in the project image")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestProjectImageRejectsCorruption(t *testing.T) {
 	encoded, err := kernelimage.Encode(firstAcidConfig(t))
 	if err != nil {
@@ -74,6 +293,13 @@ func TestProjectImageRejectsCorruption(t *testing.T) {
 	corrupt[0] = 'X'
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
 		t.Fatal("bad magic was accepted")
+	}
+	for _, oldVersion := range []byte{1, 2, 3, 4, 5, 6, 7} {
+		corrupt = append([]byte(nil), encoded...)
+		corrupt[4] = oldVersion
+		if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
+			t.Fatalf("old image version %d was accepted with a new track layout", oldVersion)
+		}
 	}
 	corrupt = append(append([]byte(nil), encoded...), 0)
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {

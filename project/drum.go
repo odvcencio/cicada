@@ -8,14 +8,14 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-// CompileDrumParams applies authored values to the six built-in M0 voices.
+// CompileDrumParams applies authored values to the eleven built-in voices.
 func CompileDrumParams(track notation.Track) ([drum.LaneCount]drum.Params, error) {
 	var values [drum.LaneCount]drum.Params
 	for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 		values[lane] = drum.DefaultParams(lane)
 	}
 	for _, source := range track.Params {
-		if source.Name == "level" || source.Name == "pan" {
+		if source.Name == "level" || source.Name == "pan" || source.Name == "insert" || source.Name == "send_a" || source.Name == "send_b" || source.Name == "send_pre" || source.Name == "bus" {
 			continue
 		}
 		parts := strings.SplitN(source.Name, "_", 2)
@@ -148,6 +148,21 @@ func validDrumParam(lane drum.Lane, name string) bool {
 	case drum.RS:
 		switch name {
 		case "tune", "decay":
+			return true
+		}
+	case drum.LT, drum.MT, drum.HT:
+		switch name {
+		case "tune", "decay", "sweep":
+			return true
+		}
+	case drum.CB:
+		switch name {
+		case "tune", "decay":
+			return true
+		}
+	case drum.CY:
+		switch name {
+		case "tune", "decay", "tone":
 			return true
 		}
 	}

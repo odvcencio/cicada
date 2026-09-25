@@ -60,7 +60,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 		overrides := make(map[string]string, len(track.Params))
 		for _, param := range track.Params {
-			if param.Name == "level" || param.Name == "pan" {
+			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
 				continue
 			}
 			overrides[param.Name] = param.Value
@@ -68,7 +68,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		if _, err := instrument.Lower(program, overrides); err != nil {
 			position := parameterErrorPosition(track, func(single notation.Track) error {
 				param := single.Params[0]
-				if param.Name == "level" || param.Name == "pan" {
+				if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
 					return nil
 				}
 				_, err := instrument.Lower(program, map[string]string{param.Name: param.Value})
@@ -130,16 +130,26 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			diagnostics = append(diagnostics, patternCompileDiagnostic(err, pattern.Position))
 		}
 	}
-	diagnostics = append(diagnostics, checkSourceVoiceBudget(score, tracks, patterns)...)
+	diagnostics = append(diagnostics, checkSourceVoiceBudget(score, tracks)...)
 	return programs, diagnostics
 }
 
 // The typed project has the same ceiling. Check it here as well so source
 // validation can point to the song entry that activates too many voices.
-func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Track, patterns map[string]notation.Pattern) []notation.Diagnostic {
+func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Track) []notation.Diagnostic {
 	scenes := make(map[string]notation.Scene, len(score.Scenes))
 	for _, scene := range score.Scenes {
 		scenes[scene.Name] = scene
+	}
+	kitVoices := make(map[string]int, len(score.Kits))
+	for _, kit := range score.Kits {
+		kitVoices[kit.Name] = len(kit.Bindings)
+	}
+	drumVoices := make(map[string]int, len(tracks))
+	for id, track := range tracks {
+		if track.Kind == "drums" {
+			drumVoices[id] = drumVoiceCount(BuiltinDrumLanes(score, track))
+		}
 	}
 	active := make(map[string]string, len(tracks))
 	for _, entry := range score.Song {
@@ -157,18 +167,14 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 			}
 		}
 		voices := 0
-		for trackID, patternID := range active {
-			if tracks[trackID].Kind != "drums" {
+		for trackID := range active {
+			kind := tracks[trackID].Kind
+			if kind == "drums" {
+				voices += drumVoices[trackID]
+			} else if count, ok := kitVoices[kind]; ok {
+				voices += count
+			} else {
 				voices++
-				continue
-			}
-			for _, lane := range patterns[patternID].Lanes {
-				for _, hit := range lane.Hits {
-					if hit.Text != "." {
-						voices++
-						break
-					}
-				}
 			}
 		}
 		if voices > 32 {

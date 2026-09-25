@@ -81,6 +81,24 @@ func TestFormatKeepsOctaveMarksAndGroupingParens(t *testing.T) {
 	}
 }
 
+func TestFormatKeepsAcidOctaveCommasAttached(t *testing.T) {
+	source := []byte("cicada 1\ntrack bass acid {}\npattern a acid steps=4 { 7,^ 7,,~ 7, . }\nscene main { bass=a }\nsong { main }\n")
+	document, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(formatted, []byte("7,^ 7,,~ 7, .")) {
+		t.Fatalf("formatter split octave modifiers:\n%s", formatted)
+	}
+	if _, diagnostics := Parse(formatted); len(diagnostics) != 0 {
+		t.Fatalf("formatted score diagnostics: %+v\n%s", diagnostics, formatted)
+	}
+}
+
 func TestExamplesRemainValidAfterFormat(t *testing.T) {
 	for _, name := range []string{"first-acid", "glassbass", "circuit-kit", "acid-voice", "cicada-chorus"} {
 		t.Run(name, func(t *testing.T) {
