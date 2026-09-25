@@ -39,6 +39,7 @@ func studioCall(t *testing.T, handler http.Handler, path string, body any) *http
 		method = http.MethodPost
 	}
 	request := httptest.NewRequest(method, path, &input)
+	request.Host = "127.0.0.1:1234"
 	if body != nil {
 		request.Header.Set("Content-Type", "application/json")
 	}
@@ -49,6 +50,10 @@ func studioCall(t *testing.T, handler http.Handler, path string, body any) *http
 
 func TestStudioProjectsAndTogglesSource(t *testing.T) {
 	handler, path := studioTestHandler(t)
+	originalInfo, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	page := studioCall(t, handler, "/", nil)
 	if page.Code != 200 || !strings.Contains(page.Body.String(), `id="source-editor"`) || !strings.Contains(page.Body.String(), `data-pattern="pulse"`) || !strings.Contains(page.Body.String(), `data-lane="bd"`) {
 		t.Fatalf("studio page: %d %s", page.Code, page.Body.String())
@@ -65,7 +70,7 @@ func TestStudioProjectsAndTogglesSource(t *testing.T) {
 	if !bytes.Contains(content, []byte("{ . . 5 . }")) {
 		t.Fatalf("note source unchanged: %s", content)
 	}
-	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != 0600 {
+	if info, err := os.Stat(path); err != nil || info.Mode().Perm() != originalInfo.Mode().Perm() {
 		t.Fatalf("score mode: %v, %v", info, err)
 	}
 	stale := studioCall(t, handler, "/api/toggle", studioEdit{Revision: revision, Pattern: "beat", Lane: "bd", Step: 0})
@@ -144,6 +149,9 @@ func TestStudioCommitRestoresExternalSaveDuringValidation(t *testing.T) {
 	if files, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".cicada-studio-*")); err != nil || len(files) != 0 {
 		t.Fatalf("transaction files left behind: %v, %v", files, err)
 	}
+	if files, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".cicada-displaced-*")); err != nil || len(files) != 0 {
+		t.Fatalf("displaced score files left behind: %v, %v", files, err)
+	}
 }
 
 func TestStudioEditsSymlinkTargetWithoutReplacingLink(t *testing.T) {
@@ -178,12 +186,36 @@ func TestStudioEditsSymlinkTargetWithoutReplacingLink(t *testing.T) {
 func TestStudioRejectsCrossOriginEdits(t *testing.T) {
 	handler, path := studioTestHandler(t)
 	request := httptest.NewRequest(http.MethodPost, "/api/source", strings.NewReader(`{"revision":"bad","source":"x"}`))
+	request.Host = "127.0.0.1:1234"
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set("Origin", "https://outside.example")
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusForbidden {
 		t.Fatalf("cross-origin edit accepted: %d", recorder.Code)
+	}
+	current, err := os.ReadFile(path)
+	if err != nil || string(current) != studioScore {
+		t.Fatalf("score changed: %v", err)
+	}
+}
+
+func TestStudioRejectsReboundHost(t *testing.T) {
+	handler, path := studioTestHandler(t)
+	for _, route := range []string{"/", "/api/state", "/api/source"} {
+		method := http.MethodGet
+		if route == "/api/source" {
+			method = http.MethodPost
+		}
+		request := httptest.NewRequest(method, route, strings.NewReader(`{"revision":"bad","source":"x"}`))
+		request.Host = "studio.attacker.example"
+		request.Header.Set("Origin", "http://studio.attacker.example")
+		request.Header.Set("Content-Type", "application/json")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusForbidden {
+			t.Fatalf("rebound host reached %s: %d", route, recorder.Code)
+		}
 	}
 	current, err := os.ReadFile(path)
 	if err != nil || string(current) != studioScore {

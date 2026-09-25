@@ -44,27 +44,42 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 	if beforeSwap != nil {
 		beforeSwap()
 	}
-	if err := studioSwap(path, stagePath); err != nil {
+	displacedPath, err := studioSwap(path, stagePath)
+	if err != nil {
 		if errors.Is(err, errStudioSwapUnavailable) {
 			return false, "", errStudioSwapUnavailable
 		}
+		if displacedPath != "" {
+			return false, displacedPath, fmt.Errorf("score replacement failed; displaced score preserved at %s: %w", displacedPath, err)
+		}
 		return false, "", err
 	}
-	displaced, err := os.ReadFile(stagePath)
+	displaced, err := os.ReadFile(displacedPath)
 	if err == nil && studioRevision(displaced) == expected {
+		if displacedPath != stagePath {
+			_ = os.Remove(displacedPath)
+		}
 		return true, "", nil
 	}
-	// The staged path currently holds another editor's score. Never delete it
-	// unless the exchange back succeeds. If a second writer intervenes, retain
-	// that version for recovery rather than silently discarding it.
-	if rollbackErr := studioSwap(path, stagePath); rollbackErr != nil {
-		removeStage = false
-		return false, stagePath, fmt.Errorf("score changed during commit; rollback failed: %w", rollbackErr)
+	// The displaced path holds another editor's score. Never delete it unless
+	// the exchange back succeeds. If a second writer intervenes, retain that
+	// version for recovery rather than silently discarding it.
+	interveningPath, rollbackErr := studioSwap(path, displacedPath)
+	if rollbackErr != nil {
+		if displacedPath == stagePath {
+			removeStage = false
+		}
+		return false, displacedPath, fmt.Errorf("score changed during commit; rollback failed: %w", rollbackErr)
 	}
-	intervening, readErr := os.ReadFile(stagePath)
+	intervening, readErr := os.ReadFile(interveningPath)
 	if readErr != nil || !bytes.Equal(intervening, updated) {
-		removeStage = false
-		return false, stagePath, fmt.Errorf("score changed during commit; another version was preserved at %s", stagePath)
+		if interveningPath == stagePath {
+			removeStage = false
+		}
+		return false, interveningPath, fmt.Errorf("score changed during commit; another version was preserved at %s", interveningPath)
+	}
+	if interveningPath != stagePath {
+		_ = os.Remove(interveningPath)
 	}
 	return false, "", nil
 }

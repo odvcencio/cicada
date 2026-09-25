@@ -1,7 +1,7 @@
-//go:build !linux
+//go:build !linux && !windows
 
 package main
 
-func studioSwap(path, replacement string) error {
-	return errStudioSwapUnavailable
+func studioSwap(path, replacement string) (string, error) {
+	return "", errStudioSwapUnavailable
 }
