@@ -245,7 +245,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 			return nil, append(diagnostics, patternCompileDiagnostic(err, source.Position))
 		}
 		pattern := Pattern{
-			ID: source.Name, Kind: source.Kind, Steps: compiled[0].Pattern.Len,
+			ID: source.Name, Kind: semanticPatternKind(score, source), Steps: compiled[0].Pattern.Len,
 			SwingPercent100: 5000, GatePercent: compiled[0].Pattern.GatePercent,
 			Transpose: compiled[0].Pattern.Transpose, Seed: compiled[0].Pattern.Seed,
 			Data: []*Step{}, Lanes: map[string][]*Step{},
@@ -271,6 +271,9 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		scene := Scene{ID: source.Name, Bindings: map[string]string{}}
 		for _, binding := range source.Bindings {
 			pattern := binding.Pattern
+			if pattern == "keep" {
+				continue // An omitted action has the same musical meaning.
+			}
 			if pattern == "stop" && !scoreHasPattern(score, "stop") {
 				pattern = "off" // canonical project-1 action; source spelling is stop
 			}
@@ -295,6 +298,35 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		return nil, append(diagnostics, notation.Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	return p, diagnostics
+}
+
+// Melodic notation can omit its kind. For a pattern used only by built-in
+// acid tracks, retain the existing project-1 "acid" kind in semantic JSON.
+func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string {
+	if pattern.Kind != "notes" {
+		return pattern.Kind
+	}
+	usedByAcid := false
+	for _, scene := range score.Scenes {
+		for _, binding := range scene.Bindings {
+			if binding.Pattern != pattern.Name {
+				continue
+			}
+			for _, track := range score.Tracks {
+				if track.Name != binding.Track {
+					continue
+				}
+				if track.Kind != "acid" {
+					return "notes"
+				}
+				usedByAcid = true
+			}
+		}
+	}
+	if usedByAcid {
+		return "acid"
+	}
+	return "notes"
 }
 
 func representativeTrack(score *notation.Score, pattern notation.Pattern) notation.Track {

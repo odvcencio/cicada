@@ -33,6 +33,10 @@ func FixSource(source []byte) ([]byte, bool, error) {
 	}
 	var edits []sourceEdit
 	movedAttrs := map[int]bool{}
+	hasStopPattern := false
+	for _, pattern := range before.Patterns {
+		hasStopPattern = hasStopPattern || pattern.Name == "stop"
+	}
 	for i := 0; i < root.NamedChildCount(); i++ {
 		node := root.NamedChild(i)
 		switch walker.Type(node) {
@@ -81,7 +85,43 @@ func FixSource(source []byte) ([]byte, bool, error) {
 				insert = newline + "  octave = 2"
 			}
 			edits = append(edits, sourceEdit{start: offset, end: offset, text: insert})
+		case "scene_decl":
+			for j := 0; j < node.NamedChildCount(); j++ {
+				binding := node.NamedChild(j)
+				if walker.Type(binding) != "scene_assignment" {
+					continue
+				}
+				pattern := walker.Field(binding, "pattern")
+				if pattern == nil {
+					continue
+				}
+				switch walker.Text(pattern) {
+				case "off":
+					if !hasStopPattern {
+						edits = append(edits, sourceEdit{start: int(pattern.StartByte()), end: int(pattern.EndByte()), text: "stop"})
+					}
+				case "keep":
+					start, end := precedingSpace(source, int(binding.StartByte())), int(binding.EndByte())
+					lineEnd := bytes.IndexByte(source[end:], '\n')
+					if lineEnd >= 0 && bytes.Contains(source[end:end+lineEnd], []byte("//")) {
+						continue // Keep a line whose trailing comment describes this action.
+					}
+					lineStart := bytes.LastIndexByte(source[:start], '\n') + 1
+					if len(bytes.TrimSpace(source[lineStart:start])) == 0 && lineEnd >= 0 && len(bytes.TrimSpace(source[end:end+lineEnd])) == 0 {
+						start, end = lineStart, end+lineEnd+1
+					}
+					edits = append(edits, sourceEdit{start: start, end: end})
+				}
+			}
 		case "acid_pattern", "note_pattern", "drum_pattern":
+			if walker.Type(node) == "acid_pattern" {
+				for j := 0; j < node.ChildCount(); j++ {
+					child := node.Child(j)
+					if child.ChildCount() == 0 && walker.Type(child) == "acid" {
+						edits = append(edits, sourceEdit{start: precedingSpace(source, int(child.StartByte())), end: int(child.EndByte())})
+					}
+				}
+			}
 			if walker.Type(node) == "note_pattern" {
 				for j := 0; j < node.ChildCount(); j++ {
 					child := node.Child(j)
@@ -157,6 +197,11 @@ func FixSource(source []byte) ([]byte, bool, error) {
 					edits = append(edits, sourceEdit{start: precedingSpace(source, int(child.StartByte())), end: int(child.EndByte())})
 				}
 			}
+		case "instrument_param":
+			name, unit, value := walker.Field(node, "name"), walker.Field(node, "unit"), walker.Field(node, "default")
+			if name != nil && unit != nil && value != nil && walker.Text(unit) == inferredFixUnit(walker.Text(value)) && !bytes.Contains(source[name.EndByte():unit.StartByte()], []byte("//")) {
+				edits = append(edits, sourceEdit{start: int(name.EndByte()), end: int(unit.EndByte())})
+			}
 		case "probability":
 			if source[node.StartByte()] != '%' {
 				break
@@ -214,6 +259,20 @@ func canonicalFixUnit(value string) string {
 		return strings.TrimSuffix(value, "db") + "dB"
 	default:
 		return value
+	}
+}
+
+func inferredFixUnit(value string) string {
+	value = strings.ToLower(value)
+	switch {
+	case strings.HasSuffix(value, "khz"), strings.HasSuffix(value, "hz"):
+		return "hz"
+	case strings.HasSuffix(value, "ms"), strings.HasSuffix(value, "s"):
+		return "ms"
+	case strings.HasSuffix(value, "db"):
+		return "db"
+	default:
+		return "unit"
 	}
 }
 
