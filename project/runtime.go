@@ -139,6 +139,9 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			}
 			overrides := map[string]string{}
 			for name, value := range track.Params {
+				if name == "octave" {
+					continue
+				}
 				literal, err := valueSource(value)
 				if err != nil {
 					return cfg, fmt.Errorf("track %s parameter %s: %w", track.ID, name, err)

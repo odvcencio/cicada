@@ -165,7 +165,7 @@ func formatDeclaration(source []byte) string {
 		value := canonicalNumericUnit(token.text)
 		if len(frames) > 0 {
 			frame := &frames[len(frames)-1]
-			if (frame.kind == "instrument" && (value == "param" || value == "voice") ||
+			if (frame.kind == "instrument" && (value == "octave" || value == "param" || value == "voice") ||
 				frame.kind == "voice" && (value == "let" || value == "out") ||
 				frame.kind == "pattern" && i+1 < len(tokens) && tokens[i+1].text == ":") && strings.TrimSpace(line) != "" {
 				flush()

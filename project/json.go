@@ -266,6 +266,20 @@ func DecodeJSON(data []byte) (*Project, error) {
 		// Semantic JSON written before editions existed means edition 1.
 		p.Edition = 1
 	}
+	var rawInstruments []map[string]json.RawMessage
+	if err := json.Unmarshal(root["instruments"], &rawInstruments); err != nil {
+		return nil, jsonError(data, "CICADA-PARAM", "/instruments", 0, err)
+	}
+	for i := range p.Instruments {
+		if raw, present := rawInstruments[i]["octave"]; present {
+			if bytes.Equal(raw, []byte("null")) {
+				return nil, jsonError(data, "CICADA-PARAM", fmt.Sprintf("/instruments/%d/octave", i), 0, fmt.Errorf("octave cannot be null"))
+			}
+		} else {
+			legacyOctave := 2
+			p.Instruments[i].Octave = &legacyOctave
+		}
+	}
 	if p.Edition != 1 {
 		return nil, jsonError(data, "CICADA-VERSION", "/edition", 0, fmt.Errorf("only cicada 1 is supported"))
 	}

@@ -23,6 +23,15 @@ var scaleIntervals = map[string][7]int{
 }
 
 var chromatic = map[byte]int{'c': 0, 'd': 2, 'e': 4, 'f': 5, 'g': 7, 'a': 9, 'b': 11}
+
+func parseOctaveLiteral(value string) (int, error) {
+	n, err := strconv.Atoi(value)
+	if err != nil || n < 0 || n > 6 {
+		return 0, fmt.Errorf("invalid octave %q: expected integer 0 to 6", value)
+	}
+	return n, nil
+}
+
 var drumNotes = func() map[string]uint8 {
 	notes := make(map[string]uint8, drum.LaneCount)
 	for lane, name := range drum.Names {
@@ -117,11 +126,17 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 	}
 	if source.Kind == "acid" || source.Kind == "notes" {
 		octave := 2
+		for _, inst := range score.Instruments {
+			if inst.Name == track.Kind {
+				octave = inst.Octave
+				break
+			}
+		}
 		for _, param := range track.Params {
 			if param.Name == "octave" {
-				n, err := strconv.Atoi(param.Value)
-				if err != nil || n < 0 || n > 6 {
-					return nil, fmt.Errorf("invalid octave %q", param.Value)
+				n, err := parseOctaveLiteral(param.Value)
+				if err != nil {
+					return nil, err
 				}
 				octave = n
 			}
