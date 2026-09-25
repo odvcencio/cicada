@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>{{.Title}} · Cicada score</title>
+<style>
+:root { --bg:#0f1411; --panel:#19211c; --panel-raised:#202b24; --border:#354439; --text:#e2e9dc; --muted:#a6b5a6; --amber:#f2c66d; --mint:#88d9bb; --coral:#ff936f; --rose:#ff8daf; --grid:#29362d; }
+* { box-sizing:border-box; }
+html { scroll-behavior:smooth; }
+body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
+a { color:var(--mint); }
+a:focus-visible, summary:focus-visible { outline:3px solid var(--amber); outline-offset:3px; }
+.hero { border-bottom:1px solid var(--border); padding:clamp(24px,4vw,56px) clamp(20px,4vw,64px) 28px; background:radial-gradient(circle at 90% -25%,#31503d 0%,transparent 42%),linear-gradient(160deg,#141d17,var(--bg)); }
+.brand { text-transform:uppercase; color:var(--mint); letter-spacing:.2em; font-size:.76rem; font-weight:800; }
+h1 { margin:.32em 0 .26em; font-size:clamp(2.25rem,5vw,4.5rem); letter-spacing:-.055em; line-height:1.05; }
+.lede { max-width:70ch; color:var(--muted); margin:0; }
+.meta { display:flex; flex-wrap:wrap; gap:10px; margin-top:24px; }
+.meta span { display:inline-flex; gap:.55rem; align-items:baseline; border:1px solid var(--border); border-radius:999px; background:#162018; padding:7px 14px; font-variant-numeric:tabular-nums; }
+.meta b { color:var(--amber); font-size:.76rem; letter-spacing:.08em; text-transform:uppercase; }
+.nav { display:flex; flex-wrap:wrap; gap:20px; padding:14px clamp(20px,4vw,64px); border-bottom:1px solid var(--border); background:#121a15; }
+.nav a { color:var(--text); font-size:.87rem; text-decoration:none; font-weight:700; }
+.nav a:hover { color:var(--amber); }
+main { max-width:1600px; margin:auto; padding:30px clamp(20px,4vw,64px) 80px; }
+section { margin:0 0 46px; }
+h2 { font-size:1.42rem; margin:0 0 14px; letter-spacing:-.025em; }
+.section-note { color:var(--muted); margin:-4px 0 20px; font-size:.92rem; }
+.track-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:12px; }
+.track { border:1px solid var(--border); border-radius:14px; padding:16px 18px; background:var(--panel); min-height:116px; }
+.track .kind { color:var(--mint); font-size:.75rem; text-transform:uppercase; letter-spacing:.13em; font-weight:800; }
+.track strong { display:block; font-size:1.18rem; margin:4px 0; overflow-wrap:anywhere; }
+.track .gain { color:var(--muted); font-size:.86rem; }
+.track.muted { opacity:.68; border-style:dashed; }
+.song { display:flex; gap:8px; overflow-x:auto; padding-bottom:9px; }
+.song-block { min-width:135px; border:1px solid #756643; border-radius:11px; background:linear-gradient(130deg,#3b3220,#29291c); padding:12px 16px; }
+.song-block strong { display:block; overflow-wrap:anywhere; color:var(--amber); }
+.song-block span { color:#e2d5b7; font-size:.85rem; }
+.patterns { display:grid; gap:18px; }
+.pattern { border:1px solid var(--border); background:var(--panel); border-radius:16px; overflow:hidden; }
+.pattern summary { cursor:pointer; display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px 18px; align-items:baseline; padding:18px 22px; background:var(--panel-raised); list-style:none; }
+.pattern summary::-webkit-details-marker { display:none; }
+.pattern summary::after { content:"▾"; color:var(--mint); margin-left:auto; }
+.pattern:not([open]) summary::after { content:"▸"; }
+.pattern-title { font-size:1.16rem; font-weight:800; overflow-wrap:anywhere; }
+.pattern-title small { font-size:.69rem; text-transform:uppercase; letter-spacing:.13em; color:var(--mint); margin-left:9px; }
+.pattern-metrics { color:var(--muted); font-size:.82rem; font-variant-numeric:tabular-nums; }
+.grid-wrap { overflow-x:auto; padding:18px 18px 22px; scrollbar-color:#65836c #19211c; }
+.grid-line { --steps:16; display:grid; grid-template-columns:76px repeat(var(--steps),minmax(48px,1fr)); min-width:max-content; align-items:stretch; gap:4px; margin-bottom:4px; }
+.row-label { display:flex; align-items:center; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; font-size:.68rem; font-weight:800; padding-left:5px; }
+.cell { display:flex; align-items:center; justify-content:center; min-height:44px; background:var(--grid); border:1px solid #334138; border-radius:6px; font:600 .78rem/1.2 ui-monospace,SFMono-Regular,Consolas,monospace; color:var(--muted); font-variant-numeric:tabular-nums; }
+.cell.beat { min-height:27px; background:transparent; border-color:transparent; font-size:.7rem; }
+.cell.beat.downbeat { color:var(--amber); border-bottom:2px solid #8d7446; }
+.cell.note.on { color:var(--amber); background:#393320; border-color:#6b5937; font-size:.88rem; }
+.cell.note.accent { background:#58342b; border-color:#a6634a; color:#ffe0a7; }
+.cell.note.tie { color:var(--mint); background:#1e3a32; }
+.cell.flag.on { color:var(--rose); background:#40242e; border-color:#774454; font-size:1rem; }
+.cell.flag.slide.on { color:var(--mint); background:#1c3932; border-color:#3c7465; }
+.cell.probability.on { color:#ccb1ff; }
+.drum .grid-line { grid-template-columns:76px repeat(var(--steps),minmax(38px,1fr)); }
+.drum-cell { position:relative; overflow:hidden; }
+.drum-cell .fill { position:absolute; inset:auto 0 0; height:var(--velocity); background:linear-gradient(180deg,#f8b962,#d86b42); opacity:.82; }
+.drum-cell .glyph { position:relative; z-index:1; color:#171a15; font-size:1rem; }
+.drum-cell.accent .fill { background:linear-gradient(180deg,#ffd49b,#ff7c69); }
+.source { border:1px solid var(--border); border-radius:14px; overflow:hidden; background:#111915; }
+.source summary { cursor:pointer; padding:16px 20px; font-weight:800; background:var(--panel-raised); }
+.source pre { overflow:auto; margin:0; padding:20px; color:#c8dbc8; font:13px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; }
+.source-name { color:var(--muted); font-weight:400; margin-left:10px; }
+footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78rem; padding:18px clamp(20px,4vw,64px); }
+@media (max-width:640px) { .hero { padding-top:28px; } .pattern summary { padding:15px 16px; } .pattern-metrics { width:100%; } .grid-wrap { padding:12px; } }
+@media (prefers-reduced-motion:reduce) { html { scroll-behavior:auto; } }
+.hero { display:flex; align-items:center; flex-wrap:wrap; gap:12px 24px; padding:15px 26px; }
+.hero h1 { font-size:1.42rem; line-height:1.2; letter-spacing:-.03em; margin:0; }
+.hero .lede { display:none; }
+.hero .meta { margin:0 0 0 auto; }
+.hero .meta span { padding:4px 10px; font-size:.78rem; }
+.nav { padding:8px 26px; }
+.workspace { display:grid; grid-template-columns:minmax(350px,42%) minmax(0,58%); max-width:none; margin:0; padding:0; align-items:start; }
+.source-pane { min-width:0; border-right:1px solid var(--border); background:#111713; position:sticky; top:0; height:calc(100vh - 104px); overflow:auto; }
+.pane-header { position:sticky; top:0; z-index:2; display:flex; flex-wrap:wrap; justify-content:space-between; gap:8px; padding:14px 18px; background:#18211b; border-bottom:1px solid var(--border); font:13px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.pane-header b { color:var(--amber); }
+.pane-header small { color:var(--muted); font:12px/1.4 system-ui,sans-serif; margin-left:6px; }
+.pane-state { color:var(--mint); }
+.source-pane pre { margin:0; padding:20px 22px 48px; white-space:pre; overflow-x:auto; font:13px/1.75 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; }
+.source-scroll { display:flex; overflow:auto; }
+.source-scroll pre { overflow:visible; flex:none; padding-left:14px; }
+.line-numbers { position:sticky; left:0; align-self:stretch; z-index:1; display:flex; flex-direction:column; flex:none; min-width:45px; padding:20px 10px 48px; border-right:1px solid var(--border); background:#141c16; color:#697b6d; text-align:right; font:13px/1.75 ui-monospace,SFMono-Regular,Consolas,monospace; user-select:none; }
+.projection { min-width:0; padding:22px 26px 60px; }
+.projection-heading { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 14px; margin-bottom:18px; }
+.projection-heading .eyebrow { color:var(--mint); text-transform:uppercase; letter-spacing:.16em; font-size:.72rem; font-weight:800; }
+.projection-heading p { color:var(--muted); margin:0; font-size:.82rem; }
+.projection section { margin-bottom:32px; }
+.projection h2 { font-size:1.08rem; margin:0 0 11px; }
+.pattern summary { padding:12px 16px; }
+.pattern-title { font-size:1rem; }
+.pattern-metrics { font-size:.75rem; }
+.grid-wrap { padding:13px; }
+.grid-line { gap:3px; margin-bottom:3px; grid-template-columns:65px repeat(var(--steps),minmax(35px,1fr)); }
+.drum .grid-line { grid-template-columns:65px repeat(var(--steps),minmax(35px,1fr)); }
+.cell { min-height:33px; font-size:.7rem; }
+.cell.beat { min-height:24px; }
+.pitch-row { margin-bottom:2px; }
+.pitch-row .pitch-cell { min-height:21px; border-color:#26322a; background:#202922; }
+.pitch-row .pitch-cell.on { background:#ffe28a; border-color:#ffe28a; color:#162019; }
+.pitch-row .pitch-cell.accent { background:#ff9979; border-color:#ff9979; }
+.pitch-label { color:#9cb7a3; text-transform:none; font-size:.68rem; }
+.track { min-height:92px; padding:12px 15px; }
+@media (max-width:980px) { .workspace { grid-template-columns:1fr; } .source-pane { position:relative; height:42vh; border-right:0; border-bottom:1px solid var(--border); } .projection { padding:22px 16px 50px; } .hero .meta { margin-left:0; } }
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="brand">Cicada / score view</div>
+  <h1>{{.Title}}</h1>
+  <p class="lede">One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.</p>
+  <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
+</header>
+<nav class="nav" aria-label="Score sections"><a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#notation">Notation</a></nav>
+<main class="workspace">
+  <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
+    <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">validated snapshot</span></div>
+    <div class="source-scroll"><div class="line-numbers" aria-hidden="true">{{range .LineNumbers}}<span>{{.}}</span>{{end}}</div><pre><code>{{.SourceHTML}}</code></pre></div>
+  </aside>
+  <div class="projection">
+    <div class="projection-heading"><span class="eyebrow">Projection</span><p>The patterns below come from the same validated source on the left. This export is read only.</p></div>
+    <section id="patterns" aria-labelledby="patterns-heading">
+      <h2 id="patterns-heading">Patterns</h2>
+      <div class="patterns">{{range .Patterns}}
+        <details class="pattern{{if .Drums}} drum{{end}}" open>
+          <summary><span class="pattern-title">{{.ID}} <small>{{.Kind}}</small></span><span class="pattern-metrics">{{.Steps}} steps · swing {{.Swing}} · gate {{.Gate}} · transpose {{.Transpose}}</span></summary>
+          <div class="grid-wrap" role="group" aria-label="{{.ID}} pattern">
+            <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Step</span>{{range .Numbers}}<span class="cell beat{{if .Downbeat}} downbeat{{end}}">{{.Value}}</span>{{end}}</div>
+            {{if .Drums}}
+              {{range .Lanes}}<div class="grid-line" style="--steps:{{len .Cells}}"><span class="row-label">{{.Name}}</span>{{range .Cells}}<span class="cell drum-cell{{if .Accent}} accent{{end}}" aria-label="{{.Label}}">{{if .Active}}<span class="fill" style="--velocity:{{.FillPercent}}%"></span><span class="glyph">●</span>{{else}}·{{end}}</span>{{end}}</div>{{end}}
+            {{else}}
+              {{range .PitchRows}}<div class="grid-line pitch-row" style="--steps:{{len .Cells}}"><span class="row-label pitch-label">{{.Name}}</span>{{range .Cells}}<span class="cell pitch-cell{{if .On}} on{{end}}{{if .Accent}} accent{{end}}"{{if .On}} aria-label="{{.Label}}"{{end}}>{{if .On}}●{{end}}</span>{{end}}</div>{{end}}
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Note</span>{{range .Cells}}<span class="cell note{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" aria-label="{{.Label}}">{{.Note}}</span>{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Accent</span>{{range .Cells}}<span class="cell flag{{if .Accent}} on{{end}}">{{if .Accent}}◆{{else}}·{{end}}</span>{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Slide</span>{{range .Cells}}<span class="cell flag slide{{if .Slide}} on{{end}}">{{if .Slide}}↗{{else if .Tie}}━{{else}}·{{end}}</span>{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Ratchet</span>{{range .Cells}}<span class="cell">{{.Ratchet}}</span>{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Chance</span>{{range .Cells}}<span class="cell probability{{if .Active}} on{{end}}">{{.Probability}}</span>{{end}}</div>
+            {{end}}
+          </div>
+        </details>{{end}}
+      </div>
+    </section>
+    <section id="tracks" aria-labelledby="tracks-heading">
+      <h2 id="tracks-heading">Tracks</h2>
+      <div class="track-list">{{range .Tracks}}<div class="track{{if .Muted}} muted{{end}}"><span class="kind">{{.Kind}}</span><strong>{{.ID}}</strong><span class="gain">{{.Gain}}{{if .Muted}} · muted{{end}}</span></div>{{end}}</div>
+    </section>
+    <section id="arrangement" aria-labelledby="arrangement-heading">
+      <h2 id="arrangement-heading">Scenes and song</h2>
+      <div class="song">{{range .Song}}<div class="song-block"><strong>{{.Scene}}</strong><span>{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span></div>{{end}}</div>
+    </section>
+  </div>
+</main>
+<footer>Cicada score view · deterministic export from the validated project model</footer>
+</body>
+</html>

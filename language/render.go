@@ -128,16 +128,27 @@ pre { margin: 0; padding: 24px 16px; overflow-x: auto; font: 14px/1.55 ui-monosp
 </head>
 <body>
 <pre><code>`, html.EscapeString(title), theme.Background.css(), theme.Foreground.css())
-	for _, r := range runs(src, spans, theme) {
-		text := html.EscapeString(string(src[r.start:r.end]))
-		if css := r.style.css(theme.Foreground); css != "" {
-			fmt.Fprintf(out, `<span style="%s">%s</span>`, css, text)
-		} else {
-			out.WriteString(text)
-		}
+	if err := WriteHTMLFragment(out, src, spans, theme); err != nil {
+		return err
 	}
 	out.WriteString("</code></pre>\n</body>\n</html>\n")
 	return out.Flush()
+}
+
+// WriteHTMLFragment renders highlighted source inside an existing code element.
+// It escapes all source text and only emits theme-derived span styles.
+func WriteHTMLFragment(w io.Writer, src []byte, spans []Span, theme Theme) error {
+	for _, r := range runs(src, spans, theme) {
+		value := html.EscapeString(string(src[r.start:r.end]))
+		if css := r.style.css(theme.Foreground); css != "" {
+			if _, err := fmt.Fprintf(w, `<span style="%s">%s</span>`, css, value); err != nil {
+				return err
+			}
+		} else if _, err := io.WriteString(w, value); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (c Color) css() string {

@@ -38,6 +38,7 @@ The [cicada chorus](examples/cicada-chorus.cicada) tours a noise-and-ring tymbal
 ```sh
 go run ./cmd/cicada highlight examples/cicada-chorus.cicada
 go run ./cmd/cicada highlight --html examples/cicada-chorus.cicada > cicada-chorus.html
+go run ./cmd/cicada view examples/first-acid.cicada -o first-acid.html
 go run ./cmd/cicada symbols --refs examples/cicada-chorus.cicada
 go run ./cmd/cicada render examples/cicada-chorus.cicada -o cicada-chorus.wav
 ```
