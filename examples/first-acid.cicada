@@ -9,7 +9,7 @@ key a minor
 seed 4242
 
 track bass acid {
-  cutoff = 620hz
+  cutoff = 620Hz
   reso = 0.62
   envmod = 0.7
   decay = 380ms
@@ -19,13 +19,13 @@ track bass acid {
 }
 
 track drums drums {
-  bd_tune = 55hz
+  bd_tune = 55Hz
   bd_decay = 400ms
   ch_decay = 60ms
 }
 
 instrument glassbass {
-  param cutoff: hz = 720hz;
+  param cutoff: hz = 720Hz;
   param bite: unit = 0.65;
   voice mono {
     let osc = saw(pitch);
@@ -37,7 +37,7 @@ instrument glassbass {
 }
 
 track lead glassbass {
-  cutoff = 900hz
+  cutoff = 900Hz
 }
 
 phrase hook acid {
