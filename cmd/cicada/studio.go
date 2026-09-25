@@ -87,6 +87,10 @@ func studioHandler(path string) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
+	absolute, err = filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return nil, err
+	}
 	source, err := os.ReadFile(absolute)
 	if err != nil {
 		return nil, err
@@ -207,6 +211,10 @@ func (s *studio) toggleStep(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *studio) apply(w http.ResponseWriter, edit studioEdit, change func([]byte) ([]byte, error)) {
+	s.applyWithHook(w, edit, change, nil)
+}
+
+func (s *studio) applyWithHook(w http.ResponseWriter, edit studioEdit, change func([]byte) ([]byte, error), beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	current, err := os.ReadFile(s.path)
@@ -238,11 +246,24 @@ func (s *studio) apply(w http.ResponseWriter, edit studioEdit, change func([]byt
 		return
 	}
 	info, err := os.Stat(s.path)
+	committed, preserved := false, ""
 	if err == nil {
-		err = writeFixedScore(s.path, updated, info.Mode().Perm())
+		committed, preserved, err = studioWriteIfRevision(s.path, updated, info.Mode().Perm(), edit.Revision, beforeSwap)
 	}
 	if err != nil {
+		if errors.Is(err, errStudioSwapUnavailable) {
+			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+			return
+		}
+		if preserved != "" {
+			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "preserved": preserved})
+			return
+		}
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	if !committed {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during commit; reload before saving"})
 		return
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
