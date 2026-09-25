@@ -3,6 +3,7 @@ package notation
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -158,7 +159,7 @@ func formatDeclaration(source []byte) string {
 			flush()
 			continue
 		}
-		value := token.text
+		value := canonicalNumericUnit(token.text)
 		if len(frames) > 0 {
 			frame := &frames[len(frames)-1]
 			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene") && frame.assignment == 3 && value != "}" {
@@ -248,6 +249,22 @@ func formatDeclaration(source []byte) string {
 	}
 	flush()
 	return strings.Join(lines, "\n")
+}
+
+func canonicalNumericUnit(value string) string {
+	lower := strings.ToLower(value)
+	for _, unit := range []struct{ source, printed string }{
+		{"khz", "kHz"}, {"hz", "Hz"}, {"db", "dB"},
+	} {
+		if !strings.HasSuffix(lower, unit.source) {
+			continue
+		}
+		number := value[:len(value)-len(unit.source)]
+		if _, err := strconv.ParseFloat(number, 64); err == nil {
+			return number + unit.printed
+		}
+	}
+	return value
 }
 
 func endsWithName(line string) bool {
