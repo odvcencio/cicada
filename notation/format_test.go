@@ -102,6 +102,24 @@ func TestFormatPatternBodySettings(t *testing.T) {
 	}
 }
 
+func TestFormatKeepsPhraseUseTranspose(t *testing.T) {
+	source := []byte("pattern p acid { use hook transpose = 12 }\n")
+	doc, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(formatted, []byte("use hook transpose = 12")) {
+		t.Fatalf("phrase transpose was split: %s", formatted)
+	}
+	if _, err := ParseDocument(formatted); err != nil {
+		t.Fatalf("formatted source syntax: %v", err)
+	}
+}
+
 func TestFormatKeepsOctaveMarksAndGroupingParens(t *testing.T) {
 	source := []byte("cicada 1\ninstrument sub {\n  voice mono {\n    let shape = env(gate, 90ms);\n    out = saw(pitch)*( shape * velocity );\n  }\n}\ntrack low sub {}\npattern a notes steps=4 { 7,~ 5,,^*2 3, ~%50 c2, }\nscene main { low=a }\nsong { main }\n")
 	document, err := ParseDocument(source)

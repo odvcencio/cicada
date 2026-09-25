@@ -171,7 +171,7 @@ func formatDeclaration(source []byte) string {
 				flush()
 				frame.assignment = 0
 			}
-			if frame.kind == "pattern" && i+1 < len(tokens) && tokens[i+1].text == "=" && strings.TrimSpace(line) != "" {
+			if frame.kind == "pattern" && i+1 < len(tokens) && tokens[i+1].text == "=" && strings.TrimSpace(line) != "" && !strings.HasPrefix(strings.TrimSpace(line), "use ") {
 				flush()
 			}
 			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "kit") && frame.assignment == 3 && value != "}" {

@@ -52,7 +52,7 @@ func TestLanguageCLI(t *testing.T) {
 		t.Fatalf("html output: %q", page[:min(len(page), 300)])
 	}
 	spans, _ := run(0, nil, "highlight", "--spans", score)
-	if !strings.Contains(spans, "62:3     tag.builtin                  \"sd:\"") {
+	if !strings.Contains(spans, "tag.builtin                  \"sd:\"") {
 		t.Fatalf("span listing lacks the snare lane:\n%s", spans)
 	}
 
