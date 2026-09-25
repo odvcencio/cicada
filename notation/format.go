@@ -165,9 +165,13 @@ func formatDeclaration(source []byte) string {
 		value := canonicalNumericUnit(token.text)
 		if len(frames) > 0 {
 			frame := &frames[len(frames)-1]
+			next := i + 1
+			for next < len(tokens) && tokens[next].comment {
+				next++
+			}
 			if (frame.kind == "instrument" && (value == "param" || value == "voice") ||
 				frame.kind == "voice" && (value == "let" || value == "out") ||
-				frame.kind == "pattern" && i+1 < len(tokens) && tokens[i+1].text == ":") && strings.TrimSpace(line) != "" {
+				frame.kind == "pattern" && next < len(tokens) && tokens[next].text == ":") && strings.TrimSpace(line) != "" {
 				flush()
 			}
 			if frame.kind == "pattern" && frame.assignment == 3 && value != "}" {
@@ -290,7 +294,7 @@ func formatDrumRows(section string, pattern *gts.Node, walker *walk.Walker) stri
 		if walker.Type(lane) != "drum_lane" {
 			continue
 		}
-		label := walker.Text(walker.Field(lane, "name"))
+		label := strings.TrimSuffix(walker.Text(walker.Field(lane, "name")), ":") + ":"
 		for lineIndex < len(lines) {
 			line := lines[lineIndex]
 			trimmed := strings.TrimSpace(line)
