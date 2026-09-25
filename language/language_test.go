@@ -68,6 +68,27 @@ func TestQueriesCompile(t *testing.T) {
 	}
 }
 
+func TestStopSceneHighlightStaysNeutralForLegacyPattern(t *testing.T) {
+	for _, source := range []string{
+		"scene main { bass = stop }\n",
+		"pattern stop { 1 . }\nscene main { bass = stop }\n",
+	} {
+		spans, err := Highlight([]byte(source))
+		if err != nil {
+			t.Fatal(err)
+		}
+		found := false
+		for _, span := range spans {
+			if string(source[span.Start:span.End]) == "stop" && span.Capture == "constant" {
+				found = true
+			}
+		}
+		if !found {
+			t.Fatalf("scene stop has no neutral capture: %q %+v", source, spans)
+		}
+	}
+}
+
 func leaves(n *gts.Node, visit func(*gts.Node)) {
 	if n.ChildCount() == 0 {
 		if n.EndByte() > n.StartByte() {
