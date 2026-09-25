@@ -91,7 +91,11 @@ func compileLiveScore(path string) (liveplay.Score, error) {
 	if err != nil {
 		return liveplay.Score{}, err
 	}
-	return liveplay.Score{Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path}, nil
+	sceneIDs := make([]string, len(p.Scenes))
+	for i, scene := range p.Scenes {
+		sceneIDs[i] = scene.ID
+	}
+	return liveplay.Score{Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path, SceneIDs: sceneIDs}, nil
 }
 
 type liveScoreWatcher struct {

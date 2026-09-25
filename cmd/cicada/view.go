@@ -75,6 +75,10 @@ type viewSongEntry struct {
 	Bars  uint16
 }
 
+type viewScene struct {
+	ID string
+}
+
 type scoreView struct {
 	Title, Tempo, Key, SourceName string
 	SourceHTML                    template.HTML
@@ -85,6 +89,7 @@ type scoreView struct {
 	Tracks                        []viewTrack
 	Voices                        []viewVoice
 	Patterns                      []viewPattern
+	Scenes                        []viewScene
 	Song                          []viewSongEntry
 }
 
@@ -129,7 +134,7 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 		Key: pitchNames[p.Key.Root] + " " + p.Key.Scale, SourceName: sourceName,
 		SourceText: source, Revision: revision, Studio: studio,
 		Tracks: make([]viewTrack, 0, len(p.Tracks)), Patterns: make([]viewPattern, 0, len(p.Patterns)),
-		Song: make([]viewSongEntry, 0, len(p.Song)),
+		Scenes: make([]viewScene, 0, len(p.Scenes)), Song: make([]viewSongEntry, 0, len(p.Song)),
 	}
 	spans, err := language.Highlight([]byte(source))
 	if err != nil {
@@ -192,6 +197,9 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 	}
 	for _, entry := range p.Song {
 		view.Song = append(view.Song, viewSongEntry{Scene: entry.Scene, Bars: entry.Bars})
+	}
+	for _, scene := range p.Scenes {
+		view.Scenes = append(view.Scenes, viewScene{ID: scene.ID})
 	}
 	page, err := template.New("view").Parse(scoreViewTemplate)
 	if err != nil {
