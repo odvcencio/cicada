@@ -153,7 +153,7 @@ func Cicada() *grammargen.Grammar {
 	// longest match beats a plain number.
 	g.Define("value", choice(sym("number"), sym("identifier"), sym("string"), sym("fraction")))
 	g.Define("fraction", token(pat(`[0-9]+\/[0-9]+[tT.]?`)))
-	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(hz|khz|ms|s|db|%)?`)))
+	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(khz|kHz|hz|Hz|ms|s|db|dB|%)?`)))
 	g.Define("integer", token(pat(`[0-9]+`)))
 	g.Define("key_root", token(pat(`[a-g][#b]?`)))
 	g.Define("string", token(pat(`"([^"\\]|\\.)*"`)))
@@ -173,6 +173,7 @@ func Cicada() *grammargen.Grammar {
 	g.Test("instrument", "cicada 1 instrument i { param c: hz = 1hz; voice mono { let s = env(gate, 9ms); out = saw(pitch - c) * (s * 2); } }", "")
 	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
 	g.Test("default notes", "phrase hook { 1 . } pattern p { use hook 5 . }", "")
+	g.Test("SI units", "track bass acid { cutoff = 2kHz level = -6dB } instrument i { param cutoff: hz = 720Hz; voice mono { out = saw(440Hz); } }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
 	return g

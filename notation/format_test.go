@@ -66,6 +66,24 @@ func TestFormatKeepsChanceAfterOctaveComma(t *testing.T) {
 	}
 }
 
+func TestFormatPrintsSIUnits(t *testing.T) {
+	source := []byte("track bass acid { cutoff = 2khz level = -6db }\npattern riff { 1 . }\nscene main { bass=riff }\nsong { main }\n")
+	doc, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(formatted, []byte("2kHz")) || !bytes.Contains(formatted, []byte("-6dB")) {
+		t.Fatalf("formatter did not use SI spelling: %s", formatted)
+	}
+	if _, diagnostics := Parse(formatted); len(diagnostics) != 0 {
+		t.Fatalf("formatted source diagnostics: %+v", diagnostics)
+	}
+}
+
 func TestFormatKeepsOctaveMarksAndGroupingParens(t *testing.T) {
 	source := []byte("cicada 1\ninstrument sub {\n  voice mono {\n    let shape = env(gate, 90ms);\n    out = saw(pitch)*( shape * velocity );\n  }\n}\ntrack low sub {}\npattern a notes steps=4 { 7,~ 5,,^*2 3, ~%50 c2, }\nscene main { low=a }\nsong { main }\n")
 	document, err := ParseDocument(source)
