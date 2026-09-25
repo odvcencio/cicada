@@ -69,9 +69,11 @@ func (t *studioTransport) snapshot() transportSnapshot {
 	return state
 }
 
-func (t *studioTransport) start() error { return t.startFrom(-1, "") }
+func (t *studioTransport) start() error { return t.startFrom(-1, "", nil, [32]byte{}) }
 
-func (t *studioTransport) startFrom(index int, scene string) error {
+func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte) error {
+	t.pollMu.Lock()
+	defer t.pollMu.Unlock()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.player != nil || t.playing && t.stream != nil {
@@ -84,6 +86,12 @@ func (t *studioTransport) startFrom(index int, scene string) error {
 			}
 		}
 		if index >= 0 {
+			if prepared != nil && preparedHash != t.last {
+				if err := t.stream.Offer(*prepared); err != nil {
+					return err
+				}
+				t.last, t.pending = preparedHash, true
+			}
 			if err := t.stream.StartSongEntry(index, scene); err != nil {
 				return err
 			}
@@ -95,14 +103,22 @@ func (t *studioTransport) startFrom(index int, scene string) error {
 		t.playing, t.errText = true, ""
 		return nil
 	}
-	fingerprint, err := playSourceHash(t.path)
-	if err != nil {
-		return err
+	var fingerprint [32]byte
+	var initial liveplay.Score
+	if prepared != nil {
+		fingerprint, initial = preparedHash, *prepared
+	} else {
+		var err error
+		fingerprint, err = playSourceHash(t.path)
+		if err != nil {
+			return err
+		}
+		initial, err = compileLiveScore(t.path)
+		if err != nil {
+			return err
+		}
 	}
-	initial, err := compileLiveScore(t.path)
-	if err != nil {
-		return err
-	}
+	var err error
 	stream, err := liveplay.New(initial, liveSampleRate)
 	if err != nil {
 		return err
@@ -286,7 +302,12 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 func (t *studioTransport) poll() {
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
-	fingerprint, err := playSourceHash(t.path)
+	source, err := os.ReadFile(t.path)
+	if err != nil {
+		t.setError(err)
+		return
+	}
+	fingerprint, err := playSourceHashBytes(t.path, source)
 	if err != nil {
 		t.setError(err)
 		return
@@ -296,9 +317,12 @@ func (t *studioTransport) poll() {
 		t.mu.Unlock()
 		return
 	}
-	t.last = fingerprint
 	t.mu.Unlock()
-	next, err := compileLiveScore(t.path)
+	project, err := compileStudioSource(t.path, source)
+	var next liveplay.Score
+	if err == nil {
+		next, err = compileLiveProject(t.path, project)
+	}
 	if err == nil {
 		err = t.stream.Offer(next)
 	}
@@ -307,6 +331,7 @@ func (t *studioTransport) poll() {
 		return
 	}
 	t.mu.Lock()
+	t.last = fingerprint
 	t.pending, t.errText = true, ""
 	position := t.stream.Position()
 	t.mu.Unlock()
@@ -378,7 +403,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		s.transport.mu.Lock()
 		hasStream := s.transport.stream != nil
 		s.transport.mu.Unlock()
-		if hasStream {
+		if hasStream && input.Action != "playFrom" {
 			s.transport.poll()
 		}
 		if input.Action == "playFrom" {
@@ -426,7 +451,17 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "song block is no longer in this position"})
 				return
 			}
-			launchErr = s.transport.startFrom(input.Entry, input.Scene)
+			prepared, compileErr := compileLiveProject(s.path, project)
+			if compileErr != nil {
+				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": compileErr.Error()})
+				return
+			}
+			fingerprint, hashErr := playSourceHashBytes(s.path, current)
+			if hashErr != nil {
+				studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": hashErr.Error()})
+				return
+			}
+			launchErr = s.transport.startFrom(input.Entry, input.Scene, &prepared, fingerprint)
 		}
 		if launchErr != nil {
 			studioJSON(w, http.StatusConflict, map[string]string{"error": launchErr.Error()})
