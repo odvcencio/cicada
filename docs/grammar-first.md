@@ -13,7 +13,7 @@ The `.cicada` score is source code for music. Its compiler parses notation, expa
   -> MIDI export, live engine, and future workstation views
 ```
 
-This grammar-first prototype broadens an acid-focused music engine toward an extensible DAW. The grammar and examples implement the first syntax slice; the wider workstation design remains a proposal.
+This grammar-first prototype broadens an acid-focused music engine toward an extensible DAW. The grammar and examples implement the first syntax slice. A project can put `project name` and `cicada 1` in its nearest `cicada.mod`; loose scores default to edition 1, and legacy `cicada 1` headers remain accepted. The wider workstation design is in progress.
 
 ## Core language
 
@@ -72,7 +72,7 @@ The next implementation boundary is a host-independent engine contract for instr
 
 ## Determinism and editing
 
-- Grammar and semantics are versioned by `cicada 1`.
+- The current grammar accepts either a legacy `cicada 1` header or a headerless score. `cicada.mod` records the project edition; only edition 1 is supported today.
 - Random operations use explicit seeds and fixed algorithms.
 - Phrase expansion and instrument graphs have static size limits.
 - Syntax and semantic diagnostics carry line, column, and stable codes.

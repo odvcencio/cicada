@@ -29,8 +29,8 @@ var (
 func Cicada() *grammargen.Grammar {
 	g := grammargen.NewGrammar("cicada")
 
-	// A score is a version directive followed by declarations in any order.
-	g.Define("source_file", seq(str("cicada"), sym("integer"), repeat(sym("_declaration"))))
+	// The legacy version directive is optional; a project manifest can own the edition.
+	g.Define("source_file", seq(optional(seq(str("cicada"), sym("integer"))), repeat(sym("_declaration"))))
 	g.Define("_declaration", choice(
 		sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
 		sym("instrument_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
