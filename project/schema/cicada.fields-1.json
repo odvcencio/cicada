@@ -395,6 +395,20 @@
     },
     {
       "construct": "instrument",
+      "name": "octave",
+      "required": false,
+      "type": "nullable\u003cinteger\u003e",
+      "unit": null,
+      "range": "0..6",
+      "default": "2",
+      "meaning": "Home octave for unnumbered notes",
+      "order": 2,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "instrument",
       "name": "mode",
       "required": true,
       "type": "string",
@@ -402,7 +416,7 @@
       "range": null,
       "default": null,
       "meaning": "Voice mode",
-      "order": 2,
+      "order": 3,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -416,7 +430,7 @@
       "range": null,
       "default": null,
       "meaning": "Exposed synthesis parameters",
-      "order": 3,
+      "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -430,7 +444,7 @@
       "range": null,
       "default": null,
       "meaning": "Named intermediate expressions",
-      "order": 4,
+      "order": 5,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -444,7 +458,7 @@
       "range": null,
       "default": null,
       "meaning": "Instrument output expression",
-      "order": 5,
+      "order": 6,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"

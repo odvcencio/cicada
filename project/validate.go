@@ -13,6 +13,13 @@ var acceptedScales = map[string]bool{
 	"harmonic": true, "pent": true, "mixo": true, "blues": true,
 }
 
+func validateOctaveValue(value Value) error {
+	if value.Unit != "unit" || value.Number == nil || !finite(*value.Number) || *value.Number < 0 || *value.Number > 6 || math.Trunc(*value.Number) != *value.Number {
+		return fmt.Errorf("octave must be a unitless integer 0 to 6")
+	}
+	return nil
+}
+
 // ValidateProject checks the semantic interchange records after source lowering
 // or JSON decoding. It does not yet load audio into the runtime engine.
 func ValidateProject(p *Project) error {
@@ -70,6 +77,9 @@ func ValidateProject(p *Project) error {
 	instruments := map[string]*instrument.Program{}
 	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
+		if inst.Octave == nil || *inst.Octave < 0 || *inst.Octave > 6 {
+			return fmt.Errorf("instrument %s octave must be 0 to 6", inst.ID)
+		}
 		if err := uniqueID(inst.ID, seenInstruments); err != nil {
 			return fmt.Errorf("instrument: %w", err)
 		}
@@ -153,6 +163,12 @@ func ValidateProject(p *Project) error {
 		if program := instruments[track.Kind]; program != nil {
 			overrides := make(map[string]string, len(track.Params))
 			for name, value := range track.Params {
+				if name == "octave" && !program.HasParameter("octave") {
+					if err := validateOctaveValue(value); err != nil {
+						return fmt.Errorf("track %s: %w", track.ID, err)
+					}
+					continue
+				}
 				literal, err := valueSource(value)
 				if err != nil {
 					return fmt.Errorf("track %s parameter %s: %w", track.ID, name, err)
