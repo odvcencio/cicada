@@ -184,7 +184,7 @@ func ValidateProject(p *Project) error {
 	allocatedVoices := 0
 	for _, track := range p.Tracks {
 		if track.Kind == "drums" {
-			allocatedVoices += len(laneOrder)
+			allocatedVoices += drumVoiceCount(projectDrumLanes(p, track))
 		} else if kit, ok := kits[track.Kind]; ok {
 			allocatedVoices += len(kit.Lanes)
 		} else {
@@ -286,7 +286,7 @@ func ValidateProject(p *Project) error {
 		for trackID := range active {
 			kind := tracks[trackID].Kind
 			if kind == "drums" {
-				voices += len(laneOrder)
+				voices += drumVoiceCount(projectDrumLanes(p, tracks[trackID]))
 			} else if kit, ok := kits[kind]; ok {
 				voices += len(kit.Lanes)
 			} else {
