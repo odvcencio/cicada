@@ -34,7 +34,7 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 	if err != nil {
 		return nil, []Diagnostic{syntaxDiagnostic(err, src)}
 	}
-	s := &Score{TempoMilli: 130_000, KeyRoot: "a", Scale: "minor"}
+	s := &Score{Version: 1, TempoMilli: 130_000, KeyRoot: "a", Scale: "minor"}
 	var diagnostics []Diagnostic
 	seenDeclarations := map[string]bool{}
 	for i := 0; i < root.NamedChildCount(); i++ {

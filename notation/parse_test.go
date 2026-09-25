@@ -43,6 +43,16 @@ func TestFirstAcidScore(t *testing.T) {
 	}
 }
 
+func TestOptionalLegacyHeader(t *testing.T) {
+	source := []byte("track bass acid {}\npattern pulse acid steps=1 { 1 }\nscene main { bass=pulse }\nsong { main }\n")
+	for _, text := range [][]byte{source, append([]byte("cicada 1\n"), source...)} {
+		score, diagnostics := Parse(text)
+		if len(diagnostics) != 0 || score == nil || score.Version != 1 {
+			t.Fatalf("header variant: score=%+v diagnostics=%+v", score, diagnostics)
+		}
+	}
+}
+
 func TestUnknownParameterHasPosition(t *testing.T) {
 	src := []byte("cicada 1\ntrack bass acid {\n  mystery = 42\n}\npattern a acid steps=1 { 1 }\nscene main { bass=a }\nsong { main }\n")
 	_, ds := Parse(src)
