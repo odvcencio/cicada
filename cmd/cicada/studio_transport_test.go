@@ -72,6 +72,7 @@ func TestStudioTransportQueuesFileEditsOnNativeBar(t *testing.T) {
 	}
 	transport := newStudioTransport(path)
 	transport.stream, transport.last = stream, fingerprint
+	transport.history = newStudioHistory([]byte(studioScore))
 	updated := strings.Replace(studioScore, "Studio", "Next Studio", 1)
 	if err := os.WriteFile(path, []byte(updated), 0600); err != nil {
 		t.Fatal(err)
@@ -79,6 +80,9 @@ func TestStudioTransportQueuesFileEditsOnNativeBar(t *testing.T) {
 	transport.poll()
 	if !transport.snapshot().Pending {
 		t.Fatal("validated file edit was not queued")
+	}
+	if events := transport.history.snapshot(); len(events) != 2 || events[0].Kind != "queued" {
+		t.Fatalf("queue missing from history: %+v", events)
 	}
 	if _, err := io.CopyN(io.Discard, stream, 96_000*8+1); err != nil {
 		t.Fatal(err)
@@ -88,8 +92,12 @@ func TestStudioTransportQueuesFileEditsOnNativeBar(t *testing.T) {
 		if event.Bar != 2 || event.Name != path {
 			t.Fatalf("wrong edit landing: %+v", event)
 		}
+		transport.markLanded(event)
 	default:
 		t.Fatal("edit did not land at next bar")
+	}
+	if events := transport.history.snapshot(); len(events) != 3 || events[0].Kind != "landed" || events[0].Bar != 2 {
+		t.Fatalf("landing missing from history: %+v", events)
 	}
 	if position := stream.Position(); position.Bar != 2 {
 		t.Fatalf("native transport position: %+v", position)

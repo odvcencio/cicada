@@ -27,6 +27,7 @@ type studioTransport struct {
 	pending bool
 	landed  int64
 	errText string
+	history *studioHistory
 }
 
 type transportSnapshot struct {
@@ -135,9 +136,7 @@ func (t *studioTransport) watch(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case event := <-t.stream.Events():
-			t.mu.Lock()
-			t.pending, t.landed = false, event.Bar
-			t.mu.Unlock()
+			t.markLanded(event)
 		case <-ticker.C:
 			t.poll()
 		case <-health.C:
@@ -149,6 +148,15 @@ func (t *studioTransport) watch(ctx context.Context) {
 			}
 			t.mu.Unlock()
 		}
+	}
+}
+
+func (t *studioTransport) markLanded(event liveplay.Event) {
+	t.mu.Lock()
+	t.pending, t.landed = false, event.Bar
+	t.mu.Unlock()
+	if t.history != nil {
+		t.history.record("landed", fmt.Sprintf("Edit landed at bar %d", event.Bar), event.Bar, 1, "")
 	}
 }
 
@@ -175,7 +183,11 @@ func (t *studioTransport) poll() {
 	}
 	t.mu.Lock()
 	t.pending, t.errText = true, ""
+	position := t.stream.Position()
 	t.mu.Unlock()
+	if t.history != nil {
+		t.history.record("queued", "Edit queued for the next bar", position.Bar, position.Step, "")
+	}
 }
 
 func (t *studioTransport) setError(err error) {
