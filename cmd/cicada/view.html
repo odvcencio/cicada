@@ -82,6 +82,9 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .pane-header small { color:var(--muted); font:12px/1.4 system-ui,sans-serif; margin-left:6px; }
 .pane-state { color:var(--mint); }
 .source-pane pre { margin:0; padding:20px 22px 48px; white-space:pre; overflow-x:auto; font:13px/1.75 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; }
+.source-scroll { display:flex; overflow:auto; }
+.source-scroll pre { overflow:visible; flex:none; padding-left:14px; }
+.line-numbers { position:sticky; left:0; align-self:stretch; z-index:1; display:flex; flex-direction:column; flex:none; min-width:45px; padding:20px 10px 48px; border-right:1px solid var(--border); background:#141c16; color:#697b6d; text-align:right; font:13px/1.75 ui-monospace,SFMono-Regular,Consolas,monospace; user-select:none; }
 .projection { min-width:0; padding:22px 26px 60px; }
 .projection-heading { display:flex; flex-wrap:wrap; align-items:baseline; gap:8px 14px; margin-bottom:18px; }
 .projection-heading .eyebrow { color:var(--mint); text-transform:uppercase; letter-spacing:.16em; font-size:.72rem; font-weight:800; }
@@ -116,7 +119,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 <main class="workspace">
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">validated snapshot</span></div>
-    <pre><code>{{.SourceHTML}}</code></pre>
+    <div class="source-scroll"><div class="line-numbers" aria-hidden="true">{{range .LineNumbers}}<span>{{.}}</span>{{end}}</div><pre><code>{{.SourceHTML}}</code></pre></div>
   </aside>
   <div class="projection">
     <div class="projection-heading"><span class="eyebrow">Projection</span><p>The patterns below come from the same validated source on the left. This export is read only.</p></div>
