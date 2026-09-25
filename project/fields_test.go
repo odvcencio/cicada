@@ -37,8 +37,17 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 		}
 	}
 	for _, field := range catalog.Fields {
-		if field.Profile != "M0" || field.Layer != "semantic" || !field.Required {
+		if field.Profile != "M0" || field.Layer != "semantic" {
 			t.Errorf("invalid field gates for %s.%s", field.Construct, field.Name)
+		}
+		if field.Construct == "project" && field.Name == "edition" {
+			if field.Required || field.Default == nil || *field.Default != "1" {
+				t.Errorf("legacy edition default is missing: %+v", field)
+			}
+			continue
+		}
+		if !field.Required {
+			t.Errorf("unexpected optional semantic field %s.%s", field.Construct, field.Name)
 		}
 		if (field.Construct == "expr" || field.Construct == "value") && field.Name != "unit" && field.Variant == "" {
 			t.Errorf("%s.%s lacks union variant", field.Construct, field.Name)
