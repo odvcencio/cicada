@@ -147,7 +147,7 @@ func TestFormatGroupsDrumHitsByFourCells(t *testing.T) {
 }
 
 func TestFormatPreservesCommentInsideDrumRow(t *testing.T) {
-	source := []byte("track drums drums {}\npattern beat drums { bd: x... // pickup\n x... }\nscene main { drums=beat }\nsong { main }\n")
+	source := []byte("track drums drums {}\npattern beat drums { bd: x.. // pickup\n x.x.x }\nscene main { drums=beat }\nsong { main }\n")
 	doc, err := ParseDocument(source)
 	if err != nil {
 		t.Fatal(err)
@@ -159,8 +159,19 @@ func TestFormatPreservesCommentInsideDrumRow(t *testing.T) {
 	if !bytes.Contains(formatted, []byte("// pickup")) {
 		t.Fatalf("formatter discarded a drum-row comment: %s", formatted)
 	}
+	if !bytes.Contains(formatted, []byte("bd: x..\n  // pickup\n      x .x.x")) {
+		t.Fatalf("commented drum row lost its beat boundary: %s", formatted)
+	}
 	if _, diagnostics := Parse(formatted); len(diagnostics) != 0 {
 		t.Fatalf("formatted score diagnostics: %+v\n%s", diagnostics, formatted)
+	}
+	again, err := ParseDocument(formatted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reformatted, err := Format(again)
+	if err != nil || !bytes.Equal(formatted, reformatted) {
+		t.Fatalf("commented drum grouping is not idempotent: %v\n%s", err, reformatted)
 	}
 }
 
