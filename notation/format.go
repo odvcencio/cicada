@@ -227,7 +227,7 @@ func formatDeclaration(source []byte) string {
 				// In steps a comma lowers the octave of the note before it, and
 				// any further octave marks or modifiers belong to the same step.
 				line = strings.TrimRight(line, " ") + ","
-				glue = i+1 < len(tokens) && strings.ContainsAny(tokens[i+1].text[:1], "'^~*%")
+				glue = i+1 < len(tokens) && strings.ContainsAny(tokens[i+1].text[:1], "'^~*%?")
 			} else {
 				line = strings.TrimRight(line, " ") + ", "
 			}

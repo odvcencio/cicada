@@ -52,6 +52,8 @@ song { main*16 }
 
 `use` is bounded and expands to explicit steps before scheduling. `transpose` changes the resulting MIDI notes while retaining the authored phrase and transform in the typed score. The broader notation example is [`examples/first-acid.cicada`](../examples/first-acid.cicada). The [circuit kit](../examples/circuit-kit.cicada) is an executable score where bass, kick, snare, and hat are synthesized from instrument code.
 
+Chance can be written `1?70` or `x?50`: the note or hit plays with that percentage. Legacy `1%70` and `x%50` remain accepted and compile to the same events. The formatter preserves either authored spelling until the source migration command is available.
+
 ## Instrument code
 
 Custom instruments are first-class declarations. A `voice` contains parameters, sequential `let` bindings, and one `out` expression. The current compiler lowers expressions to a typed acyclic graph with a maximum of 128 nodes and 32 stateful nodes per voice. Names must refer to parameters, built-in inputs, or earlier bindings. The type checker understands audio, hertz, milliseconds, dB, unit values, and gates. Its first primitives cover oscillators, noise, envelopes, filters, shaping, mixing, and arithmetic.

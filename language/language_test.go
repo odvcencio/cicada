@@ -95,7 +95,9 @@ func TestFixturesUseEveryToken(t *testing.T) {
 	}
 	for symbol := 1; symbol < int(lang.TokenCount); symbol++ {
 		name := lang.SymbolNames[symbol]
-		if !lang.SymbolMetadata[symbol].Visible || seen[name] {
+		// Grammargen escapes punctuation in its symbol table, while CST node
+		// types expose the literal character (for example, \\? versus ?).
+		if !lang.SymbolMetadata[symbol].Visible || seen[name] || seen[strings.TrimPrefix(name, "\\")] {
 			continue
 		}
 		t.Errorf("no fixture uses token %q", name)
