@@ -31,6 +31,7 @@ type studio struct {
 	lastGoodSource  []byte
 	lastGoodProject *project.Project
 	transport       *studioTransport
+	history         *studioHistory
 }
 
 func studioCommand(args []string) error {
@@ -69,6 +70,7 @@ func studioCommand(args []string) error {
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	go studio.watchHistory(ctx)
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
 	fmt.Printf("Cicada Studio: http://%s/\n", listener.Addr().String())
@@ -110,7 +112,10 @@ func newStudio(path string) (*studio, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &studio{path: absolute, lastGoodSource: bytes.Clone(source), lastGoodProject: p, transport: newStudioTransport(absolute)}, nil
+	history := newStudioHistory(source)
+	transport := newStudioTransport(absolute)
+	transport.history = history
+	return &studio{path: absolute, lastGoodSource: bytes.Clone(source), lastGoodProject: p, transport: transport, history: history}, nil
 }
 
 func (s *studio) routes() http.Handler {
@@ -122,6 +127,7 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("POST /api/transport", s.transportCommand)
 	mux.HandleFunc("GET /api/transport", s.transportState)
 	mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
+	mux.HandleFunc("GET /api/history", s.historyState)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !studioLoopbackHost(r.Host) {
 			http.Error(w, "Studio requires a loopback host", http.StatusForbidden)
@@ -160,6 +166,9 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	source, err := os.ReadFile(s.path)
 	if err == nil {
+		state := s.transport.snapshot()
+		bar, step := historyPosition(state)
+		s.history.observe(source, bar, step)
 		if p, parseErr := compileStudioSource(s.path, source); parseErr == nil {
 			s.lastGoodSource, s.lastGoodProject = bytes.Clone(source), p
 		}
@@ -181,6 +190,7 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *studio) state(w http.ResponseWriter, r *http.Request) {
+	s.observeHistory()
 	source, err := os.ReadFile(s.path)
 	if err != nil {
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
@@ -306,6 +316,7 @@ func (s *studio) applyWithHook(w http.ResponseWriter, edit studioEdit, change fu
 		return
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
+	s.recordEdit(edit, studioRevision(updated))
 	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(updated), "valid": true})
 }
 
