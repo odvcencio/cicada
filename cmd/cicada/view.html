@@ -1,3 +1,4 @@
+{{define "signal"}}<li class="signal-branch"><span class="signal-chip {{.Kind}}">{{.Label}}</span>{{if .Children}}<ol class="signal-children">{{range .Children}}{{template "signal" .}}{{end}}</ol>{{end}}</li>{{end}}
 <!doctype html>
 <html lang="en">
 <head>
@@ -120,6 +121,32 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .transport button:hover { background:#534326; }
 .transport-position { color:var(--mint); font-variant-numeric:tabular-nums; min-width:100px; }
 .transport-pending { color:var(--amber); }
+.voice-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:14px; }
+.voice-card { min-width:0; border:1px solid var(--border); border-radius:14px; background:var(--panel); overflow:hidden; }
+.voice-card summary { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:14px 17px; background:var(--panel-raised); cursor:pointer; }
+.voice-card summary strong { color:var(--amber); font-size:1rem; }
+.voice-card summary span { color:var(--mint); font-size:.69rem; font-weight:800; text-transform:uppercase; letter-spacing:.12em; }
+.voice-body { padding:16px 17px 20px; }
+.voice-meta { margin:0 0 12px; color:var(--muted); font-size:.82rem; }
+.voice-usage { display:flex; flex-wrap:wrap; gap:5px; margin:0 0 15px; }
+.voice-usage span { border:1px solid #526b58; border-radius:999px; padding:3px 8px; color:var(--mint); font-size:.69rem; }
+.voice-subhead { margin:16px 0 7px; color:var(--muted); font-size:.68rem; font-weight:800; text-transform:uppercase; letter-spacing:.14em; }
+.voice-param { display:flex; justify-content:space-between; flex-wrap:wrap; gap:3px 12px; padding:6px 0; border-top:1px solid #304037; font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.voice-param b { color:var(--text); }
+.voice-param span { color:var(--amber); }
+.voice-param small { width:100%; color:var(--mint); font-size:11px; }
+.voice-map { display:flex; gap:14px; padding:6px 0; border-top:1px solid #304037; font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.voice-map b { min-width:28px; color:var(--amber); }
+.voice-map span { color:var(--mint); }
+.signal-binding { margin-top:9px; min-width:0; }
+.signal-binding > b { display:inline-block; min-width:45px; color:var(--rose); font:700 12px ui-monospace,SFMono-Regular,Consolas,monospace; }
+.signal-tree, .signal-children { list-style:none; margin:0; padding:0; }
+.signal-tree { display:inline-block; vertical-align:top; max-width:calc(100% - 55px); }
+.signal-branch { margin:0 0 4px; }
+.signal-chip { display:inline-block; max-width:100%; overflow-wrap:anywhere; border:1px solid #496451; border-radius:6px; padding:3px 7px; color:var(--mint); background:#21382d; font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.signal-chip.name { color:var(--amber); background:#393220; border-color:#675735; }
+.signal-chip.literal { color:#ccb1ff; background:#30283f; border-color:#59476d; }
+.signal-children { margin:5px 0 7px 12px; padding-left:11px; border-left:1px solid #5b8064; }
 .editor-shell[hidden], .source-scroll[hidden] { display:none; }
 .source-editor { display:block; width:100%; min-height:calc(100vh - 220px); resize:vertical; border:0; border-radius:0; padding:20px 22px; background:#111713; color:var(--text); font:13px/1.75 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; white-space:pre; }
 .step-edit { width:100%; padding:0 2px; cursor:pointer; transition:border-color .15s,transform .15s; }
@@ -135,7 +162,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   <p class="lede">{{if .Studio}}Edit the score or click a step. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
-<nav class="nav" aria-label="Score sections"><a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#notation">Notation</a>{{if .Studio}}<div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span></div>{{end}}</nav>
+<nav class="nav" aria-label="Score sections"><a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{if .Studio}}<div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span></div>{{end}}</nav>
 <main class="workspace">
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
@@ -173,6 +200,23 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     <section id="arrangement" aria-labelledby="arrangement-heading">
       <h2 id="arrangement-heading">Scenes and song</h2>
       <div class="song">{{range .Song}}<div class="song-block"><strong>{{.Scene}}</strong><span>{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span></div>{{end}}</div>
+    </section>
+    <section id="voice" aria-labelledby="voice-heading">
+      <h2 id="voice-heading">Voice</h2>
+      <p class="section-note">Sound sources, reusable signal graphs, and the tracks and drum lanes that play them.</p>
+      <div class="voice-list">{{range $index, $voice := .Voices}}
+        <details class="voice-card"{{if eq $index 0}} open{{end}}>
+          <summary><strong>{{.ID}}</strong><span>{{.Kind}} · {{.Mode}}</span></summary>
+          <div class="voice-body">
+            <p class="voice-meta">{{.Description}}{{if .Octave}} · home octave {{.Octave}}{{end}}</p>
+            {{if .UsedBy}}<div class="voice-usage" aria-label="Used by">{{range .UsedBy}}<span>{{.}}</span>{{end}}</div>{{end}}
+            {{if .Params}}<h3 class="voice-subhead">Parameters</h3>{{range .Params}}<div class="voice-param"><b>{{.Name}}</b><span>{{.Default}}</span>{{range .Overrides}}<small>Override · {{.}}</small>{{end}}</div>{{end}}{{end}}
+            {{if .Mappings}}<h3 class="voice-subhead">Lane routing</h3>{{range .Mappings}}<div class="voice-map"><b>{{.Lane}}</b><span>→ {{.Target}}</span></div>{{end}}{{end}}
+            {{if .Lets}}<h3 class="voice-subhead">Signal bindings</h3>{{range .Lets}}<div class="signal-binding"><b>{{.Name}}</b><ol class="signal-tree">{{template "signal" .Tree}}</ol></div>{{end}}{{end}}
+            {{if .Output.Label}}<h3 class="voice-subhead">Output graph</h3><div class="signal-binding"><b>out</b><ol class="signal-tree">{{template "signal" .Output}}</ol></div>{{end}}
+          </div>
+        </details>{{end}}
+      </div>
     </section>
   </div>
 </main>
