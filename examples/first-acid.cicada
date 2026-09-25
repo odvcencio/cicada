@@ -25,14 +25,14 @@ track drums drums {
 }
 
 instrument glassbass {
-  param cutoff: hz = 720Hz;
-  param bite: unit = 0.65;
+  param cutoff: hz = 720Hz
+  param bite: unit = 0.65
   voice mono {
-    let osc = saw(pitch);
-    let sub = square(pitch / 2);
-    let tone = mix(osc, sub, 0.25);
-    let shape = env(gate, 380ms);
-    out = ladder(tone, cutoff * exp2(shape * 3), bite) * shape;
+    let osc = saw(pitch)
+    let sub = square(pitch / 2)
+    let tone = mix(osc, sub, 0.25)
+    let shape = env(gate, 380ms)
+    out = ladder(tone, cutoff * exp2(shape * 3), bite) * shape
   }
 }
 
@@ -58,10 +58,10 @@ pattern lead-a notes steps = 16 {
 }
 
 pattern beat-a drums steps = 16 {
-  bd: X...x...X...x.x.;
-  sd: ....X.......X..x;
-  ch: x.x.x.x.x.x.x.x.;
-  oh: ..x...x...x...x.;
+  bd: X...x...X...x.x.
+  sd: ....X.......X..x
+  ch: x.x.x.x.x.x.x.x.
+  oh: ..x...x...x...x.
 }
 
 scene main {
