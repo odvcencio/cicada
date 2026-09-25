@@ -76,7 +76,7 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 	if track.Kind == "acid" {
 		for _, param := range track.Params {
 			if param.Name == "gate" {
-				value, err := strconv.Atoi(param.Value)
+				value, err := strconv.Atoi(strings.TrimSuffix(param.Value, "%"))
 				if err != nil || value < 10 || value > 100 {
 					return nil, fmt.Errorf("invalid track gate %q", param.Value)
 				}
@@ -96,7 +96,7 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 				return nil, err
 			}
 		case "gate":
-			n, err := strconv.Atoi(attr.Value)
+			n, err := strconv.Atoi(strings.TrimSuffix(attr.Value, "%"))
 			if err != nil || n < 10 || n > 100 {
 				return nil, fmt.Errorf("invalid gate %q", attr.Value)
 			}
@@ -317,6 +317,7 @@ func drumStep(token string, note uint8) (seq.Step, error) {
 }
 
 func parsePercent100(s string) (uint16, error) {
+	s = strings.TrimSuffix(s, "%")
 	parts := strings.SplitN(s, ".", 2)
 	whole, err := strconv.Atoi(parts[0])
 	if err != nil {
