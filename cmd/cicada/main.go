@@ -20,6 +20,13 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "gen" {
+		if err := generatorCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && (os.Args[1] == "convert" || os.Args[1] == "compare") {
 		projectCommand(os.Args[1:])
 		return
@@ -40,6 +47,28 @@ func main() {
 		verifyWAVCommand(os.Args[2:])
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "verify-stems" {
+		verifyStemsCommand(os.Args[2:])
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "verify-midi" {
+		if err := verifyMIDICommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "compare-midi" {
+		if err := compareMIDICommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "import-midi" {
+		fmt.Fprintln(os.Stderr, "MIDI import is scheduled for M6; Cicada currently supports midi export and verify-midi")
+		os.Exit(1)
+	}
 	if len(os.Args) > 1 && os.Args[1] == "golden" {
 		if err := goldenCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -47,7 +76,7 @@ func main() {
 		}
 		return
 	}
-	if len(os.Args) < 3 || (os.Args[1] != "render" && len(os.Args) > 5) {
+	if len(os.Args) < 3 || (os.Args[1] != "render" && os.Args[1] != "stems" && os.Args[1] != "midi" && len(os.Args) > 5) {
 		usage()
 	}
 	command := os.Args[1]
@@ -62,10 +91,15 @@ func main() {
 	}
 	var renderPath string
 	var renderOptions render.Options
+	var midiOpts midiOptions
 	if command == "render" {
-		renderPath, renderOptions = renderArgs(os.Args[3:])
+		renderPath, renderOptions = renderArgs(os.Args[3:], 24)
+	} else if command == "stems" {
+		renderPath, renderOptions = renderArgs(os.Args[3:], 32)
+	} else if command == "midi" {
+		midiOpts = parseMIDIArgs(os.Args[3:])
 	}
-	if command != "validate" && command != "ast" && command != "events" && command != "graph" && command != "render" {
+	if command != "validate" && command != "ast" && command != "events" && command != "graph" && command != "render" && command != "stems" && command != "midi" {
 		usage()
 	}
 	path := os.Args[2]
@@ -76,6 +110,7 @@ func main() {
 	}
 	score, diagnostics := notation.Parse(src)
 	var programs map[string]*instrument.Program
+	var semantic *project.Project
 	parseHasError := false
 	for _, d := range diagnostics {
 		if d.Severity == "error" {
@@ -85,7 +120,8 @@ func main() {
 	if !parseHasError {
 		// Conversion and the live engine use the typed project. Validate through
 		// that same gate so a source file cannot pass here and fail to load.
-		semantic, projectDiagnostics := project.FromScore(score)
+		var projectDiagnostics []notation.Diagnostic
+		semantic, projectDiagnostics = project.FromScore(score)
 		diagnostics = appendUniqueDiagnostics(diagnostics, projectDiagnostics)
 		if semantic != nil {
 			if _, err := project.CompileEngine(semantic, 48_000, 128); err != nil {
@@ -144,7 +180,38 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "stems":
+		report, err := render.Stems(score, renderOptions, renderPath)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz\n", renderPath, len(score.Tracks)+5, report.Bars, report.From, report.Frames, report.SampleRate)
+	case "midi":
+		if err := midiFile(semantic, midiOpts); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	}
+}
+
+func verifyStemsCommand(args []string) {
+	if len(args) < 1 {
+		usage()
+	}
+	flags := flag.NewFlagSet("verify-stems", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	tap := flags.String("tap", "pre-comp", "tap to verify")
+	residual := flags.Float64("residual-max-db", -80, "maximum bus sum residual in dBFS")
+	if err := flags.Parse(args[1:]); err != nil || len(flags.Args()) != 0 || *tap != "pre-comp" {
+		usage()
+	}
+	report, err := render.VerifyStems(nil, args[0], render.VerifyStemsOptions{ResidualMaxDB: *residual})
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	fmt.Printf("%s: %d float32 stems, %d frames, pre-comp residual %.2f dBFS\n", args[0], report.Files, report.Frames, report.ResidualPeakDB)
 }
 
 func hasDiagnosticErrors(diagnostics []notation.Diagnostic) bool {
@@ -171,7 +238,15 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 }
 
 func usage() {
-	fmt.Fprintln(os.Stderr, "usage: cicada validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | render <file.cicada> -o <out.wav> [--rate 48000 --bits 24 --bars 16 --tail 3s] | verify-wav <file.wav> --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | convert <in> -o <out> | compare --semantic <a> <b> | highlight [--html|--spans] <file.cicada> | symbols [--refs] [--json] <file.cicada>")
+	fmt.Fprintln(os.Stderr, "usage: cicada "+
+		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+
+		"validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | "+
+		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --dither=true --normalize=false --block 4096] | "+
+		"stems <file.cicada> -o <dir> [--rate 48000 --from 0 --bars 16 --tail 3s] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
+		"midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | "+
+		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | "+
+		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | "+
+		"convert <in> -o <out> | compare --semantic <a> <b> | highlight [--html|--spans] <file.cicada> | symbols [--refs] [--json] <file.cicada>")
 	os.Exit(2)
 }
 
@@ -307,26 +382,30 @@ func renderFile(score *notation.Score, path string, opts render.Options) error {
 	if err := os.Rename(file.Name(), path); err != nil {
 		return err
 	}
-	fmt.Printf("%s: %d bars, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d\n", path, report.Bars, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples)
+	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d\n", path, report.Bars, report.From, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples)
 	return nil
 }
 
-func renderArgs(args []string) (string, render.Options) {
+func renderArgs(args []string, wantBits int) (string, render.Options) {
 	flags := flag.NewFlagSet("render", flag.ContinueOnError)
 	flags.SetOutput(io.Discard)
 	output := flags.String("o", "", "output WAV")
 	rate := flags.Int("rate", 48_000, "sample rate")
-	bits := flags.Int("bits", 24, "PCM bit depth")
-	bars := flags.Int("bars", 0, "bars to render; 0 is the full song")
+	bits := flags.Int("bits", wantBits, "WAV bit depth")
+	bars := flags.Int("bars", 0, "bars to render; 0 is the remaining song")
+	from := flags.Int("from", 0, "zero-based start bar")
 	tail := flags.String("tail", "3s", "tail duration")
-	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || *bits != 24 {
+	dither := flags.Bool("dither", true, "deterministic TPDF dither for integer PCM")
+	normalize := flags.Bool("normalize", false, "peak normalize output to -1 dBFS")
+	block := flags.Int("block", 4096, "offline render block size")
+	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits == 32 && *bits != 32) {
 		usage()
 	}
 	duration, err := time.ParseDuration(*tail)
 	if err != nil || duration < 0 {
 		usage()
 	}
-	return *output, render.Options{SampleRate: *rate, Bars: *bars, TailSec: duration.Seconds()}
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: *from, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block}
 }
 
 func verifyWAVCommand(args []string) {
@@ -339,6 +418,7 @@ func verifyWAVCommand(args []string) {
 	rate := flags.Int("rate", 48_000, "sample rate")
 	bits := flags.Int("bits", 24, "PCM bit depth")
 	bars := flags.Int("bars", 0, "expected bars")
+	from := flags.Int("from", 0, "zero-based start bar")
 	tail := flags.String("tail", "3s", "expected tail")
 	peak := flags.Float64("peak-max-db", -.3, "peak ceiling in dBFS")
 	dc := flags.Float64("dc-max-db", -60, "DC ceiling in dBFS")
@@ -349,7 +429,7 @@ func verifyWAVCommand(args []string) {
 	if err != nil || duration < 0 {
 		usage()
 	}
-	report, err := render.VerifyWAV(path, render.VerifyOptions{SampleRate: *rate, Bits: *bits, Bars: *bars, TailSec: duration.Seconds(), PeakMaxDB: *peak, DCMaxDB: *dc})
+	report, err := render.VerifyWAV(path, render.VerifyOptions{SampleRate: *rate, Bits: *bits, Bars: *bars, From: *from, TailSec: duration.Seconds(), PeakMaxDB: *peak, DCMaxDB: *dc})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

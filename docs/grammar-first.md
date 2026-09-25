@@ -1,23 +1,23 @@
 # Cicada language direction
 
-The `.cicada` score is source code for music. Its compiler parses notation, expands phrases, checks instrument code, resolves tracks and scenes, and creates timestamped events. The audio kernel renders custom mono instruments, the built-in acid voice, and six synthesized drum lanes to WAV. The same event and instrument model is intended to serve live output, games, and stems.
+The `.cicada` score is source code for music. Its compiler parses notation, expands phrases, checks instrument code, resolves tracks and scenes, and creates timestamped events. The audio kernel renders custom mono instruments, the built-in acid voice, and eleven synthesized drum lanes to WAV. The same event and instrument model is intended to serve live output, games, and stems.
 
 ```text
 .cicada source
-  -> Grammargen grammar + gotreesitter CST
+  -> grammargen Go DSL grammar + gotreesitter CST
   -> typed score with source positions
   -> phrase expansion + semantic checks
   -> packed patterns + deterministic timed events
   -> instrument DSP graphs + shared audio kernel
-  -> WAV (custom mono, acid, and six drum lanes)
-  -> live workstation / game / MIDI (planned)
+  -> WAV (custom mono, acid, and eleven drum lanes)
+  -> MIDI export, live engine, and future workstation views
 ```
 
 This grammar-first prototype broadens an acid-focused music engine toward an extensible DAW. The grammar and examples implement the first syntax slice; the wider workstation design remains a proposal.
 
 ## Core language
 
-The parser accepts tracks, note and drum patterns, scenes, song arrangements, named phrases, and custom instrument declarations. Braces make the syntax independent of indentation. `//` comments are named CST nodes, so editor tooling can retain them. Every syntax node has a source span.
+The parser accepts tracks, authored drum kits, note and drum patterns, scenes, song arrangements, named phrases, and custom instrument declarations. Braces make the syntax independent of indentation. `//` comments are named CST nodes, so editor tooling can retain them. Every syntax node has a source span.
 
 ```cicada
 cicada 1
@@ -62,7 +62,7 @@ The full language should give every sound source the same contract: timestamped 
 
 To support sounds that have not been invented yet, a later language profile needs user-defined DSP functions with bounded loops, delays and state, and explicit memory and CPU limits. It should compile ahead of the audio callback, prohibit allocation and blocking operations there, and state whether its output is deterministic across targets. Versioned libraries and content-addressed assets can then carry reusable instruments without hiding their dependencies. This is design direction; the current grammar implements only the typed graph profile.
 
-Drums use the same event and instrument model. The working [circuit kit](../examples/circuit-kit.cicada) defines independent tracks for code-generated kick, snare, and hat voices. Six built-in drum lanes render through the current audio kernel. A future `kit` declaration should map named lanes to instrument programs so that one `pattern drums` can drive an authored kit. Sample-based instruments and audio clips need explicit asset and portability rules.
+Drums use the same event and instrument model. The working [circuit kit](../examples/circuit-kit.cicada) defines independent tracks for code-generated kick, snare, and hat voices. Eleven built-in drum lanes render through the current audio kernel. An [authored kit](../examples/authored-kit.cicada) binds any of those lanes to a built-in recipe or a compiled mono instrument graph. Unbound lanes are silent, and each bound lane owns one voice. Sample-based instruments and audio clips need explicit asset and portability rules.
 
 ## Workstation scope
 
@@ -79,4 +79,4 @@ The next implementation boundary is a host-independent engine contract for instr
 - JSON is typed interchange for workstation and collaboration state. Text/JSON/text conversion preserves semantic meaning; an unedited CST prints the original bytes, including spelling and comments.
 - The CST and the [editor queries](editor-tooling.md) give editors an incremental parsing path: highlights, locals, tags, folds, and indents, with one capture for every token. The formatter works; source patches that preserve unaffected text are still planned.
 
-The current implementation compiles scores to note events and instrument graph IR, and renders custom mono graphs, acid, and six drum lanes to WAV. Next are the remaining drum lanes, an authored kit declaration, effects, the worklet, and the workstation.
+The current implementation compiles scores to note events and instrument graph IR, and renders custom mono graphs, acid, eleven drum lanes, authored kits, a drive insert, delay and reverb returns, music and SFX buses, and an optional music-bus compressor to WAV. Track compressor inserts, the worklet, and the workstation remain open.

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -9,6 +10,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/phrase"
 	"m31labs.dev/cicada/render"
 )
 
@@ -36,6 +38,21 @@ func TestProjectCLI(t *testing.T) {
 			}
 		}
 		return string(output)
+	}
+	generated := filepath.Join(t.TempDir(), "generated.cicada")
+	var draws []phrase.Draw
+	if err := json.Unmarshal([]byte(run(0, "gen", "--seed", "4242", "--key", "a", "--scale", "minor", "--trace", "-o", generated)), &draws); err != nil {
+		t.Fatalf("generator trace is not JSON: %v", err)
+	}
+	if len(draws) == 0 || draws[0].Raw != 744572222 || draws[0].Pass != "rhythm" {
+		t.Fatalf("generator trace lost the fixed stream vector: %+v", draws)
+	}
+	if output := run(0, "validate", generated); output != generated+"\n" {
+		t.Fatalf("generated source failed validation: %q", output)
+	}
+	run(0, "fmt", "--check", generated)
+	if output := run(1, "gen", "--density", "NaN", "-o", filepath.Join(t.TempDir(), "invalid.cicada")); !strings.Contains(output, "CICADA-PARAM") {
+		t.Fatalf("invalid generator density was accepted: %q", output)
 	}
 	if output := run(0, "convert", first, "-o", jsonPath); output != jsonPath+"\n" {
 		t.Fatalf("convert output: %q", output)
@@ -166,7 +183,33 @@ func TestProjectCLI(t *testing.T) {
 	if output := run(1, "verify-wav", wavPath, "--rate", "48000", "--bits", "24", "--bars", "16", "--tail", "3s", "--peak-max-db", "-80", "--dc-max-db", "-60"); !strings.Contains(output, "exceeds") {
 		t.Fatalf("strict peak ceiling was not enforced: %q", output)
 	}
-	run(2, "render", first, "-o", wavPath, "--bits", "16")
+	stemDir := filepath.Join(t.TempDir(), "stems")
+	if output := run(0, "stems", first, "-o", stemDir, "--bars", "1", "--tail", "0s"); !strings.Contains(output, "stems") {
+		t.Fatalf("stem export: %q", output)
+	}
+	if output := run(0, "verify-stems", stemDir, "--tap", "pre-comp", "--residual-max-db", "-80"); !strings.Contains(output, "residual") {
+		t.Fatalf("stem verification: %q", output)
+	}
+	midiPath := filepath.Join(t.TempDir(), "first-acid.mid")
+	if output := run(0, "midi", first, "-o", midiPath); !strings.Contains(output, "552 notes") {
+		t.Fatalf("MIDI export: %q", output)
+	}
+	if output := run(0, "verify-midi", midiPath, "--ppq", "960", "--type", "1"); !strings.Contains(output, "SMF type 1") {
+		t.Fatalf("MIDI verification: %q", output)
+	}
+	if output := run(1, "verify-midi", midiPath, "--ppq", "480", "--type", "1"); !strings.Contains(output, "differs") {
+		t.Fatalf("incorrect MIDI PPQ accepted: %q", output)
+	}
+	for _, bits := range []string{"16", "32"} {
+		formatPath := filepath.Join(t.TempDir(), "first-acid-"+bits+".wav")
+		run(0, "render", first, "-o", formatPath, "--bits", bits, "--bars", "1", "--tail", "0s")
+		run(0, "verify-wav", formatPath, "--rate", "48000", "--bits", bits, "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0")
+	}
+	rangedPath := filepath.Join(t.TempDir(), "first-acid-range.wav")
+	run(0, "render", first, "-o", rangedPath, "--from", "1", "--bars", "1", "--tail", "0s")
+	run(0, "verify-wav", rangedPath, "--from", "1", "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0")
+	run(1, "render", first, "-o", wavPath, "--from", "16", "--bars", "1")
+	run(2, "render", first, "-o", wavPath, "--bits", "8")
 }
 
 func TestFailedRenderPreservesOutput(t *testing.T) {

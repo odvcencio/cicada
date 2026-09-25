@@ -31,6 +31,7 @@ Each token receives exactly one capture. When one token means different things i
 | Key root and scale | `key c# dorian` | `@constant.pitch.root`, `@type.builtin` (an unknown scale is `@type`) |
 | Seed | `seed 4242` | `@number.seed` |
 | Instrument | `instrument glassbass` | `@keyword.type`, `@type.definition` |
+| Authored kit | `kit steel { bd=kick; ch=builtin.ch; }` | `@type.definition` for the kit, `@tag.builtin` for lanes and built-in voices, `@type` for an instrument target |
 | Parameter | `param cutoff: hz = 720hz;` | `@variable.parameter`, unit `@type.builtin` |
 | Voice | `voice mono` | `@keyword.function`, `@keyword.modifier` |
 | Let and out | `let osc = ...;` `out = ...;` | `@keyword` and `@variable`; `@keyword.return` |
@@ -51,7 +52,7 @@ Each token receives exactly one capture. When one token means different things i
 | Ratchet | `*2` | `@operator.ratchet`, `@number.ratchet` |
 | Probability | `%50` | `@operator.probability`, `@number.probability` |
 | Rest, tie, bar | `.` `-` `\|` | `@punctuation.special.rest`, `@punctuation.special.tie`, `@punctuation.delimiter.bar` |
-| Drum lane | `bd:` | `@tag.builtin` for `bd sd ch oh cp rs`, otherwise `@tag` |
+| Drum lane | `bd:` | `@tag.builtin` for the eleven built-in lanes, otherwise `@tag` |
 | Drum hits | `x` `X` `x1`-`x9` | `@constant.hit`, `@constant.hit.accent`, `@constant.hit.velocity` |
 | Scene | `scene main { bass = bass-a }` | `@label`; track `@variable.member`; pattern `@function`, or `@constant.builtin` for `off` and `keep` |
 | Song | `song { main*8 }` | `@label`, `@operator.repeat`, `@number.bars` |
@@ -69,7 +70,7 @@ Package [`language`](../language) embeds the queries and runs them on gotreesitt
 
 - `Highlight(src)` returns nested spans, with parameter and `let` references resolved through `locals.scm`.
 - `WriteANSI`, `WriteHTML`, and `WriteSpans` draw spans with a `Theme`.
-- `Symbols(src)` lists definitions and references from `tags.scm`. Kinds keep namespaces apart, so a track named `bass` and a pattern named `bass` stay distinct.
+- `Symbols(src)` lists definitions and references from `tags.scm`. It resolves a track's voice reference to an instrument or kit. Kinds keep namespaces apart, so a track named `bass` and a pattern named `bass` stay distinct.
 - `NewHighlighter` and `NewTagger` return gotreesitter's `Highlighter` and `Tagger` for hosts that paint flat ranges or index tags themselves.
 
 The language tests hold the contract. Every token in the grammar appears in a fixture, every token in every fixture has exactly one capture, and only the three layers capture larger nodes. The tests also lock each fixture's captures in `language/testdata/*.spans`. After an intended query change, run `go test ./language -update` and review the diff. `make grammar-check` runs these tests against the regenerated parser.

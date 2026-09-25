@@ -23,6 +23,23 @@ func TestExp2GridAndAnchors(t *testing.T) {
 	}
 }
 
+func TestLog2GridAndAnchors(t *testing.T) {
+	if Log2(1) != 0 || Log2(2) != 1 {
+		t.Fatal("log2 integer anchors are not exact")
+	}
+	maxError := 0.0
+	for i := 0; i <= 100_000; i++ {
+		x := math.Exp2(-32 + 64*float64(i)/100_000)
+		err := math.Abs(Log2(x) - math.Log2(x))
+		if err > maxError {
+			maxError = err
+		}
+	}
+	if maxError > 3e-8 {
+		t.Fatalf("log2 maximum absolute error %g", maxError)
+	}
+}
+
 func TestTanhGridAndAnchor(t *testing.T) {
 	if math.Float64bits(Tanh(0)) != 0 {
 		t.Fatal("tanh zero anchor is not exact")

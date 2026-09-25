@@ -6,6 +6,7 @@
 ; bindings, voice inputs) have no definition and are not tagged.
 
 (instrument_decl name: (identifier) @name) @definition.instrument
+(kit_decl name: (identifier) @name) @definition.kit
 (instrument_param name: (identifier) @name) @definition.parameter
 (let_stmt name: (identifier) @name) @definition.binding
 (track_decl name: (identifier) @name) @definition.track
@@ -16,8 +17,9 @@
 (drum_pattern name: (identifier) @name) @definition.pattern
 (scene_decl name: (identifier) @name) @definition.scene
 
-((track_decl kind: (identifier) @name) @reference.instrument
+((track_decl kind: (identifier) @name) @reference.voice
   (#not-any-of? @name "acid" "drums"))
+(kit_target instrument: (identifier) @name) @reference.instrument
 (scene_assignment track: (identifier) @name) @reference.track
 ((scene_assignment pattern: (identifier) @name) @reference.pattern
   (#not-any-of? @name "off" "keep"))

@@ -30,10 +30,44 @@ A track chooses the built-in `acid` or `drums` voice, or a declared
 instrument. An acid track plays `acid` or `notes` patterns. A custom
 instrument plays `notes` patterns. A drum track plays `drums` patterns.
 Track parameters are checked for the selected voice. `level` (dB or `off`)
-and `pan` (-1 to 1) control the dry stereo mixer. The grammar also accepts
-`fx` blocks and note-division values such as `1/8`, `1/8t` (triplet), and
-`1/8.` (dotted); effects report `CICADA-UNSUPPORTED` until they are
-implemented.
+and `pan` (-1 to 1) control the stereo mixer. A track can set `insert = drive`
+when the score declares `fx drive`:
+
+```cicada
+fx drive { shape = hard gain = 18db tone = 12khz mix = 0.75 }
+track bass acid { insert = drive }
+```
+
+Drive shapes are `soft`, `hard`, `fold`, and `diode`. Gain is 0–36 dB, tone
+is 1–20 kHz, and mix is 0–1. Unset fields default to soft, 0 dB, 12 kHz,
+and fully wet. The insert runs before track level and pan.
+
+The score can also declare `fx delay` and route a track with `send_a = 0.4`.
+`send_pre = true` taps after the insert and before level/pan; the default
+post-fader send follows level and pan. Delay `time` accepts 1–2000 ms or
+`1/32`, `1/16`, `1/16T`, `1/16.`, `1/8`, `1/8T`, `1/8.`, `3/16`, `1/4`,
+`1/4.`, and `1/2`. Feedback is 0–0.95, damp 1–16 kHz, pingpong is
+`true` or `false`, and width and mix are 0–1. Defaults are `1/8`, feedback
+0.35, damp 6 kHz, pingpong false, width 1, and fully wet. A synced division
+must fit the four-second delay buffer at the current tempo; for example,
+`1/2` is rejected below 30 BPM.
+
+`fx reverb` routes through `send_b = 0.4`; `send_pre` selects pre-fader input for both sends. Reverb
+accepts `size` 0.5–1.5, `decay` 0.3–12 s, `damp` 2–16 kHz, `highpass`
+40–400 Hz, `predelay` 0–200 ms, and `mix` 0–1. Defaults are size 1,
+decay 2.4 s, damp 8 kHz, highpass 120 Hz, zero predelay, and fully wet.
+`fx comp` processes the music bus after both returns and before the master
+limiter. `sidechain = beat` detects a named track's post-fader stereo output;
+without it, the music bus detects itself. The external sidechain has an
+80 Hz highpass. `detect` is `peak` or `rms`; `threshold` is -40–0 dB,
+`ratio` 1–20, `knee` 0–12 dB, `attack` 0.1–100 ms, `release` 10–1000 ms,
+`makeup` is `auto` or -24–24 dB, and `mix` is 0–1. Defaults are peak,
+-18 dB, 4:1, 6 dB, 10 ms, 100 ms, auto, and fully wet. Track compressor
+inserts and authored effect graphs are not implemented yet.
+
+`bus = sfx` places a track on the SFX bus, which joins the music bus after
+music compression. `sidechain = sfx` uses the post-fader SFX bus as the
+compressor detector. Sends from an SFX track still return to the music bus.
 
 A scene assigns patterns to tracks. `off` stops a track, and `keep`
 retains its previous pattern. A song lists scenes in order; `main*16`
@@ -98,10 +132,19 @@ pattern beat drums steps=8 {
 }
 ```
 
-The rendered M0 lanes are `bd`, `sd`, `ch`, `oh`, `cp`, and `rs`.
-The remaining lane names `lt`, `mt`, `ht`, `cb`, and `cy` are
-reserved for a later milestone and produce an unsupported diagnostic when
-used.
+All eleven built-in lanes render: `bd`, `sd`, `ch`, `oh`, `cp`, `rs`,
+`lt`, `mt`, `ht`, `cb`, and `cy`. The [drum kit example](../examples/drums-kit.cicada)
+plays each lane.
+
+An authored kit uses `kit steel { bd=kick; ch=builtin.ch; }` and
+`track drums steel {}`. Each lane binds one declared mono instrument or one
+`builtin.<lane>` recipe. Omitted lanes stay silent. A graph instrument receives
+the lane's fixed MIDI trigger pitch and hit velocity. The binding is retained
+in the typed project and plays in native, offline, and WASM renderers. See the
+[authored kit example](../examples/authored-kit.cicada).
+An authored graph should shape its one-shot decay with `env`; its gate remains
+high after a hit until a choke or scene stop. A retrigger restarts the graph
+with a 1 ms fade of the prior state.
 
 ## Code-defined instruments
 
@@ -142,6 +185,11 @@ cicada convert score.cicada -o score.cicada.json
 cicada convert score.cicada.json -o normalized.cicada
 cicada compare --semantic score.cicada normalized.cicada
 cicada render score.cicada -o score.wav --rate 48000 --bits 24
+cicada stems score.cicada -o stems/ --rate 48000 --bars 16 --tail 3s
+cicada verify-stems stems/ --tap pre-comp --residual-max-db -80
+cicada midi score.cicada -o score.mid
+cicada verify-midi score.mid --ppq 960 --type 1
+cicada compare-midi score.mid another-export.mid
 cicada highlight score.cicada
 cicada symbols --refs score.cicada
 ```

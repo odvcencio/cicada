@@ -8,7 +8,7 @@ import (
 )
 
 func testConfig() Config {
-	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 2, MaxVoices: 7, BPMMilli: 120_000, Seed: 4242}
+	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 2, MaxVoices: 12, BPMMilli: 120_000, Seed: 4242}
 	cfg.Track[0].Kind = VoiceAcid
 	cfg.Track[1].Kind = VoiceDrums
 	return cfg
@@ -456,7 +456,7 @@ func TestMaskedLayerContinuesVoiceRelease(t *testing.T) {
 
 func TestMaskedDrumLayerKeepsSynthesisTime(t *testing.T) {
 	cfg := testConfig()
-	cfg.Tracks, cfg.MaxVoices = 1, 6
+	cfg.Tracks, cfg.MaxVoices = 1, 11
 	cfg.Track[0].Kind = VoiceDrums
 	masked, err := New(cfg)
 	if err != nil {

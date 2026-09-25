@@ -63,11 +63,24 @@ jobs:
             ./build/cicada convert build/first-acid.cicada.json -o build/first-acid-roundtrip.cicada
             ./build/cicada compare --semantic examples/first-acid.cicada build/first-acid-roundtrip.cicada
           } | tee build/m0-cli-report.txt
-      - name: Save M0 gate reports
+      - name: M1 generator and export acceptance
+        run: |
+          set -euo pipefail
+          mkdir -p build/m1-ci
+          make test-phrase-wasm | tee build/m1-phrase-wasm-report.txt
+          ./build/cicada gen --seed 4242 --key a --scale minor --trace -o build/m1-ci/generated.cicada > build/m1-ci/generated.trace.json
+          {
+            ./build/cicada validate build/m1-ci/generated.cicada
+            ./build/cicada stems examples/fx-bus.cicada -o build/m1-ci/stems
+            ./build/cicada verify-stems build/m1-ci/stems --tap pre-comp --residual-max-db -80
+            ./build/cicada midi examples/first-acid.cicada -o build/m1-ci/first-acid.mid
+            ./build/cicada verify-midi build/m1-ci/first-acid.mid --ppq 960 --type 1
+          } | tee build/m1-cli-report.txt
+      - name: Save gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: m0-gate-reports
+          name: m0-m1-gate-reports
           if-no-files-found: error
           path: |
             build/grammar-doctor.txt
@@ -76,4 +89,9 @@ jobs:
             build/kernel-wasm-report.txt
             build/acid-bench-report.txt
             build/m0-cli-report.txt
+            build/m1-phrase-wasm-report.txt
+            build/m1-cli-report.txt
+            build/m1-ci/generated.cicada
+            build/m1-ci/generated.trace.json
+            build/m1-ci/first-acid.mid
             build/first-acid.wav

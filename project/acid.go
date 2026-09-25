@@ -14,7 +14,7 @@ import (
 func CompileAcidParams(track notation.Track) (acid.Params, error) {
 	params := acid.DefaultParams()
 	for _, source := range track.Params {
-		if source.Name == "level" || source.Name == "pan" {
+		if source.Name == "level" || source.Name == "pan" || source.Name == "insert" || source.Name == "send_a" || source.Name == "send_b" || source.Name == "send_pre" || source.Name == "bus" {
 			continue
 		}
 		if source.Name == "octave" {
