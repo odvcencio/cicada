@@ -188,8 +188,12 @@
 (scene_assignment track: (identifier) @variable.member)
 ((scene_assignment pattern: (identifier) @constant.builtin)
   (#any-of? @constant.builtin "off" "keep"))
+; Edition 1 can still have a pattern named `stop`. Use a neutral capture until
+; semantic highlighting can distinguish that legacy reference from the verb.
+((scene_assignment pattern: (identifier) @constant)
+  (#eq? @constant "stop"))
 ((scene_assignment pattern: (identifier) @function)
-  (#not-any-of? @function "off" "keep"))
+  (#not-any-of? @function "off" "keep" "stop"))
 
 (song_entry scene: (identifier) @label)
 (song_entry "*" @operator.repeat)
