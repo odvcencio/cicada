@@ -22,6 +22,7 @@ var drumLaneOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht
 var pitchNames = []string{"C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"}
 
 type viewCell struct {
+	Index                      int
 	Note                       string
 	Active, Accent, Slide, Tie bool
 	Ratchet, Probability       string
@@ -30,6 +31,7 @@ type viewCell struct {
 }
 
 type viewLane struct {
+	ID    string
 	Name  string
 	Cells []viewCell
 }
@@ -73,6 +75,9 @@ type viewSongEntry struct {
 type scoreView struct {
 	Title, Tempo, Key, SourceName string
 	SourceHTML                    template.HTML
+	SourceText                    string
+	Revision                      string
+	Studio                        bool
 	LineNumbers                   []int
 	Tracks                        []viewTrack
 	Patterns                      []viewPattern
@@ -108,12 +113,17 @@ func viewCommand(args []string) error {
 }
 
 func writeScoreView(w io.Writer, p *project.Project, source, sourceName string) error {
+	return writeScorePage(w, p, source, sourceName, false, "")
+}
+
+func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, studio bool, revision string) error {
 	if p == nil {
 		return fmt.Errorf("nil project")
 	}
 	view := scoreView{
 		Title: p.Title, Tempo: strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64),
 		Key: pitchNames[p.Key.Root] + " " + p.Key.Scale, SourceName: sourceName,
+		SourceText: source, Revision: revision, Studio: studio,
 		Tracks: make([]viewTrack, 0, len(p.Tracks)), Patterns: make([]viewPattern, 0, len(p.Patterns)),
 		Song: make([]viewSongEntry, 0, len(p.Song)),
 	}
@@ -152,7 +162,7 @@ func writeScoreView(w io.Writer, p *project.Project, source, sourceName string) 
 				if !ok {
 					continue
 				}
-				lane := viewLane{Name: strings.ToUpper(name), Cells: make([]viewCell, 0, card.Steps)}
+				lane := viewLane{ID: name, Name: strings.ToUpper(name), Cells: make([]viewCell, 0, card.Steps)}
 				for index := 0; index < card.Steps; index++ {
 					var step *project.Step
 					if index < len(steps) {
@@ -212,7 +222,7 @@ func pitchRows(steps []*project.Step, count int) []viewPitchRow {
 }
 
 func makeViewCell(index int, step *project.Step, drum bool) viewCell {
-	cell := viewCell{Note: "·", Probability: "—", Ratchet: "—", Label: fmt.Sprintf("Step %d, rest", index+1)}
+	cell := viewCell{Index: index, Note: "·", Probability: "—", Ratchet: "—", Label: fmt.Sprintf("Step %d, rest", index+1)}
 	if step == nil {
 		return cell
 	}
