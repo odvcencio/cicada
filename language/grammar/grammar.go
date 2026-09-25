@@ -96,7 +96,7 @@ func Cicada() *grammargen.Grammar {
 	// A phrase is a named run of steps that `use` splices into a pattern
 	// before scheduling, optionally repeated and transposed.
 	g.Define("phrase_decl", seq(
-		str("phrase"), field("name", sym("identifier")), str("acid"),
+		str("phrase"), field("name", sym("identifier")), optional(str("acid")),
 		str("{"), repeat(sym("acid_step")), str("}"),
 	))
 	g.Define("acid_pattern", seq(
@@ -104,7 +104,7 @@ func Cicada() *grammargen.Grammar {
 		str("{"), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
 	))
 	g.Define("note_pattern", seq(
-		str("pattern"), field("name", sym("identifier")), str("notes"), repeat(sym("pattern_attr")),
+		str("pattern"), field("name", sym("identifier")), optional(str("notes")), repeat(sym("pattern_attr")),
 		str("{"), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
 	))
 	g.Define("phrase_use", seq(
@@ -120,7 +120,7 @@ func Cicada() *grammargen.Grammar {
 
 	// A step is a rest, a tie, a bar line (which takes no time), or a note.
 	// A note is a scale degree or a letter pitch, then octave marks, then
-	// modifiers: accent ^, slide ~, ratchet *n, and probability %n.
+	// modifiers: accent ^, slide ~, ratchet *n, and chance ?n (%n is legacy).
 	g.Define("acid_step", choice(str("."), str("-"), str("|"), sym("acid_note")))
 	g.Define("acid_note", seq(field("pitch", sym("pitch")), repeat(sym("octave_shift")), repeat(sym("modifier"))))
 	g.Define("pitch", choice(sym("degree"), sym("letter_pitch")))
@@ -139,7 +139,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("accent_hit", token(pat(`X`)))
 	g.Define("velocity_hit", token(pat(`x[1-9]`)))
 	g.Define("ratchet", seq(str("*"), sym("integer")))
-	g.Define("probability", seq(str("%"), sym("integer")))
+	g.Define("probability", seq(choice(str("?"), str("%")), sym("integer")))
 
 	// Scenes bind patterns to tracks (off stops a track, keep holds it), and
 	// the song plays scenes for a number of bars.
@@ -171,6 +171,8 @@ func Cicada() *grammargen.Grammar {
 	g.Test("steps", "cicada 1 pattern p notes { 1^.5,~*2%70 - | c#3' use hook*2 transpose = -12 }",
 		"(source_file (integer) (note_pattern (identifier) (acid_step (acid_note (pitch (degree)) (modifier))) (acid_step) (acid_step (acid_note (pitch (degree)) (octave_shift) (modifier) (modifier (ratchet (integer))) (modifier (probability (integer))))) (acid_step) (acid_step) (acid_step (acid_note (pitch (letter_pitch)) (octave_shift))) (phrase_use (identifier) (integer) (number))))")
 	g.Test("instrument", "cicada 1 instrument i { param c: hz = 1hz; voice mono { let s = env(gate, 9ms); out = saw(pitch - c) * (s * 2); } }", "")
+	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
+	g.Test("default notes", "phrase hook { 1 . } pattern p { use hook 5 . }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
 	return g
