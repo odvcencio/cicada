@@ -40,9 +40,13 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 		if field.Profile != "M0" || field.Layer != "semantic" {
 			t.Errorf("invalid field gates for %s.%s", field.Construct, field.Name)
 		}
-		if field.Construct == "project" && field.Name == "edition" {
-			if field.Required || field.Default == nil || *field.Default != "1" {
-				t.Errorf("legacy edition default is missing: %+v", field)
+		if field.Construct == "project" && field.Name == "edition" || field.Construct == "instrument" && field.Name == "octave" {
+			expected := "1"
+			if field.Construct == "instrument" {
+				expected = "2"
+			}
+			if field.Required || field.Default == nil || *field.Default != expected {
+				t.Errorf("legacy default is missing: %+v", field)
 			}
 			continue
 		}

@@ -58,8 +58,18 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		if program == nil {
 			continue
 		}
+		for _, param := range track.Params {
+			if param.Name == "octave" && !program.HasParameter("octave") {
+				if _, err := parseOctaveLiteral(param.Value); err != nil {
+					diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
+				}
+			}
+		}
 		overrides := make(map[string]string, len(track.Params))
 		for _, param := range track.Params {
+			if param.Name == "octave" && !program.HasParameter("octave") {
+				continue
+			}
 			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
 				continue
 			}
@@ -68,6 +78,9 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		if _, err := instrument.Lower(program, overrides); err != nil {
 			position := parameterErrorPosition(track, func(single notation.Track) error {
 				param := single.Params[0]
+				if param.Name == "octave" && !program.HasParameter("octave") {
+					return nil
+				}
 				if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
 					return nil
 				}

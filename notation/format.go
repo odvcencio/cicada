@@ -169,7 +169,7 @@ func formatDeclaration(source []byte) string {
 			for next < len(tokens) && tokens[next].comment {
 				next++
 			}
-			if (frame.kind == "instrument" && (value == "param" || value == "voice") ||
+			if (frame.kind == "instrument" && (value == "octave" || value == "param" || value == "voice") ||
 				frame.kind == "voice" && (value == "let" || value == "out") ||
 				frame.kind == "pattern" && next < len(tokens) && tokens[next].text == ":") && strings.TrimSpace(line) != "" {
 				flush()

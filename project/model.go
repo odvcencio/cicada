@@ -39,6 +39,7 @@ type Key struct {
 
 type Instrument struct {
 	ID     string            `cicada:"Instrument identifier" json:"id"`
+	Octave *int              `cicada:"Home octave for unnumbered notes" default:"2" range:"0..6" json:"octave,omitempty"`
 	Mode   string            `cicada:"Voice mode" json:"mode"`
 	Params []InstrumentParam `cicada:"Exposed synthesis parameters" json:"params"`
 	Lets   []Binding         `cicada:"Named intermediate expressions" json:"lets"`
@@ -164,7 +165,8 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		Scenes: []Scene{}, Song: []SongEntry{}, Effects: []Effect{},
 	}
 	for _, source := range score.Instruments {
-		inst := Instrument{ID: source.Name, Mode: source.Mode, Params: []InstrumentParam{}, Lets: []Binding{}}
+		octave := source.Octave
+		inst := Instrument{ID: source.Name, Octave: &octave, Mode: source.Mode, Params: []InstrumentParam{}, Lets: []Binding{}}
 		for _, param := range source.Params {
 			value, inferredUnit, err := parseBaseValue(param.Default)
 			if err != nil {

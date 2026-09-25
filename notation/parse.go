@@ -142,10 +142,18 @@ func parseEffect(w *walk.Walker, n *gts.Node) Effect {
 }
 
 func parseInstrument(w *walk.Walker, n *gts.Node) Instrument {
-	inst := Instrument{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+	inst := Instrument{Name: w.Text(w.Field(n, "name")), Octave: 2, Position: pos(w, n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		switch w.Type(c) {
+		case "instrument_octave":
+			var err error
+			inst.Octave, err = strconv.Atoi(w.Text(w.Field(c, "value")))
+			if err != nil {
+				inst.Octave = -1
+			}
+			inst.OctaveSet = true
+			inst.OctavePosition = pos(w, c)
 		case "instrument_param":
 			inst.Params = append(inst.Params, InstrumentParam{
 				Name: w.Text(w.Field(c, "name")), Unit: w.Text(w.Field(c, "unit")),

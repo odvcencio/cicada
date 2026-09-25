@@ -194,6 +194,9 @@ func instrumentSource(inst Instrument) (string, error) {
 	propagateType(inst.Out, instrument.Audio, symbols, bindings, required, map[string]bool{})
 	var out strings.Builder
 	out.WriteString("instrument " + inst.ID + " {\n")
+	if inst.Octave != nil {
+		out.WriteString("  octave = " + strconv.Itoa(*inst.Octave) + "\n")
+	}
 	for _, param := range inst.Params {
 		value, err := typedNumber(param.Default, instrument.Type(param.Unit))
 		if err != nil {
