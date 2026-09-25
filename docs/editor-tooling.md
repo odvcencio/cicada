@@ -20,7 +20,7 @@ cicada symbols --refs --json examples/cicada-chorus.cicada
 
 `highlight` honors `NO_COLOR`. Both commands also work on a score that does not parse: they report its syntax errors and exit 1, and `highlight` covers the unparsed text with `error` spans. The [cicada chorus](../examples/cicada-chorus.cicada) example uses every construct the renderer plays; [`ahead.cicada`](../language/testdata/ahead.cicada) holds the syntax the grammar accepts before the renderer supports it.
 
-The semantic project model also exposes a versioned [field catalog](../project/schema/cicada.fields-1.json) for editor property panels and agent tooling. `cicada fields` emits the catalog as JSON; `cicada explain pattern.steps` prints a field's meaning, type, and known bounds. The catalog comes from tags on the typed project IR. It currently describes semantic JSON fields; source syntax field roles and variant specific editor actions are still being designed.
+The semantic project model also exposes a versioned [field catalog](../project/schema/cicada.fields-1.json) for editor property panels and agent tooling. `cicada fields` emits the catalog as JSON; `cicada explain pattern` prints a construct table and `cicada explain pattern.steps --json` selects one descriptor. The catalog comes from tags on the typed project IR. Every serialized field is required in semantic JSON, so its catalog default is `null`; source notation may still supply defaults before lowering. The catalog currently describes semantic JSON fields; source syntax field roles and editor actions are still being designed.
 
 ## Captures
 
