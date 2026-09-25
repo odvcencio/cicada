@@ -103,6 +103,56 @@ func TestSharpKeyAndModifiers(t *testing.T) {
 	}
 }
 
+func TestDenseDrumRows(t *testing.T) {
+	src := []byte("cicada 1 track kit drums {} pattern beat drums steps=8 {\n  bd: Xx..x1x9.x;\n  ch: xxxxxxxx;\n  oh: x*2%50.......;\n}\nscene main { kit=beat } song { main }")
+	s, ds := Parse(src)
+	if len(ds) != 0 {
+		t.Fatalf("diagnostics: %+v", ds)
+	}
+	var got [][]string
+	for _, lane := range s.Patterns[0].Lanes {
+		var hits []string
+		for _, hit := range lane.Hits {
+			hits = append(hits, hit.Text)
+		}
+		got = append(got, hits)
+	}
+	want := [][]string{
+		{"X", "x", ".", ".", "x1", "x9", ".", "x"},
+		{"x", "x", "x", "x", "x", "x", "x", "x"},
+		{"x*2%50", ".", ".", ".", ".", ".", ".", "."},
+	}
+	if strings.Join(flatten(got), " ") != strings.Join(flatten(want), " ") || len(got) != len(want) {
+		t.Fatalf("dense rows = %q, want %q", got, want)
+	}
+	if s.Patterns[0].Lanes[0].Hits[5].Position.Column != 13 {
+		t.Fatalf("x9 column = %d, want 13", s.Patterns[0].Lanes[0].Hits[5].Position.Column)
+	}
+}
+
+func TestFractionValuesParse(t *testing.T) {
+	src := []byte("cicada 1 track bass acid {} fx echo { time = 1/8. swing = 1/16t div = 3/4 } pattern a acid steps=1 { 1 } scene main { bass=a } song { main }")
+	s, ds := Parse(src)
+	if len(ds) != 1 || ds[0].Code != "CICADA-UNSUPPORTED" {
+		t.Fatalf("expected only the unsupported effect diagnostic, got %+v", ds)
+	}
+	var values []string
+	for _, param := range s.Effects[0].Params {
+		values = append(values, param.Value)
+	}
+	if strings.Join(values, " ") != "1/8. 1/16t 3/4" {
+		t.Fatalf("fraction values = %q", values)
+	}
+}
+
+func flatten(rows [][]string) []string {
+	var out []string
+	for _, row := range rows {
+		out = append(out, row...)
+	}
+	return out
+}
+
 func TestCommentsAndHighlightQuery(t *testing.T) {
 	src := []byte("cicada 1\n// notes for the next bar\ntrack bass acid {}\npattern a acid steps=1 { 1 }\nscene main { bass=a }\nsong { main }\n")
 	root, walker, err := ParseTree(src)
