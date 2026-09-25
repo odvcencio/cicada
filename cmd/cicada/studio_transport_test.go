@@ -314,6 +314,9 @@ func TestStudioPlayFromSongBlockUsesActiveScore(t *testing.T) {
 	if err := os.WriteFile(path, []byte(updated), 0600); err != nil {
 		t.Fatal(err)
 	}
+	if response := command(studioSongScore, "dusk", 2); response.Code != http.StatusConflict {
+		t.Fatalf("stale song start: %d %s", response.Code, response.Body.String())
+	}
 	if response := command(updated, "dusk", 2); response.Code != http.StatusOK {
 		t.Fatalf("edited song start: %d %s", response.Code, response.Body.String())
 	}

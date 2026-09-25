@@ -381,6 +381,13 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		if hasStream {
 			s.transport.poll()
 		}
+		if input.Action == "playFrom" {
+			latest, readErr := os.ReadFile(s.path)
+			if readErr != nil || studioRevision(latest) != input.Revision {
+				studioJSON(w, http.StatusConflict, map[string]string{"error": "score changed on disk; reload before starting the song"})
+				return
+			}
+		}
 		var launchErr error
 		if input.Action == "launch" {
 			found := false
