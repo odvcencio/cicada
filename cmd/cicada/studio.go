@@ -239,6 +239,7 @@ type studioEdit struct {
 	Pattern  string `json:"pattern"`
 	Lane     string `json:"lane"`
 	Step     int    `json:"step"`
+	Pitch    *int   `json:"pitch,omitempty"`
 }
 
 func studioRequest(w http.ResponseWriter, r *http.Request) (studioEdit, bool) {
@@ -283,6 +284,12 @@ func (s *studio) replaceSource(w http.ResponseWriter, r *http.Request) {
 func (s *studio) toggleStep(w http.ResponseWriter, r *http.Request) {
 	edit, ok := studioRequest(w, r)
 	if !ok {
+		return
+	}
+	if edit.Pitch != nil {
+		s.apply(w, edit, func(source []byte) ([]byte, error) {
+			return pitchedSource(source, edit.Pattern, edit.Lane, edit.Step, *edit.Pitch)
+		})
 		return
 	}
 	s.apply(w, edit, func(source []byte) ([]byte, error) { return toggledSource(source, edit.Pattern, edit.Lane, edit.Step) })
