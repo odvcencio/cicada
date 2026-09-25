@@ -115,6 +115,11 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .studio-status { color:var(--muted); font:12px/1.3 system-ui,sans-serif; margin-left:auto; }
 .studio-status[data-state="error"] { color:var(--coral); }
 .studio-status[data-state="success"] { color:var(--mint); }
+.transport { display:flex; align-items:center; gap:9px; margin-left:auto; font:700 .76rem/1.2 system-ui,sans-serif; }
+.transport button { border:1px solid var(--amber); border-radius:7px; background:#3b3220; color:var(--amber); padding:5px 11px; font:inherit; cursor:pointer; }
+.transport button:hover { background:#534326; }
+.transport-position { color:var(--mint); font-variant-numeric:tabular-nums; min-width:100px; }
+.transport-pending { color:var(--amber); }
 .editor-shell[hidden], .source-scroll[hidden] { display:none; }
 .source-editor { display:block; width:100%; min-height:calc(100vh - 220px); resize:vertical; border:0; border-radius:0; padding:20px 22px; background:#111713; color:var(--text); font:13px/1.75 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; white-space:pre; }
 .step-edit { width:100%; padding:0 2px; cursor:pointer; transition:border-color .15s,transform .15s; }
@@ -130,7 +135,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   <p class="lede">{{if .Studio}}Edit the score or click a step. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
-<nav class="nav" aria-label="Score sections"><a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#notation">Notation</a></nav>
+<nav class="nav" aria-label="Score sections"><a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#notation">Notation</a>{{if .Studio}}<div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span></div>{{end}}</nav>
 <main class="workspace">
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
@@ -181,6 +186,9 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   const discard = document.getElementById('discard-source');
   const sourceView = document.getElementById('source-view');
   const shell = document.getElementById('editor-shell');
+  const transportButton = document.getElementById('transport-button');
+  const transportPosition = document.getElementById('transport-position');
+  const transportPending = document.getElementById('transport-pending');
   let original = editor.value;
   let busy = false;
   const revision = () => document.body.dataset.revision;
@@ -213,6 +221,30 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     if (dirty()) { setStatus('Save or discard source edits before changing the grid', 'error'); return; }
     send('/api/toggle', {pattern:cell.dataset.pattern, lane:cell.dataset.lane || '', step:Number(cell.dataset.step)});
   }));
+  let playing = false;
+  function showTransport(state) {
+    playing = state.playing;
+    transportButton.textContent = playing ? 'Stop' : 'Play';
+    transportPosition.textContent = `Bar ${state.bar} · step ${state.step}`;
+    transportPending.textContent = state.pending ? 'Edit queued for next bar' : state.landedBar ? `Landed at bar ${state.landedBar}` : '';
+    if (state.error) setStatus(state.error, 'error');
+  }
+  transportButton.addEventListener('click', async () => {
+    transportButton.disabled = true;
+    try {
+      const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:playing ? 'stop' : 'play'})});
+      const state = await response.json();
+      if (!response.ok) { setStatus(state.error || 'Transport failed', 'error'); return; }
+      showTransport(state);
+    } catch (error) { setStatus('Transport connection lost: ' + error.message, 'error'); }
+    finally { transportButton.disabled = false; }
+  });
+  function connectTransport() {
+    const socket = new WebSocket(`ws://${location.host}/api/transport/ws`);
+    socket.onmessage = event => { try { showTransport(JSON.parse(event.data)); } catch {} };
+    socket.onclose = () => setTimeout(connectTransport, 1000);
+  }
+  connectTransport();
   setInterval(async () => {
     if (busy) return;
     try {

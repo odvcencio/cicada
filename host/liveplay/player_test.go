@@ -97,3 +97,23 @@ func TestLivePlayerRejectsMismatchedSampleRate(t *testing.T) {
 		t.Fatal("queued a score built for a different sample rate")
 	}
 }
+
+func TestPositionTracksRenderedBarAndStep(t *testing.T) {
+	p, err := New(testScore(t, "position", 120_000), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Position(); got != (Position{Bar: 1, Step: 1}) {
+		t.Fatalf("initial position: %+v", got)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	var frame [8]byte
+	if _, err := io.ReadFull(p, frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.Position(); got != (Position{Bar: 2, Step: 1}) {
+		t.Fatalf("second bar position: %+v", got)
+	}
+}
