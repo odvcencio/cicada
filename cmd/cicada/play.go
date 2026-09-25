@@ -82,6 +82,10 @@ func compileLiveScore(path string) (liveplay.Score, error) {
 	if err != nil {
 		return liveplay.Score{}, err
 	}
+	return compileLiveProject(path, p)
+}
+
+func compileLiveProject(path string, p *project.Project) (liveplay.Score, error) {
 	cfg, err := project.CompileEngine(p, liveSampleRate, liveBlockFrames)
 	if err != nil {
 		return liveplay.Score{}, err
@@ -104,7 +108,13 @@ func compileLiveScore(path string) (liveplay.Score, error) {
 			}
 		}
 	}
-	return liveplay.Score{Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path, SceneIDs: sceneIDs, Tracks: tracks}, nil
+	song := make([]liveplay.SongEntry, len(p.Song))
+	startBar := uint32(1)
+	for i, entry := range p.Song {
+		song[i] = liveplay.SongEntry{Scene: entry.Scene, StartBar: startBar}
+		startBar += uint32(entry.Bars)
+	}
+	return liveplay.Score{Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path, SceneIDs: sceneIDs, Tracks: tracks, Song: song}, nil
 }
 
 type liveScoreWatcher struct {
@@ -172,6 +182,11 @@ func playSourceHash(path string) ([32]byte, error) {
 	if err != nil {
 		return empty, err
 	}
+	return playSourceHashBytes(path, source)
+}
+
+func playSourceHashBytes(path string, source []byte) ([32]byte, error) {
+	var empty [32]byte
 	hash := sha256.New()
 	_, _ = hash.Write(source)
 	dir := filepath.Dir(path)
