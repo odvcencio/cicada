@@ -64,6 +64,8 @@ Statement terminators are optional in instruments, authored kits, and drum rows.
 
 An instrument parameter can infer its unit from its default: `param cutoff = 720Hz`, `param decay = 0.3s`, and `param bite = 0.65`. Explicit types such as `param cutoff: hz = 720Hz` remain accepted. Project conversion prints the concise form.
 
+In a scene, `bass = stop` releases the playing voice and prevents new notes on that track. Legacy `bass = off` has the same behavior in edition 1; project conversion prints `stop`. Omit a track line to keep its current pattern running. An explicit `bass = keep` remains accepted. If an older score already declares a pattern named `stop`, that name still launches the pattern in edition 1, and `off` remains the stop action for that score until migration renames the pattern.
+
 ## Instrument code
 
 Custom instruments are first-class declarations. A `voice` contains parameters, sequential `let` bindings, and one `out` expression. The current compiler lowers expressions to a typed acyclic graph with a maximum of 128 nodes and 32 stateful nodes per voice. Names must refer to parameters, built-in inputs, or earlier bindings. The type checker understands audio, hertz, milliseconds, dB, unit values, and gates. Its first primitives cover oscillators, noise, envelopes, filters, shaping, mixing, and arithmetic.
