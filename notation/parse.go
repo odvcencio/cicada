@@ -11,8 +11,16 @@ import (
 	"github.com/odvcencio/gotreesitter/taproot/walk"
 )
 
+// cicada.bin is generated from the grammargen DSL in language/grammar.
+//
+//go:generate go run ../cmd/cicada-grammar -bin cicada.bin
 //go:embed cicada.bin
 var grammarBlob []byte
+
+// Language returns the Cicada grammar loaded from the generated parser blob.
+func Language() (*gts.Language, error) {
+	return walk.LanguageFromBlob("cicada", grammarBlob)
+}
 
 // ParseTree returns the lossless gotreesitter CST for editor and query tools.
 // It returns a partial tree alongside syntax errors where possible.
