@@ -51,10 +51,17 @@ func Exp2(x float64) float64 {
 	)
 	t := 2 * frac
 	b1, b2 := 0.0, 0.0
-	for _, c := range [...]float64{c5, c4, c3, c2, c1} {
-		b := 2*t*b1 - b2 + c
-		b2, b1 = b1, b
-	}
+	// Unroll the fixed terms without changing their evaluation order or rounding.
+	b := 2*t*b1 - b2 + c5
+	b2, b1 = b1, b
+	b = 2*t*b1 - b2 + c4
+	b2, b1 = b1, b
+	b = 2*t*b1 - b2 + c3
+	b2, b1 = b1, b
+	b = 2*t*b1 - b2 + c2
+	b2, b1 = b1, b
+	b = 2*t*b1 - b2 + c1
+	b2, b1 = b1, b
 	return scale * (t*b1 - b2 + c0)
 }
 
