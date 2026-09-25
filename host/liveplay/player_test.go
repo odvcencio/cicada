@@ -375,6 +375,85 @@ func TestSongEntryStartsAtItsBarAndReanchorsTransport(t *testing.T) {
 	}
 }
 
+func TestSongJumpWaitsForCompleteStereoFrame(t *testing.T) {
+	p, err := New(liveSongScore(t, "song", 2), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var first [3]byte
+	if _, err := p.Read(first[:]); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.StartSongEntry(1, "chorus"); err != nil {
+		t.Fatal(err)
+	}
+	var rest [5]byte
+	if _, err := p.Read(rest[:]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("jump split a stereo frame: %+v", event)
+	default:
+	}
+	var next [8]byte
+	if _, err := p.Read(next[:]); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "song" || event.Bar != 3 {
+		t.Fatalf("jump did not start on next frame: %+v", event)
+	}
+}
+
+func TestSongJumpSupersedesQueuedManualLaunches(t *testing.T) {
+	score := liveSongScore(t, "song", 2)
+	score.SceneIDs = []string{"dusk", "chorus"}
+	score.Tracks = []TrackSlots{{ID: "bass", Slots: [16]string{"riff"}}}
+	p, err := New(score, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.LaunchScene("dusk"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SelectPattern("bass", "riff"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.StartSongEntry(1, "chorus"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8+1); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "song" || event.Bar != 3 {
+		t.Fatalf("wrong song jump: %+v", event)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("old manual launch survived song jump: %+v", event)
+	default:
+	}
+}
+
+func TestSongJumpDoesNotAllocateInAudioReader(t *testing.T) {
+	p, err := New(liveSongScore(t, "song", 2), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var frame [8]byte
+	allocs := testing.AllocsPerRun(100, func() {
+		if err := p.StartSongEntry(1, "chorus"); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := p.Read(frame[:]); err != nil {
+			t.Fatal(err)
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("song jump allocated %.2f times per read", allocs)
+	}
+}
+
 func TestSongEntryUsesOfferedScoreAndDiscardsBufferedOldAudio(t *testing.T) {
 	p, err := New(liveSongScore(t, "old", 2), 48_000)
 	if err != nil {
