@@ -142,11 +142,13 @@ func formatDeclaration(source []byte) string {
 		}
 		line = ""
 	}
+	glue := false // the next word continues the current step, as in 7,~
 	word := func(value string) {
-		if line != "" && !strings.HasSuffix(line, " ") && !strings.HasSuffix(line, "(") {
+		if line != "" && !glue && !strings.HasSuffix(line, " ") && !strings.HasSuffix(line, "(") {
 			line += " "
 		}
 		line += value
+		glue = false
 	}
 	for i := 0; i < len(tokens); i++ {
 		token := tokens[i]
@@ -210,11 +212,25 @@ func formatDeclaration(source []byte) string {
 		case ":":
 			line = strings.TrimRight(line, " ") + ": "
 		case "(":
-			line = strings.TrimRight(line, " ") + "("
+			// A call's parenthesis follows its function name; a grouping
+			// parenthesis keeps its space after an operator: a * (b + c).
+			trimmed := strings.TrimRight(line, " ")
+			if trimmed == "" || strings.HasSuffix(trimmed, "(") || endsWithName(trimmed) {
+				line = trimmed + "("
+			} else {
+				line = trimmed + " ("
+			}
 		case ")":
 			line = strings.TrimRight(line, " ") + ")"
 		case ",":
-			line = strings.TrimRight(line, " ") + ", "
+			if len(frames) > 0 && (frames[len(frames)-1].kind == "pattern" || frames[len(frames)-1].kind == "phrase") {
+				// In steps a comma lowers the octave of the note before it, and
+				// any further octave marks or modifiers belong to the same step.
+				line = strings.TrimRight(line, " ") + ","
+				glue = i+1 < len(tokens) && strings.ContainsAny(tokens[i+1].text[:1], "'^~*%")
+			} else {
+				line = strings.TrimRight(line, " ") + ", "
+			}
 		case "|":
 			line = strings.TrimRight(line, " ") + " | "
 		default:
@@ -232,4 +248,9 @@ func formatDeclaration(source []byte) string {
 	}
 	flush()
 	return strings.Join(lines, "\n")
+}
+
+func endsWithName(line string) bool {
+	c := line[len(line)-1]
+	return c == '_' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
 }
