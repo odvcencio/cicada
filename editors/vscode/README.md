@@ -1,7 +1,7 @@
 # Cicada for VS Code
 
 Open a `.cicada` score for diagnostics, hovers, inlay hints, semantic color,
-rename, and go-to-definition. Run **Cicada: Open Studio Beside Score** for the
+rename, go-to-definition, and **Apply Cicada notation fixes**. Run **Cicada: Open Studio Beside Score** for the
 live Code, Session, History, and Voice views next to the notation.
 
 Build the Cicada binary with `go build -o cicada ./cmd/cicada` from the repository
