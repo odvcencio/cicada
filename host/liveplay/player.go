@@ -21,11 +21,13 @@ type Score struct {
 	SampleRate int
 	BPMMilli   int64
 	Name       string
+	SceneIDs   []string // engine scene indices in source order
 }
 
 type Event struct {
 	Bar  int64 // one-based bar that has just begun
 	Name string
+	Kind string // edit, scene, or scene-error
 }
 
 // Position is the most recently rendered musical location. Step is one-based
@@ -48,6 +50,7 @@ type Player struct {
 	fadeTotal     int
 	fadeRemaining int
 	offers        chan Score
+	launches      chan string
 	events        chan Event
 	left, right   [blockFrames]float32
 	oldL, oldR    [blockFrames]float32
@@ -72,7 +75,7 @@ func New(initial Score, rate int) (*Player, error) {
 	p := &Player{
 		current: initial, clock: clock, rate: rate,
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
-		offers:        make(chan Score, 1), events: make(chan Event, 16),
+		offers:        make(chan Score, 1), launches: make(chan string, 1), events: make(chan Event, 16),
 	}
 	p.position.Store(1<<8 | 1)
 	return p, nil
@@ -100,6 +103,33 @@ func (p *Player) Offer(score Score) error {
 }
 
 func (p *Player) Events() <-chan Event { return p.events }
+
+// LaunchScene keeps the newest requested scene. The audio reader resolves its
+// name against the score active at the landing bar, so edits cannot stale an index.
+func (p *Player) LaunchScene(name string) error {
+	if name == "" {
+		return fmt.Errorf("scene name is required")
+	}
+	for {
+		select {
+		case p.launches <- name:
+			return nil
+		default:
+			select {
+			case <-p.launches:
+			default:
+			}
+		}
+	}
+}
+
+// CancelScene discards a request that has not reached the audio reader.
+func (p *Player) CancelScene() {
+	select {
+	case <-p.launches:
+	default:
+	}
+}
 
 // Position can be read safely by a UI thread while Read renders audio.
 func (p *Player) Position() Position {
@@ -135,6 +165,7 @@ func (p *Player) Read(out []byte) (int, error) {
 func (p *Player) renderBlock() {
 	if p.sample == p.nextBarSample {
 		p.bar++
+		swapped := false
 		select {
 		case next := <-p.offers:
 			if p.bar > int64(^uint32(0)) || !next.Engine.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(p.bar)}) || !next.Engine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
@@ -145,15 +176,39 @@ func (p *Player) renderBlock() {
 			p.fadeTotal = p.rate / 200 // five milliseconds
 			p.fadeRemaining = p.fadeTotal
 			p.current = next
+			swapped = true
 			p.clock = seq.Clock{
 				SampleRate: int64(p.rate), BPMMilli: next.BPMMilli,
 				AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar,
 			}
 			select {
-			case p.events <- Event{Bar: p.bar + 1, Name: next.Name}:
+			case p.events <- Event{Bar: p.bar + 1, Name: next.Name, Kind: "edit"}:
 			default:
 			}
 		default:
+		}
+		// A freshly swapped engine also receives Seek and Play at this bar.
+		// Let those commands settle before a scene launch on the next bar.
+		if !swapped {
+			select {
+			case name := <-p.launches:
+				index := -1
+				for i, candidate := range p.current.SceneIDs {
+					if candidate == name {
+						index = i
+						break
+					}
+				}
+				if index < 0 || index > int(^uint16(0)) {
+					p.emit(Event{Bar: p.bar + 1, Name: name, Kind: "scene-error"})
+				} else if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: uint16(index), Arg0: 0}) {
+					p.fault = fmt.Errorf("live engine rejected scene %q", name)
+					return
+				} else {
+					p.emit(Event{Bar: p.bar + 1, Name: name, Kind: "scene"})
+				}
+			default:
+			}
 		}
 		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 	}
@@ -192,6 +247,13 @@ func (p *Player) renderBlock() {
 	}
 	p.sample += int64(frames)
 	p.buffered, p.read = frames*8, 0
+}
+
+func (p *Player) emit(event Event) {
+	select {
+	case p.events <- event:
+	default:
+	}
 }
 
 var _ io.Reader = (*Player)(nil)

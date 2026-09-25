@@ -103,3 +103,63 @@ func TestStudioTransportQueuesFileEditsOnNativeBar(t *testing.T) {
 		t.Fatalf("native transport position: %+v", position)
 	}
 }
+
+func TestStudioSceneLaunchUsesNativeTransport(t *testing.T) {
+	_, path := studioTestHandler(t)
+	initial, err := compileLiveScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := liveplay.New(initial, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := newStudioTransport(path)
+	transport.stream, transport.playing = stream, true
+	transport.history = newStudioHistory([]byte(studioScore))
+	// Exercise the HTTP command against an active stream without opening an audio device.
+	p, err := compileStudioSource(path, []byte(studioScore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	studio := &studio{path: path, lastGoodSource: []byte(studioScore), lastGoodProject: p, transport: transport}
+	revision := studioRevision([]byte(studioScore))
+	request := httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(`{"action":"launch","scene":"main","revision":"`+revision+`"}`))
+	response := httptest.NewRecorder()
+	studio.transportCommand(response, request)
+	if response.Code != http.StatusOK || transport.snapshot().PendingScene != "main" {
+		t.Fatalf("scene command: %d %s", response.Code, response.Body.String())
+	}
+	if _, err := io.CopyN(io.Discard, stream, 96_000*8+1); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-stream.Events():
+		transport.markLanded(event)
+	default:
+		t.Fatal("scene launch did not reach native player")
+	}
+	state := transport.snapshot()
+	if state.PendingScene != "" || state.Scene != "main" || state.Landed != 2 {
+		t.Fatalf("landed scene state: %+v", state)
+	}
+	if events := transport.history.snapshot(); len(events) != 3 || events[0].Kind != "landed" {
+		t.Fatalf("scene launch history: %+v", events)
+	}
+	response = httptest.NewRecorder()
+	studio.transportCommand(response, httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(`{"action":"launch","scene":"","revision":"`+revision+`"}`)))
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("empty scene: %d", response.Code)
+	}
+	response = httptest.NewRecorder()
+	studio.transportCommand(response, httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(`{"action":"launch","scene":"main","revision":"stale"}`)))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("stale scene page: %d", response.Code)
+	}
+	transport.playing = false
+	response = httptest.NewRecorder()
+	studio.transportCommand(response, httptest.NewRequest(http.MethodPost, "/api/transport", bytes.NewBufferString(`{"action":"launch","scene":"main","revision":"`+revision+`"}`)))
+	if response.Code != http.StatusConflict {
+		t.Fatalf("stopped transport launch: %d", response.Code)
+	}
+}
