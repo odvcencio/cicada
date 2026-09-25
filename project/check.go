@@ -59,7 +59,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			continue
 		}
 		for _, param := range track.Params {
-			if param.Name == "octave" {
+			if param.Name == "octave" && !program.HasParameter("octave") {
 				if _, err := parseOctaveLiteral(param.Value); err != nil {
 					diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 				}
@@ -67,7 +67,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 		overrides := make(map[string]string, len(track.Params))
 		for _, param := range track.Params {
-			if param.Name == "octave" {
+			if param.Name == "octave" && !program.HasParameter("octave") {
 				continue
 			}
 			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
@@ -78,7 +78,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		if _, err := instrument.Lower(program, overrides); err != nil {
 			position := parameterErrorPosition(track, func(single notation.Track) error {
 				param := single.Params[0]
-				if param.Name == "octave" {
+				if param.Name == "octave" && !program.HasParameter("octave") {
 					return nil
 				}
 				if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
@@ -158,6 +158,12 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 	for _, kit := range score.Kits {
 		kitVoices[kit.Name] = len(kit.Bindings)
 	}
+	drumVoices := make(map[string]int, len(tracks))
+	for id, track := range tracks {
+		if track.Kind == "drums" {
+			drumVoices[id] = drumVoiceCount(BuiltinDrumLanes(score, track))
+		}
+	}
 	active := make(map[string]string, len(tracks))
 	for _, entry := range score.Song {
 		scene, ok := scenes[entry.Scene]
@@ -183,7 +189,7 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 		for trackID := range active {
 			kind := tracks[trackID].Kind
 			if kind == "drums" {
-				voices += len(laneOrder)
+				voices += drumVoices[trackID]
 			} else if count, ok := kitVoices[kind]; ok {
 				voices += count
 			} else {
