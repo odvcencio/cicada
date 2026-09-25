@@ -16,119 +16,119 @@ const FormatID = "cicada.project/1"
 // Project is the semantic interchange model shared by source tooling and the
 // future workstation. Slice order follows source order; maps carry keyed data.
 type Project struct {
-	Format      string       `json:"format"`
-	Version     int          `json:"version"`
-	Title       string       `json:"title"`
-	TempoMilli  int          `json:"tempo_milli"`
-	Key         Key          `json:"key"`
-	Seed        uint32       `json:"seed"`
-	Instruments []Instrument `json:"instruments"`
-	Kits        []Kit        `json:"kits"`
-	Tracks      []Track      `json:"tracks"`
-	Patterns    []Pattern    `json:"patterns"`
-	Scenes      []Scene      `json:"scenes"`
-	Song        []SongEntry  `json:"song"`
-	Effects     []Effect     `json:"effects"`
+	Format      string       `cicada:"Semantic format identifier" json:"format"`
+	Version     int          `cicada:"Semantic format version" json:"version"`
+	Title       string       `cicada:"Project title" json:"title"`
+	TempoMilli  int          `cicada:"Tempo in thousandths of a beat per minute" unit:"milli-BPM" range:"20000..300000" json:"tempo_milli"`
+	Key         Key          `cicada:"Tonal root and scale" json:"key"`
+	Seed        uint32       `cicada:"Project random seed" json:"seed"`
+	Instruments []Instrument `cicada:"Programmable sound generators" json:"instruments"`
+	Kits        []Kit        `cicada:"Drum instrument assignments" json:"kits"`
+	Tracks      []Track      `cicada:"Mixer tracks" json:"tracks"`
+	Patterns    []Pattern    `cicada:"Reusable step patterns" json:"patterns"`
+	Scenes      []Scene      `cicada:"Pattern arrangements" json:"scenes"`
+	Song        []SongEntry  `cicada:"Ordered scene playback" json:"song"`
+	Effects     []Effect     `cicada:"Project effects" json:"effects"`
 }
 
 type Key struct {
-	Root  uint8  `json:"root"`
-	Scale string `json:"scale"`
+	Root  uint8  `cicada:"Tonal root pitch class" range:"0..11" json:"root"`
+	Scale string `cicada:"Scale family" json:"scale"`
 }
 
 type Instrument struct {
-	ID     string            `json:"id"`
-	Mode   string            `json:"mode"`
-	Params []InstrumentParam `json:"params"`
-	Lets   []Binding         `json:"lets"`
-	Out    Expr              `json:"out"`
+	ID     string            `cicada:"Instrument identifier" json:"id"`
+	Mode   string            `cicada:"Voice mode" json:"mode"`
+	Params []InstrumentParam `cicada:"Exposed synthesis parameters" json:"params"`
+	Lets   []Binding         `cicada:"Named intermediate expressions" json:"lets"`
+	Out    Expr              `cicada:"Instrument output expression" json:"out"`
 }
 
 type InstrumentParam struct {
-	ID      string  `json:"id"`
-	Unit    string  `json:"unit"`
-	Default float64 `json:"default"`
+	ID      string  `cicada:"Parameter identifier" json:"id"`
+	Unit    string  `cicada:"Parameter measurement unit" json:"unit"`
+	Default float64 `cicada:"Parameter initial value" json:"default"`
 }
 
 type Binding struct {
-	ID    string `json:"id"`
-	Value Expr   `json:"value"`
+	ID    string `cicada:"Binding identifier" json:"id"`
+	Value Expr   `cicada:"Expression assigned to the binding" json:"value"`
 }
 
 // Expr is encoded as exactly one of literal, name, or op+args.
 type Expr struct {
-	Op      string   `json:"op"`
-	Args    []Expr   `json:"args"`
-	Literal *float64 `json:"literal"`
-	Name    string   `json:"name"`
+	Op      string   `cicada:"Expression operator" variant:"operator" json:"op"`
+	Args    []Expr   `cicada:"Operator arguments" variant:"operator" json:"args"`
+	Literal *float64 `cicada:"Numeric literal" variant:"literal" json:"literal"`
+	Name    string   `cicada:"Named expression reference" variant:"name" json:"name"`
 }
 
 type Kit struct {
-	ID    string            `json:"id"`
-	Lanes map[string]string `json:"lanes"`
+	ID    string            `cicada:"Kit identifier" json:"id"`
+	Lanes map[string]string `cicada:"Drum lane to instrument assignments" json:"lanes"`
 }
 
 type Track struct {
-	ID     string           `json:"id"`
-	Kind   string           `json:"kind"`
-	Params map[string]Value `json:"params"`
-	Mixer  Mixer            `json:"mixer"`
-	Slots  [16]*string      `json:"slots"`
+	ID     string           `cicada:"Track identifier" json:"id"`
+	Kind   string           `cicada:"Track instrument kind" json:"kind"`
+	Params map[string]Value `cicada:"Track instrument parameters" json:"params"`
+	Mixer  Mixer            `cicada:"Track mixer state" json:"mixer"`
+	Slots  [16]*string      `cicada:"Sixteen pattern slots" json:"slots"`
 }
 
 type Value struct {
-	Unit   string   `json:"unit"`
-	Number *float64 `json:"number"`
-	Text   string   `json:"text"`
+	Unit   string   `cicada:"Value measurement unit" json:"unit"`
+	Number *float64 `cicada:"Numeric value" variant:"number" json:"number"`
+	Text   string   `cicada:"Enumerated text value" variant:"text" json:"text"`
 }
 
 type Mixer struct {
-	GainDB  float64 `json:"gain_db"`
-	Pan     float64 `json:"pan"`
-	SendA   float64 `json:"send_a"`
-	SendB   float64 `json:"send_b"`
-	SendPre bool    `json:"send_pre"`
-	Mute    bool    `json:"mute"`
-	Solo    bool    `json:"solo"`
-	Insert  string  `json:"insert"`
-	Bus     string  `json:"bus"`
+	GainDB  float64 `cicada:"Track gain in decibels" unit:"dB" range:"-60..6" json:"gain_db"`
+	Pan     float64 `cicada:"Stereo pan position" range:"-1..1" json:"pan"`
+	SendA   float64 `cicada:"Send A gain" range:"0..1" json:"send_a"`
+	SendB   float64 `cicada:"Send B gain" range:"0..1" json:"send_b"`
+	SendPre bool    `cicada:"Pre fader send switch" json:"send_pre"`
+	Mute    bool    `cicada:"Mute switch" json:"mute"`
+	Solo    bool    `cicada:"Solo switch" json:"solo"`
+	Insert  string  `cicada:"Insert effect identifier" json:"insert"`
+	Bus     string  `cicada:"Output bus identifier" json:"bus"`
 }
 
 type Pattern struct {
-	ID              string             `json:"id"`
-	Kind            string             `json:"kind"`
-	Steps           uint8              `json:"steps"`
-	SwingPercent100 uint16             `json:"swing_percent100"`
-	GatePercent     uint8              `json:"gate_percent"`
-	Transpose       int8               `json:"transpose"`
-	Seed            uint32             `json:"seed"`
-	Data            []*Step            `json:"data"`
-	Lanes           map[string][]*Step `json:"lanes"`
+	ID              string             `cicada:"Pattern identifier" json:"id"`
+	Kind            string             `cicada:"Melodic or drum pattern kind" json:"kind"`
+	Steps           uint8              `cicada:"Number of steps" range:"1..64" json:"steps"`
+	SwingPercent100 uint16             `cicada:"Swing percentage scaled by one hundred" unit:"percent/100" range:"5000..7500" json:"swing_percent100"`
+	GatePercent     uint8              `cicada:"Note gate percentage" unit:"percent" range:"10..100" json:"gate_percent"`
+	Transpose       int8               `cicada:"Semitone transposition" unit:"semitone" range:"-24..24" json:"transpose"`
+	Seed            uint32             `cicada:"Pattern random seed" json:"seed"`
+	Data            []*Step            `cicada:"Melodic steps" json:"data"`
+	Lanes           map[string][]*Step `cicada:"Drum lane steps" json:"lanes"`
 }
 
 type Step struct {
-	Note        uint8 `json:"note"`
-	Accent      bool  `json:"accent"`
-	Slide       bool  `json:"slide"`
-	Tie         bool  `json:"tie"`
-	Ratchet     uint8 `json:"ratchet"`
-	Probability uint8 `json:"probability"`
-	Velocity    uint8 `json:"velocity"`
+	Note        uint8 `cicada:"MIDI note number" range:"0..127" json:"note"`
+	Accent      bool  `cicada:"Accent switch" json:"accent"`
+	Slide       bool  `cicada:"Slide switch" json:"slide"`
+	Tie         bool  `cicada:"Tie switch" json:"tie"`
+	Ratchet     uint8 `cicada:"Retrigger count" range:"1..8" json:"ratchet"`
+	Probability uint8 `cicada:"Playback probability percentage" unit:"percent" range:"0..100" json:"probability"`
+	Velocity    uint8 `cicada:"MIDI velocity" range:"0..127" json:"velocity"`
 }
 
 type Scene struct {
-	ID       string            `json:"id"`
-	Bindings map[string]string `json:"bindings"`
+	ID       string            `cicada:"Scene identifier" json:"id"`
+	Bindings map[string]string `cicada:"Track to pattern assignments" json:"bindings"`
 }
 
 type SongEntry struct {
-	Scene string `json:"scene"`
-	Bars  uint16 `json:"bars"`
+	Scene string `cicada:"Scene identifier" json:"scene"`
+	Bars  uint16 `cicada:"Scene duration in bars" unit:"bar" range:"1..999" json:"bars"`
 }
 
 type Effect struct {
-	ID     string           `json:"id"`
-	Params map[string]Value `json:"params"`
+	ID     string           `cicada:"Effect identifier" json:"id"`
+	Params map[string]Value `cicada:"Effect parameters" json:"params"`
 }
 
 var laneOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}

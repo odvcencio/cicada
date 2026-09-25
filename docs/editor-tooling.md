@@ -20,6 +20,8 @@ cicada symbols --refs --json examples/cicada-chorus.cicada
 
 `highlight` honors `NO_COLOR`. Both commands also work on a score that does not parse: they report its syntax errors and exit 1, and `highlight` covers the unparsed text with `error` spans. The [cicada chorus](../examples/cicada-chorus.cicada) example uses every construct the renderer plays; [`ahead.cicada`](../language/testdata/ahead.cicada) holds the syntax the grammar accepts before the renderer supports it.
 
+The semantic project model also exposes a versioned [field catalog](../project/schema/cicada.fields-1.json) for editor property panels and agent tooling. `cicada fields` emits the catalog as JSON; `cicada explain pattern` prints a construct table and `cicada explain pattern.steps --json` selects one descriptor. The catalog comes from tags on the typed project IR and supplies required-field lists to JSON decoding. Every serialized field is required in semantic JSON, so its catalog default is `null`; source notation may still supply defaults before lowering. The catalog currently describes semantic JSON fields; source syntax field roles and editor actions are still being designed.
+
 ## Captures
 
 Each token receives exactly one capture. When one token means different things in different places, its parent decides: `-` is a tie in a pattern and subtraction in an expression, and `,` lowers an octave in a step and separates arguments in a call. Predicates split built-in names from user names. As a result, editors that let the first matching pattern win and editors that let the last one win produce the same colors. Musical meaning is carried by dotted suffixes, so an editor that does not know `@constant.pitch.degree` falls back to `@constant.pitch`, then `@constant`.
