@@ -298,6 +298,12 @@ func (s *studio) toggleStep(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if edit.Modifier != "" {
+		if edit.Modifier == "ratchet" || edit.Modifier == "chance" {
+			s.apply(w, edit, func(source []byte) ([]byte, error) {
+				return cycledStepSource(source, edit.Pattern, edit.Lane, edit.Step, edit.Modifier)
+			})
+			return
+		}
 		s.apply(w, edit, func(source []byte) ([]byte, error) {
 			return toggledModifierSource(source, edit.Pattern, edit.Lane, edit.Step, edit.Modifier)
 		})
