@@ -120,6 +120,61 @@ func TestFormatKeepsPhraseUseTranspose(t *testing.T) {
 	}
 }
 
+func TestFormatGroupsDrumHitsByFourCells(t *testing.T) {
+	source := []byte("track drums drums {}\npattern beat drums { bd: x.x*2.x?50.X. }\nscene main { drums=beat }\nsong { main }\n")
+	doc, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(formatted, []byte("bd: x.x*2. x?50.X.")) {
+		t.Fatalf("drum row is not grouped by beat: %s", formatted)
+	}
+	if _, diagnostics := Parse(formatted); len(diagnostics) != 0 {
+		t.Fatalf("formatted score diagnostics: %+v", diagnostics)
+	}
+	again, err := ParseDocument(formatted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reformatted, err := Format(again)
+	if err != nil || !bytes.Equal(formatted, reformatted) {
+		t.Fatalf("drum grouping is not idempotent: %v\n%s", err, reformatted)
+	}
+}
+
+func TestFormatPreservesCommentInsideDrumRow(t *testing.T) {
+	source := []byte("track drums drums {}\npattern beat drums { bd: x.. // pickup\n x.x.x }\nscene main { drums=beat }\nsong { main }\n")
+	doc, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(formatted, []byte("// pickup")) {
+		t.Fatalf("formatter discarded a drum-row comment: %s", formatted)
+	}
+	if !bytes.Contains(formatted, []byte("bd: x..\n  // pickup\n      x .x.x")) {
+		t.Fatalf("commented drum row lost its beat boundary: %s", formatted)
+	}
+	if _, diagnostics := Parse(formatted); len(diagnostics) != 0 {
+		t.Fatalf("formatted score diagnostics: %+v\n%s", diagnostics, formatted)
+	}
+	again, err := ParseDocument(formatted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reformatted, err := Format(again)
+	if err != nil || !bytes.Equal(formatted, reformatted) {
+		t.Fatalf("commented drum grouping is not idempotent: %v\n%s", err, reformatted)
+	}
+}
+
 func TestFormatKeepsOctaveMarksAndGroupingParens(t *testing.T) {
 	source := []byte("cicada 1\ninstrument sub {\n  voice mono {\n    let shape = env(gate, 90ms);\n    out = saw(pitch)*( shape * velocity );\n  }\n}\ntrack low sub {}\npattern a notes steps=4 { 7,~ 5,,^*2 3, ~%50 c2, }\nscene main { low=a }\nsong { main }\n")
 	document, err := ParseDocument(source)

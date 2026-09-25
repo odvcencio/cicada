@@ -72,3 +72,30 @@ func TestShortPhraseTransposeMatchesKeyword(t *testing.T) {
 		t.Fatal("short phrase transpose changed the project")
 	}
 }
+
+func TestGeneratedDrumRowsGroupFourCellsPerBeat(t *testing.T) {
+	source := "track drums drums {}\npattern beat drums { bd: x.x*2.x?50.X. }\nscene main { drums=beat }\nsong { main }\n"
+	score, diagnostics := notation.Parse([]byte(source))
+	if len(diagnostics) != 0 {
+		t.Fatalf("source diagnostics: %+v", diagnostics)
+	}
+	p, diagnostics := FromScore(score)
+	if p == nil || len(diagnostics) != 0 {
+		t.Fatalf("project diagnostics: %+v", diagnostics)
+	}
+	generated, err := ToSource(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(generated), "bd: x.x*2. x%50.X.") {
+		t.Fatalf("generated row is not grouped by beat: %s", generated)
+	}
+	reparsed, diagnostics := notation.Parse(generated)
+	if len(diagnostics) != 0 {
+		t.Fatalf("generated source diagnostics: %+v", diagnostics)
+	}
+	again, diagnostics := FromScore(reparsed)
+	if again == nil || len(diagnostics) != 0 || !SemanticEqual(p, again) {
+		t.Fatalf("generated grouping changed the project: %+v", diagnostics)
+	}
+}
