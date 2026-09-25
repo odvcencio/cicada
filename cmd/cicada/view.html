@@ -41,15 +41,16 @@ h2 { font-size:1.42rem; margin:0 0 14px; letter-spacing:-.025em; }
 .song.timeline { align-items:stretch; }
 .song.timeline .song-block { position:relative; flex:0 0 max(155px,calc(var(--bars) * 26px)); min-height:110px; padding:10px 15px 34px; }
 .song-block-head { display:flex; align-items:center; gap:5px; }
-.song-grip, .song-controls button, .song-resize { border:1px solid #796949; border-radius:5px; background:#473b22; color:var(--amber); cursor:pointer; font:700 .72rem/1 system-ui,sans-serif; }
+.song-grip, .song-play, .song-controls button, .song-resize { border:1px solid #796949; border-radius:5px; background:#473b22; color:var(--amber); cursor:pointer; font:700 .72rem/1 system-ui,sans-serif; }
 .song-grip { min-width:27px; min-height:27px; touch-action:none; }
+.song-play { min-width:27px; min-height:27px; color:var(--mint); border-color:#527863; background:#21382d; }
 .song-block .song-range { display:block; margin-top:5px; font-size:.7rem; color:#b9aa88; }
 .song-controls { display:flex; gap:3px; margin-top:8px; }
 .song-controls button { min-width:26px; min-height:25px; }
 .song-controls button:disabled { opacity:.4; cursor:default; }
 .song-resize { position:absolute; right:0; top:0; bottom:0; width:13px; border-radius:0 10px 10px 0; touch-action:none; }
 .song-block[data-dragging] { border-color:var(--mint); box-shadow:0 0 0 2px #88d9bb44; }
-@media (pointer:coarse) { .song.timeline .song-block { min-width:230px; } .song-grip, .song-controls button { min-width:44px; min-height:44px; } .song-resize { width:44px; } }
+@media (pointer:coarse) { .song.timeline .song-block { min-width:230px; } .song-grip, .song-play, .song-controls button { min-width:44px; min-height:44px; } .song-resize { width:44px; } }
 .scene-pads { display:flex; flex-wrap:wrap; gap:9px; margin:0 0 15px; }
 .scene-pad { min-width:130px; min-height:44px; border:1px solid #527863; border-radius:10px; background:#21382d; color:var(--mint); padding:9px 14px; font:700 .83rem/1.2 system-ui,sans-serif; cursor:pointer; }
 .scene-pad:hover, .scene-pad[data-state="queued"] { border-color:var(--amber); color:var(--amber); }
@@ -213,7 +214,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     {{if .Studio}}<section id="arrangement" aria-labelledby="arrangement-heading">
       <h2 id="arrangement-heading">Scenes and song</h2>
       {{if .Scenes}}<div class="scene-matrix-scroll"><table class="scene-matrix" aria-label="Scene launch matrix"><thead><tr><th scope="col">Track</th>{{range .Scenes}}<th scope="col"><button type="button" class="scene-pad" data-scene="{{.ID}}" aria-label="Launch scene {{.ID}} at the next bar">▶ {{.ID}}</button></th>{{end}}</tr></thead><tbody>{{range .SceneRows}}<tr><th scope="row">{{.Track}}</th>{{range .Cells}}<td>{{if .Launchable}}<button type="button" class="scene-slot" data-track="{{.Track}}" data-pattern="{{.Pattern}}" aria-label="Launch {{.Pattern}} on {{.Track}} at the next bar">{{.Label}}</button>{{else}}<span class="scene-slot {{.Label}}">{{.Label}}</span>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>{{end}}
-      <div class="song timeline" aria-label="Song lane">{{range .Song}}<div class="song-block" style="--bars:{{.Bars}}" data-index="{{.Index}}" data-bars="{{.Bars}}"><div class="song-block-head"><button type="button" class="song-grip" aria-label="Drag {{.Scene}} to reorder">↔</button><strong>{{.Scene}}</strong></div><span class="song-duration">{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span><span class="song-range">Bars {{.StartBar}}–{{.EndBar}}</span><div class="song-controls"><button type="button" data-song-action="left" aria-label="Move {{.Scene}} earlier">←</button><button type="button" data-song-action="right" aria-label="Move {{.Scene}} later">→</button><button type="button" data-song-action="shorter" aria-label="Shorten {{.Scene}} by one bar">−</button><button type="button" data-song-action="longer" aria-label="Lengthen {{.Scene}} by one bar">+</button></div><button type="button" class="song-resize" aria-label="Drag to change {{.Scene}} duration">⋮</button></div>{{end}}</div>
+      <div class="song timeline" aria-label="Song lane">{{range .Song}}<div class="song-block" style="--bars:{{.Bars}}" data-index="{{.Index}}" data-bars="{{.Bars}}" data-scene="{{.Scene}}"><div class="song-block-head"><button type="button" class="song-grip" aria-label="Drag {{.Scene}} to reorder">↔</button><button type="button" class="song-play" aria-label="Play song from {{.Scene}}, bar {{.StartBar}}">▶</button><strong>{{.Scene}}</strong></div><span class="song-duration">{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span><span class="song-range">Bars {{.StartBar}}–{{.EndBar}}</span><div class="song-controls"><button type="button" data-song-action="left" aria-label="Move {{.Scene}} earlier">←</button><button type="button" data-song-action="right" aria-label="Move {{.Scene}} later">→</button><button type="button" data-song-action="shorter" aria-label="Shorten {{.Scene}} by one bar">−</button><button type="button" data-song-action="longer" aria-label="Lengthen {{.Scene}} by one bar">+</button></div><button type="button" class="song-resize" aria-label="Drag to change {{.Scene}} duration">⋮</button></div>{{end}}</div>
     </section>{{end}}
     <section id="patterns" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
@@ -330,6 +331,18 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   songBlocks.forEach(block => {
     const index = Number(block.dataset.index);
     const initialBars = Number(block.dataset.bars);
+    block.querySelector('.song-play').addEventListener('click', async event => {
+      if (dirty()) { setStatus('Save or discard source edits before starting the song', 'error'); return; }
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'playFrom', entry:index, scene:block.dataset.scene, revision:revision()})});
+        const state = await response.json();
+        if (!response.ok) { setStatus(state.error || 'Song start failed', 'error'); return; }
+        showTransport(state);
+      } catch (error) { setStatus('Transport connection lost: ' + error.message, 'error'); }
+      finally { button.disabled = false; }
+    });
     for (const control of block.querySelectorAll('[data-song-action]')) {
       const action = control.dataset.songAction;
       control.disabled = action === 'left' && index === 0 || action === 'right' && index === songBlocks.length - 1 || action === 'shorter' && initialBars === 1 || action === 'longer' && initialBars === 999;
@@ -385,7 +398,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     transportButton.textContent = playing ? 'Stop' : 'Play';
     transportPosition.textContent = `Bar ${state.bar} · step ${state.step}`;
     const queuedSlots = Object.entries(state.pendingSlots || {});
-    transportPending.textContent = state.pendingScene ? `${state.pendingScene} queued for next bar` : queuedSlots.length ? `${queuedSlots.length} track ${queuedSlots.length === 1 ? 'slot' : 'slots'} queued for next bar` : state.pending ? 'Edit queued for next bar' : state.landedBar ? `Landed at bar ${state.landedBar}` : '';
+    transportPending.textContent = state.pendingSong ? `Starting song at ${state.pendingSong}` : state.pendingScene ? `${state.pendingScene} queued for next bar` : queuedSlots.length ? `${queuedSlots.length} track ${queuedSlots.length === 1 ? 'slot' : 'slots'} queued for next bar` : state.pending ? 'Edit queued for next bar' : state.landedBar ? `Landed at bar ${state.landedBar}` : '';
     for (const pad of scenePads) {
       pad.dataset.state = state.pendingScene === pad.dataset.scene ? 'queued' : state.scene === pad.dataset.scene ? 'launched' : '';
       pad.title = pad.dataset.state === 'launched' ? 'Last manually launched scene' : '';

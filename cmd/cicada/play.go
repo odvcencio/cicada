@@ -104,7 +104,13 @@ func compileLiveScore(path string) (liveplay.Score, error) {
 			}
 		}
 	}
-	return liveplay.Score{Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path, SceneIDs: sceneIDs, Tracks: tracks}, nil
+	song := make([]liveplay.SongEntry, len(p.Song))
+	startBar := uint32(1)
+	for i, entry := range p.Song {
+		song[i] = liveplay.SongEntry{Scene: entry.Scene, StartBar: startBar}
+		startBar += uint32(entry.Bars)
+	}
+	return liveplay.Score{Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path, SceneIDs: sceneIDs, Tracks: tracks, Song: song}, nil
 }
 
 type liveScoreWatcher struct {
