@@ -369,6 +369,11 @@ func (v *Voice) filterPair(first, second, baseG float64) (float64, float64) {
 		inv := 1 / (1 + g)
 		invFirstDen := 1 / (1 - G*a2/2 + G*k*c/2)
 		invRefinedDen := 1 / (1 - G*a2/2)
+		if savage == 0 {
+			first = v.diode.processDiodeShapedNormal(first, G, k, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
+			second = v.diode.processDiodeShapedNormal(second, G, k, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
+			return first, second
+		}
 		first = v.diode.processDiodeShaped(first, G, k, savage, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
 		second = v.diode.processDiodeShaped(second, G, k, savage, inv, a3, a2, invDen3, invDen2, invFirstDen, invRefinedDen) * gain
 		return first, second
@@ -405,8 +410,8 @@ func (v *Voice) filterPair(first, second, baseG float64) (float64, float64) {
 
 func (v *Voice) filterRestingDiodePair(first, second float64) (float64, float64) {
 	c := &v.restingDiode
-	first = v.diode.processDiodeShaped(first, c.G, c.k, 0, c.inv, c.a3, c.a2, c.invDen3, c.invDen2, c.invFirstDen, c.invRefinedDen) * c.gain
-	second = v.diode.processDiodeShaped(second, c.G, c.k, 0, c.inv, c.a3, c.a2, c.invDen3, c.invDen2, c.invFirstDen, c.invRefinedDen) * c.gain
+	first = v.diode.processDiodeShapedNormal(first, c.G, c.k, c.inv, c.a3, c.a2, c.invDen3, c.invDen2, c.invFirstDen, c.invRefinedDen) * c.gain
+	second = v.diode.processDiodeShapedNormal(second, c.G, c.k, c.inv, c.a3, c.a2, c.invDen3, c.invDen2, c.invFirstDen, c.invRefinedDen) * c.gain
 	return first, second
 }
 
