@@ -181,7 +181,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     {{if .Studio}}<div class="editor-shell" id="editor-shell" hidden><label class="sr-only" for="source-editor">Cicada source</label><textarea id="source-editor" class="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off">{{.SourceText}}</textarea></div>{{end}}
   </aside>
   <div class="projection">
-    <div id="session" class="projection-heading"><span class="eyebrow">{{if .Studio}}Session{{else}}Projection{{end}}</span><p>{{if .Studio}}Click a pitch row to set or clear a note, or a drum cell to toggle a hit. Each edit writes the score on disk.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
+    <div id="session" class="projection-heading"><span class="eyebrow">{{if .Studio}}Session{{else}}Projection{{end}}</span><p>{{if .Studio}}Set notes in the pitch rows, shape them with Accent and Slide, and toggle drum hits. Each edit writes the score on disk.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
     <section id="patterns" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
       <div class="patterns">{{range .Patterns}}{{$pattern := .}}
@@ -194,8 +194,8 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
             {{else}}
               {{range .PitchRows}}{{$row := .}}<div class="grid-line pitch-row" style="--steps:{{len .Cells}}"><span class="row-label pitch-label">{{.Name}}</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell pitch-cell step-edit{{if .On}} on{{end}}{{if .Accent}} accent{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-pitch="{{$row.Note}}" aria-label="{{if .On}}Clear{{else}}Set{{end}} {{$pattern.ID}} step {{.Number}} {{if .On}}at{{else}}to{{end}} {{$row.Name}}">{{if .On}}●{{end}}</button>{{else}}<span class="cell pitch-cell{{if .On}} on{{end}}{{if .Accent}} accent{{end}}"{{if .On}} aria-label="{{.Label}}"{{end}}>{{if .On}}●{{end}}</span>{{end}}{{end}}</div>{{end}}
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Note</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell note step-edit{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" aria-label="Toggle {{$pattern.ID}} {{.Label}}">{{.Note}}</button>{{else}}<span class="cell note{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" aria-label="{{.Label}}">{{.Note}}</span>{{end}}{{end}}</div>
-              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Accent</span>{{range .Cells}}<span class="cell flag{{if .Accent}} on{{end}}">{{if .Accent}}◆{{else}}·{{end}}</span>{{end}}</div>
-              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Slide</span>{{range .Cells}}<span class="cell flag slide{{if .Slide}} on{{end}}">{{if .Slide}}↗{{else if .Tie}}━{{else}}·{{end}}</span>{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Accent</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell flag step-edit{{if .Accent}} on{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="accent" aria-label="Toggle accent on {{$pattern.ID}} {{.Label}}" aria-pressed="{{.Accent}}">{{if .Accent}}◆{{else}}·{{end}}</button>{{else}}<span class="cell flag{{if .Accent}} on{{end}}">{{if .Accent}}◆{{else}}·{{end}}</span>{{end}}{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Slide</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell flag slide step-edit{{if .Slide}} on{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="slide" aria-label="Toggle slide on {{$pattern.ID}} {{.Label}}" aria-pressed="{{.Slide}}">{{if .Slide}}↗{{else}}·{{end}}</button>{{else}}<span class="cell flag slide{{if .Slide}} on{{end}}">{{if .Slide}}↗{{else if .Tie}}━{{else}}·{{end}}</span>{{end}}{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Ratchet</span>{{range .Cells}}<span class="cell">{{.Ratchet}}</span>{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Chance</span>{{range .Cells}}<span class="cell probability{{if .Active}} on{{end}}">{{.Probability}}</span>{{end}}</div>
             {{end}}
@@ -281,6 +281,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     if (dirty()) { setStatus('Save or discard source edits before changing the grid', 'error'); return; }
     const edit = {pattern:cell.dataset.pattern, lane:cell.dataset.lane || '', step:Number(cell.dataset.step)};
     if (cell.dataset.pitch !== undefined) edit.pitch = Number(cell.dataset.pitch);
+    if (cell.dataset.modifier !== undefined) edit.modifier = cell.dataset.modifier;
     send('/api/toggle', edit);
   }));
   let playing = false;
