@@ -1,0 +1,54 @@
+{
+  "name": "cicada",
+  "displayName": "Cicada",
+  "description": "Music notation and live Studio views for Cicada scores.",
+  "version": "0.1.0",
+  "publisher": "odvcencio",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/odvcencio/cicada.git",
+    "directory": "editors/vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Programming Languages", "Other"],
+  "main": "./extension.js",
+  "activationEvents": ["onLanguage:cicada", "onCommand:cicada.openStudio"],
+  "contributes": {
+    "languages": [{
+      "id": "cicada",
+      "aliases": ["Cicada"],
+      "extensions": [".cicada"],
+      "configuration": "./language-configuration.json"
+    }],
+    "commands": [{
+      "command": "cicada.openStudio",
+      "title": "Cicada: Open Studio Beside Score"
+    }],
+    "configuration": {
+      "title": "Cicada",
+      "properties": {
+        "cicada.serverPath": {
+          "type": "string",
+          "default": "cicada",
+          "description": "Path to the Cicada binary used for notation tooling and Studio."
+        },
+        "cicada.trace.server": {
+          "type": "string",
+          "enum": ["off", "messages", "verbose"],
+          "default": "off",
+          "description": "Trace messages between VS Code and the Cicada language server."
+        }
+      }
+    }
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "scripts": {
+    "build": "npm run check",
+    "check": "node --check extension.js",
+    "test": "node --test extension.test.js"
+  }
+}

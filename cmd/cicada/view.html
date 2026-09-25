@@ -172,7 +172,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   <p class="lede">{{if .Studio}}Edit the score or click a step. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
-<nav class="nav" aria-label="Score sections"><a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a>{{if .Studio}}<a href="#history">History</a>{{end}}<a href="#voice">Voice</a><a href="#notation">Notation</a>{{if .Studio}}<div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span></div>{{end}}</nav>
+<nav class="nav" aria-label="Score sections">{{if .Studio}}<a href="#notation">Code</a><a href="#session">Session</a><a href="#history">History</a><a href="#voice">Voice</a>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}{{if .Studio}}<div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span></div>{{end}}</nav>
 <main class="workspace">
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
@@ -181,7 +181,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     {{if .Studio}}<div class="editor-shell" id="editor-shell" hidden><label class="sr-only" for="source-editor">Cicada source</label><textarea id="source-editor" class="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off">{{.SourceText}}</textarea></div>{{end}}
   </aside>
   <div class="projection">
-    <div class="projection-heading"><span class="eyebrow">Projection</span><p>{{if .Studio}}The grid follows the score on disk. Click a note or drum cell to toggle it, or edit the source directly.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
+    <div id="session" class="projection-heading"><span class="eyebrow">{{if .Studio}}Session{{else}}Projection{{end}}</span><p>{{if .Studio}}The grid follows the score on disk. Click a note or drum cell to toggle it, or edit the source directly.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
     <section id="patterns" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
       <div class="patterns">{{range .Patterns}}{{$pattern := .}}
@@ -300,7 +300,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     finally { transportButton.disabled = false; }
   });
   function connectTransport() {
-    const socket = new WebSocket(`ws://${location.host}/api/transport/ws`);
+    const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/transport/ws`);
     socket.onmessage = event => { try { showTransport(JSON.parse(event.data)); } catch {} };
     socket.onclose = () => setTimeout(connectTransport, 1000);
   }
