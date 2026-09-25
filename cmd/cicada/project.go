@@ -96,6 +96,9 @@ func loadProject(path string) (*project.Project, error) {
 	if !strings.HasSuffix(path, ".cicada") {
 		return nil, fmt.Errorf("%s:1:1: error CICADA-IO: expected .cicada or .json", path)
 	}
+	if err := checkScoreEdition(path); err != nil {
+		return nil, err
+	}
 	score, diagnostics := notation.Parse(data)
 	hasError := false
 	for _, d := range diagnostics {
