@@ -88,9 +88,6 @@ func ValidateProject(p *Project) error {
 		}
 		params := map[string]bool{}
 		for _, param := range inst.Params {
-			if param.ID == "octave" {
-				return fmt.Errorf("instrument %s cannot declare octave as a synthesis parameter", inst.ID)
-			}
 			if err := uniqueID(param.ID, params); err != nil {
 				return fmt.Errorf("instrument %s parameter: %w", inst.ID, err)
 			}
@@ -166,7 +163,7 @@ func ValidateProject(p *Project) error {
 		if program := instruments[track.Kind]; program != nil {
 			overrides := make(map[string]string, len(track.Params))
 			for name, value := range track.Params {
-				if name == "octave" {
+				if name == "octave" && !program.HasParameter("octave") {
 					if err := validateOctaveValue(value); err != nil {
 						return fmt.Errorf("track %s: %w", track.ID, err)
 					}

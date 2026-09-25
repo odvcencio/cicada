@@ -139,7 +139,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			}
 			overrides := map[string]string{}
 			for name, value := range track.Params {
-				if name == "octave" {
+				if name == "octave" && !program.HasParameter("octave") {
 					continue
 				}
 				literal, err := valueSource(value)
