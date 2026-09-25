@@ -231,7 +231,7 @@ func New(cfg Config) (*Engine, error) {
 			}
 			v.insert.Reset()
 		} else if hasDrive {
-			v.align, err = mix.NewDelay(15)
+			v.align, err = mix.NewDelay(fx.DriveLatencyFrames)
 			if err != nil {
 				return nil, err
 			}
