@@ -53,6 +53,14 @@ func TestOptionalLegacyHeader(t *testing.T) {
 	}
 }
 
+func TestPatternBodySettingsPrecedeCells(t *testing.T) {
+	source := []byte("track bass acid {}\npattern p { 1 . swing=56% 3 . }\nscene main { bass=p }\nsong { main }\n")
+	_, diagnostics := Parse(source)
+	if len(diagnostics) == 0 || diagnostics[0].Code != "CICADA-SYNTAX" {
+		t.Fatalf("interleaved setting should be a syntax error: %+v", diagnostics)
+	}
+}
+
 func TestUnknownParameterHasPosition(t *testing.T) {
 	src := []byte("cicada 1\ntrack bass acid {\n  mystery = 42\n}\npattern a acid steps=1 { 1 }\nscene main { bass=a }\nsong { main }\n")
 	_, ds := Parse(src)
