@@ -412,7 +412,7 @@ func patternSource(pattern Pattern, slot int, assigned bool) (string, error) {
 				}
 				hits = append(hits, hit)
 			}
-			out.WriteString("  " + lane + ": " + strings.Join(hits, " ") + "\n")
+			out.WriteString("  " + lane + ": " + notation.FormatDrumHits(hits) + "\n")
 		}
 	} else {
 		var notes []string
