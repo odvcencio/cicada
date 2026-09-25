@@ -106,6 +106,40 @@ func TestStudioTransportQueuesFileEditsOnNativeBar(t *testing.T) {
 	}
 }
 
+func TestStudioPollKeepsLastCompiledScoreAfterInvalidSave(t *testing.T) {
+	_, path := studioTestHandler(t)
+	initial, err := compileLiveScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := liveplay.New(initial, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := newStudioTransport(path)
+	transport.stream = stream
+	transport.last, err = playSourceHash(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastGoodHash := transport.last
+	if err := os.WriteFile(path, []byte("title \"broken\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	transport.poll()
+	if transport.last != lastGoodHash || transport.snapshot().Error == "" || transport.snapshot().Pending {
+		t.Fatalf("invalid save replaced last good score: %+v", transport.snapshot())
+	}
+	updated := strings.Replace(studioScore, "Studio", "Recovered", 1)
+	if err := os.WriteFile(path, []byte(updated), 0600); err != nil {
+		t.Fatal(err)
+	}
+	transport.poll()
+	if transport.last == lastGoodHash || !transport.snapshot().Pending || transport.snapshot().Error != "" {
+		t.Fatalf("valid save did not recover: %+v", transport.snapshot())
+	}
+}
+
 func TestStudioSceneLaunchUsesNativeTransport(t *testing.T) {
 	_, path := studioTestHandler(t)
 	initial, err := compileLiveScore(path)

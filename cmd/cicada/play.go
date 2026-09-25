@@ -82,6 +82,10 @@ func compileLiveScore(path string) (liveplay.Score, error) {
 	if err != nil {
 		return liveplay.Score{}, err
 	}
+	return compileLiveProject(path, p)
+}
+
+func compileLiveProject(path string, p *project.Project) (liveplay.Score, error) {
 	cfg, err := project.CompileEngine(p, liveSampleRate, liveBlockFrames)
 	if err != nil {
 		return liveplay.Score{}, err
@@ -178,6 +182,11 @@ func playSourceHash(path string) ([32]byte, error) {
 	if err != nil {
 		return empty, err
 	}
+	return playSourceHashBytes(path, source)
+}
+
+func playSourceHashBytes(path string, source []byte) ([32]byte, error) {
+	var empty [32]byte
 	hash := sha256.New()
 	_, _ = hash.Write(source)
 	dir := filepath.Dir(path)
