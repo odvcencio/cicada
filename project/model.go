@@ -165,11 +165,15 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 	for _, source := range score.Instruments {
 		inst := Instrument{ID: source.Name, Mode: source.Mode, Params: []InstrumentParam{}, Lets: []Binding{}}
 		for _, param := range source.Params {
-			value, _, err := parseBaseValue(param.Default)
+			value, inferredUnit, err := parseBaseValue(param.Default)
 			if err != nil {
 				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-UNIT", Severity: "error", Message: err.Error(), Position: param.Position})
 			}
-			inst.Params = append(inst.Params, InstrumentParam{ID: param.Name, Unit: param.Unit, Default: value})
+			unit := param.Unit
+			if unit == "" {
+				unit = inferredUnit
+			}
+			inst.Params = append(inst.Params, InstrumentParam{ID: param.Name, Unit: unit, Default: value})
 		}
 		for _, binding := range source.Lets {
 			inst.Lets = append(inst.Lets, Binding{ID: binding.Name, Value: projectExpr(binding.Value)})
