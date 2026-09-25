@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,37 @@ func TestProjectEditionAndNewScore(t *testing.T) {
 	}
 	if err := newCommand([]string{"night-circuit"}); err == nil {
 		t.Fatal("new overwrote an existing project")
+	}
+}
+
+func TestNewProjectRemovesPartialFilesAfterWriteFailure(t *testing.T) {
+	oldDir, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(oldDir) })
+	for _, failAt := range []int{1, 2} {
+		writes := 0
+		err := newProject("retryable", func(path string, data []byte, mode os.FileMode) error {
+			writes++
+			if writes == failAt {
+				_ = os.WriteFile(path, []byte("partial"), mode)
+				return errors.New("simulated write failure")
+			}
+			return os.WriteFile(path, data, mode)
+		})
+		if err == nil {
+			t.Fatalf("write %d failure was ignored", failAt)
+		}
+		if _, statErr := os.Stat("retryable"); !os.IsNotExist(statErr) {
+			t.Fatalf("write %d left a partial directory: %v", failAt, statErr)
+		}
+	}
+	if err := newProject("retryable", os.WriteFile); err != nil {
+		t.Fatalf("retry failed: %v", err)
 	}
 }
 
