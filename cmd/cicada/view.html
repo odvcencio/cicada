@@ -12,6 +12,7 @@ html { scroll-behavior:smooth; }
 body { margin:0; background:var(--bg); color:var(--text); font:16px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; }
 a { color:var(--mint); }
 a:focus-visible, summary:focus-visible { outline:3px solid var(--amber); outline-offset:3px; }
+button:focus-visible, textarea:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
 .hero { border-bottom:1px solid var(--border); padding:clamp(24px,4vw,56px) clamp(20px,4vw,64px) 28px; background:radial-gradient(circle at 90% -25%,#31503d 0%,transparent 42%),linear-gradient(160deg,#141d17,var(--bg)); }
 .brand { text-transform:uppercase; color:var(--mint); letter-spacing:.2em; font-size:.76rem; font-weight:800; }
 h1 { margin:.32em 0 .26em; font-size:clamp(2.25rem,5vw,4.5rem); letter-spacing:-.055em; line-height:1.05; }
@@ -105,36 +106,52 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .pitch-row .pitch-cell.accent { background:#ff9979; border-color:#ff9979; }
 .pitch-label { color:#9cb7a3; text-transform:none; font-size:.68rem; }
 .track { min-height:92px; padding:12px 15px; }
+.pane-actions { position:sticky; top:49px; z-index:2; display:flex; align-items:center; flex-wrap:wrap; gap:8px; padding:8px 14px; background:#141d17; border-bottom:1px solid var(--border); }
+.pane-actions button { border:1px solid #596d5c; border-radius:7px; background:#253529; color:var(--text); padding:6px 10px; font:700 .75rem/1.2 system-ui,sans-serif; cursor:pointer; }
+.pane-actions button.primary { background:var(--amber); border-color:var(--amber); color:#171b14; }
+.pane-actions button:hover { border-color:var(--amber); }
+.pane-actions button:disabled { opacity:.55; cursor:wait; }
+.sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
+.studio-status { color:var(--muted); font:12px/1.3 system-ui,sans-serif; margin-left:auto; }
+.studio-status[data-state="error"] { color:var(--coral); }
+.studio-status[data-state="success"] { color:var(--mint); }
+.editor-shell[hidden], .source-scroll[hidden] { display:none; }
+.source-editor { display:block; width:100%; min-height:calc(100vh - 220px); resize:vertical; border:0; border-radius:0; padding:20px 22px; background:#111713; color:var(--text); font:13px/1.75 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; white-space:pre; }
+.step-edit { width:100%; padding:0 2px; cursor:pointer; transition:border-color .15s,transform .15s; }
+.step-edit:hover { border-color:var(--amber); transform:translateY(-1px); }
+@media (prefers-reduced-motion:reduce) { .step-edit { transition:none; } .step-edit:hover { transform:none; } }
 @media (max-width:980px) { .workspace { grid-template-columns:1fr; } .source-pane { position:relative; height:42vh; border-right:0; border-bottom:1px solid var(--border); } .projection { padding:22px 16px 50px; } .hero .meta { margin-left:0; } }
 </style>
 </head>
-<body>
+<body data-revision="{{.Revision}}">
 <header class="hero">
-  <div class="brand">Cicada / score view</div>
+  <div class="brand">Cicada / {{if .Studio}}studio{{else}}score view{{end}}</div>
   <h1>{{.Title}}</h1>
-  <p class="lede">One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.</p>
+  <p class="lede">{{if .Studio}}Edit the score or click a step. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
 <nav class="nav" aria-label="Score sections"><a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#notation">Notation</a></nav>
 <main class="workspace">
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
-    <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">validated snapshot</span></div>
-    <div class="source-scroll"><div class="line-numbers" aria-hidden="true">{{range .LineNumbers}}<span>{{.}}</span>{{end}}</div><pre><code>{{.SourceHTML}}</code></pre></div>
+    <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
+    {{if .Studio}}<div class="pane-actions"><button type="button" id="edit-source">Edit source</button><button type="button" id="save-source" class="primary" hidden>Save score</button><button type="button" id="discard-source" hidden>Discard</button><span class="studio-status" id="studio-status" role="status" aria-live="polite">Ready</span></div>{{end}}
+    <div class="source-scroll" id="source-view"><div class="line-numbers" aria-hidden="true">{{range .LineNumbers}}<span>{{.}}</span>{{end}}</div><pre><code>{{.SourceHTML}}</code></pre></div>
+    {{if .Studio}}<div class="editor-shell" id="editor-shell" hidden><label class="sr-only" for="source-editor">Cicada source</label><textarea id="source-editor" class="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off">{{.SourceText}}</textarea></div>{{end}}
   </aside>
   <div class="projection">
-    <div class="projection-heading"><span class="eyebrow">Projection</span><p>The patterns below come from the same validated source on the left. This export is read only.</p></div>
+    <div class="projection-heading"><span class="eyebrow">Projection</span><p>{{if .Studio}}The grid follows the score on disk. Click a note or drum cell to toggle it, or edit the source directly.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
     <section id="patterns" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
-      <div class="patterns">{{range .Patterns}}
+      <div class="patterns">{{range .Patterns}}{{$pattern := .}}
         <details class="pattern{{if .Drums}} drum{{end}}" open>
           <summary><span class="pattern-title">{{.ID}} <small>{{.Kind}}</small></span><span class="pattern-metrics">{{.Steps}} steps · swing {{.Swing}} · gate {{.Gate}} · transpose {{.Transpose}}</span></summary>
           <div class="grid-wrap" role="group" aria-label="{{.ID}} pattern">
             <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Step</span>{{range .Numbers}}<span class="cell beat{{if .Downbeat}} downbeat{{end}}">{{.Value}}</span>{{end}}</div>
             {{if .Drums}}
-              {{range .Lanes}}<div class="grid-line" style="--steps:{{len .Cells}}"><span class="row-label">{{.Name}}</span>{{range .Cells}}<span class="cell drum-cell{{if .Accent}} accent{{end}}" aria-label="{{.Label}}">{{if .Active}}<span class="fill" style="--velocity:{{.FillPercent}}%"></span><span class="glyph">●</span>{{else}}·{{end}}</span>{{end}}</div>{{end}}
+              {{range .Lanes}}{{$lane := .}}<div class="grid-line" style="--steps:{{len .Cells}}"><span class="row-label">{{.Name}}</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell drum-cell step-edit{{if .Accent}} accent{{end}}" data-pattern="{{$pattern.ID}}" data-lane="{{$lane.ID}}" data-step="{{.Index}}" aria-label="Toggle {{$pattern.ID}} {{$lane.Name}} {{.Label}}">{{if .Active}}<span class="fill" style="--velocity:{{.FillPercent}}%"></span><span class="glyph">●</span>{{else}}·{{end}}</button>{{else}}<span class="cell drum-cell{{if .Accent}} accent{{end}}" aria-label="{{.Label}}">{{if .Active}}<span class="fill" style="--velocity:{{.FillPercent}}%"></span><span class="glyph">●</span>{{else}}·{{end}}</span>{{end}}{{end}}</div>{{end}}
             {{else}}
               {{range .PitchRows}}<div class="grid-line pitch-row" style="--steps:{{len .Cells}}"><span class="row-label pitch-label">{{.Name}}</span>{{range .Cells}}<span class="cell pitch-cell{{if .On}} on{{end}}{{if .Accent}} accent{{end}}"{{if .On}} aria-label="{{.Label}}"{{end}}>{{if .On}}●{{end}}</span>{{end}}</div>{{end}}
-              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Note</span>{{range .Cells}}<span class="cell note{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" aria-label="{{.Label}}">{{.Note}}</span>{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Note</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell note step-edit{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" aria-label="Toggle {{$pattern.ID}} {{.Label}}">{{.Note}}</button>{{else}}<span class="cell note{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" aria-label="{{.Label}}">{{.Note}}</span>{{end}}{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Accent</span>{{range .Cells}}<span class="cell flag{{if .Accent}} on{{end}}">{{if .Accent}}◆{{else}}·{{end}}</span>{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Slide</span>{{range .Cells}}<span class="cell flag slide{{if .Slide}} on{{end}}">{{if .Slide}}↗{{else if .Tie}}━{{else}}·{{end}}</span>{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Ratchet</span>{{range .Cells}}<span class="cell">{{.Ratchet}}</span>{{end}}</div>
@@ -154,6 +171,63 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     </section>
   </div>
 </main>
-<footer>Cicada score view · deterministic export from the validated project model</footer>
+<footer>{{if .Studio}}Cicada Studio · source-linked projection of the validated project{{else}}Cicada score view · deterministic export from the validated project model{{end}}</footer>
+{{if .Studio}}<script>
+(() => {
+  const status = document.getElementById('studio-status');
+  const editor = document.getElementById('source-editor');
+  const edit = document.getElementById('edit-source');
+  const save = document.getElementById('save-source');
+  const discard = document.getElementById('discard-source');
+  const sourceView = document.getElementById('source-view');
+  const shell = document.getElementById('editor-shell');
+  let original = editor.value;
+  let busy = false;
+  const revision = () => document.body.dataset.revision;
+  const setStatus = (message, state = '') => { status.textContent = message; status.dataset.state = state; };
+  const editing = () => !shell.hidden;
+  const dirty = () => editing() && editor.value !== original;
+  const showEditor = (on) => {
+    shell.hidden = !on; sourceView.hidden = on; save.hidden = !on; discard.hidden = !on;
+    edit.hidden = on;
+    if (on) editor.focus();
+  };
+  edit.addEventListener('click', () => showEditor(true));
+  discard.addEventListener('click', () => { editor.value = original; showEditor(false); setStatus('Changes discarded'); });
+  editor.addEventListener('input', () => setStatus('Unsaved source edits'));
+  async function send(path, payload) {
+    if (busy) return;
+    busy = true; save.disabled = true;
+    try {
+      const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...payload, revision:revision()}) });
+      const result = await response.json();
+      if (!response.ok) { setStatus(result.error || 'Edit failed', 'error'); return; }
+      setStatus('Saved; refreshing projection', 'success');
+      location.reload();
+    } catch (error) { setStatus('Connection lost: ' + error.message, 'error'); }
+    finally { busy = false; save.disabled = false; }
+  }
+  save.addEventListener('click', () => send('/api/source', {source:editor.value}));
+  editor.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); save.click(); } });
+  document.querySelectorAll('.step-edit').forEach(cell => cell.addEventListener('click', () => {
+    if (dirty()) { setStatus('Save or discard source edits before changing the grid', 'error'); return; }
+    send('/api/toggle', {pattern:cell.dataset.pattern, lane:cell.dataset.lane || '', step:Number(cell.dataset.step)});
+  }));
+  setInterval(async () => {
+    if (busy) return;
+    try {
+      const response = await fetch('/api/state', {cache:'no-store'});
+      const state = await response.json();
+      if (state.revision === revision()) return;
+      if (dirty()) { setStatus('The file changed outside Studio. Save with care or discard your draft.', 'error'); return; }
+      if (state.valid) location.reload();
+      else {
+        original = state.source; editor.value = original; document.body.dataset.revision = state.revision;
+        setStatus(state.error || 'The score on disk has an error; showing the last valid projection.', 'error');
+      }
+    } catch { setStatus('Waiting for the local Studio server', 'error'); }
+  }, 1500);
+})();
+</script>{{end}}
 </body>
 </html>
