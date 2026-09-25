@@ -430,9 +430,9 @@ func parseBaseValue(source string) (float64, string, error) {
 		name, unit string
 		scale      float64
 	}{{"khz", "hz", 1000}, {"hz", "hz", 1}, {"ms", "ms", 1}, {"db", "db", 1}, {"s", "ms", 1000}, {"%", "unit", 0.01}} {
-		if strings.HasSuffix(source, suffix.name) {
+		if strings.HasSuffix(strings.ToLower(source), suffix.name) {
 			unit, scale = suffix.unit, suffix.scale
-			source = strings.TrimSuffix(source, suffix.name)
+			source = source[:len(source)-len(suffix.name)]
 			break
 		}
 	}

@@ -190,11 +190,11 @@
 (song_entry bars: (integer) @number.bars)
 
 ; ---------------------------------------------------------------------------
-; Numbers carry their unit: 620hz, 380ms, 3s, -6db, 50%.
+; Numbers carry their unit: 620Hz, 380ms, 3s, -6dB, 50%.
 
-((number) @number.frequency (#match? @number.frequency "hz$"))
+((number) @number.frequency (#match? @number.frequency "[Hh]z$"))
 ((number) @number.duration (#match? @number.duration "[0-9]m?s$"))
-((number) @number.decibel (#match? @number.decibel "db$"))
+((number) @number.decibel (#match? @number.decibel "(db|dB)$"))
 ((number) @number.percent (#match? @number.percent "%$"))
 ((number) @number.float (#match? @number.float "^-?[0-9]+\\.[0-9]+$"))
 ((number) @number (#match? @number "^-?[0-9]+$"))

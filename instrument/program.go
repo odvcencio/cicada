@@ -168,8 +168,8 @@ func literalType(text string) (Type, error) {
 		typeOf Type
 	}{{"khz", Hz}, {"hz", Hz}, {"ms", MS}, {"db", DB}, {"s", MS}, {"%", Unit}}
 	for _, candidate := range suffixes {
-		if strings.HasSuffix(text, candidate.suffix) {
-			number := strings.TrimSuffix(text, candidate.suffix)
+		if strings.HasSuffix(strings.ToLower(text), candidate.suffix) {
+			number := text[:len(text)-len(candidate.suffix)]
 			if _, err := strconv.ParseFloat(number, 64); err != nil {
 				return "", err
 			}
