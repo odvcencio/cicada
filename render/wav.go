@@ -453,8 +453,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		position += int64(frames)
 	}
 	if insertLatency != 0 {
-		// Drive and the aligned dry tracks have the same 15-frame latency.
-		// Drain it, then omit the initial 15 silent output frames so the WAV
+		// Drive and the aligned dry tracks have the same insert latency.
+		// Drain it, then omit the initial silent output frames so the WAV
 		// remains aligned to the score and has exactly report.Frames frames.
 		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, &encoder, nil, position, insertLatency, block, &report); err != nil {
 			return report, err
@@ -531,8 +531,14 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 				if err != nil {
 					return nil, fmt.Errorf("track %s: %w", source.Name, err)
 				}
+				lanes := project.BuiltinDrumLanes(score, source)
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-					if err := kit.SetParams(lane, params[lane]); err != nil {
+					if lanes[lane] {
+						err = kit.SetParams(lane, params[lane])
+					} else {
+						err = kit.Disable(lane)
+					}
+					if err != nil {
 						return nil, err
 					}
 				}
@@ -660,7 +666,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 					insert.Reset()
 					tracks[i].insert = insert
 				} else {
-					align, err := mix.NewDelay(15)
+					align, err := mix.NewDelay(fx.DriveLatencyFrames)
 					if err != nil {
 						return nil, err
 					}
