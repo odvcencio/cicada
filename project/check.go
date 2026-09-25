@@ -89,7 +89,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	firstTrack := make(map[string]string)
 	for _, scene := range score.Scenes {
 		for _, binding := range scene.Bindings {
-			if binding.Pattern == "off" || binding.Pattern == "keep" {
+			if binding.Pattern == "off" || binding.Pattern == "keep" || binding.Pattern == "stop" && !scoreHasPattern(score, "stop") {
 				continue
 			}
 			pair := [2]string{binding.Track, binding.Pattern}
@@ -155,6 +155,12 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 			switch binding.Pattern {
 			case "off":
 				delete(active, binding.Track)
+			case "stop":
+				if scoreHasPattern(score, "stop") {
+					active[binding.Track] = binding.Pattern
+				} else {
+					delete(active, binding.Track)
+				}
 			case "keep":
 			default:
 				active[binding.Track] = binding.Pattern
