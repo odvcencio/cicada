@@ -258,6 +258,17 @@ func DecodeJSON(data []byte) (*Project, error) {
 		}
 		return nil, jsonError(data, "CICADA-VERSION", "/"+field, 0, fmt.Errorf("unsupported project format or version"))
 	}
+	var root map[string]json.RawMessage
+	if err := json.Unmarshal(data, &root); err != nil {
+		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
+	}
+	if _, present := root["edition"]; !present {
+		// Semantic JSON written before editions existed means edition 1.
+		p.Edition = 1
+	}
+	if p.Edition != 1 {
+		return nil, jsonError(data, "CICADA-VERSION", "/edition", 0, fmt.Errorf("only cicada 1 is supported"))
+	}
 	if err := ValidateProject(&p); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
@@ -350,9 +361,15 @@ func checkRequiredFields(data []byte) error {
 		return err
 	}
 	fieldsByConstruct := make(map[string][]string, len(catalog.Constructs))
+	optionalByConstruct := make(map[string][]string)
 	for _, field := range catalog.Fields {
-		if field.Required && field.Variant == "" {
+		if field.Variant != "" {
+			continue
+		}
+		if field.Required {
 			fieldsByConstruct[field.Construct] = append(fieldsByConstruct[field.Construct], field.Name)
+		} else {
+			optionalByConstruct[field.Construct] = append(optionalByConstruct[field.Construct], field.Name)
 		}
 	}
 	require := func(value any, construct, name, pointer string) (map[string]any, error) {
@@ -360,7 +377,7 @@ func checkRequiredFields(data []byte) error {
 		if !ok || len(fields) == 0 {
 			return nil, fmt.Errorf("no required fields registered for %s", construct)
 		}
-		return requiredObject(value, name, pointer, fields...)
+		return requiredObject(value, name, pointer, fields, optionalByConstruct[construct])
 	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
@@ -448,7 +465,7 @@ func checkRequiredFields(data []byte) error {
 	})
 }
 
-func requiredObject(value any, name, pointer string, fields ...string) (map[string]any, error) {
+func requiredObject(value any, name, pointer string, fields, optional []string) (map[string]any, error) {
 	object, ok := value.(map[string]any)
 	if !ok {
 		return nil, &jsonFieldError{pointer, fmt.Errorf("%s must be an object", name)}
@@ -459,6 +476,9 @@ func requiredObject(value any, name, pointer string, fields ...string) (map[stri
 		if _, exists := object[field]; !exists {
 			return nil, &jsonFieldError{jsonPointer(pointer, field), fmt.Errorf("%s is missing %s", name, field)}
 		}
+	}
+	for _, field := range optional {
+		allowed[field] = true
 	}
 	for _, field := range sortedKeys(object) {
 		if !allowed[field] {
@@ -486,7 +506,7 @@ func checkStepArray(value any, pointer string, fields []string) error {
 		if value == nil {
 			return nil
 		}
-		_, err := requiredObject(value, "step", child, fields...)
+		_, err := requiredObject(value, "step", child, fields, nil)
 		return err
 	})
 }
