@@ -46,6 +46,10 @@ jobs:
           set -euo pipefail
           make probe-wasm
           make test-kernel-wasm | tee build/kernel-wasm-report.txt
+      - name: Native acid benchmark
+        run: |
+          set -euo pipefail
+          GOMAXPROCS=1 go test ./kernel/voice/acid -run '^$' -bench '^BenchmarkAcidNext' -benchmem -benchtime=1s -count=5 | tee build/acid-bench-report.txt
       - name: M0 CLI acceptance
         run: |
           set -euo pipefail
@@ -70,5 +74,6 @@ jobs:
             build/golden-report.txt
             build/realtime-report.txt
             build/kernel-wasm-report.txt
+            build/acid-bench-report.txt
             build/m0-cli-report.txt
             build/first-acid.wav
