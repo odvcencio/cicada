@@ -1,6 +1,6 @@
 track bass acid {}
 track drums drums {}
-pattern riff acid steps=2 { 1?70 . }
+pattern riff { 1?70 . }
 pattern beat drums steps=2 { bd: x?50.; }
 scene main { bass=riff drums=beat }
 song { main }
