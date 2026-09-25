@@ -12,6 +12,7 @@ fx echo {
 }
 
 instrument pad {
+  octave = 3;
   param spread: db = -6db;
   voice poly {
     let wobble = lfo(pitch - 2hz);
