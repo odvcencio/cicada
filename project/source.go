@@ -14,20 +14,25 @@ import (
 
 var pitchNames = [12]string{"c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"}
 
-// ToSource writes explicit normalized notation. It reparses and recompiles the
+// ToSource writes concise edition-1 notation. It reparses and recompiles the
 // result before returning so a JSON project cannot silently change meaning.
 func ToSource(p *Project) ([]byte, error) {
 	if err := ValidateProject(p); err != nil {
 		return nil, err
 	}
 	var sections []string
-	sections = append(sections, "cicada 1")
 	if p.Title != "" {
 		sections = append(sections, "title "+strconv.Quote(p.Title))
 	}
-	sections = append(sections, "tempo "+decimal(float64(p.TempoMilli)/1000))
-	sections = append(sections, "key "+pitchNames[p.Key.Root]+" "+p.Key.Scale)
-	sections = append(sections, "seed "+strconv.FormatUint(uint64(p.Seed), 10))
+	if p.TempoMilli != 130_000 {
+		sections = append(sections, "tempo "+decimal(float64(p.TempoMilli)/1000))
+	}
+	if p.Key.Root != 9 || p.Key.Scale != "minor" {
+		sections = append(sections, "key "+pitchNames[p.Key.Root]+" "+p.Key.Scale)
+	}
+	if p.Seed != 0 {
+		sections = append(sections, "seed "+strconv.FormatUint(uint64(p.Seed), 10))
+	}
 	for _, inst := range p.Instruments {
 		source, err := instrumentSource(inst)
 		if err != nil {
@@ -76,7 +81,7 @@ func ToSource(p *Project) ([]byte, error) {
 			if track.Mixer.Mute {
 				out.WriteString("  level = off\n")
 			} else if track.Mixer.GainDB != defaultMixer().GainDB {
-				out.WriteString("  level = " + decimal(track.Mixer.GainDB) + "db\n")
+				out.WriteString("  level = " + decimal(track.Mixer.GainDB) + "dB\n")
 			}
 			if track.Mixer.Pan != 0 {
 				out.WriteString("  pan = " + decimal(track.Mixer.Pan) + "\n")
@@ -122,7 +127,7 @@ func ToSource(p *Project) ([]byte, error) {
 	}
 	for _, pattern := range p.Patterns {
 		slot, assigned := slots[pattern.ID]
-		source, err := patternSource(pattern, slot, assigned && !automatic[pattern.ID])
+		source, err := patternSource(pattern, slot, assigned && !automatic[pattern.ID], projectPatternUsedOnlyByAcid(p, pattern.ID), p.Seed)
 		if err != nil {
 			return nil, err
 		}
@@ -133,6 +138,9 @@ func ToSource(p *Project) ([]byte, error) {
 		out.WriteString("scene " + scene.ID + " {")
 		for _, track := range sortedKeys(scene.Bindings) {
 			pattern := scene.Bindings[track]
+			if pattern == "keep" {
+				continue
+			}
 			if pattern == "off" && !projectHasPattern(p, "stop") {
 				pattern = "stop"
 			}
@@ -202,12 +210,6 @@ func instrumentSource(inst Instrument) (string, error) {
 		value, err := typedNumber(param.Default, instrument.Type(param.Unit))
 		if err != nil {
 			return "", err
-		}
-		switch param.Unit {
-		case "hz":
-			value = strings.TrimSuffix(value, "hz") + "Hz"
-		case "db":
-			value = strings.TrimSuffix(value, "db") + "dB"
 		}
 		out.WriteString("  param " + param.ID + " = " + value + "\n")
 	}
@@ -394,18 +396,28 @@ func callOutputType(op string) instrument.Type {
 	return ""
 }
 
-func patternSource(pattern Pattern, slot int, assigned bool) (string, error) {
+func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, projectSeed uint32) (string, error) {
 	var out strings.Builder
-	out.WriteString("pattern " + pattern.ID + " " + pattern.Kind)
-	out.WriteString(" steps = " + strconv.Itoa(int(pattern.Steps)))
-	out.WriteString(" swing = " + percent100Text(pattern.SwingPercent100))
-	out.WriteString(" gate = " + strconv.Itoa(int(pattern.GatePercent)))
-	out.WriteString(" transpose = " + strconv.Itoa(int(pattern.Transpose)))
-	out.WriteString(" seed = " + strconv.FormatUint(uint64(pattern.Seed), 10))
-	if assigned {
-		out.WriteString(" slot = " + strconv.Itoa(slot))
+	out.WriteString("pattern " + pattern.ID)
+	if pattern.Kind == "drums" || pattern.Kind == "acid" && !acidTrackOnly {
+		out.WriteString(" " + pattern.Kind)
 	}
 	out.WriteString(" {\n")
+	if pattern.SwingPercent100 != 5000 {
+		out.WriteString("  swing = " + percent100Text(pattern.SwingPercent100) + "%\n")
+	}
+	if pattern.GatePercent != 55 {
+		out.WriteString("  gate = " + strconv.Itoa(int(pattern.GatePercent)) + "%\n")
+	}
+	if pattern.Transpose != 0 {
+		out.WriteString("  transpose = " + strconv.Itoa(int(pattern.Transpose)) + "\n")
+	}
+	if pattern.Seed != projectSeed {
+		out.WriteString("  seed = " + strconv.FormatUint(uint64(pattern.Seed), 10) + "\n")
+	}
+	if assigned {
+		out.WriteString("  slot = " + strconv.Itoa(slot) + "\n")
+	}
 	if pattern.Kind == "drums" {
 		for _, lane := range laneOrder {
 			var hits []string
@@ -454,7 +466,7 @@ func noteStepSource(step *Step) (string, error) {
 		if step.Probability == 0 {
 			return "", fmt.Errorf("zero probability cannot be spelled in source v1")
 		}
-		text += "%" + strconv.Itoa(int(step.Probability))
+		text += "?" + strconv.Itoa(int(step.Probability))
 	}
 	return text, nil
 }
@@ -482,7 +494,7 @@ func drumStepSource(step *Step, lane string) (string, error) {
 		if step.Probability == 0 {
 			return "", fmt.Errorf("zero probability cannot be spelled in source v1")
 		}
-		text += "%" + strconv.Itoa(int(step.Probability))
+		text += "?" + strconv.Itoa(int(step.Probability))
 	}
 	return text, nil
 }
@@ -519,11 +531,11 @@ func typedNumber(value float64, unit instrument.Type) (string, error) {
 	case instrument.Unit:
 		return decimal(value), nil
 	case instrument.Hz:
-		return decimal(value) + "hz", nil
+		return decimal(value) + "Hz", nil
 	case instrument.MS:
 		return decimal(value) + "ms", nil
 	case instrument.DB:
-		return decimal(value) + "db", nil
+		return decimal(value) + "dB", nil
 	}
 	return "", fmt.Errorf("cannot spell literal with unit %s", unit)
 }

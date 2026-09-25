@@ -51,7 +51,7 @@ func TestExplicitSlotsPrecedeAutomaticAllocation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(source, []byte("pattern first acid steps = 1 swing = 50 gate = 55 transpose = 0 seed = 0 slot = 7")) {
+	if !bytes.Contains(source, []byte("pattern first {\n  slot = 7")) {
 		t.Fatalf("normalized source lost explicit slot:\n%s", source)
 	}
 	encoded, err := CanonicalJSON(p)
@@ -120,7 +120,7 @@ song { a b }
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bytes.Contains(converted, []byte("pattern shared acid steps = 1 swing = 50 gate = 55 transpose = 0 seed = 0 slot")) {
+	if bytes.Contains(converted, []byte("pattern shared {\n  slot =")) {
 		t.Fatalf("per-track automatic slot became a global explicit slot:\n%s", converted)
 	}
 }
