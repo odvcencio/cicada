@@ -63,6 +63,7 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 		return
 	}
 	e.launchScene(c.Index)
+	e.manualSceneTick = e.transport.Tick()
 }
 
 // scenePatternEndTick finds the first shared end of the active patterns,
@@ -209,5 +210,7 @@ func (e *Engine) advanceSong() {
 	}
 	entry := e.song[e.songIndex]
 	e.songEndTick += int64(entry.Bars) * seq.TicksPerBar
-	e.launchScene(entry.Scene)
+	if e.manualSceneTick != e.transport.Tick() {
+		e.launchScene(entry.Scene)
+	}
 }
