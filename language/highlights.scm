@@ -53,12 +53,14 @@
 ; Instruments: typed parameters, one voice, ordered lets, one out.
 
 "instrument" @keyword.type
+"octave" @keyword
 "param" @keyword
 "voice" @keyword.function
 "let" @keyword
 "out" @keyword.return
 
 (instrument_decl name: (identifier) @type.definition)
+(instrument_octave value: (integer) @number)
 (instrument_param name: (identifier) @variable.parameter)
 (instrument_param unit: (identifier) @type.builtin)
 (voice_decl mode: (identifier) @keyword.modifier)
