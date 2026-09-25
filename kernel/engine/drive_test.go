@@ -21,7 +21,7 @@ func TestDriveInsertAlignsLiveTracksAndDoesNotAllocate(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Hear only drums. Their waveform must be unchanged, delayed by the
-	// insert's 15 frames before the shared master limiter.
+	// insert's latency before the shared master limiter.
 	driven.layerMask, dry.layerMask = 2, 2
 	note := cmd.Command{Op: cmd.OpNoteOn, Track: 1, Index: 0, Arg0: 36 | 110<<8 | 1<<16}
 	if !driven.Push(note) || !dry.Push(note) {
@@ -38,11 +38,11 @@ func TestDriveInsertAlignsLiveTracksAndDoesNotAllocate(t *testing.T) {
 		copy(dryR[block*128:], blockR[:])
 	}
 	heard := false
-	for frame := 0; frame+15 < len(dryL); frame++ {
+	for frame := 0; frame+fx.DriveLatencyFrames < len(dryL); frame++ {
 		if dryL[frame] != 0 || dryR[frame] != 0 {
 			heard = true
 		}
-		if drivenL[frame+15] != dryL[frame] || drivenR[frame+15] != dryR[frame] {
+		if drivenL[frame+fx.DriveLatencyFrames] != dryL[frame] || drivenR[frame+fx.DriveLatencyFrames] != dryR[frame] {
 			t.Fatalf("dry track changed at frame %d with drive insert on another track", frame)
 		}
 	}
