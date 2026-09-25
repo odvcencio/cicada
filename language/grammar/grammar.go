@@ -96,7 +96,7 @@ func Cicada() *grammargen.Grammar {
 	// A phrase is a named run of steps that `use` splices into a pattern
 	// before scheduling, optionally repeated and transposed.
 	g.Define("phrase_decl", seq(
-		str("phrase"), field("name", sym("identifier")), str("acid"),
+		str("phrase"), field("name", sym("identifier")), optional(str("acid")),
 		str("{"), repeat(sym("acid_step")), str("}"),
 	))
 	g.Define("acid_pattern", seq(
@@ -104,7 +104,7 @@ func Cicada() *grammargen.Grammar {
 		str("{"), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
 	))
 	g.Define("note_pattern", seq(
-		str("pattern"), field("name", sym("identifier")), str("notes"), repeat(sym("pattern_attr")),
+		str("pattern"), field("name", sym("identifier")), optional(str("notes")), repeat(sym("pattern_attr")),
 		str("{"), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
 	))
 	g.Define("phrase_use", seq(
@@ -172,6 +172,7 @@ func Cicada() *grammargen.Grammar {
 		"(source_file (integer) (note_pattern (identifier) (acid_step (acid_note (pitch (degree)) (modifier))) (acid_step) (acid_step (acid_note (pitch (degree)) (octave_shift) (modifier) (modifier (ratchet (integer))) (modifier (probability (integer))))) (acid_step) (acid_step) (acid_step (acid_note (pitch (letter_pitch)) (octave_shift))) (phrase_use (identifier) (integer) (number))))")
 	g.Test("instrument", "cicada 1 instrument i { param c: hz = 1hz; voice mono { let s = env(gate, 9ms); out = saw(pitch - c) * (s * 2); } }", "")
 	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
+	g.Test("default notes", "phrase hook { 1 . } pattern p { use hook 5 . }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
 	return g
