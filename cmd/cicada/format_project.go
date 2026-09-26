@@ -58,7 +58,7 @@ func formatProject(root string, check bool, stdout, stderr io.Writer) error {
 		return nil
 	}
 	for _, edit := range edits {
-		if err := writeAtomic(edit.path, edit.formatted); err != nil {
+		if err := writeProjectFormatEdit(edit); err != nil {
 			return fmt.Errorf("%s: %w", edit.path, err)
 		}
 		fmt.Fprintln(stdout, edit.path)
@@ -73,6 +73,9 @@ func collectProjectFormatEdits(root string) ([]projectFormatEdit, error) {
 	}
 	var edits []projectFormatEdit
 	for _, path := range paths {
+		if _, err := projectFormatRecoveryPath(path); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
 		source, err := os.ReadFile(path)
 		if err != nil {
 			return nil, err
@@ -119,4 +122,42 @@ func projectScorePaths(root string) ([]string, error) {
 		return nil
 	})
 	return paths, err
+}
+
+// Use the same revision check and recovery files as Studio. A formatter must
+// not replace changes saved after collection, including writes to open handles.
+func writeProjectFormatEdit(edit projectFormatEdit) error {
+	path, err := projectFormatRecoveryPath(edit.path)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	saved, _, err := studioWriteIfRevision(path, edit.formatted, info.Mode().Perm(), studioRevision(edit.before), nil)
+	if err != nil {
+		return err
+	}
+	if !saved {
+		return fmt.Errorf("format refused: score changed on disk")
+	}
+	return nil
+}
+
+// Check recovery files even when the current source needs no format change.
+// A late write through a displaced handle can arrive after a prior run exits.
+func projectFormatRecoveryPath(path string) (string, error) {
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	absolute, err = filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return "", err
+	}
+	if err := studioRecoveryConflict(absolute); err != nil {
+		return "", err
+	}
+	return absolute, nil
 }
