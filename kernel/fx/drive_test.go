@@ -30,8 +30,9 @@ func TestDriveParamsAndLatency(t *testing.T) {
 		t.Fatal(err)
 	}
 	drive.Reset()
-	if got := drive.LatencyFrames(); got != 15 {
-		t.Fatalf("drive latency %d frames, want 15", got)
+	const wantLatency = 21
+	if got := drive.LatencyFrames(); got != wantLatency {
+		t.Fatalf("drive latency %d frames, want %d", got, wantLatency)
 	}
 	for i := 0; i < 30; i++ {
 		input := float32(0)
@@ -39,7 +40,7 @@ func TestDriveParamsAndLatency(t *testing.T) {
 			input = .75
 		}
 		left, right := drive.Process(input, -input)
-		if i == 15 {
+		if i == wantLatency {
 			if left != .75 || right != -.75 {
 				t.Fatalf("dry impulse arrived as (%g, %g)", left, right)
 			}
