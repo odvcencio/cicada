@@ -101,6 +101,9 @@ func FixSource(source []byte) ([]byte, bool, error) {
 						edits = append(edits, sourceEdit{start: int(pattern.StartByte()), end: int(pattern.EndByte()), text: "stop"})
 					}
 				case "keep":
+					if bytes.Contains(source[binding.StartByte():binding.EndByte()], []byte("//")) {
+						continue // Keep comments inside the binding and their attachment.
+					}
 					start, end := precedingSpace(source, int(binding.StartByte())), int(binding.EndByte())
 					lineEnd := bytes.IndexByte(source[end:], '\n')
 					if lineEnd >= 0 && bytes.Contains(source[end:end+lineEnd], []byte("//")) {
