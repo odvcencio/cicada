@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/andybalholm/brotli v1.2.4
+	github.com/coder/websocket v1.8.15
 	github.com/ebitengine/oto/v3 v3.5.1
 	github.com/odvcencio/gotreesitter v0.54.0
 	github.com/tetratelabs/wazero v1.12.0
