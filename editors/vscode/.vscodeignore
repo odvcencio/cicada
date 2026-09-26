@@ -1,0 +1,5 @@
+.gitignore
+.vscodeignore
+extension.test.js
+package-lock.json
+extension-save.test.cjs
