@@ -87,7 +87,7 @@ func TestGeneratedDrumRowsGroupFourCellsPerBeat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(generated), "bd: x.x*2. x%50.X.") {
+	if !strings.Contains(string(generated), "bd: x.x*2. x?50.X.") {
 		t.Fatalf("generated row is not grouped by beat: %s", generated)
 	}
 	reparsed, diagnostics := notation.Parse(generated)
