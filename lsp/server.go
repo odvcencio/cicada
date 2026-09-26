@@ -8,12 +8,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
+	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"unicode/utf16"
 	"unicode/utf8"
 
+	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/language"
+	"m31labs.dev/cicada/migration"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -33,20 +38,24 @@ type request struct {
 	Params  json.RawMessage `json:"params"`
 }
 type document struct {
-	URI  string `json:"uri"`
-	Text string `json:"text"`
+	URI     string `json:"uri"`
+	Text    string `json:"text"`
+	Version *int   `json:"version"`
 }
 
 var tokenTypes = []string{"keyword", "number", "string", "variable", "function", "type", "operator", "comment", "property", "enumMember"}
 
 type server struct {
-	out       io.Writer
-	documents map[string][]byte
+	out              io.Writer
+	documents        map[string][]byte
+	versions         map[string]*int
+	canEditDocuments bool
+	canCreateFiles   bool
 }
 
 // Serve reads Content-Length framed JSON-RPC messages until exit or EOF.
 func Serve(in io.Reader, out io.Writer) error {
-	s := &server{out: out, documents: map[string][]byte{}}
+	s := &server{out: out, documents: map[string][]byte{}, versions: map[string]*int{}}
 	reader := bufio.NewReader(in)
 	for {
 		body, err := readFrame(reader)
@@ -114,8 +123,27 @@ func (s *server) reply(id json.RawMessage, value any) error {
 func (s *server) handle(message request) error {
 	switch message.Method {
 	case "initialize":
+		var params struct {
+			Capabilities struct {
+				Workspace struct {
+					WorkspaceEdit struct {
+						DocumentChanges    bool     `json:"documentChanges"`
+						ResourceOperations []string `json:"resourceOperations"`
+					} `json:"workspaceEdit"`
+				} `json:"workspace"`
+			} `json:"capabilities"`
+		}
+		if err := json.Unmarshal(message.Params, &params); err != nil {
+			return err
+		}
+		s.canEditDocuments = params.Capabilities.Workspace.WorkspaceEdit.DocumentChanges
+		for _, operation := range params.Capabilities.Workspace.WorkspaceEdit.ResourceOperations {
+			if operation == "create" {
+				s.canCreateFiles = true
+			}
+		}
 		return s.reply(message.ID, map[string]any{"capabilities": map[string]any{
-			"textDocumentSync": 1, "hoverProvider": true, "definitionProvider": true, "renameProvider": true, "inlayHintProvider": true,
+			"textDocumentSync": 1, "hoverProvider": true, "definitionProvider": true, "renameProvider": true, "inlayHintProvider": true, "codeActionProvider": true,
 			"semanticTokensProvider": map[string]any{"legend": map[string]any{"tokenTypes": tokenTypes, "tokenModifiers": []string{}}, "full": true},
 		}, "serverInfo": map[string]any{"name": "cicada-lsp", "version": "0.1"}})
 	case "shutdown":
@@ -128,11 +156,13 @@ func (s *server) handle(message request) error {
 			return err
 		}
 		s.documents[params.TextDocument.URI] = []byte(params.TextDocument.Text)
+		s.versions[params.TextDocument.URI] = params.TextDocument.Version
 		return s.publish(params.TextDocument.URI)
 	case "textDocument/didChange":
 		var params struct {
 			TextDocument struct {
-				URI string `json:"uri"`
+				URI     string `json:"uri"`
+				Version *int   `json:"version"`
 			} `json:"textDocument"`
 			ContentChanges []struct {
 				Text string `json:"text"`
@@ -143,6 +173,7 @@ func (s *server) handle(message request) error {
 		}
 		if len(params.ContentChanges) > 0 {
 			s.documents[params.TextDocument.URI] = []byte(params.ContentChanges[len(params.ContentChanges)-1].Text)
+			s.versions[params.TextDocument.URI] = params.TextDocument.Version
 			return s.publish(params.TextDocument.URI)
 		}
 	case "textDocument/didClose":
@@ -155,6 +186,7 @@ func (s *server) handle(message request) error {
 			return err
 		}
 		delete(s.documents, params.TextDocument.URI)
+		delete(s.versions, params.TextDocument.URI)
 		return s.send(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": map[string]any{"uri": params.TextDocument.URI, "diagnostics": []any{}}})
 	case "textDocument/hover":
 		uri, at, err := documentPosition(message.Params)
@@ -192,6 +224,68 @@ func (s *server) handle(message request) error {
 			return err
 		}
 		return s.reply(message.ID, inlayHints(s.documents[uri], params.Range))
+	case "textDocument/codeAction":
+		var params struct {
+			Context struct {
+				Only []string `json:"only"`
+			} `json:"context"`
+		}
+		if err := json.Unmarshal(message.Params, &params); err != nil {
+			return err
+		}
+		if len(params.Context.Only) > 0 {
+			requested := false
+			for _, kind := range params.Context.Only {
+				if kind == "quickfix" {
+					requested = true
+					break
+				}
+			}
+			if !requested {
+				return s.reply(message.ID, []any{})
+			}
+		}
+		uri, err := documentURI(message.Params)
+		if err != nil {
+			return err
+		}
+		source, ok := s.documents[uri]
+		if !ok || !s.canEditDocuments {
+			return s.reply(message.ID, []any{})
+		}
+		path, ok := scorePathFromURI(uri)
+		if !ok {
+			return s.reply(message.ID, []any{})
+		}
+		_, manifest, err := edition.ScoreEdition(path)
+		if err != nil || manifest == "" && !s.canCreateFiles {
+			return s.reply(message.ID, []any{})
+		}
+		fixed, changed, err := migration.FixSource(source)
+		if err != nil || !changed {
+			return s.reply(message.ID, []any{})
+		}
+		changes := make([]any, 0, 3)
+		if manifest == "" {
+			name := strings.TrimSuffix(filepath.Base(path), ".cicada")
+			if !edition.ValidProjectName(name) {
+				return s.reply(message.ID, []any{})
+			}
+			manifestURI := fileURI(filepath.Join(filepath.Dir(path), "cicada.mod"))
+			changes = append(changes,
+				map[string]any{"kind": "create", "uri": manifestURI},
+				map[string]any{"textDocument": map[string]any{"uri": manifestURI, "version": nil}, "edits": []any{map[string]any{"range": region{}, "newText": "project " + name + "\ncicada 1\n"}}},
+			)
+		}
+		changes = append(changes, map[string]any{
+			"textDocument": map[string]any{"uri": uri, "version": s.versions[uri]},
+			"edits":        []any{map[string]any{"range": region{Start: position{}, End: utf16Position(source, len(source))}, "newText": string(fixed)}},
+		})
+		action := map[string]any{
+			"title": "Apply Cicada notation fixes", "kind": "quickfix",
+			"edit": map[string]any{"documentChanges": changes},
+		}
+		return s.reply(message.ID, []any{action})
 	case "textDocument/semanticTokens/full":
 		uri, err := documentURI(message.Params)
 		if err != nil {
@@ -213,6 +307,47 @@ func documentURI(raw json.RawMessage) (string, error) {
 	}
 	err := json.Unmarshal(raw, &params)
 	return params.TextDocument.URI, err
+}
+
+func scorePathFromURI(uri string) (string, bool) {
+	return scorePathFromURIForOS(uri, runtime.GOOS == "windows")
+}
+
+func scorePathFromURIForOS(uri string, windows bool) (string, bool) {
+	parsed, err := url.Parse(uri)
+	if err != nil || parsed.Scheme != "file" || parsed.Port() != "" || parsed.User != nil || parsed.Host != "" && parsed.Host != "localhost" && !windows {
+		return "", false
+	}
+	path := parsed.Path
+	if windows {
+		if parsed.Host != "" && parsed.Host != "localhost" {
+			path = "//" + parsed.Host + path
+		} else if len(path) >= 3 && path[0] == '/' && path[2] == ':' {
+			path = path[1:]
+		}
+		return strings.ReplaceAll(path, "/", `\`), path != ""
+	}
+	return filepath.FromSlash(path), path != ""
+}
+
+func fileURI(path string) string {
+	return fileURIForOS(path, runtime.GOOS == "windows")
+}
+
+func fileURIForOS(path string, windows bool) string {
+	if windows {
+		path = strings.ReplaceAll(path, `\`, "/")
+		if strings.HasPrefix(path, "//") {
+			host, rest, ok := strings.Cut(strings.TrimPrefix(path, "//"), "/")
+			if ok {
+				return (&url.URL{Scheme: "file", Host: host, Path: "/" + rest}).String()
+			}
+		}
+		path = "/" + path
+	} else {
+		path = filepath.ToSlash(path)
+	}
+	return (&url.URL{Scheme: "file", Path: path}).String()
 }
 
 func documentPosition(raw json.RawMessage) (string, position, error) {
