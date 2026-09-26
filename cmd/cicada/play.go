@@ -95,7 +95,16 @@ func compileLiveScore(path string) (liveplay.Score, error) {
 	for i, scene := range p.Scenes {
 		sceneIDs[i] = scene.ID
 	}
-	return liveplay.Score{Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path, SceneIDs: sceneIDs}, nil
+	tracks := make([]liveplay.TrackSlots, len(p.Tracks))
+	for i, track := range p.Tracks {
+		tracks[i].ID = track.ID
+		for slot, pattern := range track.Slots {
+			if pattern != nil {
+				tracks[i].Slots[slot] = *pattern
+			}
+		}
+	}
+	return liveplay.Score{Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path, SceneIDs: sceneIDs, Tracks: tracks}, nil
 }
 
 type liveScoreWatcher struct {
