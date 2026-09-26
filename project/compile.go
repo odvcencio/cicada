@@ -126,14 +126,21 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 	}
 	if source.Kind == "acid" || source.Kind == "notes" {
 		octave := 2
+		octaveIsParameter := false
 		for _, inst := range score.Instruments {
 			if inst.Name == track.Kind {
 				octave = inst.Octave
+				for _, param := range inst.Params {
+					if param.Name == "octave" {
+						octaveIsParameter = true
+						break
+					}
+				}
 				break
 			}
 		}
 		for _, param := range track.Params {
-			if param.Name == "octave" {
+			if param.Name == "octave" && !octaveIsParameter {
 				n, err := parseOctaveLiteral(param.Value)
 				if err != nil {
 					return nil, err
