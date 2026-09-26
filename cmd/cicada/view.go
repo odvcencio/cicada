@@ -37,12 +37,15 @@ type viewLane struct {
 }
 
 type viewPitchCell struct {
+	Index      int
+	Number     int
 	On, Accent bool
 	Label      string
 }
 
 type viewPitchRow struct {
 	Name  string
+	Note  int
 	Cells []viewPitchCell
 }
 
@@ -211,12 +214,16 @@ func pitchRows(steps []*project.Step, count int) []viewPitchRow {
 	lowest, highest = max(0, lowest-2), min(127, highest+2)
 	rows := make([]viewPitchRow, 0, highest-lowest+1)
 	for note := highest; note >= lowest; note-- {
-		row := viewPitchRow{Name: midiNote(uint8(note)), Cells: make([]viewPitchCell, count)}
+		row := viewPitchRow{Name: midiNote(uint8(note)), Note: note, Cells: make([]viewPitchCell, count)}
 		for index := 0; index < count; index++ {
+			row.Cells[index].Index = index
+			row.Cells[index].Number = index + 1
 			if index >= len(steps) || steps[index] == nil || steps[index].Tie || int(steps[index].Note) != note {
 				continue
 			}
-			row.Cells[index] = viewPitchCell{On: true, Accent: steps[index].Accent, Label: fmt.Sprintf("Step %d, %s", index+1, row.Name)}
+			row.Cells[index].On = true
+			row.Cells[index].Accent = steps[index].Accent
+			row.Cells[index].Label = fmt.Sprintf("Step %d, %s", index+1, row.Name)
 		}
 		rows = append(rows, row)
 	}
