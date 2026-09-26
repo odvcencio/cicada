@@ -317,12 +317,20 @@ func usage() {
 		"stems <file.cicada> -o <dir> [--rate 48000 --from 0 --bars 16 --tail 3s] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
 		"midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | "+
 		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 | "+
-		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] <file.cicada> | "+
+		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] [file.cicada] | "+
 		"convert <in> -o <out> | compare --semantic <a> <b> | view <in.cicada|in.json> -o <out.html> | fields | explain <construct[.field]> [--json] | highlight [--html|--spans] <file.cicada> | symbols [--refs] [--json] <file.cicada>")
 	os.Exit(2)
 }
 
 func formatCommand(args []string) {
+	if len(args) == 0 || len(args) == 1 && (args[0] == "--check" || args[0] == "-w") {
+		check := len(args) == 1 && args[0] == "--check"
+		if err := formatProjectCommand(check, os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	mode := "stdout"
 	if len(args) == 2 {
 		if args[0] == "--check" || args[0] == "-w" {
