@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"sync"
 	"time"
 
@@ -16,28 +17,32 @@ import (
 )
 
 type studioTransport struct {
-	path    string
-	mu      sync.Mutex
-	stream  *liveplay.Player
-	player  *oto.Player
-	device  *oto.Context
-	cancel  context.CancelFunc
-	last    [32]byte
-	playing bool
-	pending bool
-	landed  int64
-	errText string
-	history *studioHistory
+	path         string
+	mu           sync.Mutex
+	stream       *liveplay.Player
+	player       *oto.Player
+	device       *oto.Context
+	cancel       context.CancelFunc
+	last         [32]byte
+	playing      bool
+	pending      bool
+	pendingScene string
+	scene        string
+	landed       int64
+	errText      string
+	history      *studioHistory
 }
 
 type transportSnapshot struct {
-	Type    string `json:"type"`
-	Playing bool   `json:"playing"`
-	Bar     int64  `json:"bar"`
-	Step    int64  `json:"step"`
-	Pending bool   `json:"pending"`
-	Landed  int64  `json:"landedBar,omitempty"`
-	Error   string `json:"error,omitempty"`
+	Type         string `json:"type"`
+	Playing      bool   `json:"playing"`
+	Bar          int64  `json:"bar"`
+	Step         int64  `json:"step"`
+	Pending      bool   `json:"pending"`
+	PendingScene string `json:"pendingScene,omitempty"`
+	Scene        string `json:"scene,omitempty"`
+	Landed       int64  `json:"landedBar,omitempty"`
+	Error        string `json:"error,omitempty"`
 }
 
 func newStudioTransport(path string) *studioTransport { return &studioTransport{path: path} }
@@ -45,7 +50,7 @@ func newStudioTransport(path string) *studioTransport { return &studioTransport{
 func (t *studioTransport) snapshot() transportSnapshot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	state := transportSnapshot{Type: "cicada/transport", Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Landed: t.landed, Error: t.errText}
+	state := transportSnapshot{Type: "cicada/transport", Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, PendingScene: t.pendingScene, Scene: t.scene, Landed: t.landed, Error: t.errText}
 	if t.stream != nil {
 		position := t.stream.Position()
 		state.Bar, state.Step = position.Bar, position.Step
@@ -110,7 +115,28 @@ func (t *studioTransport) stop() {
 	if t.player != nil {
 		t.player.PauseAndStopReading()
 	}
+	if t.stream != nil {
+		t.stream.CancelScene()
+	}
 	t.playing = false
+	t.pendingScene = ""
+}
+
+func (t *studioTransport) launchScene(name string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.playing || t.stream == nil {
+		return fmt.Errorf("press Play before launching a scene")
+	}
+	if err := t.stream.LaunchScene(name); err != nil {
+		return err
+	}
+	t.pendingScene, t.errText = name, ""
+	if t.history != nil {
+		position := t.stream.Position()
+		t.history.record("queued", fmt.Sprintf("Scene %s queued for the next bar", name), position.Bar, position.Step, "")
+	}
+	return nil
 }
 
 func (t *studioTransport) close() {
@@ -153,10 +179,29 @@ func (t *studioTransport) watch(ctx context.Context) {
 
 func (t *studioTransport) markLanded(event liveplay.Event) {
 	t.mu.Lock()
-	t.pending, t.landed = false, event.Bar
+	switch event.Kind {
+	case "scene":
+		t.scene, t.landed = event.Name, event.Bar
+		if t.pendingScene == event.Name {
+			t.pendingScene = ""
+		}
+	case "scene-error":
+		if t.pendingScene == event.Name {
+			t.pendingScene = ""
+		}
+		t.errText = fmt.Sprintf("scene %q is no longer in the playing score", event.Name)
+	default:
+		t.pending, t.landed = false, event.Bar
+	}
 	t.mu.Unlock()
 	if t.history != nil {
-		t.history.record("landed", fmt.Sprintf("Edit landed at bar %d", event.Bar), event.Bar, 1, "")
+		if event.Kind == "scene" {
+			t.history.record("landed", fmt.Sprintf("Scene %s launched at bar %d", event.Name, event.Bar), event.Bar, 1, "")
+		} else if event.Kind == "scene-error" {
+			t.history.record("error", fmt.Sprintf("Scene %s was not in the playing score", event.Name), event.Bar, 1, "")
+		} else {
+			t.history.record("landed", fmt.Sprintf("Edit landed at bar %d", event.Bar), event.Bar, 1, "")
+		}
 	}
 }
 
@@ -211,7 +256,9 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var input struct {
-		Action string `json:"action"`
+		Action   string `json:"action"`
+		Scene    string `json:"scene"`
+		Revision string `json:"revision"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&input); err != nil {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -225,8 +272,42 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		}
 	case "stop":
 		s.transport.stop()
+	case "launch":
+		s.mu.Lock()
+		current, err := os.ReadFile(s.path)
+		if err == nil {
+			if p, parseErr := compileStudioSource(s.path, current); parseErr == nil {
+				s.lastGoodSource, s.lastGoodProject = current, p
+			}
+		}
+		if err != nil || s.lastGoodProject == nil {
+			s.mu.Unlock()
+			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "score is unavailable"})
+			return
+		}
+		if input.Revision == "" || input.Revision != studioRevision(s.lastGoodSource) {
+			s.mu.Unlock()
+			studioJSON(w, http.StatusConflict, map[string]string{"error": "score changed on disk; reload before launching a scene"})
+			return
+		}
+		found := false
+		for _, scene := range s.lastGoodProject.Scenes {
+			if scene.ID == input.Scene {
+				found = true
+				break
+			}
+		}
+		s.mu.Unlock()
+		if !found {
+			studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": fmt.Sprintf("scene %q is not in the score", input.Scene)})
+			return
+		}
+		if err := s.transport.launchScene(input.Scene); err != nil {
+			studioJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 	default:
-		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be play or stop"})
+		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be play, stop, or launch"})
 		return
 	}
 	studioJSON(w, http.StatusOK, s.transport.snapshot())
