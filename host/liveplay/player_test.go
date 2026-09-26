@@ -221,3 +221,114 @@ func TestCanceledSceneDoesNotLaunchOnResume(t *testing.T) {
 	default:
 	}
 }
+
+func slotScore(t *testing.T, pattern string, slot int) Score {
+	t.Helper()
+	score := testScore(t, "slots", 120_000)
+	var track TrackSlots
+	track.ID = "bass"
+	track.Slots[slot] = pattern
+	score.Tracks = []TrackSlots{track}
+	return score
+}
+
+func TestSingleTrackPatternLandsAtBar(t *testing.T) {
+	p, err := New(slotScore(t, "riff", 1), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SelectPattern("bass", "riff"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("slot launched early: %+v", event)
+	default:
+	}
+	var one [1]byte
+	if _, err := p.Read(one[:]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		if event.Kind != "slot" || event.Bar != 2 || event.Track != "bass" || event.Name != "riff" {
+			t.Fatalf("wrong slot landing: %+v", event)
+		}
+	default:
+		t.Fatal("slot did not launch at bar 2")
+	}
+}
+
+func TestPatternLaunchResolvesNewSlotAfterScoreSwap(t *testing.T) {
+	p, err := New(slotScore(t, "old", 1), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SelectPattern("bass", "riff"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Offer(slotScore(t, "riff", 2)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8+1); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "edit" {
+		t.Fatalf("wrong first event: %+v", event)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "slot" || event.Bar != 3 || event.Name != "riff" {
+		t.Fatalf("new slot did not launch: %+v", event)
+	}
+	if err := p.SelectPattern("bass", "old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "slot-error" || event.Name != "old" {
+		t.Fatalf("missing slot was not rejected: %+v", event)
+	}
+}
+
+func TestMultipleTracksKeepLatestSlotPerTrack(t *testing.T) {
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 2, MaxVoices: 2, BPMMilli: 120_000}
+	cfg.Track[0].Kind, cfg.Track[1].Kind = engine.VoiceAcid, engine.VoiceAcid
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	score := Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Tracks: []TrackSlots{{ID: "bass", Slots: [16]string{"old", "new"}}, {ID: "lead", Slots: [16]string{"tone"}}}}
+	p, err := New(score, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, request := range []SlotRequest{{"bass", "old"}, {"lead", "tone"}, {"bass", "new"}} {
+		if err := p.SelectPattern(request.Track, request.Pattern); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8+1); err != nil {
+		t.Fatal(err)
+	}
+	seen := map[string]string{}
+	for range 2 {
+		select {
+		case event := <-p.Events():
+			if event.Kind != "slot" {
+				t.Fatalf("unexpected slot event: %+v", event)
+			}
+			seen[event.Track] = event.Name
+		default:
+			t.Fatal("missing queued track launch")
+		}
+	}
+	if seen["bass"] != "new" || seen["lead"] != "tone" {
+		t.Fatalf("wrong launches: %+v", seen)
+	}
+}
