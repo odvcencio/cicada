@@ -39,7 +39,7 @@ song { main }
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(rewritten, []byte("level = -12db")) || !bytes.Contains(rewritten, []byte("pan = -1")) {
+	if !bytes.Contains(rewritten, []byte("level = -12dB")) || !bytes.Contains(rewritten, []byte("pan = -1")) {
 		t.Fatalf("mixer disappeared: %s", rewritten)
 	}
 }
