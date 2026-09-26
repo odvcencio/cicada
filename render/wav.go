@@ -207,6 +207,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
+	stopIsAction := true
+	for _, pattern := range score.Patterns {
+		if pattern.Name == "stop" {
+			stopIsAction = false
+			break
+		}
+	}
 	var stems *stemOutput
 	if stemsDir != "" {
 		stems, err = newStemOutput(stemsDir, semantic, report)
@@ -330,14 +337,14 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			if bar >= renderBars {
 				break
 			}
-			if err := applyScene(tracks, scene); err != nil {
+			if err := applyScene(tracks, scene, stopIsAction); err != nil {
 				return report, err
 			}
 			var nextScene *notation.Scene
 			if bar+1 < renderBars {
 				nextScene = sceneAtBar(score, bar+1)
 			}
-			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock)
+			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock, stopIsAction)
 			end := clock.SampleAtTick(int64(bar+1) * seq.TicksPerBar)
 			for position < end {
 				frames := opts.Block
@@ -446,8 +453,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		position += int64(frames)
 	}
 	if insertLatency != 0 {
-		// Drive and the aligned dry tracks have the same 15-frame latency.
-		// Drain it, then omit the initial 15 silent output frames so the WAV
+		// Drive and the aligned dry tracks have the same insert latency.
+		// Drain it, then omit the initial silent output frames so the WAV
 		// remains aligned to the score and has exactly report.Frames frames.
 		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, &encoder, nil, position, insertLatency, block, &report); err != nil {
 			return report, err
@@ -524,8 +531,14 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 				if err != nil {
 					return nil, fmt.Errorf("track %s: %w", source.Name, err)
 				}
+				lanes := project.BuiltinDrumLanes(score, source)
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-					if err := kit.SetParams(lane, params[lane]); err != nil {
+					if lanes[lane] {
+						err = kit.SetParams(lane, params[lane])
+					} else {
+						err = kit.Disable(lane)
+					}
+					if err != nil {
 						return nil, err
 					}
 				}
@@ -589,6 +602,9 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 		}
 		overrides := make(map[string]string, len(source.Params))
 		for _, param := range source.Params {
+			if param.Name == "octave" && !program.HasParameter("octave") {
+				continue
+			}
 			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
 				continue
 			}
@@ -653,7 +669,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 					insert.Reset()
 					tracks[i].insert = insert
 				} else {
-					align, err := mix.NewDelay(15)
+					align, err := mix.NewDelay(fx.DriveLatencyFrames)
 					if err != nil {
 						return nil, err
 					}
@@ -684,7 +700,7 @@ func sceneAtBar(score *notation.Score, bar int) *notation.Scene {
 	return nil
 }
 
-func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryTick int64, clock seq.Clock) {
+func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryTick int64, clock seq.Clock, stopIsAction bool) {
 	for ti := range tracks {
 		track := &tracks[ti]
 		track.transition = sceneTransition{}
@@ -692,7 +708,7 @@ func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryT
 			continue
 		}
 		for _, binding := range next.Bindings {
-			if binding.Track != track.name || binding.Pattern == "keep" || binding.Pattern == "off" || binding.Pattern == track.currentName {
+			if binding.Track != track.name || binding.Pattern == "keep" || binding.Pattern == "off" || binding.Pattern == "stop" && stopIsAction || binding.Pattern == track.currentName {
 				continue
 			}
 			target, ok := track.patterns[binding.Pattern]
@@ -737,11 +753,14 @@ func sceneTransitionFor(source, target *seq.Pattern, track uint8, boundaryTick i
 	}
 }
 
-func applyScene(tracks []trackRuntime, scene *notation.Scene) error {
+func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool) error {
 	for _, binding := range scene.Bindings {
 		for ti := range tracks {
 			if tracks[ti].name != binding.Track {
 				continue
+			}
+			if binding.Pattern == "stop" && stopIsAction {
+				binding.Pattern = "off"
 			}
 			switch binding.Pattern {
 			case "keep":
