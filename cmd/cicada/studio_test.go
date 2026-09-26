@@ -146,11 +146,21 @@ func TestStudioCommitRestoresExternalSaveDuringValidation(t *testing.T) {
 	if err != nil || string(content) != outside {
 		t.Fatalf("external score not restored: %q, %v", content, err)
 	}
-	if files, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".cicada-studio-*")); err != nil || len(files) != 0 {
-		t.Fatalf("transaction files left behind: %v, %v", files, err)
+	var response struct {
+		Preserved string `json:"preserved"`
 	}
-	if files, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".cicada-displaced-*")); err != nil || len(files) != 0 {
-		t.Fatalf("displaced score files left behind: %v, %v", files, err)
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Preserved == "" {
+		t.Fatal("conflict did not identify the retained version")
+	}
+	content, err = os.ReadFile(response.Preserved)
+	if err != nil || string(content) != wanted {
+		t.Fatalf("Studio draft not retained: %q, %v", content, err)
+	}
+	if err := studioRecoveryConflict(path); err != nil {
+		t.Fatalf("unchanged recovery blocks saves: %v", err)
 	}
 }
 
