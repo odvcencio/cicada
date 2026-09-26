@@ -205,7 +205,10 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p == nil {
-		http.Error(w, "Score has errors. Save a valid score to open Studio.", http.StatusUnprocessableEntity)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(w, studioWaitingPage)
 		return
 	}
 	var page bytes.Buffer
