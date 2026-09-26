@@ -1,0 +1,7 @@
+cicada 1
+track d1 drums {}
+track d2 drums {}
+track d3 drums {}
+pattern beat drums steps=1 { bd: x; }
+scene all { d1=beat d2=beat d3=beat }
+song { all }
