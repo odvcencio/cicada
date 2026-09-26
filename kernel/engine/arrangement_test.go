@@ -60,6 +60,42 @@ func TestSongSceneLaunchKeepOffAndLiveOverride(t *testing.T) {
 	}
 }
 
+func TestManualSceneWinsAtSongBoundaryThenSongResumes(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices = 1, 1
+	cfg.Scenes = []Scene{
+		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}},
+		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}},
+	}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}}
+	cfg.LoopSong = true
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		t.Fatal("play rejected")
+	}
+	var left, right [128]float32
+	for range 750 {
+		e.Render(left[:], right[:])
+	}
+	if !e.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Arg0: 0}) {
+		t.Fatal("scene launch rejected")
+	}
+	e.Render(left[:], right[:])
+	if e.patterns[0].active != 1 {
+		t.Fatalf("manual scene lost to song boundary: slot %d", e.patterns[0].active)
+	}
+	for range 749 {
+		e.Render(left[:], right[:])
+	}
+	e.Render(left[:], right[:])
+	if e.patterns[0].active != 0 {
+		t.Fatalf("song did not resume after manual scene: slot %d", e.patterns[0].active)
+	}
+}
+
 func TestInvalidArrangementRejected(t *testing.T) {
 	cfg := testConfig()
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}}
