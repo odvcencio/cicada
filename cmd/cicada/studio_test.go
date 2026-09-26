@@ -55,7 +55,7 @@ func TestStudioProjectsAndTogglesSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := studioCall(t, handler, "/", nil)
-	if page.Code != 200 || !strings.Contains(page.Body.String(), `id="source-editor"`) || !strings.Contains(page.Body.String(), `data-pattern="pulse"`) || !strings.Contains(page.Body.String(), `data-lane="bd"`) || !strings.Contains(page.Body.String(), `href="#session">Session</a>`) || !strings.Contains(page.Body.String(), `href="#notation">Code</a>`) {
+	if page.Code != 200 || !strings.Contains(page.Body.String(), `id="source-editor"`) || !strings.Contains(page.Body.String(), `data-pattern="pulse"`) || !strings.Contains(page.Body.String(), `data-lane="bd"`) || !strings.Contains(page.Body.String(), `data-scene="main"`) || !strings.Contains(page.Body.String(), `href="#session">Session</a>`) || !strings.Contains(page.Body.String(), `href="#notation">Code</a>`) {
 		t.Fatalf("studio page: %d %s", page.Code, page.Body.String())
 	}
 	revision := studioRevision([]byte(studioScore))

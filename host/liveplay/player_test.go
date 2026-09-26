@@ -117,3 +117,107 @@ func TestPositionTracksRenderedBarAndStep(t *testing.T) {
 		t.Fatalf("second bar position: %+v", got)
 	}
 }
+
+func sceneScore(t *testing.T, ids ...string) Score {
+	t.Helper()
+	score := testScore(t, "scene score", 120_000)
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000, Scenes: make([]engine.Scene, len(ids))}
+	cfg.Track[0].Kind = engine.VoiceAcid
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	score.Engine, score.SceneIDs = created, ids
+	return score
+}
+
+func TestSceneLaunchLandsAtBarAndUsesNewestRequest(t *testing.T) {
+	p, err := New(sceneScore(t, "intro", "chorus"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.LaunchScene("intro"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.LaunchScene("chorus"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("scene launched before bar boundary: %+v", event)
+	default:
+	}
+	var byteAtBoundary [1]byte
+	if _, err := p.Read(byteAtBoundary[:]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		if event.Kind != "scene" || event.Bar != 2 || event.Name != "chorus" {
+			t.Fatalf("wrong scene landing: %+v", event)
+		}
+	default:
+		t.Fatal("scene did not land at bar 2")
+	}
+}
+
+func TestSceneLaunchAfterEditResolvesNewScoreAndRejectsMissingName(t *testing.T) {
+	p, err := New(sceneScore(t, "old"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.LaunchScene("new"); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Offer(sceneScore(t, "other", "new")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8+1); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "edit" || event.Bar != 2 {
+		t.Fatalf("wrong score edit: %+v", event)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("scene launched during score swap: %+v", event)
+	default:
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "scene" || event.Bar != 3 || event.Name != "new" {
+		t.Fatalf("scene did not resolve against new score: %+v", event)
+	}
+	if err := p.LaunchScene("old"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8); err != nil {
+		t.Fatal(err)
+	}
+	if event := <-p.Events(); event.Kind != "scene-error" || event.Name != "old" {
+		t.Fatalf("missing scene was not rejected: %+v", event)
+	}
+}
+
+func TestCanceledSceneDoesNotLaunchOnResume(t *testing.T) {
+	p, err := New(sceneScore(t, "intro"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.LaunchScene("intro"); err != nil {
+		t.Fatal(err)
+	}
+	p.CancelScene()
+	if _, err := io.CopyN(io.Discard, p, 96_000*8+1); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("canceled scene launched: %+v", event)
+	default:
+	}
+}
