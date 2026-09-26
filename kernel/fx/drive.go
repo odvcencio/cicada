@@ -54,7 +54,8 @@ func finite(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value
 
 type stereo struct{ left, right float64 }
 
-const driveLatency = (halfband.Taps - 1) / 2 // two FIR group delays at 2x
+// DriveLatencyFrames is the delay from the two FIR filters at 2x sample rate.
+const DriveLatencyFrames = (halfband.Taps - 1) / 2
 
 // Drive uses fixed storage, including the dry delay and both oversampled
 // paths. All four shapes stay warm so changing shape can crossfade cleanly.
@@ -71,7 +72,7 @@ type Drive struct {
 	upLeft, upRight                 halfband.FIR
 	hardLeft, hardRight             halfband.FIR
 	foldLeft, foldRight             halfband.FIR
-	dryDelay, softDelay, diodeDelay [driveLatency]stereo
+	dryDelay, softDelay, diodeDelay [DriveLatencyFrames]stereo
 	position                        int
 	toneState                       [driveShapes]stereo
 	fault                           bool
@@ -97,7 +98,7 @@ func NewDrive(sampleRate int) (*Drive, error) {
 
 func (d *Drive) Params() DriveParams { return d.params }
 func (d *Drive) Fault() bool         { return d.fault }
-func (d *Drive) LatencyFrames() int  { return driveLatency }
+func (d *Drive) LatencyFrames() int  { return DriveLatencyFrames }
 
 func (d *Drive) SetParams(p DriveParams) error {
 	if err := p.Validate(); err != nil {
@@ -128,9 +129,9 @@ func (d *Drive) Reset() {
 	d.hardRight.Reset()
 	d.foldLeft.Reset()
 	d.foldRight.Reset()
-	d.dryDelay = [driveLatency]stereo{}
-	d.softDelay = [driveLatency]stereo{}
-	d.diodeDelay = [driveLatency]stereo{}
+	d.dryDelay = [DriveLatencyFrames]stereo{}
+	d.softDelay = [DriveLatencyFrames]stereo{}
+	d.diodeDelay = [DriveLatencyFrames]stereo{}
 	d.toneState = [driveShapes]stereo{}
 	d.position, d.fault = 0, false
 	d.pre, d.post, d.tone, d.mix, d.weights = d.targetPre, d.targetPost, d.targetTone, d.targetMix, d.targetWeights
@@ -195,7 +196,7 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 	diode := d.diodeDelay[index]
 	d.diodeDelay[index] = stereo{shapeSample(Diode, x.left*d.pre) * d.post[Diode], shapeSample(Diode, x.right*d.pre) * d.post[Diode]}
 	d.position++
-	if d.position == driveLatency {
+	if d.position == DriveLatencyFrames {
 		d.position = 0
 	}
 	firstL, secondL := d.upLeft.Upsample(x.left)

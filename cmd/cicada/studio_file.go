@@ -1,11 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var errStudioSwapUnavailable = errors.New("atomic score exchange is unavailable on this filesystem; edit the score in your text editor")
@@ -13,9 +13,10 @@ var errStudioSwapUnavailable = errors.New("atomic score exchange is unavailable 
 // studioWriteIfRevision exchanges an already validated score with a staged
 // file, then checks the exact version displaced by that exchange. A pathname
 // replacement by another editor between validation and commit is detected.
-// On conflict the displaced version is exchanged back into place.
+// On conflict the displaced version is exchanged back into place. Displaced
+// files stay linked: an editor can still write through an open file handle.
 func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expected string, beforeSwap func()) (bool, string, error) {
-	stage, err := os.CreateTemp(filepath.Dir(path), ".cicada-studio-*")
+	stage, err := os.CreateTemp(filepath.Dir(path), studioRecoveryPattern(path))
 	if err != nil {
 		return false, "", err
 	}
@@ -50,36 +51,73 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 			return false, "", errStudioSwapUnavailable
 		}
 		if displacedPath != "" {
+			removeStage = false
 			return false, displacedPath, fmt.Errorf("score replacement failed; displaced score preserved at %s: %w", displacedPath, err)
 		}
 		return false, "", err
 	}
+	removeStage = false
 	displaced, err := os.ReadFile(displacedPath)
 	if err == nil && studioRevision(displaced) == expected {
-		if displacedPath != stagePath {
-			_ = os.Remove(displacedPath)
+		if err := studioKeepRecovery(displacedPath, expected); err != nil {
+			return false, displacedPath, err
 		}
-		return true, "", nil
+		return true, displacedPath, nil
 	}
-	// The displaced path holds another editor's score. Never delete it unless
-	// the exchange back succeeds. If a second writer intervenes, retain that
-	// version for recovery rather than silently discarding it.
+	// Never unlink either displaced inode, even if its bytes match now. An
+	// external writer can finish after this function returns.
 	interveningPath, rollbackErr := studioSwap(path, displacedPath)
 	if rollbackErr != nil {
-		if displacedPath == stagePath {
-			removeStage = false
+		return false, displacedPath, fmt.Errorf("score changed during commit; saved files remain at %s; rollback failed: %w", displacedPath, rollbackErr)
+	}
+	if err := studioKeepRecovery(interveningPath, studioRevision(updated)); err != nil {
+		return false, interveningPath, err
+	}
+	return false, interveningPath, fmt.Errorf("score changed during commit; the external score was restored; another version remains at %s", interveningPath)
+}
+
+// Each score has its own recovery namespace. Recovery files are never removed
+// by Studio. A revision receipt detects writes through displaced open handles,
+// including writes that finish after Studio restarts.
+func studioRecoveryPattern(path string) string {
+	return ".cicada-studio-" + studioRevision([]byte(path))[:16] + "-*"
+}
+
+func studioKeepRecovery(path, revision string) error {
+	file, err := os.OpenFile(path+".revision", os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+	if err == nil {
+		_, err = file.WriteString(revision)
+		if err == nil {
+			err = file.Sync()
 		}
-		return false, displacedPath, fmt.Errorf("score changed during commit; rollback failed: %w", rollbackErr)
-	}
-	intervening, readErr := os.ReadFile(interveningPath)
-	if readErr != nil || !bytes.Equal(intervening, updated) {
-		if interveningPath == stagePath {
-			removeStage = false
+		closeErr := file.Close()
+		if err == nil {
+			err = closeErr
 		}
-		return false, interveningPath, fmt.Errorf("score changed during commit; another version was preserved at %s", interveningPath)
 	}
-	if interveningPath != stagePath {
-		_ = os.Remove(interveningPath)
+	if err != nil {
+		return fmt.Errorf("cannot record recovery revision; keep %s and compare it with the score: %w", path, err)
 	}
-	return false, "", nil
+	return nil
+}
+
+func studioRecoveryConflict(path string) error {
+	// ReadDir avoids treating metacharacters in the score's directory as glob syntax.
+	entries, err := os.ReadDir(filepath.Dir(path))
+	if err != nil {
+		return err
+	}
+	prefix := strings.TrimSuffix(studioRecoveryPattern(path), "*")
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), prefix) || strings.HasSuffix(entry.Name(), ".revision") {
+			continue
+		}
+		recovery := filepath.Join(filepath.Dir(path), entry.Name())
+		revision, revisionErr := os.ReadFile(recovery + ".revision")
+		source, sourceErr := os.ReadFile(recovery)
+		if revisionErr != nil || sourceErr != nil || string(revision) != studioRevision(source) {
+			return fmt.Errorf("save refused: an external write or an incomplete save remains at %s; close other editors, compare and merge that file with the score, then move the recovery file and its .revision file out of this directory", recovery)
+		}
+	}
+	return nil
 }
