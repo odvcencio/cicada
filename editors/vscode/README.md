@@ -18,5 +18,6 @@ Cicada binary.
 The extension starts `cicada studio score.cicada --lsp-stdio`. One process speaks
 LSP on stdio and serves Studio on a loopback port. Studio edits the score file;
 VS Code detects the file change and updates the text buffer. Saving notation in
-VS Code updates Studio on its next refresh. The Studio process exits with the
-language client.
+VS Code updates Studio on its next poll. An open Studio draft stays in the frame.
+If the score has errors at startup, Studio waits for a valid save before it opens
+the score view. The Studio process exits with the language client.
