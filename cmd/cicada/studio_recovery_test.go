@@ -135,7 +135,7 @@ func TestStudioPageSaveDrafts(t *testing.T) {
 	if err != nil {
 		t.Skip("Node is needed for the Studio page script tests")
 	}
-	output, err := exec.Command(node, "--test", "studio-send.test.cjs").CombinedOutput()
+	output, err := exec.Command(node, "--test", "studio-send.test.cjs", "studio-waiting.test.cjs").CombinedOutput()
 	if err != nil {
 		t.Fatalf("Studio page tests: %v\n%s", err, output)
 	}
