@@ -161,6 +161,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .source-editor { display:block; width:100%; min-height:calc(100vh - 220px); resize:vertical; border:0; border-radius:0; padding:20px 22px; background:#111713; color:var(--text); font:13px/1.75 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; white-space:pre; }
 .step-edit { width:100%; padding:0 2px; cursor:pointer; transition:border-color .15s,transform .15s; }
 .step-edit:hover { border-color:var(--amber); transform:translateY(-1px); }
+@media (pointer:coarse) { .grid-line, .drum .grid-line { grid-template-columns:65px repeat(var(--steps),minmax(44px,1fr)); } .step-edit, .pitch-row .step-edit { min-height:44px; } }
 @media (prefers-reduced-motion:reduce) { .step-edit { transition:none; } .step-edit:hover { transform:none; } }
 @media (max-width:980px) { .workspace { grid-template-columns:1fr; } .source-pane { position:relative; height:42vh; border-right:0; border-bottom:1px solid var(--border); } .projection { padding:22px 16px 50px; } .hero .meta { margin-left:0; } }
 </style>
@@ -181,7 +182,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     {{if .Studio}}<div class="editor-shell" id="editor-shell" hidden><label class="sr-only" for="source-editor">Cicada source</label><textarea id="source-editor" class="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off">{{.SourceText}}</textarea></div>{{end}}
   </aside>
   <div class="projection">
-    <div id="session" class="projection-heading"><span class="eyebrow">{{if .Studio}}Session{{else}}Projection{{end}}</span><p>{{if .Studio}}Set notes in the pitch rows, shape them with Accent and Slide, and toggle drum hits. Each edit writes the score on disk.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
+    <div id="session" class="projection-heading"><span class="eyebrow">{{if .Studio}}Session{{else}}Projection{{end}}</span><p>{{if .Studio}}Set pitches, shape notes with Accent and Slide, cycle Ratchet and Chance, and toggle drum hits. Each edit writes the score on disk.{{else}}The patterns below come from the same validated source on the left. This export is read only.{{end}}</p></div>
     <section id="patterns" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
       <div class="patterns">{{range .Patterns}}{{$pattern := .}}
@@ -196,8 +197,8 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Note</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell note step-edit{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" aria-label="Toggle {{$pattern.ID}} {{.Label}}">{{.Note}}</button>{{else}}<span class="cell note{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" aria-label="{{.Label}}">{{.Note}}</span>{{end}}{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Accent</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell flag step-edit{{if .Accent}} on{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="accent" aria-label="Toggle accent on {{$pattern.ID}} {{.Label}}" aria-pressed="{{.Accent}}">{{if .Accent}}◆{{else}}·{{end}}</button>{{else}}<span class="cell flag{{if .Accent}} on{{end}}">{{if .Accent}}◆{{else}}·{{end}}</span>{{end}}{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Slide</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell flag slide step-edit{{if .Slide}} on{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="slide" aria-label="Toggle slide on {{$pattern.ID}} {{.Label}}" aria-pressed="{{.Slide}}">{{if .Slide}}↗{{else}}·{{end}}</button>{{else}}<span class="cell flag slide{{if .Slide}} on{{end}}">{{if .Slide}}↗{{else if .Tie}}━{{else}}·{{end}}</span>{{end}}{{end}}</div>
-              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Ratchet</span>{{range .Cells}}<span class="cell">{{.Ratchet}}</span>{{end}}</div>
-              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Chance</span>{{range .Cells}}<span class="cell probability{{if .Active}} on{{end}}">{{.Probability}}</span>{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Ratchet</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell step-edit" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="ratchet" aria-label="Cycle ratchet on {{$pattern.ID}} {{.Label}}">{{.Ratchet}}</button>{{else}}<span class="cell">{{.Ratchet}}</span>{{end}}{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Chance</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell probability on step-edit" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="chance" aria-label="Cycle chance on {{$pattern.ID}} {{.Label}}">{{.Probability}}</button>{{else}}<span class="cell probability{{if .Active}} on{{end}}">{{.Probability}}</span>{{end}}{{end}}</div>
             {{end}}
           </div>
         </details>{{end}}
