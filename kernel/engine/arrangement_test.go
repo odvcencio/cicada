@@ -96,6 +96,38 @@ func TestManualSceneWinsAtSongBoundaryThenSongResumes(t *testing.T) {
 	}
 }
 
+func TestManualPatternWinsOnlyItsTrackAtSongBoundary(t *testing.T) {
+	cfg := testConfig()
+	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}, {Mode: SceneSlot, Slot: 0}}}}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}}
+	cfg.LoopSong = true
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		t.Fatal("play rejected")
+	}
+	var left, right [128]float32
+	for range 750 {
+		e.Render(left[:], right[:])
+	}
+	if !e.Push(cmd.Command{Op: cmd.OpSelectPattern, Track: 0, Index: 1, Arg0: 0}) {
+		t.Fatal("pattern launch rejected")
+	}
+	e.Render(left[:], right[:])
+	if e.patterns[0].active != 1 || e.patterns[1].active != 0 {
+		t.Fatalf("manual slot/song boundary: bass=%d drums=%d", e.patterns[0].active, e.patterns[1].active)
+	}
+	for range 749 {
+		e.Render(left[:], right[:])
+	}
+	e.Render(left[:], right[:])
+	if e.patterns[0].active != 0 {
+		t.Fatalf("song did not resume on bass: slot %d", e.patterns[0].active)
+	}
+}
+
 func TestInvalidArrangementRejected(t *testing.T) {
 	cfg := testConfig()
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}}
