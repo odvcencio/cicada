@@ -93,9 +93,6 @@ func Validate(s *Score) []Diagnostic {
 		seen := map[string]bool{}
 		for _, param := range inst.Params {
 			checkID(param.Name, param.Position)
-			if param.Name == "octave" {
-				add("CICADA-PARAM", "octave is an instrument setting, not a synthesis parameter", "error", param.Position)
-			}
 			if seen[param.Name] {
 				add("CICADA-DUPLICATE", "duplicate instrument parameter "+param.Name, "error", param.Position)
 			}
