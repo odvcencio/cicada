@@ -70,7 +70,7 @@ Three captures style a whole note or hit over its tokens: an accented note or `X
 
 ## Go API
 
-`cicada lsp` serves these queries and the score validator over stdio JSON-RPC. It supports full-document change notifications, diagnostics, pitch/chance/drum hover, pattern and song inlays, semantic tokens, definition lookup, and rename. Parameter and `let` renames stay within their instrument. The server validates a renamed score before returning edits. Clients should register `.cicada` as the Cicada language and launch the CLI with `lsp`.
+`cicada lsp` serves these queries and the score validator over stdio JSON-RPC. It supports full-document change notifications, diagnostics, pitch/chance/drum hover, pattern and song inlays, semantic tokens, definition lookup, rename, and a notation quick fix. Parameter and `let` renames stay within their instrument. The server validates a renamed score before returning edits. The quick fix shares `cicada fix`'s meaning-preserving rewrite, uses a document-versioned edit, and creates `cicada.mod` when removing a legacy header from a loose score. It is offered only when the client supports the needed workspace edit operations. Clients should register `.cicada` as the Cicada language and launch the CLI with `lsp`.
 
 Package [`language`](../language) embeds the queries and runs them on gotreesitter:
 

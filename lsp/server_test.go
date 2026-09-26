@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -95,6 +97,168 @@ func TestServerDiagnosticsHoverHintsAndTokens(t *testing.T) {
 	}
 	if !bytes.Contains(messages[9]["error"], []byte(`"code":-32601`)) {
 		t.Fatalf("unknown method: %s", messages[9]["error"])
+	}
+}
+
+func TestCodeActionSharesValidatedCicadaFixAndDocumentVersion(t *testing.T) {
+	uri := fileURI(filepath.Join(t.TempDir(), "legacy.cicada"))
+	source := "cicada 1\ntitle \"🌙\"\ntrack bass acid {}\npattern p acid steps=1 { 1%70 }\nscene main { bass=p }\nsong { main }\n"
+	var input bytes.Buffer
+	input.Write(rpc(t, 1, "initialize", map[string]any{"capabilities": map[string]any{"workspace": map[string]any{"workspaceEdit": map[string]any{"documentChanges": true, "resourceOperations": []string{"create"}}}}}))
+	input.Write(rpc(t, 0, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 7, "text": source}}))
+	request := map[string]any{"textDocument": map[string]any{"uri": uri}, "range": region{}, "context": map[string]any{"diagnostics": []any{}}}
+	input.Write(rpc(t, 2, "textDocument/codeAction", request))
+	input.Write(rpc(t, 0, "textDocument/didChange", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 8}, "contentChanges": []any{map[string]any{"text": "invalid score"}}}))
+	input.Write(rpc(t, 3, "textDocument/codeAction", request))
+	input.Write(rpc(t, 0, "exit", map[string]any{}))
+	var output bytes.Buffer
+	if err := Serve(&input, &output); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(&output)
+	var frames []map[string]json.RawMessage
+	for {
+		body, err := readFrame(reader)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var frame map[string]json.RawMessage
+		if err := json.Unmarshal(body, &frame); err != nil {
+			t.Fatal(err)
+		}
+		frames = append(frames, frame)
+	}
+	if len(frames) != 5 || !bytes.Contains(frames[0]["result"], []byte(`"codeActionProvider":true`)) {
+		t.Fatalf("capability or frame count: %d", len(frames))
+	}
+	var actions []struct {
+		Title string `json:"title"`
+		Kind  string `json:"kind"`
+		Edit  struct {
+			DocumentChanges []struct {
+				Kind         string `json:"kind"`
+				URI          string `json:"uri"`
+				TextDocument struct {
+					URI     string `json:"uri"`
+					Version int    `json:"version"`
+				} `json:"textDocument"`
+				Edits []struct {
+					Range   region `json:"range"`
+					NewText string `json:"newText"`
+				} `json:"edits"`
+			} `json:"documentChanges"`
+		} `json:"edit"`
+	}
+	if err := json.Unmarshal(frames[2]["result"], &actions); err != nil || len(actions) != 1 {
+		t.Fatalf("code action: %s, %v", frames[2]["result"], err)
+	}
+	if len(actions[0].Edit.DocumentChanges) != 3 || actions[0].Edit.DocumentChanges[0].Kind != "create" || !strings.HasSuffix(actions[0].Edit.DocumentChanges[0].URI, "/cicada.mod") {
+		t.Fatalf("manifest create missing: %+v", actions[0].Edit.DocumentChanges)
+	}
+	if manifest := actions[0].Edit.DocumentChanges[1].Edits[0].NewText; manifest != "project legacy\ncicada 1\n" {
+		t.Fatalf("manifest content: %q", manifest)
+	}
+	change := actions[0].Edit.DocumentChanges[2]
+	if actions[0].Kind != "quickfix" || change.TextDocument.URI != uri || change.TextDocument.Version != 7 || change.Edits[0].Range.End != utf16Position([]byte(source), len(source)) {
+		t.Fatalf("versioned action: %+v", actions[0])
+	}
+	fixed := change.Edits[0].NewText
+	if strings.Contains(fixed, "cicada 1") || strings.Contains(fixed, "1%70") || !strings.Contains(fixed, "1?70") || !strings.Contains(fixed, "🌙") {
+		t.Fatalf("fix changed unexpected source: %s", fixed)
+	}
+	if string(frames[4]["result"]) != "[]" {
+		t.Fatalf("invalid source offered fix: %s", frames[4]["result"])
+	}
+}
+
+func TestCodeActionKeepsEditionWhenManifestCreationIsUnavailable(t *testing.T) {
+	dir := t.TempDir()
+	uri := fileURI(filepath.Join(dir, "score.cicada"))
+	source := "cicada 1\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n"
+	params := map[string]any{"textDocument": map[string]any{"uri": uri}, "range": region{}, "context": map[string]any{"diagnostics": []any{}}}
+	var input bytes.Buffer
+	input.Write(rpc(t, 1, "initialize", map[string]any{"capabilities": map[string]any{"workspace": map[string]any{"workspaceEdit": map[string]any{"documentChanges": true}}}}))
+	input.Write(rpc(t, 0, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 1, "text": source}}))
+	input.Write(rpc(t, 2, "textDocument/codeAction", params))
+	manifest := filepath.Join(dir, "cicada.mod")
+	// Serve processes the buffered requests after setup, so test the existing
+	// manifest case in a separate run below.
+	var output bytes.Buffer
+	if err := Serve(&input, &output); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(&output)
+	for i := 0; i < 2; i++ {
+		if _, err := readFrame(reader); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body, err := readFrame(reader)
+	if err != nil || !bytes.Contains(body, []byte(`"result":[]`)) {
+		t.Fatalf("header removal offered without manifest support: %s, %v", body, err)
+	}
+	if err := os.WriteFile(manifest, []byte("project score\ncicada 1\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	input.Reset()
+	output.Reset()
+	input.Write(rpc(t, 1, "initialize", map[string]any{"capabilities": map[string]any{"workspace": map[string]any{"workspaceEdit": map[string]any{"documentChanges": true}}}}))
+	input.Write(rpc(t, 0, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 1, "text": source}}))
+	input.Write(rpc(t, 2, "textDocument/codeAction", params))
+	if err := Serve(&input, &output); err != nil {
+		t.Fatal(err)
+	}
+	reader = bufio.NewReader(&output)
+	for i := 0; i < 2; i++ {
+		if _, err := readFrame(reader); err != nil {
+			t.Fatal(err)
+		}
+	}
+	body, err = readFrame(reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response struct {
+		Result []struct {
+			Edit struct {
+				DocumentChanges []json.RawMessage `json:"documentChanges"`
+			} `json:"edit"`
+		} `json:"result"`
+	}
+	if err := json.Unmarshal(body, &response); err != nil || len(response.Result) != 1 || len(response.Result[0].Edit.DocumentChanges) != 1 || bytes.Contains(body, []byte(`"kind":"create"`)) {
+		t.Fatalf("existing manifest action: %s, %v", body, err)
+	}
+}
+
+func TestCodeActionHonorsRequestedKinds(t *testing.T) {
+	uri := fileURI(filepath.Join(t.TempDir(), "legacy.cicada"))
+	source := []byte("cicada 1\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n")
+	var output bytes.Buffer
+	s := &server{out: &output, documents: map[string][]byte{uri: source}, versions: map[string]*int{}, canEditDocuments: true, canCreateFiles: true}
+	params, _ := json.Marshal(map[string]any{"textDocument": map[string]any{"uri": uri}, "context": map[string]any{"only": []string{"source"}}})
+	if err := s.handle(request{ID: json.RawMessage("1"), Method: "textDocument/codeAction", Params: params}); err != nil {
+		t.Fatal(err)
+	}
+	body, err := readFrame(bufio.NewReader(&output))
+	if err != nil || !bytes.Contains(body, []byte(`"result":[]`)) {
+		t.Fatalf("unexpected action kind: %s, %v", body, err)
+	}
+}
+
+func TestWindowsUNCScoreURIAndManifestRoundTrip(t *testing.T) {
+	path, ok := scorePathFromURIForOS("file://server/share/Music%20Room/beat.cicada", true)
+	if !ok || path != `\\server\share\Music Room\beat.cicada` {
+		t.Fatalf("UNC score path: %q, %t", path, ok)
+	}
+	manifest := fileURIForOS(`\\server\share\Music Room\cicada.mod`, true)
+	if manifest != "file://server/share/Music%20Room/cicada.mod" {
+		t.Fatalf("UNC manifest URI: %s", manifest)
+	}
+	if _, ok := scorePathFromURIForOS("file://server/share/beat.cicada", false); ok {
+		t.Fatal("Unix accepted a remote file authority")
 	}
 }
 
