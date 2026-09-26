@@ -53,6 +53,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "check" {
+		if err := checkCommand(os.Args[2:], os.Stdout, os.Stderr); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "play" {
 		if err := playCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -170,55 +177,16 @@ func main() {
 		usage()
 	}
 	path := os.Args[2]
-	src, err := os.ReadFile(path)
+	inspection, err := inspectScore(path)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
-	if err := checkScoreEdition(path); err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		os.Exit(1)
-	}
-	score, diagnostics := notation.Parse(src)
+	score, semantic, diagnostics := inspection.score, inspection.semantic, inspection.diagnostics
 	var programs map[string]*instrument.Program
-	var semantic *project.Project
-	parseHasError := false
-	for _, d := range diagnostics {
-		if d.Severity == "error" {
-			parseHasError = true
-		}
+	if command == "graph" && !hasDiagnosticErrors(diagnostics) {
+		programs, _ = project.Check(score)
 	}
-	if !parseHasError {
-		// Conversion and the live engine use the typed project. Validate through
-		// that same gate so a source file cannot pass here and fail to load.
-		var projectDiagnostics []notation.Diagnostic
-		semantic, projectDiagnostics = project.FromScore(score)
-		diagnostics = appendUniqueDiagnostics(diagnostics, projectDiagnostics)
-		if semantic != nil {
-			if _, err := project.CompileEngine(semantic, 48_000, 128); err != nil {
-				diagnostics = append(diagnostics, notation.Diagnostic{
-					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(),
-					Position: notation.Position{Line: 1, Column: 1},
-				})
-			}
-		}
-		if command == "graph" && !hasDiagnosticErrors(diagnostics) {
-			programs, _ = project.Check(score)
-		}
-	}
-	sort.SliceStable(diagnostics, func(i, j int) bool {
-		a, b := diagnostics[i], diagnostics[j]
-		if a.Position.Line != b.Position.Line {
-			return a.Position.Line < b.Position.Line
-		}
-		if a.Position.Column != b.Position.Column {
-			return a.Position.Column < b.Position.Column
-		}
-		if a.Severity != b.Severity {
-			return a.Severity == "error"
-		}
-		return a.Code < b.Code
-	})
 	hasErrors := false
 	for _, d := range diagnostics {
 		fmt.Fprintf(os.Stderr, "%s:%d:%d: %s %s: %s\n", path, d.Position.Line, d.Position.Column, d.Severity, d.Code, d.Message)
@@ -310,7 +278,7 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: cicada "+
-		"new <name> | fix <score.cicada> [--check] | play [score.cicada] | lsp | studio [score.cicada] [--listen 127.0.0.1:port] [--lsp-stdio] | "+
+		"new <name> | check [score.cicada] | validate <score.cicada> | fix <score.cicada> [--check] | play [score.cicada] | lsp | studio [score.cicada] [--listen 127.0.0.1:port] [--lsp-stdio] | "+
 		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+
 		"validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | "+
 		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --dither=true --normalize=false --block 4096] | "+

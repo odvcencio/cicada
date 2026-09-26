@@ -39,6 +39,8 @@ Start a project with `go run ./cmd/cicada new night-circuit`. It creates `night-
 
 `go run ./cmd/cicada fix score.cicada` moves a standalone legacy header into `cicada.mod`, writes missing instrument octaves, removes redundant `steps`, phrase `acid`, and pattern `notes` tags, moves pattern settings inside their braces, shortens positive phrase transposes, uses `?` for note chance, writes SI unit case, and removes statement terminators. It preserves comments and checks that the semantic project stays identical. Use `--check` to see whether this migration is needed without writing files. Further spelling migrations remain in the rollout.
 
+Run `cicada check` from a project directory to validate every score under the nearest `cicada.mod` with source carets and contextual suggestions. Without a manifest, it checks the current directory. Nested projects are checked separately. `cicada check score.cicada` checks one file; `cicada validate score.cicada` remains available for scripts. Both use the same parser, semantic model, and engine compilation gate.
+
 Play a score through the native engine and keep editing its source:
 
 ```sh
