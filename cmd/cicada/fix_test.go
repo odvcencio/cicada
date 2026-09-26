@@ -154,3 +154,31 @@ func TestFixPublishedExamplesPreservesSemantics(t *testing.T) {
 		})
 	}
 }
+
+func TestFixDropsImpliedKindsUnitsAndSceneHolds(t *testing.T) {
+	source := []byte("instrument voice1 { param cutoff: hz = 720Hz voice mono { out = saw(cutoff) } }\ntrack bass acid {}\ntrack lead voice1 {}\npattern riff acid { 1 . }\npattern lead notes { c . }\nscene main { bass = riff lead = lead }\nscene hold { bass = keep lead = stop }\nsong { main hold }\n")
+	fixed, changed, err := fixSource(source)
+	if err != nil || !changed {
+		t.Fatalf("fix failed: %v", err)
+	}
+	for _, legacy := range [][]byte{[]byte("param cutoff:"), []byte("pattern riff acid"), []byte("pattern lead notes"), []byte("bass = keep")} {
+		if bytes.Contains(fixed, legacy) {
+			t.Fatalf("implied spelling remains: %s", legacy)
+		}
+	}
+	if !bytes.Contains(fixed, []byte("lead = stop")) {
+		t.Fatalf("scene stop was lost: %s", fixed)
+	}
+	again, changed, err := fixSource(fixed)
+	if err != nil || changed || !bytes.Equal(again, fixed) {
+		t.Fatalf("fix was not stable: %v", err)
+	}
+}
+
+func TestFixKeepsOffWhenStopIsAPattern(t *testing.T) {
+	source := []byte("track bass acid {}\npattern stop { 1 . }\nscene main { bass = stop }\nscene quiet { bass = off }\nsong { main quiet }\n")
+	fixed, _, err := fixSource(source)
+	if err != nil || !bytes.Contains(fixed, []byte("bass = off")) {
+		t.Fatalf("legacy stop pattern changed meaning: %s, %v", fixed, err)
+	}
+}

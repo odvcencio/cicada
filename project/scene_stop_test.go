@@ -40,10 +40,13 @@ func TestSceneStopMatchesLegacyOffAndOmissionKeeps(t *testing.T) {
 		t.Fatalf("project source did not print stop: %s", generated)
 	}
 	omitted := strings.Replace(base, "scene outro { bass = ACTION }", "scene outro {}", 1)
-	_, omittedConfig := parse(omitted)
-	_, keepConfig := parse(strings.Replace(base, "ACTION", "keep", 1))
+	omittedProject, omittedConfig := parse(omitted)
+	keepProject, keepConfig := parse(strings.Replace(base, "ACTION", "keep", 1))
 	if omittedConfig.Scenes[1].Track[0].Mode != engine.SceneKeep || keepConfig.Scenes[1].Track[0].Mode != engine.SceneKeep {
 		t.Fatal("omitting a scene binding did not keep the track playing")
+	}
+	if !SemanticEqual(omittedProject, keepProject) {
+		t.Fatal("an explicit keep changed the semantic project")
 	}
 }
 
