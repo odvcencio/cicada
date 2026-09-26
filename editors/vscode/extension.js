@@ -124,11 +124,6 @@ function activate(context) {
   context.subscriptions.push(vscode.commands.registerCommand("cicada.openStudio", () =>
     openStudio().catch((error) => vscode.window.showErrorMessage(`Cicada: ${error.message}`))
   ));
-  context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => {
-    if (document.uri.fsPath === scorePath && panel) {
-      renderPanel().catch((error) => vscode.window.showErrorMessage(`Cicada: ${error.message}`));
-    }
-  }));
   const score = activeScore();
   if (score) {
     start(score).catch((error) => vscode.window.showErrorMessage(`Cicada: ${error.message}`));
