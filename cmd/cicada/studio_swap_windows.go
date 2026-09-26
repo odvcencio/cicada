@@ -17,7 +17,7 @@ var replaceFileW = windows.NewLazySystemDLL("kernel32.dll").NewProc("ReplaceFile
 // studioSwap replaces the score and asks Windows to preserve the displaced
 // file at a sibling pathname. ReplaceFileW keeps its backup on the same volume.
 func studioSwap(path, replacement string) (string, error) {
-	backupFile, err := os.CreateTemp(filepath.Dir(path), ".cicada-displaced-*")
+	backupFile, err := os.CreateTemp(filepath.Dir(path), studioRecoveryPattern(path))
 	if err != nil {
 		return "", err
 	}
