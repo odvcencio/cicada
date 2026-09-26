@@ -40,3 +40,17 @@ test("Studio can retry after an initial server startup failure", async () => {
     delete require.cache[require.resolve("./extension.js")];
   }
 });
+
+test("packaged language configuration is valid JSON", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const manifest = require("./package.json");
+  for (const language of manifest.contributes.languages) {
+    const configuration = JSON.parse(fs.readFileSync(path.join(__dirname, language.configuration), "utf8"));
+    assert.ok(Array.isArray(configuration.brackets));
+    for (const pair of configuration.brackets) {
+      assert.equal(pair.length, 2);
+      assert.ok(pair.every((value) => typeof value === "string"));
+    }
+  }
+});
