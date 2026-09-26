@@ -30,6 +30,7 @@ type studio struct {
 	mu              sync.Mutex
 	lastGoodSource  []byte
 	lastGoodProject *project.Project
+	transport       *studioTransport
 }
 
 func studioCommand(args []string) error {
@@ -54,10 +55,12 @@ func studioCommand(args []string) error {
 	if err != nil || host != "127.0.0.1" && host != "localhost" && host != "::1" {
 		return fmt.Errorf("studio listen address must be loopback host:port")
 	}
-	handler, err := studioHandler(path)
+	studio, err := newStudio(path)
 	if err != nil {
 		return err
 	}
+	defer studio.transport.close()
+	handler := studio.routes()
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
@@ -83,6 +86,14 @@ func studioCommand(args []string) error {
 }
 
 func studioHandler(path string) (http.Handler, error) {
+	s, err := newStudio(path)
+	if err != nil {
+		return nil, err
+	}
+	return s.routes(), nil
+}
+
+func newStudio(path string) (*studio, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -99,19 +110,25 @@ func studioHandler(path string) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &studio{path: absolute, lastGoodSource: bytes.Clone(source), lastGoodProject: p}
+	return &studio{path: absolute, lastGoodSource: bytes.Clone(source), lastGoodProject: p, transport: newStudioTransport(absolute)}, nil
+}
+
+func (s *studio) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.page)
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
+	mux.HandleFunc("POST /api/transport", s.transportCommand)
+	mux.HandleFunc("GET /api/transport", s.transportState)
+	mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !studioLoopbackHost(r.Host) {
 			http.Error(w, "Studio requires a loopback host", http.StatusForbidden)
 			return
 		}
 		mux.ServeHTTP(w, r)
-	}), nil
+	})
 }
 
 func studioLoopbackHost(address string) bool {
