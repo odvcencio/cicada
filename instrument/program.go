@@ -38,6 +38,16 @@ type Program struct {
 	StatefulNodes int
 }
 
+// HasParameter reports whether the graph declares a synthesis parameter.
+func (p *Program) HasParameter(name string) bool {
+	for _, node := range p.Nodes {
+		if node.Op == "param" && node.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
 type compiler struct {
 	program Program
 	symbols map[string]int
