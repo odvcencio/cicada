@@ -294,6 +294,11 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
       const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...payload, revision:revision()}) });
       const result = await response.json();
       if (!response.ok) { setStatus(result.error || 'Edit failed', 'error'); return; }
+      if (path === '/api/source') {
+        original = payload.source;
+        document.body.dataset.revision = result.revision;
+      }
+      if (dirty()) { setStatus('Saved. New source edits are still open.', 'success'); return true; }
       setStatus('Saved; refreshing projection', 'success');
       location.reload();
     } catch (error) { setStatus('Connection lost: ' + error.message, 'error'); }
@@ -399,7 +404,8 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     try {
       const response = await fetch('/api/state', {cache:'no-store'});
       const state = await response.json();
-      if (state.revision === revision()) return;
+      if (!response.ok) { setStatus(state.error || 'Cannot read score state', 'error'); return; }
+      if (busy || state.revision === revision()) return;
       if (dirty()) { setStatus('The file changed outside Studio. Save with care or discard your draft.', 'error'); return; }
       if (state.valid) location.reload();
       else {

@@ -120,6 +120,11 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 			}
 			config.Drums = params
+			for lane, enabled := range projectDrumLanes(p, track) {
+				if !enabled {
+					config.Drums[lane] = drum.Params{}
+				}
+			}
 			cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
 		default:
 			if kit, ok := kits[track.Kind]; ok {
@@ -139,7 +144,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			}
 			overrides := map[string]string{}
 			for name, value := range track.Params {
-				if name == "octave" {
+				if name == "octave" && !program.HasParameter("octave") {
 					continue
 				}
 				literal, err := valueSource(value)
