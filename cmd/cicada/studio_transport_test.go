@@ -3,8 +3,10 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +18,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/kernel"
 )
 
 func TestStudioTransportSocketAndIdleCommand(t *testing.T) {
@@ -55,6 +58,164 @@ func TestStudioTransportSocketAndIdleCommand(t *testing.T) {
 	}{Action: "stop"})
 	if idle.Code != http.StatusOK {
 		t.Fatalf("idle stop: %d %s", idle.Code, idle.Body.String())
+	}
+}
+
+func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
+	handler, _ := studioTestHandler(t)
+	response := studioCall(t, handler, "/api/params", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("params endpoint: %d %s", response.Code, response.Body.String())
+	}
+	var params struct {
+		Revision  string           `json:"revision"`
+		Registry  []map[string]any `json:"registry"`
+		Addresses []map[string]any `json:"addresses"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &params); err != nil {
+		t.Fatal(err)
+	}
+	if params.Revision != studioRevision([]byte(studioScore)) || len(params.Registry) != len(kernel.Params) || len(params.Addresses) == 0 {
+		t.Fatalf("incomplete current registry response: rev=%q registry=%d addresses=%d", params.Revision, len(params.Registry), len(params.Addresses))
+	}
+	page := studioCall(t, handler, "/", nil)
+	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) {
+		t.Fatalf("Studio meter markup missing: %d", page.Code)
+	}
+	script := studioCall(t, handler, "/studio-audio.js", nil)
+	if script.Code != http.StatusOK || !strings.Contains(script.Body.String(), "window.cicadaAudio") && !strings.Contains(script.Body.String(), "window.cicadaAudio =") {
+		t.Fatalf("audio facade not served: %d", script.Code)
+	}
+}
+
+func TestStudioAudioSocketRejectsInvalidParametersWithTypedErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, []byte(studioScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.transport.close()
+	initial, err := compileLiveScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := liveplay.New(initial, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.transport.stream, s.transport.playing = stream, true
+	server := httptest.NewServer(s.routes())
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/audio/ws"
+	_, response, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{"https://outside.example"}}})
+	if err == nil || response == nil || response.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin audio socket: response=%v err=%v", response, err)
+	}
+	connection, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{server.URL}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.CloseNow()
+	for _, test := range []struct {
+		message map[string]any
+		address string
+	}{
+		{map[string]any{"type": "param", "address": "unknown.level", "value": -3.5}, "unknown.level"},
+		{map[string]any{"type": "param", "address": "bass.level", "value": 7}, "bass.level"},
+		{map[string]any{"type": "param", "address": "bass.tune", "value": 440}, "bass.tune"},
+	} {
+		if err := wsjson.Write(ctx, connection, test.message); err != nil {
+			t.Fatal(err)
+		}
+		var result audioErrorMessage
+		if err := wsjson.Read(ctx, connection, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Type != "error" || result.Code != "CICADA-PARAM" || result.Address != test.address || result.Message == "" {
+			t.Fatalf("typed parameter error: %+v", result)
+		}
+	}
+	if err := wsjson.Write(ctx, connection, map[string]any{"type": "param", "address": "bass.level", "value": -3.5}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, connection, map[string]any{"type": "mute", "track": "bass", "on": true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, connection, map[string]any{"type": "solo", "track": "drums", "on": true}); err != nil {
+		t.Fatal(err)
+	}
+	s.transport.publishMeter(liveplay.MeterFrame{
+		Tick: 1234, TrackCount: 1, TrackIDs: [16]string{"bass"}, Tracks: [16]liveplay.MeterValue{{Peak: .5, RMS: .25}},
+		HasReturnA: true, ReturnA: liveplay.MeterValue{Peak: 0, RMS: .1},
+		Music: liveplay.MeterValue{Peak: .8, RMS: .4}, MasterPeak: .7, MasterRMS: .3, MasterPre: liveplay.MeterValue{Peak: .8},
+		CompGR: 2.5, LimiterGR: .25,
+	})
+	var meter struct {
+		Type    string                                 `json:"type"`
+		Tick    int64                                  `json:"tick"`
+		Tracks  map[string]struct{ Peak, RMS float64 } `json:"tracks"`
+		Returns map[string]struct{ Peak, RMS float64 } `json:"returns"`
+		Buses   map[string]struct{ Peak, RMS float64 } `json:"buses"`
+		Master  struct {
+			Peak      float64 `json:"peak"`
+			RMS       float64 `json:"rms"`
+			PrePeak   float64 `json:"pre_peak"`
+			CompGR    float64 `json:"comp_gr"`
+			LimiterGR float64 `json:"limiter_gr"`
+			Over      bool    `json:"over"`
+		} `json:"master"`
+	}
+	if err := wsjson.Read(ctx, connection, &meter); err != nil {
+		t.Fatal(err)
+	}
+	if meter.Type != "meters" || meter.Tick != 1234 || math.Abs(meter.Tracks["bass"].Peak+6.0206) > .01 || meter.Returns["a"].Peak != -120 || meter.Master.CompGR != 2.5 || meter.Master.LimiterGR != .25 {
+		t.Fatalf("wire meter values: %+v", meter)
+	}
+	if _, ok := meter.Returns["b"]; ok {
+		t.Fatal("absent return B was included")
+	}
+	if _, ok := meter.Buses["sfx"]; ok {
+		t.Fatal("absent SFX bus was included")
+	}
+}
+
+func TestStudioNullAudioPacesRenderingWithoutOpeningDevice(t *testing.T) {
+	_, path := studioTestHandler(t)
+	transport := newStudioTransport(path)
+	transport.audioNull = true
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	defer transport.close()
+	if transport.player != nil || transport.device != nil || transport.stream == nil {
+		t.Fatalf("null audio opened a device or missed its stream: player=%v device=%v", transport.player, transport.device)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if got := transport.meterSequence.Load(); got == 0 || got > 8 {
+		t.Fatalf("null audio did not render at the expected real-time pace: received %d meter frames in 80 ms", got)
+	}
+	stream := transport.stream
+	transport.stop()
+	time.Sleep(80 * time.Millisecond)
+	paused := transport.meterSequence.Load()
+	time.Sleep(50 * time.Millisecond)
+	if got := transport.meterSequence.Load(); got != paused {
+		t.Fatalf("null audio kept rendering while stopped: meter frames %d -> %d", paused, got)
+	}
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	if transport.stream != stream {
+		t.Fatal("null audio did not resume the existing stream")
+	}
+	time.Sleep(80 * time.Millisecond)
+	if got := transport.meterSequence.Load(); got <= paused {
+		t.Fatal("null audio did not resume rendering")
 	}
 }
 
