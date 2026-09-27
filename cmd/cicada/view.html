@@ -197,6 +197,37 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .history-detail { min-width:0; overflow-wrap:anywhere; }
 .history-time { color:var(--muted); font-size:.72rem; font-variant-numeric:tabular-nums; }
 @media (max-width:640px) { .history-row { grid-template-columns:70px 1fr; } .history-time { grid-column:2; } }
+.master-view { display:grid; gap:16px; }
+.master-view > p { margin:0; color:var(--muted); }
+.master-readouts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
+.master-readout, .master-card { min-width:0; border:1px solid var(--border); border-radius:12px; background:var(--panel); padding:15px; }
+.master-readout span, .master-card h3 { display:block; margin:0 0 8px; color:var(--muted); font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.09em; }
+.master-readout output { display:block; color:var(--text); font:700 clamp(1.15rem,2vw,1.65rem)/1.2 ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric:tabular-nums; }
+.master-tools { display:flex; flex-wrap:wrap; align-items:end; gap:12px; }
+.master-tools label, .export-options label { display:grid; gap:5px; color:var(--muted); font-size:.75rem; font-weight:700; }
+.master-tools select, .master-tools input, .export-options input, .export-options select { min-height:44px; border:1px solid #526451; border-radius:7px; background:#121a15; color:var(--text); padding:8px 10px; font:600 .9rem system-ui,sans-serif; }
+.master-tools select:focus-visible, .master-tools input:focus-visible, .export-options input:focus-visible, .export-options select:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
+.master-tools output { min-height:42px; display:flex; align-items:center; color:var(--amber); font:700 .9rem ui-monospace,SFMono-Regular,Consolas,monospace; }
+.master-tools button, .master-export button { min-height:44px; border:1px solid #80693d; border-radius:7px; background:#3b3220; color:#ffe0a7; padding:9px 14px; font:700 .83rem system-ui,sans-serif; cursor:pointer; }
+.master-tools button:hover, .master-export button:hover { background:#534326; }
+.master-chart { width:100%; height:220px; display:block; border:1px solid #344239; border-radius:9px; background:#111915; }
+.master-chart.gr { height:170px; }
+.master-legend { display:flex; flex-wrap:wrap; gap:12px; margin:9px 0 0; color:var(--muted); font-size:.76rem; }
+.master-legend b { color:var(--amber); }
+.master-legend .limiter { color:var(--coral); }
+.master-chart-help { margin:7px 0 0; color:var(--muted); font-size:.72rem; }
+.master-export { display:grid; gap:14px; }
+.master-export h3 { margin:0; }
+.export-options { display:grid; grid-template-columns:repeat(4,minmax(100px,1fr)); gap:10px; }
+.export-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.export-progress { color:var(--muted); font-size:.83rem; }
+.export-path { display:block; color:var(--mint); font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.export-report { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px 14px; margin:0; }
+.export-report div { min-width:0; padding-top:8px; border-top:1px solid #304037; }
+.export-report dt { color:var(--muted); font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; }
+.export-report dd { margin:3px 0 0; color:var(--text); font:600 .84rem ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.master-mixer-link { color:var(--mint); font-weight:700; }
+@media (max-width:640px) { .master-readouts { grid-template-columns:repeat(2,minmax(0,1fr)); } .master-readout, .master-card { padding:12px; } .master-chart { height:180px; } .master-chart.gr { height:150px; } .export-options { grid-template-columns:repeat(2,minmax(0,1fr)); } .export-report { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 .editor-shell[hidden], .source-scroll[hidden] { display:none; }
 .source-editor { display:block; width:100%; min-height:calc(100vh - 220px); resize:vertical; border:0; border-radius:0; padding:20px 22px; background:#111713; color:var(--text); font:13px/1.75 ui-monospace,SFMono-Regular,Consolas,monospace; tab-size:2; white-space:pre; }
 .step-edit { width:100%; padding:0 2px; cursor:pointer; transition:border-color .15s,transform .15s; }
@@ -213,7 +244,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   <p class="lede">{{if .Studio}}Edit the score, click a pitch row to set a note, or click a drum cell to toggle a hit. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
-<nav class="nav" aria-label="Score sections">{{if .Studio}}<a href="#notation">Code</a><a href="#session">Session</a><a href="#history">History</a><a href="#voice">Voice</a>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}{{if .Studio}}<div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><div class="master-meter" role="meter" aria-label="Master output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Master</span><div class="meter-track"><i id="master-meter-fill"></i><b id="master-meter-hold"></b></div><output id="master-meter-value">−120 dBFS</output></div><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span></div>{{end}}</nav>
+<nav class="nav" aria-label="Score sections">{{if .Studio}}<a href="#notation">Code</a><a href="#session">Session</a><a href="#master">Master</a><a href="#history">History</a><a href="#voice">Voice</a>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}{{if .Studio}}<div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><div class="master-meter" role="meter" aria-label="Master output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Master</span><div class="meter-track"><i id="master-meter-fill"></i><b id="master-meter-hold"></b></div><output id="master-meter-value">−120 dBFS</output></div><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span></div>{{end}}</nav>
 <main class="workspace">
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
@@ -254,6 +285,71 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
       <h2 id="tracks-heading">Tracks</h2>
       <div class="track-list">{{range .Tracks}}<div class="track{{if .Muted}} muted{{end}}"><span class="kind">{{.Kind}}</span><strong>{{.ID}}</strong><span class="gain">{{.Gain}}{{if .Muted}} · muted{{end}}</span>{{if $.Studio}}<div class="track-level-meter" data-track-meter="{{.ID}}" role="meter" aria-label="{{.ID}} output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Level</span><div class="meter-track"><i></i></div><output>−120 dBFS</output></div>{{end}}</div>{{end}}</div>
     </section>
+    {{if .Studio}}<section id="master" aria-labelledby="master-heading" class="master-view">
+      <h2 id="master-heading">Master</h2>
+      <p>Live BS.1770-4 loudness from the post-limiter master output. Metering runs off the audio reader.</p>
+      <div class="master-readouts" aria-label="Master loudness readouts">
+        <div class="master-readout"><span>Momentary</span><output id="master-momentary">— LUFS</output></div>
+        <div class="master-readout"><span>Short-term</span><output id="master-short-term">— LUFS</output></div>
+        <div class="master-readout"><span>Integrated</span><output id="master-integrated">— LUFS</output></div>
+        <div class="master-readout"><span>Loudness range</span><output id="master-range">— LU</output></div>
+        <div class="master-readout"><span>Maximum true peak</span><output id="master-true-peak">— dBTP</output></div>
+        <div class="master-readout"><span>Sample peak</span><output id="master-sample-peak">— dBFS</output></div>
+        <div class="master-readout"><span>Dropped meter blocks</span><output id="master-dropped-blocks">0 blocks</output></div>
+      </div>
+      <div class="master-tools">
+        <label for="loudness-target">Loudness target
+          <select id="loudness-target">
+            <option value="streaming">Streaming · −14 LUFS</option>
+            <option value="podcast">Podcast · −16 LUFS</option>
+            <option value="ebu-r128">EBU R 128 · −23 LUFS</option>
+            <option value="custom">Custom</option>
+          </select>
+        </label>
+        <label id="custom-target-wrap" for="custom-target" hidden>Custom target (LUFS)
+          <input id="custom-target" type="number" min="-70" max="0" step="0.1" value="-14">
+        </label>
+        <div><span class="section-note">Deviation from target</span><output id="target-deviation">— LU</output></div>
+        <button type="button" id="reset-integrated">Reset integrated</button>
+        <a class="master-mixer-link" href="#mixer-settings">Open mixer compressor settings</a>
+      </div>
+      <div class="master-card">
+        <h3>Short-term loudness · last 60 seconds</h3>
+        <canvas class="master-chart" id="loudness-history" role="img" aria-label="Short-term loudness history over the last 60 seconds, with the selected target and tolerance band"></canvas>
+        <p class="master-chart-help">The shaded target band shows the selected LUFS target ± export tolerance.</p>
+      </div>
+      <div class="master-card">
+        <h3>Gain reduction · last 60 seconds</h3>
+        <canvas class="master-chart gr" id="gain-reduction-history" role="img" aria-label="Compressor and limiter gain-reduction history over the last 60 seconds"></canvas>
+        <div class="master-legend"><span><b>Compressor</b> · dB reduction</span><span><b class="limiter">Limiter</b> · dB reduction</span></div>
+      </div>
+      <div class="master-card master-export">
+        <h3>Export WAV at target loudness</h3>
+        <div class="export-options">
+          <label for="export-true-peak">True-peak ceiling (dBTP)<input id="export-true-peak" type="number" min="-24" max="0" step="0.1" value="-1"></label>
+          <label for="export-tolerance">Tolerance (LU)<input id="export-tolerance" type="number" min="0" max="10" step="0.1" value="0.5"></label>
+          <label for="export-rate">Sample rate<select id="export-rate"><option value="48000">48 kHz</option><option value="44100">44.1 kHz</option><option value="96000">96 kHz</option></select></label>
+          <label for="export-bits">Bit depth<select id="export-bits"><option value="24">24 bit</option><option value="16">16 bit</option><option value="32">32 bit float</option></select></label>
+        </div>
+        <div class="export-actions"><button id="export-wav" type="button">Export WAV at target loudness</button><span class="export-progress" id="export-progress">Ready</span></div>
+        <output class="export-path" id="export-path" hidden></output>
+        <dl class="export-report" id="export-report" hidden>
+          <div><dt>Achieved loudness</dt><dd data-report="achieved_lufs">—</dd></div>
+          <div><dt>True peak</dt><dd data-report="true_peak_dbtp">—</dd></div>
+          <div><dt>Applied gain</dt><dd data-report="applied_gain_db">—</dd></div>
+          <div><dt>Render passes</dt><dd data-report="passes">—</dd></div>
+          <div><dt>Largest limiter reduction</dt><dd data-report="largest_limiter_reduction_db">—</dd></div>
+          <div><dt>DC correction</dt><dd data-report="dc_correction">—</dd></div>
+        </dl>
+        <p class="section-note">The export is saved beside this score with names such as score-minus14LUFS.wav. A target shortfall is saved separately; starting another export deletes the previous shortfall render. Studio does not play the file.</p>
+        <span class="sr-only" id="export-announcement" aria-live="polite" aria-atomic="true"></span>
+      </div>
+    </section>{{end}}
+    {{if .Studio}}<section id="mixer-settings" aria-labelledby="mixer-settings-heading">
+      <h2 id="mixer-settings-heading">Mixer · master compressor</h2>
+      <p class="section-note">Saved compressor parameters from the current score. This view is read only.</p>
+      {{if .HasMasterCompressor}}<div class="mixer-settings-list">{{range .MasterCompressor}}<div class="voice-param"><b>{{.Name}}</b><span>{{.Value}}</span></div>{{end}}</div>{{else}}<p class="section-note">No bus compressor is configured in this score.</p>{{end}}
+    </section>{{end}}
     {{if not .Studio}}<section id="arrangement" aria-labelledby="arrangement-heading">
       <h2 id="arrangement-heading">Scenes and song</h2>
       {{if .Scenes}}<div class="scene-pads" role="group" aria-label="Scenes">{{range .Scenes}}<span class="scene-pad">{{.ID}}</span>{{end}}</div>{{end}}
@@ -545,6 +641,6 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     } catch { setStatus('Waiting for the local Studio server', 'error'); }
   }, 1500);
 })();
-</script>{{end}}
+</script><script src="/studio-master.js"></script>{{end}}
 </body>
 </html>
