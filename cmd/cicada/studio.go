@@ -379,6 +379,11 @@ func (s *studio) applyWithHook(w http.ResponseWriter, edit studioEdit, change fu
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during validation; reload before saving"})
 		return
 	}
+	if bytes.Equal(current, updated) {
+		s.lastGoodSource, s.lastGoodProject = bytes.Clone(current), p
+		studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(current), "valid": true})
+		return
+	}
 	info, err := os.Stat(s.path)
 	committed, preserved := false, ""
 	if err == nil {
