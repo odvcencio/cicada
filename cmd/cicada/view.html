@@ -84,6 +84,10 @@ button.scene-slot:hover, button.scene-slot[data-state="queued"] { border-color:v
 .cell.note.on { color:var(--amber); background:#393320; border-color:#6b5937; font-size:.88rem; }
 .cell.note.accent { background:#58342b; border-color:#a6634a; color:#ffe0a7; }
 .cell.note.tie { color:var(--mint); background:#1e3a32; }
+.cell.velocity-cell { position:relative; overflow:hidden; color:var(--mint); }
+.velocity-cell.active { background:#202d27; border-color:#466f5d; }
+.velocity-cell .velocity-fill { position:absolute; inset:auto 0 0; height:var(--velocity); background:linear-gradient(180deg,var(--mint),#4c957a); opacity:.42; }
+.velocity-cell .velocity-value { position:relative; z-index:1; font-size:.68rem; }
 .cell.flag.on { color:var(--rose); background:#40242e; border-color:#774454; font-size:1rem; }
 .cell.flag.slide.on { color:var(--mint); background:#1c3932; border-color:#3c7465; }
 .cell.probability.on { color:#ccb1ff; }
@@ -228,6 +232,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
             {{else}}
               {{range .PitchRows}}{{$row := .}}<div class="grid-line pitch-row" style="--steps:{{len .Cells}}"><span class="row-label pitch-label">{{.Name}}</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell pitch-cell step-edit{{if .On}} on{{end}}{{if .Accent}} accent{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-pitch="{{$row.Note}}" aria-label="{{if .On}}Clear{{else}}Set{{end}} {{$pattern.ID}} step {{.Number}} {{if .On}}at{{else}}to{{end}} {{$row.Name}}">{{if .On}}●{{end}}</button>{{else}}<span class="cell pitch-cell{{if .On}} on{{end}}{{if .Accent}} accent{{end}}"{{if .On}} aria-label="{{.Label}}"{{end}}>{{if .On}}●{{end}}</span>{{end}}{{end}}</div>{{end}}
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Note</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell note step-edit{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" aria-label="Toggle {{$pattern.ID}} {{.Label}}">{{.Note}}</button>{{else}}<span class="cell note{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" aria-label="{{.Label}}">{{.Note}}</span>{{end}}{{end}}</div>
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Velocity</span>{{range .Cells}}<span class="cell velocity-cell{{if and .Active (not .Tie)}} active{{end}}" aria-label="{{if and .Active (not .Tie)}}Velocity {{.Velocity}}{{else}}No note{{end}}">{{if and .Active (not .Tie)}}<span class="velocity-fill" style="--velocity:{{.FillPercent}}%"></span><span class="velocity-value">{{.Velocity}}</span>{{else}}—{{end}}</span>{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Accent</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell flag step-edit{{if .Accent}} on{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="accent" aria-label="Toggle accent on {{$pattern.ID}} {{.Label}}" aria-pressed="{{.Accent}}">{{if .Accent}}◆{{else}}·{{end}}</button>{{else}}<span class="cell flag{{if .Accent}} on{{end}}">{{if .Accent}}◆{{else}}·{{end}}</span>{{end}}{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Slide</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell flag slide step-edit{{if .Slide}} on{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="slide" aria-label="Toggle slide on {{$pattern.ID}} {{.Label}}" aria-pressed="{{.Slide}}">{{if .Slide}}↗{{else}}·{{end}}</button>{{else}}<span class="cell flag slide{{if .Slide}} on{{end}}">{{if .Slide}}↗{{else if .Tie}}━{{else}}·{{end}}</span>{{end}}{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Ratchet</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell step-edit" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="ratchet" aria-label="Cycle ratchet on {{$pattern.ID}} {{.Label}}">{{.Ratchet}}</button>{{else}}<span class="cell">{{.Ratchet}}</span>{{end}}{{end}}</div>
@@ -399,7 +404,16 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     });
   });
   let playing = false;
+  let lastTransportSequence = 0;
+  function isNewTransportState(state) {
+    const sequence = Number(state.sequence);
+    if (!Number.isSafeInteger(sequence)) return true;
+    if (sequence < lastTransportSequence) return false;
+    lastTransportSequence = sequence;
+    return true;
+  }
   function showTransport(state) {
+    if (!isNewTransportState(state)) return;
     playing = state.playing;
     transportButton.textContent = playing ? 'Stop' : 'Play';
     transportPosition.textContent = `Bar ${state.bar} · step ${state.step}`;
