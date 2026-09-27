@@ -7,26 +7,45 @@ import (
 	"math"
 	"os"
 
+	"m31labs.dev/cicada/kernel/loudness"
+	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
 )
 
 type VerifyOptions struct {
-	SampleRate int
-	Bits       int
-	Bars       int
-	From       int
-	TailSec    float64
-	PeakMaxDB  float64
-	DCMaxDB    float64
+	SampleRate      int
+	Bits            int
+	Bars            int
+	From            int
+	TailSec         float64
+	PeakMaxDB       float64
+	DCMaxDB         float64
+	CheckLUFS       bool
+	LUFSTarget      float64
+	LUFSTolerance   float64
+	CheckTruePeak   bool
+	TruePeakMaxDBTP float64
 }
 
 type VerifyReport struct {
-	Frames         int64
-	Peak           float64
-	PeakDB         float64
-	DC             float64
-	DCDB           float64
-	ClippedSamples int64
+	SampleRate       int
+	Bars             int
+	From             int
+	Frames           int64
+	Peak             float64
+	PeakDB           float64
+	TruePeakDBTP     float64
+	RMSDBFS          float64
+	IntegratedLUFS   float64
+	LoudnessRange    float64
+	MaxMomentaryLUFS float64
+	MaxShortTermLUFS float64
+	DC               float64
+	DCDB             float64
+	DCLeft           float64
+	DCRight          float64
+	ClippedSamples   int64
+	CeilingSamples   int64
 }
 
 // VerifyWAV checks the generated WAV container, musical duration, and signal
@@ -41,6 +60,12 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 	}
 	if math.IsNaN(opts.TailSec) || math.IsInf(opts.TailSec, 0) || opts.TailSec < 0 || opts.TailSec > 10 {
 		return report, fmt.Errorf("tail must be 0 to 10 seconds")
+	}
+	if opts.CheckLUFS && (math.IsNaN(opts.LUFSTarget) || math.IsInf(opts.LUFSTarget, 0) || math.IsNaN(opts.LUFSTolerance) || math.IsInf(opts.LUFSTolerance, 0) || opts.LUFSTolerance < 0) {
+		return report, fmt.Errorf("loudness target and tolerance must be finite, with a non-negative tolerance")
+	}
+	if opts.CheckTruePeak && (math.IsNaN(opts.TruePeakMaxDBTP) || math.IsInf(opts.TruePeakMaxDBTP, 0)) {
+		return report, fmt.Errorf("true-peak ceiling must be finite")
 	}
 	file, err := os.Open(path)
 	if err != nil {
@@ -76,6 +101,7 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 		return report, fmt.Errorf("WAV size or frame alignment is invalid")
 	}
 	report.Frames = dataBytes / int64(frameBytes)
+	report.SampleRate, report.Bars, report.From = opts.SampleRate, opts.Bars, opts.From
 	var metadata [24]byte
 	if _, err := file.ReadAt(metadata[:], 44+dataBytes); err != nil {
 		return report, err
@@ -100,6 +126,15 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 	}
 	var sums [2]float64
 	var peak float64
+	meter, err := loudness.New(opts.SampleRate)
+	if err != nil {
+		return report, err
+	}
+	ceiling := math.Pow(10, mix.CeilingDB/20)
+	ceilingTolerance := math.Ldexp(1, -(opts.Bits-1)) / 2
+	if opts.Bits == 32 {
+		ceilingTolerance = 1e-7
+	}
 	var block [4096 * 8]byte
 	for remaining := report.Frames; remaining > 0; {
 		frames := min(remaining, 4096)
@@ -108,48 +143,85 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 			return report, err
 		}
 		for i := 0; i < len(buf); i += frameBytes {
+			var frameSamples [2]float32
 			for channel := 0; channel < 2; channel++ {
 				j := i + channel*(opts.Bits/8)
-				var sample float64
+				var value float64
 				if opts.Bits == 32 {
-					sample = float64(math.Float32frombits(binary.LittleEndian.Uint32(buf[j : j+4])))
-					if math.IsNaN(sample) || math.IsInf(sample, 0) {
+					value = float64(math.Float32frombits(binary.LittleEndian.Uint32(buf[j : j+4])))
+					if math.IsNaN(value) || math.IsInf(value, 0) {
 						return report, fmt.Errorf("nonfinite float WAV sample")
 					}
+					if math.Abs(value) >= 1 {
+						report.ClippedSamples++
+					}
 				} else if opts.Bits == 16 {
-					value := int16(binary.LittleEndian.Uint16(buf[j : j+2]))
-					if value == 32767 || value == -32768 {
+					integer := int16(binary.LittleEndian.Uint16(buf[j : j+2]))
+					if integer == 32767 || integer == -32768 {
 						report.ClippedSamples++
 					}
-					sample = float64(value) / 32768
+					value = float64(integer) / 32768
 				} else {
-					value := int32(buf[j]) | int32(buf[j+1])<<8 | int32(buf[j+2])<<16
-					if value&0x800000 != 0 {
-						value |= ^int32(0xffffff)
+					integer := int32(buf[j]) | int32(buf[j+1])<<8 | int32(buf[j+2])<<16
+					if integer&0x800000 != 0 {
+						integer |= ^int32(0xffffff)
 					}
-					if value == 8388607 || value == -8388608 {
+					if integer == 8388607 || integer == -8388608 {
 						report.ClippedSamples++
 					}
-					sample = float64(value) / 8388608
+					value = float64(integer) / 8388608
 				}
-				sums[channel] += sample
-				peak = max(peak, math.Abs(sample))
+				sums[channel] += value
+				peak = max(peak, math.Abs(value))
+				frameSamples[channel] = float32(value)
+			}
+			if !meter.ProcessSample(frameSamples[0], frameSamples[1]) {
+				return report, fmt.Errorf("loudness meter rejected WAV sample")
+			}
+			if math.Abs(float64(frameSamples[0])) >= ceiling-ceilingTolerance || math.Abs(float64(frameSamples[1])) >= ceiling-ceilingTolerance {
+				if math.Abs(float64(frameSamples[0])) >= ceiling-ceilingTolerance {
+					report.CeilingSamples++
+				}
+				if math.Abs(float64(frameSamples[1])) >= ceiling-ceilingTolerance {
+					report.CeilingSamples++
+				}
 			}
 		}
 		remaining -= frames
 	}
+	if err := meter.Finish(); err != nil {
+		return report, err
+	}
+	metrics := meter.Metrics()
 	report.Peak = peak
 	report.PeakDB = amplitudeDB(peak)
+	report.TruePeakDBTP = metrics.TruePeakDBTP
+	report.RMSDBFS = metrics.RMSDBFS
+	report.IntegratedLUFS = metrics.IntegratedLUFS
+	report.LoudnessRange = metrics.LoudnessRange
+	report.MaxMomentaryLUFS = metrics.MaxMomentaryLUFS
+	report.MaxShortTermLUFS = metrics.MaxShortTermLUFS
 	report.DC = max(math.Abs(sums[0]/float64(report.Frames)), math.Abs(sums[1]/float64(report.Frames)))
+	report.DCLeft = sums[0] / float64(report.Frames)
+	report.DCRight = sums[1] / float64(report.Frames)
 	report.DCDB = amplitudeDB(report.DC)
 	if report.ClippedSamples != 0 {
-		return report, fmt.Errorf("WAV contains %d full-scale clipped integer samples", report.ClippedSamples)
+		return report, fmt.Errorf("WAV contains %d full-scale clipped samples", report.ClippedSamples)
 	}
 	if report.PeakDB > opts.PeakMaxDB {
 		return report, fmt.Errorf("peak %.2f dBFS exceeds %.2f dBFS", report.PeakDB, opts.PeakMaxDB)
 	}
 	if report.DCDB > opts.DCMaxDB {
 		return report, fmt.Errorf("DC %.2f dBFS exceeds %.2f dBFS", report.DCDB, opts.DCMaxDB)
+	}
+	if opts.CheckTruePeak && report.TruePeakDBTP > opts.TruePeakMaxDBTP {
+		return report, fmt.Errorf("true peak %.2f dBTP exceeds %.2f dBTP", report.TruePeakDBTP, opts.TruePeakMaxDBTP)
+	}
+	if opts.CheckLUFS && (math.IsInf(report.IntegratedLUFS, -1) || math.Abs(report.IntegratedLUFS-opts.LUFSTarget) > opts.LUFSTolerance) {
+		if math.IsInf(report.IntegratedLUFS, -1) {
+			return report, fmt.Errorf("integrated loudness is unavailable; target is %.2f LUFS", opts.LUFSTarget)
+		}
+		return report, fmt.Errorf("integrated loudness %.2f LUFS differs from target %.2f LUFS by %.2f LU (tolerance %.2f LU)", report.IntegratedLUFS, opts.LUFSTarget, math.Abs(report.IntegratedLUFS-opts.LUFSTarget), opts.LUFSTolerance)
 	}
 	return report, nil
 }
