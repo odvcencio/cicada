@@ -94,7 +94,7 @@ song { main*4 }
 
 **Defaults:** Diagnostics are sorted by source position. <code>cicada check</code> adds a source caret and selected repair suggestions.
 
-**Errors:** Stable source and command codes include CICADA-SYNTAX, CICADA-VERSION, CICADA-KEY, CICADA-SCALE-DEGREE, CICADA-SEED, CICADA-PARAM, CICADA-UNIT, CICADA-REFERENCE, CICADA-DUPLICATE, CICADA-EXPANSION, CICADA-USE, CICADA-UNSUPPORTED, CICADA-LIMIT, CICADA-SLIDE-REST, and CICADA-IO.
+**Errors:** Stable source and command codes include CICADA-SYNTAX, CICADA-VERSION, CICADA-KEY, CICADA-SCALE-DEGREE, CICADA-SEED, CICADA-PARAM, CICADA-UNIT, CICADA-REFERENCE, CICADA-DUPLICATE, CICADA-EXPANSION, CICADA-USE, CICADA-UNSUPPORTED, CICADA-LIMIT, CICADA-SLIDE-REST, and CICADA-IO. Phrase-mutation APIs also return CICADA-LOCKED when a requested repair would need to change a locked step; this is not a source-validation diagnostic.
 
 **Example:** An invalid example in the language reference names its expected code in the fence tag; CI fails if the real validator returns a different diagnostic.
 
