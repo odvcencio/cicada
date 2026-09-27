@@ -35,6 +35,7 @@ type Score struct {
 
 type trackNameSnapshot struct {
 	ids   [16]string
+	kinds [16]string
 	count uint8
 }
 
@@ -76,7 +77,36 @@ type SongEntry struct {
 
 type TrackSlots struct {
 	ID    string
+	Kind  string
 	Slots [16]string
+}
+
+type noteInput struct {
+	Track    string
+	Note     uint8
+	Velocity uint8
+	On       bool
+}
+
+type noteBatch struct {
+	inputs [128]noteInput
+	count  uint16
+}
+
+type sceneLaunch struct {
+	id         uint64
+	name       string
+	targetTick int64
+	quantize   cmd.Quantize
+	submitted  bool
+}
+
+type slotLaunch struct {
+	request    SlotRequest
+	id         uint64
+	TargetTick int64
+	quantize   cmd.Quantize
+	submitted  bool
 }
 
 type Event struct {
@@ -96,7 +126,7 @@ type StartRequest struct {
 	Scene string
 }
 
-type slotBatch struct{ requests [16]SlotRequest }
+type slotLaunchBatch struct{ requests [16]slotLaunch }
 
 // Position is the most recently rendered musical location. Step is one-based
 // within a 16-step bar; the audio device may still be playing buffered frames.
@@ -118,12 +148,14 @@ type Player struct {
 	fadeTotal         int
 	fadeRemaining     int
 	offers            chan Score
-	launches          atomic.Pointer[string]
+	launches          atomic.Pointer[sceneLaunch]
+	launchSequence    atomic.Uint64
 	starts            chan StartRequest
 	startMu           sync.Mutex // control calls only; the audio reader never locks
 	startSequence     atomic.Uint64
 	pendingStart      atomic.Uint64
-	slotLaunches      atomic.Pointer[slotBatch]
+	slotLaunches      atomic.Pointer[slotLaunchBatch]
+	notes             atomic.Pointer[noteBatch]
 	events            chan Event
 	left, right       [blockFrames]float32
 	oldL, oldR        [blockFrames]float32
@@ -230,6 +262,7 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), 16))}
 	for index := 0; index < int(snapshot.count); index++ {
 		snapshot.ids[index] = score.Tracks[index].ID
+		snapshot.kinds[index] = score.Tracks[index].Kind
 	}
 	return snapshot
 }
@@ -246,6 +279,85 @@ func (p *Player) TrackIndex(id string) (uint8, bool) {
 		}
 	}
 	return 0, false
+}
+
+// Note queues a live note for the named acid or drum track. Requests are
+// resolved and applied by Read, so the control path never touches engine state.
+func (p *Player) Note(track string, note, velocity int, on bool) error {
+	if track == "" {
+		return fmt.Errorf("track is required")
+	}
+	if note < 0 || note > 127 {
+		return fmt.Errorf("note must be in MIDI range 0–127")
+	}
+	if velocity < 0 || velocity > 127 {
+		return fmt.Errorf("velocity must be in MIDI range 0–127")
+	}
+	snapshot := p.trackNames.Load()
+	if snapshot == nil {
+		return fmt.Errorf("track %q is not in the playing score", track)
+	}
+	for index := 0; index < int(snapshot.count); index++ {
+		if snapshot.ids[index] != track {
+			continue
+		}
+		kind := snapshot.kinds[index]
+		if kind == "drums" {
+			if _, ok := GMDrumLane(note); !ok {
+				return fmt.Errorf("MIDI drum note %d is not in the General MIDI map", note)
+			}
+		} else if kind != "acid" {
+			return fmt.Errorf("track %q is not an acid or drum track", track)
+		}
+		input := noteInput{Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on}
+		for {
+			old := p.notes.Load()
+			next := &noteBatch{}
+			if old != nil {
+				*next = *old
+			}
+			if next.count == uint16(len(next.inputs)) {
+				return fmt.Errorf("live note queue is full")
+			}
+			next.inputs[next.count] = input
+			next.count++
+			if p.notes.CompareAndSwap(old, next) {
+				return nil
+			}
+		}
+	}
+	return fmt.Errorf("track %q is not in the playing score", track)
+}
+
+// GMDrumLane returns Cicada's lane index for the supported General MIDI
+// percussion notes. Other pitches are not drum triggers.
+func GMDrumLane(note int) (uint16, bool) {
+	switch note {
+	case 36:
+		return 0, true // bd
+	case 37:
+		return 5, true // rs
+	case 38:
+		return 1, true // sd
+	case 39:
+		return 4, true // cp
+	case 41, 43:
+		return 6, true // lt
+	case 42:
+		return 2, true // ch
+	case 45, 47:
+		return 7, true // mt
+	case 46:
+		return 3, true // oh
+	case 48, 50:
+		return 8, true // ht
+	case 49, 57:
+		return 10, true // cy
+	case 56:
+		return 9, true // cb
+	default:
+		return 0, false
+	}
 }
 
 // SetParam accepts concurrent control calls. A snapshot CAS makes the latest
@@ -437,10 +549,21 @@ func (p *Player) publishMeter(frame MeterFrame) {
 // LaunchScene keeps the newest requested scene. The audio reader resolves its
 // name against the score active at the landing bar, so edits cannot stale an index.
 func (p *Player) LaunchScene(name string) error {
+	return p.LaunchSceneQuantized(name, cmd.Quantize(2))
+}
+
+// LaunchSceneQuantized schedules the newest scene request at the next
+// requested musical boundary. The audio reader resolves the name against the
+// score active at that boundary.
+func (p *Player) LaunchSceneQuantized(name string, quantize cmd.Quantize) error {
 	if name == "" {
 		return fmt.Errorf("scene name is required")
 	}
-	p.launches.Store(&name)
+	target, err := p.nextQuantizedTick(quantize)
+	if err != nil {
+		return err
+	}
+	p.launches.Store(&sceneLaunch{id: p.launchSequence.Add(1), name: name, targetTick: target, quantize: quantize})
 	return nil
 }
 
@@ -495,29 +618,42 @@ func (p *Player) CancelStart() {
 // SelectPattern queues the latest launch per track in an immutable snapshot.
 // The audio reader takes that snapshot at a bar boundary without locking.
 func (p *Player) SelectPattern(track, pattern string) error {
+	return p.SelectPatternQuantized(track, pattern, cmd.Quantize(2))
+}
+
+// SelectPatternQuantized queues the latest slot request per track and lands
+// it at the next requested transport boundary.
+func (p *Player) SelectPatternQuantized(track, pattern string, quantize cmd.Quantize) error {
 	if track == "" || pattern == "" {
 		return fmt.Errorf("track and pattern are required")
 	}
+	target, err := p.nextQuantizedTick(quantize)
+	if err != nil {
+		return err
+	}
 	for {
 		old := p.slotLaunches.Load()
-		next := &slotBatch{}
+		next := &slotLaunchBatch{}
 		if old != nil {
 			*next = *old
 		}
 		index := -1
-		for i, request := range next.requests {
-			if request.Track == track {
+		for i, queued := range next.requests {
+			if queued.request.Track == track {
 				index = i
 				break
 			}
-			if request.Track == "" && index < 0 {
+			if queued.request.Track == "" && index < 0 {
 				index = i
 			}
 		}
 		if index < 0 {
 			return fmt.Errorf("too many tracks have queued patterns")
 		}
-		next.requests[index] = SlotRequest{Track: track, Pattern: pattern}
+		next.requests[index] = slotLaunch{
+			request: SlotRequest{Track: track, Pattern: pattern}, id: p.launchSequence.Add(1),
+			TargetTick: target, quantize: quantize,
+		}
 		if p.slotLaunches.CompareAndSwap(old, next) {
 			return nil
 		}
@@ -531,18 +667,76 @@ func (p *Player) CancelPatterns() {
 // PendingScene can be read by a UI thread while Read renders audio.
 func (p *Player) PendingScene() string {
 	if request := p.launches.Load(); request != nil {
-		return *request
+		return request.name
 	}
 	return ""
+}
+
+func (p *Player) PendingSceneQuantize() uint32 {
+	if request := p.launches.Load(); request != nil {
+		return uint32(request.quantize)
+	}
+	return 0
 }
 
 // PendingPatterns returns a copy of queued pattern launches. An empty Track
 // marks an unused entry. Read can consume the queue while the UI takes its copy.
 func (p *Player) PendingPatterns() [16]SlotRequest {
 	if batch := p.slotLaunches.Load(); batch != nil {
-		return batch.requests
+		var requests [16]SlotRequest
+		for index, queued := range batch.requests {
+			requests[index] = queued.request
+		}
+		return requests
 	}
 	return [16]SlotRequest{}
+}
+
+func (p *Player) PendingPatternQuantizes() map[string]uint32 {
+	batch := p.slotLaunches.Load()
+	if batch == nil {
+		return nil
+	}
+	quantizes := make(map[string]uint32)
+	for _, queued := range batch.requests {
+		if queued.request.Track != "" {
+			quantizes[queued.request.Track] = uint32(queued.quantize)
+		}
+	}
+	return quantizes
+}
+
+func (p *Player) nextQuantizedTick(quantize cmd.Quantize) (int64, error) {
+	quantum := int64(0)
+	switch quantize {
+	case 1:
+		quantum = seq.PPQ
+	case 2, 5:
+		quantum = seq.TicksPerBar
+	case 6:
+		quantum = 2 * seq.TicksPerBar
+	case 8:
+		quantum = 4 * seq.TicksPerBar
+	default:
+		return 0, fmt.Errorf("quantize must be next beat, next bar, 2 bars, or 4 bars")
+	}
+	position := p.Position()
+	if position.Bar < 1 || position.Step < 1 {
+		return 0, fmt.Errorf("transport position is unavailable")
+	}
+	tick := (position.Bar-1)*seq.TicksPerBar + (position.Step-1)*seq.TicksPerStep
+	return nextQuantizedAfter(tick, quantize, quantum)
+}
+
+func nextQuantizedAfter(tick int64, quantize cmd.Quantize, quantum int64) (int64, error) {
+	target, err := seq.QuantizeTick(tick, quantize, 16)
+	if err != nil {
+		return 0, err
+	}
+	if target <= tick {
+		target += quantum
+	}
+	return target, nil
 }
 
 // Position can be read safely by a UI thread while Read renders audio.
@@ -674,60 +868,8 @@ func (p *Player) renderBlock() {
 			}
 		default:
 		}
-		// A freshly swapped engine also receives Seek and Play at this bar.
-		// Let those commands settle before a scene launch on the next bar.
-		if !swapped {
-			if request := p.launches.Swap(nil); request != nil {
-				name := *request
-				index := -1
-				for i, candidate := range p.current.SceneIDs {
-					if candidate == name {
-						index = i
-						break
-					}
-				}
-				if index < 0 || index > int(^uint16(0)) {
-					p.emit(Event{Bar: p.bar + 1, Name: name, Kind: "scene-error"})
-				} else if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: uint16(index), Arg0: 0}) {
-					p.fault = fmt.Errorf("live engine rejected scene %q", name)
-					return
-				} else {
-					p.emit(Event{Bar: p.bar + 1, Name: name, Kind: "scene"})
-				}
-			}
-			if batch := p.slotLaunches.Swap(nil); batch != nil {
-				for _, request := range batch.requests {
-					if request.Track == "" {
-						continue
-					}
-					track := -1
-					for i, candidate := range p.current.Tracks {
-						if candidate.ID == request.Track {
-							track = i
-							break
-						}
-					}
-					if track < 0 || track >= 16 {
-						p.emit(Event{Bar: p.bar + 1, Name: request.Pattern, Track: request.Track, Kind: "slot-error"})
-						continue
-					}
-					slot := -1
-					for j, name := range p.current.Tracks[track].Slots {
-						if name == request.Pattern {
-							slot = j
-							break
-						}
-					}
-					if slot < 0 {
-						p.emit(Event{Bar: p.bar + 1, Name: request.Pattern, Track: request.Track, Kind: "slot-error"})
-					} else if !p.current.Engine.Push(cmd.Command{Op: cmd.OpSelectPattern, Track: uint8(track), Index: uint16(slot), Arg0: 0}) {
-						p.fault = fmt.Errorf("live engine rejected pattern %q on track %q", request.Pattern, request.Track)
-						return
-					} else {
-						p.emit(Event{Bar: p.bar + 1, Name: request.Pattern, Track: request.Track, Kind: "slot"})
-					}
-				}
-			}
+		if swapped {
+			p.requeuePendingLaunches()
 		}
 		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 	}
@@ -738,6 +880,9 @@ func (p *Player) renderBlock() {
 	}
 	tick := p.clock.TickAtSample(p.sample)
 	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
+	p.queueLiveNotes()
+	p.queueSceneLaunch()
+	p.queueSlotLaunches()
 	p.applyOverrides(p.current.Engine, p.current, false)
 	p.current.Engine.Render(p.left[:frames], p.right[:frames])
 	var message cmd.Message
@@ -778,8 +923,319 @@ func (p *Player) renderBlock() {
 		binary.LittleEndian.PutUint32(p.pcm[i*8:], math.Float32bits(p.left[i]))
 		binary.LittleEndian.PutUint32(p.pcm[i*8+4:], math.Float32bits(p.right[i]))
 	}
+	endTick := p.clock.TickAtSample(p.sample + int64(frames))
+	p.completeSceneLaunch(endTick)
+	p.completeSlotLaunches(endTick)
 	p.sample += int64(frames)
 	p.buffered, p.read = frames*8, 0
+}
+
+func (p *Player) queueLiveNotes() {
+	batch := p.notes.Swap(nil)
+	if batch == nil {
+		return
+	}
+	snapshot := p.trackNames.Load()
+	for index := 0; index < int(batch.count); index++ {
+		input := batch.inputs[index]
+		track, kind, found := findTrack(snapshot, input.Track)
+		if !found {
+			p.emit(Event{Track: input.Track, Name: fmt.Sprintf("track %q is no longer in the playing score", input.Track), Kind: "note-error"})
+			continue
+		}
+		command := cmd.Command{Track: track}
+		if kind == "acid" {
+			if input.On {
+				command.Op = cmd.OpNoteOn
+				command.Arg0 = uint32(input.Note) | uint32(input.Velocity)<<8
+			} else {
+				command.Op, command.Index = cmd.OpNoteOff, 0xffff
+			}
+		} else if kind == "drums" {
+			lane, ok := GMDrumLane(int(input.Note))
+			if !ok {
+				p.emit(Event{Track: input.Track, Name: fmt.Sprintf("MIDI drum note %d is not in the General MIDI map", input.Note), Kind: "note-error"})
+				continue
+			}
+			command.Index = lane
+			if input.On {
+				command.Op = cmd.OpNoteOn
+				command.Arg0 = uint32(input.Note) | uint32(input.Velocity)<<8
+			} else {
+				command.Op = cmd.OpNoteOff
+			}
+		} else {
+			p.emit(Event{Track: input.Track, Name: fmt.Sprintf("track %q is not an acid or drum track", input.Track), Kind: "note-error"})
+			continue
+		}
+		if !p.current.Engine.Push(command) {
+			p.emit(Event{Track: input.Track, Name: "live note command queue is full", Kind: "note-error"})
+			continue
+		}
+		eventKind := "note-on"
+		if !input.On {
+			eventKind = "note-off"
+		}
+		p.emit(Event{Bar: p.Position().Bar, Name: fmt.Sprintf("%d", input.Note), Track: input.Track, Kind: eventKind})
+	}
+}
+
+func findTrack(snapshot *trackNameSnapshot, id string) (uint8, string, bool) {
+	if snapshot == nil {
+		return 0, "", false
+	}
+	for index := 0; index < int(snapshot.count); index++ {
+		if snapshot.ids[index] == id {
+			return uint8(index), snapshot.kinds[index], true
+		}
+	}
+	return 0, "", false
+}
+
+func (p *Player) queueSceneLaunch() {
+	request := p.launches.Load()
+	if request == nil || request.submitted {
+		return
+	}
+	if len(p.offers) != 0 && p.sample < p.nextBarSample && request.targetTick >= p.clock.TickAtSample(p.nextBarSample) {
+		return
+	}
+	endSample := min(p.sample+blockFrames, p.nextBarSample)
+	if request.targetTick > p.clock.TickAtSample(endSample) {
+		return
+	}
+	index := -1
+	for sceneIndex, name := range p.current.SceneIDs {
+		if name == request.name {
+			index = sceneIndex
+			break
+		}
+	}
+	if index < 0 || index > int(^uint16(0)) {
+		if p.launches.CompareAndSwap(request, nil) {
+			p.emit(Event{Bar: request.targetTick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene-error"})
+		}
+		return
+	}
+	submitted := *request
+	submitted.submitted = true
+	if !p.launches.CompareAndSwap(request, &submitted) {
+		return
+	}
+	if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: uint16(index), Tick: request.targetTick}) {
+		p.launches.CompareAndSwap(&submitted, nil)
+		p.emit(Event{Bar: request.targetTick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene-error"})
+	}
+}
+
+func (p *Player) requeuePendingLaunches() {
+	tick := p.clock.TickAtSample(p.sample)
+	for {
+		old := p.launches.Load()
+		if old == nil {
+			break
+		}
+		next := *old
+		next.submitted = false
+		if next.targetTick <= tick {
+			quantum, ok := quantizeQuantum(next.quantize)
+			if !ok {
+				p.launches.CompareAndSwap(old, nil)
+				break
+			}
+			var err error
+			next.targetTick, err = nextQuantizedAfter(tick, next.quantize, quantum)
+			if err != nil {
+				p.launches.CompareAndSwap(old, nil)
+				break
+			}
+		}
+		if p.launches.CompareAndSwap(old, &next) {
+			break
+		}
+	}
+	for {
+		old := p.slotLaunches.Load()
+		if old == nil {
+			return
+		}
+		next := *old
+		changed := false
+		for index, request := range next.requests {
+			if request.request.Track == "" {
+				continue
+			}
+			request.submitted = false
+			if request.TargetTick <= tick {
+				quantum, ok := quantizeQuantum(request.quantize)
+				if !ok {
+					next.requests[index] = slotLaunch{}
+					changed = true
+					continue
+				}
+				target, err := nextQuantizedAfter(tick, request.quantize, quantum)
+				if err != nil {
+					next.requests[index] = slotLaunch{}
+					changed = true
+					continue
+				}
+				request.TargetTick = target
+			}
+			next.requests[index] = request
+			changed = true
+		}
+		if !changed || p.slotLaunches.CompareAndSwap(old, &next) {
+			return
+		}
+	}
+}
+
+func quantizeQuantum(quantize cmd.Quantize) (int64, bool) {
+	switch quantize {
+	case 1:
+		return seq.PPQ, true
+	case 2, 5:
+		return seq.TicksPerBar, true
+	case 6:
+		return 2 * seq.TicksPerBar, true
+	case 8:
+		return 4 * seq.TicksPerBar, true
+	default:
+		return 0, false
+	}
+}
+
+func (p *Player) queueSlotLaunches() {
+	type scheduledSlot struct {
+		request slotLaunch
+		track   int
+		slot    int
+	}
+	for {
+		old := p.slotLaunches.Load()
+		if old == nil {
+			return
+		}
+		endSample := min(p.sample+blockFrames, p.nextBarSample)
+		horizon := p.clock.TickAtSample(endSample)
+		next := *old
+		changed := false
+		var failed []slotLaunch
+		var scheduled []scheduledSlot
+		for index, request := range old.requests {
+			if request.request.Track == "" || request.submitted || request.TargetTick > horizon {
+				continue
+			}
+			if len(p.offers) != 0 && p.sample < p.nextBarSample && request.TargetTick >= p.clock.TickAtSample(p.nextBarSample) {
+				continue
+			}
+			track := -1
+			for candidate, value := range p.current.Tracks {
+				if value.ID == request.request.Track {
+					track = candidate
+					break
+				}
+			}
+			slot := -1
+			if track >= 0 && track < 16 {
+				for candidate, name := range p.current.Tracks[track].Slots {
+					if name == request.request.Pattern {
+						slot = candidate
+						break
+					}
+				}
+			}
+			if track < 0 || track >= 16 || slot < 0 {
+				failed = append(failed, request)
+				next.requests[index] = slotLaunch{}
+				changed = true
+				continue
+			}
+			next.requests[index].submitted = true
+			request.submitted = true
+			scheduled = append(scheduled, scheduledSlot{request: request, track: track, slot: slot})
+			changed = true
+		}
+		if !changed {
+			return
+		}
+		if !p.slotLaunches.CompareAndSwap(old, &next) {
+			continue
+		}
+		for _, request := range failed {
+			p.emit(Event{Bar: request.TargetTick/seq.TicksPerBar + 1, Name: request.request.Pattern, Track: request.request.Track, Kind: "slot-error"})
+		}
+		for _, queued := range scheduled {
+			// A submitted request is marked before pushing so a concurrent reader
+			// cannot duplicate it. The Engine owns the command queue on this path.
+			request := queued.request
+			if !p.current.Engine.Push(cmd.Command{Op: cmd.OpSelectPattern, Track: uint8(queued.track), Index: uint16(queued.slot), Tick: request.TargetTick}) {
+				p.emit(Event{Bar: request.TargetTick/seq.TicksPerBar + 1, Name: request.request.Pattern, Track: request.request.Track, Kind: "slot-error"})
+				p.removeSlotRequest(request.id)
+			}
+		}
+		return
+	}
+}
+
+func (p *Player) removeSlotRequest(id uint64) {
+	for {
+		old := p.slotLaunches.Load()
+		if old == nil {
+			return
+		}
+		next := *old
+		changed := false
+		for index, request := range next.requests {
+			if request.id == id {
+				next.requests[index] = slotLaunch{}
+				changed = true
+				break
+			}
+		}
+		if !changed || p.slotLaunches.CompareAndSwap(old, &next) {
+			return
+		}
+	}
+}
+
+func (p *Player) completeSceneLaunch(endTick int64) {
+	request := p.launches.Load()
+	if request == nil || !request.submitted || request.targetTick >= endTick {
+		return
+	}
+	if p.launches.CompareAndSwap(request, nil) {
+		p.emit(Event{Bar: request.targetTick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene"})
+	}
+}
+
+func (p *Player) completeSlotLaunches(endTick int64) {
+	for {
+		old := p.slotLaunches.Load()
+		if old == nil {
+			return
+		}
+		next := *old
+		var landed []slotLaunch
+		changed := false
+		for index, request := range old.requests {
+			if request.request.Track != "" && request.submitted && request.TargetTick < endTick {
+				landed = append(landed, request)
+				next.requests[index] = slotLaunch{}
+				changed = true
+			}
+		}
+		if !changed {
+			return
+		}
+		if !p.slotLaunches.CompareAndSwap(old, &next) {
+			continue
+		}
+		for _, request := range landed {
+			p.emit(Event{Bar: request.TargetTick/seq.TicksPerBar + 1, Name: request.request.Pattern, Track: request.request.Track, Kind: "slot"})
+		}
+		return
+	}
 }
 
 func (p *Player) emit(event Event) {
