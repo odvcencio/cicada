@@ -63,6 +63,7 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 		return
 	}
 	e.launchScene(c.Index)
+	e.manualSceneTick = e.transport.Tick()
 }
 
 // scenePatternEndTick finds the first shared end of the active patterns,
@@ -127,8 +128,15 @@ func gcd(a, b int64) int64 {
 }
 
 func (e *Engine) launchScene(index uint16) {
+	e.launchSceneWithSkip(index, false)
+}
+
+func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
 	scene := &e.scenes[index]
 	for track := 0; track < e.tracks && !e.faulted; track++ {
+		if skipManualPatterns && e.manualPatternTick[track] == e.transport.Tick() {
+			continue
+		}
 		binding := scene.Track[track]
 		p := &e.patterns[track]
 		switch binding.Mode {
@@ -209,5 +217,7 @@ func (e *Engine) advanceSong() {
 	}
 	entry := e.song[e.songIndex]
 	e.songEndTick += int64(entry.Bars) * seq.TicksPerBar
-	e.launchScene(entry.Scene)
+	if e.manualSceneTick != e.transport.Tick() {
+		e.launchSceneWithSkip(entry.Scene, true)
+	}
 }
