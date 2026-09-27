@@ -79,12 +79,16 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 		t.Fatalf("incomplete current registry response: rev=%q registry=%d addresses=%d", params.Revision, len(params.Registry), len(params.Addresses))
 	}
 	page := studioCall(t, handler, "/", nil)
-	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) {
+	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `src="/studio-master.js"`) || !strings.Contains(page.Body.String(), `href="#master">Master</a>`) || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `id="loudness-history"`) || !strings.Contains(page.Body.String(), `id="gain-reduction-history"`) || !strings.Contains(page.Body.String(), `id="reset-integrated"`) || !strings.Contains(page.Body.String(), `id="export-wav"`) || !strings.Contains(page.Body.String(), `href="#mixer-settings">Open mixer compressor settings</a>`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) || !strings.Contains(page.Body.String(), "score-minus14LUFS.wav") {
 		t.Fatalf("Studio meter markup missing: %d", page.Code)
 	}
 	script := studioCall(t, handler, "/studio-audio.js", nil)
 	if script.Code != http.StatusOK || !strings.Contains(script.Body.String(), "window.cicadaAudio") && !strings.Contains(script.Body.String(), "window.cicadaAudio =") {
 		t.Fatalf("audio facade not served: %d", script.Code)
+	}
+	masterScript := studioCall(t, handler, "/studio-master.js", nil)
+	if masterScript.Code != http.StatusOK || !strings.Contains(masterScript.Body.String(), "createHistoryBuffer") {
+		t.Fatalf("Master view script not served: %d", masterScript.Code)
 	}
 }
 
@@ -149,11 +153,18 @@ func TestStudioAudioSocketRejectsInvalidParametersWithTypedErrors(t *testing.T) 
 	if err := wsjson.Write(ctx, connection, map[string]any{"type": "solo", "track": "drums", "on": true}); err != nil {
 		t.Fatal(err)
 	}
+	if err := wsjson.Write(ctx, connection, map[string]any{"type": "loudness-reset"}); err != nil {
+		t.Fatal(err)
+	}
 	s.transport.publishMeter(liveplay.MeterFrame{
 		Tick: 1234, TrackCount: 1, TrackIDs: [16]string{"bass"}, Tracks: [16]liveplay.MeterValue{{Peak: .5, RMS: .25}},
 		HasReturnA: true, ReturnA: liveplay.MeterValue{Peak: 0, RMS: .1},
 		Music: liveplay.MeterValue{Peak: .8, RMS: .4}, MasterPeak: .7, MasterRMS: .3, MasterPre: liveplay.MeterValue{Peak: .8},
 		CompGR: 2.5, LimiterGR: .25,
+	}, liveplay.LoudnessSnapshot{
+		Sequence: 1, MomentaryLUFS: -18.2, ShortTermLUFS: -17.9, IntegratedLUFS: -18.4, RangeLU: 4.1,
+		TruePeakDBTP: -1.2, SamplePeakDBFS: -1.5, DroppedBlocks: 3,
+		HasMomentary: true, HasShortTerm: true, HasIntegrated: true, HasRange: true, HasTruePeak: true, HasSamplePeak: true,
 	})
 	var meter struct {
 		Type    string                                 `json:"type"`
@@ -169,12 +180,24 @@ func TestStudioAudioSocketRejectsInvalidParametersWithTypedErrors(t *testing.T) 
 			LimiterGR float64 `json:"limiter_gr"`
 			Over      bool    `json:"over"`
 		} `json:"master"`
+		Loudness struct {
+			Momentary  *float64 `json:"momentary"`
+			ShortTerm  *float64 `json:"short_term"`
+			Integrated *float64 `json:"integrated"`
+			Range      *float64 `json:"range"`
+			TruePeak   *float64 `json:"true_peak"`
+			SamplePeak *float64 `json:"sample_peak"`
+			Dropped    uint64   `json:"dropped_blocks"`
+		} `json:"loudness"`
 	}
 	if err := wsjson.Read(ctx, connection, &meter); err != nil {
 		t.Fatal(err)
 	}
 	if meter.Type != "meters" || meter.Tick != 1234 || math.Abs(meter.Tracks["bass"].Peak+6.0206) > .01 || meter.Returns["a"].Peak != -120 || meter.Master.CompGR != 2.5 || meter.Master.LimiterGR != .25 {
 		t.Fatalf("wire meter values: %+v", meter)
+	}
+	if meter.Loudness.Momentary == nil || *meter.Loudness.Momentary != -18.2 || meter.Loudness.ShortTerm == nil || *meter.Loudness.ShortTerm != -17.9 || meter.Loudness.Integrated == nil || *meter.Loudness.Integrated != -18.4 || meter.Loudness.Range == nil || *meter.Loudness.Range != 4.1 || meter.Loudness.TruePeak == nil || *meter.Loudness.TruePeak != -1.2 || meter.Loudness.SamplePeak == nil || *meter.Loudness.SamplePeak != -1.5 || meter.Loudness.Dropped != 3 {
+		t.Fatalf("wire loudness values: %+v", meter.Loudness)
 	}
 	if _, ok := meter.Returns["b"]; ok {
 		t.Fatal("absent return B was included")
