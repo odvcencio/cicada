@@ -2,10 +2,12 @@
    Quoted forms are literal terminals; /.../ forms are regular expressions.
    Brackets mean optional, braces mean zero-or-more, and parentheses group.
    Spaces, tabs, CR, LF, and // comments are ignored between tokens.
-   Expression operators are left-associative: * and / bind more tightly than + and -.
-   The lexer uses priority rules for overlapping drum-row tokens; this EBNF lists
-   their spellings but does not encode lexical priority. Semantic limits are in
-   edition-1.md. *)
+   Expression precedence (larger levels bind more tightly):
+     level 2 is left-associative for "*", "/"
+     level 1 is left-associative for "+", "-"
+   The DSL may also carry lexical priority, fields, and parser test cases;
+   EBNF shows accepted forms but does not encode that parser metadata.
+   Semantic limits are in edition-1.md. *)
 
 source_file ::= [ "cicada" , integer ] , { _declaration } ;
 _declaration ::= title_decl | tempo_decl | key_decl | seed_decl | instrument_decl | kit_decl |

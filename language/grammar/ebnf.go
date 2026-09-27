@@ -2,6 +2,7 @@ package grammar
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -18,10 +19,13 @@ func EBNF() (string, error) {
 	out.WriteString("   Quoted forms are literal terminals; /.../ forms are regular expressions.\n")
 	out.WriteString("   Brackets mean optional, braces mean zero-or-more, and parentheses group.\n")
 	out.WriteString("   Spaces, tabs, CR, LF, and // comments are ignored between tokens.\n")
-	out.WriteString("   Expression operators are left-associative: * and / bind more tightly than + and -.\n")
-	out.WriteString("   The lexer uses priority rules for overlapping drum-row tokens; this EBNF lists\n")
-	out.WriteString("   their spellings but does not encode lexical priority. Semantic limits are in\n")
-	out.WriteString("   edition-1.md. *)\n\n")
+	out.WriteString("   Expression precedence (larger levels bind more tightly):\n")
+	for _, note := range expressionPrecedence(g.Rules["expression"]) {
+		out.WriteString("     " + note + "\n")
+	}
+	out.WriteString("   The DSL may also carry lexical priority, fields, and parser test cases;\n")
+	out.WriteString("   EBNF shows accepted forms but does not encode that parser metadata.\n")
+	out.WriteString("   Semantic limits are in edition-1.md. *)\n\n")
 	for _, name := range g.RuleOrder {
 		rule := g.Rules[name]
 		rhs, err := renderEBNF(rule, grammargen.RuleKind(-1))
@@ -32,6 +36,65 @@ func EBNF() (string, error) {
 		out.WriteString(" ;\n")
 	}
 	return out.String(), nil
+}
+
+type precedenceTier struct {
+	level   int
+	assoc   string
+	options []string
+}
+
+func expressionPrecedence(rule *grammargen.Rule) []string {
+	var tiers []precedenceTier
+	var visit func(*grammargen.Rule)
+	visit = func(current *grammargen.Rule) {
+		if current == nil {
+			return
+		}
+		var assoc string
+		switch current.Kind {
+		case grammargen.RulePrecLeft:
+			assoc = "left-associative"
+		case grammargen.RulePrecRight:
+			assoc = "right-associative"
+		case grammargen.RulePrec:
+			assoc = "non-associative"
+		}
+		if assoc != "" {
+			var options []string
+			seen := make(map[string]bool)
+			var collect func(*grammargen.Rule)
+			collect = func(node *grammargen.Rule) {
+				if node == nil {
+					return
+				}
+				if node.Kind == grammargen.RuleString && !seen[node.Value] {
+					options = append(options, strconv.Quote(node.Value))
+					seen[node.Value] = true
+				}
+				if node.Kind == grammargen.RuleSymbol {
+					return
+				}
+				for _, child := range node.Children {
+					collect(child)
+				}
+			}
+			for _, child := range current.Children {
+				collect(child)
+			}
+			tiers = append(tiers, precedenceTier{level: current.Prec, assoc: assoc, options: options})
+		}
+		for _, child := range current.Children {
+			visit(child)
+		}
+	}
+	visit(rule)
+	sort.SliceStable(tiers, func(i, j int) bool { return tiers[i].level > tiers[j].level })
+	notes := make([]string, 0, len(tiers))
+	for _, tier := range tiers {
+		notes = append(notes, fmt.Sprintf("level %d is %s for %s", tier.level, tier.assoc, strings.Join(tier.options, ", ")))
+	}
+	return notes
 }
 
 func renderEBNF(rule *grammargen.Rule, parent grammargen.RuleKind) (string, error) {
