@@ -94,6 +94,8 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 		ticker := time.NewTicker(time.Second / 60)
 		defer ticker.Stop()
 		var sent uint64
+		var sentLoudness uint64
+		hasSentLoudness := false
 		for {
 			select {
 			case <-ctx.Done():
@@ -112,7 +114,15 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 					continue
 				}
 				writeCtx, done := context.WithTimeout(ctx, time.Second)
-				writeErr := connection.Write(writeCtx, websocket.MessageText, mustJSON(studioMeters(latest.frame)))
+				includeLoudness := latest.loudness.Sequence > 0 && (!hasSentLoudness || latest.loudness.Sequence != sentLoudness)
+				var message map[string]any
+				if includeLoudness {
+					message = studioMeters(latest.frame, latest.loudness)
+					sentLoudness, hasSentLoudness = latest.loudness.Sequence, true
+				} else {
+					message = studioMeters(latest.frame)
+				}
+				writeErr := connection.Write(writeCtx, websocket.MessageText, mustJSON(message))
 				done()
 				if writeErr != nil {
 					cancel()
@@ -153,6 +163,10 @@ func (s *studio) queueAudioError(ctx context.Context, outgoing chan<- any, messa
 }
 
 func (s *studio) applyAudioMessage(message audioClientMessage) error {
+	if message.Type == "loudness-reset" {
+		s.transport.resetLoudness()
+		return nil
+	}
 	p, _, err := s.liveProject()
 	if err != nil {
 		return err
@@ -217,7 +231,7 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 			id = kernel.ParamMixSolo
 		}
 	default:
-		return fmt.Errorf("type must be param, mute, or solo")
+		return fmt.Errorf("type must be param, mute, solo, or loudness-reset")
 	}
 	s.transport.mu.Lock()
 	stream := s.transport.stream
@@ -257,7 +271,7 @@ func dbfs(value float32) float64 {
 	return math.Max(-120, math.Min(24, db))
 }
 
-func studioMeters(frame liveplay.MeterFrame) map[string]any {
+func studioMeters(frame liveplay.MeterFrame, loudnessSnapshots ...liveplay.LoudnessSnapshot) map[string]any {
 	tracks := make(map[string]any, frame.TrackCount)
 	for index := 0; index < int(frame.TrackCount); index++ {
 		tracks[frame.TrackIDs[index]] = dbPair(frame.Tracks[index])
@@ -278,7 +292,29 @@ func studioMeters(frame liveplay.MeterFrame) map[string]any {
 		"comp_gr": math.Max(0, float64(frame.CompGR)), "limiter_gr": math.Max(0, float64(frame.LimiterGR)),
 		"over": dbfs(frame.MasterPre.Peak) > -0.3,
 	}
-	return map[string]any{"type": "meters", "tick": frame.Tick, "tracks": tracks, "returns": returns, "buses": buses, "master": master}
+	result := map[string]any{
+		"type": "meters", "tick": frame.Tick, "tracks": tracks, "returns": returns, "buses": buses, "master": master,
+	}
+	if len(loudnessSnapshots) != 0 {
+		loudness := loudnessSnapshots[0]
+		result["loudness"] = map[string]any{
+			"momentary":      nullableLoudness(loudness.MomentaryLUFS, loudness.HasMomentary),
+			"short_term":     nullableLoudness(loudness.ShortTermLUFS, loudness.HasShortTerm),
+			"integrated":     nullableLoudness(loudness.IntegratedLUFS, loudness.HasIntegrated),
+			"range":          nullableLoudness(loudness.RangeLU, loudness.HasRange),
+			"true_peak":      nullableLoudness(loudness.TruePeakDBTP, loudness.HasTruePeak),
+			"sample_peak":    nullableLoudness(loudness.SamplePeakDBFS, loudness.HasSamplePeak),
+			"dropped_blocks": loudness.DroppedBlocks,
+		}
+	}
+	return result
+}
+
+func nullableLoudness(value float64, valid bool) any {
+	if !valid || math.IsNaN(value) || math.IsInf(value, 0) {
+		return nil
+	}
+	return value
 }
 
 func dbPair(value liveplay.MeterValue) map[string]float64 {

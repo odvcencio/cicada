@@ -143,6 +143,7 @@ type Player struct {
 	meterScratch      MeterFrame
 	meterTick         int64
 	meterStarted      bool
+	loudness          *liveLoudness
 }
 
 func New(initial Score, rate int) (*Player, error) {
@@ -153,7 +154,12 @@ func New(initial Score, rate int) (*Player, error) {
 	if err != nil {
 		return nil, err
 	}
+	masterLoudness, err := newLiveLoudness(rate)
+	if err != nil {
+		return nil, err
+	}
 	if !initial.Engine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		masterLoudness.close()
 		return nil, fmt.Errorf("live engine rejected play")
 	}
 	initial.trackNames = makeTrackNames(initial)
@@ -161,13 +167,37 @@ func New(initial Score, rate int) (*Player, error) {
 		current: initial, clock: clock, rate: rate,
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
 		offers:        make(chan Score, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
-		meters: make(chan MeterFrame, 1),
+		meters: make(chan MeterFrame, 1), loudness: masterLoudness,
 	}
 	p.overrides.Store(&liveOverrides{})
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
 	p.trackNames.Store(initial.trackNames)
 	p.position.Store(1<<8 | 1)
 	return p, nil
+}
+
+// ResetLoudness schedules a reset on the meter goroutine. It never waits for
+// the audio reader or touches meter state owned by that goroutine.
+func (p *Player) ResetLoudness() {
+	if p.loudness != nil {
+		p.loudness.resetMeter()
+	}
+}
+
+// Loudness returns the latest lock-free snapshot from the off-thread meter.
+func (p *Player) Loudness() LoudnessSnapshot {
+	if p.loudness != nil {
+		return p.loudness.metrics()
+	}
+	return LoudnessSnapshot{}
+}
+
+// Close stops the meter worker. It must be called after the audio device has
+// stopped reading this player.
+func (p *Player) Close() {
+	if p.loudness != nil {
+		p.loudness.close()
+	}
 }
 
 // Offer replaces any edit that has not landed yet with the newest valid score.
@@ -741,6 +771,9 @@ func (p *Player) renderBlock() {
 		}
 		p.jumpFadeRemaining -= fadeFrames
 	}
+	// The engine output is post-limiter. Copy it only after transport fades have
+	// been applied, and never wait for the independent meter worker.
+	p.loudness.push(p.left[:frames], p.right[:frames])
 	for i := 0; i < frames; i++ {
 		binary.LittleEndian.PutUint32(p.pcm[i*8:], math.Float32bits(p.left[i]))
 		binary.LittleEndian.PutUint32(p.pcm[i*8+4:], math.Float32bits(p.right[i]))

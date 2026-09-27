@@ -38,6 +38,7 @@ func playCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	defer stream.Close()
 	ctx, ready, err := oto.NewContext(&oto.NewContextOptions{
 		SampleRate: liveSampleRate, ChannelCount: 2, Format: oto.FormatFloat32LE,
 		BufferSize: 20 * time.Millisecond, ApplicationName: "Cicada",

@@ -44,6 +44,7 @@ type studioTransport struct {
 type studioMeterSnapshot struct {
 	sequence uint64
 	frame    liveplay.MeterFrame
+	loudness liveplay.LoudnessSnapshot
 }
 
 type transportSnapshot struct {
@@ -115,6 +116,9 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 				return err
 			}
 			t.pendingSong, t.pendingSongID = scene, requestID
+		}
+		if !t.playing {
+			t.stream.ResetLoudness()
 		}
 		if t.player != nil {
 			t.player.Play()
@@ -254,7 +258,29 @@ func (t *studioTransport) close() {
 		t.player.PauseAndStopReading()
 		_ = t.player.Close()
 	}
+	if t.stream != nil {
+		t.stream.Close()
+	}
 	t.playing = false
+}
+
+func (t *studioTransport) resetLoudness() {
+	t.mu.Lock()
+	stream := t.stream
+	t.mu.Unlock()
+	if stream != nil {
+		stream.ResetLoudness()
+	}
+}
+
+func (t *studioTransport) loudness() liveplay.LoudnessSnapshot {
+	t.mu.Lock()
+	stream := t.stream
+	t.mu.Unlock()
+	if stream != nil {
+		return stream.Loudness()
+	}
+	return liveplay.LoudnessSnapshot{}
 }
 
 func (t *studioTransport) renderNull(ctx context.Context, stream *liveplay.Player) {
@@ -290,7 +316,7 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 		case event := <-stream.Events():
 			t.markLanded(event)
 		case frame := <-stream.Meters():
-			t.publishMeter(frame)
+			t.publishMeter(frame, stream.Loudness())
 		case <-ticker.C:
 			t.poll()
 		case <-health.C:
@@ -307,9 +333,15 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 	}
 }
 
-func (t *studioTransport) publishMeter(frame liveplay.MeterFrame) {
+func (t *studioTransport) publishMeter(frame liveplay.MeterFrame, loudnessSnapshots ...liveplay.LoudnessSnapshot) {
 	sequence := t.meterSequence.Add(1)
-	t.latestMeter.Store(&studioMeterSnapshot{sequence: sequence, frame: frame})
+	snapshot := studioMeterSnapshot{sequence: sequence, frame: frame}
+	if len(loudnessSnapshots) != 0 {
+		snapshot.loudness = loudnessSnapshots[0]
+	} else {
+		snapshot.loudness = t.loudness()
+	}
+	t.latestMeter.Store(&snapshot)
 }
 
 func (t *studioTransport) markLanded(event liveplay.Event) {
