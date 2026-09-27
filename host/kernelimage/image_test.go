@@ -1,6 +1,9 @@
 package kernelimage_test
 
 import (
+	"bytes"
+	"encoding/binary"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -304,6 +307,52 @@ func TestProjectImageRejectsCorruption(t *testing.T) {
 	corrupt = append(append([]byte(nil), encoded...), 0)
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
 		t.Fatal("trailing bytes were accepted")
+	}
+}
+
+func TestProjectImageDecodesVersionEightGraphWithoutGlideField(t *testing.T) {
+	program := graph.Program{
+		Len: 2, Output: 1, GlideMS: 60,
+		Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Pitch}, {Op: graph.Sine, A: 0}},
+	}
+	cfg := engine.Config{
+		SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000,
+	}
+	cfg.Track[0].Kind = engine.VoiceGraph
+	cfg.Track[0].Graph = program
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeWire := make([]byte, 0, int(program.Len)*8)
+	for i := uint8(0); i < program.Len; i++ {
+		node := program.Nodes[i]
+		nodeWire = append(nodeWire, byte(node.Op), node.A, node.B, node.C)
+		var value [4]byte
+		binary.LittleEndian.PutUint32(value[:], math.Float32bits(node.Value))
+		nodeWire = append(nodeWire, value[:]...)
+	}
+	nodeAt := bytes.Index(encoded, nodeWire)
+	if nodeAt < 8 || bytes.Index(encoded[nodeAt+1:], nodeWire) >= 0 {
+		t.Fatal("could not uniquely locate graph nodes in version-nine image")
+	}
+	if got := math.Float64frombits(binary.LittleEndian.Uint64(encoded[nodeAt-8 : nodeAt])); got != 60 {
+		t.Fatalf("encoded glide time is %g ms, want 60 ms", got)
+	}
+	legacy := make([]byte, 0, len(encoded)-8)
+	legacy = append(legacy, encoded[:nodeAt-8]...)
+	legacy = append(legacy, encoded[nodeAt:]...)
+	binary.LittleEndian.PutUint16(legacy[4:6], 8)
+
+	decoded, err := kernelimage.Decode(legacy, 48_000, 128)
+	if err != nil {
+		t.Fatalf("decode version-eight graph image: %v", err)
+	}
+	if decoded.Track[0].Graph.GlideMS != 0 {
+		t.Fatalf("version-eight image glide time is %g ms, want legacy zero", decoded.Track[0].Graph.GlideMS)
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatalf("decoded version-eight graph image cannot play: %v", err)
 	}
 }
 
