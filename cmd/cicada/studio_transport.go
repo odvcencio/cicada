@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -34,6 +35,15 @@ type studioTransport struct {
 	landed        int64
 	errText       string
 	history       *studioHistory
+	audioNull     bool
+	latestMeter   atomic.Pointer[studioMeterSnapshot]
+	meterSequence atomic.Uint64
+	nullPlaying   atomic.Bool
+}
+
+type studioMeterSnapshot struct {
+	sequence uint64
+	frame    liveplay.MeterFrame
 }
 
 type transportSnapshot struct {
@@ -84,7 +94,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	defer t.pollMu.Unlock()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.player != nil || t.playing && t.stream != nil {
+	if t.player != nil || t.audioNull && t.stream != nil || t.playing && t.stream != nil {
 		if t.player != nil {
 			if err := t.device.Err(); err != nil {
 				return err
@@ -110,6 +120,9 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			t.player.Play()
 		}
 		t.playing, t.errText = true, ""
+		if t.audioNull {
+			t.nullPlaying.Store(true)
+		}
 		return nil
 	}
 	var fingerprint [32]byte
@@ -139,38 +152,51 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			return err
 		}
 	}
-	device, ready, err := oto.NewContext(&oto.NewContextOptions{
-		SampleRate: liveSampleRate, ChannelCount: 2, Format: oto.FormatFloat32LE,
-		BufferSize: 20 * time.Millisecond, ApplicationName: "Cicada Studio",
-	})
-	if err != nil {
-		return err
+	var device *oto.Context
+	var player *oto.Player
+	if !t.audioNull {
+		device, ready, createErr := oto.NewContext(&oto.NewContextOptions{
+			SampleRate: liveSampleRate, ChannelCount: 2, Format: oto.FormatFloat32LE,
+			BufferSize: 20 * time.Millisecond, ApplicationName: "Cicada Studio",
+		})
+		if createErr != nil {
+			return createErr
+		}
+		select {
+		case <-ready:
+		case <-time.After(10 * time.Second):
+			return fmt.Errorf("audio device did not become ready within 10 seconds")
+		}
+		if err := device.Err(); err != nil {
+			return err
+		}
+		player = device.NewPlayer(stream)
+		player.SetBufferSize(liveBlockFrames * 8 * 4)
 	}
-	select {
-	case <-ready:
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("audio device did not become ready within 10 seconds")
-	}
-	if err := device.Err(); err != nil {
-		return err
-	}
-	player := device.NewPlayer(stream)
-	player.SetBufferSize(liveBlockFrames * 8 * 4)
 	ctx, cancel := context.WithCancel(context.Background())
 	t.stream, t.device, t.player, t.last, t.cancel = stream, device, player, fingerprint, cancel
 	t.playing, t.errText = true, ""
+	if t.audioNull {
+		t.nullPlaying.Store(true)
+	}
 	if index >= 0 {
 		t.pendingSong, t.pendingSongID = scene, requestID
 	}
-	player.Play()
-	go t.watch(ctx)
+	if player != nil {
+		player.Play()
+	} else {
+		go t.renderNull(ctx, stream)
+	}
+	go t.watch(ctx, stream)
 	return nil
 }
 
 func (t *studioTransport) stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.player != nil {
+	if t.audioNull {
+		t.nullPlaying.Store(false)
+	} else if t.player != nil {
 		t.player.PauseAndStopReading()
 	}
 	if t.stream != nil {
@@ -223,6 +249,7 @@ func (t *studioTransport) close() {
 	if t.cancel != nil {
 		t.cancel()
 	}
+	t.nullPlaying.Store(false)
 	if t.player != nil {
 		t.player.PauseAndStopReading()
 		_ = t.player.Close()
@@ -230,7 +257,28 @@ func (t *studioTransport) close() {
 	t.playing = false
 }
 
-func (t *studioTransport) watch(ctx context.Context) {
+func (t *studioTransport) renderNull(ctx context.Context, stream *liveplay.Player) {
+	period := time.Duration(int64(time.Second) * liveBlockFrames / liveSampleRate)
+	ticker := time.NewTicker(period)
+	defer ticker.Stop()
+	var block [liveBlockFrames * 8]byte
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if !t.nullPlaying.Load() {
+				continue
+			}
+			if _, err := stream.Read(block[:]); err != nil {
+				t.setError(err)
+				return
+			}
+		}
+	}
+}
+
+func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	health := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -239,20 +287,29 @@ func (t *studioTransport) watch(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			return
-		case event := <-t.stream.Events():
+		case event := <-stream.Events():
 			t.markLanded(event)
+		case frame := <-stream.Meters():
+			t.publishMeter(frame)
 		case <-ticker.C:
 			t.poll()
 		case <-health.C:
 			t.mu.Lock()
-			if err := t.device.Err(); err != nil {
-				t.errText, t.playing = err.Error(), false
-			} else if err := t.player.Err(); err != nil {
-				t.errText, t.playing = err.Error(), false
+			if t.device != nil {
+				if err := t.device.Err(); err != nil {
+					t.errText, t.playing = err.Error(), false
+				} else if err := t.player.Err(); err != nil {
+					t.errText, t.playing = err.Error(), false
+				}
 			}
 			t.mu.Unlock()
 		}
 	}
+}
+
+func (t *studioTransport) publishMeter(frame liveplay.MeterFrame) {
+	sequence := t.meterSequence.Add(1)
+	t.latestMeter.Store(&studioMeterSnapshot{sequence: sequence, frame: frame})
 }
 
 func (t *studioTransport) markLanded(event liveplay.Event) {
@@ -311,14 +368,18 @@ func (t *studioTransport) poll() {
 		t.mu.Unlock()
 		return
 	}
+	stream := t.stream
 	t.mu.Unlock()
+	if stream == nil {
+		return
+	}
 	project, err := compileStudioSource(t.path, source)
 	var next liveplay.Score
 	if err == nil {
 		next, err = compileLiveProject(t.path, project)
 	}
 	if err == nil {
-		err = t.stream.Offer(next)
+		err = stream.Offer(next)
 	}
 	if err != nil {
 		t.setError(err)
@@ -327,7 +388,7 @@ func (t *studioTransport) poll() {
 	t.mu.Lock()
 	t.last = fingerprint
 	t.pending, t.errText = true, ""
-	position := t.stream.Position()
+	position := stream.Position()
 	t.mu.Unlock()
 	if t.history != nil {
 		t.history.record("queued", "Edit queued for the next bar", position.Bar, position.Step, "")

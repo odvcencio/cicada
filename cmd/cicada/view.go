@@ -18,6 +18,9 @@ import (
 //go:embed view.html
 var scoreViewTemplate string
 
+//go:embed studio-audio.js
+var studioAudioScript []byte
+
 var drumLaneOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
 var pitchNames = []string{"C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"}
 

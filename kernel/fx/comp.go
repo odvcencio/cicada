@@ -42,24 +42,27 @@ func (p CompParams) Validate() error {
 // Compressor is a linked stereo feed-forward compressor. External detector
 // inputs use an 80 Hz sidechain highpass. All storage is fixed at construction.
 type Compressor struct {
-	params                CompParams
-	sampleRate            float64
-	rms                   []float64
-	rmsIndex              int
-	rmsSum                float64
-	peak                  float64
-	peakHold              int
-	holdFrames            int
-	sideLP                stereo
-	sideAlpha             float64
-	attack, release       float64
-	kneeFloor             float64
-	makeup, targetMakeup  float64
-	mix, targetMix        float64
-	smooth                float64
-	reduction             float64
-	lastLevel, lastTarget float64
-	fault                 bool
+	params                      CompParams
+	targetParams                CompParams
+	sampleRate                  float64
+	rms                         []float64
+	rmsIndex                    int
+	rmsSum                      float64
+	peak                        float64
+	peakHold                    int
+	holdFrames                  int
+	sideLP                      stereo
+	sideAlpha                   float64
+	attack, release             float64
+	targetAttack, targetRelease float64
+	kneeFloor                   float64
+	targetKneeFloor             float64
+	makeup, targetMakeup        float64
+	mix, targetMix              float64
+	smooth                      float64
+	reduction                   float64
+	lastLevel, lastTarget       float64
+	fault                       bool
 }
 
 func NewCompressor(sampleRate int) (*Compressor, error) {
@@ -80,18 +83,19 @@ func NewCompressor(sampleRate int) (*Compressor, error) {
 	return c, nil
 }
 
-func (c *Compressor) Params() CompParams { return c.params }
-func (c *Compressor) Fault() bool        { return c.fault }
-func (c *Compressor) LatencyFrames() int { return 0 }
+func (c *Compressor) Params() CompParams       { return c.targetParams }
+func (c *Compressor) Fault() bool              { return c.fault }
+func (c *Compressor) LatencyFrames() int       { return 0 }
+func (c *Compressor) GainReductionDB() float64 { return c.reduction }
 
 func (c *Compressor) SetParams(p CompParams) error {
 	if err := p.Validate(); err != nil {
 		return err
 	}
-	c.params = p
-	c.attack = 1 - math.Exp(-1/(p.AttackMs*.001*c.sampleRate))
-	c.release = 1 - math.Exp(-1/(p.ReleaseMs*.001*c.sampleRate))
-	c.kneeFloor = math.Pow(10, (p.Threshold-p.Knee/2)/20)
+	c.targetParams = p
+	c.targetAttack = 1 - math.Exp(-1/(p.AttackMs*.001*c.sampleRate))
+	c.targetRelease = 1 - math.Exp(-1/(p.ReleaseMs*.001*c.sampleRate))
+	c.targetKneeFloor = math.Pow(10, (p.Threshold-p.Knee/2)/20)
 	c.lastLevel = math.NaN()
 	c.targetMakeup = p.MakeupDB
 	if p.MakeupAuto {
@@ -105,17 +109,26 @@ func (c *Compressor) Reset() {
 	clear(c.rms)
 	c.rmsIndex, c.rmsSum, c.peak, c.peakHold = 0, 0, 0, 0
 	c.sideLP = stereo{}
+	c.params = c.targetParams
+	c.attack, c.release, c.kneeFloor = c.targetAttack, c.targetRelease, c.targetKneeFloor
 	c.makeup, c.mix, c.reduction, c.fault = c.targetMakeup, c.targetMix, 0, false
 	c.lastLevel, c.lastTarget = math.NaN(), 0
 }
 
 func (c *Compressor) reductionDB(level float64) float64 {
-	if level <= c.kneeFloor || c.params.Ratio == 1 {
+	return reductionDBFor(level, c.targetParams.Threshold, c.targetParams.Ratio, c.targetParams.Knee, c.targetKneeFloor)
+}
+
+func (c *Compressor) reductionDBActive(level float64) float64 {
+	return reductionDBFor(level, c.params.Threshold, c.params.Ratio, c.params.Knee, c.kneeFloor)
+}
+
+func reductionDBFor(level, threshold, ratio, knee, kneeFloor float64) float64 {
+	if level <= kneeFloor || ratio == 1 {
 		return 0
 	}
-	over := (20/(math.Log2E*math.Ln10))*fastmath.Log2(level) - c.params.Threshold
-	slope := 1 - 1/c.params.Ratio
-	knee := c.params.Knee
+	over := (20/(math.Log2E*math.Ln10))*fastmath.Log2(level) - threshold
+	slope := 1 - 1/ratio
 	if knee == 0 || over >= knee/2 {
 		return math.Max(0, over) * slope
 	}
@@ -135,6 +148,31 @@ func (c *Compressor) process(left, right, detectL, detectR float32, external boo
 	if !finite(l) || !finite(r) || !finite(dl) || !finite(dr) {
 		c.fault = true
 		return 0, 0
+	}
+	changed := false
+	if c.params.Threshold != c.targetParams.Threshold {
+		c.params.Threshold += (c.targetParams.Threshold - c.params.Threshold) * c.smooth
+		c.kneeFloor += (c.targetKneeFloor - c.kneeFloor) * c.smooth
+		changed = true
+	}
+	if c.params.Ratio != c.targetParams.Ratio {
+		c.params.Ratio += (c.targetParams.Ratio - c.params.Ratio) * c.smooth
+		changed = true
+	}
+	if c.params.Knee != c.targetParams.Knee {
+		c.params.Knee += (c.targetParams.Knee - c.params.Knee) * c.smooth
+		changed = true
+	}
+	if c.attack != c.targetAttack {
+		c.attack += (c.targetAttack - c.attack) * c.smooth
+		changed = true
+	}
+	if c.release != c.targetRelease {
+		c.release += (c.targetRelease - c.release) * c.smooth
+		changed = true
+	}
+	if changed {
+		c.lastLevel = math.NaN()
 	}
 	if external {
 		c.sideLP.left += (dl - c.sideLP.left) * c.sideAlpha
@@ -163,7 +201,7 @@ func (c *Compressor) process(left, right, detectL, detectR float32, external boo
 	}
 	target := c.lastTarget
 	if level != c.lastLevel {
-		target = c.reductionDB(level)
+		target = c.reductionDBActive(level)
 		c.lastLevel, c.lastTarget = level, target
 	}
 	coefficient := c.release
