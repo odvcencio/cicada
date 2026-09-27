@@ -1,4 +1,4 @@
-.PHONY: test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm test-kernel-wasm build-phrase-wasm test-phrase-wasm
+.PHONY: test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm
 
 test:
 	go test ./... -count=1
@@ -38,8 +38,15 @@ build-kernel-wasm:
 	GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm
 	go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm
 
-test-kernel-wasm: build-kernel-wasm
+build-loudness-wasm:
+	mkdir -p build
+	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-loudness.wasm ./cmd/cicada-loudness-wasm
+
+test-kernel-wasm: build-kernel-wasm build-loudness-wasm
 	go test -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
+
+test-loudness: build-loudness-wasm
+	GOWORK=off go test ./kernel/loudness -count=1 -v
 
 build-phrase-wasm:
 	mkdir -p build

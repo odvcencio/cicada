@@ -84,6 +84,9 @@ type Config struct {
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
 	CompMusic  *fx.CompParams
+	// MasterGainDB is a static gain applied immediately before the master
+	// limiter. Zero leaves the existing master path bit-identical.
+	MasterGainDB float64
 	// CompSidechainTrack is zero for self-detection, a one-based track index,
 	// or SFXSidechain for the post-fader SFX bus.
 	CompSidechainTrack int
@@ -116,6 +119,7 @@ type Engine struct {
 	reverbB                      *fx.Reverb
 	compMusic                    *fx.Compressor
 	compSidechainTrack           int
+	masterGain                   float32
 	commands                     [512]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [256]cmd.Message
@@ -143,6 +147,9 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 || cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 {
 		return nil, Error("engine configuration is out of range")
 	}
+	if math.IsNaN(cfg.MasterGainDB) || math.IsInf(cfg.MasterGainDB, 0) || cfg.MasterGainDB < -120 || cfg.MasterGainDB > 24 {
+		return nil, Error("master gain is out of range")
+	}
 	if cfg.BPMMilli == 0 {
 		cfg.BPMMilli = 120_000
 	}
@@ -154,7 +161,11 @@ func New(cfg Config) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
-	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1}
+	masterGain := float32(1)
+	if cfg.MasterGainDB != 0 {
+		masterGain = float32(math.Pow(10, cfg.MasterGainDB/20))
+	}
+	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, masterGain: masterGain, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1}
 	for i := range e.manualPatternTick {
 		e.manualPatternTick[i] = -1
 	}
@@ -605,6 +616,10 @@ func (e *Engine) Render(outL, outR []float32) {
 			}
 		}
 		left, right = left+sfxL, right+sfxR
+		if e.masterGain != 1 {
+			left *= e.masterGain
+			right *= e.masterGain
+		}
 		outL[frame], outR[frame], _ = e.limiter.Process(left, right)
 		if e.limiter.Fault() {
 			e.fault(4)

@@ -21,32 +21,37 @@ import (
 )
 
 type Options struct {
-	SampleRate int
-	Bits       int // 16, 24, or 32-bit IEEE float; zero defaults to 24
-	Bars       int // zero renders from From through the song end
-	From       int // zero-based start bar; zero starts at the song beginning
-	TailSec    float64
-	Dither     *bool // nil enables deterministic TPDF on integer formats
-	Normalize  bool  // peak normalize the post-limiter output to -1 dBFS
-	Block      int   // zero selects 4096 frames
+	SampleRate   int
+	Bits         int // 16, 24, or 32-bit IEEE float; zero defaults to 24
+	Bars         int // zero renders from From through the song end
+	From         int // zero-based start bar; zero starts at the song beginning
+	TailSec      float64
+	Dither       *bool   // nil enables deterministic TPDF on integer formats
+	Normalize    bool    // peak normalize the post-limiter output to -1 dBFS
+	Block        int     // zero selects 4096 frames
+	MasterGainDB float64 // static gain immediately before the master limiter
+	MasterBiasL  float32 // static DC correction before the master limiter
+	MasterBiasR  float32 // static DC correction before the master limiter
 }
 
 type Report struct {
-	SampleRate      int
-	Bars            int
-	From            int
-	Frames          int64
-	Peak            float32
-	OutputPeak      float32
-	PreLimiterOvers int64
-	CeilingSamples  int64
-	ClippedSamples  int64
-	TailFrames      int64
-	writtenFrames   int64
-	skipFrames      int
-	rangeSkip       int64
-	metricStart     int64
-	metricEnd       int64
+	SampleRate                int
+	Bars                      int
+	From                      int
+	Frames                    int64
+	Peak                      float32
+	OutputPeak                float32
+	PreLimiterOvers           int64
+	CeilingSamples            int64
+	ClippedSamples            int64
+	TailFrames                int64
+	MasterGainDB              float64
+	MaxLimiterGainReductionDB float64
+	writtenFrames             int64
+	skipFrames                int
+	rangeSkip                 int64
+	metricStart               int64
+	metricEnd                 int64
 }
 
 type trackRuntime struct {
@@ -149,6 +154,9 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if opts.Block < 1 || opts.Block > 4096 {
 		return report, fmt.Errorf("WAV block must be 1 to 4096 frames")
 	}
+	if math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 || math.IsNaN(float64(opts.MasterBiasL)) || math.IsInf(float64(opts.MasterBiasL), 0) || math.IsNaN(float64(opts.MasterBiasR)) || math.IsInf(float64(opts.MasterBiasR), 0) {
+		return report, fmt.Errorf("master gain or DC correction is out of range")
+	}
 	dither := opts.Dither == nil || *opts.Dither
 	encoder, err := newWAVEncoder(opts.Bits, dither, score.Seed, outputGain)
 	if err != nil {
@@ -194,6 +202,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, fmt.Errorf("score cannot compile to a Cicada project")
 	}
 	report.SampleRate = opts.SampleRate
+	report.MasterGainDB = opts.MasterGainDB
 	report.TailFrames = int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))
 	fromFrame := clock.SampleAtTick(int64(report.From) * seq.TicksPerBar)
 	renderFrames := clock.SampleAtTick(int64(renderBars)*seq.TicksPerBar) + report.TailFrames
@@ -320,6 +329,10 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err := writeWAVHeader(writer, opts.SampleRate, opts.Bits, uint32(dataBytes)); err != nil {
 		return report, err
 	}
+	masterGain := float32(1)
+	if opts.MasterGainDB != 0 {
+		masterGain = float32(math.Pow(10, opts.MasterGainDB/20))
+	}
 	var eventBuf [128]seq.Event
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
 	var events []scheduled
@@ -424,7 +437,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 					}
 					return events[i].event.NoteID < events[j].event.NoteID
 				})
-				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
+				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
 					return report, err
 				}
 				position += int64(frames)
@@ -447,7 +460,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		if position+int64(frames) > renderFrames {
 			frames = int(renderFrames - position)
 		}
-		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, &encoder, nil, position, frames, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, limiter, stems, &encoder, nil, position, frames, block, &report); err != nil {
 			return report, err
 		}
 		position += int64(frames)
@@ -456,7 +469,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		// Drive and the aligned dry tracks have the same insert latency.
 		// Drain it, then omit the initial silent output frames so the WAV
 		// remains aligned to the score and has exactly report.Frames frames.
-		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, limiter, stems, &encoder, nil, position, insertLatency, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, limiter, stems, &encoder, nil, position, insertLatency, block, &report); err != nil {
 			return report, err
 		}
 	}
@@ -819,7 +832,7 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool)
 	return nil
 }
 
-func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
+func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, masterBiasL, masterBiasR, masterGain float32, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
 	outFrames := 0
 	for frame := 0; frame < frames; frame++ {
@@ -941,6 +954,14 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			}
 		}
 		left, right = left+sfxL, right+sfxR
+		if masterBiasL != 0 || masterBiasR != 0 {
+			left += masterBiasL
+			right += masterBiasR
+		}
+		if masterGain != 1 {
+			left *= masterGain
+			right *= masterGain
+		}
 		if sample >= report.metricStart && sample < report.metricEnd {
 			if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {
 				report.Peak = abs
@@ -955,6 +976,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		outL, outR, ready := limiter.Process(left, right)
 		if limiter.Fault() {
 			return fmt.Errorf("non-finite master input")
+		}
+		if reduction := limiter.GainReductionDB(); reduction > report.MaxLimiterGainReductionDB {
+			report.MaxLimiterGainReductionDB = reduction
 		}
 		if !ready {
 			continue
