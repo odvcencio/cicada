@@ -16,7 +16,10 @@
     };
     const master = value.master;
     if (!master || !['pre_peak', 'peak', 'rms', 'comp_gr', 'limiter_gr'].every(key => Number.isFinite(master[key])) || typeof master.over !== 'boolean') return null;
-    return {type: 'meters', tick: value.tick, tracks: readMap(value.tracks), returns: readMap(value.returns), buses: readMap(value.buses), master: {...master}};
+    const loudness = value.loudness;
+    const loudnessKeys = ['momentary', 'short_term', 'integrated', 'range', 'true_peak', 'sample_peak'];
+    if (loudness !== undefined && (!loudness || !loudnessKeys.every(key => loudness[key] === null || Number.isFinite(loudness[key])) || !Number.isSafeInteger(loudness.dropped_blocks) || loudness.dropped_blocks < 0)) return null;
+    return {type: 'meters', tick: value.tick, tracks: readMap(value.tracks), returns: readMap(value.returns), buses: readMap(value.buses), master: {...master}, loudness: loudness ? {...loudness} : null};
   }
 
   function createCicadaAudio(options = {}) {
@@ -98,6 +101,7 @@
       },
       setMute(track, on) { send({type: 'mute', track, on: !!on}); },
       setSolo(track, on) { send({type: 'solo', track, on: !!on}); },
+      resetLoudness() { send({type: 'loudness-reset'}); },
       onMeters(callback) { listeners.meters.add(callback); return () => listeners.meters.delete(callback); },
       onError(callback) { listeners.errors.add(callback); return () => listeners.errors.delete(callback); },
       close() { closed = true; if (socket) socket.close(); }

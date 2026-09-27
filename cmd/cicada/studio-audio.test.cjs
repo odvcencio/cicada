@@ -33,9 +33,20 @@ test('meter parser keeps finite contract fields and rejects invalid payloads', (
     type: 'meters', tick: 1234,
     tracks: {bass: {peak: -8.2, rms: -14.9}, invalid: {peak: Infinity, rms: -20}},
     returns: {a: {peak: -30.1, rms: -38}}, buses: {music: {peak: -6.1, rms: -12}},
-    master: {pre_peak: -1.2, peak: -1.5, rms: -9.8, comp_gr: 2.4, limiter_gr: .3, over: false}
+    master: {pre_peak: -1.2, peak: -1.5, rms: -9.8, comp_gr: 2.4, limiter_gr: .3, over: false},
+    loudness: {momentary: -18.2, short_term: -17.9, integrated: -18.4, range: 4.1, true_peak: -1.2, sample_peak: -1.5, dropped_blocks: 0}
   });
   assert.deepEqual(parsed.tracks, {bass: {peak: -8.2, rms: -14.9}});
   assert.equal(parsed.master.limiter_gr, .3);
+  assert.equal(parsed.loudness.integrated, -18.4);
   assert.equal(decodeMeters({type: 'meters', tick: 1, master: {peak: NaN}}), null);
+});
+
+test('resetLoudness sends the native loudness reset message', () => {
+  FakeSocket.instances.length = 0;
+  const root = {WebSocket: FakeSocket, location: {protocol: 'http:', host: '127.0.0.1:8161'}};
+  const audio = createCicadaAudio({window: root});
+  audio.resetLoudness();
+  assert.deepEqual(FakeSocket.instances[0].sent, [{type: 'loudness-reset'}]);
+  audio.close();
 });
