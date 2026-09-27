@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
@@ -25,6 +26,47 @@ type Score struct {
 	SceneIDs   []string     // engine scene indices in source order
 	Tracks     []TrackSlots // engine track and slot indices in source order
 	Song       []SongEntry  // song entries with one-based start bars
+	Parameters []ParameterValue
+	HasReturnA bool
+	HasReturnB bool
+	HasSFX     bool
+	trackNames *trackNameSnapshot
+}
+
+type trackNameSnapshot struct {
+	ids   [16]string
+	count uint8
+}
+
+type ParameterValue struct {
+	Track uint8
+	ID    kernel.ParamID
+	Value float32
+}
+
+type MeterValue struct{ Peak, RMS float32 }
+
+type MeterFrame struct {
+	Tick                           int64
+	TrackCount                     uint8
+	TrackIDs                       [16]string
+	Tracks                         [16]MeterValue
+	HasReturnA, HasReturnB, HasSFX bool
+	ReturnA, ReturnB               MeterValue
+	Music, SFX, MasterPre          MeterValue
+	MasterPeak, MasterRMS          float32
+	CompGR, LimiterGR              float32
+}
+
+type parameterOverride struct {
+	value   float32
+	version uint64
+	active  bool
+	trackID string
+}
+
+type liveOverrides struct {
+	values [17][kernel.ParamCount]parameterOverride
 }
 
 type SongEntry struct {
@@ -91,6 +133,16 @@ type Player struct {
 	fault             error
 	jumpFadeRemaining int
 	position          atomic.Uint64
+	overrides         atomic.Pointer[liveOverrides]
+	trackNames        atomic.Pointer[trackNameSnapshot]
+	overrideSequence  atomic.Uint64
+	trackCount        atomic.Uint32
+	appliedVersions   [17][kernel.ParamCount]uint64
+	clearedVersions   [17][kernel.ParamCount]uint64
+	meters            chan MeterFrame
+	meterScratch      MeterFrame
+	meterTick         int64
+	meterStarted      bool
 }
 
 func New(initial Score, rate int) (*Player, error) {
@@ -104,11 +156,16 @@ func New(initial Score, rate int) (*Player, error) {
 	if !initial.Engine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 		return nil, fmt.Errorf("live engine rejected play")
 	}
+	initial.trackNames = makeTrackNames(initial)
 	p := &Player{
 		current: initial, clock: clock, rate: rate,
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
 		offers:        make(chan Score, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
+		meters: make(chan MeterFrame, 1),
 	}
+	p.overrides.Store(&liveOverrides{})
+	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
+	p.trackNames.Store(initial.trackNames)
 	p.position.Store(1<<8 | 1)
 	return p, nil
 }
@@ -121,6 +178,7 @@ func (p *Player) Offer(score Score) error {
 	if _, err := seq.NewClock(p.rate, score.BPMMilli); err != nil {
 		return err
 	}
+	score.trackNames = makeTrackNames(score)
 	for {
 		select {
 		case p.offers <- score:
@@ -135,6 +193,216 @@ func (p *Player) Offer(score Score) error {
 }
 
 func (p *Player) Events() <-chan Event { return p.events }
+
+func (p *Player) Meters() <-chan MeterFrame { return p.meters }
+
+func makeTrackNames(score Score) *trackNameSnapshot {
+	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), 16))}
+	for index := 0; index < int(snapshot.count); index++ {
+		snapshot.ids[index] = score.Tracks[index].ID
+	}
+	return snapshot
+}
+
+// TrackIndex resolves a stable score track ID against the engine that Read owns.
+func (p *Player) TrackIndex(id string) (uint8, bool) {
+	snapshot := p.trackNames.Load()
+	if snapshot == nil {
+		return 0, false
+	}
+	for index := 0; index < int(snapshot.count); index++ {
+		if snapshot.ids[index] == id {
+			return uint8(index), true
+		}
+	}
+	return 0, false
+}
+
+// SetParam accepts concurrent control calls. A snapshot CAS makes the latest
+// value for each parameter win; Read never takes a mutex.
+func (p *Player) SetParam(track uint8, id kernel.ParamID, value float32) error {
+	spec, ok := kernel.Param(id)
+	if !ok || !spec.Live {
+		return fmt.Errorf("parameter is unknown or not live")
+	}
+	slot := int(track)
+	trackID := ""
+	if spec.Scope == "global" {
+		if track != 0xff {
+			return fmt.Errorf("global parameter requires track 255")
+		}
+		slot = 16
+	} else if spec.Scope != "track" || track >= 16 || uint32(track) >= p.trackCount.Load() {
+		return fmt.Errorf("track parameter index is out of range")
+	} else if names := p.trackNames.Load(); names != nil && int(track) < int(names.count) {
+		trackID = names.ids[track]
+	}
+	off := spec.Off && math.IsInf(float64(value), -1)
+	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
+		return fmt.Errorf("parameter value is out of range")
+	}
+	if spec.Curve == "toggle" && value != 0 && value != 1 {
+		return fmt.Errorf("toggle parameter must be zero or one")
+	}
+	version := p.overrideSequence.Add(1)
+	for {
+		old := p.overrides.Load()
+		next := new(liveOverrides)
+		if old != nil {
+			*next = *old
+		}
+		if trackID != "" {
+			for existing := 0; existing < 16; existing++ {
+				if existing != slot && next.values[existing][id].trackID == trackID {
+					next.values[existing][id].active = false
+				}
+			}
+		}
+		next.values[slot][id] = parameterOverride{value: value, version: version, active: true, trackID: trackID}
+		if p.overrides.CompareAndSwap(old, next) {
+			return nil
+		}
+	}
+}
+
+func (p *Player) SetMute(track uint8, on bool) error {
+	value := float32(0)
+	if on {
+		value = 1
+	}
+	return p.SetParam(track, kernel.ParamMixMute, value)
+}
+
+func (p *Player) SetSolo(track uint8, on bool) error {
+	value := float32(0)
+	if on {
+		value = 1
+	}
+	return p.SetParam(track, kernel.ParamMixSolo, value)
+}
+
+func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bool) {
+	if newEngine {
+		clear(p.appliedVersions[:])
+	}
+	snapshot := p.overrides.Load()
+	if snapshot == nil {
+		return
+	}
+	for slot := range snapshot.values {
+		for id := range snapshot.values[slot] {
+			override := snapshot.values[slot][id]
+			if !override.active || override.version == p.clearedVersions[slot][id] {
+				continue
+			}
+			track := uint8(slot)
+			if slot == 16 {
+				track = 0xff
+			} else if override.trackID != "" {
+				track = 0xff
+				for index := 0; index < len(score.Tracks); index++ {
+					if score.Tracks[index].ID == override.trackID {
+						track = uint8(index)
+						break
+					}
+				}
+				if track == 0xff {
+					continue
+				}
+			} else if slot >= target.TrackCount() {
+				continue
+			}
+			if newEngine && parameterMatches(score.Parameters, track, kernel.ParamID(id), override.value) {
+				p.clearedVersions[slot][id] = override.version
+				continue
+			}
+			if !newEngine && p.appliedVersions[slot][id] == override.version {
+				continue
+			}
+			command := cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(override.value)}
+			if target.Push(command) {
+				p.appliedVersions[slot][id] = override.version
+			}
+		}
+	}
+}
+
+func parameterMatches(parameters []ParameterValue, track uint8, id kernel.ParamID, value float32) bool {
+	for _, parameter := range parameters {
+		if parameter.Track == track && parameter.ID == id {
+			return math.Float32bits(parameter.Value) == math.Float32bits(value)
+		}
+	}
+	return false
+}
+
+func (p *Player) resetMeters() {
+	p.meterScratch = MeterFrame{}
+	p.meterTick = 0
+	p.meterStarted = false
+}
+
+func (p *Player) collectMeter(message cmd.Message) {
+	if message.Kind != cmd.Meter {
+		return
+	}
+	if !p.meterStarted || p.meterTick != message.Tick {
+		p.meterScratch = MeterFrame{Tick: message.Tick, HasReturnA: p.current.HasReturnA, HasReturnB: p.current.HasReturnB, HasSFX: p.current.HasSFX}
+		p.meterTick, p.meterStarted = message.Tick, true
+		p.meterScratch.TrackCount = uint8(min(len(p.current.Tracks), 16))
+		for i := 0; i < int(p.meterScratch.TrackCount); i++ {
+			p.meterScratch.TrackIDs[i] = p.current.Tracks[i].ID
+		}
+	}
+	value := math.Float32frombits(message.B)
+	switch {
+	case message.Track < 16 && int(message.Track) < int(p.meterScratch.TrackCount):
+		assignMeter(&p.meterScratch.Tracks[message.Track], message.A, value)
+	case message.Track == 0xf0:
+		assignMeter(&p.meterScratch.ReturnA, message.A, value)
+	case message.Track == 0xf1:
+		assignMeter(&p.meterScratch.ReturnB, message.A, value)
+	case message.Track == 0xf2:
+		assignMeter(&p.meterScratch.Music, message.A, value)
+	case message.Track == 0xf3:
+		assignMeter(&p.meterScratch.SFX, message.A, value)
+	case message.Track == 0xfd:
+		assignMeter(&p.meterScratch.MasterPre, message.A, value)
+	case message.Track == 0xff && message.A == 0:
+		p.meterScratch.MasterPeak = value
+	case message.Track == 0xff && message.A == 1:
+		p.meterScratch.MasterRMS = value
+		p.publishMeter(p.meterScratch)
+		p.meterStarted = false
+	case message.Track == 0xfc && message.A == 2:
+		p.meterScratch.CompGR = value
+	case message.Track == 0xfb && message.A == 2:
+		p.meterScratch.LimiterGR = value
+	}
+}
+
+func assignMeter(meter *MeterValue, quantity uint16, value float32) {
+	if quantity == 0 {
+		meter.Peak = value
+	} else if quantity == 1 {
+		meter.RMS = value
+	}
+}
+
+func (p *Player) publishMeter(frame MeterFrame) {
+	select {
+	case p.meters <- frame:
+	default:
+		select {
+		case <-p.meters:
+		default:
+		}
+		select {
+		case p.meters <- frame:
+		default:
+		}
+	}
+}
 
 // LaunchScene keeps the newest requested scene. The audio reader resolves its
 // name against the score active at the landing bar, so edits cannot stale an index.
@@ -322,7 +590,11 @@ func (p *Player) beginRequestedSong() {
 		p.previous, p.fadeRemaining = nil, 0
 		if hasOffer {
 			p.previous = p.current.Engine
+			p.applyOverrides(next.Engine, next, true)
 			p.current = next
+			p.trackCount.Store(uint32(next.Engine.TrackCount()))
+			p.trackNames.Store(next.trackNames)
+			p.resetMeters()
 			p.fadeTotal, p.fadeRemaining = p.rate/200, p.rate/200
 			p.emit(Event{Bar: int64(start), Name: next.Name, Kind: "edit"})
 			p.jumpFadeRemaining = 0
@@ -354,9 +626,13 @@ func (p *Player) renderBlock() {
 				return
 			}
 			p.previous = p.current.Engine
+			p.applyOverrides(next.Engine, next, true)
 			p.fadeTotal = p.rate / 200 // five milliseconds
 			p.fadeRemaining = p.fadeTotal
 			p.current = next
+			p.trackCount.Store(uint32(next.Engine.TrackCount()))
+			p.trackNames.Store(next.trackNames)
+			p.resetMeters()
 			swapped = true
 			p.clock = seq.Clock{
 				SampleRate: int64(p.rate), BPMMilli: next.BPMMilli,
@@ -432,6 +708,7 @@ func (p *Player) renderBlock() {
 	}
 	tick := p.clock.TickAtSample(p.sample)
 	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
+	p.applyOverrides(p.current.Engine, p.current, false)
 	p.current.Engine.Render(p.left[:frames], p.right[:frames])
 	var message cmd.Message
 	for p.current.Engine.Poll(&message) {
@@ -439,6 +716,7 @@ func (p *Player) renderBlock() {
 			p.fault = fmt.Errorf("live engine fault %d", message.A)
 			return
 		}
+		p.collectMeter(message)
 	}
 	if p.fadeRemaining > 0 {
 		fadeFrames := min(frames, p.fadeRemaining)
