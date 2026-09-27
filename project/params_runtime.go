@@ -1,0 +1,195 @@
+package project
+
+import (
+	_ "embed"
+	"fmt"
+	"strings"
+
+	"m31labs.dev/cicada/internal/paramdefs"
+)
+
+//go:embed params.json
+var paramsRegistryJSON string
+
+type ParamAddress struct {
+	Address string `json:"address"`
+	Param   string `json:"param"`
+	Track   string `json:"track,omitempty"`
+	Value   any    `json:"value"`
+}
+
+func ParamsJSON() string { return paramsRegistryJSON }
+
+// ParamAddresses returns the current compiled values for every registry kind
+// that exists on this score. Live-only mute and solo start off for the session.
+func ParamAddresses(p *Project) []ParamAddress {
+	if p == nil {
+		return []ParamAddress{}
+	}
+	addresses := make([]ParamAddress, 0, len(p.Tracks)*8+len(p.Effects)*8)
+	for _, track := range p.Tracks {
+		for _, descriptor := range paramdefs.Registry {
+			if descriptor.Scope != "track" || !descriptorApplies(descriptor.ID, track.Kind) {
+				continue
+			}
+			value := trackParamValue(track, descriptor)
+			addresses = append(addresses, ParamAddress{Address: track.ID + "." + descriptor.Source, Param: descriptor.ID, Track: track.ID, Value: value})
+		}
+	}
+	for _, effect := range p.Effects {
+		for _, descriptor := range paramdefs.Registry {
+			if descriptor.Scope != "global" || !strings.HasPrefix(descriptor.ID, "fx."+effect.ID+".") {
+				continue
+			}
+			value := defaultParamValue(descriptor)
+			if descriptor.ID == "fx.delay.time" && p.TempoMilli > 0 {
+				// The default source division is 1/8, which lasts half a beat.
+				value = 30_000_000 / float64(p.TempoMilli)
+			}
+			if source, ok := effect.Params[descriptor.Source]; ok {
+				if descriptor.ID == "fx.delay.time" && source.Number == nil {
+					value = delayDivisionMilliseconds(source.Text, p.TempoMilli)
+				} else if descriptor.ID == "fx.comp.makeup" && source.Text == "auto" {
+					value = automaticMakeup(effect.Params)
+				} else {
+					value = registryValue(descriptor, source)
+				}
+			} else if descriptor.ID == "fx.comp.makeup" {
+				value = automaticMakeup(effect.Params)
+			} else if descriptor.ID == "fx.comp.sidechain" {
+				value = "music"
+			}
+			addresses = append(addresses, ParamAddress{Address: "fx." + effect.ID + "." + descriptor.Source, Param: descriptor.ID, Value: value})
+		}
+	}
+	return addresses
+}
+
+func automaticMakeup(values map[string]Value) float64 {
+	threshold, ratio := -18.0, 4.0
+	if value, ok := values["threshold"]; ok && value.Number != nil {
+		threshold = *value.Number
+	}
+	if value, ok := values["ratio"]; ok && value.Number != nil {
+		ratio = *value.Number
+	}
+	return -(threshold * (1 - 1/ratio)) / 2
+}
+
+func delayDivisionMilliseconds(division string, tempoMilli int) float64 {
+	beats := 0.0
+	switch division {
+	case "1/32":
+		beats = .125
+	case "1/16":
+		beats = .25
+	case "1/16T":
+		beats = 1.0 / 6
+	case "1/16.":
+		beats = .375
+	case "1/8":
+		beats = .5
+	case "1/8T":
+		beats = 1.0 / 3
+	case "1/8.":
+		beats = .75
+	case "3/16":
+		beats = .75
+	case "1/4":
+		beats = 1
+	case "1/4.":
+		beats = 1.5
+	case "1/2":
+		beats = 2
+	}
+	if beats == 0 || tempoMilli <= 0 {
+		return 250
+	}
+	return beats * 60_000_000 / float64(tempoMilli)
+}
+
+func descriptorApplies(id, trackKind string) bool {
+	if strings.HasPrefix(id, "acid.") {
+		return trackKind == "acid"
+	}
+	if strings.HasPrefix(id, "drum.") {
+		return trackKind == "drums"
+	}
+	return strings.HasPrefix(id, "mix.")
+}
+
+func trackParamValue(track Track, descriptor paramdefs.Descriptor) any {
+	switch descriptor.ID {
+	case "mix.gain":
+		if track.Mixer.Mute {
+			return nil
+		}
+		return track.Mixer.GainDB
+	case "mix.pan":
+		return track.Mixer.Pan
+	case "mix.send_a":
+		return track.Mixer.SendA
+	case "mix.send_b":
+		return track.Mixer.SendB
+	case "mix.mute":
+		return float64(0)
+	case "mix.solo":
+		return float64(0)
+	case "mix.send_pre":
+		if track.Mixer.SendPre {
+			return float64(1)
+		}
+		return float64(0)
+	case "mix.bus":
+		return track.Mixer.Bus
+	case "mix.insert":
+		return track.Mixer.Insert
+	}
+	if value, ok := track.Params[descriptor.Source]; ok {
+		return registryValue(descriptor, value)
+	}
+	return defaultParamValue(descriptor)
+}
+
+func defaultParamValue(descriptor paramdefs.Descriptor) any {
+	if (descriptor.Curve == "enum" || descriptor.Curve == "toggle") && int(descriptor.Default) >= 0 && int(descriptor.Default) < len(descriptor.Values) {
+		if descriptor.Curve == "enum" {
+			return descriptor.Values[int(descriptor.Default)]
+		}
+	}
+	return descriptor.Default
+}
+
+func registryValue(descriptor paramdefs.Descriptor, value Value) any {
+	if value.Number != nil {
+		return *value.Number
+	}
+	if value.Text == "off" && descriptor.Off {
+		return nil
+	}
+	if descriptor.Curve == "toggle" {
+		if value.Text == "true" || value.Text == "on" {
+			return float64(1)
+		}
+		return float64(0)
+	}
+	return value.Text
+}
+
+func LookupParamDescriptor(id string) (paramdefs.Descriptor, bool) {
+	for _, descriptor := range paramdefs.Registry {
+		if descriptor.ID == id {
+			return descriptor, true
+		}
+	}
+	return paramdefs.Descriptor{}, false
+}
+
+func ParamAddressByName(p *Project, address string) (ParamAddress, error) {
+	for _, candidate := range ParamAddresses(p) {
+		if candidate.Address == address {
+			return candidate, nil
+		}
+	}
+	return ParamAddress{}, fmt.Errorf("unknown parameter address %q", address)
+}

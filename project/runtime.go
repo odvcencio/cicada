@@ -77,6 +77,8 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		}
 	}
 	cfg.CompMusic = compParams
+	cfg.DelayA = delayParams
+	cfg.ReverbB = reverbParams
 	if compSidechain == "sfx" {
 		cfg.CompSidechainTrack = engine.SFXSidechain
 	} else if compSidechain != "" && compSidechain != "music" {
@@ -85,14 +87,6 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				cfg.CompSidechainTrack = index + 1
 				break
 			}
-		}
-	}
-	for _, track := range p.Tracks {
-		if track.Mixer.SendA > 0 {
-			cfg.DelayA = delayParams
-		}
-		if track.Mixer.SendB > 0 {
-			cfg.ReverbB = reverbParams
 		}
 	}
 	trackIndex := make(map[string]int, len(p.Tracks))
