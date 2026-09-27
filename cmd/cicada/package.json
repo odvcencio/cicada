@@ -2,7 +2,7 @@
   "name": "cicada-studio-script-tests",
   "private": true,
   "scripts": {
-    "build": "node --check studio-send.test.cjs && node --check studio-waiting.test.cjs",
-    "test": "node --test studio-send.test.cjs studio-waiting.test.cjs"
+    "build": "node --check studio-send.test.cjs && node --check studio-waiting.test.cjs && node --check transport-order.test.cjs",
+    "test": "node --test studio-send.test.cjs studio-waiting.test.cjs transport-order.test.cjs"
   }
 }

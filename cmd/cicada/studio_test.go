@@ -118,6 +118,27 @@ func TestStudioValidatesSourceAndKeepsLastGoodProjection(t *testing.T) {
 	}
 }
 
+func TestStudioUnchangedSourceSaveDoesNotRecordEdit(t *testing.T) {
+	handler, _ := studioTestHandler(t)
+	response := studioCall(t, handler, "/api/source", studioEdit{Revision: studioRevision([]byte(studioScore)), Source: studioScore})
+	if response.Code != http.StatusOK {
+		t.Fatalf("unchanged source save: %d %s", response.Code, response.Body.String())
+	}
+	history := studioCall(t, handler, "/api/history", nil)
+	if history.Code != http.StatusOK {
+		t.Fatalf("history: %d %s", history.Code, history.Body.String())
+	}
+	var state struct {
+		Events []studioHistoryEntry `json:"events"`
+	}
+	if err := json.Unmarshal(history.Body.Bytes(), &state); err != nil {
+		t.Fatal(err)
+	}
+	if len(state.Events) != 1 || state.Events[0].Kind != "loaded" {
+		t.Fatalf("unchanged save added a history event: %+v", state.Events)
+	}
+}
+
 func TestStudioCommitRestoresExternalSaveDuringValidation(t *testing.T) {
 	_, path := studioTestHandler(t)
 	p, err := compileStudioSource(path, []byte(studioScore))

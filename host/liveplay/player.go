@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sync"
 	"sync/atomic"
 
 	"m31labs.dev/cicada/kernel/cmd"
@@ -48,6 +49,7 @@ type SlotRequest struct {
 }
 
 type StartRequest struct {
+	ID    uint64
 	Index int
 	Scene string
 }
@@ -74,8 +76,11 @@ type Player struct {
 	fadeTotal         int
 	fadeRemaining     int
 	offers            chan Score
-	launches          chan string
+	launches          atomic.Pointer[string]
 	starts            chan StartRequest
+	startMu           sync.Mutex // control calls only; the audio reader never locks
+	startSequence     atomic.Uint64
+	pendingStart      atomic.Uint64
 	slotLaunches      atomic.Pointer[slotBatch]
 	events            chan Event
 	left, right       [blockFrames]float32
@@ -102,7 +107,7 @@ func New(initial Score, rate int) (*Player, error) {
 	p := &Player{
 		current: initial, clock: clock, rate: rate,
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
-		offers:        make(chan Score, 1), launches: make(chan string, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
+		offers:        make(chan Score, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
 	}
 	p.position.Store(1<<8 | 1)
 	return p, nil
@@ -137,38 +142,36 @@ func (p *Player) LaunchScene(name string) error {
 	if name == "" {
 		return fmt.Errorf("scene name is required")
 	}
-	for {
-		select {
-		case p.launches <- name:
-			return nil
-		default:
-			select {
-			case <-p.launches:
-			default:
-			}
-		}
-	}
+	p.launches.Store(&name)
+	return nil
 }
 
 // CancelScene discards a request that has not reached the audio reader.
 func (p *Player) CancelScene() {
-	select {
-	case <-p.launches:
-	default:
-	}
+	p.launches.Store(nil)
 }
 
 // StartSongEntry requests an immediate transport jump to a named song block.
 // The audio reader resolves it against the score it will render next.
 func (p *Player) StartSongEntry(index int, scene string) error {
+	_, err := p.QueueSongEntry(index, scene)
+	return err
+}
+
+// QueueSongEntry returns an ID which lets the control path distinguish a
+// queued request from an older one for the same song block.
+func (p *Player) QueueSongEntry(index int, scene string) (uint64, error) {
 	if index < 0 || scene == "" {
-		return fmt.Errorf("song entry index and scene are required")
+		return 0, fmt.Errorf("song entry index and scene are required")
 	}
-	request := StartRequest{Index: index, Scene: scene}
+	p.startMu.Lock()
+	defer p.startMu.Unlock()
+	request := StartRequest{ID: p.startSequence.Add(1), Index: index, Scene: scene}
+	p.pendingStart.Store(request.ID)
 	for {
 		select {
 		case p.starts <- request:
-			return nil
+			return request.ID, nil
 		default:
 			select {
 			case <-p.starts:
@@ -178,9 +181,15 @@ func (p *Player) StartSongEntry(index int, scene string) error {
 	}
 }
 
+// PendingSongEntryID returns the queued song request ID, or zero.
+func (p *Player) PendingSongEntryID() uint64 { return p.pendingStart.Load() }
+
 func (p *Player) CancelStart() {
+	p.startMu.Lock()
+	defer p.startMu.Unlock()
 	select {
-	case <-p.starts:
+	case request := <-p.starts:
+		p.pendingStart.CompareAndSwap(request.ID, 0)
 	default:
 	}
 }
@@ -219,6 +228,23 @@ func (p *Player) SelectPattern(track, pattern string) error {
 
 func (p *Player) CancelPatterns() {
 	p.slotLaunches.Swap(nil)
+}
+
+// PendingScene can be read by a UI thread while Read renders audio.
+func (p *Player) PendingScene() string {
+	if request := p.launches.Load(); request != nil {
+		return *request
+	}
+	return ""
+}
+
+// PendingPatterns returns a copy of queued pattern launches. An empty Track
+// marks an unused entry. Read can consume the queue while the UI takes its copy.
+func (p *Player) PendingPatterns() [16]SlotRequest {
+	if batch := p.slotLaunches.Load(); batch != nil {
+		return batch.requests
+	}
+	return [16]SlotRequest{}
 }
 
 // Position can be read safely by a UI thread while Read renders audio.
@@ -265,6 +291,7 @@ func (p *Player) beginRequestedSong() {
 	}
 	select {
 	case request := <-p.starts:
+		p.pendingStart.CompareAndSwap(request.ID, 0)
 		var next Score
 		hasOffer := false
 		select {
@@ -290,10 +317,7 @@ func (p *Player) beginRequestedSong() {
 		p.read, p.buffered = 0, 0
 		// A song-position request supersedes manual launches queued for the
 		// old transport position.
-		select {
-		case <-p.launches:
-		default:
-		}
+		p.launches.Store(nil)
 		p.slotLaunches.Swap(nil)
 		p.previous, p.fadeRemaining = nil, 0
 		if hasOffer {
@@ -347,8 +371,8 @@ func (p *Player) renderBlock() {
 		// A freshly swapped engine also receives Seek and Play at this bar.
 		// Let those commands settle before a scene launch on the next bar.
 		if !swapped {
-			select {
-			case name := <-p.launches:
+			if request := p.launches.Swap(nil); request != nil {
+				name := *request
 				index := -1
 				for i, candidate := range p.current.SceneIDs {
 					if candidate == name {
@@ -364,7 +388,6 @@ func (p *Player) renderBlock() {
 				} else {
 					p.emit(Event{Bar: p.bar + 1, Name: name, Kind: "scene"})
 				}
-			default:
 			}
 			if batch := p.slotLaunches.Swap(nil); batch != nil {
 				for _, request := range batch.requests {
