@@ -229,7 +229,7 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 			if label == "off" {
 				label = "stop"
 			}
-			row.Cells = append(row.Cells, viewSceneCell{Scene: scene.ID, Track: track.ID, Pattern: binding, Label: label, Launchable: binding != "keep" && binding != "stop" && binding != "off"})
+			row.Cells = append(row.Cells, viewSceneCell{Scene: scene.ID, Track: track.ID, Pattern: binding, Label: label, Launchable: binding != "keep" && binding != "off"})
 		}
 		view.SceneRows = append(view.SceneRows, row)
 	}

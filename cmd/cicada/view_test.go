@@ -33,6 +33,57 @@ func TestScoreViewProjectsValidatedMusicAndEscapesSource(t *testing.T) {
 	}
 }
 
+func TestScoreViewShowsNonDefaultMelodicVelocity(t *testing.T) {
+	input := filepath.Join("..", "..", "examples", "first-acid.cicada")
+	p, err := loadProject(input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var melodic *project.Pattern
+	for index := range p.Patterns {
+		if p.Patterns[index].Kind != "drums" && len(p.Patterns[index].Data) > 0 && p.Patterns[index].Data[0] != nil {
+			melodic = &p.Patterns[index]
+			break
+		}
+	}
+	if melodic == nil {
+		t.Fatal("example has no active melodic step")
+	}
+	melodic.Data[0].Velocity = 73
+	var output bytes.Buffer
+	if err := writeScoreView(&output, p, "velocity test", "score.cicada"); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), `aria-label="Velocity 73"`) || !strings.Contains(output.String(), `>73</span>`) {
+		t.Fatal("non-default melodic velocity is not visible in the score view")
+	}
+}
+
+func TestScoreViewMakesLegacyStopPatternLaunchable(t *testing.T) {
+	source := "title \"Legacy stop\"\ntrack bass acid {}\npattern stop acid steps=4 { 1 . 5 . }\nscene main { bass=stop }\nsong { main }\n"
+	path := filepath.Join(t.TempDir(), "legacy-stop.cicada")
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := loadProject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := writeScorePage(&output, p, source, filepath.Base(path), true, studioRevision([]byte(source))); err != nil {
+		t.Fatal(err)
+	}
+	page := output.String()
+	if !strings.Contains(page, `<button type="button" class="scene-slot" data-track="bass" data-pattern="stop"`) {
+		index := strings.Index(page, `aria-label="Scene launch matrix"`)
+		matrix := "scene matrix not rendered"
+		if index >= 0 {
+			matrix = page[index:min(len(page), index+1000)]
+		}
+		t.Fatalf("a real pattern named stop has no launch button; scenes=%+v patterns=%+v matrix=%s", p.Scenes, p.Patterns, matrix)
+	}
+}
+
 func TestScoreViewAcceptsSemanticJSON(t *testing.T) {
 	input := filepath.Join("..", "..", "examples", "first-acid.cicada")
 	p, err := loadProject(input)
