@@ -33,6 +33,7 @@ type studio struct {
 	lastGoodProject *project.Project
 	transport       *studioTransport
 	history         *studioHistory
+	exports         *studioExportController
 }
 
 func studioCommand(args []string) error {
@@ -150,7 +151,7 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 	history := newStudioHistory(source)
 	transport := newStudioTransport(absolute)
 	transport.history = history
-	return &studio{path: absolute, lastGoodSource: bytes.Clone(source), lastGoodProject: p, transport: transport, history: history}, nil
+	return &studio{path: absolute, lastGoodSource: bytes.Clone(source), lastGoodProject: p, transport: transport, history: history, exports: newStudioExportController()}, nil
 }
 
 func (s *studio) routes() http.Handler {
@@ -166,6 +167,9 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /api/params", s.params)
 	mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
 	mux.HandleFunc("GET /studio-audio.js", s.audioScript)
+	mux.HandleFunc("GET /studio-master.js", s.masterScript)
+	mux.HandleFunc("GET /api/export", s.exportStatus)
+	mux.HandleFunc("POST /api/export", s.startExport)
 	mux.HandleFunc("GET /api/history", s.historyState)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !studioLoopbackHost(r.Host) {
