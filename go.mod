@@ -14,4 +14,7 @@ require (
 	github.com/ebitengine/purego v0.11.0 // indirect
 	github.com/jfreymuth/pulse v0.1.3 // indirect
 	golang.org/x/sys v0.47.0 // indirect
+	m31labs.dev/tymbal v0.0.0-20260927121518-a296366dc975
 )
+
+replace m31labs.dev/tymbal => github.com/odvcencio/tymbal v0.0.0-20260927121518-a296366dc975

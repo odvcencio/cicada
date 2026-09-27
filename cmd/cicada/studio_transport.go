@@ -13,7 +13,6 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
-	"github.com/ebitengine/oto/v3"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel/cmd"
 )
@@ -23,8 +22,9 @@ type studioTransport struct {
 	mu            sync.Mutex
 	pollMu        sync.Mutex
 	stream        *liveplay.Player
-	player        *oto.Player
-	device        *oto.Context
+	audio         studioAudioDevice
+	audioOptions  studioAudioOptions
+	sampleRate    int
 	cancel        context.CancelFunc
 	last          [32]byte
 	playing       bool
@@ -69,7 +69,9 @@ type transportSnapshot struct {
 	Error               string            `json:"error,omitempty"`
 }
 
-func newStudioTransport(path string) *studioTransport { return &studioTransport{path: path} }
+func newStudioTransport(path string) *studioTransport {
+	return &studioTransport{path: path, audioOptions: defaultStudioAudioOptions()}
+}
 
 func validStudioQuantize(value cmd.Quantize) bool {
 	switch value {
@@ -122,15 +124,20 @@ func (t *studioTransport) start() error { return t.startFrom(-1, "", nil, [32]by
 func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte) error {
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
+	sampleRate, err := t.ensureSampleRate()
+	if err != nil {
+		return err
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.player != nil || t.audioNull && t.stream != nil || t.playing && t.stream != nil {
-		if t.player != nil {
-			if err := t.device.Err(); err != nil {
-				return err
-			}
-			if err := t.player.Err(); err != nil {
-				return err
+	if t.stream != nil {
+		audioFailed := false
+		if t.audio != nil {
+			if err := t.audio.Err(); err != nil {
+				t.audio.Pause()
+				_ = t.audio.Close()
+				t.audio = nil
+				audioFailed = true
 			}
 		}
 		if index >= 0 {
@@ -149,8 +156,18 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 		if !t.playing {
 			t.stream.ResetLoudness()
 		}
-		if t.player != nil {
-			t.player.Play()
+		if t.audio == nil && !t.audioNull && (!t.playing || audioFailed) {
+			audio, openErr := openStudioAudio(t.stream, t.audioOptions)
+			if openErr != nil {
+				return openErr
+			}
+			audio.SetMonitor(studioMonitorOptions(t.audioOptions))
+			t.audio = audio
+		}
+		if t.audio != nil {
+			if err := t.audio.Play(); err != nil {
+				return err
+			}
 		}
 		t.playing, t.errText = true, ""
 		if t.audioNull {
@@ -162,19 +179,21 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	var initial liveplay.Score
 	if prepared != nil {
 		fingerprint, initial = preparedHash, *prepared
+		if initial.SampleRate != sampleRate {
+			return fmt.Errorf("prepared score is %d Hz but the selected audio endpoints use %d Hz", initial.SampleRate, sampleRate)
+		}
 	} else {
 		var err error
 		fingerprint, err = playSourceHash(t.path)
 		if err != nil {
 			return err
 		}
-		initial, err = compileLiveScore(t.path)
+		initial, err = compileLiveScoreAtRate(t.path, sampleRate)
 		if err != nil {
 			return err
 		}
 	}
-	var err error
-	stream, err := liveplay.New(initial, liveSampleRate)
+	stream, err := liveplay.New(initial, sampleRate)
 	if err != nil {
 		return err
 	}
@@ -185,29 +204,25 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			return err
 		}
 	}
-	var device *oto.Context
-	var player *oto.Player
+	var audio studioAudioDevice
 	if !t.audioNull {
-		device, ready, createErr := oto.NewContext(&oto.NewContextOptions{
-			SampleRate: liveSampleRate, ChannelCount: 2, Format: oto.FormatFloat32LE,
-			BufferSize: 20 * time.Millisecond, ApplicationName: "Cicada Studio",
-		})
-		if createErr != nil {
-			return createErr
-		}
-		select {
-		case <-ready:
-		case <-time.After(10 * time.Second):
-			return fmt.Errorf("audio device did not become ready within 10 seconds")
-		}
-		if err := device.Err(); err != nil {
+		audio, err = openStudioAudio(stream, t.audioOptions)
+		if err != nil {
+			stream.Close()
 			return err
 		}
-		player = device.NewPlayer(stream)
-		player.SetBufferSize(liveBlockFrames * 8 * 4)
+		audio.SetMonitor(studioMonitorOptions(t.audioOptions))
+	}
+	if audio != nil {
+		if err := audio.Play(); err != nil {
+			audio.Pause()
+			_ = audio.Close()
+			stream.Close()
+			return err
+		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	t.stream, t.device, t.player, t.last, t.cancel = stream, device, player, fingerprint, cancel
+	t.stream, t.audio, t.sampleRate, t.last, t.cancel = stream, audio, sampleRate, fingerprint, cancel
 	t.playing, t.errText = true, ""
 	if t.audioNull {
 		t.nullPlaying.Store(true)
@@ -217,9 +232,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	} else if len(initial.SceneIDs) != 0 {
 		t.scene = initial.SceneIDs[0]
 	}
-	if player != nil {
-		player.Play()
-	} else {
+	if audio == nil {
 		go t.renderNull(ctx, stream)
 	}
 	go t.watch(ctx, stream)
@@ -231,8 +244,16 @@ func (t *studioTransport) stop() {
 	defer t.mu.Unlock()
 	if t.audioNull {
 		t.nullPlaying.Store(false)
-	} else if t.player != nil {
-		t.player.PauseAndStopReading()
+	} else if t.audio != nil {
+		audio := t.audio
+		audio.Pause()
+		// Release duplex hosts after Stop so they no longer hold the input endpoint.
+		if audio.StopClosesDevice() {
+			if err := audio.Close(); err != nil {
+				t.errText = err.Error()
+			}
+			t.audio = nil
+		}
 	}
 	if t.stream != nil {
 		t.stream.CancelScene()
@@ -327,9 +348,10 @@ func (t *studioTransport) close() {
 		t.cancel()
 	}
 	t.nullPlaying.Store(false)
-	if t.player != nil {
-		t.player.PauseAndStopReading()
-		_ = t.player.Close()
+	if t.audio != nil {
+		t.audio.Pause()
+		_ = t.audio.Close()
+		t.audio = nil
 	}
 	if t.stream != nil {
 		t.stream.Close()
@@ -394,10 +416,9 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 			t.poll()
 		case <-health.C:
 			t.mu.Lock()
-			if t.device != nil {
-				if err := t.device.Err(); err != nil {
-					t.errText, t.playing = err.Error(), false
-				} else if err := t.player.Err(); err != nil {
+			if t.audio != nil {
+				if err := t.audio.Err(); err != nil {
+					t.audio.Pause()
 					t.errText, t.playing = err.Error(), false
 				}
 			}
@@ -490,14 +511,18 @@ func (t *studioTransport) poll() {
 		return
 	}
 	stream := t.stream
+	sampleRate := t.sampleRate
 	t.mu.Unlock()
 	if stream == nil {
 		return
 	}
+	if sampleRate <= 0 {
+		sampleRate = liveSampleRate
+	}
 	project, err := compileStudioSource(t.path, source)
 	var next liveplay.Score
 	if err == nil {
-		next, err = compileLiveProject(t.path, project)
+		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
 	}
 	if err == nil {
 		err = stream.Offer(next)
@@ -643,7 +668,12 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "song block is no longer in this position"})
 				return
 			}
-			prepared, compileErr := compileLiveProject(s.path, project)
+			sampleRate, rateErr := s.transport.ensureSampleRate()
+			if rateErr != nil {
+				studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": rateErr.Error()})
+				return
+			}
+			prepared, compileErr := compileLiveProjectAtRate(s.path, project, sampleRate)
 			if compileErr != nil {
 				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": compileErr.Error()})
 				return
