@@ -199,6 +199,20 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 @media (max-width:640px) { .history-row { grid-template-columns:70px 1fr; } .history-time { grid-column:2; } }
 .master-view { display:grid; gap:16px; }
 .master-view > p { margin:0; color:var(--muted); }
+.audio-io-panel { display:grid; gap:12px; border:1px solid var(--border); border-radius:12px; background:var(--panel); padding:15px; }
+.audio-io-panel h3 { margin:0; color:var(--text); font-size:1rem; }
+.audio-io-panel p { margin:0; color:var(--muted); font-size:.82rem; }
+.audio-io-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.audio-io-panel label { display:grid; gap:5px; color:var(--muted); font-size:.75rem; font-weight:700; }
+.audio-io-panel select,.audio-io-panel input[type="range"] { min-height:42px; width:100%; border:1px solid #526451; border-radius:7px; background:#121a15; color:var(--text); padding:8px 10px; accent-color:var(--mint); }
+.audio-io-panel input[type="checkbox"] { width:20px; height:20px; accent-color:var(--mint); }
+.audio-io-check { display:flex!important; align-items:center; gap:9px!important; min-height:42px; }
+.audio-io-panel :focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
+.audio-io-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
+.audio-io-actions button { min-height:42px; border:1px solid #80693d; border-radius:7px; background:#3b3220; color:#ffe0a7; padding:8px 13px; font:700 .8rem system-ui,sans-serif; cursor:pointer; }
+.audio-io-actions button:disabled,.audio-io-panel :disabled { opacity:.55; cursor:not-allowed; }
+.audio-io-runtime { display:grid; gap:5px; color:var(--mint); font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.audio-io-error { color:var(--coral); }
 .master-readouts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
 .master-readout, .master-card { min-width:0; border:1px solid var(--border); border-radius:12px; background:var(--panel); padding:15px; }
 .master-readout span, .master-card h3 { display:block; margin:0 0 8px; color:var(--muted); font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.09em; }
@@ -316,6 +330,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 @keyframes live-pad-pulse { 50% { box-shadow:0 0 0 3px #f2c66d33; } }
 @media (max-width:640px) {
   .nav { gap:10px; }
+  .audio-io-grid { grid-template-columns:1fr; }
   .transport { width:100%; margin-left:0; flex-wrap:wrap; }
   .midi-controls { margin-left:0; }
   .live-toolbar { align-items:stretch; }
@@ -411,6 +426,20 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     {{if .Studio}}<section id="master" aria-labelledby="master-heading" class="master-view">
       <h2 id="master-heading">Master</h2>
       <p>Live BS.1770-4 loudness from the post-limiter master output. Metering runs off the audio reader.</p>
+      <section class="audio-io-panel" aria-labelledby="audio-io-heading">
+        <h3 id="audio-io-heading">Audio devices and input monitor</h3>
+        <p id="audio-io-help">Windows Studio uses WASAPI shared mode for capture and render. Input monitoring starts muted to prevent feedback; device buffers and levels update while playing.</p>
+        <div class="audio-io-grid">
+          <label for="audio-output-device">Output device<select id="audio-output-device"><option value="">Default output</option></select></label>
+          <label for="audio-input-device">Input device<select id="audio-input-device"><option value="">Default input</option></select></label>
+          <label class="audio-io-check" for="audio-input-enabled"><input id="audio-input-enabled" type="checkbox" checked>Capture input while playing</label>
+          <label class="audio-io-check" for="audio-monitor-muted"><input id="audio-monitor-muted" type="checkbox" checked>Mute input monitor</label>
+          <label for="audio-monitor-gain">Input monitor gain<output id="audio-monitor-gain-value">50%</output><input id="audio-monitor-gain" type="range" min="0" max="2" step="0.01" value="0.5"></label>
+          <label for="audio-monitor-mode">Input channel routing<select id="audio-monitor-mode"><option value="stereo">Stereo · channels 1+2</option><option value="mono1">Input 1 · mono</option><option value="mono2">Input 2 · mono</option></select></label>
+        </div>
+        <div class="audio-io-actions"><button id="audio-apply-devices" type="button">Apply device selection</button><span id="audio-io-status" class="audio-io-runtime" role="status" aria-live="polite">Checking audio endpoints…</span></div>
+        <div id="audio-io-meters" class="audio-io-runtime" aria-live="off"><span>Input peak: L −120 dBFS · R −120 dBFS</span><span>Output peak: L −120 dBFS · R −120 dBFS</span></div>
+      </section>
       <div class="master-readouts" aria-label="Master loudness readouts">
         <div class="master-readout"><span>Momentary</span><output id="master-momentary">— LUFS</output></div>
         <div class="master-readout"><span>Short-term</span><output id="master-short-term">— LUFS</output></div>
@@ -764,6 +793,6 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     } catch { setStatus('Waiting for the local Studio server', 'error'); }
   }, 1500);
 })();
-</script><script src="/studio-master.js"></script><script src="/studio-midi.js"></script><script src="/studio-live.js"></script>{{end}}
+</script><script src="/studio-audio-devices.js"></script><script src="/studio-master.js"></script><script src="/studio-midi.js"></script><script src="/studio-live.js"></script>{{end}}
 </body>
 </html>
