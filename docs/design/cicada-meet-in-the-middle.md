@@ -12,7 +12,7 @@ The header is insurance for a future that has not arrived. Only one edition exis
 
 - The grammar requires it. `source_file` begins with the keyword `cicada` and an integer, so a file without the line is a syntax error.
 - The parser keeps the integer as `Score.Version`. `Validate` rejects anything but 1 with `CICADA-VERSION`: "only cicada 1 is supported".
-- `docs/grammar-first.md` states the intent: "Grammar and semantics are versioned by `cicada 1`." When an edition changes what existing text means, old files should keep their old meaning.
+- `docs/spec/edition-1.md` documents the current source edition. When a future edition changes what existing text means, old files should keep their old meaning.
 - It does not version the sound. The project JSON, the kernel image, and the golden fingerprint each carry their own format version. DSP changes such as the ones in [odvcencio/cicada#21](https://github.com/odvcencio/cicada/pull/21) and [odvcencio/cicada#22](https://github.com/odvcencio/cicada/pull/22) change renders without touching the header. They update the golden fingerprint instead.
 
 So the line guards semantic changes to the language, which is a real need. But one line per file is the wrong place for it, and it guards nothing yet.
