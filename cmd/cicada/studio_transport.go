@@ -17,27 +17,28 @@ import (
 )
 
 type studioTransport struct {
-	path         string
-	mu           sync.Mutex
-	pollMu       sync.Mutex
-	stream       *liveplay.Player
-	player       *oto.Player
-	device       *oto.Context
-	cancel       context.CancelFunc
-	last         [32]byte
-	playing      bool
-	pending      bool
-	pendingScene string
-	pendingSong  string
-	pendingSlots map[string]string
-	scene        string
-	landed       int64
-	errText      string
-	history      *studioHistory
+	path          string
+	mu            sync.Mutex
+	pollMu        sync.Mutex
+	stream        *liveplay.Player
+	player        *oto.Player
+	device        *oto.Context
+	cancel        context.CancelFunc
+	last          [32]byte
+	playing       bool
+	pending       bool
+	pendingSong   string
+	pendingSongID uint64
+	snapshotSeq   uint64
+	scene         string
+	landed        int64
+	errText       string
+	history       *studioHistory
 }
 
 type transportSnapshot struct {
 	Type         string            `json:"type"`
+	Sequence     uint64            `json:"sequence"`
 	Playing      bool              `json:"playing"`
 	Bar          int64             `json:"bar"`
 	Step         int64             `json:"step"`
@@ -55,14 +56,21 @@ func newStudioTransport(path string) *studioTransport { return &studioTransport{
 func (t *studioTransport) snapshot() transportSnapshot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	state := transportSnapshot{Type: "cicada/transport", Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, PendingScene: t.pendingScene, PendingSong: t.pendingSong, Scene: t.scene, Landed: t.landed, Error: t.errText}
-	if len(t.pendingSlots) > 0 {
-		state.PendingSlots = make(map[string]string, len(t.pendingSlots))
-		for track, pattern := range t.pendingSlots {
-			state.PendingSlots[track] = pattern
-		}
-	}
+	t.snapshotSeq++
+	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
 	if t.stream != nil {
+		if id := t.stream.PendingSongEntryID(); id != 0 && id == t.pendingSongID {
+			state.PendingSong = t.pendingSong
+		}
+		state.PendingScene = t.stream.PendingScene()
+		for _, request := range t.stream.PendingPatterns() {
+			if request.Track != "" {
+				if state.PendingSlots == nil {
+					state.PendingSlots = make(map[string]string)
+				}
+				state.PendingSlots[request.Track] = request.Pattern
+			}
+		}
 		position := t.stream.Position()
 		state.Bar, state.Step = position.Bar, position.Step
 	}
@@ -92,10 +100,11 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 				}
 				t.last, t.pending = preparedHash, true
 			}
-			if err := t.stream.StartSongEntry(index, scene); err != nil {
+			requestID, err := t.stream.QueueSongEntry(index, scene)
+			if err != nil {
 				return err
 			}
-			t.pendingSong = scene
+			t.pendingSong, t.pendingSongID = scene, requestID
 		}
 		if t.player != nil {
 			t.player.Play()
@@ -123,8 +132,10 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	if err != nil {
 		return err
 	}
+	var requestID uint64
 	if index >= 0 {
-		if err := stream.StartSongEntry(index, scene); err != nil {
+		requestID, err = stream.QueueSongEntry(index, scene)
+		if err != nil {
 			return err
 		}
 	}
@@ -149,7 +160,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	t.stream, t.device, t.player, t.last, t.cancel = stream, device, player, fingerprint, cancel
 	t.playing, t.errText = true, ""
 	if index >= 0 {
-		t.pendingSong = scene
+		t.pendingSong, t.pendingSongID = scene, requestID
 	}
 	player.Play()
 	go t.watch(ctx)
@@ -168,9 +179,8 @@ func (t *studioTransport) stop() {
 		t.stream.CancelStart()
 	}
 	t.playing = false
-	t.pendingScene = ""
 	t.pendingSong = ""
-	clear(t.pendingSlots)
+	t.pendingSongID = 0
 }
 
 func (t *studioTransport) launchScene(name string) error {
@@ -182,7 +192,7 @@ func (t *studioTransport) launchScene(name string) error {
 	if err := t.stream.LaunchScene(name); err != nil {
 		return err
 	}
-	t.pendingScene, t.errText = name, ""
+	t.errText = ""
 	if t.history != nil {
 		position := t.stream.Position()
 		t.history.record("queued", fmt.Sprintf("Scene %s queued for the next bar", name), position.Bar, position.Step, "")
@@ -199,10 +209,7 @@ func (t *studioTransport) launchPattern(track, pattern string) error {
 	if err := t.stream.SelectPattern(track, pattern); err != nil {
 		return err
 	}
-	if t.pendingSlots == nil {
-		t.pendingSlots = make(map[string]string)
-	}
-	t.pendingSlots[track], t.errText = pattern, ""
+	t.errText = ""
 	if t.history != nil {
 		position := t.stream.Position()
 		t.history.record("queued", fmt.Sprintf("%s queued on %s for the next bar", pattern, track), position.Bar, position.Step, "")
@@ -253,28 +260,15 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 	switch event.Kind {
 	case "scene":
 		t.scene, t.landed = event.Name, event.Bar
-		if t.pendingScene == event.Name {
-			t.pendingScene = ""
-		}
 	case "scene-error":
-		if t.pendingScene == event.Name {
-			t.pendingScene = ""
-		}
 		t.errText = fmt.Sprintf("scene %q is no longer in the playing score", event.Name)
 	case "song":
-		t.scene, t.landed, t.pendingSong = event.Name, event.Bar, ""
+		t.scene, t.landed = event.Name, event.Bar
 	case "song-error":
-		t.pendingSong = ""
 		t.errText = fmt.Sprintf("song block %q is no longer in the playing score", event.Name)
 	case "slot":
 		t.landed = event.Bar
-		if t.pendingSlots[event.Track] == event.Name {
-			delete(t.pendingSlots, event.Track)
-		}
 	case "slot-error":
-		if t.pendingSlots[event.Track] == event.Name {
-			delete(t.pendingSlots, event.Track)
-		}
 		t.errText = fmt.Sprintf("pattern %q is no longer on track %q in the playing score", event.Name, event.Track)
 	default:
 		t.pending, t.landed = false, event.Bar
