@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"math"
 	"os"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/tetratelabs/wazero"
 	"m31labs.dev/cicada/host/kernelimage"
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
@@ -51,6 +53,150 @@ func TestAudioWASMCompressorBusSampleParity(t *testing.T) {
 
 func TestAudioWASMSFXBusSampleParity(t *testing.T) {
 	compareWASMFixture(t, "sfx-bus.cicada", 1)
+}
+
+func TestAudioWASMLiveParameterMuteSoloMeterParity(t *testing.T) {
+	const rate, blockSize, blocks = 48_000, 128, 16
+	wasm, err := os.ReadFile(wasmModulePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("parse: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, rate, blockSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	native, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	runtime := wazero.NewRuntime(ctx)
+	t.Cleanup(func() { _ = runtime.Close(ctx) })
+	module, err := runtime.Instantiate(ctx, wasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(name string, args ...uint64) uint64 {
+		t.Helper()
+		function := module.ExportedFunction(name)
+		if function == nil {
+			t.Fatalf("missing WASM export %s", name)
+		}
+		result, callErr := function.Call(ctx, args...)
+		if callErr != nil {
+			t.Fatalf("WASM %s: %v", name, callErr)
+		}
+		if len(result) == 0 {
+			return 0
+		}
+		return result[0]
+	}
+	call("_initialize")
+	imagePtr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
+	if imagePtr == 0 || !module.Memory().Write(imagePtr, image) || call("gosx_audio_init", rate, blockSize, 2) != 0 {
+		t.Fatal("WASM engine initialization failed")
+	}
+	commands := []cmd.Command{
+		{Op: cmd.OpPlay, Track: 0xff},
+		{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixGain), Arg0: math.Float32bits(-3.5)},
+		{Op: cmd.OpSetParam, Track: 1, Index: uint16(kernel.ParamMixMute), Arg0: math.Float32bits(1)},
+		{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixSolo), Arg0: math.Float32bits(1)},
+	}
+	commandPtr := uint32(call("gosx_audio_cmd_ptr"))
+	for index, command := range commands {
+		record, encodeErr := cmd.EncodeCommand(command, uint8(cfg.Tracks))
+		if encodeErr != nil || !module.Memory().Write(commandPtr+uint32(index*cmd.CommandSize), record[:]) {
+			t.Fatalf("encode live command %d: %v", index, encodeErr)
+		}
+	}
+	call("gosx_audio_cmd_commit", uint64(len(commands)))
+	if !native.PushBatch(commands) {
+		t.Fatal("native live command batch was rejected")
+	}
+	outputPtr, messagePtr := uint32(call("gosx_audio_out_ptr")), uint32(call("gosx_audio_msg_ptr"))
+	var nativeL, nativeR [blockSize]float32
+	var wasmLog, nativeLog []byte
+	var maxDifference float64
+	var maxFrame, maxChannel int
+	var sounded, sawMeter bool
+	var meterSources [256]bool
+	for block := 0; block < blocks; block++ {
+		call("gosx_audio_render", blockSize)
+		native.Render(nativeL[:], nativeR[:])
+		for channel := 0; channel < 2; channel++ {
+			for frame := 0; frame < blockSize; frame++ {
+				wasmSample, ok := module.Memory().ReadFloat32Le(outputPtr + uint32((channel*blockSize+frame)*4))
+				if !ok || math.IsNaN(float64(wasmSample)) || math.IsInf(float64(wasmSample), 0) {
+					t.Fatalf("invalid WASM output at block %d channel %d frame %d", block, channel, frame)
+				}
+				nativeSample := nativeL[frame]
+				if channel == 1 {
+					nativeSample = nativeR[frame]
+				}
+				sounded = sounded || wasmSample != 0
+				difference := math.Abs(float64(wasmSample) - float64(nativeSample))
+				if difference > maxDifference {
+					maxDifference, maxFrame, maxChannel = difference, block*blockSize+frame, channel
+				}
+			}
+		}
+		count := int(call("gosx_audio_msg_drain"))
+		for index := 0; index < count; index++ {
+			data, ok := module.Memory().Read(messagePtr+uint32(index*cmd.MessageSize), cmd.MessageSize)
+			if !ok {
+				t.Fatal("WASM message pointer out of bounds")
+			}
+			message, decodeErr := cmd.DecodeMessage(data)
+			if decodeErr != nil || message.Kind == cmd.Fault {
+				t.Fatalf("WASM live message: %+v %v", message, decodeErr)
+			}
+			wasmLog = append(wasmLog, data...)
+			sawMeter = sawMeter || message.Kind == cmd.Meter
+			if message.Kind == cmd.Meter {
+				meterSources[message.Track] = true
+			}
+		}
+		for _, message := range drainNativeMessages(native) {
+			if message.Kind == cmd.Fault {
+				t.Fatalf("native live engine fault: %+v", message)
+			}
+			encoded := cmd.EncodeMessage(message)
+			nativeLog = append(nativeLog, encoded[:]...)
+		}
+	}
+	if !sounded || maxDifference > 1e-6 {
+		t.Fatalf("native/WASM samples: sounded=%v max difference %.9g at frame %d channel %d", sounded, maxDifference, maxFrame, maxChannel)
+	}
+	if !sawMeter {
+		t.Fatal("live parity run emitted no meter messages")
+	}
+	for _, source := range []uint8{0, 1, 2, 0xf0, 0xf1, 0xf2, 0xf3, 0xfb, 0xfc, 0xfd, 0xff} {
+		if !meterSources[source] {
+			t.Fatalf("meter source %#x was absent", source)
+		}
+	}
+	if !bytes.Equal(wasmLog, nativeLog) {
+		t.Fatalf("native/WASM message logs differ: %d vs %d bytes", len(nativeLog), len(wasmLog))
+	}
+	t.Logf("live parameter, mute, solo, and meter parity: %d log bytes, max sample difference %.9g", len(wasmLog), maxDifference)
 }
 
 func compareWASMFixture(t *testing.T, fixture string, bars int) {

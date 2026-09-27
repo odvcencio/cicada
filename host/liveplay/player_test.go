@@ -2,9 +2,12 @@ package liveplay
 
 import (
 	"io"
+	"math"
 	"testing"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/graph"
 )
 
 func testScore(t *testing.T, name string, bpmMilli int64) Score {
@@ -16,6 +19,147 @@ func testScore(t *testing.T, name string, bpmMilli int64) Score {
 		t.Fatal(err)
 	}
 	return Score{Engine: created, SampleRate: 48_000, BPMMilli: bpmMilli, Name: name}
+}
+
+func meterScore(t *testing.T, name string, gain float64) Score {
+	t.Helper()
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000}
+	program := graph.Program{}
+	program.Nodes[0] = graph.Node{Op: graph.Constant, Value: 375}
+	program.Nodes[1] = graph.Node{Op: graph.Sine, A: 0}
+	program.Len, program.Output = 2, 1
+	cfg.Track[0].Kind, cfg.Track[0].Graph = engine.VoiceGraph, program
+	cfg.Track[0].GainDB, cfg.Track[0].GainSet = gain, true
+	cfg.Track[0].Pan, cfg.Track[0].BusSFX = -1, true
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Score{
+		Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name,
+		Tracks: []TrackSlots{{ID: "bass"}}, HasSFX: true,
+		Parameters: []ParameterValue{{Track: 0, ID: kernel.ParamMixGain, Value: float32(gain)}},
+	}
+}
+
+func TestLiveParameterOverrideSurvivesOfferedScore(t *testing.T) {
+	initial := meterScore(t, "initial", -6)
+	p, err := New(initial, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SetParam(0, kernel.ParamMixGain, 0); err != nil {
+		t.Fatal(err)
+	}
+	offered := meterScore(t, "offered", -3)
+	if err := p.Offer(offered); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, int64(100_000*8)); err != nil {
+		t.Fatal(err)
+	}
+	if p.current.Name != "offered" {
+		t.Fatalf("offered score did not land: %s", p.current.Name)
+	}
+	select {
+	case frame := <-p.Meters():
+		if frame.TrackCount != 1 || frame.TrackIDs[0] != "bass" {
+			t.Fatalf("meter track metadata: %+v", frame)
+		}
+		if frame.Tracks[0].Peak < .95 {
+			t.Fatalf("live gain override did not reach offered engine; track peak=%g", frame.Tracks[0].Peak)
+		}
+	default:
+		t.Fatal("render thread did not deliver meter data")
+	}
+	override := p.overrides.Load().values[0][kernel.ParamMixGain]
+	if !override.active || p.appliedVersions[0][kernel.ParamMixGain] != override.version || p.clearedVersions[0][kernel.ParamMixGain] == override.version {
+		t.Fatalf("offered score lost live override: override=%+v applied=%d cleared=%d", override, p.appliedVersions[0][kernel.ParamMixGain], p.clearedVersions[0][kernel.ParamMixGain])
+	}
+}
+
+func TestLiveParameterOverrideFollowsTrackIDAcrossReorderedScore(t *testing.T) {
+	initial := reorderedMeterScore(t, "initial", [2]string{"bass", "lead"}, -6, -12)
+	p, err := New(initial, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SetParam(0, kernel.ParamMixGain, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Offer(reorderedMeterScore(t, "offered", [2]string{"lead", "bass"}, -12, -6)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, int64(100_000*8)); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case frame := <-p.Meters():
+		if frame.TrackIDs[0] != "lead" || frame.TrackIDs[1] != "bass" || frame.Tracks[1].Peak < .95 || frame.Tracks[0].Peak > .3 {
+			t.Fatalf("override did not follow bass through score reorder: %+v", frame)
+		}
+	default:
+		t.Fatal("reordered score emitted no meter frame")
+	}
+}
+
+func reorderedMeterScore(t *testing.T, name string, ids [2]string, firstGain, secondGain float64) Score {
+	t.Helper()
+	program := graph.Program{}
+	program.Nodes[0] = graph.Node{Op: graph.Constant, Value: 375}
+	program.Nodes[1] = graph.Node{Op: graph.Sine, A: 0}
+	program.Len, program.Output = 2, 1
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 2, MaxVoices: 2, BPMMilli: 120_000}
+	cfg.Track[0].Kind, cfg.Track[0].Graph, cfg.Track[0].GainDB, cfg.Track[0].GainSet = engine.VoiceGraph, program, firstGain, true
+	cfg.Track[1].Kind, cfg.Track[1].Graph, cfg.Track[1].GainDB, cfg.Track[1].GainSet = engine.VoiceGraph, program, secondGain, true
+	cfg.Track[0].Pan, cfg.Track[1].Pan = -1, -1
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Score{
+		Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name,
+		Tracks:     []TrackSlots{{ID: ids[0]}, {ID: ids[1]}},
+		Parameters: []ParameterValue{{Track: 0, ID: kernel.ParamMixGain, Value: float32(firstGain)}, {Track: 1, ID: kernel.ParamMixGain, Value: float32(secondGain)}},
+	}
+}
+
+func TestLiveParameterControlsKeepLastValueAcrossConcurrentCalls(t *testing.T) {
+	p, err := New(meterScore(t, "controls", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 8)
+	for i := range 8 {
+		go func(index int) { done <- p.SetParam(0, kernel.ParamMixGain, float32(-7+index)) }(i)
+	}
+	for range 8 {
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := p.SetMute(0, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.SetSolo(0, true); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := p.overrides.Load()
+	if got := snapshot.values[0][kernel.ParamMixGain].value; got < -7 || got > 0 {
+		t.Fatalf("latest concurrent gain is out of range: %g", got)
+	}
+	if snapshot.values[0][kernel.ParamMixMute].value != 1 || snapshot.values[0][kernel.ParamMixSolo].value != 1 {
+		t.Fatal("mute or solo control was lost")
+	}
+	if err := p.SetParam(0xff, kernel.ParamMixGain, 0); err == nil {
+		t.Fatal("accepted a global route for a track parameter")
+	}
+	if err := p.SetParam(0, kernel.ParamMixGain, float32(math.Inf(1))); err == nil {
+		t.Fatal("accepted positive infinity")
+	}
+	if err := p.SetParam(1, kernel.ParamMixGain, 0); err == nil {
+		t.Fatal("accepted a parameter for a missing track")
+	}
 }
 
 func TestValidatedEditsReplaceAtExactBarAndUseNewTempo(t *testing.T) {
