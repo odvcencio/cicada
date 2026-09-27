@@ -43,7 +43,7 @@ type FieldCatalog struct {
 // Fields returns a stable, exhaustive catalog of the semantic interchange IR.
 // Source-language constructs will be added as they acquire typed IR fields.
 func Fields() (FieldCatalog, error) {
-	catalog := FieldCatalog{Format: "cicada.fields/1", Constructs: []ConstructRecord{}, Fields: []Field{}}
+	catalog := FieldCatalog{Format: "cicada.fields/2", Constructs: []ConstructRecord{}, Fields: []Field{}}
 	seen := map[reflect.Type]bool{}
 	var visit func(reflect.Type) error
 	visit = func(typ reflect.Type) error {
@@ -55,7 +55,11 @@ func Fields() (FieldCatalog, error) {
 		}
 		seen[typ] = true
 		construct := snakeCaseName(typ.Name())
-		record := ConstructRecord{Name: construct, ChildRoles: []string{}, Variants: []string{}, Introduced: "cicada.project/1", Profile: "M0", Layer: "semantic"}
+		introduced := "cicada.project/1"
+		if typ == reflect.TypeFor[SceneSetting]() || typ == reflect.TypeFor[SceneValue]() {
+			introduced = "cicada.project/2"
+		}
+		record := ConstructRecord{Name: construct, ChildRoles: []string{}, Variants: []string{}, Introduced: introduced, Profile: "M0", Layer: "semantic"}
 		variantSeen := map[string]bool{}
 		for i := 0; i < typ.NumField(); i++ {
 			field := typ.Field(i)
@@ -83,11 +87,15 @@ func Fields() (FieldCatalog, error) {
 				variantSeen[variant] = true
 				record.Variants = append(record.Variants, variant)
 			}
+			fieldIntroduced := field.Tag.Get("introduced")
+			if fieldIntroduced == "" {
+				fieldIntroduced = "cicada.project/1"
+			}
 			catalog.Fields = append(catalog.Fields, Field{
 				Construct: construct, Name: name, Required: required,
 				Type: fieldType(valueType), Unit: nonemptyTag(field.Tag.Get("unit")), Range: nonemptyTag(field.Tag.Get("range")),
 				Default: nonemptyTag(field.Tag.Get("default")), Meaning: meaning, Order: i + 1,
-				Introduced: "cicada.project/1", Profile: "M0", Layer: "semantic", Variant: variant,
+				Introduced: fieldIntroduced, Profile: "M0", Layer: "semantic", Variant: variant,
 			})
 		}
 		catalog.Constructs = append(catalog.Constructs, record)

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strconv"
+	"sort"
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -58,6 +59,9 @@ func Format(document *Document) ([]byte, error) {
 				return nil, fmt.Errorf("invalid syntax span")
 			}
 			section = formatDeclaration(document.source[start:end])
+			if kind == "scene_decl" {
+				section = formatSceneDeclaration(section, document.source[start:end], node, document.Walker, pos(document.Walker, node).Line)
+			}
 			if kind == "drum_pattern" {
 				section = formatDrumRows(section, node, document.Walker)
 			}
@@ -72,6 +76,123 @@ func Format(document *Document) ([]byte, error) {
 		sections = append(sections, strings.Join(comments, "\n"))
 	}
 	return []byte(strings.Join(sections, "\n\n") + "\n"), nil
+}
+
+type sceneFormatAssignment struct {
+	path    bool
+	line    int
+	content []string
+}
+
+func formatSceneDeclaration(formatted string, source []byte, node *gts.Node, walker *walk.Walker, firstLine int) string {
+	lines := strings.Split(formatted, "\n")
+	if len(lines) < 3 {
+		return formatted
+	}
+	type assignmentPosition struct {
+		line int
+		path bool
+	}
+	var positions []assignmentPosition
+	for i := 0; i < node.NamedChildCount(); i++ {
+		child := node.NamedChild(i)
+		if walker.Type(child) != "scene_assignment" {
+			continue
+		}
+		positions = append(positions, assignmentPosition{line: pos(walker, child).Line, path: strings.Contains(walker.Text(walker.Field(child, "target")), ".")})
+	}
+	// The CST traversal already follows source order. Keep a sorted copy as a
+	// guard for parser implementations that expose extra nodes between fields.
+	sort.SliceStable(positions, func(i, j int) bool { return positions[i].line < positions[j].line })
+	commentLines := sceneCommentLines(source, firstLine)
+	commentIndex, assignmentIndex := 0, 0
+	var bindings, settings []*sceneFormatAssignment
+	var pending []string
+	var current *sceneFormatAssignment
+	for _, line := range lines[1 : len(lines)-1] {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//") {
+			commentLine := firstLine
+			if commentIndex < len(commentLines) {
+				commentLine = commentLines[commentIndex]
+			}
+			commentIndex++
+			if current != nil && commentLine == current.line {
+				current.content = append(current.content, line)
+			} else {
+				pending = append(pending, line)
+			}
+			continue
+		}
+		if equal := strings.Index(trimmed, " = "); equal >= 0 && assignmentIndex < len(positions) {
+			position := positions[assignmentIndex]
+			assignmentIndex++
+			item := &sceneFormatAssignment{path: position.path, line: position.line, content: append(pending, line)}
+			pending = nil
+			if item.path {
+				settings = append(settings, item)
+			} else {
+				bindings = append(bindings, item)
+			}
+			current = item
+			continue
+		}
+		pending = append(pending, line)
+	}
+	if len(pending) > 0 {
+		if current != nil {
+			current.content = append(current.content, pending...)
+		} else {
+			bindings = append(bindings, &sceneFormatAssignment{content: pending})
+		}
+	}
+	out := []string{lines[0]}
+	for _, group := range bindings {
+		out = append(out, group.content...)
+	}
+	for _, group := range settings {
+		out = append(out, group.content...)
+	}
+	out = append(out, lines[len(lines)-1])
+	return strings.Join(out, "\n")
+}
+
+func sceneCommentLines(source []byte, firstLine int) []int {
+	var lines []int
+	line := firstLine
+	inString, escaped := false, false
+	for i := 0; i < len(source); i++ {
+		c := source[i]
+		if c == '\n' {
+			line++
+			inString, escaped = false, false
+			continue
+		}
+		if inString {
+			if escaped {
+				escaped = false
+			} else if c == '\\' {
+				escaped = true
+			} else if c == '"' {
+				inString = false
+			}
+			continue
+		}
+		if c == '"' {
+			inString = true
+			continue
+		}
+		if c == '/' && i+1 < len(source) && source[i+1] == '/' {
+			lines = append(lines, line)
+			for i < len(source) && source[i] != '\n' {
+				i++
+			}
+			if i < len(source) {
+				line++
+			}
+		}
+	}
+	return lines
 }
 
 type formatToken struct {

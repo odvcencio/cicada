@@ -145,6 +145,13 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	// data. Canonical output drops distinctions that the current track and scene
 	// already imply, matching headerless source after a round trip.
 	normalized := *p
+	normalized.Format, normalized.Version = FormatID, 1
+	for _, scene := range p.Scenes {
+		if len(scene.Settings) > 0 {
+			normalized.Format, normalized.Version = FormatID2, 2
+			break
+		}
+	}
 	normalized.Patterns = append([]Pattern(nil), p.Patterns...)
 	for i := range normalized.Patterns {
 		if normalized.Patterns[i].Kind == "notes" && projectPatternUsedOnlyByAcid(p, normalized.Patterns[i].ID) {
@@ -292,9 +299,9 @@ func DecodeJSON(data []byte) (*Project, error) {
 	if err := decoder.Decode(&p); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
-	if p.Format != FormatID || p.Version != 1 {
+	if !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
 		field := "format"
-		if p.Format == FormatID {
+		if p.Format == FormatID || p.Format == FormatID2 {
 			field = "version"
 		}
 		return nil, jsonError(data, "CICADA-VERSION", "/"+field, 0, fmt.Errorf("unsupported project format or version"))
@@ -323,6 +330,9 @@ func DecodeJSON(data []byte) (*Project, error) {
 	}
 	if p.Edition != 1 {
 		return nil, jsonError(data, "CICADA-VERSION", "/edition", 0, fmt.Errorf("only cicada 1 is supported"))
+	}
+	if p.Format == FormatID && projectHasSceneSettings(&p) {
+		return nil, jsonError(data, "CICADA-VERSION", "/format", 0, fmt.Errorf("scene settings require cicada.project/2"))
 	}
 	if err := ValidateProject(&p); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
@@ -503,8 +513,18 @@ func checkRequiredFields(data []byte) error {
 		return err
 	}
 	if err := checkObjectArray(root["scenes"], "scenes", "/scenes", func(value any, pointer string) error {
-		_, err := require(value, "scene", "scene", pointer)
-		return err
+		object, err := require(value, "scene", "scene", pointer)
+		if err != nil {
+			return err
+		}
+		settings, present := object["settings"]
+		if !present {
+			return nil
+		}
+		return checkObjectArray(settings, "scene settings", pointer+"/settings", func(value any, child string) error {
+			_, err := require(value, "scene_setting", "scene setting", child)
+			return err
+		})
 	}); err != nil {
 		return err
 	}

@@ -142,6 +142,7 @@ type Lane struct {
 type Scene struct {
 	Name     string
 	Bindings []Binding
+	Settings []SceneSetting
 	Position Position
 }
 
@@ -149,6 +150,15 @@ type Binding struct {
 	Track    string
 	Pattern  string
 	Position Position
+}
+
+// SceneSetting is a path-addressed value applied with the scene's bindings.
+// Value keeps its source spelling until project compilation.
+type SceneSetting struct {
+	Path          string
+	Value         string
+	Position      Position
+	ValuePosition Position
 }
 
 type SongEntry struct {

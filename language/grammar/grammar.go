@@ -153,10 +153,13 @@ func Cicada() *grammargen.Grammar {
 	g.Define("ratchet", seq(str("*"), sym("integer")))
 	g.Define("probability", seq(choice(str("?"), str("%")), sym("integer")))
 
-	// Scenes bind patterns to tracks (off stops a track, keep holds it), and
-	// the song plays scenes for a number of bars.
+	// Scenes bind patterns to tracks, and also allow dotted parameter paths.
+	// Undotted identifiers keep their edition-1 binding meaning.
 	g.Define("scene_decl", seq(str("scene"), field("name", sym("identifier")), str("{"), repeat(sym("scene_assignment")), str("}")))
-	g.Define("scene_assignment", seq(field("track", sym("identifier")), str("="), field("pattern", sym("identifier"))))
+	g.Define("scene_assignment", seq(field("target", sym("scene_target")), str("="), field("value", sym("scene_value"))))
+	g.Define("scene_target", choice(sym("parameter_path"), sym("identifier")))
+	g.Define("scene_value", choice(sym("number"), sym("identifier"), sym("string"), sym("fraction")))
+	g.Define("parameter_path", token(prec(3, pat(`[a-z_][a-z0-9_-]*(\.[a-z_][a-z0-9_-]*)+`))))
 	g.Define("song_decl", seq(str("song"), str("{"), repeat(sym("song_entry")), str("}")))
 	g.Define("song_entry", seq(field("scene", sym("identifier")), optional(seq(str("*"), field("bars", sym("integer"))))))
 
@@ -184,6 +187,7 @@ func Cicada() *grammargen.Grammar {
 		"(source_file (integer) (note_pattern (identifier) (acid_step (acid_note (pitch (degree)) (modifier))) (acid_step) (acid_step (acid_note (pitch (degree)) (octave_shift) (modifier) (modifier (ratchet (integer))) (modifier (probability (integer))))) (acid_step) (acid_step) (acid_step (acid_note (pitch (letter_pitch)) (octave_shift))) (phrase_use (identifier) (integer) (number))))")
 	g.Test("instrument", "cicada 1 instrument i { param c: hz = 1hz; voice mono { let s = env(gate, 9ms); out = saw(pitch - c) * (s * 2); } }", "")
 	g.Test("inferred instrument units", "instrument i { param cutoff = 720Hz param decay = 0.3s param level = -6dB param amount = 50% voice mono { out = saw(cutoff) * amount } }", "")
+	g.Test("scene parameter paths", "scene drop { bass = bass-b bass.cutoff = 900Hz drums.bd_level = off }", "")
 	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
 	g.Test("default notes", "phrase hook { 1 . } pattern p { use hook 5 . }", "")
 	g.Test("SI units", "track bass acid { cutoff = 2kHz level = -6dB } instrument i { param cutoff: hz = 720Hz; voice mono { out = saw(440Hz); } }", "")

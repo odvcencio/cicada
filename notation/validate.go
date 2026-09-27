@@ -23,7 +23,7 @@ var drumParams = map[string]map[string]bool{
 	"sd": {"tune": true, "tone": true, "mix": true, "snappy": true, "decay": true},
 	"ch": {"tune": true, "decay": true, "tone": true, "metal": true},
 	"oh": {"tune": true, "decay": true, "tone": true, "metal": true},
-	"cp": {"tone": true, "decay": true, "spread": true},
+	"cp": {"tune": true, "tone": true, "decay": true, "spread": true},
 	"rs": {"tune": true, "decay": true},
 	"lt": {"tune": true, "decay": true, "sweep": true},
 	"mt": {"tune": true, "decay": true, "sweep": true},
@@ -398,6 +398,7 @@ func Validate(s *Score) []Diagnostic {
 			}
 		}
 	}
+	validateSceneSettings(s, add)
 	return ds
 }
 

@@ -282,9 +282,15 @@ func parseScene(w *walk.Walker, n *gts.Node) Scene {
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		if w.Type(c) == "scene_assignment" {
-			s.Bindings = append(s.Bindings, Binding{
-				Track: w.Text(w.Field(c, "track")), Pattern: w.Text(w.Field(c, "pattern")), Position: pos(w, c),
-			})
+			target := w.Text(w.Field(c, "target"))
+			value := w.Field(c, "value")
+			if strings.Contains(target, ".") {
+				s.Settings = append(s.Settings, SceneSetting{
+					Path: target, Value: w.Text(value), Position: pos(w, c), ValuePosition: pos(w, value),
+				})
+			} else {
+				s.Bindings = append(s.Bindings, Binding{Track: target, Pattern: w.Text(value), Position: pos(w, c)})
+			}
 		}
 	}
 	return s

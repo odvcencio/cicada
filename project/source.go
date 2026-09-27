@@ -146,6 +146,13 @@ func ToSource(p *Project) ([]byte, error) {
 			}
 			out.WriteString("\n  " + track + " = " + pattern)
 		}
+		for _, setting := range scene.Settings {
+			value, err := sceneSettingSource(p, setting)
+			if err != nil {
+				return nil, fmt.Errorf("scene %s path %s: %w", scene.ID, setting.Path, err)
+			}
+			out.WriteString("\n  " + setting.Path + " = " + value)
+		}
 		out.WriteString("\n}")
 		sections = append(sections, out.String())
 	}
@@ -176,6 +183,27 @@ func ToSource(p *Project) ([]byte, error) {
 		return nil, fmt.Errorf("project cannot be represented by Cicada source v1 without changing its meaning")
 	}
 	return result, nil
+}
+
+func sceneSettingSource(p *Project, setting SceneSetting) (string, error) {
+	value := setting.Value.projectValue()
+	if value.Unit == "enum" {
+		return value.Text, nil
+	}
+	resolved, err := ResolveParameterPath(p, setting.Path)
+	if err != nil {
+		return "", err
+	}
+	if resolved.Descriptor.Curve == "toggle" && value.Number != nil {
+		if *value.Number == 1 {
+			return "on", nil
+		}
+		if *value.Number == 0 {
+			return "off", nil
+		}
+		return "", fmt.Errorf("invalid toggle value")
+	}
+	return valueSource(value)
 }
 
 func projectHasPattern(p *Project, name string) bool {

@@ -33,7 +33,7 @@ func ParamAddresses(p *Project) []ParamAddress {
 				continue
 			}
 			value := trackParamValue(track, descriptor)
-			addresses = append(addresses, ParamAddress{Address: track.ID + "." + descriptor.Source, Param: descriptor.ID, Track: track.ID, Value: value})
+			addresses = append(addresses, ParamAddress{Address: track.ID + "." + descriptor.Path, Param: descriptor.ID, Track: track.ID, Value: value})
 		}
 	}
 	for _, effect := range p.Effects {
@@ -59,7 +59,16 @@ func ParamAddresses(p *Project) []ParamAddress {
 			} else if descriptor.ID == "fx.comp.sidechain" {
 				value = "music"
 			}
-			addresses = append(addresses, ParamAddress{Address: "fx." + effect.ID + "." + descriptor.Source, Param: descriptor.ID, Value: value})
+			addresses = append(addresses, ParamAddress{Address: descriptor.Path, Param: descriptor.ID, Value: value})
+		}
+	}
+	for _, descriptor := range paramdefs.Registry {
+		if descriptor.Scope == "global" && (descriptor.Path == "tempo" || descriptor.Path == "transpose") {
+			value := descriptor.Default
+			if descriptor.Path == "tempo" {
+				value = float64(p.TempoMilli) / 1000
+			}
+			addresses = append(addresses, ParamAddress{Address: descriptor.Path, Param: descriptor.ID, Value: value})
 		}
 	}
 	return addresses
@@ -186,6 +195,9 @@ func LookupParamDescriptor(id string) (paramdefs.Descriptor, bool) {
 }
 
 func ParamAddressByName(p *Project, address string) (ParamAddress, error) {
+	if _, err := ResolveParameterPath(p, address); err != nil {
+		return ParamAddress{}, err
+	}
 	for _, candidate := range ParamAddresses(p) {
 		if candidate.Address == address {
 			return candidate, nil
