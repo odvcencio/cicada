@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/host/kernelimage"
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/voice/drum"
@@ -56,6 +57,87 @@ func TestFirstAcidProjectImageRoundTrip(t *testing.T) {
 	}
 	if _, err := engine.New(decoded); err != nil {
 		t.Fatalf("decoded first-acid project cannot play: %v", err)
+	}
+}
+
+func TestSceneSettingsProjectImageRoundTrip(t *testing.T) {
+	source := []byte("fx delay { feedback = 0.2 }\ntrack bass acid { send_a = 0.2 }\npattern riff acid steps=1 { 1 }\nscene drop { bass=riff bass.cutoff=900Hz delay.feedback=0.4 delay.time=1/8 }\nsong { drop }\n")
+	score, diagnostics := notation.Parse(source)
+	if score == nil {
+		t.Fatalf("scene settings parse: %+v", diagnostics)
+	}
+	p, diagnostics := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("scene settings project: %+v", diagnostics)
+	}
+	cfg, err := project.CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil || !reflect.DeepEqual(cfg, decoded) {
+		t.Fatalf("scene settings changed in image round trip: %v", err)
+	}
+	if len(decoded.Scenes) != 1 || len(decoded.Scenes[0].Settings) != 3 || decoded.Scenes[0].Settings[0].Value != 900 || decoded.Scenes[0].Settings[1].Track != 0xff || decoded.Scenes[0].Settings[2].Division.String() != "1/8" {
+		t.Fatalf("scene settings missing from decoded image: %+v", decoded.Scenes)
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatalf("decoded synced scene delay cannot play: %v", err)
+	}
+}
+
+func TestVersion8ProjectImageWithoutSettingsStillDecodes(t *testing.T) {
+	cfg := firstAcidConfig(t)
+	for i := range cfg.Scenes {
+		cfg.Scenes[i].Settings = nil
+	}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := append([]byte(nil), encoded...)
+	if len(cfg.Scenes) > 0 {
+		sceneStart := len(legacy) - len(cfg.Song)*4 - len(cfg.Scenes)*18
+		for i := len(cfg.Scenes) - 1; i >= 0; i-- {
+			countOffset := sceneStart + i*18 + 16
+			copy(legacy[countOffset:], legacy[countOffset+2:])
+			legacy = legacy[:len(legacy)-2]
+		}
+	}
+	legacy[4], legacy[5] = 8, 0
+	decoded, err := kernelimage.Decode(legacy, 48_000, 128)
+	if err != nil {
+		t.Fatalf("version 8 project image was rejected: %v", err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) {
+		t.Fatal("version 8 image changed project data")
+	}
+}
+
+func TestVersion9SceneSettingsDecodeWithoutDivisionField(t *testing.T) {
+	cfg := firstAcidConfig(t)
+	cfg.Scenes = []engine.Scene{{Settings: []engine.SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 900}}}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}}
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := append([]byte(nil), encoded...)
+	sceneStart := len(legacy) - len(cfg.Song)*4 - (16 + 2 + 1 + 2 + 4 + 1)
+	divisionOffset := sceneStart + 16 + 2 + 1 + 2 + 4
+	copy(legacy[divisionOffset:], legacy[divisionOffset+1:])
+	legacy = legacy[:len(legacy)-1]
+	legacy[4], legacy[5] = 9, 0
+	decoded, err := kernelimage.Decode(legacy, 48_000, 128)
+	if err != nil {
+		t.Fatalf("version 9 image with scene settings was rejected: %v", err)
+	}
+	if !reflect.DeepEqual(cfg, decoded) {
+		t.Fatal("version 9 scene settings changed in the image round trip")
 	}
 }
 

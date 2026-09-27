@@ -5,6 +5,7 @@ package kernelimage
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
@@ -14,7 +15,9 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 8 // SFX bus routing; version 7 added music-bus compressor
+const imageVersion = 10      // Synced scene delay divisions
+const priorImageVersion = 9  // P1 path-addressed scene settings
+const legacyImageVersion = 8 // SFX bus routing; version 7 added music-bus compressor
 
 type Error string
 
@@ -87,7 +90,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 8. The decoded Config is separately
+// Encode writes project image version 10. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -264,6 +267,19 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 	}
 	for _, scene := range cfg.Scenes {
+		if len(scene.Settings) > int(^uint16(0)) {
+			return nil, Error("scene parameter setting count exceeds the image limit")
+		}
+		for i, setting := range scene.Settings {
+			if err := validateSceneSetting(&cfg, setting); err != nil {
+				return nil, err
+			}
+			for prior := 0; prior < i; prior++ {
+				if scene.Settings[prior].Track == setting.Track && scene.Settings[prior].ID == setting.ID {
+					return nil, Error("duplicate scene parameter setting")
+				}
+			}
+		}
 		for _, binding := range scene.Track {
 			switch binding.Mode {
 			case engine.SceneKeep:
@@ -278,6 +294,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			default:
 				return nil, Error("invalid scene binding")
 			}
+		}
+		w.u16(uint16(len(scene.Settings)))
+		for _, setting := range scene.Settings {
+			w.byte(setting.Track)
+			w.u16(uint16(setting.ID))
+			w.f32(setting.Value)
+			w.byte(byte(setting.Division))
 		}
 	}
 	for _, entry := range cfg.Song {
@@ -323,7 +346,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if version != imageVersion || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if version != imageVersion && version != priorImageVersion && version != legacyImageVersion || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -610,6 +633,37 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return Error("invalid scene image binding")
 			}
 		}
+		if version >= priorImageVersion {
+			count, err := r.u16()
+			if err != nil {
+				return err
+			}
+			cfg.Scenes[scene].Settings = make([]engine.SceneSetting, int(count))
+			for i := range cfg.Scenes[scene].Settings {
+				setting := &cfg.Scenes[scene].Settings[i]
+				if setting.Track, err = r.byte(); err != nil {
+					return err
+				}
+				id, err := r.u16()
+				if err != nil {
+					return err
+				}
+				setting.ID = kernel.ParamID(id)
+				if setting.Value, err = r.f32(); err != nil {
+					return err
+				}
+				if version >= imageVersion {
+					division, err := r.byte()
+					if err != nil {
+						return err
+					}
+					setting.Division = fx.DelayDivision(division)
+				}
+				if err := validateSceneSetting(cfg, *setting); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	for i := range cfg.Song {
 		var err error
@@ -684,6 +738,39 @@ func readGraph(r *reader) (graph.Program, error) {
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
 	}
 	return program, nil
+}
+
+func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error {
+	spec, ok := kernel.Param(setting.ID)
+	if !ok || !spec.Live {
+		return Error("scene parameter setting is not live")
+	}
+	if spec.Scope == "track" {
+		if int(setting.Track) >= cfg.Tracks {
+			return Error("scene parameter track is out of range")
+		}
+	} else if setting.Track != 0xff {
+		return Error("global scene parameter needs the global owner")
+	}
+	syncedDelay := setting.Division != fx.FreeDelay
+	if syncedDelay {
+		if setting.ID != kernel.ParamFxDelayTime || cfg.DelayA == nil || setting.Division.String() == "invalid" || setting.Value != 0 {
+			return Error("scene delay division is invalid")
+		}
+		params := *cfg.DelayA
+		params.Division, params.TimeMs = setting.Division, 0
+		if err := params.ValidateTempo(cfg.BPMMilli); err != nil {
+			return err
+		}
+	}
+	off := spec.Off && math.IsInf(float64(setting.Value), -1)
+	if math.IsNaN(float64(setting.Value)) || math.IsInf(float64(setting.Value), 0) && !off || !syncedDelay && !off && (setting.Value < spec.Min || setting.Value > spec.Max) {
+		return Error("scene parameter value is out of range")
+	}
+	if !syncedDelay && spec.Curve == "toggle" && setting.Value != 0 && setting.Value != 1 {
+		return Error("scene toggle value is out of range")
+	}
+	return nil
 }
 
 func writeAcid(w *writer, p acid.Params) {

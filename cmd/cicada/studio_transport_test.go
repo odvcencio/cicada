@@ -78,6 +78,35 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 	if params.Revision != studioRevision([]byte(studioScore)) || len(params.Registry) != len(kernel.Params) || len(params.Addresses) == 0 {
 		t.Fatalf("incomplete current registry response: rev=%q registry=%d addresses=%d", params.Revision, len(params.Registry), len(params.Addresses))
 	}
+	path := filepath.Join(t.TempDir(), "paths.cicada")
+	source := strings.Replace(studioScore, "track bass acid {}", "fx delay { feedback = 0.2 }\ntrack bass acid { send_a = 0.3 }", 1)
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	pathStudio, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pathStudio.transport.close()
+	pathResponse := studioCall(t, pathStudio.routes(), "/api/params", nil)
+	var pathParams studioParamsResponse
+	if pathResponse.Code != http.StatusOK || json.Unmarshal(pathResponse.Body.Bytes(), &pathParams) != nil {
+		t.Fatalf("P1 parameter endpoint: %d %s", pathResponse.Code, pathResponse.Body.String())
+	}
+	addresses := map[string]bool{}
+	for _, address := range pathParams.Addresses {
+		addresses[address.Address] = true
+	}
+	for _, required := range []string{"bass.send.delay", "delay.feedback"} {
+		if !addresses[required] {
+			t.Errorf("P1 address %q missing from /api/params: %v", required, addresses)
+		}
+	}
+	for old := range addresses {
+		if strings.HasPrefix(old, "fx.") || strings.Contains(old, "send_a") || strings.Contains(old, "send_b") {
+			t.Errorf("legacy address %q remains in /api/params", old)
+		}
+	}
 	page := studioCall(t, handler, "/", nil)
 	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `src="/studio-master.js"`) || !strings.Contains(page.Body.String(), `href="#master">Master</a>`) || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `id="loudness-history"`) || !strings.Contains(page.Body.String(), `id="gain-reduction-history"`) || !strings.Contains(page.Body.String(), `id="reset-integrated"`) || !strings.Contains(page.Body.String(), `id="export-wav"`) || !strings.Contains(page.Body.String(), `href="#mixer-settings">Open mixer compressor settings</a>`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) || !strings.Contains(page.Body.String(), "score-minus14LUFS.wav") {
 		t.Fatalf("Studio meter markup missing: %d", page.Code)
@@ -94,7 +123,8 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 
 func TestStudioAudioSocketRejectsInvalidParametersWithTypedErrors(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "score.cicada")
-	if err := os.WriteFile(path, []byte(studioScore), 0600); err != nil {
+	audioScore := strings.Replace(studioScore, "track bass acid {}", "fx delay { feedback = 0.2 }\ntrack bass acid { send_a = 0.1 }", 1)
+	if err := os.WriteFile(path, []byte(audioScore), 0600); err != nil {
 		t.Fatal(err)
 	}
 	s, err := newStudio(path)
@@ -146,6 +176,14 @@ func TestStudioAudioSocketRejectsInvalidParametersWithTypedErrors(t *testing.T) 
 	}
 	if err := wsjson.Write(ctx, connection, map[string]any{"type": "param", "address": "bass.level", "value": -3.5}); err != nil {
 		t.Fatal(err)
+	}
+	for _, param := range []map[string]any{
+		{"type": "param", "address": "bass.send.delay", "value": 0.4},
+		{"type": "param", "address": "delay.feedback", "value": 0.35},
+	} {
+		if err := wsjson.Write(ctx, connection, param); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := wsjson.Write(ctx, connection, map[string]any{"type": "mute", "track": "bass", "on": true}); err != nil {
 		t.Fatal(err)

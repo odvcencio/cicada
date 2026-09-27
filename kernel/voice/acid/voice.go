@@ -67,6 +67,8 @@ type restingDiodeShape struct {
 type Voice struct {
 	sampleRate                                  float64
 	params                                      Params
+	targetParams                                Params
+	paramAlpha                                  float64
 	phaseA, phaseB, phaseSub                    float64
 	pitchLog, targetLog                         float64
 	lastPitchLog, pitchDelta, detuneRatio       float64
@@ -109,6 +111,7 @@ func (v *Voice) SetParams(p Params) error {
 		return err
 	}
 	v.params = p
+	v.targetParams, v.paramAlpha = p, 0
 	v.capDecay = math.Exp(-1 / ((.08 + .17*p.Resonance) * v.sampleRate))
 	v.releaseDecay = math.Exp(-4.6 / (p.Release * v.sampleRate))
 	v.holdDecay = math.Exp(-1 / (3 * v.sampleRate))
@@ -130,6 +133,37 @@ func (v *Voice) SetParams(p Params) error {
 	v.restingFilterG = fastmath.TanSmall(math.Pi * p.Cutoff / (2 * v.sampleRate))
 	v.prepareRestingDiode()
 	return nil
+}
+
+// SetParamsTarget queues live controls for allocation-free sample smoothing.
+// The engine computes alpha before playback from the registry's smoothing.
+func (v *Voice) SetParamsTarget(p Params, alpha float64) error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	if math.IsNaN(alpha) || math.IsInf(alpha, 0) || alpha <= 0 || alpha > 1 {
+		return Error("acid parameter smoothing is out of range")
+	}
+	v.targetParams, v.paramAlpha = p, alpha
+	return nil
+}
+
+func (v *Voice) smoothLiveParams() {
+	if v.paramAlpha == 0 {
+		return
+	}
+	p, target := &v.params, &v.targetParams
+	oldCutoff, oldResonance := p.Cutoff, p.Resonance
+	alpha := v.paramAlpha
+	p.Cutoff += (target.Cutoff - p.Cutoff) * alpha
+	p.Resonance += (target.Resonance - p.Resonance) * alpha
+	p.EnvMod += (target.EnvMod - p.EnvMod) * alpha
+	p.Decay += (target.Decay - p.Decay) * alpha
+	p.Accent += (target.Accent - p.Accent) * alpha
+	if p.Cutoff != oldCutoff || p.Resonance != oldResonance {
+		v.restingFilterG = fastmath.TanSmall(math.Pi * p.Cutoff / (2 * v.sampleRate))
+		v.prepareRestingDiode()
+	}
 }
 
 func (v *Voice) prepareRestingDiode() {
@@ -218,6 +252,7 @@ func (v *Voice) Next() float32 {
 	if v.fault {
 		return 0
 	}
+	v.smoothLiveParams()
 	// Stop decays far below audibility before denormals slow the audio thread.
 	const envelopeFloor = 1e-18
 	v.cap *= v.capDecay
