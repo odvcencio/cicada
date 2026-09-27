@@ -12,7 +12,7 @@ import (
 // Lower translates the checked instrument graph to the fixed-size kernel
 // program. overrides are per-track parameter values in Cicada notation.
 func Lower(program *Program, overrides map[string]string) (graph.Program, error) {
-	var out graph.Program
+	out := graph.Program{GlideMS: 60}
 	if program == nil || len(program.Nodes) == 0 || len(program.Nodes) > graph.MaxNodes || program.Output < 0 {
 		return out, fmt.Errorf("invalid instrument program")
 	}
