@@ -15,6 +15,7 @@ import (
 	"github.com/coder/websocket/wsjson"
 	"github.com/ebitengine/oto/v3"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/kernel/cmd"
 )
 
 type studioTransport struct {
@@ -32,6 +33,8 @@ type studioTransport struct {
 	pendingSongID uint64
 	snapshotSeq   uint64
 	scene         string
+	stoppedTracks map[string]bool
+	activeSlots   map[string]string
 	landed        int64
 	errText       string
 	history       *studioHistory
@@ -48,32 +51,52 @@ type studioMeterSnapshot struct {
 }
 
 type transportSnapshot struct {
-	Type         string            `json:"type"`
-	Sequence     uint64            `json:"sequence"`
-	Playing      bool              `json:"playing"`
-	Bar          int64             `json:"bar"`
-	Step         int64             `json:"step"`
-	Pending      bool              `json:"pending"`
-	PendingScene string            `json:"pendingScene,omitempty"`
-	PendingSong  string            `json:"pendingSong,omitempty"`
-	PendingSlots map[string]string `json:"pendingSlots,omitempty"`
-	Scene        string            `json:"scene,omitempty"`
-	Landed       int64             `json:"landedBar,omitempty"`
-	Error        string            `json:"error,omitempty"`
+	Type                string            `json:"type"`
+	Sequence            uint64            `json:"sequence"`
+	Playing             bool              `json:"playing"`
+	Bar                 int64             `json:"bar"`
+	Step                int64             `json:"step"`
+	Pending             bool              `json:"pending"`
+	PendingScene        string            `json:"pendingScene,omitempty"`
+	PendingSong         string            `json:"pendingSong,omitempty"`
+	PendingSlots        map[string]string `json:"pendingSlots,omitempty"`
+	PendingSlotQuantize map[string]uint32 `json:"pendingSlotQuantize,omitempty"`
+	PendingQuantize     uint32            `json:"pendingQuantize,omitempty"`
+	StoppedTracks       []string          `json:"stoppedTracks,omitempty"`
+	ActiveSlots         map[string]string `json:"activeSlots,omitempty"`
+	Scene               string            `json:"scene,omitempty"`
+	Landed              int64             `json:"landedBar,omitempty"`
+	Error               string            `json:"error,omitempty"`
 }
 
 func newStudioTransport(path string) *studioTransport { return &studioTransport{path: path} }
+
+func validStudioQuantize(value cmd.Quantize) bool {
+	switch value {
+	case 1, 2, 5, 6, 8:
+		return true
+	default:
+		return false
+	}
+}
 
 func (t *studioTransport) snapshot() transportSnapshot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.snapshotSeq++
 	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
+	if len(t.activeSlots) != 0 {
+		state.ActiveSlots = make(map[string]string, len(t.activeSlots))
+		for track, pattern := range t.activeSlots {
+			state.ActiveSlots[track] = pattern
+		}
+	}
 	if t.stream != nil {
 		if id := t.stream.PendingSongEntryID(); id != 0 && id == t.pendingSongID {
 			state.PendingSong = t.pendingSong
 		}
 		state.PendingScene = t.stream.PendingScene()
+		state.PendingQuantize = t.stream.PendingSceneQuantize()
 		for _, request := range t.stream.PendingPatterns() {
 			if request.Track != "" {
 				if state.PendingSlots == nil {
@@ -82,8 +105,14 @@ func (t *studioTransport) snapshot() transportSnapshot {
 				state.PendingSlots[request.Track] = request.Pattern
 			}
 		}
+		state.PendingSlotQuantize = t.stream.PendingPatternQuantizes()
 		position := t.stream.Position()
 		state.Bar, state.Step = position.Bar, position.Step
+	}
+	for track, stopped := range t.stoppedTracks {
+		if stopped {
+			state.StoppedTracks = append(state.StoppedTracks, track)
+		}
 	}
 	return state
 }
@@ -185,6 +214,8 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	}
 	if index >= 0 {
 		t.pendingSong, t.pendingSongID = scene, requestID
+	} else if len(initial.SceneIDs) != 0 {
+		t.scene = initial.SceneIDs[0]
 	}
 	if player != nil {
 		player.Play()
@@ -213,15 +244,20 @@ func (t *studioTransport) stop() {
 	t.pendingSongID = 0
 }
 
-func (t *studioTransport) launchScene(name string) error {
+func (t *studioTransport) launchScene(name string, quantizes ...cmd.Quantize) error {
+	quantize := cmd.Quantize(2)
+	if len(quantizes) != 0 {
+		quantize = quantizes[0]
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.playing || t.stream == nil {
 		return fmt.Errorf("press Play before launching a scene")
 	}
-	if err := t.stream.LaunchScene(name); err != nil {
+	if err := t.stream.LaunchSceneQuantized(name, quantize); err != nil {
 		return err
 	}
+	t.resumeStoppedTracks("")
 	t.errText = ""
 	if t.history != nil {
 		position := t.stream.Position()
@@ -230,21 +266,58 @@ func (t *studioTransport) launchScene(name string) error {
 	return nil
 }
 
-func (t *studioTransport) launchPattern(track, pattern string) error {
+func (t *studioTransport) launchPattern(track, pattern string, quantizes ...cmd.Quantize) error {
+	quantize := cmd.Quantize(2)
+	if len(quantizes) != 0 {
+		quantize = quantizes[0]
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if !t.playing || t.stream == nil {
 		return fmt.Errorf("press Play before launching a pattern")
 	}
-	if err := t.stream.SelectPattern(track, pattern); err != nil {
+	if err := t.stream.SelectPatternQuantized(track, pattern, quantize); err != nil {
 		return err
 	}
+	t.resumeStoppedTracks(track)
 	t.errText = ""
 	if t.history != nil {
 		position := t.stream.Position()
 		t.history.record("queued", fmt.Sprintf("%s queued on %s for the next bar", pattern, track), position.Bar, position.Step, "")
 	}
 	return nil
+}
+
+func (t *studioTransport) stopTrack(track string) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if !t.playing || t.stream == nil {
+		return fmt.Errorf("press Play before stopping a track")
+	}
+	index, ok := t.stream.TrackIndex(track)
+	if !ok {
+		return fmt.Errorf("unknown track %q", track)
+	}
+	if err := t.stream.SetMute(index, true); err != nil {
+		return err
+	}
+	if t.stoppedTracks == nil {
+		t.stoppedTracks = make(map[string]bool)
+	}
+	t.stoppedTracks[track] = true
+	return nil
+}
+
+func (t *studioTransport) resumeStoppedTracks(only string) {
+	for track := range t.stoppedTracks {
+		if only != "" && track != only {
+			continue
+		}
+		if index, ok := t.stream.TrackIndex(track); ok {
+			_ = t.stream.SetMute(index, false)
+		}
+		delete(t.stoppedTracks, track)
+	}
 }
 
 func (t *studioTransport) close() {
@@ -346,19 +419,31 @@ func (t *studioTransport) publishMeter(frame liveplay.MeterFrame, loudnessSnapsh
 
 func (t *studioTransport) markLanded(event liveplay.Event) {
 	t.mu.Lock()
+	if event.Kind == "note-on" || event.Kind == "note-off" {
+		t.mu.Unlock()
+		return
+	}
 	switch event.Kind {
 	case "scene":
 		t.scene, t.landed = event.Name, event.Bar
+		t.activeSlots = nil
 	case "scene-error":
 		t.errText = fmt.Sprintf("scene %q is no longer in the playing score", event.Name)
 	case "song":
 		t.scene, t.landed = event.Name, event.Bar
+		t.activeSlots = nil
 	case "song-error":
 		t.errText = fmt.Sprintf("song block %q is no longer in the playing score", event.Name)
 	case "slot":
 		t.landed = event.Bar
+		if t.activeSlots == nil {
+			t.activeSlots = make(map[string]string)
+		}
+		t.activeSlots[event.Track] = event.Name
 	case "slot-error":
 		t.errText = fmt.Sprintf("pattern %q is no longer on track %q in the playing score", event.Name, event.Track)
+	case "note-error":
+		t.errText = event.Name
 	default:
 		t.pending, t.landed = false, event.Bar
 	}
@@ -376,6 +461,10 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 			t.history.record("landed", fmt.Sprintf("Scene %s launched at bar %d", event.Name, event.Bar), event.Bar, 1, "")
 		} else if event.Kind == "scene-error" {
 			t.history.record("error", fmt.Sprintf("Scene %s was not in the playing score", event.Name), event.Bar, 1, "")
+		} else if event.Kind == "note-error" {
+			t.history.record("error", event.Name, event.Bar, 1, "")
+		} else if event.Kind == "note-on" || event.Kind == "note-off" {
+			return
 		} else {
 			t.history.record("landed", fmt.Sprintf("Edit landed at bar %d", event.Bar), event.Bar, 1, "")
 		}
@@ -422,7 +511,7 @@ func (t *studioTransport) poll() {
 	t.pending, t.errText = true, ""
 	position := stream.Position()
 	t.mu.Unlock()
-	if t.history != nil {
+	if t.history != nil && !t.history.consumeRecordedTake(studioRevision(source)) {
 		t.history.record("queued", "Edit queued for the next bar", position.Bar, position.Step, "")
 	}
 }
@@ -454,10 +543,21 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		Track    string `json:"track"`
 		Pattern  string `json:"pattern"`
 		Entry    int    `json:"entry"`
+		Quantize uint32 `json:"quantize"`
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&input); err != nil {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
+	}
+	quantize := cmd.Quantize(input.Quantize)
+	if input.Action == "launch" || input.Action == "slot" {
+		if input.Quantize == 0 {
+			quantize = cmd.Quantize(2)
+		}
+		if !validStudioQuantize(quantize) {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "quantize must be next beat, next bar, 2 bars, or 4 bars"})
+			return
+		}
 	}
 	switch input.Action {
 	case "play":
@@ -467,6 +567,11 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		}
 	case "stop":
 		s.transport.stop()
+	case "trackStop":
+		if err := s.transport.stopTrack(input.Track); err != nil {
+			studioJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
+			return
+		}
 	case "launch", "slot", "playFrom":
 		s.mu.Lock()
 		current, err := os.ReadFile(s.path)
@@ -513,7 +618,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": fmt.Sprintf("scene %q is not in the score", input.Scene)})
 				return
 			}
-			launchErr = s.transport.launchScene(input.Scene)
+			launchErr = s.transport.launchScene(input.Scene, quantize)
 		} else if input.Action == "slot" {
 			found := false
 			for _, track := range project.Tracks {
@@ -532,7 +637,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": fmt.Sprintf("pattern %q is not on track %q", input.Pattern, input.Track)})
 				return
 			}
-			launchErr = s.transport.launchPattern(input.Track, input.Pattern)
+			launchErr = s.transport.launchPattern(input.Track, input.Pattern, quantize)
 		} else {
 			if input.Entry < 0 || input.Entry >= len(project.Song) || project.Song[input.Entry].Scene != input.Scene {
 				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "song block is no longer in this position"})
@@ -555,7 +660,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be play, stop, launch, slot, or playFrom"})
+		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be play, stop, trackStop, launch, slot, or playFrom"})
 		return
 	}
 	studioJSON(w, http.StatusOK, s.transport.snapshot())
