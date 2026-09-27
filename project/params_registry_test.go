@@ -42,7 +42,7 @@ func TestParameterRegistryGeneratedFilesAreCurrent(t *testing.T) {
 	}
 	for i, descriptor := range paramdefs.Registry {
 		got := kernel.Params[i]
-		if got.ID != kernel.ParamID(i) || got.Name != descriptor.ID || got.Min != float32(descriptor.Min) || got.Max != float32(descriptor.Max) || got.Default != float32(descriptor.Default) || got.Curve != descriptor.Curve || got.SmoothingMS != float32(descriptor.SmoothingMS) || got.Live != descriptor.Live {
+		if got.ID != kernel.ParamID(i) || got.Name != descriptor.ID || got.Path != descriptor.Path || got.Min != float32(descriptor.Min) || got.Max != float32(descriptor.Max) || got.Default != float32(descriptor.Default) || got.DisplayStep != float32(descriptor.DisplayStep) || got.Curve != descriptor.Curve || got.SmoothingMS != float32(descriptor.SmoothingMS) || got.Live != descriptor.Live || got.Automatable != descriptor.Automatable {
 			t.Fatalf("kernel registry row %d differs from source list: %+v vs %+v", i, got, descriptor)
 		}
 	}
@@ -70,6 +70,9 @@ func TestParameterRangesMatchProjectValidatorsAndSchema(t *testing.T) {
 		}
 	}
 	for _, descriptor := range paramdefs.Registry {
+		if strings.HasPrefix(descriptor.ID, "global.") {
+			continue // top-level source settings have no v1 track/effect compiler
+		}
 		if descriptor.Schema != "" {
 			got, ok := schemaRanges[descriptor.Schema]
 			want := strconv.FormatFloat(descriptor.Min, 'f', -1, 64) + ".." + strconv.FormatFloat(descriptor.Max, 'f', -1, 64)

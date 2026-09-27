@@ -19,11 +19,15 @@ test('setParam coalesces each address to its last value per animation frame', ()
   audio.setParam('bass.level', -9);
   audio.setParam('bass.pan', .2);
   audio.setParam('bass.level', -3.5);
+  audio.setParam('bass.send.delay', .3);
+  audio.setParam('delay.feedback', .4);
   assert.equal(frames.length, 1);
   frames.shift()();
   assert.deepEqual(socket.sent, [
     {type: 'param', address: 'bass.level', value: -3.5},
-    {type: 'param', address: 'bass.pan', value: .2}
+    {type: 'param', address: 'bass.pan', value: .2},
+    {type: 'param', address: 'bass.send.delay', value: .3},
+    {type: 'param', address: 'delay.feedback', value: .4}
   ]);
   audio.close();
 });

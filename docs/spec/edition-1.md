@@ -356,6 +356,115 @@ song { main*4 }
 
 **Edition history:** `stop` is accepted as the canonical stop word when no pattern named `stop` exists. `off` remains valid in edition 1; `cicada fix` rewrites it to `stop` when that spelling is unambiguous.
 
+## Parameter paths
+
+**Status:** Implemented.
+
+**Syntax (EBNF):** A `parameter_path` has the form `owner.setting` and is accepted as a scene target; see `parameter_path`, `scene_target`, and `scene_assignment` in the [EBNF appendix](appendix.ebnf). Its first part names the owner. The remaining part names a registered setting and may contain another dot, as in `bass.send.delay`.
+
+**Meaning:** A path addresses a registered setting on a declared track or effect. Track and effect names share the owner namespace, so an owner must resolve to exactly one of them. Effect paths use the declared effect name, such as `delay.feedback`. Track paths use the track name, such as `bass.cutoff` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the existing delay and reverb sends, which the track block spells `send_a` and `send_b`. Drum lane controls keep their flat suffixes, such as `bd_tune`.
+
+**Types and units:** The parameter registry sets each path's type, unit, range, default, and whether it can change live. Numeric scene values use the registered unit and range; toggles and enumerations use their registered words. Track voice parameters are listed in the [built-in track parameter catalog](built-in-track-parameters.md); effect values are listed under [Effects](#effects). Scene settings can target only live parameters.
+
+**Defaults:** Each path starts with its registry default. A track or effect block value overrides that default. A scene setting overrides the block value when that scene lands, and remains active until another scene sets the same path. For example, `bass.cutoff` defaults to 600 Hz, while the acid track block may set it to 700 Hz.
+
+**Errors:** An unknown owner reports `CICADA-REFERENCE`; if a track and effect have the same name, the ambiguous owner also reports `CICADA-REFERENCE` with a rename hint. An unknown setting reports `CICADA-PARAM`. A duplicate path in one scene reports `CICADA-DUPLICATE`. A wrong unit, value type, or range reports `CICADA-UNIT`. A registered but non-live setting, or any path owned by reserved `master`, reports `CICADA-UNSUPPORTED`.
+
+**Example:** Set the existing sends through their paths:
+
+```cicada
+fx delay {}
+fx reverb {}
+track bass acid { send_a = 0.2 send_b = 0.1 }
+pattern pulse acid { 1 . 1 . }
+scene main {
+  bass = pulse
+  bass.send.delay = 0.45
+  bass.send.reverb = 0.3
+}
+song { main*4 }
+```
+
+Drum lane parameters use the named drum track:
+
+```cicada
+track beat drums {}
+pattern drum-loop drums { bd: X... }
+scene main { beat = drum-loop beat.bd_tune = 48Hz }
+song { main }
+```
+
+Use `cicada explain score.cicada bass.cutoff @3.2.4` to inspect the registry default, block value, active scene value, and computed value at a song location.
+
+**Edition history:** Parameter paths and live scene settings are additive edition-1 features. They use `cicada.project/2` when a semantic project contains scene settings. The `master` owner remains reserved; see [accepted syntax](accepted.md#named-mixer-pieces).
+
+## Scene parameter settings
+
+**Status:** Implemented.
+
+**Syntax (EBNF):** A scene assignment is `scene_target = scene_value`. The target is either a track identifier for a pattern binding or a `parameter_path` for a setting. The appendix defines the accepted number, identifier, string, and fraction value tokens.
+
+**Meaning:** A scene applies its settings when it lands at the scene switch, together with its pattern bindings. A setting takes effect at that boundary and uses the registered live smoothing. Later scenes carry the last value forward when they omit that path; a scene changes it only by setting the same path again. `level = off` disables a track through the engine's layer mask. It is not a numeric level value.
+
+**Types and units:** A setting must resolve to a live registry entry for its track or effect. Numeric values use that entry's unit and range. Because the engine applies scene values as float32, a non-boundary value that rounds outside the registered range reports `CICADA-PARAM`. An exact minimum or maximum that rounds outside the range moves inward by one float32 step. Toggle and enumeration settings use the registered values, and `off` is available where the entry permits it. A `delay.time` division stays synced to tempo when a scene applies it; the engine crossfades to the new delay time. `drums.level = off` turns off the whole drum track; drum lane level paths such as `drums.bd_level` address one lane.
+
+**Defaults:** The precedence is registry default, then the track or effect block, then a scene setting. Once a scene changes a path, that value carries through following scenes until another scene sets it. An omitted setting does not restore the block value or registry default.
+
+**Errors:** Duplicate settings for one path in a scene report `CICADA-DUPLICATE`. Unknown owners report `CICADA-REFERENCE`; ambiguous track/effect owners report `CICADA-REFERENCE` and a rename hint. Unknown settings report `CICADA-PARAM`; wrong values or units report `CICADA-UNIT`. A non-boundary numeric value that rounds outside its float32 range, or a synced delay division that exceeds the four-second buffer at the score tempo, reports `CICADA-PARAM`. A registered value with no engine representation reports `CICADA-UNSUPPORTED` and names its path and value. Non-live paths and reserved `master` paths report `CICADA-UNSUPPORTED`.
+
+**Example:** The second scene leaves `bass.cutoff`, `drums.level`, and the synced delay division at the values set by the first scene:
+
+```cicada
+fx delay {}
+track bass acid { cutoff = 700Hz send_a = 0.2 }
+track drums drums { level = -4dB }
+pattern pulse acid { 1 . 1 . }
+pattern beat drums { bd: X... }
+scene verse {
+  bass = pulse
+  drums = beat
+  bass.cutoff = 900Hz
+  drums.level = off
+  delay.time = 1/8
+}
+scene chorus {
+  bass = pulse
+  drums = beat
+}
+song { verse*4 chorus*4 }
+```
+
+This invalid scene uses an owner shared by a track and an effect:
+
+```cicada-invalid CICADA-REFERENCE
+fx delay { feedback = 0.2 }
+track delay acid {}
+pattern riff acid { 1 }
+scene main { delay = riff delay.feedback = 0.3 }
+song { main }
+```
+
+This invalid scene targets an effect setting that is registered but not live:
+
+```cicada-invalid CICADA-UNSUPPORTED
+fx drive { shape = soft }
+track bass acid {}
+pattern riff acid { 1 }
+scene main { bass = riff drive.shape = hard }
+song { main }
+```
+
+This in-range value is rejected because it rounds below the drum tune's float32 minimum:
+
+```cicada-invalid CICADA-PARAM
+track beat drums {}
+pattern riff drums steps=1 { sd: X }
+scene main { beat=riff beat.sd_tune=0.7000000000000001 }
+song { main }
+```
+
+**Edition history:** Scene parameter settings were added to edition 1 without changing pattern binding syntax. At a song scene switch they land with the scene and carry forward until overridden.
+
 ## Songs
 
 **Status:** Implemented.

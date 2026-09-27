@@ -1,5 +1,8 @@
 .PHONY: test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm
 
+# Keep a TinyGo/Binaryen regression from consuming the full CI job budget.
+KERNEL_WASM_BUILD_TIMEOUT ?= 180s
+
 test:
 	go test ./... -count=1
 
@@ -35,7 +38,13 @@ probe-wasm:
 
 build-kernel-wasm:
 	mkdir -p build
-	GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm
+	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
+		status=$$?; \
+		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
+			echo "FAIL build-kernel-wasm: TinyGo kernel build exceeded $(KERNEL_WASM_BUILD_TIMEOUT) budget" >&2; \
+		fi; \
+		exit $$status; \
+	}
 	go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm
 
 build-loudness-wasm:

@@ -13,7 +13,12 @@ import (
 // generator owns project-1.json, keep every serialized field visible in the
 // current interchange schema, including fields of nested and union types.
 func TestSemanticIRFieldsMatchProjectSchema(t *testing.T) {
-	data, err := os.ReadFile("schema/project-1.json")
+	t.Run("project-1", func(t *testing.T) { checkSemanticIRFields(t, "schema/project-1.json", false) })
+	t.Run("project-2", func(t *testing.T) { checkSemanticIRFields(t, "schema/project-2.json", true) })
+}
+
+func checkSemanticIRFields(t *testing.T, path string, includeV2 bool) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +53,7 @@ func TestSemanticIRFieldsMatchProjectSchema(t *testing.T) {
 		wantRequired := map[string]bool{}
 		for index := 0; index < typ.NumField(); index++ {
 			field := typ.Field(index)
-			if !field.IsExported() {
+			if !field.IsExported() || !includeV2 && field.Tag.Get("introduced") == "cicada.project/2" {
 				continue
 			}
 			name := strings.Split(field.Tag.Get("json"), ",")[0]
@@ -60,7 +65,9 @@ func TestSemanticIRFieldsMatchProjectSchema(t *testing.T) {
 			if !strings.Contains(field.Tag.Get("json"), ",omitempty") {
 				wantRequired[name] = true
 			}
-			visit(field.Type)
+			if includeV2 || field.Tag.Get("introduced") != "cicada.project/2" {
+				visit(field.Type)
+			}
 		}
 		got := schemaProperties(definition, defs)
 		if !reflect.DeepEqual(sortedFields(want), sortedFields(got)) {

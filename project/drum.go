@@ -142,7 +142,7 @@ func validDrumParam(lane drum.Lane, name string) bool {
 		}
 	case drum.CP:
 		switch name {
-		case "tone", "decay", "spread":
+		case "tune", "tone", "decay", "spread":
 			return true
 		}
 	case drum.RS:
