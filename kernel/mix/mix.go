@@ -76,6 +76,15 @@ func (l *Limiter) LatencyFrames() int { return l.lookahead }
 func (l *Limiter) Ceiling() float64   { return l.ceiling }
 func (l *Limiter) Fault() bool        { return l.fault }
 
+// GainReductionDB reports the current linked gain reduction. Zero means the
+// limiter is passing unity gain.
+func (l *Limiter) GainReductionDB() float64 {
+	if l.gain <= 0 {
+		return math.Inf(1)
+	}
+	return -20 * math.Log10(l.gain)
+}
+
 func (l *Limiter) Reset() {
 	l.ring = [145]stereo{}
 	l.peaks = [145]peakItem{}
