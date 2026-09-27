@@ -226,7 +226,7 @@ func TestFailedRenderPreservesOutput(t *testing.T) {
 	if err := os.WriteFile(path, []byte("keep"), 0644); err != nil {
 		t.Fatal(err)
 	}
-	if err := renderFile(score, path, render.Options{SampleRate: 48_000, TailSec: 3}); err == nil {
+	if err := renderFile(score, path, render.Options{SampleRate: 48_000, TailSec: 3}, nil); err == nil {
 		t.Fatal("expected missing arrangement error")
 	}
 	data, err := os.ReadFile(path)
