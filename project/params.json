@@ -1,0 +1,1845 @@
+[
+  {
+    "id": "mix.gain",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument"
+    ],
+    "source": "level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "mix.pan",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument"
+    ],
+    "source": "pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "mix.send_a",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument"
+    ],
+    "source": "send_a",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "mix.send_b",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument"
+    ],
+    "source": "send_b",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "mix.mute",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument"
+    ],
+    "source": "mute",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "toggle",
+    "smoothing_ms": 10,
+    "live": true,
+    "persist": "live-only"
+  },
+  {
+    "id": "mix.solo",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument"
+    ],
+    "source": "solo",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "toggle",
+    "smoothing_ms": 10,
+    "live": true,
+    "persist": "live-only"
+  },
+  {
+    "id": "mix.send_pre",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument"
+    ],
+    "source": "send_pre",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "toggle",
+    "values": [
+      "false",
+      "true"
+    ],
+    "smoothing_ms": 0,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "mix.bus",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument"
+    ],
+    "source": "bus",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "enum",
+    "values": [
+      "music",
+      "sfx"
+    ],
+    "smoothing_ms": 0,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "mix.insert",
+    "scope": "track",
+    "voices": [
+      "acid",
+      "drums",
+      "instrument"
+    ],
+    "source": "insert",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "enum",
+    "values": [
+      "none",
+      "drive"
+    ],
+    "smoothing_ms": 0,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "fx.drive.shape",
+    "scope": "global",
+    "voices": [],
+    "source": "shape",
+    "unit": "",
+    "min": 0,
+    "max": 3,
+    "default": 0,
+    "curve": "enum",
+    "values": [
+      "soft",
+      "hard",
+      "fold",
+      "diode"
+    ],
+    "smoothing_ms": 0,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "fx.drive.gain",
+    "scope": "global",
+    "voices": null,
+    "source": "gain",
+    "unit": "dB",
+    "min": 0,
+    "max": 36,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.drive.tone",
+    "scope": "global",
+    "voices": null,
+    "source": "tone",
+    "unit": "Hz",
+    "min": 1000,
+    "max": 20000,
+    "default": 12000,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.drive.mix",
+    "scope": "global",
+    "voices": null,
+    "source": "mix",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.delay.time",
+    "scope": "global",
+    "voices": [],
+    "source": "time",
+    "unit": "ms",
+    "min": 1,
+    "max": 2000,
+    "default": 250,
+    "curve": "log",
+    "values": [
+      "1/32",
+      "1/16",
+      "1/16T",
+      "1/16.",
+      "1/8",
+      "1/8T",
+      "1/8.",
+      "3/16",
+      "1/4",
+      "1/4.",
+      "1/2"
+    ],
+    "smoothing_ms": 20,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.delay.feedback",
+    "scope": "global",
+    "voices": null,
+    "source": "feedback",
+    "unit": "ratio",
+    "min": 0,
+    "max": 0.95,
+    "default": 0.35,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.delay.damp",
+    "scope": "global",
+    "voices": null,
+    "source": "damp",
+    "unit": "Hz",
+    "min": 1000,
+    "max": 16000,
+    "default": 6000,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.delay.pingpong",
+    "scope": "global",
+    "voices": [],
+    "source": "pingpong",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "toggle",
+    "values": [
+      "false",
+      "true"
+    ],
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.delay.width",
+    "scope": "global",
+    "voices": null,
+    "source": "width",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.delay.mix",
+    "scope": "global",
+    "voices": null,
+    "source": "mix",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.reverb.size",
+    "scope": "global",
+    "voices": null,
+    "source": "size",
+    "unit": "ratio",
+    "min": 0.5,
+    "max": 1.5,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.reverb.decay",
+    "scope": "global",
+    "voices": null,
+    "source": "decay",
+    "unit": "ms",
+    "min": 300,
+    "max": 12000,
+    "default": 2400,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.reverb.damp",
+    "scope": "global",
+    "voices": null,
+    "source": "damp",
+    "unit": "Hz",
+    "min": 2000,
+    "max": 16000,
+    "default": 8000,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.reverb.highpass",
+    "scope": "global",
+    "voices": null,
+    "source": "highpass",
+    "unit": "Hz",
+    "min": 40,
+    "max": 400,
+    "default": 120,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.reverb.predelay",
+    "scope": "global",
+    "voices": null,
+    "source": "predelay",
+    "unit": "ms",
+    "min": 0,
+    "max": 200,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.reverb.mix",
+    "scope": "global",
+    "voices": null,
+    "source": "mix",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.comp.detect",
+    "scope": "global",
+    "voices": [],
+    "source": "detect",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "enum",
+    "values": [
+      "peak",
+      "rms"
+    ],
+    "smoothing_ms": 0,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "fx.comp.threshold",
+    "scope": "global",
+    "voices": null,
+    "source": "threshold",
+    "unit": "dB",
+    "min": -40,
+    "max": 0,
+    "default": -18,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.comp.ratio",
+    "scope": "global",
+    "voices": null,
+    "source": "ratio",
+    "unit": "ratio",
+    "min": 1,
+    "max": 20,
+    "default": 4,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.comp.knee",
+    "scope": "global",
+    "voices": null,
+    "source": "knee",
+    "unit": "dB",
+    "min": 0,
+    "max": 12,
+    "default": 6,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.comp.attack",
+    "scope": "global",
+    "voices": null,
+    "source": "attack",
+    "unit": "ms",
+    "min": 0.1,
+    "max": 100,
+    "default": 10,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.comp.release",
+    "scope": "global",
+    "voices": null,
+    "source": "release",
+    "unit": "ms",
+    "min": 10,
+    "max": 1000,
+    "default": 100,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.comp.makeup",
+    "scope": "global",
+    "voices": [],
+    "source": "makeup",
+    "unit": "dB",
+    "min": -24,
+    "max": 24,
+    "default": 0,
+    "curve": "linear",
+    "values": [
+      "auto"
+    ],
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.comp.mix",
+    "scope": "global",
+    "voices": null,
+    "source": "mix",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": true,
+    "persist": "source"
+  },
+  {
+    "id": "fx.comp.sidechain",
+    "scope": "global",
+    "voices": [],
+    "source": "sidechain",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "enum",
+    "values": [
+      "music",
+      "sfx"
+    ],
+    "smoothing_ms": 0,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.tune",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "tune",
+    "unit": "",
+    "min": -12,
+    "max": 12,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.fine",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "fine",
+    "unit": "",
+    "min": -100,
+    "max": 100,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.wave",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "wave",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.pw",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "pw",
+    "unit": "",
+    "min": 0.1,
+    "max": 0.9,
+    "default": 0.5,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.detune",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "detune",
+    "unit": "",
+    "min": 0,
+    "max": 50,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.sub",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "sub",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.cutoff",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "cutoff",
+    "unit": "Hz",
+    "min": 20,
+    "max": 8000,
+    "default": 600,
+    "curve": "log",
+    "smoothing_ms": 3,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.reso",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "reso",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0.55,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.envmod",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "envmod",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0.6,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.decay",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "decay",
+    "unit": "ms",
+    "min": 100,
+    "max": 3000,
+    "default": 400,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.accent",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "accent",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0.7,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.drive",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "drive",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0.2,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.release",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "release",
+    "unit": "ms",
+    "min": 5,
+    "max": 500,
+    "default": 30,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.slide",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "slide",
+    "unit": "ms",
+    "min": 20,
+    "max": 200,
+    "default": 60,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.gate",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "gate",
+    "unit": "",
+    "min": 10,
+    "max": 100,
+    "default": 55,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.filter",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "filter",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "enum",
+    "values": [
+      "diode",
+      "ladder"
+    ],
+    "smoothing_ms": 0,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.savage",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "savage",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "toggle",
+    "values": [
+      "off",
+      "on"
+    ],
+    "smoothing_ms": 0,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "acid.octave",
+    "scope": "track",
+    "voices": [
+      "acid"
+    ],
+    "source": "octave",
+    "unit": "",
+    "min": 0,
+    "max": 6,
+    "default": 2,
+    "curve": "enum",
+    "values": [
+      "0",
+      "1",
+      "2",
+      "3",
+      "4",
+      "5",
+      "6"
+    ],
+    "smoothing_ms": 0,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.bd.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "bd_tune",
+    "unit": "Hz",
+    "min": 40,
+    "max": 120,
+    "default": 55,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.bd.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "bd_decay",
+    "unit": "ms",
+    "min": 80,
+    "max": 1500,
+    "default": 400,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.bd.sweep",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "bd_sweep",
+    "unit": "",
+    "min": 1,
+    "max": 8,
+    "default": 4,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.bd.sweep_time",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "bd_sweep_time",
+    "unit": "ms",
+    "min": 10,
+    "max": 80,
+    "default": 30,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.bd.click",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "bd_click",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0.3,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.bd.drive",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "bd_drive",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0.2,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.bd.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "bd_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.bd.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "bd_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.sd.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "sd_tune",
+    "unit": "ratio",
+    "min": 0.7,
+    "max": 1.4,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.sd.tone",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "sd_tone",
+    "unit": "ratio",
+    "min": 0.5,
+    "max": 2,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.sd.mix",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "sd_mix",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0.6,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.sd.snappy",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "sd_snappy",
+    "unit": "ms",
+    "min": 60,
+    "max": 400,
+    "default": 180,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.sd.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "sd_decay",
+    "unit": "ms",
+    "min": 40,
+    "max": 300,
+    "default": 90,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.sd.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "sd_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.sd.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "sd_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ch.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ch_tune",
+    "unit": "ratio",
+    "min": 0.8,
+    "max": 1.25,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ch.tone",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ch_tone",
+    "unit": "Hz",
+    "min": 5000,
+    "max": 10000,
+    "default": 7500,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ch.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ch_decay",
+    "unit": "ms",
+    "min": 20,
+    "max": 150,
+    "default": 60,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ch.metal",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ch_metal",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "toggle",
+    "values": [
+      "off",
+      "on"
+    ],
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ch.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ch_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ch.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ch_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.oh.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "oh_tune",
+    "unit": "ratio",
+    "min": 0.8,
+    "max": 1.25,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.oh.tone",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "oh_tone",
+    "unit": "Hz",
+    "min": 5000,
+    "max": 10000,
+    "default": 7500,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.oh.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "oh_decay",
+    "unit": "ms",
+    "min": 150,
+    "max": 1200,
+    "default": 400,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.oh.metal",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "oh_metal",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "toggle",
+    "values": [
+      "off",
+      "on"
+    ],
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.oh.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "oh_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.oh.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "oh_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cp.tone",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cp_tone",
+    "unit": "Hz",
+    "min": 700,
+    "max": 2000,
+    "default": 1100,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cp.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cp_decay",
+    "unit": "ms",
+    "min": 60,
+    "max": 400,
+    "default": 120,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cp.spread",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cp_spread",
+    "unit": "ms",
+    "min": 6,
+    "max": 16,
+    "default": 10,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cp.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cp_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cp.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cp_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.rs.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "rs_tune",
+    "unit": "ratio",
+    "min": 0.7,
+    "max": 1.4,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.rs.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "rs_decay",
+    "unit": "ms",
+    "min": 4,
+    "max": 50,
+    "default": 12,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.rs.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "rs_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.rs.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "rs_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.lt.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "lt_tune",
+    "unit": "ratio",
+    "min": 0.6674199270850172,
+    "max": 1.4983070768766815,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.lt.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "lt_decay",
+    "unit": "ms",
+    "min": 80,
+    "max": 1000,
+    "default": 250,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.lt.sweep",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "lt_sweep",
+    "unit": "ratio",
+    "min": 0,
+    "max": 2,
+    "default": 0.4,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.lt.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "lt_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.lt.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "lt_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.mt.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "mt_tune",
+    "unit": "ratio",
+    "min": 0.6674199270850172,
+    "max": 1.4983070768766815,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.mt.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "mt_decay",
+    "unit": "ms",
+    "min": 80,
+    "max": 1000,
+    "default": 250,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.mt.sweep",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "mt_sweep",
+    "unit": "ratio",
+    "min": 0,
+    "max": 2,
+    "default": 0.4,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.mt.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "mt_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.mt.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "mt_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ht.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ht_tune",
+    "unit": "ratio",
+    "min": 0.6674199270850172,
+    "max": 1.4983070768766815,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ht.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ht_decay",
+    "unit": "ms",
+    "min": 80,
+    "max": 1000,
+    "default": 250,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ht.sweep",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ht_sweep",
+    "unit": "ratio",
+    "min": 0,
+    "max": 2,
+    "default": 0.4,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ht.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ht_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.ht.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "ht_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cb.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cb_tune",
+    "unit": "ratio",
+    "min": 0.7,
+    "max": 1.4,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cb.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cb_decay",
+    "unit": "ms",
+    "min": 40,
+    "max": 400,
+    "default": 120,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cb.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cb_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cb.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cb_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cy.tune",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cy_tune",
+    "unit": "ratio",
+    "min": 0.8,
+    "max": 1.25,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cy.decay",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cy_decay",
+    "unit": "ms",
+    "min": 500,
+    "max": 4000,
+    "default": 1500,
+    "curve": "log",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cy.tone",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cy_tone",
+    "unit": "ratio",
+    "min": 0.5,
+    "max": 2,
+    "default": 1,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cy.level",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cy_level",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": -6,
+    "curve": "fader",
+    "off": true,
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  },
+  {
+    "id": "drum.cy.pan",
+    "scope": "track",
+    "voices": [
+      "drums"
+    ],
+    "source": "cy_pan",
+    "unit": "",
+    "min": -1,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "smoothing_ms": 5,
+    "live": false,
+    "persist": "source"
+  }
+]

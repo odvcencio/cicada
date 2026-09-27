@@ -4,6 +4,8 @@ package cmd
 
 import (
 	"math"
+
+	"m31labs.dev/cicada/kernel"
 )
 
 const (
@@ -38,6 +40,10 @@ const (
 
 type Quantize uint32
 
+// Command is one audio-kernel operation. For OpSetParam, Arg0 contains the
+// float32 bits of the registry value in its declared unit. A descriptor with
+// off=true uses negative infinity to carry the source value off; all other
+// parameters must be finite.
 type Command struct {
 	Op    Op
 	Track uint8
@@ -149,8 +155,29 @@ func (c Command) Validate(tracks uint8) error {
 			return Error("tempo must be 20 to 300 BPM")
 		}
 	case OpSetParam:
-		if math.IsNaN(float64(math.Float32frombits(c.Arg0))) || math.IsInf(float64(math.Float32frombits(c.Arg0)), 0) {
+		spec, ok := kernel.Param(kernel.ParamID(c.Index))
+		if !ok {
+			return Error("unknown parameter ID")
+		}
+		if !spec.Live {
+			return Error("parameter is not live")
+		}
+		value := float64(math.Float32frombits(c.Arg0))
+		off := spec.Off && math.IsInf(value, -1)
+		if math.IsNaN(value) || math.IsInf(value, 0) && !off {
 			return Error("parameter must be finite")
+		}
+		if !off && (value < float64(spec.Min) || value > float64(spec.Max)) {
+			return Error("parameter is out of range")
+		}
+		if spec.Curve == "toggle" && value != 0 && value != 1 {
+			return Error("toggle parameter must be zero or one")
+		}
+		if spec.Scope == "global" && c.Track != 0xff || spec.Scope == "track" && c.Track >= tracks {
+			return Error("parameter track scope is invalid")
+		}
+		if c.Arg1 != 0 {
+			return Error("parameter command has unexpected payload")
 		}
 	case OpSetStep:
 		if c.Index >= 64 || c.Arg1 >= 16 || c.Arg0>>28 != 0 || c.Arg0>>14&0x7f > 100 || c.Arg0&(1<<10) != 0 && (c.Arg0&(1<<9) == 0 || c.Arg0>>11&7 != 0) {

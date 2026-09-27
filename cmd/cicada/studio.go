@@ -39,6 +39,7 @@ func studioCommand(args []string) error {
 	path, address := "main.cicada", "127.0.0.1:0"
 	seenPath := false
 	lspStdio := false
+	audioNull := false
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--lsp-stdio" {
 			lspStdio = true
@@ -49,8 +50,16 @@ func studioCommand(args []string) error {
 			i++
 			continue
 		}
+		if args[i] == "--audio" && i+1 < len(args) {
+			if args[i+1] != "null" {
+				return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio null] [--lsp-stdio]")
+			}
+			audioNull = true
+			i++
+			continue
+		}
 		if strings.HasPrefix(args[i], "-") || seenPath {
-			return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--lsp-stdio]")
+			return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio null] [--lsp-stdio]")
 		}
 		path = args[i]
 		seenPath = true
@@ -67,6 +76,7 @@ func studioCommand(args []string) error {
 		return err
 	}
 	defer studio.transport.close()
+	studio.transport.audioNull = audioNull
 	handler := studio.routes()
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -153,6 +163,9 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("POST /api/transport", s.transportCommand)
 	mux.HandleFunc("GET /api/transport", s.transportState)
 	mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
+	mux.HandleFunc("GET /api/params", s.params)
+	mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
+	mux.HandleFunc("GET /studio-audio.js", s.audioScript)
 	mux.HandleFunc("GET /api/history", s.historyState)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !studioLoopbackHost(r.Host) {
