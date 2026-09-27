@@ -206,7 +206,10 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if p == nil {
-		http.Error(w, "Score has errors. Save a valid score to open Studio.", http.StatusUnprocessableEntity)
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = io.WriteString(w, studioWaitingPage)
 		return
 	}
 	var page bytes.Buffer
@@ -221,6 +224,12 @@ func (s *studio) page(w http.ResponseWriter, r *http.Request) {
 
 func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 	s.observeHistory()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := studioRecoveryConflict(s.path); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
 	source, err := os.ReadFile(s.path)
 	if err != nil {
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
@@ -338,6 +347,10 @@ func (s *studio) apply(w http.ResponseWriter, edit studioEdit, change func([]byt
 func (s *studio) applyWithHook(w http.ResponseWriter, edit studioEdit, change func([]byte) ([]byte, error), beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := studioRecoveryConflict(s.path); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
 	current, err := os.ReadFile(s.path)
 	if err != nil {
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
@@ -389,7 +402,7 @@ func (s *studio) applyWithHook(w http.ResponseWriter, edit studioEdit, change fu
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
 	s.recordEdit(edit, studioRevision(updated))
-	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(updated), "valid": true})
+	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(updated), "valid": true, "preserved": preserved})
 }
 
 func compileStudioSource(path string, source []byte) (*project.Project, error) {
