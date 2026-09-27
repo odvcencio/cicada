@@ -118,6 +118,12 @@ func (s *studio) historyState(w http.ResponseWriter, _ *http.Request) {
 
 func (s *studio) recordEdit(edit studioEdit, revision string) {
 	detail := "Source edited"
+	if edit.Action == "move" {
+		detail = fmt.Sprintf("Song block %d moved to %d", edit.Index+1, edit.Target+1)
+	}
+	if edit.Action == "bars" {
+		detail = fmt.Sprintf("Song block %d set to %d bars", edit.Index+1, edit.Bars)
+	}
 	if edit.Pattern != "" {
 		detail = fmt.Sprintf("%s step %d toggled", edit.Pattern, edit.Step+1)
 		if edit.Lane != "" {
