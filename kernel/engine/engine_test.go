@@ -6,6 +6,7 @@ import (
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/seq"
 )
 
@@ -136,6 +137,55 @@ func TestRenderDoesNotAllocate(t *testing.T) {
 	allocs := testing.AllocsPerRun(1000, func() { e.Render(left[:], right[:]) })
 	if allocs != 0 {
 		t.Fatalf("Engine.Render allocated %.2f objects", allocs)
+	}
+}
+
+func TestSceneSettingsRenderDoesNotAllocate(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices = 1, 1
+	cfg.Scenes = []Scene{{Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 900}}}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.meterRate = 0
+	command := cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 0, Arg0: 0}
+	var left, right [1]float32
+	allocs := testing.AllocsPerRun(1000, func() {
+		if !e.Push(command) {
+			panic("scene command rejected")
+		}
+		e.Render(left[:], right[:])
+	})
+	if allocs != 0 {
+		t.Fatalf("scene setting render allocated %.2f objects", allocs)
+	}
+}
+
+func TestSceneDelayDivisionRenderDoesNotAllocate(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices = 1, 1
+	delay := fx.DefaultDelayParams()
+	cfg.DelayA = &delay
+	cfg.Scenes = []Scene{{Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamFxDelayTime, Division: fx.Quarter}}}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.meterRate = 0
+	command := cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 0}
+	var left, right [1]float32
+	allocs := testing.AllocsPerRun(1000, func() {
+		if !e.Push(command) {
+			panic("scene command rejected")
+		}
+		e.Render(left[:], right[:])
+	})
+	if allocs != 0 {
+		t.Fatalf("synced delay scene setting allocated %.2f objects", allocs)
+	}
+	if got := e.delayA.Params().Division; got != fx.Quarter {
+		t.Fatalf("scene delay division was not applied: got %s", got)
 	}
 }
 

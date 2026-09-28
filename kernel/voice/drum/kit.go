@@ -59,7 +59,7 @@ func DefaultParams(lane Lane) Params {
 	case OH:
 		p.Tune, p.Tone, p.Decay = 1, 7500, .4
 	case CP:
-		p.Tone, p.Decay, p.Spread = 1100, .12, .01
+		p.Tune, p.Tone, p.Decay, p.Spread = 1, 1100, .12, .01
 	case RS:
 		p.Tune, p.Decay = 1, .012
 	case LT, MT, HT:
@@ -102,7 +102,7 @@ func (p Params) Validate(lane Lane) error {
 			return Error("open hat parameter is out of range")
 		}
 	case CP:
-		if p.Tone < 700 || p.Tone > 2000 || p.Decay < .06 || p.Decay > .4 || p.Spread < .006 || p.Spread > .016 {
+		if p.Tune < .5 || p.Tune > 2 || p.Tone < 700 || p.Tone > 2000 || p.Decay < .06 || p.Decay > .4 || p.Spread < .006 || p.Spread > .016 {
 			return Error("clap parameter is out of range")
 		}
 	case RS:
@@ -161,17 +161,20 @@ type state struct {
 }
 
 type laneVoice struct {
-	params            Params
-	current, old      state
-	fadeRemaining     int
-	panL, panR, level float64
-	recipe            Lane
-	enabled           bool
-	custom, customOld *graph.Voice
-	customActive      bool
-	customChoke       int
-	customAccent      float64
-	customOldAccent   float64
+	params                              Params
+	targetParams                        Params
+	paramAlpha                          float64
+	current, old                        state
+	fadeRemaining                       int
+	panL, panR, level                   float64
+	targetPanL, targetPanR, targetLevel float64
+	recipe                              Lane
+	enabled                             bool
+	custom, customOld                   *graph.Voice
+	customActive                        bool
+	customChoke                         int
+	customAccent                        float64
+	customOldAccent                     float64
 }
 
 type Kit struct {
@@ -205,13 +208,35 @@ func (k *Kit) SetParams(lane Lane, params Params) error {
 		return err
 	}
 	v := &k.lanes[lane]
-	v.params = params
+	v.params, v.targetParams, v.paramAlpha = params, params, 0
 	angle := (params.Pan + 1) * math.Pi / 4
 	v.panL, v.panR = math.Cos(angle), math.Sin(angle)
+	v.targetPanL, v.targetPanR = v.panL, v.panR
 	if params.LevelDB == -1000 {
 		v.level = 0
 	} else {
 		v.level = math.Pow(10, params.LevelDB/20)
+	}
+	v.targetLevel = v.level
+	return nil
+}
+
+// SetParamsTarget smooths live lane controls in NextStereo without allocating.
+func (k *Kit) SetParamsTarget(lane Lane, params Params, alpha float64) error {
+	if lane >= LaneCount || math.IsNaN(alpha) || math.IsInf(alpha, 0) || alpha <= 0 || alpha > 1 {
+		return Error("drum parameter smoothing is out of range")
+	}
+	if err := params.Validate(k.lanes[lane].recipe); err != nil {
+		return err
+	}
+	v := &k.lanes[lane]
+	v.targetParams, v.paramAlpha = params, alpha
+	angle := (params.Pan + 1) * math.Pi / 4
+	v.targetPanL, v.targetPanR = math.Cos(angle), math.Sin(angle)
+	if params.LevelDB == -1000 {
+		v.targetLevel = 0
+	} else {
+		v.targetLevel = math.Pow(10, params.LevelDB/20)
 	}
 	return nil
 }
@@ -373,6 +398,14 @@ func (k *Kit) NextStereo() (left, right float32) {
 	var l, r float64
 	for lane := Lane(0); lane < LaneCount; lane++ {
 		v := &k.lanes[lane]
+		if v.paramAlpha > 0 {
+			alpha := v.paramAlpha
+			v.params.Tune += (v.targetParams.Tune - v.params.Tune) * alpha
+			v.params.Decay += (v.targetParams.Decay - v.params.Decay) * alpha
+			v.level += (v.targetLevel - v.level) * alpha
+			v.panL += (v.targetPanL - v.panL) * alpha
+			v.panR += (v.targetPanR - v.panR) * alpha
+		}
 		if !v.enabled {
 			continue
 		}
@@ -420,7 +453,7 @@ func (k *Kit) bandCutoff(lane Lane, p Params) float64 {
 	case CH, OH:
 		return p.Tone
 	case CP:
-		return p.Tone
+		return p.Tone * p.Tune
 	case RS:
 		return 1700 * p.Tune
 	case LT, MT, HT:

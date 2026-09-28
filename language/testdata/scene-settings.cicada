@@ -1,0 +1,13 @@
+fx delay {}
+track bass acid { cutoff = 600Hz }
+track drums drums {}
+pattern bass-b acid { 1 }
+pattern beat drums { bd: x }
+scene drop {
+  bass = bass-b // pattern binding
+  drums = beat
+  bass.cutoff = 900Hz // live filter path
+  delay.feedback = 0.4
+  drums.bd_level = off
+}
+song { drop }

@@ -203,13 +203,26 @@ func TestAudioWASMLiveParameterMuteSoloMeterParity(t *testing.T) {
 	t.Logf("live parameter, mute, solo, and meter parity: %d log bytes, max sample difference %.9g", len(wasmLog), maxDifference)
 }
 
-func compareWASMFixture(t *testing.T, fixture string, bars int) {
-	t.Helper()
-	wasm, err := os.ReadFile(wasmModulePath())
+func TestAudioWASMSceneSettingsSampleParity(t *testing.T) {
+	source, err := os.ReadFile("testdata/scene-settings.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
+	compareWASMSource(t, "scene-settings.cicada", source, 2, true)
+}
+
+func compareWASMFixture(t *testing.T, fixture string, bars int) {
+	t.Helper()
 	source, err := os.ReadFile(filepath.Join("..", "..", "examples", fixture))
+	if err != nil {
+		t.Fatal(err)
+	}
+	compareWASMSource(t, fixture, source, bars, false)
+}
+
+func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, exactMessages bool) {
+	t.Helper()
+	wasm, err := os.ReadFile(wasmModulePath())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,12 +348,32 @@ func compareWASMFixture(t *testing.T, fixture string, bars int) {
 			if stableMemory == 0 || module.Memory().Size() != stableMemory {
 				t.Fatalf("WASM memory grew after warm-up: %d -> %d", stableMemory, module.Memory().Size())
 			}
-			compareMusicalMessages(t, wasmEvents, nativeEvents)
+			if exactMessages {
+				compareMessageLogs(t, wasmEvents, nativeEvents)
+			} else {
+				compareMusicalMessages(t, wasmEvents, nativeEvents)
+			}
 			if peakDifference > 1e-6 {
 				t.Fatalf("native/WASM peak sample difference %.9g at frame %d channel %d exceeds 1e-6", peakDifference, peakSample, peakChannel)
 			}
 			t.Logf("%s: %d bars at %d Hz, peak native/WASM sample difference %.9g", fixture, bars, rate, peakDifference)
 		})
+	}
+}
+
+func compareMessageLogs(t *testing.T, wasm, native []cmd.Message) {
+	t.Helper()
+	var wasmLog, nativeLog []byte
+	for _, message := range wasm {
+		encoded := cmd.EncodeMessage(message)
+		wasmLog = append(wasmLog, encoded[:]...)
+	}
+	for _, message := range native {
+		encoded := cmd.EncodeMessage(message)
+		nativeLog = append(nativeLog, encoded[:]...)
+	}
+	if !bytes.Equal(wasmLog, nativeLog) {
+		t.Fatalf("native/WASM scene-setting message logs differ: %d vs %d bytes", len(nativeLog), len(wasmLog))
 	}
 }
 

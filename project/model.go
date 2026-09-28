@@ -1,6 +1,7 @@
 package project
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 )
 
 const FormatID = "cicada.project/1"
+const FormatID2 = "cicada.project/2"
 
 // Project is the semantic interchange model shared by source tooling and the
 // future workstation. Slice order follows source order; maps carry keyed data.
@@ -121,6 +123,60 @@ type Step struct {
 type Scene struct {
 	ID       string            `cicada:"Scene identifier" json:"id"`
 	Bindings map[string]string `cicada:"Track to pattern assignments" json:"bindings"`
+	Settings []SceneSetting    `cicada:"Ordered live parameter settings" json:"settings,omitempty" introduced:"cicada.project/2"`
+}
+
+type SceneSetting struct {
+	Path  string     `cicada:"Resolved parameter path" json:"path" introduced:"cicada.project/2"`
+	Value SceneValue `cicada:"Parameter value in base units" json:"value" introduced:"cicada.project/2"`
+}
+
+// SceneValue is the /2 wire form of a path-addressed parameter value. Numeric
+// values carry only their base-unit number and unit; enums retain text.
+type SceneValue struct {
+	Unit   string   `cicada:"Base measurement unit or enum" json:"unit,omitempty" variant:"unit" introduced:"cicada.project/2"`
+	Number *float64 `cicada:"Numeric value in base units" json:"number,omitempty" variant:"number" introduced:"cicada.project/2"`
+	Text   string   `cicada:"Enumerated value" json:"text,omitempty" variant:"text" introduced:"cicada.project/2"`
+}
+
+func sceneValueFrom(value Value) SceneValue {
+	return SceneValue{Unit: value.Unit, Number: value.Number, Text: value.Text}
+}
+
+func (value SceneValue) projectValue() Value {
+	return Value{Unit: value.Unit, Number: value.Number, Text: value.Text}
+}
+
+func (value *SceneValue) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*value = SceneValue{}
+	var unit string
+	if raw, ok := fields["unit"]; !ok || json.Unmarshal(raw, &unit) != nil || unit == "" {
+		return fmt.Errorf("scene value needs a unit")
+	}
+	if unit == "enum" {
+		if len(fields) != 2 {
+			return fmt.Errorf("enum scene value must contain only unit and text")
+		}
+		raw, ok := fields["text"]
+		if !ok || json.Unmarshal(raw, &value.Text) != nil || value.Text == "" {
+			return fmt.Errorf("enum scene value needs text")
+		}
+		value.Unit = unit
+		return nil
+	}
+	if len(fields) != 2 {
+		return fmt.Errorf("numeric scene value must contain only unit and number")
+	}
+	raw, ok := fields["number"]
+	if !ok || json.Unmarshal(raw, &value.Number) != nil || value.Number == nil {
+		return fmt.Errorf("numeric scene value needs a number")
+	}
+	value.Unit = unit
+	return nil
 }
 
 type SongEntry struct {
@@ -136,6 +192,18 @@ type Effect struct {
 var laneOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
 
 func defaultMixer() Mixer { return Mixer{GainDB: -6, Insert: "none", Bus: "music"} }
+
+func projectHasSceneSettings(p *Project) bool {
+	if p == nil {
+		return false
+	}
+	for _, scene := range p.Scenes {
+		if len(scene.Settings) > 0 {
+			return true
+		}
+	}
+	return false
+}
 
 // FromScore lowers a validated source score to the versioned semantic model.
 // It does not silently omit a source declaration that has no v1 representation.
@@ -279,6 +347,20 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 			}
 			scene.Bindings[binding.Track] = pattern
 		}
+		for _, setting := range source.Settings {
+			resolved, resolveErr := ResolveParameterPath(p, setting.Path)
+			if resolveErr != nil {
+				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-REFERENCE", Severity: "error", Message: resolveErr.Error(), Position: setting.Position})
+			}
+			value, err := parseParameterValue(resolved.Descriptor, setting.Value)
+			if err != nil {
+				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-UNIT", Severity: "error", Message: err.Error(), Position: setting.ValuePosition})
+			}
+			scene.Settings = append(scene.Settings, SceneSetting{Path: setting.Path, Value: sceneValueFrom(value)})
+		}
+		if len(scene.Settings) > 0 {
+			p.Format, p.Version = FormatID2, 2
+		}
 		p.Scenes = append(p.Scenes, scene)
 	}
 	for _, entry := range score.Song {
@@ -288,7 +370,11 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	if err := ValidateProject(p); err != nil {
-		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
+		code := "CICADA-PARAM"
+		if strings.Contains(err.Error(), "CICADA-UNSUPPORTED:") {
+			code = "CICADA-UNSUPPORTED"
+		}
+		return nil, append(diagnostics, notation.Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	if _, err := canonicalProjectBytes(p); err != nil {
 		code := "CICADA-PARAM"
@@ -477,22 +563,55 @@ func projectValue(source string) (Value, error) {
 
 func parseBaseValue(source string) (float64, string, error) {
 	unit := "unit"
-	scale := 1.0
+	places := 0
 	for _, suffix := range []struct {
 		name, unit string
-		scale      float64
-	}{{"khz", "hz", 1000}, {"hz", "hz", 1}, {"ms", "ms", 1}, {"db", "db", 1}, {"s", "ms", 1000}, {"%", "unit", 0.01}} {
+		places     int
+	}{{"khz", "hz", 3}, {"hz", "hz", 0}, {"ms", "ms", 0}, {"db", "db", 0}, {"s", "ms", 3}, {"%", "unit", -2}} {
 		if strings.HasSuffix(strings.ToLower(source), suffix.name) {
-			unit, scale = suffix.unit, suffix.scale
+			unit, places = suffix.unit, suffix.places
 			source = source[:len(source)-len(suffix.name)]
 			break
 		}
 	}
-	value, err := strconv.ParseFloat(source, 64)
+	shifted, err := shiftDecimal(source, places)
 	if err != nil {
 		return 0, "", err
 	}
-	return value * scale, unit, nil
+	value, err := strconv.ParseFloat(shifted, 64)
+	if err != nil {
+		return 0, "", err
+	}
+	return value, unit, nil
+}
+
+// shiftDecimal moves a decimal point in the literal text, preserving exact
+// base-unit conversion until the final float64 parse.
+func shiftDecimal(source string, places int) (string, error) {
+	sign := ""
+	if strings.HasPrefix(source, "-") {
+		sign, source = "-", source[1:]
+	} else if strings.HasPrefix(source, "+") {
+		sign, source = "+", source[1:]
+	}
+	point := strings.IndexByte(source, '.')
+	if point < 0 {
+		point = len(source)
+	}
+	digits := strings.ReplaceAll(source, ".", "")
+	if digits == "" {
+		return "", fmt.Errorf("invalid decimal value")
+	}
+	newPoint := point + places
+	if newPoint <= 0 {
+		digits = strings.Repeat("0", -newPoint) + digits
+		digits = "0." + digits
+	} else if newPoint >= len(digits) {
+		digits += strings.Repeat("0", newPoint-len(digits))
+	} else {
+		digits = digits[:newPoint] + "." + digits[newPoint:]
+	}
+	return sign + digits, nil
 }
 
 func rootPitchClass(source string) (uint8, error) {

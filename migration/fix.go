@@ -91,14 +91,18 @@ func FixSource(source []byte) ([]byte, bool, error) {
 				if walker.Type(binding) != "scene_assignment" {
 					continue
 				}
-				pattern := walker.Field(binding, "pattern")
-				if pattern == nil {
+				target := walker.Field(binding, "target")
+				value := walker.Field(binding, "value")
+				if target == nil || value == nil || walker.Type(target) != "scene_target" {
 					continue
 				}
-				switch walker.Text(pattern) {
+				if walker.Type(target.NamedChild(0)) != "identifier" || walker.Type(value.NamedChild(0)) != "identifier" {
+					continue
+				}
+				switch walker.Text(value) {
 				case "off":
 					if !hasStopPattern {
-						edits = append(edits, sourceEdit{start: int(pattern.StartByte()), end: int(pattern.EndByte()), text: "stop"})
+						edits = append(edits, sourceEdit{start: int(value.StartByte()), end: int(value.EndByte()), text: "stop"})
 					}
 				case "keep":
 					if bytes.Contains(source[binding.StartByte():binding.EndByte()], []byte("//")) {
