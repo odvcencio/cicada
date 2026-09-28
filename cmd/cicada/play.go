@@ -105,6 +105,13 @@ func compileLiveProject(path string, p *project.Project) (liveplay.Score, error)
 	tracks := make([]liveplay.TrackSlots, len(p.Tracks))
 	for i, track := range p.Tracks {
 		tracks[i].ID = track.ID
+		tracks[i].Kind = track.Kind
+		for _, kit := range p.Kits {
+			if track.Kind == kit.ID {
+				tracks[i].Kind = "drums"
+				break
+			}
+		}
 		for slot, pattern := range track.Slots {
 			if pattern != nil {
 				tracks[i].Slots[slot] = *pattern
