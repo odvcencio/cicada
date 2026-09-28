@@ -56,7 +56,7 @@ func Fields() (FieldCatalog, error) {
 		seen[typ] = true
 		construct := snakeCaseName(typ.Name())
 		introduced := "cicada.project/1"
-		if typ == reflect.TypeFor[SceneSetting]() || typ == reflect.TypeFor[SceneValue]() {
+		if typ == reflect.TypeFor[SceneSetting]() || typ == reflect.TypeFor[SceneValue]() || typ == reflect.TypeFor[MixerSend]() || typ == reflect.TypeFor[Bus]() || typ == reflect.TypeFor[Master]() || typ == reflect.TypeFor[Export]() {
 			introduced = "cicada.project/2"
 		}
 		record := ConstructRecord{Name: construct, ChildRoles: []string{}, Variants: []string{}, Introduced: introduced, Profile: "M0", Layer: "semantic"}
@@ -88,6 +88,9 @@ func Fields() (FieldCatalog, error) {
 				record.Variants = append(record.Variants, variant)
 			}
 			fieldIntroduced := field.Tag.Get("introduced")
+			if fieldIntroduced == "" && field.Tag.Get("legacy") != "" {
+				fieldIntroduced = field.Tag.Get("legacy")
+			}
 			if fieldIntroduced == "" {
 				fieldIntroduced = "cicada.project/1"
 			}

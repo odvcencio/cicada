@@ -164,6 +164,40 @@ func TestFractionValuesParse(t *testing.T) {
 	}
 }
 
+func TestEditionTwoNamedMixerAndLegacyAliasGate(t *testing.T) {
+	source := []byte("cicada 2\nfx room delay {}\ntrack bass acid { mute = off send room = 0.25 pre }\npattern pulse acid { 1 }\nscene main { bass=pulse }\nsong { main }\n")
+	score, diagnostics := Parse(source)
+	if score == nil || score.Version != 2 || parseHasErrors(diagnostics) {
+		t.Fatalf("edition 2 named mixer score: %+v, %+v", score, diagnostics)
+	}
+	for _, legacy := range [][]byte{
+		[]byte("cicada 2\nfx delay {}\ntrack bass acid { send_a = 0.25 }\npattern pulse acid { 1 }\nscene main { bass=pulse }\nsong { main }\n"),
+		[]byte("cicada 2\ntrack bass acid { level = off }\npattern pulse acid { 1 }\nscene main { bass=pulse }\nsong { main }\n"),
+	} {
+		_, diagnostics := Parse(legacy)
+		found := false
+		for _, diagnostic := range diagnostics {
+			found = found || diagnostic.Code == "CICADA-VERSION"
+		}
+		if !found {
+			t.Fatalf("edition 2 accepted a legacy mixer alias: %+v", diagnostics)
+		}
+	}
+	manifestScore, diagnostics := ParseEdition([]byte("track bass acid {}\npattern pulse acid { 1 }\nscene main { bass=pulse }\nsong { main }\n"), 2)
+	if manifestScore == nil || manifestScore.Version != 2 || parseHasErrors(diagnostics) {
+		t.Fatalf("manifest edition 2 score: %+v, %+v", manifestScore, diagnostics)
+	}
+}
+
+func parseHasErrors(diagnostics []Diagnostic) bool {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			return true
+		}
+	}
+	return false
+}
+
 func flatten(rows [][]string) []string {
 	var out []string
 	for _, row := range rows {
@@ -203,7 +237,7 @@ func TestUnsupportedAndSeedDiagnostics(t *testing.T) {
 		{"large project seed", "seed 4294967296", "CICADA-SEED"},
 		{"large pattern seed", "", "CICADA-SEED"},
 		{"effect", "fx echo {}", "CICADA-UNSUPPORTED"},
-		{"mixer value", "track bass acid { solo = true }", "CICADA-UNSUPPORTED"},
+		{"mixer value", "track bass acid { solo = true }", "CICADA-SOLO"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -225,6 +259,44 @@ func TestUnsupportedAndSeedDiagnostics(t *testing.T) {
 				}
 			}
 			t.Fatalf("want %s with position, got %+v", tc.code, ds)
+		})
+	}
+}
+
+func TestP2EngineUnsupportedMixerFormsNameTheirConstruct(t *testing.T) {
+	cases := []struct {
+		name, declarations, mixer, want string
+	}{
+		{"unknown effect kind", "fx echo echo {}\n", "", "effect kind echo"},
+		{"second delay", "fx room delay {}\nfx other delay {}\n", "", "delay"},
+		{"second reverb", "fx hall reverb {}\nfx room reverb {}\n", "", "reverb"},
+		{"custom bus", "bus ambience {}\n", "", "user-declared bus ambience"},
+		{"bus send", "fx room delay {}\nbus music { send room = 0.2 }\n", "", "music bus send"},
+		{"non-fixed music level", "bus music { level = -2dB }\n", "", "music bus level"},
+		{"SFX bus level", "bus sfx { level = -3dB }\n", "", "sfx bus level"},
+		{"bus pan", "bus music { pan = 0.2 }\n", "", "music bus pan"},
+		{"unsupported SFX insert", "fx warm drive {}\nbus sfx { insert = warm }\n", "", "sfx bus insert"},
+		{"insert chain", "fx warm drive {}\nfx edge drive {}\n", "insert = warm -> edge", "insert chain on track bass"},
+		{"master insert", "fx warm drive {}\nmaster { insert = warm }\n", "", "master inserts"},
+		{"master send", "fx room delay {}\nmaster { send room = 0.2 }\n", "", "master send"},
+		{"master output", "master { out = sfx }\n", "", "master out"},
+		{"master pan", "master { pan = 0.2 }\n", "", "master pan"},
+		{"compressor track insert", "fx glue comp {}\n", "insert = glue", "comp as a track insert"},
+		{"compressor SFX insert", "fx glue comp {}\nbus sfx { insert = glue }\n", "", "sfx bus insert"},
+		{"send to compressor", "fx glue comp {}\n", "send glue = 0.2", "send to comp effect glue"},
+		{"send to bus", "", "send sfx = 0.2", "send to bus sfx"},
+		{"custom output bus", "", "out = ambience", "output bus ambience"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			source := "cicada 1\n" + tc.declarations + "track bass acid { " + tc.mixer + " }\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n"
+			_, diagnostics := Parse([]byte(source))
+			for _, diagnostic := range diagnostics {
+				if diagnostic.Code == "CICADA-UNSUPPORTED" && strings.Contains(diagnostic.Message, tc.want) {
+					return
+				}
+			}
+			t.Fatalf("want CICADA-UNSUPPORTED naming %q, got %+v", tc.want, diagnostics)
 		})
 	}
 }

@@ -15,8 +15,8 @@ var projectName = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 func ValidProjectName(name string) bool { return projectName.MatchString(name) }
 
-// ScoreEdition finds the closest manifest. A loose score and a legacy header
-// both use edition 1 until a later edition has a migration path.
+// ScoreEdition finds the closest manifest. A loose score defaults to edition
+// 1; an explicit source header is resolved by the notation parser.
 func ScoreEdition(scorePath string) (int, string, error) {
 	dir, err := filepath.Abs(filepath.Dir(scorePath))
 	if err != nil {
@@ -81,8 +81,48 @@ func ParseManifest(data []byte) (int, error) {
 	if name == "" || edition == 0 {
 		return 0, fmt.Errorf("manifest requires project and cicada directives")
 	}
-	if edition != 1 {
-		return 0, fmt.Errorf("CICADA-VERSION: only cicada 1 is supported")
+	if edition != 1 && edition != 2 {
+		return 0, fmt.Errorf("CICADA-VERSION: only cicada 1 and 2 are supported")
 	}
 	return edition, nil
+}
+
+// UpgradeManifestEdition rewrites an edition-1 manifest to edition 2 while
+// preserving its project name, whitespace, comments, and line endings.
+func UpgradeManifestEdition(source []byte) ([]byte, bool, error) {
+	lines := strings.SplitAfter(string(source), "\n")
+	found := false
+	changed := false
+	for i, line := range lines {
+		ending := ""
+		body := line
+		if strings.HasSuffix(body, "\n") {
+			ending, body = "\n", strings.TrimSuffix(body, "\n")
+		}
+		if strings.HasSuffix(body, "\r") {
+			ending = "\r" + ending
+			body = strings.TrimSuffix(body, "\r")
+		}
+		parts := strings.Fields(body)
+		if len(parts) == 2 && parts[0] == "cicada" {
+			if found {
+				return nil, false, fmt.Errorf("duplicate cicada edition")
+			}
+			found = true
+			if parts[1] == "2" {
+				continue
+			}
+			if parts[1] != "1" {
+				return nil, false, fmt.Errorf("CICADA-VERSION: only cicada 1 can be migrated")
+			}
+			at := strings.Index(body, parts[1])
+			body = body[:at] + "2" + body[at+len(parts[1]):]
+			lines[i] = body + ending
+			changed = true
+		}
+	}
+	if !found {
+		return nil, false, fmt.Errorf("manifest has no cicada edition directive")
+	}
+	return []byte(strings.Join(lines, "")), changed, nil
 }

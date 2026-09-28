@@ -177,6 +177,149 @@ func TestMigrate1To2IsPureAndWriterKeepsProject1WithoutNewContent(t *testing.T) 
 	}
 }
 
+func TestMigrate1To2CarriesLegacyMixerFields(t *testing.T) {
+	source := []byte("fx delay { feedback = 0.2 }\ntrack bass acid { send_a = 0.25 send_pre = true }\npattern pulse acid steps=1 { 1 }\nscene main { bass = pulse }\nsong { main }\n")
+	score, diagnostics := notation.Parse(source)
+	if hasProjectErrors(diagnostics) {
+		t.Fatalf("source parse: %+v", diagnostics)
+	}
+	legacy, diagnostics := FromScore(score)
+	if legacy == nil || hasProjectErrors(diagnostics) || legacy.Format != FormatID {
+		t.Fatalf("source project: %+v", diagnostics)
+	}
+	migrated, err := Migrate1To2(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrated.Tracks[0].Mixer.Sends) != 1 {
+		t.Fatalf("legacy send missing after migration: %+v", migrated.Tracks[0].Mixer)
+	}
+	send := migrated.Tracks[0].Mixer.Sends[0]
+	if send.To != "delay" || send.Level.Number == nil || *send.Level.Number != .25 || send.Tap != "pre" {
+		t.Fatalf("legacy send changed in /2 migration: %+v", send)
+	}
+	encoded, err := CanonicalJSON(migrated)
+	if err != nil || !bytes.Contains(encoded, []byte(`"format": "cicada.project/1"`)) {
+		t.Fatalf("writer promoted a project with no /2-only content: %v", err)
+	}
+	if _, err := DecodeJSON(encoded); err != nil {
+		t.Fatalf("legacy writer output did not decode: %v", err)
+	}
+}
+
+func TestMigrate1To2PlacesLegacyCompressorOnMusicBus(t *testing.T) {
+	source := []byte("fx comp { threshold = -20dB }\ntrack bass acid {}\npattern pulse acid steps=1 { 1 }\nscene main { bass = pulse }\nsong { main }\n")
+	score, diagnostics := notation.Parse(source)
+	if hasProjectErrors(diagnostics) {
+		t.Fatalf("source parse: %+v", diagnostics)
+	}
+	legacy, diagnostics := FromScore(score)
+	if legacy == nil || hasProjectErrors(diagnostics) || legacy.Format != FormatID {
+		t.Fatalf("source project: %+v", diagnostics)
+	}
+	migrated, err := Migrate1To2(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(migrated.Buses) != 1 || migrated.Buses[0].ID != "music" || len(migrated.Buses[0].Mixer.Inserts) != 1 || migrated.Buses[0].Mixer.Inserts[0] != "comp" {
+		t.Fatalf("legacy compressor route was not made explicit: %+v", migrated.Buses)
+	}
+	encoded, err := CanonicalJSON(migrated)
+	if err != nil || !bytes.Contains(encoded, []byte(`"format": "cicada.project/2"`)) || !bytes.Contains(encoded, []byte(`"kind": "comp"`)) {
+		t.Fatalf("migrated compressor project is not /2: %v", err)
+	}
+}
+
+func TestNamedMixerProject2JSONRoundTripAndLowering(t *testing.T) {
+	const source = `fx warm drive {}
+fx room delay {}
+fx hall reverb {}
+fx glue comp {}
+track bass acid {
+  level = -6dB
+  pan = 0.2
+  mute = off
+  solo = off
+  insert = warm
+  send room = 0.3 pre
+  send hall = -12dB
+  out = sfx
+}
+
+bus music { level = -3dB insert = glue mute = on }
+bus sfx { solo = on }
+master { level = -1dB insert = none mute = on solo = on }
+export web { rate = 44100Hz bits = 24 tail = 1s loudness = -14LUFS true_peak = -1dBTP }
+pattern pulse acid steps=1 { 1 }
+scene main { bass = pulse }
+song { main }
+`
+	score, diagnostics := notation.Parse([]byte(source))
+	if score == nil {
+		t.Fatalf("parse: %+v", diagnostics)
+	}
+	p, diagnostics := FromScore(score)
+	if p == nil || hasProjectErrors(diagnostics) || p.Format != FormatID2 {
+		t.Fatalf("named mixer compile: %+v", diagnostics)
+	}
+	encoded, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{`"format": "cicada.project/2"`, `"kind": "delay"`, `"buses"`, `"master"`, `"exports"`, `"tap": "pre"`, `"out": "sfx"`} {
+		if !bytes.Contains(encoded, []byte(required)) {
+			t.Errorf("/2 JSON missing %s:\n%s", required, encoded)
+		}
+	}
+	decoded, err := DecodeJSON(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := CanonicalJSON(decoded)
+	if err != nil || !bytes.Equal(encoded, second) || !SemanticEqual(p, decoded) {
+		t.Fatalf("/2 JSON round trip changed named mixer project: %v", err)
+	}
+	cfg, err := CompileEngine(decoded, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Track[0].SendAPre || cfg.Track[0].SendBPre || !cfg.Track[0].BusSFX || cfg.CompMusic == nil || cfg.MasterGainDB != -1 || !cfg.MusicBusMute || !cfg.SFXBusSolo || !cfg.MasterMute || !cfg.MasterSolo {
+		t.Fatalf("named mixer did not lower to today's engine config: %+v", cfg.Track[0])
+	}
+	if decoded.Exports[0].Rate == nil || *decoded.Exports[0].Rate != 44_100 || decoded.Exports[0].Loudness == nil || decoded.Exports[0].TruePeak == nil {
+		t.Fatalf("export profile lost during /2 round trip: %+v", decoded.Exports)
+	}
+}
+
+func TestMixerOffLevelKeepsItsDefaultGainAcrossJSON(t *testing.T) {
+	source := []byte("track bass acid {}\nbus music { level = off }\nmaster { level = off }\npattern pulse acid steps=1 { 1 }\nscene main { bass = pulse }\nsong { main }\n")
+	score, diagnostics := notation.Parse(source)
+	p, diagnostics := FromScore(score)
+	if p == nil || hasProjectErrors(diagnostics) {
+		t.Fatalf("off-level compile: %+v", diagnostics)
+	}
+	if p.Buses[0].Mixer.GainDB != -3 || !p.Buses[0].Mixer.Mute || p.Master.Mixer.GainDB != 0 || !p.Master.Mixer.Mute {
+		t.Fatalf("off levels changed their stored defaults: bus=%+v master=%+v", p.Buses[0].Mixer, p.Master.Mixer)
+	}
+	encoded, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeJSON(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Buses[0].Mixer.GainDB != -3 || !decoded.Buses[0].Mixer.Mute || decoded.Master.Mixer.GainDB != 0 || !decoded.Master.Mixer.Mute {
+		t.Fatalf("off levels changed through /2 JSON: bus=%+v master=%+v", decoded.Buses[0].Mixer, decoded.Master.Mixer)
+	}
+	decoded.Tracks[0].Mixer.Level = &Value{Unit: "lufs", Number: floatPointer(-14)}
+	if _, err := CanonicalJSON(decoded); err == nil {
+		t.Fatal("accepted loudness as a mixer level")
+	}
+}
+
+func floatPointer(value float64) *float64 { return &value }
+
 func hasProjectErrors(diagnostics []notation.Diagnostic) bool {
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Severity == "error" {
@@ -214,7 +357,7 @@ func TestProjectJSONRecordsSourceEditionAndReadsLegacyJSON(t *testing.T) {
 	if !reflect.DeepEqual(p, decoded) {
 		t.Fatal("legacy JSON changed musical meaning")
 	}
-	for _, edition := range []any{0, 2, nil} {
+	for _, edition := range []any{0, nil} {
 		legacy["edition"] = edition
 		invalid, err := json.Marshal(legacy)
 		if err != nil {
@@ -225,6 +368,43 @@ func TestProjectJSONRecordsSourceEditionAndReadsLegacyJSON(t *testing.T) {
 		if !errors.As(err, &diagnostic) || diagnostic.Code != "CICADA-VERSION" || diagnostic.Pointer != "/edition" {
 			t.Fatalf("accepted unsupported edition %v: %v", edition, err)
 		}
+	}
+	legacy["edition"] = 2
+	editionTwo, err := json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err = DecodeJSON(editionTwo)
+	if err != nil || decoded.Edition != 2 {
+		t.Fatalf("edition 2 project JSON = %+v, %v", decoded, err)
+	}
+}
+
+func TestSourceEditionTwoRoundTripsThroughProjectAndSource(t *testing.T) {
+	source := []byte("cicada 2\ntrack bass acid {}\npattern pulse acid { 1 }\nscene main { bass=pulse }\nsong { main }\n")
+	score, diagnostics := notation.Parse(source)
+	if score == nil || hasProjectErrors(diagnostics) {
+		t.Fatalf("edition 2 parse: %+v", diagnostics)
+	}
+	p, diagnostics := FromScore(score)
+	if p == nil || hasProjectErrors(diagnostics) || p.Edition != 2 {
+		t.Fatalf("edition 2 lowering: project=%+v diagnostics=%+v", p, diagnostics)
+	}
+	encoded, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeJSON(encoded)
+	if err != nil || decoded.Edition != 2 {
+		t.Fatalf("edition 2 JSON round trip: project=%+v err=%v", decoded, err)
+	}
+	rewritten, err := ToSource(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reparsed, diagnostics := notation.Parse(rewritten)
+	if reparsed == nil || hasProjectErrors(diagnostics) || reparsed.Version != 2 {
+		t.Fatalf("edition 2 source round trip: %+v; %s", diagnostics, rewritten)
 	}
 }
 

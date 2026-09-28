@@ -84,6 +84,7 @@
     "lowpass" "highpass" "mix" "tanh" "exp2" "clamp"))
 
 (expression ["+" "-" "*" "/"] @operator)
+("->" @operator)
 (call_expr "," @punctuation.delimiter)
 
 ; ---------------------------------------------------------------------------
@@ -91,6 +92,19 @@
 
 "track" @keyword
 "fx" @keyword.type
+"bus" @keyword
+"master" @keyword
+"export" @keyword
+"send" @keyword
+"pre" @keyword.modifier
+"insert" @keyword
+
+(fx_decl kind: (identifier) @type.builtin)
+(bus_decl name: (identifier) @type.definition)
+(export_decl name: (identifier) @label)
+(send_decl to: (identifier) @variable.member)
+(insert_chain first: (identifier) @variable.member)
+(insert_chain next: (identifier) @variable.member)
 
 (track_decl name: (identifier) @variable.member)
 ((track_decl kind: (identifier) @type.builtin)
@@ -208,6 +222,8 @@
 ((number) @number.frequency (#match? @number.frequency "[Hh]z$"))
 ((number) @number.duration (#match? @number.duration "[0-9]m?s$"))
 ((number) @number.decibel (#match? @number.decibel "(db|dB)$"))
+((number) @number.loudness (#match? @number.loudness "(LU|LUFS)$"))
+((number) @number.true_peak (#match? @number.true_peak "dBTP$"))
 ((number) @number.percent (#match? @number.percent "%$"))
 ((number) @number.float (#match? @number.float "^-?[0-9]+\\.[0-9]+$"))
 ((number) @number (#match? @number "^-?[0-9]+$"))

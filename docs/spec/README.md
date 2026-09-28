@@ -1,14 +1,14 @@
 # Cicada language specification
 
-This specification defines Cicada source edition 1, its typed project model, and the constructs approved for later implementation.
+This specification defines Cicada source editions 1 and 2, their typed project model, and the constructs approved for later implementation.
 
 ## Status labels
 
-- **Implemented** means the construct is available on main and accepted by the validator.
+- **Implemented** means the construct is available in the current build and accepted by the validator.
 - **Accepted** means the owner approved the design, but it is not available in the current build. Examples use cicada-accepted fences and are skipped by the documentation validator until the construct lands.
 - **Proposed** means the design has not been approved.
 
-Edition 1 is the only implemented source edition. See [edition 1](edition-1.md), the [semantic JSON mapping](semantic-model.md), [accepted syntax](accepted.md), and the [EBNF appendix](appendix.ebnf).
+Both source editions are implemented. Edition 2 keeps edition-1 meanings and requires named mixer spellings. See [edition 1](edition-1.md), [edition 2](edition-2.md), the [semantic JSON mapping](semantic-model.md), [accepted syntax](accepted.md), and the [EBNF appendix](appendix.ebnf).
 
 The Go test <code>TestDocumentationCicadaExamples</code> runs every <code>cicada</code> and <code>cicada-invalid</code> block in this directory and <code>docs/manual</code> through the same parser, semantic checks, and engine compilation used by <code>cicada check</code>. The test <code>TestDocumentationEBNFMatchesGrammarDSL</code> checks that the generated appendix matches the grammargen DSL in <code>language/grammar/grammar.go</code>.
 

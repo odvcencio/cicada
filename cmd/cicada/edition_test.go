@@ -28,6 +28,10 @@ func TestProjectEditionAndNewScore(t *testing.T) {
 	if strings.HasPrefix(string(data), "cicada 1") {
 		t.Fatal("new scores should use the manifest instead of a header")
 	}
+	manifest, err := os.ReadFile(filepath.Join("night-circuit", "cicada.mod"))
+	if err != nil || string(manifest) != "project night-circuit\ncicada 2\n" {
+		t.Fatalf("new project edition = %q, %v", manifest, err)
+	}
 	if _, err := loadProject(path); err != nil {
 		t.Fatalf("new score does not compile: %v", err)
 	}
@@ -80,7 +84,7 @@ func TestNearestManifestAndUnsupportedEdition(t *testing.T) {
 	if edition, manifest, err := scoreEdition(score); err != nil || edition != 1 || manifest != filepath.Join(root, "cicada.mod") {
 		t.Fatalf("parent lookup = %d, %q, %v", edition, manifest, err)
 	}
-	if err := os.WriteFile(filepath.Join(child, "cicada.mod"), []byte("project child\ncicada 2\n"), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(child, "cicada.mod"), []byte("project child\ncicada 3\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := scoreEdition(score); err == nil || !strings.Contains(err.Error(), "CICADA-VERSION") {

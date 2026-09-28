@@ -37,10 +37,12 @@ func ParamAddresses(p *Project) []ParamAddress {
 		}
 	}
 	for _, effect := range p.Effects {
+		kind := semanticEffectKind(effect)
 		for _, descriptor := range paramdefs.Registry {
-			if descriptor.Scope != "global" || !strings.HasPrefix(descriptor.ID, "fx."+effect.ID+".") {
+			if descriptor.Scope != "global" || !strings.HasPrefix(descriptor.ID, "fx."+kind+".") {
 				continue
 			}
+			suffix := strings.TrimPrefix(descriptor.Path, kind+".")
 			value := defaultParamValue(descriptor)
 			if descriptor.ID == "fx.delay.time" && p.TempoMilli > 0 {
 				// The default source division is 1/8, which lasts half a beat.
@@ -59,7 +61,26 @@ func ParamAddresses(p *Project) []ParamAddress {
 			} else if descriptor.ID == "fx.comp.sidechain" {
 				value = "music"
 			}
-			addresses = append(addresses, ParamAddress{Address: descriptor.Path, Param: descriptor.ID, Value: value})
+			addresses = append(addresses, ParamAddress{Address: effect.ID + "." + suffix, Param: descriptor.ID, Value: value})
+		}
+	}
+	busValues := map[string]Mixer{"music": {GainDB: -3, Bus: "music"}, "sfx": {GainDB: 0, Bus: "sfx"}}
+	for _, bus := range p.Buses {
+		busValues[bus.ID] = bus.Mixer
+	}
+	for _, busID := range []string{"music", "sfx"} {
+		mixer := busValues[busID]
+		for _, descriptor := range paramdefs.Registry {
+			if descriptor.Scope == "bus" {
+				addresses = append(addresses, ParamAddress{Address: busID + "." + descriptor.Path, Param: descriptor.ID, Value: mixerParamValue(mixer, descriptor)})
+			}
+		}
+	}
+	if p.Master != nil {
+		for _, descriptor := range paramdefs.Registry {
+			if descriptor.Scope == "master" {
+				addresses = append(addresses, ParamAddress{Address: "master." + descriptor.Path, Param: descriptor.ID, Value: mixerParamValue(p.Master.Mixer, descriptor)})
+			}
 		}
 	}
 	for _, descriptor := range paramdefs.Registry {
@@ -130,9 +151,6 @@ func descriptorApplies(id, trackKind string) bool {
 func trackParamValue(track Track, descriptor paramdefs.Descriptor) any {
 	switch descriptor.ID {
 	case "mix.gain":
-		if track.Mixer.Mute {
-			return nil
-		}
 		return track.Mixer.GainDB
 	case "mix.pan":
 		return track.Mixer.Pan
@@ -141,8 +159,14 @@ func trackParamValue(track Track, descriptor paramdefs.Descriptor) any {
 	case "mix.send_b":
 		return track.Mixer.SendB
 	case "mix.mute":
+		if track.Mixer.Mute {
+			return float64(1)
+		}
 		return float64(0)
 	case "mix.solo":
+		if track.Mixer.Solo {
+			return float64(1)
+		}
 		return float64(0)
 	case "mix.send_pre":
 		if track.Mixer.SendPre {
@@ -152,12 +176,46 @@ func trackParamValue(track Track, descriptor paramdefs.Descriptor) any {
 	case "mix.bus":
 		return track.Mixer.Bus
 	case "mix.insert":
+		if len(track.Mixer.Inserts) > 0 {
+			return track.Mixer.Inserts[0]
+		}
 		return track.Mixer.Insert
 	}
 	if value, ok := track.Params[descriptor.Source]; ok {
 		return registryValue(descriptor, value)
 	}
 	return defaultParamValue(descriptor)
+}
+
+func mixerParamValue(mixer Mixer, descriptor paramdefs.Descriptor) any {
+	switch descriptor.Path {
+	case "level":
+		return mixer.GainDB
+	case "pan":
+		return mixer.Pan
+	case "mute":
+		if mixer.Mute {
+			return float64(1)
+		}
+		return float64(0)
+	case "solo":
+		if mixer.Solo {
+			return float64(1)
+		}
+		return float64(0)
+	case "insert":
+		if len(mixer.Inserts) > 0 {
+			return mixer.Inserts[0]
+		}
+		return "none"
+	case "out":
+		if mixer.Out != nil {
+			return *mixer.Out
+		}
+		return mixer.Bus
+	default:
+		return float64(0)
+	}
 }
 
 func defaultParamValue(descriptor paramdefs.Descriptor) any {

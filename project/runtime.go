@@ -45,31 +45,27 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	for _, kit := range p.Kits {
 		kits[kit.ID] = kit
 	}
-	var driveParams *fx.DriveParams
+	effectsByID := make(map[string]Effect, len(p.Effects))
 	var delayParams *fx.DelayParams
 	var reverbParams *fx.ReverbParams
 	var compParams *fx.CompParams
 	var compSidechain string
 	for _, effect := range p.Effects {
-		if effect.ID == "drive" {
-			params, err := DriveParamsFromValues(effect.Params)
-			if err != nil {
-				return cfg, err
-			}
-			driveParams = &params
-		} else if effect.ID == "delay" {
+		effectsByID[effect.ID] = effect
+		kind := semanticEffectKind(effect)
+		if kind == "delay" {
 			params, err := DelayParamsFromValues(effect.Params)
 			if err != nil {
 				return cfg, err
 			}
 			delayParams = &params
-		} else if effect.ID == "reverb" {
+		} else if kind == "reverb" {
 			params, err := ReverbParamsFromValues(effect.Params)
 			if err != nil {
 				return cfg, err
 			}
 			reverbParams = &params
-		} else if effect.ID == "comp" {
+		} else if kind == "comp" {
 			params, sidechain, err := CompSpecFromValues(effect.Params)
 			if err != nil {
 				return cfg, err
@@ -80,6 +76,21 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	cfg.CompMusic = compParams
 	cfg.DelayA = delayParams
 	cfg.ReverbB = reverbParams
+	for _, bus := range p.Buses {
+		switch bus.ID {
+		case "music":
+			cfg.MusicBusMute, cfg.MusicBusSolo = bus.Mixer.Mute, bus.Mixer.Solo
+		case "sfx":
+			cfg.SFXBusMute, cfg.SFXBusSolo = bus.Mixer.Mute, bus.Mixer.Solo
+		}
+	}
+	if p.Master != nil {
+		cfg.MasterMute = p.Master.Mixer.Mute
+		cfg.MasterSolo = p.Master.Mixer.Solo
+		if p.Master.Mixer.Level != nil && p.Master.Mixer.Level.Number != nil && p.Master.Mixer.Level.Unit == "db" {
+			cfg.MasterGainDB = *p.Master.Mixer.Level.Number
+		}
+	}
 	if compSidechain == "sfx" {
 		cfg.CompSidechainTrack = engine.SFXSidechain
 	} else if compSidechain != "" && compSidechain != "music" {
@@ -94,11 +105,40 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	for ti, track := range p.Tracks {
 		trackIndex[track.ID] = ti
 		config := &cfg.Track[ti]
-		config.GainDB, config.GainSet, config.Pan, config.Mute = track.Mixer.GainDB, true, track.Mixer.Pan, track.Mixer.Mute
+		config.GainDB, config.GainSet, config.Pan = track.Mixer.GainDB, true, track.Mixer.Pan
+		config.Mute, config.Solo = track.Mixer.Mute, track.Mixer.Solo
 		config.SendA, config.SendB, config.SendPre = track.Mixer.SendA, track.Mixer.SendB, track.Mixer.SendPre
+		for _, send := range track.Mixer.Sends {
+			effect, ok := effectsByID[send.To]
+			if !ok || send.Level.Number == nil {
+				continue
+			}
+			gain := *send.Level.Number
+			if send.Level.Unit == "db" {
+				gain = math.Pow(10, gain/20)
+			}
+			switch semanticEffectKind(effect) {
+			case "delay":
+				config.SendA = gain
+				config.SendAPre = send.Tap == "pre"
+			case "reverb":
+				config.SendB = gain
+				config.SendBPre = send.Tap == "pre"
+			}
+		}
 		config.BusSFX = track.Mixer.Bus == "sfx"
-		if track.Mixer.Insert == "drive" {
-			config.InsertDrive = driveParams
+		inserts := track.Mixer.Inserts
+		if len(inserts) == 0 && track.Mixer.Insert != "none" {
+			inserts = []string{track.Mixer.Insert}
+		}
+		if len(inserts) == 1 {
+			if effect, ok := effectsByID[inserts[0]]; ok && semanticEffectKind(effect) == "drive" {
+				params, err := DriveParamsFromValues(effect.Params)
+				if err != nil {
+					return cfg, err
+				}
+				config.InsertDrive = &params
+			}
 		}
 		switch track.Kind {
 		case "acid":

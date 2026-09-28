@@ -50,6 +50,14 @@ func Symbols(src []byte) ([]Symbol, error) {
 			if kits[tag.Name] {
 				kind = "kit"
 			}
+		} else if tag.Kind == "reference.mixer" {
+			kind = "bus"
+			for _, candidate := range tags {
+				if candidate.Kind == "definition.effect" && candidate.Name == tag.Name {
+					kind = "effect"
+					break
+				}
+			}
 		}
 		line, column := position(src, int(tag.NameRange.StartByte))
 		symbols = append(symbols, Symbol{Role: role, Kind: kind, Name: tag.Name, Position: notation.Position{Line: line, Column: column}})
