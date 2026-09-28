@@ -39,6 +39,10 @@ func TestAudioWASMDriveInsertSampleParity(t *testing.T) {
 	compareWASMFixture(t, "fx/drive-insert.cicada", 1)
 }
 
+func TestAudioWASMCustomVoiceSlideSampleParity(t *testing.T) {
+	compareWASMFixture(t, "glassbass.cicada", 1)
+}
+
 func TestAudioWASMDelaySendSampleParity(t *testing.T) {
 	compareWASMFixture(t, "fx/delay-send.cicada", 1)
 }
