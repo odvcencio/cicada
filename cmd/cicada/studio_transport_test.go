@@ -3,8 +3,12 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -16,6 +20,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/kernel"
 )
 
 func TestStudioTransportSocketAndIdleCommand(t *testing.T) {
@@ -55,6 +60,273 @@ func TestStudioTransportSocketAndIdleCommand(t *testing.T) {
 	}{Action: "stop"})
 	if idle.Code != http.StatusOK {
 		t.Fatalf("idle stop: %d %s", idle.Code, idle.Body.String())
+	}
+}
+
+func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
+	handler, _ := studioTestHandler(t)
+	response := studioCall(t, handler, "/api/params", nil)
+	if response.Code != http.StatusOK {
+		t.Fatalf("params endpoint: %d %s", response.Code, response.Body.String())
+	}
+	var params struct {
+		Revision  string           `json:"revision"`
+		Registry  []map[string]any `json:"registry"`
+		Addresses []map[string]any `json:"addresses"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &params); err != nil {
+		t.Fatal(err)
+	}
+	if params.Revision != studioRevision([]byte(studioScore)) || len(params.Registry) != len(kernel.Params) || len(params.Addresses) == 0 {
+		t.Fatalf("incomplete current registry response: rev=%q registry=%d addresses=%d", params.Revision, len(params.Registry), len(params.Addresses))
+	}
+	page := studioCall(t, handler, "/", nil)
+	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `src="/studio-audio-devices.js"`) || !strings.Contains(page.Body.String(), `src="/studio-master.js"`) || !strings.Contains(page.Body.String(), `href="#master">Master</a>`) || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `id="audio-output-device"`) || !strings.Contains(page.Body.String(), `id="audio-input-device"`) || !strings.Contains(page.Body.String(), `id="audio-monitor-gain"`) || !strings.Contains(page.Body.String(), `id="loudness-history"`) || !strings.Contains(page.Body.String(), `id="gain-reduction-history"`) || !strings.Contains(page.Body.String(), `id="reset-integrated"`) || !strings.Contains(page.Body.String(), `id="export-wav"`) || !strings.Contains(page.Body.String(), `href="#mixer-settings">Open mixer compressor settings</a>`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) || !strings.Contains(page.Body.String(), "score-minus14LUFS.wav") {
+		t.Fatalf("Studio meter markup missing: %d", page.Code)
+	}
+	script := studioCall(t, handler, "/studio-audio.js", nil)
+	if script.Code != http.StatusOK || !strings.Contains(script.Body.String(), "window.cicadaAudio") && !strings.Contains(script.Body.String(), "window.cicadaAudio =") {
+		t.Fatalf("audio facade not served: %d", script.Code)
+	}
+	masterScript := studioCall(t, handler, "/studio-master.js", nil)
+	if masterScript.Code != http.StatusOK || !strings.Contains(masterScript.Body.String(), "createHistoryBuffer") {
+		t.Fatalf("Master view script not served: %d", masterScript.Code)
+	}
+	deviceScript := studioCall(t, handler, "/studio-audio-devices.js", nil)
+	if deviceScript.Code != http.StatusOK || !strings.Contains(deviceScript.Body.String(), "inputLatencyKnown") || !strings.Contains(deviceScript.Body.String(), "monitorGain") {
+		t.Fatalf("audio device controls not served: %d", deviceScript.Code)
+	}
+	audioState := studioCall(t, handler, "/api/audio/config", nil)
+	if audioState.Code != http.StatusOK || !strings.Contains(audioState.Body.String(), `"monitorMuted":true`) {
+		t.Fatalf("audio config state: %d %s", audioState.Code, audioState.Body.String())
+	}
+	invalidAudio := studioCall(t, handler, "/api/audio/config", studioAudioOptions{MonitorGain: 3, MonitorMode: "stereo"})
+	if invalidAudio.Code != http.StatusBadRequest {
+		t.Fatalf("invalid monitor gain accepted: %d %s", invalidAudio.Code, invalidAudio.Body.String())
+	}
+}
+
+func TestStudioAudioMixerRoutesGainAndClamps(t *testing.T) {
+	encode := func(samples ...float32) []byte {
+		pcm := make([]byte, len(samples)*4)
+		for index, sample := range samples {
+			binary.LittleEndian.PutUint32(pcm[index*4:], math.Float32bits(sample))
+		}
+		return pcm
+	}
+	pcm := encode(.25, -.25)
+	input := [][]float32{{.5}, {-.5}}
+	left, right := make([]float32, 1), make([]float32, 1)
+	output := [][]float32{left, right}
+
+	mixStudioAudio(pcm, input, output, studioAudioMonitor{Gain: .5, Mode: "stereo"})
+	if left[0] != .5 || right[0] != -.5 {
+		t.Fatalf("stereo monitor mix = %g/%g, want .5/-.5", left[0], right[0])
+	}
+	mixStudioAudio(pcm, input, output, studioAudioMonitor{Muted: true, Gain: 1, Mode: "stereo"})
+	if left[0] != .25 || right[0] != -.25 {
+		t.Fatalf("muted monitor changed render = %g/%g", left[0], right[0])
+	}
+	mixStudioAudio(pcm, input, output, studioAudioMonitor{Gain: .5, Mode: "mono1"})
+	if left[0] != .5 || right[0] != 0 {
+		t.Fatalf("mono1 monitor mix = %g/%g, want .5/0", left[0], right[0])
+	}
+	mono := [][]float32{make([]float32, 1)}
+	mixStudioAudio(encode(.5, .5), [][]float32{{1}, {1}}, mono, studioAudioMonitor{Gain: 1, Mode: "stereo"})
+	if mono[0][0] != 1 {
+		t.Fatalf("mono output did not clamp: %g", mono[0][0])
+	}
+	peakL, peakR, _, _ := measureStudioAudioInput(input)
+	if peakL != .5 || peakR != .5 {
+		t.Fatalf("input peak meter = %g/%g", peakL, peakR)
+	}
+}
+
+func TestStudioAudioPeriodClearsOutputWhenPausedOrRenderIsShort(t *testing.T) {
+	output := [][]float32{{1, .5}, {-.5, 1}}
+	clearStudioAudioOutput(output)
+	for channelIndex, channel := range output {
+		for frame, sample := range channel {
+			if sample != 0 {
+				t.Fatalf("paused output[%d][%d] = %g, want silence", channelIndex, frame, sample)
+			}
+		}
+	}
+
+	output[0][0], output[0][1], output[1][0], output[1][1] = 1, 1, 1, 1
+	err := renderStudioAudioPeriod(bytes.NewReader([]byte{1, 2, 3}), make([]byte, 16), nil, output, studioAudioMonitor{Muted: true})
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("short reader error = %v, want unexpected EOF", err)
+	}
+	for channelIndex, channel := range output {
+		for frame, sample := range channel {
+			if sample != 0 {
+				t.Fatalf("short render output[%d][%d] = %g, want silence", channelIndex, frame, sample)
+			}
+		}
+	}
+
+	output[0][0], output[0][1], output[1][0], output[1][1] = 1, 1, 1, 1
+	err = renderStudioAudioPeriod(bytes.NewReader(make([]byte, 16)), make([]byte, 8), nil, output, studioAudioMonitor{Muted: true})
+	if !errors.Is(err, io.ErrShortBuffer) {
+		t.Fatalf("undersized period buffer error = %v, want short buffer", err)
+	}
+	for channelIndex, channel := range output {
+		for frame, sample := range channel {
+			if sample != 0 {
+				t.Fatalf("undersized render output[%d][%d] = %g, want silence", channelIndex, frame, sample)
+			}
+		}
+	}
+}
+
+func TestStudioAudioSocketRejectsInvalidParametersWithTypedErrors(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, []byte(studioScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.transport.close()
+	initial, err := compileLiveScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := liveplay.New(initial, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.transport.stream, s.transport.playing = stream, true
+	server := httptest.NewServer(s.routes())
+	defer server.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	wsURL := "ws" + strings.TrimPrefix(server.URL, "http") + "/api/audio/ws"
+	_, response, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{"https://outside.example"}}})
+	if err == nil || response == nil || response.StatusCode != http.StatusForbidden {
+		t.Fatalf("cross-origin audio socket: response=%v err=%v", response, err)
+	}
+	connection, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{HTTPHeader: http.Header{"Origin": []string{server.URL}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.CloseNow()
+	for _, test := range []struct {
+		message map[string]any
+		address string
+	}{
+		{map[string]any{"type": "param", "address": "unknown.level", "value": -3.5}, "unknown.level"},
+		{map[string]any{"type": "param", "address": "bass.level", "value": 7}, "bass.level"},
+		{map[string]any{"type": "param", "address": "bass.tune", "value": 440}, "bass.tune"},
+	} {
+		if err := wsjson.Write(ctx, connection, test.message); err != nil {
+			t.Fatal(err)
+		}
+		var result audioErrorMessage
+		if err := wsjson.Read(ctx, connection, &result); err != nil {
+			t.Fatal(err)
+		}
+		if result.Type != "error" || result.Code != "CICADA-PARAM" || result.Address != test.address || result.Message == "" {
+			t.Fatalf("typed parameter error: %+v", result)
+		}
+	}
+	if err := wsjson.Write(ctx, connection, map[string]any{"type": "param", "address": "bass.level", "value": -3.5}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, connection, map[string]any{"type": "mute", "track": "bass", "on": true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, connection, map[string]any{"type": "solo", "track": "drums", "on": true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := wsjson.Write(ctx, connection, map[string]any{"type": "loudness-reset"}); err != nil {
+		t.Fatal(err)
+	}
+	s.transport.publishMeter(liveplay.MeterFrame{
+		Tick: 1234, TrackCount: 1, TrackIDs: [16]string{"bass"}, Tracks: [16]liveplay.MeterValue{{Peak: .5, RMS: .25}},
+		HasReturnA: true, ReturnA: liveplay.MeterValue{Peak: 0, RMS: .1},
+		Music: liveplay.MeterValue{Peak: .8, RMS: .4}, MasterPeak: .7, MasterRMS: .3, MasterPre: liveplay.MeterValue{Peak: .8},
+		CompGR: 2.5, LimiterGR: .25,
+	}, liveplay.LoudnessSnapshot{
+		Sequence: 1, MomentaryLUFS: -18.2, ShortTermLUFS: -17.9, IntegratedLUFS: -18.4, RangeLU: 4.1,
+		TruePeakDBTP: -1.2, SamplePeakDBFS: -1.5, DroppedBlocks: 3,
+		HasMomentary: true, HasShortTerm: true, HasIntegrated: true, HasRange: true, HasTruePeak: true, HasSamplePeak: true,
+	})
+	var meter struct {
+		Type    string                                 `json:"type"`
+		Tick    int64                                  `json:"tick"`
+		Tracks  map[string]struct{ Peak, RMS float64 } `json:"tracks"`
+		Returns map[string]struct{ Peak, RMS float64 } `json:"returns"`
+		Buses   map[string]struct{ Peak, RMS float64 } `json:"buses"`
+		Master  struct {
+			Peak      float64 `json:"peak"`
+			RMS       float64 `json:"rms"`
+			PrePeak   float64 `json:"pre_peak"`
+			CompGR    float64 `json:"comp_gr"`
+			LimiterGR float64 `json:"limiter_gr"`
+			Over      bool    `json:"over"`
+		} `json:"master"`
+		Loudness struct {
+			Momentary  *float64 `json:"momentary"`
+			ShortTerm  *float64 `json:"short_term"`
+			Integrated *float64 `json:"integrated"`
+			Range      *float64 `json:"range"`
+			TruePeak   *float64 `json:"true_peak"`
+			SamplePeak *float64 `json:"sample_peak"`
+			Dropped    uint64   `json:"dropped_blocks"`
+		} `json:"loudness"`
+	}
+	if err := wsjson.Read(ctx, connection, &meter); err != nil {
+		t.Fatal(err)
+	}
+	if meter.Type != "meters" || meter.Tick != 1234 || math.Abs(meter.Tracks["bass"].Peak+6.0206) > .01 || meter.Returns["a"].Peak != -120 || meter.Master.CompGR != 2.5 || meter.Master.LimiterGR != .25 {
+		t.Fatalf("wire meter values: %+v", meter)
+	}
+	if meter.Loudness.Momentary == nil || *meter.Loudness.Momentary != -18.2 || meter.Loudness.ShortTerm == nil || *meter.Loudness.ShortTerm != -17.9 || meter.Loudness.Integrated == nil || *meter.Loudness.Integrated != -18.4 || meter.Loudness.Range == nil || *meter.Loudness.Range != 4.1 || meter.Loudness.TruePeak == nil || *meter.Loudness.TruePeak != -1.2 || meter.Loudness.SamplePeak == nil || *meter.Loudness.SamplePeak != -1.5 || meter.Loudness.Dropped != 3 {
+		t.Fatalf("wire loudness values: %+v", meter.Loudness)
+	}
+	if _, ok := meter.Returns["b"]; ok {
+		t.Fatal("absent return B was included")
+	}
+	if _, ok := meter.Buses["sfx"]; ok {
+		t.Fatal("absent SFX bus was included")
+	}
+}
+
+func TestStudioNullAudioPacesRenderingWithoutOpeningDevice(t *testing.T) {
+	_, path := studioTestHandler(t)
+	transport := newStudioTransport(path)
+	transport.audioNull = true
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	defer transport.close()
+	if transport.audio != nil || transport.stream == nil {
+		t.Fatalf("null audio opened a device or missed its stream: audio=%v stream=%v", transport.audio, transport.stream)
+	}
+	time.Sleep(80 * time.Millisecond)
+	if got := transport.meterSequence.Load(); got == 0 || got > 8 {
+		t.Fatalf("null audio did not render at the expected real-time pace: received %d meter frames in 80 ms", got)
+	}
+	stream := transport.stream
+	transport.stop()
+	time.Sleep(80 * time.Millisecond)
+	paused := transport.meterSequence.Load()
+	time.Sleep(50 * time.Millisecond)
+	if got := transport.meterSequence.Load(); got != paused {
+		t.Fatalf("null audio kept rendering while stopped: meter frames %d -> %d", paused, got)
+	}
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	if transport.stream != stream {
+		t.Fatal("null audio did not resume the existing stream")
+	}
+	time.Sleep(80 * time.Millisecond)
+	if got := transport.meterSequence.Load(); got <= paused {
+		t.Fatal("null audio did not resume rendering")
 	}
 }
 
@@ -204,13 +476,12 @@ func TestStudioSceneLaunchUsesNativeTransport(t *testing.T) {
 	if _, err := io.CopyN(io.Discard, stream, 96_000*8); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case event := <-stream.Events():
+	if event, ok := nextManualTransportEvent(stream); ok {
 		if event.Kind != "slot" || event.Bar != 3 || event.Track != "bass" || event.Name != "pulse" {
 			t.Fatalf("wrong slot event: %+v", event)
 		}
 		transport.markLanded(event)
-	default:
+	} else {
 		t.Fatal("slot did not land")
 	}
 	if len(transport.snapshot().PendingSlots) != 0 {
@@ -224,12 +495,11 @@ func TestStudioSceneLaunchUsesNativeTransport(t *testing.T) {
 	if _, err := io.CopyN(io.Discard, stream, 96_000*8); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case event := <-stream.Events():
+	if event, ok := nextManualTransportEvent(stream); ok {
 		if event.Kind != "slot" || event.Bar != 4 || event.Track != "drums" || event.Name != "beat" {
 			t.Fatalf("wrong second-track event: %+v", event)
 		}
-	default:
+	} else {
 		t.Fatal("second-track slot did not land")
 	}
 	response = httptest.NewRecorder()
@@ -285,7 +555,7 @@ func TestStudioQueuesNewlySavedSlotAfterScoreOffer(t *testing.T) {
 	if _, err := io.CopyN(io.Discard, stream, 96_000*8); err != nil {
 		t.Fatal(err)
 	}
-	if event := <-stream.Events(); event.Kind != "slot" || event.Bar != 3 || event.Name != "riff" {
+	if event, ok := nextManualTransportEvent(stream); !ok || event.Kind != "slot" || event.Bar != 3 || event.Name != "riff" {
 		t.Fatalf("newly saved slot did not launch: %+v", event)
 	}
 }
@@ -365,5 +635,19 @@ func TestStudioPlayFromSongBlockUsesActiveScore(t *testing.T) {
 	}
 	if got := stream.Position(); got.Bar != 7 {
 		t.Fatalf("edited song position: %+v", got)
+	}
+}
+
+// Automatic song progress is independent of the requested manual launch.
+func nextManualTransportEvent(stream *liveplay.Player) (liveplay.Event, bool) {
+	for {
+		select {
+		case event := <-stream.Events():
+			if event.Kind != "song-scene" {
+				return event, true
+			}
+		default:
+			return liveplay.Event{}, false
+		}
 	}
 }

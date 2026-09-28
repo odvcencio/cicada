@@ -4,6 +4,7 @@ package engine
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
@@ -93,18 +94,31 @@ type Config struct {
 }
 
 type voiceSlot struct {
-	kind    VoiceKind
-	acid    *acid.Voice
-	drums   *drum.Kit
-	graph   *graph.Voice
-	mix     mix.Track
-	insert  *fx.Drive
-	align   *mix.Delay
-	sendA   float32
-	sendB   float32
-	sendPre bool
-	muted   bool
-	busSFX  bool
+	kind                           VoiceKind
+	acid                           *acid.Voice
+	drums                          *drum.Kit
+	graph                          *graph.Voice
+	mix                            mix.Track
+	targetMix                      mix.Track
+	mixSmooth                      float32
+	muteGain, muteTarget, muteStep float32
+	gainDB, pan                    float32
+	insert                         *fx.Drive
+	align                          *mix.Delay
+	sendA                          float32
+	sendB                          float32
+	targetSendA                    float32
+	targetSendB                    float32
+	sendSmooth                     float32
+	sendPre                        bool
+	muted, sourceOff               bool
+	soloed                         bool
+	busSFX                         bool
+}
+
+type meterAccum struct {
+	peak  float32
+	power float64
 }
 
 // Engine has fixed command and message rings. The host owns cross-thread
@@ -130,11 +144,21 @@ type Engine struct {
 	pendingLen                   int
 	layerMask                    uint32
 	meterRate, meterBlock        uint32
+	meterFrames                  uint32
+	trackMeter                   [16]meterAccum
+	returnAMeter, returnBMeter   meterAccum
+	musicMeter, sfxMeter         meterAccum
+	preMasterMeter, masterMeter  meterAccum
+	compGR, limiterGR            float32
+	hasSFX                       bool
+	soloCount                    int
 	faulted                      bool
 	patterns                     [16]patternTrack
 	eventScratch                 [128]seq.Event
 	renderFrame, renderFrames    int
 	scenes                       []Scene
+	currentScene                 int
+	sceneSequence                uint64
 	song                         []SongEntry
 	loopSong, songMode           bool
 	songIndex                    int
@@ -142,6 +166,14 @@ type Engine struct {
 	manualSceneTick              int64
 	manualPatternTick            [16]int64
 }
+
+// TrackCount reports the immutable track count established by New.
+func (e *Engine) TrackCount() int { return e.tracks }
+
+// CurrentScene reports the last launched scene and its launch sequence.
+// The index is -1 before a scene launches.
+// Call it only from the goroutine that owns Render.
+func (e *Engine) CurrentScene() (int, uint64) { return e.currentScene, e.sceneSequence }
 
 func New(cfg Config) (*Engine, error) {
 	if cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 || cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 {
@@ -165,7 +197,7 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.MasterGainDB != 0 {
 		masterGain = float32(math.Pow(10, cfg.MasterGainDB/20))
 	}
-	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, masterGain: masterGain, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1}
+	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, masterGain: masterGain, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1, currentScene: -1}
 	for i := range e.manualPatternTick {
 		e.manualPatternTick[i] = -1
 	}
@@ -231,9 +263,22 @@ func New(cfg Config) (*Engine, error) {
 		}
 		v := &e.voices[i]
 		v.kind = spec.Kind
-		v.mix = mix.NewTrack(gain, spec.Pan, spec.Mute)
-		v.sendA, v.sendB, v.sendPre, v.muted = float32(spec.SendA), float32(spec.SendB), spec.SendPre, spec.Mute
+		v.mix = mix.NewTrack(gain, spec.Pan, false)
+		if spec.Mute {
+			v.mix = mix.Track{}
+		}
+		v.targetMix = v.mix
+		v.mixSmooth = smoothingAlpha(kernel.ParamMixGain, cfg.SampleRate)
+		v.sendSmooth = smoothingAlpha(kernel.ParamMixSendA, cfg.SampleRate)
+		v.gainDB, v.pan = float32(gain), float32(spec.Pan)
+		v.muteGain, v.muteTarget = 1, 1
+		v.muteStep = 1 / float32(math.Ceil(float64(kernel.Params[kernel.ParamMixMute].SmoothingMS)*.001*float64(cfg.SampleRate)))
+		v.sendA, v.sendB = float32(spec.SendA), float32(spec.SendB)
+		v.targetSendA, v.targetSendB, v.sendPre, v.sourceOff = v.sendA, v.sendB, spec.SendPre, spec.Mute
 		v.busSFX = spec.BusSFX
+		if spec.BusSFX {
+			e.hasSFX = true
+		}
 		if spec.InsertDrive != nil {
 			if spec.Kind == VoiceOff {
 				return nil, Error("silent track cannot have a drive insert")
@@ -450,6 +495,7 @@ func (e *Engine) Reset() {
 	e.layerMask = (1 << e.tracks) - 1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
 	e.manualSceneTick = -1
+	e.currentScene = -1
 	for i := range e.manualPatternTick {
 		e.manualPatternTick[i] = -1
 	}
@@ -515,6 +561,15 @@ func (e *Engine) Render(outL, outR []float32) {
 		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
 		for track := 0; track < e.tracks; track++ {
 			v := &e.voices[track]
+			v.mix.Left += (v.targetMix.Left - v.mix.Left) * v.mixSmooth
+			v.mix.Right += (v.targetMix.Right - v.mix.Right) * v.mixSmooth
+			v.sendA += (v.targetSendA - v.sendA) * v.sendSmooth
+			v.sendB += (v.targetSendB - v.sendB) * v.sendSmooth
+			if v.muteGain < v.muteTarget {
+				v.muteGain = min(v.muteTarget, v.muteGain+v.muteStep)
+			} else if v.muteGain > v.muteTarget {
+				v.muteGain = max(v.muteTarget, v.muteGain-v.muteStep)
+			}
 			var left, right float32
 			switch v.kind {
 			case VoiceAcid:
@@ -549,34 +604,38 @@ func (e *Engine) Render(outL, outR []float32) {
 			} else if v.align != nil {
 				left, right = v.align.Process(left, right)
 			}
+			var trackL, trackR float32
 			if e.layerMask&(1<<track) != 0 && v.kind != VoiceOff {
-				if v.sendA > 0 && !v.muted {
+				trackL, trackR = left*(v.mix.Left*v.muteGain), right*(v.mix.Right*v.muteGain)
+				if v.sendA > 0 && v.muteGain > 0 && !v.sourceOff {
 					if v.sendPre {
-						sendAL += left * v.sendA
-						sendAR += right * v.sendA
+						sendAL += left * v.sendA * v.muteGain
+						sendAR += right * v.sendA * v.muteGain
 					} else {
-						sendAL += left * v.mix.Left * v.sendA
-						sendAR += right * v.mix.Right * v.sendA
+						sendAL += left * v.mix.Left * v.muteGain * v.sendA
+						sendAR += right * v.mix.Right * v.muteGain * v.sendA
 					}
 				}
-				if v.sendB > 0 && !v.muted {
+				if v.sendB > 0 && v.muteGain > 0 && !v.sourceOff {
 					if v.sendPre {
-						sendBL += left * v.sendB
-						sendBR += right * v.sendB
+						sendBL += left * v.sendB * v.muteGain
+						sendBR += right * v.sendB * v.muteGain
 					} else {
-						sendBL += left * v.mix.Left * v.sendB
-						sendBR += right * v.mix.Right * v.sendB
+						sendBL += left * v.mix.Left * v.muteGain * v.sendB
+						sendBR += right * v.mix.Right * v.muteGain * v.sendB
 					}
 				}
+				tap := mix.Track{Left: v.mix.Left * v.muteGain, Right: v.mix.Right * v.muteGain}
 				if v.busSFX {
-					dry.AddSFX(left, right, v.mix)
+					dry.AddSFX(left, right, tap)
 				} else {
-					dry.Add(left, right, v.mix)
+					dry.Add(left, right, tap)
 				}
 				if e.compSidechainTrack == track+1 {
-					sideL, sideR = left*v.mix.Left, right*v.mix.Right
+					sideL, sideR = trackL, trackR
 				}
 			}
+			accumulateMeter(&e.trackMeter[track], trackL, trackR)
 		}
 		if e.delayA != nil {
 			returnL, returnR := e.delayA.Process(sendAL, sendAR)
@@ -586,6 +645,7 @@ func (e *Engine) Render(outL, outR []float32) {
 				clear(outR[frame:])
 				return
 			}
+			accumulateMeter(&e.returnAMeter, returnL, returnR)
 			dry.AddReturn(returnL, returnR)
 		}
 		if e.reverbB != nil {
@@ -596,10 +656,12 @@ func (e *Engine) Render(outL, outR []float32) {
 				clear(outR[frame:])
 				return
 			}
+			accumulateMeter(&e.returnBMeter, returnL, returnR)
 			dry.AddReturn(returnL, returnR)
 		}
 		left, right := dry.Music()
 		sfxL, sfxR := dry.SFX()
+		accumulateMeter(&e.sfxMeter, sfxL, sfxR)
 		if e.compMusic != nil {
 			if e.compSidechainTrack == 0 {
 				left, right = e.compMusic.Process(left, right)
@@ -614,12 +676,15 @@ func (e *Engine) Render(outL, outR []float32) {
 				clear(outR[frame:])
 				return
 			}
+			e.compGR = max(e.compGR, float32(e.compMusic.GainReductionDB()))
 		}
+		accumulateMeter(&e.musicMeter, left, right)
 		left, right = left+sfxL, right+sfxR
 		if e.masterGain != 1 {
 			left *= e.masterGain
 			right *= e.masterGain
 		}
+		accumulateMeter(&e.preMasterMeter, left, right)
 		outL[frame], outR[frame], _ = e.limiter.Process(left, right)
 		if e.limiter.Fault() {
 			e.fault(4)
@@ -627,14 +692,60 @@ func (e *Engine) Render(outL, outR []float32) {
 			clear(outR[frame:])
 			return
 		}
+		e.limiterGR = max(e.limiterGR, float32(e.limiter.GainReductionDB()))
+		accumulateMeter(&e.masterMeter, outL[frame], outR[frame])
 		blockPeak = max(blockPeak, float32(math.Max(math.Abs(float64(outL[frame])), math.Abs(float64(outR[frame])))))
 		e.transport.Advance(1)
 	}
 	e.renderFrames = 0
+	e.meterFrames += uint32(len(outL))
 	e.meterBlock++
 	if e.meterRate != 0 && e.meterBlock%e.meterRate == 0 {
-		e.emit(cmd.Message{Kind: cmd.Meter, Track: 0xff, B: math.Float32bits(blockPeak), Tick: e.transport.Tick()})
+		e.emitMeters(blockPeak)
 	}
+}
+
+func accumulateMeter(m *meterAccum, left, right float32) {
+	peak := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right))))
+	m.peak = max(m.peak, peak)
+	m.power += (float64(left)*float64(left) + float64(right)*float64(right)) * .5
+}
+
+func smoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
+	return float32(1 - math.Exp(-1/(float64(kernel.Params[id].SmoothingMS)*.001*float64(sampleRate))))
+}
+
+func (e *Engine) emitMeters(masterBlockPeak float32) {
+	tick := e.transport.Tick()
+	for track := 0; track < e.tracks; track++ {
+		e.emitMeterPair(uint8(track), &e.trackMeter[track], tick)
+		e.trackMeter[track] = meterAccum{}
+	}
+	e.emitMeterPair(0xf0, &e.returnAMeter, tick)
+	e.emitMeterPair(0xf1, &e.returnBMeter, tick)
+	e.emitMeterPair(0xf2, &e.musicMeter, tick)
+	e.emitMeterPair(0xf3, &e.sfxMeter, tick)
+	e.emitMeterPair(0xfd, &e.preMasterMeter, tick)
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: 0xff, A: 0, B: math.Float32bits(masterBlockPeak), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: 0xfc, A: 2, B: math.Float32bits(e.compGR), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: 0xfb, A: 2, B: math.Float32bits(e.limiterGR), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: 0xff, A: 1, B: math.Float32bits(meterRMS(&e.masterMeter, e.meterFrames)), Tick: tick})
+	e.masterMeter = meterAccum{}
+	e.returnAMeter, e.returnBMeter = meterAccum{}, meterAccum{}
+	e.musicMeter, e.sfxMeter, e.preMasterMeter = meterAccum{}, meterAccum{}, meterAccum{}
+	e.compGR, e.limiterGR, e.meterFrames = 0, 0, 0
+}
+
+func (e *Engine) emitMeterPair(track uint8, meter *meterAccum, tick int64) {
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 0, B: math.Float32bits(meter.peak), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 1, B: math.Float32bits(meterRMS(meter, e.meterFrames)), Tick: tick})
+}
+
+func meterRMS(meter *meterAccum, frames uint32) float32 {
+	if frames == 0 {
+		return 0
+	}
+	return float32(math.Sqrt(meter.power / float64(frames)))
 }
 
 func (e *Engine) drainCommands() {
@@ -762,6 +873,8 @@ func (e *Engine) apply(c cmd.Command) {
 		if e.transport.QueueTempo(int64(c.Arg0)) != nil {
 			e.fault(7)
 		}
+	case cmd.OpSetParam:
+		e.setParam(c)
 	case cmd.OpNoteOn:
 		track := int(c.Track)
 		note, velocity := uint8(c.Arg0), uint8(c.Arg0>>8)
@@ -809,6 +922,179 @@ func (e *Engine) apply(c cmd.Command) {
 		e.meterRate = c.Arg0
 	default:
 		e.fault(10) // No accepted command may be silently discarded.
+	}
+}
+
+func (e *Engine) setParam(c cmd.Command) {
+	spec, ok := kernel.Param(kernel.ParamID(c.Index))
+	if !ok || !spec.Live {
+		e.fault(18)
+		return
+	}
+	value := math.Float32frombits(c.Arg0)
+	off := spec.Off && math.IsInf(float64(value), -1)
+	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
+		e.fault(18)
+		return
+	}
+	if spec.Curve == "toggle" && value != 0 && value != 1 {
+		e.fault(18)
+		return
+	}
+	if spec.Scope == "track" {
+		if int(c.Track) >= e.tracks {
+			e.fault(18)
+			return
+		}
+		v := &e.voices[c.Track]
+		switch kernel.ParamID(c.Index) {
+		case kernel.ParamMixGain:
+			v.gainDB = value
+			v.sourceOff = off
+			if off {
+				v.targetMix = mix.Track{}
+			} else {
+				v.targetMix = mix.NewTrack(float64(v.gainDB), float64(v.pan), false)
+			}
+		case kernel.ParamMixPan:
+			v.pan = value
+			if v.sourceOff {
+				v.targetMix = mix.Track{}
+			} else {
+				v.targetMix = mix.NewTrack(float64(v.gainDB), float64(v.pan), false)
+			}
+		case kernel.ParamMixSendA:
+			v.targetSendA = value
+		case kernel.ParamMixSendB:
+			v.targetSendB = value
+		case kernel.ParamMixMute:
+			v.muted = value == 1
+			e.updateMuteTargets()
+		case kernel.ParamMixSolo:
+			if v.soloed != (value == 1) {
+				v.soloed = value == 1
+				if v.soloed {
+					e.soloCount++
+				} else {
+					e.soloCount--
+				}
+				e.updateMuteTargets()
+			}
+		default:
+			e.fault(18)
+		}
+		return
+	}
+	if c.Track != 0xff {
+		e.fault(18)
+		return
+	}
+	e.setGlobalParam(kernel.ParamID(c.Index), value)
+}
+
+func (e *Engine) updateMuteTargets() {
+	for track := 0; track < e.tracks; track++ {
+		v := &e.voices[track]
+		v.muteTarget = 1
+		if v.muted || e.soloCount > 0 && !v.soloed {
+			v.muteTarget = 0
+		}
+	}
+}
+
+func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
+	switch id {
+	case kernel.ParamFxDriveGain, kernel.ParamFxDriveTone, kernel.ParamFxDriveMix:
+		for track := 0; track < e.tracks; track++ {
+			drive := e.voices[track].insert
+			if drive == nil {
+				continue
+			}
+			params := drive.Params()
+			switch id {
+			case kernel.ParamFxDriveGain:
+				params.GainDB = float64(value)
+			case kernel.ParamFxDriveTone:
+				params.ToneHz = float64(value)
+			case kernel.ParamFxDriveMix:
+				params.Mix = float64(value)
+			}
+			if drive.SetParams(params) != nil {
+				e.fault(18)
+				return
+			}
+		}
+	case kernel.ParamFxDelayTime, kernel.ParamFxDelayFeedback, kernel.ParamFxDelayDamp, kernel.ParamFxDelayPingpong, kernel.ParamFxDelayWidth, kernel.ParamFxDelayMix:
+		if e.delayA != nil {
+			params := e.delayA.Params()
+			switch id {
+			case kernel.ParamFxDelayTime:
+				params.Division, params.TimeMs = fx.FreeDelay, float64(value)
+			case kernel.ParamFxDelayFeedback:
+				params.Feedback = float64(value)
+			case kernel.ParamFxDelayDamp:
+				params.DampHz = float64(value)
+			case kernel.ParamFxDelayPingpong:
+				params.PingPong = value == 1
+			case kernel.ParamFxDelayWidth:
+				params.Width = float64(value)
+			case kernel.ParamFxDelayMix:
+				params.Mix = float64(value)
+			}
+			if e.delayA.SetParams(params) != nil {
+				e.fault(18)
+				return
+			}
+		}
+	case kernel.ParamFxReverbSize, kernel.ParamFxReverbDecay, kernel.ParamFxReverbDamp, kernel.ParamFxReverbHighpass, kernel.ParamFxReverbPredelay, kernel.ParamFxReverbMix:
+		if e.reverbB != nil {
+			params := e.reverbB.Params()
+			switch id {
+			case kernel.ParamFxReverbSize:
+				params.Size = float64(value)
+			case kernel.ParamFxReverbDecay:
+				params.DecaySec = float64(value) / 1000
+			case kernel.ParamFxReverbDamp:
+				params.DampHz = float64(value)
+			case kernel.ParamFxReverbHighpass:
+				params.HighpassHz = float64(value)
+			case kernel.ParamFxReverbPredelay:
+				params.PredelayMs = float64(value)
+			case kernel.ParamFxReverbMix:
+				params.Mix = float64(value)
+			}
+			if e.reverbB.SetParams(params) != nil {
+				e.fault(18)
+				return
+			}
+		}
+	case kernel.ParamFxCompThreshold, kernel.ParamFxCompRatio, kernel.ParamFxCompKnee, kernel.ParamFxCompAttack, kernel.ParamFxCompRelease, kernel.ParamFxCompMakeup, kernel.ParamFxCompMix:
+		if e.compMusic != nil {
+			params := e.compMusic.Params()
+			switch id {
+			case kernel.ParamFxCompThreshold:
+				params.Threshold = float64(value)
+			case kernel.ParamFxCompRatio:
+				params.Ratio = float64(value)
+			case kernel.ParamFxCompKnee:
+				params.Knee = float64(value)
+			case kernel.ParamFxCompAttack:
+				params.AttackMs = float64(value)
+			case kernel.ParamFxCompRelease:
+				params.ReleaseMs = float64(value)
+			case kernel.ParamFxCompMakeup:
+				params.MakeupAuto, params.MakeupDB = false, float64(value)
+			case kernel.ParamFxCompMix:
+				params.Mix = float64(value)
+			}
+			if e.compMusic.SetParams(params) != nil {
+				e.fault(18)
+				return
+			}
+		}
+	default:
+		e.fault(18)
+		return
 	}
 }
 
