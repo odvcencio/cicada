@@ -22,6 +22,8 @@
         return;
       }
       if (event.ctrlKey || event.altKey || event.shiftKey && event.key !== '?') return;
+      // Space and Enter activate a focused button, link, or summary (a pattern grid cell, for example).
+      if (event.key === ' ' && /^(BUTTON|A|SUMMARY)$/.test(event.target?.tagName || '')) return;
       if (/^[1-8]$/.test(event.key)) {
         event.preventDefault();
         selectPanel(panelNames[Number(event.key) - 1]);
@@ -54,6 +56,11 @@
     let active = initial;
     function choose(name) {
       if (!panelNames.includes(name)) return;
+      if (name === 'code') {
+        // Code is a dock beside the active panel, not a panel of its own.
+        selectPanel(name);
+        return;
+      }
       active = name;
       document.documentElement.dataset.activePanel = name;
       tabs.forEach(tab => {

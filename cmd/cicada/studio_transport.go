@@ -251,13 +251,19 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	return nil
 }
 
-func (t *studioTransport) stop() {
+// pause halts playback and keeps the stream, so play resumes at the same
+// position (D18: Space toggles play and pause).
+func (t *studioTransport) pause() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.pauseLocked()
+}
+
+func (t *studioTransport) pauseLocked() {
 	if t.audio != nil {
 		audio := t.audio
 		audio.Pause()
-		// Release duplex hosts after Stop so they no longer hold the input endpoint.
+		// Release duplex hosts after Pause so they no longer hold the input endpoint.
 		if audio.StopClosesDevice() {
 			if err := audio.Close(); err != nil {
 				t.errText = err.Error()
@@ -265,19 +271,49 @@ func (t *studioTransport) stop() {
 			t.audio = nil
 		}
 	}
-	// D18: Stop halts playback and returns to bar 1 by discarding the old stream.
-	// The next start() will build a new stream from the beginning.
 	if t.stream != nil {
 		t.stream.CancelScene()
 		t.stream.CancelPatterns()
 		t.stream.CancelStart()
-		t.stream.Close()
-		t.stream = nil
 	}
 	t.playing = false
 	t.pendingSong = ""
 	t.pendingSongID = 0
-	t.cancel = nil
+}
+
+// stop halts playback and returns to bar 1 by discarding the stream (D18).
+// The next start builds a new stream from the beginning.
+func (t *studioTransport) stop() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pauseLocked()
+	if t.cancel != nil {
+		t.cancel()
+		t.cancel = nil
+	}
+	if t.audio != nil {
+		if err := t.audio.Close(); err != nil {
+			t.errText = err.Error()
+		}
+		t.audio = nil
+	}
+	if t.stream != nil {
+		t.stream.Close()
+		t.stream = nil
+	}
+}
+
+// returnToStart moves to bar 1. A playing transport keeps playing from the
+// start; a stopped one stays stopped (D18).
+func (t *studioTransport) returnToStart() error {
+	t.mu.Lock()
+	wasPlaying := t.playing
+	t.mu.Unlock()
+	t.stop()
+	if wasPlaying {
+		return t.start()
+	}
+	return nil
 }
 
 func (t *studioTransport) launchScene(name string, quantizes ...cmd.Quantize) error {
@@ -590,8 +626,16 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 			return
 		}
+	case "pause":
+		s.transport.pause()
 	case "stop":
 		s.transport.stop()
+	case "home":
+		if err := s.transport.returnToStart(); err != nil {
+			s.transport.setError(err)
+			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
 	case "trackStop":
 		if err := s.transport.stopTrack(input.Track); err != nil {
 			studioJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})

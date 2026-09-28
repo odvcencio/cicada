@@ -219,6 +219,7 @@
     checkbox.addEventListener('change', () => {
       if (checkbox.checked) armedTracks.add(track.id);
       else armedTracks.delete(track.id);
+      window.dispatchEvent(new CustomEvent('cicada:armchange', {detail: {count: armedTracks.size}}));
     });
     const text = document.createElement('span');
     text.textContent = `Arm ${track.id}`;
@@ -647,7 +648,7 @@
       capturedNotes = [];
       activeNotes.clear();
       takePanel.hidden = true;
-      setTimeout(() => location.reload(), 900);
+      window.cicadaRefreshProjection?.({revision: result.revision}).catch(() => setStatus('Take committed; the projection could not refresh', 'error', false));
     } catch (error) { setStatus(`Take commit failed: ${error.message}`, 'error'); }
     finally { button.disabled = false; }
   });
