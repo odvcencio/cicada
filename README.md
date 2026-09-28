@@ -49,3 +49,7 @@ by default. `CICADA_AUDIO` selects a backend when `--audio` is omitted.
 
 Run `cicada help` for the command list or `cicada help COMMAND` for usage and
 flags.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
