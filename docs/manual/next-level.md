@@ -1,71 +1,181 @@
 # Live playback, mixing, and what comes next
 
-This chapter separates current behavior from the features still under review.
-The detailed track and effect limits are in the
-[language specification](../spec/edition-1.md#effects).
+Cicada projects use source edition 2. A new project includes bass, drums, and
+two scenes. You can save mixer routes and scene parameter changes in the score,
+record MIDI note takes in Studio, and render a WAV.
 
 ## Available on main
 
-| Area | Current behavior |
-| --- | --- |
-| Live playback | `cicada play` watches a score and loops it through the native audio engine. Valid saves take effect at the next bar; an invalid save leaves the last valid score playing. |
-| Studio transport | Studio can play or stop the song, launch scenes or individual track patterns at a bar boundary, and start the song at a selected block. It shows track and master peak levels in dBFS while playing. Use `--audio null` for real-time rendering without an audio device. |
-| Live controls | The page's `window.cicadaAudio` API lists typed live addresses and can set a parameter, mute a track, or solo a track during playback. Values are validated; overrides do not write the score and follow a track with the same ID across valid source edits. |
-| Mixing | Track source supports level, pan, a drive insert, delay and reverb sends, pre-fader sends, and the music or SFX bus. A music-bus compressor can use a track or the SFX bus as its sidechain. |
-| Master output | A linked stereo limiter protects the output at −0.3 dBFS with 1.5 ms lookahead. WAV export can also peak-normalize to −1 dBFS. |
-| Recording | There is no audio-input recording or take lane in the current build. |
-| Automation | There are no automation lanes or source automation blocks in the current build. |
+### Start and check a project
 
-Mixing settings live in the score, for example:
+Create a project, then check its starter score:
 
-```cicada
-fx drive { shape = hard gain = 9dB }
-fx delay { time = 1/8 feedback = 0.35 }
-fx reverb { decay = 2.4s }
-
-track bass acid {
-  level = -3dB
-  pan = -0.2
-  insert = drive
-  send_a = 0.3
-  send_b = 0.2
-  send_pre = true
-  bus = music
-}
-
-track drums drums { bus = sfx }
-pattern bassline acid { 1^ . 1~ 5 }
-pattern beat drums { bd: X... }
-scene main { bass = bassline drums = beat }
-song { main*4 }
+```sh
+cicada new night-circuit
+cd night-circuit
+cicada fmt --check
+cicada check
 ```
 
-The fixed effect graph is drive on a track, delay on send A, reverb on send B,
-an optional music-bus compressor, then the master limiter. Studio has no
-interactive mixer panel or dedicated mastering chain. Its peak meters do not
-measure integrated loudness. Use the [WAV chapter](exporting.md#wav) for export
-controls and verifiers.
+If you paste the mixing example below into `main.cicada`, run `cicada fix
+main.cicada`, then check and render it:
+
+```sh
+cicada fix main.cicada
+cicada check
+cicada render main.cicada -o preview.wav --bars 1 --tail 0s
+```
+
+The example already uses edition 2, so `fix` leaves its source unchanged.
+When you paste older edition-1 spellings into an edition-2 project, `fix`
+rewrites them. If another edition-1 score is in the project, use
+`cicada fix --all` to migrate the project together.
+
+### Named mixer and parameter paths
+
+Save mixer routing and scene changes in the score:
+
+```cicada
+cicada 2
+fx room delay { time = 1/8 feedback = 0.3 }
+track bass acid {
+  level = -6dB
+  mute = off
+  solo = off
+  send room = -12dB pre
+}
+pattern pulse acid { 1^ . 1~ 5 }
+scene verse {
+  bass = pulse
+  bass.cutoff = 900Hz
+  room.feedback = 0.4
+}
+song { verse*4 }
+```
+
+Check the score and inspect the cutoff at bar 3:
+
+```sh
+cicada check main.cicada
+cicada explain main.cicada bass.cutoff @3
+```
+
+The parameter registry supplies the type, unit, range, and smoothing used by
+the source checker, Studio, the language server, and `cicada explain`. A scene
+setting takes effect when that scene starts and carries forward until a later
+scene changes the same path. See the [edition 2 mixer reference](../spec/edition-2.md#named-mixer-forms).
+
+### Live MIDI performance and note takes
+
+Studio's **Live** mode has scene and track launch pads. Turn on **Enable MIDI**
+to receive notes and controls from a connected MIDI device. Choose a note track
+and drum track, then use **Record-arm** checkboxes to select which tracks
+receive a note take.
+
+Start playback before selecting **Record**. Play notes, select **Stop
+recording**, review the take, then choose **Commit take** or **Discard**. The
+take stays in page memory until you commit it. Drum hits keep separate lanes
+and supported velocities. Acid notation keeps pitch and slides at its fixed
+velocity; it cannot save arbitrary MIDI velocity. MIDI overdub and replace
+modes are not available yet, and Studio does not record audio input.
+
+Open Studio without an audio device for a silent session:
+
+```sh
+cicada studio examples/first-acid.cicada --audio null
+```
+
+The [Studio chapter](studio.md#live-mode) explains the controls and shortcuts.
+
+### Native audio
+
+On Windows and Linux, `cicada play` and Studio use Tymbal by default. Tymbal
+uses WASAPI shared mode on Windows and ALSA on Linux. If the device cannot
+open, Cicada reports the error; it does not switch engines silently. Select
+Oto explicitly when you need its system-default device:
+
+```sh
+cicada play main.cicada --audio oto
+CICADA_AUDIO=oto cicada play main.cicada
+```
+
+Use `--audio null` for real-time transport without an output device. macOS
+continues to use Oto by default.
+
+On Windows, Studio can open WASAPI input and output together. Input monitoring
+starts muted. Change device selections while playback is stopped; Stop releases
+both endpoints.
+
+### Loudness and WAV export
+
+The renderer can target integrated loudness and limit true peak, then verify
+the result:
+
+```sh
+cicada render examples/first-acid.cicada -o release.wav --rate 48000 --bits 24 --bars 16 --loudness -14 --true-peak-max -1
+cicada verify-wav release.wav --rate 48000 --bits 24 --bars 16 --tail 3s --lufs -14 --true-peak-max -1
+```
+
+Bar numbers start at 1, so `--from 1` selects the first bar. The old
+`--from 0` input still selects bar 1 and prints a deprecation warning.
+Studio's Master panel also measures integrated loudness and exports at a
+target level. Use `--normalize` for peak normalization when you do not request
+a loudness target.
+
+### Custom-voice glide
+
+Custom graph voices glide for 60 ms when a note marked with `~` slides to the
+next pitch. Notes without `~` keep their existing onset behavior:
+
+```cicada
+cicada 2
+instrument glassbass {
+  voice mono {
+    let osc = saw(pitch)
+    out = osc
+  }
+}
+track lead glassbass {}
+pattern glide-line { 1~ 3 . 5 }
+scene main { lead = glide-line }
+song { main }
+```
+
+Validate this score with `cicada check glide.cicada`. Source-level `glide`,
+`vibrato`, and per-step pitch rows remain accepted designs, not current
+syntax; see [accepted syntax](../spec/accepted.md#continuous-pitch-settings-and-rows-p7).
+
+### Language reference
+
+The [edition 2 reference](../spec/edition-2.md) describes the current named
+mixer forms. The [edition 1 reference](../spec/edition-1.md) documents the
+earlier source spelling. The [accepted syntax list](../spec/accepted.md)
+marks each future design as accepted and unavailable. The repository checks the
+runnable Cicada examples in the README, manual, and specification with
+`GOWORK=off go test ./cmd/cicada -run '^TestDocumentationCicadaExamples$' -count=1`.
 
 ## Coming next
 
-These descriptions set user-facing direction; they are not a release schedule.
-Only items marked **accepted** have an owner-approved notation design. Every
-accepted syntax example is labeled unavailable in the
-[specification](../spec/accepted.md).
+The next workstation steps follow the order in the 28 September 2026 decision.
+The new-project and migration path is covered above.
 
-| Feature | Status | What it will do |
-| --- | --- | --- |
-| Expanded live mode | Proposed | Extend the current next-bar transport into a fuller performance workflow while keeping source edits and playback state together. |
-| Recording | Proposed | Capture an audio or performance take so you can keep it with a project and arrange it with your score. No recording syntax or file format is available yet. |
-| Parameter paths | Accepted | Give each track, bus, or effect setting a typed address that scenes, automation, and tools can refer to consistently. |
-| Named mixing | Accepted | Give effects and buses names, route tracks and buses explicitly, and order inserts on tracks, buses, and the master. |
-| Mastering | Proposed | Add a dedicated final-stage workflow for shaping and checking a delivery render. The current limiter and peak normalization are the only final-stage controls. |
-| Automation | Accepted | Change a typed parameter over song time with lanes that can live at song, scene, or pattern scope. The accepted design is not in the parser, semantic JSON, or Studio. |
-| Flexible grids and chains | Accepted | Choose a step duration, use subdivided groups and per-step parameter rows, and arrange patterns into a repeating chain. |
-| Multi-file projects | Accepted | Let scores in one project share declarations while imports expose reusable libraries. Files still compile independently today. |
+1. **Workspace shell and in-place updates.** Keep transport and status visible
+   while switching between panels. Apply edits without reloading the page so
+   MIDI access, armed tracks, and keyboard focus survive.
 
-For automation, named mixing, flexible grids, chains, and multi-file source,
-read the syntax and current limits in
-[accepted but unavailable designs](../spec/accepted.md). The
-[engine-host chapter](engine-host.md) covers the current native and TinyGo
-runtime for developers.
+2. **Undo and edit history.** Add undo and redo for source writes, with history
+   focused on edits instead of routine transport events.
+
+3. **Mix view.** Add a Studio panel for track, bus, effect-return, and master
+   strips. Its controls will write the named mixer settings already available
+   in the score.
+
+4. **Record panel.** Add audio-input takes that stay with the project. Each
+   pass will write a 32-bit float WAV at the engine rate under
+   `audio/takes/`; the score will refer to the take through a hash-checked
+   asset and clip.
+
+After these steps, the accepted feature order continues with the mastering
+view, automation lanes, expanded saved live settings and MIDI mappings, then
+the flexible grid and pattern chains. These are design directions, not release
+dates.

@@ -1,0 +1,11 @@
+Usage: cicada <command> [arguments]
+
+Create a project, edit and validate scores, play them in Studio, or render files.
+
+Commands:
+  new, fix, check, fmt, play, studio, lsp
+  render, stems, verify-wav, verify-stems, midi, verify-midi, compare-midi
+  gen, explain, view, highlight, symbols, convert, compare, validate, ast
+  events, graph, fields, params, golden
+
+Run "cicada help <command>" for usage and flags.

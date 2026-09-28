@@ -1,100 +1,51 @@
-# Cicada: programmable music notation
+# Cicada
 
-Cicada is an experimental music language for people, agents, and a future extensible DAW. A `.cicada` file describes music and can define the instruments that play it. The [grammar](language/grammar/grammar.go) is written in the grammargen Go DSL and compiles into a parser blob consumed by gotreesitter; the compiler builds a typed score, deterministic note events, and bounded DSP graphs. The offline renderer writes stereo 24-bit WAV from custom mono instruments, the built-in acid voice, and eleven synthesized drum lanes.
+Cicada is a music language and workstation. A score describes tracks, patterns,
+scenes, and a song. New projects use source edition 2.
 
-Start with the [Cicada User Manual](docs/manual/README.md). The [Cicada Language Specification](docs/spec/README.md) is the complete reference for edition 1, semantic JSON, diagnostics, and accepted syntax that has not shipped.
+## Quick start
 
-Render the [circuit kit score](examples/circuit-kit.cicada). Its bass, kick, snare, and hat are all defined in the score:
-
-```sh
-go run ./cmd/cicada validate examples/circuit-kit.cicada
-go run ./cmd/cicada render examples/circuit-kit.cicada -o circuit-kit.wav
-```
-
-The repository includes a [rendered circuit kit](circuit-kit.wav) and a [longer glassbass study](glassbass.wav), both generated from Cicada source.
-
-Render the [acid voice study](examples/acid-voice.cicada) to hear the built-in synthesizer path:
+Build the command-line tool with Go 1.25 or newer, then create and check a
+project:
 
 ```sh
-go run ./cmd/cicada render examples/acid-voice.cicada -o acid-voice.wav
+go build -o cicada ./cmd/cicada
+./cicada new night-circuit
+cd night-circuit
+../cicada fmt --check
+../cicada check
 ```
 
-The [first acid score](examples/first-acid.cicada) renders sixteen bars of acid, drums, phrase reuse, and scenes:
+The starter score has bass, drums, and two scenes. Open it in Studio:
 
 ```sh
-go run ./cmd/cicada ast examples/first-acid.cicada
-go run ./cmd/cicada graph examples/first-acid.cicada glassbass
-go run ./cmd/cicada events examples/first-acid.cicada lead lead-a
-go run ./cmd/cicada render examples/first-acid.cicada -o first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s
-go run ./cmd/cicada verify-wav first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60
-go run ./cmd/cicada stems examples/sfx-bus.cicada -o sfx-stems --bars 1 --tail 0s
-go run ./cmd/cicada verify-stems sfx-stems --tap pre-comp --residual-max-db -80
-go run ./cmd/cicada midi examples/first-acid.cicada -o first-acid.mid
-go run ./cmd/cicada verify-midi first-acid.mid --ppq 960 --type 1
+../cicada studio main.cicada --audio null
 ```
 
-`validate` checks syntax, references, and instrument types. `ast` prints the typed score; `graph` prints a compiled instrument; `events` shows a bar of sample-positioned note onsets. `make grammar` regenerates the parser blob from the Go DSL grammar, `make grammar-check` verifies the blob and the editor queries, `make test` runs the Go suite, and `make probe-wasm` builds the TinyGo sequencing probe.
-
-The [cicada chorus](examples/cicada-chorus.cicada) tours a noise-and-ring tymbal voice, thirteen graph primitives, degrees and letter pitches, step modifiers, dense drum rows, phrases, and scenes. `highlight` draws a score in color, and `symbols` lists the names a score defines and where each is used. Both run the [editor queries](docs/manual/editors.md#highlighting-and-navigation) in `language/` on gotreesitter, including the authored-kit constructs:
-
-Start a project with `go run ./cmd/cicada new night-circuit`. It creates `night-circuit/cicada.mod` and a headerless, eight-bar `main.cicada`. The nearest manifest supplies edition 1; existing files with a `cicada 1` header still work. Semantic JSON exports record the source edition separately from the project format version. Older JSON without that field reads as edition 1. The owner's [language direction](docs/design/cicada-meet-in-the-middle.md) and [Cicada Live concept](docs/design/cicada-live.pdf) guide the ongoing notation and editor work.
-
-`go run ./cmd/cicada fix score.cicada` moves a standalone legacy header into `cicada.mod`, writes missing instrument octaves, removes redundant `steps`, melodic kind tags and instrument parameter unit tags, omits no-op scene `keep` lines, writes scene `stop` where it is unambiguous, moves pattern settings inside their braces, shortens positive phrase transposes, uses `?` for note chance, writes SI unit case, and removes statement terminators. It preserves comments and checks that the semantic project stays identical. Use `--check` to see whether this migration is needed without writing files. Further spelling migrations remain in the rollout.
-
-Run `cicada check` from a project directory to validate every score under the nearest `cicada.mod` with source carets and contextual suggestions. Without a manifest, it checks the current directory. Nested projects are checked separately. `cicada check score.cicada` checks one file; `cicada validate score.cicada` remains available for scripts. Both use the same parser, semantic model, and engine compilation gate.
-
-Play a score through the native engine and keep editing its source:
+The null backend lets you use Studio transport and meters without opening an
+audio device. For WAV output, render the score:
 
 ```sh
-go run ./cmd/cicada play examples/first-acid.cicada
+../cicada render main.cicada -o mix.wav --bars 8
 ```
 
-`play` loops the song at 48 kHz. It validates each saved score outside the audio stream and lands the latest valid edit at the next bar with a five-millisecond crossfade. A score that fails to parse or compile leaves the last good version playing and prints the diagnostic. From inside a project, `cicada play` defaults to `main.cicada`; Ctrl-C stops playback.
+## Audio
 
-On Windows, `play` and Studio use Tymbal with WASAPI. On Linux they use Tymbal
-with ALSA; macOS keeps Oto. If a Tymbal device cannot open, playback stops and
-prints the device error. Select Oto explicitly with `--audio oto` or
-`CICADA_AUDIO=oto`.
+On Windows and Linux, `cicada play` and Studio use Tymbal by default: WASAPI
+shared mode on Windows and ALSA on Linux. Cicada reports device errors and does
+not switch engines silently. Use `--audio oto` to select Oto explicitly, or
+`--audio null` for real-time transport without an output device. macOS uses Oto
+by default. `CICADA_AUDIO` selects a backend when `--audio` is omitted.
 
-Run `go run ./cmd/cicada lsp` as an editor's stdio language server. It publishes parser and compiler diagnostics as the score changes, explains pitches, chance, and drum velocity on hover, shows pattern length and song position inlays, provides semantic tokens, and supports definition lookup and scoped rename. Its **Apply Cicada notation fixes** action uses the same validated rewrite as `cicada fix`; when needed, the workspace edit creates `cicada.mod` before removing a legacy header. Documents use full-text synchronization and UTF-16 positions.
+## Learn Cicada
 
-Run `go run ./cmd/cicada studio examples/first-acid.cicada` to open a local source-linked workstation page. Add `--audio null` to render in real time without opening an audio device, for captures and automated checks. The URL printed by the command shows highlighted notation beside the pattern grid, tracks, song, a Voice view of custom instrument signal graphs and drum-kit routing, and a History view of this Studio session's edits grouped by transport bar. Edit and save the source, or click a note or drum cell to toggle its token in the score file. A click on a reused phrase edits the phrase definition, so every use reflects the change. Studio validates and compiles before writing, keeps the last valid projection visible during an invalid external edit, and rejects saves based on an outdated file revision. Studio uses an atomic file exchange on Linux or a replace-with-backup operation on native Windows to catch saves by another editor at commit time. Studio retains displaced files as hidden `.cicada-studio-*` recovery files beside the score. It checks these files for late writes from other editors and refuses further saves if a file changes. Close other editors, compare and merge the recovery file named in the error, then move that file and its `.revision` file out of the score directory. Studio does not remove recovery files automatically. Filesystems without that operation (including Windows mounts accessed by a WSL Linux binary) return a conflict without writing; run a native Windows build to edit scores stored on a Windows drive. Play and Stop use the native audio engine; validated file edits queue for the next bar. Studio streams bar, step, queued edit, landed edit, and meter state to the page over local WebSockets. The score file and Git hold durable source history; the History view keeps the latest 512 events in memory until Studio exits.
+- [User manual](docs/manual/README.md) — write scores, use Studio, and export
+  audio.
+- [Language specification](docs/spec/README.md) — edition 1 and 2 syntax,
+  defaults, diagnostics, and accepted designs that are not yet available.
+- [Examples](examples/) — complete Cicada scores, including
+  [first acid](examples/first-acid.cicada) and
+  [circuit kit](examples/circuit-kit.cicada).
 
-```sh
-go run ./cmd/cicada highlight examples/cicada-chorus.cicada
-go run ./cmd/cicada highlight --html examples/cicada-chorus.cicada > cicada-chorus.html
-go run ./cmd/cicada view examples/first-acid.cicada -o first-acid.html
-go run ./cmd/cicada symbols --refs examples/cicada-chorus.cicada
-go run ./cmd/cicada render examples/cicada-chorus.cicada -o cicada-chorus.wav
-```
-
-`make test-golden` renders eight bars of the compiled first-acid project through the native float32 engine and compares its 100 ms, 64-band spectral fingerprint with `testdata/golden/first-acid.fp`. `go run ./cmd/cicada golden --update` regenerates it and reports drift from the previous fixture; review an audio preview before accepting a changed golden. The [engine-host chapter](docs/manual/engine-host.md#regress-audio-changes) describes what the fingerprint checks.
-
-The bounded live engine plays packed patterns with gate releases, all eleven drum lanes on the same step, sixteen slots per track, per-track pattern chains, quantized scene launches, and a song arrangement. Pattern-end scene launch finds the first shared end across active patterns with different lengths and restart offsets. Edits made during playback take effect at the next bar. `project.CompileEngine` lowers a typed project, including custom mono instruments, authored kits, drive inserts, both effect sends, and music-bus compression, into engine configuration. `kernelimage.Encode` carries that complete configuration into the TinyGo module before playback. The engine renders through track inserts, music and SFX buses, send A's delay return, send B's reverb return, an optional music-bus compressor, and the limiter and emits 16-byte status messages. Build and exercise its TinyGo module with `make test-kernel-wasm`; the tests compare native and WASM musical event logs for live input, patterns, songs, and the compiled first-acid project. First-acid, authored-kit, drive-insert, delay-send, [FX bus](examples/fx-bus.cicada), [compressor bus](examples/fx/compressor-bus.cicada), and [SFX bus](examples/sfx-bus.cicada) renders are compared sample by sample at 44.1 and 48 kHz. The [engine-host chapter](docs/manual/engine-host.md) describes the binary host buffers and current boundaries. DAW integration remains open.
-
-The WAV renderer writes stereo PCM16, PCM24 (default), or IEEE float32 with a three-second tail by default. Integer output uses seeded TPDF dither unless `--dither=false`; `--normalize` sets the post-limiter sample peak to -1 dBFS, and `--block` selects 1–4096 render frames without changing the result. `--loudness -14` applies one static master gain before the limiter and adjusts it over a bounded number of offline passes; `--true-peak-max` defaults to -1 dBTP and `--loudness-tolerance` defaults to 0.5 LU. If the true-peak ceiling prevents the requested loudness, the renderer writes the closest safe result and exits with a shortfall message. The render report includes pre-limiter peak, limiter input overs, ceiling samples, clipped output samples, achieved LUFS and true peak, applied gain, pass count, and maximum limiter gain reduction. `verify-wav` reads every sample and the Cicada timing chunk and reports sample peak, true peak, RMS, integrated LUFS, loudness range, maximum momentary and short-term loudness, DC offset, and clipped samples. Optional `--lufs <target> --lufs-tolerance <LU>` and `--true-peak-max <dBTP>` checks fail with exit status 1 when their limits are exceeded. Tracks accept `level` in dB (or `off`), `pan` from -1 to +1, and `bus = music|sfx`. The music bus sums its tracks and both effect returns before optional compression; the SFX bus joins at master before the linked stereo limiter with 1.5 ms lookahead and a -0.3 dBFS ceiling.
-
-Use `--from N --bars M` to render a bar range starting at zero-based bar `N`. `--bars 0` renders from that bar through the song end. WAV and stem exports process earlier bars to preserve instrument and effect state; only the selected range and requested tail are written. Pass the same `--from` value to `verify-wav`. The stem manifest records the start bar for standalone `verify-stems` checks.
-
-`stems` creates a new directory of stereo float32 WAV files in one render pass: `01-<track>.wav` onward, `return-a.wav`, `return-b.wav`, `music.wav`, `sfx.wav`, and `master.wav`. `manifest.json` records the track routing so the directory can be verified on its own. Track and return taps include the music bus's -3 dB gain where applicable. `music.wav` is the pre-compressor tap; `master.wav` includes compression and limiting. `verify-stems` checks timing, finite samples, and that the pre-compressor music and SFX taps equal their component stems within the requested residual threshold. The output directory must not already exist.
-
-`midi` exports the arrangement as SMF type 1 at 960 PPQ, with tempo, meter, key signature, one track per Cicada track, GM drum notes, swing and ratchets in tick positions, and one-tick overlap for slides. `--pattern <name>` exports a single loop instead. Probability uses the first seeded pass on every repetition. `verify-midi` decodes, re-encodes, and compares normalized tempo and note events. `compare-midi <a.mid> <b.mid>` compares those events across files; [first-acid.mid](testdata/golden/first-acid.mid) pins the encoder's reference output. `import-midi` reports that pattern import is scheduled for M6.
-
-The [eleven-lane drum kit](examples/drums-kit.cicada) uses every built-in voice: `bd sd ch oh cp rs lt mt ht cb cy`. Render it with `go run ./cmd/cicada render examples/drums-kit.cicada -o drums-kit.wav --bars 1 --tail 0s`. The [authored kit](examples/authored-kit.cicada) maps `bd` to instrument code and `ch` to a built-in recipe; omitted lanes are silent. Render it with `go run ./cmd/cicada render examples/authored-kit.cicada -o authored-kit.wav --bars 1 --tail 0s`.
-
-The [drive insert example](examples/fx/drive-insert.cicada) declares `fx drive` with `shape`, `gain`, `tone`, and `mix`, then sets `insert = drive` on the bass track. Drive supports soft, hard, fold, and diode shapes. The same score loads into the live native/TinyGo engine and renders to WAV; tracks without the insert are latency aligned. Render it with `go run ./cmd/cicada render examples/fx/drive-insert.cicada -o drive-insert.wav --bars 4`. The [delay send example](examples/fx/delay-send.cicada) routes bass through send A to a tempo-synced stereo delay. The [FX bus example](examples/fx-bus.cicada) routes bass and drums through send B to an eight-line reverb, alongside drive and delay. The [compressor bus example](examples/fx/compressor-bus.cicada) ducks the music bus from a drum track sidechain. The [SFX bus example](examples/sfx-bus.cicada) routes drums to SFX and uses that bus as the music sidechain. Track compressor inserts and authored effect graphs remain future work.
-
-The typed [project format](project/schema/project-1.json) supports canonical JSON interchange and semantic comparison:
-
-```sh
-go run ./cmd/cicada fmt examples/first-acid.cicada --check
-go run ./cmd/cicada convert examples/first-acid.cicada -o first-acid.cicada.json
-go run ./cmd/cicada convert first-acid.cicada.json -o first-acid-roundtrip.cicada
-go run ./cmd/cicada compare --semantic examples/first-acid.cicada first-acid-roundtrip.cicada
-```
-
-Run `cicada fmt` from a project directory to format every `.cicada` score under the nearest `cicada.mod`; with no manifest it uses the current directory. Nested projects are left to their own `fmt` run. `cicada fmt --check` reports every file that would change without writing. The command parses all selected scores before changing any file, so an invalid score stops the run. Each write checks the source revision and keeps a recovery file. If the revision changes, the command stops with a conflict; earlier files can already be formatted. Late writes to a retained file cause later format and check runs to be refused, even when the current source needs no change. Resolve the named recovery file as described for Studio. A filename still formats one score to stdout, and `-w` writes that file; JSON formatting remains available by filename. JSON-to-source conversion emits the concise notation and expands phrases and normalizes pitch spelling; semantic comparison checks the resulting project rather than source text. An unedited source document can be printed byte for byte, including comments.
-
-The render path supports custom **mono** instruments with graph expressions, the built-in acid and eleven-lane drum voices, authored kits, and the drive insert. Filter response, aliasing and cost gates, drum fidelity, subjective listening review, polyphony, complete scene-switch behavior, and the full DAW UI remain open work. The current Go module targets Go 1.25. This is an implementation slice, not a completed workstation.
-
-Use the [Language Specification](docs/spec/README.md) for exact source and semantic behavior, and the [User Manual](docs/manual/README.md) for Studio, editor, playback, and export workflows. The current mixer and accepted next syntax are documented separately so examples do not imply unavailable features.
+Run `cicada help` for the command list or `cicada help COMMAND` for usage and
+flags.
