@@ -154,6 +154,8 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .pane-actions button:disabled { opacity:.55; cursor:wait; }
 .sr-only { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0; }
 .studio-status { color:var(--muted); font:12px/1.3 system-ui,sans-serif; margin-left:auto; }
+.audio-status-bar { color:var(--mint); font:700 12px/1.3 system-ui,sans-serif; }
+.audio-status-bar[data-state="error"] { color:var(--coral); }
 .studio-status[data-state="error"] { color:var(--coral); }
 .studio-status[data-state="success"] { color:var(--mint); }
 .transport { display:flex; align-items:center; gap:9px; margin-left:auto; font:700 .76rem/1.2 system-ui,sans-serif; }
@@ -359,7 +361,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 <main class="workspace">
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
-    {{if .Studio}}<div class="pane-actions"><button type="button" id="edit-source">Edit source</button><button type="button" id="save-source" class="primary" hidden>Save score</button><button type="button" id="discard-source" hidden>Discard</button><span class="studio-status" id="studio-status" role="status" aria-live="polite">Ready</span></div>{{end}}
+    {{if .Studio}}<div class="pane-actions"><button type="button" id="edit-source">Edit source</button><button type="button" id="save-source" class="primary" hidden>Save score</button><button type="button" id="discard-source" hidden>Discard</button><span class="audio-status-bar" id="audio-status-bar" role="status" aria-live="polite">Audio: checking…</span><span class="studio-status" id="studio-status" role="status" aria-live="polite">Ready</span></div>{{end}}
     <div class="source-scroll" id="source-view"><div class="line-numbers" aria-hidden="true">{{range .LineNumbers}}<span>{{.}}</span>{{end}}</div><pre><code>{{.SourceHTML}}</code></pre></div>
     {{if .Studio}}<div class="editor-shell" id="editor-shell" hidden><label class="sr-only" for="source-editor">Cicada source</label><textarea id="source-editor" class="source-editor" spellcheck="false" autocapitalize="off" autocomplete="off">{{.SourceText}}</textarea></div>{{end}}
   </aside>
