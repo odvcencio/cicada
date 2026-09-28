@@ -20,8 +20,8 @@
 ((track_decl kind: (identifier) @name) @reference.voice
   (#not-any-of? @name "acid" "drums"))
 (kit_target instrument: (identifier) @name) @reference.instrument
-(scene_assignment track: (identifier) @name) @reference.track
-((scene_assignment pattern: (identifier) @name) @reference.pattern
+(scene_assignment target: (scene_target (identifier) @name)) @reference.track
+((scene_assignment value: (scene_value (identifier) @name)) @reference.pattern
   (#not-any-of? @name "off" "keep"))
 (phrase_use name: (identifier) @name) @reference.phrase
 (song_entry scene: (identifier) @name) @reference.scene

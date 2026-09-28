@@ -143,7 +143,7 @@ func (s *server) handle(message request) error {
 			}
 		}
 		return s.reply(message.ID, map[string]any{"capabilities": map[string]any{
-			"textDocumentSync": 1, "hoverProvider": true, "definitionProvider": true, "renameProvider": true, "inlayHintProvider": true, "codeActionProvider": true,
+			"textDocumentSync": 1, "hoverProvider": true, "definitionProvider": true, "renameProvider": true, "completionProvider": map[string]any{"triggerCharacters": []string{"."}}, "inlayHintProvider": true, "codeActionProvider": true,
 			"semanticTokensProvider": map[string]any{"legend": map[string]any{"tokenTypes": tokenTypes, "tokenModifiers": []string{}}, "full": true},
 		}, "serverInfo": map[string]any{"name": "cicada-lsp", "version": "0.1"}})
 	case "shutdown":
@@ -212,6 +212,12 @@ func (s *server) handle(message request) error {
 			return err
 		}
 		return s.reply(message.ID, rename(params.TextDocument.URI, s.documents[params.TextDocument.URI], params.Position, params.NewName))
+	case "textDocument/completion":
+		uri, at, err := documentPosition(message.Params)
+		if err != nil {
+			return err
+		}
+		return s.reply(message.ID, parameterPathCompletion(s.documents[uri], at))
 	case "textDocument/inlayHint":
 		uri, err := documentURI(message.Params)
 		if err != nil {
@@ -452,6 +458,12 @@ func byteOffset(source []byte, at position) int {
 func hover(source []byte, at position) any {
 	if len(source) == 0 {
 		return nil
+	}
+	if match, ok := parameterPathAt(source, byteOffset(source, at)); ok {
+		message := parameterPathHover(source, match)
+		if message != "" {
+			return map[string]any{"contents": map[string]any{"kind": "markdown", "value": message}, "range": region{Start: utf16Position(source, match.start), End: utf16Position(source, match.end)}}
+		}
 	}
 	spans, err := language.Highlight(source)
 	if err != nil {

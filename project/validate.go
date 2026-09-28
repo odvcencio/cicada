@@ -23,8 +23,11 @@ func validateOctaveValue(value Value) error {
 // ValidateProject checks the semantic interchange records after source lowering
 // or JSON decoding. It does not yet load audio into the runtime engine.
 func ValidateProject(p *Project) error {
-	if p == nil || p.Format != FormatID || p.Version != 1 {
+	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
 		return fmt.Errorf("unsupported project format or version")
+	}
+	if p.Format == FormatID && projectHasSceneSettings(p) {
+		return fmt.Errorf("scene settings require cicada.project/2")
 	}
 	if p.Edition != 1 {
 		return fmt.Errorf("CICADA-VERSION: only cicada 1 is supported")
@@ -279,6 +282,34 @@ func ValidateProject(p *Project) error {
 			pattern, ok := patterns[patternID]
 			if !ok || !compatible(track.Kind, pattern.Kind, kits) || !hasSlot(track, patternID) {
 				return fmt.Errorf("scene %s cannot bind %s to %s", scene.ID, trackID, patternID)
+			}
+		}
+		seenSettings := make(map[string]bool, len(scene.Settings))
+		for _, setting := range scene.Settings {
+			if setting.Path == "" || seenSettings[setting.Path] {
+				return fmt.Errorf("scene %s has an empty or duplicate setting path %q", scene.ID, setting.Path)
+			}
+			seenSettings[setting.Path] = true
+			resolved, err := ResolveParameterPath(p, setting.Path)
+			if err != nil {
+				return err
+			}
+			if !resolved.Descriptor.Live {
+				return fmt.Errorf("CICADA-UNSUPPORTED: scene setting %s is not live", setting.Path)
+			}
+			if setting.Value.Number != nil && (setting.Value.Unit == "enum" || setting.Value.Text != "") || setting.Value.Number == nil && (setting.Value.Unit != "enum" || setting.Value.Text == "") {
+				return fmt.Errorf("scene %s setting %s has an invalid value variant", scene.ID, setting.Path)
+			}
+			if err := validateParameterValue(resolved.Descriptor, setting.Value.projectValue()); err != nil {
+				return fmt.Errorf("scene %s setting %s: %w", scene.ID, setting.Path, err)
+			}
+			if setting.Value.Number != nil {
+				if _, err := sceneSettingFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *setting.Value.Number); err != nil {
+					return fmt.Errorf("scene %s setting %s: %w", scene.ID, setting.Path, err)
+				}
+			}
+			if _, _, err := sceneSettingKernelValue(p, setting, resolved); err != nil {
+				return fmt.Errorf("scene %s setting %s: %w", scene.ID, setting.Path, err)
 			}
 		}
 	}

@@ -2,39 +2,6 @@
 
 The owner accepted these designs for later additive changes to edition 1. None is available in the current validator, formatter, LSP, Studio, or semantic JSON. The examples below are design records, not runnable scores. The documentation test skips each cicada-accepted block until its construct lands.
 
-## Parameter paths
-
-**Status:** Accepted; not available in the current build.
-
-**Syntax (EBNF):**
-
-```ebnf
-parameter_path ::= owner , "." , setting
-                 | track , "." , "send" , "." , bus ;
-owner ::= track | bus | effect | "master" ;
-setting ::= identifier ;
-```
-
-**Meaning:** One dotted address names a setting from a scene, automation lane, lock, MIDI map, or Studio control. Track, bus, and effect names share a namespace. Top-level paths also include tempo and transpose. Source spellings such as kit lane settings remain unchanged.
-
-**Types and units:** A registry entry will provide the value type, unit, range, default, curve, display step, and whether automation is supported. Values must match the registered type and unit.
-
-**Defaults:** Registry defaults are inherited unless a track or higher-level setting overrides them. The registry has not landed, so the current build has no path defaults.
-
-**Errors:** An unresolved path or a value with the wrong type or unit must be rejected. Stable diagnostic codes have not been assigned.
-
-**Example:**
-
-```cicada-accepted
-scene drop {
-  bass = bass-b
-  bass.cutoff = 900Hz
-  drums.mute = on
-}
-```
-
-**Edition history:** Accepted as an additive edition-1 feature. It has not landed in grammar, validation, JSON, LSP, or Studio.
-
 ## Named mixer pieces
 
 **Status:** Accepted; not available in the current build.
@@ -176,4 +143,3 @@ song { main*8 }
 ```
 
 **Edition history:** Accepted as additive edition-1 support. Current project tools can walk multiple files, but they compile each score independently and cannot resolve declarations across files.
-

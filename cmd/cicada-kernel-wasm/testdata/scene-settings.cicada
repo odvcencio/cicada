@@ -1,0 +1,12 @@
+tempo 120
+
+fx delay {}
+track bass acid { cutoff = 700Hz send_a = 0.3 }
+
+pattern riff-a acid steps=4 { 1 . 5 . }
+pattern riff-b acid steps=4 { 3 . 7 . }
+
+scene first { bass = riff-a bass.cutoff = 800Hz delay.time = 1/8 }
+scene switch { bass = riff-b bass.cutoff = 1200Hz bass.pan = 0.35 }
+
+song { first switch }

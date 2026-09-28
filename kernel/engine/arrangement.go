@@ -3,7 +3,9 @@ package engine
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/seq"
 )
 
@@ -20,10 +22,18 @@ type SceneBinding struct {
 	Slot uint8
 }
 
+type SceneSetting struct {
+	Track    uint8
+	ID       kernel.ParamID
+	Value    float32
+	Division fx.DelayDivision
+}
+
 // Scene has one optional action per track. An omitted binding keeps the
 // current slot; on the first scene that means the track stays off.
 type Scene struct {
-	Track [16]SceneBinding
+	Track    [16]SceneBinding
+	Settings []SceneSetting
 }
 
 type SongEntry struct {
@@ -128,10 +138,14 @@ func gcd(a, b int64) int64 {
 }
 
 func (e *Engine) launchScene(index uint16) {
-	e.launchSceneWithSkip(index, false)
+	e.launchSceneMode(index, false, false)
 }
 
 func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
+	e.launchSceneMode(index, skipManualPatterns, false)
+}
+
+func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings bool) {
 	e.currentScene = int(index)
 	e.sceneSequence++
 	scene := &e.scenes[index]
@@ -167,10 +181,44 @@ func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
 			e.applyPatternCommand(cmd.Command{Op: cmd.OpSelectPattern, Track: uint8(track), Index: uint16(binding.Slot)})
 		}
 	}
+	e.applySceneSettingsMode(index, snapSettings)
+}
+
+func (e *Engine) applySceneSettings(index uint16) {
+	e.applySceneSettingsMode(index, false)
+}
+
+func (e *Engine) applySceneSettingsMode(index uint16, snap bool) {
+	if int(index) >= len(e.scenes) {
+		return
+	}
+	settings := e.scenes[index].Settings
+	for i := range settings {
+		setting := settings[i]
+		if setting.Division != fx.FreeDelay {
+			e.setDelayDivision(setting.Division)
+			if e.faulted {
+				return
+			}
+			continue
+		}
+		command := cmd.Command{Op: cmd.OpSetParam, Track: setting.Track, Index: uint16(setting.ID), Arg0: math.Float32bits(setting.Value)}
+		if snap {
+			e.setParamImmediate(command)
+		} else {
+			e.setParam(command)
+		}
+		if e.faulted {
+			return
+		}
+	}
 }
 
 func (e *Engine) startSong() {
 	if len(e.song) == 0 {
+		return
+	}
+	if !e.restoreSceneDefaults() {
 		return
 	}
 	var total int64
@@ -193,7 +241,25 @@ func (e *Engine) startSong() {
 			e.songMode = true
 			e.songIndex = i
 			e.songEndTick = end
-			e.launchScene(entry.Scene)
+			entryStart := end - int64(entry.Bars)*seq.TicksPerBar
+			// Parameter settings carry forward from every earlier song scene.
+			// A seek reconstructs the settled parameter state immediately; at an
+			// exact scene boundary the current scene still starts its normal glide.
+			for prior := 0; tick > cycleStart && prior < i; prior++ {
+				e.applySceneSettingsMode(e.song[prior].Scene, true)
+				if e.faulted {
+					return
+				}
+			}
+			// Settle the reconstructed effects before a boundary's normal
+			// transition, or after the current scene when seeking into it.
+			if tick == entryStart {
+				e.settleSceneEffects()
+			}
+			e.launchSceneMode(entry.Scene, false, tick > entryStart)
+			if tick > entryStart {
+				e.settleSceneEffects()
+			}
 			return
 		}
 	}
