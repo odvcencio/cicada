@@ -122,3 +122,7 @@ continuing.
 
 If you want Studio beside VS Code, install or run the extension described in
 [Editors and notation tools](editors.md#vs-code).
+
+### Live take dynamics
+
+Drum takes keep simultaneous hits on separate lanes and quantize velocity to the nearest supported drum level. Acid takes save pitch and overlapping slides at the score format’s fixed velocity. Arbitrary MIDI velocity is not representable in acid score notation; the take preview explains this before Commit. Live MIDI playback still uses incoming velocity.

@@ -388,13 +388,12 @@ func TestStudioSceneLaunchUsesNativeTransport(t *testing.T) {
 	if _, err := io.CopyN(io.Discard, stream, 96_000*8); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case event := <-stream.Events():
+	if event, ok := nextManualTransportEvent(stream); ok {
 		if event.Kind != "slot" || event.Bar != 3 || event.Track != "bass" || event.Name != "pulse" {
 			t.Fatalf("wrong slot event: %+v", event)
 		}
 		transport.markLanded(event)
-	default:
+	} else {
 		t.Fatal("slot did not land")
 	}
 	if len(transport.snapshot().PendingSlots) != 0 {
@@ -408,12 +407,11 @@ func TestStudioSceneLaunchUsesNativeTransport(t *testing.T) {
 	if _, err := io.CopyN(io.Discard, stream, 96_000*8); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case event := <-stream.Events():
+	if event, ok := nextManualTransportEvent(stream); ok {
 		if event.Kind != "slot" || event.Bar != 4 || event.Track != "drums" || event.Name != "beat" {
 			t.Fatalf("wrong second-track event: %+v", event)
 		}
-	default:
+	} else {
 		t.Fatal("second-track slot did not land")
 	}
 	response = httptest.NewRecorder()
@@ -469,7 +467,7 @@ func TestStudioQueuesNewlySavedSlotAfterScoreOffer(t *testing.T) {
 	if _, err := io.CopyN(io.Discard, stream, 96_000*8); err != nil {
 		t.Fatal(err)
 	}
-	if event := <-stream.Events(); event.Kind != "slot" || event.Bar != 3 || event.Name != "riff" {
+	if event, ok := nextManualTransportEvent(stream); !ok || event.Kind != "slot" || event.Bar != 3 || event.Name != "riff" {
 		t.Fatalf("newly saved slot did not launch: %+v", event)
 	}
 }
@@ -549,5 +547,19 @@ func TestStudioPlayFromSongBlockUsesActiveScore(t *testing.T) {
 	}
 	if got := stream.Position(); got.Bar != 7 {
 		t.Fatalf("edited song position: %+v", got)
+	}
+}
+
+// Automatic song progress is independent of the requested manual launch.
+func nextManualTransportEvent(stream *liveplay.Player) (liveplay.Event, bool) {
+	for {
+		select {
+		case event := <-stream.Events():
+			if event.Kind != "song-scene" {
+				return event, true
+			}
+		default:
+			return liveplay.Event{}, false
+		}
 	}
 }
