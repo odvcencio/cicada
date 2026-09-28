@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -17,6 +18,9 @@ import (
 
 //go:embed view.html
 var scoreViewTemplate string
+
+//go:embed studio-audio.js
+var studioAudioScript []byte
 
 var drumLaneOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
 var pitchNames = []string{"C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"}
@@ -70,6 +74,8 @@ type viewTrack struct {
 	Muted          bool
 }
 
+type viewMixerParam struct{ Name, Value string }
+
 type viewSongEntry struct {
 	Scene    string
 	Bars     uint16
@@ -105,6 +111,8 @@ type scoreView struct {
 	Scenes                        []viewScene
 	SceneRows                     []viewSceneRow
 	Song                          []viewSongEntry
+	MasterCompressor              []viewMixerParam
+	HasMasterCompressor           bool
 }
 
 func viewCommand(args []string) error {
@@ -149,6 +157,35 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 		SourceText: source, Revision: revision, Studio: studio,
 		Tracks: make([]viewTrack, 0, len(p.Tracks)), Patterns: make([]viewPattern, 0, len(p.Patterns)),
 		Scenes: make([]viewScene, 0, len(p.Scenes)), Song: make([]viewSongEntry, 0, len(p.Song)),
+		MasterCompressor: make([]viewMixerParam, 0),
+	}
+	for _, effect := range p.Effects {
+		if effect.ID != "comp" {
+			continue
+		}
+		view.HasMasterCompressor = true
+		keys := make([]string, 0, len(effect.Params))
+		for key := range effect.Params {
+			keys = append(keys, key)
+		}
+		sort.Strings(keys)
+		for _, key := range keys {
+			value := effect.Params[key]
+			formatted := value.Text
+			if value.Number != nil {
+				formatted = strconv.FormatFloat(*value.Number, 'f', -1, 64)
+				switch value.Unit {
+				case "db":
+					formatted += " dB"
+				case "ms":
+					formatted += " ms"
+				case "ratio", "unit":
+				case "s":
+					formatted += " s"
+				}
+			}
+			view.MasterCompressor = append(view.MasterCompressor, viewMixerParam{Name: key, Value: formatted})
+		}
 	}
 	spans, err := language.Highlight([]byte(source))
 	if err != nil {

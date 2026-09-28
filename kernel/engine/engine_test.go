@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"math"
 	"testing"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/seq"
 )
@@ -119,9 +121,16 @@ func TestRenderDoesNotAllocate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	e.meterRate = 0
 	if !e.Push(cmd.Command{Op: cmd.OpNoteOn, Track: 0, Arg0: 45 | 100<<8}) {
 		t.Fatal("note rejected")
+	}
+	for _, parameter := range []struct {
+		id    kernel.ParamID
+		value float32
+	}{{kernel.ParamMixGain, -3}, {kernel.ParamMixSendA, .2}, {kernel.ParamMixMute, 1}, {kernel.ParamMixSolo, 0}} {
+		if !e.Push(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(parameter.id), Arg0: math.Float32bits(parameter.value)}) {
+			t.Fatalf("parameter %d command rejected", parameter.id)
+		}
 	}
 	var left, right [128]float32
 	allocs := testing.AllocsPerRun(1000, func() { e.Render(left[:], right[:]) })

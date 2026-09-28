@@ -4,6 +4,8 @@
 //
 // Only the generator and tests import this package. The parser loads the
 // generated blob, so programs that parse scores do not link grammargen.
+//
+//go:generate go run ../../cmd/cicada-ebnf -o ../../docs/spec/appendix.ebnf
 package grammar
 
 import "github.com/odvcencio/gotreesitter/grammargen"
