@@ -86,6 +86,12 @@ func (t *studioTransport) snapshot() transportSnapshot {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.snapshotSeq++
+	// Event delivery is bounded; recover scene truth even if a UI event was dropped.
+	if t.stream != nil {
+		if scene := t.stream.CurrentScene(); scene != "" && scene != t.scene {
+			t.scene, t.activeSlots = scene, nil
+		}
+	}
 	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
 	if len(t.activeSlots) != 0 {
 		state.ActiveSlots = make(map[string]string, len(t.activeSlots))
@@ -229,8 +235,8 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	}
 	if index >= 0 {
 		t.pendingSong, t.pendingSongID = scene, requestID
-	} else if len(initial.SceneIDs) != 0 {
-		t.scene = initial.SceneIDs[0]
+	} else {
+		t.scene = stream.CurrentScene()
 	}
 	if audio == nil {
 		go t.renderNull(ctx, stream)
@@ -278,7 +284,6 @@ func (t *studioTransport) launchScene(name string, quantizes ...cmd.Quantize) er
 	if err := t.stream.LaunchSceneQuantized(name, quantize); err != nil {
 		return err
 	}
-	t.resumeStoppedTracks("")
 	t.errText = ""
 	if t.history != nil {
 		position := t.stream.Position()
@@ -300,7 +305,6 @@ func (t *studioTransport) launchPattern(track, pattern string, quantizes ...cmd.
 	if err := t.stream.SelectPatternQuantized(track, pattern, quantize); err != nil {
 		return err
 	}
-	t.resumeStoppedTracks(track)
 	t.errText = ""
 	if t.history != nil {
 		position := t.stream.Position()
@@ -446,6 +450,10 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 	}
 	switch event.Kind {
 	case "scene":
+		t.resumeStoppedTracks("")
+		t.scene, t.landed = event.Name, event.Bar
+		t.activeSlots = nil
+	case "song-scene":
 		t.scene, t.landed = event.Name, event.Bar
 		t.activeSlots = nil
 	case "scene-error":
@@ -456,6 +464,7 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 	case "song-error":
 		t.errText = fmt.Sprintf("song block %q is no longer in the playing score", event.Name)
 	case "slot":
+		t.resumeStoppedTracks(event.Track)
 		t.landed = event.Bar
 		if t.activeSlots == nil {
 			t.activeSlots = make(map[string]string)
@@ -472,6 +481,8 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 	if t.history != nil {
 		if event.Kind == "song" {
 			t.history.record("landed", fmt.Sprintf("Song started at %s, bar %d", event.Name, event.Bar), event.Bar, 1, "")
+		} else if event.Kind == "song-scene" {
+			t.history.record("landed", fmt.Sprintf("Song advanced to %s at bar %d", event.Name, event.Bar), event.Bar, 1, "")
 		} else if event.Kind == "song-error" {
 			t.history.record("error", fmt.Sprintf("Song block %s was not in the playing score", event.Name), event.Bar, 1, "")
 		} else if event.Kind == "slot" {

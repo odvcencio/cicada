@@ -165,6 +165,9 @@ type Player struct {
 	fault             error
 	jumpFadeRemaining int
 	position          atomic.Uint64
+	scene             atomic.Pointer[string]
+	sceneSequence     uint64
+	sceneEngine       *engine.Engine
 	overrides         atomic.Pointer[liveOverrides]
 	trackNames        atomic.Pointer[trackNameSnapshot]
 	overrideSequence  atomic.Uint64
@@ -205,6 +208,11 @@ func New(initial Score, rate int) (*Player, error) {
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
 	p.trackNames.Store(initial.trackNames)
 	p.position.Store(1<<8 | 1)
+	if len(initial.Song) != 0 {
+		p.scene.Store(&p.current.Song[0].Scene)
+	} else if len(initial.SceneIDs) != 0 {
+		p.scene.Store(&p.current.SceneIDs[0])
+	}
 	return p, nil
 }
 
@@ -739,6 +747,14 @@ func nextQuantizedAfter(tick int64, quantize cmd.Quantize, quantum int64) (int64
 	return target, nil
 }
 
+// CurrentScene returns the scene observed by the audio reader without blocking it.
+func (p *Player) CurrentScene() string {
+	if scene := p.scene.Load(); scene != nil {
+		return *scene
+	}
+	return ""
+}
+
 // Position can be read safely by a UI thread while Read renders audio.
 func (p *Player) Position() Position {
 	packed := p.position.Load()
@@ -885,6 +901,16 @@ func (p *Player) renderBlock() {
 	p.queueSlotLaunches()
 	p.applyOverrides(p.current.Engine, p.current, false)
 	p.current.Engine.Render(p.left[:frames], p.right[:frames])
+	if index, sequence := p.current.Engine.CurrentScene(); index >= 0 && index < len(p.current.SceneIDs) && (p.sceneEngine != p.current.Engine || p.sceneSequence != sequence) {
+		firstScene := p.sceneEngine == nil
+		p.sceneEngine, p.sceneSequence = p.current.Engine, sequence
+		p.scene.Store(&p.current.SceneIDs[index])
+		request := p.launches.Load()
+		manual := request != nil && request.submitted && request.targetTick < p.clock.TickAtSample(p.sample+int64(frames))
+		if !firstScene && !manual {
+			p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: p.current.SceneIDs[index], Kind: "song-scene"})
+		}
+	}
 	var message cmd.Message
 	for p.current.Engine.Poll(&message) {
 		if message.Kind == cmd.Fault {
