@@ -265,14 +265,19 @@ func (t *studioTransport) stop() {
 			t.audio = nil
 		}
 	}
+	// D18: Stop halts playback and returns to bar 1 by discarding the old stream.
+	// The next start() will build a new stream from the beginning.
 	if t.stream != nil {
 		t.stream.CancelScene()
 		t.stream.CancelPatterns()
 		t.stream.CancelStart()
+		t.stream.Close()
+		t.stream = nil
 	}
 	t.playing = false
 	t.pendingSong = ""
 	t.pendingSongID = 0
+	t.cancel = nil
 }
 
 func (t *studioTransport) launchScene(name string, quantizes ...cmd.Quantize) error {
@@ -526,6 +531,7 @@ func (t *studioTransport) poll() {
 	}
 	t.mu.Lock()
 	t.last = fingerprint
+	// Clear the transport error when a valid revision lands (UX review finding 2).
 	t.pending, t.errText = true, ""
 	position := stream.Position()
 	t.mu.Unlock()
@@ -707,19 +713,26 @@ func (s *studio) transportSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer connection.CloseNow()
 	ctx := connection.CloseRead(context.Background())
+	// Send transport snapshot immediately when the WebSocket connects so stopped transports show their real position.
+	writeCtx, cancel := context.WithTimeout(ctx, time.Second)
+	err = wsjson.Write(writeCtx, connection, s.transport.snapshot())
+	cancel()
+	if err != nil {
+		return
+	}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		writeCtx, cancel := context.WithTimeout(ctx, time.Second)
 		err := wsjson.Write(writeCtx, connection, s.transport.snapshot())
 		cancel()
 		if err != nil {
 			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
 		}
 	}
 }
