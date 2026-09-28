@@ -146,7 +146,15 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 			return nil, fmt.Errorf("recorded velocity must be in MIDI range 1–127")
 		}
 		step := int((note.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
-		steps[step] = recordedStep{note: note.Note, velocity: note.Velocity, step: step}
+		key := step
+		if drums {
+			lane, ok := liveplay.GMDrumLane(note.Note)
+			if !ok {
+				return nil, fmt.Errorf("MIDI drum note %d is not in the General MIDI map", note.Note)
+			}
+			key += int(lane) * 64
+		}
+		steps[key] = recordedStep{note: note.Note, velocity: note.Velocity, step: step}
 	}
 	if !drums {
 		for _, prior := range take {
