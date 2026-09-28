@@ -1,0 +1,11 @@
+cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio]
+
+open the local workstation
+
+Flags:
+  --listen <addr>  loopback address; default 127.0.0.1:0
+  --audio <name>   select tymbal, oto, or null
+  --lsp-stdio      serve LSP on stdin/stdout and Studio on stderr
+  --help           show this help
+
+CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly.

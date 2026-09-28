@@ -71,6 +71,7 @@ This page defines the current typed JSON interchange form. It is distinct from b
 **Example:** These declarations lower to /2 records:
 
 ```cicada
+cicada 2
 fx room delay {}
 bus music { insert = none }
 master { insert = none }
@@ -107,6 +108,7 @@ This JSON fragment shows the named records and their base units:
 ```
 
 ```cicada-invalid CICADA-UNSUPPORTED
+cicada 2
 bus ambience {}
 track bass acid {}
 pattern pulse acid { 1 }
@@ -149,6 +151,7 @@ The JSON step record contains <code>note</code>, <code>accent</code>, <code>slid
 **Example:**
 
 ```cicada
+cicada 2
 title "Agent sketch"
 tempo 120
 key c major
@@ -164,9 +167,9 @@ song { main*4 }
 
 **Status:** Implemented.
 
-**Syntax:** <code>cicada fix score.cicada</code> migrates edition-1 source to edition 2. <code>cicada fix score.cicada --check</code> reports whether a rewrite or manifest update is needed without writing. The Go API <code>project.Migrate1To2(p)</code> migrates a semantic project.
+**Syntax:** <code>cicada fix score.cicada</code> rewrites recognized legacy source spellings, even if the manifest already selects edition 2. <code>cicada fix score.cicada --check</code> reports whether a source rewrite or manifest update is needed without writing. From the project folder, <code>cicada fix --all</code> migrates all edition-1 scores together. The Go API <code>project.Migrate1To2(p)</code> migrates a semantic project.
 
-**Meaning:** The source migration edits tokens while preserving comments and unrelated layout. It checks that the source compiles before migration and that the semantic project remains equal afterward. A loose score gets a <code>cicada.mod</code> manifest; an existing edition-1 manifest is upgraded to edition 2. <code>Migrate1To2</code> validates a /1 project, returns a detached copy with <code>format: cicada.project/2</code> and <code>version: 2</code>, and leaves the input unchanged.
+**Meaning:** The source migration edits tokens while preserving comments and unrelated layout. It checks that the source compiles before migration and that the semantic project remains equal afterward. Before a single-score command writes or creates/upgrades a manifest, it checks for sibling edition-1 scores and refuses if any exist. Use <code>cicada fix --all</code> to migrate those scores together. A loose score gets a <code>cicada.mod</code> manifest; an existing edition-1 manifest is upgraded to edition 2. <code>Migrate1To2</code> validates a /1 project, returns a detached copy with <code>format: cicada.project/2</code> and <code>version: 2</code>, and leaves the input unchanged.
 
 **Types and units:** <code>fix</code> rewrites <code>send_a</code> and <code>send_b</code> to named delay and reverb sends, moves <code>send_pre = true</code> onto each send as <code>pre</code>, changes <code>bus = sfx</code> to <code>out = sfx</code>, adds <code>bus music { insert = comp }</code> for a legacy compressor, and changes track-block <code>level = off</code> to <code>mute = on</code>. It also expands shorthand effect declarations, removes default-only legacy settings, and records edition 2 in the project manifest. <code>Migrate1To2</code> accepts only a valid <code>cicada.project/1</code> value and carries its legacy mixer values into /2 records.
 
@@ -176,7 +179,7 @@ song { main*4 }
 
 **Example:** <code>cicada fix score.cicada --check</code> is suitable for an editor or CI preflight; omit <code>--check</code> to write the source migration. A Go caller can write <code>v2, err := project.Migrate1To2(v1)</code>.
 
-**Edition history:** Source <code>cicada fix</code> migrates edition 1 to edition 2. <code>Migrate1To2</code> bridges semantic JSON /1 to /2 while preserving legacy mixer meaning.
+**Edition history:** Source <code>cicada fix</code> rewrites recognized edition-1 spellings, including spellings in an edition-2 project. <code>Migrate1To2</code> bridges semantic JSON /1 to /2 while preserving legacy mixer meaning.
 
 ## Diagnostics
 

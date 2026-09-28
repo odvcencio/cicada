@@ -4,9 +4,9 @@ This manual takes you from your first score to editing, arranging, and exporting
 music in Cicada. You write a score as text, then use Studio's grids and
 arrangement views to edit the same source.
 
-The reference for every edition-1 construct, field, unit, range, default, and
-diagnostic is the [Cicada Language Specification](../spec/README.md). Syntax
-marked **accepted** there is under review and is not available in the current
+The [Cicada Language Specification](../spec/README.md) documents source
+editions 1 and 2, with edition 2 used by new projects. Syntax marked
+**accepted** is approved for later work but is not available in the current
 build.
 
 ## Start here
@@ -40,9 +40,11 @@ cd night-circuit
 ../cicada studio main.cicada
 ```
 
-The manifest sets the project name and edition. Your score can omit the
-`cicada 1` header; existing headered scores still work. A score outside a
-project also defaults to edition 1.
+The manifest selects edition 2, so `main.cicada` does not need an edition
+header. A loose score without a manifest still defaults to edition 1. Run
+`cicada fix score.cicada` to migrate legacy spellings; if other edition-1
+scores share the project folder, use `cicada fix --all` to migrate them
+together.
 
 ## Manual chapters
 

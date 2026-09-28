@@ -6,6 +6,13 @@ TinyGo/WebAssembly runtime. If you only want to write scores or use Studio, see
 
 ## Native Go
 
+On Windows and Linux, `cicada play` and Studio select Tymbal by default
+(`WASAPI` on Windows and `ALSA` on Linux). Cicada reports the selected backend
+and device when playback starts, and it does not fall back silently. Use
+`--audio oto` when you need Oto's system-default device, or set
+`CICADA_AUDIO=oto`. Use `--audio null` for real-time rendering without an
+audio device. macOS continues to use Oto by default.
+
 Parse and validate source on the host, convert it to a typed project, and
 compile the project before starting audio. `project.CompileEngine` creates an
 engine configuration; `engine.New` validates and copies its track, pattern,
@@ -38,7 +45,7 @@ TinyGo audio module:
 
 The image allocation accepts 32 bytes through 2 MiB and happens before audio
 initialization. A new module instance is required to load a different project.
-The current encoded image is version 8, with a little-endian header. It carries
+The current encoded image is version 10, with a little-endian header. It carries
 mixer routing, effects, instrument graphs, authored kits, patterns, scenes,
 and song entries. Use `kernelimage.Encode` instead of constructing the image
 bytes yourself.

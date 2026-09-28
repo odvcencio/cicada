@@ -22,6 +22,12 @@ import (
 )
 
 func main() {
+	if handled, exitCode := handleCLIHelp(os.Args[1:], os.Stdout, os.Stderr); handled {
+		if exitCode != 0 {
+			os.Exit(exitCode)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "studio" {
 		if err := studioCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -256,7 +262,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz\n", renderPath, len(score.Tracks)+5, report.Bars, report.From, report.Frames, report.SampleRate)
+		fmt.Printf("%s: %d stems, %d bars from bar %d, %d frames at %d Hz\n", renderPath, len(score.Tracks)+5, report.Bars, report.From+1, report.Frames, report.SampleRate)
 	case "midi":
 		if err := midiFile(semantic, midiOpts); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -309,13 +315,13 @@ func appendUniqueDiagnostics(existing, extra []notation.Diagnostic) []notation.D
 
 func usage() {
 	fmt.Fprintln(os.Stderr, "usage: cicada "+
-		"new <name> | check [score.cicada] | validate <score.cicada> | fix <score.cicada> [--check] | play [score.cicada] | lsp | studio [score.cicada] [--listen 127.0.0.1:port] [--lsp-stdio] | "+
+		"new <name> | check [score.cicada] | validate <score.cicada> | fix <score.cicada> [--all] [--check] | play [score.cicada] [--audio tymbal|oto|null] | lsp | studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio] | "+
 		"gen --seed N --key a --scale minor [-o out.cicada] [--trace] | "+
 		"validate|ast <file.cicada> | events <file.cicada> <track> <pattern> | graph <file.cicada> <instrument> | "+
-		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --dither=true --normalize=false --block 4096 --loudness -14 --true-peak-max -1 --loudness-tolerance 0.5] | "+
-		"stems <file.cicada> -o <dir> [--rate 48000 --from 0 --bars 16 --tail 3s] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
+		"render <file.cicada> -o <out.wav> [--rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --dither=true --normalize=false --block 4096 --loudness -14 --true-peak-max -1 --loudness-tolerance 0.5] | "+
+		"stems <file.cicada> -o <dir> [--rate 48000 --from 1 --bars 16 --tail 3s] | verify-stems <dir> [--tap pre-comp --residual-max-db -80] | "+
 		"midi <file.cicada> -o <out.mid> [--bars 16 --pattern name --report] | verify-midi <file.mid> --ppq 960 --type 1 | compare-midi <a.mid> <b.mid> | "+
-		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 0 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 [--lufs -14 --lufs-tolerance 0.5 --true-peak-max -1 --report] | "+
+		"verify-wav <file.wav> --rate 48000 --bits 16|24|32 --from 1 --bars 16 --tail 3s --peak-max-db -0.3 --dc-max-db -60 [--lufs -14 --lufs-tolerance 0.5 --true-peak-max -1 --report] | "+
 		"golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8] | fmt [--check|-w] [file.cicada] | "+
 		"convert <in> -o <out> | compare --semantic <a> <b> | view <in.cicada|in.json> -o <out.html> | fields | params | explain <construct[.field]> [--json] | explain <score.cicada> <path> [@bar[.beat[.step]]] | highlight [--html|--spans] <file.cicada> | symbols [--refs] [--json] <file.cicada>")
 	os.Exit(2)
@@ -526,7 +532,7 @@ func renderFile(score *notation.Score, path string, opts render.Options, target 
 	if err := os.Rename(file.Name(), path); err != nil {
 		return err
 	}
-	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d\n", path, report.Bars, report.From, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples)
+	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, pre-limiter peak %.3f, pre-limiter overs %d, output peak %.3f, ceiling samples %d, clipped samples %d\n", path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.Peak, report.PreLimiterOvers, report.OutputPeak, report.CeilingSamples, report.ClippedSamples)
 	return nil
 }
 
@@ -534,7 +540,7 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 	report, err := renderLoudnessFileReport(score, path, opts, target, nil)
 	if report.Passes > 0 {
 		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d, largest limiter gain reduction %.2f dB\n",
-			path, report.Bars, report.From, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.LargestLimiterReductionDB)
+			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.LargestLimiterReductionDB)
 	}
 	return err
 }
@@ -762,7 +768,7 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 	rate := flags.Int("rate", 48_000, "sample rate")
 	bits := flags.Int("bits", wantBits, "WAV bit depth")
 	bars := flags.Int("bars", 0, "bars to render; 0 is the remaining song")
-	from := flags.Int("from", 0, "zero-based start bar")
+	from := flags.Int("from", 1, "one-based start bar; 1 is the first bar")
 	tail := flags.String("tail", "3s", "tail duration")
 	dither := flags.Bool("dither", true, "deterministic TPDF dither for integer PCM")
 	normalize := flags.Bool("normalize", false, "peak normalize output to -1 dBFS")
@@ -772,6 +778,10 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 	loudnessTolerance := flags.Float64("loudness-tolerance", 0.5, "loudness target tolerance in LU")
 	exportName := flags.String("export", "", "named export settings block")
 	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits == 32 && *bits != 32) {
+		usage()
+	}
+	fromBar, err := cliBarOffset(*from, flags, os.Stderr)
+	if err != nil {
 		usage()
 	}
 	duration, err := time.ParseDuration(*tail)
@@ -813,7 +823,7 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 			}
 		})
 	}
-	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: *from, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block}, target
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block}, target
 }
 
 func verifyWAVCommand(args []string) {
@@ -826,7 +836,7 @@ func verifyWAVCommand(args []string) {
 	rate := flags.Int("rate", 48_000, "sample rate")
 	bits := flags.Int("bits", 24, "PCM bit depth")
 	bars := flags.Int("bars", 0, "expected bars")
-	from := flags.Int("from", 0, "zero-based start bar")
+	from := flags.Int("from", 1, "one-based start bar; 1 is the first bar")
 	tail := flags.String("tail", "3s", "expected tail")
 	peak := flags.Float64("peak-max-db", -.3, "peak ceiling in dBFS")
 	dc := flags.Float64("dc-max-db", -60, "DC ceiling in dBFS")
@@ -835,6 +845,10 @@ func verifyWAVCommand(args []string) {
 	truePeak := flags.Float64("true-peak-max", math.NaN(), "maximum true peak in dBTP")
 	jsonReport := flags.Bool("report", false, "write the verification report as JSON to stderr")
 	if err := flags.Parse(args[1:]); err != nil || len(flags.Args()) != 0 || *bars == 0 {
+		usage()
+	}
+	fromBar, err := cliBarOffset(*from, flags, os.Stderr)
+	if err != nil {
 		usage()
 	}
 	duration, err := time.ParseDuration(*tail)
@@ -852,7 +866,7 @@ func verifyWAVCommand(args []string) {
 		}
 	})
 	report, err := render.VerifyWAV(path, render.VerifyOptions{
-		SampleRate: *rate, Bits: *bits, Bars: *bars, From: *from, TailSec: duration.Seconds(),
+		SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(),
 		PeakMaxDB: *peak, DCMaxDB: *dc, CheckLUFS: checkLUFS, LUFSTarget: *lufs,
 		LUFSTolerance: *lufsTolerance, CheckTruePeak: checkTruePeak, TruePeakMaxDBTP: *truePeak,
 	})
@@ -881,6 +895,23 @@ func formatDB(value float64) string {
 	return fmt.Sprintf("%.2f", value)
 }
 
+func cliBarOffset(bar int, flags *flag.FlagSet, warning io.Writer) (int, error) {
+	if bar == 0 {
+		provided := false
+		flags.Visit(func(value *flag.Flag) {
+			provided = provided || value.Name == "from"
+		})
+		if provided {
+			fmt.Fprintln(warning, "warning: --from 0 is deprecated; use --from 1 for the first bar")
+		}
+		return 0, nil
+	}
+	if bar < 1 {
+		return 0, fmt.Errorf("bar numbers start at 1")
+	}
+	return bar - 1, nil
+}
+
 func writeVerifyJSON(report render.VerifyReport) error {
 	value := func(input float64) any {
 		if math.IsInf(input, 0) || math.IsNaN(input) {
@@ -891,7 +922,7 @@ func writeVerifyJSON(report render.VerifyReport) error {
 	data := map[string]any{
 		"sample_rate":         report.SampleRate,
 		"bars":                report.Bars,
-		"from":                report.From,
+		"from":                report.From + 1,
 		"frames":              report.Frames,
 		"sample_peak_dbfs":    value(report.PeakDB),
 		"true_peak_dbtp":      value(report.TruePeakDBTP),
