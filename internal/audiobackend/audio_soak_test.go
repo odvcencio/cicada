@@ -6,14 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"m31labs.dev/cicada/internal/audiobackend/rt"
+	"m31labs.dev/tymbal"
 )
 
 func TestOtoSilent60sRunOrCleanFailure(t *testing.T) {
 	if os.Getenv("CICADA_AUDIO_SOAK") != "60s" {
 		t.Skip("set CICADA_AUDIO_SOAK=60s to run the silent Oto soak")
 	}
-	restore, _, _ := rt.RaiseProcessThreads(1)
+	restore, _, _ := tymbal.RaiseProcessThreads(1)
 	defer restore()
 	backend, err := New(Oto)
 	if err != nil {
