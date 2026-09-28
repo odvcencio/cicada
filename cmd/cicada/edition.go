@@ -59,15 +59,28 @@ func newProject(name string, writeFile func(string, []byte, os.FileMode) error) 
 		if !complete {
 			_ = os.Remove(filepath.Join(name, "main.cicada"))
 			_ = os.Remove(filepath.Join(name, "cicada.mod"))
+			_ = os.Remove(filepath.Join(name, ".gitignore"))
 			_ = os.Remove(name)
 		}
 	}()
 	manifest := []byte("project " + name + "\ncicada 2\n")
-	main := []byte("title \"" + name + "\"\ntempo 130\nkey a minor\n\ntrack bass acid {}\n\npattern pulse acid steps = 16 {\n  1 . . . 5 . . . 1 . . . 7 . . .\n}\n\nscene main { bass = pulse }\nsong { main*8 }\n")
+	main := []byte("title \"" + name + "\"\ntempo 130\nkey a minor\n\ntrack bass acid {}\ntrack drums drums {}\n\npattern pulse acid {\n  1 . . . 5 . . . 1 . . . 7 . . .\n}\n\npattern beat drums {\n  bd: X... .... X... ....\n  sd: .... X... .... X...\n  ch: x.x. x.x. x.x. x.x.\n}\n\nscene main { bass = pulse drums = beat }\nscene break { bass = pulse drums = beat }\nsong { main*4 break*4 }\n")
+	document, err := notation.ParseDocument(main)
+	if err != nil {
+		return err
+	}
+	main, err = notation.Format(document)
+	if err != nil {
+		return err
+	}
+	gitignore := []byte(".cicada-studio-*\n*.revision\n.cicada/\ncicada.local\n")
 	if err := writeFile(filepath.Join(name, "cicada.mod"), manifest, 0644); err != nil {
 		return err
 	}
 	if err := writeFile(filepath.Join(name, "main.cicada"), main, 0644); err != nil {
+		return err
+	}
+	if err := writeFile(filepath.Join(name, ".gitignore"), gitignore, 0644); err != nil {
 		return err
 	}
 	complete = true

@@ -74,7 +74,7 @@ func newStemOutput(dir string, p *project.Project, report Report) (*stemOutput, 
 	if err != nil {
 		return nil, err
 	}
-	stems := &stemOutput{dir: dir, temporary: temporary, report: report, manifest: stemManifest{Version: 1, From: report.From}}
+	stems := &stemOutput{dir: dir, temporary: temporary, report: report, manifest: stemManifest{Version: 2, From: report.From + 1}}
 	defer func() {
 		if err != nil {
 			stems.abort()

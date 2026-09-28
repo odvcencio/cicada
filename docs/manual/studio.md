@@ -83,6 +83,49 @@ last valid score keeps playing and the status reports the problem. The
 [live-playback chapter](next-level.md#available-on-main) covers the
 boundaries of the current engine.
 
+#### Live mode
+
+Select **Live** in the top bar to open the Live performance panel. It shows the
+bar and beat, a launch-quantize menu, a scene-by-track launch grid, MIDI note
+and drum track selectors, record-arm controls, and the take preview. Scene and
+track launches follow the selected quantize value.
+
+#### Enable MIDI
+
+Select **Enable MIDI** in the top bar and allow the browser to access MIDI
+devices. The page shows connected-device count and MIDI activity. Choose a
+note track and drum track in Live mode. Right-click or long-press a scene pad,
+track pad, or live parameter to learn a MIDI note or controller; use **Remove**
+in MIDI mappings to clear a mapping.
+
+MIDI permission and mappings belong to the browser session. The source-level
+`midi {}` mapping syntax is accepted for later work; it is not available in the
+current parser.
+
+#### Record and Arm
+
+Start playback before recording. Check **Arm** for each track that should
+receive notes, then select **Record** and play the MIDI device. Select **Stop
+recording** to preview the buffered notes. Choose **Commit take** to write the
+notes into the score or **Discard** to clear the buffer. Nothing reaches the
+score before Commit.
+
+Drum takes keep simultaneous hits on separate lanes and quantize velocity to
+the nearest supported drum level. Acid takes save pitch and overlapping slides
+at the score format's fixed velocity. The preview explains that arbitrary MIDI
+velocity cannot be saved for acid notation. Live MIDI playback still uses
+incoming velocity. Studio records MIDI note takes; audio-input recording is
+not available yet.
+
+#### Live keyboard shortcuts
+
+With Live mode on and focus outside a text field:
+
+- **F1–F8** launch scenes 1–8.
+- **Left/Up** and **Right/Down** select the previous or next scene.
+- **Enter** or **Shift+Space** launches the selected scene.
+- **Escape** closes the MIDI learn menu.
+
 While transport runs, Studio shows track and master peak levels in dBFS. These
 are peak meters, not integrated-loudness measurements. Run
 `./cicada studio examples/first-acid.cicada --audio null` to render silently
@@ -96,18 +139,19 @@ it stops. Change device selections while stopped. Input capture is enabled by
 default on Windows; input monitoring starts muted to prevent feedback. Use the
 gain and stereo/mono channel controls to monitor an input. Device latency is
 shown only when the host reports it. macOS keeps Oto's system-default output.
-If Tymbal cannot open a device, Studio shows the error in its status bar and
-keeps playback stopped. Use `--audio oto` or `CICADA_AUDIO=oto` to choose Oto
-explicitly.
+While the transport runs, the audio status line names the active backend and
+output device. If Tymbal cannot open a device, Studio shows the device error in
+its status bar and keeps playback stopped. Use `--audio oto` or
+`CICADA_AUDIO=oto` to choose Oto explicitly.
 
 Studio also exposes live controls to same-origin page tools through
 `window.cicadaAudio`. Call `params()` to read the supported addresses and their
 types, units, and ranges. `setParam(address, value)`, `setMute(track, on)`, and
 `setSolo(track, on)` apply validated runtime changes during playback. They do
 not write the score; the source file remains authoritative. Live overrides
-follow a track when a valid score edit keeps that track's ID. The accepted
-source-level parameter-path notation is a separate feature and is not
-available yet; see [accepted syntax](../spec/accepted.md#parameter-paths).
+follow a track when a valid score edit keeps that track's ID. Source-level
+parameter paths are available in scene settings; see
+[parameter paths](../spec/accepted.md#parameter-paths-and-scene-settings).
 
 ### History
 
@@ -134,7 +178,3 @@ continuing.
 
 If you want Studio beside VS Code, install or run the extension described in
 [Editors and notation tools](editors.md#vs-code).
-
-### Live take dynamics
-
-Drum takes keep simultaneous hits on separate lanes and quantize velocity to the nearest supported drum level. Acid takes save pitch and overlapping slides at the score format’s fixed velocity. Arbitrary MIDI velocity is not representable in acid score notation; the take preview explains this before Commit. Live MIDI playback still uses incoming velocity.

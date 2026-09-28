@@ -206,9 +206,21 @@ func TestProjectCLI(t *testing.T) {
 		run(0, "verify-wav", formatPath, "--rate", "48000", "--bits", bits, "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0")
 	}
 	rangedPath := filepath.Join(t.TempDir(), "first-acid-range.wav")
-	run(0, "render", first, "-o", rangedPath, "--from", "1", "--bars", "1", "--tail", "0s")
-	run(0, "verify-wav", rangedPath, "--from", "1", "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0")
-	run(1, "render", first, "-o", wavPath, "--from", "16", "--bars", "1")
+	if output := run(0, "render", first, "-o", rangedPath, "--from", "1", "--bars", "1", "--tail", "0s"); !strings.Contains(output, "from bar 1") {
+		t.Fatalf("--from 1 did not name the first bar: %q", output)
+	}
+	if output := run(0, "verify-wav", rangedPath, "--from", "1", "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0", "--report"); !strings.Contains(output, `"from": 1`) {
+		t.Fatalf("verify-wav did not report one-based bar 1: %q", output)
+	}
+	legacyRangePath := filepath.Join(t.TempDir(), "first-acid-legacy-range.wav")
+	if output := run(0, "render", first, "-o", legacyRangePath, "--from", "0", "--bars", "1", "--tail", "0s"); !strings.Contains(output, "deprecated") || !strings.Contains(output, "from bar 1") {
+		t.Fatalf("legacy --from 0 did not warn and select bar 1: %q", output)
+	}
+	rangedSecondPath := filepath.Join(t.TempDir(), "first-acid-range-second.wav")
+	if output := run(0, "render", first, "-o", rangedSecondPath, "--from", "2", "--bars", "1", "--tail", "0s"); !strings.Contains(output, "from bar 2") {
+		t.Fatalf("--from 2 did not select bar 2: %q", output)
+	}
+	run(1, "render", first, "-o", wavPath, "--from", "17", "--bars", "1")
 	run(2, "render", first, "-o", wavPath, "--bits", "8")
 	exportSource := filepath.Join(t.TempDir(), "export.cicada")
 	if err := os.WriteFile(exportSource, []byte("track bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\nexport web { rate = 44100Hz bits = 16 tail = 0s }\n"), 0644); err != nil {
