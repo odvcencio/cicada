@@ -410,6 +410,8 @@ Use `cicada explain score.cicada bass.cutoff @3.2.4` to inspect the registry def
 
 **Defaults:** The precedence is registry default, then the track or effect block, then a scene setting. Once a scene changes a path, that value carries through following scenes until another scene sets it. An omitted setting does not restore the block value or registry default.
 
+Seeking or restarting a song with scene settings reconstructs parameters from the authored track and effect blocks, then replays earlier scene settings. Values left by later playback or live edits do not carry backward into the reconstructed song position.
+
 **Errors:** Duplicate settings for one path in a scene report `CICADA-DUPLICATE`. Unknown owners report `CICADA-REFERENCE`; ambiguous track/effect owners report `CICADA-REFERENCE` and a rename hint. Unknown settings report `CICADA-PARAM`; wrong values or units report `CICADA-UNIT`. A non-boundary numeric value that rounds outside its float32 range, or a synced delay division that exceeds the four-second buffer at the score tempo, reports `CICADA-PARAM`. A registered value with no engine representation reports `CICADA-UNSUPPORTED` and names its path and value. Non-live paths and reserved `master` paths report `CICADA-UNSUPPORTED`.
 
 **Example:** The second scene leaves `bass.cutoff`, `drums.level`, and the synced delay division at the values set by the first scene:

@@ -218,6 +218,9 @@ func (e *Engine) startSong() {
 	if len(e.song) == 0 {
 		return
 	}
+	if !e.restoreSceneDefaults() {
+		return
+	}
 	var total int64
 	for _, entry := range e.song {
 		total += int64(entry.Bars) * seq.TicksPerBar
@@ -248,7 +251,15 @@ func (e *Engine) startSong() {
 					return
 				}
 			}
+			// Settle the reconstructed effects before a boundary's normal
+			// transition, or after the current scene when seeking into it.
+			if tick == entryStart {
+				e.settleSceneEffects()
+			}
 			e.launchSceneMode(entry.Scene, false, tick > entryStart)
+			if tick > entryStart {
+				e.settleSceneEffects()
+			}
 			return
 		}
 	}
