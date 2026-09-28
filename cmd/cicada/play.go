@@ -81,15 +81,26 @@ func playScorePath(args []string) (string, error) {
 }
 
 func compileLiveScore(path string) (liveplay.Score, error) {
+	return compileLiveScoreAtRate(path, liveSampleRate)
+}
+
+func compileLiveScoreAtRate(path string, sampleRate int) (liveplay.Score, error) {
 	p, err := loadProject(path)
 	if err != nil {
 		return liveplay.Score{}, err
 	}
-	return compileLiveProject(path, p)
+	return compileLiveProjectAtRate(path, p, sampleRate)
 }
 
 func compileLiveProject(path string, p *project.Project) (liveplay.Score, error) {
-	cfg, err := project.CompileEngine(p, liveSampleRate, liveBlockFrames)
+	return compileLiveProjectAtRate(path, p, liveSampleRate)
+}
+
+func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (liveplay.Score, error) {
+	if sampleRate <= 0 {
+		return liveplay.Score{}, fmt.Errorf("audio sample rate must be positive")
+	}
+	cfg, err := project.CompileEngine(p, sampleRate, liveBlockFrames)
 	if err != nil {
 		return liveplay.Score{}, err
 	}
@@ -125,7 +136,7 @@ func compileLiveProject(path string, p *project.Project) (liveplay.Score, error)
 		startBar += uint32(entry.Bars)
 	}
 	return liveplay.Score{
-		Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path,
+		Engine: created, SampleRate: sampleRate, BPMMilli: int64(p.TempoMilli), Name: path,
 		SceneIDs: sceneIDs, Tracks: tracks, Song: song, Parameters: liveProjectParameters(p),
 		HasReturnA: cfg.DelayA != nil, HasReturnB: cfg.ReverbB != nil, HasSFX: hasSFXTracks(p),
 	}, nil
