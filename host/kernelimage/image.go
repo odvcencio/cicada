@@ -15,8 +15,8 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 10      // Synced scene delay divisions
-const priorImageVersion = 9  // P1 path-addressed scene settings
+const imageVersion = 10      // Scene settings with synced delay divisions
+const priorImageVersion = 9  // Custom graph glide time
 const legacyImageVersion = 8 // SFX bus routing; version 7 added music-bus compressor
 
 type Error string
@@ -346,7 +346,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if version != imageVersion && version != priorImageVersion && version != legacyImageVersion || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != imageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -560,7 +560,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						}
 						binding.Recipe = drum.Lane(recipe)
 					case engine.KitLaneGraph:
-						if binding.Program, err = readGraph(&r); err != nil {
+						if binding.Program, err = readGraph(&r, version); err != nil {
 							return err
 						}
 					default:
@@ -569,7 +569,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				}
 			}
 		case engine.VoiceGraph:
-			if spec.Graph, err = readGraph(&r); err != nil {
+			if spec.Graph, err = readGraph(&r, version); err != nil {
 				return err
 			}
 		default:
@@ -633,7 +633,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return Error("invalid scene image binding")
 			}
 		}
-		if version >= priorImageVersion {
+		if version >= imageVersion {
 			count, err := r.u16()
 			if err != nil {
 				return err
@@ -652,13 +652,11 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				if setting.Value, err = r.f32(); err != nil {
 					return err
 				}
-				if version >= imageVersion {
-					division, err := r.byte()
-					if err != nil {
-						return err
-					}
-					setting.Division = fx.DelayDivision(division)
+				division, err := r.byte()
+				if err != nil {
+					return err
 				}
+				setting.Division = fx.DelayDivision(division)
 				if err := validateSceneSetting(cfg, *setting); err != nil {
 					return err
 				}
@@ -691,8 +689,12 @@ func writeGraph(w *writer, program graph.Program) error {
 	if program.Len == 0 || program.Len > graph.MaxNodes || program.Output >= program.Len {
 		return Error("invalid graph program length or output")
 	}
+	if math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
+		return Error("invalid graph glide time")
+	}
 	w.byte(program.Len)
 	w.byte(program.Output)
+	w.f64(program.GlideMS)
 	for i := uint8(0); i < program.Len; i++ {
 		node := program.Nodes[i]
 		w.byte(byte(node.Op))
@@ -704,7 +706,7 @@ func writeGraph(w *writer, program graph.Program) error {
 	return nil
 }
 
-func readGraph(r *reader) (graph.Program, error) {
+func readGraph(r *reader, version uint16) (graph.Program, error) {
 	var program graph.Program
 	length, err := r.byte()
 	if err != nil || length == 0 || length > graph.MaxNodes {
@@ -713,6 +715,11 @@ func readGraph(r *reader) (graph.Program, error) {
 	program.Len = length
 	if program.Output, err = r.byte(); err != nil || program.Output >= length {
 		return program, Error("invalid graph image output")
+	}
+	if version >= priorImageVersion {
+		if program.GlideMS, err = r.f64(); err != nil || math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
+			return program, Error("invalid graph glide time image")
+		}
 	}
 	for i := uint8(0); i < length; i++ {
 		op, err := r.byte()

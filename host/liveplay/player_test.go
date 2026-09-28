@@ -652,3 +652,58 @@ func TestMissingSongEntryDoesNotConsumePendingEdit(t *testing.T) {
 		t.Fatalf("pending edit lost after invalid request: %+v", event)
 	}
 }
+
+func TestCurrentSceneFollowsSongOrderAndAutomaticTransitions(t *testing.T) {
+	score := liveSongScore(t, "song", 1)
+	score.SceneIDs = []string{"dusk", "chorus"}
+	p, err := New(score, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if got := p.CurrentScene(); got != "dusk" {
+		t.Fatalf("initial scene=%q", got)
+	}
+	if _, err := io.CopyN(io.Discard, p, 96_000*8+8); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.CurrentScene(); got != "chorus" {
+		t.Fatalf("advanced scene=%q", got)
+	}
+	select {
+	case event := <-p.Events():
+		if event.Kind != "song-scene" || event.Name != "chorus" || event.Bar != 2 {
+			t.Fatalf("transition=%+v", event)
+		}
+	default:
+		t.Fatal("automatic transition was not published")
+	}
+}
+
+func TestInitialSceneUsesSongOrderInsteadOfDeclarationOrder(t *testing.T) {
+	score := liveSongScore(t, "song", 1)
+	score.SceneIDs = []string{"chorus", "dusk"}
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000, LoopSong: true}
+	cfg.Track[0].Kind = engine.VoiceAcid
+	cfg.Scenes = []engine.Scene{{}, {}}
+	cfg.Song = []engine.SongEntry{{Scene: 1, Bars: 1}, {Scene: 0, Bars: 2}}
+	var err error
+	score.Engine, err = engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(score, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if got := p.CurrentScene(); got != "dusk" {
+		t.Fatalf("initial scene=%q", got)
+	}
+	if _, err := io.CopyN(io.Discard, p, 1024); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.CurrentScene(); got != "dusk" {
+		t.Fatalf("rendered scene=%q", got)
+	}
+}

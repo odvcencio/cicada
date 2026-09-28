@@ -26,6 +26,13 @@ func TestGlassbassGraph(t *testing.T) {
 	if program.Nodes[program.Output].Type != Audio || program.Nodes[program.Output].Op != "*" {
 		t.Fatalf("wrong output node: %+v", program.Nodes[program.Output])
 	}
+	kernelProgram, err := Lower(program, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kernelProgram.GlideMS != 60 {
+		t.Fatalf("custom graph glide default is %g ms, want 60 ms", kernelProgram.GlideMS)
+	}
 }
 
 func TestUndefinedSymbol(t *testing.T) {
