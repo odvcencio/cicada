@@ -160,6 +160,7 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
+	mux.HandleFunc("POST /api/record", s.recordTake)
 	mux.HandleFunc("POST /api/song", s.editSong)
 	mux.HandleFunc("POST /api/transport", s.transportCommand)
 	mux.HandleFunc("GET /api/transport", s.transportState)
@@ -167,6 +168,8 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /api/params", s.params)
 	mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
 	mux.HandleFunc("GET /studio-audio.js", s.audioScript)
+	mux.HandleFunc("GET /studio-midi.js", s.midiScript)
+	mux.HandleFunc("GET /studio-live.js", s.liveScript)
 	mux.HandleFunc("GET /studio-master.js", s.masterScript)
 	mux.HandleFunc("GET /api/export", s.exportStatus)
 	mux.HandleFunc("POST /api/export", s.startExport)
@@ -261,17 +264,22 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
-	Revision string `json:"revision"`
-	Action   string `json:"action,omitempty"`
-	Index    int    `json:"index,omitempty"`
-	Target   int    `json:"target,omitempty"`
-	Bars     int    `json:"bars,omitempty"`
-	Source   string `json:"source"`
-	Pattern  string `json:"pattern"`
-	Lane     string `json:"lane"`
-	Step     int    `json:"step"`
-	Pitch    *int   `json:"pitch,omitempty"`
-	Modifier string `json:"modifier,omitempty"`
+	Revision     string                `json:"revision"`
+	Action       string                `json:"action,omitempty"`
+	Index        int                   `json:"index,omitempty"`
+	Target       int                   `json:"target,omitempty"`
+	Bars         int                   `json:"bars,omitempty"`
+	Source       string                `json:"source"`
+	Pattern      string                `json:"pattern"`
+	Track        string                `json:"track,omitempty"`
+	Count        int                   `json:"count,omitempty"`
+	Take         []studioTakeNote      `json:"take,omitempty"`
+	Recordings   []studioTakeRecording `json:"recordings,omitempty"`
+	PatternCount int                   `json:"patternCount,omitempty"`
+	Lane         string                `json:"lane"`
+	Step         int                   `json:"step"`
+	Pitch        *int                  `json:"pitch,omitempty"`
+	Modifier     string                `json:"modifier,omitempty"`
 }
 
 func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {

@@ -101,6 +101,17 @@
       },
       setMute(track, on) { send({type: 'mute', track, on: !!on}); },
       setSolo(track, on) { send({type: 'solo', track, on: !!on}); },
+      noteOn(track, note, velocity) {
+        if (typeof track !== 'string' || !track) throw new TypeError('note track is required');
+        if (!Number.isInteger(note) || note < 0 || note > 127) throw new RangeError('note must be an integer from 0 to 127');
+        if (!Number.isInteger(velocity) || velocity < 0 || velocity > 127) throw new RangeError('velocity must be an integer from 0 to 127');
+        send({type: 'note', track, note, velocity, on: true});
+      },
+      noteOff(track, note) {
+        if (typeof track !== 'string' || !track) throw new TypeError('note track is required');
+        if (!Number.isInteger(note) || note < 0 || note > 127) throw new RangeError('note must be an integer from 0 to 127');
+        send({type: 'note', track, note, velocity: 0, on: false});
+      },
       resetLoudness() { send({type: 'loudness-reset'}); },
       onMeters(callback) { listeners.meters.add(callback); return () => listeners.meters.delete(callback); },
       onError(callback) { listeners.errors.add(callback); return () => listeners.errors.delete(callback); },

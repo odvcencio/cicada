@@ -60,11 +60,13 @@ func (s *studio) liveProject() (*project.Project, []byte, error) {
 }
 
 type audioClientMessage struct {
-	Type    string          `json:"type"`
-	Address string          `json:"address"`
-	Track   string          `json:"track"`
-	Value   json.RawMessage `json:"value"`
-	On      bool            `json:"on"`
+	Type     string          `json:"type"`
+	Address  string          `json:"address"`
+	Track    string          `json:"track"`
+	Value    json.RawMessage `json:"value"`
+	Note     *int            `json:"note,omitempty"`
+	Velocity *int            `json:"velocity,omitempty"`
+	On       *bool           `json:"on,omitempty"`
 }
 
 type audioErrorMessage struct {
@@ -145,13 +147,24 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if err := s.applyAudioMessage(message); err != nil {
-			address := message.Address
-			if address == "" && (message.Type == "mute" || message.Type == "solo") {
-				address = message.Track + "." + message.Type
-			}
-			s.queueAudioError(ctx, outgoing, audioErrorMessage{Type: "error", Code: "CICADA-PARAM", Message: err.Error(), Address: address})
+			s.queueAudioError(ctx, outgoing, audioErrorResponse(message, err))
 		}
 	}
+}
+
+func audioErrorResponse(message audioClientMessage, err error) audioErrorMessage {
+	address := message.Address
+	if address == "" && (message.Type == "mute" || message.Type == "solo") {
+		address = message.Track + "." + message.Type
+	}
+	if address == "" && message.Type == "note" {
+		address = message.Track
+	}
+	code := "CICADA-PARAM"
+	if message.Type == "note" {
+		code = "CICADA-NOTE"
+	}
+	return audioErrorMessage{Type: "error", Code: code, Message: err.Error(), Address: address}
 }
 
 func (s *studio) queueAudioError(ctx context.Context, outgoing chan<- any, message audioErrorMessage) {
@@ -166,6 +179,24 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 	if message.Type == "loudness-reset" {
 		s.transport.resetLoudness()
 		return nil
+	}
+	if message.Type == "note" {
+		if message.Note == nil || message.Velocity == nil || message.On == nil {
+			return fmt.Errorf("note message needs note, velocity, and on fields")
+		}
+		if *message.Note < 0 || *message.Note > 127 {
+			return fmt.Errorf("note must be in MIDI range 0–127")
+		}
+		if *message.Velocity < 0 || *message.Velocity > 127 {
+			return fmt.Errorf("velocity must be in MIDI range 0–127")
+		}
+		s.transport.mu.Lock()
+		stream := s.transport.stream
+		s.transport.mu.Unlock()
+		if stream == nil {
+			return fmt.Errorf("audio transport is not running")
+		}
+		return stream.Note(message.Track, *message.Note, *message.Velocity, *message.On)
 	}
 	p, _, err := s.liveProject()
 	if err != nil {
@@ -225,6 +256,9 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 		if message.Track == "" {
 			return fmt.Errorf("unknown track")
 		}
+		if message.On == nil {
+			return fmt.Errorf("%s message needs an on field", message.Type)
+		}
 		trackName = message.Track
 		id = kernel.ParamMixMute
 		if message.Type == "solo" {
@@ -247,10 +281,10 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 		}
 	}
 	if message.Type == "mute" {
-		return stream.SetMute(track, message.On)
+		return stream.SetMute(track, *message.On)
 	}
 	if message.Type == "solo" {
-		return stream.SetSolo(track, message.On)
+		return stream.SetSolo(track, *message.On)
 	}
 	return stream.SetParam(track, id, value)
 }
