@@ -365,7 +365,6 @@ body[data-studio] .hero h1 { font-size:.95rem; margin:0; }
 body[data-studio] .hero .lede, body[data-studio] .hero .meta { display:none; }
 body[data-studio] .nav { position:relative; top:auto; z-index:10; padding:6px 12px; overflow:hidden; }
 body[data-studio] .nav a { display:none; }
-body[data-studio] .nav .bar-error { display:inline-block; }
 body[data-studio] .transport { width:100%; margin:0; display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; }
 body[data-studio] .transport button { min-height:38px; white-space:nowrap; padding:4px 12px; }
 body[data-studio] .transport-position { min-width:150px; white-space:nowrap; font:700 .8rem/1.2 ui-monospace,monospace; }
@@ -383,7 +382,7 @@ body[data-studio] .workspace-tabs button[aria-selected="true"] { border-color:#6
 body[data-studio] .source-pane { grid-column:2; grid-row:1; position:relative; top:auto; height:100%; min-width:0; overflow:auto; background:var(--panel); border-right:0; }
 body[data-studio] .dock-resizer { grid-column:3; grid-row:1; cursor:col-resize; background:var(--border); touch-action:none; }
 body[data-studio] .dock-resizer:hover, body[data-studio] .dock-resizer:focus-visible { background:var(--amber); outline:none; }
-body[data-studio] .projection { grid-column:4; grid-row:1; display:block; min-width:0; min-height:0; height:100%; overflow:auto; padding:16px 20px 24px; }
+body[data-studio] .projection { grid-column:4; grid-row:1; display:block; position:relative; min-width:0; min-height:0; height:100%; overflow:auto; padding:16px 20px 24px; }
 body[data-studio] .projection > section[hidden] { display:none; }
 body[data-studio] .projection-heading { display:none; }
 body[data-studio] #arrangement { position:sticky; top:-16px; z-index:3; background:var(--bg,#0f1511); padding-top:8px; }
@@ -400,8 +399,10 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
 @media (max-width:640px) {
   body[data-studio] .hero { display:none; }
   body[data-studio] .nav { min-height:48px; padding:4px 8px; }
-  body[data-studio] .transport { flex-wrap:nowrap; overflow-x:auto; }
-  body[data-studio] .transport .master-meter, body[data-studio] .transport .tempo-readout, body[data-studio] .bar-chip:not([data-keep]) { display:none; }
+  body[data-studio] .transport { flex-wrap:nowrap; overflow:hidden; gap:4px; }
+  body[data-studio] .transport-position { min-width:0; font-size:0; }
+  body[data-studio] .transport-position::after { content:attr(data-short); font:700 .8rem/1.2 ui-monospace,monospace; }
+  body[data-studio] .transport .transport-pending, body[data-studio] .transport .midi-controls, body[data-studio] .transport .master-meter, body[data-studio] .transport .tempo-readout, body[data-studio] .bar-chip:not([data-keep]) { display:none; }
   body[data-studio] .transport button { min-width:44px; min-height:44px; }
   body[data-studio] .workspace, body[data-studio] .workspace[data-dock="off"], body[data-studio] .workspace.live-mode { grid-template-columns:minmax(0,1fr); grid-template-rows:minmax(0,1fr) 52px; }
   body[data-studio] .workspace-tabs { grid-column:1; grid-row:2; flex-direction:row; border-right:none; border-top:1px solid var(--border); padding:4px; overflow-x:auto; overflow-y:hidden; }
@@ -409,137 +410,11 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   body[data-studio] .source-pane, body[data-studio] .workspace[data-dock="off"] .source-pane { grid-column:1; grid-row:1; display:none; }
   body[data-studio] .dock-resizer { display:none !important; }
   html[data-code-focus] body[data-studio] .source-pane { display:block !important; }
+  html[data-code-focus] body[data-studio] .workspace-tabs button[aria-selected="true"]:not([data-panel-tab="code"]) { border-color:transparent; color:var(--text); background:transparent; }
   html[data-code-focus] body[data-studio] .projection { display:none; }
   body[data-studio] .projection { grid-column:1; grid-row:1; padding:10px 10px 16px; }
   body[data-studio] .step-edit, body[data-studio] .pitch-row .step-edit { min-height:44px; min-width:40px; }
   body[data-studio] .grid-line, body[data-studio] .drum .grid-line { grid-template-columns:65px repeat(var(--steps),44px); overflow-x:auto; }
-}
-</style>
-<style>
-.live-toggle,.midi-enable { min-height:38px; border:1px solid #55745f; border-radius:8px; background:#1c3026; color:var(--mint); padding:6px 12px; font:700 .78rem system-ui,sans-serif; cursor:pointer; }
-.live-toggle[aria-pressed="true"] { color:#171b14; background:var(--amber); border-color:var(--amber); }
-.midi-controls { display:flex; align-items:center; gap:8px; margin-left:4px; }
-.midi-status { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:.72rem; white-space:nowrap; }
-.midi-activity { width:9px; height:9px; border-radius:50%; background:#657366; box-shadow:0 0 0 2px #65736633; }
-.midi-activity.active { background:var(--mint); box-shadow:0 0 8px var(--mint); }
-.workspace.live-mode { grid-template-columns:minmax(0,1fr); }
-.workspace.live-mode .source-pane { position:relative; top:auto; height:48px; min-height:48px; max-height:48px; border-right:0; border-bottom:1px solid var(--border); overflow:hidden; }
-.workspace.live-mode .source-pane > :not(.pane-header) { display:none; }
-.workspace.live-mode .pane-header { min-height:48px; padding:12px 18px; }
-.workspace.live-mode .projection { min-width:0; width:100%; padding:16px clamp(12px,2vw,30px) 60px; }
-.workspace.live-mode .projection > :not(#live-surface) { display:none; }
-.live-surface { margin:0!important; }
-.live-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px; padding:14px; border:1px solid var(--border); border-radius:12px; background:var(--panel); }
-.live-toolbar label { display:grid; gap:4px; color:var(--muted); font-size:.7rem; font-weight:800; text-transform:uppercase; letter-spacing:.08em; }
-.live-toolbar select,.live-toolbar button { min-height:44px; border:1px solid #526451; border-radius:8px; background:#121a15; color:var(--text); padding:8px 11px; font:700 .82rem system-ui,sans-serif; }
-.live-toolbar select:focus-visible,.live-toolbar button:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
-.live-toolbar button { cursor:pointer; }
-.live-toolbar button:hover { border-color:var(--amber); }
-.live-toolbar .stop-all { color:#ffd3c5; border-color:#9c5947; background:#3b2723; }
-.live-toolbar .record-button[aria-pressed="true"] { color:#fff; border-color:#e0645c; background:#6a292c; }
-.live-readout { position:sticky; top:52px; z-index:3; display:flex; align-items:center; flex-wrap:wrap; gap:12px 22px; min-height:80px; margin:12px 0; padding:12px 18px; border:1px solid #576849; border-radius:12px; background:#171f18f2; box-shadow:0 8px 24px #0005; }
-.live-barbeat { color:var(--amber); font:800 clamp(1.6rem,4vw,2.55rem)/1 ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric:tabular-nums; letter-spacing:-.04em; }
-.beat-lamps { display:flex; align-items:center; gap:8px; }
-.beat-lamp { width:17px; height:17px; border:2px solid #63715e; border-radius:50%; background:#172019; }
-.beat-lamp[aria-current="true"] { background:var(--mint); border-color:#d3ffea; box-shadow:0 0 12px #88d9bb99; }
-.beat-lamp:first-child[aria-current="true"] { background:var(--amber); border-color:#fff0ac; box-shadow:0 0 12px #f2c66d99; }
-.live-grid-scroll { overflow-x:auto; margin:12px 0 18px; border:1px solid var(--border); border-radius:13px; background:#131a15; }
-.live-grid { width:100%; min-width:max-content; border-collapse:separate; border-spacing:6px; padding:8px; }
-.live-grid th { color:var(--muted); text-align:left; font-size:.72rem; text-transform:uppercase; letter-spacing:.08em; }
-.live-grid th:first-child { position:sticky; left:0; z-index:2; min-width:105px; background:#131a15; }
-.live-grid td { min-width:112px; }
-.live-pad { position:relative; display:flex; width:100%; min-width:112px; min-height:66px; align-items:center; justify-content:center; flex-direction:column; gap:4px; border:1px solid #496451; border-radius:10px; background:#1d3027; color:var(--text); padding:8px; text-align:center; font:700 .78rem/1.2 system-ui,sans-serif; cursor:pointer; }
-.live-pad:hover { border-color:var(--amber); }
-.live-scene-pad { color:var(--mint); background:#20362b; }
-.live-scene-pad[data-state="playing"] { color:#ffe7a6; border-color:#e4b852; background:#40351e; animation:live-pad-pulse 1.8s ease-in-out infinite; }
-.live-scene-pad[data-state="queued"] { color:var(--amber); border:2px dashed var(--amber); background:#332d1f; }
-.live-slot-pad[data-state="playing"] { color:#ffe7a6; border:2px solid var(--amber); background:#40351e; }
-.live-slot-pad[data-state="queued"] { color:var(--amber); border:2px dashed var(--amber); }
-.live-slot-pad[data-state="stopped"],.live-slot-pad[data-empty="true"] { color:var(--muted); border-style:dashed; background:#18231c; }
-.live-pad-status { display:block; min-height:1em; color:var(--amber); font-size:.66rem; font-weight:800; letter-spacing:.08em; text-transform:uppercase; }
-.live-slot-pad[data-state="playing"]::before { content:"●"; color:var(--amber); }
-.live-slot-pad[data-state="queued"]::before { content:"◷"; color:var(--amber); }
-.live-slot-pad[data-empty="true"]::before { content:"—"; color:var(--muted); }
-.live-stop-pad { min-width:76px; color:#ffc8b6; border-color:#83564a; background:#342522; }
-.live-stop-pad[aria-pressed="true"] { border:2px solid var(--coral); background:#542d29; }
-.live-track-label { min-width:105px; color:var(--text); overflow-wrap:anywhere; }
-.live-arm-controls { display:flex; flex-wrap:wrap; gap:8px; margin:12px 0; }
-.live-arm { display:flex; align-items:center; gap:7px; min-height:42px; border:1px solid var(--border); border-radius:8px; background:var(--panel); padding:7px 10px; color:var(--text); font-size:.78rem; }
-.live-arm input { width:18px; height:18px; accent-color:var(--coral); }
-.live-midi-help { margin:12px 2px; color:var(--muted); font-size:.78rem; }
-.live-map-details,.live-parameter-details { border:1px solid var(--border); border-radius:10px; background:var(--panel); margin:10px 0; }
-.live-map-details summary,.live-parameter-details summary { cursor:pointer; padding:12px 14px; color:var(--mint); font-weight:800; }
-.midi-mapping-list,.live-param-list { display:grid; gap:5px; padding:0 12px 12px; }
-.midi-mapping-row { display:flex; align-items:center; gap:8px; min-height:38px; padding:5px 8px; border-top:1px solid #304037; font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace; }
-.midi-mapping-row span { flex:1; min-width:0; overflow-wrap:anywhere; }
-.midi-mapping-row button { min-height:30px; border:1px solid #765447; border-radius:6px; background:#352521; color:#ffd2be; padding:4px 8px; cursor:pointer; }
-.live-param-row { display:grid; grid-template-columns:minmax(130px,1fr) minmax(120px,2fr) auto; align-items:center; gap:8px; border-top:1px solid #304037; padding:7px 4px; }
-.live-param-row label { min-width:0; overflow-wrap:anywhere; color:var(--text); font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace; }
-.live-param-row input[type="range"] { width:100%; accent-color:var(--mint); }
-.live-param-row output { min-width:72px; text-align:right; color:var(--amber); font:12px ui-monospace,SFMono-Regular,Consolas,monospace; }
-.midi-learn-dot { display:inline-block; width:8px; height:8px; margin-left:5px; border-radius:50%; background:var(--amber); vertical-align:middle; box-shadow:0 0 8px #f2c66d99; }
-.midi-learn-menu { position:fixed; z-index:20; display:grid; min-width:160px; padding:5px; border:1px solid #7b855e; border-radius:8px; background:#202a22; box-shadow:0 10px 24px #0009; }
-.midi-learn-menu[hidden] { display:none; }
-.midi-learn-menu button { min-height:40px; border:0; border-radius:5px; background:transparent; color:var(--text); padding:7px 10px; text-align:left; font:700 .78rem system-ui,sans-serif; cursor:pointer; }
-.midi-learn-menu button:hover,.midi-learn-menu button:focus-visible { background:#364633; color:var(--amber); }
-.take-panel { margin:16px 0; padding:14px; border:1px solid #a26750; border-radius:12px; background:#251e1b; }
-.take-panel h3 { margin:0 0 8px; color:#ffd5ab; }
-.take-preview { display:grid; grid-template-columns:repeat(var(--steps,16),minmax(30px,1fr)); gap:4px; overflow-x:auto; margin:12px 0; }
-.take-preview-cell { min-height:43px; display:grid; place-items:center; border:1px solid #4a5947; border-radius:5px; background:#1a261e; color:var(--muted); font:700 .72rem ui-monospace,SFMono-Regular,Consolas,monospace; }
-.take-preview-cell.has-note { border-color:var(--amber); background:#3a3220; color:#ffdfa1; }
-.take-preview-cell.slide { border-color:var(--mint); }
-.take-actions { display:flex; flex-wrap:wrap; gap:8px; }
-.take-actions button { min-height:44px; border:1px solid #8a6e42; border-radius:8px; background:#40341f; color:#ffe0a7; padding:8px 14px; font-weight:800; cursor:pointer; }
-.take-actions button[data-action="discard"] { border-color:#75564b; background:#352522; color:#ffd0bf; }
-.live-announcement { position:absolute; width:1px; height:1px; clip:rect(0,0,0,0); overflow:hidden; }
-@keyframes live-pad-pulse { 50% { box-shadow:0 0 0 3px #f2c66d33; } }
-@media (max-width:640px) {
-  .nav { gap:10px; }
-  .audio-io-grid { grid-template-columns:1fr; }
-  .transport { width:100%; margin-left:0; flex-wrap:wrap; }
-  .midi-controls { margin-left:0; }
-  .live-toolbar { align-items:stretch; }
-  .live-toolbar label { flex:1 1 142px; }
-  .live-toolbar select { width:100%; }
-  .live-readout { top:92px; min-height:72px; padding:10px 12px; }
-  .live-grid th:first-child { min-width:82px; }
-  .live-grid td { min-width:92px; }
-  .live-pad { min-width:92px; min-height:58px; }
-  .live-stop-pad { min-width:68px; }
-  .live-param-row { grid-template-columns:1fr auto; }
-  .live-param-row input[type="range"] { grid-column:1; }
-  .live-param-row output { grid-column:2; grid-row:1 / span 2; }
-}
-@media (prefers-reduced-motion:reduce) { .live-scene-pad[data-state="playing"] { animation:none; } }
-html:has(body[data-studio]) { height:100%; overflow:hidden; }
-body[data-studio] { height:100dvh; overflow:hidden; display:flex; flex-direction:column; }
-body[data-studio] .hero { min-height:40px; padding:6px 16px; border-bottom:1px solid var(--border); }
-body[data-studio] .hero h1 { font-size:1rem; margin:.2em 0; }
-body[data-studio] .hero .lede, body[data-studio] .hero .meta { display:none; }
-body[data-studio] .nav { position:relative; top:auto; z-index:10; min-height:56px; padding:8px 12px; gap:8px; flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; }
-body[data-studio] .nav a { display:none; }
-body[data-studio] .transport { width:100%; margin:0; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
-body[data-studio] .transport button { min-height:40px; white-space:nowrap; padding:6px 12px; }
-body[data-studio] .transport-position { min-width:140px; white-space:nowrap; font:700 .8rem/1.2 ui-monospace,monospace; }
-body[data-studio] .tempo-readout { font:700 .72rem/1.2 ui-monospace,monospace; color:var(--muted); }
-body[data-studio] .workspace { flex:1; min-height:0; display:grid; grid-template-columns:52px minmax(280px,35vw) minmax(0,1fr); grid-template-rows:minmax(0,1fr); overflow:hidden; }
-body[data-studio] .workspace-tabs { grid-column:1; grid-row:1; display:flex; flex-direction:column; gap:4px; padding:6px 3px; border-right:1px solid var(--border); background:#121a15; overflow-y:auto; }
-body[data-studio] .workspace-tabs button { min-height:46px; padding:6px 4px; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--text); font:700 .62rem/1.1 system-ui,sans-serif; text-transform:uppercase; letter-spacing:.05em; cursor:pointer; display:flex; flex-direction:column; align-items:center; justify-content:center; }
-body[data-studio] .workspace-tabs button[aria-selected="true"] { border-color:#6b5937; color:var(--amber); background:#3b3220; }
-body[data-studio] .source-pane { grid-column:2; grid-row:1; position:relative; height:100%; min-width:0; resize:horizontal; max-width:50vw; overflow:auto; background:var(--panel); border-right:1px solid var(--border); }
-body[data-studio] .source-pane[hidden] { display:none; }
-body[data-studio] main { max-width:none; margin:0; padding:0; grid-column:3; grid-row:1; }
-body[data-studio] .projection { display:contents; }
-body[data-studio] .projection > * { grid-column:3; grid-row:1; min-width:0; min-height:0; max-height:100%; margin:0; overflow:auto; padding:20px; }
-body[data-studio] .projection > *[hidden] { display:none; }
-body[data-studio] .projection-heading { display:none; }
-@media (max-width:640px) {
-  body[data-studio] .workspace { grid-template-columns:1fr; grid-template-rows:minmax(0,1fr) 52px; }
-  body[data-studio] .workspace-tabs { grid-column:1; grid-row:2; flex-direction:row; border-right:none; border-top:1px solid var(--border); padding:4px; }
-  body[data-studio] .workspace-tabs button { min-width:60px; min-height:48px; }
-  body[data-studio] .source-pane { grid-column:1; grid-row:1; max-width:none; resize:none; }
-  body[data-studio] .source-pane[data-panel-visible="false"] { display:none; }
-  body[data-studio] .projection > * { grid-column:1; grid-row:1; }
 }
 </style>
 </head>
@@ -550,7 +425,7 @@ body[data-studio] .projection-heading { display:none; }
   <p class="lede">{{if .Studio}}Edit the score, click a pitch row to set a note, or click a drum cell to toggle a hit. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
-<nav class="nav" aria-label="{{if .Studio}}Studio transport{{else}}Score sections{{end}}">{{if .Studio}}<div class="transport"><button id="transport-button" type="button" aria-label="Play or pause">Play</button><button id="transport-stop" type="button" aria-label="Stop and return to bar 1">■ Stop</button><button id="transport-home" type="button" aria-label="Return to start">⏮</button><span class="transport-position" id="transport-position">Bar 1 · Beat 1 · Step 1</span><span class="tempo-readout">{{.Tempo}} BPM</span><button id="live-toggle" class="live-toggle" type="button" aria-pressed="false">Live</button><span class="transport-pending" id="transport-pending" aria-live="polite"></span><div class="master-meter" role="meter" aria-label="Master output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Peak</span><div class="meter-track"><i id="master-meter-fill"></i><b id="master-meter-hold"></b></div><output id="master-meter-value">−120 dBFS</output></div><span id="midi-controls" class="midi-controls" hidden><span class="midi-status"><i id="midi-activity" class="midi-activity" aria-hidden="true"></i><span id="midi-status">MIDI off</span></span><button id="midi-enable" class="midi-enable" type="button">Enable MIDI</button></span><span id="bar-arm" class="bar-chip" title="Armed tracks">REC ○</span><span id="bar-engine" class="bar-chip" title="Audio engine and device">audio: checking</span><span id="bar-lufs" class="bar-chip" title="Integrated loudness">— LUFS</span><span id="bar-save" class="bar-chip" data-keep data-state="saved">✓ saved</span><a id="bar-error" class="bar-chip bar-error" data-keep href="#notation" hidden></a></div>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}</nav>
+<nav class="nav" aria-label="{{if .Studio}}Studio transport{{else}}Score sections{{end}}">{{if .Studio}}<div class="transport"><button id="transport-button" type="button" aria-label="Play or pause">Play</button><button id="transport-stop" type="button" aria-label="Stop and return to bar 1">■ Stop</button><button id="transport-home" type="button" aria-label="Return to start">⏮</button><span class="transport-position" id="transport-position" data-short="1.1.1">Bar 1 · Beat 1 · Step 1</span><span class="tempo-readout">{{.Tempo}} BPM</span><button id="live-toggle" class="live-toggle" type="button" aria-pressed="false">Live</button><span class="transport-pending" id="transport-pending" aria-live="polite"></span><div class="master-meter" role="meter" aria-label="Master output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Peak</span><div class="meter-track"><i id="master-meter-fill"></i><b id="master-meter-hold"></b></div><output id="master-meter-value">−120 dBFS</output></div><span id="midi-controls" class="midi-controls" hidden><span class="midi-status"><i id="midi-activity" class="midi-activity" aria-hidden="true"></i><span id="midi-status">MIDI off</span></span><button id="midi-enable" class="midi-enable" type="button">Enable MIDI</button></span><span id="bar-arm" class="bar-chip" title="Armed tracks">REC ○</span><span id="bar-engine" class="bar-chip" title="Audio engine and device">audio: checking</span><span id="bar-lufs" class="bar-chip" title="Integrated loudness">— LUFS</span><span id="bar-save" class="bar-chip" data-keep data-state="saved">✓ saved</span><a id="bar-error" class="bar-chip bar-error" data-keep href="#notation" hidden></a></div>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}</nav>
 <main class="workspace">{{if .Studio}}<nav class="workspace-tabs" role="tablist" aria-label="Studio panels"><button type="button" role="tab" data-panel-tab="code" aria-selected="false" tabindex="-1">Code</button><button type="button" role="tab" data-panel-tab="session" aria-selected="true" tabindex="0">Session</button><button type="button" role="tab" data-panel-tab="song" aria-selected="false" tabindex="-1">Song</button><button type="button" role="tab" data-panel-tab="mix" aria-selected="false" tabindex="-1">Mix</button><button type="button" role="tab" data-panel-tab="master" aria-selected="false" tabindex="-1">Master</button><button type="button" role="tab" data-panel-tab="record" aria-selected="false" tabindex="-1">Record</button><button type="button" role="tab" data-panel-tab="voice" aria-selected="false" tabindex="-1">Voice</button><button type="button" role="tab" data-panel-tab="history" aria-selected="false" tabindex="-1">History</button></nav>{{end}}
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
@@ -927,7 +802,9 @@ body[data-studio] .projection-heading { display:none; }
     playing = state.playing;
     transportButton.textContent = playing ? 'Pause' : 'Play';
     transportButton.setAttribute('aria-pressed', String(playing));
-    transportPosition.textContent = `Bar ${state.bar} · Beat ${Math.floor((state.step - 1) / 4) + 1} · Step ${state.step}`;
+    const beat = Math.floor((state.step - 1) / 4) + 1;
+    transportPosition.textContent = `Bar ${state.bar} · Beat ${beat} · Step ${state.step}`;
+    transportPosition.dataset.short = `${state.bar}.${beat}.${state.step}`;
     const queuedSlots = Object.entries(state.pendingSlots || {});
     transportPending.textContent = state.pendingSong ? `Starting song at ${state.pendingSong}` : state.pendingScene ? `${state.pendingScene} queued for next bar` : queuedSlots.length ? `${queuedSlots.length} track ${queuedSlots.length === 1 ? 'slot' : 'slots'} queued for next bar` : state.pending ? 'Edit queued for next bar' : state.landedBar ? `Landed at bar ${state.landedBar}` : '';
     for (const pad of scenePads()) {
