@@ -58,7 +58,7 @@ func TestFixCommandCreatesManifestAndCheckDoesNotWrite(t *testing.T) {
 		t.Fatal(err)
 	}
 	manifest, err := os.ReadFile(filepath.Join(dir, "cicada.mod"))
-	if err != nil || string(manifest) != "project night-circuit\ncicada 1\n" {
+	if err != nil || string(manifest) != "project night-circuit\ncicada 2\n" {
 		t.Fatalf("manifest: %q, %v", manifest, err)
 	}
 	fixed, err := os.ReadFile(path)

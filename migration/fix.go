@@ -4,11 +4,11 @@ package migration
 import (
 	"bytes"
 	"fmt"
-	"reflect"
 	"sort"
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
+	"github.com/odvcencio/gotreesitter/taproot/walk"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -34,12 +34,115 @@ func FixSource(source []byte) ([]byte, bool, error) {
 	var edits []sourceEdit
 	movedAttrs := map[int]bool{}
 	hasStopPattern := false
+	hasLegacyComp := false
+	hasMusicInsert := false
+	delayName, reverbName := "delay", "reverb"
+	for _, effect := range before.Effects {
+		if effect.Kind == "delay" {
+			delayName = effect.Name
+		}
+		if effect.Kind == "reverb" {
+			reverbName = effect.Name
+		}
+		hasLegacyComp = hasLegacyComp || effect.Legacy && effect.Kind == "comp"
+	}
 	for _, pattern := range before.Patterns {
 		hasStopPattern = hasStopPattern || pattern.Name == "stop"
 	}
 	for i := 0; i < root.NamedChildCount(); i++ {
 		node := root.NamedChild(i)
 		switch walker.Type(node) {
+		case "track_decl":
+			var legacyPre bool
+			for j := 0; j < node.NamedChildCount(); j++ {
+				setting := node.NamedChild(j)
+				if walker.Type(setting) != "mix_setting" || setting.NamedChildCount() == 0 {
+					continue
+				}
+				child := setting.NamedChild(0)
+				if walker.Type(child) != "param_decl" {
+					continue
+				}
+				nameNode, valueNode := walker.Field(child, "name"), walker.Field(child, "value")
+				if nameNode == nil || valueNode == nil {
+					continue
+				}
+				name, value := walker.Text(nameNode), walker.Text(valueNode)
+				if name == "send_pre" && (value == "true" || value == "on") {
+					legacyPre = true
+				}
+			}
+			for j := 0; j < node.NamedChildCount(); j++ {
+				setting := node.NamedChild(j)
+				if walker.Type(setting) != "mix_setting" || setting.NamedChildCount() == 0 {
+					continue
+				}
+				child := setting.NamedChild(0)
+				switch walker.Type(child) {
+				case "send_decl":
+					if legacyPre && walker.Field(child, "tap") == nil {
+						edits = append(edits, sourceEdit{start: int(child.EndByte()), end: int(child.EndByte()), text: " pre"})
+					}
+				case "param_decl":
+					nameNode, valueNode := walker.Field(child, "name"), walker.Field(child, "value")
+					if nameNode == nil || valueNode == nil {
+						continue
+					}
+					name, value := walker.Text(nameNode), walker.Text(valueNode)
+					switch {
+					case name == "send_pre" && legacyPre:
+						start, end := int(child.StartByte()), int(child.EndByte())
+						edits = append(edits, sourceEdit{start: start, end: end})
+					case name == "send_a" || name == "send_b":
+						target := delayName
+						if name == "send_b" {
+							target = reverbName
+						}
+						replacement := "send " + target + " = " + value
+						if legacyPre {
+							replacement += " pre"
+						}
+						edits = append(edits, sourceEdit{start: int(child.StartByte()), end: int(child.EndByte()), text: replacement})
+					case name == "send_pre":
+						// A false switch is the default; edition 2 has per-send taps only.
+						edits = append(edits, sourceEdit{start: int(child.StartByte()), end: int(child.EndByte())})
+					case name == "bus" && value == "sfx":
+						edits = append(edits, sourceEdit{start: int(nameNode.StartByte()), end: int(nameNode.EndByte()), text: "out"})
+					case name == "bus" && value == "music":
+						edits = append(edits, sourceEdit{start: int(child.StartByte()), end: int(child.EndByte())})
+					case name == "level" && value == "off":
+						edits = append(edits, sourceEdit{start: int(child.StartByte()), end: int(child.EndByte()), text: "mute = on"})
+					}
+				}
+			}
+		case "fx_decl":
+			name, kind := walker.Field(node, "name"), walker.Field(node, "kind")
+			if name != nil && kind == nil {
+				legacyKind := walker.Text(name)
+				switch legacyKind {
+				case "drive", "delay", "reverb", "comp":
+					edits = append(edits, sourceEdit{start: int(name.EndByte()), end: int(name.EndByte()), text: " " + legacyKind})
+				}
+				if legacyKind == "comp" {
+					hasLegacyComp = true
+				}
+			}
+		case "bus_decl":
+			name := walker.Field(node, "name")
+			if name != nil && walker.Text(name) == "music" {
+				for j := 0; j < node.NamedChildCount(); j++ {
+					setting := node.NamedChild(j)
+					if walker.Type(setting) != "mix_setting" || setting.NamedChildCount() == 0 {
+						continue
+					}
+					child := setting.NamedChild(0)
+					if walker.Type(child) == "param_decl" && walker.Field(child, "name") != nil && walker.Text(walker.Field(child, "name")) == "insert" {
+						if walker.Field(child, "value") != nil && walker.Text(walker.Field(child, "value")) == "comp" {
+							hasMusicInsert = true
+						}
+					}
+				}
+			}
 		case "integer":
 			start := bytes.LastIndexByte(source[:node.StartByte()], '\n') + 1
 			end := int(node.EndByte())
@@ -178,6 +281,29 @@ func FixSource(source []byte) ([]byte, bool, error) {
 			}
 		}
 	}
+	if hasLegacyComp && !hasMusicInsert {
+		addition := "bus music {\n  insert = comp\n}"
+		insertAt := len(source)
+		if insertAt > 0 && source[insertAt-1] != '\n' {
+			addition = "\n\n" + addition + "\n"
+		} else if insertAt > 1 && source[insertAt-2] == '\n' {
+			addition = addition + "\n"
+		} else {
+			addition = "\n" + addition + "\n"
+		}
+		if hasAnyMusicBus(root, walker) {
+			for i := 0; i < root.NamedChildCount(); i++ {
+				node := root.NamedChild(i)
+				if walker.Type(node) != "bus_decl" || walker.Field(node, "name") == nil || walker.Text(walker.Field(node, "name")) != "music" {
+					continue
+				}
+				insertAt = int(node.EndByte()) - 1
+				addition = "\n  insert = comp\n"
+				break
+			}
+		}
+		edits = append(edits, sourceEdit{start: insertAt, end: insertAt, text: addition})
+	}
 	var collectTokens func(*gts.Node)
 	collectTokens = func(node *gts.Node) {
 		switch walker.Type(node) {
@@ -250,10 +376,20 @@ func FixSource(source []byte) ([]byte, bool, error) {
 		return nil, false, fmt.Errorf("fix generated invalid score: %+v", diagnostics)
 	}
 	projectAfter, diagnostics := project.FromScore(after)
-	if projectAfter == nil || hasDiagnosticErrors(diagnostics) || !reflect.DeepEqual(projectBefore, projectAfter) {
+	if projectAfter == nil || hasDiagnosticErrors(diagnostics) || !project.SemanticEqual(projectBefore, projectAfter) {
 		return nil, false, fmt.Errorf("fix changed musical meaning")
 	}
 	return fixed, true, nil
+}
+
+func hasAnyMusicBus(root *gts.Node, walker *walk.Walker) bool {
+	for i := 0; i < root.NamedChildCount(); i++ {
+		node := root.NamedChild(i)
+		if walker.Type(node) == "bus_decl" && walker.Field(node, "name") != nil && walker.Text(walker.Field(node, "name")) == "music" {
+			return true
+		}
+	}
+	return false
 }
 
 func canonicalFixUnit(value string) string {

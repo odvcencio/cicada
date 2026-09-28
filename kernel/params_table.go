@@ -11,131 +11,147 @@ type ParamSpec struct {
 }
 
 const (
-	ParamMixGain          ParamID = 0
-	ParamMixPan           ParamID = 1
-	ParamMixSendA         ParamID = 2
-	ParamMixSendB         ParamID = 3
-	ParamMixMute          ParamID = 4
-	ParamMixSolo          ParamID = 5
-	ParamMixSendPre       ParamID = 6
-	ParamMixBus           ParamID = 7
-	ParamMixInsert        ParamID = 8
-	ParamFxDriveShape     ParamID = 9
-	ParamFxDriveGain      ParamID = 10
-	ParamFxDriveTone      ParamID = 11
-	ParamFxDriveMix       ParamID = 12
-	ParamFxDelayTime      ParamID = 13
-	ParamFxDelayFeedback  ParamID = 14
-	ParamFxDelayDamp      ParamID = 15
-	ParamFxDelayPingpong  ParamID = 16
-	ParamFxDelayWidth     ParamID = 17
-	ParamFxDelayMix       ParamID = 18
-	ParamFxReverbSize     ParamID = 19
-	ParamFxReverbDecay    ParamID = 20
-	ParamFxReverbDamp     ParamID = 21
-	ParamFxReverbHighpass ParamID = 22
-	ParamFxReverbPredelay ParamID = 23
-	ParamFxReverbMix      ParamID = 24
-	ParamFxCompDetect     ParamID = 25
-	ParamFxCompThreshold  ParamID = 26
-	ParamFxCompRatio      ParamID = 27
-	ParamFxCompKnee       ParamID = 28
-	ParamFxCompAttack     ParamID = 29
-	ParamFxCompRelease    ParamID = 30
-	ParamFxCompMakeup     ParamID = 31
-	ParamFxCompMix        ParamID = 32
-	ParamFxCompSidechain  ParamID = 33
-	ParamAcidTune         ParamID = 34
-	ParamAcidFine         ParamID = 35
-	ParamAcidWave         ParamID = 36
-	ParamAcidPw           ParamID = 37
-	ParamAcidDetune       ParamID = 38
-	ParamAcidSub          ParamID = 39
-	ParamAcidCutoff       ParamID = 40
-	ParamAcidReso         ParamID = 41
-	ParamAcidEnvmod       ParamID = 42
-	ParamAcidDecay        ParamID = 43
-	ParamAcidAccent       ParamID = 44
-	ParamAcidDrive        ParamID = 45
-	ParamAcidRelease      ParamID = 46
-	ParamAcidSlide        ParamID = 47
-	ParamAcidGate         ParamID = 48
-	ParamAcidFilter       ParamID = 49
-	ParamAcidSavage       ParamID = 50
-	ParamAcidOctave       ParamID = 51
-	ParamDrumBdTune       ParamID = 52
-	ParamDrumBdDecay      ParamID = 53
-	ParamDrumBdSweep      ParamID = 54
-	ParamDrumBdSweepTime  ParamID = 55
-	ParamDrumBdClick      ParamID = 56
-	ParamDrumBdDrive      ParamID = 57
-	ParamDrumBdLevel      ParamID = 58
-	ParamDrumBdPan        ParamID = 59
-	ParamDrumSdTune       ParamID = 60
-	ParamDrumSdTone       ParamID = 61
-	ParamDrumSdMix        ParamID = 62
-	ParamDrumSdSnappy     ParamID = 63
-	ParamDrumSdDecay      ParamID = 64
-	ParamDrumSdLevel      ParamID = 65
-	ParamDrumSdPan        ParamID = 66
-	ParamDrumChTune       ParamID = 67
-	ParamDrumChTone       ParamID = 68
-	ParamDrumChDecay      ParamID = 69
-	ParamDrumChMetal      ParamID = 70
-	ParamDrumChLevel      ParamID = 71
-	ParamDrumChPan        ParamID = 72
-	ParamDrumOhTune       ParamID = 73
-	ParamDrumOhTone       ParamID = 74
-	ParamDrumOhDecay      ParamID = 75
-	ParamDrumOhMetal      ParamID = 76
-	ParamDrumOhLevel      ParamID = 77
-	ParamDrumOhPan        ParamID = 78
-	ParamDrumCpTone       ParamID = 79
-	ParamDrumCpDecay      ParamID = 80
-	ParamDrumCpSpread     ParamID = 81
-	ParamDrumCpLevel      ParamID = 82
-	ParamDrumCpPan        ParamID = 83
-	ParamDrumRsTune       ParamID = 84
-	ParamDrumRsDecay      ParamID = 85
-	ParamDrumRsLevel      ParamID = 86
-	ParamDrumRsPan        ParamID = 87
-	ParamDrumLtTune       ParamID = 88
-	ParamDrumLtDecay      ParamID = 89
-	ParamDrumLtSweep      ParamID = 90
-	ParamDrumLtLevel      ParamID = 91
-	ParamDrumLtPan        ParamID = 92
-	ParamDrumMtTune       ParamID = 93
-	ParamDrumMtDecay      ParamID = 94
-	ParamDrumMtSweep      ParamID = 95
-	ParamDrumMtLevel      ParamID = 96
-	ParamDrumMtPan        ParamID = 97
-	ParamDrumHtTune       ParamID = 98
-	ParamDrumHtDecay      ParamID = 99
-	ParamDrumHtSweep      ParamID = 100
-	ParamDrumHtLevel      ParamID = 101
-	ParamDrumHtPan        ParamID = 102
-	ParamDrumCbTune       ParamID = 103
-	ParamDrumCbDecay      ParamID = 104
-	ParamDrumCbLevel      ParamID = 105
-	ParamDrumCbPan        ParamID = 106
-	ParamDrumCyTune       ParamID = 107
-	ParamDrumCyDecay      ParamID = 108
-	ParamDrumCyTone       ParamID = 109
-	ParamDrumCyLevel      ParamID = 110
-	ParamDrumCyPan        ParamID = 111
-	ParamDrumCpTune       ParamID = 112
-	ParamGlobalTempo      ParamID = 113
-	ParamGlobalTranspose  ParamID = 114
-	ParamCount                    = 115
+	ParamMixGain             ParamID = 0
+	ParamMixPan              ParamID = 1
+	ParamMixSendA            ParamID = 2
+	ParamMixSendB            ParamID = 3
+	ParamMixMute             ParamID = 4
+	ParamMixSolo             ParamID = 5
+	ParamMixSendPre          ParamID = 6
+	ParamMixBus              ParamID = 7
+	ParamMixInsert           ParamID = 8
+	ParamFxDriveShape        ParamID = 9
+	ParamFxDriveGain         ParamID = 10
+	ParamFxDriveTone         ParamID = 11
+	ParamFxDriveMix          ParamID = 12
+	ParamFxDelayTime         ParamID = 13
+	ParamFxDelayFeedback     ParamID = 14
+	ParamFxDelayDamp         ParamID = 15
+	ParamFxDelayPingpong     ParamID = 16
+	ParamFxDelayWidth        ParamID = 17
+	ParamFxDelayMix          ParamID = 18
+	ParamFxReverbSize        ParamID = 19
+	ParamFxReverbDecay       ParamID = 20
+	ParamFxReverbDamp        ParamID = 21
+	ParamFxReverbHighpass    ParamID = 22
+	ParamFxReverbPredelay    ParamID = 23
+	ParamFxReverbMix         ParamID = 24
+	ParamFxCompDetect        ParamID = 25
+	ParamFxCompThreshold     ParamID = 26
+	ParamFxCompRatio         ParamID = 27
+	ParamFxCompKnee          ParamID = 28
+	ParamFxCompAttack        ParamID = 29
+	ParamFxCompRelease       ParamID = 30
+	ParamFxCompMakeup        ParamID = 31
+	ParamFxCompMix           ParamID = 32
+	ParamFxCompSidechain     ParamID = 33
+	ParamAcidTune            ParamID = 34
+	ParamAcidFine            ParamID = 35
+	ParamAcidWave            ParamID = 36
+	ParamAcidPw              ParamID = 37
+	ParamAcidDetune          ParamID = 38
+	ParamAcidSub             ParamID = 39
+	ParamAcidCutoff          ParamID = 40
+	ParamAcidReso            ParamID = 41
+	ParamAcidEnvmod          ParamID = 42
+	ParamAcidDecay           ParamID = 43
+	ParamAcidAccent          ParamID = 44
+	ParamAcidDrive           ParamID = 45
+	ParamAcidRelease         ParamID = 46
+	ParamAcidSlide           ParamID = 47
+	ParamAcidGate            ParamID = 48
+	ParamAcidFilter          ParamID = 49
+	ParamAcidSavage          ParamID = 50
+	ParamAcidOctave          ParamID = 51
+	ParamDrumBdTune          ParamID = 52
+	ParamDrumBdDecay         ParamID = 53
+	ParamDrumBdSweep         ParamID = 54
+	ParamDrumBdSweepTime     ParamID = 55
+	ParamDrumBdClick         ParamID = 56
+	ParamDrumBdDrive         ParamID = 57
+	ParamDrumBdLevel         ParamID = 58
+	ParamDrumBdPan           ParamID = 59
+	ParamDrumSdTune          ParamID = 60
+	ParamDrumSdTone          ParamID = 61
+	ParamDrumSdMix           ParamID = 62
+	ParamDrumSdSnappy        ParamID = 63
+	ParamDrumSdDecay         ParamID = 64
+	ParamDrumSdLevel         ParamID = 65
+	ParamDrumSdPan           ParamID = 66
+	ParamDrumChTune          ParamID = 67
+	ParamDrumChTone          ParamID = 68
+	ParamDrumChDecay         ParamID = 69
+	ParamDrumChMetal         ParamID = 70
+	ParamDrumChLevel         ParamID = 71
+	ParamDrumChPan           ParamID = 72
+	ParamDrumOhTune          ParamID = 73
+	ParamDrumOhTone          ParamID = 74
+	ParamDrumOhDecay         ParamID = 75
+	ParamDrumOhMetal         ParamID = 76
+	ParamDrumOhLevel         ParamID = 77
+	ParamDrumOhPan           ParamID = 78
+	ParamDrumCpTone          ParamID = 79
+	ParamDrumCpDecay         ParamID = 80
+	ParamDrumCpSpread        ParamID = 81
+	ParamDrumCpLevel         ParamID = 82
+	ParamDrumCpPan           ParamID = 83
+	ParamDrumRsTune          ParamID = 84
+	ParamDrumRsDecay         ParamID = 85
+	ParamDrumRsLevel         ParamID = 86
+	ParamDrumRsPan           ParamID = 87
+	ParamDrumLtTune          ParamID = 88
+	ParamDrumLtDecay         ParamID = 89
+	ParamDrumLtSweep         ParamID = 90
+	ParamDrumLtLevel         ParamID = 91
+	ParamDrumLtPan           ParamID = 92
+	ParamDrumMtTune          ParamID = 93
+	ParamDrumMtDecay         ParamID = 94
+	ParamDrumMtSweep         ParamID = 95
+	ParamDrumMtLevel         ParamID = 96
+	ParamDrumMtPan           ParamID = 97
+	ParamDrumHtTune          ParamID = 98
+	ParamDrumHtDecay         ParamID = 99
+	ParamDrumHtSweep         ParamID = 100
+	ParamDrumHtLevel         ParamID = 101
+	ParamDrumHtPan           ParamID = 102
+	ParamDrumCbTune          ParamID = 103
+	ParamDrumCbDecay         ParamID = 104
+	ParamDrumCbLevel         ParamID = 105
+	ParamDrumCbPan           ParamID = 106
+	ParamDrumCyTune          ParamID = 107
+	ParamDrumCyDecay         ParamID = 108
+	ParamDrumCyTone          ParamID = 109
+	ParamDrumCyLevel         ParamID = 110
+	ParamDrumCyPan           ParamID = 111
+	ParamDrumCpTune          ParamID = 112
+	ParamGlobalTempo         ParamID = 113
+	ParamGlobalTranspose     ParamID = 114
+	ParamMixBusLevel         ParamID = 115
+	ParamMixBusPan           ParamID = 116
+	ParamMixBusMute          ParamID = 117
+	ParamMixBusSolo          ParamID = 118
+	ParamMixBusInsert        ParamID = 119
+	ParamMixBusSendDelay     ParamID = 120
+	ParamMixBusSendReverb    ParamID = 121
+	ParamMixBusOut           ParamID = 122
+	ParamMixMasterLevel      ParamID = 123
+	ParamMixMasterPan        ParamID = 124
+	ParamMixMasterMute       ParamID = 125
+	ParamMixMasterSolo       ParamID = 126
+	ParamMixMasterInsert     ParamID = 127
+	ParamMixMasterSendDelay  ParamID = 128
+	ParamMixMasterSendReverb ParamID = 129
+	ParamMixMasterOut        ParamID = 130
+	ParamCount                       = 131
 )
 
 var Params = [...]ParamSpec{
 	{0, "mix.gain", "level", "track", "level", "dB", "fader", "source", -60, 6, -6, 0.1, 5, true, true, true},
 	{1, "mix.pan", "pan", "track", "pan", "", "linear", "source", -1, 1, 0, 0.01, 5, true, true, false},
-	{2, "mix.send_a", "send.delay", "track", "send_a", "", "linear", "source", 0, 1, 0, 0.01, 5, true, true, false},
-	{3, "mix.send_b", "send.reverb", "track", "send_b", "", "linear", "source", 0, 1, 0, 0.01, 5, true, true, false},
-	{4, "mix.mute", "mute", "track", "mute", "", "toggle", "live-only", 0, 1, 0, 0.01, 10, true, false, false},
-	{5, "mix.solo", "solo", "track", "solo", "", "toggle", "live-only", 0, 1, 0, 0.01, 10, true, false, false},
+	{2, "mix.send_a", "send.delay", "track", "send", "", "linear", "source", 0, 1, 0, 0.01, 5, true, true, false},
+	{3, "mix.send_b", "send.reverb", "track", "send", "", "linear", "source", 0, 1, 0, 0.01, 5, true, true, false},
+	{4, "mix.mute", "mute", "track", "mute", "", "toggle", "source", 0, 1, 0, 0.01, 10, true, false, false},
+	{5, "mix.solo", "solo", "track", "solo", "", "toggle", "source", 0, 1, 0, 0.01, 10, true, false, false},
 	{6, "mix.send_pre", "send_pre", "track", "send_pre", "", "toggle", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{7, "mix.bus", "bus", "track", "bus", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{8, "mix.insert", "insert", "track", "insert", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
@@ -245,6 +261,22 @@ var Params = [...]ParamSpec{
 	{112, "drum.cp.tune", "cp_tune", "track", "cp_tune", "ratio", "linear", "source", 0.5, 2, 1, 0.01, 5, true, true, false},
 	{113, "global.tempo", "tempo", "global", "tempo", "BPM", "linear", "source", 20, 300, 130, 0.1, 5, false, false, false},
 	{114, "global.transpose", "transpose", "global", "transpose", "semitone", "linear", "source", -24, 24, 0, 1, 5, false, false, false},
+	{115, "mix.bus.level", "level", "bus", "level", "dB", "fader", "source", -60, 6, -3, 0.01, 0, false, false, false},
+	{116, "mix.bus.pan", "pan", "bus", "pan", "", "linear", "source", -1, 1, 0, 0.01, 0, false, false, false},
+	{117, "mix.bus.mute", "mute", "bus", "mute", "", "toggle", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{118, "mix.bus.solo", "solo", "bus", "solo", "", "toggle", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{119, "mix.bus.insert", "insert", "bus", "insert", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{120, "mix.bus.send.delay", "send.delay", "bus", "send", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{121, "mix.bus.send.reverb", "send.reverb", "bus", "send", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{122, "mix.bus.out", "out", "bus", "out", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{123, "mix.master.level", "level", "master", "level", "dB", "fader", "source", -60, 6, 0, 0.01, 0, false, false, false},
+	{124, "mix.master.pan", "pan", "master", "pan", "", "linear", "source", -1, 1, 0, 0.01, 0, false, false, false},
+	{125, "mix.master.mute", "mute", "master", "mute", "", "toggle", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{126, "mix.master.solo", "solo", "master", "solo", "", "toggle", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{127, "mix.master.insert", "insert", "master", "insert", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{128, "mix.master.send.delay", "send.delay", "master", "send", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{129, "mix.master.send.reverb", "send.reverb", "master", "send", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{130, "mix.master.out", "out", "master", "out", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
 }
 
 func Param(id ParamID) (ParamSpec, bool) {

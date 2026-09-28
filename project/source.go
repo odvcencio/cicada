@@ -14,8 +14,9 @@ import (
 
 var pitchNames = [12]string{"c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"}
 
-// ToSource writes concise edition-1 notation. It reparses and recompiles the
-// result before returning so a JSON project cannot silently change meaning.
+// ToSource writes concise notation in the project's source edition. It
+// reparses and recompiles the result before returning so a JSON project
+// cannot silently change meaning.
 func ToSource(p *Project) ([]byte, error) {
 	if err := ValidateProject(p); err != nil {
 		return nil, err
@@ -56,7 +57,11 @@ func ToSource(p *Project) ([]byte, error) {
 	}
 	for _, effect := range p.Effects {
 		var out strings.Builder
-		out.WriteString("fx " + effect.ID + " {")
+		out.WriteString("fx " + effect.ID)
+		if effect.Kind != "" {
+			out.WriteString(" " + effect.Kind)
+		}
+		out.WriteString(" {")
 		for _, key := range sortedKeys(effect.Params) {
 			value, err := valueSource(effect.Params[key])
 			if err != nil {
@@ -70,9 +75,67 @@ func ToSource(p *Project) ([]byte, error) {
 		out.WriteByte('}')
 		sections = append(sections, out.String())
 	}
+	for _, bus := range p.Buses {
+		var out strings.Builder
+		out.WriteString("bus " + bus.ID + " {")
+		writeMixerSettings(&out, bus.Mixer, bus.ID)
+		out.WriteByte('}')
+		sections = append(sections, out.String())
+	}
+	if p.Master != nil {
+		var out strings.Builder
+		out.WriteString("master {")
+		writeMixerSettings(&out, p.Master.Mixer, "master")
+		out.WriteByte('}')
+		sections = append(sections, out.String())
+	}
+	for _, export := range p.Exports {
+		var out strings.Builder
+		out.WriteString("export " + export.ID + " {")
+		if export.Rate != nil {
+			out.WriteString("\n  rate = " + strconv.Itoa(*export.Rate) + "Hz")
+		}
+		if export.Bits != nil {
+			out.WriteString("\n  bits = " + strconv.Itoa(*export.Bits))
+		}
+		for _, item := range []struct {
+			name  string
+			value *Value
+		}{{"tail", export.Tail}, {"loudness", export.Loudness}, {"true_peak", export.TruePeak}} {
+			if item.value == nil {
+				continue
+			}
+			value, err := valueSource(*item.value)
+			if err != nil {
+				return nil, err
+			}
+			out.WriteString("\n  " + item.name + " = " + value)
+		}
+		if export.Normalize != nil {
+			value := "off"
+			if *export.Normalize {
+				value = "on"
+			}
+			out.WriteString("\n  normalize = " + value)
+		}
+		if export.Rate != nil || export.Bits != nil || export.Tail != nil || export.Loudness != nil || export.TruePeak != nil || export.Normalize != nil {
+			out.WriteByte('\n')
+		}
+		out.WriteByte('}')
+		sections = append(sections, out.String())
+	}
 	for _, track := range p.Tracks {
 		var out strings.Builder
 		out.WriteString("track " + track.ID + " " + track.Kind)
+		if p.p2Syntax {
+			source, err := trackMixerSource(track)
+			if err != nil {
+				return nil, err
+			}
+			out.WriteString(source)
+			sections = append(sections, out.String())
+			continue
+		}
 		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0 || track.Mixer.Insert != "none" || track.Mixer.SendA != 0 || track.Mixer.SendB != 0 || track.Mixer.SendPre || track.Mixer.Bus != "music"
 		if len(track.Params) == 0 && !hasMixer {
 			out.WriteString(" {}")
@@ -166,7 +229,11 @@ func ToSource(p *Project) ([]byte, error) {
 	}
 	song.WriteString("\n}")
 	sections = append(sections, song.String())
-	result := []byte(strings.Join(sections, "\n\n") + "\n")
+	source := strings.Join(sections, "\n\n") + "\n"
+	if p.Edition == 2 {
+		source = "cicada 2\n" + source
+	}
+	result := []byte(source)
 	score, diagnostics := notation.Parse(result)
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Severity == "error" {
@@ -180,7 +247,7 @@ func ToSource(p *Project) ([]byte, error) {
 	before, beforeErr := canonicalProjectBytes(p)
 	after, afterErr := canonicalProjectBytes(recompiled)
 	if beforeErr != nil || afterErr != nil || !bytes.Equal(before, after) {
-		return nil, fmt.Errorf("project cannot be represented by Cicada source v1 without changing its meaning")
+		return nil, fmt.Errorf("project cannot be represented by Cicada source edition %d without changing its meaning", p.Edition)
 	}
 	return result, nil
 }
@@ -540,6 +607,9 @@ func absolutePitch(note uint8) string {
 }
 
 func valueSource(value Value) (string, error) {
+	if value.Number != nil && value.Unit == "ratio" {
+		return decimal(*value.Number), nil
+	}
 	if value.Number != nil {
 		return typedNumber(*value.Number, instrument.Type(value.Unit))
 	}
@@ -565,7 +635,122 @@ func typedNumber(value float64, unit instrument.Type) (string, error) {
 	case instrument.DB:
 		return decimal(value) + "dB", nil
 	}
+	switch string(unit) {
+	case "lu":
+		return decimal(value) + "LU", nil
+	case "lufs":
+		return decimal(value) + "LUFS", nil
+	case "dbtp":
+		return decimal(value) + "dBTP", nil
+	case "ratio":
+		return decimal(value), nil
+	}
 	return "", fmt.Errorf("cannot spell literal with unit %s", unit)
+}
+
+func trackMixerSource(track Track) (string, error) {
+	var out strings.Builder
+	out.WriteString(" {")
+	settings := 0
+	write := func(name, value string) {
+		out.WriteString("\n  " + name + " = " + value)
+		settings++
+	}
+	if track.Mixer.Level != nil {
+		value, err := valueSource(*track.Mixer.Level)
+		if err != nil {
+			return "", err
+		}
+		write("level", value)
+	}
+	if track.Mixer.panSet {
+		write("pan", decimal(track.Mixer.Pan))
+	}
+	if track.Mixer.muteSet {
+		value := "off"
+		if track.Mixer.Mute {
+			value = "on"
+		}
+		write("mute", value)
+	}
+	if track.Mixer.soloSet {
+		value := "off"
+		if track.Mixer.Solo {
+			value = "on"
+		}
+		write("solo", value)
+	}
+	if track.Mixer.Inserts != nil {
+		value := "none"
+		if len(track.Mixer.Inserts) > 0 {
+			value = strings.Join(track.Mixer.Inserts, " -> ")
+		}
+		write("insert", value)
+	}
+	for _, send := range track.Mixer.Sends {
+		value, err := valueSource(send.Level)
+		if err != nil {
+			return "", err
+		}
+		line := "send " + send.To + " = " + value
+		if send.Tap == "pre" {
+			line += " pre"
+		}
+		out.WriteString("\n  " + line)
+		settings++
+	}
+	if track.Mixer.Out != nil {
+		write("out", *track.Mixer.Out)
+	}
+	for _, key := range sortedKeys(track.Params) {
+		value, err := valueSource(track.Params[key])
+		if err != nil {
+			return "", err
+		}
+		write(key, value)
+	}
+	if settings > 0 {
+		out.WriteByte('\n')
+	}
+	out.WriteByte('}')
+	return out.String(), nil
+}
+
+func writeMixerSettings(out *strings.Builder, mixer Mixer, owner string) {
+	if mixer.Level != nil {
+		if value, err := valueSource(*mixer.Level); err == nil {
+			out.WriteString("\n  level = " + value)
+		}
+	} else if owner == "music" && mixer.GainDB != -3 || owner == "sfx" && mixer.GainDB != 0 || owner == "master" && mixer.GainDB != 0 {
+		out.WriteString("\n  level = " + decimal(mixer.GainDB) + "dB")
+	}
+	if mixer.panSet {
+		out.WriteString("\n  pan = " + decimal(mixer.Pan))
+	}
+	if mixer.muteSet {
+		value := "off"
+		if mixer.Mute {
+			value = "on"
+		}
+		out.WriteString("\n  mute = " + value)
+	}
+	if mixer.soloSet {
+		value := "off"
+		if mixer.Solo {
+			value = "on"
+		}
+		out.WriteString("\n  solo = " + value)
+	}
+	if mixer.Inserts != nil {
+		value := "none"
+		if len(mixer.Inserts) > 0 {
+			value = strings.Join(mixer.Inserts, " -> ")
+		}
+		out.WriteString("\n  insert = " + value)
+	}
+	if mixer.Out != nil {
+		out.WriteString("\n  out = " + *mixer.Out)
+	}
 }
 
 func decimal(value float64) string {
@@ -599,7 +784,114 @@ func SemanticEqual(a, b *Project) bool {
 	if a == nil || b == nil {
 		return a == b
 	}
-	left, leftError := CanonicalJSON(a)
-	right, rightError := CanonicalJSON(b)
-	return leftError == nil && rightError == nil && bytes.Equal(left, right)
+	left, leftErr := canonicalProjectBytes(ptrProject(normalizeProjectMeaning(a)))
+	right, rightErr := canonicalProjectBytes(ptrProject(normalizeProjectMeaning(b)))
+	return leftErr == nil && rightErr == nil && bytes.Equal(left, right)
+}
+
+func ptrProject(project Project) *Project { return &project }
+
+func normalizeProjectMeaning(source *Project) Project {
+	p := *source
+	p.Edition = 1 // Source edition is metadata; migrations may change it without changing meaning.
+	p.Format, p.Version, p.p2Syntax = FormatID2, 2, true
+	p.Effects = append([]Effect(nil), source.Effects...)
+	p.Buses = append([]Bus(nil), source.Buses...)
+	p.Tracks = append([]Track(nil), source.Tracks...)
+	effectIDs := make(map[string]string, len(p.Effects))
+	for i := range p.Effects {
+		kind := semanticEffectKind(p.Effects[i])
+		p.Effects[i].Kind = kind
+		effectIDs[kind] = p.Effects[i].ID
+	}
+	for i := range p.Tracks {
+		m := &p.Tracks[i].Mixer
+		m.Sends = append([]MixerSend{}, m.Sends...)
+		if m.Level != nil && m.Level.Unit == "enum" && m.Level.Text == "off" {
+			m.Level = nil
+			m.Mute = true
+		}
+		if m.Inserts == nil {
+			m.Inserts = []string{}
+			if m.Insert != "none" {
+				m.Inserts = append(m.Inserts, m.Insert)
+			}
+		}
+		m.Insert = "none"
+		if len(m.Inserts) > 0 {
+			m.Insert = m.Inserts[0]
+		}
+		m.Out = stringPointer(m.Bus)
+		if m.Sends == nil {
+			m.Sends = []MixerSend{}
+		}
+		kept := m.Sends[:0]
+		for j := range m.Sends {
+			if m.Sends[j].Level.Number != nil && *m.Sends[j].Level.Number == 0 {
+				continue
+			}
+			if m.Sends[j].Tap == "" {
+				m.Sends[j].Tap = "post"
+			}
+			kept = append(kept, m.Sends[j])
+		}
+		m.Sends = kept
+		for _, item := range []struct {
+			kind  string
+			value float64
+		}{{"delay", m.SendA}, {"reverb", m.SendB}} {
+			kind, value := item.kind, item.value
+			if value <= 0 {
+				continue
+			}
+			id := effectIDs[kind]
+			found := false
+			for _, send := range m.Sends {
+				found = found || send.To == id
+			}
+			if found || id == "" {
+				continue
+			}
+			amount := value
+			tap := "post"
+			if m.SendPre {
+				tap = "pre"
+			}
+			m.Sends = append(m.Sends, MixerSend{To: id, Level: Value{Unit: "ratio", Number: &amount}, Tap: tap})
+		}
+		m.SendA, m.SendB, m.SendPre = 0, 0, false
+		m.panSet, m.muteSet, m.soloSet, m.wireV2 = false, false, false, true
+	}
+	p.Patterns = append([]Pattern(nil), source.Patterns...)
+	for i := range p.Patterns {
+		if p.Patterns[i].Kind == "notes" && projectPatternUsedOnlyByAcid(source, p.Patterns[i].ID) {
+			p.Patterns[i].Kind = "acid"
+		}
+	}
+	p.Scenes = append([]Scene(nil), source.Scenes...)
+	for i := range p.Scenes {
+		bindings := make(map[string]string, len(source.Scenes[i].Bindings))
+		for track, pattern := range source.Scenes[i].Bindings {
+			if pattern != "keep" {
+				bindings[track] = pattern
+			}
+		}
+		p.Scenes[i].Bindings = bindings
+	}
+	if p.Buses == nil {
+		p.Buses = []Bus{}
+	}
+	legacyComp := false
+	for _, effect := range source.Effects {
+		legacyComp = legacyComp || effect.Kind == "" && effect.ID == "comp"
+	}
+	hasMusicBus := false
+	for i := range p.Buses {
+		p.Buses[i].Mixer.wireV2 = true
+		hasMusicBus = hasMusicBus || p.Buses[i].ID == "music"
+	}
+	if legacyComp && !hasMusicBus {
+		p.Buses = append(p.Buses, Bus{ID: "music", Mixer: Mixer{GainDB: -6, Insert: "comp", Bus: "music", Inserts: []string{"comp"}, wireV2: true}})
+	}
+	return p
 }

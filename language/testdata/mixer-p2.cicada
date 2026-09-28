@@ -1,0 +1,12 @@
+fx room delay { time = 1/8 feedback = 0.3 }
+fx wide reverb { size = 0.8 }
+fx warmth drive {}
+fx glue comp {}
+bus music { insert = glue }
+bus sfx { mute = off }
+master { level = -1dB insert = none }
+export streaming { rate = 48000Hz bits = 24 tail = 2s loudness = -14LUFS true_peak = -1dBTP normalize = off }
+track bass acid { insert = warmth send room = 0.2 pre send wide = -12dB out = sfx }
+pattern riff acid steps=1 { 1 }
+scene main { bass = riff }
+song { main }

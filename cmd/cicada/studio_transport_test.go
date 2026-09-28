@@ -81,7 +81,8 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 		t.Fatalf("incomplete current registry response: rev=%q registry=%d addresses=%d", params.Revision, len(params.Registry), len(params.Addresses))
 	}
 	path := filepath.Join(t.TempDir(), "paths.cicada")
-	source := strings.Replace(studioScore, "track bass acid {}", "fx delay { feedback = 0.2 }\ntrack bass acid { send_a = 0.3 }", 1)
+	source := strings.Replace(studioScore, "track bass acid {}", "fx room delay { feedback = 0.2 }\ntrack bass acid { send room = 0.3 pre }", 1)
+	source = strings.Replace(source, "scene main {", "bus sfx { mute = off }\nmaster { level = -1dB }\nscene main {", 1)
 	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -99,7 +100,7 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 	for _, address := range pathParams.Addresses {
 		addresses[address.Address] = true
 	}
-	for _, required := range []string{"bass.send.delay", "delay.feedback"} {
+	for _, required := range []string{"bass.send.delay", "room.feedback", "music.mute", "sfx.solo", "master.level"} {
 		if !addresses[required] {
 			t.Errorf("P1 address %q missing from /api/params: %v", required, addresses)
 		}

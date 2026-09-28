@@ -208,6 +208,12 @@ func main() {
 		os.Exit(1)
 	}
 	score, semantic, diagnostics := inspection.score, inspection.semantic, inspection.diagnostics
+	if command == "render" && renderTarget != nil && renderTarget.ExportName != "" {
+		if err := applyExportTarget(semantic, &renderOptions, renderTarget); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
 	var programs map[string]*instrument.Program
 	if command == "graph" && !hasDiagnosticErrors(diagnostics) {
 		programs, _ = project.Check(score)
@@ -427,15 +433,69 @@ func writeAtomic(path string, data []byte) error {
 }
 
 type renderTargetOptions struct {
-	LoudnessTarget  float64
-	TruePeakMaxDBTP float64
-	Tolerance       float64
+	LoudnessTarget    float64
+	TruePeakMaxDBTP   float64
+	Tolerance         float64
+	Loudness          bool
+	ExportName        string
+	ExplicitRate      bool
+	ExplicitBits      bool
+	ExplicitTail      bool
+	ExplicitNormalize bool
+	ExplicitLoudness  bool
+	ExplicitTruePeak  bool
+	ExplicitTolerance bool
+}
+
+func applyExportTarget(p *project.Project, opts *render.Options, target *renderTargetOptions) error {
+	if p == nil || opts == nil || target == nil {
+		return fmt.Errorf("export settings need a compiled project")
+	}
+	var selected *project.Export
+	for i := range p.Exports {
+		if p.Exports[i].ID == target.ExportName {
+			selected = &p.Exports[i]
+			break
+		}
+	}
+	if selected == nil {
+		return fmt.Errorf("unknown export %s", target.ExportName)
+	}
+	if selected.Rate != nil && !target.ExplicitRate {
+		opts.SampleRate = *selected.Rate
+	}
+	if selected.Bits != nil && !target.ExplicitBits {
+		opts.Bits = *selected.Bits
+	}
+	if selected.Tail != nil && selected.Tail.Number != nil && !target.ExplicitTail {
+		opts.TailSec = *selected.Tail.Number / 1000
+	}
+	if selected.Normalize != nil && !target.ExplicitNormalize {
+		opts.Normalize = *selected.Normalize
+	}
+	if selected.Loudness != nil && selected.Loudness.Number != nil && !target.ExplicitLoudness {
+		target.LoudnessTarget = *selected.Loudness.Number
+		target.Loudness = true
+	}
+	if selected.TruePeak != nil && selected.TruePeak.Number != nil && !target.ExplicitTruePeak {
+		target.TruePeakMaxDBTP = *selected.TruePeak.Number
+	}
+	if target.Loudness && !target.ExplicitTolerance {
+		target.Tolerance = 0.5
+	}
+	if selected.TruePeak != nil && selected.Loudness == nil && !target.ExplicitLoudness {
+		return fmt.Errorf("CICADA-UNSUPPORTED: export %s true_peak without loudness targeting is not implemented", selected.ID)
+	}
+	if target.Loudness && opts.Normalize {
+		return fmt.Errorf("CICADA-UNSUPPORTED: export %s cannot combine loudness targeting and normalize", selected.ID)
+	}
+	return nil
 }
 
 const loudnessPassLimit = 6
 
 func renderFile(score *notation.Score, path string, opts render.Options, target *renderTargetOptions) error {
-	if target != nil {
+	if target != nil && target.Loudness {
 		return renderLoudnessFile(score, path, opts, *target)
 	}
 	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-render-*")
@@ -710,6 +770,7 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 	loudness := flags.Float64("loudness", math.NaN(), "target integrated loudness in LUFS")
 	truePeak := flags.Float64("true-peak-max", -1, "maximum true peak in dBTP for loudness rendering")
 	loudnessTolerance := flags.Float64("loudness-tolerance", 0.5, "loudness target tolerance in LU")
+	exportName := flags.String("export", "", "named export settings block")
 	if err := flags.Parse(args); err != nil || *output == "" || len(flags.Args()) != 0 || (*bits != 16 && *bits != 24 && *bits != 32) || (wantBits == 32 && *bits != 32) {
 		usage()
 	}
@@ -723,9 +784,35 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 			if math.IsNaN(*loudness) || math.IsInf(*loudness, 0) || math.IsNaN(*truePeak) || math.IsInf(*truePeak, 0) || math.IsNaN(*loudnessTolerance) || math.IsInf(*loudnessTolerance, 0) || *loudnessTolerance < 0 || *loudnessTolerance > 10 || *normalize {
 				usage()
 			}
-			target = &renderTargetOptions{LoudnessTarget: *loudness, TruePeakMaxDBTP: *truePeak, Tolerance: *loudnessTolerance}
+			target = &renderTargetOptions{LoudnessTarget: *loudness, TruePeakMaxDBTP: *truePeak, Tolerance: *loudnessTolerance, Loudness: true}
 		}
 	})
+	if *exportName != "" {
+		if target == nil {
+			target = &renderTargetOptions{TruePeakMaxDBTP: -1, Tolerance: 0.5}
+		}
+		target.ExportName = *exportName
+	}
+	if target != nil {
+		flags.Visit(func(value *flag.Flag) {
+			switch value.Name {
+			case "rate":
+				target.ExplicitRate = true
+			case "bits":
+				target.ExplicitBits = true
+			case "tail":
+				target.ExplicitTail = true
+			case "normalize":
+				target.ExplicitNormalize = true
+			case "loudness":
+				target.ExplicitLoudness = true
+			case "true-peak-max":
+				target.ExplicitTruePeak = true
+			case "loudness-tolerance":
+				target.ExplicitTolerance = true
+			}
+		})
+	}
 	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: *from, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block}, target
 }
 

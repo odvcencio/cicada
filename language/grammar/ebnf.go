@@ -25,7 +25,7 @@ func EBNF() (string, error) {
 	}
 	out.WriteString("   The DSL may also carry lexical priority, fields, and parser test cases;\n")
 	out.WriteString("   EBNF shows accepted forms but does not encode that parser metadata.\n")
-	out.WriteString("   Semantic limits are in edition-1.md. *)\n\n")
+	out.WriteString("   Edition-specific limits are in edition-1.md and edition-2.md. *)\n\n")
 	for _, name := range g.RuleOrder {
 		rule := g.Rules[name]
 		rhs, err := renderEBNF(rule, grammargen.RuleKind(-1))
