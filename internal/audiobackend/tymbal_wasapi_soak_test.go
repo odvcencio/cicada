@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"m31labs.dev/cicada/internal/audiobackend/rt"
+	"m31labs.dev/tymbal"
 )
 
 func TestTymbalWASAPISilent60sRun(t *testing.T) {
 	if os.Getenv("CICADA_AUDIO_WASAPI_SOAK") != "60s" {
 		t.Skip("set CICADA_AUDIO_WASAPI_SOAK=60s on the Windows host to run the WASAPI soak")
 	}
-	restore, _, _ := rt.RaiseProcessThreads(1)
+	restore, _, _ := tymbal.RaiseProcessThreads(1)
 	defer restore()
 	backend, err := New(Tymbal)
 	if err != nil {
