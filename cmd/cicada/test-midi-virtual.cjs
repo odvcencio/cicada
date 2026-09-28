@@ -188,6 +188,7 @@ async function main() {
     await waitFor(async () => cdp.evaluate('!document.querySelector("#live-take-panel").hidden && document.querySelectorAll(".take-preview-cell.has-note").length > 0'), 'take preview after Stop');
     await cdp.screenshot('midi-take-before-commit.png');
 
+    assert.match(await cdp.evaluate('document.querySelector("#live-take-summary").textContent'), /MIDI velocity is not saved/, 'take preview must disclose acid velocity normalization');
     const oldSource = fs.readFileSync(scorePath, 'utf8');
     const oldHistory = await json('http://127.0.0.1:8161/api/history');
     const oldTimeOrigin = await cdp.evaluate('performance.timeOrigin');
@@ -212,7 +213,16 @@ async function main() {
     await cdp.send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 960, deviceScaleFactor: 1, mobile: false});
     await cdp.evaluate('document.querySelector("#live-toggle").click()');
     await cdp.screenshot('committed-take-source.png');
-    console.log(`headless Chrome MIDI learn, note input, and capture commit passed; evidence: ${evidenceDirectory}`);
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', {source: "Object.defineProperty(navigator, 'requestMIDIAccess', {configurable:true,value:undefined});"});
+    await cdp.send('Page.reload');
+    await waitFor(async () => {
+      try { return await cdp.evaluate('typeof navigator.requestMIDIAccess === "undefined" && !!window.cicadaAudio && !!document.querySelector(".live-param-row input")'); }
+      catch { return false; }
+    }, 'parameter controls without Web MIDI');
+    await cdp.evaluate(`(() => {const toggle=document.querySelector('#live-toggle');if(toggle.getAttribute('aria-pressed')!=='true')toggle.click();document.querySelector('.live-parameter-details').open=true;})()`);
+    assert.equal(await cdp.evaluate('document.querySelector(".live-parameter-details").hidden'), false, 'manual sliders must remain visible without Web MIDI');
+    assert.ok(await cdp.evaluate('document.querySelector(".live-param-row input").getBoundingClientRect().height > 0'), 'manual slider is rendered without Web MIDI');
+    console.log(`headless Chrome MIDI capture and no-MIDI parameter controls passed; evidence: ${evidenceDirectory}`);
   } finally {
     socket?.close();
     for (const child of [...children].reverse()) {

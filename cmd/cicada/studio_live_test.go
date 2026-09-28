@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -170,4 +171,86 @@ func studioTestPath(t *testing.T, source string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestRecordedTakePreservesSimultaneousDrumLanes(t *testing.T) {
+	source, err := recordedTakeSource([]byte(studioScore), "drums", "beat", []studioTakeNote{
+		{Tick: 120, EndTick: 120, Note: 36, Velocity: 80},
+		{Tick: 120, EndTick: 120, Note: 38, Velocity: 127},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, lane := range []string{"bd", "sd"} {
+		token, err := studioDrumToken(source, "beat", lane, 1)
+		if err != nil || token == "." {
+			t.Fatalf("lost %s hit: token=%q error=%v", lane, token, err)
+		}
+	}
+}
+
+func TestQueuedLaunchKeepsStoppedTracksMutedUntilLanding(t *testing.T) {
+	for _, scene := range []bool{true, false} {
+		t.Run(fmt.Sprint(scene), func(t *testing.T) {
+			initial, err := compileLiveScore(studioTestPath(t, studioScore))
+			if err != nil {
+				t.Fatal(err)
+			}
+			stream, err := liveplay.New(initial, liveSampleRate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			transport := &studioTransport{stream: stream, playing: true, audioNull: true}
+			if err := transport.stopTrack("bass"); err != nil {
+				t.Fatal(err)
+			}
+			if scene {
+				err = transport.launchScene("main", 8)
+			} else {
+				err = transport.launchPattern("bass", "pulse", 8)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !transport.stoppedTracks["bass"] {
+				t.Fatal("queued launch resumed the old pattern")
+			}
+			if _, err := io.CopyN(io.Discard, stream, 1024); err != nil {
+				t.Fatal(err)
+			}
+			if !transport.stoppedTracks["bass"] {
+				t.Fatal("track resumed before quantized landing")
+			}
+			event := liveplay.Event{Kind: "slot", Track: "bass", Name: "pulse", Bar: 5}
+			if scene {
+				event.Kind = "scene"
+				event.Name = "main"
+			}
+			transport.markLanded(event)
+			if transport.stoppedTracks["bass"] {
+				t.Fatal("landed launch did not resume the track")
+			}
+		})
+	}
+}
+
+func TestTransportSnapshotTracksSongWithoutEventDelivery(t *testing.T) {
+	initial, err := compileLiveScore(studioTestPath(t, studioSongScore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := liveplay.New(initial, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	transport := &studioTransport{stream: stream, playing: true, scene: "dusk", activeSlots: map[string]string{"bass": "old"}}
+	if _, err := io.CopyN(io.Discard, stream, 192_000*8+8); err != nil {
+		t.Fatal(err)
+	}
+	state := transport.snapshot()
+	if state.Scene != "chorus" || len(state.ActiveSlots) != 0 {
+		t.Fatalf("stale recording target: %+v", state)
+	}
 }
