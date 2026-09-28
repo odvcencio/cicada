@@ -47,9 +47,12 @@ score.cicada` to write one file, and `cicada fmt --check` to check a project
 without changing it. From a project directory, the command covers score files
 under the nearest manifest; nested projects are handled separately.
 
-Use `cicada fix score.cicada --check` to see whether the edition-1 migration
-would change source. Omit `--check` to apply it. `fix` preserves comments and
-checks that the compiled project keeps the same meaning. See the
+Use `cicada fix score.cicada --check` to see whether legacy source spellings
+need rewriting, even when the project manifest already selects edition 2. Omit
+`--check` to apply the rewrite. If other edition-1 scores share the project
+folder, `fix` lists them and refuses a single-file change; run
+`cicada fix --all` from that folder to migrate them together. `fix` preserves
+comments and checks that the compiled project keeps the same meaning. See the
 [migration reference](../spec/semantic-model.md#cicada-fix-and-migrations)
 for the complete list of rewrites.
 
