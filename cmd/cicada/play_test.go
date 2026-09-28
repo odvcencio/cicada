@@ -11,9 +11,20 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/internal/audiobackend"
 )
 
 const liveTestScore = "title \"live\"\ntempo 120\nkey a minor\ntrack bass acid {}\npattern pulse acid steps = 16 { 1 . . . 5 . . . 1 . . . 7 . . . }\nscene main { bass = pulse }\nsong { main*8 }\n"
+
+func TestPlayAudioBackendBanner(t *testing.T) {
+	format := audiobackend.Format{Backend: audiobackend.Tymbal, Host: "wasapi", SampleRate: 48_000, FramesPerPeriod: 480}
+	if got, want := playAudioBanner(format), "audio: tymbal (wasapi, 48000 Hz, 480 frames)"; got != want {
+		t.Fatalf("audio banner = %q, want %q", got, want)
+	}
+	if got, want := playAudioRunSummary(format, audiobackend.Stats{Callbacks: 6000}), "audio: callbacks=6000 glitches=0 period=480 frames"; got != want {
+		t.Fatalf("audio summary = %q, want %q", got, want)
+	}
+}
 
 func TestLiveReaderProducesStereoAudioFromScore(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "main.cicada")

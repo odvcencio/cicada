@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strings"
 )
 
 type studioAudioOptions struct {
@@ -26,14 +27,18 @@ type studioAudioDeviceInfo struct {
 }
 
 type studioAudioInventory struct {
-	Supported bool                    `json:"supported"`
-	Backend   string                  `json:"backend"`
-	Message   string                  `json:"message,omitempty"`
-	Devices   []studioAudioDeviceInfo `json:"devices"`
+	Supported   bool                    `json:"supported"`
+	Backend     string                  `json:"backend"`
+	BackendName string                  `json:"backendName"`
+	Host        string                  `json:"host,omitempty"`
+	Message     string                  `json:"message,omitempty"`
+	Devices     []studioAudioDeviceInfo `json:"devices"`
 }
 
 type studioAudioSnapshot struct {
 	Backend            string  `json:"backend"`
+	BackendName        string  `json:"backendName"`
+	Host               string  `json:"host,omitempty"`
 	InputName          string  `json:"inputName,omitempty"`
 	OutputName         string  `json:"outputName,omitempty"`
 	InputChannels      int     `json:"inputChannels"`
@@ -60,6 +65,7 @@ type studioAudioState struct {
 	Options   studioAudioOptions   `json:"options"`
 	Runtime   studioAudioSnapshot  `json:"runtime"`
 	Playing   bool                 `json:"playing"`
+	Status    string               `json:"status"`
 }
 
 func (t *studioTransport) ensureSampleRate() (int, error) {
@@ -104,6 +110,8 @@ func (t *studioTransport) audioState() studioAudioState {
 		state.Runtime = t.audio.Snapshot()
 	} else {
 		state.Runtime.Backend = inventory.Backend
+		state.Runtime.BackendName = inventory.BackendName
+		state.Runtime.Host = inventory.Host
 		state.Runtime.SampleRate = t.sampleRate
 		if !inventory.Supported {
 			state.Runtime.OutputName = "System default"
@@ -116,8 +124,81 @@ func (t *studioTransport) audioState() studioAudioState {
 	if state.Runtime.Error == "" {
 		state.Runtime.Error = t.errText
 	}
+	if state.Runtime.Error == "" && inventory.Message != "" && inventory.Supported {
+		state.Runtime.Error = inventory.Message
+	}
+	if state.Runtime.Error == "" && inventory.BackendName == "tymbal" && !studioInventoryHasPlayback(inventory, options.OutputDevice) {
+		state.Runtime.Error = studioNoPlaybackDeviceMessage(inventory.Host, options.OutputDevice)
+	}
+	state.Status = studioAudioStatus(state)
 	t.mu.Unlock()
 	return state
+}
+
+func studioInventoryHasPlayback(inventory studioAudioInventory, selected string) bool {
+	for _, device := range inventory.Devices {
+		if device.Outputs == 0 {
+			continue
+		}
+		if selected != "" && device.ID == selected {
+			return true
+		}
+		if selected == "" && device.DefaultOutput {
+			return true
+		}
+	}
+	return false
+}
+
+func studioNoPlaybackDeviceMessage(host, selected string) string {
+	if host == "alsa" && selected == "" {
+		return "no ALSA playback device found; use --audio oto"
+	}
+	device := selected
+	if device == "" {
+		device = "default playback device"
+	}
+	return fmt.Sprintf("Tymbal %s device %q could not be opened; use --audio oto: no active playback endpoint found", strings.ToUpper(host), device)
+}
+
+func studioAudioStatus(state studioAudioState) string {
+	if state.Runtime.Error != "" {
+		return state.Runtime.Error
+	}
+	backend := state.Runtime.BackendName
+	if backend == "" {
+		backend = state.Inventory.BackendName
+	}
+	if backend == "" {
+		backend = "oto"
+	}
+	status := "Audio: " + backend
+	host := state.Runtime.Host
+	if host == "" {
+		host = state.Inventory.Host
+	}
+	if backend == "tymbal" && host != "" {
+		status += " · " + strings.ToUpper(host)
+	}
+	rate := state.Runtime.SampleRate
+	if rate == 0 {
+		selected := state.Options.OutputDevice
+		for _, device := range state.Inventory.Devices {
+			if device.Outputs == 0 || selected != "" && device.ID != selected || selected == "" && !device.DefaultOutput {
+				continue
+			}
+			rate = device.SampleRate
+			break
+		}
+	}
+	if rate > 0 {
+		if rate%1000 == 0 {
+			status += fmt.Sprintf(" · %d kHz", rate/1000)
+		} else {
+			status += fmt.Sprintf(" · %.1f kHz", float64(rate)/1000)
+		}
+	}
+	return status
 }
 
 func (t *studioTransport) configureAudio(options studioAudioOptions) error {

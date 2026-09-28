@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync/atomic"
 
 	"m31labs.dev/tymbal"
@@ -26,7 +27,7 @@ func (tymbalBackend) Name() Name { return Tymbal }
 func (b tymbalBackend) Devices() ([]Device, bool, error) {
 	native, err := b.host.Devices()
 	if err != nil {
-		return nil, true, err
+		return nil, true, tymbalDeviceErrorForOS(runtime.GOOS, tymbal.Output, "", err)
 	}
 	devices := make([]Device, 0, len(native))
 	for _, device := range native {
@@ -141,7 +142,11 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 		}
 	}
 	if openErr != nil {
-		return nil, tymbalOpenError(output.Name, input != nil, openErr)
+		captureName := ""
+		if input != nil {
+			captureName = input.Name
+		}
+		return nil, tymbalOpenError(output.Name, captureName, openErr)
 	}
 	actual := nativeStream.Actual()
 	captureName := ""
@@ -152,21 +157,65 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 		stream:      nativeStream,
 		callbackErr: callbackErr,
 		format: Format{
-			Backend: Tymbal, Device: output.Name, CaptureDevice: captureName, SampleRate: actual.SampleRate,
+			Backend: Tymbal, Host: b.host.Name(), Device: output.Name, CaptureDevice: captureName, SampleRate: actual.SampleRate,
 			Channels: actual.OutChannels, CaptureChannels: actual.InChannels,
 			FramesPerPeriod: actual.Period, Latency: actual.LatencyOut, CaptureLatency: actual.LatencyIn,
 		},
 	}, nil
 }
 
-func tymbalOpenError(device string, duplex bool, err error) error {
-	if errors.Is(err, tymbal.ErrBusy) && runtime.GOOS == "linux" {
-		return fmt.Errorf("Tymbal ALSA device %q is busy; use --audio oto: %w", device, err)
+func tymbalOpenError(outputDevice, captureDevice string, err error) error {
+	if captureDevice != "" {
+		if errors.Is(err, tymbal.ErrFormat) {
+			err = fmt.Errorf("could not negotiate a shared duplex period: %w", err)
+		}
+		return tymbalDuplexDeviceErrorForOS(runtime.GOOS, outputDevice, captureDevice, err)
 	}
-	if duplex && errors.Is(err, tymbal.ErrFormat) {
-		return fmt.Errorf("could not negotiate a shared Tymbal duplex period: %w", err)
+	return tymbalDeviceErrorForOS(runtime.GOOS, tymbal.Output, outputDevice, err)
+}
+
+func tymbalDuplexDeviceErrorForOS(goos, outputDevice, captureDevice string, err error) error {
+	if err == nil {
+		return nil
 	}
-	return err
+	backend := "WASAPI"
+	if goos == "linux" {
+		backend = "ALSA"
+	}
+	detail := oneLineAudioError(err.Error())
+	message := "could not be opened"
+	if errors.Is(err, tymbal.ErrBusy) {
+		message = "could not be opened because one endpoint is busy"
+	}
+	return fmt.Errorf("Tymbal %s playback device %q and capture device %q %s; use --audio oto: %s", backend, oneLineAudioError(outputDevice), oneLineAudioError(captureDevice), message, detail)
+}
+
+func tymbalDeviceErrorForOS(goos string, direction tymbal.Direction, device string, err error) error {
+	if err == nil {
+		return nil
+	}
+	backend := "WASAPI"
+	if goos == "linux" {
+		backend = "ALSA"
+	}
+	kind := "playback"
+	if direction == tymbal.Input {
+		kind = "capture"
+	}
+	if goos == "linux" && direction == tymbal.Output && device == "" && strings.Contains(strings.ToLower(err.Error()), "no default device") {
+		return errors.New("no ALSA playback device found; use --audio oto")
+	}
+	if device == "" {
+		device = "default " + kind + " device"
+	}
+	if errors.Is(err, tymbal.ErrBusy) {
+		return fmt.Errorf("Tymbal %s device %q is busy; use --audio oto", backend, oneLineAudioError(device))
+	}
+	return fmt.Errorf("Tymbal %s device %q could not be opened; use --audio oto: %s", backend, oneLineAudioError(device), oneLineAudioError(err.Error()))
+}
+
+func oneLineAudioError(value string) string {
+	return strings.NewReplacer("\r", " ", "\n", " ").Replace(value)
 }
 
 func tymbalCallback(render Callback, callbackErr *atomic.Pointer[audioError]) tymbal.Callback {
@@ -184,13 +233,13 @@ func (b tymbalBackend) device(id string, direction tymbal.Direction) (tymbal.Dev
 	if id == "" {
 		device, err := b.host.Default(direction)
 		if err != nil {
-			return tymbal.Device{}, err
+			return tymbal.Device{}, tymbalDeviceErrorForOS(runtime.GOOS, direction, "", err)
 		}
 		return device, nil
 	}
 	devices, err := b.host.Devices()
 	if err != nil {
-		return tymbal.Device{}, err
+		return tymbal.Device{}, tymbalDeviceErrorForOS(runtime.GOOS, direction, id, err)
 	}
 	for _, device := range devices {
 		if device.ID != id {
@@ -205,7 +254,7 @@ func (b tymbalBackend) device(id string, direction tymbal.Direction) (tymbal.Dev
 	if direction == tymbal.Input {
 		kind = "input"
 	}
-	return tymbal.Device{}, fmt.Errorf("selected %s device %q is no longer available", kind, id)
+	return tymbal.Device{}, tymbalDeviceErrorForOS(runtime.GOOS, direction, id, fmt.Errorf("selected %s device %q is no longer available", kind, id))
 }
 
 func preferredDeviceRate(device tymbal.Device) (int, error) {
@@ -233,7 +282,10 @@ func (s *tymbalStream) Start() error {
 	if !s.started.CompareAndSwap(false, true) {
 		return fmt.Errorf("Tymbal stream cannot be restarted after it stops")
 	}
-	return s.stream.Start()
+	if err := s.stream.Start(); err != nil {
+		return tymbalDeviceErrorForOS(runtime.GOOS, tymbal.Output, s.format.Device, err)
+	}
+	return nil
 }
 
 func (s *tymbalStream) Pause() {
