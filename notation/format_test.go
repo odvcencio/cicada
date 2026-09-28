@@ -84,6 +84,86 @@ func TestFormatPrintsSIUnits(t *testing.T) {
 	}
 }
 
+func TestFormatNamedMixerCatalogOrderAndComments(t *testing.T) {
+	source := []byte(`fx drive drive {}
+fx room delay {}
+track bass acid {
+  // output follows the sends in the catalog
+  out = sfx
+  // keep this with the delay send
+  send room = 0.25 pre
+  insert = drive
+  solo = on
+  mute = off
+  pan = -0.5
+  level = -9dB
+}
+bus music {
+  solo = off
+  insert = none
+  level = -3dB
+  mute = off
+}
+master { insert = none }
+export web {
+  normalize = off
+  true_peak = -1dBTP
+  loudness = -14LUFS
+  tail = 1s
+  bits = 24
+  rate = 44100Hz
+}
+pattern p acid steps=1 { 1 }
+scene main { bass=p }
+song { main }
+`)
+	doc, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(formatted)
+	ordered := []string{"level = -9dB", "pan = -0.5", "mute = off", "solo = on", "insert = drive", "send room = 0.25 pre", "out = sfx"}
+	last := -1
+	for _, setting := range ordered {
+		index := strings.Index(text, setting)
+		if index <= last {
+			t.Fatalf("mixer setting %q is out of catalog order:\n%s", setting, formatted)
+		}
+		last = index
+	}
+	for _, comment := range []string{"// output follows the sends in the catalog", "// keep this with the delay send"} {
+		if !strings.Contains(text, comment) {
+			t.Fatalf("formatter lost comment %q:\n%s", comment, formatted)
+		}
+	}
+	reparsed, diagnostics := Parse(formatted)
+	if reparsed == nil {
+		t.Fatalf("formatted mixer did not parse: %+v", diagnostics)
+	}
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("formatted mixer is invalid: %+v\n%s", diagnostics, formatted)
+		}
+	}
+	again, err := Format(mustDocument(t, formatted))
+	if err != nil || !bytes.Equal(formatted, again) {
+		t.Fatalf("mixer formatter is not idempotent: %v\n%s\n---\n%s", err, formatted, again)
+	}
+}
+
+func mustDocument(t *testing.T, source []byte) *Document {
+	t.Helper()
+	document, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return document
+}
+
 func TestFormatPatternBodySettings(t *testing.T) {
 	source := []byte("track bass acid {}\npattern p { swing=56% gate=60% 1 . 3 . }\nscene main { bass=p }\nsong { main }\n")
 	doc, err := ParseDocument(source)

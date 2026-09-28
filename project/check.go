@@ -70,7 +70,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			if param.Name == "octave" && !program.HasParameter("octave") {
 				continue
 			}
-			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
+			if isMixerSourceParam(param.Name) {
 				continue
 			}
 			overrides[param.Name] = param.Value
@@ -81,7 +81,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 				if param.Name == "octave" && !program.HasParameter("octave") {
 					return nil
 				}
-				if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
+				if isMixerSourceParam(param.Name) {
 					return nil
 				}
 				_, err := instrument.Lower(program, map[string]string{param.Name: param.Value})

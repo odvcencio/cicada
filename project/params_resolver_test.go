@@ -73,6 +73,7 @@ func TestScenePathValidationCodesAndAmbiguity(t *testing.T) {
 		{"unknown setting", parameterPathScore + "scene extra { bass.mystery=1 }\n", "bass.mystery", "CICADA-PARAM"},
 		{"bad unit", parameterPathScore + "scene extra { bass.cutoff=3dB }\n", "bass.cutoff", "CICADA-UNIT"},
 		{"unknown toggle value", parameterPathScore + "scene extra { delay.pingpong=yes }\n", "delay.pingpong", "CICADA-UNIT"},
+		{"invalid toggle spelling", parameterPathScore + "scene extra { delay.pingpong=maybe }\n", "delay.pingpong", "CICADA-UNIT"},
 		{"nonlive", "fx drive { shape = soft }\ntrack bass acid {}\npattern riff acid steps=1 { 1 }\nscene main { bass=riff drive.shape=hard }\nsong { main }\n", "drive.shape", "CICADA-UNSUPPORTED"},
 		{"ambiguous owner", "fx delay { feedback = 0.2 }\ntrack delay acid {}\npattern riff acid steps=1 { 1 }\nscene main { delay=riff delay.feedback=0.3 }\nsong { main }\n", "delay.feedback", "CICADA-REFERENCE"},
 	} {

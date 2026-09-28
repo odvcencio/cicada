@@ -7,17 +7,17 @@
      level 1 is left-associative for "+", "-"
    The DSL may also carry lexical priority, fields, and parser test cases;
    EBNF shows accepted forms but does not encode that parser metadata.
-   Semantic limits are in edition-1.md. *)
+   Edition-specific limits are in edition-1.md and edition-2.md. *)
 
 source_file ::= [ "cicada" , integer ] , { _declaration } ;
 _declaration ::= title_decl | tempo_decl | key_decl | seed_decl | instrument_decl | kit_decl |
                  track_decl | phrase_decl | acid_pattern | note_pattern | drum_pattern | scene_decl |
-                 song_decl | fx_decl ;
+                 song_decl | fx_decl | bus_decl | master_decl | export_decl ;
 title_decl ::= "title" , string ;
 tempo_decl ::= "tempo" , number ;
 key_decl ::= "key" , key_root , identifier ;
 seed_decl ::= "seed" , integer ;
-track_decl ::= "track" , identifier , identifier , "{" , { param_decl } , "}" ;
+track_decl ::= "track" , identifier , identifier , "{" , { mix_setting } , "}" ;
 instrument_decl ::= "instrument" , identifier , "{" , [ instrument_octave ] , { instrument_param } ,
                     voice_decl , "}" ;
 instrument_octave ::= "octave" , "=" , integer , [ ";" ] ;
@@ -32,7 +32,12 @@ expression ::= expression , ("+" | "-") , expression | expression , ("*" | "/") 
                call_expr | number | identifier | "(" , expression , ")" ;
 call_expr ::= identifier , "(" , [ expression , { "," , expression } ] , ")" ;
 param_decl ::= identifier , "=" , value ;
-fx_decl ::= "fx" , identifier , "{" , { param_decl } , "}" ;
+send_decl ::= "send" , identifier , "=" , number , [ "pre" ] ;
+mix_setting ::= send_decl | param_decl ;
+fx_decl ::= "fx" , identifier , [ identifier ] , "{" , { param_decl } , "}" ;
+bus_decl ::= "bus" , identifier , "{" , { mix_setting } , "}" ;
+master_decl ::= "master" , "{" , { mix_setting } , "}" ;
+export_decl ::= "export" , identifier , "{" , { param_decl } , "}" ;
 phrase_decl ::= "phrase" , identifier , [ "acid" ] , "{" , { acid_step } , "}" ;
 acid_pattern ::= "pattern" , identifier , "acid" , { pattern_attr } , "{" , { pattern_attr } ,
                  { acid_step | phrase_use } , "}" ;
@@ -65,9 +70,10 @@ scene_value ::= number | identifier | string | fraction ;
 parameter_path ::= /[a-z_][a-z0-9_-]*(\.[a-z_][a-z0-9_-]*)+/ ;
 song_decl ::= "song" , "{" , { song_entry } , "}" ;
 song_entry ::= identifier , [ "*" , integer ] ;
-value ::= number | identifier | string | fraction ;
+value ::= number | insert_chain | identifier | string | fraction ;
+insert_chain ::= identifier , { "->" , identifier } ;
 fraction ::= /[0-9]+\/[0-9]+[tT.]?/ ;
-number ::= /-?[0-9]+(\.[0-9]+)?(khz|kHz|hz|Hz|ms|s|db|dB|%)?/ ;
+number ::= /-?[0-9]+(\.[0-9]+)?(LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?/ ;
 integer ::= /[0-9]+/ ;
 key_root ::= /[a-g][#b]?/ ;
 string ::= /"([^"\\]|\\.)*"/ ;

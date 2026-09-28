@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -263,7 +264,7 @@ func (s *server) handle(message request) error {
 		if !ok {
 			return s.reply(message.ID, []any{})
 		}
-		_, manifest, err := edition.ScoreEdition(path)
+		projectEdition, manifest, err := edition.ScoreEdition(path)
 		if err != nil || manifest == "" && !s.canCreateFiles {
 			return s.reply(message.ID, []any{})
 		}
@@ -280,8 +281,22 @@ func (s *server) handle(message request) error {
 			manifestURI := fileURI(filepath.Join(filepath.Dir(path), "cicada.mod"))
 			changes = append(changes,
 				map[string]any{"kind": "create", "uri": manifestURI},
-				map[string]any{"textDocument": map[string]any{"uri": manifestURI, "version": nil}, "edits": []any{map[string]any{"range": region{}, "newText": "project " + name + "\ncicada 1\n"}}},
+				map[string]any{"textDocument": map[string]any{"uri": manifestURI, "version": nil}, "edits": []any{map[string]any{"range": region{}, "newText": "project " + name + "\ncicada 2\n"}}},
 			)
+		} else if projectEdition == 1 {
+			manifestData, readErr := os.ReadFile(manifest)
+			if readErr != nil {
+				return s.reply(message.ID, []any{})
+			}
+			upgraded, changed, upgradeErr := edition.UpgradeManifestEdition(manifestData)
+			if upgradeErr != nil || !changed {
+				return s.reply(message.ID, []any{})
+			}
+			manifestURI := fileURI(manifest)
+			changes = append(changes, map[string]any{
+				"textDocument": map[string]any{"uri": manifestURI, "version": nil},
+				"edits":        []any{map[string]any{"range": region{Start: position{}, End: utf16Position(manifestData, len(manifestData))}, "newText": string(upgraded)}},
+			})
 		}
 		changes = append(changes, map[string]any{
 			"textDocument": map[string]any{"uri": uri, "version": s.versions[uri]},
@@ -369,7 +384,7 @@ func documentPosition(raw json.RawMessage) (string, position, error) {
 
 func (s *server) publish(uri string) error {
 	source := s.documents[uri]
-	score, diagnostics := notation.Parse(source)
+	score, diagnostics := parseDocumentScore(uri, source)
 	if score != nil && !hasErrors(diagnostics) {
 		_, extra := project.FromScore(score)
 		seen := map[string]bool{}
@@ -393,6 +408,23 @@ func (s *server) publish(uri string) error {
 		items = append(items, map[string]any{"range": region{Start: start, End: position{Line: start.Line, Character: start.Character + 1}}, "severity": severity, "code": d.Code, "source": "cicada", "message": d.Message})
 	}
 	return s.send(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": map[string]any{"uri": uri, "diagnostics": items}})
+}
+
+func parseDocumentScore(uri string, source []byte) (*notation.Score, []notation.Diagnostic) {
+	path, ok := scorePathFromURI(uri)
+	if !ok {
+		return notation.Parse(source)
+	}
+	projectEdition, manifest, err := edition.ScoreEdition(path)
+	if err != nil {
+		return nil, []notation.Diagnostic{{
+			Code: "CICADA-VERSION", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1},
+		}}
+	}
+	if manifest == "" {
+		return notation.Parse(source)
+	}
+	return notation.ParseEdition(source, projectEdition)
 }
 
 func hasErrors(ds []notation.Diagnostic) bool {
@@ -465,6 +497,12 @@ func hover(source []byte, at position) any {
 			return map[string]any{"contents": map[string]any{"kind": "markdown", "value": message}, "range": region{Start: utf16Position(source, match.start), End: utf16Position(source, match.end)}}
 		}
 	}
+	if symbol, _, ok := symbolAt(source, at); ok && (symbol.Kind == "effect" || symbol.Kind == "bus") {
+		message := mixerSymbolHover(source, symbol)
+		if message != "" {
+			return map[string]any{"contents": map[string]any{"kind": "markdown", "value": message}, "range": symbolRegion(source, symbol)}
+		}
+	}
 	spans, err := language.Highlight(source)
 	if err != nil {
 		return nil
@@ -486,6 +524,31 @@ func hover(source []byte, at position) any {
 		return nil
 	}
 	return map[string]any{"contents": map[string]any{"kind": "markdown", "value": message}, "range": region{Start: utf16Position(source, selected.Start), End: utf16Position(source, selected.End)}}
+}
+
+func mixerSymbolHover(source []byte, symbol language.Symbol) string {
+	score, _ := notation.Parse(source)
+	if score == nil {
+		return ""
+	}
+	if symbol.Kind == "effect" {
+		for _, effect := range score.Effects {
+			if effect.Name == symbol.Name {
+				return fmt.Sprintf("Effect **%s** uses kind `%s`.", effect.Name, effect.Kind)
+			}
+		}
+	}
+	if symbol.Kind == "bus" {
+		if symbol.Name == "music" || symbol.Name == "sfx" {
+			return fmt.Sprintf("Built-in output bus **%s**.", symbol.Name)
+		}
+		for _, bus := range score.Buses {
+			if bus.Name == symbol.Name {
+				return fmt.Sprintf("Bus **%s** is declared here.", bus.Name)
+			}
+		}
+	}
+	return ""
 }
 
 func hoverText(capture, value string, source []byte, offset int) string {

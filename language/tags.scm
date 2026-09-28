@@ -11,6 +11,8 @@
 (let_stmt name: (identifier) @name) @definition.binding
 (track_decl name: (identifier) @name) @definition.track
 (fx_decl name: (identifier) @name) @definition.effect
+(bus_decl name: (identifier) @name) @definition.bus
+(export_decl name: (identifier) @name) @definition.export
 (phrase_decl name: (identifier) @name) @definition.phrase
 (acid_pattern name: (identifier) @name) @definition.pattern
 (note_pattern name: (identifier) @name) @definition.pattern
@@ -25,5 +27,10 @@
   (#not-any-of? @name "off" "keep"))
 (phrase_use name: (identifier) @name) @reference.phrase
 (song_entry scene: (identifier) @name) @reference.scene
+((send_decl to: (identifier) @name) @reference.mixer)
+(insert_chain first: (identifier) @name) @reference.mixer
+(insert_chain next: (identifier) @name) @reference.mixer
+((param_decl name: (identifier) @field value: (value (identifier) @name)) @reference.mixer
+  (#any-of? @field "insert" "out" "bus"))
 ((expression (identifier) @name) @reference.binding
   (#not-any-of? @name "pitch" "gate" "velocity" "sample_rate"))

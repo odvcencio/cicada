@@ -34,6 +34,10 @@ type Score struct {
 	Song          []SongEntry
 	SongPosition  Position
 	Effects       []Effect
+	Buses         []Bus
+	Master        []Param
+	HasMaster     bool
+	Exports       []Export
 }
 
 type Track struct {
@@ -95,6 +99,8 @@ type Expr struct {
 type Param struct {
 	Name          string
 	Value         string
+	Target        string
+	Pre           bool
 	Position      Position
 	ValuePosition Position
 }
@@ -168,6 +174,23 @@ type SongEntry struct {
 }
 
 type Effect struct {
+	Name     string
+	Kind     string
+	Legacy   bool
+	Params   []Param
+	Position Position
+}
+
+// Bus is a named mixer destination. P2a currently lowers only the built-in
+// music and sfx buses; other declarations parse for precise diagnostics.
+type Bus struct {
+	Name     string
+	Params   []Param
+	Position Position
+}
+
+// Export stores one named render delivery target.
+type Export struct {
 	Name     string
 	Params   []Param
 	Position Position

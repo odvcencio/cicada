@@ -37,7 +37,8 @@ func Cicada() *grammargen.Grammar {
 		sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
 		sym("instrument_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
-		sym("scene_decl"), sym("song_decl"), sym("fx_decl"),
+		sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
+		sym("master_decl"), sym("export_decl"),
 	))
 
 	// Header: `title "Night circuit"`, `tempo 138`, `key a minor`, `seed 4242`.
@@ -50,7 +51,7 @@ func Cicada() *grammargen.Grammar {
 	// or drums voice, or to a declared instrument.
 	g.Define("track_decl", seq(
 		str("track"), field("name", sym("identifier")), field("kind", sym("identifier")),
-		str("{"), repeat(sym("param_decl")), str("}"),
+		str("{"), repeat(sym("mix_setting")), str("}"),
 	))
 
 	// An instrument declares typed parameters and one voice. The voice binds
@@ -92,9 +93,16 @@ func Cicada() *grammargen.Grammar {
 	))
 	g.Define("call_expr", seq(field("function", sym("identifier")), str("("), commaSep(sym("expression")), str(")")))
 
-	// Parameters of tracks and effects. Effects parse but do not render yet.
+	// Parameters of tracks and effects. Mixer routing has its own typed source
+	// forms; unsupported routes still parse so validation can name the exact
+	// construct instead of reporting a syntax error.
 	g.Define("param_decl", seq(field("name", sym("identifier")), str("="), field("value", sym("value"))))
-	g.Define("fx_decl", seq(str("fx"), field("name", sym("identifier")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("send_decl", seq(str("send"), field("to", sym("identifier")), str("="), field("level", sym("number")), optional(field("tap", str("pre")))))
+	g.Define("mix_setting", choice(sym("send_decl"), sym("param_decl")))
+	g.Define("fx_decl", seq(str("fx"), field("name", sym("identifier")), optional(field("kind", sym("identifier"))), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("bus_decl", seq(str("bus"), field("name", sym("identifier")), str("{"), repeat(sym("mix_setting")), str("}")))
+	g.Define("master_decl", seq(str("master"), str("{"), repeat(sym("mix_setting")), str("}")))
+	g.Define("export_decl", seq(str("export"), field("name", sym("identifier")), str("{"), repeat(sym("param_decl")), str("}")))
 
 	// A phrase is a named run of steps that `use` splices into a pattern
 	// before scheduling, optionally repeated and transposed.
@@ -166,9 +174,10 @@ func Cicada() *grammargen.Grammar {
 	// Literals. A number carries its unit; a fraction is a note division such
 	// as 1/8, 1/8T (triplet), or 1/8. (dotted), lexed as one token so the
 	// longest match beats a plain number.
-	g.Define("value", choice(sym("number"), sym("identifier"), sym("string"), sym("fraction")))
+	g.Define("value", choice(sym("number"), sym("insert_chain"), sym("identifier"), sym("string"), sym("fraction")))
+	g.Define("insert_chain", seq(field("first", sym("identifier")), repeat(seq(str("->"), field("next", sym("identifier"))))))
 	g.Define("fraction", token(pat(`[0-9]+\/[0-9]+[tT.]?`)))
-	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(khz|kHz|hz|Hz|ms|s|db|dB|%)?`)))
+	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?`)))
 	g.Define("integer", token(pat(`[0-9]+`)))
 	g.Define("key_root", token(pat(`[a-g][#b]?`)))
 	g.Define("string", token(pat(`"([^"\\]|\\.)*"`)))
@@ -182,6 +191,8 @@ func Cicada() *grammargen.Grammar {
 		"(source_file (integer) (drum_pattern (identifier) (drum_lane (drum_lane_label) (drum_hit (accent_hit)) (drum_hit (hit)) (drum_hit) (drum_hit) (drum_hit (velocity_hit)) (drum_hit (velocity_hit) (ratchet (integer)) (probability (integer))))))")
 	g.Test("note divisions", "cicada 1 fx echo { time = 1/8. swing = 1/16t div = 3/4 }",
 		"(source_file (integer) (fx_decl (identifier) (param_decl (identifier) (value (fraction))) (param_decl (identifier) (value (fraction))) (param_decl (identifier) (value (fraction)))))")
+	g.Test("named mixer pieces", "fx hall reverb {} bus music { insert = comp } track bass acid { send hall = -9dB pre insert = grit -> drive out = sfx mute = on solo = off } master { insert = none } export release { loudness = -14LUFS true_peak = -1dBTP normalize = off }",
+		"")
 	g.Test("uppercase triplet", "cicada 1 fx delay { time = 1/16T }", "")
 	g.Test("steps", "cicada 1 pattern p notes { 1^.5,~*2%70 - | c#3' use hook*2 transpose = -12 }",
 		"(source_file (integer) (note_pattern (identifier) (acid_step (acid_note (pitch (degree)) (modifier))) (acid_step) (acid_step (acid_note (pitch (degree)) (octave_shift) (modifier) (modifier (ratchet (integer))) (modifier (probability (integer))))) (acid_step) (acid_step) (acid_step (acid_note (pitch (letter_pitch)) (octave_shift))) (phrase_use (identifier) (integer) (number))))")

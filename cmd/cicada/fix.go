@@ -8,12 +8,11 @@ import (
 
 	ed "m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/migration"
+	"m31labs.dev/cicada/notation"
 )
 
-// fixCommand performs the first edition-1 migrations without reprinting the
-// score: it moves a legacy header to a manifest, makes instrument registers
-// explicit, and updates chance and statement separators. Comments, phrase
-// spelling, and layout stay in place.
+// fixCommand migrates an edition-1 score to edition 2 without reprinting it.
+// It preserves comments, phrase spelling, and unrelated layout.
 func fixCommand(args []string) error {
 	return fixCommandWithWriter(args, writeFixedScore)
 }
@@ -44,20 +43,51 @@ func fixCommandWithWriter(args []string, writeScore func(string, []byte, os.File
 	if err != nil {
 		return err
 	}
+	if edition == 2 {
+		fmt.Println("already fixed:", path)
+		return nil
+	}
+	if manifest == "" {
+		score, _ := notation.Parse(source)
+		if score != nil && score.Version == 2 {
+			fmt.Println("already fixed:", path)
+			return nil
+		}
+	}
 	if edition != 1 {
-		return fmt.Errorf("CICADA-VERSION: only cicada 1 is supported")
+		return fmt.Errorf("CICADA-VERSION: only cicada 1 can be migrated")
 	}
 	fixed, changed, err := fixSource(source)
 	if err != nil {
 		return fmt.Errorf("%s: %w", path, err)
 	}
 	newManifest := manifest == ""
-	if !changed && !newManifest {
+	manifestUpgrade := false
+	var manifestSource []byte
+	manifestMode := os.FileMode(0644)
+	if !newManifest {
+		manifestSource, err = os.ReadFile(manifest)
+		if err != nil {
+			return err
+		}
+		manifestSource, manifestUpgrade, err = ed.UpgradeManifestEdition(manifestSource)
+		if err != nil {
+			return fmt.Errorf("%s: %w", manifest, err)
+		}
+		if manifestUpgrade {
+			info, err := os.Stat(manifest)
+			if err != nil {
+				return err
+			}
+			manifestMode = info.Mode().Perm()
+		}
+	}
+	if !changed && !newManifest && !manifestUpgrade {
 		fmt.Println("already fixed:", path)
 		return nil
 	}
 	if check {
-		return fmt.Errorf("fix needed: %s (score changed: %t, manifest needed: %t)", path, changed, newManifest)
+		return fmt.Errorf("fix needed: %s (score changed: %t, manifest needed: %t, manifest edition upgrade needed: %t)", path, changed, newManifest, manifestUpgrade)
 	}
 	var mode os.FileMode
 	if changed {
@@ -80,13 +110,21 @@ func fixCommandWithWriter(args []string, writeScore func(string, []byte, os.File
 			return fmt.Errorf("cannot derive project name from %q", path)
 		}
 		manifest = filepath.Join(filepath.Dir(path), "cicada.mod")
-		if err := os.WriteFile(manifest, []byte("project "+name+"\ncicada 1\n"), 0644); err != nil {
+		if err := os.WriteFile(manifest, []byte("project "+name+"\ncicada 2\n"), 0644); err != nil {
 			return err
 		}
 		createdManifest = true
 	}
 	if changed {
 		if err := writeScore(path, fixed, mode); err != nil {
+			return err
+		}
+	}
+	if manifestUpgrade {
+		if err := writeFixedScore(manifest, manifestSource, manifestMode); err != nil {
+			if changed {
+				_ = writeFixedScore(path, source, mode)
+			}
 			return err
 		}
 	}

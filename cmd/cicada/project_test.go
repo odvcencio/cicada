@@ -210,6 +210,16 @@ func TestProjectCLI(t *testing.T) {
 	run(0, "verify-wav", rangedPath, "--from", "1", "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0")
 	run(1, "render", first, "-o", wavPath, "--from", "16", "--bars", "1")
 	run(2, "render", first, "-o", wavPath, "--bits", "8")
+	exportSource := filepath.Join(t.TempDir(), "export.cicada")
+	if err := os.WriteFile(exportSource, []byte("track bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\nexport web { rate = 44100Hz bits = 16 tail = 0s }\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	exportWAV := filepath.Join(t.TempDir(), "web.wav")
+	run(0, "render", exportSource, "--export", "web", "-o", exportWAV, "--bars", "1")
+	run(0, "verify-wav", exportWAV, "--rate", "44100", "--bits", "16", "--bars", "1", "--tail", "0s", "--peak-max-db", "0", "--dc-max-db", "0")
+	if output := run(1, "render", exportSource, "--export", "missed", "-o", filepath.Join(t.TempDir(), "missing.wav"), "--bars", "1"); !strings.Contains(output, "unknown export missed") {
+		t.Fatalf("missing export profile was accepted: %q", output)
+	}
 }
 
 func TestFailedRenderPreservesOutput(t *testing.T) {

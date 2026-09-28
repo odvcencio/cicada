@@ -1,6 +1,6 @@
 # Cicada source edition 1
 
-This reference describes the notation accepted by the current validator. The complete grammar is in the [EBNF appendix](appendix.ebnf). Numeric limits and defaults below describe edition 1 on main.
+This reference describes source edition 1. The complete grammar is in the [EBNF appendix](appendix.ebnf); edition-specific spelling rules are applied by validation. Numeric limits and defaults below describe edition 1. Edition 2 preserves these meanings and removes the legacy mixer aliases listed in the [edition 2 reference](edition-2.md).
 
 ## Notation conventions
 
@@ -12,7 +12,7 @@ This reference describes the notation accepted by the current validator. The com
 
 **Types and units:** Identifiers are ASCII and case-sensitive. They begin with a lowercase letter or underscore, then contain lowercase letters, digits, underscores, or hyphens. An identifier is at most 64 bytes.
 
-**Defaults:** A score without a header is edition 1. The parser accepts spaces, tabs, CR, and LF between tokens.
+**Defaults:** A loose score without a header is edition 1. A project's `cicada.mod` selects its source edition, and an explicit source header must match it. The parser accepts spaces, tabs, CR, and LF between tokens.
 
 **Errors:** Invalid tokens or declaration forms report `CICADA-SYNTAX`. Duplicate declarations report `CICADA-DUPLICATE`; overlong names report `CICADA-LIMIT`.
 
@@ -362,25 +362,24 @@ song { main*4 }
 
 **Syntax (EBNF):** A `parameter_path` has the form `owner.setting` and is accepted as a scene target; see `parameter_path`, `scene_target`, and `scene_assignment` in the [EBNF appendix](appendix.ebnf). Its first part names the owner. The remaining part names a registered setting and may contain another dot, as in `bass.send.delay`.
 
-**Meaning:** A path addresses a registered setting on a declared track or effect. Track and effect names share the owner namespace, so an owner must resolve to exactly one of them. Effect paths use the declared effect name, such as `delay.feedback`. Track paths use the track name, such as `bass.cutoff` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the existing delay and reverb sends, which the track block spells `send_a` and `send_b`. Drum lane controls keep their flat suffixes, such as `bd_tune`.
+**Meaning:** A path addresses a registered setting on a declared track, effect, or bus. Those names share one namespace. Effect paths use the declared effect name, such as `room.feedback`. Track paths use the track name, such as `bass.cutoff` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the delay and reverb sends. Drum lane controls keep their flat suffixes, such as `bd_tune`.
 
-**Types and units:** The parameter registry sets each path's type, unit, range, default, and whether it can change live. Numeric scene values use the registered unit and range; toggles and enumerations use their registered words. Track voice parameters are listed in the [built-in track parameter catalog](built-in-track-parameters.md); effect values are listed under [Effects](#effects). Scene settings can target only live parameters.
+**Types and units:** The parameter registry sets each path's type, unit, range, default, and whether it can change live. Numeric scene values use the registered unit and range; toggles and enumerations use their registered words. Track voice parameters are listed in the [built-in track parameter catalog](built-in-track-parameters.md); effect values are listed under [Named effects](#named-effects). Scene settings can target only live parameters.
 
 **Defaults:** Each path starts with its registry default. A track or effect block value overrides that default. A scene setting overrides the block value when that scene lands, and remains active until another scene sets the same path. For example, `bass.cutoff` defaults to 600 Hz, while the acid track block may set it to 700 Hz.
 
-**Errors:** An unknown owner reports `CICADA-REFERENCE`; if a track and effect have the same name, the ambiguous owner also reports `CICADA-REFERENCE` with a rename hint. An unknown setting reports `CICADA-PARAM`. A duplicate path in one scene reports `CICADA-DUPLICATE`. A wrong unit, value type, or range reports `CICADA-UNIT`. A registered but non-live setting, or any path owned by reserved `master`, reports `CICADA-UNSUPPORTED`.
+**Errors:** An unknown owner reports `CICADA-REFERENCE`; duplicate track, effect, or bus names report `CICADA-DUPLICATE`. An unknown setting reports `CICADA-PARAM`. A duplicate path in one scene reports `CICADA-DUPLICATE`. A wrong unit, value type, or range reports `CICADA-UNIT`. A registered but non-live setting reports `CICADA-UNSUPPORTED`.
 
-**Example:** Set the existing sends through their paths:
+**Example:** Set a track send and an effect through their paths:
 
 ```cicada
-fx delay {}
-fx reverb {}
-track bass acid { send_a = 0.2 send_b = 0.1 }
+fx room delay {}
+track bass acid { send room = 0.2 }
 pattern pulse acid { 1 . 1 . }
 scene main {
   bass = pulse
   bass.send.delay = 0.45
-  bass.send.reverb = 0.3
+  room.feedback = 0.3
 }
 song { main*4 }
 ```
@@ -396,7 +395,7 @@ song { main }
 
 Use `cicada explain score.cicada bass.cutoff @3.2.4` to inspect the registry default, block value, active scene value, and computed value at a song location.
 
-**Edition history:** Parameter paths and live scene settings are additive edition-1 features. They use `cicada.project/2` when a semantic project contains scene settings. The `master` owner remains reserved; see [accepted syntax](accepted.md#named-mixer-pieces).
+**Edition history:** Parameter paths and live scene settings are edition-1 features. Named mixer paths and scene settings use `cicada.project/2`.
 
 ## Scene parameter settings
 
@@ -436,13 +435,12 @@ scene chorus {
 song { verse*4 chorus*4 }
 ```
 
-This invalid scene uses an owner shared by a track and an effect:
+This invalid scene names a setting that is not in the registry:
 
-```cicada-invalid CICADA-REFERENCE
-fx delay { feedback = 0.2 }
-track delay acid {}
+```cicada-invalid CICADA-PARAM
+track bass acid {}
 pattern riff acid { 1 }
-scene main { delay = riff delay.feedback = 0.3 }
+scene main { bass = riff bass.not_a_setting = 0.3 }
 song { main }
 ```
 
@@ -551,38 +549,152 @@ cicada gen --seed 4242 --key a --scale minor --trace -o generated.cicada
 
 **Edition history:** The generator emits edition-1 source and runs before the audio callback. Its output is parsed and compiled by the same project pipeline as authored scores.
 
-## Effects
+## Named effects
+
+**Status:** Implemented for `drive`, `delay`, `reverb`, and `comp` on the engine routes listed below.
+
+Unknown effect kinds, repeated delay or reverb instances, compressor track inserts, and insert chains longer than one are rejected with `CICADA-UNSUPPORTED`.
+
+**Syntax (EBNF):** `fx <name> <kind> { settings }` declares an effect instance. The edition-1 shorthand `fx <kind> { settings }` keeps the kind as its name. Effect names share the namespace with tracks and buses.
+
+**Meaning:** A track insert can use one drive instance. Any number of drive instances may be declared, but delay and reverb each support one instance. A named send to a delay or reverb creates that effect return and feeds the music bus. A compressor runs only when inserted on the music bus; its `sidechain` setting keeps its existing behavior. The built-in master limiter always stays last.
+
+**Types and units:** Effect parameters keep their registered types, ranges, and defaults. Send routing is described under [Track mixer settings](#track-mixer-settings).
+
+**Defaults:** Unspecified effect settings use the existing parameter registry defaults. A one-name declaration uses that same name as its effect ID and kind.
+
+**Errors:** More than one delay or reverb, a compressor outside the music bus, a compressor track insert, or an insert chain with more than one item reports `CICADA-UNSUPPORTED` naming the construct. Unknown names report `CICADA-REFERENCE`; an unknown effect kind reports `CICADA-UNSUPPORTED`.
+
+**Example:** Named effects route through the current delay, reverb, drive, and music compressor processors:
+
+```cicada
+fx grit drive { shape = hard }
+fx room delay { time = 1/8 feedback = 0.35 }
+fx space reverb { size = 1 }
+fx glue comp { threshold = -18dB }
+bus music { insert = glue }
+track bass acid { insert = grit send room = 0.2 pre send space = -12dB }
+pattern pulse acid { 1 . 1 . }
+scene main { bass = pulse }
+song { main*4 }
+```
+
+**Edition history:** Named effect IDs, named sends, and compressor placement are available in edition 1. Edition 2 requires an explicit effect kind. `cicada fix` converts shorthand declarations and adds the music bus insert for a legacy `fx comp`.
+
+## Buses and master
+
+**Status:** Implemented for the built-in `music` and `sfx` buses and the master level, mute, and solo controls. Unsupported routes report `CICADA-UNSUPPORTED`.
+
+**Syntax (EBNF):** `bus music { settings }` and `bus sfx { settings }` set a built-in bus. Both buses exist without declarations. `master { settings }` configures the final master path.
+
+**Meaning:** The music bus keeps its fixed -3 dB trim. The SFX bus joins after music compression. `bus music { insert = comp }` selects the existing music compressor. `insert = none` leaves that bus without a compressor; on the master it leaves the safety limiter in place. Bus mute and solo are applied at load. Master mute gates the complete output; its level is applied before the final limiter.
+
+**Types and units:** Bus and master `level` values use dB, `mute` and `solo` use switches, and master pan is parsed but not implemented. `solo = on` emits `CICADA-SOLO` during render and check.
+
+**Defaults:** Music is trimmed by -3 dB, SFX is at unity, and both built-in buses are unmuted and unsoloed. The master limiter stays last with its existing ceiling and lookahead.
+
+**Errors:** A user-declared bus, bus send, non-fixed bus level, bus pan, master send, master output, master pan, or a non-empty master insert reports `CICADA-UNSUPPORTED`. A master `insert = none` is valid.
+
+**Example:** The built-in buses and master can be named when their defaults need to be stated:
+
+```cicada
+bus music { level = -3dB mute = off solo = off insert = none }
+bus sfx { mute = off solo = off }
+master { level = -1dB mute = off solo = off insert = none }
+track bass acid { out = sfx }
+pattern pulse acid { 1 . }
+scene main { bass = pulse }
+song { main }
+```
+
+```cicada-invalid CICADA-UNSUPPORTED
+bus ambience {}
+track bass acid {}
+pattern pulse acid { 1 }
+scene main { bass = pulse }
+song { main }
+```
+
+**Edition history:** Built-in bus controls and the master block use `cicada.project/2`. Edition 2 rejects the legacy track `bus` setting; `cicada fix` rewrites `bus = sfx` to `out = sfx` and removes the default `bus = music` setting.
+
+## Track mixer settings
+
+**Status:** Implemented for tracks on the built-in buses.
+
+Insert chains longer than one, sends to buses, and sends to unsupported effect kinds report `CICADA-UNSUPPORTED`.
+
+**Syntax (EBNF):** Track blocks accept `level`, `pan`, `mute`, `solo`, `insert`, `send <effect> = <level> [pre]`, and `out`. Inserts use `a -> b` notation; P2a runs at most one insert.
+
+**Meaning:** `level = off` is a synonym for `mute = on` and keeps the stored level. `solo = on` uses the engine solo state and emits `CICADA-SOLO` during render and check. `send` names a declared delay or reverb effect. `pre` selects a pre-fader tap for that send alone; without it, the send is post-fader. `out = sfx` selects the SFX bus; the default is music.
+
+**Types and units:** Level is -60 to +6 dB or `off`. Pan is -1 to 1. Unitless send levels are linear gain from 0 to 1; dB send levels range from -60 to 0 dB. Switches accept `on` and `off`; `true` and `false` remain accepted.
+
+**Defaults:** Track level is -6 dB, pan is centered, mute and solo are off, there is no insert, sends are zero, sends are post-fader, and output is music.
+
+**Errors:** Sends to buses, sends to unsupported effect kinds, more than one insert, and compressor track inserts report `CICADA-UNSUPPORTED`. Unknown send targets report `CICADA-REFERENCE`. Invalid ranges report `CICADA-PARAM`.
+
+**Example:** The sends have separate taps and can use either linear gain or dB:
+
+```cicada
+fx room delay {}
+fx space reverb {}
+track bass acid {
+  level = -6dB
+  pan = -0.2
+  mute = off
+  solo = off
+  send room = 0.3 pre
+  send space = -12dB
+  out = music
+}
+pattern pulse acid { 1 . 1 . }
+scene main { bass = pulse }
+song { main }
+```
+
+```cicada-invalid CICADA-UNSUPPORTED
+fx grit drive {}
+fx second drive {}
+track bass acid { insert = grit -> second }
+pattern pulse acid { 1 }
+scene main { bass = pulse }
+song { main }
+```
+
+**Edition history:** Mixer source settings are available in editions 1 and 2 and write semantic project `/2`. Edition 2 rejects legacy `send_a`, `send_b`, `send_pre`, `bus`, and track-block `level = off`; `cicada fix` rewrites them to named sends, per-send taps, `out`, and `mute`.
+
+## Export profiles
 
 **Status:** Implemented.
 
-**Syntax (EBNF):** `fx_decl` contains named parameter assignments. The supported effect names are `drive`, `delay`, `reverb`, and `comp`.
+True peak without loudness targeting and loudness targeting with normalization are accepted, engine support pending.
 
-**Meaning:** `drive` is a track insert; `delay` and `reverb` are fixed send returns; `comp` processes the music bus after returns and before the master limiter.
+**Syntax (EBNF):** `export <name> { rate bits tail loudness true_peak normalize }` declares a named render target. All settings are optional.
 
-**Types and units:** Drive uses shape (`soft`, `hard`, `fold`, `diode`), gain (0–36 dB), tone (1–20 kHz), and mix (0–1). Delay uses free time (1–2000 ms) or one of `1/32`, `1/16`, `1/16T`, `1/16.`, `1/8`, `1/8T`, `1/8.`, `3/16`, `1/4`, `1/4.`, `1/2`; feedback (0–0.95), damp (1–16 kHz), width and mix (0–1), and a boolean ping-pong setting. A synced division must fit the four-second delay buffer at the score tempo. Reverb uses size (0.5–1.5), decay (0.3–12 s), damp (2–16 kHz), highpass (40–400 Hz), predelay (0–200 ms), and mix (0–1). Compressor uses peak/RMS detection, threshold (−40–0 dB), ratio (1–20), knee (0–12 dB), attack (0.1–100 ms), release (10–1000 ms), auto or −24–24 dB makeup, optional sidechain track, and mix (0–1).
+**Meaning:** `cicada render score.cicada --export <name> -o out.wav` applies the profile. Explicit CLI flags override profile fields. A missed loudness target fails through the existing loudness-targeting path.
 
-**Defaults:** Drive: soft, 0 dB, 12 kHz, fully wet. Delay: 1/8, feedback 0.35, damp 6 kHz, ping-pong off, width 1, fully wet. Reverb: size 1, decay 2.4 s, damp 8 kHz, highpass 120 Hz, no predelay, fully wet. Compressor: peak, −18 dB, 4:1, 6 dB knee, 10 ms attack, 100 ms release, auto makeup, fully wet.
+**Types and units:** Supported render rates are 44100Hz, 48000Hz, and 96000Hz; bits are 16, 24, or 32. Tail uses seconds or milliseconds and is limited to 0-10 seconds. Loudness accepts `LUFS` or `LU`; true peak uses `dBTP`. True peak requires loudness targeting. Loudness targeting cannot be combined with normalization.
 
-**Errors:** Unknown effects report `CICADA-UNSUPPORTED`. Unknown parameter names, wrong units, out-of-range values, or unsupported tempo divisions report `CICADA-PARAM` or `CICADA-UNIT`.
+**Defaults:** Unspecified fields keep the render CLI defaults. The existing CLI loudness and true-peak flags remain available.
 
-**Example:** The [FX bus example](../../examples/fx-bus.cicada) declares drive, delay, and reverb and routes tracks through the current fixed sends.
+**Errors:** A missing profile reports `CICADA-REFERENCE`. A profile that requests an unsupported target combination reports `CICADA-UNSUPPORTED`; invalid units or ranges report `CICADA-PARAM`.
 
-**Edition history:** These four built-in effects are available in edition 1. Arbitrary effect graphs and per-track compressor inserts are not implemented.
+**Example:**
 
-## Current mixer
+```cicada
+export streaming { rate = 48000Hz bits = 24 tail = 2s loudness = -14LUFS true_peak = -1dBTP normalize = off }
+track bass acid {}
+pattern pulse acid { 1 . }
+scene main { bass = pulse }
+song { main }
+```
 
-**Status:** Implemented.
+```cicada-invalid CICADA-UNSUPPORTED
+export peak_only { true_peak = -1dBTP }
+track bass acid {}
+pattern pulse acid { 1 }
+scene main { bass = pulse }
+song { main }
+```
 
-**Syntax (EBNF):** Mixer values use `param_decl` inside a `track_decl`; the current source keys are `level`, `pan`, `insert`, `send_a`, `send_b`, `send_pre`, and `bus`.
-
-**Meaning:** Track level and pan control the dry path. `insert` selects `none` or the declared `drive` effect. `send_a` routes to delay and `send_b` to reverb. `send_pre = true` taps both sends before level and pan. `bus` selects the music or SFX bus. The SFX bus joins after music compression; its tracks can feed the compressor sidechain.
-
-**Types and units:** Level is dB or `off`; pan is unitless; send amounts are unit values; `send_pre` is boolean; bus is `music` or `sfx`.
-
-**Defaults:** Level −6 dB, pan 0, no insert, both sends 0, post-fader sends, output bus `music`. The master path has a linked stereo limiter with a −0.3 dBFS ceiling and 1.5 ms lookahead.
-
-**Errors:** Level must be −60 to +6 dB; pan −1 to +1; sends 0–1. `send_pre` requires a nonzero send. `mute` and `solo` source fields are reserved and report an error in this edition.
-
-**Example:** `track bass acid { level = -3dB pan = -0.2 insert = drive send_a = 0.3 bus = music }`.
-
-**Edition history:** Edition 1 has two fixed send returns, one drive insert, music/SFX buses, and a master limiter. Named mixer pieces and a master insert chain are accepted but not yet available; see [accepted syntax](accepted.md#named-mixer-pieces).
+**Edition history:** Export profiles are edition-1 declarations stored in `cicada.project/2`.

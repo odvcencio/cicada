@@ -171,6 +171,34 @@ func TestSoloSilencesTrackAndSendButKeepsReturnTail(t *testing.T) {
 	}
 }
 
+func TestNamedSendTapFlagsStayIndependent(t *testing.T) {
+	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 1}
+	cfg.Track[0].Kind = VoiceOff
+	cfg.Track[0].SendA, cfg.Track[0].SendB = 0.25, 0.5
+	cfg.Track[0].SendAPre = true
+	delay, reverb := fx.DefaultDelayParams(), fx.DefaultReverbParams()
+	cfg.DelayA, cfg.ReverbB = &delay, &reverb
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.voices[0].sendAPre || e.voices[0].sendBPre {
+		t.Fatalf("per-send taps collapsed to one flag: delay=%t reverb=%t", e.voices[0].sendAPre, e.voices[0].sendBPre)
+	}
+}
+
+func TestMasterSoloStateIsLoaded(t *testing.T) {
+	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, MasterSolo: true}
+	cfg.Track[0].Kind = VoiceOff
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.masterSolo {
+		t.Fatal("master solo state was dropped during engine load")
+	}
+}
+
 func TestTrackMeterMatchesEqualPowerSineFormula(t *testing.T) {
 	e := liveMeterEngine(t, 1)
 	e.voices[0].gainDB, e.voices[0].pan = -6, 0

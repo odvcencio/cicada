@@ -1,0 +1,14 @@
+cicada 1
+fx room delay { feedback = 0.2 }
+fx hall reverb { size = 0.8 }
+fx comp { threshold = -20dB }
+track bass acid {
+  send_a = 0.25
+  send_b = 0.125
+  send_pre = true
+  bus = sfx
+  level = off
+}
+pattern pulse acid steps=1 { 1 }
+scene main { bass = pulse }
+song { main }

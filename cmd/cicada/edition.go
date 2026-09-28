@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"m31labs.dev/cicada/edition"
+	"m31labs.dev/cicada/notation"
 )
 
 func scoreEdition(scorePath string) (int, string, error) {
@@ -19,6 +20,19 @@ func parseManifest(data []byte) (int, error) {
 func checkScoreEdition(path string) error {
 	_, _, err := scoreEdition(path)
 	return err
+}
+
+func parseScoreForPath(path string, source []byte) (*notation.Score, []notation.Diagnostic, error) {
+	projectEdition, manifest, err := scoreEdition(path)
+	if err != nil {
+		return nil, nil, err
+	}
+	if manifest == "" {
+		score, diagnostics := notation.Parse(source)
+		return score, diagnostics, nil
+	}
+	score, diagnostics := notation.ParseEdition(source, projectEdition)
+	return score, diagnostics, nil
 }
 
 func newCommand(args []string) error {
@@ -48,7 +62,7 @@ func newProject(name string, writeFile func(string, []byte, os.FileMode) error) 
 			_ = os.Remove(name)
 		}
 	}()
-	manifest := []byte("project " + name + "\ncicada 1\n")
+	manifest := []byte("project " + name + "\ncicada 2\n")
 	main := []byte("title \"" + name + "\"\ntempo 130\nkey a minor\n\ntrack bass acid {}\n\npattern pulse acid steps = 16 {\n  1 . . . 5 . . . 1 . . . 7 . . .\n}\n\nscene main { bass = pulse }\nsong { main*8 }\n")
 	if err := writeFile(filepath.Join(name, "cicada.mod"), manifest, 0644); err != nil {
 		return err

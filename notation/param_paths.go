@@ -53,14 +53,20 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 		}
 	}
 	effectOK := false
+	effectKind := ""
 	for _, effect := range score.Effects {
 		if effect.Name == owner {
 			effectOK = true
+			effectKind = effect.Kind
 			break
 		}
 	}
-	if owner == "master" {
-		return paramdefs.Descriptor{}, "master", owner, "CICADA-UNSUPPORTED", "scene setting " + path + " is reserved for the master mixer"
+	busOK := owner == "music" || owner == "sfx"
+	for _, bus := range score.Buses {
+		busOK = busOK || bus.Name == owner
+	}
+	if owner == "master" && !score.HasMaster {
+		return paramdefs.Descriptor{}, "master", owner, "CICADA-UNSUPPORTED", "scene setting " + path + " requires a master block"
 	}
 	if trackOK && effectOK {
 		return paramdefs.Descriptor{}, "", owner, "CICADA-REFERENCE", "ambiguous path owner " + owner + "; hint: rename the track or effect so this path resolves to one owner"
@@ -77,12 +83,26 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 		return paramdefs.Descriptor{}, "track", owner, "CICADA-PARAM", "unknown setting in parameter path " + path
 	}
 	if effectOK {
+		setting := strings.Join(parts[1:], ".")
 		for _, descriptor := range paramdefs.Registry {
-			if descriptor.Scope == "global" && descriptor.Path == path {
+			if descriptor.Scope == "global" && descriptor.Path == effectKind+"."+setting {
 				return descriptor, "effect", owner, "", ""
 			}
 		}
 		return paramdefs.Descriptor{}, "effect", owner, "CICADA-PARAM", "unknown setting in parameter path " + path
+	}
+	if owner == "master" || busOK {
+		scope := "bus"
+		if owner == "master" {
+			scope = "master"
+		}
+		setting := strings.Join(parts[1:], ".")
+		for _, descriptor := range paramdefs.Registry {
+			if descriptor.Scope == scope && descriptor.Path == setting {
+				return descriptor, scope, owner, "", ""
+			}
+		}
+		return paramdefs.Descriptor{}, scope, owner, "CICADA-PARAM", "unknown setting in parameter path " + path
 	}
 	return paramdefs.Descriptor{}, "", owner, "CICADA-REFERENCE", "unknown parameter path owner " + owner
 }
@@ -107,7 +127,7 @@ func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {
 		return nil
 	}
 	if descriptor.Curve == "toggle" {
-		if source == "on" || source == "off" {
+		if source == "on" || source == "off" || source == "true" || source == "false" {
 			return nil
 		}
 	}

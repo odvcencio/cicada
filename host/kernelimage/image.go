@@ -15,9 +15,12 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 10      // Scene settings with synced delay divisions
-const priorImageVersion = 9  // Custom graph glide time
-const legacyImageVersion = 8 // SFX bus routing; version 7 added music-bus compressor
+const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
+const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
+const sendTapImageVersion = 11       // named mixer per-send taps and track solo
+const sceneSettingsImageVersion = 10 // scene settings with synced delay divisions
+const priorImageVersion = 9          // custom graph glide time
+const legacyImageVersion = 8         // SFX bus routing; version 7 added music-bus compressor
 
 type Error string
 
@@ -90,7 +93,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 10. The decoded Config is separately
+// Encode writes project image version 13. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -171,6 +174,26 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		w.f64(cfg.CompMusic.Mix)
 		w.byte(byte(cfg.CompSidechainTrack))
 	}
+	var busFlags uint16
+	if cfg.MusicBusMute {
+		busFlags |= 1 << 0
+	}
+	if cfg.MusicBusSolo {
+		busFlags |= 1 << 1
+	}
+	if cfg.SFXBusMute {
+		busFlags |= 1 << 2
+	}
+	if cfg.SFXBusSolo {
+		busFlags |= 1 << 3
+	}
+	if cfg.MasterMute {
+		busFlags |= 1 << 4
+	}
+	if cfg.MasterSolo {
+		busFlags |= 1 << 5
+	}
+	w.u16(busFlags)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		w.byte(byte(spec.Kind))
@@ -188,6 +211,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		w.f64(spec.SendB)
 		w.byte(boolByte(spec.SendPre))
+		w.byte(boolByte(spec.SendAPre))
+		w.byte(boolByte(spec.SendBPre))
+		w.byte(boolByte(spec.Solo))
 		if spec.InsertDrive == nil {
 			w.byte(0)
 		} else {
@@ -346,7 +372,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -465,6 +491,20 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		cfg.CompMusic, cfg.CompSidechainTrack = params, int(sidechain)
 	}
+	if version >= busMixerImageVersion {
+		busFlags, err := r.u16()
+		allowed := uint16(0x1f)
+		if version >= imageVersion {
+			allowed = 0x3f
+		}
+		if err != nil || busFlags&^allowed != 0 {
+			return Error("invalid bus mixer image flags")
+		}
+		cfg.MusicBusMute, cfg.MusicBusSolo = busFlags&1 != 0, busFlags&2 != 0
+		cfg.SFXBusMute, cfg.SFXBusSolo = busFlags&4 != 0, busFlags&8 != 0
+		cfg.MasterMute = busFlags&16 != 0
+		cfg.MasterSolo = busFlags&32 != 0
+	}
 	for track := 0; track < int(tracks); track++ {
 		spec := &cfg.Track[track]
 		kind, err := r.byte()
@@ -501,6 +541,21 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return Error("invalid track send-pre flag")
 		}
 		spec.SendPre = sendPre == 1
+		if version >= sendTapImageVersion {
+			sendAPre, err := r.byte()
+			if err != nil {
+				return err
+			}
+			sendBPre, err := r.byte()
+			if err != nil {
+				return err
+			}
+			solo, err := r.byte()
+			if err != nil || sendAPre > 1 || sendBPre > 1 || solo > 1 {
+				return Error("invalid P2 track mixer flags")
+			}
+			spec.SendAPre, spec.SendBPre, spec.Solo = sendAPre == 1, sendBPre == 1, solo == 1
+		}
 		insertPresent, err := r.byte()
 		if err != nil || insertPresent > 1 {
 			return Error("invalid drive insert image flag")
@@ -633,7 +688,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return Error("invalid scene image binding")
 			}
 		}
-		if version >= imageVersion {
+		if version >= sceneSettingsImageVersion {
 			count, err := r.u16()
 			if err != nil {
 				return err
