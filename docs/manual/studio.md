@@ -88,6 +88,16 @@ are peak meters, not integrated-loudness measurements. Run
 `./cicada studio examples/first-acid.cicada --audio null` to render silently
 in real time without opening an audio device.
 
+On Windows, the **Audio devices and input monitor** panel uses WASAPI shared
+mode. It lists the available input and output endpoints, sample rate, stream
+period, callback count, and dropout counters. Cicada opens the selected input
+and output together when playback starts and releases both endpoints when it
+stops. Change device selections while stopped. Input capture is enabled by
+default on Windows, but input monitoring starts muted to prevent feedback; use
+the gain and stereo/mono channel controls to monitor an input. Device latency is
+shown only when the host reports it. Other platforms keep the Oto system-default
+output path and do not expose input selection or monitoring.
+
 Studio also exposes live controls to same-origin page tools through
 `window.cicadaAudio`. Call `params()` to read the supported addresses and their
 types, units, and ranges. `setParam(address, value)`, `setMute(track, on)`, and
@@ -122,3 +132,7 @@ continuing.
 
 If you want Studio beside VS Code, install or run the extension described in
 [Editors and notation tools](editors.md#vs-code).
+
+### Live take dynamics
+
+Drum takes keep simultaneous hits on separate lanes and quantize velocity to the nearest supported drum level. Acid takes save pitch and overlapping slides at the score format’s fixed velocity. Arbitrary MIDI velocity is not representable in acid score notation; the take preview explains this before Commit. Live MIDI playback still uses incoming velocity.

@@ -54,3 +54,19 @@ test('resetLoudness sends the native loudness reset message', () => {
   assert.deepEqual(FakeSocket.instances[0].sent, [{type: 'loudness-reset'}]);
   audio.close();
 });
+
+test('note facade sends note on and note off messages and validates MIDI ranges', () => {
+  FakeSocket.instances.length = 0;
+  const root = {WebSocket: FakeSocket, location: {protocol: 'http:', host: '127.0.0.1:8161'}};
+  const audio = createCicadaAudio({window: root});
+  audio.noteOn('bass', 60, 100);
+  audio.noteOff('bass', 60);
+  assert.deepEqual(FakeSocket.instances[0].sent, [
+    {type: 'note', track: 'bass', note: 60, velocity: 100, on: true},
+    {type: 'note', track: 'bass', note: 60, velocity: 0, on: false}
+  ]);
+  assert.throws(() => audio.noteOn('bass', 128, 100), RangeError);
+  assert.throws(() => audio.noteOn('bass', 60, 128), RangeError);
+  assert.throws(() => audio.noteOff('bass', -1), RangeError);
+  audio.close();
+});

@@ -146,6 +146,8 @@ func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
 }
 
 func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings bool) {
+	e.currentScene = int(index)
+	e.sceneSequence++
 	scene := &e.scenes[index]
 	for track := 0; track < e.tracks && !e.faulted; track++ {
 		if skipManualPatterns && e.manualPatternTick[track] == e.transport.Tick() {

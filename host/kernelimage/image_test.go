@@ -1,6 +1,9 @@
 package kernelimage_test
 
 import (
+	"bytes"
+	"encoding/binary"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -8,7 +11,6 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/host/kernelimage"
-	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/voice/drum"
@@ -91,10 +93,14 @@ func TestSceneSettingsProjectImageRoundTrip(t *testing.T) {
 }
 
 func TestVersion8ProjectImageWithoutSettingsStillDecodes(t *testing.T) {
-	cfg := firstAcidConfig(t)
-	for i := range cfg.Scenes {
-		cfg.Scenes[i].Settings = nil
+	cfg := engine.Config{
+		SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000,
+		Patterns: []engine.PatternBank{{}},
+		Scenes:   []engine.Scene{{}, {}},
+		Song:     []engine.SongEntry{{Scene: 0, Bars: 2}, {Scene: 1, Bars: 3}},
 	}
+	cfg.Track[0].Kind = engine.VoiceAcid
+	cfg.Scenes[1].Track[0].Mode = engine.SceneOff
 	encoded, err := kernelimage.Encode(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -118,26 +124,42 @@ func TestVersion8ProjectImageWithoutSettingsStillDecodes(t *testing.T) {
 	}
 }
 
-func TestVersion9SceneSettingsDecodeWithoutDivisionField(t *testing.T) {
+func TestVersion9GraphGlideWithoutSceneSettingsStillDecodes(t *testing.T) {
 	cfg := firstAcidConfig(t)
-	cfg.Scenes = []engine.Scene{{Settings: []engine.SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 900}}}}
-	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}}
+	for i := range cfg.Scenes {
+		cfg.Scenes[i].Settings = nil
+	}
+	hasGlide := false
+	for i := 0; i < cfg.Tracks; i++ {
+		if cfg.Track[i].Kind == engine.VoiceGraph && cfg.Track[i].Graph.GlideMS > 0 {
+			hasGlide = true
+		}
+	}
+	if !hasGlide {
+		t.Fatal("version 9 compatibility fixture must contain custom graph glide")
+	}
 	encoded, err := kernelimage.Encode(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	legacy := append([]byte(nil), encoded...)
-	sceneStart := len(legacy) - len(cfg.Song)*4 - (16 + 2 + 1 + 2 + 4 + 1)
-	divisionOffset := sceneStart + 16 + 2 + 1 + 2 + 4
-	copy(legacy[divisionOffset:], legacy[divisionOffset+1:])
-	legacy = legacy[:len(legacy)-1]
-	legacy[4], legacy[5] = 9, 0
+	// Version 9 carries graph glide, but each scene has only its 16 bindings.
+	sceneStart := len(legacy) - len(cfg.Song)*4 - len(cfg.Scenes)*18
+	for i := len(cfg.Scenes) - 1; i >= 0; i-- {
+		countOffset := sceneStart + i*18 + 16
+		copy(legacy[countOffset:], legacy[countOffset+2:])
+		legacy = legacy[:len(legacy)-2]
+	}
+	binary.LittleEndian.PutUint16(legacy[4:6], 9)
 	decoded, err := kernelimage.Decode(legacy, 48_000, 128)
 	if err != nil {
-		t.Fatalf("version 9 image with scene settings was rejected: %v", err)
+		t.Fatalf("version 9 graph glide image was rejected: %v", err)
 	}
 	if !reflect.DeepEqual(cfg, decoded) {
-		t.Fatal("version 9 scene settings changed in the image round trip")
+		t.Fatal("version 9 graph glide or scene data changed")
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatalf("decoded version 9 graph glide cannot play: %v", err)
 	}
 }
 
@@ -386,6 +408,52 @@ func TestProjectImageRejectsCorruption(t *testing.T) {
 	corrupt = append(append([]byte(nil), encoded...), 0)
 	if _, err := kernelimage.Decode(corrupt, 48_000, 128); err == nil {
 		t.Fatal("trailing bytes were accepted")
+	}
+}
+
+func TestProjectImageDecodesVersionEightGraphWithoutGlideField(t *testing.T) {
+	program := graph.Program{
+		Len: 2, Output: 1, GlideMS: 60,
+		Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Pitch}, {Op: graph.Sine, A: 0}},
+	}
+	cfg := engine.Config{
+		SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000,
+	}
+	cfg.Track[0].Kind = engine.VoiceGraph
+	cfg.Track[0].Graph = program
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	nodeWire := make([]byte, 0, int(program.Len)*8)
+	for i := uint8(0); i < program.Len; i++ {
+		node := program.Nodes[i]
+		nodeWire = append(nodeWire, byte(node.Op), node.A, node.B, node.C)
+		var value [4]byte
+		binary.LittleEndian.PutUint32(value[:], math.Float32bits(node.Value))
+		nodeWire = append(nodeWire, value[:]...)
+	}
+	nodeAt := bytes.Index(encoded, nodeWire)
+	if nodeAt < 8 || bytes.Index(encoded[nodeAt+1:], nodeWire) >= 0 {
+		t.Fatal("could not uniquely locate graph nodes in current image")
+	}
+	if got := math.Float64frombits(binary.LittleEndian.Uint64(encoded[nodeAt-8 : nodeAt])); got != 60 {
+		t.Fatalf("encoded glide time is %g ms, want 60 ms", got)
+	}
+	legacy := make([]byte, 0, len(encoded)-8)
+	legacy = append(legacy, encoded[:nodeAt-8]...)
+	legacy = append(legacy, encoded[nodeAt:]...)
+	binary.LittleEndian.PutUint16(legacy[4:6], 8)
+
+	decoded, err := kernelimage.Decode(legacy, 48_000, 128)
+	if err != nil {
+		t.Fatalf("decode version-eight graph image: %v", err)
+	}
+	if decoded.Track[0].Graph.GlideMS != 0 {
+		t.Fatalf("version-eight image glide time is %g ms, want legacy zero", decoded.Track[0].Graph.GlideMS)
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatalf("decoded version-eight graph image cannot play: %v", err)
 	}
 }
 
