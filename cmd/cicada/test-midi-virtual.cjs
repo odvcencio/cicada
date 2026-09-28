@@ -206,10 +206,10 @@ async function main() {
     if (diff.status !== 1) throw new Error(`expected one committed source diff, diff exited ${diff.status}`);
     fs.writeFileSync(path.join(evidenceDirectory, 'committed-take-source.diff'), diff.stdout);
     const newHistory = await json('http://127.0.0.1:8161/api/history');
-    const recorded = newHistory.events.filter(event => event.detail === 'Recorded 1 notes into riff');
+    const recorded = newHistory.edits.filter(event => event.label === 'Take committed · riff · 1 notes');
     assert.equal(recorded.length, 1, 'commit must write one history entry');
     assert.notEqual(newSource, originalScore, 'take commit should change the score copy');
-    assert.ok(oldHistory.events.length < newHistory.events.length, 'take commit should append history');
+    assert.ok(oldHistory.edits.length < newHistory.edits.length, 'take commit should append edit history');
     await cdp.send('Emulation.setDeviceMetricsOverride', {width: 1440, height: 960, deviceScaleFactor: 1, mobile: false});
     await cdp.evaluate('document.querySelector("#live-toggle").click()');
     await cdp.screenshot('committed-take-source.png');
