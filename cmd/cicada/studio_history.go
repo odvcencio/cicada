@@ -23,10 +23,30 @@ type studioHistoryEntry struct {
 // studioHistory records the current workstation session. The score file and
 // Git remain the durable source history; this log adds musical landing times.
 type studioHistory struct {
-	mu           sync.Mutex
-	entries      []studioHistoryEntry
-	nextSeq      uint64
-	lastRevision string
+	mu                  sync.Mutex
+	entries             []studioHistoryEntry
+	nextSeq             uint64
+	lastRevision        string
+	pendingTakeRevision string
+}
+
+func (h *studioHistory) expectRecordedTake(revision string) {
+	if revision == "" {
+		return
+	}
+	h.mu.Lock()
+	h.pendingTakeRevision = revision
+	h.mu.Unlock()
+}
+
+func (h *studioHistory) consumeRecordedTake(revision string) bool {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if revision == "" || h.pendingTakeRevision != revision {
+		return false
+	}
+	h.pendingTakeRevision = ""
+	return true
 }
 
 func newStudioHistory(source []byte) *studioHistory {
@@ -124,7 +144,14 @@ func (s *studio) recordEdit(edit studioEdit, revision string) {
 	if edit.Action == "bars" {
 		detail = fmt.Sprintf("Song block %d set to %d bars", edit.Index+1, edit.Bars)
 	}
-	if edit.Pattern != "" {
+	if edit.Action == "record" {
+		if edit.Pattern != "" {
+			detail = fmt.Sprintf("Recorded %d notes into %s", edit.Count, edit.Pattern)
+		} else {
+			detail = fmt.Sprintf("Recorded %d notes across %d patterns", edit.Count, edit.PatternCount)
+		}
+	}
+	if edit.Action != "record" && edit.Pattern != "" {
 		detail = fmt.Sprintf("%s step %d toggled", edit.Pattern, edit.Step+1)
 		if edit.Lane != "" {
 			detail = fmt.Sprintf("%s / %s step %d toggled", edit.Pattern, edit.Lane, edit.Step+1)

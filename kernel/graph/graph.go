@@ -2,7 +2,11 @@
 // compiled and validated outside the audio callback.
 package graph
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/dsp/fastmath"
+)
 
 const MaxNodes = 128
 
@@ -42,9 +46,10 @@ type Node struct {
 }
 
 type Program struct {
-	Nodes  [MaxNodes]Node
-	Len    uint8
-	Output uint8
+	Nodes   [MaxNodes]Node
+	Len     uint8
+	Output  uint8
+	GlideMS float64 // portamento time constant in milliseconds; zero keeps immediate pitch changes
 }
 
 type Error string
@@ -66,6 +71,10 @@ type Voice struct {
 	states     [MaxNodes]nodeState
 	sampleRate float32
 	pitch      float32
+	pitchLog   float64
+	targetLog  float64
+	pitchAlpha float64
+	gliding    bool
 	gate       float32
 	velocity   float32
 }
@@ -73,6 +82,9 @@ type Voice struct {
 func NewVoice(program Program, sampleRate int) (*Voice, error) {
 	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
 		return nil, Error("invalid graph program")
+	}
+	if math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
+		return nil, Error("invalid graph glide time")
 	}
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
 		return nil, Error("unsupported sample rate")
@@ -99,6 +111,9 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 		}
 	}
 	v := &Voice{program: program, sampleRate: float32(sampleRate)}
+	if program.GlideMS > 0 {
+		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(sampleRate)))
+	}
 	for i := 0; i < int(program.Len); i++ {
 		v.states[i].noise = uint32(i+1)*0x9e3779b9 ^ 0xa5a5a5a5
 	}
@@ -106,12 +121,24 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 }
 
 func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
-	v.pitch = float32(440 * math.Exp2((float64(note)-69)/12))
+	wasGated := v.gate > 0
+	targetLog := math.Log2(440) + (float64(note)-69)/12
 	v.velocity = float32(velocity) / 127
 	v.gate = 1
-	if slide {
+	if slide && wasGated && v.pitch != 0 {
+		if v.pitchAlpha > 0 {
+			v.targetLog = targetLog
+			v.gliding = targetLog != v.pitchLog
+			return
+		}
+		v.pitch = float32(440 * math.Exp2((float64(note)-69)/12))
+		v.pitchLog, v.targetLog = targetLog, targetLog
+		v.gliding = false
 		return
 	}
+	v.pitch = float32(440 * math.Exp2((float64(note)-69)/12))
+	v.pitchLog, v.targetLog = targetLog, targetLog
+	v.gliding = false
 	for i := 0; i < int(v.program.Len); i++ {
 		s := &v.states[i]
 		switch v.program.Nodes[i].Op {
@@ -127,6 +154,7 @@ func (v *Voice) NoteOff() { v.gate = 0 }
 
 func (v *Voice) Reset() {
 	v.pitch, v.gate, v.velocity = 0, 0, 0
+	v.pitchLog, v.targetLog, v.gliding = 0, 0, false
 	for i := 0; i < int(v.program.Len); i++ {
 		v.values[i] = 0
 		v.states[i].phase = 0
@@ -136,6 +164,10 @@ func (v *Voice) Reset() {
 }
 
 func (v *Voice) Next() float32 {
+	if v.gliding {
+		v.pitchLog += (v.targetLog - v.pitchLog) * v.pitchAlpha
+		v.pitch = float32(fastmath.Exp2(v.pitchLog))
+	}
 	for i := 0; i < int(v.program.Len); i++ {
 		n := v.program.Nodes[i]
 		s := &v.states[i]
