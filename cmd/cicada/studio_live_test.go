@@ -151,9 +151,9 @@ func TestRecordTakeCreatesOneRevisionAndHistoryEntry(t *testing.T) {
 		t.Fatal("take commit did not create a source revision")
 	}
 	s.transport.poll()
-	events := studioHistoryEvents(t, handler)
-	if len(events) != 2 || events[0].Detail != "Recorded 2 notes into pulse" {
-		t.Fatalf("take commit did not create one history entry: %+v", events)
+	edits := studioHistoryEdits(t, handler)
+	if len(edits) != 1 || edits[0].Label != "Take committed · pulse · 2 notes" || edits[0].RevisionBefore != take.Revision || edits[0].RevisionAfter != result.Revision || !strings.Contains(edits[0].Diff, "@@") {
+		t.Fatalf("take commit did not create one history entry: %+v", edits)
 	}
 	committed, err := os.ReadFile(path)
 	if err != nil || studioRevision(committed) != result.Revision {
