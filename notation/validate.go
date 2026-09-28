@@ -1,6 +1,7 @@
 package notation
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -16,6 +17,7 @@ var acidParams = map[string]bool{
 var mixerParams = map[string]bool{
 	"level": true, "pan": true, "send_a": true, "send_b": true,
 	"send_pre": true, "mute": true, "solo": true, "insert": true, "bus": true,
+	"send": true, "out": true,
 }
 
 var drumParams = map[string]map[string]bool{
@@ -49,8 +51,22 @@ func Validate(s *Score) []Diagnostic {
 			add("CICADA-LIMIT", "identifier must contain 1 to 64 bytes", "error", p)
 		}
 	}
-	if s.Version != 1 {
-		add("CICADA-VERSION", "only cicada 1 is supported", "error", Position{1, 1})
+	if s.Version != 1 && s.Version != 2 {
+		add("CICADA-VERSION", "only cicada 1 and 2 are supported", "error", Position{1, 1})
+	}
+	if s.Version == 2 {
+		for _, effect := range s.Effects {
+			if effect.Legacy {
+				add("CICADA-VERSION", "legacy fx shorthand requires an explicit effect kind in edition 2", "error", effect.Position)
+			}
+		}
+		for _, track := range s.Tracks {
+			for _, param := range track.Params {
+				if param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" || param.Name == "level" && param.Value == "off" {
+					add("CICADA-VERSION", "legacy mixer spelling "+param.Name+" requires cicada fix in edition 2", "error", param.Position)
+				}
+			}
+		}
 	}
 	if s.TempoMilli < 20_000 || s.TempoMilli > 300_000 {
 		add("CICADA-PARAM", "tempo must be 20 to 300 BPM with at most three decimals", "error", Position{1, 1})
@@ -136,13 +152,18 @@ func Validate(s *Score) []Diagnostic {
 		}
 	}
 	trackByName := make(map[string]Track, len(s.Tracks))
+	namespace := map[string]string{"music": "built-in bus", "sfx": "built-in bus"}
 	for _, t := range s.Tracks {
 		checkID(t.Name, t.Position)
 		checkID(t.Kind, t.Position)
 		if _, exists := trackByName[t.Name]; exists {
 			add("CICADA-DUPLICATE", "duplicate track "+t.Name, "error", t.Position)
 		}
+		if previous, exists := namespace[t.Name]; exists {
+			add("CICADA-DUPLICATE", "track name "+t.Name+" conflicts with "+previous, "error", t.Position)
+		}
 		trackByName[t.Name] = t
+		namespace[t.Name] = "track"
 		if t.Kind != "acid" && t.Kind != "drums" {
 			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
 				if _, kitOK := kits[t.Kind]; !kitOK {
@@ -153,14 +174,16 @@ func Validate(s *Score) []Diagnostic {
 		seen := map[string]bool{}
 		for _, param := range t.Params {
 			checkID(param.Name, param.Position)
-			if seen[param.Name] {
-				add("CICADA-DUPLICATE", "duplicate parameter "+param.Name, "error", param.Position)
+			key := param.Name
+			if param.Name == "send" {
+				key += "." + param.Target
 			}
-			seen[param.Name] = true
+			if seen[key] {
+				add("CICADA-DUPLICATE", "duplicate parameter "+key, "error", param.Position)
+			}
+			seen[key] = true
 			if !validTrackParam(t.Kind, param.Name, instruments) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
-			} else if mixerParams[param.Name] && param.Name != "level" && param.Name != "pan" && param.Name != "insert" && param.Name != "send_a" && param.Name != "send_b" && param.Name != "send_pre" && param.Name != "bus" {
-				add("CICADA-UNSUPPORTED", "mixer parameter "+param.Name+" is not implemented", "error", param.Position)
 			}
 		}
 	}
@@ -348,15 +371,21 @@ func Validate(s *Score) []Diagnostic {
 		}
 		add("CICADA-LIMIT", "song must contain at least one scene entry", "error", position)
 	}
-	declaredEffects := map[string]bool{}
+	declaredEffects := map[string]Effect{}
+	kindCounts := map[string]int{}
 	for _, effect := range s.Effects {
 		checkID(effect.Name, effect.Position)
-		if declaredEffects[effect.Name] {
+		if previous, exists := namespace[effect.Name]; exists {
+			add("CICADA-DUPLICATE", "effect name "+effect.Name+" conflicts with "+previous, "error", effect.Position)
+		}
+		if _, exists := declaredEffects[effect.Name]; exists {
 			add("CICADA-DUPLICATE", "duplicate effect "+effect.Name, "error", effect.Position)
 		}
-		declaredEffects[effect.Name] = true
-		if effect.Name != "drive" && effect.Name != "delay" && effect.Name != "reverb" && effect.Name != "comp" {
-			add("CICADA-UNSUPPORTED", "effect "+effect.Name+" is not implemented", "error", effect.Position)
+		namespace[effect.Name] = "effect"
+		declaredEffects[effect.Name] = effect
+		kindCounts[effect.Kind]++
+		if effect.Kind != "drive" && effect.Kind != "delay" && effect.Kind != "reverb" && effect.Kind != "comp" {
+			add("CICADA-UNSUPPORTED", "effect kind "+effect.Kind+" is not implemented", "error", effect.Position)
 		}
 		seen := map[string]bool{}
 		for _, param := range effect.Params {
@@ -364,7 +393,7 @@ func Validate(s *Score) []Diagnostic {
 				add("CICADA-DUPLICATE", "duplicate effect parameter "+param.Name, "error", param.Position)
 			}
 			seen[param.Name] = true
-			if effect.Name == "comp" && param.Name == "sidechain" {
+			if effect.Kind == "comp" && param.Name == "sidechain" {
 				reference := param.Value
 				if strings.HasPrefix(reference, "\"") {
 					if decoded, err := strconv.Unquote(reference); err == nil {
@@ -379,24 +408,123 @@ func Validate(s *Score) []Diagnostic {
 			}
 		}
 	}
-	for _, track := range s.Tracks {
-		for _, param := range track.Params {
-			if param.Name == "insert" && param.Value != "none" && !declaredEffects[param.Value] {
-				add("CICADA-REFERENCE", "track references undeclared insert "+param.Value, "error", param.ValuePosition)
+	for _, kind := range []string{"delay", "reverb", "comp"} {
+		if kindCounts[kind] > 1 {
+			add("CICADA-UNSUPPORTED", "multiple "+kind+" instances are not implemented", "error", Position{1, 1})
+		}
+	}
+	for _, bus := range s.Buses {
+		checkID(bus.Name, bus.Position)
+		if previous, exists := namespace[bus.Name]; exists && previous != "built-in bus" {
+			add("CICADA-DUPLICATE", "bus name "+bus.Name+" conflicts with "+previous, "error", bus.Position)
+		}
+		namespace[bus.Name] = "bus"
+		if bus.Name != "music" && bus.Name != "sfx" {
+			add("CICADA-UNSUPPORTED", "user-declared bus "+bus.Name+" is not implemented", "error", bus.Position)
+			continue
+		}
+		seen := map[string]bool{}
+		for _, param := range bus.Params {
+			key := param.Name
+			if param.Name == "send" {
+				key += "." + param.Target
 			}
-			if param.Name == "send_a" {
-				value, err := strconv.ParseFloat(param.Value, 64)
-				if err == nil && value > 0 && !declaredEffects["delay"] {
-					add("CICADA-REFERENCE", "send_a requires a declared delay effect", "error", param.ValuePosition)
-				}
+			if seen[key] {
+				add("CICADA-DUPLICATE", "duplicate music bus setting "+key, "error", param.Position)
 			}
-			if param.Name == "send_b" {
-				value, err := strconv.ParseFloat(param.Value, 64)
-				if err == nil && value > 0 && !declaredEffects["reverb"] {
-					add("CICADA-REFERENCE", "send_b requires a declared reverb effect", "error", param.ValuePosition)
+			seen[key] = true
+			switch param.Name {
+			case "insert":
+				if param.Value == "none" {
+					continue
 				}
+				chain := strings.Fields(param.Value)
+				var names []string
+				for _, part := range chain {
+					if part != "->" {
+						names = append(names, part)
+					}
+				}
+				if bus.Name != "music" || len(names) != 1 || strings.Contains(param.Value, "->") {
+					add("CICADA-UNSUPPORTED", bus.Name+" bus insert "+param.Value+" is not implemented", "error", param.ValuePosition)
+					continue
+				}
+				effect, ok := declaredEffects[names[0]]
+				if !ok {
+					add("CICADA-REFERENCE", "music bus insert references undeclared effect "+names[0], "error", param.ValuePosition)
+				} else if effect.Kind != "comp" {
+					add("CICADA-UNSUPPORTED", "music bus insert of "+effect.Kind+" is not implemented", "error", param.ValuePosition)
+				}
+			case "level":
+				if param.Value == "off" {
+					continue
+				}
+				value, unit, err := notationBaseValue(param.Value)
+				if bus.Name != "music" || err != nil || unit != "db" || value != -3 {
+					add("CICADA-UNSUPPORTED", bus.Name+" bus level "+param.Value+" is not implemented", "error", param.ValuePosition)
+				}
+			case "mute", "solo":
+				on, ok := mixerSwitch(param.Value)
+				if !ok {
+					add("CICADA-PARAM", param.Name+" must be on or off", "error", param.ValuePosition)
+				} else if param.Name == "solo" && on {
+					add("CICADA-SOLO", "solo is enabled for bus "+bus.Name, "warning", param.ValuePosition)
+				}
+			case "send", "out", "pan":
+				add("CICADA-UNSUPPORTED", bus.Name+" bus "+param.Name+" is not implemented", "error", param.Position)
+			default:
+				add("CICADA-PARAM", "unknown bus mixer setting "+param.Name, "error", param.Position)
 			}
 		}
+	}
+	for _, param := range s.Master {
+		switch param.Name {
+		case "insert":
+			if param.Value != "none" {
+				add("CICADA-UNSUPPORTED", "master inserts are not implemented", "error", param.ValuePosition)
+			}
+		case "level":
+			if param.Value != "off" {
+				value, unit, err := notationBaseValue(param.Value)
+				if err != nil || unit != "db" || value < -60 || value > 6 {
+					add("CICADA-PARAM", "master level must be -60 to +6 dB or off", "error", param.ValuePosition)
+				}
+			}
+		case "mute", "solo":
+			on, ok := mixerSwitch(param.Value)
+			if !ok {
+				add("CICADA-PARAM", param.Name+" must be on or off", "error", param.ValuePosition)
+			} else if param.Name == "solo" && on {
+				add("CICADA-SOLO", "solo is enabled for master", "warning", param.ValuePosition)
+			}
+		case "pan":
+			add("CICADA-UNSUPPORTED", "master pan is not implemented", "error", param.Position)
+		default:
+			add("CICADA-UNSUPPORTED", "master "+param.Name+" is not implemented", "error", param.Position)
+		}
+	}
+	seenExports := map[string]bool{}
+	for _, export := range s.Exports {
+		checkID(export.Name, export.Position)
+		if seenExports[export.Name] {
+			add("CICADA-DUPLICATE", "duplicate export "+export.Name, "error", export.Position)
+		}
+		seenExports[export.Name] = true
+		seen := map[string]bool{}
+		for _, param := range export.Params {
+			if seen[param.Name] {
+				add("CICADA-DUPLICATE", "duplicate export setting "+param.Name, "error", param.Position)
+			}
+			seen[param.Name] = true
+			switch param.Name {
+			case "rate", "bits", "tail", "loudness", "true_peak", "normalize":
+			default:
+				add("CICADA-PARAM", "unknown export setting "+param.Name, "error", param.Position)
+			}
+		}
+	}
+	for _, track := range s.Tracks {
+		validateTrackMixer(s, track, declaredEffects, namespace, add)
 	}
 	validateSceneSettings(s, add)
 	return ds
@@ -428,6 +556,140 @@ func validTrackParam(kind, name string, instruments map[string]Instrument) bool 
 	}
 	return false
 }
+
+func validateTrackMixer(score *Score, track Track, effects map[string]Effect, namespace map[string]string, add func(string, string, string, Position)) {
+	seen := map[string]bool{}
+	insertSeen := false
+	legacyPre := false
+	for _, param := range track.Params {
+		key := param.Name
+		if param.Name == "send" {
+			key += "." + param.Target
+		}
+		if seen[key] {
+			add("CICADA-DUPLICATE", "duplicate mixer setting "+key, "error", param.Position)
+		}
+		seen[key] = true
+		switch param.Name {
+		case "mute", "solo":
+			on, ok := mixerSwitch(param.Value)
+			if !ok {
+				add("CICADA-PARAM", param.Name+" must be on or off", "error", param.ValuePosition)
+			} else if param.Name == "solo" && on {
+				add("CICADA-SOLO", "solo is enabled for track "+track.Name, "warning", param.ValuePosition)
+			}
+		case "insert":
+			insertSeen = true
+			if param.Value == "none" {
+				continue
+			}
+			chain := strings.Fields(param.Value)
+			var names []string
+			for i := 0; i < len(chain); i++ {
+				if chain[i] != "->" {
+					names = append(names, chain[i])
+				}
+			}
+			if len(names) != 1 || strings.Contains(param.Value, "->") {
+				add("CICADA-UNSUPPORTED", "insert chain on track "+track.Name+" is not implemented", "error", param.ValuePosition)
+				continue
+			}
+			effect, ok := effects[names[0]]
+			if !ok {
+				add("CICADA-REFERENCE", "track references undeclared insert "+names[0], "error", param.ValuePosition)
+			} else if effect.Kind != "drive" {
+				add("CICADA-UNSUPPORTED", effect.Kind+" as a track insert is not implemented", "error", param.ValuePosition)
+			}
+		case "send":
+			effect, ok := effects[param.Target]
+			if !ok {
+				if param.Target == "music" || param.Target == "sfx" || namespace[param.Target] == "bus" {
+					add("CICADA-UNSUPPORTED", "send to bus "+param.Target+" is not implemented", "error", param.Position)
+				} else {
+					add("CICADA-REFERENCE", "send references unknown effect or bus "+param.Target, "error", param.Position)
+				}
+				continue
+			}
+			if effect.Kind != "delay" && effect.Kind != "reverb" {
+				add("CICADA-UNSUPPORTED", "send to "+effect.Kind+" effect "+param.Target+" is not implemented", "error", param.Position)
+			}
+			validateSendLevel(param.Value, param.ValuePosition, add)
+		case "out":
+			if param.Value != "music" && param.Value != "sfx" {
+				add("CICADA-UNSUPPORTED", "output bus "+param.Value+" is not implemented", "error", param.ValuePosition)
+			}
+		case "bus":
+			if param.Value != "music" && param.Value != "sfx" {
+				add("CICADA-UNSUPPORTED", "output bus "+param.Value+" is not implemented", "error", param.ValuePosition)
+			}
+		case "send_a", "send_b":
+			value, err := strconv.ParseFloat(param.Value, 64)
+			if err != nil || !finiteMixerNumber(value) || value < 0 || value > 1 {
+				add("CICADA-PARAM", param.Name+" must be a unitless value from 0 to 1", "error", param.ValuePosition)
+			}
+			kind := "delay"
+			if param.Name == "send_b" {
+				kind = "reverb"
+			}
+			found := false
+			for _, effect := range effects {
+				found = found || effect.Kind == kind
+			}
+			if value > 0 && !found {
+				add("CICADA-REFERENCE", param.Name+" requires a declared "+kind+" effect", "error", param.ValuePosition)
+			}
+		case "send_pre":
+			if _, ok := mixerSwitch(param.Value); !ok {
+				add("CICADA-PARAM", "send_pre must be true or false", "error", param.ValuePosition)
+			}
+			legacyPre = param.Value == "true" || param.Value == "on"
+		}
+	}
+	_ = insertSeen
+	if legacyPre {
+		hasSend := false
+		for _, param := range track.Params {
+			if param.Name == "send_a" || param.Name == "send_b" {
+				value, _ := strconv.ParseFloat(param.Value, 64)
+				hasSend = hasSend || value > 0
+			}
+		}
+		if !hasSend {
+			add("CICADA-PARAM", "send_pre requires a nonzero send", "error", track.Position)
+		}
+	}
+}
+
+func validateSendLevel(source string, position Position, add func(string, string, string, Position)) {
+	value, unit, err := notationBaseValue(source)
+	if err != nil || !finiteMixerNumber(value) {
+		add("CICADA-PARAM", "send level must be a finite unitless value or dB", "error", position)
+		return
+	}
+	if unit == "unit" {
+		if value < 0 || value > 1 {
+			add("CICADA-PARAM", "unitless send level must be 0 to 1", "error", position)
+		}
+		return
+	}
+	if unit == "db" && value >= -60 && value <= 0 {
+		return
+	}
+	add("CICADA-PARAM", "send level must be 0 to 1 linear or -60 to 0 dB", "error", position)
+}
+
+func mixerSwitch(source string) (bool, bool) {
+	switch source {
+	case "on", "true":
+		return true, true
+	case "off", "false":
+		return false, true
+	default:
+		return false, false
+	}
+}
+
+func finiteMixerNumber(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
 
 func validKeyRoot(s string) bool {
 	if len(s) < 1 || len(s) > 2 || s[0] < 'a' || s[0] > 'g' {

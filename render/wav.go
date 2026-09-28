@@ -62,7 +62,9 @@ type trackRuntime struct {
 	align          *mix.Delay
 	sendA          float32
 	sendB          float32
-	sendPre        bool
+	sendAPre       bool
+	sendBPre       bool
+	solo           bool
 	muted          bool
 	busSFX         bool
 	drums          *drum.Kit
@@ -81,6 +83,12 @@ type trackRuntime struct {
 	transition     sceneTransition
 	slideFrom      int64
 	slideAt        int64
+}
+
+type busMixerState struct {
+	musicMute, musicSolo bool
+	sfxMute, sfxSolo     bool
+	masterMute           bool
 }
 
 type sceneTransition struct {
@@ -201,8 +209,27 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 		return report, fmt.Errorf("score cannot compile to a Cicada project")
 	}
+	busState := busMixerState{}
+	masterGainDB := opts.MasterGainDB
+	for _, bus := range semantic.Buses {
+		switch bus.ID {
+		case "music":
+			busState.musicMute, busState.musicSolo = bus.Mixer.Mute, bus.Mixer.Solo
+		case "sfx":
+			busState.sfxMute, busState.sfxSolo = bus.Mixer.Mute, bus.Mixer.Solo
+		}
+	}
+	if semantic.Master != nil {
+		busState.masterMute = semantic.Master.Mixer.Mute
+		if level := semantic.Master.Mixer.Level; level != nil && level.Unit == "db" && level.Number != nil {
+			masterGainDB += *level.Number
+		}
+	}
+	if math.IsNaN(masterGainDB) || math.IsInf(masterGainDB, 0) || masterGainDB < -120 || masterGainDB > 24 {
+		return report, fmt.Errorf("combined master gain is out of range")
+	}
 	report.SampleRate = opts.SampleRate
-	report.MasterGainDB = opts.MasterGainDB
+	report.MasterGainDB = masterGainDB
 	report.TailFrames = int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))
 	fromFrame := clock.SampleAtTick(int64(report.From) * seq.TicksPerBar)
 	renderFrames := clock.SampleAtTick(int64(renderBars)*seq.TicksPerBar) + report.TailFrames
@@ -238,7 +265,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	for _, track := range tracks {
 		if track.sendA > 0 {
 			for _, effect := range semantic.Effects {
-				if effect.ID == "delay" {
+				if projectEffectKind(effect) == "delay" {
 					params, err := project.DelayParamsFromValues(effect.Params)
 					if err != nil {
 						return report, err
@@ -260,7 +287,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	for _, track := range tracks {
 		if track.sendB > 0 {
 			for _, effect := range semantic.Effects {
-				if effect.ID == "reverb" {
+				if projectEffectKind(effect) == "reverb" {
 					params, err := project.ReverbParamsFromValues(effect.Params)
 					if err != nil {
 						return report, err
@@ -279,8 +306,21 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			break
 		}
 	}
+	compID := ""
+	for _, bus := range semantic.Buses {
+		if bus.ID == "music" && len(bus.Mixer.Inserts) == 1 {
+			compID = bus.Mixer.Inserts[0]
+		}
+	}
+	if compID == "" && semantic.Format == project.FormatID {
+		for _, effect := range semantic.Effects {
+			if projectEffectKind(effect) == "comp" {
+				compID = effect.ID
+			}
+		}
+	}
 	for _, effect := range semantic.Effects {
-		if effect.ID == "comp" {
+		if effect.ID == compID && compID != "" {
 			params, sidechain, err := project.CompSpecFromValues(effect.Params)
 			if err != nil {
 				return report, err
@@ -330,8 +370,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, err
 	}
 	masterGain := float32(1)
-	if opts.MasterGainDB != 0 {
-		masterGain = float32(math.Pow(10, opts.MasterGainDB/20))
+	if masterGainDB != 0 {
+		masterGain = float32(math.Pow(10, masterGainDB/20))
 	}
 	var eventBuf [128]seq.Event
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
@@ -437,7 +477,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 					}
 					return events[i].event.NoteID < events[j].event.NoteID
 				})
-				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
+				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
 					return report, err
 				}
 				position += int64(frames)
@@ -460,7 +500,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		if position+int64(frames) > renderFrames {
 			frames = int(renderFrames - position)
 		}
-		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, limiter, stems, &encoder, nil, position, frames, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, nil, position, frames, block, &report); err != nil {
 			return report, err
 		}
 		position += int64(frames)
@@ -469,7 +509,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		// Drive and the aligned dry tracks have the same insert latency.
 		// Drain it, then omit the initial silent output frames so the WAV
 		// remains aligned to the score and has exactly report.Frames frames.
-		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, limiter, stems, &encoder, nil, position, insertLatency, block, &report); err != nil {
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, nil, position, insertLatency, block, &report); err != nil {
 			return report, err
 		}
 	}
@@ -618,7 +658,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 			if param.Name == "octave" && !program.HasParameter("octave") {
 				continue
 			}
-			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
+			if project.IsMixerSourceParam(param.Name) {
 				continue
 			}
 			overrides[param.Name] = param.Value
@@ -647,51 +687,100 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 	for i := range tracks {
 		tracks[i].sendA = float32(semantic.Tracks[i].Mixer.SendA)
 		tracks[i].sendB = float32(semantic.Tracks[i].Mixer.SendB)
-		tracks[i].sendPre = semantic.Tracks[i].Mixer.SendPre
+		tracks[i].sendAPre = semantic.Tracks[i].Mixer.SendPre
+		tracks[i].sendBPre = semantic.Tracks[i].Mixer.SendPre
+		for _, send := range semantic.Tracks[i].Mixer.Sends {
+			kind := send.To
+			for _, effect := range semantic.Effects {
+				if effect.ID == send.To {
+					kind = projectEffectKind(effect)
+					break
+				}
+			}
+			if kind == "delay" {
+				tracks[i].sendAPre = tracks[i].sendAPre || send.Tap == "pre"
+			} else if kind == "reverb" {
+				tracks[i].sendBPre = tracks[i].sendBPre || send.Tap == "pre"
+			}
+		}
 		tracks[i].muted = semantic.Tracks[i].Mixer.Mute
+		tracks[i].solo = semantic.Tracks[i].Mixer.Solo
 		tracks[i].busSFX = semantic.Tracks[i].Mixer.Bus == "sfx"
 	}
-	var driveParams *fx.DriveParams
-	for _, effect := range semantic.Effects {
-		if effect.ID == "drive" {
+	anySolo := false
+	for i := range tracks {
+		anySolo = anySolo || tracks[i].solo
+	}
+	for i := range tracks {
+		tracks[i].muted = tracks[i].muted || anySolo && !tracks[i].solo
+	}
+	for i := range tracks {
+		inserts := semantic.Tracks[i].Mixer.Inserts
+		if len(inserts) == 0 && semantic.Tracks[i].Mixer.Insert != "none" {
+			inserts = []string{semantic.Tracks[i].Mixer.Insert}
+		}
+		if len(inserts) == 0 {
+			continue
+		}
+		for _, effect := range semantic.Effects {
+			if effect.ID != inserts[0] || projectEffectKind(effect) != "drive" {
+				continue
+			}
 			params, err := project.DriveParamsFromValues(effect.Params)
 			if err != nil {
 				return nil, err
 			}
-			driveParams = &params
+			insert, err := fx.NewDrive(sampleRate)
+			if err != nil {
+				return nil, err
+			}
+			if err := insert.SetParams(params); err != nil {
+				return nil, err
+			}
+			insert.Reset()
+			tracks[i].insert = insert
+			break
 		}
 	}
-	if driveParams != nil {
-		hasInsert := false
-		for _, track := range semantic.Tracks {
-			if track.Mixer.Insert == "drive" {
-				hasInsert = true
-				break
-			}
-		}
-		if hasInsert {
-			for i := range tracks {
-				if semantic.Tracks[i].Mixer.Insert == "drive" {
-					insert, err := fx.NewDrive(sampleRate)
-					if err != nil {
-						return nil, err
-					}
-					if err := insert.SetParams(*driveParams); err != nil {
-						return nil, err
-					}
-					insert.Reset()
-					tracks[i].insert = insert
-				} else {
-					align, err := mix.NewDelay(fx.DriveLatencyFrames)
-					if err != nil {
-						return nil, err
-					}
-					tracks[i].align = align
+	if hasDriveInsert(semantic) {
+		for i := range tracks {
+			if tracks[i].insert == nil {
+				align, err := mix.NewDelay(fx.DriveLatencyFrames)
+				if err != nil {
+					return nil, err
 				}
+				tracks[i].align = align
 			}
 		}
 	}
 	return tracks, nil
+}
+
+func projectEffectKind(effect project.Effect) string {
+	if effect.Kind != "" {
+		return effect.Kind
+	}
+	return effect.ID
+}
+
+func hasDriveInsert(p *project.Project) bool {
+	if p == nil {
+		return false
+	}
+	for _, track := range p.Tracks {
+		inserts := track.Mixer.Inserts
+		if len(inserts) == 0 && track.Mixer.Insert != "none" {
+			inserts = []string{track.Mixer.Insert}
+		}
+		for _, id := range inserts {
+			for _, effect := range p.Effects {
+				if effect.ID == id && projectEffectKind(effect) == "drive" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func findScene(score *notation.Score, name string) *notation.Scene {
@@ -832,7 +921,7 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool)
 	return nil
 }
 
-func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, masterBiasL, masterBiasR, masterGain float32, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
+func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *fx.Reverb, compMusic *fx.Compressor, compSidechainTrack int, masterBiasL, masterBiasR, masterGain float32, busState busMixerState, limiter *mix.Limiter, stems *stemOutput, encoder *wavEncoder, events []scheduled, start int64, frames int, buffer []byte, report *Report) error {
 	eventIndex := 0
 	outFrames := 0
 	for frame := 0; frame < frames; frame++ {
@@ -882,7 +971,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				l, r = tracks[ti].align.Process(l, r)
 			}
 			if tracks[ti].sendA > 0 && !tracks[ti].muted {
-				if tracks[ti].sendPre {
+				if tracks[ti].sendAPre {
 					sendAL += l * tracks[ti].sendA
 					sendAR += r * tracks[ti].sendA
 				} else {
@@ -891,7 +980,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				}
 			}
 			if tracks[ti].sendB > 0 && !tracks[ti].muted {
-				if tracks[ti].sendPre {
+				if tracks[ti].sendBPre {
 					sendBL += l * tracks[ti].sendB
 					sendBR += r * tracks[ti].sendB
 				} else {
@@ -937,6 +1026,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		}
 		left, right := dry.Music()
 		sfxL, sfxR := dry.SFX()
+		if busState.sfxMute || busState.musicSolo && !busState.sfxSolo {
+			sfxL, sfxR = 0, 0
+		}
 		if stems != nil {
 			stems.buses(left, right, sfxL, sfxR)
 			stems.appendMixFrame(sample)
@@ -953,7 +1045,13 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				return fmt.Errorf("music compressor DSP fault")
 			}
 		}
+		if busState.musicMute || busState.sfxSolo && !busState.musicSolo {
+			left, right = 0, 0
+		}
 		left, right = left+sfxL, right+sfxR
+		if busState.masterMute {
+			left, right = 0, 0
+		}
 		if masterBiasL != 0 || masterBiasR != 0 {
 			left += masterBiasL
 			right += masterBiasR

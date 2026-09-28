@@ -29,7 +29,10 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 	if err != nil {
 		return err
 	}
-	score, diagnostics := notation.Parse(source)
+	score, diagnostics, err := parseScoreForPath(scorePath, source)
+	if err != nil {
+		return err
+	}
 	if score == nil {
 		return diagnosticError(diagnostics)
 	}

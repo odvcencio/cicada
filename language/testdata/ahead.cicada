@@ -11,6 +11,9 @@ fx echo {
   wet = 25%
 }
 
+fx warm drive {}
+fx edge drive {}
+
 instrument pad {
   octave = 3;
   param spread: db = -6db;
@@ -23,6 +26,7 @@ instrument pad {
 track keys pad {
   level = off
   send_a = true
+  insert = warm -> edge
 }
 
 pattern stab notes steps = 4 {

@@ -53,3 +53,56 @@ func TestParameterPathCompletionAndTrackRename(t *testing.T) {
 		t.Fatalf("rename on a path owner did not resolve to its track: %s", encoded)
 	}
 }
+
+func TestNamedMixerPathNavigationAndCompletion(t *testing.T) {
+	source := []byte("fx room delay {}\nfx warmth drive {}\nbus music { mute = off }\ntrack bass acid { insert = warmth send room = 0.2 pre out = music }\npattern riff acid steps=1 { 1 }\nscene main { bass = riff room.feedback = 0.3 bass.send.delay = 0.4 }\nsong { main }\n")
+	uri := "file:///named-mixer.cicada"
+	pathOffset := bytes.Index(source, []byte("room.feedback")) + 2
+	hoverValue, _ := json.Marshal(hover(source, utf16Position(source, pathOffset)))
+	if !bytes.Contains(hoverValue, []byte("effect `room`")) {
+		t.Fatalf("named effect hover did not resolve: %s", hoverValue)
+	}
+	location, _ := json.Marshal(definition(uri, source, utf16Position(source, pathOffset)))
+	if !bytes.Contains(location, []byte(`"line":0`)) {
+		t.Fatalf("named effect definition did not select its declaration: %s", location)
+	}
+	busOffset := bytes.Index(source, []byte("out = music")) + len("out = ")
+	busLocation, _ := json.Marshal(definition(uri, source, utf16Position(source, busOffset)))
+	if !bytes.Contains(busLocation, []byte(`"line":2`)) {
+		t.Fatalf("bus reference did not resolve to its declaration: %s", busLocation)
+	}
+	completionSource := []byte("fx room delay {}\ntrack bass acid {}\nbus sfx {}\nscene main { bass.send.\n}\n")
+	items := parameterPathCompletion(completionSource, utf16Position(completionSource, bytes.Index(completionSource, []byte("bass.send."))+len("bass.send.")))
+	encoded, _ := json.Marshal(items)
+	if !bytes.Contains(encoded, []byte(`"label":"delay"`)) {
+		t.Fatalf("named send path completion missing delay: %s", encoded)
+	}
+	trackCompletionSource := []byte("fx room delay {}\nfx warmth drive {}\nfx glue comp {}\ntrack bass acid {\n  insert = warmth\n  send room = 0.2\n  out = music\n}\nbus music {\n  insert = glue\n}\n")
+	trackInsert := parameterPathCompletion(trackCompletionSource, utf16Position(trackCompletionSource, bytes.Index(trackCompletionSource, []byte("warmth\n"))))
+	trackInsertJSON, _ := json.Marshal(trackInsert)
+	if !bytes.Contains(trackInsertJSON, []byte(`"label":"warmth"`)) || bytes.Contains(trackInsertJSON, []byte(`"label":"glue"`)) {
+		t.Fatalf("track insert completion offered a non-drive: %s", trackInsertJSON)
+	}
+	sendCompletion := parameterPathCompletion(trackCompletionSource, utf16Position(trackCompletionSource, bytes.Index(trackCompletionSource, []byte("room ="))))
+	sendCompletionJSON, _ := json.Marshal(sendCompletion)
+	if !bytes.Contains(sendCompletionJSON, []byte(`"label":"room"`)) {
+		t.Fatalf("track send completion omitted declared delay: %s", sendCompletionJSON)
+	}
+	busInsert := parameterPathCompletion(trackCompletionSource, utf16Position(trackCompletionSource, bytes.LastIndex(trackCompletionSource, []byte("glue"))))
+	busInsertJSON, _ := json.Marshal(busInsert)
+	if !bytes.Contains(busInsertJSON, []byte(`"label":"glue"`)) || bytes.Contains(busInsertJSON, []byte(`"label":"warmth"`)) {
+		t.Fatalf("music bus insert completion offered a non-compressor: %s", busInsertJSON)
+	}
+	declarationOffset := bytes.Index(source, []byte("fx room")) + len("fx ")
+	edit := rename(uri, source, utf16Position(source, declarationOffset), "chamber")
+	encoded, _ = json.Marshal(edit)
+	if bytes.Count(encoded, []byte(`"newText":"chamber"`)) < 3 {
+		t.Fatalf("effect rename did not update declaration, send target, and path owner: %s", encoded)
+	}
+	busDeclaration := bytes.Index(source, []byte("bus music")) + len("bus ")
+	busEdit := rename(uri, source, utf16Position(source, busDeclaration), "sfx")
+	encoded, _ = json.Marshal(busEdit)
+	if bytes.Count(encoded, []byte(`"newText":"sfx"`)) < 2 {
+		t.Fatalf("bus rename did not update declaration and output: %s", encoded)
+	}
+}

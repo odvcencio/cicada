@@ -93,7 +93,7 @@ func rename(uri string, source []byte, at position, newName string) any {
 		if match, found := parameterPathAt(source, byteOffset(source, at)); found {
 			owner, _, _ := strings.Cut(match.path, ".")
 			for _, symbol := range symbols {
-				if symbol.Role == "definition" && symbol.Kind == "track" && symbol.Name == owner {
+				if symbol.Role == "definition" && (symbol.Kind == "track" || symbol.Kind == "effect" || symbol.Kind == "bus") && symbol.Name == owner {
 					selected, ok = symbol, true
 					break
 				}
@@ -115,6 +115,25 @@ func rename(uri string, source []byte, at position, newName string) any {
 		replacements = append(replacements, replacement{start, start + len(symbol.Name), newName})
 	}
 	if selected.Kind == "track" {
+		root, walker, err := notation.ParseTree(source)
+		if err != nil {
+			return nil
+		}
+		var visit func(*gts.Node)
+		visit = func(node *gts.Node) {
+			if walker.Type(node) == "parameter_path" {
+				path := pathRegion{path: walker.Text(node), start: int(node.StartByte()), end: int(node.EndByte())}
+				if start, end, found := pathOwnerPrefix(path, selected.Name); found {
+					edits = append(edits, map[string]any{"range": region{Start: utf16Position(source, start), End: utf16Position(source, end)}, "newText": newName})
+					replacements = append(replacements, replacement{start: start, end: end, text: newName})
+				}
+			}
+			for i := 0; i < node.ChildCount(); i++ {
+				visit(node.Child(i))
+			}
+		}
+		visit(root)
+	} else if selected.Kind == "effect" || selected.Kind == "bus" {
 		root, walker, err := notation.ParseTree(source)
 		if err != nil {
 			return nil

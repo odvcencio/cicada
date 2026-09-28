@@ -53,10 +53,13 @@ type TrackConfig struct {
 	GainSet     bool
 	Pan         float64
 	Mute        bool
+	Solo        bool
 	InsertDrive *fx.DriveParams
 	SendA       float64
 	SendB       float64
 	SendPre     bool
+	SendAPre    bool
+	SendBPre    bool
 	BusSFX      bool
 }
 
@@ -88,6 +91,13 @@ type Config struct {
 	// MasterGainDB is a static gain applied immediately before the master
 	// limiter. Zero leaves the existing master path bit-identical.
 	MasterGainDB float64
+	MusicBusMute bool
+	MusicBusSolo bool
+	SFXBusMute   bool
+	SFXBusSolo   bool
+	MasterMute   bool
+	// MasterSolo is retained as project state; the final output has no peer bus.
+	MasterSolo bool
 	// CompSidechainTrack is zero for self-detection, a one-based track index,
 	// or SFXSidechain for the post-fader SFX bus.
 	CompSidechainTrack int
@@ -110,7 +120,7 @@ type voiceSlot struct {
 	targetSendA                    float32
 	targetSendB                    float32
 	sendSmooth                     float32
-	sendPre                        bool
+	sendAPre, sendBPre             bool
 	muted, sourceOff               bool
 	soloed                         bool
 	busSFX                         bool
@@ -137,6 +147,9 @@ type Engine struct {
 	compMusic                    *fx.Compressor
 	compSidechainTrack           int
 	masterGain                   float32
+	musicBusMute, musicBusSolo   bool
+	sfxBusMute, sfxBusSolo       bool
+	masterMute, masterSolo       bool
 	commands                     [512]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [256]cmd.Message
@@ -210,14 +223,15 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if cfg.MasterGainDB != 0 {
 		masterGain = float32(math.Pow(10, cfg.MasterGainDB/20))
 	}
-	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1, currentScene: -1}
+	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain,
+		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
+		layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1, currentScene: -1}
 	for id := 0; id < len(kernel.Params); id++ {
 		e.paramAlpha[id] = smoothingAlpha(kernel.ParamID(id), cfg.SampleRate)
 	}
 	for i := range e.manualPatternTick {
 		e.manualPatternTick[i] = -1
 	}
-
 	if err := e.initEffects(cfg, bpmMilli); err != nil {
 		return nil, err
 	}
@@ -225,6 +239,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if err != nil {
 		return nil, err
 	}
+	e.updateMuteTargets()
 	if voices > cfg.MaxVoices {
 		return nil, Error("engine exceeds maximum voices")
 	}
@@ -275,7 +290,6 @@ func (e *Engine) initEffects(cfg *Config, bpmMilli int64) error {
 		e.compMusic.Reset()
 		e.compSidechainTrack = cfg.CompSidechainTrack
 	}
-
 	return nil
 }
 
@@ -321,7 +335,12 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		v.muteGain, v.muteTarget = 1, 1
 		v.muteStep = 1 / float32(math.Ceil(float64(kernel.Params[kernel.ParamMixMute].SmoothingMS)*.001*float64(cfg.SampleRate)))
 		v.sendA, v.sendB = float32(spec.SendA), float32(spec.SendB)
-		v.targetSendA, v.targetSendB, v.sendPre, v.sourceOff = v.sendA, v.sendB, spec.SendPre, spec.Mute
+		v.targetSendA, v.targetSendB = v.sendA, v.sendB
+		v.sendAPre, v.sendBPre = spec.SendPre || spec.SendAPre, spec.SendPre || spec.SendBPre
+		v.sourceOff, v.muted, v.soloed = spec.Mute, spec.Mute, spec.Solo
+		if spec.Solo {
+			e.soloCount++
+		}
 		v.busSFX = spec.BusSFX
 		if spec.BusSFX {
 			e.hasSFX = true
@@ -406,7 +425,6 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			return 0, err
 		}
 	}
-
 	return voices, nil
 }
 
@@ -453,7 +471,6 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			}
 		}
 	}
-
 	return nil
 }
 
@@ -515,7 +532,6 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	}
 	e.song = append([]SongEntry(nil), cfg.Song...)
 	e.loopSong = cfg.LoopSong
-
 	return nil
 }
 
@@ -707,7 +723,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			if e.layerMask&(1<<track) != 0 && v.kind != VoiceOff {
 				trackL, trackR = left*(v.mix.Left*v.muteGain), right*(v.mix.Right*v.muteGain)
 				if v.sendA > 0 && v.muteGain > 0 && !v.sourceOff {
-					if v.sendPre {
+					if v.sendAPre {
 						sendAL += left * v.sendA * v.muteGain
 						sendAR += right * v.sendA * v.muteGain
 					} else {
@@ -716,7 +732,7 @@ func (e *Engine) Render(outL, outR []float32) {
 					}
 				}
 				if v.sendB > 0 && v.muteGain > 0 && !v.sourceOff {
-					if v.sendPre {
+					if v.sendBPre {
 						sendBL += left * v.sendB * v.muteGain
 						sendBR += right * v.sendB * v.muteGain
 					} else {
@@ -761,6 +777,9 @@ func (e *Engine) Render(outL, outR []float32) {
 		left, right := dry.Music()
 		sfxL, sfxR := dry.SFX()
 		accumulateMeter(&e.sfxMeter, sfxL, sfxR)
+		if e.sfxBusMute || e.musicBusSolo && !e.sfxBusSolo {
+			sfxL, sfxR = 0, 0
+		}
 		if e.compMusic != nil {
 			if e.compSidechainTrack == 0 {
 				left, right = e.compMusic.Process(left, right)
@@ -778,7 +797,13 @@ func (e *Engine) Render(outL, outR []float32) {
 			e.compGR = max(e.compGR, float32(e.compMusic.GainReductionDB()))
 		}
 		accumulateMeter(&e.musicMeter, left, right)
+		if e.musicBusMute || e.sfxBusSolo && !e.musicBusSolo {
+			left, right = 0, 0
+		}
 		left, right = left+sfxL, right+sfxR
+		if e.masterMute {
+			left, right = 0, 0
+		}
 		if e.masterGain != 1 {
 			left *= e.masterGain
 			right *= e.masterGain

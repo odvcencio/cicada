@@ -27,7 +27,10 @@
       "const": 2
     },
     "edition": {
-      "const": 1,
+      "enum": [
+        1,
+        2
+      ],
       "description": "Source language edition; absent in legacy project JSON means 1"
     },
     "title": {
@@ -92,6 +95,21 @@
       "maxItems": 4,
       "items": {
         "$ref": "#/$defs/effect"
+      }
+    },
+    "buses": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/bus"
+      }
+    },
+    "master": {
+      "$ref": "#/$defs/master"
+    },
+    "exports": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/export"
       }
     }
   },
@@ -187,9 +205,13 @@
             "unit": {
               "enum": [
                 "unit",
+                "ratio",
                 "hz",
                 "ms",
-                "db"
+                "db",
+                "lu",
+                "lufs",
+                "dbtp"
               ]
             },
             "number": {
@@ -334,54 +356,34 @@
     "mixer": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "gain_db",
-        "pan",
-        "send_a",
-        "send_b",
-        "send_pre",
-        "mute",
-        "solo",
-        "insert",
-        "bus"
-      ],
       "properties": {
-        "gain_db": {
-          "type": "number",
-          "minimum": -60,
-          "maximum": 6
+        "level": {
+          "$ref": "#/$defs/value"
         },
         "pan": {
           "type": "number",
           "minimum": -1,
           "maximum": 1
         },
-        "send_a": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "send_b": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "send_pre": {
-          "type": "boolean"
-        },
         "mute": {
           "type": "boolean"
         },
         "solo": {
-          "const": false
+          "type": "boolean"
         },
-        "insert": {
-          "enum": [
-            "none",
-            "drive"
-          ]
+        "inserts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/id"
+          }
         },
-        "bus": {
+        "sends": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/mixer_send"
+          }
+        },
+        "out": {
           "enum": [
             "music",
             "sfx"
@@ -1245,39 +1247,66 @@
       }
     },
     "effect": {
-      "oneOf": [
-        {
-          "$ref": "#/$defs/drive_effect"
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "params"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
         },
-        {
-          "$ref": "#/$defs/delay_effect"
+        "kind": {
+          "enum": [
+            "drive",
+            "delay",
+            "reverb",
+            "comp"
+          ]
         },
-        {
-          "$ref": "#/$defs/reverb_effect"
-        },
-        {
-          "$ref": "#/$defs/comp_effect"
+        "params": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/value"
+          }
         }
-      ]
+      }
     },
     "scene_value": {
       "oneOf": [
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["unit", "number"],
+          "required": [
+            "unit",
+            "number"
+          ],
           "properties": {
-            "unit": {"type": "string"},
-            "number": {"type": "number"}
+            "unit": {
+              "type": "string"
+            },
+            "number": {
+              "type": "number"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["unit", "text"],
+          "required": [
+            "unit",
+            "text"
+          ],
           "properties": {
-            "unit": {"const": "enum"},
-            "text": {"type": "string", "minLength": 1}
+            "unit": {
+              "const": "enum"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         }
       ]
@@ -1294,7 +1323,96 @@
           "type": "string",
           "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)+$"
         },
-        "value": {"$ref": "#/$defs/scene_value"}
+        "value": {
+          "$ref": "#/$defs/scene_value"
+        }
+      }
+    },
+    "mixer_send": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "to",
+        "level",
+        "tap"
+      ],
+      "properties": {
+        "to": {
+          "$ref": "#/$defs/id"
+        },
+        "level": {
+          "$ref": "#/$defs/value"
+        },
+        "tap": {
+          "enum": [
+            "pre",
+            "post"
+          ]
+        }
+      }
+    },
+    "bus": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "mixer"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "mixer": {
+          "$ref": "#/$defs/mixer"
+        }
+      }
+    },
+    "master": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "mixer"
+      ],
+      "properties": {
+        "mixer": {
+          "$ref": "#/$defs/mixer"
+        }
+      }
+    },
+    "export": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/id"
+        },
+        "rate": {
+          "type": "integer",
+          "minimum": 8000,
+          "maximum": 192000
+        },
+        "bits": {
+          "enum": [
+            16,
+            24,
+            32
+          ]
+        },
+        "tail": {
+          "$ref": "#/$defs/value"
+        },
+        "loudness": {
+          "$ref": "#/$defs/value"
+        },
+        "true_peak": {
+          "$ref": "#/$defs/value"
+        },
+        "normalize": {
+          "type": "boolean"
+        }
       }
     }
   }
