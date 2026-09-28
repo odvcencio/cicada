@@ -15,7 +15,7 @@ valid but still fail a name, type, unit, range, or engine check.
 ## Notation errors
 
 - **`CICADA-SYNTAX`** — check braces, spelling, separators, and whether the
-  construct exists in edition 1. The [accepted syntax list](../spec/accepted.md)
+  construct exists in edition 2. The [accepted syntax list](../spec/accepted.md)
   is not available in the current build.
 - **`CICADA-REFERENCE`** — check that a track, pattern, scene, instrument, kit,
   or phrase name exists and is spelled consistently.
@@ -44,11 +44,13 @@ valid but still fail a name, type, unit, range, or engine check.
 
 ## No sound or unexpected sound
 
-- Windows and Linux use Tymbal by default (`WASAPI` and `ALSA`); macOS uses
-  Oto. If Tymbal cannot open the selected device, Cicada names it and suggests
-  `--audio oto`. On Linux, a device held by PipeWire or Pulse can cause this
-  error. Choose the explicit Oto escape hatch with `cicada play --audio oto`
-  or `CICADA_AUDIO=oto`. To render without live playback, render a WAV.
+- On Windows and Linux, `cicada play` and Studio use Tymbal by default: WASAPI
+  on Windows and ALSA on Linux. If Tymbal cannot open a device, Cicada names it
+  and suggests `--audio oto`. On Linux, no ALSA default device or a device held
+  by PipeWire or Pulse can cause this error. Use `--audio oto` or set
+  `CICADA_AUDIO=oto` to select Oto explicitly. Use `--audio null` for real-time
+  transport without an output device. macOS uses Oto by default.
+- To check a score without live playback, render a WAV.
 - If playback continues after an invalid save, Studio or `play` is keeping the
   last valid compiled score. Correct the reported diagnostic and save again.
 - If a scene sounds incomplete, check that each track has a compatible
@@ -63,7 +65,9 @@ valid but still fail a name, type, unit, range, or engine check.
 - A stem export's destination directory must not already exist. Choose a new
   name, then run `verify-stems` on the completed directory.
 - When checking a WAV range, pass the same `--from`, `--bars`, and `--tail`
-  values to `verify-wav` that you used for `render`.
+  values to `verify-wav` that you used for `render`. Bar numbers start at 1;
+  `--from 1` selects the first bar. The old `--from 0` input still selects bar
+  1 and prints a deprecation warning.
 - MIDI chance output is deterministic: the exporter uses the first seeded
   pass on each repetition. It does not encode a live probability generator.
 - If a typed JSON field is rejected, inspect the public schema and field

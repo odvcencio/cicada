@@ -17,8 +17,10 @@ tail by default. Integer PCM output uses deterministic triangular dither.
 `--normalize` peak-normalizes the finished file to −1 dBFS; it does not target
 a loudness standard.
 
-Use `--from N` and `--bars M` to select a range. `N` is a zero-based bar.
-`--bars 0` renders from that bar through the end of the song. Cicada processes
+Use `--from N` and `--bars M` to select a range. Bar numbers start at 1, so
+`--from 1` selects the first bar. The legacy value `--from 0` still selects the
+first bar and prints a deprecation warning. `--bars 0` renders from that bar
+through the end of the song. Cicada processes
 the earlier bars before writing the selected range, so instruments and effects
 have the state they would have reached in a full render. Pass the same range
 options to `verify-wav`.
