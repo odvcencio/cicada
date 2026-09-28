@@ -590,7 +590,9 @@
       group.append(preview);
       takePreview.append(group);
     }
-    $('#live-take-summary').textContent = `${capturedNotes.length} note${capturedNotes.length === 1 ? '' : 's'} quantized to the nearest pattern step. Nothing has been written to the score.`;
+    const velocityNotice = recordings.some(item => !patternMeta.get(item.pattern)?.drums)
+      ? ' Acid takes save pitch and slides at fixed velocity; MIDI velocity is not saved.' : '';
+    $('#live-take-summary').textContent = `${capturedNotes.length} note${capturedNotes.length === 1 ? '' : 's'} quantized to the nearest pattern step.${velocityNotice} Nothing has been written to the score.`;
     takePanel.hidden = false;
   }
   function finishRecording() {
@@ -879,7 +881,6 @@
     midiControls.hidden = true;
     $('#live-midi-help').hidden = true;
     $('.live-map-details').hidden = true;
-    $('.live-parameter-details').hidden = true;
     $('#live-acid-track')?.closest('label')?.setAttribute('hidden', '');
     $('#live-drum-track')?.closest('label')?.setAttribute('hidden', '');
     recordButton.hidden = true;

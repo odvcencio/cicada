@@ -157,6 +157,8 @@ type Engine struct {
 	eventScratch                 [128]seq.Event
 	renderFrame, renderFrames    int
 	scenes                       []Scene
+	currentScene                 int
+	sceneSequence                uint64
 	song                         []SongEntry
 	loopSong, songMode           bool
 	songIndex                    int
@@ -167,6 +169,11 @@ type Engine struct {
 
 // TrackCount reports the immutable track count established by New.
 func (e *Engine) TrackCount() int { return e.tracks }
+
+// CurrentScene reports the last launched scene and its launch sequence.
+// The index is -1 before a scene launches.
+// Call it only from the goroutine that owns Render.
+func (e *Engine) CurrentScene() (int, uint64) { return e.currentScene, e.sceneSequence }
 
 func New(cfg Config) (*Engine, error) {
 	if cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 || cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 {
@@ -190,7 +197,7 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.MasterGainDB != 0 {
 		masterGain = float32(math.Pow(10, cfg.MasterGainDB/20))
 	}
-	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, masterGain: masterGain, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1}
+	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, masterGain: masterGain, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1, currentScene: -1}
 	for i := range e.manualPatternTick {
 		e.manualPatternTick[i] = -1
 	}
@@ -488,6 +495,7 @@ func (e *Engine) Reset() {
 	e.layerMask = (1 << e.tracks) - 1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
 	e.manualSceneTick = -1
+	e.currentScene = -1
 	for i := range e.manualPatternTick {
 		e.manualPatternTick[i] = -1
 	}
