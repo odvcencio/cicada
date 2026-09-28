@@ -58,7 +58,7 @@ func (otoBackend) Open(config Config, render Callback) (Stream, error) {
 		player: player,
 		reader: reader,
 		format: Format{
-			Backend: Oto, SampleRate: config.SampleRate, Channels: config.Channels,
+			Backend: Oto, Host: "system", SampleRate: config.SampleRate, Channels: config.Channels,
 			FramesPerPeriod: config.FramesPerPeriod, Device: "System default",
 		},
 	}, nil

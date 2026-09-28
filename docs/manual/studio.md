@@ -88,15 +88,17 @@ are peak meters, not integrated-loudness measurements. Run
 `./cicada studio examples/first-acid.cicada --audio null` to render silently
 in real time without opening an audio device.
 
-On Windows, the **Audio devices and input monitor** panel uses WASAPI shared
-mode. It lists the available input and output endpoints, sample rate, stream
-period, callback count, and dropout counters. Cicada opens the selected input
-and output together when playback starts and releases both endpoints when it
-stops. Change device selections while stopped. Input capture is enabled by
-default on Windows, but input monitoring starts muted to prevent feedback; use
-the gain and stereo/mono channel controls to monitor an input. Device latency is
-shown only when the host reports it. Other platforms keep the Oto system-default
-output path and do not expose input selection or monitoring.
+On Windows and Linux, Studio uses Tymbal with WASAPI and ALSA, respectively.
+The **Audio devices and input monitor** panel lists available input and output
+devices, sample rate, stream period, callback count, and dropout counters.
+Cicada opens the selected endpoints when playback starts and releases them when
+it stops. Change device selections while stopped. Input capture is enabled by
+default on Windows; input monitoring starts muted to prevent feedback. Use the
+gain and stereo/mono channel controls to monitor an input. Device latency is
+shown only when the host reports it. macOS keeps Oto's system-default output.
+If Tymbal cannot open a device, Studio shows the error in its status bar and
+keeps playback stopped. Use `--audio oto` or `CICADA_AUDIO=oto` to choose Oto
+explicitly.
 
 Studio also exposes live controls to same-origin page tools through
 `window.cicadaAudio`. Call `params()` to read the supported addresses and their

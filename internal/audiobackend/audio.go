@@ -54,7 +54,7 @@ func DefaultFor(command string) Name {
 }
 
 func DefaultForOS(command, goos string) Name {
-	if command == "studio" && goos == "windows" {
+	if (command == "play" || command == "studio") && (goos == "windows" || goos == "linux") {
 		return Tymbal
 	}
 	return Oto
@@ -104,6 +104,7 @@ type Config struct {
 
 type Format struct {
 	Backend         Name
+	Host            string
 	Device          string
 	CaptureDevice   string
 	SampleRate      int

@@ -11,6 +11,7 @@
   const monitorMode = byId('audio-monitor-mode');
   const applyButton = byId('audio-apply-devices');
   const status = byId('audio-io-status');
+  const statusBar = byId('audio-status-bar');
   const meters = byId('audio-io-meters');
   const help = byId('audio-io-help');
   if (!outputSelect || !inputSelect || !status) return;
@@ -108,16 +109,22 @@
     monitorMode.disabled = !monitorAvailable;
     applyButton.disabled = !supported || !!state.playing;
     if (!supported) {
-      help.textContent = state.inventory.message || 'This platform uses Oto system-default output; native device selection and input monitoring are available in the Windows Studio build.';
+      help.textContent = state.inventory.message || 'Oto uses the system default output. Native device selection and capture are available with Tymbal on Windows and Linux.';
     } else if (state.inventory.message) {
       help.textContent = state.inventory.message;
+    } else if (state.inventory.host === 'alsa') {
+      help.textContent = 'Tymbal uses ALSA on Linux. Select output and capture devices while stopped; input monitoring starts muted to prevent feedback.';
     } else {
-      help.textContent = 'WASAPI shared mode runs capture and render together. Input monitoring stays muted until you unmute it; select devices while stopped.';
+      help.textContent = 'WASAPI shared mode runs capture and render together. Input monitoring starts muted to prevent feedback; select devices while stopped.';
     }
   }
 
   function render(state, syncOptions = false) {
     latest = state;
+    if (statusBar) {
+      statusBar.textContent = state.status || 'Audio status unavailable';
+      statusBar.dataset.state = state.runtime?.error ? 'error' : '';
+    }
     status.textContent = formatRuntime(state);
     status.classList.toggle('audio-io-error', !!state.runtime?.error);
     if (state.inventory.message && state.inventory.supported) status.title = state.inventory.message;

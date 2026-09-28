@@ -44,9 +44,11 @@ valid but still fail a name, type, unit, range, or engine check.
 
 ## No sound or unexpected sound
 
-- `cicada play` uses the native audio device. Check that the operating system
-  has an output device selected and that the device is not held by another
-  process. To test the score without live playback, render a WAV.
+- Windows and Linux use Tymbal by default (`WASAPI` and `ALSA`); macOS uses
+  Oto. If Tymbal cannot open the selected device, Cicada names it and suggests
+  `--audio oto`. On Linux, a device held by PipeWire or Pulse can cause this
+  error. Choose the explicit Oto escape hatch with `cicada play --audio oto`
+  or `CICADA_AUDIO=oto`. To render without live playback, render a WAV.
 - If playback continues after an invalid save, Studio or `play` is keeping the
   last valid compiled score. Correct the reported diagnostic and save again.
 - If a scene sounds incomplete, check that each track has a compatible

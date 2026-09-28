@@ -18,6 +18,12 @@ validation, and engine construction happen outside the audio reader. A valid
 save replaces the active engine at a bar boundary and crossfades for five
 milliseconds. A failed compile leaves the last valid project playing.
 
+`cicada play` and Studio select Tymbal by default on Windows (WASAPI) and Linux
+(ALSA). macOS uses Oto until Tymbal supports CoreAudio. Tymbal does not fall
+back silently: if the selected device cannot open, `play` exits with a device
+error and Studio leaves transport stopped. Use `--audio oto` or
+`CICADA_AUDIO=oto` to choose Oto explicitly.
+
 ## Load a project in TinyGo
 
 The project-image interface is the shortest path from a Cicada score to the

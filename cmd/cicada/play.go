@@ -67,8 +67,25 @@ func playCommand(args []string) error {
 	if err := audio.Start(); err != nil {
 		return err
 	}
+	fmt.Fprintln(os.Stdout, playAudioBanner(format))
 	fmt.Printf("playing %s at %d Hz; edits land on the next bar (Ctrl-C to stop)\n", path, format.SampleRate)
-	return watchLiveScore(ctxSignal, path, initialHash, stream, audio, os.Stderr)
+	err = watchLiveScore(ctxSignal, path, initialHash, stream, audio, os.Stderr)
+	if format.Backend == audiobackend.Tymbal {
+		fmt.Fprintln(os.Stderr, playAudioRunSummary(audio.Format(), audio.Stats()))
+	}
+	return err
+}
+
+func playAudioBanner(format audiobackend.Format) string {
+	host := format.Host
+	if host == "" {
+		host = string(format.Backend)
+	}
+	return fmt.Sprintf("audio: %s (%s, %d Hz, %d frames)", format.Backend, host, format.SampleRate, format.FramesPerPeriod)
+}
+
+func playAudioRunSummary(format audiobackend.Format, stats audiobackend.Stats) string {
+	return fmt.Sprintf("audio: callbacks=%d glitches=%d period=%d frames", stats.Callbacks, stats.Dropouts+stats.Late, format.FramesPerPeriod)
 }
 
 func renderLivePlayPeriod(source io.Reader, pcm []byte, output [][]float32) error {

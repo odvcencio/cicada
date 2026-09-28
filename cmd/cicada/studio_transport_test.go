@@ -20,6 +20,7 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel"
 )
 
@@ -111,7 +112,7 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 		}
 	}
 	page := studioCall(t, handler, "/", nil)
-	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `src="/studio-audio-devices.js"`) || !strings.Contains(page.Body.String(), `src="/studio-master.js"`) || !strings.Contains(page.Body.String(), `href="#master">Master</a>`) || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `id="audio-output-device"`) || !strings.Contains(page.Body.String(), `id="audio-input-device"`) || !strings.Contains(page.Body.String(), `id="audio-monitor-gain"`) || !strings.Contains(page.Body.String(), `id="loudness-history"`) || !strings.Contains(page.Body.String(), `id="gain-reduction-history"`) || !strings.Contains(page.Body.String(), `id="reset-integrated"`) || !strings.Contains(page.Body.String(), `id="export-wav"`) || !strings.Contains(page.Body.String(), `href="#mixer-settings">Open mixer compressor settings</a>`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) || !strings.Contains(page.Body.String(), "score-minus14LUFS.wav") {
+	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `src="/studio-audio-devices.js"`) || !strings.Contains(page.Body.String(), `src="/studio-master.js"`) || !strings.Contains(page.Body.String(), `href="#master">Master</a>`) || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `id="audio-output-device"`) || !strings.Contains(page.Body.String(), `id="audio-input-device"`) || !strings.Contains(page.Body.String(), `id="audio-monitor-gain"`) || !strings.Contains(page.Body.String(), `id="audio-status-bar"`) || !strings.Contains(page.Body.String(), `id="loudness-history"`) || !strings.Contains(page.Body.String(), `id="gain-reduction-history"`) || !strings.Contains(page.Body.String(), `id="reset-integrated"`) || !strings.Contains(page.Body.String(), `id="export-wav"`) || !strings.Contains(page.Body.String(), `href="#mixer-settings">Open mixer compressor settings</a>`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) || !strings.Contains(page.Body.String(), "score-minus14LUFS.wav") {
 		t.Fatalf("Studio meter markup missing: %d", page.Code)
 	}
 	script := studioCall(t, handler, "/studio-audio.js", nil)
@@ -127,12 +128,36 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 		t.Fatalf("audio device controls not served: %d", deviceScript.Code)
 	}
 	audioState := studioCall(t, handler, "/api/audio/config", nil)
-	if audioState.Code != http.StatusOK || !strings.Contains(audioState.Body.String(), `"monitorMuted":true`) {
+	if audioState.Code != http.StatusOK || !strings.Contains(audioState.Body.String(), `"monitorMuted":true`) || !strings.Contains(audioState.Body.String(), `"status":`) {
 		t.Fatalf("audio config state: %d %s", audioState.Code, audioState.Body.String())
+	}
+	var audioStateJSON studioAudioState
+	if err := json.Unmarshal(audioState.Body.Bytes(), &audioStateJSON); err != nil {
+		t.Fatal(err)
+	}
+	if audioStateJSON.Runtime.BackendName != string(audiobackend.DefaultFor("studio")) || audioStateJSON.Status == "" {
+		t.Fatalf("Studio audio status omitted the active backend: %+v", audioStateJSON)
 	}
 	invalidAudio := studioCall(t, handler, "/api/audio/config", studioAudioOptions{MonitorGain: 3, MonitorMode: "stereo"})
 	if invalidAudio.Code != http.StatusBadRequest {
 		t.Fatalf("invalid monitor gain accepted: %d %s", invalidAudio.Code, invalidAudio.Body.String())
+	}
+}
+
+func TestStudioAudioStatusField(t *testing.T) {
+	state := studioAudioState{
+		Inventory: studioAudioInventory{
+			BackendName: "tymbal", Host: "wasapi",
+			Devices: []studioAudioDeviceInfo{{ID: "default", Outputs: 2, SampleRate: 48_000, DefaultOutput: true}},
+		},
+		Runtime: studioAudioSnapshot{BackendName: "tymbal", Host: "wasapi"},
+	}
+	if got, want := studioAudioStatus(state), "Audio: tymbal · WASAPI · 48 kHz"; got != want {
+		t.Fatalf("Studio audio status = %q, want %q", got, want)
+	}
+	state.Runtime.Error = "no ALSA playback device found; use --audio oto"
+	if got := studioAudioStatus(state); got != state.Runtime.Error {
+		t.Fatalf("Studio audio error status = %q, want %q", got, state.Runtime.Error)
 	}
 }
 
@@ -572,6 +597,7 @@ func TestStudioQueuesNewlySavedSlotAfterScoreOffer(t *testing.T) {
 		t.Fatal(err)
 	}
 	transport := newStudioTransport(path)
+	transport.audioNull = true
 	transport.stream, transport.playing, transport.last = stream, true, fingerprint
 	p, err := compileStudioSource(path, []byte(studioScore))
 	if err != nil {
@@ -624,6 +650,7 @@ func TestStudioPlayFromSongBlockUsesActiveScore(t *testing.T) {
 		t.Fatal(err)
 	}
 	transport := newStudioTransport(path)
+	transport.audioNull = true
 	transport.stream, transport.playing, transport.last = stream, true, fingerprint
 	transport.history = newStudioHistory([]byte(studioSongScore))
 	studio := &studio{path: path, lastGoodSource: []byte(studioSongScore), lastGoodProject: project, transport: transport}
