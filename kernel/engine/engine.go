@@ -159,6 +159,7 @@ type Engine struct {
 	patterns                     [16]patternTrack
 	eventScratch                 [128]seq.Event
 	renderFrame, renderFrames    int
+	sceneDefaults                *sceneParameterState
 	scenes                       []Scene
 	currentScene                 int
 	sceneSequence                uint64
@@ -233,6 +234,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if err := e.loadArrangement(cfg, bpmMilli); err != nil {
 		return nil, err
 	}
+	e.captureSceneDefaults()
 	return e, nil
 }
 
@@ -466,13 +468,18 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 				return Error("scene binding is out of range")
 			}
 		}
-		seen := make(map[kernel.ParamID]bool, len(scene.Settings))
+		type parameterAddress struct {
+			track uint8
+			id    kernel.ParamID
+		}
+		seen := make(map[parameterAddress]bool, len(scene.Settings))
 		for _, setting := range scene.Settings {
+			address := parameterAddress{track: setting.Track, id: setting.ID}
 			spec, ok := kernel.Param(setting.ID)
-			if !ok || !spec.Live || seen[setting.ID] {
+			if !ok || !spec.Live || seen[address] {
 				return Error("scene parameter setting is invalid")
 			}
-			seen[setting.ID] = true
+			seen[address] = true
 			syncedDelay := setting.Division != fx.FreeDelay
 			if syncedDelay {
 				if setting.ID != kernel.ParamFxDelayTime || e.delayA == nil || setting.Division.String() == "invalid" || setting.Value != 0 {
