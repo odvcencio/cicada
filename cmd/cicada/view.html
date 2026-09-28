@@ -133,6 +133,67 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .projection-heading p { color:var(--muted); margin:0; font-size:.82rem; }
 .projection section { margin-bottom:32px; }
 .projection h2 { font-size:1.08rem; margin:0 0 11px; }
+.mix-view { width:100%; scroll-margin-top:64px; }
+.mix-warning { min-height:24px; margin:0 0 10px; color:var(--amber); font-size:.82rem; }
+.mix-rack { display:flex; align-items:stretch; gap:10px; max-width:100%; overflow-x:auto; overscroll-behavior-x:contain; padding:2px 2px 12px; scrollbar-color:#65836c #19211c; }
+.mix-strip { flex:0 0 188px; min-width:0; border:1px solid var(--border); border-radius:12px; background:var(--panel); overflow:hidden; }
+.mix-strip.master-strip { position:sticky; right:0; z-index:2; flex-basis:220px; box-shadow:-12px 0 18px #0f1411bb; }
+.mix-strip > summary { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:54px; padding:9px 12px; list-style:none; cursor:pointer; background:var(--panel-raised); }
+.mix-strip > summary::-webkit-details-marker { display:none; }
+.mix-strip > summary::after { content:"▾"; color:var(--mint); }
+.mix-strip:not([open]) > summary::after { content:"▸"; }
+.mix-strip-name { min-width:0; padding:0; border:0; background:none; color:var(--text); text-align:left; font:800 .92rem system-ui,sans-serif; overflow-wrap:anywhere; cursor:pointer; }
+.mix-kind { flex:none; color:var(--mint); font-size:.61rem; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+.mix-strip-body { display:grid; gap:10px; padding:11px; }
+.mix-tag { display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border:1px solid #8b7045; border-radius:999px; color:var(--amber); font-size:.65rem; font-weight:800; text-transform:uppercase; }
+.mix-control { display:grid; gap:5px; min-width:0; }
+.mix-control-head { display:flex; align-items:baseline; justify-content:space-between; gap:7px; color:var(--muted); font-size:.7rem; font-weight:800; }
+.mix-control output { color:var(--amber); font:700 .72rem ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric:tabular-nums; text-align:right; }
+.mix-control select { width:100%; min-height:44px; border:1px solid #526451; border-radius:7px; background:#121a15; color:var(--text); padding:7px 8px; font:600 .78rem system-ui,sans-serif; }
+.mix-control select:focus-visible,.mix-control button:focus-visible,.mix-fader:focus-visible,.mix-knob:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
+.mix-fader-wrap { display:grid; grid-template-columns:44px 1fr; align-items:center; gap:8px; min-height:142px; }
+.mix-fader { position:relative; justify-self:center; width:44px; height:132px; border:1px solid #48584b; border-radius:7px; background:linear-gradient(to top,#17221b 0%,#2a392d 90%,#655737 100%); touch-action:none; cursor:ns-resize; }
+.mix-fader::before { content:""; position:absolute; left:20px; top:6px; bottom:6px; width:2px; background:#738475; }
+.mix-fader-thumb { position:absolute; z-index:1; left:9px; right:9px; height:12px; border:2px solid #18211b; border-radius:4px; background:var(--amber); box-shadow:0 0 0 1px #f2c66d; transform:translateY(-50%); }
+.mix-fader[aria-disabled="true"],.mix-knob[aria-disabled="true"] { opacity:.5; cursor:not-allowed; }
+.mix-level-side { display:grid; justify-items:start; align-content:center; gap:9px; }
+.mix-off,.mix-toggle,.mix-pre,.mix-remove,.mix-add,.mix-chain button { min-width:44px; min-height:44px; border:1px solid #596d5c; border-radius:7px; background:#253529; color:var(--text); padding:7px 9px; font:700 .73rem/1.2 system-ui,sans-serif; cursor:pointer; }
+.mix-off[aria-pressed="true"],.mix-toggle[aria-pressed="true"],.mix-pre[aria-pressed="true"] { border-color:var(--amber); background:#3b3220; color:#ffe0a7; }
+.mix-knob { display:grid; place-items:center; justify-self:start; width:72px; height:72px; border:1px solid #596d5c; border-radius:50%; background:radial-gradient(circle at 50% 75%,#34483a,#18221b 68%); color:var(--mint); font:700 .69rem ui-monospace,SFMono-Regular,Consolas,monospace; touch-action:none; user-select:none; cursor:ns-resize; }
+.mix-buttons { display:flex; flex-wrap:wrap; gap:6px; }
+.mix-chain,.mix-sends { display:grid; gap:7px; }
+.mix-chain-item,.mix-send { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px; padding:7px; border:1px solid #35483a; border-radius:8px; background:#151d18; }
+.mix-chain-item[draggable="true"] { cursor:grab; }
+.mix-chain select { width:100%; min-height:44px; border:1px solid #526451; border-radius:7px; background:#121a15; color:var(--text); padding:7px 8px; font:600 .78rem system-ui,sans-serif; }
+.mix-chain-item[data-dragging] { border-color:var(--amber); }
+.mix-chain-label,.mix-send-title { min-width:0; color:var(--text); font:700 .75rem ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.mix-send .mix-control { grid-column:1 / -1; }
+.mix-send-actions { display:flex; gap:5px; justify-content:flex-end; }
+.mix-send-actions button { min-width:44px; min-height:44px; }
+.mix-add { width:100%; border-style:dashed; color:var(--mint); }
+.mix-unsupported { padding:7px 8px; border-left:3px solid var(--coral); background:#271f1c; color:#ffd0bf; font-size:.68rem; overflow-wrap:anywhere; }
+.mix-meter { display:grid; gap:4px; color:var(--muted); font:600 .66rem ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric:tabular-nums; }
+.mix-meter-track { position:relative; height:10px; overflow:visible; border-radius:999px; background:#0e1510; box-shadow:inset 0 0 0 1px #344539; }
+.mix-meter-track i { position:absolute; inset:0 auto 0 0; width:0; border-radius:inherit; background:linear-gradient(90deg,#62b58f,#e8c66f 78%,#ff836c); }
+.mix-meter-track b { position:absolute; top:-2px; bottom:-2px; left:0; width:2px; background:#fff0ac; }
+.mix-meter-over { min-height:20px; color:var(--muted); font-size:.68rem; font-weight:800; }
+.mix-meter-over[data-over="true"] { color:var(--coral); }
+.mix-gr { display:flex; justify-content:space-between; gap:8px; padding:7px 0; border-top:1px solid #304037; color:var(--muted); font-size:.7rem; }
+.mix-line-link { border:0; padding:0; background:none; color:var(--mint); text-align:left; font:inherit; cursor:pointer; }
+.source-code-line { display:block; min-height:1.75em; }
+.source-code-line[data-highlight] { background:#75643b66; box-shadow:inset 3px 0 var(--amber); }
+.mix-warning[hidden],.mix-strip-body[hidden] { display:none; }
+@media (max-width:640px) {
+  .mix-view { scroll-margin-top:180px; }
+  .mix-rack { display:grid; grid-template-columns:minmax(0,1fr); overflow:visible; padding:0; }
+  .mix-strip,.mix-strip.master-strip { position:static; width:100%; flex:auto; box-shadow:none; }
+  .mix-strip > summary { min-height:56px; }
+  .mix-strip:not([open]) .mix-strip-body { display:none; }
+  .mix-strip-body { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .mix-strip-body > .mix-control,.mix-strip-body > .mix-meter,.mix-strip-body > .mix-sends,.mix-strip-body > .mix-chain,.mix-strip-body > .mix-unsupported,.mix-strip-body > .mix-section-title { grid-column:1 / -1; }
+  .mix-fader-wrap { min-height:118px; }
+  .mix-fader { height:108px; }
+}
 .pattern summary { padding:12px 16px; }
 .pattern-title { font-size:1rem; }
 .pattern-metrics { font-size:.75rem; }
@@ -355,7 +416,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   <p class="lede">{{if .Studio}}Edit the score, click a pitch row to set a note, or click a drum cell to toggle a hit. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
-<nav class="nav" aria-label="Score sections">{{if .Studio}}<a href="#notation">Code</a><a href="#session">Session</a><a href="#master">Master</a><a href="#history">History</a><a href="#voice">Voice</a><div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><div class="master-meter" role="meter" aria-label="Master output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Master</span><div class="meter-track"><i id="master-meter-fill"></i><b id="master-meter-hold"></b></div><output id="master-meter-value">−120 dBFS</output></div><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span><button id="live-toggle" class="live-toggle" type="button" aria-pressed="false">Live</button><div id="midi-controls" class="midi-controls" hidden><span class="midi-status"><i id="midi-activity" class="midi-activity" aria-hidden="true"></i><span id="midi-status">MIDI off</span></span><button id="midi-enable" class="midi-enable" type="button">Enable MIDI</button></div></div>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}</nav>
+<nav class="nav" aria-label="Score sections">{{if .Studio}}<a href="#notation">Code</a><a href="#session">Session</a><a href="#mix">Mix</a><a href="#master">Master</a><a href="#history">History</a><a href="#voice">Voice</a><div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><div class="master-meter" role="meter" aria-label="Master output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Master</span><div class="meter-track"><i id="master-meter-fill"></i><b id="master-meter-hold"></b></div><output id="master-meter-value">−120 dBFS</output></div><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span><button id="live-toggle" class="live-toggle" type="button" aria-pressed="false">Live</button><div id="midi-controls" class="midi-controls" hidden><span class="midi-status"><i id="midi-activity" class="midi-activity" aria-hidden="true"></i><span id="midi-status">MIDI off</span></span><button id="midi-enable" class="midi-enable" type="button">Enable MIDI</button></div></div>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}</nav>
 <main class="workspace">
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
@@ -423,7 +484,13 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
       <h2 id="tracks-heading">Tracks</h2>
       <div class="track-list">{{range .Tracks}}<div class="track{{if .Muted}} muted{{end}}"><span class="kind">{{.Kind}}</span><strong>{{.ID}}</strong><span class="gain">{{.Gain}}{{if .Muted}} · muted{{end}}</span>{{if $.Studio}}<div class="track-level-meter" data-track-meter="{{.ID}}" role="meter" aria-label="{{.ID}} output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Level</span><div class="meter-track"><i></i></div><output>−120 dBFS</output></div>{{end}}</div>{{end}}</div>
     </section>
-    {{if .Studio}}<section id="master" aria-labelledby="master-heading" class="master-view">
+    {{if .Studio}}<section id="mix" class="mix-view" aria-labelledby="mix-heading">
+      <h2 id="mix-heading">Mix</h2>
+      <p class="section-note">Named track, bus, effect, and master controls write the score. Saved solo switches show the CICADA-SOLO warning.</p>
+      <p id="mix-warning" class="mix-warning" role="status" aria-live="polite" hidden></p>
+      <div id="mix-rack" class="mix-rack" aria-label="Named mixer strips" aria-busy="true"><p>Loading mixer…</p></div>
+    </section>
+    <section id="master" aria-labelledby="master-heading" class="master-view">
       <h2 id="master-heading">Master</h2>
       <p>Live BS.1770-4 loudness from the post-limiter master output. Metering runs off the audio reader.</p>
       <section class="audio-io-panel" aria-labelledby="audio-io-heading">
@@ -602,6 +669,51 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     } catch (error) { setStatus('Connection lost: ' + error.message, 'error'); return false; }
     finally { busy = false; save.disabled = false; }
   }
+  function updateSourceProjection(source, changedRange) {
+    const code = sourceView.querySelector('pre code');
+    const numbers = sourceView.querySelector('.line-numbers');
+    const lines = source.replace(/\r\n/g, '\n').split('\n');
+    if (lines.at(-1) === '') lines.pop();
+    const numberNodes = [], codeNodes = [];
+    lines.forEach((line, index) => {
+      const number = document.createElement('span'); number.textContent = String(index + 1); numberNodes.push(number);
+      const sourceLine = document.createElement('span'); sourceLine.className = 'source-code-line'; sourceLine.dataset.sourceLine = String(index + 1); sourceLine.textContent = line || ' ';
+      if (changedRange && index + 1 >= changedRange.start && index + 1 <= changedRange.end) sourceLine.dataset.highlight = '';
+      codeNodes.push(sourceLine);
+    });
+    numbers.replaceChildren(...numberNodes); code.replaceChildren(...codeNodes);
+    editor.value = source; original = source;
+    if (changedRange) {
+      const line = sourceView.querySelector(`[data-source-line="${changedRange.start}"]`);
+      line?.scrollIntoView({block:'center', behavior:'smooth'});
+      setTimeout(() => sourceView.querySelectorAll('[data-highlight]').forEach(node => node.removeAttribute('data-highlight')), 1800);
+    }
+  }
+  async function commitMixer(path, value, preview = null) {
+    if (busy) { setStatus('Finish the current mixer edit before saving another', 'error'); return false; }
+    if (dirty()) { setStatus('Save or discard source edits before changing the mixer', 'error'); return false; }
+    busy = true; save.disabled = true;
+    try {
+      async function post(confirmUpgrade) {
+        const response = await fetch('/api/mixer', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({revision:revision(), path, value, ...(confirmUpgrade ? {confirmUpgrade:true} : {})})});
+        return {response, result:await response.json()};
+      }
+      let {response, result} = await post(false);
+      if (!response.ok && result.code === 'CICADA-VERSION' && result.upgradeRequired) {
+        if (!window.confirm('This score uses edition 1. Upgrade to edition 2 to save mixer changes?')) return false;
+        ({response, result} = await post(true));
+      }
+      if (!response.ok) { setStatus(result.error || 'Mixer edit failed', 'error'); return false; }
+      document.body.dataset.revision = result.revision;
+      document.body.dataset.playing = playing ? 'true' : 'false';
+      updateSourceProjection(result.source, result.changedRange);
+      if (preview) preview(result);
+      setStatus(`Saved mixer change at line ${result.changedRange.start}`, 'success');
+      return result;
+    } catch (error) { setStatus('Connection lost: ' + error.message, 'error'); return false; }
+    finally { busy = false; save.disabled = false; }
+  }
+  window.cicadaStudio = {commitMixer, dirty, busy:() => busy, setStatus, revision:() => revision(), playing:() => playing};
   save.addEventListener('click', () => send('/api/source', {source:editor.value}));
   editor.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); save.click(); } });
   document.querySelectorAll('.step-edit').forEach(cell => cell.addEventListener('click', () => {
@@ -694,6 +806,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   function showTransport(state) {
     if (!isNewTransportState(state)) return;
     playing = state.playing;
+    document.body.dataset.playing = playing ? 'true' : 'false';
     transportButton.textContent = playing ? 'Stop' : 'Play';
     transportPosition.textContent = `Bar ${state.bar} · step ${state.step}`;
     const queuedSlots = Object.entries(state.pendingSlots || {});
@@ -793,6 +906,6 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     } catch { setStatus('Waiting for the local Studio server', 'error'); }
   }, 1500);
 })();
-</script><script src="/studio-audio-devices.js"></script><script src="/studio-master.js"></script><script src="/studio-midi.js"></script><script src="/studio-live.js"></script>{{end}}
+</script><script src="/studio-audio-devices.js"></script><script src="/studio-master.js"></script><script src="/studio-midi.js"></script><script src="/studio-live.js"></script><script src="/studio-mix.js"></script>{{end}}
 </body>
 </html>
