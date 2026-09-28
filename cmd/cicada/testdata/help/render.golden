@@ -1,0 +1,21 @@
+cicada render <score.cicada> -o <out.wav> [flags]
+
+render a score to WAV
+
+Flags:
+  -o <file>                    required output WAV path
+  --rate <Hz>                  sample rate (default 48000)
+  --bits <16|24|32>            WAV bit depth (default 24)
+  --from <bar>                 one-based start bar (default 1)
+  --bars <n>                   bars to render; 0 means through song end
+  --tail <duration>            render tail (default 3s)
+  --dither=<bool>              deterministic TPDF dither for integer PCM (default true)
+  --normalize=<bool>           peak normalize to -1 dBFS (default false)
+  --block <frames>             offline block size (default 4096)
+  --loudness <LUFS>            target integrated loudness
+  --true-peak-max <dBTP>       maximum true peak for loudness rendering (default -1)
+  --loudness-tolerance <LU>    target tolerance (default 0.5)
+  --export <name>              use a named export profile
+  --help                       show this help
+
+Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1.
