@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -79,7 +81,7 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 		t.Fatalf("incomplete current registry response: rev=%q registry=%d addresses=%d", params.Revision, len(params.Registry), len(params.Addresses))
 	}
 	page := studioCall(t, handler, "/", nil)
-	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `src="/studio-master.js"`) || !strings.Contains(page.Body.String(), `href="#master">Master</a>`) || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `id="loudness-history"`) || !strings.Contains(page.Body.String(), `id="gain-reduction-history"`) || !strings.Contains(page.Body.String(), `id="reset-integrated"`) || !strings.Contains(page.Body.String(), `id="export-wav"`) || !strings.Contains(page.Body.String(), `href="#mixer-settings">Open mixer compressor settings</a>`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) || !strings.Contains(page.Body.String(), "score-minus14LUFS.wav") {
+	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `src="/studio-audio-devices.js"`) || !strings.Contains(page.Body.String(), `src="/studio-master.js"`) || !strings.Contains(page.Body.String(), `href="#master">Master</a>`) || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `id="audio-output-device"`) || !strings.Contains(page.Body.String(), `id="audio-input-device"`) || !strings.Contains(page.Body.String(), `id="audio-monitor-gain"`) || !strings.Contains(page.Body.String(), `id="loudness-history"`) || !strings.Contains(page.Body.String(), `id="gain-reduction-history"`) || !strings.Contains(page.Body.String(), `id="reset-integrated"`) || !strings.Contains(page.Body.String(), `id="export-wav"`) || !strings.Contains(page.Body.String(), `href="#mixer-settings">Open mixer compressor settings</a>`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) || !strings.Contains(page.Body.String(), "score-minus14LUFS.wav") {
 		t.Fatalf("Studio meter markup missing: %d", page.Code)
 	}
 	script := studioCall(t, handler, "/studio-audio.js", nil)
@@ -89,6 +91,92 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 	masterScript := studioCall(t, handler, "/studio-master.js", nil)
 	if masterScript.Code != http.StatusOK || !strings.Contains(masterScript.Body.String(), "createHistoryBuffer") {
 		t.Fatalf("Master view script not served: %d", masterScript.Code)
+	}
+	deviceScript := studioCall(t, handler, "/studio-audio-devices.js", nil)
+	if deviceScript.Code != http.StatusOK || !strings.Contains(deviceScript.Body.String(), "inputLatencyKnown") || !strings.Contains(deviceScript.Body.String(), "monitorGain") {
+		t.Fatalf("audio device controls not served: %d", deviceScript.Code)
+	}
+	audioState := studioCall(t, handler, "/api/audio/config", nil)
+	if audioState.Code != http.StatusOK || !strings.Contains(audioState.Body.String(), `"monitorMuted":true`) {
+		t.Fatalf("audio config state: %d %s", audioState.Code, audioState.Body.String())
+	}
+	invalidAudio := studioCall(t, handler, "/api/audio/config", studioAudioOptions{MonitorGain: 3, MonitorMode: "stereo"})
+	if invalidAudio.Code != http.StatusBadRequest {
+		t.Fatalf("invalid monitor gain accepted: %d %s", invalidAudio.Code, invalidAudio.Body.String())
+	}
+}
+
+func TestStudioAudioMixerRoutesGainAndClamps(t *testing.T) {
+	encode := func(samples ...float32) []byte {
+		pcm := make([]byte, len(samples)*4)
+		for index, sample := range samples {
+			binary.LittleEndian.PutUint32(pcm[index*4:], math.Float32bits(sample))
+		}
+		return pcm
+	}
+	pcm := encode(.25, -.25)
+	input := [][]float32{{.5}, {-.5}}
+	left, right := make([]float32, 1), make([]float32, 1)
+	output := [][]float32{left, right}
+
+	mixStudioAudio(pcm, input, output, studioAudioMonitor{Gain: .5, Mode: "stereo"})
+	if left[0] != .5 || right[0] != -.5 {
+		t.Fatalf("stereo monitor mix = %g/%g, want .5/-.5", left[0], right[0])
+	}
+	mixStudioAudio(pcm, input, output, studioAudioMonitor{Muted: true, Gain: 1, Mode: "stereo"})
+	if left[0] != .25 || right[0] != -.25 {
+		t.Fatalf("muted monitor changed render = %g/%g", left[0], right[0])
+	}
+	mixStudioAudio(pcm, input, output, studioAudioMonitor{Gain: .5, Mode: "mono1"})
+	if left[0] != .5 || right[0] != 0 {
+		t.Fatalf("mono1 monitor mix = %g/%g, want .5/0", left[0], right[0])
+	}
+	mono := [][]float32{make([]float32, 1)}
+	mixStudioAudio(encode(.5, .5), [][]float32{{1}, {1}}, mono, studioAudioMonitor{Gain: 1, Mode: "stereo"})
+	if mono[0][0] != 1 {
+		t.Fatalf("mono output did not clamp: %g", mono[0][0])
+	}
+	peakL, peakR, _, _ := measureStudioAudioInput(input)
+	if peakL != .5 || peakR != .5 {
+		t.Fatalf("input peak meter = %g/%g", peakL, peakR)
+	}
+}
+
+func TestStudioAudioPeriodClearsOutputWhenPausedOrRenderIsShort(t *testing.T) {
+	output := [][]float32{{1, .5}, {-.5, 1}}
+	clearStudioAudioOutput(output)
+	for channelIndex, channel := range output {
+		for frame, sample := range channel {
+			if sample != 0 {
+				t.Fatalf("paused output[%d][%d] = %g, want silence", channelIndex, frame, sample)
+			}
+		}
+	}
+
+	output[0][0], output[0][1], output[1][0], output[1][1] = 1, 1, 1, 1
+	err := renderStudioAudioPeriod(bytes.NewReader([]byte{1, 2, 3}), make([]byte, 16), nil, output, studioAudioMonitor{Muted: true})
+	if !errors.Is(err, io.ErrUnexpectedEOF) {
+		t.Fatalf("short reader error = %v, want unexpected EOF", err)
+	}
+	for channelIndex, channel := range output {
+		for frame, sample := range channel {
+			if sample != 0 {
+				t.Fatalf("short render output[%d][%d] = %g, want silence", channelIndex, frame, sample)
+			}
+		}
+	}
+
+	output[0][0], output[0][1], output[1][0], output[1][1] = 1, 1, 1, 1
+	err = renderStudioAudioPeriod(bytes.NewReader(make([]byte, 16)), make([]byte, 8), nil, output, studioAudioMonitor{Muted: true})
+	if !errors.Is(err, io.ErrShortBuffer) {
+		t.Fatalf("undersized period buffer error = %v, want short buffer", err)
+	}
+	for channelIndex, channel := range output {
+		for frame, sample := range channel {
+			if sample != 0 {
+				t.Fatalf("undersized render output[%d][%d] = %g, want silence", channelIndex, frame, sample)
+			}
+		}
 	}
 }
 
@@ -215,8 +303,8 @@ func TestStudioNullAudioPacesRenderingWithoutOpeningDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer transport.close()
-	if transport.player != nil || transport.device != nil || transport.stream == nil {
-		t.Fatalf("null audio opened a device or missed its stream: player=%v device=%v", transport.player, transport.device)
+	if transport.audio != nil || transport.stream == nil {
+		t.Fatalf("null audio opened a device or missed its stream: audio=%v stream=%v", transport.audio, transport.stream)
 	}
 	time.Sleep(80 * time.Millisecond)
 	if got := transport.meterSequence.Load(); got == 0 || got > 8 {
