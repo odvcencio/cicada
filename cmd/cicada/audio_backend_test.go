@@ -13,8 +13,14 @@ import (
 )
 
 func TestSelectCommandAudioEnvironmentAndFlagPrecedence(t *testing.T) {
-	t.Setenv("CICADA_AUDIO", "null")
+	t.Setenv("CICADA_AUDIO", "")
 	args, name, _, err := selectCommandAudio("play", []string{"score.cicada"})
+	if err != nil || name != audiobackend.DefaultFor("play") || len(args) != 1 || args[0] != "score.cicada" {
+		t.Fatalf("default selection = (%v, %q, %v)", args, name, err)
+	}
+
+	t.Setenv("CICADA_AUDIO", "null")
+	args, name, _, err = selectCommandAudio("play", []string{"score.cicada"})
 	if err != nil || name != audiobackend.Null || len(args) != 1 || args[0] != "score.cicada" {
 		t.Fatalf("environment selection = (%v, %q, %v)", args, name, err)
 	}

@@ -30,7 +30,10 @@ func enumerateStudioAudio(backendName string) (studioAudioInventory, error) {
 		return studioAudioInventory{}, err
 	}
 	devices, supported, err := backend.Devices()
-	inventory := studioAudioInventory{Backend: studioAudioBackendLabel(audiobackend.Name(backendName)), Supported: supported}
+	name := audiobackend.Name(backendName)
+	inventory := studioAudioInventory{
+		Backend: studioAudioBackendLabel(name), BackendName: string(name), Host: studioAudioHost(name), Supported: supported,
+	}
 	if err != nil {
 		return inventory, err
 	}
@@ -243,7 +246,8 @@ func (a *backendStudioAudio) Snapshot() studioAudioSnapshot {
 		return studioAudioSnapshot{}
 	}
 	snapshot := studioAudioSnapshot{
-		Backend: a.formatName, InputName: a.inputName, OutputName: a.outputName,
+		Backend: a.formatName, BackendName: string(a.actual.Backend), Host: a.actual.Host,
+		InputName: a.inputName, OutputName: a.outputName,
 		InputChannels: a.actual.CaptureChannels, OutputChannels: a.actual.Channels,
 		SampleRate: a.actual.SampleRate, PeriodFrames: a.actual.FramesPerPeriod,
 		InputLatencyMS:    float64(a.actual.CaptureLatency) / float64(time.Millisecond),
@@ -278,4 +282,17 @@ func studioAudioBackendLabel(name audiobackend.Name) string {
 	default:
 		return fmt.Sprint(name)
 	}
+}
+
+func studioAudioHost(name audiobackend.Name) string {
+	if name != audiobackend.Tymbal {
+		return ""
+	}
+	if runtime.GOOS == "windows" {
+		return "wasapi"
+	}
+	if runtime.GOOS == "linux" {
+		return "alsa"
+	}
+	return ""
 }

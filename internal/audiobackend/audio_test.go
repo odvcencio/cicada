@@ -57,12 +57,13 @@ func TestAudioDefaultsByCommandAndOS(t *testing.T) {
 		command, goos string
 		want          Name
 	}{
-		{command: "play", goos: "windows", want: Oto},
-		{command: "play", goos: "linux", want: Oto},
+		{command: "play", goos: "windows", want: Tymbal},
+		{command: "play", goos: "linux", want: Tymbal},
 		{command: "play", goos: "darwin", want: Oto},
 		{command: "studio", goos: "windows", want: Tymbal},
-		{command: "studio", goos: "linux", want: Oto},
+		{command: "studio", goos: "linux", want: Tymbal},
 		{command: "studio", goos: "darwin", want: Oto},
+		{command: "other", goos: "windows", want: Oto},
 	} {
 		if got := DefaultForOS(test.command, test.goos); got != test.want {
 			t.Errorf("DefaultForOS(%q, %q) = %q, want %q", test.command, test.goos, got, test.want)

@@ -155,6 +155,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 				_ = t.audio.Close()
 				t.audio = nil
 				audioFailed = true
+				t.playing, t.errText = false, err.Error()
 			}
 		}
 		if index >= 0 {
@@ -176,6 +177,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 		if t.audio == nil && (!t.playing || audioFailed) {
 			audio, openErr := openStudioAudio(t.stream, t.audioOptions, t.selectedAudioBackend(), sampleRate)
 			if openErr != nil {
+				t.playing, t.errText = false, openErr.Error()
 				return openErr
 			}
 			audio.SetMonitor(studioMonitorOptions(t.audioOptions))
@@ -183,6 +185,10 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 		}
 		if t.audio != nil {
 			if err := t.audio.Play(); err != nil {
+				t.audio.Pause()
+				_ = t.audio.Close()
+				t.audio = nil
+				t.playing, t.errText = false, err.Error()
 				return err
 			}
 		}
@@ -574,6 +580,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 	switch input.Action {
 	case "play":
 		if err := s.transport.start(); err != nil {
+			s.transport.setError(err)
 			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 			return
 		}
@@ -657,6 +664,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			}
 			sampleRate, rateErr := s.transport.ensureSampleRate()
 			if rateErr != nil {
+				s.transport.setError(rateErr)
 				studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": rateErr.Error()})
 				return
 			}
@@ -673,6 +681,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			launchErr = s.transport.startFrom(input.Entry, input.Scene, &prepared, fingerprint)
 		}
 		if launchErr != nil {
+			s.transport.setError(launchErr)
 			studioJSON(w, http.StatusConflict, map[string]string{"error": launchErr.Error()})
 			return
 		}
