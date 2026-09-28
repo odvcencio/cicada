@@ -77,6 +77,161 @@ func TestFixCommandCreatesManifestAndCheckDoesNotWrite(t *testing.T) {
 	}
 }
 
+func TestFixMigratesLegacySpellingsUnderEditionTwoManifest(t *testing.T) {
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "cicada.mod")
+	path := filepath.Join(dir, "mix.cicada")
+	legacy := []byte("cicada 1\nfx delay { time = 1/8 feedback = 0.3 }\ntrack bass acid { send_a = 0.25 bus = music }\npattern pulse acid steps = 1 { 1 }\nscene main { bass = pulse }\nsong { main }\n")
+	if err := os.WriteFile(manifest, []byte("project mix\ncicada 2\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, legacy, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixCommand([]string{path}); err != nil {
+		t.Fatal(err)
+	}
+	fixed, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, old := range [][]byte{[]byte("cicada 1"), []byte("send_a"), []byte("bus = music"), []byte("steps = 1")} {
+		if bytes.Contains(fixed, old) {
+			t.Fatalf("legacy spelling remains after fix: %q", old)
+		}
+	}
+	if !bytes.Contains(fixed, []byte("send delay = 0.25")) {
+		t.Fatalf("legacy send was not migrated: %s", fixed)
+	}
+	if err := checkPaths([]string{path}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fixed score does not check under edition 2: %v", err)
+	}
+	if err := fixCommand([]string{path, "--check"}); err != nil {
+		t.Fatalf("fixed score needs another migration: %v", err)
+	}
+}
+
+func TestFixMigratesEditionOneSpellingsInsideEditionTwoHeader(t *testing.T) {
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "cicada.mod")
+	path := filepath.Join(dir, "mix.cicada")
+	legacy := []byte("cicada 2\ntrack bass acid { bus = music }\npattern pulse acid steps = 1 { 1 }\nscene main { bass = pulse }\nsong { main }\n")
+	if err := os.WriteFile(manifest, []byte("project mix\ncicada 2\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, legacy, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixCommand([]string{path}); err != nil {
+		t.Fatal(err)
+	}
+	fixed, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, old := range [][]byte{[]byte("cicada 2"), []byte("bus = music"), []byte("steps = 1")} {
+		if bytes.Contains(fixed, old) {
+			t.Fatalf("legacy spelling remains after fix: %q", old)
+		}
+	}
+	if err := checkPaths([]string{path}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+		t.Fatalf("fixed score does not check under edition 2: %v", err)
+	}
+}
+
+func TestFixRequiresAllWhenEditionOneSiblingsShareFolder(t *testing.T) {
+	dir := t.TempDir()
+	manifest := filepath.Join(dir, "cicada.mod")
+	mainPath := filepath.Join(dir, "main.cicada")
+	siblingPath := filepath.Join(dir, "sibling.cicada")
+	mainSource := []byte("cicada 1\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n")
+	siblingSource := []byte("cicada 1\ntrack lead acid {}\npattern q acid steps=1 { 3 }\nscene main { lead=q }\nsong { main }\n")
+	if err := os.WriteFile(manifest, []byte("project night\ncicada 1\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mainPath, mainSource, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(siblingPath, siblingSource, 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := fixCommand([]string{mainPath})
+	if err == nil || !strings.Contains(err.Error(), "sibling.cicada") || !strings.Contains(err.Error(), "cicada fix --all") {
+		t.Fatalf("single-score fix did not identify its sibling: %v", err)
+	}
+	unchanged, err := os.ReadFile(mainPath)
+	if err != nil || !bytes.Equal(unchanged, mainSource) {
+		t.Fatalf("refused fix changed the selected score: %v", err)
+	}
+	unchangedManifest, err := os.ReadFile(manifest)
+	if err != nil || string(unchangedManifest) != "project night\ncicada 1\n" {
+		t.Fatalf("refused fix changed the manifest: %q, %v", unchangedManifest, err)
+	}
+	previousDirectory, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.Chdir(previousDirectory); err != nil {
+			t.Errorf("restore working directory: %v", err)
+		}
+	})
+	if err := fixCommand([]string{"--all"}); err != nil {
+		t.Fatalf("fix --all: %v", err)
+	}
+	upgraded, err := os.ReadFile(manifest)
+	if err != nil || string(upgraded) != "project night\ncicada 2\n" {
+		t.Fatalf("manifest was not upgraded with all scores: %q, %v", upgraded, err)
+	}
+	for _, path := range []string{mainPath, siblingPath} {
+		if err := checkPaths([]string{path}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+			t.Fatalf("%s does not check after --all: %v", path, err)
+		}
+	}
+}
+
+func TestFixRequiresAllBeforeCreatingManifestForLooseScores(t *testing.T) {
+	dir := t.TempDir()
+	mainPath := filepath.Join(dir, "main.cicada")
+	siblingPath := filepath.Join(dir, "sibling.cicada")
+	mainSource := []byte("cicada 1\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n")
+	siblingSource := []byte("cicada 1\ntrack lead acid {}\npattern q acid steps=1 { 3 }\nscene main { lead=q }\nsong { main }\n")
+	if err := os.WriteFile(mainPath, mainSource, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(siblingPath, siblingSource, 0644); err != nil {
+		t.Fatal(err)
+	}
+	err := fixCommand([]string{mainPath})
+	if err == nil || !strings.Contains(err.Error(), "sibling.cicada") || !strings.Contains(err.Error(), "cicada fix --all") {
+		t.Fatalf("single-score fix did not identify its sibling: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "cicada.mod")); !os.IsNotExist(err) {
+		t.Fatalf("refused fix created a manifest: %v", err)
+	}
+	for path, want := range map[string][]byte{mainPath: mainSource, siblingPath: siblingSource} {
+		got, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("refused fix changed %s: %v", path, err)
+		}
+	}
+	if err := fixCommand([]string{mainPath, "--all"}); err != nil {
+		t.Fatalf("fix --all: %v", err)
+	}
+	manifest, err := os.ReadFile(filepath.Join(dir, "cicada.mod"))
+	if err != nil || string(manifest) != "project main\ncicada 2\n" {
+		t.Fatalf("manifest was not created by --all: %q, %v", manifest, err)
+	}
+	for _, path := range []string{mainPath, siblingPath} {
+		if err := checkPaths([]string{path}, &bytes.Buffer{}, &bytes.Buffer{}); err != nil {
+			t.Fatalf("%s does not check after --all: %v", path, err)
+		}
+	}
+}
+
 func TestFixKeepsCRLF(t *testing.T) {
 	source := []byte("cicada 1\r\n\r\n// preserved\r\ninstrument bass {\r\n  voice mono { out = saw(pitch) }\r\n}\r\ntrack low bass {}\r\npattern p notes steps=1 { c }\r\nscene main { low=p }\r\nsong { main }\r\n")
 	fixed, changed, err := fixSource(source)
