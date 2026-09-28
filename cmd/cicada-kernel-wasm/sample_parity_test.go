@@ -20,7 +20,7 @@ import (
 )
 
 func TestAudioWASMFirstAcidSampleParity(t *testing.T) {
-	compareWASMFixture(t, "first-acid.cicada", 8)
+	compareWASMFixture(t, "first-acid.cicada", 16)
 }
 
 func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {

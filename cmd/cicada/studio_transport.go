@@ -19,30 +19,32 @@ import (
 )
 
 type studioTransport struct {
-	path          string
-	audioBackend  string
-	mu            sync.Mutex
-	pollMu        sync.Mutex
-	stream        *liveplay.Player
-	audio         studioAudioDevice
-	audioOptions  studioAudioOptions
-	sampleRate    int
-	cancel        context.CancelFunc
-	last          [32]byte
-	playing       bool
-	pending       bool
-	pendingSong   string
-	pendingSongID uint64
-	snapshotSeq   uint64
-	scene         string
-	stoppedTracks map[string]bool
-	activeSlots   map[string]string
-	landed        int64
-	errText       string
-	history       *studioHistory
-	audioNull     bool
-	latestMeter   atomic.Pointer[studioMeterSnapshot]
-	meterSequence atomic.Uint64
+	path              string
+	audioBackend      string
+	mu                sync.Mutex
+	pollMu            sync.Mutex
+	stream            *liveplay.Player
+	audio             studioAudioDevice
+	audioOptions      studioAudioOptions
+	sampleRate        int
+	cancel            context.CancelFunc
+	last              [32]byte
+	playing           bool
+	browserPlaying    bool
+	browserSampleRate int
+	pending           bool
+	pendingSong       string
+	pendingSongID     uint64
+	snapshotSeq       uint64
+	scene             string
+	stoppedTracks     map[string]bool
+	activeSlots       map[string]string
+	landed            int64
+	errText           string
+	history           *studioHistory
+	audioNull         bool
+	latestMeter       atomic.Pointer[studioMeterSnapshot]
+	meterSequence     atomic.Uint64
 }
 
 type studioMeterSnapshot struct {
@@ -54,6 +56,8 @@ type studioMeterSnapshot struct {
 type transportSnapshot struct {
 	Type                string            `json:"type"`
 	Sequence            uint64            `json:"sequence"`
+	ActiveBackend       string            `json:"activeBackend,omitempty"`
+	BrowserPlaying      bool              `json:"browserPlaying,omitempty"`
 	Playing             bool              `json:"playing"`
 	Bar                 int64             `json:"bar"`
 	Step                int64             `json:"step"`
@@ -104,6 +108,13 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		}
 	}
 	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
+	if t.browserPlaying && t.browserSampleRate > 0 {
+		state.ActiveBackend = fmt.Sprintf("browser · AudioWorklet · %s", studioAudioRateLabel(t.browserSampleRate))
+		state.BrowserPlaying = true
+	} else if t.playing && t.sampleRate > 0 {
+		backend := studioAudioBackendLabel(audiobackend.Name(t.selectedAudioBackend()))
+		state.ActiveBackend = fmt.Sprintf("%s · %s", backend, studioAudioRateLabel(t.sampleRate))
+	}
 	if len(t.activeSlots) != 0 {
 		state.ActiveSlots = make(map[string]string, len(t.activeSlots))
 		for track, pattern := range t.activeSlots {
@@ -137,6 +148,24 @@ func (t *studioTransport) snapshot() transportSnapshot {
 }
 
 func (t *studioTransport) start() error { return t.startFrom(-1, "", nil, [32]byte{}) }
+
+func (t *studioTransport) setBrowserAudioStatus(playing bool, sampleRate int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.browserPlaying = playing
+	if playing {
+		t.browserSampleRate = sampleRate
+	} else {
+		t.browserSampleRate = 0
+	}
+}
+
+func studioAudioRateLabel(sampleRate int) string {
+	if sampleRate%1000 == 0 {
+		return fmt.Sprintf("%dk", sampleRate/1000)
+	}
+	return fmt.Sprintf("%.1fk", float64(sampleRate)/1000)
+}
 
 func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte) error {
 	t.pollMu.Lock()
