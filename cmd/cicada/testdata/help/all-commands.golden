@@ -1,0 +1,335 @@
+### new
+cicada new <name>
+
+create an edition-2 project
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+### fix
+cicada fix <score.cicada> [--all] [--check]
+
+migrate legacy source spellings
+
+Flags:
+  --all       migrate every edition-1 score under the project folder together
+  --check     report required source or manifest changes without writing
+  --help      show this help
+
+With --all, the score path is optional; run the command from the project folder.
+
+### check
+cicada check [score.cicada]
+
+validate one score or the current project
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+### fmt
+cicada fmt [--check|-w] [score.cicada]
+
+format a score or current project
+
+Flags:
+  --check     report formatting changes without writing
+  -w          write formatted source
+  --help      show this help
+
+### play
+cicada play [score.cicada] [--audio tymbal|oto|null]
+
+play and watch a score
+
+Flags:
+  --audio <name>  select tymbal, oto, or null
+  --help          show this help
+
+CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly.
+
+### studio
+cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio]
+
+open the local workstation
+
+Flags:
+  --listen <addr>  loopback address; default 127.0.0.1:0
+  --audio <name>   select tymbal, oto, or null
+  --lsp-stdio      serve LSP on stdin/stdout and Studio on stderr
+  --help           show this help
+
+CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly.
+
+### lsp
+cicada lsp
+
+run the editor language server
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+### fields
+cicada fields
+
+print the project field catalog as JSON
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+### params
+cicada params
+
+print the parameter catalog as JSON
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+### view
+cicada view <score.cicada|project.json> -o <view.html>
+
+write a score or project view as HTML
+
+Flags:
+  -o <file>   required output HTML path
+  --help      show this help
+
+### explain
+cicada explain <construct[.field]> [--json]
+cicada explain <score.cicada> <path> [@bar[.beat[.step]]]
+
+explain a language item or parameter value
+
+Flags:
+  --json      print construct details as JSON
+  --help      show this help
+
+Score locations use bar numbers starting at 1.
+
+### gen
+cicada gen [flags]
+
+generate a deterministic phrase
+
+Flags:
+  --seed <n>             64-bit generator seed (default 0)
+  --key <pitch-class>    tonic pitch class (default c)
+  --scale <name>         scale (default minor)
+  --root-octave <n>      root octave (default 2)
+  --steps <n>            steps per bar (default 16)
+  --density <n>          onset density (default 0.6)
+  --accent-density <n>   accent density (default 0.5)
+  --slide-density <n>    slide density (default 0.4)
+  --octave-jump <n>      octave-jump density (default 0.3)
+  --swing <percent>      swing percent (default 54)
+  --gate <percent>       gate percent (default 55)
+  --structure <name>     A, AABA, ABAB, ABAC, or AAAB (default aaba)
+  --rest-downbeat        allow a downbeat rest
+  --trace                write the draw trace as JSON to stdout
+  -o <file>              write the score instead of stdout
+  --help                 show this help
+
+### convert
+cicada convert <in.cicada|in.json> -o <out.json|out.cicada>
+
+convert source and semantic JSON
+
+Flags:
+  -o <file>   required output path with matching extension
+  --help      show this help
+
+### compare
+cicada compare --semantic <a> <b>
+
+compare two projects
+
+Flags:
+  --semantic  compare compiled project meaning
+  --help      show this help
+
+### highlight
+cicada highlight [--html|--spans] <score.cicada>
+
+print source with syntax highlighting
+
+Flags:
+  --html    write HTML highlighting
+  --spans   write JSON highlighting spans
+  --help    show this help
+
+### symbols
+cicada symbols [--refs] [--json] <score.cicada>
+
+list source definitions and references
+
+Flags:
+  --refs   include references as well as definitions
+  --json   write the symbol list as JSON
+  --help   show this help
+
+### render
+cicada render <score.cicada> -o <out.wav> [flags]
+
+render a score to WAV
+
+Flags:
+  -o <file>                    required output WAV path
+  --rate <Hz>                  sample rate (default 48000)
+  --bits <16|24|32>            WAV bit depth (default 24)
+  --from <bar>                 one-based start bar (default 1)
+  --bars <n>                   bars to render; 0 means through song end
+  --tail <duration>            render tail (default 3s)
+  --dither=<bool>              deterministic TPDF dither for integer PCM (default true)
+  --normalize=<bool>           peak normalize to -1 dBFS (default false)
+  --block <frames>             offline block size (default 4096)
+  --loudness <LUFS>            target integrated loudness
+  --true-peak-max <dBTP>       maximum true peak for loudness rendering (default -1)
+  --loudness-tolerance <LU>    target tolerance (default 0.5)
+  --export <name>              use a named export profile
+  --help                       show this help
+
+Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1.
+
+### stems
+cicada stems <score.cicada> -o <directory> [flags]
+
+render separate float32 WAV stems
+
+Flags:
+  -o <directory>           required output directory
+  --rate <Hz>              sample rate (default 48000)
+  --bits 32                float32 output only
+  --from <bar>             one-based start bar (default 1)
+  --bars <n>               bars to render; 0 means through song end
+  --tail <duration>        render tail (default 3s)
+  --dither=<bool>          deterministic TPDF dither option
+  --normalize=<bool>       peak normalization option
+  --block <frames>         offline block size (default 4096)
+  --help                   show this help
+
+Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1.
+
+### verify-wav
+cicada verify-wav <file.wav> [flags]
+
+verify WAV samples and timing
+
+Flags:
+  --rate <Hz>                 expected sample rate (default 48000)
+  --bits <16|24|32>           expected bit depth (default 24)
+  --from <bar>                one-based start bar (default 1)
+  --bars <n>                  expected bars (required)
+  --tail <duration>           expected tail (default 3s)
+  --peak-max-db <dBFS>        peak ceiling (default -0.3)
+  --dc-max-db <dBFS>          DC ceiling (default -60)
+  --lufs <LUFS>               integrated-loudness target
+  --lufs-tolerance <LU>       loudness tolerance (default 0.5)
+  --true-peak-max <dBTP>      true-peak ceiling
+  --report                    write JSON report to stderr
+  --help                      show this help
+
+Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1.
+
+### verify-stems
+cicada verify-stems <directory> [flags]
+
+verify a stem directory
+
+Flags:
+  --tap <name>             verification tap (default pre-comp)
+  --residual-max-db <dBFS> maximum bus-sum residual (default -80)
+  --help                   show this help
+
+### midi
+cicada midi <score.cicada> [flags]
+
+export a Standard MIDI File
+
+Flags:
+  -o <file>       required output MIDI path
+  --bars <n>      song bars; 0 means all (default 0)
+  --pattern <id>  export only one pattern
+  --report        write JSON report to stderr
+  --help          show this help
+
+### verify-midi
+cicada verify-midi <file.mid> [flags]
+
+verify a Standard MIDI File
+
+Flags:
+  --ppq <n>     expected pulses per quarter note (default 960)
+  --type <n>    expected SMF type (default 1)
+  --report      write JSON report to stderr
+  --help        show this help
+
+### compare-midi
+cicada compare-midi <a.mid> <b.mid>
+
+compare MIDI event streams
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+### import-midi
+cicada import-midi
+
+show MIDI import status
+
+Flags:
+  (MIDI import is scheduled; no flags are available)
+  --help      show this help
+
+### golden
+cicada golden [flags]
+
+check the reference render fingerprint
+
+Flags:
+  --update       write the golden fingerprint
+  --score <file> score to render (default examples/first-acid.cicada)
+  --out <file>   fingerprint path (default testdata/golden/first-acid.fp)
+  --rate <Hz>    sample rate (default 48000)
+  --bars <n>     bars to render (default 8)
+  --help         show this help
+
+### validate
+cicada validate <score.cicada>
+
+validate one score
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+### ast
+cicada ast <score.cicada>
+
+print the typed syntax tree as JSON
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+### events
+cicada events <score.cicada> <track> <pattern>
+
+print events for one pattern
+
+Flags:
+  (no command flags)
+  --help      show this help
+
+### graph
+cicada graph <score.cicada> <instrument>
+
+print one compiled instrument graph
+
+Flags:
+  (no command flags)
+  --help      show this help

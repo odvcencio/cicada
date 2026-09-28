@@ -19,7 +19,7 @@ This reference describes source edition 1. The complete grammar is in the [EBNF 
 **Example:**
 
 ```cicada
-cicada 1
+cicada 2
 title "Night circuit"
 tempo 138
 key a minor
@@ -69,7 +69,7 @@ song { main*8 }
 
 **Example:** The manifest form is `project night-circuit` followed by `cicada 1`; a matching score uses the first example on this page.
 
-**Edition history:** Edition 1 adds the manifest while keeping loose scores and the legacy source header usable. Multi-file shared namespaces are accepted for later implementation; see [accepted syntax](accepted.md#multi-file-projects).
+**Edition history:** Edition 1 adds the manifest while keeping loose scores and the legacy source header usable. Multi-file shared namespaces are accepted for later implementation; see [accepted syntax](accepted.md#multi-file-projects-and-manifest-metadata).
 
 ## Edition directive
 
@@ -178,6 +178,7 @@ song { main*8 }
 **Example:**
 
 ```cicada
+cicada 2
 instrument glassbass {
   octave = 2
   param cutoff: hz = 720Hz
@@ -213,6 +214,7 @@ song { main }
 **Example:**
 
 ```cicada
+cicada 2
 instrument kick {
   param decay = 250ms
   voice mono {
@@ -249,6 +251,7 @@ song { main*4 }
 Unknown track parameters fail semantic validation. This score has exactly one error:
 
 ```cicada-invalid CICADA-PARAM
+cicada 2
 track bass acid { mystery = 1 }
 pattern pulse acid { 1 }
 scene main { bass = pulse }
@@ -290,6 +293,7 @@ song { main }
 **Example:**
 
 ```cicada
+cicada 2
 track kit drums {}
 pattern beat drums {
   bd: X...x...
@@ -373,6 +377,7 @@ song { main*4 }
 **Example:** Set a track send and an effect through their paths:
 
 ```cicada
+cicada 2
 fx room delay {}
 track bass acid { send room = 0.2 }
 pattern pulse acid { 1 . 1 . }
@@ -387,6 +392,7 @@ song { main*4 }
 Drum lane parameters use the named drum track:
 
 ```cicada
+cicada 2
 track beat drums {}
 pattern drum-loop drums { bd: X... }
 scene main { beat = drum-loop beat.bd_tune = 48Hz }
@@ -416,8 +422,9 @@ Seeking or restarting a song with scene settings reconstructs parameters from th
 **Example:** The second scene leaves `bass.cutoff`, `drums.level`, and the synced delay division at the values set by the first scene:
 
 ```cicada
-fx delay {}
-track bass acid { cutoff = 700Hz send_a = 0.2 }
+cicada 2
+fx delay delay {}
+track bass acid { cutoff = 700Hz send delay = 0.2 }
 track drums drums { level = -4dB }
 pattern pulse acid { 1 . 1 . }
 pattern beat drums { bd: X... }
@@ -438,6 +445,7 @@ song { verse*4 chorus*4 }
 This invalid scene names a setting that is not in the registry:
 
 ```cicada-invalid CICADA-PARAM
+cicada 2
 track bass acid {}
 pattern riff acid { 1 }
 scene main { bass = riff bass.not_a_setting = 0.3 }
@@ -447,7 +455,8 @@ song { main }
 This invalid scene targets an effect setting that is registered but not live:
 
 ```cicada-invalid CICADA-UNSUPPORTED
-fx drive { shape = soft }
+cicada 2
+fx drive drive { shape = soft }
 track bass acid {}
 pattern riff acid { 1 }
 scene main { bass = riff drive.shape = hard }
@@ -457,6 +466,7 @@ song { main }
 This in-range value is rejected because it rounds below the drum tune's float32 minimum:
 
 ```cicada-invalid CICADA-PARAM
+cicada 2
 track beat drums {}
 pattern riff drums steps=1 { sd: X }
 scene main { beat=riff beat.sd_tune=0.7000000000000001 }
@@ -518,6 +528,7 @@ song { main }
 **Example:**
 
 ```cicada
+cicada 2
 track bass acid {}
 phrase hook { 1^ . 1~ 5 }
 pattern pulse { use hook*2 }
@@ -568,6 +579,7 @@ Unknown effect kinds, repeated delay or reverb instances, compressor track inser
 **Example:** Named effects route through the current delay, reverb, drive, and music compressor processors:
 
 ```cicada
+cicada 2
 fx grit drive { shape = hard }
 fx room delay { time = 1/8 feedback = 0.35 }
 fx space reverb { size = 1 }
@@ -598,6 +610,7 @@ song { main*4 }
 **Example:** The built-in buses and master can be named when their defaults need to be stated:
 
 ```cicada
+cicada 2
 bus music { level = -3dB mute = off solo = off insert = none }
 bus sfx { mute = off solo = off }
 master { level = -1dB mute = off solo = off insert = none }
@@ -608,6 +621,7 @@ song { main }
 ```
 
 ```cicada-invalid CICADA-UNSUPPORTED
+cicada 2
 bus ambience {}
 track bass acid {}
 pattern pulse acid { 1 }
@@ -636,6 +650,7 @@ Insert chains longer than one, sends to buses, and sends to unsupported effect k
 **Example:** The sends have separate taps and can use either linear gain or dB:
 
 ```cicada
+cicada 2
 fx room delay {}
 fx space reverb {}
 track bass acid {
@@ -653,6 +668,7 @@ song { main }
 ```
 
 ```cicada-invalid CICADA-UNSUPPORTED
+cicada 2
 fx grit drive {}
 fx second drive {}
 track bass acid { insert = grit -> second }
@@ -682,6 +698,7 @@ True peak without loudness targeting and loudness targeting with normalization a
 **Example:**
 
 ```cicada
+cicada 2
 export streaming { rate = 48000Hz bits = 24 tail = 2s loudness = -14LUFS true_peak = -1dBTP normalize = off }
 track bass acid {}
 pattern pulse acid { 1 . }
@@ -690,6 +707,7 @@ song { main }
 ```
 
 ```cicada-invalid CICADA-UNSUPPORTED
+cicada 2
 export peak_only { true_peak = -1dBTP }
 track bass acid {}
 pattern pulse acid { 1 }

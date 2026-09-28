@@ -27,6 +27,11 @@ func repositoryRoot() string {
 func TestDocumentationCicadaExamples(t *testing.T) {
 	root := repositoryRoot()
 	var examples []documentationExample
+	readmeExamples, err := readDocumentationExamples(filepath.Join(root, "README.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	examples = append(examples, readmeExamples...)
 	for _, dir := range []string{"docs/spec", "docs/manual"} {
 		path := filepath.Join(root, dir)
 		if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -89,6 +94,55 @@ func TestDocumentationCicadaExamples(t *testing.T) {
 		t.Fatal("no Cicada examples found under docs/spec or docs/manual")
 	}
 	t.Logf("checked %d Cicada blocks: %d valid, %d invalid; skipped %d accepted", valid+invalid, valid, invalid, accepted)
+}
+
+func TestDocumentationExamplesUseEditionTwo(t *testing.T) {
+	root := repositoryRoot()
+	var examples []documentationExample
+	for _, path := range []string{filepath.Join(root, "README.md"), filepath.Join(root, "docs", "spec"), filepath.Join(root, "docs", "manual")} {
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !info.IsDir() {
+			found, err := readDocumentationExamples(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			examples = append(examples, found...)
+			continue
+		}
+		if err := filepath.WalkDir(path, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() || filepath.Ext(path) != ".md" {
+				return nil
+			}
+			found, err := readDocumentationExamples(path)
+			if err != nil {
+				return err
+			}
+			examples = append(examples, found...)
+			return nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, example := range examples {
+		if example.kind == "cicada-accepted" || example.kind == "cicada-invalid" || example.kind == "cicada" {
+			first := ""
+			for _, line := range strings.Split(example.source, "\n") {
+				if strings.TrimSpace(line) != "" {
+					first = strings.TrimSpace(line)
+					break
+				}
+			}
+			if first != "cicada 2" {
+				t.Errorf("%s:%d: Cicada example must declare edition 2", example.path, example.line)
+			}
+		}
+	}
 }
 
 func readDocumentationExamples(path string) ([]documentationExample, error) {

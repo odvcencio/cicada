@@ -63,10 +63,10 @@ Unknown effect and bus names report `CICADA-REFERENCE`. Supported effect kinds, 
 
 **Status:** Implemented.
 
-**Syntax:** Run `cicada fix score.cicada`; use `cicada fix score.cicada --check` to check whether a rewrite or manifest update is needed.
+**Syntax:** Run `cicada fix score.cicada`; use `cicada fix score.cicada --check` to check whether a source rewrite or manifest update is needed. From the project folder, `cicada fix --all` migrates all edition-1 scores together; `--check` can be combined with either form.
 
-**Meaning:** The command rewrites edition-1 mixer aliases while preserving unrelated text and layout, then creates a `cicada.mod` at edition 2 or upgrades an existing edition-1 manifest. `send_a` maps to the declared delay effect and `send_b` to the declared reverb effect. `send_pre = true` moves the pre-fader tap onto each migrated send; `send_pre = false` is removed. `bus = sfx` becomes `out = sfx`; the default `bus = music` is removed. Track `level = off` becomes `mute = on`. Legacy `fx comp {}` becomes a named compressor and is inserted on the music bus unless that insert is already present.
+**Meaning:** The command rewrites recognized edition-1 spellings wherever they occur, including in a project whose manifest already selects edition 2. It preserves unrelated text and layout, then creates a `cicada.mod` at edition 2 or upgrades an existing edition-1 manifest when needed. `send_a` maps to the declared delay effect and `send_b` to the declared reverb effect. `send_pre = true` moves the pre-fader tap onto each migrated send; `send_pre = false` is removed. `bus = sfx` becomes `out = sfx`; the default `bus = music` is removed. Track `level = off` becomes `mute = on`. Legacy `fx comp {}` becomes a named compressor and is inserted on the music bus unless that insert is already present.
 
 The migration requires valid source before editing and checks typed semantic equality after rewriting. `TestFixNamedMixerMigrationIsTypedAndPCMExact` also renders the covered examples and migration fixture before and after, then compares their PCM24 hashes.
 
-**Errors:** Invalid input, unsupported source editions, ambiguous rewrites, and any semantic change stop the migration. A source header must be standalone for `cicada fix` to remove it safely.
+**Errors:** Invalid input, unsupported source editions, ambiguous rewrites, and any semantic change stop the migration. Before writing source or creating/upgrading a manifest, a single-score migration checks for sibling edition-1 scores and refuses with their paths; use `cicada fix --all` to migrate them together. A source header must be standalone for `cicada fix` to remove it safely.

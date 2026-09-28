@@ -1,0 +1,9 @@
+cicada play [score.cicada] [--audio tymbal|oto|null]
+
+play and watch a score
+
+Flags:
+  --audio <name>  select tymbal, oto, or null
+  --help          show this help
+
+CICADA_AUDIO selects the backend when --audio is omitted. Tymbal is the default on Windows and Linux; oto is the macOS default. Use --audio oto to select oto explicitly.
