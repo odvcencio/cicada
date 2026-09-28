@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -11,8 +12,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ebitengine/oto/v3"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/project"
@@ -22,6 +23,12 @@ const liveSampleRate = 48_000
 const liveBlockFrames = 256
 
 func playCommand(args []string) error {
+	args, backendName, backend, err := selectCommandAudio("play", args)
+	if err != nil {
+		return err
+	}
+	restoreThreads := raiseAudioProcessThreads(backendName)
+	defer restoreThreads()
 	path, err := playScorePath(args)
 	if err != nil {
 		return err
@@ -30,42 +37,74 @@ func playCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	initial, err := compileLiveScore(path)
+	sampleRate, err := backend.SampleRate(audiobackend.Config{Channels: 2, FramesPerPeriod: liveBlockFrames})
 	if err != nil {
 		return err
 	}
-	stream, err := liveplay.New(initial, liveSampleRate)
+	initial, err := compileLiveScoreAtRate(path, sampleRate)
+	if err != nil {
+		return err
+	}
+	stream, err := liveplay.New(initial, sampleRate)
 	if err != nil {
 		return err
 	}
 	defer stream.Close()
-	ctx, ready, err := oto.NewContext(&oto.NewContextOptions{
-		SampleRate: liveSampleRate, ChannelCount: 2, Format: oto.FormatFloat32LE,
-		BufferSize: 20 * time.Millisecond, ApplicationName: "Cicada",
+	var pcm []byte
+	audio, err := backend.Open(audiobackend.Config{
+		SampleRate: sampleRate, Channels: 2, FramesPerPeriod: liveBlockFrames,
+	}, func(_ [][]float32, output [][]float32) error {
+		return renderLivePlayPeriod(stream, pcm, output)
 	})
 	if err != nil {
 		return err
 	}
-	select {
-	case <-ready:
-	case <-time.After(10 * time.Second):
-		return fmt.Errorf("audio device did not become ready within 10 seconds")
-	}
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	player := ctx.NewPlayer(stream)
-	player.SetBufferSize(liveBlockFrames * 8 * 4)
+	defer audio.Close()
+	format := audio.Format()
+	pcm = make([]byte, format.FramesPerPeriod*8)
 	ctxSignal, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-	player.Play()
-	fmt.Printf("playing %s at 48 kHz; edits land on the next bar (Ctrl-C to stop)\n", path)
-	return watchLiveScore(ctxSignal, path, initialHash, stream, player, ctx, os.Stderr)
+	if err := audio.Start(); err != nil {
+		return err
+	}
+	fmt.Printf("playing %s at %d Hz; edits land on the next bar (Ctrl-C to stop)\n", path, format.SampleRate)
+	return watchLiveScore(ctxSignal, path, initialHash, stream, audio, os.Stderr)
+}
+
+func renderLivePlayPeriod(source io.Reader, pcm []byte, output [][]float32) error {
+	if len(output) == 0 {
+		return nil
+	}
+	frames := len(output[0])
+	need := frames * 8
+	if need > len(pcm) {
+		return io.ErrShortBuffer
+	}
+	if _, err := io.ReadFull(source, pcm[:need]); err != nil {
+		clearStudioAudioOutput(output)
+		return err
+	}
+	if len(output) == 1 {
+		for frame := 0; frame < frames; frame++ {
+			left := math.Float32frombits(binary.LittleEndian.Uint32(pcm[frame*8 : frame*8+4]))
+			right := math.Float32frombits(binary.LittleEndian.Uint32(pcm[frame*8+4 : frame*8+8]))
+			output[0][frame] = (left + right) * 0.5
+		}
+		return nil
+	}
+	for frame := 0; frame < frames; frame++ {
+		output[0][frame] = math.Float32frombits(binary.LittleEndian.Uint32(pcm[frame*8 : frame*8+4]))
+		output[1][frame] = math.Float32frombits(binary.LittleEndian.Uint32(pcm[frame*8+4 : frame*8+8]))
+	}
+	for channel := 2; channel < len(output); channel++ {
+		clear(output[channel])
+	}
+	return nil
 }
 
 func playScorePath(args []string) (string, error) {
 	if len(args) > 1 {
-		return "", fmt.Errorf("usage: cicada play [score.cicada]")
+		return "", fmt.Errorf("usage: cicada play [score.cicada] [--audio tymbal|oto|null]")
 	}
 	path := "main.cicada"
 	if len(args) == 1 {
@@ -230,7 +269,7 @@ func (w *liveScoreWatcher) poll() {
 	w.lastError = ""
 }
 
-func watchLiveScore(ctx context.Context, path string, initialHash [32]byte, stream *liveplay.Player, player *oto.Player, device *oto.Context, errorsTo io.Writer) error {
+func watchLiveScore(ctx context.Context, path string, initialHash [32]byte, stream *liveplay.Player, audio audiobackend.Stream, errorsTo io.Writer) error {
 	watcher := liveScoreWatcher{path: path, last: initialHash, stream: stream, output: errorsTo}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	health := time.NewTicker(time.Second)
@@ -239,17 +278,14 @@ func watchLiveScore(ctx context.Context, path string, initialHash [32]byte, stre
 	for {
 		select {
 		case <-ctx.Done():
-			player.PauseAndStopReading()
+			audio.Pause()
 			return nil
 		case event := <-stream.Events():
 			fmt.Fprintf(errorsTo, "landed %s at bar %d\n", event.Name, event.Bar)
 		case <-ticker.C:
 			watcher.poll()
 		case <-health.C:
-			if err := device.Err(); err != nil {
-				return err
-			}
-			if err := player.Err(); err != nil {
+			if err := audio.Err(); err != nil {
 				return err
 			}
 		}
