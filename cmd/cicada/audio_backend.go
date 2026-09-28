@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"m31labs.dev/cicada/internal/audiobackend"
-	"m31labs.dev/cicada/internal/audiobackend/rt"
+	"m31labs.dev/tymbal"
 )
 
 func selectCommandAudio(command string, args []string) ([]string, audiobackend.Name, audiobackend.Backend, error) {
@@ -27,7 +27,7 @@ func raiseAudioProcessThreads(name audiobackend.Name) func() {
 	if name == audiobackend.Null {
 		return func() {}
 	}
-	restore, _, err := rt.RaiseProcessThreads(1)
+	restore, _, err := tymbal.RaiseProcessThreads(1)
 	_ = err // Audio remains available when the operating system denies priority.
 	if restore == nil {
 		return func() {}
