@@ -4,18 +4,21 @@ on:
   pull_request:
   push:
     branches: [main]
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: cicada-ci-${{ github.ref }}
+  group: cicada-ci-${{ github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
   m0:
     name: M0 language and kernel
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, buildbox, linux, x64]
     timeout-minutes: 25
     steps:
@@ -97,3 +100,109 @@ jobs:
             build/m1-ci/generated.trace.json
             build/m1-ci/first-acid.mid
             build/first-acid.wav
+
+  m2-pr:
+    name: M2 AudioWorklet gates
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: [self-hosted, buildbox, linux, x64]
+    timeout-minutes: 40
+    env:
+      GOWORK: off
+      CHROME_VERSION: 152.0.7977.64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'false'
+      - name: Cache pinned Chrome for Testing headless shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
+          browser_path="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
+          if [[ ! -x "$browser_path" ]]; then
+            mkdir -p "$tool_root"
+            temp_dir="$(mktemp -d "$RUNNER_TEMP/chrome-for-testing.XXXXXX")"
+            trap 'rm -rf "$temp_dir"' EXIT
+            archive="$temp_dir/chrome-headless-shell.zip"
+            curl --fail --location --retry 3 --output "$archive" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
+            unzip -q "$archive" -d "$temp_dir"
+            mv "$temp_dir/chrome-headless-shell-linux64" "$tool_root/"
+          fi
+          echo "CHROME_BIN=$browser_path" >> "$GITHUB_ENV"
+          PULSE_SERVER=unix:/nonexistent "$browser_path" --mute-audio --version
+          go version
+          tinygo version
+          node --version
+      - name: M2 parity, browser, and budgets
+        run: make test-wasm test-browser budget-size budget-browser
+      - name: Save M2 gate reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: m2-audioworklet-gate-reports
+          if-no-files-found: warn
+          path: |
+            build/test-wasm.log
+            build/test-browser.log
+            build/budget-size-report.txt
+            build/budget-browser.log
+            build/browser-cpu-report.json
+            build/m2-browser-chrome.log
+
+  m2-soak:
+    name: M2 AudioWorklet nightly soak
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: [self-hosted, buildbox, linux, x64]
+    timeout-minutes: 55
+    env:
+      GOWORK: off
+      CHROME_VERSION: 152.0.7977.64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'false'
+      - name: Cache pinned Chrome for Testing headless shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
+          browser_path="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
+          if [[ ! -x "$browser_path" ]]; then
+            mkdir -p "$tool_root"
+            temp_dir="$(mktemp -d "$RUNNER_TEMP/chrome-for-testing.XXXXXX")"
+            trap 'rm -rf "$temp_dir"' EXIT
+            archive="$temp_dir/chrome-headless-shell.zip"
+            curl --fail --location --retry 3 --output "$archive" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
+            unzip -q "$archive" -d "$temp_dir"
+            mv "$temp_dir/chrome-headless-shell-linux64" "$tool_root/"
+          fi
+          echo "CHROME_BIN=$browser_path" >> "$GITHUB_ENV"
+          PULSE_SERVER=unix:/nonexistent "$browser_path" --mute-audio --version
+          go version
+          tinygo version
+          node --version
+      - name: Run full 30-minute browser soak
+        run: make test-browser-soak
+      - name: Save M2 soak report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: m2-audioworklet-soak-report
+          if-no-files-found: warn
+          path: |
+            build/browser-soak.log
+            build/browser-soak-report.json
+            build/browser-cpu-report.json
+            build/m2-browser-chrome.log
