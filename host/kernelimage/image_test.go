@@ -41,6 +41,10 @@ func firstAcidConfig(t *testing.T) engine.Config {
 	return cfg
 }
 
+func removeImageRange(data []byte, start, count int) []byte {
+	return append(append([]byte(nil), data[:start]...), data[start+count:]...)
+}
+
 func TestFirstAcidProjectImageRoundTrip(t *testing.T) {
 	cfg := firstAcidConfig(t)
 	encoded, err := kernelimage.Encode(cfg)
@@ -106,12 +110,15 @@ func TestVersion8ProjectImageWithoutSettingsStillDecodes(t *testing.T) {
 		t.Fatal(err)
 	}
 	legacy := append([]byte(nil), encoded...)
+	// Versions before 11 omit the per-send taps and track solo flags.
+	legacy = removeImageRange(legacy, 32+3+2+37, 3)
+	// Versions before 12 omit built-in bus and master flags.
+	legacy = removeImageRange(legacy, 32+3, 2)
 	if len(cfg.Scenes) > 0 {
 		sceneStart := len(legacy) - len(cfg.Song)*4 - len(cfg.Scenes)*18
 		for i := len(cfg.Scenes) - 1; i >= 0; i-- {
 			countOffset := sceneStart + i*18 + 16
-			copy(legacy[countOffset:], legacy[countOffset+2:])
-			legacy = legacy[:len(legacy)-2]
+			legacy = removeImageRange(legacy, countOffset, 2)
 		}
 	}
 	legacy[4], legacy[5] = 8, 0
@@ -125,31 +132,23 @@ func TestVersion8ProjectImageWithoutSettingsStillDecodes(t *testing.T) {
 }
 
 func TestVersion9GraphGlideWithoutSceneSettingsStillDecodes(t *testing.T) {
-	cfg := firstAcidConfig(t)
-	for i := range cfg.Scenes {
-		cfg.Scenes[i].Settings = nil
+	cfg := engine.Config{
+		SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000,
+		Patterns: []engine.PatternBank{{}}, Scenes: []engine.Scene{}, Song: []engine.SongEntry{},
 	}
-	hasGlide := false
-	for i := 0; i < cfg.Tracks; i++ {
-		if cfg.Track[i].Kind == engine.VoiceGraph && cfg.Track[i].Graph.GlideMS > 0 {
-			hasGlide = true
-		}
-	}
-	if !hasGlide {
-		t.Fatal("version 9 compatibility fixture must contain custom graph glide")
+	cfg.Track[0].Kind = engine.VoiceGraph
+	cfg.Track[0].Graph = graph.Program{
+		Len: 2, Output: 1, GlideMS: 60,
+		Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Pitch}, {Op: graph.Sine, A: 0}},
 	}
 	encoded, err := kernelimage.Encode(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	legacy := append([]byte(nil), encoded...)
-	// Version 9 carries graph glide, but each scene has only its 16 bindings.
-	sceneStart := len(legacy) - len(cfg.Song)*4 - len(cfg.Scenes)*18
-	for i := len(cfg.Scenes) - 1; i >= 0; i-- {
-		countOffset := sceneStart + i*18 + 16
-		copy(legacy[countOffset:], legacy[countOffset+2:])
-		legacy = legacy[:len(legacy)-2]
-	}
+	// Version 9 carries graph glide but predates P2's track and bus flags.
+	legacy = removeImageRange(legacy, 32+3+2+37, 3)
+	legacy = removeImageRange(legacy, 32+3, 2)
 	binary.LittleEndian.PutUint16(legacy[4:6], 9)
 	decoded, err := kernelimage.Decode(legacy, 48_000, 128)
 	if err != nil {
@@ -160,6 +159,39 @@ func TestVersion9GraphGlideWithoutSceneSettingsStillDecodes(t *testing.T) {
 	}
 	if _, err := engine.New(decoded); err != nil {
 		t.Fatalf("decoded version 9 graph glide cannot play: %v", err)
+	}
+}
+
+func TestBuiltInBusMixerImageRoundTrip(t *testing.T) {
+	cfg := firstAcidConfig(t)
+	cfg.MusicBusMute, cfg.MusicBusSolo = true, true
+	cfg.SFXBusMute, cfg.SFXBusSolo, cfg.MasterMute, cfg.MasterSolo = true, true, true, true
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := kernelimage.Decode(encoded, 48_000, 128)
+	if err != nil || !reflect.DeepEqual(cfg, decoded) {
+		t.Fatalf("built-in bus mixer changed across project image: %v", err)
+	}
+}
+
+func TestVersion12ImageDefaultsMasterSoloOff(t *testing.T) {
+	cfg := engine.Config{Tracks: 1, MaxVoices: 1, SampleRate: 48_000, MaxBlock: 128, BPMMilli: 120_000}
+	cfg.MasterSolo = true
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := append([]byte(nil), encoded...)
+	legacy[4], legacy[5] = 12, 0
+	legacy[35] &^= 32
+	decoded, err := kernelimage.Decode(legacy, 48_000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.MasterSolo {
+		t.Fatal("version 12 image acquired a master solo flag")
 	}
 }
 
@@ -443,6 +475,8 @@ func TestProjectImageDecodesVersionEightGraphWithoutGlideField(t *testing.T) {
 	legacy := make([]byte, 0, len(encoded)-8)
 	legacy = append(legacy, encoded[:nodeAt-8]...)
 	legacy = append(legacy, encoded[nodeAt:]...)
+	legacy = removeImageRange(legacy, 32+3+2+37, 3)
+	legacy = removeImageRange(legacy, 32+3, 2)
 	binary.LittleEndian.PutUint16(legacy[4:6], 8)
 
 	decoded, err := kernelimage.Decode(legacy, 48_000, 128)

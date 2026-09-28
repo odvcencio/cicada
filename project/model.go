@@ -32,6 +32,10 @@ type Project struct {
 	Scenes      []Scene      `cicada:"Pattern arrangements" json:"scenes"`
 	Song        []SongEntry  `cicada:"Ordered scene playback" json:"song"`
 	Effects     []Effect     `cicada:"Project effects" json:"effects"`
+	Buses       []Bus        `cicada:"Named mixer buses" json:"buses,omitempty" introduced:"cicada.project/2"`
+	Master      *Master      `cicada:"Master mixer" json:"master,omitempty" introduced:"cicada.project/2"`
+	Exports     []Export     `cicada:"Named render delivery targets" json:"exports,omitempty" introduced:"cicada.project/2"`
+	p2Syntax    bool
 }
 
 type Key struct {
@@ -87,15 +91,48 @@ type Value struct {
 }
 
 type Mixer struct {
-	GainDB  float64 `cicada:"Track gain in decibels" unit:"dB" range:"-60..6" json:"gain_db"`
-	Pan     float64 `cicada:"Stereo pan position" range:"-1..1" json:"pan"`
-	SendA   float64 `cicada:"Send A gain" range:"0..1" json:"send_a"`
-	SendB   float64 `cicada:"Send B gain" range:"0..1" json:"send_b"`
-	SendPre bool    `cicada:"Pre fader send switch" json:"send_pre"`
-	Mute    bool    `cicada:"Mute switch" json:"mute"`
-	Solo    bool    `cicada:"Solo switch" json:"solo"`
-	Insert  string  `cicada:"Insert effect identifier" json:"insert"`
-	Bus     string  `cicada:"Output bus identifier" json:"bus"`
+	GainDB  float64     `cicada:"Track gain in decibels" unit:"dB" range:"-60..6" json:"gain_db" legacy:"cicada.project/1"`
+	Pan     float64     `cicada:"Stereo pan position" range:"-1..1" json:"pan"`
+	SendA   float64     `cicada:"Send A gain" range:"0..1" json:"send_a" legacy:"cicada.project/1"`
+	SendB   float64     `cicada:"Send B gain" range:"0..1" json:"send_b" legacy:"cicada.project/1"`
+	SendPre bool        `cicada:"Pre fader send switch" json:"send_pre" legacy:"cicada.project/1"`
+	Mute    bool        `cicada:"Mute switch" json:"mute"`
+	Solo    bool        `cicada:"Solo switch" json:"solo"`
+	Insert  string      `cicada:"Insert effect identifier" json:"insert" legacy:"cicada.project/1"`
+	Bus     string      `cicada:"Output bus identifier" json:"bus" legacy:"cicada.project/1"`
+	Level   *Value      `cicada:"Explicit mixer level" json:"level,omitempty" introduced:"cicada.project/2"`
+	Inserts []string    `cicada:"Ordered insert chain" json:"inserts,omitempty" introduced:"cicada.project/2"`
+	Sends   []MixerSend `cicada:"Ordered named sends" json:"sends,omitempty" introduced:"cicada.project/2"`
+	Out     *string     `cicada:"Explicit output bus" json:"out,omitempty" introduced:"cicada.project/2"`
+	panSet  bool
+	muteSet bool
+	soloSet bool
+	wireV2  bool
+}
+
+type MixerSend struct {
+	To    string `cicada:"Effect or bus destination" json:"to" introduced:"cicada.project/2"`
+	Level Value  `cicada:"Send amount in linear gain or dB" json:"level" introduced:"cicada.project/2"`
+	Tap   string `cicada:"Pre or post fader tap" json:"tap" introduced:"cicada.project/2"`
+}
+
+type Bus struct {
+	ID    string `cicada:"Bus identifier" json:"id" introduced:"cicada.project/2"`
+	Mixer Mixer  `cicada:"Bus mixer state" json:"mixer" introduced:"cicada.project/2"`
+}
+
+type Master struct {
+	Mixer Mixer `cicada:"Master mixer state" json:"mixer" introduced:"cicada.project/2"`
+}
+
+type Export struct {
+	ID        string `cicada:"Export identifier" json:"id" introduced:"cicada.project/2"`
+	Rate      *int   `cicada:"Output sample rate" json:"rate,omitempty" introduced:"cicada.project/2"`
+	Bits      *int   `cicada:"Output sample depth" json:"bits,omitempty" introduced:"cicada.project/2"`
+	Tail      *Value `cicada:"Render tail length" json:"tail,omitempty" introduced:"cicada.project/2"`
+	Loudness  *Value `cicada:"Integrated loudness target" json:"loudness,omitempty" introduced:"cicada.project/2"`
+	TruePeak  *Value `cicada:"True peak target" json:"true_peak,omitempty" introduced:"cicada.project/2"`
+	Normalize *bool  `cicada:"Static gain normalization switch" json:"normalize,omitempty" introduced:"cicada.project/2"`
 }
 
 type Pattern struct {
@@ -186,6 +223,7 @@ type SongEntry struct {
 
 type Effect struct {
 	ID     string           `cicada:"Effect identifier" json:"id"`
+	Kind   string           `cicada:"Built-in effect kind" json:"kind" introduced:"cicada.project/2"`
 	Params map[string]Value `cicada:"Effect parameters" json:"params"`
 }
 
@@ -227,7 +265,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-KEY", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	p := &Project{
-		Format: FormatID, Version: 1, Edition: 1, Title: score.Title, TempoMilli: int(score.TempoMilli),
+		Format: FormatID, Version: 1, Edition: score.Version, Title: score.Title, TempoMilli: int(score.TempoMilli),
 		Key: Key{Root: root, Scale: score.Scale}, Seed: uint32(score.Seed),
 		Instruments: []Instrument{}, Kits: []Kit{}, Tracks: []Track{}, Patterns: []Pattern{},
 		Scenes: []Scene{}, Song: []SongEntry{}, Effects: []Effect{},
@@ -259,31 +297,44 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		}
 		p.Kits = append(p.Kits, kit)
 	}
+	needsProject2 := sourceUsesNamedMixer(score)
+	for _, scene := range score.Scenes {
+		needsProject2 = needsProject2 || len(scene.Settings) > 0
+	}
+	effectKinds := make(map[string]string, len(score.Effects))
 	for _, source := range score.Effects {
-		effect := Effect{ID: source.Name, Params: map[string]Value{}}
+		effectKinds[source.Name] = source.Kind
+		kind := source.Kind
+		if kind == "" {
+			kind = source.Name
+		}
+		effect := Effect{ID: source.Name, Kind: kind, Params: map[string]Value{}}
 		for _, param := range source.Params {
 			value, err := projectValue(param.Value)
 			if err != nil {
 				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 			}
 			effect.Params[param.Name] = value
-			if source.Name == "drive" {
+			if kind == "drive" {
 				if _, err := DriveParamsFromValues(map[string]Value{param.Name: value}); err != nil {
 					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 				}
-			} else if source.Name == "delay" {
+			} else if kind == "delay" {
 				if _, err := DelayParamsFromValues(map[string]Value{param.Name: value}); err != nil {
 					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 				}
-			} else if source.Name == "reverb" {
+			} else if kind == "reverb" {
 				if _, err := ReverbParamsFromValues(map[string]Value{param.Name: value}); err != nil {
 					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 				}
-			} else if source.Name == "comp" {
+			} else if kind == "comp" {
 				if _, _, err := CompSpecFromValues(map[string]Value{param.Name: value}); err != nil {
 					return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
 				}
 			}
+		}
+		if source.Legacy && !needsProject2 {
+			effect.Kind = ""
 		}
 		p.Effects = append(p.Effects, effect)
 	}
@@ -294,8 +345,23 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 			return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Position})
 		}
 		track.Mixer = mixer
+		resolveNamedMixer(&track.Mixer, source, effectKinds)
+		if needsProject2 {
+			track.Mixer.wireV2 = true
+			for _, param := range source.Params {
+				if param.Name == "level" && param.Value != "off" {
+					value, unit, parseErr := parseBaseValue(param.Value)
+					if parseErr == nil && unit == "db" {
+						track.Mixer.Level = &Value{Unit: "db", Number: &value}
+					}
+				}
+			}
+		} else {
+			track.Mixer.Level, track.Mixer.Inserts, track.Mixer.Sends, track.Mixer.Out = nil, nil, nil, nil
+			track.Mixer.panSet, track.Mixer.muteSet, track.Mixer.soloSet, track.Mixer.wireV2 = false, false, false, false
+		}
 		for _, param := range source.Params {
-			if param.Name == "level" || param.Name == "pan" || param.Name == "insert" || param.Name == "send_a" || param.Name == "send_b" || param.Name == "send_pre" || param.Name == "bus" {
+			if isMixerSourceParam(param.Name) {
 				continue
 			}
 			value, err := projectValue(param.Value)
@@ -305,6 +371,68 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 			track.Params[param.Name] = value
 		}
 		p.Tracks = append(p.Tracks, track)
+	}
+	for _, source := range score.Buses {
+		settings := notation.Track{Name: source.Name, Params: source.Params}
+		mixer, err := CompileMixerParams(settings)
+		if err != nil {
+			return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Message: err.Error(), Severity: "error", Position: source.Position})
+		}
+		mixer.wireV2 = true
+		mixer.Bus, mixer.Out = source.Name, nil
+		if source.Name == "music" {
+			mixer.GainDB = -3
+		} else {
+			mixer.GainDB = 0
+		}
+		p.Buses = append(p.Buses, Bus{ID: source.Name, Mixer: mixer})
+	}
+	if needsProject2 {
+		for _, effect := range score.Effects {
+			if !effect.Legacy || effect.Kind != "comp" {
+				continue
+			}
+			musicIndex := -1
+			for i := range p.Buses {
+				if p.Buses[i].ID == "music" {
+					musicIndex = i
+					break
+				}
+			}
+			if musicIndex < 0 {
+				p.Buses = append(p.Buses, Bus{ID: "music", Mixer: Mixer{
+					GainDB: -3, Insert: effect.Name, Bus: "music", Inserts: []string{effect.Name}, wireV2: true,
+				}})
+				continue
+			}
+			if len(p.Buses[musicIndex].Mixer.Inserts) == 0 {
+				p.Buses[musicIndex].Mixer.Insert = effect.Name
+				p.Buses[musicIndex].Mixer.Inserts = []string{effect.Name}
+			}
+		}
+	}
+	if score.HasMaster {
+		settings := notation.Track{Name: "master", Params: score.Master}
+		mixer, err := CompileMixerParams(settings)
+		if err != nil {
+			return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Message: err.Error(), Severity: "error", Position: notation.Position{Line: 1, Column: 1}})
+		}
+		mixer.wireV2 = true
+		if mixer.Level == nil {
+			mixer.GainDB = 0
+		}
+		p.Master = &Master{Mixer: mixer}
+	}
+	for _, source := range score.Exports {
+		export, err := compileExport(source)
+		if err != nil {
+			return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Position})
+		}
+		p.Exports = append(p.Exports, export)
+	}
+	if needsProject2 {
+		p.p2Syntax = true
+		p.Format, p.Version = FormatID2, 2
 	}
 	for _, source := range score.Patterns {
 		track := representativeTrack(score, source)
@@ -359,6 +487,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 			scene.Settings = append(scene.Settings, SceneSetting{Path: setting.Path, Value: sceneValueFrom(value)})
 		}
 		if len(scene.Settings) > 0 {
+			p.p2Syntax = true
 			p.Format, p.Version = FormatID2, 2
 		}
 		p.Scenes = append(p.Scenes, scene)
@@ -370,20 +499,23 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	if err := ValidateProject(p); err != nil {
-		code := "CICADA-PARAM"
-		if strings.Contains(err.Error(), "CICADA-UNSUPPORTED:") {
-			code = "CICADA-UNSUPPORTED"
-		}
-		return nil, append(diagnostics, notation.Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
+		return nil, append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	if _, err := canonicalProjectBytes(p); err != nil {
-		code := "CICADA-PARAM"
+		code := projectDiagnosticCode(err)
 		if errors.Is(err, errCanonicalJSONLimit) {
 			code = "CICADA-LIMIT"
 		}
 		return nil, append(diagnostics, notation.Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
 	return p, diagnostics
+}
+
+func projectDiagnosticCode(err error) string {
+	if err != nil && strings.HasPrefix(err.Error(), "CICADA-UNSUPPORTED:") {
+		return "CICADA-UNSUPPORTED"
+	}
+	return "CICADA-PARAM"
 }
 
 // Melodic notation can omit its kind. For a pattern used only by built-in
@@ -567,7 +699,7 @@ func parseBaseValue(source string) (float64, string, error) {
 	for _, suffix := range []struct {
 		name, unit string
 		places     int
-	}{{"khz", "hz", 3}, {"hz", "hz", 0}, {"ms", "ms", 0}, {"db", "db", 0}, {"s", "ms", 3}, {"%", "unit", -2}} {
+	}{{"lufs", "lufs", 0}, {"dbtp", "dbtp", 0}, {"khz", "hz", 3}, {"hz", "hz", 0}, {"ms", "ms", 0}, {"db", "db", 0}, {"lu", "lu", 0}, {"s", "ms", 3}, {"%", "unit", -2}} {
 		if strings.HasSuffix(strings.ToLower(source), suffix.name) {
 			unit, places = suffix.unit, suffix.places
 			source = source[:len(source)-len(suffix.name)]

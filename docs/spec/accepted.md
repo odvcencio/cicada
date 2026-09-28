@@ -1,46 +1,6 @@
 # Accepted source syntax that has not merged
 
-The owner accepted these designs for later additive changes to edition 1. None is available in the current validator, formatter, LSP, Studio, or semantic JSON. The examples below are design records, not runnable scores. The documentation test skips each cicada-accepted block until its construct lands.
-
-## Named mixer pieces
-
-**Status:** Accepted; not available in the current build.
-
-**Syntax (EBNF):**
-
-```ebnf
-effect_decl ::= "fx" , identifier , identifier , "{" , { param_decl } , "}" ;
-bus_decl ::= "bus" , identifier , "{" , { mixer_setting } , "}" ;
-send_decl ::= "send" , identifier , "=" , value , [ "pre" ] ;
-insert_decl ::= "insert" , "=" , identifier , { "->" , identifier } ;
-master_decl ::= "master" , "{" , { mixer_setting } , "}" ;
-mixer_setting ::= "level" | "pan" | "mute" | "solo" | send_decl
-                | insert_decl | "out" , "=" , identifier ;
-```
-
-**Meaning:** Named effect instances and buses replace the fixed return names. Track, bus, and master blocks can declare levels, pan, mute, solo, ordered inserts, sends, and output routing. Sending to an effect creates its return bus by default. A master block owns the final insert chain.
-
-**Types and units:** Send levels use dB; `pre` selects a pre-fader tap. `mute` and `solo` are switches. Insert and output values name declared mixer objects.
-
-**Defaults:** A one-name legacy `fx <kind> { ... }` declaration keeps working during the migration. Unspecified routing and mixer values use the accepted registry defaults; exact default serialization is not available yet.
-
-**Errors:** Unknown effect, bus, insert, send destination, and output names must be rejected. The current compiler does not validate this syntax, so stable diagnostics are not assigned.
-
-**Example:**
-
-```cicada-accepted
-fx grit drive { shape = hard }
-fx room reverb { decay = 2.4s }
-bus music { insert = grit }
-track bass acid {
-  insert = grit
-  send room = -12dB pre
-  out = music
-}
-master { insert = grit }
-```
-
-**Edition history:** Accepted as an additive edition-1 form. `cicada fix` is expected to rewrite `send_a` to a delay send, `send_b` to a reverb send, `send_pre = true` to `pre` on each send, `bus = sfx` to `out = sfx`, implicit compressor placement to an explicit music-bus insert, and `level = off` to `mute = on`. Edition 2 is expected to remove the old spellings after migration.
+These designs are accepted for later additive changes to edition 1. Each section states whether source syntax is available and whether engine support has landed. Remaining `cicada-accepted` examples are design records, not runnable scores.
 
 ## Automation blocks
 

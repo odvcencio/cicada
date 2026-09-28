@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
 )
@@ -27,10 +26,10 @@ func goldenCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	if err := checkScoreEdition(*scorePath); err != nil {
+	score, diagnostics, err := parseScoreForPath(*scorePath, source)
+	if err != nil {
 		return err
 	}
-	score, diagnostics := notation.Parse(source)
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Severity == "error" {
 			return fmt.Errorf("%s:%d:%d: %s", *scorePath, diagnostic.Position.Line, diagnostic.Position.Column, diagnostic.Message)

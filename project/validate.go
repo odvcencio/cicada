@@ -29,8 +29,11 @@ func ValidateProject(p *Project) error {
 	if p.Format == FormatID && projectHasSceneSettings(p) {
 		return fmt.Errorf("scene settings require cicada.project/2")
 	}
-	if p.Edition != 1 {
-		return fmt.Errorf("CICADA-VERSION: only cicada 1 is supported")
+	if p.Edition != 1 && p.Edition != 2 {
+		return fmt.Errorf("CICADA-VERSION: only cicada 1 and 2 are supported")
+	}
+	if p.Format == FormatID && (len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0) {
+		return fmt.Errorf("cicada.project/2 is required for buses, master, and exports")
 	}
 	if !utf8.ValidString(p.Title) || utf8.RuneCountInString(p.Title) > 120 {
 		return fmt.Errorf("title must contain at most 120 UTF-8 characters")
@@ -41,21 +44,27 @@ func ValidateProject(p *Project) error {
 	if p.Instruments == nil || p.Kits == nil || p.Tracks == nil || p.Patterns == nil || p.Scenes == nil || p.Song == nil || p.Effects == nil {
 		return fmt.Errorf("project arrays must be explicit")
 	}
-	effects := map[string]bool{}
+	effects := map[string]Effect{}
+	kindCounts := map[string]int{}
 	var compSidechain string
 	for _, effect := range p.Effects {
-		if effect.ID != "drive" && effect.ID != "delay" && effect.ID != "reverb" && effect.ID != "comp" {
-			return fmt.Errorf("effect %s is not implemented", effect.ID)
+		kind := semanticEffectKind(effect)
+		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" {
+			return fmt.Errorf("CICADA-UNSUPPORTED: effect kind %s is not implemented", kind)
 		}
-		if effects[effect.ID] || effect.Params == nil {
+		if effect.ID == "music" || effect.ID == "sfx" || !validID(effect.ID) {
+			return fmt.Errorf("effect %s conflicts with a built-in bus or has an invalid ID", effect.ID)
+		}
+		if _, exists := effects[effect.ID]; exists || effect.Params == nil {
 			return fmt.Errorf("duplicate or incomplete effect %s", effect.ID)
 		}
-		effects[effect.ID] = true
-		if effect.ID == "drive" {
+		effects[effect.ID] = effect
+		kindCounts[kind]++
+		if kind == "drive" {
 			if _, err := DriveParamsFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
-		} else if effect.ID == "delay" {
+		} else if kind == "delay" {
 			params, err := DelayParamsFromValues(effect.Params)
 			if err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
@@ -63,7 +72,7 @@ func ValidateProject(p *Project) error {
 			if err := params.ValidateTempo(int64(p.TempoMilli)); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
-		} else if effect.ID == "reverb" {
+		} else if kind == "reverb" {
 			if _, err := ReverbParamsFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
@@ -73,6 +82,9 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
 		}
+	}
+	if kindCounts["delay"] > 1 || kindCounts["reverb"] > 1 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: multiple delay or reverb instances are not implemented")
 	}
 	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 || len(p.Song) == 0 {
 		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
@@ -131,7 +143,7 @@ func ValidateProject(p *Project) error {
 	}
 	tracks := map[string]Track{}
 	for _, track := range p.Tracks {
-		if _, exists := tracks[track.ID]; exists || !validID(track.ID) {
+		if _, exists := tracks[track.ID]; exists || !validID(track.ID) || track.ID == "music" || track.ID == "sfx" {
 			return fmt.Errorf("duplicate or invalid track ID %q", track.ID)
 		}
 		tracks[track.ID] = track
@@ -182,17 +194,158 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
+		if p.Format == FormatID && track.Mixer.Solo {
+			return fmt.Errorf("project/1 does not support solo")
+		}
 		if err := validateMixer(track.Mixer); err != nil {
 			return fmt.Errorf("track %s: %w", track.ID, err)
 		}
-		if track.Mixer.Insert != "none" && !effects[track.Mixer.Insert] {
-			return fmt.Errorf("track %s references undeclared insert %s", track.ID, track.Mixer.Insert)
+		if err := validateMixerLevel(track.Mixer); err != nil {
+			return fmt.Errorf("track %s: %w", track.ID, err)
 		}
-		if track.Mixer.SendA > 0 && !effects["delay"] {
+		inserts := track.Mixer.Inserts
+		if inserts == nil && track.Mixer.Insert != "none" {
+			inserts = []string{track.Mixer.Insert}
+		}
+		if len(inserts) > 1 {
+			return fmt.Errorf("CICADA-UNSUPPORTED: track insert chain is not implemented")
+		}
+		if len(inserts) == 1 {
+			effect, exists := effects[inserts[0]]
+			if !exists {
+				return fmt.Errorf("track %s references undeclared insert %s", track.ID, inserts[0])
+			}
+			if semanticEffectKind(effect) != "drive" {
+				return fmt.Errorf("CICADA-UNSUPPORTED: %s as a track insert is not implemented", semanticEffectKind(effect))
+			}
+		}
+		if track.Mixer.SendA > 0 && !hasEffectKind(effects, "delay") {
 			return fmt.Errorf("track %s requires a declared delay for send_a", track.ID)
 		}
-		if track.Mixer.SendB > 0 && !effects["reverb"] {
+		if track.Mixer.SendB > 0 && !hasEffectKind(effects, "reverb") {
 			return fmt.Errorf("track %s requires a declared reverb for send_b", track.ID)
+		}
+		if p.Format == FormatID2 {
+			seenSends := map[string]bool{}
+			for _, send := range track.Mixer.Sends {
+				effect, exists := effects[send.To]
+				if !exists {
+					return fmt.Errorf("track %s send references unknown effect %s", track.ID, send.To)
+				}
+				kind := semanticEffectKind(effect)
+				if kind != "delay" && kind != "reverb" {
+					return fmt.Errorf("CICADA-UNSUPPORTED: send to %s effect is not implemented", kind)
+				}
+				if seenSends[kind] {
+					return fmt.Errorf("track %s has multiple sends to %s", track.ID, kind)
+				}
+				seenSends[kind] = true
+				if !validValue(send.Level) || send.Level.Number == nil || send.Tap != "" && send.Tap != "pre" && send.Tap != "post" {
+					return fmt.Errorf("track %s has invalid send", track.ID)
+				}
+				unit, value := send.Level.Unit, *send.Level.Number
+				if unit == "ratio" || unit == "unit" {
+					if value < 0 || value > 1 {
+						return fmt.Errorf("track %s linear send is outside 0..1", track.ID)
+					}
+				} else if unit != "db" || value < -60 || value > 0 {
+					return fmt.Errorf("CICADA-UNSUPPORTED: track %s send level is outside the engine range", track.ID)
+				}
+			}
+		}
+	}
+	namespace := map[string]string{}
+	for id := range tracks {
+		namespace[id] = "track"
+	}
+	for id := range effects {
+		if previous := namespace[id]; previous != "" {
+			return fmt.Errorf("duplicate mixer namespace ID %s (%s and effect)", id, previous)
+		}
+		namespace[id] = "effect"
+	}
+	seenBuses := map[string]bool{}
+	for _, bus := range p.Buses {
+		if !validID(bus.ID) || seenBuses[bus.ID] || namespace[bus.ID] != "" {
+			return fmt.Errorf("duplicate or invalid bus ID %q", bus.ID)
+		}
+		seenBuses[bus.ID] = true
+		namespace[bus.ID] = "bus"
+	}
+	if p.Format == FormatID2 {
+		for _, bus := range p.Buses {
+			if bus.ID != "music" && bus.ID != "sfx" {
+				return fmt.Errorf("CICADA-UNSUPPORTED: user-declared bus %s is not implemented", bus.ID)
+			}
+			if err := validateMixer(bus.Mixer); err != nil {
+				return fmt.Errorf("bus %s: %w", bus.ID, err)
+			}
+			if err := validateMixerLevel(bus.Mixer); err != nil {
+				return fmt.Errorf("bus %s: %w", bus.ID, err)
+			}
+			if len(bus.Mixer.Sends) != 0 || bus.Mixer.SendA != 0 || bus.Mixer.SendB != 0 {
+				return fmt.Errorf("CICADA-UNSUPPORTED: sends from bus %s are not implemented", bus.ID)
+			}
+			if bus.Mixer.Out != nil && *bus.Mixer.Out != bus.ID {
+				return fmt.Errorf("CICADA-UNSUPPORTED: bus %s output routing is not implemented", bus.ID)
+			}
+			if bus.Mixer.Pan != 0 || bus.Mixer.panSet {
+				return fmt.Errorf("CICADA-UNSUPPORTED: bus %s pan is not implemented", bus.ID)
+			}
+			if bus.Mixer.Level != nil {
+				off := bus.Mixer.Level.Unit == "enum" && bus.Mixer.Level.Text == "off"
+				if !off && (bus.ID != "music" || bus.Mixer.Level.Unit != "db" || bus.Mixer.Level.Number == nil || *bus.Mixer.Level.Number != -3) {
+					return fmt.Errorf("CICADA-UNSUPPORTED: bus %s level is not implemented", bus.ID)
+				}
+			}
+			if bus.Mixer.GainDB != -3 && bus.ID == "music" || bus.Mixer.GainDB != 0 && bus.ID == "sfx" {
+				return fmt.Errorf("CICADA-UNSUPPORTED: bus %s level is not implemented", bus.ID)
+			}
+			inserts := bus.Mixer.Inserts
+			if inserts == nil && bus.Mixer.Insert != "none" {
+				inserts = []string{bus.Mixer.Insert}
+			}
+			if len(inserts) > 1 {
+				return fmt.Errorf("CICADA-UNSUPPORTED: bus %s insert chain is not implemented", bus.ID)
+			}
+			if len(inserts) == 1 {
+				effect, exists := effects[inserts[0]]
+				if bus.ID != "music" || !exists || semanticEffectKind(effect) != "comp" {
+					return fmt.Errorf("CICADA-UNSUPPORTED: bus music insert must be a compressor")
+				}
+			}
+		}
+		if p.Master != nil && len(p.Master.Mixer.Inserts) > 0 {
+			return fmt.Errorf("CICADA-UNSUPPORTED: master inserts are not implemented")
+		}
+		if p.Master != nil {
+			if err := validateMixer(p.Master.Mixer); err != nil {
+				return fmt.Errorf("master: %w", err)
+			}
+			if err := validateMixerLevel(p.Master.Mixer); err != nil {
+				return fmt.Errorf("master: %w", err)
+			}
+			if len(p.Master.Mixer.Sends) > 0 || p.Master.Mixer.SendA != 0 || p.Master.Mixer.SendB != 0 || p.Master.Mixer.Out != nil {
+				return fmt.Errorf("CICADA-UNSUPPORTED: master sends and output routing are not implemented")
+			}
+			if p.Master.Mixer.Pan != 0 || p.Master.Mixer.panSet {
+				return fmt.Errorf("CICADA-UNSUPPORTED: master pan is not implemented")
+			}
+		}
+		for _, effect := range p.Effects {
+			if semanticEffectKind(effect) != "comp" {
+				continue
+			}
+			placed := false
+			for _, bus := range p.Buses {
+				placed = placed || bus.ID == "music" && len(bus.Mixer.Inserts) == 1 && bus.Mixer.Inserts[0] == effect.ID
+			}
+			if !placed {
+				return fmt.Errorf("CICADA-UNSUPPORTED: compressor %s must be inserted on bus music", effect.ID)
+			}
+		}
+		if err := validateExports(p.Exports); err != nil {
+			return err
 		}
 	}
 	if compSidechain != "" && compSidechain != "music" && compSidechain != "sfx" {
@@ -347,6 +500,23 @@ func ValidateProject(p *Project) error {
 	return nil
 }
 
+func validateMixerLevel(mixer Mixer) error {
+	if mixer.Level == nil {
+		return nil
+	}
+	level := mixer.Level
+	if level.Unit == "enum" && level.Text == "off" && level.Number == nil {
+		if !mixer.Mute {
+			return fmt.Errorf("level off must also set mute")
+		}
+		return nil
+	}
+	if level.Unit != "db" || level.Number == nil || !finite(*level.Number) || *level.Number < -60 || *level.Number > 6 || level.Text != "" {
+		return fmt.Errorf("mixer level must be dB from -60 to +6 or off")
+	}
+	return nil
+}
+
 func validID(id string) bool {
 	if len(id) < 1 || len(id) > 64 || !(id[0] == '_' || id[0] >= 'a' && id[0] <= 'z') {
 		return false
@@ -368,7 +538,55 @@ func uniqueID(id string, seen map[string]bool) error {
 }
 
 func validNumericUnit(unit string) bool {
-	return unit == "unit" || unit == "hz" || unit == "ms" || unit == "db"
+	return unit == "unit" || unit == "ratio" || unit == "hz" || unit == "ms" || unit == "db" || unit == "lu" || unit == "lufs" || unit == "dbtp"
+}
+
+func semanticEffectKind(effect Effect) string {
+	if effect.Kind != "" {
+		return effect.Kind
+	}
+	return effect.ID
+}
+
+func hasEffectKind(effects map[string]Effect, kind string) bool {
+	for _, effect := range effects {
+		if semanticEffectKind(effect) == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func validateExports(exports []Export) error {
+	seen := map[string]bool{}
+	for _, export := range exports {
+		if !validID(export.ID) || seen[export.ID] {
+			return fmt.Errorf("duplicate or invalid export ID %q", export.ID)
+		}
+		seen[export.ID] = true
+		if export.Rate != nil && *export.Rate != 44100 && *export.Rate != 48000 && *export.Rate != 96000 {
+			return fmt.Errorf("CICADA-UNSUPPORTED: export %s rate %dHz is not supported by the renderer", export.ID, *export.Rate)
+		}
+		if export.Bits != nil && *export.Bits != 16 && *export.Bits != 24 && *export.Bits != 32 {
+			return fmt.Errorf("export %s bits must be 16, 24, or 32", export.ID)
+		}
+		if export.Tail != nil && (!validValue(*export.Tail) || export.Tail.Number == nil || export.Tail.Unit != "ms" || *export.Tail.Number < 0 || *export.Tail.Number > 10000) {
+			return fmt.Errorf("CICADA-UNSUPPORTED: export %s tail is outside the renderer's 0 to 10 second range", export.ID)
+		}
+		if export.Loudness != nil && (!validValue(*export.Loudness) || export.Loudness.Number == nil || export.Loudness.Unit != "lufs" && export.Loudness.Unit != "lu" || *export.Loudness.Number < -70 || *export.Loudness.Number > 0) {
+			return fmt.Errorf("export %s loudness must be -70 to 0 LUFS", export.ID)
+		}
+		if export.TruePeak != nil && (!validValue(*export.TruePeak) || export.TruePeak.Number == nil || export.TruePeak.Unit != "dbtp" || *export.TruePeak.Number < -20 || *export.TruePeak.Number > 0) {
+			return fmt.Errorf("export %s true_peak must be -20 to 0 dBTP", export.ID)
+		}
+		if export.TruePeak != nil && export.Loudness == nil {
+			return fmt.Errorf("CICADA-UNSUPPORTED: export %s true_peak without loudness targeting is not implemented", export.ID)
+		}
+		if export.Normalize != nil && *export.Normalize && export.Loudness != nil {
+			return fmt.Errorf("CICADA-UNSUPPORTED: export %s cannot combine loudness targeting and normalize", export.ID)
+		}
+	}
+	return nil
 }
 
 func validValue(value Value) bool {

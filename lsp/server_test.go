@@ -158,7 +158,7 @@ func TestCodeActionSharesValidatedCicadaFixAndDocumentVersion(t *testing.T) {
 	if len(actions[0].Edit.DocumentChanges) != 3 || actions[0].Edit.DocumentChanges[0].Kind != "create" || !strings.HasSuffix(actions[0].Edit.DocumentChanges[0].URI, "/cicada.mod") {
 		t.Fatalf("manifest create missing: %+v", actions[0].Edit.DocumentChanges)
 	}
-	if manifest := actions[0].Edit.DocumentChanges[1].Edits[0].NewText; manifest != "project legacy\ncicada 1\n" {
+	if manifest := actions[0].Edit.DocumentChanges[1].Edits[0].NewText; manifest != "project legacy\ncicada 2\n" {
 		t.Fatalf("manifest content: %q", manifest)
 	}
 	change := actions[0].Edit.DocumentChanges[2]
@@ -174,7 +174,7 @@ func TestCodeActionSharesValidatedCicadaFixAndDocumentVersion(t *testing.T) {
 	}
 }
 
-func TestCodeActionKeepsEditionWhenManifestCreationIsUnavailable(t *testing.T) {
+func TestCodeActionUpgradesExistingManifestWithoutCreateCapability(t *testing.T) {
 	dir := t.TempDir()
 	uri := fileURI(filepath.Join(dir, "score.cicada"))
 	source := "cicada 1\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n"
@@ -228,8 +228,16 @@ func TestCodeActionKeepsEditionWhenManifestCreationIsUnavailable(t *testing.T) {
 			} `json:"edit"`
 		} `json:"result"`
 	}
-	if err := json.Unmarshal(body, &response); err != nil || len(response.Result) != 1 || len(response.Result[0].Edit.DocumentChanges) != 1 || bytes.Contains(body, []byte(`"kind":"create"`)) {
+	if err := json.Unmarshal(body, &response); err != nil || len(response.Result) != 1 || len(response.Result[0].Edit.DocumentChanges) != 2 || bytes.Contains(body, []byte(`"kind":"create"`)) {
 		t.Fatalf("existing manifest action: %s, %v", body, err)
+	}
+	var manifestEdit struct {
+		Edits []struct {
+			NewText string `json:"newText"`
+		} `json:"edits"`
+	}
+	if err := json.Unmarshal(response.Result[0].Edit.DocumentChanges[0], &manifestEdit); err != nil || manifestEdit.Edits[0].NewText != "project score\ncicada 2\n" {
+		t.Fatalf("existing manifest upgrade: %+v, %v", manifestEdit, err)
 	}
 }
 

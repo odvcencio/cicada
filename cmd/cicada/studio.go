@@ -442,10 +442,10 @@ func compileStudioSource(path string, source []byte) (*project.Project, error) {
 	if !utf8.Valid(source) {
 		return nil, fmt.Errorf("score is not UTF-8")
 	}
-	if err := checkScoreEdition(path); err != nil {
+	score, diagnostics, err := parseScoreForPath(path, source)
+	if err != nil {
 		return nil, err
 	}
-	score, diagnostics := notation.Parse(source)
 	for _, d := range diagnostics {
 		if d.Severity == "error" {
 			return nil, fmt.Errorf("%d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)

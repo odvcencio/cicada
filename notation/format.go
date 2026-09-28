@@ -3,8 +3,8 @@ package notation
 import (
 	"bytes"
 	"fmt"
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -59,6 +59,9 @@ func Format(document *Document) ([]byte, error) {
 				return nil, fmt.Errorf("invalid syntax span")
 			}
 			section = formatDeclaration(document.source[start:end])
+			if kind == "track_decl" || kind == "bus_decl" || kind == "master_decl" || kind == "export_decl" {
+				section = formatMixerDeclaration(section, kind)
+			}
 			if kind == "scene_decl" {
 				section = formatSceneDeclaration(section, document.source[start:end], node, document.Walker, pos(document.Walker, node).Line)
 			}
@@ -76,6 +79,71 @@ func Format(document *Document) ([]byte, error) {
 		sections = append(sections, strings.Join(comments, "\n"))
 	}
 	return []byte(strings.Join(sections, "\n\n") + "\n"), nil
+}
+
+func formatMixerDeclaration(section, kind string) string {
+	lines := strings.Split(section, "\n")
+	if len(lines) < 3 {
+		return section
+	}
+	type lineGroup struct {
+		order int
+		key   string
+		lines []string
+		seq   int
+	}
+	order := map[string]int{"level": 0, "pan": 1, "mute": 2, "solo": 3, "insert": 4, "out": 6}
+	if kind == "export_decl" {
+		order = map[string]int{"rate": 0, "bits": 1, "tail": 2, "loudness": 3, "true_peak": 4, "normalize": 5}
+	}
+	var groups []lineGroup
+	var pending []string
+	sequence := 0
+	for _, line := range lines[1 : len(lines)-1] {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//") || trimmed == "" {
+			pending = append(pending, line)
+			continue
+		}
+		key := ""
+		if equal := strings.Index(trimmed, " = "); equal >= 0 {
+			key = trimmed[:equal]
+		}
+		rank, found := order[key]
+		if strings.HasPrefix(key, "send ") {
+			rank, found = 5, true
+		}
+		if !found {
+			rank = 100
+		}
+		item := append([]string(nil), pending...)
+		pending = nil
+		item = append(item, line)
+		groups = append(groups, lineGroup{order: rank, key: key, lines: item, seq: sequence})
+		sequence++
+	}
+	if len(pending) > 0 {
+		if len(groups) > 0 {
+			groups[len(groups)-1].lines = append(groups[len(groups)-1].lines, pending...)
+		} else {
+			groups = append(groups, lineGroup{order: 100, lines: pending, seq: sequence})
+		}
+	}
+	sort.SliceStable(groups, func(i, j int) bool {
+		if groups[i].order != groups[j].order {
+			return groups[i].order < groups[j].order
+		}
+		if groups[i].order == 5 && groups[i].key != groups[j].key {
+			return groups[i].key < groups[j].key
+		}
+		return groups[i].seq < groups[j].seq
+	})
+	out := []string{lines[0]}
+	for _, group := range groups {
+		out = append(out, group.lines...)
+	}
+	out = append(out, lines[len(lines)-1])
+	return strings.Join(out, "\n")
 }
 
 type sceneFormatAssignment struct {
@@ -302,7 +370,7 @@ func formatDeclaration(source []byte) string {
 			if frame.kind == "pattern" && i+1 < len(tokens) && tokens[i+1].text == "=" && strings.TrimSpace(line) != "" && !strings.HasPrefix(strings.TrimSpace(line), "use ") {
 				flush()
 			}
-			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "kit") && frame.assignment == 3 && value != "}" {
+			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export") && frame.assignment == 3 && value != "}" && !(strings.HasPrefix(strings.TrimSpace(line), "send ") && value == "pre") {
 				flush()
 				frame.assignment = 0
 			}
@@ -345,7 +413,7 @@ func formatDeclaration(source []byte) string {
 			line = strings.TrimRight(line, " ") + " = "
 			if len(frames) > 0 {
 				frame := &frames[len(frames)-1]
-				if frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit" {
+				if frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export" {
 					frame.assignment = 2
 				}
 			}
@@ -377,7 +445,7 @@ func formatDeclaration(source []byte) string {
 			word(value)
 			if len(frames) > 0 {
 				frame := &frames[len(frames)-1]
-				if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit") && frame.assignment == 2 {
+				if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export") && frame.assignment == 2 {
 					frame.assignment = 3
 				}
 				if frame.kind == "song" {
