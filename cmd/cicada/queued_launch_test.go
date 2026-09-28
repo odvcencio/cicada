@@ -18,6 +18,7 @@ func TestSongLandingKeepsRequestsQueuedAfterTheJump(t *testing.T) {
 		t.Fatal(err)
 	}
 	transport := newStudioTransport(path)
+	transport.audioNull = true
 	transport.stream, transport.playing = stream, true
 	transport.last, err = playSourceHash(path)
 	if err != nil {
@@ -70,6 +71,7 @@ func TestSongLandingKeepsNewSongStartPending(t *testing.T) {
 		t.Fatal(err)
 	}
 	transport := newStudioTransport(path)
+	transport.audioNull = true
 	transport.stream, transport.playing = stream, true
 	if err := transport.startFrom(0, "main", nil, [32]byte{}); err != nil {
 		t.Fatal(err)

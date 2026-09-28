@@ -46,7 +46,7 @@ func (nullBackend) Open(config Config, render Callback) (Stream, error) {
 		render: render,
 		output: output,
 		format: Format{
-			Backend: Null, SampleRate: config.SampleRate, Channels: config.Channels,
+			Backend: Null, Host: "null", SampleRate: config.SampleRate, Channels: config.Channels,
 			FramesPerPeriod: config.FramesPerPeriod, Device: "Null output",
 		},
 		period: period,
