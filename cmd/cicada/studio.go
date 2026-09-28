@@ -21,6 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -37,30 +38,31 @@ type studio struct {
 }
 
 func studioCommand(args []string) error {
+	args, backendName, _, err := selectCommandAudio("studio", args)
+	if err != nil {
+		return err
+	}
+	restoreThreads := raiseAudioProcessThreads(backendName)
+	defer restoreThreads()
 	path, address := "main.cicada", "127.0.0.1:0"
 	seenPath := false
 	lspStdio := false
-	audioNull := false
+	audioNull := backendName == audiobackend.Null
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--lsp-stdio" {
 			lspStdio = true
 			continue
 		}
-		if args[i] == "--listen" && i+1 < len(args) {
+		if args[i] == "--listen" {
+			if i+1 >= len(args) {
+				return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio]")
+			}
 			address = args[i+1]
 			i++
 			continue
 		}
-		if args[i] == "--audio" && i+1 < len(args) {
-			if args[i+1] != "null" {
-				return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio null] [--lsp-stdio]")
-			}
-			audioNull = true
-			i++
-			continue
-		}
 		if strings.HasPrefix(args[i], "-") || seenPath {
-			return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio null] [--lsp-stdio]")
+			return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio tymbal|oto|null] [--lsp-stdio]")
 		}
 		path = args[i]
 		seenPath = true
@@ -78,6 +80,8 @@ func studioCommand(args []string) error {
 	}
 	defer studio.transport.close()
 	studio.transport.audioNull = audioNull
+	studio.transport.audioBackend = string(backendName)
+	studio.transport.audioOptions = defaultStudioAudioOptionsFor(backendName)
 	handler := studio.routes()
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
