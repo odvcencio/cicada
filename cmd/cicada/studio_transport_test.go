@@ -342,8 +342,11 @@ func TestStudioNullAudioPacesRenderingWithoutOpeningDevice(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer transport.close()
-	if transport.audio != nil || transport.stream == nil {
-		t.Fatalf("null audio opened a device or missed its stream: audio=%v stream=%v", transport.audio, transport.stream)
+	if transport.audio == nil || transport.stream == nil {
+		t.Fatalf("null backend missed its output stream: audio=%v stream=%v", transport.audio != nil, transport.stream != nil)
+	}
+	if snapshot := transport.audio.Snapshot(); snapshot.Backend != "Null" || snapshot.OutputName != "Null output" {
+		t.Fatalf("null backend snapshot = %+v", snapshot)
 	}
 	time.Sleep(80 * time.Millisecond)
 	if got := transport.meterSequence.Load(); got == 0 || got > 8 {

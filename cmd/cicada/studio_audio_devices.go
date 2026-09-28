@@ -69,17 +69,13 @@ func (t *studioTransport) ensureSampleRate() (int, error) {
 		t.mu.Unlock()
 		return rate, nil
 	}
-	if t.audioNull {
-		t.sampleRate = liveSampleRate
-		t.mu.Unlock()
-		return liveSampleRate, nil
-	}
+	backendName := t.selectedAudioBackend()
 	if t.audioOptions == (studioAudioOptions{}) {
 		t.audioOptions = defaultStudioAudioOptions()
 	}
-	options := normalizeStudioAudioOptions(t.audioOptions)
+	options := normalizeStudioAudioOptions(effectiveStudioAudioOptions(backendName, t.audioOptions))
 	t.mu.Unlock()
-	rate, err := studioAudioSampleRate(options)
+	rate, err := studioAudioSampleRate(backendName, options)
 	if err != nil {
 		return 0, err
 	}
@@ -93,7 +89,7 @@ func (t *studioTransport) ensureSampleRate() (int, error) {
 }
 
 func (t *studioTransport) audioState() studioAudioState {
-	inventory, err := enumerateStudioAudio()
+	inventory, err := enumerateStudioAudio(t.selectedAudioBackend())
 	if err != nil {
 		inventory.Message = err.Error()
 	}
@@ -129,7 +125,7 @@ func (t *studioTransport) configureAudio(options studioAudioOptions) error {
 	if err := validateStudioAudioOptions(options); err != nil {
 		return err
 	}
-	inventory, err := enumerateStudioAudio()
+	inventory, err := enumerateStudioAudio(t.selectedAudioBackend())
 	if err != nil {
 		return err
 	}

@@ -14,11 +14,13 @@ import (
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/cmd"
 )
 
 type studioTransport struct {
 	path          string
+	audioBackend  string
 	mu            sync.Mutex
 	pollMu        sync.Mutex
 	stream        *liveplay.Player
@@ -41,7 +43,6 @@ type studioTransport struct {
 	audioNull     bool
 	latestMeter   atomic.Pointer[studioMeterSnapshot]
 	meterSequence atomic.Uint64
-	nullPlaying   atomic.Bool
 }
 
 type studioMeterSnapshot struct {
@@ -70,7 +71,17 @@ type transportSnapshot struct {
 }
 
 func newStudioTransport(path string) *studioTransport {
-	return &studioTransport{path: path, audioOptions: defaultStudioAudioOptions()}
+	return &studioTransport{path: path, audioBackend: string(audiobackend.DefaultFor("studio")), audioOptions: defaultStudioAudioOptions()}
+}
+
+func (t *studioTransport) selectedAudioBackend() string {
+	if t.audioNull {
+		return string(audiobackend.Null)
+	}
+	if t.audioBackend != "" {
+		return t.audioBackend
+	}
+	return string(audiobackend.DefaultFor("studio"))
 }
 
 func validStudioQuantize(value cmd.Quantize) bool {
@@ -162,8 +173,8 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 		if !t.playing {
 			t.stream.ResetLoudness()
 		}
-		if t.audio == nil && !t.audioNull && (!t.playing || audioFailed) {
-			audio, openErr := openStudioAudio(t.stream, t.audioOptions)
+		if t.audio == nil && (!t.playing || audioFailed) {
+			audio, openErr := openStudioAudio(t.stream, t.audioOptions, t.selectedAudioBackend(), sampleRate)
 			if openErr != nil {
 				return openErr
 			}
@@ -176,9 +187,6 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			}
 		}
 		t.playing, t.errText = true, ""
-		if t.audioNull {
-			t.nullPlaying.Store(true)
-		}
 		return nil
 	}
 	var fingerprint [32]byte
@@ -211,14 +219,12 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 		}
 	}
 	var audio studioAudioDevice
-	if !t.audioNull {
-		audio, err = openStudioAudio(stream, t.audioOptions)
-		if err != nil {
-			stream.Close()
-			return err
-		}
-		audio.SetMonitor(studioMonitorOptions(t.audioOptions))
+	audio, err = openStudioAudio(stream, t.audioOptions, t.selectedAudioBackend(), sampleRate)
+	if err != nil {
+		stream.Close()
+		return err
 	}
+	audio.SetMonitor(studioMonitorOptions(t.audioOptions))
 	if audio != nil {
 		if err := audio.Play(); err != nil {
 			audio.Pause()
@@ -230,16 +236,10 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	ctx, cancel := context.WithCancel(context.Background())
 	t.stream, t.audio, t.sampleRate, t.last, t.cancel = stream, audio, sampleRate, fingerprint, cancel
 	t.playing, t.errText = true, ""
-	if t.audioNull {
-		t.nullPlaying.Store(true)
-	}
 	if index >= 0 {
 		t.pendingSong, t.pendingSongID = scene, requestID
 	} else {
 		t.scene = stream.CurrentScene()
-	}
-	if audio == nil {
-		go t.renderNull(ctx, stream)
 	}
 	go t.watch(ctx, stream)
 	return nil
@@ -248,9 +248,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 func (t *studioTransport) stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.audioNull {
-		t.nullPlaying.Store(false)
-	} else if t.audio != nil {
+	if t.audio != nil {
 		audio := t.audio
 		audio.Pause()
 		// Release duplex hosts after Stop so they no longer hold the input endpoint.
@@ -351,7 +349,6 @@ func (t *studioTransport) close() {
 	if t.cancel != nil {
 		t.cancel()
 	}
-	t.nullPlaying.Store(false)
 	if t.audio != nil {
 		t.audio.Pause()
 		_ = t.audio.Close()
@@ -380,27 +377,6 @@ func (t *studioTransport) loudness() liveplay.LoudnessSnapshot {
 		return stream.Loudness()
 	}
 	return liveplay.LoudnessSnapshot{}
-}
-
-func (t *studioTransport) renderNull(ctx context.Context, stream *liveplay.Player) {
-	period := time.Duration(int64(time.Second) * liveBlockFrames / liveSampleRate)
-	ticker := time.NewTicker(period)
-	defer ticker.Stop()
-	var block [liveBlockFrames * 8]byte
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			if !t.nullPlaying.Load() {
-				continue
-			}
-			if _, err := stream.Read(block[:]); err != nil {
-				t.setError(err)
-				return
-			}
-		}
-	}
 }
 
 func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
