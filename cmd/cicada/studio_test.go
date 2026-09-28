@@ -55,7 +55,7 @@ func TestStudioProjectsAndTogglesSource(t *testing.T) {
 		t.Fatal(err)
 	}
 	page := studioCall(t, handler, "/", nil)
-	if page.Code != 200 || !strings.Contains(page.Body.String(), `id="source-editor"`) || !strings.Contains(page.Body.String(), `data-pattern="pulse"`) || !strings.Contains(page.Body.String(), `data-lane="bd"`) || !strings.Contains(page.Body.String(), `data-scene="main"`) || !strings.Contains(page.Body.String(), `aria-label="Scene launch matrix"`) || !strings.Contains(page.Body.String(), `data-track="bass" data-pattern="pulse"`) || !strings.Contains(page.Body.String(), `href="#session">Session</a>`) || !strings.Contains(page.Body.String(), `href="#notation">Code</a>`) {
+	if page.Code != 200 || !strings.Contains(page.Body.String(), `id="source-editor"`) || !strings.Contains(page.Body.String(), `data-pattern="pulse"`) || !strings.Contains(page.Body.String(), `data-lane="bd"`) || !strings.Contains(page.Body.String(), `data-scene="main"`) || !strings.Contains(page.Body.String(), `aria-label="Scene launch matrix"`) || !strings.Contains(page.Body.String(), `data-track="bass" data-pattern="pulse"`) || !strings.Contains(page.Body.String(), `data-panel-tab="session"`) || !strings.Contains(page.Body.String(), `data-panel-tab="code"`) {
 		t.Fatalf("studio page: %d %s", page.Code, page.Body.String())
 	}
 	revision := studioRevision([]byte(studioScore))
@@ -285,5 +285,21 @@ func TestStudioGridEditFollowsSharedPhraseSource(t *testing.T) {
 	}
 	if !strings.Contains(string(updated), "phrase hook { . . }") || !strings.Contains(string(updated), "use hook*2") {
 		t.Fatalf("phrase source was not edited in place: %s", updated)
+	}
+}
+
+func TestStudioShellHasPanelsAndNeverReloadsThePage(t *testing.T) {
+	handler, _ := studioTestHandler(t)
+	page := studioCall(t, handler, "/", nil).Body.String()
+	for _, want := range []string{`data-panel-tab="code"`, `data-panel-tab="history"`, `id="shortcut-sheet"`, `id="transport-stop"`, `id="transport-home"`, `id="bar-engine"`, `id="bar-save"`, `data-workspace-panel="record"`} {
+		if !strings.Contains(page, want) {
+			t.Errorf("Studio page misses %s", want)
+		}
+	}
+	for _, path := range []string{"/", "/studio-live.js", "/studio-workspace.js", "/studio-history.js"} {
+		body := studioCall(t, handler, path, nil).Body.String()
+		if strings.Contains(body, "location.reload") {
+			t.Errorf("%s calls location.reload", path)
+		}
 	}
 }

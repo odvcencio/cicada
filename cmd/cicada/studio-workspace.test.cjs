@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const {installWorkspaceKeyboard, replaceProjection} = require('./studio-workspace.js');
+const {installWorkspaceKeyboard, installPanelTabs, replaceProjection} = require('./studio-workspace.js');
 
 function fakeDocument(activeElement = {tagName: 'BODY'}) {
   const listeners = new Map();
@@ -43,7 +43,7 @@ test('in-place projection replacement leaves persistent workspace and MIDI state
   const focus = {current: editor};
   const child = {cloneNode() { return this; }};
   const panel = {childNodes: [child]};
-  const target = {childNodes: [child]};
+  const target = {childNodes: [child], replaceChildren(...nodes) { this.nodes = nodes; }};
   const parsed = {querySelector(selector) { return selector === '#projection' ? panel : target; }};
   const projection = {replaceChildren(...nodes) { this.nodes = nodes; }};
   const document = {querySelector(selector) { return selector === '#projection' ? projection : target; }};
@@ -66,4 +66,54 @@ test('transport and utility shortcuts invoke their commands', () => {
     assert.equal(event.prevented, true, `${key} should be handled`);
   }
   assert.deepEqual(calls, ['playPause', 'returnToStart', 'toggleLive', 'toggleRecord', 'shortcuts']);
+});
+
+test('Space on a focused button or grid cell activates it instead of toggling playback', () => {
+  const calls = [];
+  const button = {tagName: 'BUTTON'};
+  const document = fakeDocument(button);
+  installWorkspaceKeyboard({document, command: name => calls.push(name), selectPanel() {}});
+  const event = {key: ' ', target: button};
+  document.dispatch(event);
+  assert.equal(event.prevented, undefined);
+  assert.deepEqual(calls, []);
+});
+
+test('Ctrl+backslash toggles the dock even inside the editor', () => {
+  let toggled = 0;
+  const editor = {tagName: 'TEXTAREA', id: 'source-editor'};
+  const document = fakeDocument(editor);
+  installWorkspaceKeyboard({document, toggleDock: () => toggled++, selectPanel() {}});
+  document.dispatch({key: '\\', ctrlKey: true, target: editor});
+  assert.equal(toggled, 1);
+});
+
+function panelDocument() {
+  const mk = name => ({dataset: {workspacePanel: name}, hidden: false});
+  const tab = name => ({dataset: {panelTab: name}, attrs: {}, tabIndex: -1, setAttribute(key, value) { this.attrs[key] = value; }, addEventListener() {}});
+  const names = ['session', 'song', 'mix'];
+  const panels = names.map(mk), tabs = ['code', ...names].map(tab);
+  return {panels, tabs, document: {documentElement: {dataset: {}}, querySelectorAll: sel => sel === '[data-panel-tab]' ? tabs : panels}};
+}
+
+test('choosing a panel shows only that panel and marks its tab', () => {
+  const {panels, tabs, document} = panelDocument();
+  const chosen = [];
+  const controller = installPanelTabs({document, selectPanel: name => chosen.push(name), initial: 'session'});
+  controller.choose('mix');
+  assert.deepEqual(panels.map(panel => panel.hidden), [true, true, false]);
+  assert.equal(document.documentElement.dataset.activePanel, 'mix');
+  assert.equal(tabs.find(tab => tab.dataset.panelTab === 'mix').attrs['aria-selected'], 'true');
+  assert.equal(tabs.find(tab => tab.dataset.panelTab === 'mix').tabIndex, 0);
+  assert.equal(controller.active, 'mix');
+});
+
+test('choosing Code focuses the dock and keeps the active panel visible', () => {
+  const {panels, document} = panelDocument();
+  const chosen = [];
+  const controller = installPanelTabs({document, selectPanel: name => chosen.push(name), initial: 'song'});
+  controller.choose('code');
+  assert.deepEqual(panels.map(panel => panel.hidden), [true, false, true]);
+  assert.equal(controller.active, 'song');
+  assert.equal(chosen.at(-1), 'code');
 });
