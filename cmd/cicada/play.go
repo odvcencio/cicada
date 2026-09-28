@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/ebitengine/oto/v3"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/project"
 )
@@ -36,6 +38,7 @@ func playCommand(args []string) error {
 	if err != nil {
 		return err
 	}
+	defer stream.Close()
 	ctx, ready, err := oto.NewContext(&oto.NewContextOptions{
 		SampleRate: liveSampleRate, ChannelCount: 2, Format: oto.FormatFloat32LE,
 		BufferSize: 20 * time.Millisecond, ApplicationName: "Cicada",
@@ -78,15 +81,26 @@ func playScorePath(args []string) (string, error) {
 }
 
 func compileLiveScore(path string) (liveplay.Score, error) {
+	return compileLiveScoreAtRate(path, liveSampleRate)
+}
+
+func compileLiveScoreAtRate(path string, sampleRate int) (liveplay.Score, error) {
 	p, err := loadProject(path)
 	if err != nil {
 		return liveplay.Score{}, err
 	}
-	return compileLiveProject(path, p)
+	return compileLiveProjectAtRate(path, p, sampleRate)
 }
 
 func compileLiveProject(path string, p *project.Project) (liveplay.Score, error) {
-	cfg, err := project.CompileEngine(p, liveSampleRate, liveBlockFrames)
+	return compileLiveProjectAtRate(path, p, liveSampleRate)
+}
+
+func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (liveplay.Score, error) {
+	if sampleRate <= 0 {
+		return liveplay.Score{}, fmt.Errorf("audio sample rate must be positive")
+	}
+	cfg, err := project.CompileEngine(p, sampleRate, liveBlockFrames)
 	if err != nil {
 		return liveplay.Score{}, err
 	}
@@ -102,6 +116,13 @@ func compileLiveProject(path string, p *project.Project) (liveplay.Score, error)
 	tracks := make([]liveplay.TrackSlots, len(p.Tracks))
 	for i, track := range p.Tracks {
 		tracks[i].ID = track.ID
+		tracks[i].Kind = track.Kind
+		for _, kit := range p.Kits {
+			if track.Kind == kit.ID {
+				tracks[i].Kind = "drums"
+				break
+			}
+		}
 		for slot, pattern := range track.Slots {
 			if pattern != nil {
 				tracks[i].Slots[slot] = *pattern
@@ -114,7 +135,66 @@ func compileLiveProject(path string, p *project.Project) (liveplay.Score, error)
 		song[i] = liveplay.SongEntry{Scene: entry.Scene, StartBar: startBar}
 		startBar += uint32(entry.Bars)
 	}
-	return liveplay.Score{Engine: created, SampleRate: liveSampleRate, BPMMilli: int64(p.TempoMilli), Name: path, SceneIDs: sceneIDs, Tracks: tracks, Song: song}, nil
+	return liveplay.Score{
+		Engine: created, SampleRate: sampleRate, BPMMilli: int64(p.TempoMilli), Name: path,
+		SceneIDs: sceneIDs, Tracks: tracks, Song: song, Parameters: liveProjectParameters(p),
+		HasReturnA: cfg.DelayA != nil, HasReturnB: cfg.ReverbB != nil, HasSFX: hasSFXTracks(p),
+	}, nil
+}
+
+func hasSFXTracks(p *project.Project) bool {
+	for _, track := range p.Tracks {
+		if track.Mixer.Bus == "sfx" {
+			return true
+		}
+	}
+	return false
+}
+
+func liveProjectParameters(p *project.Project) []liveplay.ParameterValue {
+	addresses := project.ParamAddresses(p)
+	values := make([]liveplay.ParameterValue, 0, len(addresses))
+	for _, address := range addresses {
+		descriptor, ok := project.LookupParamDescriptor(address.Param)
+		if !ok || !descriptor.Live {
+			continue
+		}
+		track := uint8(0xff)
+		if address.Track != "" {
+			found := false
+			for i, candidate := range p.Tracks {
+				if candidate.ID == address.Track {
+					track, found = uint8(i), true
+					break
+				}
+			}
+			if !found {
+				continue
+			}
+		}
+		value := float32(0)
+		switch number := address.Value.(type) {
+		case float64:
+			value = float32(number)
+		case float32:
+			value = number
+		case int:
+			value = float32(number)
+		case nil:
+			if !descriptor.Off {
+				continue
+			}
+			value = float32(math.Inf(-1))
+		default:
+			continue
+		}
+		id, ok := kernel.FindParam(address.Param)
+		if !ok {
+			continue
+		}
+		values = append(values, liveplay.ParameterValue{Track: track, ID: id, Value: value})
+	}
+	return values
 }
 
 type liveScoreWatcher struct {

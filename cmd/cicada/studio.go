@@ -33,12 +33,14 @@ type studio struct {
 	lastGoodProject *project.Project
 	transport       *studioTransport
 	history         *studioHistory
+	exports         *studioExportController
 }
 
 func studioCommand(args []string) error {
 	path, address := "main.cicada", "127.0.0.1:0"
 	seenPath := false
 	lspStdio := false
+	audioNull := false
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--lsp-stdio" {
 			lspStdio = true
@@ -49,8 +51,16 @@ func studioCommand(args []string) error {
 			i++
 			continue
 		}
+		if args[i] == "--audio" && i+1 < len(args) {
+			if args[i+1] != "null" {
+				return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio null] [--lsp-stdio]")
+			}
+			audioNull = true
+			i++
+			continue
+		}
 		if strings.HasPrefix(args[i], "-") || seenPath {
-			return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--lsp-stdio]")
+			return fmt.Errorf("usage: cicada studio [score.cicada] [--listen 127.0.0.1:port] [--audio null] [--lsp-stdio]")
 		}
 		path = args[i]
 		seenPath = true
@@ -67,6 +77,7 @@ func studioCommand(args []string) error {
 		return err
 	}
 	defer studio.transport.close()
+	studio.transport.audioNull = audioNull
 	handler := studio.routes()
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
@@ -140,7 +151,7 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 	history := newStudioHistory(source)
 	transport := newStudioTransport(absolute)
 	transport.history = history
-	return &studio{path: absolute, lastGoodSource: bytes.Clone(source), lastGoodProject: p, transport: transport, history: history}, nil
+	return &studio{path: absolute, lastGoodSource: bytes.Clone(source), lastGoodProject: p, transport: transport, history: history, exports: newStudioExportController()}, nil
 }
 
 func (s *studio) routes() http.Handler {
@@ -149,10 +160,22 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
+	mux.HandleFunc("POST /api/record", s.recordTake)
 	mux.HandleFunc("POST /api/song", s.editSong)
 	mux.HandleFunc("POST /api/transport", s.transportCommand)
 	mux.HandleFunc("GET /api/transport", s.transportState)
 	mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
+	mux.HandleFunc("GET /api/params", s.params)
+	mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
+	mux.HandleFunc("GET /api/audio/config", s.audioConfig)
+	mux.HandleFunc("POST /api/audio/config", s.audioConfig)
+	mux.HandleFunc("GET /studio-audio.js", s.audioScript)
+	mux.HandleFunc("GET /studio-audio-devices.js", s.audioDeviceScript)
+	mux.HandleFunc("GET /studio-midi.js", s.midiScript)
+	mux.HandleFunc("GET /studio-live.js", s.liveScript)
+	mux.HandleFunc("GET /studio-master.js", s.masterScript)
+	mux.HandleFunc("GET /api/export", s.exportStatus)
+	mux.HandleFunc("POST /api/export", s.startExport)
 	mux.HandleFunc("GET /api/history", s.historyState)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !studioLoopbackHost(r.Host) {
@@ -244,17 +267,22 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
-	Revision string `json:"revision"`
-	Action   string `json:"action,omitempty"`
-	Index    int    `json:"index,omitempty"`
-	Target   int    `json:"target,omitempty"`
-	Bars     int    `json:"bars,omitempty"`
-	Source   string `json:"source"`
-	Pattern  string `json:"pattern"`
-	Lane     string `json:"lane"`
-	Step     int    `json:"step"`
-	Pitch    *int   `json:"pitch,omitempty"`
-	Modifier string `json:"modifier,omitempty"`
+	Revision     string                `json:"revision"`
+	Action       string                `json:"action,omitempty"`
+	Index        int                   `json:"index,omitempty"`
+	Target       int                   `json:"target,omitempty"`
+	Bars         int                   `json:"bars,omitempty"`
+	Source       string                `json:"source"`
+	Pattern      string                `json:"pattern"`
+	Track        string                `json:"track,omitempty"`
+	Count        int                   `json:"count,omitempty"`
+	Take         []studioTakeNote      `json:"take,omitempty"`
+	Recordings   []studioTakeRecording `json:"recordings,omitempty"`
+	PatternCount int                   `json:"patternCount,omitempty"`
+	Lane         string                `json:"lane"`
+	Step         int                   `json:"step"`
+	Pitch        *int                  `json:"pitch,omitempty"`
+	Modifier     string                `json:"modifier,omitempty"`
 }
 
 func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {

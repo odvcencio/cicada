@@ -451,25 +451,65 @@ func renderFile(score *notation.Score, path string, opts render.Options, target 
 }
 
 func renderLoudnessFile(score *notation.Score, path string, opts render.Options, target renderTargetOptions) error {
+	report, err := renderLoudnessFileReport(score, path, opts, target, nil)
+	if report.Passes > 0 {
+		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d, largest limiter gain reduction %.2f dB\n",
+			path, report.Bars, report.From, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.LargestLimiterReductionDB)
+	}
+	return err
+}
+
+type loudnessFileReport struct {
+	TargetLUFS                float64 `json:"target_lufs"`
+	AchievedLUFS              float64 `json:"achieved_lufs"`
+	TruePeakDBTP              float64 `json:"true_peak_dbtp"`
+	SamplePeakDBFS            float64 `json:"sample_peak_dbfs"`
+	AppliedGainDB             float64 `json:"applied_gain_db"`
+	Passes                    int     `json:"passes"`
+	LargestLimiterReductionDB float64 `json:"largest_limiter_reduction_db"`
+	DCCorrection              struct {
+		LeftFS  float64 `json:"left_fs"`
+		RightFS float64 `json:"right_fs"`
+	} `json:"dc_correction"`
+	Bars       int   `json:"-"`
+	From       int   `json:"-"`
+	Frames     int64 `json:"-"`
+	SampleRate int   `json:"-"`
+}
+
+func renderLoudnessFileReport(score *notation.Score, path string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
+	return renderLoudnessFileReportWithShortfall(score, path, "", opts, target, onPass)
+}
+
+func renderStudioLoudnessFileReport(score *notation.Score, path string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
+	return renderLoudnessFileReportWithShortfall(score, path, studioShortfallPath(path), opts, target, onPass)
+}
+
+type loudnessShortfallError struct{ message string }
+
+func (e *loudnessShortfallError) Error() string { return e.message }
+
+func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfallPath string, opts render.Options, target renderTargetOptions, onPass func(int)) (loudnessFileReport, error) {
+	report := loudnessFileReport{TargetLUFS: target.LoudnessTarget}
 	dir := filepath.Dir(path)
 	candidate, err := os.CreateTemp(dir, ".cicada-loudness-candidate-*")
 	if err != nil {
-		return err
+		return report, err
 	}
 	candidatePath := candidate.Name()
 	if err := candidate.Close(); err != nil {
 		os.Remove(candidatePath)
-		return err
+		return report, err
 	}
 	defer os.Remove(candidatePath)
 	best, err := os.CreateTemp(dir, ".cicada-loudness-best-*")
 	if err != nil {
-		return err
+		return report, err
 	}
 	bestPath := best.Name()
 	if err := best.Close(); err != nil {
 		os.Remove(bestPath)
-		return err
+		return report, err
 	}
 	defer os.Remove(bestPath)
 
@@ -477,18 +517,26 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 	var bestMeasure render.VerifyReport
 	bestGain, bestDelta, hasBest := 0.0, math.Inf(1), false
 	var bestBiasL, bestBiasR float32
+	var peakFallbackRender render.Report
+	var peakFallbackMeasure render.VerifyReport
+	peakFallbackExcess := math.Inf(1)
+	peakFallbackGain := 0.0
+	var peakFallbackBiasL, peakFallbackBiasR float32
 	passes := 0
 	gain := 0.0
 	var biasL, biasR float32
 	for pass := 1; pass <= loudnessPassLimit; pass++ {
 		passes = pass
+		if onPass != nil {
+			onPass(pass)
+		}
 		passOptions := opts
 		passOptions.MasterGainDB = gain
 		passOptions.MasterBiasL, passOptions.MasterBiasR = biasL, biasR
 		passOptions.Normalize = false
 		file, err := os.OpenFile(candidatePath, os.O_WRONLY|os.O_TRUNC, 0)
 		if err != nil {
-			return err
+			return report, err
 		}
 		passReport, renderErr := render.WAV(score, passOptions, file)
 		if renderErr == nil {
@@ -496,10 +544,10 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 		}
 		closeErr := file.Close()
 		if renderErr != nil {
-			return renderErr
+			return report, renderErr
 		}
 		if closeErr != nil {
-			return closeErr
+			return report, closeErr
 		}
 		measurement, err := render.VerifyWAV(candidatePath, render.VerifyOptions{
 			SampleRate: passReport.SampleRate,
@@ -511,16 +559,26 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 			DCMaxDB:    100,
 		})
 		if err != nil {
-			return err
+			return report, err
 		}
 		peakSafe := measurement.TruePeakDBTP <= target.TruePeakMaxDBTP
 		dcSafe := measurement.DCDB <= -60
 		safe := peakSafe && dcSafe
+		if dcSafe && !peakSafe && !hasBest {
+			excess := measurement.TruePeakDBTP - target.TruePeakMaxDBTP
+			if excess < peakFallbackExcess {
+				if err := copyRenderFile(candidatePath, bestPath); err != nil {
+					return report, err
+				}
+				peakFallbackRender, peakFallbackMeasure, peakFallbackGain = passReport, measurement, gain
+				peakFallbackBiasL, peakFallbackBiasR, peakFallbackExcess = biasL, biasR, excess
+			}
+		}
 		if safe {
 			delta := math.Abs(measurement.IntegratedLUFS - target.LoudnessTarget)
 			if !hasBest || delta < bestDelta {
 				if err := copyRenderFile(candidatePath, bestPath); err != nil {
-					return err
+					return report, err
 				}
 				bestRender, bestMeasure, bestGain, bestDelta, bestBiasL, bestBiasR, hasBest = passReport, measurement, gain, delta, biasL, biasR, true
 			}
@@ -547,31 +605,53 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 		gain = math.Max(-120, math.Min(24, gain))
 	}
 	if !hasBest {
-		return fmt.Errorf("could not meet the true-peak ceiling %.2f dBTP and -60 dBFS DC limit in %d passes", target.TruePeakMaxDBTP, passes)
+		if math.IsInf(peakFallbackExcess, 1) {
+			return report, fmt.Errorf("could not meet the true-peak ceiling %.2f dBTP and -60 dBFS DC limit in %d passes", target.TruePeakMaxDBTP, passes)
+		}
+		bestRender, bestMeasure, bestGain = peakFallbackRender, peakFallbackMeasure, peakFallbackGain
+		bestBiasL, bestBiasR = peakFallbackBiasL, peakFallbackBiasR
+		bestDelta = math.Abs(bestMeasure.IntegratedLUFS - target.LoudnessTarget)
+		hasBest = true
 	}
-	if info, err := os.Stat(path); err == nil {
+	shortfallErr := (*loudnessShortfallError)(nil)
+	if math.IsNaN(bestMeasure.IntegratedLUFS) || math.IsInf(bestMeasure.IntegratedLUFS, 0) {
+		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("loudness target %.2f LUFS was not reached: render has no measurable loudness", target.LoudnessTarget)}
+	} else if bestMeasure.TruePeakDBTP > target.TruePeakMaxDBTP {
+		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("true peak %.2f dBTP exceeds ceiling %.2f dBTP", bestMeasure.TruePeakDBTP, target.TruePeakMaxDBTP)}
+	} else if bestDelta > target.Tolerance {
+		shortfall := target.LoudnessTarget - bestMeasure.IntegratedLUFS
+		if shortfall > target.Tolerance && bestMeasure.TruePeakDBTP >= target.TruePeakMaxDBTP-0.1 {
+			shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at true-peak ceiling %.2f dBTP (target %.2f LUFS)", shortfall, bestMeasure.IntegratedLUFS, bestMeasure.TruePeakDBTP, target.LoudnessTarget)}
+		} else {
+			shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU); achieved %.2f LUFS", target.LoudnessTarget, bestDelta, target.Tolerance, bestMeasure.IntegratedLUFS)}
+		}
+	}
+	destination := path
+	if shortfallErr != nil && shortfallPath != "" {
+		destination = shortfallPath
+	}
+	if info, err := os.Stat(destination); err == nil {
 		if err := os.Chmod(bestPath, info.Mode().Perm()); err != nil {
-			return err
+			return report, err
 		}
 	} else if !os.IsNotExist(err) {
-		return err
+		return report, err
 	}
-	if err := os.Rename(bestPath, path); err != nil {
-		return err
+	if err := os.Rename(bestPath, destination); err != nil {
+		return report, err
 	}
-	fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d, largest limiter gain reduction %.2f dB\n",
-		path, bestRender.Bars, bestRender.From, bestRender.Frames, bestRender.SampleRate, bestMeasure.IntegratedLUFS, bestMeasure.TruePeakDBTP, bestGain, bestBiasL, bestBiasR, passes, bestRender.MaxLimiterGainReductionDB)
-	shortfall := target.LoudnessTarget - bestMeasure.IntegratedLUFS
-	if math.IsInf(bestMeasure.IntegratedLUFS, -1) {
-		return fmt.Errorf("loudness target %.2f LUFS was not reached: render has no measurable loudness", target.LoudnessTarget)
+	report.AchievedLUFS = bestMeasure.IntegratedLUFS
+	report.TruePeakDBTP = bestMeasure.TruePeakDBTP
+	report.SamplePeakDBFS = bestMeasure.PeakDB
+	report.AppliedGainDB = bestGain
+	report.Passes = passes
+	report.LargestLimiterReductionDB = bestRender.MaxLimiterGainReductionDB
+	report.DCCorrection.LeftFS, report.DCCorrection.RightFS = float64(bestBiasL), float64(bestBiasR)
+	report.Bars, report.From, report.Frames, report.SampleRate = bestRender.Bars, bestRender.From, bestRender.Frames, bestRender.SampleRate
+	if shortfallErr != nil {
+		return report, shortfallErr
 	}
-	if bestDelta > target.Tolerance {
-		if shortfall > target.Tolerance && bestMeasure.TruePeakDBTP >= target.TruePeakMaxDBTP-0.1 {
-			return fmt.Errorf("loudness target shortfall %.2f LU at true-peak ceiling %.2f dBTP", shortfall, target.TruePeakMaxDBTP)
-		}
-		return fmt.Errorf("loudness target %.2f LUFS missed by %.2f LU (tolerance %.2f LU)", target.LoudnessTarget, bestDelta, target.Tolerance)
-	}
-	return nil
+	return report, nil
 }
 
 func copyRenderFile(source, destination string) error {

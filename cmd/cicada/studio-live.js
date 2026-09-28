@@ -1,0 +1,917 @@
+(() => {
+  'use strict';
+
+  const midi = window.cicadaMidi;
+  if (!midi) return;
+
+  const $ = selector => document.querySelector(selector);
+  const $$ = selector => [...document.querySelectorAll(selector)];
+  const workspace = $('.workspace');
+  const liveToggle = $('#live-toggle');
+  const liveSurface = $('#live-surface');
+  const launchGrid = $('#live-launch-grid');
+  const status = $('#studio-status');
+  const announcement = $('#live-announcement');
+  const quantizeSelect = $('#live-quantize');
+  const recordButton = $('#live-record');
+  const stopAllButton = $('#live-stop-all');
+  const takePanel = $('#live-take-panel');
+  const takePreview = $('#live-take-preview');
+  const midiControls = $('#midi-controls');
+  const midiEnable = $('#midi-enable');
+  const midiStatus = $('#midi-status');
+  const midiActivity = $('#midi-activity');
+  const learnMenu = $('#midi-learn-menu');
+  const learnMenuButton = $('#midi-learn');
+  const clearMenuButton = $('#midi-clear');
+  const mappingList = $('#midi-mapping-list');
+  const parameterList = $('#live-param-list');
+  const isMIDIAvailable = typeof navigator.requestMIDIAccess === 'function';
+  const settingsKey = 'cicada.live.settings.v1';
+  const getStorage = () => { try { return window.localStorage; } catch { return null; } };
+  const storage = getStorage();
+  const mappings = midi.createMappingStore(storage);
+
+  const patternMeta = new Map();
+  for (const card of $$('.pattern')) {
+    const title = card.querySelector('.pattern-title');
+    const id = title?.childNodes[0]?.textContent.trim();
+    const grid = card.querySelector('.grid-line');
+    const steps = Number.parseInt(grid?.style.getPropertyValue('--steps') || '16', 10);
+    if (id) patternMeta.set(id, {steps: Number.isInteger(steps) ? steps : 16, drums: card.classList.contains('drum')});
+  }
+
+  const sceneNames = $$('.scene-matrix thead .scene-pad[data-scene]').map(pad => pad.dataset.scene);
+  const sceneRows = new Map();
+  for (const row of $$('.scene-matrix tbody tr')) {
+    const track = row.querySelector('th')?.textContent.trim();
+    if (!track) continue;
+    const cells = [...row.querySelectorAll('td')].map(cell => {
+      const pad = cell.querySelector('button.scene-slot[data-pattern]');
+      return {pattern: pad?.dataset.pattern || '', label: pad?.textContent.trim() || cell.textContent.trim() || 'Keep'};
+    });
+    sceneRows.set(track, cells);
+  }
+  const tracks = $$('.track-list .track').map(card => {
+    const id = card.querySelector('strong')?.textContent.trim() || '';
+    const kind = card.querySelector('.kind')?.textContent.trim().toLowerCase() || '';
+    const cells = sceneRows.get(id) || [];
+    const drum = kind.includes('drum') || cells.some(cell => cell.pattern && patternMeta.get(cell.pattern)?.drums);
+    return {id, kind, drum, acid: kind === 'acid'};
+  }).filter(track => track.id);
+  const trackByID = new Map(tracks.map(track => [track.id, track]));
+
+  function readSettings() {
+    try {
+      const value = JSON.parse(storage?.getItem(settingsKey) || '{}');
+      return value && typeof value === 'object' ? value : {};
+    } catch { return {}; }
+  }
+  let settings = readSettings();
+  function saveSettings() {
+    try { storage?.setItem(settingsKey, JSON.stringify(settings)); }
+    catch { /* The current page keeps working when browser storage is unavailable. */ }
+  }
+  function setStatus(message, state = '', announceStatus = true) {
+    if (!status) return;
+    status.textContent = message;
+    status.dataset.state = state;
+    status.setAttribute('aria-live', announceStatus ? 'polite' : 'off');
+  }
+  function announce(message) {
+    if (!announcement) return;
+    announcement.textContent = '';
+    requestAnimationFrame(() => { announcement.textContent = message; });
+  }
+  function fillTrackSelect(select, predicate, selected) {
+    if (!select) return;
+    const candidates = tracks.filter(predicate);
+    select.replaceChildren();
+    if (!candidates.length) {
+      const option = document.createElement('option');
+      option.textContent = 'No matching track';
+      option.value = '';
+      select.append(option);
+      select.disabled = true;
+      return;
+    }
+    select.disabled = false;
+    for (const track of candidates) {
+      const option = document.createElement('option');
+      option.value = track.id;
+      option.textContent = track.id;
+      select.append(option);
+    }
+    select.value = candidates.some(track => track.id === selected) ? selected : candidates[0].id;
+  }
+  const acidSelect = $('#live-acid-track');
+  const drumSelect = $('#live-drum-track');
+  fillTrackSelect(acidSelect, track => track.acid, settings.acidTrack);
+  fillTrackSelect(drumSelect, track => track.drum, settings.drumTrack);
+  if (acidSelect) settings.acidTrack = acidSelect.value;
+  if (drumSelect) settings.drumTrack = drumSelect.value;
+  if (quantizeSelect) {
+    quantizeSelect.value = ['1', '2', '5', '6', '8'].includes(String(settings.quantize)) ? String(settings.quantize) : '2';
+    settings.quantize = Number(quantizeSelect.value);
+  }
+  saveSettings();
+
+  const liveScenePads = [];
+  const liveSlotPads = [];
+  function makePad(text, className, attrs = {}) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = `live-pad ${className}`;
+    button.dataset.baseLabel = text;
+    button.dataset.state = 'stopped';
+    const label = document.createElement('span');
+    label.className = 'live-pad-text';
+    label.textContent = text;
+    const state = document.createElement('span');
+    state.className = 'live-pad-status';
+    state.textContent = 'STOPPED';
+    button.append(label, state);
+    Object.assign(button.dataset, attrs);
+    return button;
+  }
+  function buildLaunchGrid() {
+    if (!launchGrid) return;
+    const table = document.createElement('table');
+    table.className = 'live-grid';
+    table.setAttribute('aria-label', 'Live scene and track launch pads');
+    const head = document.createElement('thead');
+    const header = document.createElement('tr');
+    const trackHeading = document.createElement('th');
+    trackHeading.scope = 'col';
+    trackHeading.textContent = 'Track';
+    header.append(trackHeading);
+    sceneNames.forEach((scene, index) => {
+      const cell = document.createElement('th');
+      cell.scope = 'col';
+      const pad = makePad(scene, 'live-scene-pad', {midiAction: `scene:${scene}`, scene, sceneIndex: String(index)});
+      pad.setAttribute('aria-label', `Launch scene ${scene}, stopped`);
+      pad.addEventListener('click', () => {
+        selectScene(index, false);
+        launchScene(scene);
+      });
+      liveScenePads.push(pad);
+      cell.append(pad);
+      header.append(cell);
+    });
+    const stopHeading = document.createElement('th');
+    stopHeading.scope = 'col';
+    stopHeading.textContent = 'Stop';
+    header.append(stopHeading);
+    head.append(header);
+    const body = document.createElement('tbody');
+    for (const track of tracks) {
+      const row = document.createElement('tr');
+      const label = document.createElement('th');
+      label.scope = 'row';
+      label.className = 'live-track-label';
+      label.textContent = track.id;
+      row.append(label);
+      const cells = sceneRows.get(track.id) || [];
+      sceneNames.forEach((scene, index) => {
+        const cell = document.createElement('td');
+        const slot = cells[index];
+        if (slot?.pattern) {
+          const pad = makePad(slot.pattern, 'live-slot-pad', {
+            midiAction: `slot:${track.id}:${slot.pattern}`, track: track.id, pattern: slot.pattern, scene
+          });
+          pad.setAttribute('aria-label', `Launch ${slot.pattern} on ${track.id}, stopped`);
+          pad.addEventListener('click', () => launchSlot(track.id, slot.pattern));
+          liveSlotPads.push(pad);
+          cell.append(pad);
+        } else {
+          const empty = makePad(slot?.label || 'Keep', 'live-slot-pad', {empty: 'true', track: track.id, scene});
+          empty.disabled = true;
+          empty.dataset.state = 'stopped';
+          empty.querySelector('.live-pad-status').textContent = slot?.label?.toUpperCase() || 'KEEP';
+          empty.setAttribute('aria-label', `${slot?.label || 'Keep'} ${track.id} in scene ${scene}`);
+          cell.append(empty);
+        }
+        row.append(cell);
+      });
+      const stopCell = document.createElement('td');
+      const stop = makePad('STOP TRACK', 'live-stop-pad', {midiAction: `stop-track:${track.id}`, track: track.id});
+      stop.querySelector('.live-pad-status').textContent = '';
+      stop.setAttribute('aria-label', `Stop track ${track.id}`);
+      stop.addEventListener('click', () => stopTrack(track.id));
+      stopCell.append(stop);
+      row.append(stopCell);
+      body.append(row);
+    }
+    table.append(head, body);
+    launchGrid.replaceChildren(table);
+  }
+  buildLaunchGrid();
+
+  const armControls = $('#live-arm-controls');
+  const armedTracks = new Set();
+  for (const track of tracks) {
+    const label = document.createElement('label');
+    label.className = 'live-arm';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = track.id;
+    checkbox.setAttribute('aria-label', `Arm ${track.id} for MIDI take`);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) armedTracks.add(track.id);
+      else armedTracks.delete(track.id);
+    });
+    const text = document.createElement('span');
+    text.textContent = `Arm ${track.id}`;
+    label.append(checkbox, text);
+    armControls?.append(label);
+  }
+
+  let transportState = {playing: false, bar: 1, step: 1, scene: '', pendingScene: '', pendingSlots: {}, activeSlots: {}, stoppedTracks: []};
+  let lastSequence = 0;
+  let lastPendingScene = '';
+  const lastPendingSlots = new Map();
+  let selectedSceneIndex = Math.max(0, sceneNames.indexOf(settings.selectedScene));
+  function selectScene(index, focus) {
+    if (!sceneNames.length) return;
+    selectedSceneIndex = Math.max(0, Math.min(sceneNames.length - 1, index));
+    settings.selectedScene = sceneNames[selectedSceneIndex];
+    saveSettings();
+    liveScenePads.forEach((pad, padIndex) => pad.setAttribute('aria-pressed', padIndex === selectedSceneIndex ? 'true' : 'false'));
+    if (focus) liveScenePads[selectedSceneIndex]?.focus();
+  }
+  selectScene(selectedSceneIndex, false);
+
+  function quantizeTicks(value) {
+    const map = {1: 480, 2: 1920, 5: 1920, 6: 3840, 8: 7680};
+    return map[value] || 1920;
+  }
+  function stateTick(state = transportState) {
+    return Math.max(0, (Number(state.bar || 1) - 1) * 1920 + (Number(state.step || 1) - 1) * 120);
+  }
+  function queuedBars(state, selectedQuantize = state.pendingQuantize || quantizeSelect?.value || 2) {
+    const current = stateTick(state);
+    const quantum = quantizeTicks(Number(selectedQuantize));
+    let target = Math.ceil(current / quantum) * quantum;
+    if (target <= current) target += quantum;
+    return Math.max(1, Math.ceil((target - current) / 1920));
+  }
+  function setPadState(pad, state, statusText, ariaLabel) {
+    pad.dataset.state = state;
+    pad.querySelector('.live-pad-status').textContent = statusText;
+    pad.setAttribute('aria-label', ariaLabel);
+  }
+  function renderPosition() {
+    const bar = Math.max(1, Number(transportState.bar || 1));
+    const step = Math.max(1, Number(transportState.step || 1));
+    const beat = Math.floor((step - 1) / 4) + 1;
+    const position = $('#live-barbeat');
+    if (position) position.textContent = `BAR ${String(bar).padStart(3, '0')} · BEAT ${beat}`;
+    $$('#live-beat-lamps .beat-lamp').forEach((lamp, index) => {
+      const active = transportState.playing && index === beat - 1;
+      lamp.setAttribute('aria-current', active ? 'true' : 'false');
+    });
+  }
+  function renderLaunchStates() {
+    const isPlaying = !!transportState.playing;
+    const queuedScene = transportState.pendingScene || '';
+    const activeScene = transportState.scene || sceneNames[0] || '';
+    const stopped = new Set(transportState.stoppedTracks || []);
+    const countdown = queuedScene ? queuedBars(transportState) : 0;
+    for (const pad of liveScenePads) {
+      const scene = pad.dataset.scene;
+      const state = queuedScene === scene ? 'queued' : isPlaying && activeScene === scene ? 'playing' : 'stopped';
+      const stateText = state === 'queued' ? `QUEUED · ${countdown} BAR${countdown === 1 ? '' : 'S'}` : state.toUpperCase();
+      setPadState(pad, state, stateText, `Launch scene ${scene}, ${state === 'queued' ? `queued with ${countdown} bar countdown` : state}`);
+    }
+    for (const pad of liveSlotPads) {
+      const track = pad.dataset.track;
+      const scene = pad.dataset.scene;
+      const pattern = pad.dataset.pattern;
+      const queued = transportState.pendingSlots?.[track] === pattern;
+      const sceneIndex = sceneNames.indexOf(activeScene);
+      const scenePattern = sceneRows.get(track)?.[sceneIndex]?.pattern || '';
+      const activePattern = transportState.activeSlots?.[track] || scenePattern;
+      const state = queued ? 'queued' : stopped.has(track) ? 'stopped' : isPlaying && activeScene === scene && activePattern === pattern ? 'playing' : 'stopped';
+      const slotCountdown = queued ? queuedBars(transportState, transportState.pendingSlotQuantize?.[track] || quantizeSelect?.value) : 0;
+      const stateText = state === 'queued' ? `QUEUED · ${slotCountdown} BAR${slotCountdown === 1 ? '' : 'S'}` : state.toUpperCase();
+      setPadState(pad, state, stateText, `Launch ${pattern} on ${track}, ${state === 'queued' ? `queued with ${slotCountdown} bar countdown` : state}`);
+    }
+    for (const stop of $$('.live-stop-pad')) {
+      const track = stop.dataset.track;
+      const isStopped = stopped.has(track);
+      stop.setAttribute('aria-pressed', isStopped ? 'true' : 'false');
+      stop.setAttribute('aria-label', `Stop track ${track}${isStopped ? ', stopped' : ''}`);
+      stop.querySelector('.live-pad-status').textContent = isStopped ? 'STOPPED' : '';
+    }
+    renderPosition();
+  }
+  function announcePendingLaunches(state) {
+    if (state.pendingScene && state.pendingScene !== lastPendingScene) {
+      announce(`Queued scene ${state.pendingScene} with a ${queuedBars(state)} bar countdown`);
+    }
+    lastPendingScene = state.pendingScene || '';
+    const pending = state.pendingSlots || {};
+    for (const [track, pattern] of Object.entries(pending)) {
+      if (lastPendingSlots.get(track) !== pattern) {
+        const quantize = state.pendingSlotQuantize?.[track] || quantizeSelect?.value;
+        announce(`Queued ${pattern} on ${track} with a ${queuedBars(state, quantize)} bar countdown`);
+      }
+    }
+    for (const track of [...lastPendingSlots.keys()]) if (!pending[track]) lastPendingSlots.delete(track);
+    for (const [track, pattern] of Object.entries(pending)) lastPendingSlots.set(track, pattern);
+  }
+  function acceptTransportState(state) {
+    if (!state || typeof state !== 'object') return;
+    const sequence = Number(state.sequence || 0);
+    if (sequence && sequence < lastSequence) return;
+    if (sequence) lastSequence = sequence;
+    const wasPlaying = !!transportState.playing;
+    transportState = {...transportState, ...state, receivedAt: performance.now()};
+    announcePendingLaunches(transportState);
+    renderLaunchStates();
+    if (recording && wasPlaying && !transportState.playing) finishRecording();
+    if (transportState.error) setStatus(transportState.error, 'error');
+  }
+
+  const revision = () => document.body.dataset.revision;
+  async function transportAction(payload) {
+    if (status && status.dataset.state === 'error' && status.textContent.startsWith('Save or discard')) return null;
+    try {
+      const response = await fetch('/api/transport', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({...payload, revision: revision()})
+      });
+      const state = await response.json();
+      if (!response.ok) { setStatus(state.error || 'Transport command failed', 'error'); return null; }
+      acceptTransportState(state);
+      return state;
+    } catch (error) { setStatus(`Transport connection lost: ${error.message}`, 'error'); return null; }
+  }
+  function selectedQuantize() { return Number(quantizeSelect?.value || 2); }
+  function launchScene(scene) {
+    const repeated = transportState.pendingScene === scene;
+    const request = transportAction({action: 'launch', scene, quantize: selectedQuantize()});
+    if (repeated) request.then(state => state && announce(`Queued scene ${scene} with a ${queuedBars(state)} bar countdown`));
+    return request;
+  }
+  function launchSlot(track, pattern) {
+    const repeated = transportState.pendingSlots?.[track] === pattern;
+    const request = transportAction({action: 'slot', track, pattern, quantize: selectedQuantize()});
+    if (repeated) request.then(state => state && announce(`Queued ${pattern} on ${track} with a ${queuedBars(state, state.pendingSlotQuantize?.[track])} bar countdown`));
+    return request;
+  }
+  function stopTrack(track) { return transportAction({action: 'trackStop', track}); }
+
+  $('#live-toggle')?.addEventListener('click', () => {
+    const on = liveToggle.getAttribute('aria-pressed') !== 'true';
+    liveToggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+    liveSurface.hidden = !on;
+    workspace.classList.toggle('live-mode', on);
+    document.body.classList.toggle('live-mode', on);
+    liveToggle.textContent = on ? 'Exit Live' : 'Live';
+    if (on) selectScene(selectedSceneIndex, false);
+    try { storage?.setItem('cicada.live.enabled', on ? '1' : '0'); } catch {}
+  });
+  if (settings.liveEnabled === true || storage?.getItem('cicada.live.enabled') === '1') {
+    liveToggle?.click();
+  }
+  quantizeSelect?.addEventListener('change', () => {
+    settings.quantize = selectedQuantize();
+    saveSettings();
+    renderLaunchStates();
+  });
+  acidSelect?.addEventListener('change', () => { settings.acidTrack = acidSelect.value; saveSettings(); });
+  drumSelect?.addEventListener('change', () => { settings.drumTrack = drumSelect.value; saveSettings(); });
+  $('#live-stop-all')?.addEventListener('click', async () => {
+    await transportAction({action: 'stop'});
+    if (recording) finishRecording();
+  });
+
+  let currentMidiAccess = null;
+  let activityTimer = 0;
+  function midiDeviceName(port) { return port?.name || port?.manufacturer || port?.id || 'MIDI device'; }
+  function updateMIDIStatus() {
+    if (!currentMidiAccess) return;
+    const count = [...currentMidiAccess.inputs.values()].filter(input => input.state !== 'disconnected').length;
+    midiStatus.textContent = `${count} MIDI device${count === 1 ? '' : 's'}${learnTarget ? ' · learning' : ''}`;
+  }
+  function flashMIDIActivity() {
+    midiActivity.classList.add('active');
+    clearTimeout(activityTimer);
+    activityTimer = setTimeout(() => midiActivity.classList.remove('active'), 150);
+  }
+  function sendNoteOn(track, note, velocity) {
+    if (!track || !window.cicadaAudio) return;
+    try { window.cicadaAudio.noteOn(track, note, velocity); }
+    catch (error) { setStatus(error.message, 'error'); }
+  }
+  function sendNoteOff(track, note) {
+    if (!track || !window.cicadaAudio) return;
+    try { window.cicadaAudio.noteOff(track, note); }
+    catch (error) { setStatus(error.message, 'error'); }
+  }
+
+  const liveParamByAddress = new Map();
+  async function buildParameterControls() {
+    if (!window.cicadaAudio?.params || !parameterList) return;
+    try {
+      const response = await window.cicadaAudio.params();
+      const registry = Array.isArray(response.registry) ? response.registry : [];
+      const descriptors = new Map(registry.map(descriptor => [descriptor.id, descriptor]));
+      const rows = [];
+      for (const address of response.addresses || []) {
+        const descriptor = descriptors.get(address.param);
+        if (!descriptor || descriptor.live !== true || typeof address.address !== 'string') continue;
+        const row = document.createElement('div');
+        row.className = 'live-param-row';
+        row.dataset.midiAddress = address.address;
+        const label = document.createElement('label');
+        const controlID = `live-param-${rows.length}`;
+        label.htmlFor = controlID;
+        label.append(document.createTextNode(address.address));
+        const control = document.createElement('input');
+        control.id = controlID;
+        control.type = 'range';
+        control.min = String(descriptor.min);
+        control.max = String(descriptor.max);
+        control.step = descriptor.curve === 'fader' ? '0.1' : String(Math.max((descriptor.max - descriptor.min) / 1000, 0.0001));
+        control.value = String(address.value == null ? descriptor.min : address.value);
+        control.setAttribute('aria-label', address.address);
+        control.dataset.midiAddress = address.address;
+        const output = document.createElement('output');
+        output.value = formatParamValue(address.value, descriptor);
+        control.addEventListener('input', () => {
+          const value = Number(control.value);
+          output.value = formatParamValue(value, descriptor);
+          window.cicadaAudio.setParam(address.address, value);
+        });
+        row.append(label, control, output);
+        parameterList.append(row);
+        liveParamByAddress.set(address.address, {descriptor, control, output});
+        rows.push(row);
+      }
+      if (!rows.length) {
+        const empty = document.createElement('p');
+        empty.className = 'section-note';
+        empty.textContent = 'No live parameter addresses are available in this score.';
+        parameterList.append(empty);
+      }
+      renderLearnedDots();
+    } catch (error) { setStatus(`Cannot load live parameters: ${error.message}`, 'error'); }
+  }
+  function formatParamValue(value, descriptor) {
+    if (value === null || value === undefined) return 'off';
+    const digits = descriptor.max - descriptor.min < 10 ? 2 : 1;
+    return `${Number(value).toFixed(digits)}${descriptor.unit ? ` ${descriptor.unit}` : ''}`;
+  }
+  buildParameterControls();
+
+  function updateParamFromCC(address, cc) {
+    const target = liveParamByAddress.get(address);
+    if (!target) return;
+    let value;
+    try { value = midi.mapCCValue(target.descriptor, cc); }
+    catch (error) { setStatus(error.message, 'error'); return; }
+    if (value === null && target.descriptor.off) {
+      target.control.value = String(target.descriptor.min);
+      target.output.value = 'off';
+    } else {
+      target.control.value = String(value);
+      target.output.value = formatParamValue(value, target.descriptor);
+    }
+    window.cicadaAudio?.setParam(address, value);
+  }
+
+  function deviceMappings(device, channel, type, value) {
+    return mappings.findInput(device, channel, type, value);
+  }
+  function invokeMappedAction(action) {
+    if (!action) return;
+    if (action.startsWith('scene:')) launchScene(action.slice(6));
+    else if (action.startsWith('slot:')) {
+      const split = action.indexOf(':', 5);
+      if (split >= 0) launchSlot(action.slice(5, split), action.slice(split + 1));
+    } else if (action.startsWith('stop-track:')) stopTrack(action.slice(11));
+  }
+  function transportTickAt(time = performance.now()) {
+    const base = stateTick();
+    if (!transportState.playing || !Number.isFinite(transportState.receivedAt)) return base;
+    const tempoText = $('.meta span')?.textContent || '';
+    const tempo = Number(tempoText.match(/[0-9]+(?:\.[0-9]+)?/)?.[0] || 120);
+    const elapsedMS = Math.max(0, Math.min(500, time - transportState.receivedAt));
+    return base + elapsedMS * tempo * 480 / 60000;
+  }
+  function activePatternFor(track) {
+    const manual = transportState.activeSlots?.[track];
+    if (manual) return manual;
+    const scene = transportState.scene || sceneNames[0];
+    const index = sceneNames.indexOf(scene);
+    return sceneRows.get(track)?.[index]?.pattern || '';
+  }
+
+  let recording = false;
+  let capturedNotes = [];
+  const activeNotes = new Map();
+  function captureKey(track, note) { return `${track}:${note}`; }
+  function captureNoteOn(track, note, velocity, eventTime) {
+    if (!recording || !armedTracks.has(track) || !transportState.playing) return;
+    const pattern = activePatternFor(track);
+    if (!pattern) { setStatus(`No active pattern is assigned to ${track}`, 'error'); return; }
+    const tick = Math.max(0, transportTickAt(eventTime));
+    const record = {track, pattern, note, velocity, tick, endTick: tick};
+    capturedNotes.push(record);
+    const key = captureKey(track, note);
+    const stack = activeNotes.get(key) || [];
+    stack.push(record);
+    activeNotes.set(key, stack);
+  }
+  function captureNoteOff(track, note, eventTime) {
+    const stack = activeNotes.get(captureKey(track, note));
+    if (!stack?.length) return;
+    const record = stack.pop();
+    record.endTick = Math.max(record.tick, transportTickAt(eventTime));
+    if (!stack.length) activeNotes.delete(captureKey(track, note));
+  }
+  function closeOpenNotes() {
+    const tick = Math.max(0, transportTickAt());
+    for (const stack of activeNotes.values()) for (const record of stack) record.endTick = Math.max(record.tick, tick);
+    activeNotes.clear();
+  }
+  function recordingsFromBuffer() {
+    const groups = new Map();
+    for (const note of capturedNotes) {
+      const key = `${note.track}\u0000${note.pattern}`;
+      if (!groups.has(key)) groups.set(key, {track: note.track, pattern: note.pattern, notes: []});
+      groups.get(key).notes.push({tick: Math.round(note.tick), endTick: Math.round(note.endTick), note: note.note, velocity: note.velocity});
+    }
+    return [...groups.values()];
+  }
+  function noteName(note) {
+    const names = ['C', 'C♯', 'D', 'D♯', 'E', 'F', 'F♯', 'G', 'G♯', 'A', 'A♯', 'B'];
+    return `${names[note % 12]}${Math.floor(note / 12) - 1}`;
+  }
+  function renderTakePreview() {
+    const recordings = recordingsFromBuffer();
+    takePreview.replaceChildren();
+    if (!recordings.length) { takePanel.hidden = true; return; }
+    for (const recording of recordings) {
+      const meta = patternMeta.get(recording.pattern) || {steps: 16, drums: false};
+      const group = document.createElement('div');
+      const heading = document.createElement('strong');
+      heading.textContent = `${recording.track} · ${recording.pattern}`;
+      group.append(heading);
+      const preview = document.createElement('div');
+      preview.className = 'take-preview';
+      preview.style.setProperty('--steps', meta.steps);
+      const byStep = new Map();
+      for (const note of recording.notes) {
+        const step = midi.quantizeStep(note.tick, meta.steps);
+        const text = meta.drums ? midi.mapGeneralMIDIDrum(note.note) || '?' : noteName(note.note);
+        const slide = !meta.drums && recording.notes.some(next => note.tick < next.tick && note.endTick > next.tick);
+        const values = byStep.get(step) || [];
+        values.push({text, slide});
+        byStep.set(step, values);
+      }
+      for (let step = 0; step < meta.steps; step++) {
+        const cell = document.createElement('span');
+        cell.className = 'take-preview-cell';
+        cell.textContent = String(step + 1);
+        const notes = byStep.get(step) || [];
+        if (notes.length) {
+          cell.classList.add('has-note');
+          if (notes.some(note => note.slide)) cell.classList.add('slide');
+          cell.textContent = notes.map(note => `${note.text}${note.slide ? ' ↗' : ''}`).join(' · ');
+          cell.setAttribute('aria-label', `Step ${step + 1}, ${cell.textContent}`);
+        } else {
+          cell.setAttribute('aria-label', `Step ${step + 1}, empty`);
+        }
+        preview.append(cell);
+      }
+      group.append(preview);
+      takePreview.append(group);
+    }
+    const velocityNotice = recordings.some(item => !patternMeta.get(item.pattern)?.drums)
+      ? ' Acid takes save pitch and slides at fixed velocity; MIDI velocity is not saved.' : '';
+    $('#live-take-summary').textContent = `${capturedNotes.length} note${capturedNotes.length === 1 ? '' : 's'} quantized to the nearest pattern step.${velocityNotice} Nothing has been written to the score.`;
+    takePanel.hidden = false;
+  }
+  function finishRecording() {
+    if (!recording && !capturedNotes.length) return;
+    closeOpenNotes();
+    recording = false;
+    recordButton.setAttribute('aria-pressed', 'false');
+    recordButton.textContent = 'Record';
+    renderTakePreview();
+  }
+  recordButton?.addEventListener('click', () => {
+    if (!recording) {
+      if (!transportState.playing) { setStatus('Press Play before recording a MIDI take', 'error'); return; }
+      if (!armedTracks.size) { setStatus('Arm a track before recording a MIDI take', 'error'); return; }
+      capturedNotes = [];
+      activeNotes.clear();
+      recording = true;
+      takePanel.hidden = true;
+      recordButton.setAttribute('aria-pressed', 'true');
+      recordButton.textContent = 'Stop recording';
+      setStatus('MIDI take recording in page memory');
+      return;
+    }
+    finishRecording();
+  });
+  $('#live-take-discard')?.addEventListener('click', () => {
+    recording = false;
+    capturedNotes = [];
+    activeNotes.clear();
+    takePanel.hidden = true;
+    recordButton.setAttribute('aria-pressed', 'false');
+    recordButton.textContent = 'Record';
+    announce('Recorded take discarded');
+  });
+  $('#live-take-commit')?.addEventListener('click', async () => {
+    const recordings = recordingsFromBuffer();
+    if (!recordings.length) return;
+    const button = $('#live-take-commit');
+    button.disabled = true;
+    try {
+      const response = await fetch('/api/record', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({revision: revision(), recordings})
+      });
+      const result = await response.json();
+      if (!response.ok) { setStatus(result.error || 'Take commit failed', 'error'); return; }
+      const count = capturedNotes.length;
+      const destination = recordings.length === 1 ? recordings[0].pattern : `${recordings.length} patterns`;
+      document.body.dataset.revision = result.revision;
+      announce(`Committed ${count} recorded notes into ${destination}`);
+      setStatus(`Committed ${count} recorded notes into ${destination}`, 'success', false);
+      capturedNotes = [];
+      activeNotes.clear();
+      takePanel.hidden = true;
+      setTimeout(() => location.reload(), 900);
+    } catch (error) { setStatus(`Take commit failed: ${error.message}`, 'error'); }
+    finally { button.disabled = false; }
+  });
+
+  function targetFor(element) {
+    const target = element?.closest('[data-midi-address],[data-midi-action]');
+    if (!target) return null;
+    if (target.dataset.midiAddress) return {address: target.dataset.midiAddress, label: target.dataset.midiAddress};
+    if (target.dataset.midiAction) return {action: target.dataset.midiAction, label: target.dataset.baseLabel || target.dataset.midiAction};
+    return null;
+  }
+  let menuTarget = null;
+  let learnTarget = null;
+  function mappingTargetsEqual(left, right) {
+    if (!left || !right) return false;
+    return left.address ? left.address === right.address : left.action === right.action;
+  }
+  function openLearnMenu(element, x, y) {
+    const target = targetFor(element);
+    if (!target || !isMIDIAvailable) return;
+    menuTarget = target;
+    learnMenu.hidden = false;
+    learnMenu.style.left = `${Math.min(x, window.innerWidth - 190)}px`;
+    learnMenu.style.top = `${Math.min(y, window.innerHeight - 100)}px`;
+    learnMenuButton.textContent = target.address ? 'Learn CC' : 'Learn note';
+    learnMenuButton.focus();
+  }
+  function closeLearnMenu() { learnMenu.hidden = true; menuTarget = null; }
+  learnMenuButton?.addEventListener('click', () => {
+    if (!currentMidiAccess) { setStatus('Enable MIDI before learning a controller', 'error'); closeLearnMenu(); return; }
+    learnTarget = menuTarget;
+    closeLearnMenu();
+    updateMIDIStatus();
+    announce(learnTarget.address ? `Move a MIDI controller for ${learnTarget.label}` : `Play a MIDI note for ${learnTarget.label}`);
+    setStatus(learnTarget.address ? `Learning a controller for ${learnTarget.label}` : `Learning a note for ${learnTarget.label}`);
+  });
+  clearMenuButton?.addEventListener('click', () => {
+    if (menuTarget) {
+      mappings.clearTarget(menuTarget);
+      renderMappings();
+      renderLearnedDots();
+      announce(`MIDI mapping cleared for ${menuTarget.label}`);
+    }
+    closeLearnMenu();
+  });
+  document.addEventListener('contextmenu', event => {
+    const target = targetFor(event.target);
+    if (!target || !isMIDIAvailable) return;
+    event.preventDefault();
+    if (event.shiftKey) {
+      mappings.clearTarget(target);
+      renderMappings();
+      renderLearnedDots();
+      announce(`MIDI mapping cleared for ${target.label}`);
+    } else openLearnMenu(event.target, event.clientX, event.clientY);
+  });
+  document.addEventListener('pointerdown', event => {
+    if (!isMIDIAvailable || event.pointerType !== 'touch') return;
+    const target = targetFor(event.target);
+    if (!target) return;
+    clearTimeout(longPressTimer);
+    longPressElement = event.target;
+    longPressTimer = setTimeout(() => {
+      longPressOpened = true;
+      suppressFollowingClick = true;
+      openLearnMenu(event.target, event.clientX || 24, event.clientY || 90);
+    }, 550);
+  }, {capture: true});
+  document.addEventListener('pointerup', () => clearTimeout(longPressTimer), {capture: true});
+  document.addEventListener('pointercancel', () => clearTimeout(longPressTimer), {capture: true});
+  let longPressTimer = 0;
+  let longPressElement = null;
+  let longPressOpened = false;
+  let suppressFollowingClick = false;
+  document.addEventListener('click', event => {
+    if (suppressFollowingClick && (longPressElement && longPressElement.contains(event.target) || targetFor(event.target))) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      suppressFollowingClick = false;
+      longPressOpened = false;
+      longPressElement = null;
+    }
+  }, true);
+  document.addEventListener('click', event => {
+    if (!learnMenu.hidden && !learnMenu.contains(event.target)) closeLearnMenu();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && !learnMenu.hidden) closeLearnMenu();
+    const live = liveToggle?.getAttribute('aria-pressed') === 'true';
+    if (!live || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+    if (/^F[1-8]$/.test(event.key)) {
+      const index = Number(event.key.slice(1)) - 1;
+      if (sceneNames[index]) { event.preventDefault(); selectScene(index, false); launchScene(sceneNames[index]); }
+      return;
+    }
+    if (event.shiftKey && event.code === 'Space') {
+      event.preventDefault();
+      if (sceneNames[selectedSceneIndex]) launchScene(sceneNames[selectedSceneIndex]);
+      return;
+    }
+    if (event.key === 'Enter' && event.target.closest?.('button')) return;
+    if (['ArrowLeft', 'ArrowUp', 'ArrowRight', 'ArrowDown'].includes(event.key)) {
+      event.preventDefault();
+      const direction = event.key === 'ArrowLeft' || event.key === 'ArrowUp' ? -1 : 1;
+      selectScene(selectedSceneIndex + direction, true);
+      return;
+    }
+    if (event.key === 'Enter' && sceneNames[selectedSceneIndex]) {
+      event.preventDefault();
+      launchScene(sceneNames[selectedSceneIndex]);
+    }
+  });
+
+  function renderMappings() {
+    if (!mappingList) return;
+    const current = mappings.all();
+    mappingList.replaceChildren();
+    if (!current.length) {
+      const empty = document.createElement('p');
+      empty.className = 'section-note';
+      empty.textContent = 'No MIDI mappings yet. Right-click or long-press a pad or live parameter to learn.';
+      mappingList.append(empty);
+      return;
+    }
+    for (const mapping of current) {
+      const row = document.createElement('div');
+      row.className = 'midi-mapping-row';
+      const description = document.createElement('span');
+      const input = mapping.cc === undefined ? `ch ${mapping.channel + 1} note ${mapping.note}` : `ch ${mapping.channel + 1} CC ${mapping.cc}`;
+      description.textContent = `${mapping.device} · ${input} → ${mapping.address || mapping.action}`;
+      const remove = document.createElement('button');
+      remove.type = 'button';
+      remove.textContent = 'Remove';
+      remove.setAttribute('aria-label', `Remove MIDI mapping ${input} to ${mapping.address || mapping.action}`);
+      remove.addEventListener('click', () => { mappings.remove(mapping); renderMappings(); renderLearnedDots(); });
+      row.append(description, remove);
+      mappingList.append(row);
+    }
+  }
+  function renderLearnedDots() {
+    const all = mappings.all();
+    for (const element of $$('[data-midi-address],[data-midi-action]')) {
+      const target = targetFor(element);
+      if (!target) continue;
+      const learned = all.some(mapping => mappingTargetsEqual(mapping, target));
+      const parent = element.matches('.live-param-row input') ? element.closest('.live-param-row') : element;
+      let dot = parent.querySelector('.midi-learn-dot');
+      if (!dot && learned) {
+        dot = document.createElement('i');
+        dot.className = 'midi-learn-dot';
+        dot.setAttribute('aria-label', 'MIDI learned');
+        const label = parent.querySelector('label');
+        if (label) label.append(dot);
+        else parent.append(dot);
+      }
+      if (dot && !learned) dot.remove();
+    }
+  }
+  renderMappings();
+
+  function storeLearnedInput(device, channel, type, value) {
+    if (!learnTarget || !currentMidiAccess) return false;
+    if (learnTarget.address && type !== 'cc' || learnTarget.action && type !== 'note') return false;
+    const mapping = {
+      device, channel,
+      ...(type === 'cc' ? {cc: value, address: learnTarget.address} : {note: value, action: learnTarget.action})
+    };
+    mappings.bind(mapping);
+    const target = learnTarget;
+    learnTarget = null;
+    updateMIDIStatus();
+    renderMappings();
+    renderLearnedDots();
+    announce(`MIDI ${type === 'cc' ? 'controller' : 'note'} learned for ${target.label}`);
+    setStatus(`MIDI ${type === 'cc' ? 'controller' : 'note'} learned for ${target.label}`, 'success');
+    return true;
+  }
+
+  function handleMIDIMessage(input, event) {
+    const data = event.data;
+    if (!data || data.length < 2) return;
+    flashMIDIActivity();
+    const statusByte = data[0] & 0xff;
+    const command = statusByte & 0xf0;
+    const channel = statusByte & 0x0f;
+    const first = data[1] & 0x7f;
+    const second = data.length > 2 ? data[2] & 0x7f : 0;
+    const device = midiDeviceName(input || event.target);
+    if (command === 0xb0) {
+      if (storeLearnedInput(device, channel, 'cc', first)) return;
+      const mapping = deviceMappings(device, channel, 'cc', first);
+      if (mapping?.address) updateParamFromCC(mapping.address, second);
+      return;
+    }
+    const noteOn = command === 0x90 && second > 0;
+    const noteOff = command === 0x80 || command === 0x90 && second === 0;
+    if (!noteOn && !noteOff) return;
+    if (noteOn && storeLearnedInput(device, channel, 'note', first)) return;
+    const learned = deviceMappings(device, channel, 'note', first);
+    if (learned?.action) {
+      if (noteOn) invokeMappedAction(learned.action);
+      return;
+    }
+    const track = channel === 9 ? drumSelect?.value : acidSelect?.value;
+    if (!track) { setStatus(channel === 9 ? 'No drum track is available' : 'No acid track is available', 'error'); return; }
+    const meta = trackByID.get(track);
+    if (channel === 9) {
+      const lane = midi.mapGeneralMIDIDrum(first);
+      if (!lane) return;
+    } else if (!meta?.acid) {
+      setStatus(`Track ${track} is not an acid track`, 'error');
+      return;
+    }
+    if (noteOn) {
+      captureNoteOn(track, first, second, Number(event.timeStamp) || performance.now());
+      sendNoteOn(track, first, second);
+    } else {
+      captureNoteOff(track, first, Number(event.timeStamp) || performance.now());
+      sendNoteOff(track, first);
+    }
+  }
+
+  function bindMIDIInputs() {
+    if (!currentMidiAccess) return;
+    for (const input of currentMidiAccess.inputs.values()) {
+      input.onmidimessage = event => handleMIDIMessage(input, event);
+    }
+    updateMIDIStatus();
+  }
+  if (!isMIDIAvailable) {
+    midiControls.hidden = true;
+    $('#live-midi-help').hidden = true;
+    $('.live-map-details').hidden = true;
+    $('#live-acid-track')?.closest('label')?.setAttribute('hidden', '');
+    $('#live-drum-track')?.closest('label')?.setAttribute('hidden', '');
+    recordButton.hidden = true;
+    armControls.hidden = true;
+  } else {
+    midiControls.hidden = false;
+    $('#live-midi-help').hidden = false;
+    midiEnable?.addEventListener('click', async () => {
+      midiEnable.disabled = true;
+      try {
+        currentMidiAccess = await navigator.requestMIDIAccess({sysex: false});
+        currentMidiAccess.onstatechange = bindMIDIInputs;
+        bindMIDIInputs();
+        midiEnable.textContent = 'MIDI ready';
+        setStatus(`MIDI ready: ${currentMidiAccess.inputs.size} device${currentMidiAccess.inputs.size === 1 ? '' : 's'}`);
+      } catch (error) {
+        currentMidiAccess = null;
+        midiStatus.textContent = 'MIDI unavailable';
+        setStatus(`MIDI access failed: ${error.message}`, 'error');
+      } finally { midiEnable.disabled = false; }
+    });
+  }
+  window.cicadaAudio?.onError(error => setStatus(error.message || 'Audio message failed', 'error'));
+
+  function connectTransport() {
+    const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const socket = new WebSocket(`${scheme}//${location.host}/api/transport/ws`);
+    socket.onmessage = event => { try { acceptTransportState(JSON.parse(event.data)); } catch {} };
+    socket.onclose = () => setTimeout(connectTransport, 1000);
+  }
+  if (transportState) connectTransport();
+  if ($('#transport-pending')) $('#transport-pending').setAttribute('aria-live', 'off');
+  renderLaunchStates();
+})();
