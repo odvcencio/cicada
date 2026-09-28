@@ -13,6 +13,22 @@ import (
 	"unicode/utf8"
 )
 
+// MarshalJSON supplies the effect kind when a migrated in-memory /2 value
+// still carries the /1 shorthand representation for a built-in effect.
+func (p Project) MarshalJSON() ([]byte, error) {
+	copy := p
+	if p.Format == FormatID2 {
+		copy.Effects = append([]Effect{}, p.Effects...)
+		for i := range copy.Effects {
+			if copy.Effects[i].Kind == "" {
+				copy.Effects[i].Kind = semanticEffectKind(copy.Effects[i])
+			}
+		}
+	}
+	type wireProject Project
+	return json.Marshal(wireProject(copy))
+}
+
 const maxJSONBytes = 2 << 20
 const maxJSONDepth = 64
 
@@ -77,6 +93,45 @@ func (e *Expr) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("expression must be exactly one of literal, name, or op with args")
 }
 
+func (e Effect) MarshalJSON() ([]byte, error) {
+	if e.Kind == "" {
+		return json.Marshal(struct {
+			ID     string           `json:"id"`
+			Params map[string]Value `json:"params"`
+		}{e.ID, e.Params})
+	}
+	return json.Marshal(struct {
+		ID     string           `json:"id"`
+		Kind   string           `json:"kind"`
+		Params map[string]Value `json:"params"`
+	}{e.ID, e.Kind, e.Params})
+}
+
+func (e *Effect) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil || fields == nil {
+		return fmt.Errorf("effect must be an object")
+	}
+	for key := range fields {
+		if key != "id" && key != "kind" && key != "params" {
+			return fmt.Errorf("effect has unknown field %s", key)
+		}
+	}
+	*e = Effect{}
+	if raw, ok := fields["id"]; !ok || json.Unmarshal(raw, &e.ID) != nil || e.ID == "" {
+		return fmt.Errorf("effect needs an id")
+	}
+	if raw, ok := fields["kind"]; ok {
+		if json.Unmarshal(raw, &e.Kind) != nil || e.Kind == "" {
+			return fmt.Errorf("effect kind is invalid")
+		}
+	}
+	if raw, ok := fields["params"]; !ok || json.Unmarshal(raw, &e.Params) != nil || e.Params == nil {
+		return fmt.Errorf("effect needs a params object")
+	}
+	return nil
+}
+
 func (v Value) MarshalJSON() ([]byte, error) {
 	if v.Number != nil && v.Unit != "enum" && v.Text == "" {
 		return json.Marshal(struct {
@@ -122,6 +177,125 @@ func (v *Value) UnmarshalJSON(data []byte) error {
 	return fmt.Errorf("value must have a number or enum text")
 }
 
+type mixerV1 struct {
+	GainDB  float64 `json:"gain_db"`
+	Pan     float64 `json:"pan"`
+	SendA   float64 `json:"send_a"`
+	SendB   float64 `json:"send_b"`
+	SendPre bool    `json:"send_pre"`
+	Mute    bool    `json:"mute"`
+	Solo    bool    `json:"solo"`
+	Insert  string  `json:"insert"`
+	Bus     string  `json:"bus"`
+}
+
+func (m Mixer) MarshalJSON() ([]byte, error) {
+	if !m.wireV2 {
+		return json.Marshal(mixerV1{m.GainDB, m.Pan, m.SendA, m.SendB, m.SendPre, m.Mute, m.Solo, m.Insert, m.Bus})
+	}
+	fields := make(map[string]any)
+	if m.Level != nil {
+		fields["level"] = m.Level
+	}
+	if m.panSet {
+		fields["pan"] = m.Pan
+	}
+	if m.muteSet {
+		fields["mute"] = m.Mute
+	}
+	if m.soloSet {
+		fields["solo"] = m.Solo
+	}
+	if m.Inserts != nil {
+		fields["inserts"] = m.Inserts
+	}
+	if m.Sends != nil {
+		fields["sends"] = m.Sends
+	}
+	if m.Out != nil {
+		fields["out"] = *m.Out
+	}
+	return json.Marshal(fields)
+}
+
+func (m *Mixer) UnmarshalJSON(data []byte) error {
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil || fields == nil {
+		return fmt.Errorf("mixer must be an object")
+	}
+	for key := range fields {
+		if !strings.Contains("|gain_db|pan|send_a|send_b|send_pre|mute|solo|insert|bus|level|inserts|sends|out|", "|"+key+"|") {
+			return fmt.Errorf("mixer has unknown field %s", key)
+		}
+	}
+	*m = defaultMixer()
+	if _, old := fields["gain_db"]; old {
+		var legacy mixerV1
+		if err := json.Unmarshal(data, &legacy); err != nil {
+			return err
+		}
+		*m = Mixer{GainDB: legacy.GainDB, Pan: legacy.Pan, SendA: legacy.SendA, SendB: legacy.SendB,
+			SendPre: legacy.SendPre, Mute: legacy.Mute, Solo: legacy.Solo, Insert: legacy.Insert, Bus: legacy.Bus}
+		return nil
+	}
+	m.wireV2 = true
+	if raw, ok := fields["level"]; ok {
+		var value Value
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return fmt.Errorf("mixer level: %w", err)
+		}
+		m.Level = &value
+		if value.Unit == "db" && value.Number != nil {
+			m.GainDB = *value.Number
+		} else if value.Unit == "enum" && value.Text == "off" {
+			m.Mute = true
+		}
+	}
+	if raw, ok := fields["pan"]; ok {
+		var value float64
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return err
+		}
+		m.panSet, m.Pan = true, value
+	}
+	if raw, ok := fields["mute"]; ok {
+		var value bool
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return err
+		}
+		m.muteSet, m.Mute = true, value
+	}
+	if raw, ok := fields["solo"]; ok {
+		var value bool
+		if err := json.Unmarshal(raw, &value); err != nil {
+			return err
+		}
+		m.soloSet, m.Solo = true, value
+	}
+	if raw, ok := fields["inserts"]; ok {
+		if err := json.Unmarshal(raw, &m.Inserts); err != nil || m.Inserts == nil {
+			return fmt.Errorf("mixer inserts must be an array")
+		}
+		m.Insert = "none"
+		if len(m.Inserts) > 0 {
+			m.Insert = m.Inserts[0]
+		}
+	}
+	if raw, ok := fields["sends"]; ok {
+		if err := json.Unmarshal(raw, &m.Sends); err != nil || m.Sends == nil {
+			return fmt.Errorf("mixer sends must be an array")
+		}
+	}
+	if raw, ok := fields["out"]; ok {
+		var value string
+		if err := json.Unmarshal(raw, &value); err != nil || value == "" {
+			return fmt.Errorf("mixer output bus is invalid")
+		}
+		m.Out, m.Bus = &value, value
+	}
+	return nil
+}
+
 // CanonicalJSON writes sorted object keys, two-space indentation, LF, and a
 // final LF. It expands exponent-form JSON numbers to decimal notation.
 func CanonicalJSON(p *Project) ([]byte, error) {
@@ -132,8 +306,10 @@ func CanonicalJSON(p *Project) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if _, err := ToSource(p); err != nil {
-		return nil, fmt.Errorf("project cannot be represented by source v1: %w", err)
+	if p.Format == FormatID && p.Version == 1 {
+		if _, err := ToSource(p); err != nil {
+			return nil, fmt.Errorf("project cannot be represented by source v1: %w", err)
+		}
 	}
 	return encoded, nil
 }
@@ -146,10 +322,33 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	// already imply, matching headerless source after a round trip.
 	normalized := *p
 	normalized.Format, normalized.Version = FormatID, 1
-	for _, scene := range p.Scenes {
-		if len(scene.Settings) > 0 {
-			normalized.Format, normalized.Version = FormatID2, 2
-			break
+	useV2 := p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
+	for _, effect := range p.Effects {
+		useV2 = useV2 || effect.Kind != ""
+	}
+	if useV2 {
+		normalized.Format, normalized.Version = FormatID2, 2
+	}
+	normalized.Tracks = append([]Track(nil), p.Tracks...)
+	for i := range normalized.Tracks {
+		normalized.Tracks[i].Mixer.wireV2 = useV2
+	}
+	normalized.Buses = append([]Bus(nil), p.Buses...)
+	for i := range normalized.Buses {
+		normalized.Buses[i].Mixer.wireV2 = true
+	}
+	if normalized.Master != nil {
+		master := *normalized.Master
+		master.Mixer.wireV2 = true
+		normalized.Master = &master
+	}
+	normalized.Effects = append([]Effect{}, p.Effects...)
+	for i := range normalized.Effects {
+		if useV2 && normalized.Effects[i].Kind == "" {
+			normalized.Effects[i].Kind = normalized.Effects[i].ID
+		}
+		if !useV2 {
+			normalized.Effects[i].Kind = ""
 		}
 	}
 	normalized.Patterns = append([]Pattern(nil), p.Patterns...)
@@ -299,6 +498,41 @@ func DecodeJSON(data []byte) (*Project, error) {
 	if err := decoder.Decode(&p); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
+	effectKinds := make(map[string]string, len(p.Effects))
+	for _, effect := range p.Effects {
+		effectKinds[effect.ID] = semanticEffectKind(effect)
+	}
+	for i := range p.Tracks {
+		for _, send := range p.Tracks[i].Mixer.Sends {
+			if send.Level.Number == nil {
+				continue
+			}
+			gain := *send.Level.Number
+			if send.Level.Unit == "db" {
+				gain = math.Pow(10, gain/20)
+			}
+			switch effectKinds[send.To] {
+			case "delay":
+				p.Tracks[i].Mixer.SendA = gain
+			case "reverb":
+				p.Tracks[i].Mixer.SendB = gain
+			}
+		}
+	}
+	for i := range p.Buses {
+		bus := &p.Buses[i]
+		bus.Mixer.Bus = bus.ID
+		if bus.Mixer.Level == nil || bus.Mixer.Level.Unit == "enum" && bus.Mixer.Level.Text == "off" {
+			if bus.ID == "music" {
+				bus.Mixer.GainDB = -3
+			} else if bus.ID == "sfx" {
+				bus.Mixer.GainDB = 0
+			}
+		}
+	}
+	if p.Master != nil && (p.Master.Mixer.Level == nil || p.Master.Mixer.Level.Unit == "enum" && p.Master.Mixer.Level.Text == "off") {
+		p.Master.Mixer.GainDB = 0
+	}
 	if !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
 		field := "format"
 		if p.Format == FormatID || p.Format == FormatID2 {
@@ -309,6 +543,13 @@ func DecodeJSON(data []byte) (*Project, error) {
 	var root map[string]json.RawMessage
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
+	}
+	p.p2Syntax = p.Format == FormatID2 && (projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
+	for _, effect := range p.Effects {
+		p.p2Syntax = p.p2Syntax || effect.Kind != ""
+	}
+	for _, track := range p.Tracks {
+		p.p2Syntax = p.p2Syntax || track.Mixer.wireV2 && (len(track.Mixer.Sends) > 0 || track.Mixer.Out != nil || track.Mixer.Level != nil || track.Mixer.Inserts != nil || track.Mixer.soloSet || track.Mixer.muteSet || track.Mixer.panSet)
 	}
 	if _, present := root["edition"]; !present {
 		// Semantic JSON written before editions existed means edition 1.
@@ -328,8 +569,8 @@ func DecodeJSON(data []byte) (*Project, error) {
 			p.Instruments[i].Octave = &legacyOctave
 		}
 	}
-	if p.Edition != 1 {
-		return nil, jsonError(data, "CICADA-VERSION", "/edition", 0, fmt.Errorf("only cicada 1 is supported"))
+	if p.Edition != 1 && p.Edition != 2 {
+		return nil, jsonError(data, "CICADA-VERSION", "/edition", 0, fmt.Errorf("only cicada 1 and 2 are supported"))
 	}
 	if p.Format == FormatID && projectHasSceneSettings(&p) {
 		return nil, jsonError(data, "CICADA-VERSION", "/format", 0, fmt.Errorf("scene settings require cicada.project/2"))
@@ -344,8 +585,10 @@ func DecodeJSON(data []byte) (*Project, error) {
 		}
 		return nil, jsonError(data, code, "", 0, err)
 	}
-	if _, err := ToSource(&p); err != nil {
-		return nil, jsonError(data, "CICADA-PARAM", "", 0, fmt.Errorf("project cannot be represented by source v1: %w", err))
+	if p.Format == FormatID && p.Version == 1 {
+		if _, err := ToSource(&p); err != nil {
+			return nil, jsonError(data, "CICADA-PARAM", "", 0, fmt.Errorf("project cannot be represented by source v1: %w", err))
+		}
 	}
 	return &p, nil
 }
@@ -437,18 +680,35 @@ func checkRequiredFields(data []byte) error {
 			optionalByConstruct[field.Construct] = append(optionalByConstruct[field.Construct], field.Name)
 		}
 	}
-	require := func(value any, construct, name, pointer string) (map[string]any, error) {
-		fields, ok := fieldsByConstruct[construct]
-		if !ok || len(fields) == 0 {
-			return nil, fmt.Errorf("no required fields registered for %s", construct)
-		}
-		return requiredObject(value, name, pointer, fields, optionalByConstruct[construct])
-	}
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.UseNumber()
 	var raw any
 	if err := decoder.Decode(&raw); err != nil {
 		return err
+	}
+	rootObject, ok := raw.(map[string]any)
+	if !ok {
+		return fmt.Errorf("project must be an object")
+	}
+	version2 := rootObject["format"] == FormatID2
+	if version2 {
+		fieldsByConstruct["mixer"] = []string{}
+		optionalByConstruct["mixer"] = []string{"level", "pan", "mute", "solo", "inserts", "sends", "out"}
+		fieldsByConstruct["effect"] = []string{"id", "kind", "params"}
+		optionalByConstruct["effect"] = nil
+	} else {
+		fieldsByConstruct["mixer"] = []string{"gain_db", "pan", "send_a", "send_b", "send_pre", "mute", "solo", "insert", "bus"}
+		optionalByConstruct["mixer"] = nil
+		fieldsByConstruct["effect"] = []string{"id", "params"}
+		optionalByConstruct["effect"] = nil
+		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports")
+	}
+	require := func(value any, construct, name, pointer string) (map[string]any, error) {
+		fields, ok := fieldsByConstruct[construct]
+		if !ok || len(fields) == 0 && construct != "mixer" {
+			return nil, fmt.Errorf("no required fields registered for %s", construct)
+		}
+		return requiredObject(value, name, pointer, fields, optionalByConstruct[construct])
 	}
 	root, err := require(raw, "project", "project", "")
 	if err != nil {
@@ -486,8 +746,17 @@ func checkRequiredFields(data []byte) error {
 		if err != nil {
 			return err
 		}
-		_, err = require(object["mixer"], "mixer", "mixer", pointer+"/mixer")
-		return err
+		mixer, err := require(object["mixer"], "mixer", "mixer", pointer+"/mixer")
+		if err != nil {
+			return err
+		}
+		if version2 {
+			return checkObjectArrayOptional(mixer["sends"], "mixer sends", pointer+"/mixer/sends", func(value any, child string) error {
+				_, err := require(value, "mixer_send", "mixer send", child)
+				return err
+			})
+		}
+		return nil
 	}); err != nil {
 		return err
 	}
@@ -534,10 +803,65 @@ func checkRequiredFields(data []byte) error {
 	}); err != nil {
 		return err
 	}
+	if version2 {
+		if rawBuses, exists := root["buses"]; exists {
+			if err := checkObjectArray(rawBuses, "buses", "/buses", func(value any, pointer string) error {
+				object, err := require(value, "bus", "bus", pointer)
+				if err != nil {
+					return err
+				}
+				_, err = require(object["mixer"], "mixer", "mixer", pointer+"/mixer")
+				return err
+			}); err != nil {
+				return err
+			}
+		}
+		if rawMaster, exists := root["master"]; exists {
+			object, err := require(rawMaster, "master", "master", "/master")
+			if err != nil {
+				return err
+			}
+			if _, err := require(object["mixer"], "mixer", "mixer", "/master/mixer"); err != nil {
+				return err
+			}
+		}
+		if rawExports, exists := root["exports"]; exists {
+			if err := checkObjectArray(rawExports, "exports", "/exports", func(value any, pointer string) error {
+				_, err := require(value, "export", "export", pointer)
+				return err
+			}); err != nil {
+				return err
+			}
+		}
+	}
 	return checkObjectArray(root["effects"], "effects", "/effects", func(value any, pointer string) error {
 		_, err := require(value, "effect", "effect", pointer)
 		return err
 	})
+}
+
+func removeNames(source []string, removed ...string) []string {
+	var output []string
+	for _, name := range source {
+		keep := true
+		for _, candidate := range removed {
+			if name == candidate {
+				keep = false
+				break
+			}
+		}
+		if keep {
+			output = append(output, name)
+		}
+	}
+	return output
+}
+
+func checkObjectArrayOptional(value any, name, pointer string, check func(any, string) error) error {
+	if value == nil {
+		return nil
+	}
+	return checkObjectArray(value, name, pointer, check)
 }
 
 func requiredObject(value any, name, pointer string, fields, optional []string) (map[string]any, error) {

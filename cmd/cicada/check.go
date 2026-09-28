@@ -26,10 +26,10 @@ func inspectScore(path string) (scoreInspection, error) {
 	if err != nil {
 		return scoreInspection{}, err
 	}
-	if err := checkScoreEdition(path); err != nil {
+	score, diagnostics, err := parseScoreForPath(path, source)
+	if err != nil {
 		return scoreInspection{}, err
 	}
-	score, diagnostics := notation.Parse(source)
 	var semantic *project.Project
 	if !hasDiagnosticErrors(diagnostics) {
 		var projectDiagnostics []notation.Diagnostic

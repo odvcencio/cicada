@@ -58,14 +58,17 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 		}
 	}
 	effectOK := false
+	effectKind := ""
 	for _, effect := range p.Effects {
 		if effect.ID == owner {
 			effectOK = true
+			effectKind = semanticEffectKind(effect)
 			break
 		}
 	}
-	if owner == "master" {
-		return fail("CICADA-UNSUPPORTED", "master parameter paths are reserved for named mixer pieces")
+	busOK := owner == "music" || owner == "sfx"
+	for _, bus := range p.Buses {
+		busOK = busOK || bus.ID == owner
 	}
 	if trackOK && effectOK {
 		return fail("CICADA-REFERENCE", "ambiguous path owner "+owner+"; hint: rename the track or effect so this path resolves to one owner")
@@ -85,8 +88,27 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			return fail("CICADA-PARAM", "unknown setting in parameter path "+path)
 		}
 	} else if effectOK {
+		setting := strings.Join(parts[1:], ".")
 		for _, candidate := range paramdefs.Registry {
-			if candidate.Scope == "global" && candidate.Path == path {
+			if candidate.Scope == "global" && strings.TrimPrefix(candidate.Path, effectKind+".") == setting && strings.HasPrefix(candidate.ID, "fx."+effectKind+".") {
+				descriptor, found = candidate, true
+				break
+			}
+		}
+		if !found {
+			return fail("CICADA-PARAM", "unknown setting in parameter path "+path)
+		}
+	} else if owner == "master" || busOK {
+		setting := strings.Join(parts[1:], ".")
+		scope := "bus"
+		if owner == "master" {
+			scope = "master"
+			if p.Master == nil {
+				return fail("CICADA-UNSUPPORTED", "master parameter paths are reserved for named mixer pieces")
+			}
+		}
+		for _, candidate := range paramdefs.Registry {
+			if candidate.Scope == scope && candidate.Path == setting {
 				descriptor, found = candidate, true
 				break
 			}
@@ -104,6 +126,10 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 	result := ResolvedParam{Path: path, Owner: owner, ID: id, Descriptor: descriptor, Track: 0xff}
 	if trackOK {
 		result.OwnerKind, result.Track = "track", uint8(trackIndex)
+	} else if owner == "master" {
+		result.OwnerKind = "master"
+	} else if busOK {
+		result.OwnerKind = "bus"
 	} else {
 		result.OwnerKind = "effect"
 	}

@@ -30,18 +30,36 @@ func ParseTree(src []byte) (*gts.Node, *walk.Walker, error) {
 
 // Parse lowers the CST to a typed score and then validates musical references.
 func Parse(src []byte) (*Score, []Diagnostic) {
+	return parseEdition(src, 0)
+}
+
+// ParseEdition parses a score using the edition inherited from its project
+// manifest. An explicit source header must match that edition.
+func ParseEdition(src []byte, edition int) (*Score, []Diagnostic) {
+	if edition != 1 && edition != 2 {
+		return nil, []Diagnostic{{Code: "CICADA-VERSION", Severity: "error", Message: "only cicada 1 and 2 are supported", Position: Position{1, 1}}}
+	}
+	return parseEdition(src, edition)
+}
+
+func parseEdition(src []byte, edition int) (*Score, []Diagnostic) {
 	root, w, err := ParseTree(src)
 	if err != nil {
 		return nil, []Diagnostic{syntaxDiagnostic(err, src)}
 	}
-	s := &Score{Version: 1, TempoMilli: 130_000, KeyRoot: "a", Scale: "minor"}
+	requestedEdition := edition
+	if edition == 0 {
+		edition = 1
+	}
+	s := &Score{Version: edition, TempoMilli: 130_000, KeyRoot: "a", Scale: "minor"}
+	headerEdition := 0
 	var diagnostics []Diagnostic
 	seenDeclarations := map[string]bool{}
 	for i := 0; i < root.NamedChildCount(); i++ {
 		n := root.NamedChild(i)
 		kind := w.Type(n)
 		switch kind {
-		case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl":
+		case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl":
 			if seenDeclarations[kind] {
 				diagnostics = append(diagnostics, Diagnostic{
 					Code: "CICADA-DUPLICATE", Severity: "error",
@@ -54,6 +72,7 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 		switch kind {
 		case "integer":
 			s.Version, _ = strconv.Atoi(w.Text(n))
+			headerEdition = s.Version
 		case "title_decl":
 			v := childText(w, n, "string")
 			s.TitlePosition = pos(w, n)
@@ -82,6 +101,13 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 			s.Kits = append(s.Kits, parseKit(w, n))
 		case "track_decl":
 			s.Tracks = append(s.Tracks, parseTrack(w, n))
+		case "bus_decl":
+			s.Buses = append(s.Buses, parseBus(w, n))
+		case "master_decl":
+			s.HasMaster = true
+			s.Master = parseMixBlock(w, n)
+		case "export_decl":
+			s.Exports = append(s.Exports, parseExport(w, n))
 		case "phrase_decl":
 			s.Phrases = append(s.Phrases, parsePhrase(w, n))
 		case "acid_pattern", "note_pattern", "drum_pattern":
@@ -100,6 +126,12 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 			s.Effects = append(s.Effects, parseEffect(w, n))
 		}
 	}
+	if headerEdition != 0 && requestedEdition != 0 && headerEdition != requestedEdition {
+		diagnostics = append(diagnostics, Diagnostic{
+			Code: "CICADA-VERSION", Severity: "error", Message: "source header does not match the project edition",
+			Position: Position{1, 1},
+		})
+	}
 	diagnostics = append(diagnostics, expandPhrases(s)...)
 	diagnostics = append(diagnostics, Validate(s)...)
 	return s, diagnostics
@@ -109,8 +141,8 @@ func parseTrack(w *walk.Walker, n *gts.Node) Track {
 	t := Track{Name: w.Text(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: pos(w, n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
-		if w.Type(c) == "param_decl" {
-			t.Params = append(t.Params, parseParam(w, c))
+		if w.Type(c) == "mix_setting" {
+			t.Params = append(t.Params, parseMixSetting(w, c))
 		}
 	}
 	return t
@@ -131,7 +163,11 @@ func parseKit(w *walk.Walker, n *gts.Node) Kit {
 }
 
 func parseEffect(w *walk.Walker, n *gts.Node) Effect {
-	e := Effect{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+	e := Effect{Name: w.Text(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: pos(w, n)}
+	if e.Kind == "" { // edition-1 shorthand: fx delay { ... }
+		e.Kind = e.Name
+		e.Legacy = true
+	}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		if w.Type(c) == "param_decl" {
@@ -139,6 +175,51 @@ func parseEffect(w *walk.Walker, n *gts.Node) Effect {
 		}
 	}
 	return e
+}
+
+func parseBus(w *walk.Walker, n *gts.Node) Bus {
+	b := Bus{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+	for i := 0; i < n.NamedChildCount(); i++ {
+		if w.Type(n.NamedChild(i)) == "mix_setting" {
+			b.Params = append(b.Params, parseMixSetting(w, n.NamedChild(i)))
+		}
+	}
+	return b
+}
+
+func parseMixBlock(w *walk.Walker, n *gts.Node) []Param {
+	var params []Param
+	for i := 0; i < n.NamedChildCount(); i++ {
+		if w.Type(n.NamedChild(i)) == "mix_setting" {
+			params = append(params, parseMixSetting(w, n.NamedChild(i)))
+		}
+	}
+	return params
+}
+
+func parseExport(w *walk.Walker, n *gts.Node) Export {
+	e := Export{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+	for i := 0; i < n.NamedChildCount(); i++ {
+		if w.Type(n.NamedChild(i)) == "param_decl" {
+			e.Params = append(e.Params, parseParam(w, n.NamedChild(i)))
+		}
+	}
+	return e
+}
+
+func parseMixSetting(w *walk.Walker, n *gts.Node) Param {
+	for i := 0; i < n.NamedChildCount(); i++ {
+		child := n.NamedChild(i)
+		switch w.Type(child) {
+		case "send_decl":
+			level := w.Field(child, "level")
+			return Param{Name: "send", Target: w.Text(w.Field(child, "to")), Value: w.Text(level),
+				Pre: w.Field(child, "tap") != nil, Position: pos(w, child), ValuePosition: pos(w, level)}
+		case "param_decl":
+			return parseParam(w, child)
+		}
+	}
+	return Param{Position: pos(w, n)}
 }
 
 func parseInstrument(w *walk.Walker, n *gts.Node) Instrument {
@@ -216,7 +297,8 @@ func parseExpr(w *walk.Walker, n *gts.Node) *Expr {
 
 func parseParam(w *walk.Walker, n *gts.Node) Param {
 	value := w.Field(n, "value")
-	return Param{Name: w.Text(w.Field(n, "name")), Value: w.Text(value), Position: pos(w, n), ValuePosition: pos(w, value)}
+	text := strings.Join(strings.Fields(w.Text(value)), " ")
+	return Param{Name: w.Text(w.Field(n, "name")), Value: text, Position: pos(w, n), ValuePosition: pos(w, value)}
 }
 
 func parsePattern(w *walk.Walker, n *gts.Node) Pattern {

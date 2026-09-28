@@ -56,13 +56,16 @@ func checkSemanticIRFields(t *testing.T, path string, includeV2 bool) {
 			if !field.IsExported() || !includeV2 && field.Tag.Get("introduced") == "cicada.project/2" {
 				continue
 			}
+			if includeV2 && field.Tag.Get("legacy") == "cicada.project/1" {
+				continue
+			}
 			name := strings.Split(field.Tag.Get("json"), ",")[0]
 			if name == "" || name == "-" {
 				t.Errorf("%s.%s has no serialized field name", typ.Name(), field.Name)
 				continue
 			}
 			want[name] = true
-			if !strings.Contains(field.Tag.Get("json"), ",omitempty") {
+			if !strings.Contains(field.Tag.Get("json"), ",omitempty") && !(includeV2 && construct == "mixer") {
 				wantRequired[name] = true
 			}
 			if includeV2 || field.Tag.Get("introduced") != "cicada.project/2" {
