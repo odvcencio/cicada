@@ -6,9 +6,9 @@ This page defines the current typed JSON interchange form. It is distinct from b
 
 **Status:** Implemented.
 
-**Syntax:** JSON objects follow the public [project schema](../../project/schema/project-1.json). The generated [field catalog](../../project/schema/cicada.fields-1.json) is the machine-readable index of constructs and fields. Run <code>go run ./cmd/cicada fields</code> to print the catalog or <code>go run ./cmd/cicada explain pattern.steps --json</code> to inspect one field.
+**Syntax:** JSON objects follow the public [project schema /1](../../project/schema/project-1.json) or [project schema /2](../../project/schema/project-2.json). The generated [field catalog /1](../../project/schema/cicada.fields-1.json) and [field catalog /2](../../project/schema/cicada.fields-2.json) index their constructs and fields. Run <code>go run ./cmd/cicada fields</code> to print the catalog or <code>go run ./cmd/cicada explain pattern.steps --json</code> to inspect one field.
 
-**Meaning:** <code>cicada.project/1</code> stores the typed project consumed by validation, rendering, interchange, and agent tools. <code>cicada.fields/1</code> records each construct, field order, required flag, type, unit, range, default, meaning, profile, and format that introduced it.
+**Meaning:** <code>cicada.project/1</code> stores the typed project consumed by validation, rendering, interchange, and agent tools when it has no scene parameter settings. <code>cicada.project/2</code> adds those settings. The field catalogs record each construct, field order, required flag, type, unit, range, default, meaning, profile, and format that introduced it.
 
 **Types and units:** The project uses records for the key, instruments, expressions, kits, tracks, mixer values, patterns, steps, scenes, song entries, and effects. Tempo is an integer in milli-BPM. Step notes are resolved MIDI numbers; chance is an integer percentage; effect and track parameters are tagged number-or-text values. The schema rejects unknown fields.
 
@@ -18,7 +18,41 @@ This page defines the current typed JSON interchange form. It is distinct from b
 
 **Example:** Convert a validated source file with <code>cicada convert score.cicada -o score.json</code>, then inspect the JSON with the project schema and field catalog.
 
-**Edition history:** Semantic format /1 and field catalog /1 are current. The source edition and semantic format version are independent. Accepted parameter paths and automation require later semantic JSON work; they are not present in /1.
+**Edition history:** Semantic formats /1 and /2 and their field catalogs are implemented. The source edition and semantic format version are independent. Scene parameter settings require /2; automation remains accepted and is not present in either format.
+
+## Semantic JSON version 2 scene settings
+
+**Status:** Implemented.
+
+**Syntax:** In <code>cicada.project/2</code>, a scene may contain an ordered <code>settings</code> array. Each entry contains a resolved <code>path</code> and a typed <code>value</code>. The [project /2 schema](../../project/schema/project-2.json) defines the complete object.
+
+**Meaning:** The path records the source parameter address, such as <code>bass.cutoff</code>. The value records the registry-validated setting in semantic form. Source order is preserved, and a path may appear at most once in a scene.
+
+**Types and units:** Numeric values use a <code>number</code> in the registry's base unit with a matching <code>unit</code>. Enumerated values use <code>unit: "enum"</code> and <code>text</code>; for example, <code>level = off</code> becomes enum text <code>off</code>. Numeric values do not include both number and text.
+
+**Defaults:** A scene without settings omits <code>settings</code>. Canonical JSON uses <code>cicada.project/1</code> whenever no /2-only scene settings are present, including when the in-memory project carries a /2 marker. It writes <code>cicada.project/2</code> when at least one scene has settings.
+
+**Errors:** A /1 JSON document containing scene settings reports <code>CICADA-VERSION</code>. Paths must resolve to live registry entries, values must match their type, unit, and range, and duplicate paths are rejected. Invalid paths and values report the stable Cicada diagnostics described under [Diagnostics](#diagnostics).
+
+**Example:** This fragment shows a frequency setting in base units:
+
+```json
+{
+  "format": "cicada.project/2",
+  "version": 2,
+  "scenes": [
+    {
+      "id": "drop",
+      "bindings": { "bass": "pulse" },
+      "settings": [
+        { "path": "bass.cutoff", "value": { "number": 900, "unit": "hz" } }
+      ]
+    }
+  ]
+}
+```
+
+**Edition history:** Version /2 adds ordered scene parameter settings. Projects without those settings remain representable as /1.
 
 ## Source-to-JSON mapping
 
@@ -30,7 +64,7 @@ This page defines the current typed JSON interchange form. It is distinct from b
 | <code>track</code> | <code>tracks[]</code> | Parameters are typed values; the mixer is a separate record; each track has 16 pattern slots. |
 | Note pattern | <code>patterns[].data[]</code> | Source degrees and spelling resolve to MIDI note numbers. |
 | Drum pattern | <code>patterns[].lanes</code> | Each lane stores one nullable step per pattern position. |
-| Scene | <code>scenes[].bindings</code> | Track names map to pattern IDs or the <code>off</code> action. <code>keep</code> is omitted from the resolved map. |
+| Scene | <code>scenes[].bindings</code>; <code>scenes[].settings[]</code> in /2 | Track names map to pattern IDs or the <code>off</code> action. <code>keep</code> is omitted from the resolved map. Version /2 settings preserve the path and typed value in source order. |
 | Song | <code>song[]</code> | Each entry contains a scene ID and bar count. |
 | <code>fx</code> | <code>effects[]</code> | The effect ID and typed parameter map are preserved. |
 
@@ -42,7 +76,7 @@ The JSON step record contains <code>note</code>, <code>accent</code>, <code>slid
 
 **Syntax:** <code>cicada convert source.cicada -o project.json</code> writes canonical semantic JSON. <code>cicada convert project.json -o source.cicada</code> writes normalized source. <code>cicada compare --semantic a b</code> compares compiled project meaning.
 
-**Meaning:** Semantic comparison ignores comments, layout, and equivalent source spellings. JSON-to-source conversion writes the concise edition-1 form and checks that recompiling it produces the same canonical project.
+**Meaning:** Semantic comparison ignores comments, layout, and equivalent source spellings. JSON-to-source conversion writes the concise edition-1 form and checks that recompiling it produces the same canonical project. Canonical JSON writes /1 when there are no scene settings and /2 when any scene contains a setting, regardless of an unused /2 marker on the in-memory project.
 
 **Types and units:** JSON values retain their unit tag. Expression nodes are exactly one of a literal, a name, or an operator with arguments.
 
@@ -68,19 +102,19 @@ song { main*4 }
 
 **Status:** Implemented.
 
-**Syntax:** <code>cicada fix score.cicada</code> applies the edition-1 spelling migration. <code>cicada fix score.cicada --check</code> reports whether a rewrite or manifest is needed without writing.
+**Syntax:** <code>cicada fix score.cicada</code> applies the edition-1 spelling migration. <code>cicada fix score.cicada --check</code> reports whether a rewrite or manifest is needed without writing. The Go API <code>project.Migrate1To2(p)</code> migrates a semantic project.
 
-**Meaning:** The migration edits source tokens while preserving comments and unrelated layout. It checks that the source compiles before migration and that the semantic project remains equal afterward. A loose score gets a <code>cicada.mod</code> manifest.
+**Meaning:** The source migration edits tokens while preserving comments and unrelated layout. It checks that the source compiles before migration and that the semantic project remains equal afterward. A loose score gets a <code>cicada.mod</code> manifest. <code>Migrate1To2</code> validates a /1 project, returns a detached copy with <code>format: cicada.project/2</code> and <code>version: 2</code>, and leaves the input unchanged.
 
-**Types and units:** <code>fix</code> runs only for edition 1. It moves a standalone <code>cicada 1</code> header into the manifest; writes missing instrument octaves; removes redundant <code>steps</code>, <code>acid</code>/<code>notes</code>, and inferred unit annotations; removes no-op <code>keep</code> actions; rewrites unambiguous <code>off</code> actions to <code>stop</code>; moves pattern attributes into braces; shortens positive phrase transposes; changes <code>%N</code> chance to <code>?N</code>; normalizes SI unit case; and removes statement terminators.
+**Types and units:** <code>fix</code> runs only for edition 1. It moves a standalone <code>cicada 1</code> header into the manifest; writes missing instrument octaves; removes redundant <code>steps</code>, <code>acid</code>/<code>notes</code>, and inferred unit annotations; removes no-op <code>keep</code> actions; rewrites unambiguous <code>off</code> actions to <code>stop</code>; moves pattern attributes into braces; shortens positive phrase transposes; changes <code>%N</code> chance to <code>?N</code>; normalizes SI unit case; and removes statement terminators. <code>Migrate1To2</code> accepts only a valid <code>cicada.project/1</code> value and sets the format and version to /2; it does not add scene settings.
 
-**Defaults:** <code>--check</code> is read-only. A score that already uses the canonical form is reported as already fixed.
+**Defaults:** <code>--check</code> is read-only. A score that already uses the canonical form is reported as already fixed. A migrated project with no scene settings is still written as /1 by <code>CanonicalJSON</code>.
 
-**Errors:** A score must parse, validate, and compile before migration. If a legacy spelling is ambiguous or comments cannot safely move with it, migration refuses that rewrite. A semantic change after rewriting is an error.
+**Errors:** A score must parse, validate, and compile before source migration. If a legacy spelling is ambiguous or comments cannot safely move with it, migration refuses that rewrite. <code>Migrate1To2</code> rejects nil, non-/1, or invalid projects. A semantic change after source rewriting is an error.
 
-**Example:** <code>cicada fix score.cicada --check</code> is suitable for an editor or CI preflight; omit <code>--check</code> to write the migration.
+**Example:** <code>cicada fix score.cicada --check</code> is suitable for an editor or CI preflight; omit <code>--check</code> to write the source migration. A Go caller can write <code>v2, err := project.Migrate1To2(v1)</code>.
 
-**Edition history:** The first migration targets edition 1. It does not introduce accepted-but-unmerged syntax.
+**Edition history:** The source migration targets edition 1. <code>Migrate1To2</code> bridges semantic /1 to /2 without introducing source syntax or scene settings.
 
 ## Diagnostics
 

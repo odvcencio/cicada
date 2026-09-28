@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -48,6 +50,140 @@ func TestFirstAcidCanonicalJSON(t *testing.T) {
 	if err != nil || !bytes.Equal(encoded, again) {
 		t.Fatalf("canonical JSON is not stable: %v", err)
 	}
+}
+
+func TestProject1ExampleJSONRoundTripsStayByteStable(t *testing.T) {
+	count := 0
+	err := filepath.WalkDir("../examples", func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if entry.IsDir() || filepath.Ext(path) != ".cicada" {
+			return nil
+		}
+		count++
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		score, diagnostics := notation.Parse(source)
+		if score == nil || hasProjectErrors(diagnostics) {
+			return fmt.Errorf("%s: parse failed: %+v", path, diagnostics)
+		}
+		p, diagnostics := FromScore(score)
+		if p == nil || hasProjectErrors(diagnostics) {
+			return fmt.Errorf("%s: compile failed: %+v", path, diagnostics)
+		}
+		first, err := CanonicalJSON(p)
+		if err != nil {
+			return fmt.Errorf("%s: encode: %w", path, err)
+		}
+		if p.Format != FormatID || p.Version != 1 {
+			return fmt.Errorf("%s: no /2-only content should be emitted as /1", path)
+		}
+		decoded, err := DecodeJSON(first)
+		if err != nil {
+			return fmt.Errorf("%s: decode: %w", path, err)
+		}
+		second, err := CanonicalJSON(decoded)
+		if err != nil || !bytes.Equal(first, second) {
+			return fmt.Errorf("%s: project/1 output changed after decode: %v", path, err)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count == 0 {
+		t.Fatal("no project examples were tested")
+	}
+}
+
+func TestProject2SceneSettingsRoundTripInSourceOrderAndBaseUnits(t *testing.T) {
+	source := []byte("fx delay { feedback = 0.2 }\ntrack bass acid { cutoff = 700Hz send_a = 0.2 }\ntrack drums drums {}\npattern riff acid steps=1 { 1 }\npattern beat drums steps=1 { bd: x }\nscene drop { bass=riff drums=beat bass.cutoff=0.9kHz bass.send.delay=0.3 delay.feedback=0.4 drums.level=off }\nsong { drop }\n")
+	score, diagnostics := notation.Parse(source)
+	if score == nil || hasProjectErrors(diagnostics) {
+		t.Fatalf("parse scene settings: %+v", diagnostics)
+	}
+	p, diagnostics := FromScore(score)
+	if p == nil || hasProjectErrors(diagnostics) || p.Format != FormatID2 || p.Version != 2 {
+		t.Fatalf("compile scene settings as project/2: %+v, %+v", p, diagnostics)
+	}
+	encoded, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(encoded, []byte(`"format": "cicada.project/2"`)) || !bytes.Contains(encoded, []byte(`"settings": [`)) {
+		t.Fatalf("project/2 scene settings missing: %s", encoded)
+	}
+	var raw struct {
+		Scenes []struct {
+			Settings []struct {
+				Path  string         `json:"path"`
+				Value map[string]any `json:"value"`
+			} `json:"settings"`
+		} `json:"scenes"`
+	}
+	if err := json.Unmarshal(encoded, &raw); err != nil {
+		t.Fatal(err)
+	}
+	settings := raw.Scenes[0].Settings
+	if len(settings) != 4 || settings[0].Path != "bass.cutoff" || settings[0].Value["unit"] != "hz" || settings[0].Value["number"] != float64(900) || settings[1].Path != "bass.send.delay" || settings[2].Path != "delay.feedback" || settings[3].Path != "drums.level" {
+		t.Fatalf("settings order or base-unit conversion changed: %+v", settings)
+	}
+	if len(settings[0].Value) != 2 || settings[0].Value["text"] != nil {
+		t.Fatalf("numeric /2 value must contain only number and unit: %+v", settings[0].Value)
+	}
+	if len(settings[3].Value) != 2 || settings[3].Value["unit"] != "enum" || settings[3].Value["text"] != "off" || settings[3].Value["number"] != nil {
+		t.Fatalf("enum /2 value has the wrong shape: %+v", settings[3].Value)
+	}
+	decoded, err := DecodeJSON(encoded)
+	if err != nil || !reflect.DeepEqual(p, decoded) {
+		t.Fatalf("project/2 JSON round trip: %v", err)
+	}
+	again, err := CanonicalJSON(decoded)
+	if err != nil || !bytes.Equal(encoded, again) {
+		t.Fatalf("project/2 JSON is not canonical: %v", err)
+	}
+}
+
+func TestMigrate1To2IsPureAndWriterKeepsProject1WithoutNewContent(t *testing.T) {
+	p, diagnostics := FromScore(firstScore(t))
+	if p == nil || hasProjectErrors(diagnostics) {
+		t.Fatalf("project compilation: %+v", diagnostics)
+	}
+	before := *p
+	beforeBytes, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	migrated, err := Migrate1To2(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if migrated.Format != FormatID2 || migrated.Version != 2 || !reflect.DeepEqual(p, &before) {
+		t.Fatalf("migration mutated source or lost the v2 marker: source=%s/%d migrated=%s/%d", p.Format, p.Version, migrated.Format, migrated.Version)
+	}
+	afterBytes, err := CanonicalJSON(migrated)
+	if err != nil || !bytes.Equal(beforeBytes, afterBytes) || !bytes.Contains(afterBytes, []byte(`"format": "cicada.project/1"`)) {
+		t.Fatalf("project without /2 content changed its JSON output: %v", err)
+	}
+	decoded, err := DecodeJSON(beforeBytes)
+	if err != nil || decoded.Format != FormatID || decoded.Version != 1 {
+		t.Fatalf("project/1 reader rejected canonical output: %v", err)
+	}
+	if _, err := Migrate1To2(migrated); err == nil {
+		t.Fatal("migration accepted a project/2 input")
+	}
+}
+
+func hasProjectErrors(diagnostics []notation.Diagnostic) bool {
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			return true
+		}
+	}
+	return false
 }
 
 func TestProjectJSONRecordsSourceEditionAndReadsLegacyJSON(t *testing.T) {

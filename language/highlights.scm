@@ -187,14 +187,15 @@
 "song" @keyword
 
 (scene_decl name: (identifier) @label)
-(scene_assignment track: (identifier) @variable.member)
-((scene_assignment pattern: (identifier) @constant.builtin)
+(scene_assignment target: (scene_target (identifier) @variable.member))
+(parameter_path) @property.parameter_path
+((scene_assignment value: (scene_value (identifier) @constant.builtin))
   (#any-of? @constant.builtin "off" "keep"))
 ; Edition 1 can still have a pattern named `stop`. Use a neutral capture until
 ; semantic highlighting can distinguish that legacy reference from the verb.
-((scene_assignment pattern: (identifier) @constant)
+((scene_assignment value: (scene_value (identifier) @constant))
   (#eq? @constant "stop"))
-((scene_assignment pattern: (identifier) @function)
+((scene_assignment value: (scene_value (identifier) @function))
   (#not-any-of? @function "off" "keep" "stop"))
 
 (song_entry scene: (identifier) @label)

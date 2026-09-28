@@ -102,6 +102,48 @@ func TestFormatPatternBodySettings(t *testing.T) {
 	}
 }
 
+func TestFormatSceneSettingsAfterBindingsWithComments(t *testing.T) {
+	source := []byte("track bass acid { cutoff = 700Hz }\ntrack drums drums {}\nfx delay { feedback = 0.2 }\npattern riff acid steps=2 { 1 . }\npattern beat drums { bd: x. }\nscene main {\n  bass.cutoff = 900Hz // cutoff scene setting\n  drums.bd_level = off\n  bass = riff // pattern binding\n  delay.feedback = 0.3 // delay scene setting\n}\nsong { main }\n")
+	doc, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(doc)
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(formatted)
+	positions := []string{"bass = riff", "bass.cutoff = 900Hz", "drums.bd_level = off", "delay.feedback = 0.3"}
+	last := -1
+	for _, fragment := range positions {
+		index := strings.Index(text, fragment)
+		if index <= last {
+			t.Fatalf("scene binding/settings order is wrong at %q:\n%s", fragment, text)
+		}
+		last = index
+	}
+	for _, comment := range []string{"// cutoff scene setting", "// pattern binding", "// delay scene setting"} {
+		if !strings.Contains(text, comment) {
+			t.Fatalf("formatter lost %q:\n%s", comment, text)
+		}
+	}
+	score, diagnostics := Parse(formatted)
+	if score == nil || len(diagnostics) != 0 {
+		t.Fatalf("formatted scene settings do not parse: %+v\n%s", diagnostics, text)
+	}
+	if got := score.Scenes[0]; got.Bindings[0].Track != "bass" || got.Bindings[0].Pattern != "riff" || len(got.Settings) != 3 || got.Settings[0].Path != "bass.cutoff" || got.Settings[1].Path != "drums.bd_level" || got.Settings[2].Path != "delay.feedback" {
+		t.Fatalf("scene settings did not round trip in source order: %+v", got)
+	}
+	againDoc, err := ParseDocument(formatted)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := Format(againDoc)
+	if err != nil || !bytes.Equal(formatted, again) {
+		t.Fatalf("scene formatting is not idempotent: %v\n%s", err, again)
+	}
+}
+
 func TestFormatKeepsPhraseUseTranspose(t *testing.T) {
 	source := []byte("pattern p acid { use hook transpose = 12 }\n")
 	doc, err := ParseDocument(source)

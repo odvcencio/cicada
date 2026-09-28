@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"regexp"
 	"sort"
+	"strings"
+
+	gts "github.com/odvcencio/gotreesitter"
 
 	"m31labs.dev/cicada/language"
 	"m31labs.dev/cicada/notation"
@@ -60,6 +63,9 @@ func symbolRegion(source []byte, symbol language.Symbol) region {
 }
 
 func definition(uri string, source []byte, at position) any {
+	if match, ok := parameterPathAt(source, byteOffset(source, at)); ok {
+		return parameterPathDefinition(uri, source, match)
+	}
 	selected, symbols, ok := symbolAt(source, at)
 	if !ok {
 		return nil
@@ -83,6 +89,17 @@ func rename(uri string, source []byte, at position, newName string) any {
 		return nil
 	}
 	selected, symbols, ok := symbolAt(source, at)
+	if !ok {
+		if match, found := parameterPathAt(source, byteOffset(source, at)); found {
+			owner, _, _ := strings.Cut(match.path, ".")
+			for _, symbol := range symbols {
+				if symbol.Role == "definition" && symbol.Kind == "track" && symbol.Name == owner {
+					selected, ok = symbol, true
+					break
+				}
+			}
+		}
+	}
 	if !ok || selected.Name == newName {
 		return nil
 	}
@@ -96,6 +113,26 @@ func rename(uri string, source []byte, at position, newName string) any {
 		start := scalarOffset(source, symbol.Position)
 		edits = append(edits, map[string]any{"range": symbolRegion(source, symbol), "newText": newName})
 		replacements = append(replacements, replacement{start, start + len(symbol.Name), newName})
+	}
+	if selected.Kind == "track" {
+		root, walker, err := notation.ParseTree(source)
+		if err != nil {
+			return nil
+		}
+		var visit func(*gts.Node)
+		visit = func(node *gts.Node) {
+			if walker.Type(node) == "parameter_path" {
+				path := pathRegion{path: walker.Text(node), start: int(node.StartByte()), end: int(node.EndByte())}
+				if start, end, found := pathOwnerPrefix(path, selected.Name); found {
+					edits = append(edits, map[string]any{"range": region{Start: utf16Position(source, start), End: utf16Position(source, end)}, "newText": newName})
+					replacements = append(replacements, replacement{start: start, end: end, text: newName})
+				}
+			}
+			for i := 0; i < node.ChildCount(); i++ {
+				visit(node.Child(i))
+			}
+		}
+		visit(root)
 	}
 	if len(edits) == 0 {
 		return nil

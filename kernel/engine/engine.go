@@ -114,6 +114,8 @@ type voiceSlot struct {
 	muted, sourceOff               bool
 	soloed                         bool
 	busSFX                         bool
+	acidTarget                     acid.Params
+	drumTargets                    [drum.LaneCount]drum.Params
 }
 
 type meterAccum struct {
@@ -125,6 +127,7 @@ type meterAccum struct {
 // communication and calls Push only on the render thread.
 type Engine struct {
 	sampleRate, maxBlock, tracks int
+	paramAlpha                   [kernel.ParamCount]float32
 	bpmMilli                     int64
 	voices                       [16]voiceSlot
 	transport                    seq.Transport
@@ -156,6 +159,7 @@ type Engine struct {
 	patterns                     [16]patternTrack
 	eventScratch                 [128]seq.Event
 	renderFrame, renderFrames    int
+	sceneDefaults                *sceneParameterState
 	scenes                       []Scene
 	currentScene                 int
 	sceneSequence                uint64
@@ -176,16 +180,25 @@ func (e *Engine) TrackCount() int { return e.tracks }
 func (e *Engine) CurrentScene() (int, uint64) { return e.currentScene, e.sceneSequence }
 
 func New(cfg Config) (*Engine, error) {
+	return NewFromConfig(&cfg)
+}
+
+//go:noinline
+func NewFromConfig(cfg *Config) (*Engine, error) {
+	if cfg == nil {
+		return nil, Error("engine configuration is out of range")
+	}
 	if cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 || cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 {
 		return nil, Error("engine configuration is out of range")
 	}
 	if math.IsNaN(cfg.MasterGainDB) || math.IsInf(cfg.MasterGainDB, 0) || cfg.MasterGainDB < -120 || cfg.MasterGainDB > 24 {
 		return nil, Error("master gain is out of range")
 	}
-	if cfg.BPMMilli == 0 {
-		cfg.BPMMilli = 120_000
+	bpmMilli := cfg.BPMMilli
+	if bpmMilli == 0 {
+		bpmMilli = 120_000
 	}
-	transport, err := seq.NewTransport(cfg.SampleRate, cfg.BPMMilli)
+	transport, err := seq.NewTransport(cfg.SampleRate, bpmMilli)
 	if err != nil {
 		return nil, err
 	}
@@ -197,17 +210,44 @@ func New(cfg Config) (*Engine, error) {
 	if cfg.MasterGainDB != 0 {
 		masterGain = float32(math.Pow(10, cfg.MasterGainDB/20))
 	}
-	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: cfg.BPMMilli, transport: transport, limiter: limiter, masterGain: masterGain, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1, currentScene: -1}
+	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1, currentScene: -1}
+	for id := 0; id < len(kernel.Params); id++ {
+		e.paramAlpha[id] = smoothingAlpha(kernel.ParamID(id), cfg.SampleRate)
+	}
 	for i := range e.manualPatternTick {
 		e.manualPatternTick[i] = -1
 	}
+
+	if err := e.initEffects(cfg, bpmMilli); err != nil {
+		return nil, err
+	}
+	voices, err := e.initTrackVoices(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if voices > cfg.MaxVoices {
+		return nil, Error("engine exceeds maximum voices")
+	}
+	if err := e.loadPatterns(cfg); err != nil {
+		return nil, err
+	}
+	if err := e.loadArrangement(cfg, bpmMilli); err != nil {
+		return nil, err
+	}
+	e.captureSceneDefaults()
+	return e, nil
+}
+
+//go:noinline
+func (e *Engine) initEffects(cfg *Config, bpmMilli int64) error {
+	var err error
 	if cfg.DelayA != nil {
-		e.delayA, err = fx.NewDelay(cfg.SampleRate, cfg.BPMMilli)
+		e.delayA, err = fx.NewDelay(cfg.SampleRate, bpmMilli)
 		if err == nil {
 			err = e.delayA.SetParams(*cfg.DelayA)
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 		e.delayA.Reset()
 	}
@@ -217,12 +257,12 @@ func New(cfg Config) (*Engine, error) {
 			err = e.reverbB.SetParams(*cfg.ReverbB)
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 		e.reverbB.Reset()
 	}
 	if cfg.CompSidechainTrack < 0 || cfg.CompSidechainTrack > cfg.Tracks && cfg.CompSidechainTrack != SFXSidechain || cfg.CompMusic == nil && cfg.CompSidechainTrack != 0 {
-		return nil, Error("invalid compressor sidechain track")
+		return Error("invalid compressor sidechain track")
 	}
 	if cfg.CompMusic != nil {
 		e.compMusic, err = fx.NewCompressor(cfg.SampleRate)
@@ -230,11 +270,18 @@ func New(cfg Config) (*Engine, error) {
 			err = e.compMusic.SetParams(*cfg.CompMusic)
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 		e.compMusic.Reset()
 		e.compSidechainTrack = cfg.CompSidechainTrack
 	}
+
+	return nil
+}
+
+//go:noinline
+func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
+	var err error
 	voices := 0
 	hasDrive := false
 	for i := 0; i < cfg.Tracks; i++ {
@@ -253,13 +300,13 @@ func New(cfg Config) (*Engine, error) {
 			gain = -6
 		}
 		if math.IsNaN(gain) || math.IsInf(gain, 0) || gain < -60 || gain > 6 || math.IsNaN(spec.Pan) || math.IsInf(spec.Pan, 0) || spec.Pan < -1 || spec.Pan > 1 {
-			return nil, Error("track mixer parameter is out of range")
+			return 0, Error("track mixer parameter is out of range")
 		}
 		if math.IsNaN(spec.SendA) || math.IsInf(spec.SendA, 0) || spec.SendA < 0 || spec.SendA > 1 || spec.SendA > 0 && e.delayA == nil {
-			return nil, Error("track send A is invalid or has no delay return")
+			return 0, Error("track send A is invalid or has no delay return")
 		}
 		if math.IsNaN(spec.SendB) || math.IsInf(spec.SendB, 0) || spec.SendB < 0 || spec.SendB > 1 || spec.SendB > 0 && e.reverbB == nil {
-			return nil, Error("track send B is invalid or has no reverb return")
+			return 0, Error("track send B is invalid or has no reverb return")
 		}
 		v := &e.voices[i]
 		v.kind = spec.Kind
@@ -268,8 +315,8 @@ func New(cfg Config) (*Engine, error) {
 			v.mix = mix.Track{}
 		}
 		v.targetMix = v.mix
-		v.mixSmooth = smoothingAlpha(kernel.ParamMixGain, cfg.SampleRate)
-		v.sendSmooth = smoothingAlpha(kernel.ParamMixSendA, cfg.SampleRate)
+		v.mixSmooth = e.paramAlpha[kernel.ParamMixGain]
+		v.sendSmooth = e.paramAlpha[kernel.ParamMixSendA]
 		v.gainDB, v.pan = float32(gain), float32(spec.Pan)
 		v.muteGain, v.muteTarget = 1, 1
 		v.muteStep = 1 / float32(math.Ceil(float64(kernel.Params[kernel.ParamMixMute].SmoothingMS)*.001*float64(cfg.SampleRate)))
@@ -281,20 +328,20 @@ func New(cfg Config) (*Engine, error) {
 		}
 		if spec.InsertDrive != nil {
 			if spec.Kind == VoiceOff {
-				return nil, Error("silent track cannot have a drive insert")
+				return 0, Error("silent track cannot have a drive insert")
 			}
 			v.insert, err = fx.NewDrive(cfg.SampleRate)
 			if err == nil {
 				err = v.insert.SetParams(*spec.InsertDrive)
 			}
 			if err != nil {
-				return nil, err
+				return 0, err
 			}
 			v.insert.Reset()
 		} else if hasDrive {
 			v.align, err = mix.NewDelay(fx.DriveLatencyFrames)
 			if err != nil {
-				return nil, err
+				return 0, err
 			}
 		}
 		switch spec.Kind {
@@ -304,6 +351,9 @@ func New(cfg Config) (*Engine, error) {
 			v.acid, err = acid.New(cfg.SampleRate)
 			if err == nil && spec.Acid != (acid.Params{}) {
 				err = v.acid.SetParams(spec.Acid)
+			}
+			if err == nil {
+				v.acidTarget = v.acid.Params()
 			}
 		case VoiceDrums:
 			e.patterns[i].drumSlots = new([16][drum.LaneCount]seq.Pattern)
@@ -325,7 +375,7 @@ func New(cfg Config) (*Engine, error) {
 						case KitLaneGraph:
 							err = v.drums.SetGraph(lane, binding.Program)
 						default:
-							return nil, Error("unknown kit lane kind")
+							return 0, Error("unknown kit lane kind")
 						}
 						if binding.Kind != KitLaneOff {
 							voices++
@@ -343,42 +393,46 @@ func New(cfg Config) (*Engine, error) {
 					if err != nil {
 						break
 					}
+					v.drumTargets[lane] = v.drums.Params(lane)
 				}
 			}
 		case VoiceGraph:
 			voices++
 			v.graph, err = graph.NewVoice(spec.Graph, cfg.SampleRate)
 		default:
-			return nil, Error("unknown voice kind")
+			return 0, Error("unknown voice kind")
 		}
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
 	}
-	if voices > cfg.MaxVoices {
-		return nil, Error("engine exceeds maximum voices")
-	}
+
+	return voices, nil
+}
+
+//go:noinline
+func (e *Engine) loadPatterns(cfg *Config) error {
 	if len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
-		return nil, Error("pattern bank count must match tracks")
+		return Error("pattern bank count must match tracks")
 	}
 	for track, bank := range cfg.Patterns {
 		isDrum := e.voices[track].kind == VoiceDrums
 		if isDrum != (bank.Drums != nil) {
-			return nil, Error("pattern bank kind differs from track")
+			return Error("pattern bank kind differs from track")
 		}
 		for slot, pattern := range bank.Slots {
 			if pattern.Len == 0 {
 				if isDrum {
 					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 						if bank.Drums[slot][lane].Len != 0 {
-							return nil, Error("unused drum slot contains lane data")
+							return Error("unused drum slot contains lane data")
 						}
 					}
 				}
 				continue
 			}
 			if pattern.Validate() != nil {
-				return nil, Error("invalid preloaded pattern")
+				return Error("invalid preloaded pattern")
 			}
 			e.patterns[track].slots[slot] = pattern
 			if !isDrum {
@@ -387,37 +441,82 @@ func New(cfg Config) (*Engine, error) {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				lanePattern := bank.Drums[slot][lane]
 				if lanePattern.Len != pattern.Len || lanePattern.SwingPermille != pattern.SwingPermille || lanePattern.GatePercent != pattern.GatePercent || lanePattern.Seed != pattern.Seed || lanePattern.Transpose != 0 || lanePattern.Validate() != nil {
-					return nil, Error("invalid preloaded drum lane")
+					return Error("invalid preloaded drum lane")
 				}
 				for step := uint8(0); step < lanePattern.Len; step++ {
 					decoded, _ := seq.UnpackStep(lanePattern.Steps[step])
 					if decoded.Gate && (decoded.Tie || decoded.Note != uint8(lane)) {
-						return nil, Error("drum lane step has wrong routing")
+						return Error("drum lane step has wrong routing")
 					}
 				}
 				e.patterns[track].drumSlots[slot][lane] = lanePattern
 			}
 		}
 	}
+
+	return nil
+}
+
+//go:noinline
+func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	if len(cfg.Scenes) > 1<<16 || len(cfg.Song) > 1<<16 {
-		return nil, Error("arrangement exceeds the wire index range")
+		return Error("arrangement exceeds the wire index range")
 	}
 	for _, scene := range cfg.Scenes {
 		for track, binding := range scene.Track {
 			if binding.Mode > SceneSlot || track >= cfg.Tracks && binding.Mode != SceneKeep || binding.Mode == SceneSlot && binding.Slot >= 16 {
-				return nil, Error("scene binding is out of range")
+				return Error("scene binding is out of range")
+			}
+		}
+		type parameterAddress struct {
+			track uint8
+			id    kernel.ParamID
+		}
+		seen := make(map[parameterAddress]bool, len(scene.Settings))
+		for _, setting := range scene.Settings {
+			address := parameterAddress{track: setting.Track, id: setting.ID}
+			spec, ok := kernel.Param(setting.ID)
+			if !ok || !spec.Live || seen[address] {
+				return Error("scene parameter setting is invalid")
+			}
+			seen[address] = true
+			syncedDelay := setting.Division != fx.FreeDelay
+			if syncedDelay {
+				if setting.ID != kernel.ParamFxDelayTime || e.delayA == nil || setting.Division.String() == "invalid" || setting.Value != 0 {
+					return Error("scene delay division is invalid")
+				}
+				params := e.delayA.Params()
+				params.Division, params.TimeMs = setting.Division, 0
+				if err := params.ValidateTempo(bpmMilli); err != nil {
+					return err
+				}
+			}
+			off := spec.Off && math.IsInf(float64(setting.Value), -1)
+			if spec.Scope == "track" && int(setting.Track) >= cfg.Tracks || spec.Scope == "global" && setting.Track != 0xff {
+				return Error("scene parameter owner is out of range")
+			}
+			if math.IsNaN(float64(setting.Value)) || math.IsInf(float64(setting.Value), 0) && !off || !syncedDelay && !off && (setting.Value < spec.Min || setting.Value > spec.Max) {
+				return Error("scene parameter value is out of range")
+			}
+			if !syncedDelay && spec.Curve == "toggle" && setting.Value != 0 && setting.Value != 1 {
+				return Error("scene toggle value is out of range")
 			}
 		}
 	}
 	for _, entry := range cfg.Song {
 		if int(entry.Scene) >= len(cfg.Scenes) || entry.Bars < 1 || entry.Bars > 999 {
-			return nil, Error("song entry is out of range")
+			return Error("song entry is out of range")
 		}
 	}
-	e.scenes = append([]Scene(nil), cfg.Scenes...)
+	e.scenes = make([]Scene, len(cfg.Scenes))
+	for i := range cfg.Scenes {
+		e.scenes[i] = cfg.Scenes[i]
+		e.scenes[i].Settings = append([]SceneSetting(nil), cfg.Scenes[i].Settings...)
+	}
 	e.song = append([]SongEntry(nil), cfg.Song...)
 	e.loopSong = cfg.LoopSong
-	return e, nil
+
+	return nil
 }
 
 func (e *Engine) Push(c cmd.Command) bool {
@@ -925,7 +1024,11 @@ func (e *Engine) apply(c cmd.Command) {
 	}
 }
 
-func (e *Engine) setParam(c cmd.Command) {
+func (e *Engine) setParam(c cmd.Command) { e.setParamMode(c, false) }
+
+func (e *Engine) setParamImmediate(c cmd.Command) { e.setParamMode(c, true) }
+
+func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 	spec, ok := kernel.Param(kernel.ParamID(c.Index))
 	if !ok || !spec.Live {
 		e.fault(18)
@@ -952,9 +1055,17 @@ func (e *Engine) setParam(c cmd.Command) {
 			v.gainDB = value
 			v.sourceOff = off
 			if off {
+				e.layerMask &^= 1 << c.Track
+			} else {
+				e.layerMask |= 1 << c.Track
+			}
+			if off {
 				v.targetMix = mix.Track{}
 			} else {
 				v.targetMix = mix.NewTrack(float64(v.gainDB), float64(v.pan), false)
+			}
+			if immediate {
+				v.mix = v.targetMix
 			}
 		case kernel.ParamMixPan:
 			v.pan = value
@@ -963,10 +1074,19 @@ func (e *Engine) setParam(c cmd.Command) {
 			} else {
 				v.targetMix = mix.NewTrack(float64(v.gainDB), float64(v.pan), false)
 			}
+			if immediate {
+				v.mix = v.targetMix
+			}
 		case kernel.ParamMixSendA:
 			v.targetSendA = value
+			if immediate {
+				v.sendA = value
+			}
 		case kernel.ParamMixSendB:
 			v.targetSendB = value
+			if immediate {
+				v.sendB = value
+			}
 		case kernel.ParamMixMute:
 			v.muted = value == 1
 			e.updateMuteTargets()
@@ -980,8 +1100,64 @@ func (e *Engine) setParam(c cmd.Command) {
 				}
 				e.updateMuteTargets()
 			}
+		case kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:
+			if v.kind != VoiceAcid || v.acid == nil {
+				e.fault(18)
+				return
+			}
+			params := v.acidTarget
+			switch kernel.ParamID(c.Index) {
+			case kernel.ParamAcidCutoff:
+				params.Cutoff = float64(value)
+			case kernel.ParamAcidReso:
+				params.Resonance = float64(value)
+			case kernel.ParamAcidEnvmod:
+				params.EnvMod = float64(value)
+			case kernel.ParamAcidDecay:
+				params.Decay = float64(value) / 1000
+			case kernel.ParamAcidAccent:
+				params.Accent = float64(value)
+			}
+			v.acidTarget = params
+			var setErr error
+			if immediate {
+				setErr = v.acid.SetParams(params)
+			} else {
+				setErr = v.acid.SetParamsTarget(params, float64(e.paramAlpha[c.Index]))
+			}
+			if setErr != nil {
+				e.fault(18)
+			}
 		default:
-			e.fault(18)
+			lane, control, drumParameter := drumParamControl(kernel.ParamID(c.Index))
+			if !drumParameter || v.kind != VoiceDrums || v.drums == nil {
+				e.fault(18)
+				return
+			}
+			params := v.drumTargets[lane]
+			switch control {
+			case drumTune:
+				params.Tune = float64(value)
+			case drumDecay:
+				params.Decay = float64(value) / 1000
+			case drumLevel:
+				params.LevelDB = float64(value)
+				if off {
+					params.LevelDB = -1000
+				}
+			case drumPan:
+				params.Pan = float64(value)
+			}
+			v.drumTargets[lane] = params
+			var setErr error
+			if immediate {
+				setErr = v.drums.SetParams(lane, params)
+			} else {
+				setErr = v.drums.SetParamsTarget(lane, params, float64(e.paramAlpha[c.Index]))
+			}
+			if setErr != nil {
+				e.fault(18)
+			}
 		}
 		return
 	}
@@ -992,6 +1168,110 @@ func (e *Engine) setParam(c cmd.Command) {
 	e.setGlobalParam(kernel.ParamID(c.Index), value)
 }
 
+type drumParamField uint8
+
+const (
+	drumTune drumParamField = iota
+	drumDecay
+	drumLevel
+	drumPan
+)
+
+func drumParamControl(id kernel.ParamID) (drum.Lane, drumParamField, bool) {
+	switch id {
+	case kernel.ParamDrumBdTune:
+		return drum.BD, drumTune, true
+	case kernel.ParamDrumBdDecay:
+		return drum.BD, drumDecay, true
+	case kernel.ParamDrumBdLevel:
+		return drum.BD, drumLevel, true
+	case kernel.ParamDrumBdPan:
+		return drum.BD, drumPan, true
+	case kernel.ParamDrumSdTune:
+		return drum.SD, drumTune, true
+	case kernel.ParamDrumSdDecay:
+		return drum.SD, drumDecay, true
+	case kernel.ParamDrumSdLevel:
+		return drum.SD, drumLevel, true
+	case kernel.ParamDrumSdPan:
+		return drum.SD, drumPan, true
+	case kernel.ParamDrumChTune:
+		return drum.CH, drumTune, true
+	case kernel.ParamDrumChDecay:
+		return drum.CH, drumDecay, true
+	case kernel.ParamDrumChLevel:
+		return drum.CH, drumLevel, true
+	case kernel.ParamDrumChPan:
+		return drum.CH, drumPan, true
+	case kernel.ParamDrumOhTune:
+		return drum.OH, drumTune, true
+	case kernel.ParamDrumOhDecay:
+		return drum.OH, drumDecay, true
+	case kernel.ParamDrumOhLevel:
+		return drum.OH, drumLevel, true
+	case kernel.ParamDrumOhPan:
+		return drum.OH, drumPan, true
+	case kernel.ParamDrumCpTune:
+		return drum.CP, drumTune, true
+	case kernel.ParamDrumCpDecay:
+		return drum.CP, drumDecay, true
+	case kernel.ParamDrumCpLevel:
+		return drum.CP, drumLevel, true
+	case kernel.ParamDrumCpPan:
+		return drum.CP, drumPan, true
+	case kernel.ParamDrumRsTune:
+		return drum.RS, drumTune, true
+	case kernel.ParamDrumRsDecay:
+		return drum.RS, drumDecay, true
+	case kernel.ParamDrumRsLevel:
+		return drum.RS, drumLevel, true
+	case kernel.ParamDrumRsPan:
+		return drum.RS, drumPan, true
+	case kernel.ParamDrumLtTune:
+		return drum.LT, drumTune, true
+	case kernel.ParamDrumLtDecay:
+		return drum.LT, drumDecay, true
+	case kernel.ParamDrumLtLevel:
+		return drum.LT, drumLevel, true
+	case kernel.ParamDrumLtPan:
+		return drum.LT, drumPan, true
+	case kernel.ParamDrumMtTune:
+		return drum.MT, drumTune, true
+	case kernel.ParamDrumMtDecay:
+		return drum.MT, drumDecay, true
+	case kernel.ParamDrumMtLevel:
+		return drum.MT, drumLevel, true
+	case kernel.ParamDrumMtPan:
+		return drum.MT, drumPan, true
+	case kernel.ParamDrumHtTune:
+		return drum.HT, drumTune, true
+	case kernel.ParamDrumHtDecay:
+		return drum.HT, drumDecay, true
+	case kernel.ParamDrumHtLevel:
+		return drum.HT, drumLevel, true
+	case kernel.ParamDrumHtPan:
+		return drum.HT, drumPan, true
+	case kernel.ParamDrumCbTune:
+		return drum.CB, drumTune, true
+	case kernel.ParamDrumCbDecay:
+		return drum.CB, drumDecay, true
+	case kernel.ParamDrumCbLevel:
+		return drum.CB, drumLevel, true
+	case kernel.ParamDrumCbPan:
+		return drum.CB, drumPan, true
+	case kernel.ParamDrumCyTune:
+		return drum.CY, drumTune, true
+	case kernel.ParamDrumCyDecay:
+		return drum.CY, drumDecay, true
+	case kernel.ParamDrumCyLevel:
+		return drum.CY, drumLevel, true
+	case kernel.ParamDrumCyPan:
+		return drum.CY, drumPan, true
+	default:
+		return 0, 0, false
+	}
+}
+
 func (e *Engine) updateMuteTargets() {
 	for track := 0; track < e.tracks; track++ {
 		v := &e.voices[track]
@@ -999,6 +1279,18 @@ func (e *Engine) updateMuteTargets() {
 		if v.muted || e.soloCount > 0 && !v.soloed {
 			v.muteTarget = 0
 		}
+	}
+}
+
+func (e *Engine) setDelayDivision(division fx.DelayDivision) {
+	if e.delayA == nil {
+		e.fault(18)
+		return
+	}
+	params := e.delayA.Params()
+	params.Division, params.TimeMs = division, 0
+	if e.delayA.SetParams(params) != nil {
+		e.fault(18)
 	}
 }
 

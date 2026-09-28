@@ -2,6 +2,7 @@ package project
 
 import (
 	"fmt"
+	"math"
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/engine"
@@ -211,11 +212,97 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				}
 			}
 		}
+		cfg.Scenes[si].Settings = make([]engine.SceneSetting, 0, len(scene.Settings))
+		for _, setting := range scene.Settings {
+			resolved, err := ResolveParameterPath(p, setting.Path)
+			if err != nil {
+				return cfg, err
+			}
+			value, division, err := sceneSettingKernelValue(p, setting, resolved)
+			if err != nil {
+				return cfg, fmt.Errorf("scene %s path %s: %w", scene.ID, setting.Path, err)
+			}
+			cfg.Scenes[si].Settings = append(cfg.Scenes[si].Settings, engine.SceneSetting{Track: resolved.Track, ID: resolved.ID, Value: value, Division: division})
+		}
 	}
 	for i, entry := range p.Song {
 		cfg.Song[i] = engine.SongEntry{Scene: sceneIndex[entry.Scene], Bars: entry.Bars}
 	}
 	return cfg, nil
+}
+
+func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved ResolvedParam) (float32, fx.DelayDivision, error) {
+	value := setting.Value.projectValue()
+	if value.Unit == "enum" {
+		if value.Text == "off" && resolved.Descriptor.Off {
+			return float32(math.Inf(-1)), fx.FreeDelay, nil
+		}
+		if resolved.Descriptor.ID == "fx.delay.time" {
+			division, err := fx.ParseDelayDivision(value.Text)
+			if err != nil || division == fx.FreeDelay {
+				return 0, fx.FreeDelay, fmt.Errorf("CICADA-UNSUPPORTED: scene setting %s value %q has no engine representation", setting.Path, value.Text)
+			}
+			for _, effect := range p.Effects {
+				if effect.ID != resolved.Owner {
+					continue
+				}
+				params, err := DelayParamsFromValues(effect.Params)
+				if err != nil {
+					return 0, fx.FreeDelay, err
+				}
+				params.Division, params.TimeMs = division, 0
+				if err := params.ValidateTempo(int64(p.TempoMilli)); err != nil {
+					return 0, fx.FreeDelay, fmt.Errorf("CICADA-PARAM: scene setting %s value %q: %w", setting.Path, value.Text, err)
+				}
+				return 0, division, nil
+			}
+			return 0, fx.FreeDelay, fmt.Errorf("CICADA-REFERENCE: scene setting %s has no delay effect", setting.Path)
+		}
+		if resolved.Descriptor.Curve == "toggle" {
+			switch value.Text {
+			case "false":
+				return 0, fx.FreeDelay, nil
+			case "true":
+				return 1, fx.FreeDelay, nil
+			}
+		}
+		if value.Text == "auto" && resolved.Descriptor.ID == "fx.comp.makeup" {
+			for _, effect := range p.Effects {
+				if effect.ID == resolved.Owner {
+					return float32(automaticMakeup(effect.Params)), fx.FreeDelay, nil
+				}
+			}
+		}
+		return 0, fx.FreeDelay, fmt.Errorf("CICADA-UNSUPPORTED: scene setting %s value %q has no engine representation", setting.Path, value.Text)
+	}
+	if value.Number == nil {
+		return 0, fx.FreeDelay, fmt.Errorf("setting has no numeric value")
+	}
+	compiled, err := sceneSettingFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *value.Number)
+	if err != nil {
+		return 0, fx.FreeDelay, err
+	}
+	return compiled, fx.FreeDelay, nil
+}
+
+func sceneSettingFloat32Value(minimum, maximum, value float64) (float32, error) {
+	compiled := float32(value)
+	if float64(compiled) < minimum {
+		if value != minimum {
+			return 0, fmt.Errorf("value rounds outside float32 range %g..%g", minimum, maximum)
+		}
+		compiled = math.Nextafter32(compiled, float32(math.Inf(1)))
+	}
+	if float64(compiled) > maximum {
+		if value != maximum {
+			return 0, fmt.Errorf("value rounds outside float32 range %g..%g", minimum, maximum)
+		}
+		compiled = math.Nextafter32(compiled, float32(math.Inf(-1)))
+	}
+	if float64(compiled) < minimum || float64(compiled) > maximum {
+		return 0, fmt.Errorf("float32 boundary step is outside range %g..%g", minimum, maximum)
+	}
+	return compiled, nil
 }
 
 func kernelPattern(pattern Pattern) (seq.Pattern, error) {

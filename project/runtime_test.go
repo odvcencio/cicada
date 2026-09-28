@@ -3,6 +3,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/cmd"
@@ -71,5 +72,46 @@ func TestFirstAcidCompilesIntoLiveEngine(t *testing.T) {
 	}
 	if _, err := CompileEngine(project, 48_000, 128); err == nil {
 		t.Fatal("unsupported drum transpose was silently accepted")
+	}
+}
+
+func TestSceneSyncedDelayDivisionValidatesAndCompiles(t *testing.T) {
+	source := []byte("fx delay {}\ntrack bass acid {}\npattern riff acid { 1 }\nscene main { bass = riff delay.time = 1/8 }\nsong { main }\n")
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("source parse: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := FromScore(score)
+	if p == nil {
+		t.Fatalf("source validation: %+v", diagnostics)
+	}
+	if err := ValidateProject(p); err != nil {
+		t.Fatalf("semantic validation rejected a registered synced delay division: %v", err)
+	}
+	cfg, err := CompileEngine(p, 48_000, 128)
+	if err != nil {
+		t.Fatalf("validated synced delay division did not compile: %v", err)
+	}
+	if len(cfg.Scenes) != 1 || len(cfg.Scenes[0].Settings) != 1 || cfg.Scenes[0].Settings[0].Division.String() != "1/8" {
+		t.Fatalf("scene lost its synced delay division: %+v", cfg.Scenes)
+	}
+}
+
+func TestSceneSyncedDelayDivisionMustFitAtScoreTempo(t *testing.T) {
+	source := []byte("tempo 20\nfx delay {}\ntrack bass acid {}\npattern riff acid { 1 }\nscene main { bass = riff delay.time = 1/2 }\nsong { main }\n")
+	score, diagnostics := notation.Parse(source)
+	for _, diagnostic := range diagnostics {
+		if diagnostic.Severity == "error" {
+			t.Fatalf("source parse: %+v", diagnostic)
+		}
+	}
+	p, diagnostics := FromScore(score)
+	if p != nil {
+		t.Fatal("scene accepted a synced delay division longer than the four-second buffer")
+	}
+	if len(diagnostics) == 0 || diagnostics[len(diagnostics)-1].Code != "CICADA-PARAM" || !strings.Contains(diagnostics[len(diagnostics)-1].Message, "delay.time") || !strings.Contains(diagnostics[len(diagnostics)-1].Message, "1/2") {
+		t.Fatalf("oversized synced scene delay lacks its path, value, and diagnostic: %+v", diagnostics)
 	}
 }

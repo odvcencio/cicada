@@ -1,11 +1,90 @@
 package engine
 
 import (
+	"math"
 	"testing"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/acid"
 )
+
+func TestSceneSettingSwitchCarryAndSeekState(t *testing.T) {
+	newConfig := func() Config {
+		cfg := testConfig()
+		cfg.Tracks, cfg.MaxVoices = 1, 1
+		cfg.Track[0].Acid = acid.DefaultParams()
+		cfg.Scenes = []Scene{
+			{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 800}}},
+			{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}},
+			{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 1200}}},
+		}
+		cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
+		return cfg
+	}
+	newEngine := func() *Engine {
+		e, err := New(newConfig())
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.meterRate = 0
+		return e
+	}
+	advanceTo := func(e *Engine, sample int64) {
+		var left, right [128]float32
+		for e.transport.Sample() < sample {
+			count := int(min(int64(len(left)), sample-e.transport.Sample()))
+			e.Render(left[:count], right[:count])
+			if e.faulted {
+				t.Fatal("engine fault while advancing to scene boundary")
+			}
+		}
+	}
+
+	full := newEngine()
+	if !full.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		t.Fatal("song play rejected")
+	}
+	advanceTo(full, full.transport.Clock().SampleAtTick(seq.TicksPerBar))
+	if full.songIndex != 0 || full.voices[0].acidTarget.Cutoff != 800 {
+		t.Fatalf("scene one setting was applied before its switch: index=%d target=%g", full.songIndex, full.voices[0].acidTarget.Cutoff)
+	}
+	var left, right [1]float32
+	full.Render(left[:], right[:])
+	if full.songIndex != 1 || full.voices[0].acidTarget.Cutoff != 800 {
+		t.Fatalf("scene two did not carry the previous setting at the boundary: index=%d target=%g", full.songIndex, full.voices[0].acidTarget.Cutoff)
+	}
+	for full.transport.Sample() < full.transport.Clock().SampleAtTick(2*seq.TicksPerBar) {
+		var blockL, blockR [128]float32
+		count := int(min(int64(len(blockL)), full.transport.Clock().SampleAtTick(2*seq.TicksPerBar)-full.transport.Sample()))
+		full.Render(blockL[:count], blockR[:count])
+	}
+	if full.voices[0].acidTarget.Cutoff != 800 {
+		t.Fatalf("carried setting changed before the next scene switch: %g", full.voices[0].acidTarget.Cutoff)
+	}
+	full.Render(left[:], right[:])
+	var sawSameSampleSwitch bool
+	var message cmd.Message
+	for full.Poll(&message) {
+		if message.Kind == cmd.Fault {
+			t.Fatalf("scene setting fault %d", message.A)
+		}
+		sawSameSampleSwitch = sawSameSampleSwitch || message.Kind == cmd.Switched && message.A == 0 && message.Tick == 2*seq.TicksPerBar
+	}
+	if full.songIndex != 2 || full.voices[0].acidTarget.Cutoff != 1200 || full.voices[0].acid.Params().Cutoff <= 800 || !sawSameSampleSwitch {
+		t.Fatalf("scene switch setting did not land on the binding sample: index=%d target=%g current=%g switched=%v", full.songIndex, full.voices[0].acidTarget.Cutoff, full.voices[0].acid.Params().Cutoff, sawSameSampleSwitch)
+	}
+
+	jump := newEngine()
+	if !jump.PushBatch([]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: 2}, {Op: cmd.OpPlay, Track: 0xff}}) {
+		t.Fatal("play-from-block commands rejected")
+	}
+	jump.Render(left[:], right[:])
+	if jump.faulted || jump.songIndex != 2 || jump.voices[0].acidTarget.Cutoff != full.voices[0].acidTarget.Cutoff || math.Abs(jump.voices[0].acid.Params().Cutoff-full.voices[0].acid.Params().Cutoff) > 1e-6 {
+		t.Fatalf("play-from-block state differs: full=%g/%g jump=%g/%g", full.voices[0].acidTarget.Cutoff, full.voices[0].acid.Params().Cutoff, jump.voices[0].acidTarget.Cutoff, jump.voices[0].acid.Params().Cutoff)
+	}
+}
 
 func TestSongSceneLaunchKeepOffAndLiveOverride(t *testing.T) {
 	cfg := testConfig()

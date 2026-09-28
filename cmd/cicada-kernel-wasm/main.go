@@ -127,7 +127,7 @@ func initAudio(sampleRate, maxBlock, channels int32) int32 {
 		}
 		cfg.LoopSong = songLoop
 	}
-	created, err := engine.New(cfg)
+	created, err := engine.NewFromConfig(&cfg)
 	if err != nil {
 		return -1
 	}
