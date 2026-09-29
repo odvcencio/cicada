@@ -4,6 +4,7 @@ Start with one voice, one pattern, and one scene. Then add another part when
 you know what the first one should do.
 
 ```cicada
+cicada 2
 title "Night circuit"
 tempo 138
 key a minor
@@ -84,6 +85,7 @@ accepted; `cicada fix` changes it to `?70`.
 You can reuse a phrase and transpose a use:
 
 ```cicada
+cicada 2
 track bass acid {}
 phrase hook { 1^ . 1~ 5 }
 
@@ -133,6 +135,7 @@ output. Parameters and inputs carry types and units, so a frequency cannot
 silently be used where a time value is expected.
 
 ```cicada
+cicada 2
 instrument glassbass {
   octave = 2
   param cutoff = 720Hz
@@ -162,6 +165,7 @@ keeps that track's current pattern. `off` stops a track; `keep` is an explicit
 no-change action. A song plays scenes in order:
 
 ```cicada
+cicada 2
 track bass acid {}
 track drums drums {}
 pattern bassline acid { 1 . 3 . }
@@ -179,9 +183,12 @@ source; the [Studio chapter](studio.md) explains those controls.
 ## Keep score files clear
 
 Use `cicada fmt -w main.cicada` to write the canonical formatting. `cicada
-fix main.cicada --check` reports whether edition-1 migration is needed;
-`cicada fix main.cicada` applies a meaning-preserving rewrite. Both commands
-check that the score parses and compiles. The specification lists every
+fix main.cicada --check` reports whether legacy source spellings need
+rewriting, even when the manifest already selects edition 2. `cicada fix
+main.cicada` applies a meaning-preserving rewrite. If other edition-1 scores
+share the folder, `fix` lists them and refuses the single-file change; run
+`cicada fix --all` from the project folder to migrate them together. Both
+commands check that the score parses and compiles. The specification lists every
 [edition-1 spelling migration](../spec/semantic-model.md#cicada-fix-and-migrations).
 
 The public [`examples/`](../../examples/) directory has 55 scores, from

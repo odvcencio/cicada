@@ -1,0 +1,10 @@
+cicada fix <score.cicada> [--all] [--check]
+
+migrate legacy source spellings
+
+Flags:
+  --all       migrate every edition-1 score under the project folder together
+  --check     report required source or manifest changes without writing
+  --help      show this help
+
+With --all, the score path is optional; run the command from the project folder.

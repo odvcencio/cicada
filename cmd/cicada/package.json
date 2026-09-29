@@ -2,7 +2,7 @@
   "name": "cicada-studio-script-tests",
   "private": true,
   "scripts": {
-    "build": "node --check studio-audio.js && node --check studio-master.js && node --check studio-midi.js && node --check studio-live.js && node --check studio-audio.test.cjs && node --check studio-midi.test.cjs && node --check studio-master.test.cjs && node --check studio-send.test.cjs && node --check studio-waiting.test.cjs && node --check transport-order.test.cjs && node --check test-midi-virtual.cjs",
-    "test": "npm run build && node --test studio-audio.test.cjs studio-midi.test.cjs studio-master.test.cjs studio-send.test.cjs studio-waiting.test.cjs transport-order.test.cjs"
+    "build": "node --check studio-audio.js && node --check studio-history.js && node --check studio-master.js && node --check studio-midi.js && node --check studio-live.js && node --check studio-audio.test.cjs && node --check studio-history.test.cjs && node --check studio-midi.test.cjs && node --check studio-master.test.cjs && node --check studio-send.test.cjs && node --check studio-waiting.test.cjs && node --check transport-order.test.cjs && node --check test-midi-virtual.cjs",
+    "test": "npm run build && node --test studio-audio.test.cjs studio-history.test.cjs studio-midi.test.cjs studio-master.test.cjs studio-send.test.cjs studio-waiting.test.cjs transport-order.test.cjs"
   }
 }

@@ -128,14 +128,12 @@ func TestStudioUnchangedSourceSaveDoesNotRecordEdit(t *testing.T) {
 	if history.Code != http.StatusOK {
 		t.Fatalf("history: %d %s", history.Code, history.Body.String())
 	}
-	var state struct {
-		Events []studioHistoryEntry `json:"events"`
-	}
+	var state studioHistorySnapshot
 	if err := json.Unmarshal(history.Body.Bytes(), &state); err != nil {
 		t.Fatal(err)
 	}
-	if len(state.Events) != 1 || state.Events[0].Kind != "loaded" {
-		t.Fatalf("unchanged save added a history event: %+v", state.Events)
+	if len(state.Edits) != 0 {
+		t.Fatalf("unchanged save added a history edit: %+v", state.Edits)
 	}
 }
 
