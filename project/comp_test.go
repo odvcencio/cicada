@@ -11,7 +11,7 @@ import (
 )
 
 func TestCompressorBusProjectRoundTrip(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "examples", "fx", "compressor-bus.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", "fx", "compressor-bus.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}

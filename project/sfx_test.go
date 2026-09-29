@@ -11,7 +11,7 @@ import (
 )
 
 func TestSFXBusSourceProjectAndEngine(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "examples", "sfx-bus.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", "sfx-bus.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}

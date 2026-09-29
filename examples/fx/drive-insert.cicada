@@ -1,5 +1,3 @@
-cicada 1
-
 title "Drive insert"
 
 tempo 130
@@ -8,29 +6,29 @@ key a minor
 
 seed 4242
 
-fx drive {
+fx drive drive {
   shape = hard
-  gain = 18db
-  tone = 12khz
+  gain = 18dB
+  tone = 12kHz
   mix = 0.75
 }
 
 track bass acid {
-  cutoff = 620hz
+  cutoff = 620Hz
   reso = 0.62
   insert = drive
 }
 
 track beat drums {}
 
-pattern riff acid steps = 16 {
+pattern riff {
   1^ . 1~ 5 | . 1 7, . | 1^ . 3 . | 5^ . 1 .
 }
 
-pattern beat-a drums steps = 16 {
-  bd: X...x...X...x...;
-  sd: ....X.......X...;
-  ch: x.x.x.x.x.x.x.x.;
+pattern beat-a drums {
+  bd: X...x...X...x...
+  sd: ....X.......X...
+  ch: x.x.x.x.x.x.x.x.
 }
 
 scene main {

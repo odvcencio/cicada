@@ -94,7 +94,7 @@ func TestSlideIntoRestWarningFixture(t *testing.T) {
 }
 
 func TestAuthoredKitLowersAndLoads(t *testing.T) {
-	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	source, err := os.ReadFile("../testdata/edition1/examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestAuthoredKitLowersAndLoads(t *testing.T) {
 }
 
 func TestSemanticKitRejectsInvalidRouting(t *testing.T) {
-	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	source, err := os.ReadFile("../testdata/edition1/examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
