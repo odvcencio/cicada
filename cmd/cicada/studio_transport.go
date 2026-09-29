@@ -301,6 +301,8 @@ func (t *studioTransport) stop() {
 		t.stream.Close()
 		t.stream = nil
 	}
+	// A discarded stream has no muted tracks; do not report them as stopped.
+	t.stoppedTracks = nil
 }
 
 // returnToStart moves to bar 1. A playing transport keeps playing from the

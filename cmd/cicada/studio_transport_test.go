@@ -796,3 +796,29 @@ func TestErrorClearedWhenValidRevisionLands(t *testing.T) {
 		t.Fatalf("error was not cleared after valid revision landed: %q", snap.Error)
 	}
 }
+
+func TestStudioStopClearsStoppedTracksAndPauseKeepsPosition(t *testing.T) {
+	_, path := studioTestHandler(t)
+	transport := newStudioTransport(path)
+	transport.audioNull = true
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	defer transport.close()
+	if err := transport.stopTrack("bass"); err != nil {
+		t.Fatal(err)
+	}
+	if got := transport.snapshot().StoppedTracks; len(got) != 1 {
+		t.Fatalf("stopped tracks after stop-track = %v, want [bass]", got)
+	}
+	stream := transport.stream
+	transport.pause()
+	if transport.stream != stream || transport.snapshot().Playing {
+		t.Fatalf("pause must keep the stream and stop playing: same stream=%v playing=%v", transport.stream == stream, transport.snapshot().Playing)
+	}
+	transport.stop()
+	snapshot := transport.snapshot()
+	if len(snapshot.StoppedTracks) != 0 || snapshot.Bar != 1 || snapshot.Step != 1 || transport.stream != nil {
+		t.Fatalf("after Stop: stopped tracks %v, bar %d step %d, stream nil=%v", snapshot.StoppedTracks, snapshot.Bar, snapshot.Step, transport.stream == nil)
+	}
+}
