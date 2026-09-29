@@ -52,6 +52,35 @@ func TestLiveAcidAndDrumsRenderDeterministically(t *testing.T) {
 	}
 }
 
+func TestSlowConsumerKeepsLatestPlayheadWithoutFault(t *testing.T) {
+	e, err := New(testConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		t.Fatal("play command rejected")
+	}
+	var left, right [128]float32
+	for block := 0; block < 1200; block++ {
+		e.Render(left[:], right[:])
+	}
+	playheads := 0
+	var lastPlayhead cmd.Message
+	var message cmd.Message
+	for e.Poll(&message) {
+		if message.Kind == cmd.Fault {
+			t.Fatalf("unread Playhead messages faulted the engine: %+v", message)
+		}
+		if message.Kind == cmd.Playhead {
+			playheads++
+			lastPlayhead = message
+		}
+	}
+	if playheads != 1 || lastPlayhead.Tick == 0 {
+		t.Fatalf("slow consumer retained %d Playhead messages, last=%+v; want one latest position", playheads, lastPlayhead)
+	}
+}
+
 func TestFutureTickCommandIsSampleScheduled(t *testing.T) {
 	cfg := testConfig()
 	cfg.Tracks = 1

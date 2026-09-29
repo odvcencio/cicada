@@ -300,7 +300,27 @@ func TestAudioWASMABI(t *testing.T) {
 	if !native.PushBatch(patternBatch) {
 		t.Fatal("native pattern batch rejected")
 	}
+	for range 800 {
+		call("gosx_audio_render", 128)
+		native.Render(nativeL[:], nativeR[:])
+	}
 	memoryBytes := module.Memory().Size()
+	restartBatch := make([]cmd.Command, 0, len(patternBatch)+2)
+	restartBatch = append(restartBatch,
+		cmd.Command{Op: cmd.OpSeek, Track: 0xff},
+		cmd.Command{Op: cmd.OpPlay, Track: 0xff},
+	)
+	restartBatch = append(restartBatch, patternBatch...)
+	for i, c := range restartBatch {
+		record, err := cmd.EncodeCommand(c, 2)
+		if err != nil || !module.Memory().Write(command+uint32(i*cmd.CommandSize), record[:]) {
+			t.Fatalf("write warmup replay command %d: %v", i, err)
+		}
+	}
+	call("gosx_audio_cmd_commit", uint64(len(restartBatch)))
+	if !native.PushBatch(restartBatch) {
+		t.Fatal("native warmup replay batch rejected")
+	}
 	for range 800 {
 		call("gosx_audio_render", 128)
 		native.Render(nativeL[:], nativeR[:])

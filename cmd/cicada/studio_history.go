@@ -482,3 +482,12 @@ func (s *studio) commitSourceLocked(w http.ResponseWriter, edit studioEdit, curr
 	}
 	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(updated), "valid": true, "source": string(updated), "preserved": preserved})
 }
+
+//go:embed studio-workspace.js
+var studioWorkspaceScript []byte
+
+func (s *studio) workspaceScript(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache")
+	_, _ = w.Write(studioWorkspaceScript)
+}
