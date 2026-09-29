@@ -694,7 +694,12 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
         original = payload.source;
         document.body.dataset.revision = result.revision;
       }
-      if (dirty()) { setStatus('Saved. New source edits are still open.', 'success'); return true; }
+      if (dirty()) {
+        // Refresh the projection to the saved score; refreshProjection keeps the open draft.
+        await refreshProjection({revision: result.revision}).catch(() => {});
+        setStatus('Saved. New source edits are still open.', 'success');
+        return true;
+      }
       await refreshProjection({revision: result.revision});
       if (path === '/api/source') showEditor(false);
       setStatus('Saved', 'success');
@@ -871,7 +876,8 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     bindSong();
     initGrids();
     const nextRevision = next.body.dataset.revision || hint.revision || state.revision;
-    if (nextRevision) document.body.dataset.revision = nextRevision;
+    // With an open draft, keep the revision the draft was written against, so saving it still hits the conflict guard.
+    if (nextRevision && !dirty()) document.body.dataset.revision = nextRevision;
     if (!dirty()) { original = state.source ?? hint.source ?? original; editor.value = original; }
     for (const [node, top] of scrolls) node.scrollTop = top;
     if (key) {
