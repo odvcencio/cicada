@@ -450,7 +450,7 @@ func TestStudioTransportQueuesFileEditsOnNativeBar(t *testing.T) {
 	if !transport.snapshot().Pending {
 		t.Fatal("validated file edit was not queued")
 	}
-	if events := transport.history.snapshot(); len(events) != 2 || events[0].Kind != "queued" {
+	if events := transport.history.snapshot(); len(events) != 1 || events[0].Kind != "queued" {
 		t.Fatalf("queue missing from history: %+v", events)
 	}
 	if _, err := io.CopyN(io.Discard, stream, 96_000*8+1); err != nil {
@@ -465,7 +465,7 @@ func TestStudioTransportQueuesFileEditsOnNativeBar(t *testing.T) {
 	default:
 		t.Fatal("edit did not land at next bar")
 	}
-	if events := transport.history.snapshot(); len(events) != 3 || events[0].Kind != "landed" || events[0].Bar != 2 {
+	if events := transport.history.snapshot(); len(events) != 2 || events[0].Kind != "landed" || events[0].Bar != 2 {
 		t.Fatalf("landing missing from history: %+v", events)
 	}
 	if position := stream.Position(); position.Bar != 2 {
@@ -550,7 +550,7 @@ func TestStudioSceneLaunchUsesNativeTransport(t *testing.T) {
 	if state.PendingScene != "" || state.Scene != "main" || state.Landed != 2 {
 		t.Fatalf("landed scene state: %+v", state)
 	}
-	if events := transport.history.snapshot(); len(events) != 3 || events[0].Kind != "landed" {
+	if events := transport.history.snapshot(); len(events) != 2 || events[0].Kind != "landed" {
 		t.Fatalf("scene launch history: %+v", events)
 	}
 	response = httptest.NewRecorder()

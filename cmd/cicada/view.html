@@ -192,16 +192,26 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .signal-chip.name { color:var(--amber); background:#393220; border-color:#675735; }
 .signal-chip.literal { color:#ccb1ff; background:#30283f; border-color:#59476d; }
 .signal-children { margin:5px 0 7px 12px; padding-left:11px; border-left:1px solid #5b8064; }
-.history-list { display:grid; gap:12px; }
-.history-group { border:1px solid var(--border); border-radius:13px; background:var(--panel); overflow:hidden; }
-.history-group h3 { margin:0; padding:9px 14px; background:var(--panel-raised); color:var(--amber); font-size:.76rem; text-transform:uppercase; letter-spacing:.1em; }
-.history-row { display:grid; grid-template-columns:minmax(70px,auto) 1fr auto; align-items:baseline; gap:8px 14px; padding:9px 14px; border-top:1px solid #304037; font-size:.8rem; }
-.history-kind { color:var(--mint); font:700 .7rem ui-monospace,SFMono-Regular,Consolas,monospace; text-transform:uppercase; }
-.history-row[data-kind="landed"] .history-kind { color:var(--amber); }
-.history-row[data-kind="external"] .history-kind { color:var(--coral); }
-.history-detail { min-width:0; overflow-wrap:anywhere; }
+.history-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px 14px; margin:0 0 12px; }
+.history-toolbar button,.history-row button { border:1px solid #596d5c; border-radius:7px; background:#253529; color:var(--text); padding:7px 11px; font:700 .75rem/1.2 system-ui,sans-serif; cursor:pointer; }
+.history-toolbar button:disabled { opacity:.5; cursor:not-allowed; }
+.history-toolbar label { display:flex; align-items:center; gap:7px; color:var(--muted); font-size:.78rem; }
+.history-list { display:grid; gap:9px; }
+.history-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px 14px; padding:11px 14px; border:1px solid var(--border); border-radius:10px; background:var(--panel); font-size:.8rem; }
+.history-entry-heading { display:flex; align-items:baseline; flex-wrap:wrap; gap:7px 14px; min-width:0; }
+.history-label { overflow-wrap:anywhere; }
 .history-time { color:var(--muted); font-size:.72rem; font-variant-numeric:tabular-nums; }
-@media (max-width:640px) { .history-row { grid-template-columns:70px 1fr; } .history-time { grid-column:2; } }
+.history-revisions { grid-column:1; color:var(--muted); font:11px ui-monospace,SFMono-Regular,Consolas,monospace; }
+.history-diff { grid-column:1 / -1; min-width:0; }
+.history-diff summary { color:var(--mint); cursor:pointer; font-size:.75rem; }
+.history-diff pre { max-height:300px; overflow:auto; margin:8px 0 2px; padding:11px; border-radius:7px; background:#111915; color:#c8dbc8; font:12px/1.55 ui-monospace,SFMono-Regular,Consolas,monospace; white-space:pre; }
+.history-row button { grid-column:2; grid-row:1 / span 2; }
+.history-transport-heading { margin:14px 0 0; color:var(--amber); font-size:.78rem; }
+.history-transport-event { display:grid; grid-template-columns:75px minmax(0,1fr) auto; align-items:baseline; gap:8px 14px; padding:8px 12px; border-top:1px solid #304037; font-size:.78rem; }
+.history-kind { color:var(--mint); font:700 .7rem ui-monospace,SFMono-Regular,Consolas,monospace; text-transform:uppercase; }
+.history-detail { min-width:0; overflow-wrap:anywhere; }
+.history-empty { margin:5px 0; color:var(--muted); font-size:.82rem; }
+@media (max-width:640px) { .history-transport-event { grid-template-columns:70px 1fr; } .history-transport-event .history-time { grid-column:2; } }
 .master-view { display:grid; gap:16px; }
 .master-view > p { margin:0; color:var(--muted); }
 .audio-io-panel { display:grid; gap:12px; border:1px solid var(--border); border-radius:12px; background:var(--panel); padding:15px; }
@@ -512,9 +522,14 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
       {{if .Scenes}}<div class="scene-pads" role="group" aria-label="Scenes">{{range .Scenes}}<span class="scene-pad">{{.ID}}</span>{{end}}</div>{{end}}
       <div class="song">{{range .Song}}<div class="song-block" style="--bars:{{.Bars}}"><strong>{{.Scene}}</strong><span>{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}} · bars {{.StartBar}}–{{.EndBar}}</span></div>{{end}}</div>
     </section>{{end}}
-    {{if .Studio}}<section id="history" aria-labelledby="history-heading">
+    {{if .Studio}}<section id="history" aria-labelledby="history-heading" data-studio-history>
       <h2 id="history-heading">History</h2>
-      <p class="section-note">Edits in this Studio session, grouped by transport bar. The score file and Git keep the durable history.</p>
+      <p class="section-note">Source edits in this Studio session. Expand an edit to inspect its diff or revert it.</p>
+      <div class="history-toolbar" role="group" aria-label="History actions">
+        <button type="button" id="history-undo" disabled>Undo</button>
+        <button type="button" id="history-redo" disabled>Redo</button>
+        <label for="history-show-transport"><input type="checkbox" id="history-show-transport">Show transport events</label>
+      </div>
       <div class="history-list" id="history-list" aria-live="polite"></div>
     </section>{{end}}
     <section id="voice" aria-labelledby="voice-heading">
@@ -537,7 +552,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   </div>
 </main>
 <footer>{{if .Studio}}Cicada Studio · source-linked projection of the validated project{{else}}Cicada score view · deterministic export from the validated project model{{end}}</footer>
-{{if .Studio}}<script src="/studio-audio.js"></script><script src="/audio/cicada-client.js"></script><script>
+{{if .Studio}}<script src="/studio-history.js"></script><script src="/studio-audio.js"></script><script src="/audio/cicada-client.js"></script><script>
 (() => {
   const status = document.getElementById('studio-status');
   const editor = document.getElementById('source-editor');
@@ -900,40 +915,23 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     socket.onclose = () => setTimeout(connectTransport, 1000);
   }
   connectTransport();
-  let lastHistorySeq = -1;
-  async function loadHistory() {
+  window.addEventListener('cicada:historybeforechange', event => {
+    if (dirty()) {
+      setStatus('Save or discard source edits before changing history', 'error');
+      event.preventDefault();
+    }
+  });
+  window.addEventListener('cicada:sourcewritten', async event => {
+    const result = event.detail;
+    if (!result?.revision || dirty()) return;
     try {
-      const response = await fetch('/api/history', {cache:'no-store'});
-      if (!response.ok) return;
-      const data = await response.json();
-      const events = data.events || [];
-      const newest = events.length ? events[0].seq : 0;
-      if (newest === lastHistorySeq) return;
-      lastHistorySeq = newest;
-      const groups = new Map();
-      for (const entry of events) {
-        const key = entry.bar > 0 ? `Bar ${entry.bar}` : 'Before playback';
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(entry);
-      }
-      const cards = [];
-      for (const [label, entries] of groups) {
-        const card = document.createElement('div'); card.className = 'history-group';
-        const heading = document.createElement('h3'); heading.textContent = label; card.append(heading);
-        for (const entry of entries) {
-          const row = document.createElement('div'); row.className = 'history-row'; row.dataset.kind = entry.kind;
-          const kind = document.createElement('span'); kind.className = 'history-kind'; kind.textContent = entry.kind;
-          const detail = document.createElement('span'); detail.className = 'history-detail'; detail.textContent = entry.detail;
-          const time = document.createElement('time'); time.className = 'history-time'; time.dateTime = entry.at; time.textContent = new Date(entry.at).toLocaleTimeString();
-          row.append(kind, detail, time); card.append(row);
-        }
-        cards.push(card);
-      }
-      historyList.replaceChildren(...cards);
-    } catch { /* The file and transport remain usable if history polling is interrupted. */ }
-  }
-  loadHistory();
-  setInterval(loadHistory, 1500);
+      await refreshProjection();
+      original = result.source || original;
+      editor.value = original;
+      document.body.dataset.revision = result.revision;
+      setStatus('History edit applied', 'success');
+    } catch { setStatus('History changed; refresh the projection to see every source view update', 'error'); }
+  });
   setInterval(async () => {
     if (busy) return;
     try {

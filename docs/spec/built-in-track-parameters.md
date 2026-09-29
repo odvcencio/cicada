@@ -8,7 +8,7 @@ This page lists source parameters for the built-in acid and drum voices. For typ
 
 **Syntax (EBNF):** A <code>param_decl</code> is inside <code>track_decl</code>. Acid fields use their field name, such as <code>cutoff</code>; drum fields use a lane prefix, such as <code>bd_tune</code>.
 
-**Meaning:** The selected voice validates the names, types, and ranges before compilation. Mixer fields are documented in [Current mixer](edition-1.md#current-mixer) and are not part of the voice parameter list.
+**Meaning:** The selected voice validates the names, types, and ranges before compilation. Mixer fields are documented in [Track mixer settings](edition-1.md#track-mixer-settings) and are not part of the voice parameter list.
 
 **Types and units:** Unit names in the tables describe the source value. Unitless oscillator controls and ratios have no suffix. Time values use milliseconds; frequencies use Hz; levels use dB. Switches accept <code>on</code>/<code>off</code>; <code>true</code>/<code>false</code> remain aliases.
 
@@ -19,6 +19,7 @@ This page lists source parameters for the built-in acid and drum voices. For typ
 **Example:**
 
 ```cicada
+cicada 2
 track bass acid { cutoff = 720Hz reso = 0.65 decay = 500ms }
 pattern pulse acid { 1^ . 5 . }
 scene main { bass = pulse }
@@ -72,6 +73,7 @@ Prefix a drum parameter with the lane name. For example, <code>bd_tune</code> se
 <code>sd_tune</code>, <code>sd_tone</code>, <code>sd_mix</code>, <code>ch_tune</code>, <code>oh_tune</code>, tom tune, <code>cb_tune</code>, <code>cy_tune</code>, and <code>cy_tone</code> are unitless ratios. <code>sweep</code>, <code>click</code>, <code>drive</code>, and <code>mix</code> are unitless controls from 0 to 1 unless a narrower range is listed. The tom tune bounds are 2 to the power of −7/12 through +7/12.
 
 ```cicada
+cicada 2
 track kit drums { bd_tune = 55Hz bd_decay = 400ms ch_tone = 7500Hz }
 pattern beat drums {
   bd: X...x...
@@ -80,4 +82,3 @@ pattern beat drums {
 scene main { kit = beat }
 song { main*4 }
 ```
-
