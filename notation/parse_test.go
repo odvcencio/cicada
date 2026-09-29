@@ -10,7 +10,7 @@ import (
 )
 
 func TestFirstAcidScore(t *testing.T) {
-	src, err := os.ReadFile("../examples/first-acid.cicada")
+	src, err := os.ReadFile("../testdata/edition1/examples/first-acid.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -317,7 +317,7 @@ func TestAllDrumLanesParse(t *testing.T) {
 }
 
 func TestAuthoredKitKeepsBindingsAndParses(t *testing.T) {
-	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	source, err := os.ReadFile("../testdata/edition1/examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -350,7 +350,7 @@ func TestAuthoredKitKeepsBindingsAndParses(t *testing.T) {
 }
 
 func TestAuthoredKitRejectsInvalidBindings(t *testing.T) {
-	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	source, err := os.ReadFile("../testdata/edition1/examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}

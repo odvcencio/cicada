@@ -1,21 +1,20 @@
-cicada 1
-
 instrument kick {
+  octave = 2
   voice mono {
-    out = sine(pitch) * env(gate, 120ms);
+    out = sine(pitch) * env(gate, 120ms)
   }
 }
 
 kit steel {
-  bd = kick;
-  ch = builtin.ch;
+  bd = kick
+  ch = builtin.ch
 }
 
 track drums steel {}
 
-pattern beat drums steps = 4 {
-  bd: x...;
-  ch: ..x.;
+pattern beat drums {
+  bd: x...
+  ch: ..x.
 }
 
 scene main {

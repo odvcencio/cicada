@@ -74,7 +74,7 @@ func TestFixNamedMixerMigrationIsTypedAndPCMExact(t *testing.T) {
 		name string
 		path string
 	}
-	err := filepath.WalkDir(filepath.Join(root, "examples"), func(path string, entry os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir(filepath.Join(root, "testdata", "edition1", "examples"), func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

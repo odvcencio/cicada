@@ -10,7 +10,7 @@ import (
 )
 
 func TestDriveInsertChangesBassButKeepsDryTrackAligned(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "examples", "fx", "drive-insert.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", "fx", "drive-insert.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}

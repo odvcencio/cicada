@@ -16,7 +16,7 @@ import (
 func TestStemsSinglePassBusEquationsAndMasterAlignment(t *testing.T) {
 	for _, example := range []string{"sfx-bus.cicada", filepath.Join("fx", "drive-insert.cicada")} {
 		t.Run(example, func(t *testing.T) {
-			source, err := os.ReadFile(filepath.Join("..", "examples", example))
+			source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", example))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -74,7 +74,7 @@ func TestStemsSinglePassBusEquationsAndMasterAlignment(t *testing.T) {
 }
 
 func TestVerifyStemsDetectsBrokenBusSum(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "examples", "sfx-bus.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", "sfx-bus.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestStemsBarRangeMatchesFullRender(t *testing.T) {
 }
 
 func TestStemsBarRangeWithDriveAlignment(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "examples", "fx", "drive-insert.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", "fx", "drive-insert.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}

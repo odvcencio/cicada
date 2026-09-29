@@ -1,0 +1,34 @@
+cicada 1
+
+title "Generated phrase"
+
+tempo 130
+
+key a minor
+
+seed 9
+
+track bass acid {}
+
+pattern bass-a acid steps = 16 swing = 54 gate = 55 {
+  1^ 1 7, . 5^ . 1' . 7^ . 1~ 5~ 1 . 1 1
+}
+
+pattern bass-b acid steps = 16 swing = 54 gate = 55 {
+  1^ - 7, . 5^ . 1' . 7^ . 1^~ 5~ 1 . 1 1
+}
+
+scene a {
+  bass = bass-a
+}
+
+scene b {
+  bass = bass-b
+}
+
+song {
+  a
+  a
+  b
+  a
+}

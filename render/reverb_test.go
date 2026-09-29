@@ -10,7 +10,7 @@ import (
 )
 
 func TestReverbSendChangesWAVDeterministically(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "examples", "fx-bus.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", "fx-bus.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}
