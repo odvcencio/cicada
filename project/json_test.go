@@ -54,7 +54,7 @@ func TestFirstAcidCanonicalJSON(t *testing.T) {
 
 func TestProject1ExampleJSONRoundTripsStayByteStable(t *testing.T) {
 	count := 0
-	err := filepath.WalkDir("../examples", func(path string, entry os.DirEntry, walkErr error) error {
+	err := filepath.WalkDir("../testdata/edition1/examples", func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}

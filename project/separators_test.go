@@ -9,7 +9,7 @@ import (
 )
 
 func TestSeparatorFreeKitAndInstrumentMatchLegacySource(t *testing.T) {
-	legacy, err := os.ReadFile("../examples/authored-kit.cicada")
+	legacy, err := os.ReadFile("../testdata/edition1/examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
