@@ -1,5 +1,3 @@
-cicada 1
-
 title "Delay send"
 
 tempo 120
@@ -8,29 +6,29 @@ key a minor
 
 seed 4242
 
-fx delay {
+fx delay delay {
   time = 1/8T
   feedback = 0.4
-  damp = 6khz
+  damp = 6kHz
   pingpong = true
   width = 1
   mix = 1
 }
 
 track bass acid {
-  cutoff = 620hz
-  send_a = 0.4
+  cutoff = 620Hz
+  send delay = 0.4
 }
 
 track beat drums {}
 
-pattern riff acid steps = 16 {
+pattern riff {
   1 . . . | 5 . . . | 1 . . . | 3 . . .
 }
 
-pattern beat-a drums steps = 16 {
-  bd: X...x...X...x...;
-  sd: ....X.......X...;
+pattern beat-a drums {
+  bd: X...x...X...x...
+  sd: ....X.......X...
 }
 
 scene main {

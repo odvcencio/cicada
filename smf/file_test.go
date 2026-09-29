@@ -14,7 +14,7 @@ import (
 
 func firstAcidProject(t *testing.T) *project.Project {
 	t.Helper()
-	source, err := os.ReadFile(filepath.Join("..", "examples", "first-acid.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", "first-acid.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}

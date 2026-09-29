@@ -8,7 +8,7 @@ import (
 )
 
 func TestGlassbassGraph(t *testing.T) {
-	src, err := os.ReadFile("../examples/first-acid.cicada")
+	src, err := os.ReadFile("../testdata/edition1/examples/first-acid.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}

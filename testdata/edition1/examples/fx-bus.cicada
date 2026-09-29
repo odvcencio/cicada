@@ -1,0 +1,64 @@
+cicada 1
+
+title "FX bus"
+
+tempo 120
+
+key a minor
+
+seed 4242
+
+fx drive {
+  shape = soft
+  gain = 9db
+  tone = 9khz
+  mix = 0.7
+}
+
+fx delay {
+  time = 1/8T
+  feedback = 0.35
+  damp = 6khz
+  pingpong = true
+  width = 1
+  mix = 1
+}
+
+fx reverb {
+  size = 1
+  decay = 2.4s
+  damp = 8khz
+  highpass = 120hz
+  predelay = 25ms
+  mix = 1
+}
+
+track bass acid {
+  cutoff = 620hz
+  insert = drive
+  send_a = 0.3
+  send_b = 0.35
+}
+
+track beat drums {
+  send_b = 0.2
+}
+
+pattern riff acid steps = 16 {
+  1 . . . | 5 . . . | 1 . . . | 3 . . .
+}
+
+pattern beat-a drums steps = 16 {
+  bd: X...x...X...x...;
+  sd: ....X.......X...;
+  ch: x.x.x.x.x.x.x.x.;
+}
+
+scene main {
+  bass = riff
+  beat = beat-a
+}
+
+song {
+  main*4
+}
