@@ -653,8 +653,8 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
         const state = await stateResponse.json();
         if (state.valid) {
           document.body.dataset.revision = state.revision;
-          original = state.source;
-          editor.value = state.source;
+          // Keep text typed since the save was sent; only replace a clean editor.
+          if (!dirty()) { original = state.source; editor.value = state.source; }
           if (window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(state.revision);
           await refreshProjection();
           setStatus(window.cicadaBrowserAudio.context && browserPlaying ? 'Saved; browser score queued for the next bar' : 'Saved to score file', 'success');
@@ -807,8 +807,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     if (!nextProjection || !nextSource || !nextEditor) throw new Error('Studio projection is incomplete');
     document.querySelector('.projection').replaceWith(nextProjection);
     sourceView.innerHTML = nextSource.innerHTML;
-    original = nextEditor.value;
-    editor.value = original;
+    if (!dirty()) { original = nextEditor.value; editor.value = original; }
     document.body.dataset.revision = html.body.dataset.revision;
     bindProjectionControls();
   }
