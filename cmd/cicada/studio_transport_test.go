@@ -811,6 +811,9 @@ func TestStudioStopClearsStoppedTracksAndPauseKeepsPosition(t *testing.T) {
 	if got := transport.snapshot().StoppedTracks; len(got) != 1 {
 		t.Fatalf("stopped tracks after stop-track = %v, want [bass]", got)
 	}
+	transport.mu.Lock()
+	transport.scene, transport.activeSlots = "main", map[string]string{"bass": "pulse"}
+	transport.mu.Unlock()
 	stream := transport.stream
 	transport.pause()
 	if transport.stream != stream || transport.snapshot().Playing {
@@ -818,6 +821,9 @@ func TestStudioStopClearsStoppedTracksAndPauseKeepsPosition(t *testing.T) {
 	}
 	transport.stop()
 	snapshot := transport.snapshot()
+	if len(snapshot.ActiveSlots) != 0 || snapshot.Scene != "" {
+		t.Fatalf("after Stop: active slots %v, scene %q, want none", snapshot.ActiveSlots, snapshot.Scene)
+	}
 	if len(snapshot.StoppedTracks) != 0 || snapshot.Bar != 1 || snapshot.Step != 1 || transport.stream != nil {
 		t.Fatalf("after Stop: stopped tracks %v, bar %d step %d, stream nil=%v", snapshot.StoppedTracks, snapshot.Bar, snapshot.Step, transport.stream == nil)
 	}

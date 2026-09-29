@@ -303,6 +303,10 @@ func (t *studioTransport) stop() {
 	}
 	// A discarded stream has no muted tracks; do not report them as stopped.
 	t.stoppedTracks = nil
+	t.activeSlots = nil
+	t.scene = ""
+	t.pending = false
+	t.landed = 0
 }
 
 // returnToStart moves to bar 1. A playing transport keeps playing from the
