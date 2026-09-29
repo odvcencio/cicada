@@ -64,6 +64,34 @@ func TestStudioTransportSocketAndIdleCommand(t *testing.T) {
 	}
 }
 
+func TestStudioBrowserAudioStatusReportsActiveEngine(t *testing.T) {
+	handler, _ := studioTestHandler(t)
+	setStatus := studioCall(t, handler, "/api/transport/browser-audio", map[string]any{"playing": true, "sampleRate": 48000})
+	if setStatus.Code != http.StatusOK {
+		t.Fatalf("set browser audio status: %d %s", setStatus.Code, setStatus.Body.String())
+	}
+	var posted transportSnapshot
+	if err := json.Unmarshal(setStatus.Body.Bytes(), &posted); err != nil {
+		t.Fatal(err)
+	}
+	if posted.ActiveBackend != "browser · AudioWorklet · 48k" || !posted.BrowserPlaying {
+		t.Fatalf("browser transport status = %+v", posted)
+	}
+	var fetched transportSnapshot
+	state := studioCall(t, handler, "/api/transport", nil)
+	if state.Code != http.StatusOK || json.Unmarshal(state.Body.Bytes(), &fetched) != nil || fetched.ActiveBackend != posted.ActiveBackend {
+		t.Fatalf("GET /api/transport did not retain browser engine state: %d %s", state.Code, state.Body.String())
+	}
+	clearStatus := studioCall(t, handler, "/api/transport/browser-audio", map[string]any{"playing": false, "sampleRate": 48000})
+	if clearStatus.Code != http.StatusOK || strings.Contains(clearStatus.Body.String(), `"activeBackend":"browser`) {
+		t.Fatalf("stop browser audio status: %d %s", clearStatus.Code, clearStatus.Body.String())
+	}
+	invalid := studioCall(t, handler, "/api/transport/browser-audio", map[string]any{"playing": true, "sampleRate": 0})
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid browser sample rate accepted: %d %s", invalid.Code, invalid.Body.String())
+	}
+}
+
 func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 	handler, _ := studioTestHandler(t)
 	response := studioCall(t, handler, "/api/params", nil)
