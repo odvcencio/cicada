@@ -85,12 +85,14 @@ type viewSongEntry struct {
 }
 
 type viewScene struct {
-	ID string
+	ID    string
+	Index int
 }
 
 type viewSceneCell struct {
 	Scene, Track, Pattern, Label string
 	Launchable                   bool
+	TrackIndex, SlotIndex        int
 }
 
 type viewSceneRow struct {
@@ -252,10 +254,10 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 		view.Song = append(view.Song, viewSongEntry{Scene: entry.Scene, Bars: entry.Bars, Index: index, StartBar: bar, EndBar: end})
 		bar = end + 1
 	}
-	for _, scene := range p.Scenes {
-		view.Scenes = append(view.Scenes, viewScene{ID: scene.ID})
+	for sceneIndex, scene := range p.Scenes {
+		view.Scenes = append(view.Scenes, viewScene{ID: scene.ID, Index: sceneIndex})
 	}
-	for _, track := range p.Tracks {
+	for trackIndex, track := range p.Tracks {
 		row := viewSceneRow{Track: track.ID, Cells: make([]viewSceneCell, 0, len(p.Scenes))}
 		for _, scene := range p.Scenes {
 			binding := scene.Bindings[track.ID]
@@ -266,7 +268,14 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 			if label == "off" {
 				label = "stop"
 			}
-			row.Cells = append(row.Cells, viewSceneCell{Scene: scene.ID, Track: track.ID, Pattern: binding, Label: label, Launchable: binding != "keep" && binding != "off"})
+			slotIndex := -1
+			for index, pattern := range track.Slots {
+				if pattern != nil && *pattern == binding {
+					slotIndex = index
+					break
+				}
+			}
+			row.Cells = append(row.Cells, viewSceneCell{Scene: scene.ID, Track: track.ID, Pattern: binding, Label: label, Launchable: binding != "keep" && binding != "off", TrackIndex: trackIndex, SlotIndex: slotIndex})
 		}
 		view.SceneRows = append(view.SceneRows, row)
 	}
