@@ -164,7 +164,8 @@ func TestConductorCommandsValidate(t *testing.T) {
 		valid  bool
 	}{
 		{"layers minimum threshold and default release", 4, Command{Op: OpSetLayers, Track: 255, Index: 0, Arg0: 0x00030201}, true},
-		{"layers all thresholds and release max", 16, Command{Op: OpSetLayers, Track: 255, Index: 15, Arg0: 0xffc08040, Arg1: 16}, true},
+		{"layers three thresholds and release max", 16, Command{Op: OpSetLayers, Track: 255, Index: 15, Arg0: 0x00c08040, Arg1: 16}, true},
+		{"layers four thresholds rejected", 16, Command{Op: OpSetLayers, Track: 255, Index: 15, Arg0: 0xffc08040, Arg1: 16}, false},
 		{"layers macro out of range", 4, Command{Op: OpSetLayers, Track: 255, Index: 16, Arg0: 0x00030201}, false},
 		{"layers thresholds not ascending", 4, Command{Op: OpSetLayers, Track: 255, Arg0: 0x00030202}, false},
 		{"layers release out of range", 4, Command{Op: OpSetLayers, Track: 255, Arg0: 0x00030201, Arg1: 17}, false},

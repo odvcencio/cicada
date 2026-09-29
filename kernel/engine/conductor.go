@@ -11,6 +11,28 @@ func (e *Engine) applyLayerMask(mask uint32) {
 	e.layerMask = mask
 }
 
+// macroLayerMask combines every configured macro layer table: a track sounds
+// only when every configured macro allows it. The bool is false when no macro
+// layer table is active, so authored layer masks stay in charge.
+func (e *Engine) macroLayerMask() (uint32, bool) {
+	mask, active := uint32(1)<<e.tracks-1, false
+	for id := range e.macroLayerEnabled {
+		if e.macroLayerEnabled[id] && e.macroLayerInitialized[id] {
+			mask &= e.macroLayerMasks[id][e.macroLayerLevel[id]]
+			active = true
+		}
+	}
+	return mask, active
+}
+
+// reapplyMacroLayers restores the combined macro mask after something else,
+// such as a seek or a scene reconstruction, put the authored mask back.
+func (e *Engine) reapplyMacroLayers() {
+	if mask, active := e.macroLayerMask(); active {
+		e.applyLayerMask(mask)
+	}
+}
+
 // processBarBoundary runs after same-tick commands so scene launches and
 // conductor changes share the transport's exact bar-line ordering.
 func (e *Engine) processBarBoundary() {
@@ -28,6 +50,7 @@ func (e *Engine) processBarBoundary() {
 		e.emit(cmd.Message{Kind: cmd.Bar, B: bar, Tick: tick})
 	}
 
+	var changed [16]bool
 	for id := range e.macroLayerEnabled {
 		if !e.macroLayerEnabled[id] {
 			continue
@@ -59,13 +82,20 @@ func (e *Engine) processBarBoundary() {
 		}
 		if level != e.macroLayerLevel[id] {
 			e.macroLayerLevel[id] = level
-			mask := e.macroLayerMasks[id][level]
-			e.applyLayerMask(mask)
-			e.emit(cmd.Message{Kind: cmd.LayerChanged, A: uint16(level), B: mask, Tick: tick})
-		} else if !e.macroLayerInitialized[id] {
-			e.applyLayerMask(e.macroLayerMasks[id][level])
+			changed[id] = true
 		}
 		e.macroLayerInitialized[id] = true
+	}
+
+	// Apply the combined mask once per bar, even when no level changed, so a seek or a
+	// scene reconstruction cannot leave the authored mask in place.
+	if mask, active := e.macroLayerMask(); active {
+		e.applyLayerMask(mask)
+		for id, was := range changed {
+			if was {
+				e.emit(cmd.Message{Kind: cmd.LayerChanged, Track: uint8(id), A: uint16(e.macroLayerLevel[id]), B: mask, Tick: tick})
+			}
+		}
 	}
 
 	if e.phraseBars != 0 && completedBars > 0 &&

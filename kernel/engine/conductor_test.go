@@ -5,8 +5,10 @@ import (
 	"reflect"
 	"testing"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/acid"
 )
 
 func conductorTestEngine(t *testing.T, tracks int, phraseBars uint32) *Engine {
@@ -227,5 +229,82 @@ func TestBarEventsStayOffUntilLiveControlIsUsed(t *testing.T) {
 		if message.Kind == cmd.Bar || message.Kind == cmd.PhraseEnd || message.Kind == cmd.MacroReached {
 			t.Fatalf("live-control message %d was emitted without a live-control op", message.Kind)
 		}
+	}
+}
+
+func setLayerTable(t *testing.T, e *Engine, id uint16, threshold uint32, level0, level1 uint32) {
+	t.Helper()
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpDefineMacro, Track: 255, Index: id})
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetLayers, Track: 255, Index: id, Arg0: threshold})
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetLayerMasks, Track: 255, Index: id, Arg0: level0&0xffff | level1<<16, Arg1: level1&0xffff | level1<<16})
+}
+
+// Two macros with layer tables never overwrite each other: a track sounds only when
+// every configured macro allows it, and the same combined mask is applied once per bar.
+func TestMacroLayerMasksCombineAcrossMacros(t *testing.T) {
+	e, err := New(Config{SampleRate: 48_000, MaxBlock: 256, Tracks: 4, MaxVoices: 4, BPMMilli: 120_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	setLayerTable(t, e, 0, 0x80, 0b0111, 0b1111)
+	setLayerTable(t, e, 1, 0x80, 0b1101, 0b1111)
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpPlay, Track: 255})
+	var left, right [1]float32
+	e.Render(left[:], right[:])
+	if e.layerMask != 0b0101 {
+		t.Fatalf("both macros at level 0: mask=%04b, want 0101 (0111 and 1101)", e.layerMask)
+	}
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(1), Tick: seq.TicksPerBar})
+	if err := e.transport.SeekTick(seq.TicksPerBar); err != nil {
+		t.Fatal(err)
+	}
+	e.Render(left[:], right[:])
+	if e.layerMask != 0b1101 {
+		t.Fatalf("macro 0 at level 1, macro 1 at level 0: mask=%04b, want 1101", e.layerMask)
+	}
+	var message cmd.Message
+	found := false
+	for e.Poll(&message) {
+		if message.Kind == cmd.LayerChanged && message.Track == 0 && message.A == 1 && message.B == 0b1101 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("LayerChanged for macro 0 with the combined mask was not emitted")
+	}
+}
+
+// A seek rebuilds the scene defaults, which restores the authored layer mask. The
+// macro mask must come back at once, not only when a level next changes.
+func TestSeekReappliesMacroLayerMask(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks, cfg.MaxVoices = 1, 1
+	cfg.Track[0].Acid = acid.DefaultParams()
+	// Scene settings make the engine keep scene defaults, which a seek restores.
+	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 800}}}, {Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}}}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 2}, {Scene: 1, Bars: 2}}
+	cfg.LoopSong = true
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setLayerTable(t, e, 0, 0x80, 0b0, 0b1)
+	if !e.PushBatch([]cmd.Command{{Op: cmd.OpSeek, Track: 0xff}, {Op: cmd.OpPlay, Track: 0xff}}) {
+		t.Fatal("start commands rejected")
+	}
+	var left, right [128]float32
+	e.Render(left[:], right[:])
+	if e.layerMask != 0 {
+		t.Fatalf("before the seek: mask=%b, want 0 (macro level 0)", e.layerMask)
+	}
+	if !e.PushBatch([]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: 2, Arg1: 960}, {Op: cmd.OpPlay, Track: 0xff}}) { // mid-bar: no bar line to fix the mask
+		t.Fatal("seek commands rejected")
+	}
+	e.Render(left[:], right[:])
+	if e.songIndex != 1 {
+		t.Fatalf("seek did not reach the second song entry: index=%d", e.songIndex)
+	}
+	if e.layerMask != 0 {
+		t.Fatalf("after the seek the authored mask came back: mask=%b, want 0", e.layerMask)
 	}
 }
