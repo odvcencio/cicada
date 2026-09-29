@@ -40,6 +40,9 @@ const (
 	OpDefineMacro
 	// OpSetMacro carries the macro ID in Index, target float32 bits in Arg0, and smoothing frames in Arg1.
 	OpSetMacro
+	OpSetLayers
+	OpSetLayerMasks
+	OpSetPhraseBars
 )
 
 type Quantize uint32
@@ -69,6 +72,10 @@ const (
 	Overload
 	Fault
 	Late
+	Bar
+	PhraseEnd
+	LayerChanged
+	MacroReached
 )
 
 type Message struct {
@@ -132,7 +139,7 @@ func (c Command) Validate(tracks uint8) error {
 	if tracks < 1 || tracks > 16 {
 		return Error("track count must be 1 to 16")
 	}
-	if c.Op < OpPlay || c.Op > OpSetMacro {
+	if c.Op < OpPlay || c.Op > OpSetPhraseBars {
 		return Error("unknown command opcode")
 	}
 	if c.Pad != 0 || c.Tick < 0 {
@@ -216,6 +223,35 @@ func (c Command) Validate(tracks uint8) error {
 		if c.Arg0>>tracks != 0 {
 			return Error("layer mask exceeds track count")
 		}
+	case OpSetLayers:
+		thresholds := c.Arg0
+		previous := uint32(0)
+		hasUnused := false
+		for level := range 4 {
+			threshold := thresholds & 0xff
+			if threshold == 0 {
+				hasUnused = true
+			} else if hasUnused || level > 0 && threshold <= previous {
+				return Error("layer thresholds must be strictly ascending")
+			}
+			if threshold != 0 {
+				previous = threshold
+			}
+			thresholds >>= 8
+		}
+		if c.Index >= 16 || c.Arg1 > 16 {
+			return Error("layer macro ID or release bars are out of range")
+		}
+	case OpSetLayerMasks:
+		maskLimit := uint32(1<<tracks) - 1
+		if c.Index >= 16 || uint32(uint16(c.Arg0))&^maskLimit != 0 || uint32(uint16(c.Arg0>>16))&^maskLimit != 0 ||
+			uint32(uint16(c.Arg1))&^maskLimit != 0 || uint32(uint16(c.Arg1>>16))&^maskLimit != 0 {
+			return Error("layer mask table exceeds macro or track count")
+		}
+	case OpSetPhraseBars:
+		if c.Index != 0 || c.Arg0 < 1 || c.Arg0 > 64 || c.Arg1 != 0 {
+			return Error("phrase length must be 1 to 64 bars")
+		}
 	case OpMeterRate:
 		if c.Arg0 == 0 {
 			return Error("meter rate must be positive")
@@ -234,7 +270,8 @@ func (c Command) Validate(tracks uint8) error {
 
 func globalOp(op Op) bool {
 	switch op {
-	case OpPlay, OpStop, OpSeek, OpSetTempo, OpLaunchScene, OpCue, OpSetLayerMask, OpMeterRate, OpDefineMacro, OpSetMacro:
+	case OpPlay, OpStop, OpSeek, OpSetTempo, OpLaunchScene, OpCue, OpSetLayerMask, OpMeterRate, OpDefineMacro, OpSetMacro,
+		OpSetLayers, OpSetLayerMasks, OpSetPhraseBars:
 		return true
 	}
 	return false
@@ -256,7 +293,7 @@ func DecodeMessage(data []byte) (Message, error) {
 		return Message{}, Error("message must be exactly 16 bytes")
 	}
 	m := Message{Kind: Kind(data[0]), Track: data[1], A: get16(data[2:4]), B: get32(data[4:8]), Tick: int64(get64(data[8:16]))}
-	if m.Kind < Playhead || m.Kind > Late {
+	if m.Kind < Playhead || m.Kind > MacroReached {
 		return Message{}, Error("unknown message kind")
 	}
 	return m, nil
