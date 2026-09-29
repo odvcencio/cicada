@@ -4,15 +4,18 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/coder/websocket"
+	"m31labs.dev/cicada/host/kernelimage"
+	"m31labs.dev/cicada/host/liveplay"
+	webhost "m31labs.dev/cicada/host/web"
+	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/project"
 	"math"
 	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
 	"time"
-
-	"github.com/coder/websocket"
-	"m31labs.dev/cicada/host/liveplay"
-	"m31labs.dev/cicada/kernel"
-	"m31labs.dev/cicada/project"
 )
 
 type studioParamsResponse struct {
@@ -359,4 +362,99 @@ func (s *studio) audioScript(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(studioAudioScript)
+}
+
+func (s *studio) kernelImage(w http.ResponseWriter, r *http.Request) {
+	rate, err := strconv.Atoi(r.URL.Query().Get("rate"))
+	if err != nil || rate != 44_100 && rate != 48_000 && rate != 96_000 {
+		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "rate must be 44100, 48000, or 96000"})
+		return
+	}
+	s.mu.Lock()
+	source, err := os.ReadFile(s.path)
+	if err != nil {
+		s.mu.Unlock()
+		studioJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	revision := studioRevision(source)
+	p, err := compileStudioSource(s.path, source)
+	s.mu.Unlock()
+	if err != nil {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		return
+	}
+	cfg, err := project.CompileEngine(p, rate, 128)
+	if err != nil {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		return
+	}
+	image, err := kernelimage.Encode(cfg)
+	if err != nil {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		return
+	}
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Cicada-Revision", revision)
+	w.Header().Set("ETag", `"`+revision+`"`)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(image)
+}
+
+func (s *studio) kernelWASM(w http.ResponseWriter, _ *http.Request) {
+	path, err := locateKernelWASM()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusServiceUnavailable)
+		return
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/wasm")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(data)
+}
+
+func locateKernelWASM() (string, error) {
+	if explicit := os.Getenv("CICADA_KERNEL_WASM"); explicit != "" {
+		if info, err := os.Stat(explicit); err == nil && info.Mode().IsRegular() {
+			return explicit, nil
+		}
+		return "", fmt.Errorf("CICADA_KERNEL_WASM does not name a kernel module")
+	}
+	if executable, err := os.Executable(); err == nil {
+		candidate := filepath.Join(filepath.Dir(executable), "cicada-kernel.wasm")
+		if info, statErr := os.Stat(candidate); statErr == nil && info.Mode().IsRegular() {
+			return candidate, nil
+		}
+	}
+	working, err := os.Getwd()
+	if err == nil {
+		for directory := working; ; directory = filepath.Dir(directory) {
+			candidate := filepath.Join(directory, "build", "cicada-kernel.wasm")
+			if info, statErr := os.Stat(candidate); statErr == nil && info.Mode().IsRegular() {
+				return candidate, nil
+			}
+			parent := filepath.Dir(directory)
+			if parent == directory {
+				break
+			}
+		}
+	}
+	return "", fmt.Errorf("kernel WASM is missing; run make build-kernel-wasm first")
+}
+
+func (s *studio) processorAsset(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(webhost.Processor())
+}
+
+func (s *studio) clientAsset(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	_, _ = w.Write(webhost.Client())
 }
