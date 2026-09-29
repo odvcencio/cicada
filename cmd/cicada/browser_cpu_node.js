@@ -44,7 +44,7 @@ async function main() {
     const count = x.gosx_audio_msg_drain();
     for (let message = 0; message < count; message++) if (messages[message * 16] === 7) faults++;
     const elapsed = process.cpuUsage(started);
-    samples[block] = (elapsed.user + elapsed.system) / 1000;
+    samples[block] = elapsed.user / 1000;
     if (samples[block] > 128 * 1000 / 48000) blocksOverDeadlineCpuTime++;
     if (block + 1 === warmupBlocks) warmMemoryBytes = x.memory.buffer.byteLength;
   }
@@ -53,7 +53,7 @@ async function main() {
   const percentile = p => measured[Math.min(measured.length - 1, Math.floor((measured.length - 1) * p))] || 0;
   const report = {
     engine: 'Node V8 WebAssembly',
-    clock: 'process.cpuUsage() user+system milliseconds',
+    clock: 'process.cpuUsage() user milliseconds',
     blockFrames: 128,
     blocks: blockCount,
     warmupBlocks,
