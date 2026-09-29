@@ -287,7 +287,7 @@ song { main }
 }
 
 func TestAuthoredKitRendersAndOmitsUnboundLanes(t *testing.T) {
-	source, err := os.ReadFile("../examples/authored-kit.cicada")
+	source, err := os.ReadFile("../testdata/edition1/examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}

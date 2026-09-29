@@ -11,7 +11,7 @@ import (
 
 func firstScore(t *testing.T) *notation.Score {
 	t.Helper()
-	src, err := os.ReadFile("../examples/first-acid.cicada")
+	src, err := os.ReadFile("../testdata/edition1/examples/first-acid.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestCompileDrumLanes(t *testing.T) {
 }
 
 func TestElevenLaneDrumKitCompiles(t *testing.T) {
-	source, err := os.ReadFile("../examples/drums-kit.cicada")
+	source, err := os.ReadFile("../testdata/edition1/examples/drums-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}

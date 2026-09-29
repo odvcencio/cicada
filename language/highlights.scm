@@ -25,7 +25,8 @@
 (drum_hit (ratchet)) @markup.underline
 
 ; ---------------------------------------------------------------------------
-; Header: `cicada 1`, title, tempo, key, seed.
+; Source header: edition is selected by the project manifest; the optional source
+; marker is highlighted when present. Title, tempo, key, and seed are declarations.
 
 "cicada" @keyword.directive
 (source_file (integer) @number.version)

@@ -20,7 +20,7 @@ import (
 
 func firstAcidConfig(t *testing.T) engine.Config {
 	t.Helper()
-	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "edition1", "examples", "first-acid.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestAuthoredKitImageRoundTrip(t *testing.T) {
 }
 
 func TestDriveInsertImageRoundTrip(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx", "drive-insert.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "edition1", "examples", "fx", "drive-insert.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,7 +270,7 @@ func TestDriveInsertImageRoundTrip(t *testing.T) {
 }
 
 func TestDelaySendImageRoundTrip(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx", "delay-send.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "edition1", "examples", "fx", "delay-send.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -308,7 +308,7 @@ func TestDelaySendImageRoundTrip(t *testing.T) {
 }
 
 func TestReverbSendImageRoundTrip(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx-bus.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "edition1", "examples", "fx-bus.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -343,7 +343,7 @@ func TestReverbSendImageRoundTrip(t *testing.T) {
 }
 
 func TestCompressorBusImageRoundTrip(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx", "compressor-bus.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "edition1", "examples", "fx", "compressor-bus.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,7 +378,7 @@ func TestCompressorBusImageRoundTrip(t *testing.T) {
 }
 
 func TestSFXBusImageRoundTrip(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "sfx-bus.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "edition1", "examples", "sfx-bus.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,12 +24,20 @@ func fixtures(t *testing.T) map[string][]byte {
 	if err != nil {
 		t.Fatal(err)
 	}
+	legacy, err := filepath.Glob("../testdata/edition1/examples/*.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
 	more, err := filepath.Glob("testdata/*.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
+	legacyMore, err := filepath.Glob("testdata/edition1/*.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
 	out := make(map[string][]byte)
-	for _, path := range append(paths, more...) {
+	for _, path := range append(append(append(paths, legacy...), more...), legacyMore...) {
 		src, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -158,7 +166,7 @@ func TestEveryLeafHasOneCapture(t *testing.T) {
 func TestHighlightGolden(t *testing.T) {
 	for source, golden := range map[string]string{
 		"../examples/cicada-chorus.cicada": "testdata/cicada-chorus.spans",
-		"testdata/ahead.cicada":            "testdata/ahead.spans",
+		"testdata/edition1/ahead.cicada":   "testdata/ahead.spans",
 	} {
 		src, err := os.ReadFile(source)
 		if err != nil {
@@ -320,7 +328,7 @@ func TestHighlightMarksSyntaxErrors(t *testing.T) {
 }
 
 func TestSymbols(t *testing.T) {
-	src, err := os.ReadFile("../examples/first-acid.cicada")
+	src, err := os.ReadFile("../testdata/edition1/examples/first-acid.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -365,7 +373,7 @@ func TestSymbols(t *testing.T) {
 }
 
 func TestAuthoredKitSymbols(t *testing.T) {
-	src, err := os.ReadFile("../examples/authored-kit.cicada")
+	src, err := os.ReadFile("../testdata/edition1/examples/authored-kit.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}

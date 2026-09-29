@@ -10,7 +10,7 @@ import (
 )
 
 func TestFixPreservesScoreAndIsIdempotent(t *testing.T) {
-	source, err := os.ReadFile("../../examples/first-acid.cicada")
+	source, err := os.ReadFile("../../testdata/edition1/examples/first-acid.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
