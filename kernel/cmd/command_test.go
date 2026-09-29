@@ -82,6 +82,42 @@ func TestCommandRejectsMalformedRecords(t *testing.T) {
 	}
 }
 
+func TestMacroCommandsRoundTripAndRejectInvalidPayloads(t *testing.T) {
+	commands := []Command{
+		{Op: OpDefineMacro, Track: 255, Index: 15, Arg0: math.Float32bits(0.25)},
+		{Op: OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(1), Arg1: 4800},
+	}
+	for _, command := range commands {
+		encoded, err := EncodeCommand(command, 1)
+		if err != nil {
+			t.Fatalf("encode %+v: %v", command, err)
+		}
+		decoded, err := DecodeCommand(encoded[:], 1)
+		if err != nil || decoded != command {
+			t.Fatalf("round trip %+v: got %+v, %v", command, decoded, err)
+		}
+	}
+
+	invalid := []Command{
+		{Op: OpDefineMacro, Track: 255, Index: 16, Arg0: math.Float32bits(0.5)},
+		{Op: OpSetMacro, Track: 255, Index: 16, Arg0: math.Float32bits(0.5)},
+		{Op: OpDefineMacro, Track: 255, Index: 0, Arg0: math.Float32bits(1.5)},
+		{Op: OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(1.5)},
+		{Op: OpDefineMacro, Track: 255, Index: 0, Arg0: math.Float32bits(float32(math.NaN()))},
+		{Op: OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(float32(math.NaN()))},
+		{Op: OpDefineMacro, Track: 255, Index: 0, Arg0: math.Float32bits(float32(math.Inf(1)))},
+		{Op: OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(float32(math.Inf(-1)))},
+		{Op: OpDefineMacro, Track: 0, Index: 0, Arg0: math.Float32bits(0.5)},
+		{Op: OpSetMacro, Track: 0, Index: 0, Arg0: math.Float32bits(0.5)},
+		{Op: OpDefineMacro, Track: 255, Index: 0, Arg0: math.Float32bits(0.5), Arg1: 1},
+	}
+	for _, command := range invalid {
+		if _, err := EncodeCommand(command, 1); err == nil {
+			t.Errorf("accepted invalid macro command: %+v", command)
+		}
+	}
+}
+
 func TestBatchDecodeIsAllOrNone(t *testing.T) {
 	one, _ := EncodeCommand(Command{Op: OpPlay, Track: 255}, 1)
 	two, _ := EncodeCommand(Command{Op: OpStop, Track: 255}, 1)

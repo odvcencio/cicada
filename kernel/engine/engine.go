@@ -138,6 +138,11 @@ type meterAccum struct {
 type Engine struct {
 	sampleRate, maxBlock, tracks int
 	paramAlpha                   [kernel.ParamCount]float32
+	macroCurrent                 [16]float32
+	macroStart                   [16]float32
+	macroTarget                  [16]float32
+	macroRampFrames              [16]uint32
+	macroRampElapsed             [16]uint32
 	bpmMilli                     int64
 	voices                       [16]voiceSlot
 	transport                    seq.Transport
@@ -186,6 +191,14 @@ type Engine struct {
 
 // TrackCount reports the immutable track count established by New.
 func (e *Engine) TrackCount() int { return e.tracks }
+
+// MacroValue reports the current and target values for a macro ID. Invalid IDs return zero values.
+func (e *Engine) MacroValue(id int) (current, target float32) {
+	if id < 0 || id >= len(e.macroCurrent) {
+		return 0, 0
+	}
+	return e.macroCurrent[id], e.macroTarget[id]
+}
 
 // CurrentScene reports the last launched scene and its launch sequence.
 // The index is -1 before a scene launches.
@@ -819,6 +832,7 @@ func (e *Engine) Render(outL, outR []float32) {
 		e.limiterGR = max(e.limiterGR, float32(e.limiter.GainReductionDB()))
 		accumulateMeter(&e.masterMeter, outL[frame], outR[frame])
 		blockPeak = max(blockPeak, float32(math.Max(math.Abs(float64(outL[frame])), math.Abs(float64(outR[frame])))))
+		e.advanceMacroRamps()
 		e.transport.Advance(1)
 	}
 	e.renderFrames = 0
@@ -870,6 +884,22 @@ func meterRMS(meter *meterAccum, frames uint32) float32 {
 		return 0
 	}
 	return float32(math.Sqrt(meter.power / float64(frames)))
+}
+
+func (e *Engine) advanceMacroRamps() {
+	for id, total := range e.macroRampFrames {
+		if total == 0 {
+			continue
+		}
+		elapsed := e.macroRampElapsed[id] + 1
+		if elapsed >= total {
+			e.macroCurrent[id] = e.macroTarget[id]
+			e.macroRampFrames[id], e.macroRampElapsed[id] = 0, 0
+			continue
+		}
+		e.macroRampElapsed[id] = elapsed
+		e.macroCurrent[id] = e.macroStart[id] + (e.macroTarget[id]-e.macroStart[id])*float32(elapsed)/float32(total)
+	}
 }
 
 func (e *Engine) drainCommands() {
@@ -999,6 +1029,19 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 	case cmd.OpSetParam:
 		e.setParam(c)
+	case cmd.OpDefineMacro:
+		id := int(c.Index)
+		value := math.Float32frombits(c.Arg0)
+		e.macroCurrent[id], e.macroStart[id], e.macroTarget[id] = value, value, value
+		e.macroRampFrames[id], e.macroRampElapsed[id] = 0, 0
+	case cmd.OpSetMacro:
+		id := int(c.Index)
+		target := math.Float32frombits(c.Arg0)
+		e.macroStart[id], e.macroTarget[id] = e.macroCurrent[id], target
+		e.macroRampElapsed[id], e.macroRampFrames[id] = 0, c.Arg1
+		if c.Arg1 == 0 {
+			e.macroCurrent[id] = target
+		}
 	case cmd.OpNoteOn:
 		track := int(c.Track)
 		note, velocity := uint8(c.Arg0), uint8(c.Arg0>>8)

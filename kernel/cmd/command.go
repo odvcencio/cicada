@@ -36,6 +36,10 @@ const (
 	OpCue
 	OpSetLayerMask
 	OpMeterRate
+	// OpDefineMacro carries the macro ID in Index, initial float32 bits in Arg0, and requires Arg1 = 0.
+	OpDefineMacro
+	// OpSetMacro carries the macro ID in Index, target float32 bits in Arg0, and smoothing frames in Arg1.
+	OpSetMacro
 )
 
 type Quantize uint32
@@ -128,7 +132,7 @@ func (c Command) Validate(tracks uint8) error {
 	if tracks < 1 || tracks > 16 {
 		return Error("track count must be 1 to 16")
 	}
-	if c.Op < OpPlay || c.Op > OpMeterRate {
+	if c.Op < OpPlay || c.Op > OpSetMacro {
 		return Error("unknown command opcode")
 	}
 	if c.Pad != 0 || c.Tick < 0 {
@@ -216,13 +220,21 @@ func (c Command) Validate(tracks uint8) error {
 		if c.Arg0 == 0 {
 			return Error("meter rate must be positive")
 		}
+	case OpDefineMacro, OpSetMacro:
+		value := math.Float32frombits(c.Arg0)
+		if c.Index >= 16 || math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) || value < 0 || value > 1 {
+			return Error("macro ID or value is out of range")
+		}
+		if c.Op == OpDefineMacro && c.Arg1 != 0 {
+			return Error("macro definition has unexpected smoothing")
+		}
 	}
 	return nil
 }
 
 func globalOp(op Op) bool {
 	switch op {
-	case OpPlay, OpStop, OpSeek, OpSetTempo, OpLaunchScene, OpCue, OpSetLayerMask, OpMeterRate:
+	case OpPlay, OpStop, OpSeek, OpSetTempo, OpLaunchScene, OpCue, OpSetLayerMask, OpMeterRate, OpDefineMacro, OpSetMacro:
 		return true
 	}
 	return false
