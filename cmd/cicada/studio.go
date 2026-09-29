@@ -169,6 +169,8 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("POST /api/undo", s.undo)
 	mux.HandleFunc("POST /api/redo", s.redo)
 	mux.HandleFunc("POST /api/history/{id}/revert", s.revertHistory)
+	mux.HandleFunc("GET /api/mixer", s.mixerState)
+	mux.HandleFunc("POST /api/mixer", s.editMixer)
 	mux.HandleFunc("POST /api/transport", s.transportCommand)
 	mux.HandleFunc("GET /api/transport", s.transportState)
 	mux.HandleFunc("POST /api/transport/browser-audio", s.browserAudioStatus)
@@ -183,6 +185,7 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /studio-midi.js", s.midiScript)
 	mux.HandleFunc("GET /studio-live.js", s.liveScript)
 	mux.HandleFunc("GET /studio-master.js", s.masterScript)
+	mux.HandleFunc("GET /studio-mix.js", s.mixScript)
 	mux.HandleFunc("GET /api/export", s.exportStatus)
 	mux.HandleFunc("POST /api/export", s.startExport)
 	mux.HandleFunc("GET /api/history", s.historyState)
@@ -281,23 +284,26 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
-	Revision     string                `json:"revision"`
-	Label        string                `json:"label,omitempty"`
-	Action       string                `json:"action,omitempty"`
-	Index        int                   `json:"index,omitempty"`
-	Target       int                   `json:"target,omitempty"`
-	Bars         int                   `json:"bars,omitempty"`
-	Source       string                `json:"source"`
-	Pattern      string                `json:"pattern"`
-	Track        string                `json:"track,omitempty"`
-	Count        int                   `json:"count,omitempty"`
-	Take         []studioTakeNote      `json:"take,omitempty"`
-	Recordings   []studioTakeRecording `json:"recordings,omitempty"`
-	PatternCount int                   `json:"patternCount,omitempty"`
-	Lane         string                `json:"lane"`
-	Step         int                   `json:"step"`
-	Pitch        *int                  `json:"pitch,omitempty"`
-	Modifier     string                `json:"modifier,omitempty"`
+	Revision       string                `json:"revision"`
+	Label          string                `json:"label,omitempty"`
+	Action         string                `json:"action,omitempty"`
+	Index          int                   `json:"index,omitempty"`
+	Target         int                   `json:"target,omitempty"`
+	Bars           int                   `json:"bars,omitempty"`
+	Source         string                `json:"source"`
+	Pattern        string                `json:"pattern"`
+	Track          string                `json:"track,omitempty"`
+	Count          int                   `json:"count,omitempty"`
+	Take           []studioTakeNote      `json:"take,omitempty"`
+	Recordings     []studioTakeRecording `json:"recordings,omitempty"`
+	PatternCount   int                   `json:"patternCount,omitempty"`
+	Lane           string                `json:"lane"`
+	Step           int                   `json:"step"`
+	Pitch          *int                  `json:"pitch,omitempty"`
+	Modifier       string                `json:"modifier,omitempty"`
+	Path           string                `json:"path,omitempty"`
+	Value          json.RawMessage       `json:"value,omitempty"`
+	ConfirmUpgrade bool                  `json:"confirmUpgrade,omitempty"`
 }
 
 func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
@@ -388,6 +394,27 @@ func (s *studio) apply(w http.ResponseWriter, edit studioEdit, change func([]byt
 }
 
 func (s *studio) applyWithHook(w http.ResponseWriter, edit studioEdit, change func([]byte) ([]byte, error), beforeSwap func()) {
+	s.applyWithResult(w, edit, func(source []byte) (studioMutation, error) {
+		updated, err := change(source)
+		return studioMutation{Source: updated}, err
+	}, beforeSwap)
+}
+
+type studioMutation struct {
+	Source        []byte
+	Response      map[string]any
+	HistoryDetail string
+	Files         []studioAuxiliaryFile
+}
+
+type studioAuxiliaryFile struct {
+	Path   string
+	Before []byte
+	After  []byte
+	Mode   os.FileMode
+}
+
+func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change func([]byte) (studioMutation, error), beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := studioRecoveryConflict(s.path); err != nil {
@@ -407,12 +434,79 @@ func (s *studio) applyWithHook(w http.ResponseWriter, edit studioEdit, change fu
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving"})
 		return
 	}
-	updated, err := change(current)
+	mutation, err := change(current)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
-	s.commitSourceLocked(w, edit, current, updated, beforeSwap, studioHistoryWriteNew, 0)
+	updated := mutation.Source
+	p, err := compileStudioSource(s.path, updated)
+	if err != nil {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		return
+	}
+	latest, err := os.ReadFile(s.path)
+	if err != nil {
+		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	if studioRevision(latest) != edit.Revision {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during validation; reload before saving"})
+		return
+	}
+	if bytes.Equal(current, updated) {
+		s.lastGoodSource, s.lastGoodProject = bytes.Clone(current), p
+		response := map[string]any{"revision": studioRevision(current), "valid": true, "source": string(current), "unchanged": true}
+		for key, value := range mutation.Response {
+			response[key] = value
+		}
+		studioJSON(w, http.StatusOK, response)
+		return
+	}
+	info, err := os.Stat(s.path)
+	committed, preserved := false, ""
+	if err == nil {
+		committed, preserved, err = studioWriteIfRevision(s.path, updated, info.Mode().Perm(), edit.Revision, beforeSwap)
+	}
+	if err != nil {
+		if errors.Is(err, errStudioSwapUnavailable) {
+			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+			return
+		}
+		if preserved != "" {
+			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "preserved": preserved})
+			return
+		}
+		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	if !committed {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during commit; reload before saving"})
+		return
+	}
+	for _, file := range mutation.Files {
+		if err := studioWriteAuxiliaryFile(file); err != nil {
+			_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
+			message := "mixer source saved but edition upgrade failed: " + err.Error()
+			if rollbackErr != nil {
+				message += "; source rollback failed: " + rollbackErr.Error()
+			}
+			studioJSON(w, http.StatusConflict, map[string]any{"error": message})
+			return
+		}
+	}
+	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
+	if s.history != nil {
+		if mutation.HistoryDetail != "" {
+			edit.Label = mutation.HistoryDetail
+		}
+		s.history.recordSourceWrite(current, updated, studioEditLabel(edit), studioHistoryWriteNew, 0)
+	}
+	response := map[string]any{"revision": studioRevision(updated), "valid": true, "source": string(updated), "preserved": preserved}
+	for key, value := range mutation.Response {
+		response[key] = value
+	}
+	studioJSON(w, http.StatusOK, response)
 }
 
 func compileStudioSource(path string, source []byte) (*project.Project, error) {

@@ -25,7 +25,6 @@
   const learnMenuButton = $('#midi-learn');
   const clearMenuButton = $('#midi-clear');
   const mappingList = $('#midi-mapping-list');
-  const parameterList = $('#live-param-list');
   const isMIDIAvailable = typeof navigator.requestMIDIAccess === 'function';
   const settingsKey = 'cicada.live.settings.v1';
   const getStorage = () => { try { return window.localStorage; } catch { return null; } };
@@ -59,14 +58,17 @@
       });
       sceneRows.set(track, cells);
     }
-    tracks = $$('.track-list .track').map(card => {
-      const id = card.querySelector('strong')?.textContent.trim() || '';
-      const kind = card.querySelector('.kind')?.textContent.trim().toLowerCase() || '';
-      const cells = sceneRows.get(id) || [];
-      const drum = kind.includes('drum') || cells.some(cell => cell.pattern && patternMeta.get(cell.pattern)?.drums);
-      return {id, kind, drum, acid: kind === 'acid'};
-    }).filter(track => track.id);
-    trackByID = new Map(tracks.map(track => [track.id, track]));
+    const mixerRack = $('#mix-rack');
+    if (mixerRack && mixerRack.getAttribute('aria-busy') !== 'true') {
+      tracks = $$('.mix-strip[data-kind="track"]').map(card => {
+        const id = card.dataset.strip || '';
+        const kind = card.dataset.sourceKind?.toLowerCase() || '';
+        const cells = sceneRows.get(id) || [];
+        const drum = kind.includes('drum') || cells.some(cell => cell.pattern && patternMeta.get(cell.pattern)?.drums);
+        return {id, kind, drum, acid: kind === 'acid'};
+      }).filter(track => track.id);
+      trackByID = new Map(tracks.map(track => [track.id, track]));
+    }
   }
   readProjection();
 
@@ -430,76 +432,6 @@
     catch (error) { setStatus(error.message, 'error'); }
   }
 
-  const liveParamByAddress = new Map();
-  async function buildParameterControls() {
-    if (!window.cicadaAudio?.params || !parameterList) return;
-    try {
-      const response = await window.cicadaAudio.params();
-      const registry = Array.isArray(response.registry) ? response.registry : [];
-      const descriptors = new Map(registry.map(descriptor => [descriptor.id, descriptor]));
-      const rows = [];
-      for (const address of response.addresses || []) {
-        const descriptor = descriptors.get(address.param);
-        if (!descriptor || descriptor.live !== true || typeof address.address !== 'string') continue;
-        const row = document.createElement('div');
-        row.className = 'live-param-row';
-        row.dataset.midiAddress = address.address;
-        const label = document.createElement('label');
-        const controlID = `live-param-${rows.length}`;
-        label.htmlFor = controlID;
-        label.append(document.createTextNode(address.address));
-        const control = document.createElement('input');
-        control.id = controlID;
-        control.type = 'range';
-        control.min = String(descriptor.min);
-        control.max = String(descriptor.max);
-        control.step = descriptor.curve === 'fader' ? '0.1' : String(Math.max((descriptor.max - descriptor.min) / 1000, 0.0001));
-        control.value = String(address.value == null ? descriptor.min : address.value);
-        control.setAttribute('aria-label', address.address);
-        control.dataset.midiAddress = address.address;
-        const output = document.createElement('output');
-        output.value = formatParamValue(address.value, descriptor);
-        control.addEventListener('input', () => {
-          const value = Number(control.value);
-          output.value = formatParamValue(value, descriptor);
-          window.cicadaAudio.setParam(address.address, value);
-        });
-        row.append(label, control, output);
-        parameterList.append(row);
-        liveParamByAddress.set(address.address, {descriptor, control, output});
-        rows.push(row);
-      }
-      if (!rows.length) {
-        const empty = document.createElement('p');
-        empty.className = 'section-note';
-        empty.textContent = 'No live parameter addresses are available in this score.';
-        parameterList.append(empty);
-      }
-      renderLearnedDots();
-    } catch (error) { setStatus(`Cannot load live parameters: ${error.message}`, 'error'); }
-  }
-  function formatParamValue(value, descriptor) {
-    if (value === null || value === undefined) return 'off';
-    const digits = descriptor.max - descriptor.min < 10 ? 2 : 1;
-    return `${Number(value).toFixed(digits)}${descriptor.unit ? ` ${descriptor.unit}` : ''}`;
-  }
-  buildParameterControls();
-
-  function updateParamFromCC(address, cc) {
-    const target = liveParamByAddress.get(address);
-    if (!target) return;
-    let value;
-    try { value = midi.mapCCValue(target.descriptor, cc); }
-    catch (error) { setStatus(error.message, 'error'); return; }
-    if (value === null && target.descriptor.off) {
-      target.control.value = String(target.descriptor.min);
-      target.output.value = 'off';
-    } else {
-      target.control.value = String(value);
-      target.output.value = formatParamValue(value, target.descriptor);
-    }
-    window.cicadaAudio?.setParam(address, value);
-  }
 
   function deviceMappings(device, channel, type, value) {
     return mappings.findInput(device, channel, type, value);
@@ -857,8 +789,6 @@
     const device = midiDeviceName(input || event.target);
     if (command === 0xb0) {
       if (storeLearnedInput(device, channel, 'cc', first)) return;
-      const mapping = deviceMappings(device, channel, 'cc', first);
-      if (mapping?.address) updateParamFromCC(mapping.address, second);
       return;
     }
     const noteOn = command === 0x90 && second > 0;
@@ -933,7 +863,7 @@
   if (transportState) connectTransport();
   if ($('#transport-pending')) $('#transport-pending').setAttribute('aria-live', 'off');
   renderLaunchStates();
-  window.addEventListener('cicada:projectionrefreshed', () => {
+  function refreshLiveProjection() {
     readProjection();
     fillTrackSelect(acidSelect, track => track.acid, settings.acidTrack);
     fillTrackSelect(drumSelect, track => track.drum, settings.drumTrack);
@@ -943,5 +873,7 @@
     buildArmControls();
     selectScene(Math.max(0, sceneNames.indexOf(settings.selectedScene)), false);
     renderLaunchStates();
-  });
+  }
+  window.addEventListener('cicada:projectionrefreshed', refreshLiveProjection);
+  window.addEventListener('cicada:mixrendered', refreshLiveProjection);
 })();
