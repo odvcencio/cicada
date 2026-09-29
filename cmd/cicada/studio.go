@@ -177,6 +177,7 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
 	mux.HandleFunc("GET /api/audio/config", s.audioConfig)
 	mux.HandleFunc("POST /api/audio/config", s.audioConfig)
+	mux.HandleFunc("GET /studio-workspace.js", s.workspaceScript)
 	mux.HandleFunc("GET /studio-audio.js", s.audioScript)
 	mux.HandleFunc("GET /studio-audio-devices.js", s.audioDeviceScript)
 	mux.HandleFunc("GET /studio-midi.js", s.midiScript)

@@ -14,10 +14,11 @@ function harness() {
     editor: {value: 'old score'}, save: {disabled: false},
     document: {body: {dataset: {revision: 'old-revision'}}},
     revision() { return state.document.body.dataset.revision; },
-    reloads: 0,
+    refreshes: 0,
     setStatus(message, kind) { state.status = {message, kind}; },
     dirty() { return state.editor.value !== state.original; },
-    location: {reload() { state.reloads++; }},
+    refreshProjection() { state.refreshes++; return Promise.resolve(); },
+    showEditor() {},
     fetch(path, options) {
       requests.push({path, ...JSON.parse(options.body)});
       return new Promise((resolve, fail) => { release = resolve; reject = fail; });
@@ -33,13 +34,13 @@ function harness() {
   };
 }
 
-test('a normal source save reloads the projection', async () => {
+test('a normal source save refreshes the projection in place', async () => {
   const h = harness();
   h.state.editor.value = 'saved score';
   const pending = h.state.send('/api/source', {source: h.state.editor.value});
   h.finish();
   await pending;
-  assert.equal(h.state.reloads, 1);
+  assert.equal(h.state.refreshes, 1);
   assert.equal(h.state.save.disabled, false);
 });
 
@@ -50,7 +51,7 @@ test('new source edits survive and the next save uses the accepted revision', as
   h.state.editor.value = 'newer draft';
   h.finish();
   await pending;
-  assert.equal(h.state.reloads, 0);
+  assert.equal(h.state.refreshes, 1, 'the accepted save refreshes the projection even with a draft open');
   assert.equal(h.state.editor.value, 'newer draft');
   assert.equal(h.state.original, 'sent score');
   assert.equal(h.state.dirty(), true);
@@ -59,7 +60,7 @@ test('new source edits survive and the next save uses the accepted revision', as
   assert.equal(h.requests[1].revision, 'saved-revision');
   h.finish(true, 'second-revision');
   await next;
-  assert.equal(h.state.reloads, 1);
+  assert.equal(h.state.refreshes, 2);
 });
 
 test('reverting to the old text during a save remains an unsaved draft', async () => {
@@ -69,7 +70,7 @@ test('reverting to the old text during a save remains an unsaved draft', async (
   h.state.editor.value = 'old score';
   h.finish();
   await pending;
-  assert.equal(h.state.reloads, 0);
+  assert.equal(h.state.refreshes, 1, 'accepted save refreshes the projection');
   assert.equal(h.state.editor.value, 'old score');
   assert.equal(h.state.dirty(), true);
 });
@@ -80,7 +81,7 @@ test('a grid save keeps a concurrent source draft and its conflict guard', async
   h.state.editor.value = 'draft from the old grid';
   h.finish();
   await pending;
-  assert.equal(h.state.reloads, 0);
+  assert.equal(h.state.refreshes, 1, 'accepted save refreshes the projection');
   assert.equal(h.state.editor.value, 'draft from the old grid');
   assert.equal(h.state.document.body.dataset.revision, 'old-revision');
   assert.equal(h.state.original, 'old score');
@@ -95,7 +96,7 @@ for (const failure of ['rejected', 'offline']) {
     if (failure === 'offline') h.fail();
     else h.finish(false);
     await pending;
-    assert.equal(h.state.reloads, 0);
+    assert.equal(h.state.refreshes, 0);
     assert.equal(h.state.editor.value, 'newer draft');
     assert.equal(h.state.document.body.dataset.revision, 'old-revision');
     assert.equal(h.state.original, 'old score');

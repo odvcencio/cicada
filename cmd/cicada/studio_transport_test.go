@@ -140,7 +140,7 @@ func TestStudioParamsEndpointAndAudioScript(t *testing.T) {
 		}
 	}
 	page := studioCall(t, handler, "/", nil)
-	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `src="/studio-audio-devices.js"`) || !strings.Contains(page.Body.String(), `src="/studio-master.js"`) || !strings.Contains(page.Body.String(), `href="#master">Master</a>`) || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `id="audio-output-device"`) || !strings.Contains(page.Body.String(), `id="audio-input-device"`) || !strings.Contains(page.Body.String(), `id="audio-monitor-gain"`) || !strings.Contains(page.Body.String(), `id="audio-status-bar"`) || !strings.Contains(page.Body.String(), `id="loudness-history"`) || !strings.Contains(page.Body.String(), `id="gain-reduction-history"`) || !strings.Contains(page.Body.String(), `id="reset-integrated"`) || !strings.Contains(page.Body.String(), `id="export-wav"`) || !strings.Contains(page.Body.String(), `href="#mixer-settings">Open mixer compressor settings</a>`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) || !strings.Contains(page.Body.String(), "score-minus14LUFS.wav") {
+	if page.Code != http.StatusOK || strings.Count(page.Body.String(), `src="/studio-audio.js"`) != 1 || !strings.Contains(page.Body.String(), `src="/studio-audio-devices.js"`) || !strings.Contains(page.Body.String(), `src="/studio-master.js"`) || !strings.Contains(page.Body.String(), `data-panel-tab="master"`) || !strings.Contains(page.Body.String(), `id="master-meter-fill"`) || !strings.Contains(page.Body.String(), `id="audio-output-device"`) || !strings.Contains(page.Body.String(), `id="audio-input-device"`) || !strings.Contains(page.Body.String(), `id="audio-monitor-gain"`) || !strings.Contains(page.Body.String(), `id="audio-status-bar"`) || !strings.Contains(page.Body.String(), `id="loudness-history"`) || !strings.Contains(page.Body.String(), `id="gain-reduction-history"`) || !strings.Contains(page.Body.String(), `id="reset-integrated"`) || !strings.Contains(page.Body.String(), `id="export-wav"`) || !strings.Contains(page.Body.String(), `href="#mixer-settings">Open mixer compressor settings</a>`) || !strings.Contains(page.Body.String(), `data-track-meter="bass"`) || !strings.Contains(page.Body.String(), `data-track-meter="drums"`) || !strings.Contains(page.Body.String(), "score-minus14LUFS.wav") {
 		t.Fatalf("Studio meter markup missing: %d", page.Code)
 	}
 	script := studioCall(t, handler, "/studio-audio.js", nil)
@@ -416,8 +416,11 @@ func TestStudioNullAudioPacesRenderingWithoutOpeningDevice(t *testing.T) {
 	if err := transport.start(); err != nil {
 		t.Fatal(err)
 	}
-	if transport.stream != stream {
-		t.Fatal("null audio did not resume the existing stream")
+	if transport.stream == stream {
+		t.Fatal("Stop reused the old stream instead of returning to the start")
+	}
+	if state := transport.snapshot(); state.Bar != 1 || state.Step != 1 {
+		t.Fatalf("Stop did not return to the start: %+v", state)
 	}
 	time.Sleep(80 * time.Millisecond)
 	if got := transport.meterSequence.Load(); got <= paused {
@@ -746,5 +749,110 @@ func nextManualTransportEvent(stream *liveplay.Player) (liveplay.Event, bool) {
 		default:
 			return liveplay.Event{}, false
 		}
+	}
+}
+
+func TestTransportSnapshotSentOnWebSocketConnect(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	handler, path := studioTestHandler(t)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	transport := newStudioTransport(path)
+	transport.audioNull = true
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	defer transport.close()
+	time.Sleep(50 * time.Millisecond)
+	// Stop the transport so it's no longer sending periodic updates.
+	transport.stop()
+	time.Sleep(50 * time.Millisecond)
+	// Connect to the WebSocket; it should send a snapshot immediately.
+	connection, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/api/transport/ws", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer connection.CloseNow()
+	readCtx, readCancel := context.WithTimeout(ctx, time.Second)
+	defer readCancel()
+	var snap transportSnapshot
+	if err := wsjson.Read(readCtx, connection, &snap); err != nil {
+		t.Fatalf("did not receive transport snapshot on connect: %v", err)
+	}
+	if snap.Type != "cicada/transport" {
+		t.Fatalf("received %q instead of cicada/transport", snap.Type)
+	}
+	if snap.Bar != 1 || snap.Step != 1 {
+		t.Fatalf("snapshot on connect: bar=%d step=%d, expected bar=1 step=1", snap.Bar, snap.Step)
+	}
+}
+
+func TestErrorClearedWhenValidRevisionLands(t *testing.T) {
+	_, path := studioTestHandler(t)
+	source, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Modify the source to a different valid score.
+	modified := strings.Replace(string(source), "Studio", "Next Studio", 1)
+	if err := os.WriteFile(path, []byte(modified), 0644); err != nil {
+		t.Fatal(err)
+	}
+	transport := newStudioTransport(path)
+	transport.audioNull = true
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	defer transport.close()
+	// Simulate an error.
+	transport.mu.Lock()
+	transport.errText = "CICADA-SYNTAX: invalid note"
+	transport.mu.Unlock()
+	snap := transport.snapshot()
+	if snap.Error == "" {
+		t.Fatal("error was not recorded in snapshot")
+	}
+	// Restore the original valid source and poll.
+	if err := os.WriteFile(path, source, 0644); err != nil {
+		t.Fatal(err)
+	}
+	transport.poll()
+	time.Sleep(50 * time.Millisecond)
+	snap = transport.snapshot()
+	if snap.Error != "" {
+		t.Fatalf("error was not cleared after valid revision landed: %q", snap.Error)
+	}
+}
+
+func TestStudioStopClearsStoppedTracksAndPauseKeepsPosition(t *testing.T) {
+	_, path := studioTestHandler(t)
+	transport := newStudioTransport(path)
+	transport.audioNull = true
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	defer transport.close()
+	if err := transport.stopTrack("bass"); err != nil {
+		t.Fatal(err)
+	}
+	if got := transport.snapshot().StoppedTracks; len(got) != 1 {
+		t.Fatalf("stopped tracks after stop-track = %v, want [bass]", got)
+	}
+	transport.mu.Lock()
+	transport.scene, transport.activeSlots = "main", map[string]string{"bass": "pulse"}
+	transport.mu.Unlock()
+	stream := transport.stream
+	transport.pause()
+	if transport.stream != stream || transport.snapshot().Playing {
+		t.Fatalf("pause must keep the stream and stop playing: same stream=%v playing=%v", transport.stream == stream, transport.snapshot().Playing)
+	}
+	transport.stop()
+	snapshot := transport.snapshot()
+	if len(snapshot.ActiveSlots) != 0 || snapshot.Scene != "" {
+		t.Fatalf("after Stop: active slots %v, scene %q, want none", snapshot.ActiveSlots, snapshot.Scene)
+	}
+	if len(snapshot.StoppedTracks) != 0 || snapshot.Bar != 1 || snapshot.Step != 1 || transport.stream != nil {
+		t.Fatalf("after Stop: stopped tracks %v, bar %d step %d, stream nil=%v", snapshot.StoppedTracks, snapshot.Bar, snapshot.Step, transport.stream == nil)
 	}
 }

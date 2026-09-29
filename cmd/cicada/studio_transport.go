@@ -280,13 +280,19 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	return nil
 }
 
-func (t *studioTransport) stop() {
+// pause halts playback and keeps the stream, so play resumes at the same
+// position (D18: Space toggles play and pause).
+func (t *studioTransport) pause() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.pauseLocked()
+}
+
+func (t *studioTransport) pauseLocked() {
 	if t.audio != nil {
 		audio := t.audio
 		audio.Pause()
-		// Release duplex hosts after Stop so they no longer hold the input endpoint.
+		// Release duplex hosts after Pause so they no longer hold the input endpoint.
 		if audio.StopClosesDevice() {
 			if err := audio.Close(); err != nil {
 				t.errText = err.Error()
@@ -302,6 +308,47 @@ func (t *studioTransport) stop() {
 	t.playing = false
 	t.pendingSong = ""
 	t.pendingSongID = 0
+}
+
+// stop halts playback and returns to bar 1 by discarding the stream (D18).
+// The next start builds a new stream from the beginning.
+func (t *studioTransport) stop() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pauseLocked()
+	if t.cancel != nil {
+		t.cancel()
+		t.cancel = nil
+	}
+	if t.audio != nil {
+		if err := t.audio.Close(); err != nil {
+			t.errText = err.Error()
+		}
+		t.audio = nil
+	}
+	if t.stream != nil {
+		t.stream.Close()
+		t.stream = nil
+	}
+	// A discarded stream has no muted tracks; do not report them as stopped.
+	t.stoppedTracks = nil
+	t.activeSlots = nil
+	t.scene = ""
+	t.pending = false
+	t.landed = 0
+}
+
+// returnToStart moves to bar 1. A playing transport keeps playing from the
+// start; a stopped one stays stopped (D18).
+func (t *studioTransport) returnToStart() error {
+	t.mu.Lock()
+	wasPlaying := t.playing
+	t.mu.Unlock()
+	t.stop()
+	if wasPlaying {
+		return t.start()
+	}
+	return nil
 }
 
 func (t *studioTransport) launchScene(name string, quantizes ...cmd.Quantize) error {
@@ -555,6 +602,7 @@ func (t *studioTransport) poll() {
 	}
 	t.mu.Lock()
 	t.last = fingerprint
+	// Clear the transport error when a valid revision lands (UX review finding 2).
 	t.pending, t.errText = true, ""
 	position := stream.Position()
 	t.mu.Unlock()
@@ -613,8 +661,16 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 			return
 		}
+	case "pause":
+		s.transport.pause()
 	case "stop":
 		s.transport.stop()
+	case "home":
+		if err := s.transport.returnToStart(); err != nil {
+			s.transport.setError(err)
+			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
 	case "trackStop":
 		if err := s.transport.stopTrack(input.Track); err != nil {
 			studioJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
@@ -736,19 +792,26 @@ func (s *studio) transportSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer connection.CloseNow()
 	ctx := connection.CloseRead(context.Background())
+	// Send transport snapshot immediately when the WebSocket connects so stopped transports show their real position.
+	writeCtx, cancel := context.WithTimeout(ctx, time.Second)
+	err = wsjson.Write(writeCtx, connection, s.transport.snapshot())
+	cancel()
+	if err != nil {
+		return
+	}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		writeCtx, cancel := context.WithTimeout(ctx, time.Second)
 		err := wsjson.Write(writeCtx, connection, s.transport.snapshot())
 		cancel()
 		if err != nil {
 			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
 		}
 	}
 }
