@@ -171,6 +171,7 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("POST /api/history/{id}/revert", s.revertHistory)
 	mux.HandleFunc("POST /api/transport", s.transportCommand)
 	mux.HandleFunc("GET /api/transport", s.transportState)
+	mux.HandleFunc("POST /api/transport/browser-audio", s.browserAudioStatus)
 	mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
 	mux.HandleFunc("GET /api/params", s.params)
 	mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
@@ -184,6 +185,10 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /api/export", s.exportStatus)
 	mux.HandleFunc("POST /api/export", s.startExport)
 	mux.HandleFunc("GET /api/history", s.historyState)
+	mux.HandleFunc("GET /api/kernel-image", s.kernelImage)
+	mux.HandleFunc("GET /api/kernel.wasm", s.kernelWASM)
+	mux.HandleFunc("GET /audio/cicada-processor.js", s.processorAsset)
+	mux.HandleFunc("GET /audio/cicada-client.js", s.clientAsset)
 	mux.HandleFunc("GET /studio-history.js", s.historyScript)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !studioLoopbackHost(r.Host) {

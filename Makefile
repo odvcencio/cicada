@@ -1,4 +1,6 @@
-.PHONY: test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual
+.PHONY: test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report
+
+export GOWORK := off
 
 # Keep a TinyGo/Binaryen regression from consuming the full CI job budget.
 KERNEL_WASM_BUILD_TIMEOUT ?= 180s
@@ -55,10 +57,35 @@ build-loudness-wasm:
 	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-loudness.wasm ./cmd/cicada-loudness-wasm
 
 test-kernel-wasm: build-kernel-wasm build-loudness-wasm
-	go test -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
+	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v
+
+test-wasm: build-kernel-wasm
+	bash -o pipefail -c "GOWORK=off nice -n 10 go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1 -v | tee build/test-wasm.log"
+
+test-browser: build-kernel-wasm
+	mkdir -p build
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|StudioFlow|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression)$$' 5m build/test-browser.log
+
+budget-size: build-kernel-wasm
+	bash -o pipefail -c "go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm host/web/processor.min.js | tee build/budget-size-report.txt"
+
+budget-browser: build-kernel-wasm
+	mkdir -p build
+	bash -o pipefail -c "GOWORK=off nice -n 10 go test -tags browser ./cmd/cicada -run '^TestBrowserCPUReport$$' -count=1 -timeout=5m -v | tee build/budget-browser.log"
+
+# Release gate: run this from WSL with Windows Chrome before any release that changes the kernel or
+# the AudioWorklet processor, and keep build/release-cpu-report.log with the release record.
+# It records the real p99 against the 0.67 ms budget that the Node fallback in CI does not gate.
+release-cpu-report: build-kernel-wasm
+	mkdir -p build
+	CICADA_BROWSER=windows bash -o pipefail -c "GOWORK=off go test -tags browser ./cmd/cicada -run '^TestBrowserCPUReport$$' -count=1 -timeout=5m -v | tee build/release-cpu-report.log"
+	grep -q 'Windows Chrome CPU budget' build/release-cpu-report.log
+
+test-browser-soak: build-kernel-wasm budget-browser
+	bash cmd/cicada/browser-runner.sh browser_soak '^TestBrowserSoak$$' 40m build/browser-soak.log
 
 build-phrase-wasm:
 	mkdir -p build

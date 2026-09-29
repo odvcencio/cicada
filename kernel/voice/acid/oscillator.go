@@ -1,8 +1,10 @@
 package acid
 
 import (
+	"encoding/binary"
 	"math"
 	"sync"
+	"unsafe"
 )
 
 // Each table is limited to harmonics below the top of its semitone bin.
@@ -28,16 +30,136 @@ var sharedOscillatorBanks [3]struct {
 	bank *oscillatorBank
 }
 
-func bankForSampleRate(sampleRate int) *oscillatorBank {
-	index := 0
+const oscillatorBankImageVersion = 1
+const oscillatorBankImageHeaderSize = 4
+const MaxOscillatorBankImageBytes = oscillatorBankImageHeaderSize + oscillatorBins*2 + oscillatorBins*oscillatorTableSize*4
+
+// ExportOscillatorBankImage returns the exact shared wavetable data used by
+// voices at this sample rate. Hosts can pass it to another kernel instance so
+// score edits do not rebuild the FFT tables on the audio thread.
+func ExportOscillatorBankImage(sampleRate int) ([]byte, error) {
+	image := make([]byte, MaxOscillatorBankImageBytes)
+	return ExportOscillatorBankImageInto(sampleRate, image)
+}
+
+// ExportOscillatorBankImageInto writes an oscillator cache into caller-owned
+// storage and returns the used prefix.
+func ExportOscillatorBankImageInto(sampleRate int, storage []byte) ([]byte, error) {
+	_, ok := oscillatorBankIndex(sampleRate)
+	if !ok {
+		return nil, Error("unsupported oscillator sample rate")
+	}
+	bank := bankForSampleRate(sampleRate)
+	var unique []*oscillatorTable
+	indices := make(map[*oscillatorTable]uint16, oscillatorBins)
+	for _, table := range bank.tables {
+		if _, found := indices[table]; found {
+			continue
+		}
+		indices[table] = uint16(len(unique))
+		unique = append(unique, table)
+	}
+	const mappingBytes = oscillatorBins * 2
+	imageBytes := oscillatorBankImageHeaderSize + mappingBytes + len(unique)*oscillatorTableSize*4
+	if len(storage) < imageBytes {
+		return nil, Error("oscillator bank image storage is too small")
+	}
+	image := storage[:imageBytes]
+	clear(image[:oscillatorBankImageHeaderSize])
+	image[0] = oscillatorBankImageVersion
+	binary.LittleEndian.PutUint16(image[1:3], uint16(len(unique)))
+	for bin, table := range bank.tables {
+		binary.LittleEndian.PutUint16(image[oscillatorBankImageHeaderSize+bin*2:], indices[table])
+	}
+	at := oscillatorBankImageHeaderSize + mappingBytes
+	for _, table := range unique {
+		for _, value := range table {
+			binary.LittleEndian.PutUint32(image[at:], math.Float32bits(value))
+			at += 4
+		}
+	}
+	return image, nil
+}
+
+// InstallOscillatorBankImage installs a bank exported by another instance.
+// The format stores unique tables once and maps semitone bins to them.
+func InstallOscillatorBankImage(sampleRate int, image []byte) error {
+	index, ok := oscillatorBankIndex(sampleRate)
+	if !ok {
+		return Error("unsupported oscillator sample rate")
+	}
+	shared := &sharedOscillatorBanks[index]
+	if shared.bank != nil {
+		return Error("oscillator bank is already initialized")
+	}
+	bank, err := decodeOscillatorBankImage(image)
+	if err != nil {
+		return err
+	}
+	shared.once.Do(func() { shared.bank = bank })
+	if shared.bank != bank {
+		return Error("oscillator bank was initialized concurrently")
+	}
+	return nil
+}
+
+func decodeOscillatorBankImage(image []byte) (*oscillatorBank, error) {
+	if len(image) < oscillatorBankImageHeaderSize || image[0] != oscillatorBankImageVersion {
+		return nil, Error("invalid oscillator bank image")
+	}
+	count := int(binary.LittleEndian.Uint16(image[1:3]))
+	if count < 1 || count > oscillatorBins {
+		return nil, Error("invalid oscillator bank table count")
+	}
+	const mappingBytes = oscillatorBins * 2
+	dataAt := oscillatorBankImageHeaderSize + mappingBytes
+	if len(image) != dataAt+count*oscillatorTableSize*4 {
+		return nil, Error("invalid oscillator bank image length")
+	}
+	unique := make([]*oscillatorTable, count)
+	littleEndian := func() bool {
+		var value uint16 = 1
+		return *(*byte)(unsafe.Pointer(&value)) == 1
+	}()
+	for i := range unique {
+		start := dataAt + i*oscillatorTableSize*4
+		part := image[start : start+oscillatorTableSize*4]
+		if littleEndian {
+			unique[i] = (*oscillatorTable)(unsafe.Pointer(&image[start]))
+		} else {
+			table := new(oscillatorTable)
+			for j := range table {
+				table[j] = math.Float32frombits(binary.LittleEndian.Uint32(part[j*4:]))
+			}
+			unique[i] = table
+		}
+	}
+	bank := new(oscillatorBank)
+	for bin := range bank.tables {
+		index := int(binary.LittleEndian.Uint16(image[oscillatorBankImageHeaderSize+bin*2:]))
+		if index >= len(unique) {
+			return nil, Error("invalid oscillator bank table reference")
+		}
+		bank.tables[bin] = unique[index]
+	}
+	return bank, nil
+}
+
+func oscillatorBankIndex(sampleRate int) (int, bool) {
 	switch sampleRate {
 	case 44_100:
-		index = 0
+		return 0, true
 	case 48_000:
-		index = 1
+		return 1, true
 	case 96_000:
-		index = 2
+		return 2, true
+	default:
+		return 0, false
 	}
+}
+
+func bankForSampleRate(sampleRate int) *oscillatorBank {
+	index, _ := oscillatorBankIndex(sampleRate)
 	shared := &sharedOscillatorBanks[index]
 	shared.once.Do(func() { shared.bank = buildOscillatorBank(float64(sampleRate)) })
 	return shared.bank

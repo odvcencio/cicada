@@ -161,8 +161,11 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .transport { display:flex; align-items:center; gap:9px; margin-left:auto; font:700 .76rem/1.2 system-ui,sans-serif; }
 .transport button { border:1px solid var(--amber); border-radius:7px; background:#3b3220; color:var(--amber); padding:5px 11px; font:inherit; cursor:pointer; }
 .transport button:hover { background:#534326; }
+.transport select { min-height:31px; border:1px solid var(--border); border-radius:7px; background:var(--panel); color:var(--text); padding:4px 8px; font:inherit; }
+.transport select:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
 .transport-position { color:var(--mint); font-variant-numeric:tabular-nums; min-width:100px; }
 .transport-pending { color:var(--amber); }
+.audio-engine-status { color:var(--mint); font-size:.68rem; font-variant-numeric:tabular-nums; white-space:nowrap; }
 .voice-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,340px),1fr)); gap:14px; }
 .voice-card { min-width:0; border:1px solid var(--border); border-radius:14px; background:var(--panel); overflow:hidden; }
 .voice-card summary { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:14px 17px; background:var(--panel-raised); cursor:pointer; }
@@ -367,7 +370,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   <p class="lede">{{if .Studio}}Edit the score, click a pitch row to set a note, or click a drum cell to toggle a hit. The notation on disk remains the source of truth.{{else}}One score, shown as tracks, arrangement, step patterns, and source notation. This export is read only.{{end}}</p>
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
-<nav class="nav" aria-label="Score sections">{{if .Studio}}<a href="#notation">Code</a><a href="#session">Session</a><a href="#master">Master</a><a href="#history">History</a><a href="#voice">Voice</a><div class="transport" aria-label="Native audio transport"><button id="transport-button" type="button">Play</button><div class="master-meter" role="meter" aria-label="Master output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Master</span><div class="meter-track"><i id="master-meter-fill"></i><b id="master-meter-hold"></b></div><output id="master-meter-value">−120 dBFS</output></div><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span><button id="live-toggle" class="live-toggle" type="button" aria-pressed="false">Live</button><div id="midi-controls" class="midi-controls" hidden><span class="midi-status"><i id="midi-activity" class="midi-activity" aria-hidden="true"></i><span id="midi-status">MIDI off</span></span><button id="midi-enable" class="midi-enable" type="button">Enable MIDI</button></div></div>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}</nav>
+<nav class="nav" aria-label="Score sections">{{if .Studio}}<a href="#notation">Code</a><a href="#session">Session</a><a href="#master">Master</a><a href="#history">History</a><a href="#voice">Voice</a><div class="transport" aria-label="Studio audio transport"><label class="sr-only" for="audio-mode">Audio mode</label><select id="audio-mode"><option value="native" selected>Native</option><option value="browser">Browser</option></select><button id="start-audio" type="button" hidden>Start audio</button><button id="transport-button" type="button">Play</button><span class="audio-engine-status" id="audio-engine-status" role="status" aria-live="polite"></span><div class="master-meter" role="meter" aria-label="Master output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Master</span><div class="meter-track"><i id="master-meter-fill"></i><b id="master-meter-hold"></b></div><output id="master-meter-value">−120 dBFS</output></div><span class="transport-position" id="transport-position">Bar 1 · step 1</span><span class="transport-pending" id="transport-pending" aria-live="polite"></span><button id="live-toggle" class="live-toggle" type="button" aria-pressed="false">Live</button><div id="midi-controls" class="midi-controls" hidden><span class="midi-status"><i id="midi-activity" class="midi-activity" aria-hidden="true"></i><span id="midi-status">MIDI off</span></span><button id="midi-enable" class="midi-enable" type="button">Enable MIDI</button></div></div>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}</nav>
 <main class="workspace">
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
@@ -406,8 +409,8 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     </section>{{end}}
     {{if .Studio}}<section id="arrangement" aria-labelledby="arrangement-heading">
       <h2 id="arrangement-heading">Scenes and song</h2>
-      {{if .Scenes}}<div class="scene-matrix-scroll"><table class="scene-matrix" aria-label="Scene launch matrix"><thead><tr><th scope="col">Track</th>{{range .Scenes}}<th scope="col"><button type="button" class="scene-pad" data-scene="{{.ID}}" aria-label="Launch scene {{.ID}} at the next bar">▶ {{.ID}}</button></th>{{end}}</tr></thead><tbody>{{range .SceneRows}}<tr><th scope="row">{{.Track}}</th>{{range .Cells}}<td>{{if .Launchable}}<button type="button" class="scene-slot" data-track="{{.Track}}" data-pattern="{{.Pattern}}" aria-label="Launch {{.Pattern}} on {{.Track}} at the next bar">{{.Label}}</button>{{else}}<span class="scene-slot {{.Label}}">{{.Label}}</span>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>{{end}}
-      <div class="song timeline" aria-label="Song lane">{{range .Song}}<div class="song-block" style="--bars:{{.Bars}}" data-index="{{.Index}}" data-bars="{{.Bars}}" data-scene="{{.Scene}}"><div class="song-block-head"><button type="button" class="song-grip" aria-label="Drag {{.Scene}} to reorder">↔</button><button type="button" class="song-play" aria-label="Play song from {{.Scene}}, bar {{.StartBar}}">▶</button><strong>{{.Scene}}</strong></div><span class="song-duration">{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span><span class="song-range">Bars {{.StartBar}}–{{.EndBar}}</span><div class="song-controls"><button type="button" data-song-action="left" aria-label="Move {{.Scene}} earlier">←</button><button type="button" data-song-action="right" aria-label="Move {{.Scene}} later">→</button><button type="button" data-song-action="shorter" aria-label="Shorten {{.Scene}} by one bar">−</button><button type="button" data-song-action="longer" aria-label="Lengthen {{.Scene}} by one bar">+</button></div><button type="button" class="song-resize" aria-label="Drag to change {{.Scene}} duration">⋮</button></div>{{end}}</div>
+      {{if .Scenes}}<div class="scene-matrix-scroll"><table class="scene-matrix" aria-label="Scene launch matrix"><thead><tr><th scope="col">Track</th>{{range .Scenes}}<th scope="col"><button type="button" class="scene-pad" data-scene="{{.ID}}" data-scene-index="{{.Index}}" aria-label="Launch scene {{.ID}} at the next bar">▶ {{.ID}}</button></th>{{end}}</tr></thead><tbody>{{range .SceneRows}}<tr><th scope="row">{{.Track}}</th>{{range .Cells}}<td>{{if .Launchable}}<button type="button" class="scene-slot" data-track="{{.Track}}" data-pattern="{{.Pattern}}" data-track-index="{{.TrackIndex}}" data-slot-index="{{.SlotIndex}}" aria-label="Launch {{.Pattern}} on {{.Track}} at the next bar">{{.Label}}</button>{{else}}<span class="scene-slot {{.Label}}">{{.Label}}</span>{{end}}</td>{{end}}</tr>{{end}}</tbody></table></div>{{end}}
+      <div class="song timeline" aria-label="Song lane">{{range .Song}}<div class="song-block" style="--bars:{{.Bars}}" data-index="{{.Index}}" data-bars="{{.Bars}}" data-start-bar="{{.StartBar}}" data-scene="{{.Scene}}"><div class="song-block-head"><button type="button" class="song-grip" aria-label="Drag {{.Scene}} to reorder">↔</button><button type="button" class="song-play" aria-label="Play song from {{.Scene}}, bar {{.StartBar}}">▶</button><strong>{{.Scene}}</strong></div><span class="song-duration">{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span><span class="song-range">Bars {{.StartBar}}–{{.EndBar}}</span><div class="song-controls"><button type="button" data-song-action="left" aria-label="Move {{.Scene}} earlier">←</button><button type="button" data-song-action="right" aria-label="Move {{.Scene}} later">→</button><button type="button" data-song-action="shorter" aria-label="Shorten {{.Scene}} by one bar">−</button><button type="button" data-song-action="longer" aria-label="Lengthen {{.Scene}} by one bar">+</button></div><button type="button" class="song-resize" aria-label="Drag to change {{.Scene}} duration">⋮</button></div>{{end}}</div>
     </section>{{end}}
     <section id="patterns" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
@@ -549,7 +552,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   </div>
 </main>
 <footer>{{if .Studio}}Cicada Studio · source-linked projection of the validated project{{else}}Cicada score view · deterministic export from the validated project model{{end}}</footer>
-{{if .Studio}}<script src="/studio-history.js"></script><script src="/studio-audio.js"></script><script>
+{{if .Studio}}<script src="/studio-history.js"></script><script src="/studio-audio.js"></script><script src="/audio/cicada-client.js"></script><script>
 (() => {
   const status = document.getElementById('studio-status');
   const editor = document.getElementById('source-editor');
@@ -559,11 +562,14 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   const sourceView = document.getElementById('source-view');
   const shell = document.getElementById('editor-shell');
   const transportButton = document.getElementById('transport-button');
+  const audioMode = document.getElementById('audio-mode');
+  const startAudioButton = document.getElementById('start-audio');
+  const audioEngineStatus = document.getElementById('audio-engine-status');
   const transportPosition = document.getElementById('transport-position');
   const transportPending = document.getElementById('transport-pending');
-  const scenePads = [...document.querySelectorAll('.scene-pad[data-scene]')];
-  const sceneSlots = [...document.querySelectorAll('button.scene-slot[data-track]')];
-  const patternsRoot = document.getElementById('patterns');
+  let scenePads = [...document.querySelectorAll('.scene-pad[data-scene]')];
+  let sceneSlots = [...document.querySelectorAll('button.scene-slot[data-track]')];
+  let historyList = document.getElementById('history-list');
   const masterMeter = document.querySelector('.master-meter');
   const masterMeterFill = document.getElementById('master-meter-fill');
   const masterMeterHold = document.getElementById('master-meter-hold');
@@ -589,8 +595,36 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   });
   let original = editor.value;
   let busy = false;
+  let idle = Promise.resolve();
+  let audioModeValue = 'native';
+  let browserPlaying = false;
   const revision = () => document.body.dataset.revision;
+  const isBrowser = () => audioModeValue === 'browser';
   const setStatus = (message, state = '') => { status.textContent = message; status.dataset.state = state; };
+  let browserStatusVersion = 0;
+  let browserStatusQueue = Promise.resolve();
+  function browserAudioRateLabel(rate) {
+    const kilo = rate / 1000;
+    return `${Number.isInteger(kilo) ? kilo : kilo.toFixed(1)}k`;
+  }
+  function reportBrowserAudioStatus(active) {
+    const version = ++browserStatusVersion;
+    const sampleRate = window.cicadaBrowserAudio.context?.sampleRate || 0;
+    audioEngineStatus.textContent = active && sampleRate ? `browser · AudioWorklet · ${browserAudioRateLabel(sampleRate)}` : '';
+    browserStatusQueue = browserStatusQueue.then(async () => {
+      const response = await fetch('/api/transport/browser-audio', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({playing:active, sampleRate})
+      });
+      if (!response.ok) return;
+      const state = await response.json();
+      if (version === browserStatusVersion) audioEngineStatus.textContent = state.activeBackend || '';
+    }).catch(() => {});
+  }
+  window.addEventListener('pagehide', () => {
+    if (!browserPlaying) return;
+    const sampleRate = window.cicadaBrowserAudio.context?.sampleRate || 0;
+    navigator.sendBeacon('/api/transport/browser-audio', new Blob([JSON.stringify({playing:false, sampleRate})], {type:'application/json'}));
+  });
   const editing = () => !shell.hidden;
   const dirty = () => editing() && editor.value !== original;
   const showEditor = (on) => {
@@ -604,6 +638,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   async function send(path, payload) {
     if (busy) return false;
     busy = true; save.disabled = true;
+    idle = new Promise(resolve => { resolveIdle = resolve; });
     try {
       const response = await fetch(path, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({...payload, revision:revision()}) });
       const result = await response.json();
@@ -612,30 +647,51 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
         original = payload.source;
         document.body.dataset.revision = result.revision;
       }
+      if (typeof isBrowser === 'function' && isBrowser()) {
+        document.body.dataset.revision = result.revision;
+        const stateResponse = await fetch('/api/state', {cache:'no-store'});
+        const state = await stateResponse.json();
+        if (state.valid) {
+          document.body.dataset.revision = state.revision;
+          // Keep text typed since the save was sent; only replace a clean editor.
+          if (!dirty()) { original = state.source; editor.value = state.source; }
+          if (window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(state.revision);
+          await refreshProjection();
+          setStatus(window.cicadaBrowserAudio.context && browserPlaying ? 'Saved; browser score queued for the next bar' : 'Saved to score file', 'success');
+        }
+        return true;
+      }
       if (dirty()) { setStatus('Saved. New source edits are still open.', 'success'); return true; }
       setStatus('Saved; refreshing projection', 'success');
       location.reload();
       return true;
     } catch (error) { setStatus('Connection lost: ' + error.message, 'error'); return false; }
-    finally { busy = false; save.disabled = false; }
+    finally { busy = false; save.disabled = false; resolveIdle(); }
+  }
+  let resolveIdle = () => {};
+  async function sendStepEdit(edit) {
+    while (busy) await idle;
+    if (dirty()) { setStatus('Save or discard source edits before changing the grid', 'error'); return false; }
+    return send('/api/toggle', edit);
   }
   save.addEventListener('click', () => send('/api/source', {source:editor.value}));
   editor.addEventListener('keydown', event => { if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') { event.preventDefault(); save.click(); } });
-  patternsRoot.addEventListener('click', event => {
-    const cell = event.target.closest('.step-edit');
-    if (!cell) return;
-    if (dirty()) { setStatus('Save or discard source edits before changing the grid', 'error'); return; }
-    const edit = {pattern:cell.dataset.pattern, lane:cell.dataset.lane || '', step:Number(cell.dataset.step)};
-    if (cell.dataset.pitch !== undefined) edit.pitch = Number(cell.dataset.pitch);
-    if (cell.dataset.modifier !== undefined) edit.modifier = cell.dataset.modifier;
-    send('/api/toggle', edit);
-  });
-  const songBlocks = [...document.querySelectorAll('.song.timeline .song-block')];
-  const songEdit = payload => {
-    if (busy) return Promise.resolve(false);
-    if (dirty()) { setStatus('Save or discard source edits before changing the song', 'error'); return Promise.resolve(false); }
-    return send('/api/song', payload);
-  };
+  function bindProjectionControls() {
+    scenePads = [...document.querySelectorAll('.scene-pad[data-scene]')];
+    sceneSlots = [...document.querySelectorAll('button.scene-slot[data-track]')];
+    historyList = document.getElementById('history-list');
+    document.querySelectorAll('.step-edit').forEach(cell => cell.addEventListener('click', () => {
+      const edit = {pattern:cell.dataset.pattern, lane:cell.dataset.lane || '', step:Number(cell.dataset.step)};
+      if (cell.dataset.pitch !== undefined) edit.pitch = Number(cell.dataset.pitch);
+      if (cell.dataset.modifier !== undefined) edit.modifier = cell.dataset.modifier;
+      sendStepEdit(edit);
+    }));
+    const songBlocks = [...document.querySelectorAll('.song.timeline .song-block')];
+    const songEdit = payload => {
+      if (busy) return Promise.resolve(false);
+      if (dirty()) { setStatus('Save or discard source edits before changing the song', 'error'); return Promise.resolve(false); }
+      return send('/api/song', payload);
+    };
   songBlocks.forEach(block => {
     const index = Number(block.dataset.index);
     const initialBars = Number(block.dataset.bars);
@@ -645,6 +701,12 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
       const button = event.currentTarget;
       button.disabled = true;
       try {
+        if (isBrowser()) {
+          if (!window.cicadaBrowserAudio.context) throw new Error('Start browser audio before starting a song block');
+          window.cicadaBrowserAudio.playFrom(Number(block.dataset.startBar));
+          setStatus(`Starting ${block.dataset.scene} at bar ${block.dataset.startBar}`, 'success');
+          return;
+        }
         const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'playFrom', entry:index, scene:block.dataset.scene, revision:revision()})});
         const state = await response.json();
         if (!response.ok) { setStatus(state.error || 'Song start failed', 'error'); return; }
@@ -700,7 +762,55 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
       if (previewBars !== initialBars) { if (!await songEdit({action:'bars', index, bars:previewBars})) restore(); }
       else restore();
     });
-  });
+    });
+    scenePads.forEach(pad => pad.addEventListener('click', async () => {
+      if (isBrowser()) {
+        if (!browserPlaying) { setStatus('Play before launching a scene', 'error'); return; }
+        try { window.cicadaBrowserAudio.launchScene(Number(pad.dataset.sceneIndex)); setStatus(`${pad.dataset.scene} queued for the next bar`, 'success'); }
+        catch (error) { setStatus(error.message, 'error'); }
+        return;
+      }
+      pad.disabled = true;
+      try {
+        const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'launch', scene:pad.dataset.scene, revision:revision()})});
+        const state = await response.json();
+        if (!response.ok) { setStatus(state.error || 'Scene launch failed', 'error'); return; }
+        showTransport(state);
+      } catch (error) { setStatus('Transport connection lost: ' + error.message, 'error'); }
+      finally { pad.disabled = false; }
+    }));
+    sceneSlots.forEach(slot => slot.addEventListener('click', async () => {
+      if (isBrowser()) {
+        if (!browserPlaying) { setStatus('Play before launching a pattern', 'error'); return; }
+        try { window.cicadaBrowserAudio.selectPattern(Number(slot.dataset.trackIndex), Number(slot.dataset.slotIndex)); setStatus(`${slot.dataset.pattern} queued for the next bar`, 'success'); }
+        catch (error) { setStatus(error.message, 'error'); }
+        return;
+      }
+      slot.disabled = true;
+      try {
+        const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'slot', track:slot.dataset.track, pattern:slot.dataset.pattern, revision:revision()})});
+        const state = await response.json();
+        if (!response.ok) { setStatus(state.error || 'Pattern launch failed', 'error'); return; }
+        showTransport(state);
+      } catch (error) { setStatus('Transport connection lost: ' + error.message, 'error'); }
+      finally { slot.disabled = false; }
+    }));
+  }
+  bindProjectionControls();
+  async function refreshProjection() {
+    const response = await fetch('/', {cache:'no-store'});
+    if (!response.ok) throw new Error('Cannot refresh the Studio projection');
+    const html = new DOMParser().parseFromString(await response.text(), 'text/html');
+    const nextProjection = html.querySelector('.projection');
+    const nextSource = html.getElementById('source-view');
+    const nextEditor = html.getElementById('source-editor');
+    if (!nextProjection || !nextSource || !nextEditor) throw new Error('Studio projection is incomplete');
+    document.querySelector('.projection').replaceWith(nextProjection);
+    sourceView.innerHTML = nextSource.innerHTML;
+    if (!dirty()) { original = nextEditor.value; editor.value = original; }
+    document.body.dataset.revision = html.body.dataset.revision;
+    bindProjectionControls();
+  }
   let playing = false;
   let lastTransportSequence = 0;
   function isNewTransportState(state) {
@@ -711,8 +821,10 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     return true;
   }
   function showTransport(state) {
+    if (isBrowser()) return;
     if (!isNewTransportState(state)) return;
     playing = state.playing;
+    audioEngineStatus.textContent = state.activeBackend || '';
     transportButton.textContent = playing ? 'Stop' : 'Play';
     transportPosition.textContent = `Bar ${state.bar} · step ${state.step}`;
     const queuedSlots = Object.entries(state.pendingSlots || {});
@@ -729,6 +841,12 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   transportButton.addEventListener('click', async () => {
     transportButton.disabled = true;
     try {
+      if (isBrowser()) {
+        if (!window.cicadaBrowserAudio.context) throw new Error('Start browser audio before pressing Play');
+        if (browserPlaying) window.cicadaBrowserAudio.stop();
+        else window.cicadaBrowserAudio.play();
+        return;
+      }
       const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:playing ? 'stop' : 'play'})});
       const state = await response.json();
       if (!response.ok) { setStatus(state.error || 'Transport failed', 'error'); return; }
@@ -736,26 +854,60 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     } catch (error) { setStatus('Transport connection lost: ' + error.message, 'error'); }
     finally { transportButton.disabled = false; }
   });
-  scenePads.forEach(pad => pad.addEventListener('click', async () => {
-    pad.disabled = true;
+  audioMode.addEventListener('change', async () => {
+    const next = audioMode.value;
+    if (next === audioModeValue) return;
+    if (next === 'browser' && playing) {
+      try {
+        await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'stop'})});
+      } catch {}
+    }
+    if (next === 'native' && browserPlaying) window.cicadaBrowserAudio.stop();
+    audioModeValue = next;
+    startAudioButton.hidden = !isBrowser();
+    transportButton.textContent = isBrowser() ? (browserPlaying ? 'Stop' : 'Play') : (playing ? 'Stop' : 'Play');
+    transportPosition.textContent = isBrowser() ? 'Bar 1 · step 1' : transportPosition.textContent;
+    transportPending.textContent = '';
+    if (isBrowser()) setStatus(window.cicadaBrowserAudio.context ? 'Browser audio ready' : 'Start audio to use the browser engine');
+    else {
+      reportBrowserAudioStatus(false);
+      try {
+        const response = await fetch('/api/transport', {cache:'no-store'});
+        if (response.ok) showTransport(await response.json());
+        setStatus('Native audio selected');
+      } catch { setStatus('Native transport is waiting for Studio'); }
+    }
+  });
+  startAudioButton.addEventListener('click', async () => {
+    startAudioButton.disabled = true;
     try {
-      const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'launch', scene:pad.dataset.scene, revision:revision()})});
-      const state = await response.json();
-      if (!response.ok) { setStatus(state.error || 'Scene launch failed', 'error'); return; }
-      showTransport(state);
-    } catch (error) { setStatus('Transport connection lost: ' + error.message, 'error'); }
-    finally { pad.disabled = false; }
-  }));
-  sceneSlots.forEach(slot => slot.addEventListener('click', async () => {
-    slot.disabled = true;
-    try {
-      const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'slot', track:slot.dataset.track, pattern:slot.dataset.pattern, revision:revision()})});
-      const state = await response.json();
-      if (!response.ok) { setStatus(state.error || 'Pattern launch failed', 'error'); return; }
-      showTransport(state);
-    } catch (error) { setStatus('Transport connection lost: ' + error.message, 'error'); }
-    finally { slot.disabled = false; }
-  }));
+      const result = await window.cicadaBrowserAudio.startAudio();
+      startAudioButton.textContent = 'Audio ready';
+      setStatus(`Browser audio ready at ${result.sampleRate} Hz`, 'success');
+    } catch (error) {
+      setStatus(error.message, 'error');
+      startAudioButton.disabled = false;
+    }
+  });
+  window.cicadaBrowserAudio.onState(state => {
+    browserPlaying = state;
+    reportBrowserAudioStatus(state);
+    if (isBrowser()) transportButton.textContent = state ? 'Stop' : 'Play';
+  });
+  window.cicadaBrowserAudio.onMessage(message => {
+    if (message.kind !== 1 || !isBrowser()) return;
+    const bar = Math.floor(message.tick / 3840) + 1;
+    const step = Math.floor(message.tick % 3840 / 240) + 1;
+    transportPosition.textContent = `Bar ${bar} · step ${step}`;
+  });
+  window.cicadaBrowserAudio.onError(error => {
+    browserPlaying = false;
+    reportBrowserAudioStatus(false);
+    if (isBrowser()) {
+      transportButton.textContent = 'Play';
+      setStatus(error.message, 'error');
+    }
+  });
   function connectTransport() {
     const socket = new WebSocket(`${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/api/transport/ws`);
     socket.onmessage = event => { try { showTransport(JSON.parse(event.data)); } catch {} };
@@ -772,15 +924,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
     const result = event.detail;
     if (!result?.revision || dirty()) return;
     try {
-      const response = await fetch('/', {cache:'no-store'});
-      if (!response.ok) return;
-      const markup = await response.text();
-      const next = new DOMParser().parseFromString(markup, 'text/html');
-      const nextSource = next.getElementById('source-view');
-      const nextPatterns = next.getElementById('patterns');
-      if (!nextSource || !nextPatterns) return;
-      sourceView.replaceChildren(...[...nextSource.childNodes].map(node => node.cloneNode(true)));
-      patternsRoot.replaceChildren(...[...nextPatterns.childNodes].map(node => node.cloneNode(true)));
+      await refreshProjection();
       original = result.source || original;
       editor.value = original;
       document.body.dataset.revision = result.revision;
@@ -795,7 +939,11 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
       if (!response.ok) { setStatus(state.error || 'Cannot read score state', 'error'); return; }
       if (busy || state.revision === revision()) return;
       if (dirty()) { setStatus('The file changed outside Studio. Save with care or discard your draft.', 'error'); return; }
-      if (state.valid) location.reload();
+      if (state.valid && isBrowser()) {
+        if (window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(state.revision);
+        await refreshProjection();
+        setStatus(window.cicadaBrowserAudio.context && browserPlaying ? 'External edit queued for the next bar' : 'Score refreshed from disk', 'success');
+      } else if (state.valid) location.reload();
       else {
         original = state.source; editor.value = original; document.body.dataset.revision = state.revision;
         setStatus(state.error || 'The score on disk has an error; showing the last valid projection.', 'error');
