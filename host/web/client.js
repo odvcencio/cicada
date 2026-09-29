@@ -35,40 +35,51 @@
       const Context = window.AudioContext || window.webkitAudioContext;
       if (!Context) throw new Error('AudioWorklet is not available in this browser');
       this.context = new Context({ sampleRate: 48000, latencyHint: 'interactive' });
-      const [module, imageResponse] = await Promise.all([
-        this.modulePromise || (this.modulePromise = fetch('/api/kernel.wasm', { cache: 'no-store' }).then(r => {
-          if (!r.ok) throw new Error('Cannot load the audio kernel');
-          return r.arrayBuffer();
-        }).then(bytes => WebAssembly.compile(bytes))),
-        fetch(`/api/kernel-image?rate=${this.context.sampleRate}`, { cache: 'no-store' })
-      ]);
-      if (!imageResponse.ok) throw new Error((await imageResponse.text()) || 'Cannot load the score image');
-      const revision = imageResponse.headers.get('X-Cicada-Revision') || '';
-      const image = await imageResponse.arrayBuffer();
-      await this.context.audioWorklet.addModule('/audio/cicada-processor.js');
-      this.node = new AudioWorkletNode(this.context, 'cicada', {
-        numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
-        processorOptions: { m: module, i: image, r: revision, l: this.contextLatencyMs() }
-      });
-      this.readyPromise = new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('AudioWorklet did not initialize')), 10000);
-        this.node.port.onmessage = event => {
-          const data = event.data;
-          if (data.t === 'r') {
-            clearTimeout(timeout);
-            this.revision = data.r;
-            this.clock = data.c;
-            resolve(data);
-          }
-          this.receive(data);
-        };
-        this.node.port.onmessageerror = () => reject(new Error('AudioWorklet message could not be decoded'));
-      });
-      this.node.connect(this.context.destination);
-      await this.readyPromise;
-      await this.context.resume();
-      this.node.port.postMessage({ t: 'q', l: this.contextLatencyMs() });
-      if (!this.outputTimelineTimer) this.outputTimelineTimer = setInterval(() => this.sampleOutputTimeline(), 5);
+      try {
+        const [module, imageResponse] = await Promise.all([
+          this.modulePromise || (this.modulePromise = fetch('/api/kernel.wasm', { cache: 'no-store' }).then(r => {
+            if (!r.ok) throw new Error('Cannot load the audio kernel');
+            return r.arrayBuffer();
+          }).then(bytes => WebAssembly.compile(bytes))),
+          fetch(`/api/kernel-image?rate=${this.context.sampleRate}`, { cache: 'no-store' })
+        ]);
+        if (!imageResponse.ok) throw new Error((await imageResponse.text()) || 'Cannot load the score image');
+        const revision = imageResponse.headers.get('X-Cicada-Revision') || '';
+        const image = await imageResponse.arrayBuffer();
+        await this.context.audioWorklet.addModule('/audio/cicada-processor.js');
+        this.node = new AudioWorkletNode(this.context, 'cicada', {
+          numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
+          processorOptions: { m: module, i: image, r: revision, l: this.contextLatencyMs() }
+        });
+        this.readyPromise = new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => reject(new Error('AudioWorklet did not initialize')), 10000);
+          this.node.port.onmessage = event => {
+            const data = event.data;
+            if (data.t === 'r') {
+              clearTimeout(timeout);
+              this.revision = data.r;
+              this.clock = data.c;
+              resolve(data);
+            }
+            this.receive(data);
+          };
+          this.node.port.onmessageerror = () => reject(new Error('AudioWorklet message could not be decoded'));
+        });
+        this.node.connect(this.context.destination);
+        await this.readyPromise;
+        await this.context.resume();
+        this.node.port.postMessage({ t: 'q', l: this.contextLatencyMs() });
+        if (!this.outputTimelineTimer) this.outputTimelineTimer = setInterval(() => this.sampleOutputTimeline(), 5);
+      } catch (error) {
+        // Leave no half-started context behind, so a later Start retries from scratch.
+        const failed = this.context;
+        this.context = null;
+        this.node = null;
+        this.readyPromise = null;
+        this.modulePromise = null;
+        if (failed && failed.close) failed.close().catch(() => {});
+        throw error;
+      }
       return { sampleRate: this.context.sampleRate, clock: this.clock };
     }
 

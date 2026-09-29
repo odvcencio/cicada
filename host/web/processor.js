@@ -42,6 +42,20 @@ class CicadaKernel extends AudioWorkletProcessor {
         r: new Float32Array(x.memory.buffer, x.gosx_audio_out_ptr() + max * 4, max)
       };
     };
+    const flush = () => {
+      for (let i = 0; i < deferredCount; i++) commit(active, deferred, i * 24, 24);
+      deferredCount = 0;
+    };
+    // Make a staged instance the active one: at a stop, or when nothing is playing.
+    const promote = (next) => {
+      pending = null;
+      active = next;
+      bpm = next.b;
+      engineSample = anchorSample = 0;
+      anchorTick = 0;
+      nextBarTick = 3840;
+      flush();
+    };
     const receive = (data) => {
       if (data.t === 'b') {
         view = new Uint8Array(data.bytes);
@@ -56,21 +70,11 @@ class CicadaKernel extends AudioWorkletProcessor {
         pending = true;
         create(data.i).then(next => {
           if (playing) pending = next;
-          else {
-            pending = null;
-            active = next;
-            bpm = next.b;
-            engineSample = anchorSample = 0;
-            anchorTick = 0;
-            nextBarTick = 3840;
-            for (let i = 0; i < deferredCount; i++) commit(active, deferred, i * 24, 24);
-            deferredCount = 0;
-          }
+          else promote(next);
           port.postMessage({ t: 't', r: data.r });
         }, error => {
           if (pending === true) pending = null;
-          for (let i = 0; i < deferredCount; i++) commit(active, deferred, i * 24, 24);
-          deferredCount = 0;
+          flush();
           port.postMessage({ t: 'x', r: data.r, e: String(error) });
         });
       }
@@ -119,7 +123,7 @@ class CicadaKernel extends AudioWorkletProcessor {
           if (starts) { previous = null; fadeLeft = fadeTotal; }
         }
         if (starts) { playing = true; port.postMessage({ t: 's', p: true }); }
-        if (stops) { playing = false; port.postMessage({ t: 's', p: false }); }
+        if (stops) { playing = false; port.postMessage({ t: 's', p: false }); if (pending && pending !== true) promote(pending); }
       }
     };
     const sampleAtTick = (tick) => {
