@@ -41,6 +41,26 @@ func TestMessageWireLayout(t *testing.T) {
 	}
 }
 
+func TestConductorMessageKindsRoundTrip(t *testing.T) {
+	messages := []Message{
+		{Kind: Bar, B: 16, Tick: 3840},
+		{Kind: PhraseEnd, B: 2, Tick: 7680},
+		{Kind: LayerChanged, A: 3, B: 0xffff, Tick: 3840},
+		{Kind: MacroReached, Track: 15, Tick: 123},
+	}
+	for _, message := range messages {
+		encoded := EncodeMessage(message)
+		decoded, err := DecodeMessage(encoded[:])
+		if err != nil || decoded != message {
+			t.Fatalf("message round trip %+v: got %+v, %v", message, decoded, err)
+		}
+	}
+	invalid := EncodeMessage(Message{Kind: MacroReached + 1})
+	if _, err := DecodeMessage(invalid[:]); err == nil {
+		t.Fatal("accepted unknown conductor message kind")
+	}
+}
+
 func TestCommandRejectsMalformedRecords(t *testing.T) {
 	valid, _ := EncodeCommand(Command{Op: OpPlay, Track: 255}, 1)
 	for _, mutate := range []func(*[CommandSize]byte){
@@ -133,5 +153,39 @@ func TestBatchDecodeIsAllOrNone(t *testing.T) {
 	}
 	if count, err := DecodeCommands(data[:len(data)-1], 1, dst); err == nil || count != 0 {
 		t.Fatal("accepted partial batch")
+	}
+}
+
+func TestConductorCommandsValidate(t *testing.T) {
+	tests := []struct {
+		name   string
+		tracks uint8
+		cmd    Command
+		valid  bool
+	}{
+		{"layers minimum threshold and default release", 4, Command{Op: OpSetLayers, Track: 255, Index: 0, Arg0: 0x00030201}, true},
+		{"layers all thresholds and release max", 16, Command{Op: OpSetLayers, Track: 255, Index: 15, Arg0: 0xffc08040, Arg1: 16}, true},
+		{"layers macro out of range", 4, Command{Op: OpSetLayers, Track: 255, Index: 16, Arg0: 0x00030201}, false},
+		{"layers thresholds not ascending", 4, Command{Op: OpSetLayers, Track: 255, Arg0: 0x00030202}, false},
+		{"layers release out of range", 4, Command{Op: OpSetLayers, Track: 255, Arg0: 0x00030201, Arg1: 17}, false},
+		{"layers requires global track", 4, Command{Op: OpSetLayers, Track: 0, Arg0: 0x00030201}, false},
+		{"masks fit track count", 4, Command{Op: OpSetLayerMasks, Track: 255, Index: 0, Arg0: 0x00030001, Arg1: 0x000f0004}, true},
+		{"mask above track count in first pair", 3, Command{Op: OpSetLayerMasks, Track: 255, Index: 0, Arg0: 0x00080001}, false},
+		{"mask above track count in second pair", 3, Command{Op: OpSetLayerMasks, Track: 255, Index: 0, Arg1: 0x00080001}, false},
+		{"masks macro out of range", 4, Command{Op: OpSetLayerMasks, Track: 255, Index: 16}, false},
+		{"phrase minimum", 1, Command{Op: OpSetPhraseBars, Track: 255, Arg0: 1}, true},
+		{"phrase maximum", 1, Command{Op: OpSetPhraseBars, Track: 255, Arg0: 64}, true},
+		{"phrase zero", 1, Command{Op: OpSetPhraseBars, Track: 255}, false},
+		{"phrase above maximum", 1, Command{Op: OpSetPhraseBars, Track: 255, Arg0: 65}, false},
+		{"phrase index must be zero", 1, Command{Op: OpSetPhraseBars, Track: 255, Index: 1, Arg0: 8}, false},
+		{"phrase reserved payload", 1, Command{Op: OpSetPhraseBars, Track: 255, Arg0: 8, Arg1: 1}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := EncodeCommand(tt.cmd, tt.tracks)
+			if (err == nil) != tt.valid {
+				t.Fatalf("EncodeCommand(%+v) error = %v, valid = %v", tt.cmd, err, tt.valid)
+			}
+		})
 	}
 }

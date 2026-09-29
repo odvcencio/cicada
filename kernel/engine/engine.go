@@ -143,6 +143,17 @@ type Engine struct {
 	macroTarget                  [16]float32
 	macroRampFrames              [16]uint32
 	macroRampElapsed             [16]uint32
+	macroLayerEnabled            [16]bool
+	macroLayerThresholds         [16][4]uint8
+	macroLayerThresholdCount     [16]uint8
+	macroLayerInitialized        [16]bool
+	macroLayerMasks              [16][4]uint32
+	macroLayerRelease            [16]uint8
+	macroLayerLevel              [16]uint8
+	macroLayerQuiet              [16]uint8
+	phraseBars                   uint32
+	liveEvents                   bool // set by any live-control op; keeps Bar and MacroReached off for hosts that never drain messages
+	lastBarTick                  int64
 	bpmMilli                     int64
 	voices                       [16]voiceSlot
 	transport                    seq.Transport
@@ -239,7 +250,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	}
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
-		layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1}
+		layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
 	for id := 0; id < len(kernel.Params); id++ {
 		e.paramAlpha[id] = smoothingAlpha(kernel.ParamID(id), cfg.SampleRate)
 	}
@@ -620,6 +631,8 @@ func (e *Engine) Reset() {
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0
 	e.pendingLen, e.meterBlock = 0, 0
+	e.liveEvents, e.phraseBars, e.lastBarTick = false, 0, -1
+	e.macroLayerEnabled = [16]bool{}
 	e.playheadFrames = e.sampleRate / 60
 	e.renderFrame, e.renderFrames = 0, 0
 	e.layerMask = (1 << e.tracks) - 1
@@ -676,6 +689,12 @@ func (e *Engine) Render(outL, outR []float32) {
 			return
 		}
 		e.applyPending()
+		if e.faulted {
+			clear(outL[frame:])
+			clear(outR[frame:])
+			return
+		}
+		e.processBarBoundary()
 		if e.faulted {
 			clear(outL[frame:])
 			clear(outR[frame:])
@@ -906,6 +925,9 @@ func (e *Engine) advanceMacroRamps() {
 		if elapsed >= total {
 			e.macroCurrent[id] = e.macroTarget[id]
 			e.macroRampFrames[id], e.macroRampElapsed[id] = 0, 0
+			if e.liveEvents {
+				e.emit(cmd.Message{Kind: cmd.MacroReached, Track: uint8(id), Tick: e.transport.Tick()})
+			}
 			continue
 		}
 		e.macroRampElapsed[id] = elapsed
@@ -995,6 +1017,7 @@ func (e *Engine) apply(c cmd.Command) {
 		e.emit(cmd.Message{Kind: cmd.Playhead, Track: 0xff, Tick: e.transport.Tick()})
 	case cmd.OpStop:
 		e.transport.Stop()
+		e.lastBarTick = -1
 		for i := 0; i < e.tracks; i++ {
 			e.noteOff(i, 0xffff)
 			e.patterns[i].playingNote = 0
@@ -1005,6 +1028,7 @@ func (e *Engine) apply(c cmd.Command) {
 			e.fault(6)
 			return
 		}
+		e.lastBarTick = -1
 		for i := 0; i < e.tracks; i++ {
 			e.resetVoice(i)
 		}
@@ -1041,11 +1065,13 @@ func (e *Engine) apply(c cmd.Command) {
 	case cmd.OpSetParam:
 		e.setParam(c)
 	case cmd.OpDefineMacro:
+		e.liveEvents = true
 		id := int(c.Index)
 		value := math.Float32frombits(c.Arg0)
 		e.macroCurrent[id], e.macroStart[id], e.macroTarget[id] = value, value, value
 		e.macroRampFrames[id], e.macroRampElapsed[id] = 0, 0
 	case cmd.OpSetMacro:
+		e.liveEvents = true
 		id := int(c.Index)
 		target := math.Float32frombits(c.Arg0)
 		e.macroStart[id], e.macroTarget[id] = e.macroCurrent[id], target
@@ -1053,6 +1079,35 @@ func (e *Engine) apply(c cmd.Command) {
 		if c.Arg1 == 0 {
 			e.macroCurrent[id] = target
 		}
+	case cmd.OpSetLayers:
+		e.liveEvents = true
+		id := int(c.Index)
+		e.macroLayerEnabled[id] = true
+		e.macroLayerInitialized[id] = false
+		e.macroLayerThresholds[id] = [4]uint8{}
+		e.macroLayerThresholdCount[id] = 0
+		thresholds := c.Arg0
+		for level := range 4 {
+			threshold := uint8(thresholds)
+			if threshold == 0 {
+				break
+			}
+			e.macroLayerThresholds[id][level] = threshold
+			e.macroLayerThresholdCount[id]++
+			thresholds >>= 8
+		}
+		e.macroLayerRelease[id] = uint8(c.Arg1)
+		if e.macroLayerRelease[id] == 0 {
+			e.macroLayerRelease[id] = 3
+		}
+		e.macroLayerLevel[id], e.macroLayerQuiet[id] = 0, 0
+	case cmd.OpSetLayerMasks:
+		id := int(c.Index)
+		e.macroLayerMasks[id] = [4]uint32{uint32(uint16(c.Arg0)), uint32(uint16(c.Arg0 >> 16)), uint32(uint16(c.Arg1)), uint32(uint16(c.Arg1 >> 16))}
+		e.macroLayerInitialized[id] = false
+	case cmd.OpSetPhraseBars:
+		e.liveEvents = true
+		e.phraseBars = c.Arg0
 	case cmd.OpNoteOn:
 		track := int(c.Track)
 		note, velocity := uint8(c.Arg0), uint8(c.Arg0>>8)
@@ -1095,7 +1150,7 @@ func (e *Engine) apply(c cmd.Command) {
 	case cmd.OpLaunchScene:
 		e.applySceneCommand(c)
 	case cmd.OpSetLayerMask:
-		e.layerMask = c.Arg0
+		e.applyLayerMask(c.Arg0)
 	case cmd.OpMeterRate:
 		e.meterRate = c.Arg0
 	default:
