@@ -19,30 +19,32 @@ import (
 )
 
 type studioTransport struct {
-	path          string
-	audioBackend  string
-	mu            sync.Mutex
-	pollMu        sync.Mutex
-	stream        *liveplay.Player
-	audio         studioAudioDevice
-	audioOptions  studioAudioOptions
-	sampleRate    int
-	cancel        context.CancelFunc
-	last          [32]byte
-	playing       bool
-	pending       bool
-	pendingSong   string
-	pendingSongID uint64
-	snapshotSeq   uint64
-	scene         string
-	stoppedTracks map[string]bool
-	activeSlots   map[string]string
-	landed        int64
-	errText       string
-	history       *studioHistory
-	audioNull     bool
-	latestMeter   atomic.Pointer[studioMeterSnapshot]
-	meterSequence atomic.Uint64
+	path              string
+	audioBackend      string
+	mu                sync.Mutex
+	pollMu            sync.Mutex
+	stream            *liveplay.Player
+	audio             studioAudioDevice
+	audioOptions      studioAudioOptions
+	sampleRate        int
+	cancel            context.CancelFunc
+	last              [32]byte
+	playing           bool
+	browserPlaying    bool
+	browserSampleRate int
+	pending           bool
+	pendingSong       string
+	pendingSongID     uint64
+	snapshotSeq       uint64
+	scene             string
+	stoppedTracks     map[string]bool
+	activeSlots       map[string]string
+	landed            int64
+	errText           string
+	history           *studioHistory
+	audioNull         bool
+	latestMeter       atomic.Pointer[studioMeterSnapshot]
+	meterSequence     atomic.Uint64
 }
 
 type studioMeterSnapshot struct {
@@ -54,6 +56,8 @@ type studioMeterSnapshot struct {
 type transportSnapshot struct {
 	Type                string            `json:"type"`
 	Sequence            uint64            `json:"sequence"`
+	ActiveBackend       string            `json:"activeBackend,omitempty"`
+	BrowserPlaying      bool              `json:"browserPlaying,omitempty"`
 	Playing             bool              `json:"playing"`
 	Bar                 int64             `json:"bar"`
 	Step                int64             `json:"step"`
@@ -104,6 +108,13 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		}
 	}
 	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
+	if t.browserPlaying && t.browserSampleRate > 0 {
+		state.ActiveBackend = fmt.Sprintf("browser · AudioWorklet · %s", studioAudioRateLabel(t.browserSampleRate))
+		state.BrowserPlaying = true
+	} else if t.playing && t.sampleRate > 0 {
+		backend := studioAudioBackendLabel(audiobackend.Name(t.selectedAudioBackend()))
+		state.ActiveBackend = fmt.Sprintf("%s · %s", backend, studioAudioRateLabel(t.sampleRate))
+	}
 	if len(t.activeSlots) != 0 {
 		state.ActiveSlots = make(map[string]string, len(t.activeSlots))
 		for track, pattern := range t.activeSlots {
@@ -137,6 +148,24 @@ func (t *studioTransport) snapshot() transportSnapshot {
 }
 
 func (t *studioTransport) start() error { return t.startFrom(-1, "", nil, [32]byte{}) }
+
+func (t *studioTransport) setBrowserAudioStatus(playing bool, sampleRate int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.browserPlaying = playing
+	if playing {
+		t.browserSampleRate = sampleRate
+	} else {
+		t.browserSampleRate = 0
+	}
+}
+
+func studioAudioRateLabel(sampleRate int) string {
+	if sampleRate%1000 == 0 {
+		return fmt.Sprintf("%dk", sampleRate/1000)
+	}
+	return fmt.Sprintf("%.1fk", float64(sampleRate)/1000)
+}
 
 func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte) error {
 	t.pollMu.Lock()
@@ -251,13 +280,19 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	return nil
 }
 
-func (t *studioTransport) stop() {
+// pause halts playback and keeps the stream, so play resumes at the same
+// position (D18: Space toggles play and pause).
+func (t *studioTransport) pause() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.pauseLocked()
+}
+
+func (t *studioTransport) pauseLocked() {
 	if t.audio != nil {
 		audio := t.audio
 		audio.Pause()
-		// Release duplex hosts after Stop so they no longer hold the input endpoint.
+		// Release duplex hosts after Pause so they no longer hold the input endpoint.
 		if audio.StopClosesDevice() {
 			if err := audio.Close(); err != nil {
 				t.errText = err.Error()
@@ -273,6 +308,47 @@ func (t *studioTransport) stop() {
 	t.playing = false
 	t.pendingSong = ""
 	t.pendingSongID = 0
+}
+
+// stop halts playback and returns to bar 1 by discarding the stream (D18).
+// The next start builds a new stream from the beginning.
+func (t *studioTransport) stop() {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.pauseLocked()
+	if t.cancel != nil {
+		t.cancel()
+		t.cancel = nil
+	}
+	if t.audio != nil {
+		if err := t.audio.Close(); err != nil {
+			t.errText = err.Error()
+		}
+		t.audio = nil
+	}
+	if t.stream != nil {
+		t.stream.Close()
+		t.stream = nil
+	}
+	// A discarded stream has no muted tracks; do not report them as stopped.
+	t.stoppedTracks = nil
+	t.activeSlots = nil
+	t.scene = ""
+	t.pending = false
+	t.landed = 0
+}
+
+// returnToStart moves to bar 1. A playing transport keeps playing from the
+// start; a stopped one stays stopped (D18).
+func (t *studioTransport) returnToStart() error {
+	t.mu.Lock()
+	wasPlaying := t.playing
+	t.mu.Unlock()
+	t.stop()
+	if wasPlaying {
+		return t.start()
+	}
+	return nil
 }
 
 func (t *studioTransport) launchScene(name string, quantizes ...cmd.Quantize) error {
@@ -526,6 +602,7 @@ func (t *studioTransport) poll() {
 	}
 	t.mu.Lock()
 	t.last = fingerprint
+	// Clear the transport error when a valid revision lands (UX review finding 2).
 	t.pending, t.errText = true, ""
 	position := stream.Position()
 	t.mu.Unlock()
@@ -584,8 +661,16 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
 			return
 		}
+	case "pause":
+		s.transport.pause()
 	case "stop":
 		s.transport.stop()
+	case "home":
+		if err := s.transport.returnToStart(); err != nil {
+			s.transport.setError(err)
+			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
 	case "trackStop":
 		if err := s.transport.stopTrack(input.Track); err != nil {
 			studioJSON(w, http.StatusConflict, map[string]string{"error": err.Error()})
@@ -707,19 +792,26 @@ func (s *studio) transportSocket(w http.ResponseWriter, r *http.Request) {
 	}
 	defer connection.CloseNow()
 	ctx := connection.CloseRead(context.Background())
+	// Send transport snapshot immediately when the WebSocket connects so stopped transports show their real position.
+	writeCtx, cancel := context.WithTimeout(ctx, time.Second)
+	err = wsjson.Write(writeCtx, connection, s.transport.snapshot())
+	cancel()
+	if err != nil {
+		return
+	}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
 	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
 		writeCtx, cancel := context.WithTimeout(ctx, time.Second)
 		err := wsjson.Write(writeCtx, connection, s.transport.snapshot())
 		cancel()
 		if err != nil {
 			return
-		}
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
 		}
 	}
 }
