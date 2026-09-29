@@ -225,6 +225,9 @@ func (c Command) Validate(tracks uint8) error {
 		}
 	case OpSetLayers:
 		thresholds := c.Arg0
+		if thresholds>>24 != 0 {
+			return Error("at most three layer thresholds")
+		}
 		previous := uint32(0)
 		hasUnused := false
 		for level := range 4 {
