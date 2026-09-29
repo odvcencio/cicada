@@ -32,34 +32,43 @@
   const storage = getStorage();
   const mappings = midi.createMappingStore(storage);
 
-  const patternMeta = new Map();
-  for (const card of $$('.pattern')) {
-    const title = card.querySelector('.pattern-title');
-    const id = title?.childNodes[0]?.textContent.trim();
-    const grid = card.querySelector('.grid-line');
-    const steps = Number.parseInt(grid?.style.getPropertyValue('--steps') || '16', 10);
-    if (id) patternMeta.set(id, {steps: Number.isInteger(steps) ? steps : 16, drums: card.classList.contains('drum')});
+  let patternMeta = new Map();
+  let sceneNames = [];
+  let sceneRows = new Map();
+  let tracks = [];
+  let trackByID = new Map();
+  // readProjection derives the score data Live works from out of the Session and Mix markup.
+  // An in-place refresh calls it again, so Live never launches a stale scene or pattern.
+  function readProjection() {
+    patternMeta = new Map();
+    for (const card of $$('.pattern')) {
+      const title = card.querySelector('.pattern-title');
+      const id = title?.childNodes[0]?.textContent.trim();
+      const grid = card.querySelector('.grid-line');
+      const steps = Number.parseInt(grid?.style.getPropertyValue('--steps') || '16', 10);
+      if (id) patternMeta.set(id, {steps: Number.isInteger(steps) ? steps : 16, drums: card.classList.contains('drum')});
+    }
+    sceneNames = $$('.scene-matrix thead .scene-pad[data-scene]').map(pad => pad.dataset.scene);
+    sceneRows = new Map();
+    for (const row of $$('.scene-matrix tbody tr')) {
+      const track = row.querySelector('th')?.textContent.trim();
+      if (!track) continue;
+      const cells = [...row.querySelectorAll('td')].map(cell => {
+        const pad = cell.querySelector('button.scene-slot[data-pattern]');
+        return {pattern: pad?.dataset.pattern || '', label: pad?.textContent.trim() || cell.textContent.trim() || 'Keep'};
+      });
+      sceneRows.set(track, cells);
+    }
+    tracks = $$('.track-list .track').map(card => {
+      const id = card.querySelector('strong')?.textContent.trim() || '';
+      const kind = card.querySelector('.kind')?.textContent.trim().toLowerCase() || '';
+      const cells = sceneRows.get(id) || [];
+      const drum = kind.includes('drum') || cells.some(cell => cell.pattern && patternMeta.get(cell.pattern)?.drums);
+      return {id, kind, drum, acid: kind === 'acid'};
+    }).filter(track => track.id);
+    trackByID = new Map(tracks.map(track => [track.id, track]));
   }
-
-  const sceneNames = $$('.scene-matrix thead .scene-pad[data-scene]').map(pad => pad.dataset.scene);
-  const sceneRows = new Map();
-  for (const row of $$('.scene-matrix tbody tr')) {
-    const track = row.querySelector('th')?.textContent.trim();
-    if (!track) continue;
-    const cells = [...row.querySelectorAll('td')].map(cell => {
-      const pad = cell.querySelector('button.scene-slot[data-pattern]');
-      return {pattern: pad?.dataset.pattern || '', label: pad?.textContent.trim() || cell.textContent.trim() || 'Keep'};
-    });
-    sceneRows.set(track, cells);
-  }
-  const tracks = $$('.track-list .track').map(card => {
-    const id = card.querySelector('strong')?.textContent.trim() || '';
-    const kind = card.querySelector('.kind')?.textContent.trim().toLowerCase() || '';
-    const cells = sceneRows.get(id) || [];
-    const drum = kind.includes('drum') || cells.some(cell => cell.pattern && patternMeta.get(cell.pattern)?.drums);
-    return {id, kind, drum, acid: kind === 'acid'};
-  }).filter(track => track.id);
-  const trackByID = new Map(tracks.map(track => [track.id, track]));
+  readProjection();
 
   function readSettings() {
     try {
@@ -136,6 +145,8 @@
   }
   function buildLaunchGrid() {
     if (!launchGrid) return;
+    liveScenePads.length = 0;
+    liveSlotPads.length = 0;
     const table = document.createElement('table');
     table.className = 'live-grid';
     table.setAttribute('aria-label', 'Live scene and track launch pads');
@@ -209,22 +220,30 @@
 
   const armControls = $('#live-arm-controls');
   const armedTracks = new Set();
-  for (const track of tracks) {
-    const label = document.createElement('label');
-    label.className = 'live-arm';
-    const checkbox = document.createElement('input');
-    checkbox.type = 'checkbox';
-    checkbox.value = track.id;
-    checkbox.setAttribute('aria-label', `Arm ${track.id} for MIDI take`);
-    checkbox.addEventListener('change', () => {
-      if (checkbox.checked) armedTracks.add(track.id);
-      else armedTracks.delete(track.id);
-    });
-    const text = document.createElement('span');
-    text.textContent = `Arm ${track.id}`;
-    label.append(checkbox, text);
-    armControls?.append(label);
+  function buildArmControls() {
+    for (const id of [...armedTracks]) if (!trackByID.has(id)) armedTracks.delete(id);
+    armControls?.replaceChildren();
+    for (const track of tracks) {
+      const label = document.createElement('label');
+      label.className = 'live-arm';
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = track.id;
+      checkbox.checked = armedTracks.has(track.id);
+      checkbox.setAttribute('aria-label', `Arm ${track.id} for MIDI take`);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) armedTracks.add(track.id);
+        else armedTracks.delete(track.id);
+        window.dispatchEvent(new CustomEvent('cicada:armchange', {detail: {count: armedTracks.size}}));
+      });
+      const text = document.createElement('span');
+      text.textContent = `Arm ${track.id}`;
+      label.append(checkbox, text);
+      armControls?.append(label);
+    }
+    window.dispatchEvent(new CustomEvent('cicada:armchange', {detail: {count: armedTracks.size}}));
   }
+  buildArmControls();
 
   let transportState = {playing: false, bar: 1, step: 1, scene: '', pendingScene: '', pendingSlots: {}, activeSlots: {}, stoppedTracks: []};
   let lastSequence = 0;
@@ -647,7 +666,7 @@
       capturedNotes = [];
       activeNotes.clear();
       takePanel.hidden = true;
-      setTimeout(() => location.reload(), 900);
+      window.cicadaRefreshProjection?.({revision: result.revision}).catch(() => setStatus('Take committed; the projection could not refresh', 'error', false));
     } catch (error) { setStatus(`Take commit failed: ${error.message}`, 'error'); }
     finally { button.disabled = false; }
   });
@@ -914,4 +933,15 @@
   if (transportState) connectTransport();
   if ($('#transport-pending')) $('#transport-pending').setAttribute('aria-live', 'off');
   renderLaunchStates();
+  window.addEventListener('cicada:projectionrefreshed', () => {
+    readProjection();
+    fillTrackSelect(acidSelect, track => track.acid, settings.acidTrack);
+    fillTrackSelect(drumSelect, track => track.drum, settings.drumTrack);
+    if (acidSelect) settings.acidTrack = acidSelect.value;
+    if (drumSelect) settings.drumTrack = drumSelect.value;
+    buildLaunchGrid();
+    buildArmControls();
+    selectScene(Math.max(0, sceneNames.indexOf(settings.selectedScene)), false);
+    renderLaunchStates();
+  });
 })();
