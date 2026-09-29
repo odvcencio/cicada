@@ -10,8 +10,8 @@ github.com/jfreymuth/pulse v0.1.3 h1:bc5TdxiB8E+2INnFjFWWgyfgXtz2IyNNNCX+Wt/ZD14
 github.com/jfreymuth/pulse v0.1.3/go.mod h1:cpYspI6YljhkUf1WLXLLDmeaaPFc3CnGLjDZf9dZ4no=
 github.com/odvcencio/gotreesitter v0.54.0 h1:zHIsmm2gsgfwywjtBNOm7Xq/40TZ1mTQRUIBqg2QkMY=
 github.com/odvcencio/gotreesitter v0.54.0/go.mod h1:hBVkghd0paaYAVwd2087vfwdeU984bQbMo9LvpE0moo=
-github.com/odvcencio/tymbal v0.0.0-20260928215234-60585616f5cf h1:6+QE3oD31KDWOI9W7/UK9xz6XSUbRbT8nm0lNepsrdQ=
-github.com/odvcencio/tymbal v0.0.0-20260928215234-60585616f5cf/go.mod h1:dAqS4PSB206gXQ1GqsxZ1ftkdXjNozHfE7tHo6qImvs=
+github.com/odvcencio/tymbal v0.0.0-20260929091837-23968cefb0c6 h1:EmWVy09jtqH8v7zFwgkBWwAY355IFudugvCuV+wLSwg=
+github.com/odvcencio/tymbal v0.0.0-20260929091837-23968cefb0c6/go.mod h1:dAqS4PSB206gXQ1GqsxZ1ftkdXjNozHfE7tHo6qImvs=
 github.com/tetratelabs/wazero v1.12.0 h1:DuWcpNu/FzgEXgGBDp8J1Spc+CWOvvtvVyjKlaZopYU=
 github.com/tetratelabs/wazero v1.12.0/go.mod h1:LvKtzl2RqO4gyF27BiXU+nKAjcV8f38U+kP/q2vgxh0=
 github.com/xyproto/randomstring v1.0.5 h1:YtlWPoRdgMu3NZtP45drfy1GKoojuR7hmRcnhZqKjWU=
