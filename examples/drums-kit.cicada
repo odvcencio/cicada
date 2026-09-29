@@ -1,5 +1,3 @@
-cicada 1
-
 title "Eleven drum lanes"
 
 tempo 120
@@ -13,18 +11,18 @@ track kit drums {
   cy_tone = 1
 }
 
-pattern beat drums steps = 16 {
-  bd: x...x...x...x...;
-  sd: ....x.......x...;
-  ch: x.x.x.x.x.x.x.x.;
-  oh: ......x.........;
-  cp: ............x...;
-  rs: ...x............;
-  lt: ..........x.....;
-  mt: ......x.........;
-  ht: ..x.............;
-  cb: .........x......;
-  cy: x...............;
+pattern beat drums {
+  bd: x...x...x...x...
+  sd: ....x.......x...
+  ch: x.x.x.x.x.x.x.x.
+  oh: ......x.........
+  cp: ............x...
+  rs: ...x............
+  lt: ..........x.....
+  mt: ......x.........
+  ht: ..x.............
+  cb: .........x......
+  cy: x...............
 }
 
 scene main {

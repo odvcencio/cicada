@@ -1,5 +1,3 @@
-cicada 1
-
 title "Glassbass study"
 
 tempo 128
@@ -9,31 +7,36 @@ key a minor
 seed 4242
 
 instrument glassbass {
-  param cutoff: hz = 540hz;
-  param bite: unit = 0.58;
+  octave = 2
+  param cutoff = 540Hz
+  param bite = 0.58
   voice mono {
-    let osc = saw(pitch);
-    let sub = square(pitch / 2);
-    let body = mix(osc, sub, 0.32);
-    let shape = env(gate, 330ms);
-    out = ladder(body, cutoff * exp2(shape * 3.2), bite) * shape;
+    let osc = saw(pitch)
+    let sub = square(pitch / 2)
+    let body = mix(osc, sub, 0.32)
+    let shape = env(gate, 330ms)
+    out = ladder(body, cutoff * exp2(shape * 3.2), bite) * shape
   }
 }
 
 track lead glassbass {
-  cutoff = 680hz
+  cutoff = 680Hz
 }
 
-phrase hook acid {
+phrase hook {
   1^ . 1~ 5 . 1 7, .
 }
 
-pattern lead-a notes steps = 16 swing = 54 gate = 55 {
+pattern lead-a {
+  swing = 54%
+  gate = 55%
   use hook
-  use hook transpose = 12
+  use hook +12
 }
 
-pattern lead-b notes steps = 16 swing = 54 gate = 55 {
+pattern lead-b {
+  swing = 54%
+  gate = 55%
   1^ . 5 . 3 . 7, . | 1' . 5 . 4 . 3 .
 }
 

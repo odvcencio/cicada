@@ -15,7 +15,7 @@ func TestLanguageCLI(t *testing.T) {
 	if output, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("build: %v\n%s", err, output)
 	}
-	score := filepath.Join("..", "..", "examples", "first-acid.cicada")
+	score := filepath.Join("..", "..", "testdata", "edition1", "examples", "first-acid.cicada")
 	run := func(wantCode int, env []string, args ...string) (string, string) {
 		t.Helper()
 		command := exec.Command(bin, args...)

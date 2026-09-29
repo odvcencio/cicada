@@ -12,7 +12,7 @@ import (
 )
 
 func TestDelaySendChangesWAVDeterministically(t *testing.T) {
-	source, err := os.ReadFile(filepath.Join("..", "examples", "fx", "delay-send.cicada"))
+	source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", "fx", "delay-send.cicada"))
 	if err != nil {
 		t.Fatal(err)
 	}

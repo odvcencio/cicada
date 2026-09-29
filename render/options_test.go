@@ -157,7 +157,7 @@ func TestWAVBarRangeMatchesFullRender(t *testing.T) {
 func TestWAVBarRangePreservesEffectStateAndAlignment(t *testing.T) {
 	for _, example := range []string{"fx-bus.cicada", filepath.Join("fx", "drive-insert.cicada")} {
 		t.Run(example, func(t *testing.T) {
-			source, err := os.ReadFile(filepath.Join("..", "examples", example))
+			source, err := os.ReadFile(filepath.Join("..", "testdata", "edition1", "examples", example))
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -67,6 +67,9 @@ func TestGenerateStructuresCompileBackToSameBars(t *testing.T) {
 					t.Fatalf("structure=%d scale=%d seed=%d: %v", structure, scale, seed, err)
 				}
 				score, diagnostics := notation.Parse([]byte(result.Notation))
+				if score == nil || score.Version != 2 {
+					t.Fatalf("generated source did not select edition 2: structure=%d scale=%d seed=%d\n%s", structure, scale, seed, result.Notation)
+				}
 				for _, diagnostic := range diagnostics {
 					if diagnostic.Severity == "error" {
 						t.Fatalf("generated source invalid: structure=%d scale=%d seed=%d: %+v\n%s", structure, scale, seed, diagnostic, result.Notation)
