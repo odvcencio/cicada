@@ -7,6 +7,7 @@ import (
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/voice/acid"
 )
 
 var audioEngine *engine.Engine
@@ -20,7 +21,45 @@ var messageBytes [256 * cmd.MessageSize]byte
 var sceneBytes, songBytes []byte
 var arrangementPrepared, songLoop bool
 var projectBytes []byte
+var oscillatorBankBytes []byte
+var oscillatorBankStorage [acid.MaxOscillatorBankImageBytes]byte
+var audioSampleRate int
 var legacyConfigured bool
+
+//go:wasmexport gosx_audio_bank_image_ptr
+func bankImagePtr() uint32 {
+	if len(oscillatorBankBytes) == 0 && audioEngine != nil {
+		oscillatorBankBytes, _ = acid.ExportOscillatorBankImageInto(audioSampleRate, oscillatorBankStorage[:])
+	}
+	if len(oscillatorBankBytes) == 0 {
+		return 0
+	}
+	return uint32(uintptr(unsafe.Pointer(&oscillatorBankBytes[0])))
+}
+
+//go:wasmexport gosx_audio_bank_image_len
+func bankImageLen() int32 { return int32(len(oscillatorBankBytes)) }
+
+//go:wasmexport gosx_audio_bank_alloc
+func bankAlloc(size int32) uint32 {
+	if audioEngine != nil || len(oscillatorBankBytes) != 0 || size < 1 || size > 8<<20 {
+		return 0
+	}
+	oscillatorBankBytes = oscillatorBankStorage[:int(size)]
+	return uint32(uintptr(unsafe.Pointer(&oscillatorBankBytes[0])))
+}
+
+//go:wasmexport gosx_audio_bank_install
+func bankInstall(sampleRate int32) int32 {
+	if audioEngine != nil || len(oscillatorBankBytes) == 0 {
+		return -1
+	}
+	if err := acid.InstallOscillatorBankImage(int(sampleRate), oscillatorBankBytes); err != nil {
+		return -1
+	}
+	audioSampleRate = int(sampleRate)
+	return 0
+}
 
 //go:wasmexport gosx_audio_project_alloc
 func projectAlloc(size int32) uint32 {
@@ -132,6 +171,7 @@ func initAudio(sampleRate, maxBlock, channels int32) int32 {
 		return -1
 	}
 	audioEngine = created
+	audioSampleRate = int(sampleRate)
 	trackCount = cfg.Tracks
 	maxFrames = int(maxBlock)
 	return 0

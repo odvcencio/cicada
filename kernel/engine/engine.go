@@ -168,6 +168,7 @@ type Engine struct {
 	compGR, limiterGR            float32
 	hasSFX                       bool
 	soloCount                    int
+	playheadFrames               int
 	faulted                      bool
 	patterns                     [16]patternTrack
 	eventScratch                 [128]seq.Event
@@ -225,7 +226,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	}
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
-		layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, manualSceneTick: -1, currentScene: -1}
+		layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1}
 	for id := 0; id < len(kernel.Params); id++ {
 		e.paramAlpha[id] = smoothingAlpha(kernel.ParamID(id), cfg.SampleRate)
 	}
@@ -606,6 +607,7 @@ func (e *Engine) Reset() {
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0
 	e.pendingLen, e.meterBlock = 0, 0
+	e.playheadFrames = e.sampleRate / 60
 	e.renderFrame, e.renderFrames = 0, 0
 	e.layerMask = (1 << e.tracks) - 1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
@@ -820,6 +822,15 @@ func (e *Engine) Render(outL, outR []float32) {
 		accumulateMeter(&e.masterMeter, outL[frame], outR[frame])
 		blockPeak = max(blockPeak, float32(math.Max(math.Abs(float64(outL[frame])), math.Abs(float64(outR[frame])))))
 		e.transport.Advance(1)
+		if e.transport.Playing() {
+			e.playheadFrames--
+			if e.playheadFrames <= 0 {
+				e.emit(cmd.Message{Kind: cmd.Playhead, Track: 0xff, Tick: e.transport.Tick()})
+				e.playheadFrames = e.sampleRate / 60
+			}
+		} else {
+			e.playheadFrames = e.sampleRate / 60
+		}
 	}
 	e.renderFrames = 0
 	e.meterFrames += uint32(len(outL))
@@ -1452,6 +1463,18 @@ func (e *Engine) resetVoice(track int) {
 }
 
 func (e *Engine) emit(message cmd.Message) {
+	if message.Kind == cmd.Playhead {
+		for i := e.messageRead; i != e.messageWrite; i++ {
+			if e.messages[i%uint16(len(e.messages))].Kind != cmd.Playhead {
+				continue
+			}
+			for j := i; j != e.messageWrite-1; j++ {
+				e.messages[j%uint16(len(e.messages))] = e.messages[(j+1)%uint16(len(e.messages))]
+			}
+			e.messageWrite--
+			break
+		}
+	}
 	if e.messageWrite-e.messageRead >= uint16(len(e.messages)) {
 		if message.Kind == cmd.Meter {
 			return
