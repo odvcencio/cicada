@@ -140,6 +140,7 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 		for _, name := range required {
 			if _, ok := result[name]; !ok {
 				add(code, name+" field", "missing", position)
+				result[name] = Param{Name: name, Value: "<missing>", Position: position, ValuePosition: position}
 			}
 		}
 		return result
@@ -307,4 +308,32 @@ func audioFieldPosition(params []Param, name string, fallback Position) Position
 		}
 	}
 	return fallback
+}
+
+// ValidateAudio checks the audio portion of a typed score without requiring
+// note tracks or a song. Source spellings and typed values must agree.
+func ValidateAudio(s *Score) []Diagnostic {
+	if s == nil {
+		return nil
+	}
+	assets, clips, samplers, ds := resolveAudio(s)
+	for i, a := range s.Assets {
+		v := assets[i]
+		if a.SHA256 != v.SHA256 || a.Format != v.Format || a.Source != v.Source || a.Frames != v.Frames || a.RateHz != v.RateHz || a.Channels != v.Channels {
+			ds = append(ds, audioDiagnostic("CICADA-ASSET-FORMAT", fmt.Sprintf("source fields hash=%s format=%s frames=%d rate=%d channels=%d", v.SHA256, v.Format, v.Frames, v.RateHz, v.Channels), fmt.Sprintf("typed fields hash=%s format=%s frames=%d rate=%d channels=%d", a.SHA256, a.Format, a.Frames, a.RateHz, a.Channels), a.Position))
+		}
+	}
+	for i, c := range s.Clips {
+		v := clips[i]
+		if c.StartFrame != v.StartFrame || c.EndFrame != v.EndFrame || c.GainDB != v.GainDB || c.FadeInFrames != v.FadeInFrames || c.FadeOutFrames != v.FadeOutFrames {
+			ds = append(ds, audioDiagnostic("CICADA-CLIP-RANGE", fmt.Sprintf("source region [%d,%d) fades=%d,%d gain=%gdB", v.StartFrame, v.EndFrame, v.FadeInFrames, v.FadeOutFrames, v.GainDB), fmt.Sprintf("typed region [%d,%d) fades=%d,%d gain=%gdB", c.StartFrame, c.EndFrame, c.FadeInFrames, c.FadeOutFrames, c.GainDB), c.Position))
+		}
+	}
+	for i, v := range s.Samplers {
+		resolved := samplers[i]
+		if v.Asset != resolved.Asset || v.RootMIDI != resolved.RootMIDI || v.Mode != resolved.Mode || v.Voices != resolved.Voices {
+			ds = append(ds, audioDiagnostic("CICADA-SAMPLER-PARAM", fmt.Sprintf("source asset=%s root=%d mode=%s voices=%d", resolved.Asset, resolved.RootMIDI, resolved.Mode, resolved.Voices), fmt.Sprintf("typed asset=%s root=%d mode=%s voices=%d", v.Asset, v.RootMIDI, v.Mode, v.Voices), v.Position))
+		}
+	}
+	return ds
 }

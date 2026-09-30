@@ -59,6 +59,12 @@ func TestClipRangeDiagnostic(t *testing.T) {
 	}
 }
 func TestSamplerParamsValidate(t *testing.T) {
+	score, ds := ParseEdition([]byte(audioTestScore), 2)
+	if parseHasErrors(ds) {
+		t.Fatal(ds)
+	}
+	score.Samplers[0].Voices = 0
+	requireAudioCode(t, ValidateAudio(score), "CICADA-SAMPLER-PARAM")
 	for _, change := range [][2]string{{"voices = 8", "voices = 0"}, {"voices = 8", "voices = 33"}, {"voices = 8", "voices = 1.5"}, {"root = c3", "root = c"}, {"root = c3", "root = nonsense"}, {"mode = oneshot", "mode = stretch"}, {"voices = 8", "voics = 8"}} {
 		_, ds := ParseEdition([]byte(strings.Replace(audioTestScore, change[0], change[1], 1)), 2)
 		requireAudioCode(t, ds, "CICADA-SAMPLER-PARAM")
@@ -69,7 +75,7 @@ func TestSamplerParamsValidate(t *testing.T) {
 			t.Fatalf("%s: %+v", mode, ds)
 		}
 	}
-	_, ds := ParseEdition([]byte(strings.Replace(audioTestScore, "asset = vocal", "asset = vocla", 1)), 2)
+	_, ds = ParseEdition([]byte(strings.Replace(audioTestScore, "asset = vocal", "asset = vocla", 1)), 2)
 	requireAudioCode(t, ds, "CICADA-REFERENCE")
 	found := false
 	for _, d := range ds {
@@ -110,5 +116,17 @@ func TestAssetsRoundTripThroughFmt(t *testing.T) {
 	}
 	if before.Assets[0].SHA256 != after.Assets[0].SHA256 || before.Clips[0].EndFrame != after.Clips[0].EndFrame || before.Samplers[0].RootMIDI != after.Samplers[0].RootMIDI {
 		t.Fatal("fmt changed audio data")
+	}
+}
+
+func TestAudioMissingFieldsHavePositions(t *testing.T) {
+	source := []byte("asset missing \"file.wav\" {}\nsampler broken {}\ntrack vox audio {}\nclip region missing {}\nscene main {vox=region}\nsong {main}\n")
+	_, ds := ParseEdition(source, 2)
+	requireAudioCode(t, ds, "CICADA-ASSET-FORMAT")
+	requireAudioCode(t, ds, "CICADA-SAMPLER-PARAM")
+	for _, d := range ds {
+		if d.Position.Line < 1 || d.Position.Column < 1 {
+			t.Errorf("diagnostic without source location: %+v", d)
+		}
 	}
 }
