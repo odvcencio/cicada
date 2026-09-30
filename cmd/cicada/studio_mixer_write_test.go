@@ -348,8 +348,8 @@ func TestStudioMixerViewAndRoutes(t *testing.T) {
 		t.Fatalf("restored track level: %d %s", restored.Code, restored.Body.String())
 	}
 	content, err = os.ReadFile(path)
-	if err != nil || !strings.Contains(string(content), "level = -2.3dB") || !strings.Contains(string(content), "mute = on") {
-		t.Fatalf("track fader edit was not persisted: %v\n%s", err, content)
+	if err != nil || !strings.Contains(string(content), "level = -2.3dB") || strings.Contains(string(content), "mute = on") {
+		t.Fatalf("moving the fader from Off must save the level and clear the mute: %v\n%s", err, content)
 	}
 	history := studioCall(t, handler, "/api/history", nil)
 	if !strings.Contains(history.Body.String(), "Mix: bass level -6 dB to -3.5 dB") {

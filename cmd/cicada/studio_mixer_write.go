@@ -252,7 +252,11 @@ func editMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKi
 			return updated, before, "off", levelRange, nil
 		}
 		updated, before, after, changed, editErr := editOneMixerSetting(source, walker, decl, declKind, field, literal)
-		if editErr != nil || trackMixerSourceText(mixerOwnerParams(score, declKind, owner), "level") != "off" {
+		params := mixerOwnerParams(score, declKind, owner)
+		// Moving the fader up from Off wakes the strip: Off is saved as mute on a track, and as
+		// level off plus mute on a bus or the master. Clear the saved mute with the level write.
+		mutedTrack := declKind == "track_decl" && (trackMixerSourceText(params, "mute") == "on" || trackMixerSourceText(params, "mute") == "true")
+		if editErr != nil || (trackMixerSourceText(params, "level") != "off" && !mutedTrack) {
 			return updated, before, after, changed, editErr
 		}
 		withMute, _, _, muteRange, muteErr := studioMixerSource(updated, owner+".mute", json.RawMessage(`false`))
