@@ -124,7 +124,8 @@ func TestConcurrentSongRequestsKeepTheQueuedIdentity(t *testing.T) {
 	}
 }
 
-// The audio goroutine hands a due scene launch to the engine. That must not allocate.
+// The audio goroutine hands a due scene launch to the engine. That must not allocate, and it
+// must mark the published record in place so readers never see a record replaced under them.
 func TestQueueSceneLaunchDoesNotAllocate(t *testing.T) {
 	score := slotScore(t, "riff", 1)
 	score.SceneIDs = []string{"main"}
@@ -145,38 +146,8 @@ func TestQueueSceneLaunchDoesNotAllocate(t *testing.T) {
 	if allocs != 0 {
 		t.Fatalf("queueSceneLaunch allocated %.1f times per launch, want 0", allocs)
 	}
-	if request := p.launches.Load(); request == nil || !request.submitted {
-		t.Fatalf("the launch was not handed to the engine: %+v", request)
-	}
-}
-
-// Requeueing pending launches when a replacement score lands runs on the audio goroutine too.
-func TestRequeuePendingLaunchesDoesNotAllocate(t *testing.T) {
-	score := slotScore(t, "riff", 1)
-	score.SceneIDs = []string{"main"}
-	p, err := New(score, 48_000)
-	if err != nil {
-		t.Fatal(err)
-	}
-	scenes := make([]*sceneLaunch, 32)
-	batches := make([]*slotLaunchBatch, 32)
-	for i := range scenes {
-		scenes[i] = &sceneLaunch{id: uint64(i + 1), name: "main", targetTick: 1, quantize: 2, submitted: true}
-		batch := &slotLaunchBatch{}
-		batch.requests[0] = slotLaunch{request: SlotRequest{Track: "bass", Pattern: "riff"}, id: uint64(i + 1), TargetTick: 1, quantize: 2, submitted: true}
-		batches[i] = batch
-	}
-	i := 0
-	allocs := testing.AllocsPerRun(20, func() {
-		p.launches.Store(scenes[i])
-		p.slotLaunches.Store(batches[i])
-		i++
-		p.requeuePendingLaunches()
-	})
-	if allocs != 0 {
-		t.Fatalf("requeuePendingLaunches allocated %.1f times, want 0", allocs)
-	}
-	if request := p.launches.Load(); request == nil || request.submitted {
-		t.Fatalf("the scene launch was not requeued: %+v", request)
+	published := requests[i-1]
+	if p.launches.Load() != published || !published.submitted.Load() {
+		t.Fatal("the launch was not marked submitted in place")
 	}
 }
