@@ -237,3 +237,12 @@
 ["{" "}" "(" ")"] @punctuation.bracket
 
 (comment) @comment
+
+; Live host controls.
+["live" "land" "macro" "smooth" "layers" "attack" "release"] @keyword
+(live_land value: (identifier) @constant.builtin)
+(bar_count) @number.bars
+(live_macro name: (identifier) @variable.parameter)
+(live_layers macro: (identifier) @variable.parameter)
+(live_layer track: (identifier) @variable.member)
+">=" @operator

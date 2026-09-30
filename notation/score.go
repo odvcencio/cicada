@@ -37,6 +37,7 @@ type Score struct {
 	Buses         []Bus
 	Master        []Param
 	HasMaster     bool
+	Live          *Live
 	Exports       []Export
 }
 
@@ -194,4 +195,43 @@ type Export struct {
 	Name     string
 	Params   []Param
 	Position Position
+}
+
+// Live declares the controls available to a host. Source positions remain
+// available for diagnostics; kernel packing happens in package project.
+type Live struct {
+	Land           string
+	LandPosition   Position
+	PhraseBars     int
+	PhrasePosition Position
+	Macros         []LiveMacro
+	Layers         []LiveLayers
+	Position       Position
+}
+
+type LiveMacro struct {
+	Name           string
+	Value          float64
+	SmoothMS       float64
+	Position       Position
+	ValuePosition  Position
+	SmoothPosition Position
+}
+
+type LiveLayers struct {
+	Macro           string
+	Rules           []LiveLayer
+	AttackBars      int
+	ReleaseBars     int
+	Position        Position
+	MacroPosition   Position
+	AttackPosition  Position
+	ReleasePosition Position
+}
+
+type LiveLayer struct {
+	Track         string
+	Value         float64
+	Position      Position
+	ValuePosition Position
 }

@@ -3,6 +3,7 @@ package notation
 import (
 	"bytes"
 	_ "embed"
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -99,7 +100,16 @@ func parseEdition(src []byte, edition int) (*Score, []Diagnostic) {
 			s.Instruments = append(s.Instruments, parseInstrument(w, n))
 		case "kit_decl":
 			s.Kits = append(s.Kits, parseKit(w, n))
+		case "live_decl":
+			if s.Live != nil {
+				diagnostics = append(diagnostics, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "only one live block is allowed", Position: pos(w, n)})
+			} else {
+				s.Live, diagnostics = parseLive(w, n, diagnostics)
+			}
 		case "track_decl":
+			if s.Live != nil {
+				diagnostics = append(diagnostics, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "live block must appear after all tracks", Position: pos(w, n)})
+			}
 			s.Tracks = append(s.Tracks, parseTrack(w, n))
 		case "bus_decl":
 			s.Buses = append(s.Buses, parseBus(w, n))
@@ -464,4 +474,80 @@ func parseMilli(s string) int64 {
 		frac = v
 	}
 	return whole*1000 + frac
+}
+
+func parseLive(w *walk.Walker, n *gts.Node, ds []Diagnostic) (*Live, []Diagnostic) {
+	live := &Live{Position: pos(w, n)}
+	seen := map[string]bool{}
+	duplicate := func(kind string, node *gts.Node, settings map[string]bool) {
+		if settings[kind] {
+			ds = append(ds, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "duplicate " + strings.TrimPrefix(kind, "live_") + " setting", Position: pos(w, node)})
+		}
+		settings[kind] = true
+	}
+	for i := 0; i < n.NamedChildCount(); i++ {
+		c := n.NamedChild(i)
+		value := w.Field(c, "value")
+		switch w.Type(c) {
+		case "live_land":
+			duplicate(w.Type(c), c, seen)
+			live.Land, live.LandPosition = w.Text(value), pos(w, value)
+		case "live_phrase":
+			duplicate(w.Type(c), c, seen)
+			live.PhraseBars, live.PhrasePosition = parseBars(w.Text(value)), pos(w, value)
+		case "live_macro":
+			smooth := w.Field(c, "smooth")
+			ms := float64(0)
+			if smooth != nil {
+				ms = parseDurationMS(w.Text(smooth))
+			}
+			live.Macros = append(live.Macros, LiveMacro{Name: w.Text(w.Field(c, "name")), Value: parseLiveNumber(w.Text(value)), SmoothMS: ms, Position: pos(w, c), ValuePosition: pos(w, value), SmoothPosition: pos(w, smooth)})
+		case "live_layers":
+			macro := w.Field(c, "macro")
+			layers := LiveLayers{Macro: w.Text(macro), AttackBars: 1, ReleaseBars: 3, Position: pos(w, c), MacroPosition: pos(w, macro)}
+			settings := map[string]bool{}
+			for j := 0; j < c.NamedChildCount(); j++ {
+				entry := c.NamedChild(j)
+				v := w.Field(entry, "value")
+				switch w.Type(entry) {
+				case "live_layer":
+					layers.Rules = append(layers.Rules, LiveLayer{Track: w.Text(w.Field(entry, "track")), Value: parseLiveNumber(w.Text(v)), Position: pos(w, entry), ValuePosition: pos(w, v)})
+				case "live_attack":
+					duplicate(w.Type(entry), entry, settings)
+					layers.AttackBars, layers.AttackPosition = parseBars(w.Text(v)), pos(w, v)
+				case "live_release":
+					duplicate(w.Type(entry), entry, settings)
+					layers.ReleaseBars, layers.ReleasePosition = parseBars(w.Text(v)), pos(w, v)
+				}
+			}
+			live.Layers = append(live.Layers, layers)
+		}
+	}
+	return live, ds
+}
+
+func parseLiveNumber(text string) float64 {
+	value, err := strconv.ParseFloat(text, 64)
+	if err != nil {
+		return math.NaN()
+	}
+	return value
+}
+
+func parseBars(text string) int {
+	value, err := strconv.Atoi(strings.TrimSuffix(strings.TrimSuffix(text, "s"), "bar"))
+	if err != nil {
+		return -1
+	}
+	return value
+}
+
+func parseDurationMS(text string) float64 {
+	if strings.HasSuffix(text, "ms") {
+		return parseLiveNumber(strings.TrimSuffix(text, "ms"))
+	}
+	if strings.HasSuffix(text, "s") {
+		return parseLiveNumber(strings.TrimSuffix(text, "s")) * 1000
+	}
+	return math.NaN()
 }
