@@ -335,3 +335,18 @@ func TestTimedLayerMaskCannotBypassMacroGating(t *testing.T) {
 		t.Fatalf("authored mask changed by the macro: %02b", e.layerAuthored)
 	}
 }
+
+func TestMacroReachedOnImmediateSet(t *testing.T) {
+	e := conductorTestEngine(t, 2, 0)
+	primeConductor(t, e)
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetMacro, Track: 255, Index: 0, Arg0: math.Float32bits(0.5), Arg1: 0})
+	var left, right [1]float32
+	e.Render(left[:], right[:])
+	var message cmd.Message
+	for e.Poll(&message) {
+		if message.Kind == cmd.MacroReached && message.Track == 0 {
+			return
+		}
+	}
+	t.Fatal("an immediate macro change did not emit MacroReached")
+}

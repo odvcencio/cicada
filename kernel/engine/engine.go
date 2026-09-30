@@ -1079,6 +1079,7 @@ func (e *Engine) apply(c cmd.Command) {
 		e.macroRampElapsed[id], e.macroRampFrames[id] = 0, c.Arg1
 		if c.Arg1 == 0 {
 			e.macroCurrent[id] = target
+			e.emit(cmd.Message{Kind: cmd.MacroReached, Track: uint8(id), Tick: e.transport.Tick()})
 		}
 	case cmd.OpSetLayers:
 		e.liveEvents = true
