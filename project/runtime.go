@@ -252,23 +252,34 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				}
 			}
 		}
-		cfg.Scenes[si].Settings = make([]engine.SceneSetting, 0, len(scene.Settings))
-		for _, setting := range scene.Settings {
-			resolved, err := ResolveParameterPath(p, setting.Path)
-			if err != nil {
-				return cfg, err
-			}
-			value, division, err := sceneSettingKernelValue(p, setting, resolved)
-			if err != nil {
-				return cfg, fmt.Errorf("scene %s path %s: %w", scene.ID, setting.Path, err)
-			}
-			cfg.Scenes[si].Settings = append(cfg.Scenes[si].Settings, engine.SceneSetting{Track: resolved.Track, ID: resolved.ID, Value: value, Division: division})
+		var err error
+		cfg.Scenes[si].Settings, err = CompileSceneSettings(p, scene)
+		if err != nil {
+			return cfg, err
 		}
 	}
 	for i, entry := range p.Song {
 		cfg.Song[i] = engine.SongEntry{Scene: sceneIndex[entry.Scene], Bars: entry.Bars}
 	}
 	return cfg, nil
+}
+
+// CompileSceneSettings resolves scene settings in source order to the same
+// float32 values and delay divisions for playback and offline rendering.
+func CompileSceneSettings(p *Project, scene Scene) ([]engine.SceneSetting, error) {
+	settings := make([]engine.SceneSetting, 0, len(scene.Settings))
+	for _, setting := range scene.Settings {
+		resolved, err := ResolveParameterPath(p, setting.Path)
+		if err != nil {
+			return nil, err
+		}
+		value, division, err := sceneSettingKernelValue(p, setting, resolved)
+		if err != nil {
+			return nil, fmt.Errorf("scene %s path %s: %w", scene.ID, setting.Path, err)
+		}
+		settings = append(settings, engine.SceneSetting{Track: resolved.Track, ID: resolved.ID, Value: value, Division: division})
+	}
+	return settings, nil
 }
 
 func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved ResolvedParam) (float32, fx.DelayDivision, error) {

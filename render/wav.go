@@ -62,6 +62,7 @@ type trackRuntime struct {
 	align          *mix.Delay
 	sendA          float32
 	sendB          float32
+	sendPreGain    float32
 	sendAPre       bool
 	sendBPre       bool
 	solo           bool
@@ -83,6 +84,7 @@ type trackRuntime struct {
 	pendingGen     uint64
 	pendingSlot    uint8
 	hasPendingGate bool
+	parameters     *sceneTrackParameters
 	transition     sceneTransition
 	slideFrom      int64
 	slideAt        int64
@@ -266,7 +268,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	var compMusic *fx.Compressor
 	var compSidechainTrack int
 	for _, track := range tracks {
-		if track.sendA > 0 {
+		if track.sendA > 0 || hasSceneParameters(semantic) {
 			for _, effect := range semantic.Effects {
 				if projectEffectKind(effect) == "delay" {
 					params, err := project.DelayParamsFromValues(effect.Params)
@@ -288,7 +290,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	for _, track := range tracks {
-		if track.sendB > 0 {
+		if track.sendB > 0 || hasSceneParameters(semantic) {
 			for _, effect := range semantic.Effects {
 				if projectEffectKind(effect) == "reverb" {
 					params, err := project.ReverbParamsFromValues(effect.Params)
@@ -349,6 +351,10 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			break
 		}
 	}
+	parameters, err := compileSceneParameters(semantic, tracks, opts.SampleRate, delayA, reverbB, compMusic)
+	if err != nil {
+		return report, err
+	}
 	insertLatency := 0
 	for i := range tracks {
 		if tracks[i].insert != nil {
@@ -389,12 +395,17 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		if scene == nil {
 			return report, fmt.Errorf("unknown scene %s", entry.Scene)
 		}
-		for range entry.Bars {
+		for entryBar := range entry.Bars {
 			if bar >= renderBars {
 				break
 			}
 			if err := applyScene(tracks, scene, stopIsAction); err != nil {
 				return report, err
+			}
+			if entryBar == 0 {
+				if err := parameters.apply(entry.Scene); err != nil {
+					return report, err
+				}
 			}
 			var nextScene *notation.Scene
 			if bar+1 < renderBars {
@@ -696,6 +707,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 				tracks[i].patternSlots[*pattern] = uint8(slot)
 			}
 		}
+		tracks[i].sendPreGain = 1
 		tracks[i].sendA = float32(semantic.Tracks[i].Mixer.SendA)
 		tracks[i].sendB = float32(semantic.Tracks[i].Mixer.SendB)
 		tracks[i].sendAPre = semantic.Tracks[i].Mixer.SendPre
@@ -966,6 +978,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		var dry mix.Dry
 		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
 		for ti := range tracks {
+			if tracks[ti].parameters != nil {
+				tracks[ti].parameters.advance(&tracks[ti])
+			}
 			var l, r float32
 			if tracks[ti].drums != nil {
 				l, r = tracks[ti].drums.NextStereo()
@@ -986,8 +1001,8 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			}
 			if tracks[ti].sendA > 0 && !tracks[ti].muted {
 				if tracks[ti].sendAPre {
-					sendAL += l * tracks[ti].sendA
-					sendAR += r * tracks[ti].sendA
+					sendAL += l * tracks[ti].sendA * tracks[ti].sendPreGain
+					sendAR += r * tracks[ti].sendA * tracks[ti].sendPreGain
 				} else {
 					sendAL += l * tracks[ti].mixer.Left * tracks[ti].sendA
 					sendAR += r * tracks[ti].mixer.Right * tracks[ti].sendA
@@ -995,8 +1010,8 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			}
 			if tracks[ti].sendB > 0 && !tracks[ti].muted {
 				if tracks[ti].sendBPre {
-					sendBL += l * tracks[ti].sendB
-					sendBR += r * tracks[ti].sendB
+					sendBL += l * tracks[ti].sendB * tracks[ti].sendPreGain
+					sendBR += r * tracks[ti].sendB * tracks[ti].sendPreGain
 				} else {
 					sendBL += l * tracks[ti].mixer.Left * tracks[ti].sendB
 					sendBR += r * tracks[ti].mixer.Right * tracks[ti].sendB
