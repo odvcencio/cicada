@@ -296,7 +296,16 @@ func TestStudioShellHasPanelsAndNeverReloadsThePage(t *testing.T) {
 			t.Errorf("Studio page misses %s", want)
 		}
 	}
-	for _, path := range []string{"/", "/studio-live.js", "/studio-workspace.js", "/studio-history.js"} {
+	mixPanelStart := strings.Index(page, `<section id="tracks" data-workspace-panel="mix"`)
+	if mixPanelStart < 0 {
+		t.Fatal("Mix workspace panel is missing")
+	}
+	mixRack := strings.Index(page, `id="mix-rack"`)
+	mixPanelEnd := strings.Index(page[mixPanelStart:], `</section>`)
+	if mixPanelEnd < 0 || mixRack < mixPanelStart || mixRack >= mixPanelStart+mixPanelEnd {
+		t.Fatal("Mix rack is not mounted inside the Mix workspace panel")
+	}
+	for _, path := range []string{"/", "/studio-live.js", "/studio-workspace.js", "/studio-history.js", "/studio-mix.js"} {
 		body := studioCall(t, handler, path, nil).Body.String()
 		if strings.Contains(body, "location.reload") {
 			t.Errorf("%s calls location.reload", path)
