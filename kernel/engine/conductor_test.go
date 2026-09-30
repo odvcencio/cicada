@@ -308,3 +308,30 @@ func TestSeekReappliesMacroLayerMask(t *testing.T) {
 		t.Fatalf("after the seek the authored mask came back: mask=%b, want 0", e.layerMask)
 	}
 }
+
+// A timed OpSetLayerMask must not switch on a track that the macro layer excludes,
+// and the macro mask must not throw away what the authored mask switched off.
+func TestTimedLayerMaskCannotBypassMacroGating(t *testing.T) {
+	e := conductorTestEngine(t, 2, 0) // level 0 allows track 0 only; level 1 allows track 1 only
+	primeConductor(t, e)
+	if e.layerMask != 0b01 {
+		t.Fatalf("macro level 0 mask=%02b, want 01", e.layerMask)
+	}
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetLayerMask, Track: 255, Arg0: 0b11, Tick: seq.TicksPerBar / 2})
+	if err := e.transport.SeekTick(seq.TicksPerBar / 2); err != nil {
+		t.Fatal(err)
+	}
+	var left, right [1]float32
+	e.Render(left[:], right[:])
+	if e.layerMask != 0b01 {
+		t.Fatalf("a timed layer mask enabled a macro-excluded track: mask=%02b, want 01", e.layerMask)
+	}
+	// The authored mask switches track 0 off; at level 1 the macro then allows only track 1.
+	pushMacroCommand(t, e, cmd.Command{Op: cmd.OpSetLayerMask, Track: 255, Arg0: 0b10, Tick: seq.TicksPerBar/2 + 1})
+	if mask, _ := conductorAt(t, e, seq.TicksPerBar, 1); mask != 0b10 {
+		t.Fatalf("authored 10 and macro level 1 (10): mask=%02b, want 10", mask)
+	}
+	if e.layerAuthored != 0b10 {
+		t.Fatalf("authored mask changed by the macro: %02b", e.layerAuthored)
+	}
+}

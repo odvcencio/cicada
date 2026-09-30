@@ -33,7 +33,7 @@ func (e *Engine) captureSceneDefaults() {
 	}
 	for _, scene := range e.scenes {
 		if len(scene.Settings) != 0 {
-			e.sceneDefaults = &sceneParameterState{layerMask: e.layerMask}
+			e.sceneDefaults = &sceneParameterState{layerMask: e.layerAuthored}
 			break
 		}
 	}
@@ -66,7 +66,8 @@ func (e *Engine) restoreSceneDefaults() bool {
 	if base == nil {
 		return true
 	}
-	e.layerMask, e.soloCount = base.layerMask, 0
+	e.layerAuthored, e.soloCount = base.layerMask, 0
+	e.composeLayerMask()
 	for i := 0; i < e.tracks; i++ {
 		v, p := &e.voices[i], &base.tracks[i]
 		v.mix, v.targetMix = p.mix, p.mix
