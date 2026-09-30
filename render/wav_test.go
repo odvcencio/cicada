@@ -445,3 +445,37 @@ func TestMasterLimiterReducesHotSignalWithoutClipping(t *testing.T) {
 		t.Fatalf("limiter did not contain hot signal: %+v", report)
 	}
 }
+
+// The native/WASM sample parity tests use the same 1e-6 tolerance.
+func TestOfflineRenderAppliesSceneParameters(t *testing.T) {
+	const source = `tempo 120
+key a minor
+seed 42
+track bass acid { cutoff = 700Hz reso = 0.6 envmod = 0.5 }
+pattern riff acid steps=4 { 1 . 5 . }
+scene first { bass = riff }
+scene second { bass = riff bass.cutoff = 4000Hz }
+song { first second }
+`
+	renderScore := func(source string) (*notation.Score, []byte, Report) {
+		t.Helper()
+		score, diagnostics := notation.ParseEdition([]byte(source), 2)
+		if len(diagnostics) != 0 {
+			t.Fatalf("score diagnostics: %+v", diagnostics)
+		}
+		var output bytes.Buffer
+		report, err := WAV(score, Options{SampleRate: 48_000, Bits: 32, Bars: 2}, &output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return score, output.Bytes(), report
+	}
+	score, wav, report := renderScore(source)
+	_, baseline, _ := renderScore(strings.Replace(source, " bass.cutoff = 4000Hz", "", 1))
+	const first = 96_000
+	last := int(report.Frames)
+	if bytes.Equal(wav[44+first*8:44+last*8], baseline[44+first*8:44+last*8]) {
+		t.Error("second-scene PCM is identical with and without bass.cutoff = 4000Hz")
+	}
+	assertSceneEngineMatchesWAV(t, score, wav, 48_000, first, last)
+}
