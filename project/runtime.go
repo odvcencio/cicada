@@ -19,6 +19,9 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	if err := ValidateProject(p); err != nil {
 		return cfg, err
 	}
+	if p.HasAudio() {
+		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio assets, clips, and samplers need a sample-capable engine")
+	}
 	if len(p.Scenes) > 1<<16 || len(p.Song) > 1<<16 {
 		return cfg, fmt.Errorf("arrangement exceeds the kernel index range")
 	}

@@ -126,6 +126,11 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 	}
 	if source.Kind == "acid" || source.Kind == "notes" {
 		octave := 2
+		for _, sampler := range score.Samplers {
+			if sampler.Name == track.Kind {
+				octave = sampler.RootMIDI/12 - 1
+			}
+		}
 		octaveIsParameter := false
 		for _, inst := range score.Instruments {
 			if inst.Name == track.Kind {

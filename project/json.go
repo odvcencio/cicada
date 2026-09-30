@@ -322,7 +322,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	// already imply, matching headerless source after a round trip.
 	normalized := *p
 	normalized.Format, normalized.Version = FormatID, 1
-	useV2 := p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
+	useV2 := p.HasAudio() || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
 	for _, effect := range p.Effects {
 		useV2 = useV2 || effect.Kind != ""
 	}
@@ -701,7 +701,7 @@ func checkRequiredFields(data []byte) error {
 		optionalByConstruct["mixer"] = nil
 		fieldsByConstruct["effect"] = []string{"id", "params"}
 		optionalByConstruct["effect"] = nil
-		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports")
+		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers")
 	}
 	require := func(value any, construct, name, pointer string) (map[string]any, error) {
 		fields, ok := fieldsByConstruct[construct]
@@ -713,6 +713,16 @@ func checkRequiredFields(data []byte) error {
 	root, err := require(raw, "project", "project", "")
 	if err != nil {
 		return err
+	}
+	for _, construct := range []struct{ array, name string }{{"assets", "asset"}, {"clips", "clip"}, {"samplers", "sampler"}} {
+		if value, exists := root[construct.array]; exists {
+			if err := checkObjectArray(value, construct.array, "/"+construct.array, func(item any, pointer string) error {
+				_, err := require(item, construct.name, construct.name, pointer)
+				return err
+			}); err != nil {
+				return err
+			}
+		}
 	}
 	if _, err := require(root["key"], "key", "key", "/key"); err != nil {
 		return err
