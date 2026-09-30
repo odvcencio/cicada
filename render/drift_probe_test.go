@@ -248,7 +248,11 @@ func driftSamples(t *testing.T, out io.Writer, score *notation.Score, cfg engine
 			}
 		}
 		track, _ := responsible(at)
-		fmt.Fprintf(out, "BAR %d range=[%d,%d) peak=%.9f sample=%d track=%s\n", bar+1, start, end, peak, at, track)
+		if bar == bars {
+			fmt.Fprintf(out, "TAIL range=[%d,%d) peak=%.9f sample=%d track=%s\n", start, end, peak, at, track)
+		} else {
+			fmt.Fprintf(out, "BAR %d range=[%d,%d) peak=%.9f sample=%d track=%s\n", bar+1, start, end, peak, at, track)
+		}
 	}
 }
 
@@ -256,6 +260,15 @@ func TestRenderDriftProbes(t *testing.T) {
 	dir := os.Getenv("CICADA_RENDER_DRIFT_DIR")
 	if dir == "" {
 		t.Skip("set CICADA_RENDER_DRIFT_DIR to save investigation evidence")
+	}
+	// Capturing a baseline requires an explicit phase and the baseline wav.go
+	// overlay. A normal rerun must not overwrite the before-change evidence.
+	phase := os.Getenv("CICADA_RENDER_DRIFT_PHASE")
+	if phase == "" {
+		phase = "after"
+	}
+	if phase != "before" && phase != "after" {
+		t.Fatal("CICADA_RENDER_DRIFT_PHASE must be before or after")
 	}
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatal(err)
@@ -330,12 +343,12 @@ func TestRenderDriftProbes(t *testing.T) {
 		offline := driftOffline(t, s, bars, 3, 4096)
 		unified := driftEngine(t, c, bars, 3, driftLatency(t, c))
 		d, peak, rms := driftMeasure(t, offline, unified)
-		fmt.Fprintf(&out, "METRIC %s phase=before bars=%d tail=3 mean_db=%.9f max_db=%.1f peak=%.9f rms=%.9f\n", name, bars, d.MeanDB, d.MaxDB, peak, rms)
-		driftWriteWAV(t, filepath.Join(dir, name+".before.offline.float.wav"), offline, s, bars, 32, 3)
-		driftWriteWAV(t, filepath.Join(dir, name+".before.unified.float.wav"), unified, s, bars, 32, 3)
+		fmt.Fprintf(&out, "METRIC %s phase=%s bars=%d tail=3 mean_db=%.9f max_db=%.1f peak=%.9f rms=%.9f\n", name, phase, bars, d.MeanDB, d.MaxDB, peak, rms)
+		driftWriteWAV(t, filepath.Join(dir, name+"."+phase+".offline.float.wav"), offline, s, bars, 32, 3)
+		driftWriteWAV(t, filepath.Join(dir, name+"."+phase+".unified.float.wav"), unified, s, bars, 32, 3)
 	}
 	t.Log(out.String())
-	if err := os.WriteFile(filepath.Join(dir, "probes.txt"), out.Bytes(), 0644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "probes."+phase+".txt"), out.Bytes(), 0644); err != nil {
 		t.Fatal(err)
 	}
 }
