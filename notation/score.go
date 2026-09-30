@@ -25,6 +25,9 @@ type Score struct {
 	Seed          uint64
 	SeedLiteral   string
 	SeedPosition  Position
+	Assets        []Asset
+	Clips         []Clip
+	Samplers      []Sampler
 	Instruments   []Instrument
 	Kits          []Kit
 	Tracks        []Track

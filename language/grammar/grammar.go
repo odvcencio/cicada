@@ -38,8 +38,13 @@ func Cicada() *grammargen.Grammar {
 		sym("instrument_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
 		sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
-		sym("master_decl"), sym("export_decl"),
+		sym("master_decl"), sym("export_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"),
 	))
+
+	// Edition-2 audio declarations share typed key/value bodies.
+	g.Define("asset_decl", seq(str("asset"), field("name", sym("identifier")), field("path", sym("string")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("clip_decl", seq(str("clip"), field("name", sym("identifier")), field("asset", sym("identifier")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("sampler_decl", seq(str("sampler"), field("name", sym("identifier")), str("{"), repeat(sym("param_decl")), str("}")))
 
 	// Header: `title "Night circuit"`, `tempo 138`, `key a minor`, `seed 4242`.
 	g.Define("title_decl", seq(str("title"), sym("string")))
@@ -177,7 +182,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("value", choice(sym("number"), sym("insert_chain"), sym("identifier"), sym("string"), sym("fraction")))
 	g.Define("insert_chain", seq(field("first", sym("identifier")), repeat(seq(str("->"), field("next", sym("identifier"))))))
 	g.Define("fraction", token(pat(`[0-9]+\/[0-9]+[tT.]?`)))
-	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?`)))
+	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?`)))
 	g.Define("integer", token(pat(`[0-9]+`)))
 	g.Define("key_root", token(pat(`[a-g][#b]?`)))
 	g.Define("string", token(pat(`"([^"\\]|\\.)*"`)))

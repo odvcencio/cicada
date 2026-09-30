@@ -34,6 +34,7 @@ func ToSource(p *Project) ([]byte, error) {
 	if p.Seed != 0 {
 		sections = append(sections, "seed "+strconv.FormatUint(uint64(p.Seed), 10))
 	}
+	sections = append(sections, audioSource(p)...)
 	for _, inst := range p.Instruments {
 		source, err := instrumentSource(inst)
 		if err != nil {

@@ -42,7 +42,7 @@ var scales = map[string]bool{
 // Validate checks the meaning of a syntactically valid score. It leaves the
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) []Diagnostic {
-	var ds []Diagnostic
+	_, _, _, ds := resolveAudio(s)
 	add := func(code, message, severity string, p Position) {
 		ds = append(ds, Diagnostic{Code: code, Message: message, Severity: severity, Position: p})
 	}
@@ -88,7 +88,7 @@ func Validate(s *Score) []Diagnostic {
 	instruments := make(map[string]Instrument, len(s.Instruments))
 	for _, inst := range s.Instruments {
 		checkID(inst.Name, inst.Position)
-		if inst.Name == "acid" || inst.Name == "drums" {
+		if inst.Name == "acid" || inst.Name == "drums" || inst.Name == "audio" {
 			add("CICADA-DUPLICATE", "instrument name is reserved: "+inst.Name, "error", inst.Position)
 		}
 		if _, exists := instruments[inst.Name]; exists {
@@ -125,7 +125,7 @@ func Validate(s *Score) []Diagnostic {
 	for _, kit := range s.Kits {
 		checkID(kit.Name, kit.Position)
 		_, instrumentNameTaken := instruments[kit.Name]
-		if kit.Name == "acid" || kit.Name == "drums" || instrumentNameTaken {
+		if kit.Name == "acid" || kit.Name == "drums" || kit.Name == "audio" || instrumentNameTaken {
 			add("CICADA-DUPLICATE", "kit name is reserved or already declared: "+kit.Name, "error", kit.Position)
 		}
 		if _, exists := kits[kit.Name]; exists {
@@ -164,7 +164,10 @@ func Validate(s *Score) []Diagnostic {
 		}
 		trackByName[t.Name] = t
 		namespace[t.Name] = "track"
-		if t.Kind != "acid" && t.Kind != "drums" {
+		if t.Kind == "audio" && s.Version != 2 {
+			add("CICADA-VERSION", "expected edition 2 for audio; actual 1", "error", t.Position)
+		}
+		if t.Kind != "acid" && t.Kind != "drums" && t.Kind != "audio" && !scoreHasSampler(s, t.Kind) {
 			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
 				if _, kitOK := kits[t.Kind]; !kitOK {
 					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
@@ -190,7 +193,7 @@ func Validate(s *Score) []Diagnostic {
 	for _, phrase := range s.Phrases {
 		checkID(phrase.Name, phrase.Position)
 	}
-	if len(s.Patterns) == 0 {
+	if len(s.Patterns) == 0 && len(s.Clips) == 0 {
 		add("CICADA-LIMIT", "score needs at least one pattern", "error", Position{1, 1})
 	}
 	patterns := make(map[string]Pattern, len(s.Patterns))
@@ -311,6 +314,20 @@ func Validate(s *Score) []Diagnostic {
 			if b.Pattern == "keep" || b.Pattern == "off" || b.Pattern == "stop" && patterns["stop"].Name == "" {
 				continue
 			}
+			if track.Kind == "audio" {
+				names := []string{}
+				for _, clip := range s.Clips {
+					names = append(names, clip.Name)
+				}
+				if !scoreHasClip(s, b.Pattern) {
+					add("CICADA-REFERENCE", AudioReferenceMessage("clip", b.Pattern, names), "error", b.Position)
+				}
+				continue
+			}
+			if scoreHasClip(s, b.Pattern) {
+				add("CICADA-CLIP-RANGE", "expected audio track for clip; actual "+track.Kind, "error", b.Position)
+				continue
+			}
 			pattern, patternOK := patterns[b.Pattern]
 			if !patternOK {
 				add("CICADA-REFERENCE", "scene references unknown pattern "+b.Pattern, "error", b.Position)
@@ -328,7 +345,7 @@ func Validate(s *Score) []Diagnostic {
 	usedPatterns := make(map[string]map[string]bool)
 	for _, scene := range s.Scenes {
 		for _, binding := range scene.Bindings {
-			if binding.Pattern == "off" || binding.Pattern == "keep" || binding.Pattern == "stop" && patterns["stop"].Name == "" {
+			if trackByName[binding.Track].Kind == "audio" || binding.Pattern == "off" || binding.Pattern == "keep" || binding.Pattern == "stop" && patterns["stop"].Name == "" {
 				continue
 			}
 			if usedPatterns[binding.Track] == nil {
@@ -696,4 +713,21 @@ func validKeyRoot(s string) bool {
 		return false
 	}
 	return len(s) == 1 || s[1] == '#' || s[1] == 'b'
+}
+
+func scoreHasSampler(s *Score, name string) bool {
+	for _, sampler := range s.Samplers {
+		if sampler.Name == name {
+			return true
+		}
+	}
+	return false
+}
+func scoreHasClip(s *Score, name string) bool {
+	for _, clip := range s.Clips {
+		if clip.Name == name {
+			return true
+		}
+	}
+	return false
 }
