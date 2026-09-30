@@ -204,6 +204,29 @@ func driftIsolate(t *testing.T, score *notation.Score, track int) (*notation.Sco
 
 func driftSamples(t *testing.T, out io.Writer, score *notation.Score, cfg engine.Config, a, b driftAudio, bars int) {
 	t.Helper()
+	// Locate the spectral maximum as well as the first PCM differences. The
+	// golden metric is band energy in 100 ms windows, not a sample peak in dB.
+	af, err := FingerprintStereo(a.left, a.right, 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bf, err := FingerprintStereo(b.left, b.right, 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	peakDB, frameAt, bandAt := 0.0, 0, 0
+	for frame, bands := range af.Frames {
+		for band, value := range bands {
+			delta := math.Abs(float64(value)-float64(bf.Frames[frame][band])) / 10
+			if delta > peakDB {
+				peakDB, frameAt, bandAt = delta, frame, band
+			}
+		}
+	}
+	start := frameAt * int(af.WindowSamples)
+	lowHz := 40 * math.Pow(400, float64(bandAt)/FingerprintBands)
+	highHz := 40 * math.Pow(400, float64(bandAt+1)/FingerprintBands)
+	fmt.Fprintf(out, "FINGERPRINT_MAX frame=%d samples=[%d,%d) band=%d hz=[%.3f,%.3f) offline_db=%.1f unified_db=%.1f drift_db=%.1f\n", frameAt, start, min(start+int(af.WindowSamples), len(a.left)), bandAt, lowHz, highHz, float64(af.Frames[frameAt][bandAt])/10, float64(bf.Frames[frameAt][bandAt])/10, peakDB)
 	isolatedA, isolatedB := make([]driftAudio, cfg.Tracks), make([]driftAudio, cfg.Tracks)
 	for i := 0; i < cfg.Tracks; i++ {
 		s, c := driftIsolate(t, score, i)
