@@ -40,7 +40,7 @@ type host struct {
 	state     hostState
 	score     string
 	proc      *sidecar.Process
-	switching bool
+	queue     openQueue
 	closing   bool
 
 	smokeOut  string
@@ -166,18 +166,19 @@ func run() error {
 // open stops the current Studio process, starts one for score, and shows it.
 func (h *host) open(score string) {
 	h.mu.Lock()
-	if h.closing || h.switching {
-		h.mu.Unlock()
+	closing := h.closing
+	h.mu.Unlock()
+	if closing || !h.queue.request(score) {
 		return
 	}
-	h.switching = true
+	h.mu.Lock()
 	previous := h.proc
 	h.proc = nil
 	h.mu.Unlock()
 	defer func() {
-		h.mu.Lock()
-		h.switching = false
-		h.mu.Unlock()
+		if next := h.queue.done(); next != "" {
+			go h.open(next)
+		}
 	}()
 
 	if previous != nil {
