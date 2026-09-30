@@ -14,7 +14,7 @@ import (
 func TestRenderDriftBaselineCLI(t *testing.T) {
 	dir, cli := os.Getenv("CICADA_RENDER_DRIFT_DIR"), os.Getenv("CICADA_RENDER_DRIFT_CLI")
 	if dir == "" || cli == "" {
-		t.Skip("set the output directory and baseline CLI built with the original wav.go overlay")
+		t.Skip("set the output directory and baseline CLI built with origin/main's wav.go overlay")
 	}
 	for _, name := range driftExamples {
 		score, _ := driftScore(t, name)
@@ -91,7 +91,7 @@ func TestRenderDriftAB(t *testing.T) {
 	}
 	var readme, metrics bytes.Buffer
 	fmt.Fprintln(&readme, "DO NOT MERGE: awaiting owner listening test")
-	fmt.Fprintln(&readme, "A (*.offline.wav): baseline cicada render from main before this fix. B (*.unified.wav): Engine.Render after this fix, with limiter/insert latency removed.")
+	fmt.Fprintln(&readme, "A (*.offline.wav): cicada render from main including #92, before the chance-slot fix. B (*.unified.wav): Engine.Render after this fix, with limiter/insert latency removed.")
 	fmt.Fprintln(&readme, "Additional *.corrected-offline.wav files show the fixed offline renderer. They should match B exactly. No engine production code changed; no goldens or thresholds changed.")
 	fmt.Fprintln(&readme, "All listening files: stereo, 48 kHz, PCM16; first 16 bars or whole song if shorter; 3 s tail; normalization and dither off. No audio has been played.")
 	fmt.Fprintln(&readme, "Fingerprint figures use float32 before PCM16 encoding and the same FingerprintStereo/FingerprintDrift code as cicada golden. The A/B peak and RMS below use the encoded PCM16 files.")
