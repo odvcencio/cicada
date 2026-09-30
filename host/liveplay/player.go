@@ -93,6 +93,8 @@ type noteBatch struct {
 	count  uint16
 }
 
+const launchPoolSize = 16
+
 type sceneLaunch struct {
 	id         uint64
 	name       string
@@ -138,17 +140,23 @@ type Position struct {
 // Player implements io.Reader for interleaved stereo float32 little-endian PCM.
 // Read is owned by the audio device; Offer may be called from a file watcher.
 type Player struct {
-	current           Score
-	previous          *engine.Engine
-	clock             seq.Clock
-	rate              int
-	sample            int64
-	bar               int64
-	nextBarSample     int64
-	fadeTotal         int
-	fadeRemaining     int
-	offers            chan Score
-	launches          atomic.Pointer[sceneLaunch]
+	current       Score
+	previous      *engine.Engine
+	clock         seq.Clock
+	rate          int
+	sample        int64
+	bar           int64
+	nextBarSample int64
+	fadeTotal     int
+	fadeRemaining int
+	offers        chan Score
+	launches      atomic.Pointer[sceneLaunch]
+	// submittedLaunches holds the records queueSceneLaunch publishes once a launch is handed to
+	// the engine, so the audio goroutine allocates nothing. Only that goroutine writes them, in
+	// rotation; a record is rewritten after launchPoolSize later submissions, far longer than
+	// any reader keeps the pointer.
+	submittedLaunches [launchPoolSize]sceneLaunch
+	submittedNext     uint32
 	launchSequence    atomic.Uint64
 	starts            chan StartRequest
 	startMu           sync.Mutex // control calls only; the audio reader never locks
@@ -1043,13 +1051,15 @@ func (p *Player) queueSceneLaunch() {
 		}
 		return
 	}
-	submitted := *request
+	submitted := &p.submittedLaunches[p.submittedNext%launchPoolSize]
+	p.submittedNext++
+	*submitted = *request
 	submitted.submitted = true
-	if !p.launches.CompareAndSwap(request, &submitted) {
+	if !p.launches.CompareAndSwap(request, submitted) {
 		return
 	}
 	if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: uint16(index), Tick: request.targetTick}) {
-		p.launches.CompareAndSwap(&submitted, nil)
+		p.launches.CompareAndSwap(submitted, nil)
 		p.emit(Event{Bar: request.targetTick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene-error"})
 	}
 }
