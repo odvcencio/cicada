@@ -81,6 +81,10 @@ func driftLatency(t *testing.T, cfg engine.Config) int {
 }
 
 func driftEngine(t *testing.T, cfg engine.Config, bars int, tail float64, trim int) driftAudio {
+	return driftEngineCommands(t, cfg, bars, tail, trim, nil)
+}
+
+func driftEngineCommands(t *testing.T, cfg engine.Config, bars int, tail float64, trim int, commands []cmd.Command) driftAudio {
 	t.Helper()
 	clock, err := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
 	if err != nil {
@@ -105,6 +109,12 @@ func driftEngine(t *testing.T, cfg engine.Config, bars int, tail float64, trim i
 		frames := min(cfg.MaxBlock, n-at)
 		if at < end {
 			frames = min(frames, end-at)
+		}
+		for len(commands) > 0 && clock.SampleAtTick(commands[0].Tick) < int64(at+frames) {
+			if !player.Push(commands[0]) {
+				t.Fatal("probe command rejected")
+			}
+			commands = commands[1:]
 		}
 		player.Render(out.left[at:at+frames], out.right[at:at+frames])
 		var message cmd.Message
