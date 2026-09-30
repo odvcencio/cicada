@@ -47,6 +47,16 @@ func (p *Pool) SetParams(params Params) error {
 	return nil
 }
 
+// SetGainTarget smooths the same live gain target independently in every slot.
+func (p *Pool) SetGainTarget(gain, alpha float64) error {
+	for i := 0; i < p.limit; i++ {
+		if err := p.voices[i].SetGainTarget(gain, alpha); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (p *Pool) NoteOn(note, velocity uint8) (Handle, error) {
 	if _, err := p.voices[0].playbackRatio(note); err != nil {
 		return Handle{}, err
