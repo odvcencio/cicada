@@ -130,11 +130,12 @@ func TestEngineRenderDriftControls(t *testing.T) {
 			for i := range left {
 				peak = max(peak, math.Abs(float64(left[i])-float64(referenceL[i])), math.Abs(float64(right[i])-float64(referenceR[i])))
 			}
-			if peak != 0 {
+			if peak != 0 && (variant != "flush-output-denormals" || peak >= float64(math.Float32frombits(0x00800000))) {
 				t.Fatalf("control changed output by %.9g", peak)
 			}
-			// Byte-identical PCM implies identical fingerprints at every band.
-			t.Logf("CAUSE %s mean_db=0 max_db=0 peak=%.9f", variant, peak)
+			// render.TestRenderDriftControlFingerprints measures the saved PCM
+			// with the actual golden fingerprint code, including denormals.
+			t.Logf("CONTROL %s peak=%.9g", variant, peak)
 			pcm := make([]byte, (n-input.Trim)*8)
 			for i := input.Trim; i < n; i++ {
 				binary.LittleEndian.PutUint32(pcm[(i-input.Trim)*8:], math.Float32bits(left[i]))
