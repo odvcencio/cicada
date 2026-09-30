@@ -5,11 +5,21 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
 
 func TestWAVChanceUsesCompiledPatternSlot(t *testing.T) {
+	var drumSeed uint32
+	for ; drumSeed < 10000; drumSeed++ {
+		if seq.ProbabilityHit(60, drumSeed, 0, 7, 0, 1) != seq.ProbabilityHit(60, drumSeed, 0, uint8(drum.CH), 0, 1) {
+			break
+		}
+	}
+	if drumSeed == 10000 {
+		t.Fatal("no distinguishing drum chance seed")
+	}
 	var slideSeed uint32
 	for ; slideSeed < 10000; slideSeed++ {
 		if seq.ProbabilityHit(60, slideSeed, 0, 7, 0, 15) && !seq.ProbabilityHit(60, slideSeed, 0, 0, 0, 15) && seq.ProbabilityHit(60, slideSeed, 0, 13, 1, 0) {
@@ -20,11 +30,11 @@ func TestWAVChanceUsesCompiledPatternSlot(t *testing.T) {
 		t.Fatal("no distinguishing source/target chance seed")
 	}
 	for _, fixture := range []struct{ name, source string }{
-		{"drum lane differs from slot", `seed 1717
+		{"drum lane differs from slot", fmt.Sprintf(`seed %d
 track drums drums {}
 pattern beat drums { slot=7 ch: xx?60xx }
 scene a { drums=beat }
-song { a*2 }`},
+song { a*2 }`, drumSeed)},
 		{"acid explicit slot", `seed 1717
 track bass acid {}
 pattern line { slot=7 1?60 . 3?60 . }

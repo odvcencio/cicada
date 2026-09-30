@@ -145,13 +145,22 @@ func driftMeasure(t *testing.T, a, b driftAudio) (FingerprintDifference, float64
 	if err != nil {
 		t.Fatal(err)
 	}
+	peak, rms := driftDelta(t, a, b)
+	return diff, peak, rms
+}
+
+func driftDelta(t *testing.T, a, b driftAudio) (float64, float64) {
+	t.Helper()
+	if len(a.left) != len(b.left) {
+		t.Fatal("audio lengths differ")
+	}
 	var peak, power float64
 	for i := range a.left {
 		l, r := float64(a.left[i])-float64(b.left[i]), float64(a.right[i])-float64(b.right[i])
 		peak = max(peak, math.Abs(l), math.Abs(r))
 		power += l*l + r*r
 	}
-	return diff, peak, math.Sqrt(power / float64(2*len(a.left)))
+	return peak, math.Sqrt(power / float64(2*len(a.left)))
 }
 
 // Run explicitly with CICADA_RENDER_DRIFT_DIR set. Reports and audio never go
