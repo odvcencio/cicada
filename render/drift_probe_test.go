@@ -325,13 +325,44 @@ func TestRenderDriftProbes(t *testing.T) {
 	noEffects := driftEngine(t, c, 17, 3, driftLatency(t, c))
 	d, peak, rms = driftMeasure(t, b, noEffects)
 	fmt.Fprintf(&out, "CAUSE effect-order-and-routing mean_db=%.9f max_db=%.1f peak=%.9f rms=%.9f\n", d.MeanDB, d.MaxDB, peak, rms)
-	clock, _ := seq.NewClock(48000, cfg.BPMMilli)
-	for iteration := int64(0); iteration < 17; iteration++ {
-		native := seq.ProbabilityHit(60, 1717, 1, 0, iteration, 13)
-		legacy := seq.ProbabilityHit(60, 1717, 1, uint8(drum.CH), iteration, 13)
-		if native != legacy {
-			fmt.Fprintf(&out, "CHANCE bar=%d step=13 tick=%d sample=%d offline_hit=%v unified_hit=%v\n", iteration+1, (iteration*16+13)*seq.TicksPerStep, clock.SampleAtTick((iteration*16+13)*seq.TicksPerStep), legacy, native)
+	// Compare scheduled events, including scene stop/keep semantics. Hash-only
+	// decisions after hush are irrelevant because the drum track stays stopped.
+	_, nativeEvents := driftDrumCommands(t, cfg, 17, false)
+	_, legacyEvents := driftDrumCommands(t, cfg, 17, true)
+	type onset struct {
+		tick  int64
+		track uint8
+		lane  uint16
+	}
+	hits := make(map[onset][2]bool)
+	for variant, events := range [][]cmd.Command{legacyEvents, nativeEvents} {
+		for _, event := range events {
+			key := onset{event.Tick, event.Track, event.Index}
+			decision := hits[key]
+			decision[variant] = true
+			hits[key] = decision
 		}
+	}
+	var mismatches []onset
+	for key, decision := range hits {
+		if decision[0] != decision[1] {
+			mismatches = append(mismatches, key)
+		}
+	}
+	sort.Slice(mismatches, func(i, j int) bool {
+		a, b := mismatches[i], mismatches[j]
+		if a.tick != b.tick {
+			return a.tick < b.tick
+		}
+		if a.track != b.track {
+			return a.track < b.track
+		}
+		return a.lane < b.lane
+	})
+	clock, _ := seq.NewClock(48000, cfg.BPMMilli)
+	for _, key := range mismatches {
+		decision := hits[key]
+		fmt.Fprintf(&out, "CHANCE bar=%d step=%d tick=%d sample=%d track=%s lane=%d offline_hit=%v unified_hit=%v\n", key.tick/seq.TicksPerBar+1, key.tick/seq.TicksPerStep%16, key.tick, clock.SampleAtTick(key.tick), score.Tracks[key.track].Name, key.lane, decision[0], decision[1])
 	}
 	for _, name := range driftExamples {
 		s, c := driftScore(t, name)
