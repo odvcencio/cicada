@@ -164,3 +164,22 @@ func TestWindowTitle(t *testing.T) {
 		t.Fatalf("score title = %q", got)
 	}
 }
+
+func TestOpenQueueKeepsTheLatestRequestDuringASwitch(t *testing.T) {
+	var q openQueue
+	if !q.request("a.cicada") {
+		t.Fatal("the first request must start")
+	}
+	if q.request("b.cicada") || q.request("c.cicada") {
+		t.Fatal("requests during a switch must wait")
+	}
+	if next := q.done(); next != "c.cicada" {
+		t.Fatalf("done returned %q, want the latest request c.cicada", next)
+	}
+	if !q.request("c.cicada") {
+		t.Fatal("after done the queue must accept a new switch")
+	}
+	if next := q.done(); next != "" {
+		t.Fatalf("nothing was requested during the second switch, got %q", next)
+	}
+}

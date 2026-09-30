@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 )
 
 // studioReadyLine matches the address line `cicada studio` prints once it
@@ -191,4 +192,36 @@ func windowTitle(score string) string {
 		name = filepath.Base(filepath.Dir(score))
 	}
 	return name + " - Cicada Studio"
+}
+
+// openQueue lets one score switch run at a time and keeps the latest request that
+// arrives while a switch is running, so a menu click or a second launch is not lost.
+type openQueue struct {
+	mu      sync.Mutex
+	busy    bool
+	pending string
+}
+
+// request reports whether the caller may start the switch now. If a switch is
+// already running, the score is kept and false is returned.
+func (q *openQueue) request(score string) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	if q.busy {
+		q.pending = score
+		return false
+	}
+	q.busy = true
+	return true
+}
+
+// done ends the running switch and returns the latest score requested meanwhile,
+// or an empty string. The caller then opens it.
+func (q *openQueue) done() string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	q.busy = false
+	next := q.pending
+	q.pending = ""
+	return next
 }
