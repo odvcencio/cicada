@@ -174,7 +174,8 @@ type Engine struct {
 	overflowRead, overflowLen    uint8
 	pending                      [512]cmd.Command
 	pendingLen                   int
-	layerMask                    uint32
+	layerMask                    uint32 // effective: layerAuthored gated by the macro layer tables
+	layerAuthored                uint32 // set by scenes, OpSetLayerMask and source-off; never by macros
 	meterRate, meterBlock        uint32
 	meterFrames                  uint32
 	trackMeter                   [16]meterAccum
@@ -250,7 +251,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	}
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
-		layerMask: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
+		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
 	for id := 0; id < len(kernel.Params); id++ {
 		e.paramAlpha[id] = smoothingAlpha(kernel.ParamID(id), cfg.SampleRate)
 	}
@@ -635,7 +636,7 @@ func (e *Engine) Reset() {
 	e.macroLayerEnabled = [16]bool{}
 	e.playheadFrames = e.sampleRate / 60
 	e.renderFrame, e.renderFrames = 0, 0
-	e.layerMask = (1 << e.tracks) - 1
+	e.layerMask, e.layerAuthored = (1<<e.tracks)-1, (1<<e.tracks)-1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
 	e.manualSceneTick = -1
 	e.currentScene = -1
@@ -1150,7 +1151,7 @@ func (e *Engine) apply(c cmd.Command) {
 	case cmd.OpLaunchScene:
 		e.applySceneCommand(c)
 	case cmd.OpSetLayerMask:
-		e.applyLayerMask(c.Arg0)
+		e.setAuthoredLayerMask(c.Arg0)
 	case cmd.OpMeterRate:
 		e.meterRate = c.Arg0
 	default:
@@ -1189,10 +1190,11 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			v.gainDB = value
 			v.sourceOff = off
 			if off {
-				e.layerMask &^= 1 << c.Track
+				e.layerAuthored &^= 1 << c.Track
 			} else {
-				e.layerMask |= 1 << c.Track
+				e.layerAuthored |= 1 << c.Track
 			}
+			e.composeLayerMask()
 			if off {
 				v.targetMix = mix.Track{}
 			} else {

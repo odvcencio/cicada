@@ -7,7 +7,20 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 )
 
-func (e *Engine) applyLayerMask(mask uint32) {
+// setAuthoredLayerMask records a mask chosen by a command or a scene. The mask in
+// force is always the authored mask gated by the macro layer tables, so a timed
+// OpSetLayerMask cannot switch on a track that a macro layer excludes.
+func (e *Engine) setAuthoredLayerMask(mask uint32) {
+	e.layerAuthored = mask
+	e.composeLayerMask()
+}
+
+// composeLayerMask sets the effective mask from the authored mask and the macros.
+func (e *Engine) composeLayerMask() {
+	mask := e.layerAuthored
+	if macro, active := e.macroLayerMask(); active {
+		mask &= macro
+	}
 	e.layerMask = mask
 }
 
@@ -25,13 +38,8 @@ func (e *Engine) macroLayerMask() (uint32, bool) {
 	return mask, active
 }
 
-// reapplyMacroLayers restores the combined macro mask after something else,
-// such as a seek or a scene reconstruction, put the authored mask back.
-func (e *Engine) reapplyMacroLayers() {
-	if mask, active := e.macroLayerMask(); active {
-		e.applyLayerMask(mask)
-	}
-}
+// reapplyMacroLayers recomposes the mask after a seek or a scene reconstruction.
+func (e *Engine) reapplyMacroLayers() { e.composeLayerMask() }
 
 // processBarBoundary runs after same-tick commands so scene launches and
 // conductor changes share the transport's exact bar-line ordering.
@@ -89,8 +97,9 @@ func (e *Engine) processBarBoundary() {
 
 	// Apply the combined mask once per bar, even when no level changed, so a seek or a
 	// scene reconstruction cannot leave the authored mask in place.
-	if mask, active := e.macroLayerMask(); active {
-		e.applyLayerMask(mask)
+	if _, active := e.macroLayerMask(); active {
+		e.composeLayerMask()
+		mask := e.layerMask
 		for id, was := range changed {
 			if was {
 				e.emit(cmd.Message{Kind: cmd.LayerChanged, Track: uint8(id), A: uint16(e.macroLayerLevel[id]), B: mask, Tick: tick})
