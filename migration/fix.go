@@ -27,6 +27,11 @@ func FixSource(source []byte) ([]byte, bool, error) {
 	if projectBefore == nil || hasDiagnosticErrors(diagnostics) {
 		return nil, false, fmt.Errorf("score must compile before fix: %+v", diagnostics)
 	}
+	// A validated edition-2 score already uses the target edition. Keep its
+	// header: live controls require edition 2 even without a project manifest.
+	if before.Version == 2 {
+		return source, false, nil
+	}
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {
 		return nil, false, err

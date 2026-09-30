@@ -43,6 +43,7 @@ var scales = map[string]bool{
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) []Diagnostic {
 	var ds []Diagnostic
+	ds = append(ds, ValidateLive(s.Live, s.Tracks)...)
 	add := func(code, message, severity string, p Position) {
 		ds = append(ds, Diagnostic{Code: code, Message: message, Severity: severity, Position: p})
 	}
@@ -50,6 +51,9 @@ func Validate(s *Score) []Diagnostic {
 		if len(id) < 1 || len(id) > 64 {
 			add("CICADA-LIMIT", "identifier must contain 1 to 64 bytes", "error", p)
 		}
+	}
+	if s.Live != nil && s.Version != 2 {
+		add("CICADA-VERSION", "live controls require edition 2", "error", s.Live.Position)
 	}
 	if s.Version != 1 && s.Version != 2 {
 		add("CICADA-VERSION", "only cicada 1 and 2 are supported", "error", Position{1, 1})
@@ -696,4 +700,93 @@ func validKeyRoot(s string) bool {
 		return false
 	}
 	return len(s) == 1 || s[1] == '#' || s[1] == 'b'
+}
+
+// ValidateLive checks the declared host controls, retaining source positions.
+func ValidateLive(live *Live, tracks []Track) []Diagnostic {
+	if live == nil {
+		return nil
+	}
+	var ds []Diagnostic
+	add := func(code, message string, p Position) {
+		if p.Line == 0 {
+			p = live.Position
+		}
+		if p.Line == 0 {
+			p = Position{1, 1}
+		}
+		ds = append(ds, Diagnostic{Code: code, Severity: "error", Message: message, Position: p})
+	}
+	unit := func(value float64) bool {
+		return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= 0 && value <= 1
+	}
+	switch live.Land {
+	case "", "now", "beat", "bar", "2bars", "4bars", "phrase":
+	default:
+		add("CICADA-LIVE-LAND", "land must be now, beat, bar, 2bars, 4bars, or phrase", live.LandPosition)
+	}
+	if live.PhraseBars != 0 || live.PhrasePosition.Line != 0 {
+		if live.PhraseBars < 1 || live.PhraseBars > 64 {
+			add("CICADA-LIVE-PHRASE", "phrase must be 1 to 64 bars", live.PhrasePosition)
+		}
+	}
+	if len(live.Macros) > 16 {
+		add("CICADA-LIVE-LIMIT", "live block allows at most 16 macros", live.Macros[16].Position)
+	}
+	macros := map[string]bool{}
+	for _, macro := range live.Macros {
+		if macros[macro.Name] {
+			add("CICADA-LIVE-MACRO", "duplicate macro "+macro.Name, macro.Position)
+		}
+		if len(macro.Name) == 0 || len(macro.Name) > 64 {
+			add("CICADA-LIVE-MACRO", "macro name must contain 1 to 64 bytes", macro.Position)
+		}
+		macros[macro.Name] = true
+		if !unit(macro.Value) {
+			add("CICADA-LIVE-MACRO", "macro value must be a unitless number from 0 to 1", macro.ValuePosition)
+		}
+		if math.IsNaN(macro.SmoothMS) || math.IsInf(macro.SmoothMS, 0) || macro.SmoothMS < 0 {
+			add("CICADA-LIVE-MACRO", "smooth must be a nonnegative duration in ms or s", macro.SmoothPosition)
+		}
+	}
+	trackNames := map[string]bool{}
+	for _, track := range tracks {
+		trackNames[track.Name] = true
+	}
+	layerMacros := map[string]bool{}
+	for _, layers := range live.Layers {
+		if !macros[layers.Macro] {
+			add("CICADA-LIVE-MACRO", "unknown macro "+layers.Macro, layers.MacroPosition)
+		}
+		if layerMacros[layers.Macro] {
+			add("CICADA-LIVE-MACRO", "duplicate layers for macro "+layers.Macro, layers.MacroPosition)
+		}
+		layerMacros[layers.Macro] = true
+		if layers.AttackBars != 1 {
+			add("CICADA-LIVE-ATTACK", "only attack 1bar is supported", layers.AttackPosition)
+		}
+		if layers.ReleaseBars < 1 || layers.ReleaseBars > 16 {
+			add("CICADA-LIVE-RELEASE", "release must be 1 to 16 bars", layers.ReleasePosition)
+		}
+		thresholds := map[float64]bool{}
+		seenTracks := map[string]bool{}
+		for _, rule := range layers.Rules {
+			if !trackNames[rule.Track] {
+				add("CICADA-LIVE-TRACK", "unknown track "+rule.Track, rule.Position)
+			}
+			if seenTracks[rule.Track] {
+				add("CICADA-LIVE-TRACK", "duplicate layer rule for track "+rule.Track, rule.Position)
+			}
+			seenTracks[rule.Track] = true
+			if !unit(rule.Value) {
+				add("CICADA-LIVE-MACRO", "layer threshold must be a unitless number from 0 to 1", rule.ValuePosition)
+				continue
+			}
+			if !thresholds[rule.Value] && len(thresholds) == 3 {
+				add("CICADA-LIVE-LIMIT", "layers allow at most 3 distinct thresholds", rule.ValuePosition)
+			}
+			thresholds[rule.Value] = true
+		}
+	}
+	return ds
 }

@@ -111,6 +111,9 @@
       "items": {
         "$ref": "#/$defs/export"
       }
+    },
+    "live": {
+      "$ref": "#/$defs/live"
     }
   },
   "$defs": {
@@ -1414,6 +1417,113 @@
           "type": "boolean"
         }
       }
+    },
+    "live": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "land": {
+          "enum": [
+            "now",
+            "beat",
+            "bar",
+            "2bars",
+            "4bars",
+            "phrase"
+          ]
+        },
+        "phrase_bars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 64
+        },
+        "macros": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/live_macro"
+          }
+        },
+        "layers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/live_layers"
+          }
+        }
+      },
+      "required": [
+        "macros",
+        "layers"
+      ]
+    },
+    "live_macro": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "default": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "smooth_ms": {
+          "type": "number",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "name",
+        "default",
+        "smooth_ms"
+      ]
+    },
+    "live_layers": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "macro": {
+          "type": "string"
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/live_layer"
+          }
+        },
+        "attack_bars": {
+          "const": 1
+        },
+        "release_bars": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16
+        }
+      },
+      "required": [
+        "macro",
+        "rules",
+        "attack_bars",
+        "release_bars"
+      ]
+    },
+    "live_layer": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "track": {
+          "type": "string"
+        },
+        "threshold": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": [
+        "track",
+        "threshold"
+      ]
     }
   }
 }
