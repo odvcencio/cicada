@@ -157,6 +157,11 @@ type Player struct {
 	// any reader keeps the pointer.
 	submittedLaunches [launchPoolSize]sceneLaunch
 	submittedNext     uint32
+	// requeuedLaunches and requeuedSlots do the same for requeuePendingLaunches, which also runs
+	// on the audio goroutine when a replacement score lands.
+	requeuedLaunches  [launchPoolSize]sceneLaunch
+	requeuedSlots     [launchPoolSize]slotLaunchBatch
+	requeuedNext      uint32
 	launchSequence    atomic.Uint64
 	starts            chan StartRequest
 	startMu           sync.Mutex // control calls only; the audio reader never locks
@@ -1071,7 +1076,9 @@ func (p *Player) requeuePendingLaunches() {
 		if old == nil {
 			break
 		}
-		next := *old
+		next := &p.requeuedLaunches[p.requeuedNext%launchPoolSize]
+		p.requeuedNext++
+		*next = *old
 		next.submitted = false
 		if next.targetTick <= tick {
 			quantum, ok := quantizeQuantum(next.quantize)
@@ -1086,7 +1093,7 @@ func (p *Player) requeuePendingLaunches() {
 				break
 			}
 		}
-		if p.launches.CompareAndSwap(old, &next) {
+		if p.launches.CompareAndSwap(old, next) {
 			break
 		}
 	}
@@ -1095,7 +1102,9 @@ func (p *Player) requeuePendingLaunches() {
 		if old == nil {
 			return
 		}
-		next := *old
+		next := &p.requeuedSlots[p.requeuedNext%launchPoolSize]
+		p.requeuedNext++
+		*next = *old
 		changed := false
 		for index, request := range next.requests {
 			if request.request.Track == "" {
@@ -1120,7 +1129,7 @@ func (p *Player) requeuePendingLaunches() {
 			next.requests[index] = request
 			changed = true
 		}
-		if !changed || p.slotLaunches.CompareAndSwap(old, &next) {
+		if !changed || p.slotLaunches.CompareAndSwap(old, next) {
 			return
 		}
 	}
