@@ -90,6 +90,22 @@ func (v *Voice) interpolate() (float64, float64) {
 		(!v.region.Loop || (first >= v.region.LoopStart && first+bank.taps <= v.region.LoopEnd) ||
 			(!v.looped && first+bank.taps <= v.region.LoopEnd)) {
 		l := v.region.Left[first : first+bank.taps]
+		// Exact table phases need no row interpolation. This preserves the
+		// same tap order and rounding while reducing integer-ratio CPU cost.
+		if fraction == 0 {
+			if len(v.region.Right) == 0 {
+				for i, c := range row {
+					left += float64(float64(l[i]) * float64(c))
+				}
+				return left, left
+			}
+			r := v.region.Right[first : first+bank.taps]
+			for i, c := range row {
+				left += float64(float64(l[i]) * float64(c))
+				right += float64(float64(r[i]) * float64(c))
+			}
+			return left, right
+		}
 		if len(v.region.Right) == 0 {
 			for i, a := range row {
 				c := float64(a) + float64((float64(next[i])-float64(a))*fraction)

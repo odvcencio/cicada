@@ -62,6 +62,7 @@ type Voice struct {
 	remaining                  int
 	lastL, lastR               float32
 	heldL, heldR               float32
+	heldFrames                 int
 	tailL, tailR               float32
 	tailRemaining              int
 }
@@ -191,8 +192,9 @@ func (v *Voice) NextStereo() (float32, float32) {
 			gain = float64(gain * (float64(v.remaining) / float64(v.fadeFrames)))
 		}
 		if v.held {
-			// lastL/R already contain gain: hold the last output, not the PCM.
-			fade := float64(v.remaining) / float64(v.fadeFrames)
+			// Continue from the captured output's release fraction, including
+			// when the source ended partway through an explicit NoteOff fade.
+			fade := float64(v.remaining) / float64(v.heldFrames)
 			left, right = float32(float64(v.heldL)*fade), float32(float64(v.heldR)*fade)
 		} else if v.ratio == 1 {
 			left, right = v.frame(int(v.phase))
@@ -214,6 +216,7 @@ func (v *Voice) NextStereo() (float32, float32) {
 				v.held = true
 				v.heldL, v.heldR = left, right
 				v.NoteOff()
+				v.heldFrames = v.remaining
 			}
 		}
 		if v.releasing {

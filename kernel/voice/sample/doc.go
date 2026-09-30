@@ -31,8 +31,11 @@
 // are stored as float32, promoted before row interpolation; coefficient
 // interpolation products and source products explicitly round to float64
 // before addition. Taps accumulate in ascending order, gain applies in
-// float64, and the voice output rounds once to float32. Pool accumulation uses
-// ascending slot order in float64 and then rounds to float32. These explicit
+// float64, and the voice output rounds once to float32. Exact table phases
+// skip coefficient interpolation with the same tap order. Declick tails
+// multiply held float32 outputs in float64, add to the rounded voice output,
+// and round to float32 again. Pool accumulation uses ascending slot order in
+// float64 and then rounds to float32. These explicit
 // rounding boundaries prevent native FMA contraction across multiply/add
 // operations. Loop wrapping uses a rounded float64 integer-times-length
 // product before subtraction. Pitch math occurs only on NoteOn. See the
@@ -40,7 +43,8 @@
 //
 // Reproduce quality with go test ./kernel/voice/sample -run SRC -count=1 -v;
 // reproduce CPU percentiles with go run ./cmd/cicada-sample-metrics. Use
-// GOWORK=off, nice -n 10 and the local-heavy.lock for both commands. The tools
+// go test -tags sample_wasm ./kernel/voice/sample to verify native/TinyGo bits.
+// Use GOWORK=off, nice -n 10 and the local-heavy.lock for these commands. The tools
 // print METRIC lines. Quality excludes startup/end transients, fits clean
 // fundamentals by least squares, and measures total residual rather than
 // hiding aliases in an FFT-bin exclusion window. See quality_test.go for the

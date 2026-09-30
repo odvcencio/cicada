@@ -267,4 +267,20 @@ func TestSampleReleaseVelocityAndValidation(t *testing.T) {
 	if err := v.NoteOn(0, 127); err == nil {
 		t.Fatal("unsupported ratio accepted")
 	}
+	// Ending the source during an existing release must continue the fade
+	// rather than multiplying the already faded last output by it again.
+	r = testRegion(10, false, false)
+	for i := range r.Left {
+		r.Left[i] = .5
+	}
+	v = testVoice(t, r)
+	trigger(t, v, 60, 127)
+	v.NoteOff()
+	for i := 0; i < v.fadeFrames; i++ {
+		l, _ := v.NextStereo()
+		want := .5 * float64(v.fadeFrames-i) / float64(v.fadeFrames)
+		if math.Abs(float64(l)-want) > 1e-7 {
+			t.Fatalf("source ended during release at frame %d: %g want %g", i, l, want)
+		}
+	}
 }
