@@ -1,0 +1,100 @@
+cicada 2
+
+title "Live intensity"
+
+tempo 138
+
+key a minor
+
+seed 4242
+
+track bass acid {
+  cutoff = 620Hz
+  reso = 0.62
+  envmod = 0.7
+  decay = 380ms
+  accent = 0.8
+  drive = 0.25
+  filter = diode
+}
+
+track drums drums {
+  bd_tune = 55Hz
+  bd_decay = 400ms
+  ch_decay = 60ms
+}
+
+instrument glassbass {
+  octave = 2
+  param cutoff = 720Hz
+  param bite = 0.65
+  voice mono {
+    let osc = saw(pitch)
+    let sub = square(pitch / 2)
+    let tone = mix(osc, sub, 0.25)
+    let shape = env(gate, 380ms)
+    out = ladder(tone, cutoff * exp2(shape * 3), bite) * shape
+  }
+}
+
+track lead glassbass {
+  cutoff = 900Hz
+}
+
+live {
+  land = bar
+  phrase = 8bars
+  macro intensity = 0.3 smooth 400ms
+  layers intensity {
+    drums >= 0.25
+    bass >= 0.45
+    lead >= 0.70
+    attack 1bar
+    release 3bars
+  }
+}
+
+phrase hook {
+  1^ . 1~ 5 . 1 7, .
+}
+
+pattern bass-a {
+  swing = 54%
+  gate = 55%
+  1^ . 1~ 5 . 1 7, . | 1^ . 1'~ 1 5^ 3 1 .
+}
+
+pattern bass-b {
+  swing = 54%
+  gate = 55%
+  use hook
+  use hook +12
+}
+
+pattern lead-a {
+  5 . . . 3 . . . | 1' . . . 7 . . .
+}
+
+pattern beat-a drums {
+  bd: X... x... X... x.x.
+  sd: .... X... .... X..x
+  ch: x.x. x.x. x.x. x.x.
+  oh: ..x. ..x. ..x. ..x.
+}
+
+scene main {
+  bass = bass-a
+  drums = beat-a
+  lead = lead-a
+}
+
+scene outro {
+  bass = bass-b
+  drums = beat-a
+  lead = lead-a
+}
+
+song {
+  main*8
+  outro*8
+}

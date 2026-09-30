@@ -35,6 +35,7 @@ type Project struct {
 	Buses       []Bus        `cicada:"Named mixer buses" json:"buses,omitempty" introduced:"cicada.project/2"`
 	Master      *Master      `cicada:"Master mixer" json:"master,omitempty" introduced:"cicada.project/2"`
 	Exports     []Export     `cicada:"Named render delivery targets" json:"exports,omitempty" introduced:"cicada.project/2"`
+	Live        *Live        `cicada:"Declared host controls" json:"live,omitempty" introduced:"cicada.project/2"`
 	p2Syntax    bool
 }
 
@@ -297,7 +298,8 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		}
 		p.Kits = append(p.Kits, kit)
 	}
-	needsProject2 := sourceUsesNamedMixer(score)
+	needsProject2 := sourceUsesNamedMixer(score) || score.Live != nil
+	p.Live = liveFromScore(score.Live)
 	for _, scene := range score.Scenes {
 		needsProject2 = needsProject2 || len(scene.Settings) > 0
 	}
@@ -512,6 +514,12 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 }
 
 func projectDiagnosticCode(err error) string {
+	if err != nil && strings.HasPrefix(err.Error(), "CICADA-LIVE-") {
+		code, _, ok := strings.Cut(err.Error(), ":")
+		if ok {
+			return code
+		}
+	}
 	if err != nil && strings.HasPrefix(err.Error(), "CICADA-UNSUPPORTED:") {
 		return "CICADA-UNSUPPORTED"
 	}
