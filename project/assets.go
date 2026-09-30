@@ -95,7 +95,7 @@ func VerifyAssets(score *notation.Score, projectDir string) []notation.Diagnosti
 		file, err := root.Open(a.Path)
 		if err != nil {
 			code := "CICADA-ASSET-MISSING"
-			if !os.IsNotExist(err) {
+			if strings.Contains(err.Error(), "escapes") {
 				code = "CICADA-ASSET-PATH"
 			}
 			add(a, "", code, "readable regular file inside project", err.Error())
@@ -176,11 +176,8 @@ func validateAudioProject(p *Project) error {
 		}
 		s.Samplers = append(s.Samplers, notation.Sampler{Name: v.Name, Asset: v.Asset, RootMIDI: v.RootMIDI, Mode: v.Mode, Voices: v.Voices})
 	}
-	// Validate uses the same typed audio invariants. Discard unrelated score requirements.
-	for _, d := range notation.Validate(s) {
-		if strings.HasPrefix(d.Code, "CICADA-ASSET") || d.Code == "CICADA-CLIP-RANGE" || d.Code == "CICADA-SAMPLER-PARAM" || d.Code == "CICADA-REFERENCE" || d.Code == "CICADA-DUPLICATE" {
-			return fmt.Errorf("%s: %s", d.Code, d.Message)
-		}
+	if ds := notation.ValidateAudio(s); len(ds) > 0 {
+		return fmt.Errorf("%s: %s", ds[0].Code, ds[0].Message)
 	}
 	for _, sampler := range p.Samplers {
 		for _, inst := range p.Instruments {

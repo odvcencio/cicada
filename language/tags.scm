@@ -39,3 +39,6 @@
 (clip_decl name: (identifier) @name) @definition.clip
 (clip_decl asset: (identifier) @name) @reference.asset
 (sampler_decl name: (identifier) @name) @definition.sampler
+
+((sampler_decl (param_decl name: (identifier) @field value: (value (identifier) @name))) @reference.asset
+  (#eq? @field "asset"))

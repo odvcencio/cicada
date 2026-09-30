@@ -554,3 +554,23 @@ func TestHighlighterAndTaggerAPIs(t *testing.T) {
 		t.Errorf("tags = %+v, want track, pattern, scene, two scene references, and a song reference", tags)
 	}
 }
+
+func TestAudioSymbols(t *testing.T) {
+	source, err := os.ReadFile("testdata/audio-assets.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	symbols, err := Symbols(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []struct{ role, kind, name string }{{"definition", "asset", "vocal"}, {"definition", "clip", "vocal-a"}, {"definition", "sampler", "hit"}, {"reference", "asset", "vocal"}, {"reference", "sampler", "hit"}, {"reference", "clip", "vocal-a"}} {
+		found := false
+		for _, symbol := range symbols {
+			found = found || symbol.Role == want.role && symbol.Kind == want.kind && symbol.Name == want.name
+		}
+		if !found {
+			t.Errorf("missing %+v: %+v", want, symbols)
+		}
+	}
+}

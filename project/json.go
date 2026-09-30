@@ -576,7 +576,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 		return nil, jsonError(data, "CICADA-VERSION", "/format", 0, fmt.Errorf("scene settings require cicada.project/2"))
 	}
 	if err := ValidateProject(&p); err != nil {
-		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
+		return nil, jsonError(data, projectDiagnosticCode(err), "", 0, err)
 	}
 	if _, err := canonicalProjectBytes(&p); err != nil {
 		code := "CICADA-PARAM"

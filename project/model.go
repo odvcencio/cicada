@@ -516,14 +516,15 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 }
 
 func projectDiagnosticCode(err error) string {
-	if err != nil && strings.HasPrefix(err.Error(), "CICADA-UNSUPPORTED:") {
-		return "CICADA-UNSUPPORTED"
+	if err != nil {
+		code, _, ok := strings.Cut(err.Error(), ":")
+		if ok && strings.HasPrefix(code, "CICADA-") {
+			return code
+		}
 	}
 	return "CICADA-PARAM"
 }
 
-// Melodic notation can omit its kind. For a pattern used only by built-in
-// acid tracks, retain the existing project-1 "acid" kind in semantic JSON.
 func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string {
 	if pattern.Kind != "notes" {
 		return pattern.Kind

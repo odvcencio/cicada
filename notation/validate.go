@@ -42,7 +42,7 @@ var scales = map[string]bool{
 // Validate checks the meaning of a syntactically valid score. It leaves the
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) []Diagnostic {
-	_, _, _, ds := resolveAudio(s)
+	ds := ValidateAudio(s)
 	add := func(code, message, severity string, p Position) {
 		ds = append(ds, Diagnostic{Code: code, Message: message, Severity: severity, Position: p})
 	}
