@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/notation"
 )
 
 var acceptedScales = map[string]bool{
@@ -25,6 +26,31 @@ func validateOctaveValue(value Value) error {
 func ValidateProject(p *Project) error {
 	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
 		return fmt.Errorf("unsupported project format or version")
+	}
+	if p.Live != nil {
+		if p.Edition != 2 || p.Format != FormatID2 {
+			return fmt.Errorf("CICADA-VERSION: live controls require edition 2 and cicada.project/2")
+		}
+		if p.Live.Macros == nil || p.Live.Layers == nil {
+			return fmt.Errorf("CICADA-LIVE-BLOCK: live arrays must be explicit")
+		}
+		for _, layers := range p.Live.Layers {
+			if layers.Rules == nil {
+				return fmt.Errorf("CICADA-LIVE-BLOCK: layer rules must be explicit")
+			}
+		}
+		tracks := make([]notation.Track, len(p.Tracks))
+		for i, track := range p.Tracks {
+			tracks[i].Name = track.ID
+		}
+		if ds := notation.ValidateLive(liveToScore(p.Live), tracks); len(ds) > 0 {
+			return fmt.Errorf("%s: %s", ds[0].Code, ds[0].Message)
+		}
+		for _, macro := range p.Live.Macros {
+			if !validID(macro.Name) {
+				return fmt.Errorf("CICADA-LIVE-MACRO: invalid macro name %s", macro.Name)
+			}
+		}
 	}
 	if p.Format == FormatID && projectHasSceneSettings(p) {
 		return fmt.Errorf("scene settings require cicada.project/2")

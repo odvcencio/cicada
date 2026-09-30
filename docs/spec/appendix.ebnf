@@ -12,7 +12,7 @@
 source_file ::= [ "cicada" , integer ] , { _declaration } ;
 _declaration ::= title_decl | tempo_decl | key_decl | seed_decl | instrument_decl | kit_decl |
                  track_decl | phrase_decl | acid_pattern | note_pattern | drum_pattern | scene_decl |
-                 song_decl | fx_decl | bus_decl | master_decl | export_decl ;
+                 song_decl | fx_decl | bus_decl | master_decl | export_decl | live_decl ;
 title_decl ::= "title" , string ;
 tempo_decl ::= "tempo" , number ;
 key_decl ::= "key" , key_root , identifier ;
@@ -79,3 +79,12 @@ key_root ::= /[a-g][#b]?/ ;
 string ::= /"([^"\\]|\\.)*"/ ;
 identifier ::= /[a-z_][a-z0-9_-]*/ ;
 comment ::= /\/\/[^\n]*/ ;
+live_decl ::= "live" , "{" , { live_land | live_phrase | live_macro | live_layers } , "}" ;
+live_land ::= "land" , "=" , (identifier | bar_count) , [ ";" ] ;
+live_phrase ::= "phrase" , "=" , bar_count , [ ";" ] ;
+live_macro ::= "macro" , identifier , "=" , number , [ "smooth" , number ] , [ ";" ] ;
+live_layers ::= "layers" , identifier , "{" , { live_layer | live_attack | live_release } , "}" ;
+live_layer ::= identifier , ">=" , number , [ ";" ] ;
+live_attack ::= "attack" , bar_count , [ ";" ] ;
+live_release ::= "release" , bar_count , [ ";" ] ;
+bar_count ::= /-?[0-9]+(\.[0-9]+)?bars?/ ;
