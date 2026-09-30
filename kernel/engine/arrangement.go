@@ -218,6 +218,7 @@ func (e *Engine) startSong() {
 	if len(e.song) == 0 {
 		return
 	}
+	defer e.reapplyMacroLayers()
 	if !e.restoreSceneDefaults() {
 		return
 	}
