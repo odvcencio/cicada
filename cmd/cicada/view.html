@@ -317,16 +317,12 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .live-arm { display:flex; align-items:center; gap:7px; min-height:42px; border:1px solid var(--border); border-radius:8px; background:var(--panel); padding:7px 10px; color:var(--text); font-size:.78rem; }
 .live-arm input { width:18px; height:18px; accent-color:var(--coral); }
 .live-midi-help { margin:12px 2px; color:var(--muted); font-size:.78rem; }
-.live-map-details,.live-parameter-details { border:1px solid var(--border); border-radius:10px; background:var(--panel); margin:10px 0; }
-.live-map-details summary,.live-parameter-details summary { cursor:pointer; padding:12px 14px; color:var(--mint); font-weight:800; }
-.midi-mapping-list,.live-param-list { display:grid; gap:5px; padding:0 12px 12px; }
+.live-map-details { border:1px solid var(--border); border-radius:10px; background:var(--panel); margin:10px 0; }
+.live-map-details summary { cursor:pointer; padding:12px 14px; color:var(--mint); font-weight:800; }
+.midi-mapping-list { display:grid; gap:5px; padding:0 12px 12px; }
 .midi-mapping-row { display:flex; align-items:center; gap:8px; min-height:38px; padding:5px 8px; border-top:1px solid #304037; font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace; }
 .midi-mapping-row span { flex:1; min-width:0; overflow-wrap:anywhere; }
 .midi-mapping-row button { min-height:30px; border:1px solid #765447; border-radius:6px; background:#352521; color:#ffd2be; padding:4px 8px; cursor:pointer; }
-.live-param-row { display:grid; grid-template-columns:minmax(130px,1fr) minmax(120px,2fr) auto; align-items:center; gap:8px; border-top:1px solid #304037; padding:7px 4px; }
-.live-param-row label { min-width:0; overflow-wrap:anywhere; color:var(--text); font:12px/1.35 ui-monospace,SFMono-Regular,Consolas,monospace; }
-.live-param-row input[type="range"] { width:100%; accent-color:var(--mint); }
-.live-param-row output { min-width:72px; text-align:right; color:var(--amber); font:12px ui-monospace,SFMono-Regular,Consolas,monospace; }
 .midi-learn-dot { display:inline-block; width:8px; height:8px; margin-left:5px; border-radius:50%; background:var(--amber); vertical-align:middle; box-shadow:0 0 8px #f2c66d99; }
 .midi-learn-menu { position:fixed; z-index:20; display:grid; min-width:160px; padding:5px; border:1px solid #7b855e; border-radius:8px; background:#202a22; box-shadow:0 10px 24px #0009; }
 .midi-learn-menu[hidden] { display:none; }
@@ -356,9 +352,6 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
   .live-grid td { min-width:92px; }
   .live-pad { min-width:92px; min-height:58px; }
   .live-stop-pad { min-width:68px; }
-  .live-param-row { grid-template-columns:1fr auto; }
-  .live-param-row input[type="range"] { grid-column:1; }
-  .live-param-row output { grid-column:2; grid-row:1 / span 2; }
 }
 @media (prefers-reduced-motion:reduce) { .live-scene-pad[data-state="playing"] { animation:none; } }
 html:has(body[data-studio]) { height:100%; overflow:hidden; }
@@ -422,6 +415,67 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   body[data-studio] .step-edit, body[data-studio] .pitch-row .step-edit { min-height:44px; min-width:40px; }
   body[data-studio] .grid-line, body[data-studio] .drum .grid-line { grid-template-columns:65px repeat(var(--steps),44px); overflow-x:auto; }
 }
+.mix-view { width:100%; scroll-margin-top:64px; }
+.mix-warning { min-height:24px; margin:0 0 10px; color:var(--amber); font-size:.82rem; }
+.mix-rack { display:flex; align-items:stretch; gap:10px; max-width:100%; overflow-x:auto; overscroll-behavior-x:contain; padding:2px 2px 12px; scrollbar-color:#65836c #19211c; }
+.mix-strip { flex:0 0 188px; min-width:0; border:1px solid var(--border); border-radius:12px; background:var(--panel); overflow:hidden; }
+.mix-strip.master-strip { position:sticky; right:0; z-index:2; flex-basis:220px; box-shadow:-12px 0 18px #0f1411bb; }
+.mix-strip > summary { display:flex; align-items:center; justify-content:space-between; gap:8px; min-height:54px; padding:9px 12px; list-style:none; cursor:pointer; background:var(--panel-raised); }
+.mix-strip > summary::-webkit-details-marker { display:none; }
+.mix-strip > summary::after { content:"▾"; color:var(--mint); }
+.mix-strip:not([open]) > summary::after { content:"▸"; }
+.mix-strip-name { min-width:0; padding:0; border:0; background:none; color:var(--text); text-align:left; font:800 .92rem system-ui,sans-serif; overflow-wrap:anywhere; cursor:pointer; }
+.mix-kind { flex:none; color:var(--mint); font-size:.61rem; font-weight:800; letter-spacing:.09em; text-transform:uppercase; }
+.mix-strip-body { display:grid; gap:10px; padding:11px; }
+.mix-tag { display:inline-flex; align-items:center; min-height:22px; padding:2px 7px; border:1px solid #8b7045; border-radius:999px; color:var(--amber); font-size:.65rem; font-weight:800; text-transform:uppercase; }
+.mix-control { display:grid; gap:5px; min-width:0; }
+.mix-control-head { display:flex; align-items:baseline; justify-content:space-between; gap:7px; color:var(--muted); font-size:.7rem; font-weight:800; }
+.mix-control output { color:var(--amber); font:700 .72rem ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric:tabular-nums; text-align:right; }
+.mix-control select { width:100%; min-height:44px; border:1px solid #526451; border-radius:7px; background:#121a15; color:var(--text); padding:7px 8px; font:600 .78rem system-ui,sans-serif; }
+.mix-control select:focus-visible,.mix-control button:focus-visible,.mix-fader:focus-visible,.mix-knob:focus-visible { outline:3px solid var(--amber); outline-offset:2px; }
+.mix-fader-wrap { display:grid; grid-template-columns:44px 1fr; align-items:center; gap:8px; min-height:142px; }
+.mix-fader { position:relative; justify-self:center; width:44px; height:132px; border:1px solid #48584b; border-radius:7px; background:linear-gradient(to top,#17221b 0%,#2a392d 90%,#655737 100%); touch-action:none; cursor:ns-resize; }
+.mix-fader::before { content:""; position:absolute; left:20px; top:6px; bottom:6px; width:2px; background:#738475; }
+.mix-fader-thumb { position:absolute; z-index:1; left:9px; right:9px; height:12px; border:2px solid #18211b; border-radius:4px; background:var(--amber); box-shadow:0 0 0 1px #f2c66d; transform:translateY(-50%); }
+.mix-fader[aria-disabled="true"],.mix-knob[aria-disabled="true"] { opacity:.5; cursor:not-allowed; }
+.mix-level-side { display:grid; justify-items:start; align-content:center; gap:9px; }
+.mix-off,.mix-toggle,.mix-pre,.mix-remove,.mix-add,.mix-chain button { min-width:44px; min-height:44px; border:1px solid #596d5c; border-radius:7px; background:#253529; color:var(--text); padding:7px 9px; font:700 .73rem/1.2 system-ui,sans-serif; cursor:pointer; }
+.mix-off[aria-pressed="true"],.mix-toggle[aria-pressed="true"],.mix-pre[aria-pressed="true"] { border-color:var(--amber); background:#3b3220; color:#ffe0a7; }
+.mix-knob { display:grid; place-items:center; justify-self:start; width:72px; height:72px; border:1px solid #596d5c; border-radius:50%; background:radial-gradient(circle at 50% 75%,#34483a,#18221b 68%); color:var(--mint); font:700 .69rem ui-monospace,SFMono-Regular,Consolas,monospace; touch-action:none; user-select:none; cursor:ns-resize; }
+.mix-buttons { display:flex; flex-wrap:wrap; gap:6px; }
+.mix-chain,.mix-sends { display:grid; gap:7px; }
+.mix-chain-item,.mix-send { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:6px; padding:7px; border:1px solid #35483a; border-radius:8px; background:#151d18; }
+.mix-chain-item[draggable="true"] { cursor:grab; }
+.mix-chain select { width:100%; min-height:44px; border:1px solid #526451; border-radius:7px; background:#121a15; color:var(--text); padding:7px 8px; font:600 .78rem system-ui,sans-serif; }
+.mix-chain-item[data-dragging] { border-color:var(--amber); }
+.mix-chain-label,.mix-send-title { min-width:0; color:var(--text); font:700 .75rem ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.mix-send .mix-control { grid-column:1 / -1; }
+.mix-send-actions { display:flex; gap:5px; justify-content:flex-end; }
+.mix-send-actions button { min-width:44px; min-height:44px; }
+.mix-add { width:100%; border-style:dashed; color:var(--mint); }
+.mix-unsupported { padding:7px 8px; border-left:3px solid var(--coral); background:#271f1c; color:#ffd0bf; font-size:.68rem; overflow-wrap:anywhere; }
+.mix-meter { display:grid; gap:4px; color:var(--muted); font:600 .66rem ui-monospace,SFMono-Regular,Consolas,monospace; font-variant-numeric:tabular-nums; }
+.mix-meter-track { position:relative; height:10px; overflow:visible; border-radius:999px; background:#0e1510; box-shadow:inset 0 0 0 1px #344539; }
+.mix-meter-track i { position:absolute; inset:0 auto 0 0; width:0; border-radius:inherit; background:linear-gradient(90deg,#62b58f,#e8c66f 78%,#ff836c); }
+.mix-meter-track b { position:absolute; top:-2px; bottom:-2px; left:0; width:2px; background:#fff0ac; }
+.mix-meter-over { min-height:20px; color:var(--muted); font-size:.68rem; font-weight:800; }
+.mix-meter-over[data-over="true"] { color:var(--coral); }
+.mix-gr { display:flex; justify-content:space-between; gap:8px; padding:7px 0; border-top:1px solid #304037; color:var(--muted); font-size:.7rem; }
+.mix-line-link { border:0; padding:0; background:none; color:var(--mint); text-align:left; font:inherit; cursor:pointer; }
+.source-code-line { display:block; min-height:1.75em; }
+.source-code-line[data-highlight] { background:#75643b66; box-shadow:inset 3px 0 var(--amber); }
+.mix-warning[hidden],.mix-strip-body[hidden] { display:none; }
+@media (max-width:640px) {
+  .mix-view { scroll-margin-top:180px; }
+  .mix-rack { display:flex; grid-template-columns:none; overflow-x:auto; padding:2px 2px 12px; }
+  .mix-strip,.mix-strip.master-strip { position:static; width:auto; flex:0 0 188px; box-shadow:none; }
+  .mix-strip > summary { min-height:56px; }
+  .mix-strip:not([open]) .mix-strip-body { display:none; }
+  .mix-strip-body { grid-template-columns:repeat(2,minmax(0,1fr)); }
+  .mix-strip-body > .mix-control,.mix-strip-body > .mix-meter,.mix-strip-body > .mix-sends,.mix-strip-body > .mix-chain,.mix-strip-body > .mix-unsupported,.mix-strip-body > .mix-section-title { grid-column:1 / -1; }
+  .mix-fader-wrap { min-height:118px; }
+  .mix-fader { height:108px; }
+}
 </style>
 </head>
 <body data-revision="{{.Revision}}"{{if .Studio}} data-studio{{end}}>
@@ -465,7 +519,6 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       </div>
       <p id="live-midi-help" class="live-midi-help">Channel 10 percussion map: 36 bd, 37 rs, 38 sd, 39 cp, 41/43 lt, 42 ch, 45/47 mt, 46 oh, 48/50 ht, 49/57 cy, 56 cb. Mappings and Live settings stay in this browser session.</p>
       <details class="live-map-details"><summary>MIDI mappings</summary><div id="midi-mapping-list" class="midi-mapping-list"></div></details>
-      <details class="live-parameter-details"><summary>Live parameter controls</summary><div id="live-param-list" class="live-param-list"></div></details>
       <div id="midi-learn-menu" class="midi-learn-menu" role="menu" aria-label="MIDI mapping actions" hidden><button id="midi-learn" type="button" role="menuitem">Learn MIDI</button><button id="midi-clear" type="button" role="menuitem">Clear mapping</button></div>
       <span id="live-announcement" class="live-announcement" aria-live="polite" aria-atomic="true"></span>
     </section>{{end}}
@@ -501,7 +554,9 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     </section>
     <section id="tracks" data-workspace-panel="mix" aria-labelledby="tracks-heading">
       <h2 id="tracks-heading">Mix</h2>
-      <div class="track-list">{{range .Tracks}}<div class="track{{if .Muted}} muted{{end}}"><span class="kind">{{.Kind}}</span><strong>{{.ID}}</strong><span class="gain">{{.Gain}}{{if .Muted}} · muted{{end}}</span>{{if $.Studio}}<div class="track-level-meter" data-track-meter="{{.ID}}" role="meter" aria-label="{{.ID}} output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Level</span><div class="meter-track"><i></i></div><output>−120 dBFS</output></div>{{end}}</div>{{end}}</div>
+      <p class="section-note">Named track, bus, effect, and master controls write the score. Saved solo switches show the CICADA-SOLO warning.</p>
+      <p id="mix-warning" class="mix-warning" role="status" aria-live="polite" hidden></p>
+      <div id="mix-rack" class="mix-rack" aria-label="Named mixer strips" aria-busy="true"><p>Loading mixer…</p></div>
     </section>
     {{if .Studio}}<section id="master" data-workspace-panel="master" aria-labelledby="master-heading" class="master-view">
       <h2 id="master-heading">Master</h2>
@@ -635,7 +690,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
 <tr><td><kbd>?</kbd></td><td>This sheet (Esc closes it)</td></tr>
 </tbody></table><form method="dialog"><button>Close</button></form></dialog>{{end}}
 <footer>{{if .Studio}}Cicada Studio · source-linked projection of the validated project{{else}}Cicada score view · deterministic export from the validated project model{{end}}</footer>
-{{if .Studio}}<script src="/studio-workspace.js"></script><script src="/studio-history.js"></script><script src="/studio-audio.js"></script><script src="/audio/cicada-client.js"></script><script>
+{{if .Studio}}<script src="/studio-workspace.js"></script><script src="/studio-history.js"></script><script defer src="/studio-mix.js"></script><script src="/studio-audio.js"></script><script src="/audio/cicada-client.js"></script><script>
 (() => {
   const {installWorkspaceKeyboard, installPanelTabs, replaceProjection} = typeof CicadaWorkspace !== 'undefined' ? CicadaWorkspace : {installWorkspaceKeyboard(){}, installPanelTabs(){return {choose(){}, active:'session'}}, replaceProjection(){}};
   const status = document.getElementById('studio-status');
@@ -1038,6 +1093,37 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     window.dispatchEvent(new CustomEvent('cicada:projectionrefreshed'));
   }
   window.cicadaRefreshProjection = refreshProjection;
+  async function commitMixer(path, value, preview = null) {
+    if (busy) { setStatus('Finish the current mixer edit before saving another', 'error'); return false; }
+    if (dirty()) { setStatus('Save or discard source edits before changing the mixer', 'error'); return false; }
+    busy = true; save.disabled = true;
+    try {
+      async function post(confirmUpgrade) {
+        const response = await fetch('/api/mixer', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({revision:revision(), path, value, ...(confirmUpgrade ? {confirmUpgrade:true} : {})})});
+        return {response, result:await response.json()};
+      }
+      let {response, result} = await post(false);
+      if (!response.ok && result.code === 'CICADA-VERSION' && result.upgradeRequired) {
+        if (!window.confirm('This score uses edition 1. Upgrade to edition 2 to save mixer changes?')) return false;
+        ({response, result} = await post(true));
+      }
+      if (!response.ok) { setStatus(result.error || 'Mixer edit failed', 'error'); return false; }
+      document.body.dataset.revision = result.revision;
+      document.body.dataset.playing = playing ? 'true' : 'false';
+      if (isBrowser() && window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(result.revision);
+      await refreshProjection({revision:result.revision, source:result.source});
+      if (preview) preview(result);
+      setStatus(`Saved mixer change at line ${result.changedRange.start}`, 'success');
+      return result;
+    } catch (error) {
+      setStatus('Connection lost: ' + error.message, 'error');
+      return false;
+    } finally {
+      busy = false;
+      save.disabled = false;
+    }
+  }
+  window.cicadaStudio = {commitMixer, dirty, busy:() => busy, setStatus, revision:() => revision(), playing:() => playing};
   window.addEventListener('cicada:sourcewritten', async event => {
     const result = event.detail;
     if (!result?.revision || dirty()) return;
