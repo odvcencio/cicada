@@ -1101,7 +1101,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       if (match) { setRovingTarget(match); match.focus({preventScroll:true}); }
     }
     updateBar();
-    window.dispatchEvent(new CustomEvent('cicada:projectionrefreshed'));
+    window.dispatchEvent(new CustomEvent('cicada:projectionrefreshed', {detail: {document: next}}));
   }
   window.cicadaRefreshProjection = refreshProjection;
   async function commitMixer(path, value, preview = null) {
