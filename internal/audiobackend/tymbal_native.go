@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/tymbal"
 )
 
@@ -125,6 +126,7 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 	}
 	var nativeStream *tymbal.Stream
 	var openErr error
+	timing := &tymbalTiming{tap: config.Capture, epoch: deviceEpoch.Add(1)}
 	for _, period := range periods {
 		cfg := tymbal.Config{
 			Output: &output, OutChannels: config.Channels,
@@ -133,7 +135,7 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 		if input != nil {
 			cfg.Input, cfg.InChannels = input, inputChannels
 		}
-		nativeStream, openErr = tymbal.Open(b.host, cfg, tymbalCallback(render, callbackErr))
+		nativeStream, openErr = tymbal.Open(b.host, cfg, tymbalTimedCallback(render, callbackErr, timing))
 		if openErr == nil {
 			break
 		}
@@ -149,6 +151,7 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 		return nil, tymbalOpenError(output.Name, captureName, openErr)
 	}
 	actual := nativeStream.Actual()
+	timing.actual = actual
 	captureName := ""
 	if input != nil {
 		captureName = input.Name
@@ -218,15 +221,64 @@ func oneLineAudioError(value string) string {
 	return strings.NewReplacer("\r", " ", "\n", " ").Replace(value)
 }
 
+var deviceEpoch atomic.Uint64
+
+type tymbalTiming struct {
+	tap    func(capture.Block, [][]float32)
+	epoch  uint64
+	actual tymbal.Actual
+}
+
 func tymbalCallback(render Callback, callbackErr *atomic.Pointer[audioError]) tymbal.Callback {
-	return func(_ tymbal.Time, input, output [][]float32) {
+	return tymbalTimedCallback(render, callbackErr, nil)
+}
+
+func tymbalTimedCallback(render Callback, callbackErr *atomic.Pointer[audioError], timing *tymbalTiming) tymbal.Callback {
+	// The failure cell is prepared outside the callback, including the fault path.
+	failure := &audioError{}
+	return func(t tymbal.Time, input, output [][]float32) {
+		if timing != nil && timing.tap != nil {
+			timing.tap(timing.block(t, input, output), input)
+		}
 		if err := render(input, output); err != nil {
-			callbackErr.CompareAndSwap(nil, &audioError{err: err})
+			if callbackErr.Load() == nil {
+				failure.err = err
+				callbackErr.Store(failure)
+			}
 			for _, channel := range output {
 				clear(channel)
 			}
 		}
 	}
+}
+
+func (s *tymbalTiming) block(t tymbal.Time, input, output [][]float32) capture.Block {
+	frames := s.actual.Period
+	if len(output) > 0 {
+		frames = len(output[0])
+	} else if len(input) > 0 {
+		frames = len(input[0])
+	}
+	outRef := capture.ReferenceFirstFrame
+	// WASAPI exposes an audio-clock observation, not the queued render frame.
+	if t.OutputFrequency != 0 {
+		outRef = capture.ReferenceClockObservation
+	}
+	b := capture.Block{
+		DeviceEpoch: s.epoch, DeviceFrame: t.Frame,
+		InputPosition:  capture.DevicePosition{Position: t.InputPosition, Frequency: t.InputFrequency, Valid: t.InputFrequency != 0},
+		OutputPosition: capture.DevicePosition{Position: t.OutputPosition, Frequency: t.OutputFrequency, Valid: t.OutputFrequency != 0},
+		InputTime:      capture.Timestamp{Nano: t.InputNano, Valid: t.InputNano != 0, Domain: capture.ClockHostMonotonic, Reference: capture.ReferenceFirstFrame},
+		OutputTime:     capture.Timestamp{Nano: t.OutputNano, Valid: t.OutputNano != 0, Domain: capture.ClockHostMonotonic, Reference: outRef},
+		SampleRate:     s.actual.SampleRate, Period: s.actual.Period, Frames: frames,
+		InputLatencyNano: int64(s.actual.LatencyIn), OutputLatencyNano: int64(s.actual.LatencyOut),
+		InputLatencyValid: s.actual.LatencyIn > 0, OutputLatencyValid: s.actual.LatencyOut > 0,
+		Layout: capture.ChannelLayout(len(input)), DeviceDropouts: t.Dropouts,
+	}
+	if t.Discontinuity {
+		b.Flags |= capture.DeviceDiscontinuity
+	}
+	return b
 }
 
 func (b tymbalBackend) device(id string, direction tymbal.Direction) (tymbal.Device, error) {

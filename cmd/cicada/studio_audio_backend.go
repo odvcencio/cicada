@@ -5,9 +5,11 @@ import (
 	"io"
 	"math"
 	"runtime"
+	"sync"
 	"sync/atomic"
 	"time"
 
+	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/internal/audiobackend"
 )
 
@@ -94,12 +96,14 @@ func openStudioAudio(source io.Reader, options studioAudioOptions, backendName s
 		outputName: "System default",
 		rawOutput:  backendName != string(audiobackend.Tymbal),
 	}
+	session.engineEpoch = studioEngineEpoch.Add(1)
 	monitor := studioMonitorOptions(options)
 	session.monitorState.Store(&monitor)
 	config := audiobackend.Config{
 		SampleRate: sampleRate, Channels: 2, FramesPerPeriod: liveBlockFrames,
 		Device: options.OutputDevice, CaptureDevice: options.InputDevice,
 		CaptureChannels: captureChannels, AllowMissingInput: true,
+		Capture: session.captureInput,
 	}
 	stream, err := backend.Open(config, session.renderPeriod)
 	if err != nil {
@@ -145,16 +149,64 @@ type backendStudioAudio struct {
 	inputName      string
 	outputName     string
 	startupWarning string
+	lifeMu         sync.Mutex // control side only
+	active         bool
+	armed          atomic.Pointer[capture.Recorder]
+	source         atomic.Pointer[studioRenderSource]
+	rendering      atomic.Int64
+	engineEpoch    uint64 // callback owned
+	engineFrame    int64  // callback owned
+	currentSource  *studioRenderSource
+	periodCapture  *capture.Recorder
+	periodPlaying  bool
+	timingSeen     bool
+}
+
+var studioEngineEpoch atomic.Uint64
+
+type studioRenderSource struct {
+	reader io.Reader
+	epoch  uint64
+}
+
+// SetSource publishes a prepared render source. The callback adopts it at the
+// next block boundary, including a new engine epoch when Stop returns to home.
+func (a *backendStudioAudio) SetSource(reader io.Reader) {
+	a.source.Store(&studioRenderSource{reader: reader, epoch: studioEngineEpoch.Add(1)})
+}
+
+func (a *backendStudioAudio) captureInput(b capture.Block, input [][]float32) {
+	a.rendering.Add(1)
+	a.timingSeen = true
+	if source := a.source.Load(); source != nil && source != a.currentSource {
+		a.currentSource = source
+		a.engineEpoch, a.engineFrame = source.epoch, 0
+	}
+	a.periodPlaying = a.playing.Load()
+	a.periodCapture = a.armed.Load()
+	b.EngineEpoch, b.EngineFrame = a.engineEpoch, a.engineFrame
+	if a.periodCapture != nil && a.periodPlaying {
+		a.periodCapture.Capture(b, input)
+	}
 }
 
 func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
+	if !a.timingSeen {
+		a.rendering.Add(1)
+	}
+	defer a.rendering.Add(-1)
 	if len(output) == 0 {
 		return nil
 	}
-	if !a.playing.Load() {
+	playing := a.playing.Load()
+	if a.timingSeen {
+		playing = a.periodPlaying
+	}
+	if !playing {
 		clearStudioAudioOutput(output)
-		a.inputPeakL.Store(0)
-		a.inputPeakR.Store(0)
+		peakL, peakR, _, _ := measureStudioAudioInput(input)
+		a.inputPeakL.Store(math.Float32bits(peakL))
+		a.inputPeakR.Store(math.Float32bits(peakR))
 		a.outputPeakL.Store(0)
 		a.outputPeakR.Store(0)
 		return nil
@@ -167,15 +219,37 @@ func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 		monitor = &studioMutedMonitor
 	}
 	var err error
-	if a.rawOutput {
-		err = renderLivePlayPeriod(a.reader, a.pcm, output)
-	} else {
-		err = renderStudioAudioPeriod(a.reader, a.pcm, input, output, *monitor)
+	reader := a.reader
+	if a.currentSource != nil {
+		reader = a.currentSource.reader
+	}
+	clearStudioAudioOutput(output)
+	delay := 0
+	if a.periodCapture != nil {
+		delay = a.periodCapture.LeadIn(output)
+	}
+	frames := len(output[0]) - delay
+	var tail [2][]float32
+	for ch := range min(len(output), 2) {
+		tail[ch] = output[ch][delay:]
+	}
+	if frames > 0 && a.rawOutput {
+		err = renderLivePlayPeriod(reader, a.pcm, tail[:min(len(output), 2)])
+	} else if frames > 0 {
+		var monitored [2][]float32
+		for ch := range min(len(input), 2) {
+			monitored[ch] = input[ch][min(delay, len(input[ch])):]
+		}
+		err = renderStudioAudioPeriod(reader, a.pcm, monitored[:min(len(input), 2)], tail[:min(len(output), 2)], *monitor)
 	}
 	if err != nil {
+		if a.periodCapture != nil {
+			a.periodCapture.MarkIncomplete()
+		}
 		clearStudioAudioOutput(output)
 		return err
 	}
+	a.engineFrame += int64(frames)
 	var outputL, outputR float32
 	for channelIndex, channel := range output {
 		for _, sample := range channel {
@@ -194,28 +268,95 @@ func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 }
 
 func (a *backendStudioAudio) Play() error {
+	a.lifeMu.Lock()
+	defer a.lifeMu.Unlock()
 	if err := a.Err(); err != nil {
 		return err
 	}
 	a.playing.Store(true)
-	if err := a.stream.Start(); err != nil {
+	if err := a.startDevice(); err != nil {
 		a.playing.Store(false)
 		return err
 	}
 	return nil
 }
 
+func (a *backendStudioAudio) startDevice() error {
+	if a.active {
+		return nil
+	}
+	if err := a.stream.Start(); err != nil {
+		return err
+	}
+	a.active = true
+	return nil
+}
+
+func (a *backendStudioAudio) Armed() bool { return a != nil && a.armed.Load() != nil }
+
+func (a *backendStudioAudio) ArmCapture(recorder *capture.Recorder) error {
+	a.lifeMu.Lock()
+	defer a.lifeMu.Unlock()
+	if !recorder.FormatFits(a.actual.FramesPerPeriod, a.actual.CaptureChannels) {
+		return fmt.Errorf("capture ring must match the device's mono/stereo input and actual period")
+	}
+	if a.Armed() {
+		return fmt.Errorf("capture is already armed")
+	}
+	if err := a.Err(); err != nil {
+		return err
+	}
+	a.armed.Store(recorder)
+	if err := a.startDevice(); err != nil {
+		a.armed.Store(nil)
+		return err
+	}
+	return nil
+}
+
+func (a *backendStudioAudio) DisarmCapture() error {
+	a.lifeMu.Lock()
+	defer a.lifeMu.Unlock()
+	recorder := a.armed.Swap(nil)
+	if !a.playing.Load() && a.active {
+		a.stream.Pause()
+		a.active = false
+	}
+	if recorder != nil {
+		return recorder.Close()
+	}
+	return nil
+}
+
+func (a *backendStudioAudio) BeginCapture(countIn capture.CountIn, calibration capture.Calibration) error {
+	a.lifeMu.Lock()
+	defer a.lifeMu.Unlock()
+	if recorder := a.armed.Load(); recorder != nil {
+		return recorder.Begin(countIn, calibration)
+	}
+	return fmt.Errorf("arm capture before recording")
+}
+
 func (a *backendStudioAudio) Pause() {
 	if a != nil {
+		a.lifeMu.Lock()
+		defer a.lifeMu.Unlock()
 		a.playing.Store(false)
-		if a.stream != nil {
+		if recorder := a.armed.Load(); recorder != nil {
+			recorder.End()
+		}
+		for a.rendering.Load() != 0 {
+			time.Sleep(time.Millisecond)
+		}
+		if a.stream != nil && !a.Armed() {
 			a.stream.Pause()
+			a.active = false
 		}
 	}
 }
 
 func (a *backendStudioAudio) StopClosesDevice() bool {
-	return a != nil && a.stream != nil && a.stream.StopClosesDevice()
+	return a != nil && a.stream != nil && a.stream.StopClosesDevice() && !a.Armed()
 }
 
 func (a *backendStudioAudio) Err() error {
@@ -229,8 +370,17 @@ func (a *backendStudioAudio) Close() error {
 	if a == nil || a.stream == nil {
 		return nil
 	}
+	a.lifeMu.Lock()
+	defer a.lifeMu.Unlock()
 	a.playing.Store(false)
-	return a.stream.Close()
+	err := a.stream.Close()
+	a.active = false
+	if recorder := a.armed.Swap(nil); recorder != nil {
+		if captureErr := recorder.Close(); err == nil {
+			err = captureErr
+		}
+	}
+	return err
 }
 
 func (a *backendStudioAudio) SetMonitor(monitor studioAudioMonitor) {
@@ -261,6 +411,10 @@ func (a *backendStudioAudio) Snapshot() studioAudioSnapshot {
 		stats := a.stream.Stats()
 		snapshot.Callbacks, snapshot.Dropouts, snapshot.Late = stats.Callbacks, stats.Dropouts, stats.Late
 		snapshot.CallbackMaxUS = float64(stats.CallbackMax) / float64(time.Microsecond)
+	}
+	if recorder := a.armed.Load(); recorder != nil {
+		state := recorder.Snapshot()
+		snapshot.Armed, snapshot.Capture = true, &state
 	}
 	if err := a.Err(); err != nil {
 		snapshot.Error = err.Error()
