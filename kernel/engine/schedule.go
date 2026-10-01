@@ -207,7 +207,7 @@ func (e *Engine) applyScheduleEvent(v ScheduleEvent, tick int64) {
 	case SchedulePattern:
 		e.placementID[track] = v.ID
 		e.applyPatternCommand(cmd.Command{Op: cmd.OpSelectPattern, Track: v.Track, Index: v.Index, Arg1: 1})
-		e.patterns[track].startStep = (v.Tick + e.cycleStart) / seq.TicksPerStep
+		e.patterns[track].startTick = v.Tick + e.cycleStart
 		e.scheduleTrack(track)
 	case SchedulePatternEnd:
 		if e.placementID[track] != v.ID {

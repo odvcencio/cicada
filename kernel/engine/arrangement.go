@@ -82,23 +82,25 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 // including restart offsets. Their lengths are at most 64 steps, so each
 // congruence can be combined in bounded time without allocating.
 func (e *Engine) scenePatternEndTick() (int64, bool) {
-	const maxSteps = math.MaxInt64 / seq.TicksPerStep
-	period, residue := int64(1), int64(0)
+	period, residue := int64(0), int64(0)
 	active := false
 	for track := 0; track < e.tracks; track++ {
 		p := &e.patterns[track]
 		if p.active < 0 {
 			continue
 		}
-		active = true
-		length := int64(p.slots[p.active].Len)
-		target := p.startStep % length
+		length := int64(p.slots[p.active].Len) * seq.TicksPerStep
+		target := p.startTick % length
+		if !active {
+			period, residue, active = length, target, true
+			continue
+		}
 		g := gcd(period, length)
 		if (target-residue)%g != 0 {
 			return 0, false
 		}
 		cycles := length / g
-		if period > maxSteps/cycles {
+		if period > math.MaxInt64/cycles {
 			return 0, false
 		}
 		for k := int64(0); k < cycles; k++ {
@@ -111,25 +113,21 @@ func (e *Engine) scenePatternEndTick() (int64, bool) {
 		period *= cycles
 	}
 	if !active {
-		period = 16
+		period = seq.TicksPerBar
 	}
 	tick := e.transport.Tick()
-	step := tick / seq.TicksPerStep
-	if tick%seq.TicksPerStep != 0 {
-		step++
-	}
-	if step > residue {
-		delta := step - residue
+	if tick > residue {
+		delta := tick - residue
 		cycles := delta / period
 		if delta%period != 0 {
 			cycles++
 		}
-		if cycles > (maxSteps-residue)/period {
+		if cycles > (math.MaxInt64-residue)/period {
 			return 0, false
 		}
 		residue += cycles * period
 	}
-	return residue * seq.TicksPerStep, true
+	return residue, true
 }
 
 func gcd(a, b int64) int64 {

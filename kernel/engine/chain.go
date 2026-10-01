@@ -37,7 +37,7 @@ func chainStartTick(p *patternTrack, tick int64) int64 {
 	if p.active < 0 {
 		return ((tick + seq.TicksPerStep - 1) / seq.TicksPerStep) * seq.TicksPerStep
 	}
-	start := p.startStep * seq.TicksPerStep
+	start := p.startTick
 	if tick <= start {
 		return start
 	}

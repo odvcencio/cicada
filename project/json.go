@@ -826,6 +826,20 @@ func checkRequiredFields(data []byte) error {
 		return err
 	}
 	if version2 {
+		if rawArrange, exists := root["arrange"]; exists {
+			arrange, err := require(rawArrange, "arrangement", "arrangement", "/arrange")
+			if err != nil {
+				return err
+			}
+			for _, child := range []struct{ array, construct string }{{"placements", "placement"}, {"markers", "marker"}} {
+				if err := checkObjectArray(arrange[child.array], child.array, "/arrange/"+child.array, func(value any, pointer string) error {
+					_, err := require(value, child.construct, child.construct, pointer)
+					return err
+				}); err != nil {
+					return err
+				}
+			}
+		}
 		if rawLive, exists := root["live"]; exists {
 			live, err := require(rawLive, "live", "live", "/live")
 			if err != nil {

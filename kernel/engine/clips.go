@@ -52,6 +52,8 @@ func (e *Engine) prepareClips(cfg *Config) error {
 			return err
 		}
 		e.clipTemplates[i] = *voice
+		frames := ((c.EndFrame-c.StartFrame)*int64(cfg.SampleRate) + int64(a.SampleRate) - 1) / int64(a.SampleRate)
+		e.clipMaxFrames = max(e.clipMaxFrames, frames)
 	}
 	return nil
 }
@@ -60,22 +62,23 @@ func (e *Engine) startClip(track int, clip uint16, id int, elapsed int64) {
 		e.fault(17)
 		return
 	}
+	voice := e.clipTemplates[clip]
+	if voice.NoteOn(60, 127) != nil {
+		e.fault(17)
+		return
+	}
+	voice.SeekFrames(elapsed)
+	if !voice.Active() {
+		return
+	}
 	for i := range e.clipVoices[:e.clipLimit] {
 		v := &e.clipVoices[i]
 		if v.active {
 			continue
 		}
-		*v = clipPlayback{voice: e.clipTemplates[clip], track: track, clip: clip, id: id, active: true}
-		if v.voice.NoteOn(60, 127) != nil {
-			e.fault(17)
-			return
-		}
+		*v = clipPlayback{voice: voice, track: track, clip: clip, id: id, active: true}
 		v.ratio = v.voice.Ratio()
 		v.sourceFrame = float64(elapsed) * v.ratio
-		v.voice.SeekFrames(elapsed)
-		if !v.voice.Active() {
-			v.active = false
-		}
 		return
 	}
 	e.fault(17)
@@ -120,31 +123,34 @@ func (e *Engine) nextClipStereo(track int) (float32, float32) {
 
 func (e *Engine) restoreSongClips(index int, cycleStart, tick int64) {
 	e.resetClips()
-	var selected [16]int
-	for t := range selected {
-		selected[t] = -1
-	}
-	for i := 0; i <= index; i++ {
-		event := e.schedule[i]
-		for t, b := range e.scenes[event.Scene].Track {
-			if t >= e.tracks || e.voices[t].kind != VoiceAudio {
-				continue
-			}
-			if b.Mode == SceneClip {
-				selected[t] = i
-			} else if b.Mode == SceneOff {
-				selected[t] = -1
-			}
-		}
-	}
 	clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.transport.BPMMilli()}
-	for track, index := range selected {
-		if index < 0 {
-			continue
+	sample := clock.SampleAtTick(tick)
+	startCycle := int64(0)
+	if e.loopSong {
+		oldestTick := clock.TickAtSample(max(0, sample-e.clipMaxFrames))
+		startCycle = oldestTick / e.scheduleDuration * e.scheduleDuration
+	}
+	// Replay starts and stops in source order. Clips can overlap scene entries
+	// and loop cycles; natural completion is checked before claiming a voice.
+	for cycle := startCycle; cycle <= cycleStart; cycle += e.scheduleDuration {
+		last := len(e.schedule) - 1
+		if cycle == cycleStart {
+			last = index
 		}
-		v := e.schedule[index]
-		b := e.scenes[v.Scene].Track[track]
-		elapsed := clock.SampleAtTick(tick) - clock.SampleAtTick(v.Tick+cycleStart)
-		e.startClip(track, b.Clip, -1, elapsed)
+		for i := 0; i <= last && !e.faulted; i++ {
+			event := e.schedule[i]
+			elapsed := sample - clock.SampleAtTick(event.Tick+cycle)
+			for track, binding := range e.scenes[event.Scene].Track {
+				if track >= e.tracks || e.voices[track].kind != VoiceAudio {
+					continue
+				}
+				switch binding.Mode {
+				case SceneClip:
+					e.startClip(track, binding.Clip, -1, elapsed)
+				case SceneOff:
+					e.stopClips(track)
+				}
+			}
+		}
 	}
 }
