@@ -72,6 +72,9 @@
       settings.textContent='Native capture uses the configured duplex device layout.';
     } else {
       await capture.arm(Number(byId('pcm-channels').value));
+      // A newly admitted take supersedes the previous publication receipt.
+      // Until publication succeeds, recovery must use this browser take.
+      try { localStorage.removeItem(receiptKey); } catch (_) {}
       // Keep the revision and target across a browser reload or capture fault.
       capture.take.target=target;
       try { localStorage.setItem('cicada-last-take',JSON.stringify(capture.take)); } catch (_) {}
