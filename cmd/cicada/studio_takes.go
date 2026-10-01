@@ -168,17 +168,11 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			fail(errTakeRevision)
 			return
 		}
-		rate, err := s.transport.ensureSampleRate()
+		rate, channels, err := s.transport.prepareTakeInput()
 		if err != nil {
 			fail(err)
 			return
 		}
-		s.transport.mu.Lock()
-		channels := 2
-		if s.transport.audio != nil {
-			channels = s.transport.audio.Snapshot().InputChannels
-		}
-		s.transport.mu.Unlock()
 		id, err := s.takes.Begin(edit.Track, edit.Scene, edit.Revision, rate, channels)
 		if err != nil {
 			fail(err)
