@@ -135,7 +135,7 @@ func (s *studio) takeState(w http.ResponseWriter, r *http.Request) {
 	studioJSON(w, http.StatusOK, map[string]any{"takes": takes, "activeCapture": s.captureID})
 }
 func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
-	edit, ok := studioRequest(w, r)
+	edit, ok := studioRequestLimit(w, r, 128<<20)
 	if !ok {
 		return
 	}
@@ -154,6 +154,22 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch edit.Action {
+	case "import":
+		if s.captureID != "" {
+			fail(errors.New("stop native capture before importing a browser take"))
+			return
+		}
+		id, err := s.importBrowserTake(edit)
+		responseTake = id
+		if err != nil {
+			fail(err)
+			return
+		}
+	case "audition":
+		if err := s.auditionTake(w, edit); err != nil {
+			fail(err)
+		}
+		return
 	case "arm":
 		if s.captureID != "" {
 			fail(errors.New("finish the current take before arming another"))
@@ -230,6 +246,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "recover", "select":
+		responseTake = edit.TakeID
 		if s.captureID != "" {
 			fail(errors.New("stop capture before selecting a take"))
 			return
@@ -252,7 +269,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		fail(errors.New("take action must be arm, start, stop, recover or select"))
+		fail(errors.New("take action must be arm, start, stop, recover, select, import or audition"))
 		return
 	}
 	source, err := os.ReadFile(s.path)
@@ -260,7 +277,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 		fail(err)
 		return
 	}
-	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(source), "takes": s.takes.Takes(), "activeCapture": s.captureID})
+	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(source), "source": string(source), "take": responseTake, "takes": s.takes.Takes(), "activeCapture": s.captureID})
 }
 
 func takeRoot(score string) string { dir, _ := takejournal.ProjectRoot(score); return dir }

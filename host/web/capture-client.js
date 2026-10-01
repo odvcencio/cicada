@@ -43,7 +43,7 @@
       this.busy=true; this.status.error=''; this.status.incomplete=false;
       try {
         if (!this.env.navigator?.mediaDevices?.getUserMedia) throw new Error('Microphone capture unavailable; use a secure context');
-        await this.audio.startAudio();
+        await this.audio.startAudio(true);
         if (this.audio.playing) throw new Error('Stop the transport before arming');
         this.stream=await this.env.navigator.mediaDevices.getUserMedia({audio:{channelCount:{ideal:channels},echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
         const track=this.stream.getAudioTracks()[0];
@@ -83,7 +83,7 @@
     async record() {
       if (this.status.state !== 'armed') throw new Error('Arm the microphone first');
       if (this.audio.playing) throw new Error('Stop the transport before recording');
-      await this.audio.stageCurrentScore();
+      await this.audio.stageCurrentScore('',true);
       if (this.status.state !== 'armed' || this.audio.playing) throw new Error('Capture state changed while preparing the score');
       const bpm=this.audio.bpmMilli;
       if (!bpm) throw new Error('Score tempo unavailable');
@@ -117,7 +117,7 @@
       return recovered;
     }
   }
-  // One bounded audition voice; sampler engine/assets integration is lane A/B/E.
+  // The original browser-local audition remains available for stored takes.
   class TakeSampler {
     constructor(context) { this.context=context; this.voice=null; this.buffer=null; this.incomplete=false; }
     load(take) {
@@ -151,7 +151,41 @@
     }
     stop() { if(this.voice) { this.voice.onended=null;this.voice.stop();this.voice.disconnect();this.voice=null; } }
   }
-  const api={inspectSettings,BrowserCapture,TakeSampler};
+  async function publishTake(take, target, env = root) {
+    const bytes=new Uint8Array(take.pcm);
+    if(bytes.length>64*1024*1024) throw new Error('Take exceeds the project import limit; browser PCM is retained');
+    let encoded='';
+    for(let at=0;at<bytes.length;at+=16384) encoded+=String.fromCharCode(...bytes.subarray(at,at+16384));
+    const capture={sampleRate:take.metadata.sampleRate,channels:take.metadata.channels,rawFrames:take.rawFrames,incomplete:take.incomplete,
+      blocks:take.blocks.map(({timing,rawFrame,offset,length})=>({timing,rawFrame,offset,length})),pcm:env.btoa(encoded)};
+    const response=await env.fetch('/api/takes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...target,action:'import',capture})});
+    const result=await response.json();
+    if(!response.ok) {
+      const error=new Error(result.error || 'Cannot publish take; browser PCM is retained');
+      error.takeId=result.take;
+      throw error;
+    }
+    return result;
+  }
+
+  // One voice, with pitch conversion rendered by the shared Go sample DSP.
+  class PublishedSampler {
+    constructor(context,takeId,revision,env=root) { this.context=context;this.takeId=takeId;this.revision=revision;this.env=env;this.voice=null;this.generation=0; }
+    async play(note=60,rootNote=60,loop=false) {
+      this.stop();
+      const generation=this.generation;
+      const response=await this.env.fetch('/api/takes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'audition',revision:this.revision,takeId:this.takeId,sample:{root:rootNote,note,loop}})});
+      if(!response.ok) throw new Error((await response.json()).error || 'Cannot prepare sampler audition');
+      const buffer=await this.context.decodeAudioData(await response.arrayBuffer());
+      if(generation!==this.generation) return;
+      const voice=this.context.createBufferSource();
+      voice.buffer=buffer;voice.loop=loop;voice.playbackRate.value=1;
+      voice.connect(this.context.destination);this.voice=voice;
+      voice.onended=()=>{voice.disconnect();if(this.voice===voice)this.voice=null;};voice.start();
+    }
+    stop() { this.generation++;if(this.voice) { this.voice.onended=null;this.voice.stop();this.voice.disconnect();this.voice=null; } }
+  }
+  const api={inspectSettings,BrowserCapture,TakeSampler,publishTake,PublishedSampler};
   if(typeof module!=='undefined') module.exports=api;
   root.CicadaBrowserCapture=api;
 })(globalThis);

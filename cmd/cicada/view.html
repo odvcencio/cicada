@@ -632,15 +632,15 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       <h2 id="record-heading">Record</h2>
       <p class="section-note">Device setup and input monitoring. Use Live (L) for arming tracks and MIDI takes.</p>
       <section class="audio-io-panel" aria-labelledby="pcm-heading">
-        <h3 id="pcm-heading">Browser PCM capture</h3>
-        <p>Choose Browser audio, arm the microphone, then record with one bar of count-in. Monitoring stays off. Raw takes remain in browser storage; timing is uncalibrated.</p>
-        <div class="audio-io-grid"><label for="pcm-channels">Input layout<select id="pcm-channels"><option value="1">Mono</option><option value="2">Stereo</option></select></label></div>
+        <h3 id="pcm-heading">PCM capture</h3>
+        <p>Choose the audio track and scene, arm the microphone, then record with one bar of count-in. Native capture requires duplex input. Stop publishes a retained take to the selected scene. Browser PCM remains available for recovery; timing is uncalibrated. Synth tracks provide accompaniment; audition recorded audio separately.</p>
+        <div class="audio-io-grid"><label for="pcm-channels">Input layout<select id="pcm-channels"><option value="1">Mono</option><option value="2">Stereo</option></select></label><label for="pcm-track">Audio track<select id="pcm-track">{{range .Tracks}}{{if eq .Kind "audio"}}<option value="{{.ID}}">{{.ID}}</option>{{end}}{{end}}</select></label><label for="pcm-scene">Scene<select id="pcm-scene">{{range .Scenes}}<option value="{{.ID}}">{{.ID}}</option>{{end}}</select></label></div>
         <div class="audio-io-actions"><button id="pcm-arm" type="button" aria-pressed="false">Arm microphone</button><button id="pcm-record" type="button" disabled>Record PCM</button><button id="pcm-stop" type="button" disabled>Stop and save</button><button id="pcm-recover" type="button">Recover last take</button></div>
         <p id="pcm-status" role="status" aria-live="polite">idle · storage unchecked · timing unavailable · uncalibrated · monitor off</p>
         <p id="pcm-settings">Microphone processing settings appear after arming.</p>
         <h3>Sampler audition</h3>
         <div class="audio-io-grid"><label for="sampler-root">Root MIDI note<input id="sampler-root" type="number" min="0" max="127" value="60"></label><label for="sampler-note">Audition MIDI note<input id="sampler-note" type="number" min="0" max="127" value="60"></label><label for="sampler-loop"><input id="sampler-loop" type="checkbox">Basic loop</label></div>
-        <div class="audio-io-actions"><button id="sampler-play" type="button" disabled>Play sample</button><button id="sampler-stop" type="button" disabled>Stop sample</button><span id="sampler-status" role="status">Recover a take to audition it. One voice; up to 30 minutes.</span></div>
+        <div class="audio-io-actions"><button id="sampler-play" type="button" disabled>Play sample</button><button id="sampler-stop" type="button" disabled>Stop sample</button><span id="sampler-status" role="status">Publish or recover a take to audition it. One voice; up to 8,388,608 source and output frames.</span></div>
       </section>
       <section class="audio-io-panel" aria-labelledby="audio-io-heading">
         <h3 id="audio-io-heading">Audio devices and input monitor</h3>
