@@ -21,7 +21,7 @@ func TestAudioWASMScheduleClipsSeekParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, rate := range []int{44100, 48000} {
-		for _, scenario := range []string{"placements", "non-step-loop", "scene-clips"} {
+		for _, scenario := range []string{"placements", "non-step-loop", "leading-gap", "scene-clips"} {
 			t.Run(strconv.Itoa(rate)+"/"+scenario, func(t *testing.T) {
 				source := []byte("cicada 2\ntempo 120\ntrack bass acid {}\npattern hit { c3 }\narrange { place p bass hit { at = 0ticks length = 100ticks } }\n")
 				score, ds := notation.Parse([]byte("cicada 2\ntrack bass acid {}\npattern hits { c3 . c4~ c3 }\narrange { place bass-1 bass hits { at = @1.2.1 length = 1bar } place bass-2 bass hits { at = @3.1.1 length = 1bar } }\n"))
@@ -65,6 +65,8 @@ func TestAudioWASMScheduleClipsSeekParity(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
+				} else if scenario == "leading-gap" {
+					cfg.Schedule = []engine.ScheduleEvent{{Tick: 240, EndTick: 960, Kind: engine.ScheduleClip, Track: 1, ID: 3}, {Tick: 960, EndTick: 960, Kind: engine.ScheduleClipEnd, Track: 1, ID: 3}}
 				} else if scenario == "scene-clips" {
 					cfg.Schedule = nil
 					cfg.BPMMilli = 300000

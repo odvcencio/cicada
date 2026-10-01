@@ -2,11 +2,140 @@ package engine
 
 import (
 	"reflect"
+	"strconv"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/seq"
 )
+
+func TestPlacementLoopPreservesLeadingClipGap(t *testing.T) {
+	for _, block := range []int{1, 128, 4096} {
+		t.Run(strconv.Itoa(block), func(t *testing.T) {
+			cfg := clipScheduleConfig()
+			cfg.MaxBlock, cfg.MaxVoices, cfg.BPMMilli, cfg.LoopSong = block, 1, 120000, true
+			for i := range cfg.Assets[0].Left {
+				cfg.Assets[0].Left[i] = 0.25
+			}
+			cfg.Schedule = []ScheduleEvent{{Tick: 240, EndTick: 960, Kind: ScheduleClip, ID: 1}, {Tick: 960, EndTick: 960, Kind: ScheduleClipEnd, ID: 1}}
+			e, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+				t.Fatal("play rejected")
+			}
+			left, right, taps := make([]float32, block), make([]float32, block), make([]TapFrame, block)
+			clock, _ := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
+			cycleFrames, gapFrames := clock.SampleAtTick(960), clock.SampleAtTick(240)
+			var message cmd.Message
+			for frame, end := int64(0), 3*cycleFrames+gapFrames+1; frame < end; {
+				n := int(min(int64(block), end-frame))
+				e.RenderWithTaps(left[:n], right[:n], taps[:n])
+				for e.Poll(&message) {
+					if message.Kind == cmd.Fault {
+						t.Fatal(message)
+					}
+				}
+				for i, tap := range taps[:n] {
+					at := frame + int64(i)
+					audible := tap.Tracks[0].Left != 0 || tap.Tracks[0].Right != 0
+					if want := at%cycleFrames >= gapFrames; audible != want {
+						t.Fatalf("frame %d tick %d audible=%v want=%v (cycle %d)", at, clock.TickAtSample(at), audible, want, at/cycleFrames)
+					}
+				}
+				frame += int64(n)
+			}
+		})
+	}
+}
+
+func TestSongRestartAtFullClipCapacity(t *testing.T) {
+	for _, block := range []int{1, 128, 4096} {
+		t.Run(strconv.Itoa(block), func(t *testing.T) {
+			cfg := clipScheduleConfig()
+			cfg.MaxBlock, cfg.MaxVoices, cfg.BPMMilli, cfg.Schedule = block, 1, 300000, nil
+			cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneClip}}}}
+			cfg.Song = []SongEntry{{Bars: 1}}
+			e, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			left, right, taps := make([]float32, block), make([]float32, block), make([]TapFrame, block)
+			var first [128]TapFrame
+			var message cmd.Message
+			clock, _ := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
+			end := clock.SampleAtTick(seq.TicksPerBar) + 1
+			for play := 0; play < 3; play++ {
+				if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+					t.Fatal("play rejected")
+				}
+				for frame := int64(0); frame < end; {
+					n := int(min(int64(block), end-frame))
+					e.RenderWithTaps(left[:n], right[:n], taps[:n])
+					for e.Poll(&message) {
+						if message.Kind == cmd.Fault {
+							t.Fatalf("play %d fault: %+v", play, message)
+						}
+					}
+					for i := 0; i < n && frame+int64(i) < int64(len(first)); i++ {
+						at := int(frame) + i
+						if play == 0 {
+							first[at] = taps[i]
+						} else if taps[i].Tracks[0] != first[at].Tracks[0] {
+							t.Fatalf("play %d frame %d restarted=%+v initial=%+v", play, at, taps[i].Tracks[0], first[at].Tracks[0])
+						}
+					}
+					frame += int64(n)
+				}
+				if e.transport.Playing() || !e.clipVoices[0].active {
+					t.Fatal("song did not finish with its only clip voice occupied")
+				}
+			}
+		})
+	}
+}
+
+func TestClipLoopGapAndSongRestartAllocationFree(t *testing.T) {
+	for _, scenario := range []string{"leading-gap", "restart"} {
+		t.Run(scenario, func(t *testing.T) {
+			cfg := clipScheduleConfig()
+			cfg.MaxVoices, cfg.BPMMilli = 1, 300000
+			duration := int64(seq.TicksPerBar)
+			if scenario == "leading-gap" {
+				cfg.LoopSong, duration = true, 960
+				cfg.Schedule = []ScheduleEvent{{Tick: 240, EndTick: 960, Kind: ScheduleClip, ID: 1}, {Tick: 960, EndTick: 960, Kind: ScheduleClipEnd, ID: 1}}
+			} else {
+				cfg.Schedule = nil
+				cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneClip}}}}
+				cfg.Song = []SongEntry{{Bars: 1}}
+			}
+			e, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			clock, _ := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
+			end := clock.SampleAtTick(duration) + 1
+			var left, right [4096]float32
+			var taps [4096]TapFrame
+			var message cmd.Message
+			allocs := testing.AllocsPerRun(100, func() {
+				e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+				for frame := int64(0); frame < end; {
+					n := int(min(int64(len(left)), end-frame))
+					e.RenderWithTaps(left[:n], right[:n], taps[:n])
+					for e.Poll(&message) {
+					}
+					frame += int64(n)
+				}
+			})
+			if allocs != 0 || e.faulted {
+				t.Fatalf("allocations=%g fault=%v", allocs, e.faulted)
+			}
+			t.Logf("callback allocations=%g across 100 %s cycles", allocs, scenario)
+		})
+	}
+}
 
 func TestPlacementLoopKeepsExactTickOrigin(t *testing.T) {
 	step, err := seq.PackStep(seq.Step{Note: 60, Velocity: 100, Gate: true, Ratchet: 1, Probability: 100})

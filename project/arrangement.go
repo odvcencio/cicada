@@ -62,6 +62,9 @@ func validateArrangementProject(p *Project) error {
 		return fmt.Errorf("CICADA-ARRANGEMENT: arrange requires edition 2 and exclusive arrangement authority")
 	}
 	for _, placement := range p.Arrange.Placements {
+		if !validID(placement.ID) {
+			return fmt.Errorf("CICADA-ARRANGEMENT: invalid placement ID %q", placement.ID)
+		}
 		for _, track := range p.Tracks {
 			if track.ID == placement.Track && track.Kind != "audio" && !hasSlot(track, placement.Content) {
 				return fmt.Errorf("CICADA-ARRANGEMENT: placement %s content has no track slot", placement.ID)
@@ -70,6 +73,11 @@ func validateArrangementProject(p *Project) error {
 	}
 	if p.Arrange.Placements == nil || p.Arrange.Markers == nil {
 		return fmt.Errorf("CICADA-ARRANGEMENT: placement and marker arrays must be explicit")
+	}
+	for _, marker := range p.Arrange.Markers {
+		if !validID(marker.ID) {
+			return fmt.Errorf("CICADA-ARRANGEMENT: invalid marker ID %q", marker.ID)
+		}
 	}
 	s := &notation.Score{Version: p.Edition, Arrange: &notation.Arrangement{}}
 	for _, t := range p.Tracks {

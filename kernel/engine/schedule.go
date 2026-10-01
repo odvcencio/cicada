@@ -192,6 +192,8 @@ func (e *Engine) advancePlacementSchedule() {
 			}
 			e.cycleStart += e.scheduleDuration
 			e.songIndex = -1
+			e.setNextScheduleTick()
+			continue
 		}
 		e.songIndex++
 		e.applyScheduleEvent(e.schedule[e.songIndex], tick)
