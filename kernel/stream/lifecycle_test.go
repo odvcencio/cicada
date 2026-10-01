@@ -17,8 +17,30 @@ func TestRetiredAndEndedReadersDoNotReportUnderruns(t *testing.T) {
 	r.SeekFrame(0, 1)
 	r.Render(l[:], rr[:])
 	r.Stop()
-	if r.Stats() != (ReaderStats{}) {
+	if r.Stats().Misses != 0 || r.Stats().Recoveries != 0 || r.Stats().MissingFrames != 0 {
 		t.Fatal("natural end reported cache recovery", r.Stats())
+	}
+}
+
+func TestMissingPageLookupBoundedPerCallback(t *testing.T) {
+	c, rs := newTestCache(t, 1, 3, hourFrames)
+	r := rs[0]
+	var left, right [128]float32
+	r.SeekFrame(0, 1)
+	r.Render(left[:], right[:])
+	r.Render(left[:], right[:])
+	if s := r.Stats(); s.PageLookups != 2 || s.MissingFrames != 256 {
+		t.Fatal("stalled source repeated lookups inside a callback", s)
+	}
+	prime(c)
+	r.Render(left[:], right[:])
+	if s := r.Stats(); s.PageLookups != 3 || s.Recoveries != 1 {
+		t.Fatal("next callback did not retry ready storage", s)
+	}
+	r.SeekFrame(PageFrames*100-16, 1)
+	r.Render(left[:], right[:])
+	if s := r.Stats(); s.PageLookups != 5 || s.MissingFrames != 384 {
+		t.Fatal("crossing a missing source page did not get one attempt per page", s)
 	}
 }
 
