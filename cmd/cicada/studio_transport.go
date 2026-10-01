@@ -20,6 +20,7 @@ import (
 )
 
 type studioTransport struct {
+	takeInputOpener   studioTakeInputOpener
 	path              string
 	audioBackend      string
 	mu                sync.Mutex
