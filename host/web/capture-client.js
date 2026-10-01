@@ -162,7 +162,9 @@
     const result=await response.json();
     if(!response.ok) {
       const error=new Error(result.error || 'Cannot publish take; browser PCM is retained');
-      error.takeId=result.take;
+      // A revision conflict happens after immutable publication. Other failures
+      // may leave only a partial native journal; retry from retained browser PCM.
+      if(response.status===409) error.takeId=result.take;
       throw error;
     }
     return result;

@@ -224,13 +224,15 @@ test('fatal worker error releases microphone and permits recovery/re-arm',async(
 test('project publication retains worker PCM and exposes a recoverable revision conflict',async()=>{
   const pcm=new Float32Array([.25,-.5]).buffer;
   const take={metadata:{sampleRate:48000,channels:1},pcm,rawFrames:2,incomplete:false,blocks:[{timing:block(2),rawFrame:0,offset:0,length:8,placement:{engineFrame:0},type:'block'}]};
-  let sent;
-  const env={btoa,async fetch(url,options){assert.equal(url,'/api/takes');sent=JSON.parse(options.body);return {ok:false,async json(){return {error:'score changed during recording; take retained',take:'native-retained'};}};}};
+  let sent,status=409;
+  const env={btoa,async fetch(url,options){assert.equal(url,'/api/takes');sent=JSON.parse(options.body);return {ok:false,status,async json(){return {error:'publication failed; take retained',take:'native-retained'};}};}};
   await assert.rejects(publishTake(take,{track:'vox',scene:'main',revision:'before-recording'},env),error=>error.takeId==='native-retained');
   assert.deepEqual(Buffer.from(sent.capture.pcm,'base64'),Buffer.from(pcm));
   assert.equal(sent.revision,'before-recording');
   assert.equal(sent.capture.blocks[0].timing.GapFrames,0);
   assert.deepEqual(new Float32Array(take.pcm),new Float32Array([.25,-.5]));
+  status=422;
+  await assert.rejects(publishTake(take,{track:'vox',scene:'main',revision:'before-recording'},env),error=>error.takeId===undefined);
 });
 
 test('published sampler uses shared DSP output once and Stop cancels pending audition',async()=>{
