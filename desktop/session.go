@@ -157,28 +157,13 @@ func newProject(cicada, parent, name string) (string, error) {
 	return filepath.Join(parent, name, "main.cicada"), nil
 }
 
-// saveCopy copies a score to target. When the score belongs to a project
-// (cicada.mod beside it) and the target folder has no manifest, the manifest
-// is copied too, so the copy compiles with the same edition.
-func saveCopy(score, target string) error {
-	if samePath(score, target) {
-		return nil
-	}
-	data, err := os.ReadFile(score)
-	if err != nil {
-		return err
-	}
-	if err := os.WriteFile(target, data, 0o644); err != nil {
-		return err
-	}
-	manifest := filepath.Join(filepath.Dir(score), "cicada.mod")
-	targetManifest := filepath.Join(filepath.Dir(target), "cicada.mod")
-	if isFile(manifest) && !isFile(targetManifest) {
-		data, err := os.ReadFile(manifest)
-		if err != nil {
-			return err
-		}
-		return os.WriteFile(targetManifest, data, 0o644)
+// saveCopyWithAssets uses the core collector so desktop Save As retains audio,
+// historical passes and recovery dependencies before exposing the new score.
+func saveCopyWithAssets(cicada, score, target string) error {
+	cmd := exec.Command(cicada, "save-as", score, target)
+	hideConsole(cmd)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("cicada save-as: %v: %s", err, strings.TrimSpace(string(output)))
 	}
 	return nil
 }

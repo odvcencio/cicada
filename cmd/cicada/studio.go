@@ -21,6 +21,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/notation"
@@ -28,6 +30,9 @@ import (
 )
 
 type studio struct {
+	takes           *takejournal.Store
+	captureID       string
+	captureRecorder *capture.Recorder
 	path            string
 	mu              sync.Mutex
 	lastGoodSource  []byte
@@ -78,7 +83,11 @@ func studioCommand(args []string) error {
 	if err != nil {
 		return err
 	}
-	defer studio.transport.close()
+	defer func() {
+		if err := studio.shutdown(); err != nil {
+			fmt.Fprintln(os.Stderr, "Cicada take recovery:", err)
+		}
+	}()
 	studio.transport.audioNull = audioNull
 	studio.transport.audioBackend = string(backendName)
 	studio.transport.audioOptions = defaultStudioAudioOptionsFor(backendName)
@@ -144,6 +153,16 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 	if err != nil {
 		return nil, err
 	}
+	s := &studio{path: absolute}
+	opened := false
+	defer func() {
+		if !opened && s.takes != nil {
+			s.takes.Close()
+		}
+	}()
+	if err = s.recoverTakesOnOpen(); err != nil {
+		return nil, err
+	}
 	source, err := os.ReadFile(absolute)
 	if err != nil {
 		return nil, err
@@ -155,13 +174,17 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 	history := newStudioHistory(source)
 	transport := newStudioTransport(absolute)
 	transport.history = history
-	return &studio{path: absolute, lastGoodSource: bytes.Clone(source), lastGoodProject: p, transport: transport, history: history, exports: newStudioExportController()}, nil
+	s.lastGoodSource, s.lastGoodProject, s.transport, s.history, s.exports = bytes.Clone(source), p, transport, history, newStudioExportController()
+	opened = true
+	return s, nil
 }
 
 func (s *studio) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.page)
 	mux.HandleFunc("GET /api/state", s.state)
+	mux.HandleFunc("GET /api/takes", s.takeState)
+	mux.HandleFunc("POST /api/takes", s.takeCommand)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
 	mux.HandleFunc("POST /api/record", s.recordTake)
@@ -289,6 +312,8 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
+	TakeID         string                `json:"takeId,omitempty"`
+	Scene          string                `json:"scene,omitempty"`
 	Revision       string                `json:"revision"`
 	Label          string                `json:"label,omitempty"`
 	Action         string                `json:"action,omitempty"`
@@ -536,8 +561,13 @@ func compileStudioSource(path string, source []byte) (*project.Project, error) {
 	if p == nil {
 		return nil, fmt.Errorf("score did not compile")
 	}
-	if _, err := project.CompileEngine(p, 48000, 128); err != nil {
+	if err := project.ValidateProject(p); err != nil {
 		return nil, err
+	}
+	if !p.HasAudio() {
+		if _, err := project.CompileEngine(p, 48000, 128); err != nil {
+			return nil, err
+		}
 	}
 	return p, nil
 }
