@@ -193,6 +193,11 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /api/kernel.wasm", s.kernelWASM)
 	mux.HandleFunc("GET /audio/cicada-processor.js", s.processorAsset)
 	mux.HandleFunc("GET /audio/cicada-client.js", s.clientAsset)
+	mux.HandleFunc("GET /audio/cicada-capture.js", s.captureAdapterAsset)
+	mux.HandleFunc("GET /audio/cicada-capture-processor.js", s.captureProcessorAsset)
+	mux.HandleFunc("GET /audio/cicada-capture-worker.js", s.captureWorkerAsset)
+	mux.HandleFunc("GET /audio/cicada-capture-client.js", s.captureClientAsset)
+	mux.HandleFunc("GET /studio-capture.js", s.captureUIScript)
 	mux.HandleFunc("GET /studio-history.js", s.historyScript)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !studioLoopbackHost(r.Host) {

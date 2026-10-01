@@ -396,6 +396,12 @@ func TestBrowserProcessorAllocations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Node AudioWorklet allocation test: %v", err)
 	}
+	capture := exec.Command("node", "--expose-gc", "../../host/web/processor_alloc_test.js", filepath.Join(temp, "kernel.wasm"), filepath.Join(temp, "kernel.image"), "capture")
+	captureOutput, captureErr := capture.CombinedOutput()
+	t.Logf("Capture worklet allocation test output:\n%s", captureOutput)
+	if captureErr != nil {
+		t.Fatalf("Node capture worklet allocation test: %v", captureErr)
+	}
 	stop := exec.Command("node", "../../host/web/processor_stop_test.js", filepath.Join(temp, "kernel.wasm"), filepath.Join(temp, "kernel.image"))
 	stopOutput, stopErr := stop.CombinedOutput()
 	t.Logf("AudioWorklet stop-after-edit test output:\n%s", stopOutput)

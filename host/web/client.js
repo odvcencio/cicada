@@ -46,9 +46,11 @@
         if (!imageResponse.ok) throw new Error((await imageResponse.text()) || 'Cannot load the score image');
         const revision = imageResponse.headers.get('X-Cicada-Revision') || '';
         const image = await imageResponse.arrayBuffer();
-        await this.context.audioWorklet.addModule('/audio/cicada-processor.js');
+        this.bpmMilli = new DataView(image).getUint32(12, true);
+        await this.context.audioWorklet.addModule('/audio/cicada-capture.js');
+        await this.context.audioWorklet.addModule('/audio/cicada-capture-processor.js');
         this.node = new AudioWorkletNode(this.context, 'cicada', {
-          numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
+          numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: 'max', channelInterpretation: 'discrete', outputChannelCount: [2],
           processorOptions: { m: module, i: image, r: revision, l: this.contextLatencyMs() }
         });
         this.readyPromise = new Promise((resolve, reject) => {
@@ -235,6 +237,7 @@
       const imageRevision = response.headers.get('X-Cicada-Revision') || '';
       if (revision && imageRevision !== revision) throw new Error('Score changed while preparing the browser kernel');
       const image = await response.arrayBuffer();
+      this.bpmMilli = new DataView(image).getUint32(12, true);
       const ready = new Promise((resolve, reject) => this.stageWaiters.set(imageRevision, { resolve, reject }));
       this.node.port.postMessage({ t: 'i', i: image, r: imageRevision }, [image]);
       await ready;
