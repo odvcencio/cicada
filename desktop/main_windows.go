@@ -318,7 +318,7 @@ func (h *host) saveAsDialog() {
 	if err != nil || target == "" {
 		return
 	}
-	if err := saveCopy(current, target); err != nil {
+	if err := saveCopyWithAssets(h.cicada, current, target); err != nil {
 		showError("Save As failed", err.Error())
 		return
 	}
