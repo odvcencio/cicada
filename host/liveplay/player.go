@@ -98,7 +98,9 @@ type sceneLaunch struct {
 	name       string
 	targetTick int64
 	quantize   cmd.Quantize
-	submitted  bool
+	// submitted flips once, in place, when the audio goroutine hands the launch to the engine.
+	// Every other field is immutable after the record is published.
+	submitted atomic.Bool
 }
 
 type slotLaunch struct {
@@ -906,7 +908,7 @@ func (p *Player) renderBlock() {
 		p.sceneEngine, p.sceneSequence = p.current.Engine, sequence
 		p.scene.Store(&p.current.SceneIDs[index])
 		request := p.launches.Load()
-		manual := request != nil && request.submitted && request.targetTick < p.clock.TickAtSample(p.sample+int64(frames))
+		manual := request != nil && request.submitted.Load() && request.targetTick < p.clock.TickAtSample(p.sample+int64(frames))
 		if !firstScene && !manual {
 			p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: p.current.SceneIDs[index], Kind: "song-scene"})
 		}
@@ -1020,7 +1022,7 @@ func findTrack(snapshot *trackNameSnapshot, id string) (uint8, string, bool) {
 
 func (p *Player) queueSceneLaunch() {
 	request := p.launches.Load()
-	if request == nil || request.submitted {
+	if request == nil || request.submitted.Load() {
 		return
 	}
 	if len(p.offers) != 0 && p.sample < p.nextBarSample && request.targetTick >= p.clock.TickAtSample(p.nextBarSample) {
@@ -1043,13 +1045,13 @@ func (p *Player) queueSceneLaunch() {
 		}
 		return
 	}
-	submitted := *request
-	submitted.submitted = true
-	if !p.launches.CompareAndSwap(request, &submitted) {
+	// Mark the published record in place: no copy, so the audio goroutine allocates nothing and
+	// readers never see a record change except through the atomic flag.
+	if p.launches.Load() != request || !request.submitted.CompareAndSwap(false, true) {
 		return
 	}
 	if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: uint16(index), Tick: request.targetTick}) {
-		p.launches.CompareAndSwap(&submitted, nil)
+		p.launches.CompareAndSwap(request, nil)
 		p.emit(Event{Bar: request.targetTick/seq.TicksPerBar + 1, Name: request.name, Kind: "scene-error"})
 	}
 }
@@ -1061,8 +1063,9 @@ func (p *Player) requeuePendingLaunches() {
 		if old == nil {
 			break
 		}
-		next := *old
-		next.submitted = false
+		// A requeued launch may get a new target tick, so it is a new immutable record. This runs
+		// when a replacement score lands, not every block, and allocates once per pending launch.
+		next := sceneLaunch{id: old.id, name: old.name, targetTick: old.targetTick, quantize: old.quantize}
 		if next.targetTick <= tick {
 			quantum, ok := quantizeQuantum(next.quantize)
 			if !ok {
@@ -1227,7 +1230,7 @@ func (p *Player) removeSlotRequest(id uint64) {
 
 func (p *Player) completeSceneLaunch(endTick int64) {
 	request := p.launches.Load()
-	if request == nil || !request.submitted || request.targetTick >= endTick {
+	if request == nil || !request.submitted.Load() || request.targetTick >= endTick {
 		return
 	}
 	if p.launches.CompareAndSwap(request, nil) {
