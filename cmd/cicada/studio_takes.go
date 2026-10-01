@@ -226,7 +226,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 		id := s.captureID
 		s.captureID = ""
 		s.captureRecorder = nil
-		if err := s.takes.Finalize(id, snapshot.Incomplete || drainErr != nil); err != nil {
+		if err := s.finalizeCaptureTake(id, snapshot, drainErr); err != nil {
 			fail(err)
 			return
 		}
@@ -319,7 +319,7 @@ func (s *studio) shutdown() error {
 	if s.captureRecorder != nil && s.captureID != "" {
 		drainErr := s.captureRecorder.Close()
 		snapshot := s.captureRecorder.Snapshot()
-		if err := s.takes.Finalize(s.captureID, snapshot.Incomplete || drainErr != nil); err != nil {
+		if err := s.finalizeCaptureTake(s.captureID, snapshot, drainErr); err != nil {
 			return err
 		}
 		if err := s.takes.Publish(s.captureID); err != nil {
@@ -332,4 +332,14 @@ func (s *studio) shutdown() error {
 		return s.commitTake(s.captureID, t.Expected, nil)
 	}
 	return nil
+}
+
+// finalizeCaptureTake persists any known trailing loss after the recorder drains.
+func (s *studio) finalizeCaptureTake(id string, snapshot capture.Snapshot, drainErr error) error {
+	if snapshot.TrailingGap != nil {
+		if err := s.takes.Write(id, *snapshot.TrailingGap, nil); err != nil {
+			return err
+		}
+	}
+	return s.takes.Finalize(id, snapshot.Incomplete || drainErr != nil)
 }
