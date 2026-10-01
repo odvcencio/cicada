@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"sort"
+	"testing"
+
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/seq"
-	"testing"
 )
 
 func clipScheduleConfig() Config {
@@ -140,10 +142,76 @@ func BenchmarkScheduleSeek10000(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg1: 4799640})
-		e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+		const tick = 4799640
+		if !e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(tick / seq.TicksPerBar), Arg1: uint32(tick % seq.TicksPerBar)}) || !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+			b.Fatal("seek/play command rejected")
+		}
 		e.Render(l[:], r[:])
 		for e.Poll(&message) {
+		}
+		if e.faulted || e.songIndex != len(cfg.Schedule)-2 {
+			b.Fatal("seek did not reach final placement")
+		}
+	}
+}
+
+func TestScheduleIndexedSeekRestoresOnlyActiveIntervals(t *testing.T) {
+	cfg := clipScheduleConfig()
+	cfg.Schedule = []ScheduleEvent{{EndTick: 1000, Kind: ScheduleClip, ID: 1}, {Tick: 1000, EndTick: 1000, Kind: ScheduleClipEnd, ID: 1}}
+	for i := 0; i < 100; i++ {
+		tick, id := int64(i*4), uint32(i+2)
+		cfg.Schedule = append(cfg.Schedule, ScheduleEvent{Tick: tick, EndTick: tick + 2, Kind: ScheduleClip, ID: id}, ScheduleEvent{Tick: tick + 2, EndTick: tick + 2, Kind: ScheduleClipEnd, ID: id})
+	}
+	sort.SliceStable(cfg.Schedule, func(i, j int) bool {
+		if cfg.Schedule[i].Tick == cfg.Schedule[j].Tick {
+			return cfg.Schedule[i].Kind > cfg.Schedule[j].Kind
+		}
+		return cfg.Schedule[i].Tick < cfg.Schedule[j].Tick
+	})
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	clock, _ := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
+	var left, right [1]float32
+	var message cmd.Message
+	for _, tick := range []int64{0, 1, 2, 101, 102, 198, 199, 396, 398, 400, 999, 4} {
+		if !e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg1: uint32(tick)}) || !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+			t.Fatal("seek/play command rejected")
+		}
+		e.Render(left[:], right[:])
+		for e.Poll(&message) {
+			if message.Kind == cmd.Fault {
+				t.Fatal(message)
+			}
+		}
+		var want, got []int
+		for _, event := range cfg.Schedule {
+			if event.Kind == ScheduleClip && event.Tick <= tick && tick < event.EndTick {
+				want = append(want, int(event.ID))
+			}
+		}
+		for _, voice := range e.clipVoices {
+			if !voice.active {
+				continue
+			}
+			got = append(got, voice.id)
+			for _, event := range cfg.Schedule {
+				if event.Kind == ScheduleClip && int(event.ID) == voice.id {
+					frames := clock.SampleAtTick(tick) - clock.SampleAtTick(event.Tick) + 1
+					if voice.sourceFrame != float64(frames) {
+						t.Fatalf("seek %d placement %d source=%g want=%d", tick, voice.id, voice.sourceFrame, frames)
+					}
+				}
+			}
+		}
+		if len(got) != len(want) {
+			t.Fatalf("seek %d active=%v want=%v", tick, got, want)
+		}
+		for i := range want {
+			if got[i] != want[i] {
+				t.Fatalf("seek %d restore order=%v want=%v", tick, got, want)
+			}
 		}
 	}
 }

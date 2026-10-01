@@ -16,6 +16,51 @@ type ScheduleEvent struct {
 	ID            uint32
 }
 
+type scheduleInterval struct {
+	Event  int
+	MaxEnd int64
+}
+
+// The balanced interval index prunes expired subtrees during seeks. Its shape
+// and storage are prepared once, and active placements restore in event order.
+func (e *Engine) indexSchedule() {
+	for i, v := range e.schedule {
+		if v.Kind == SchedulePattern || v.Kind == ScheduleClip {
+			e.scheduleIntervals = append(e.scheduleIntervals, scheduleInterval{Event: i})
+		}
+	}
+	var build func(int, int) int64
+	build = func(lo, hi int) int64 {
+		if lo >= hi {
+			return 0
+		}
+		mid := (lo + hi) / 2
+		end := max(e.schedule[e.scheduleIntervals[mid].Event].EndTick, build(lo, mid), build(mid+1, hi))
+		e.scheduleIntervals[mid].MaxEnd = end
+		return end
+	}
+	build(0, len(e.scheduleIntervals))
+}
+
+func (e *Engine) restoreScheduleIntervals(lo, hi int, localTick, tick int64) {
+	if lo >= hi {
+		return
+	}
+	mid := (lo + hi) / 2
+	interval := e.scheduleIntervals[mid]
+	if interval.MaxEnd <= localTick {
+		return
+	}
+	event := e.schedule[interval.Event]
+	e.restoreScheduleIntervals(lo, mid, localTick, tick)
+	if event.Tick <= localTick {
+		if event.EndTick > localTick {
+			e.applyScheduleEvent(event, tick)
+		}
+		e.restoreScheduleIntervals(mid+1, hi, localTick, tick)
+	}
+}
+
 func (e *Engine) validateSchedule() error {
 	starts := make(map[uint32]ScheduleEvent)
 	ends := make(map[uint32]bool)
@@ -82,6 +127,7 @@ func (e *Engine) validateSchedule() error {
 			end = v.EndTick
 		}
 	}
+	e.indexSchedule()
 	return nil
 }
 
@@ -108,15 +154,18 @@ func (e *Engine) startPlacementSchedule() {
 		e.patterns[track].eventIndex = 0
 		e.placementID[track] = 0
 	}
-	for i, v := range e.schedule {
-		if v.Tick+e.cycleStart > tick {
-			break
-		}
-		e.songIndex = i
-		if (v.Kind == SchedulePattern || v.Kind == ScheduleClip) && v.EndTick+e.cycleStart > tick {
-			e.applyScheduleEvent(v, tick)
+	localTick := tick - e.cycleStart
+	lo, hi := 0, len(e.schedule)
+	for lo < hi {
+		mid := (lo + hi) / 2
+		if e.schedule[mid].Tick <= localTick {
+			lo = mid + 1
+		} else {
+			hi = mid
 		}
 	}
+	e.songIndex = lo - 1
+	e.restoreScheduleIntervals(0, len(e.scheduleIntervals), localTick, tick)
 	e.setNextScheduleTick()
 }
 func (e *Engine) setNextScheduleTick() {
