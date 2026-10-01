@@ -260,6 +260,9 @@ func (e *Engine) startSong() {
 			if tick == entryStart {
 				e.settleSceneEffects()
 			}
+			// Natural completion can leave clips longer than the song active.
+			// Release those voices before launching the reconstructed scene.
+			e.resetClips()
 			e.launchSceneMode(entry.Scene, false, tick > entryStart)
 			if len(e.clipTemplates) > 0 {
 				e.restoreSongClips(i, cycleStart, tick)
