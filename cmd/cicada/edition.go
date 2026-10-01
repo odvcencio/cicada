@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 )
 
 func scoreEdition(scorePath string) (int, string, error) {
@@ -29,9 +30,11 @@ func parseScoreForPath(path string, source []byte) (*notation.Score, []notation.
 	}
 	if manifest == "" {
 		score, diagnostics := notation.Parse(source)
+		diagnostics = append(diagnostics, project.VerifyAssets(score, filepath.Dir(path))...)
 		return score, diagnostics, nil
 	}
 	score, diagnostics := notation.ParseEdition(source, projectEdition)
+	diagnostics = append(diagnostics, project.VerifyAssets(score, filepath.Dir(manifest))...)
 	return score, diagnostics, nil
 }
 

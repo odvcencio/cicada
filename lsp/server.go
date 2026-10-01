@@ -424,7 +424,9 @@ func parseDocumentScore(uri string, source []byte) (*notation.Score, []notation.
 	if manifest == "" {
 		return notation.Parse(source)
 	}
-	return notation.ParseEdition(source, projectEdition)
+	score, diagnostics := notation.ParseEdition(source, projectEdition)
+	diagnostics = append(diagnostics, project.VerifyAssets(score, filepath.Dir(manifest))...)
+	return score, diagnostics
 }
 
 func hasErrors(ds []notation.Diagnostic) bool {

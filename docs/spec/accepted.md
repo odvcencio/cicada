@@ -70,60 +70,50 @@ song { main }
 
 **Edition history:** The named mixer was accepted as additive edition-1 syntax and is implemented in edition 2. Edition 2 requires named mixer spellings; `cicada fix` migrates the edition-1 aliases.
 
-## Audio clips and takes
+## Audio assets, clips and samplers
 
-**Status:** Accepted; not available in the current build.
+**Status:** Implemented as edition-2 score and project data. `cicada check` verifies assets. Playback, capture, retained-take recovery and Studio controls belong to the other Phase 1 lanes.
 
 **Syntax (EBNF):**
 
 ```ebnf
-asset_decl ::= "asset" , identifier , string , "{" , { asset_field } , "}" ;
-asset_field ::= "sha256" , "=" , hex_digest
-              | "frames" , "=" , integer
-              | "rate" , "=" , number , "Hz"
-              | "channels" , "=" , integer
-              | "source" , "=" , identifier ;
-clip_decl ::= "clip" , identifier , identifier , "{" , { clip_field } , "}" ;
-clip_field ::= "start" , "=" , duration
-             | "end" , "=" , duration
-             | "gain" , "=" , number , "dB"
-             | "fade_in" , "=" , duration
-             | "fade_out" , "=" , duration ;
-audio_track_decl ::= "track" , identifier , "audio" , "{" , { mixer_setting } , "}" ;
+asset_decl ::= "asset" , identifier , string , "{" , { param_decl } , "}" ;
+clip_decl ::= "clip" , identifier , identifier , "{" , { param_decl } , "}" ;
+sampler_decl ::= "sampler" , identifier , "{" , { param_decl } , "}" ;
 ```
 
-**Meaning:** An `asset` identifies project audio by a project-relative path and SHA-256. A `clip` is a trimmed, gained use of that asset; a scene binds the clip to an audio track as it binds a pattern. Recording creates 32-bit float WAV files at the engine rate under `audio/takes/`. Each pass adds a take to the track; the newest take is active and earlier takes stay in the project until deleted.
+**Meaning:** An asset identifies immutable file bytes by a project-relative path and SHA-256. A clip defines a half-open source region `[start, end)` with gain and fades. A scene binds a clip to an `audio` track. That binding denotes one start on scene entry; playback scheduling is implemented by the engine lane. A sampler names one whole-asset region and accepts note patterns. `loop` means the whole region; loop bounds and crossfades are later work.
 
-**Types and units:** The hash is 64 lowercase hexadecimal digits. Frame count and channel count are positive integers; rate is in Hz; clip positions and fades use seconds or milliseconds; gain uses dB. Asset paths cannot be absolute or escape the project directory.
+**Types and units:** Required asset fields are `sha256` (64 lowercase hex digits in a quoted string), `format = wav`, positive integer `frames`, integer `rate` from 8000 to 384000Hz, and `channels` from 1 to 2. Optional `source` is `recorded`, `imported`, or `generated`. WAV validation supports PCM 16/24/32-bit and IEEE float32, including ancillary RIFF chunks. It verifies rate, channels and frame count against the declaration without decoding samples. Paths and symlinks must stay inside the project directory.
 
-**Defaults:** A clip starts at 0 ms, ends at the asset's final frame, has 0 dB gain, and has no fade. Audio capture uses a one-bar count-in by default. Input monitoring starts off. Takes use the engine rate and a name of the form `audio/takes/<track>-<UTC time>-<n>.wav`.
+Clip `start`, `end`, `fade_in` and `fade_out` accept `frames`, `s`, or `ms`. They must resolve exactly to integer source frames. Gain is -60 to +24dB. Each fade is at most the region length. A sampler requires `asset`, an absolute `root` with octave 0–6 and resolved MIDI note 12–95, `mode = oneshot` or `loop`, and integer `voices` from 1 to 32. Audio and sampler tracks accept mixer settings only. Clip names cannot collide with patterns or the scene actions `off`, `keep`, and `stop`.
 
-**Errors:** A missing asset, hash mismatch, invalid trim, or path escape must fail validation. A rate that differs from the render rate is rejected until a pinned resampler is available. Asset I/O and recording diagnostics have not landed.
+**Defaults:** Clips start at frame 0, end at the asset frame count, use 0dB gain, and have no fades. Sampler fields are explicit. A project manifest carries edition 2; the legacy source header remains optional.
 
-**Example:** The 10-second, 48 kHz asset below can be used as one clip on an audio track:
+**Errors:** `CICADA-ASSET-MISSING` reports missing or unreadable files; `CICADA-ASSET-HASH` reports malformed or mismatched hashes; `CICADA-ASSET-FORMAT` reports unsupported containers, WAV encodings, or dimension mismatches; `CICADA-ASSET-PATH` reports path escapes; `CICADA-CLIP-RANGE` reports invalid regions or units; `CICADA-SAMPLER-PARAM` reports invalid sampler fields. Unknown references report `CICADA-REFERENCE` and close names receive a spelling suggestion. Diagnostics include expected and actual values and source positions. Different supported source rates are accepted as data for the sample engine; no resampling runs during checking.
 
-```cicada-accepted
+**Example:** Generate the 9,644-byte WAV with the helper in [the manual](../manual/writing-music.md#audio-assets-and-samplers), then use:
+
+```cicada
 cicada 2
-asset take-1 "audio/takes/vox-20260928T120000Z-1.wav" {
-  sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
-  frames = 480000
+asset vocal "audio/example.wav" {
+  sha256 = "528059ad119b79f269c9580505858c14d3636f77ade0e908942653e4c708f6ee"
+  format = wav
+  frames = 4800
   rate = 48000Hz
   channels = 1
-  source = recorded
+  source = generated
 }
-
-clip vox-take-1 take-1 {
-  start = 0ms
-  end = 10s
-  gain = 0dB
-}
-
-track vox audio {}
-scene verse { vox = vox-take-1 }
-song { verse }
+clip vocal-a vocal { start = 10ms end = 4800frames gain = -2dB fade_in = 1ms fade_out = 2ms }
+sampler vocal-hit { asset = vocal root = c3 mode = oneshot voices = 8 }
+track chops vocal-hit { level = -8dB }
+track vox audio { level = -6dB }
+pattern hits { c3 . c3 . }
+scene verse { chops = hits vox = vocal-a }
+song { verse*4 }
 ```
 
-**Edition history:** Accepted as additive edition-1 syntax. Studio will store captured takes with the project and write the asset, clip, and scene binding together.
+**Edition history:** The September 30 workstation scope supersedes the earlier additive edition-1 proposal. These declarations require edition 2. Semantic assets, clips and sampler instruments extend `cicada.project/2`; the three arrays are omitted for scores without assets. Older strict readers reject the new fields. The future unified plan ABI and proposed project format 3 remain separate work.
 
 ## Mastering targets and the master insert chain
 
