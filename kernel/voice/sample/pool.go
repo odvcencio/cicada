@@ -105,6 +105,23 @@ func (p *Pool) ActiveVoices() int {
 	return count
 }
 
+// NextStereo sums the fixed pool without allocating.
+func (p *Pool) NextStereo() (float32, float32) {
+	var left, right float64
+	for i := 0; i < p.limit; i++ {
+		l, r := p.voices[i].NextStereo()
+		left += float64(l)
+		right += float64(r)
+	}
+	return float32(left), float32(right)
+}
+
+func (p *Pool) NoteOffAll() {
+	for i := 0; i < p.limit; i++ {
+		p.voices[i].NoteOff()
+	}
+}
+
 func (p *Pool) Reset() {
 	for i := 0; i < p.limit; i++ {
 		p.voices[i].Reset()

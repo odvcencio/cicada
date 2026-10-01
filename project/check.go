@@ -100,7 +100,13 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	reached := make(map[string]bool, len(score.Patterns))
 	compiledByPattern := make(map[string][]CompiledPattern)
 	firstTrack := make(map[string]string)
-	for _, scene := range score.Scenes {
+	scenes := append([]notation.Scene(nil), score.Scenes...)
+	if score.Arrange != nil {
+		for _, p := range score.Arrange.Placements {
+			scenes = append(scenes, notation.Scene{Bindings: []notation.Binding{{Track: p.Track, Pattern: p.Content, Position: p.Position}}})
+		}
+	}
+	for _, scene := range scenes {
 		for _, binding := range scene.Bindings {
 			if binding.Pattern == "off" || binding.Pattern == "keep" || binding.Pattern == "stop" && !scoreHasPattern(score, "stop") {
 				continue

@@ -364,7 +364,7 @@ func (e *Engine) scheduleSwitchRelease(track int, clock seq.Clock, startSample i
 		}
 		e.scheduleNormalRelease(track, slot, c.Tick, restart, clock, startSample, frames)
 	}
-	if e.songMode && (e.songIndex+1 < len(e.schedule) || e.loopSong) {
+	if !e.placementSchedule && e.songMode && (e.songIndex+1 < len(e.schedule) || e.loopSong) {
 		next := (e.songIndex + 1) % len(e.schedule)
 		binding := e.scenes[e.schedule[next].Scene].Track[track]
 		if binding.Mode == SceneSlot && p.active != int8(binding.Slot) {
@@ -465,7 +465,7 @@ func (e *Engine) pendingSwitchSlides(track int, off seq.Event) bool {
 			}
 		}
 	}
-	if e.songMode && e.songEndTick == switchTick && (e.songIndex+1 < len(e.schedule) || e.loopSong) {
+	if !e.placementSchedule && e.songMode && e.songEndTick == switchTick && (e.songIndex+1 < len(e.schedule) || e.loopSong) {
 		next := (e.songIndex + 1) % len(e.schedule)
 		binding := e.scenes[e.schedule[next].Scene].Track[track]
 		return binding.Mode == SceneSlot && p.active != int8(binding.Slot) && e.switchSlideTarget(track, int(binding.Slot), switchTick, false)
@@ -512,6 +512,14 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			switch e.voices[track].kind {
 			case VoiceAcid:
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
+			case VoiceSample:
+				v := &e.voices[track]
+				var err error
+				v.samplerNote, err = v.sampler.NoteOn(event.Note, event.Velocity)
+				if err != nil {
+					e.fault(9)
+					return
+				}
 			case VoiceGraph:
 				e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
 			case VoiceDrums:

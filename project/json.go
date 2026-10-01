@@ -322,7 +322,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	// already imply, matching headerless source after a round trip.
 	normalized := *p
 	normalized.Format, normalized.Version = FormatID, 1
-	useV2 := p.HasAudio() || p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
+	useV2 := p.Arrange != nil || p.HasAudio() || p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
 	for _, effect := range p.Effects {
 		useV2 = useV2 || effect.Kind != ""
 	}
@@ -357,7 +357,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 			normalized.Patterns[i].Kind = "acid"
 		}
 	}
-	normalized.Scenes = append([]Scene(nil), p.Scenes...)
+	normalized.Scenes = append([]Scene{}, p.Scenes...)
 	for i := range normalized.Scenes {
 		bindings := make(map[string]string, len(p.Scenes[i].Bindings))
 		for track, pattern := range p.Scenes[i].Bindings {
@@ -390,6 +390,18 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 
 func projectPatternUsedOnlyByAcid(p *Project, patternID string) bool {
 	used := false
+	for _, v := range arrangementPlacements(p) {
+		if v.Content == patternID {
+			for _, t := range p.Tracks {
+				if t.ID == v.Track {
+					if t.Kind != "acid" {
+						return false
+					}
+					used = true
+				}
+			}
+		}
+	}
 	for _, scene := range p.Scenes {
 		for trackID, assigned := range scene.Bindings {
 			if assigned != patternID {
@@ -544,7 +556,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
-	p.p2Syntax = p.Format == FormatID2 && (p.Live != nil || projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
+	p.p2Syntax = p.Format == FormatID2 && (p.Arrange != nil || p.Live != nil || projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
 	for _, effect := range p.Effects {
 		p.p2Syntax = p.p2Syntax || effect.Kind != ""
 	}
@@ -701,7 +713,7 @@ func checkRequiredFields(data []byte) error {
 		optionalByConstruct["mixer"] = nil
 		fieldsByConstruct["effect"] = []string{"id", "params"}
 		optionalByConstruct["effect"] = nil
-		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers", "live")
+		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers", "live", "arrange")
 	}
 	require := func(value any, construct, name, pointer string) (map[string]any, error) {
 		fields, ok := fieldsByConstruct[construct]

@@ -33,6 +33,7 @@ type Project struct {
 	Tracks      []Track      `cicada:"Mixer tracks" json:"tracks"`
 	Patterns    []Pattern    `cicada:"Reusable step patterns" json:"patterns"`
 	Scenes      []Scene      `cicada:"Pattern arrangements" json:"scenes"`
+	Arrange     *Arrangement `cicada:"Named timeline placements" json:"arrange,omitempty" introduced:"cicada.project/2"`
 	Song        []SongEntry  `cicada:"Ordered scene playback" json:"song"`
 	Effects     []Effect     `cicada:"Project effects" json:"effects"`
 	Buses       []Bus        `cicada:"Named mixer buses" json:"buses,omitempty" introduced:"cicada.project/2"`
@@ -275,6 +276,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		Scenes: []Scene{}, Song: []SongEntry{}, Effects: []Effect{},
 	}
 	lowerAudio(p, score)
+	lowerArrangement(p, score)
 	for _, source := range score.Instruments {
 		octave := source.Octave
 		inst := Instrument{ID: source.Name, Octave: &octave, Mode: source.Mode, Params: []InstrumentParam{}, Lets: []Binding{}}
@@ -532,6 +534,20 @@ func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string
 		return pattern.Kind
 	}
 	usedByAcid := false
+	if score.Arrange != nil {
+		for _, p := range score.Arrange.Placements {
+			if p.Content == pattern.Name {
+				for _, t := range score.Tracks {
+					if t.Name == p.Track {
+						if t.Kind != "acid" {
+							return "notes"
+						}
+						usedByAcid = true
+					}
+				}
+			}
+		}
+	}
 	for _, scene := range score.Scenes {
 		for _, binding := range scene.Bindings {
 			if binding.Pattern != pattern.Name {
@@ -555,6 +571,17 @@ func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string
 }
 
 func representativeTrack(score *notation.Score, pattern notation.Pattern) notation.Track {
+	if score.Arrange != nil {
+		for _, p := range score.Arrange.Placements {
+			if p.Content == pattern.Name {
+				for _, t := range score.Tracks {
+					if t.Name == p.Track {
+						return t
+					}
+				}
+			}
+		}
+	}
 	for _, scene := range score.Scenes {
 		for _, binding := range scene.Bindings {
 			if binding.Pattern == pattern.Name {
@@ -613,6 +640,12 @@ func assignSlots(p *Project, score *notation.Score) error {
 				explicit[pattern.Name] = slot
 			}
 		}
+	}
+	for _, placement := range arrangementPlacements(p) {
+		if used[placement.Track] == nil {
+			used[placement.Track] = map[string]bool{}
+		}
+		used[placement.Track][placement.Content] = true
 	}
 	for _, scene := range p.Scenes {
 		for track, pattern := range scene.Bindings {
