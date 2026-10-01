@@ -123,3 +123,31 @@ func TestConcurrentSongRequestsKeepTheQueuedIdentity(t *testing.T) {
 		}
 	}
 }
+
+// The audio goroutine hands a due scene launch to the engine. That must not allocate, and it
+// must mark the published record in place so readers never see a record replaced under them.
+func TestQueueSceneLaunchDoesNotAllocate(t *testing.T) {
+	score := slotScore(t, "riff", 1)
+	score.SceneIDs = []string{"main"}
+	p, err := New(score, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	requests := make([]*sceneLaunch, 32)
+	for i := range requests {
+		requests[i] = &sceneLaunch{id: uint64(i + 1), name: "main", targetTick: 0}
+	}
+	i := 0
+	allocs := testing.AllocsPerRun(20, func() {
+		p.launches.Store(requests[i])
+		i++
+		p.queueSceneLaunch()
+	})
+	if allocs != 0 {
+		t.Fatalf("queueSceneLaunch allocated %.1f times per launch, want 0", allocs)
+	}
+	published := requests[i-1]
+	if p.launches.Load() != published || !published.submitted.Load() {
+		t.Fatal("the launch was not marked submitted in place")
+	}
+}
