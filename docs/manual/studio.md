@@ -114,8 +114,45 @@ Drum takes keep simultaneous hits on separate lanes and quantize velocity to
 the nearest supported drum level. Acid takes save pitch and overlapping slides
 at the score format's fixed velocity. The preview explains that arbitrary MIDI
 velocity cannot be saved for acid notation. Live MIDI playback still uses
-incoming velocity. Studio records MIDI note takes; audio-input recording is
-not available yet.
+incoming velocity. Live records MIDI note takes. Browser PCM capture is in the
+Record panel.
+
+#### Browser PCM capture and sampler audition
+
+Select **Browser** audio, stop transport, and open **Record**. Choose mono or
+stereo, then **Arm microphone**. Arming requests microphone permission with
+echo cancellation, noise suppression, and automatic gain control disabled.
+The effective settings appear below the buttons; a browser may keep processing
+enabled or leave a setting unreported. The input remains active while armed,
+including when transport is stopped. Input monitoring stays off.
+
+Choose **Record PCM** for a one-bar count-in, then **Stop and save**. Stopping
+transport also finalizes an active recording. The worker stores raw interleaved
+float32 PCM, including count-in, alongside lane D's capture block descriptors
+and placement metadata. A bounded 32-buffer transfer pool admits mono/stereo
+callbacks of up to 2,048 frames. A full pool or missing input marks the take
+incomplete and records a known frame gap, including any trailing gap.
+
+Storage uses OPFS with synchronous worker handles when available, or durable
+IndexedDB transactions otherwise. Recording is refused when neither works.
+PCM is flushed before its journal entry; recovery ignores uncommitted tails.
+Browser storage remains subject to the browser's quota and eviction policy.
+**Recover last take** reopens the last admitted take across reloads, including
+an interrupted take, using a small local storage index. Every take gets a new
+storage ID; old PCM is never overwritten.
+
+Web Audio does not expose microphone first-frame timestamps or a qualified
+duplex latency measurement. The status therefore shows **timing unavailable**
+and **uncalibrated**. Reported device settings are retained, but no latency
+correction is silently applied to the take.
+
+After recovery, **Play sample** auditions one region with one voice. Choose a
+root MIDI note, audition MIDI note, and optional basic loop. Audition skips
+negative count-in placement and inserts silence for known gaps; stored PCM
+stays unchanged. The maximum admitted audition is 30 minutes. Saving takes as
+project assets and using the shared sampler engine require the asset, sampler,
+and take-publication lanes. Hardware calibration and browser soak qualification
+are separate checks.
 
 #### Live keyboard shortcuts
 
