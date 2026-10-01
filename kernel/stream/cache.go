@@ -137,8 +137,11 @@ func (w Work) Left() []float32  { return w.page.left[w.Offset : w.Offset+w.Frame
 func (w Work) Right() []float32 { return w.page.right[w.Offset : w.Offset+w.Frames] }
 
 // Wanted reads bounded mailboxes without waiting for an audio owner mid-write.
-func (w Work) Wanted() bool { return w.cache.wanted(w.Asset.ID, w.Index) }
-func (c *Cache) wanted(asset uint32, index int64) bool {
+func (w Work) Wanted() bool { return w.cache.Wanted(w.Asset.ID, w.Index) }
+
+// Wanted reports demand to workers/control callers. An incomplete mailbox
+// conservatively retains demand until the audio owner finishes rewriting it.
+func (c *Cache) Wanted(asset uint32, index int64) bool {
 	for i := 0; i < c.readerCount; i++ {
 		w, ok := c.readers[i].intent.snapshot()
 		// A mailbox being rewritten is uncertain demand, not obsolete demand.
@@ -186,7 +189,7 @@ func (c *Cache) reserve(a Asset, index int64) (Work, bool) {
 			victim = p
 			break
 		}
-		if state == ready && !c.wanted(p.asset, p.index) && (victim == nil || p.used < victim.used) {
+		if state == ready && !c.Wanted(p.asset, p.index) && (victim == nil || p.used < victim.used) {
 			victim = p
 		}
 	}
@@ -213,6 +216,13 @@ func (c *Cache) reserve(a Asset, index int64) (Work, bool) {
 // Next coalesces seek storms into the latest window instead of queuing every
 // seek. Current pages take precedence over prefetch; readers rotate fairly.
 func (c *Cache) Next() (Work, bool) {
+	return c.NextEligible(nil)
+}
+
+// NextEligible skips pages whose reads the worker has deferred, allowing other
+// current pages and prefetch to progress. The predicate runs only on the worker
+// and must not change cache ownership. A nil predicate admits every page.
+func (c *Cache) NextEligible(eligible func(asset uint32, index int64) bool) (Work, bool) {
 	for distance := 0; distance <= c.config.AheadPages+1; distance++ {
 		for n := 0; n < c.readerCount; n++ {
 			i := (c.nextReader + n) % c.readerCount
@@ -228,6 +238,9 @@ func (c *Cache) Next() (Work, bool) {
 			if index < w.low || index > w.high || c.present(w.asset, index) {
 				continue
 			}
+			if eligible != nil && !eligible(w.asset, index) {
+				continue
+			}
 			if work, ok := c.reserve(r.asset, index); ok {
 				c.nextReader = (i + 1) % c.readerCount
 				return work, true
@@ -235,6 +248,17 @@ func (c *Cache) Next() (Work, bool) {
 		}
 	}
 	return Work{}, false
+}
+
+// Ready checks immutable publication for workers/control callers without
+// retaining a page pin or exposing PCM.
+func (c *Cache) Ready(asset uint32, index int64) bool {
+	p := c.acquire(asset, index)
+	if p == nil {
+		return false
+	}
+	p.state.Add(^uint32(pin - 1))
+	return true
 }
 
 func (c *Cache) acquire(asset uint32, index int64) *page {

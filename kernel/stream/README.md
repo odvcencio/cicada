@@ -57,7 +57,13 @@ closes, then close files. No goroutine is created per seek. A stalled source can
 delay other reads on that worker, while rendering continues with counted misses.
 
 Offline hosts call `WaitReady` outside rendering, with a deadline, before each
-new window. It reports storage errors explicitly. This package provides lane A's
+new window. It reports errors only for missing pages in that reader's window.
+The worker retains bounded retry/error records by asset and page, with a 25 ms
+initial retry delay that doubles to a 1 s cap. Deferred failures cannot monopolize
+current-page priority or starve other readers' prefetch. Successful publication
+clears only that page's error; retired demand is reclaimed before records are
+reused. Retry/error records never exceed the admitted arena's page count.
+This package provides lane A's
 streamed reader; arrangement scheduling and browser worker page transfer are
 separate integration work. Changing the core worklet or legacy engine is not
 required to use the native page source.
