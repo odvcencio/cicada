@@ -253,3 +253,47 @@ func TestJournalBatchFlushAndWriterFailure(t *testing.T) {
 		t.Fatal("failed journal finalized")
 	}
 }
+
+func TestJournalRecoverChecksLiveTail(t *testing.T) {
+	for _, tail := range []string{`{"stage":"finalized"`, "corrupt\n"} {
+		t.Run(tail, func(t *testing.T) {
+			s, path := testStore(t)
+			id, err := s.Begin("vox", "main", Revision(nil), 48000, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			writeBlock(t, s, id, 0, []float32{.75}, 0)
+			if err := s.Flush(id); err != nil {
+				t.Fatal(err)
+			}
+			f, err := s.root.OpenFile(s.logPath(id), os.O_WRONLY|os.O_APPEND, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := f.WriteString(tail); err != nil {
+				t.Fatal(err)
+			}
+			f.Close()
+			err = s.Recover()
+			if strings.HasSuffix(tail, "\n") {
+				if err == nil {
+					t.Fatal("Recover ignored journal corruption")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			s.Close()
+			reopened, err := Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.Close()
+			take, err := reopened.Get(id)
+			if err != nil || take.Frames != 1 {
+				t.Fatalf("take=%+v %v", take, err)
+			}
+		})
+	}
+}

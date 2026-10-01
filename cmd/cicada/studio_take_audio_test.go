@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/host/capture"
@@ -222,5 +223,77 @@ func TestAudioScoreCaptureBackingPreservesProjectAndIndices(t *testing.T) {
 	after, err := project.CanonicalJSON(s.lastGoodProject)
 	if err != nil || string(before) != string(after) {
 		t.Fatal("capture backing changed the project")
+	}
+}
+
+func TestAudioOnlyCaptureBacking(t *testing.T) {
+	for _, host := range []string{"native", "browser"} {
+		t.Run(host, func(t *testing.T) {
+			s := newTakeStudio(t, t.TempDir())
+			id := captureTestTake(t, s)
+			if err := s.commitTake(id, studioRevision([]byte(audioTakeScore)), nil); err != nil {
+				t.Fatal(err)
+			}
+			source, err := os.ReadFile(s.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			text := strings.ReplaceAll(string(source), "track bass acid {}\n", "")
+			text = strings.ReplaceAll(text, "pattern pulse acid steps=4 { 1 . 5 . }\n", "")
+			text = strings.ReplaceAll(text, "bass = pulse ", "")
+			if err := os.WriteFile(s.path, []byte(text), 0600); err != nil {
+				t.Fatal(err)
+			}
+			p, err := compileStudioSource(s.path, []byte(text))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(p.Patterns) != 0 || len(p.Clips) == 0 {
+				t.Fatal("fixture is not audio only")
+			}
+			before, err := project.CanonicalJSON(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if host == "browser" {
+				response := studioCall(t, s.routes(), "/api/kernel-image?rate=48000&capture=1", nil)
+				if response.Code != http.StatusOK {
+					t.Fatalf("browser capture preparation: %d %s", response.Code, response.Body)
+				}
+			} else {
+				audio, _ := simulatedCaptureAudio(256, zeroAudioSource{})
+				s.transport.audio, s.transport.sampleRate = audio, 48000
+				s.transport.audioOptions.InputEnabled = true
+				r, err := capture.NewRecorder(4, 256, 2, func(capture.RecordedBlock, [][]float32) error { return nil })
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer r.Close()
+				if err := s.transport.armCapture(r); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.transport.startCapture(capture.Calibration{}); err != nil {
+					t.Fatal(err)
+				}
+				if index, ok := s.transport.stream.TrackIndex("vox"); !ok || index != 0 {
+					t.Fatal("capture changed track index")
+				}
+				s.transport.stop()
+				if err := s.transport.disarmCapture(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			backing := captureBacking(p)
+			if err := project.ValidateProject(backing); err != nil {
+				t.Fatal(err)
+			}
+			if backing.Scenes[0].Bindings["vox"] != "off" {
+				t.Fatal("audio accompaniment is not silent")
+			}
+			after, err := project.CanonicalJSON(p)
+			if err != nil || string(before) != string(after) {
+				t.Fatal("capture changed original project")
+			}
+		})
 	}
 }

@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"math"
 	"net/http"
@@ -370,5 +371,207 @@ func TestTakeShutdownFinalizesShortBatch(t *testing.T) {
 	take, err := reopened.takes.Get(id)
 	if err != nil || take.Frames != 4 || take.Stage != takejournal.Committed {
 		t.Fatalf("shutdown take=%+v %v", take, err)
+	}
+}
+
+func TestNativeTakeTrailingGap(t *testing.T) {
+	for _, action := range []string{"stop", "shutdown"} {
+		t.Run(action, func(t *testing.T) {
+			s := newTakeStudio(t, t.TempDir())
+			id, err := s.takes.Begin("vox", "main", studioRevision([]byte(audioTakeScore)), 48000, 1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			entered, release := make(chan struct{}), make(chan struct{})
+			writer := s.takes.Writer(id)
+			r, err := capture.NewRecorder(1, 4, 1, func(b capture.RecordedBlock, pcm [][]float32) error {
+				if b.RawFrame == 0 {
+					close(entered)
+					<-release
+				}
+				return writer(b, pcm)
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			c, _ := capture.NewCountIn(48000, 120000, 0)
+			if err := r.Begin(c, capture.Calibration{}); err != nil {
+				t.Fatal(err)
+			}
+			a, _ := simulatedCaptureAudio(4, zeroAudioSource{})
+			a.actual.CaptureChannels = 1
+			if err := a.ArmCapture(r); err != nil {
+				t.Fatal(err)
+			}
+			s.transport.audio, s.transport.sampleRate = a, 48000
+			s.captureID, s.captureRecorder = id, r
+			b := capture.Block{DeviceEpoch: 1, EngineEpoch: 1, SampleRate: 48000, Frames: 4, Layout: capture.LayoutMono}
+			pcm := [][]float32{{.25, .5, .75, 1}}
+			r.Capture(b, pcm)
+			<-entered
+			for _, frame := range []uint64{4, 8} {
+				b.DeviceFrame, b.EngineFrame = frame, int64(frame)
+				r.Capture(b, pcm)
+			}
+			close(release)
+			if action == "stop" {
+				response := studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "stop", Revision: studioRevision([]byte(audioTakeScore))})
+				if response.Code != http.StatusOK {
+					t.Fatal(response.Body.String())
+				}
+				s.transport.close()
+				s.takes.Close()
+			} else if err := s.shutdown(); err != nil {
+				t.Fatal(err)
+			}
+			reopened, err := newStudio(s.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer reopened.transport.close()
+			defer reopened.takes.Close()
+			take, err := reopened.takes.Get(id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if take.Frames != 12 || take.Asset.Frames != 12 || !take.Incomplete || take.Stage != takejournal.Committed {
+				t.Fatalf("trailing gap lost: journal frames=%d asset frames=%d incomplete=%t stage=%s", take.Frames, take.Asset.Frames, take.Incomplete, take.Stage)
+			}
+			data, err := os.ReadFile(filepath.Join(filepath.Dir(s.path), take.Asset.Path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(data) != 44+12*4 {
+				t.Fatalf("WAV bytes=%d", len(data))
+			}
+			for i := range 12 {
+				got := math.Float32frombits(binary.LittleEndian.Uint32(data[44+i*4:]))
+				want := float32(0)
+				if i < 4 {
+					want = pcm[0][i]
+				}
+				if got != want {
+					t.Fatalf("frame %d = %g, want %g", i, got, want)
+				}
+			}
+
+			journal, err := os.ReadFile(filepath.Join(filepath.Dir(s.path), takejournal.Namespace(s.path), id+".jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			foundGap := false
+			for _, line := range bytes.Split(journal, []byte("\n")) {
+				if len(line) == 0 {
+					continue
+				}
+				var event struct {
+					Block *capture.RecordedBlock `json:"block"`
+				}
+				if err := json.Unmarshal(line, &event); err != nil {
+					t.Fatal(err)
+				}
+				if event.Block != nil && event.Block.Timing.GapFrames == 8 {
+					b := event.Block
+					foundGap = b.RawFrame == 12 && b.Timing.Frames == 0 && b.Timing.Flags&capture.QueueOverrun != 0
+				}
+			}
+			if !foundGap {
+				t.Fatal("journal lost trailing gap metadata")
+			}
+			source, err := os.ReadFile(s.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err := compileStudioSource(s.path, source)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Clips[0].EndFrame != 12 {
+				t.Fatalf("published clip duration=%d", p.Clips[0].EndFrame)
+			}
+		})
+	}
+}
+
+func TestNativeRecordAfterArmedPlayPauseTrimsCountIn(t *testing.T) {
+	s := newTakeStudio(t, t.TempDir())
+	source := []byte(strings.Replace(audioTakeScore, "cicada 2\n", "cicada 2\ntempo 130\n", 1))
+	if err := os.WriteFile(s.path, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.takes.Begin("vox", "main", studioRevision(source), 48000, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := capture.NewRecorder(1024, 256, 2, s.takes.Writer(id))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	a, device := simulatedCaptureAudio(256, zeroAudioSource{})
+	s.transport.audio, s.transport.sampleRate = a, 48000
+	s.transport.audioOptions.InputEnabled = true
+	if err := s.transport.armCapture(r); err != nil {
+		t.Fatal(err)
+	}
+	s.captureID, s.captureRecorder = id, r
+	if err := s.transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	input, output := [][]float32{make([]float32, 256), make([]float32, 256)}, [][]float32{make([]float32, 256), make([]float32, 256)}
+	for frame := uint64(0); frame < 102400; frame += 256 {
+		simulatedCapturePeriod(t, a, frame, input, output)
+	}
+	s.transport.pause()
+	oldEpoch := a.engineEpoch
+	if err := s.transport.startCapture(capture.Calibration{}); err != nil {
+		t.Fatal(err)
+	}
+	countIn := r.Snapshot().CountInFrames
+	var total int64
+	for total < countIn+512 {
+		for i := range input[0] {
+			value := float32(.25)
+			if total+int64(i) >= countIn {
+				value = .75
+			}
+			input[0][i], input[1][i] = value, value
+		}
+		simulatedCapturePeriod(t, a, uint64(102400+total), input, output)
+		total += 256
+	}
+	response := studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "stop", Revision: studioRevision(source)})
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Body.String())
+	}
+	take, err := s.takes.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if take.FirstBlock.Placement.EngineFrame != -countIn {
+		t.Fatalf("count-in started at %d, want %d", take.FirstBlock.Placement.EngineFrame, -countIn)
+	}
+	if a.engineEpoch == oldEpoch || device.starts != 1 {
+		t.Fatal("recording did not reset the origin while retaining the armed device")
+	}
+	current, err := os.ReadFile(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := compileStudioSource(s.path, current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Clips[0].StartFrame != countIn || take.Frames != uint64(total) {
+		t.Fatalf("preroll trim=%d frames=%d", p.Clips[0].StartFrame, take.Frames)
+	}
+	audition := studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "audition", TakeID: id, Revision: studioRevision(current), Sample: &studioSampleRequest{Root: 60, Note: 60}})
+	if audition.Code != http.StatusOK {
+		t.Fatal(audition.Body.String())
+	}
+	data := audition.Body.Bytes()
+	if len(data) != 44+(int(total-countIn)+48000/500)*8 || math.Float32frombits(binary.LittleEndian.Uint32(data[44:])) != .75 {
+		t.Fatal("audition retained count-in audio")
 	}
 }

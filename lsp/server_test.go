@@ -296,3 +296,24 @@ func TestParameterHoverShowsDefaultAndTrackOverride(t *testing.T) {
 		t.Fatalf("track hover: %s", result)
 	}
 }
+
+func TestEditionOneAudioNameDiagnostics(t *testing.T) {
+	for _, fixture := range []struct{ path, name string }{{"glassbass.cicada", "glassbass"}, {"authored-kit.cicada", "steel"}} {
+		t.Run(fixture.path, func(t *testing.T) {
+			source, err := os.ReadFile(filepath.Join("..", "examples", fixture.path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			source = bytes.ReplaceAll(source, []byte(fixture.name), []byte("audio"))
+			uri := fileURI(filepath.Join(t.TempDir(), "main.cicada"))
+			var output bytes.Buffer
+			server := &server{out: &output, documents: map[string][]byte{uri: source}}
+			if err := server.publish(uri); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(output.Bytes(), []byte(`"diagnostics":[]`)) {
+				t.Fatalf("edition 1 diagnostics: %s", output.Bytes())
+			}
+		})
+	}
+}

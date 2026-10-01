@@ -158,17 +158,17 @@ func CompileEngineWithAssets(p *Project, sampleRate, maxBlock int, assets []engi
 				config.InsertDrive = &params
 			}
 		}
-		switch track.Kind {
-		case "audio":
+		switch {
+		case p.Edition == 2 && track.Kind == "audio":
 			config.Kind = engine.VoiceAudio
-		case "acid":
+		case track.Kind == "acid":
 			config.Kind = engine.VoiceAcid
 			params, err := acidParamsFromValues(track.Params)
 			if err != nil {
 				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 			}
 			config.Acid = params
-		case "drums":
+		case track.Kind == "drums":
 			config.Kind = engine.VoiceDrums
 			params, err := drumParamsFromValues(track.Params)
 			if err != nil {
@@ -273,7 +273,7 @@ func CompileEngineWithAssets(p *Project, sampleRate, maxBlock int, assets []engi
 			case "off":
 				binding.Mode = engine.SceneOff
 			default:
-				if p.Tracks[ti].Kind == "audio" {
+				if cfg.Track[ti].Kind == engine.VoiceAudio {
 					binding.Mode = engine.SceneClip
 					binding.Clip = clipIndex[patternID]
 					continue

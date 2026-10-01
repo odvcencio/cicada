@@ -44,7 +44,7 @@ func (p *Project) HasAudio() bool {
 }
 func projectHasAudioTrack(p *Project) bool {
 	for _, t := range p.Tracks {
-		if t.Kind == "audio" {
+		if p.Edition == 2 && t.Kind == "audio" {
 			return true
 		}
 	}
@@ -55,7 +55,7 @@ func sourceHasAudio(score *notation.Score) bool {
 		return true
 	}
 	for _, t := range score.Tracks {
-		if t.Kind == "audio" {
+		if score.Version == 2 && t.Kind == "audio" {
 			return true
 		}
 	}

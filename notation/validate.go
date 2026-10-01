@@ -93,7 +93,7 @@ func Validate(s *Score) []Diagnostic {
 	instruments := make(map[string]Instrument, len(s.Instruments))
 	for _, inst := range s.Instruments {
 		checkID(inst.Name, inst.Position)
-		if inst.Name == "acid" || inst.Name == "drums" || inst.Name == "audio" {
+		if inst.Name == "acid" || inst.Name == "drums" || s.Version == 2 && inst.Name == "audio" {
 			add("CICADA-DUPLICATE", "instrument name is reserved: "+inst.Name, "error", inst.Position)
 		}
 		if _, exists := instruments[inst.Name]; exists {
@@ -130,7 +130,7 @@ func Validate(s *Score) []Diagnostic {
 	for _, kit := range s.Kits {
 		checkID(kit.Name, kit.Position)
 		_, instrumentNameTaken := instruments[kit.Name]
-		if kit.Name == "acid" || kit.Name == "drums" || kit.Name == "audio" || instrumentNameTaken {
+		if kit.Name == "acid" || kit.Name == "drums" || s.Version == 2 && kit.Name == "audio" || instrumentNameTaken {
 			add("CICADA-DUPLICATE", "kit name is reserved or already declared: "+kit.Name, "error", kit.Position)
 		}
 		if _, exists := kits[kit.Name]; exists {
@@ -169,10 +169,7 @@ func Validate(s *Score) []Diagnostic {
 		}
 		trackByName[t.Name] = t
 		namespace[t.Name] = "track"
-		if t.Kind == "audio" && s.Version != 2 {
-			add("CICADA-VERSION", "expected edition 2 for audio; actual 1", "error", t.Position)
-		}
-		if t.Kind != "acid" && t.Kind != "drums" && t.Kind != "audio" && !scoreHasSampler(s, t.Kind) {
+		if t.Kind != "acid" && t.Kind != "drums" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
 			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
 				if _, kitOK := kits[t.Kind]; !kitOK {
 					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
@@ -319,7 +316,7 @@ func Validate(s *Score) []Diagnostic {
 			if b.Pattern == "keep" || b.Pattern == "off" || b.Pattern == "stop" && patterns["stop"].Name == "" {
 				continue
 			}
-			if track.Kind == "audio" {
+			if s.Version == 2 && track.Kind == "audio" {
 				names := []string{}
 				for _, clip := range s.Clips {
 					names = append(names, clip.Name)
@@ -350,7 +347,7 @@ func Validate(s *Score) []Diagnostic {
 	usedPatterns := make(map[string]map[string]bool)
 	for _, scene := range s.Scenes {
 		for _, binding := range scene.Bindings {
-			if trackByName[binding.Track].Kind == "audio" || binding.Pattern == "off" || binding.Pattern == "keep" || binding.Pattern == "stop" && patterns["stop"].Name == "" {
+			if s.Version == 2 && trackByName[binding.Track].Kind == "audio" || binding.Pattern == "off" || binding.Pattern == "keep" || binding.Pattern == "stop" && patterns["stop"].Name == "" {
 				continue
 			}
 			if usedPatterns[binding.Track] == nil {
