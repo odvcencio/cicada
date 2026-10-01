@@ -13,6 +13,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -45,6 +46,7 @@ type studioTransport struct {
 	audioNull         bool
 	latestMeter       atomic.Pointer[studioMeterSnapshot]
 	meterSequence     atomic.Uint64
+	pendingCapture    *capture.Calibration
 }
 
 type studioMeterSnapshot struct {
@@ -213,6 +215,9 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			t.audio = audio
 		}
 		if t.audio != nil {
+			if err := t.prepareCaptureLocked(t.audio, t.stream.BPMMilli()); err != nil {
+				return err
+			}
 			if err := t.audio.Play(); err != nil {
 				t.audio.Pause()
 				_ = t.audio.Close()
@@ -253,14 +258,22 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			return err
 		}
 	}
-	var audio studioAudioDevice
-	audio, err = openStudioAudio(stream, t.audioOptions, t.selectedAudioBackend(), sampleRate)
-	if err != nil {
-		stream.Close()
-		return err
+	audio := t.audio
+	if audio != nil && audio.Armed() {
+		audio.SetSource(stream)
+	} else {
+		audio, err = openStudioAudio(stream, t.audioOptions, t.selectedAudioBackend(), sampleRate)
+		if err != nil {
+			stream.Close()
+			return err
+		}
 	}
 	audio.SetMonitor(studioMonitorOptions(t.audioOptions))
 	if audio != nil {
+		if err := t.prepareCaptureLocked(audio, initial.BPMMilli); err != nil {
+			stream.Close()
+			return err
+		}
 		if err := audio.Play(); err != nil {
 			audio.Pause()
 			_ = audio.Close()
@@ -308,6 +321,7 @@ func (t *studioTransport) pauseLocked() {
 	t.playing = false
 	t.pendingSong = ""
 	t.pendingSongID = 0
+	t.pendingCapture = nil
 }
 
 // stop halts playback and returns to bar 1 by discarding the stream (D18).
@@ -320,11 +334,14 @@ func (t *studioTransport) stop() {
 		t.cancel()
 		t.cancel = nil
 	}
-	if t.audio != nil {
+	if t.audio != nil && !t.audio.Armed() {
 		if err := t.audio.Close(); err != nil {
 			t.errText = err.Error()
 		}
 		t.audio = nil
+	}
+	if t.audio != nil {
+		t.audio.SetSource(nil)
 	}
 	if t.stream != nil {
 		t.stream.Close()

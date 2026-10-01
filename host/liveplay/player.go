@@ -165,6 +165,7 @@ type Player struct {
 	fault             error
 	jumpFadeRemaining int
 	position          atomic.Uint64
+	tempoMilli        atomic.Int64
 	scene             atomic.Pointer[string]
 	sceneSequence     uint64
 	sceneEngine       *engine.Engine
@@ -208,6 +209,7 @@ func New(initial Score, rate int) (*Player, error) {
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
 	p.trackNames.Store(initial.trackNames)
 	p.position.Store(1<<8 | 1)
+	p.tempoMilli.Store(initial.BPMMilli)
 	if len(initial.Song) != 0 {
 		p.scene.Store(&p.current.Song[0].Scene)
 	} else if len(initial.SceneIDs) != 0 {
@@ -755,6 +757,10 @@ func (p *Player) CurrentScene() string {
 	return ""
 }
 
+// BPMMilli observes the active engine tempo, excluding score offers that have
+// not landed yet. Hosts use it to prepare count-in with the engine's clock.
+func (p *Player) BPMMilli() int64 { return p.tempoMilli.Load() }
+
 // Position can be read safely by a UI thread while Read renders audio.
 func (p *Player) Position() Position {
 	packed := p.position.Load()
@@ -848,6 +854,7 @@ func (p *Player) beginRequestedSong() {
 		}
 		p.bar = int64(start) - 1
 		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.BPMMilli, AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
+		p.tempoMilli.Store(selected.BPMMilli)
 		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 		p.position.Store(uint64(start)<<8 | 1)
 		p.emit(Event{Bar: int64(start), Name: request.Scene, Kind: "song"})
@@ -878,6 +885,7 @@ func (p *Player) renderBlock() {
 				SampleRate: int64(p.rate), BPMMilli: next.BPMMilli,
 				AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar,
 			}
+			p.tempoMilli.Store(next.BPMMilli)
 			select {
 			case p.events <- Event{Bar: p.bar + 1, Name: next.Name, Kind: "edit"}:
 			default:

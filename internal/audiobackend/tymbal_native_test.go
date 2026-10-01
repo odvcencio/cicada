@@ -8,10 +8,53 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
+	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/tymbal"
 	"m31labs.dev/tymbal/tymbaltest"
 )
+
+func TestTymbalPreservesBlockTimingBeforeRender(t *testing.T) {
+	var got capture.Block
+	var raw float32
+	timing := &tymbalTiming{
+		epoch:  42,
+		actual: tymbal.Actual{SampleRate: 96000, Period: 480, InChannels: 2, OutChannels: 2, LatencyIn: time.Millisecond, LatencyOut: 2 * time.Millisecond},
+		tap:    func(b capture.Block, input [][]float32) { got, raw = b, input[0][0] },
+	}
+	cb := tymbalTimedCallback(func(in, _ [][]float32) error { in[0][0] = 0; return nil }, &atomic.Pointer[audioError]{}, timing)
+	tm := tymbal.Time{Frame: 1234, InputNano: 9000, OutputNano: 12000, InputPosition: 77, InputFrequency: 96000, OutputPosition: 100, OutputFrequency: 10000000, Dropouts: 3, Discontinuity: true}
+	cb(tm, [][]float32{{0.75}, {0.5}}, [][]float32{{0}, {0}})
+	if raw != 0.75 || got.DeviceEpoch != 42 || got.DeviceFrame != 1234 || got.Frames != 1 || got.Period != 480 || got.SampleRate != 96000 || got.Layout != capture.LayoutStereo || got.Flags != capture.DeviceDiscontinuity || got.DeviceDropouts != 3 {
+		t.Fatalf("lost block metadata: %+v, raw %g", got, raw)
+	}
+	if got.InputTime.Nano != 9000 || !got.InputTime.Valid || got.InputTime.Domain != capture.ClockHostMonotonic || got.OutputTime.Reference != capture.ReferenceClockObservation || got.InputPosition.Position != 77 || got.OutputPosition.Frequency != 10000000 || got.InputLatencyNano != int64(time.Millisecond) || got.OutputLatencyNano != int64(2*time.Millisecond) {
+		t.Fatalf("lost clock metadata: %+v", got)
+	}
+	got = timing.block(tymbal.Time{}, nil, nil)
+	if got.InputTime.Valid || got.OutputTime.Valid || got.InputPosition.Valid || got.OutputPosition.Valid || got.Calibration.Valid {
+		t.Fatalf("fabricated timing confidence: %+v", got)
+	}
+}
+
+func TestTymbalCaptureAndFaultPathsAllocateZero(t *testing.T) {
+	r, _ := capture.NewRing(1, 256, 2)
+	timing := &tymbalTiming{epoch: 1, actual: tymbal.Actual{SampleRate: 48000, Period: 256}, tap: func(b capture.Block, in [][]float32) { r.Push(b, in) }}
+	for _, fail := range []bool{false, true} {
+		errCell := &atomic.Pointer[audioError]{}
+		cb := tymbalTimedCallback(func(_, _ [][]float32) error {
+			if fail {
+				return tymbal.ErrCallback
+			}
+			return nil
+		}, errCell, timing)
+		in, out := [][]float32{make([]float32, 256), make([]float32, 256)}, [][]float32{make([]float32, 256), make([]float32, 256)}
+		if n := testing.AllocsPerRun(1000, func() { errCell.Store(nil); cb(tymbal.Time{}, in, out) }); n != 0 {
+			t.Fatalf("capture/fault allocations = %g (fault %v)", n, fail)
+		}
+	}
+}
 
 func TestTymbalCallbackIsAllocationFree(t *testing.T) {
 	render := Callback(func(_ [][]float32, output [][]float32) error {
