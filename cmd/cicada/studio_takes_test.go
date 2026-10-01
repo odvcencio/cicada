@@ -575,3 +575,37 @@ func TestNativeRecordAfterArmedPlayPauseTrimsCountIn(t *testing.T) {
 		t.Fatal("audition retained count-in audio")
 	}
 }
+
+func TestTakeStateRestoresActiveCapture(t *testing.T) {
+	s := newTakeStudio(t, t.TempDir())
+	a, _ := simulatedCaptureAudio(8, zeroAudioSource{})
+	s.transport.audio, s.transport.sampleRate = a, 48000
+	s.transport.audioOptions.InputEnabled = true
+	response := studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "arm", Track: "vox", Scene: "main", Revision: studioRevision([]byte(audioTakeScore))})
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Body.String())
+	}
+	for _, recording := range []bool{false, true} {
+		if recording {
+			countIn, _ := capture.DefaultCountIn(48000, 120000)
+			if err := s.captureRecorder.Begin(countIn, capture.Calibration{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		response = studioCall(t, s.routes(), "/api/takes", nil)
+		var state struct {
+			Active  string             `json:"activeCapture"`
+			Capture *capture.Snapshot  `json:"capture"`
+			Takes   []takejournal.Take `json:"takes"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &state); err != nil {
+			t.Fatal(err)
+		}
+		if state.Active != s.captureID || state.Capture == nil || state.Capture.Recording != recording || len(state.Takes) != 1 || state.Takes[0].Track != "vox" || state.Takes[0].Scene != "main" {
+			t.Fatalf("active take cannot be restored: %s", response.Body.String())
+		}
+	}
+	if err := s.transport.disarmCapture(); err != nil {
+		t.Fatal(err)
+	}
+}

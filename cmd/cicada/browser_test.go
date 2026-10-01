@@ -570,3 +570,27 @@ func TestBrowserCPUReport(t *testing.T) {
 		t.Fatalf("Node V8 WASM p95 %.4f ms (budget 0.67 ms) or p99 %.4f ms (ceiling 2.01 ms) exceeded; max %.4f ms", report.P95, report.P99, report.Max)
 	}
 }
+
+func TestBrowserCaptureTargets(t *testing.T) {
+	server := startBrowserStudio(t, []byte(audioTakeScore), nil)
+	chrome := startBrowserChrome(t, server)
+	chrome.navigate("http://" + browserStudioAddress + "/")
+	chrome.waitFor("!document.getElementById('pcm-arm').disabled", 5*time.Second)
+	save := func(source, condition string) {
+		t.Helper()
+		text, _ := json.Marshal(source)
+		chrome.eval(`(()=>{window.__targetRevision=document.body.dataset.revision;document.getElementById('edit-source').click();const editor=document.getElementById('source-editor');editor.value=` + string(text) + `;editor.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('save-source').click();return true})()`)
+		chrome.waitFor("document.body.dataset.revision!==window.__targetRevision && !document.getElementById('save-source').disabled && ("+condition+")", 10*time.Second)
+	}
+	added := strings.Replace(audioTakeScore, "track vox audio {}", "track vox audio {}\ntrack guitar audio {}", 1)
+	save(added, "document.getElementById('pcm-track').options.length===2")
+	chrome.eval(`document.getElementById('pcm-track').value='guitar';true`)
+	renamed := strings.Replace(added, "track guitar audio {}", "track lead audio {}", 1)
+	renamed = strings.ReplaceAll(renamed, "main", "verse")
+	save(renamed, "Array.from(document.getElementById('pcm-track').options,o=>o.value).join(',')==='vox,lead' && document.getElementById('pcm-track').value==='vox' && document.getElementById('pcm-scene').value==='verse'")
+	removed := strings.ReplaceAll(renamed, "track vox audio {}", "")
+	removed = strings.ReplaceAll(removed, "track lead audio {}", "")
+	removed = strings.ReplaceAll(removed, "vox = off", "")
+	save(removed, "document.getElementById('pcm-track').options.length===0 && document.getElementById('pcm-arm').disabled")
+	t.Log("capture selectors follow added, renamed and removed targets through actual source saves")
+}

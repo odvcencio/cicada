@@ -132,7 +132,12 @@ func (s *studio) takeState(w http.ResponseWriter, r *http.Request) {
 	if s.takes != nil {
 		takes = s.takes.Takes()
 	}
-	studioJSON(w, http.StatusOK, map[string]any{"takes": takes, "activeCapture": s.captureID})
+	var snapshot *capture.Snapshot
+	if s.captureRecorder != nil {
+		current := s.captureRecorder.Snapshot()
+		snapshot = &current
+	}
+	studioJSON(w, http.StatusOK, map[string]any{"takes": takes, "activeCapture": s.captureID, "capture": snapshot})
 }
 func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 	edit, ok := studioRequestLimit(w, r, 128<<20)
