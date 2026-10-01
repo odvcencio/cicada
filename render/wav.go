@@ -186,8 +186,21 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if len(score.Song) == 0 {
 		return report, fmt.Errorf("score has no song arrangement")
 	}
-	for _, entry := range score.Song {
-		report.Bars += entry.Bars
+	semantic, diagnostics := project.FromScore(score)
+	if semantic == nil {
+		for _, diagnostic := range diagnostics {
+			if diagnostic.Severity == "error" {
+				return report, fmt.Errorf("%s: %s", diagnostic.Code, diagnostic.Message)
+			}
+		}
+		return report, fmt.Errorf("score cannot compile to a Cicada project")
+	}
+	schedule, err := project.CompileSchedule(semantic)
+	if err != nil {
+		return report, err
+	}
+	if len(schedule) > 0 {
+		report.Bars = int(schedule[len(schedule)-1].EndTick / seq.TicksPerBar)
 	}
 	songBars := report.Bars
 	if opts.From < 0 || opts.From >= songBars {
@@ -206,15 +219,6 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, fmt.Errorf("render supports 1 to 256 bars")
 	}
 	renderBars := report.From + report.Bars
-	semantic, diagnostics := project.FromScore(score)
-	if semantic == nil {
-		for _, diagnostic := range diagnostics {
-			if diagnostic.Severity == "error" {
-				return report, fmt.Errorf("%s: %s", diagnostic.Code, diagnostic.Message)
-			}
-		}
-		return report, fmt.Errorf("score cannot compile to a Cicada project")
-	}
 	busState := busMixerState{}
 	masterGainDB := opts.MasterGainDB
 	for _, bus := range semantic.Buses {
@@ -388,10 +392,6 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	var events []scheduled
 	var position int64
 	bar := 0
-	schedule, err := project.CompileSchedule(semantic)
-	if err != nil {
-		return report, err
-	}
 	for _, event := range schedule {
 		entry := notation.SongEntry{Scene: semantic.Scenes[event.Scene].ID, Bars: int((event.EndTick - event.Tick) / seq.TicksPerBar)}
 		if bar >= renderBars {
@@ -415,7 +415,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			}
 			var nextScene *notation.Scene
 			if bar+1 < renderBars {
-				nextScene = sceneAtBar(score, bar+1)
+				nextScene = sceneAtBar(score, semantic, schedule, bar+1)
 			}
 			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock, stopIsAction)
 			end := clock.SampleAtTick(int64(bar+1) * seq.TicksPerBar)
@@ -813,14 +813,13 @@ func findScene(score *notation.Score, name string) *notation.Scene {
 	return nil
 }
 
-func sceneAtBar(score *notation.Score, bar int) *notation.Scene {
-	for _, entry := range score.Song {
-		if bar < entry.Bars {
-			return findScene(score, entry.Scene)
-		}
-		bar -= entry.Bars
+func sceneAtBar(score *notation.Score, p *project.Project, schedule []engine.ScheduleEvent, bar int) *notation.Scene {
+	tick := int64(bar) * seq.TicksPerBar
+	i := sort.Search(len(schedule), func(i int) bool { return tick < schedule[i].EndTick })
+	if i == len(schedule) {
+		return nil
 	}
-	return nil
+	return findScene(score, p.Scenes[schedule[i].Scene].ID)
 }
 
 func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryTick int64, clock seq.Clock, stopIsAction bool) {
