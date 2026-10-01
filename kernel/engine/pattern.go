@@ -19,7 +19,7 @@ type patternTrack struct {
 	slots       [16]seq.Pattern
 	drumSlots   *[16][drum.LaneCount]seq.Pattern
 	active      int8 // -1 until a slot is selected
-	startStep   int64
+	startTick   int64
 	generation  uint32
 	playingNote int64
 	playingGen  uint32
@@ -60,9 +60,9 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			length = p.slots[p.active].Len
 		}
 		at, err := seq.QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), length)
-		if c.Arg0 == 3 && p.active >= 0 && p.startStep != 0 {
+		if c.Arg0 == 3 && p.active >= 0 && p.startTick != 0 {
 			patternTicks := int64(length) * seq.TicksPerStep
-			startTick := p.startStep * seq.TicksPerStep
+			startTick := p.startTick
 			if e.transport.Tick() <= startTick {
 				at = startTick
 			} else {
@@ -132,7 +132,7 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 	if p.active == int8(slot) && p.playingNote != 0 && p.playingGen == p.generation {
 		p.held = p.slots[slot]
 		p.heldSlot = uint8(slot)
-		p.heldStart = p.startStep
+		p.heldStart = p.startTick
 		p.heldGen = p.generation
 		p.heldValid = true
 		p.generation++
@@ -165,7 +165,7 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 	if p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 {
 		p.held = p.slots[p.active]
 		p.heldSlot = uint8(p.active)
-		p.heldStart = p.startStep
+		p.heldStart = p.startTick
 		p.heldGen = p.generation
 		p.heldValid = true
 	}
@@ -179,9 +179,9 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 	}
 	p.active = int8(slot)
 	p.generation++
-	p.startStep = 0
+	p.startTick = 0
 	if restart {
-		p.startStep = (e.transport.Tick() + seq.TicksPerStep - 1) / seq.TicksPerStep
+		p.startTick = (e.transport.Tick() + seq.TicksPerStep - 1) / seq.TicksPerStep * seq.TicksPerStep
 	}
 	if e.renderFrames > 0 {
 		e.scheduleTrack(track)
@@ -209,7 +209,7 @@ func (e *Engine) scheduleTrack(track int) {
 		var overflow bool
 		if e.voices[track].kind == VoiceDrums {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-				n, overflow = seq.EventsOffsetInBlock(&p.drumSlots[p.active][lane], clock, uint8(track), uint8(p.active), p.startStep, startSample, frames, e.eventScratch[:])
+				n, overflow = seq.EventsAtTickInBlock(&p.drumSlots[p.active][lane], clock, uint8(track), uint8(p.active), p.startTick, startSample, frames, e.eventScratch[:])
 				if overflow || p.eventCount+n > len(p.events) {
 					e.fault(16)
 					return
@@ -220,7 +220,7 @@ func (e *Engine) scheduleTrack(track int) {
 				}
 			}
 		} else {
-			n, overflow = seq.EventsWithGatesOffsetInBlock(&p.slots[p.active], clock, uint8(track), uint8(p.active), p.startStep, startSample, frames, e.eventScratch[:])
+			n, overflow = seq.EventsWithGatesAtTickInBlock(&p.slots[p.active], clock, uint8(track), uint8(p.active), p.startTick, startSample, frames, e.eventScratch[:])
 			if overflow || p.eventCount+n > len(p.events) {
 				e.fault(16)
 				return
@@ -235,7 +235,7 @@ func (e *Engine) scheduleTrack(track int) {
 		}
 	}
 	if p.heldValid && p.playingNote != 0 {
-		n, overflow := seq.EventsWithGatesOffsetInBlock(&p.held, clock, uint8(track), p.heldSlot, p.heldStart, startSample, frames, e.eventScratch[:])
+		n, overflow := seq.EventsWithGatesAtTickInBlock(&p.held, clock, uint8(track), p.heldSlot, p.heldStart, startSample, frames, e.eventScratch[:])
 		if overflow {
 			e.fault(16)
 			return
@@ -317,13 +317,14 @@ func (e *Engine) switchWouldSlide(track, slot int, tick int64, restart bool) boo
 	}
 	targetStep := tick / seq.TicksPerStep
 	sourceStep := targetStep - 1
-	if sourceStep < p.startStep {
+	if tick < p.startTick+seq.TicksPerStep || (tick-p.startTick)%seq.TicksPerStep != 0 {
 		return false
 	}
 	source := &p.slots[p.active]
-	sourceIndex := (sourceStep - p.startStep) % int64(source.Len)
+	startStep := p.startTick / seq.TicksPerStep
+	sourceIndex := (sourceStep - startStep) % int64(source.Len)
 	old, err := seq.UnpackStep(source.Steps[sourceIndex])
-	if err != nil || !old.Gate || !old.Slide || !seq.ProbabilityHit(old.Probability, source.Seed, uint8(track), uint8(p.active), (sourceStep-p.startStep)/int64(source.Len), uint8(sourceIndex)) {
+	if err != nil || !old.Gate || !old.Slide || !seq.ProbabilityHit(old.Probability, source.Seed, uint8(track), uint8(p.active), (sourceStep-startStep)/int64(source.Len), uint8(sourceIndex)) {
 		return false
 	}
 	target := &p.slots[slot]
@@ -404,11 +405,11 @@ func (e *Engine) scheduleNormalRelease(track, slot int, switchTick int64, restar
 
 func (e *Engine) normalSlideRelease(track int, switchTick int64, clock seq.Clock) (seq.Event, bool) {
 	p := &e.patterns[track]
-	if p.active < 0 || switchTick < seq.TicksPerStep || switchTick%seq.TicksPerStep != 0 {
+	if p.active < 0 || switchTick < p.startTick+seq.TicksPerStep || (switchTick-p.startTick)%seq.TicksPerStep != 0 {
 		return seq.Event{}, false
 	}
-	step := switchTick/seq.TicksPerStep - 1
-	local := step - p.startStep
+	local := (switchTick-p.startTick)/seq.TicksPerStep - 1
+	step := p.startTick/seq.TicksPerStep + local
 	source := &p.slots[p.active]
 	if local < 0 {
 		return seq.Event{}, false
@@ -418,7 +419,7 @@ func (e *Engine) normalSlideRelease(track int, switchTick int64, clock seq.Clock
 	if err != nil || !old.Gate || !old.Slide || !seq.ProbabilityHit(old.Probability, source.Seed, uint8(track), uint8(p.active), local/int64(source.Len), index) {
 		return seq.Event{}, false
 	}
-	startTick := step * seq.TicksPerStep
+	startTick := p.startTick + local*seq.TicksPerStep
 	endTick := switchTick
 	if step&1 != 0 {
 		startTick += seq.SwingDelayTicks(source.SwingPermille)
@@ -445,7 +446,7 @@ func (e *Engine) pendingSwitchSlides(track int, off seq.Event) bool {
 	if p.active < 0 || p.playingNote != off.NoteID {
 		return false
 	}
-	switchTick := ((off.NoteID-1)/8 + 1) * seq.TicksPerStep
+	switchTick := ((off.NoteID-1)/8+1)*seq.TicksPerStep + p.startTick%seq.TicksPerStep
 	for i := 0; i < e.pendingLen; i++ {
 		c := e.pending[i]
 		if c.Tick != switchTick {

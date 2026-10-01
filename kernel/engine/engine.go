@@ -216,6 +216,7 @@ type Engine struct {
 	clipLimit                    int
 	clipTemplates                []sample.Voice
 	clipSpecs                    []ClipConfig
+	clipMaxFrames                int64
 	clipVoices                   [32]clipPlayback
 	loopSong, songMode           bool
 	songIndex                    int

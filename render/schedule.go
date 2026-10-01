@@ -68,16 +68,18 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	fromFrame := clock.SampleAtTick(int64(opts.From) * seq.TicksPerBar)
 	endFrame := clock.SampleAtTick(endTick)
 	report = Report{SampleRate: opts.SampleRate, Bars: int((endTick+seq.TicksPerBar-1)/seq.TicksPerBar) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
-	report.Frames = endFrame + report.TailFrames - fromFrame
 	dither := opts.Dither == nil || *opts.Dither
 	encoder, err := newWAVEncoder(opts.Bits, dither, score.Seed, outputGain)
 	if err != nil {
 		return report, err
 	}
-	dataBytes := report.Frames * int64(encoder.frameBytes())
-	if dataBytes > int64(^uint32(0))-60 {
+	maxFrames := int64(^uint32(0)-60) / int64(encoder.frameBytes())
+	spanFrames := endFrame - fromFrame
+	if spanFrames < 0 || report.TailFrames > maxFrames || spanFrames > maxFrames-report.TailFrames {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
+	report.Frames = spanFrames + report.TailFrames
+	dataBytes := report.Frames * int64(encoder.frameBytes())
 	if err = writeWAVHeader(w, opts.SampleRate, opts.Bits, uint32(dataBytes)); err != nil {
 		return report, err
 	}
