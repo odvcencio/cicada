@@ -91,6 +91,13 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		stems.skipFrames = fromFrame
 	}
 	latency := int64(player.LatencyFrames())
+	insertLatency := int64(player.TrackLatencyFrames())
+	metricStart := fromFrame + insertLatency
+	if opts.From == 0 {
+		metricStart = 0
+	}
+	metricEnd := endFrame + report.TailFrames + insertLatency
+	ceiling := math.Pow(10, mix.CeilingDB/20)
 	taps := make([]engine.TapFrame, opts.Block)
 	left, right := make([]float32, opts.Block), make([]float32, opts.Block)
 	buffer := make([]byte, opts.Block*encoder.frameBytes())
@@ -112,6 +119,16 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		written := 0
 		for i := 0; i < frames; i++ {
 			tap := &taps[i]
+			if at := position + int64(i); at >= metricStart && at < metricEnd {
+				for _, value := range [...]float32{tap.PreMaster.Left, tap.PreMaster.Right} {
+					peak := math.Abs(float64(value))
+					report.Peak = max(report.Peak, float32(peak))
+					if peak > ceiling {
+						report.PreLimiterOvers++
+					}
+				}
+			}
+			report.MaxLimiterGainReductionDB = max(report.MaxLimiterGainReductionDB, tap.LimiterReductionDB)
 			if stems != nil {
 				for t := range p.Tracks {
 					track := tap.Tracks[t]
@@ -124,7 +141,6 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 				stems.returnA(tap.ReturnA.Left, tap.ReturnA.Right)
 				stems.returnB(tap.ReturnB.Left, tap.ReturnB.Right)
 				stems.buses(tap.Music.Left, tap.Music.Right, tap.SFX.Left, tap.SFX.Right)
-				insertLatency := int64(player.TrackLatencyFrames())
 				stems.appendMixFrame(position + int64(i) - insertLatency)
 			}
 			if position+int64(i) < latency {
@@ -135,16 +151,16 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 				continue
 			}
 			l, r := left[i], right[i]
-			report.Peak = max(report.Peak, float32(math.Abs(float64(tap.PreMaster.Left))), float32(math.Abs(float64(tap.PreMaster.Right))))
-			report.MaxLimiterGainReductionDB = max(report.MaxLimiterGainReductionDB, tap.LimiterReductionDB)
 			if stems != nil {
-				stems.appendMaster(l, r)
+				stems.appendMaster(l*encoder.gain, r*encoder.gain)
 			}
-			encoder.writeFrame(buffer[written:written+encoder.frameBytes()], l, r, 1, &report)
+			encoder.writeFrame(buffer[written:written+encoder.frameBytes()], l, r, ceiling, &report)
 			written += encoder.frameBytes()
 		}
-		if _, err = w.Write(buffer[:written]); err != nil {
-			return report, err
+		if n, writeErr := w.Write(buffer[:written]); writeErr != nil {
+			return report, writeErr
+		} else if n != written {
+			return report, io.ErrShortWrite
 		}
 		if stems != nil {
 			if err = stems.flush(); err != nil {

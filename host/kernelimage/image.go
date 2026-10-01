@@ -94,7 +94,8 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 13. The decoded Config is separately
+// Encode writes version 13 for legacy projects and version 14 for schedules
+// and prepared audio. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -110,6 +111,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	version := uint16(imageVersion)
 	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
 		version = scheduleImageVersion
+	}
+	for _, track := range cfg.Track[:cfg.Tracks] {
+		if track.Kind == engine.VoiceAudio || track.Kind == engine.VoiceSample {
+			version = scheduleImageVersion
+		}
 	}
 	w.u16(version)
 	w.byte(byte(cfg.Tracks))
@@ -602,7 +608,11 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			spec.InsertDrive = params
 		}
 		switch spec.Kind {
-		case engine.VoiceOff, engine.VoiceAudio:
+		case engine.VoiceOff:
+		case engine.VoiceAudio:
+			if version < scheduleImageVersion {
+				return Error("unsupported audio track image")
+			}
 		case engine.VoiceAcid:
 			if spec.Acid, err = readAcid(&r); err != nil {
 				return err

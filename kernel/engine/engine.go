@@ -95,10 +95,11 @@ type Config struct {
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
 	CompMusic  *fx.CompParams
+	// MasterBias is an optional DC correction before gain and limiting.
+	MasterBiasL float32 `json:",omitempty"`
+	MasterBiasR float32 `json:",omitempty"`
 	// MasterGainDB is a static gain applied immediately before the master
 	// limiter. Zero leaves the existing master path bit-identical.
-	MasterBiasL  float32 `json:",omitempty"`
-	MasterBiasR  float32 `json:",omitempty"`
 	MasterGainDB float64
 	MusicBusMute bool
 	MusicBusSolo bool
@@ -208,6 +209,7 @@ type Engine struct {
 	currentScene                 int
 	sceneSequence                uint64
 	schedule                     []ScheduleEvent
+	scheduleIntervals            []scheduleInterval
 	scheduleDuration, cycleStart int64
 	placementSchedule            bool
 	placementID                  [16]uint32

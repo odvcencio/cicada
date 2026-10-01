@@ -66,6 +66,25 @@ func TestFirstAcidProjectImageRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAudioTrackRequiresVersion14(t *testing.T) {
+	cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120000}
+	cfg.Track[0].Kind = engine.VoiceAudio
+	data, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binary.LittleEndian.Uint16(data[4:6]) != 14 {
+		t.Fatal("audio track encoded with legacy version")
+	}
+	if _, err = kernelimage.Decode(data, 48000, 128); err != nil {
+		t.Fatal(err)
+	}
+	binary.LittleEndian.PutUint16(data[4:6], 13)
+	if _, err = kernelimage.Decode(data, 48000, 128); err == nil {
+		t.Fatal("audio track accepted with legacy version")
+	}
+}
+
 func TestSceneSettingsProjectImageRoundTrip(t *testing.T) {
 	source := []byte("fx delay { feedback = 0.2 }\ntrack bass acid { send_a = 0.2 }\npattern riff acid steps=1 { 1 }\nscene drop { bass=riff bass.cutoff=900Hz delay.feedback=0.4 delay.time=1/8 }\nsong { drop }\n")
 	score, diagnostics := notation.Parse(source)
