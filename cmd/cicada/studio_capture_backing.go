@@ -17,9 +17,18 @@ func captureBacking(p *project.Project) *project.Project {
 	backing := *p
 	backing.Assets, backing.Clips, backing.Samplers = nil, nil, nil
 	backing.Tracks = nil
+	// Audio-only projects lose their last playable table when clips are removed.
+	// Keep an unused rest pattern so validation and engine preparation stay valid.
+	if len(backing.Patterns) == 0 {
+		backing.Patterns = []project.Pattern{{
+			ID: "capture-silence", Kind: "acid", Steps: 1,
+			SwingPercent100: 5000, GatePercent: 50,
+			Data: []*project.Step{nil}, Lanes: map[string][]*project.Step{},
+		}}
+	}
 	silent := map[string]bool{}
 	for _, track := range p.Tracks {
-		isAudio := track.Kind == "audio"
+		isAudio := p.Edition == 2 && track.Kind == "audio"
 		for _, sampler := range p.Samplers {
 			isAudio = isAudio || track.Kind == sampler.Name
 		}

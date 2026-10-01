@@ -25,6 +25,7 @@ type Ring struct {
 	invalid          atomic.Uint64
 	pendingGap       uint64 // producer owned
 	pendingFlags     Discontinuity
+	pendingBlock     Block
 }
 
 func NewRing(slots, frames, channels int) (*Ring, error) {
@@ -41,8 +42,8 @@ func NewRing(slots, frames, channels int) (*Ring, error) {
 }
 
 // Push never allocates or blocks, including malformed input and full queues.
-// Gaps are attached to the next accepted block; Stats also retains a trailing
-// gap when no subsequent block arrives. Samples are never silently discarded.
+// Gaps are attached to the next accepted block; pendingGap retains a trailing
+// interval for the recorder to collect after the producer stops.
 func (r *Ring) Push(block Block, input [][]float32) bool {
 	valid := block.Frames > 0 && block.Frames <= r.frames && len(input) == r.channels && int(block.Layout) == r.channels
 	if valid {
@@ -77,6 +78,9 @@ func (r *Ring) Push(block Block, input [][]float32) bool {
 }
 
 func (r *Ring) lose(block Block, flag Discontinuity) {
+	if r.pendingGap == 0 {
+		r.pendingBlock = block
+	}
 	frames := uint64(max(0, block.Frames))
 	r.pendingGap += frames + block.GapFrames
 	r.pendingFlags |= block.Flags | flag

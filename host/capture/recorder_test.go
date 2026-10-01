@@ -59,6 +59,9 @@ func TestRecorderTrailingOverrunAndWriterDrain(t *testing.T) {
 	if err := r.Close(); err != nil {
 		t.Fatal(err)
 	}
+	if got := r.Snapshot(); got.TrailingGap == nil || got.TrailingGap.RawFrame != 12 || got.TrailingGap.Timing.GapFrames != 8 || got.TrailingGap.Timing.Flags&QueueOverrun == 0 {
+		t.Fatalf("trailing gap not exposed after drain: %+v", got.TrailingGap)
+	}
 	if got := r.Snapshot(); got.WrittenFrames != 4 || !got.Incomplete {
 		t.Fatalf("drain = %+v", got)
 	}
@@ -97,5 +100,52 @@ func TestRecorderCallbackAllocations(t *testing.T) {
 	}
 	if err := r.Begin(c, Calibration{}); err == nil {
 		t.Fatal("overwrote retained take")
+	}
+}
+
+func TestRecorderConsumedGapIsNotTrailing(t *testing.T) {
+	entered, release, drained := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var last RecordedBlock
+	r, err := NewRecorder(1, 4, 1, func(b RecordedBlock, _ [][]float32) error {
+		if b.RawFrame == 0 {
+			close(entered)
+			<-release
+		}
+		last = b
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r.Close()
+	c, _ := NewCountIn(48000, 120000, 0)
+	if err := r.Begin(c, Calibration{}); err != nil {
+		t.Fatal(err)
+	}
+	b := Block{DeviceEpoch: 1, EngineEpoch: 1, SampleRate: 48000, Frames: 4, Layout: LayoutMono}
+	pcm := [][]float32{{1, 2, 3, 4}}
+	r.Capture(b, pcm)
+	<-entered
+	b.DeviceFrame = 4
+	r.Capture(b, pcm)
+	close(release)
+	go func() {
+		for r.ring.read.Load() == 0 {
+			time.Sleep(time.Millisecond)
+		}
+		close(drained)
+	}()
+	select {
+	case <-drained:
+	case <-time.After(time.Second):
+		t.Fatal("ring did not drain")
+	}
+	b.DeviceFrame = 8
+	r.Capture(b, pcm)
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if last.RawFrame != 8 || last.Timing.GapFrames != 4 || r.Snapshot().TrailingGap != nil {
+		t.Fatalf("consumed gap was duplicated: last=%+v snapshot=%+v", last, r.Snapshot())
 	}
 }

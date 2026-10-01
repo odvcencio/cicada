@@ -423,7 +423,10 @@ func (s *Store) Write(id string, b capture.RecordedBlock, pcm [][]float32) (err 
 	if es := s.pending[id]; len(es) > 0 {
 		cursor = es[len(es)-1].Frames
 	}
-	if len(pcm) != t.Channels || b.Timing.SampleRate != t.Rate || b.Timing.Frames <= 0 || b.RawFrame < cursor {
+	// A drained recorder can end with a gap and no following PCM block.
+	// Persist that interval as a sparse hole with its discontinuity metadata.
+	gapOnly := b.Timing.Frames == 0 && b.Timing.GapFrames > 0 && len(pcm) == 0 && b.RawFrame >= cursor && b.RawFrame-cursor == b.Timing.GapFrames
+	if !gapOnly && (len(pcm) != t.Channels || b.Timing.Frames <= 0) || b.Timing.SampleRate != t.Rate || b.RawFrame < cursor {
 		return errors.New("capture block format or position changed")
 	}
 	for _, ch := range pcm {
