@@ -10,6 +10,7 @@ var ErrRingFormat = errors.New("capture ring needs positive slots and frames wit
 type slot struct {
 	block Block
 	pcm   [2][]float32
+	view  [2][]float32
 }
 
 // Ring is single producer/single consumer. Push copies borrowed input; Consume
@@ -68,6 +69,7 @@ func (r *Ring) Push(block Block, input [][]float32) bool {
 	s.block = block
 	for ch := 0; ch < r.channels; ch++ {
 		copy(s.pcm[ch], input[ch][:block.Frames])
+		s.view[ch] = s.pcm[ch][:block.Frames]
 	}
 	r.pendingGap, r.pendingFlags = 0, 0
 	r.write.Store(write + 1)
@@ -88,11 +90,7 @@ func (r *Ring) Consume(write func(Block, [][]float32)) bool {
 		return false
 	}
 	s := &r.slots[read%uint64(len(r.slots))]
-	var input [2][]float32
-	for ch := 0; ch < r.channels; ch++ {
-		input[ch] = s.pcm[ch][:s.block.Frames]
-	}
-	write(s.block, input[:r.channels])
+	write(s.block, s.view[:r.channels])
 	r.read.Store(read + 1)
 	return true
 }
