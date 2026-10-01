@@ -39,6 +39,7 @@ type Recorder struct {
 	incomplete atomic.Bool
 	remaining  atomic.Int64
 	first      atomic.Pointer[RecordedBlock]
+	trailing   atomic.Pointer[RecordedBlock]
 	current    *recordPlan // audio owner only
 	cursor     int64       // audio owner only
 }
@@ -137,11 +138,14 @@ type Snapshot struct {
 	Incomplete      bool           `json:"incomplete"`
 	Ring            RingStats      `json:"ring"`
 	FirstBlock      *RecordedBlock `json:"firstBlock,omitempty"`
-	Error           string         `json:"error,omitempty"`
+	// TrailingGap is available after Close drains the recorder. It has no PCM;
+	// RawFrame marks the end of the lost interval in the raw frame domain.
+	TrailingGap *RecordedBlock `json:"trailingGap,omitempty"`
+	Error       string         `json:"error,omitempty"`
 }
 
 func (r *Recorder) Snapshot() Snapshot {
-	s := Snapshot{Recording: r.plan.Load() != nil && !r.ended.Load() && !r.closed.Load(), RemainingFrames: r.remaining.Load(), WrittenFrames: r.written.Load(), Ring: r.ring.Stats(), FirstBlock: r.first.Load()}
+	s := Snapshot{Recording: r.plan.Load() != nil && !r.ended.Load() && !r.closed.Load(), RemainingFrames: r.remaining.Load(), WrittenFrames: r.written.Load(), Ring: r.ring.Stats(), FirstBlock: r.first.Load(), TrailingGap: r.trailing.Load()}
 	if p := r.plan.Load(); p != nil {
 		s.CountInFrames = p.countIn.Frames
 	}
@@ -191,6 +195,12 @@ func (r *Recorder) run() {
 		select {
 		case <-r.stop:
 			for r.ring.Consume(write) {
+			}
+			// Close has stopped the producer, so its pending gap is now stable.
+			if gap := r.ring.pendingGap; gap != 0 {
+				b := r.ring.pendingBlock
+				b.Frames, b.GapFrames, b.Flags = 0, gap, r.ring.pendingFlags
+				r.trailing.Store(&RecordedBlock{Timing: b, Placement: Place(b), RawFrame: rawFrame + gap})
 			}
 			return
 		case <-ticker.C:

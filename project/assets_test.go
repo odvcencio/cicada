@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -254,5 +255,59 @@ func BenchmarkAssetHash10MB(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
+	}
+}
+
+func TestEditionOneAudioNameCompatibility(t *testing.T) {
+	for _, fixture := range []struct{ path, name string }{{"glassbass.cicada", "glassbass"}, {"authored-kit.cicada", "steel"}} {
+		t.Run(fixture.path, func(t *testing.T) {
+			source, err := os.ReadFile(filepath.Join("..", "examples", fixture.path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			original, ds := notation.ParseEdition(source, 1)
+			if hasErrors(ds) {
+				t.Fatal(ds)
+			}
+			before, ds := FromScore(original)
+			if before == nil || hasErrors(ds) {
+				t.Fatal(ds)
+			}
+			want, err := CompileEngine(before, 48000, 128)
+			if err != nil {
+				t.Fatal(err)
+			}
+			renamed := bytes.ReplaceAll(source, []byte(fixture.name), []byte("audio"))
+			score, ds := notation.ParseEdition(renamed, 1)
+			if hasErrors(ds) {
+				t.Fatal(ds)
+			}
+			p, ds := FromScore(score)
+			if p == nil || hasErrors(ds) {
+				t.Fatal(ds)
+			}
+			if p.HasAudio() || p.Format != before.Format {
+				t.Fatal("edition 1 name changed audio semantics or project format")
+			}
+			data, err := CanonicalJSON(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			p, err = DecodeJSON(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := CompileEngine(p, 48000, 128)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(want, got) {
+				t.Fatal("renaming changed engine configuration")
+			}
+			_, ds = notation.ParseEdition(renamed, 2)
+			if !hasErrors(ds) {
+				t.Fatal("edition 2 allowed reserved audio name")
+			}
+		})
 	}
 }

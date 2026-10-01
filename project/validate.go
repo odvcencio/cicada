@@ -124,6 +124,9 @@ func ValidateProject(p *Project) error {
 	instruments := map[string]*instrument.Program{}
 	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
+		if p.Edition == 2 && inst.ID == "audio" {
+			return fmt.Errorf("instrument name is reserved: audio")
+		}
 		if inst.Octave == nil || *inst.Octave < 0 || *inst.Octave > 6 {
 			return fmt.Errorf("instrument %s octave must be 0 to 6", inst.ID)
 		}
@@ -162,7 +165,7 @@ func ValidateProject(p *Project) error {
 	}
 	kits := map[string]Kit{}
 	for _, kit := range p.Kits {
-		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || instruments[kit.ID] != nil {
+		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || p.Edition == 2 && kit.ID == "audio" || instruments[kit.ID] != nil {
 			return fmt.Errorf("kit %s has an invalid or reserved ID", kit.ID)
 		}
 		if _, exists := kits[kit.ID]; exists {
@@ -188,10 +191,10 @@ func ValidateProject(p *Project) error {
 		}
 		tracks[track.ID] = track
 		_, isKit := kits[track.Kind]
-		if track.Kind != "acid" && track.Kind != "drums" && track.Kind != "audio" && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
+		if track.Kind != "acid" && track.Kind != "drums" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
 			return fmt.Errorf("track %s has unknown instrument %s", track.ID, track.Kind)
 		}
-		if (track.Kind == "audio" || samplers[track.Kind].Name != "") && len(track.Params) > 0 {
+		if (p.Edition == 2 && track.Kind == "audio" || samplers[track.Kind].Name != "") && len(track.Params) > 0 {
 			return fmt.Errorf("audio and sampler tracks accept mixer settings only")
 		}
 		if track.Params == nil {
@@ -477,7 +480,7 @@ func ValidateProject(p *Project) error {
 			if patternID == "keep" || patternID == "off" {
 				continue
 			}
-			if track.Kind == "audio" {
+			if p.Edition == 2 && track.Kind == "audio" {
 				if _, ok := clips[patternID]; !ok {
 					return fmt.Errorf("scene %s references unknown clip %s", scene.ID, patternID)
 				}
