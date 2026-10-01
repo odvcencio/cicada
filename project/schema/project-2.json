@@ -302,7 +302,7 @@
           "maximum": 6
         },
         "mode": {
-          "const": "mono"
+          "enum": ["mono", "poly"]
         },
         "params": {
           "type": "array",
@@ -455,6 +455,7 @@
           "minimum": 0,
           "maximum": 127
         },
+        "notes": {"type": "array", "minItems": 2, "maxItems": 4, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 127}},
         "accent": {
           "type": "boolean"
         },

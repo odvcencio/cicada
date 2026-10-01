@@ -36,6 +36,7 @@ type Score struct {
 type trackNameSnapshot struct {
 	ids   [16]string
 	kinds [16]string
+	poly  [16]bool
 	count uint8
 }
 
@@ -271,6 +272,9 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 	for index := 0; index < int(snapshot.count); index++ {
 		snapshot.ids[index] = score.Tracks[index].ID
 		snapshot.kinds[index] = score.Tracks[index].Kind
+		if score.Engine != nil {
+			snapshot.poly[index] = score.Engine.TrackPolyphonic(index)
+		}
 	}
 	return snapshot
 }
@@ -310,6 +314,9 @@ func (p *Player) Note(track string, note, velocity int, on bool) error {
 			continue
 		}
 		kind := snapshot.kinds[index]
+		if snapshot.poly[index] {
+			return fmt.Errorf("%s", cmd.PolyLiveUnsupported)
+		}
 		if kind == "drums" {
 			if _, ok := GMDrumLane(note); !ok {
 				return fmt.Errorf("MIDI drum note %d is not in the General MIDI map", note)
@@ -914,7 +921,11 @@ func (p *Player) renderBlock() {
 	var message cmd.Message
 	for p.current.Engine.Poll(&message) {
 		if message.Kind == cmd.Fault {
-			p.fault = fmt.Errorf("live engine fault %d", message.A)
+			if message.A == cmd.FaultPolyLive {
+				p.fault = fmt.Errorf("%s", cmd.PolyLiveUnsupported)
+			} else {
+				p.fault = fmt.Errorf("live engine fault %d", message.A)
+			}
 			return
 		}
 		p.collectMeter(message)
@@ -967,6 +978,10 @@ func (p *Player) queueLiveNotes() {
 		track, kind, found := findTrack(snapshot, input.Track)
 		if !found {
 			p.emit(Event{Track: input.Track, Name: fmt.Sprintf("track %q is no longer in the playing score", input.Track), Kind: "note-error"})
+			continue
+		}
+		if snapshot.poly[track] {
+			p.emit(Event{Track: input.Track, Name: cmd.PolyLiveUnsupported, Kind: "note-error"})
 			continue
 		}
 		command := cmd.Command{Track: track}
