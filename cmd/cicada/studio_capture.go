@@ -52,6 +52,9 @@ func (t *studioTransport) startCapture(calibration capture.Calibration) error {
 		t.mu.Unlock()
 		return fmt.Errorf("pause playback before starting count-in")
 	}
+	// A paused armed device can have an advanced playback cursor. Discard that
+	// stream so count-in placement is relative to a fresh recording origin.
+	t.stopLocked()
 	t.pendingCapture = &calibration
 	t.mu.Unlock()
 	if err := t.start(); err != nil {
