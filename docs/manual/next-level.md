@@ -65,6 +65,50 @@ the source checker, Studio, the language server, and `cicada explain`. A scene
 setting takes effect when that scene starts and carries forward until a later
 scene changes the same path. See the [edition 2 mixer reference](../spec/edition-2.md#named-mixer-forms).
 
+### Host macros and track layers
+
+Place one `live` block after all tracks. A host can change `intensity` to add
+tracks at bar boundaries. This complete score starts from the bass, drums,
+and lead layout in [live-intensity.cicada](../../examples/live-intensity.cicada):
+
+```cicada
+cicada 2
+track bass acid {}
+track drums drums {}
+track lead acid {}
+
+live {
+  land = bar
+  phrase = 8bars
+  macro intensity = 0.3 smooth 400ms
+  layers intensity {
+    drums >= 0.25
+    bass  >= 0.45
+    lead  >= 0.70
+    attack 1bar
+    release 3bars
+  }
+}
+
+pattern pulse { 1^ . 1~ 5 }
+pattern beat drums { bd: X... }
+scene main { bass = pulse drums = beat lead = pulse }
+song { main*8 }
+```
+
+Run `cicada check examples/live-intensity.cicada` from the repository root.
+Macro IDs follow declaration order. `project.LiveCommands` returns the kernel
+setup commands; `project.LiveSurfaceOf` returns names, defaults, and smoothing
+with `macro.SmoothingFrames(sampleRate)`. A host submits the setup commands
+before playback and uses `OpSetMacro` for later values. Initial values apply
+immediately; the 400 ms smoothing default applies to later host changes.
+
+Layers rise one level per bar and fall one level after 3 quiet bars. Tracks
+without a rule stay on. Values and thresholds are 0–1; the kernel rounds
+thresholds to 8 bits, so nearby values can share a level. `land` is stored;
+launch scheduling, tempo controls, MIDI mappings, and parameter-mapped macros
+remain follow-up work.
+
 ### Live MIDI performance and note takes
 
 Studio's **Live** mode has scene and track launch pads. Turn on **Enable MIDI**

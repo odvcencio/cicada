@@ -322,7 +322,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	// already imply, matching headerless source after a round trip.
 	normalized := *p
 	normalized.Format, normalized.Version = FormatID, 1
-	useV2 := p.HasAudio() || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
+	useV2 := p.HasAudio() || p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
 	for _, effect := range p.Effects {
 		useV2 = useV2 || effect.Kind != ""
 	}
@@ -544,7 +544,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
-	p.p2Syntax = p.Format == FormatID2 && (projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
+	p.p2Syntax = p.Format == FormatID2 && (p.Live != nil || projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
 	for _, effect := range p.Effects {
 		p.p2Syntax = p.p2Syntax || effect.Kind != ""
 	}
@@ -701,7 +701,7 @@ func checkRequiredFields(data []byte) error {
 		optionalByConstruct["mixer"] = nil
 		fieldsByConstruct["effect"] = []string{"id", "params"}
 		optionalByConstruct["effect"] = nil
-		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers")
+		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers", "live")
 	}
 	require := func(value any, construct, name, pointer string) (map[string]any, error) {
 		fields, ok := fieldsByConstruct[construct]
@@ -814,6 +814,30 @@ func checkRequiredFields(data []byte) error {
 		return err
 	}
 	if version2 {
+		if rawLive, exists := root["live"]; exists {
+			live, err := require(rawLive, "live", "live", "/live")
+			if err != nil {
+				return err
+			}
+			if err := checkObjectArray(live["macros"], "macros", "/live/macros", func(value any, pointer string) error {
+				_, err := require(value, "live_macro", "macro", pointer)
+				return err
+			}); err != nil {
+				return err
+			}
+			if err := checkObjectArray(live["layers"], "layers", "/live/layers", func(value any, pointer string) error {
+				layers, err := require(value, "live_layers", "layers", pointer)
+				if err != nil {
+					return err
+				}
+				return checkObjectArray(layers["rules"], "layer rules", pointer+"/rules", func(value any, pointer string) error {
+					_, err := require(value, "live_layer", "layer rule", pointer)
+					return err
+				})
+			}); err != nil {
+				return err
+			}
+		}
 		if rawBuses, exists := root["buses"]; exists {
 			if err := checkObjectArray(rawBuses, "buses", "/buses", func(value any, pointer string) error {
 				object, err := require(value, "bus", "bus", pointer)

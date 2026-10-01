@@ -163,65 +163,49 @@ func TestScoresWithoutAssetsCompileUnchanged(t *testing.T) {
 	if err := json.Unmarshal(data, &want); err != nil {
 		t.Fatal(err)
 	}
-	seen := 0
-	for _, dir := range []string{"../examples", "../testdata/edition1/examples"} {
-		err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	// This baseline freezes the pre-audio corpus; new examples have their own tests.
+	for _, key := range sortedKeys(want) {
+		path := filepath.Join("..", filepath.FromSlash(key))
+		t.Run(path, func(t *testing.T) {
+			source, err := os.ReadFile(path)
 			if err != nil {
-				return err
+				t.Fatal(err)
 			}
-			if d.IsDir() || filepath.Ext(path) != ".cicada" {
-				return nil
+			e, m, err := edition.ScoreEdition(path)
+			if err != nil {
+				t.Fatal(err)
 			}
-			seen++
-			t.Run(path, func(t *testing.T) {
-				source, err := os.ReadFile(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				e, m, err := edition.ScoreEdition(path)
-				if err != nil {
-					t.Fatal(err)
-				}
-				var score *notation.Score
-				var ds []notation.Diagnostic
-				if m != "" {
-					score, ds = notation.ParseEdition(source, e)
-				} else {
-					score, ds = notation.Parse(source)
-				}
-				if hasErrors(ds) {
-					t.Fatal(ds)
-				}
-				p, ds := FromScore(score)
-				if p == nil || hasErrors(ds) {
-					t.Fatal(ds)
-				}
-				data, err := CanonicalJSON(p)
-				if err != nil {
-					t.Fatal(err)
-				}
-				cfg, err := CompileEngine(p, 48000, 128)
-				if err != nil {
-					t.Fatal(err)
-				}
-				config, err := json.Marshal(cfg)
-				if err != nil {
-					t.Fatal(err)
-				}
-				actual := [2]string{fmt.Sprintf("%x", sha256.Sum256(data)), fmt.Sprintf("%x", sha256.Sum256(config))}
-				key := filepath.ToSlash(strings.TrimPrefix(path, "../"))
-				if expected, ok := want[key]; !ok || expected != actual {
-					t.Fatalf("JSON/engine configuration changed: expected %v actual %v", expected, actual)
-				}
-			})
-			return nil
+			var score *notation.Score
+			var ds []notation.Diagnostic
+			if m != "" {
+				score, ds = notation.ParseEdition(source, e)
+			} else {
+				score, ds = notation.Parse(source)
+			}
+			if hasErrors(ds) {
+				t.Fatal(ds)
+			}
+			p, ds := FromScore(score)
+			if p == nil || hasErrors(ds) {
+				t.Fatal(ds)
+			}
+			data, err := CanonicalJSON(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := CompileEngine(p, 48000, 128)
+			if err != nil {
+				t.Fatal(err)
+			}
+			config, err := json.Marshal(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			actual := [2]string{fmt.Sprintf("%x", sha256.Sum256(data)), fmt.Sprintf("%x", sha256.Sum256(config))}
+			if expected := want[key]; expected != actual {
+				t.Fatalf("JSON/engine configuration changed: expected %v actual %v", expected, actual)
+			}
 		})
-		if err != nil {
-			t.Fatal(err)
-		}
-	}
-	if seen != len(want) {
-		t.Fatalf("checked %d examples, baseline %d", seen, len(want))
 	}
 }
 func BenchmarkAssets64Clips256(b *testing.B) {

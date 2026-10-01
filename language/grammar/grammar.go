@@ -38,7 +38,7 @@ func Cicada() *grammargen.Grammar {
 		sym("instrument_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
 		sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
-		sym("master_decl"), sym("export_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"),
+		sym("master_decl"), sym("export_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
 	))
 
 	// Edition-2 audio declarations share typed key/value bodies.
@@ -189,6 +189,17 @@ func Cicada() *grammargen.Grammar {
 	g.Define("identifier", token(pat(`[a-z_][a-z0-9_-]*`)))
 	g.Define("comment", token(pat(`\/\/[^\n]*`)))
 
+	// Live controls use ordinary numbers so unit and range errors get semantic diagnostics.
+	g.Define("live_decl", seq(str("live"), str("{"), repeat(choice(sym("live_land"), sym("live_phrase"), sym("live_macro"), sym("live_layers"))), str("}")))
+	g.Define("live_land", seq(str("land"), str("="), field("value", choice(sym("identifier"), sym("bar_count"))), optional(str(";"))))
+	g.Define("live_phrase", seq(str("phrase"), str("="), field("value", sym("bar_count")), optional(str(";"))))
+	g.Define("live_macro", seq(str("macro"), field("name", sym("identifier")), str("="), field("value", sym("number")), optional(seq(str("smooth"), field("smooth", sym("number")))), optional(str(";"))))
+	g.Define("live_layers", seq(str("layers"), field("macro", sym("identifier")), str("{"), repeat(choice(sym("live_layer"), sym("live_attack"), sym("live_release"))), str("}")))
+	g.Define("live_layer", seq(field("track", sym("identifier")), str(">="), field("value", sym("number")), optional(str(";"))))
+	g.Define("live_attack", seq(str("attack"), field("value", sym("bar_count")), optional(str(";"))))
+	g.Define("live_release", seq(str("release"), field("value", sym("bar_count")), optional(str(";"))))
+	g.Define("bar_count", token(pat(`-?[0-9]+(\.[0-9]+)?bars?`)))
+
 	g.SetExtras(pat(`[ \t\r\n]+`), sym("comment"))
 	g.SetWord("identifier")
 
@@ -210,6 +221,7 @@ func Cicada() *grammargen.Grammar {
 	g.Test("pattern settings inside braces", "pattern p { swing = 56% gate = 60% seed = 7 1 . } pattern beat drums { swing = 54% bd: x.; }", "")
 	g.Test("line-based statements", "instrument i { param cutoff: hz = 720Hz voice mono { let osc = saw(pitch) out = osc } } kit k { bd = i ch = builtin.ch } pattern b drums { bd: x... sd: .x.. }", "")
 	g.Test("short transpose", "phrase hook { 1 . } pattern p { use hook +7 }", "")
+	g.Test("live controls", "live { land = bar phrase = 8bars macro intensity = 0.3 smooth 400ms layers intensity { drums >= 0.25 attack 1bar release 3bars } }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
 	return g
