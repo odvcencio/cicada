@@ -16,12 +16,13 @@ type Reader struct {
 	fade, recovery                    int
 	lastL, lastR, heldL, heldR        float32
 	misses, missingFrames, recoveries atomic.Uint64
+	lookups                           atomic.Uint64
 }
 
-type ReaderStats struct{ Misses, MissingFrames, Recoveries uint64 }
+type ReaderStats struct{ Misses, MissingFrames, Recoveries, PageLookups uint64 }
 
 func (r *Reader) Stats() ReaderStats {
-	return ReaderStats{r.misses.Load(), r.missingFrames.Load(), r.recoveries.Load()}
+	return ReaderStats{r.misses.Load(), r.missingFrames.Load(), r.recoveries.Load(), r.lookups.Load()}
 }
 func (r *Reader) Position() int64 { return r.position }
 
@@ -112,6 +113,7 @@ func (r *Reader) ReadFrame(frame int64) (float32, float32, bool) {
 		}
 	}
 	r.release()
+	r.lookups.Add(1)
 	r.page = r.cache.acquire(r.asset.ID, frame/PageFrames)
 	if r.page == nil {
 		return 0, 0, false
@@ -127,6 +129,9 @@ func (r *Reader) Render(left, right []float32) {
 	if len(left) != len(right) {
 		panic("stream output channel lengths differ")
 	}
+	// Retry a missing page on the next callback, or when crossing into another
+	// source page. A storage stall must not multiply arena scans by block size.
+	missedPage := int64(-1)
 	for i := range left {
 		inRange := !r.ended && r.position >= 0 && r.position < r.asset.Frames
 		var l, rr float32
@@ -135,7 +140,13 @@ func (r *Reader) Render(left, right []float32) {
 			if w := r.position / PageFrames; r.intent.current.Load() != w {
 				r.announce(r.position)
 			}
-			l, rr, ok = r.ReadFrame(r.position)
+			index := r.position / PageFrames
+			if index != missedPage {
+				l, rr, ok = r.ReadFrame(r.position)
+				if !ok {
+					missedPage = index
+				}
+			}
 		} else if !r.ended {
 			r.Stop()
 		}

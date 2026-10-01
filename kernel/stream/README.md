@@ -43,6 +43,10 @@ loaded, evicted, cancelled and failed pages. Reader telemetry counts underrun
 episodes, missing output frames and recoveries. On a miss, the last output fades
 to silence over 2 ms while source position advances. A ready page fades back in
 at the current position. End-of-asset fading does not count as an underrun.
+Missing pages get at most one lookup per source page in a render block; the next
+block retries, so a storage stall cannot multiply arena scans by frame count.
+Reader telemetry also counts page lookups for this bound. Recovery can wait one
+additional render block after publication.
 
 `host/sampleasset.OpenStream` verifies a WAV hash and dimensions before returning
 a file-backed page source. `StartWorker` performs bounded-chunk decoding and
