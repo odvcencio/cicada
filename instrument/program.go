@@ -58,6 +58,9 @@ type compiler struct {
 // may refer only to parameters, built-in inputs, or earlier lets, so the graph
 // is acyclic. Stateful DSP primitives reserve state when an executor loads it.
 func Compile(src notation.Instrument) (*Program, []notation.Diagnostic) {
+	if src.Mode != "mono" && src.Mode != "poly" {
+		return nil, []notation.Diagnostic{{Code: "CICADA-PARAM", Severity: "error", Message: "voice mode must be mono or poly", Position: src.Position}}
+	}
 	c := &compiler{program: Program{Name: src.Name, Mode: src.Mode}, symbols: map[string]int{}}
 	for _, input := range []struct {
 		name   string

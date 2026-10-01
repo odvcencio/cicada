@@ -10,6 +10,9 @@ import (
 	"m31labs.dev/cicada/kernel/voice/acid"
 )
 
+//go:wasmexport gosx_audio_capabilities
+func capabilities() uint32 { return 1 } // bit0: image14 and OpSetChordStep22
+
 var audioEngine *engine.Engine
 var maxFrames int
 var trackKinds = [16]engine.VoiceKind{engine.VoiceAcid}
