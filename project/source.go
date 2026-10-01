@@ -176,6 +176,9 @@ func ToSource(p *Project) ([]byte, error) {
 		}
 		sections = append(sections, out.String())
 	}
+	if p.Live != nil {
+		sections = append(sections, liveSource(p.Live))
+	}
 	slots := make(map[string]int)
 	automatic := make(map[string]bool)
 	for _, track := range p.Tracks {

@@ -245,3 +245,12 @@
 (clip_decl asset: (identifier) @type)
 (sampler_decl name: (identifier) @type.definition)
 ((number) @number.frames (#match? @number.frames "frames$"))
+
+; Live host controls.
+["live" "land" "macro" "smooth" "layers" "attack" "release"] @keyword
+(live_land value: (identifier) @constant.builtin)
+(bar_count) @number.bars
+(live_macro name: (identifier) @variable.parameter)
+(live_layers macro: (identifier) @variable.parameter)
+(live_layer track: (identifier) @variable.member)
+">=" @operator

@@ -155,28 +155,34 @@ export streaming {
 
 ## Live settings and MIDI mappings
 
-**Status:** Accepted; source-level `live` and `midi` blocks are not available in the current build. Studio already supports live MIDI performance and note takes.
+**Status:** Built for macro, layers and phrase; land stored; midi and tempo still accepted-only. Record quantization, count-in, and parameter-mapped macros remain accepted-only. Studio already supports live MIDI performance and note takes.
 
 **Syntax (EBNF):**
 
 ```ebnf
 live_decl ::= "live" , "{" , { live_setting } , "}" ;
-live_setting ::= "land" , "=" , identifier
+live_setting ::= "land" , "=" , ( identifier | bar_count )
+               | "phrase" , "=" , bar_count
+               | "macro" , identifier , "=" , number , [ "smooth" , duration ]
+               | "layers" , identifier , "{" , { layer_setting } , "}"
                | "record" , "=" , fraction
                | "count_in" , "=" , duration ;
+layer_setting ::= identifier , ">=" , number
+                | "attack" , bar_count
+                | "release" , bar_count ;
 midi_decl ::= "midi" , "{" , { midi_port | midi_mapping } , "}" ;
 midi_port ::= "port" , identifier ;
 midi_mapping ::= identifier , ( "ch" , integer | "cc" , integer ) , "->" , parameter_path
                | identifier , "note" , pitch , "->" , ( identifier | action ) ;
 ```
 
-**Meaning:** `live` saves launch timing, input quantization, and count-in with the piece. A scene may save its own launch timing. `midi` maps logical ports to tracks, parameter paths, or launch actions. `cicada.local` maps those logical ports to device names on one machine and is not committed. Session view and armed-track state stay in `.cicada/studio.json`.
+**Meaning:** In edition 2, one `live` block after all tracks declares ordered host macros, track layers, and phrase length. The compiler emits initial macro values, layer thresholds and masks, and phrase length as global kernel commands at tick 0. Smoothing is a host default for later changes; initialization emits no ramp. `land` is stored for future launch scheduling. Input quantization and count-in remain accepted follow-up work. A scene may save its own launch timing. `midi` maps logical ports to tracks, parameter paths, or launch actions. `cicada.local` maps those logical ports to device names on one machine and is not committed. Session view and armed-track state stay in `.cicada/studio.json`.
 
-**Types and units:** Launch timing is `now`, `beat`, `bar`, `2bars`, `4bars`, or `pattern`. Record quantization is a musical fraction. Count-in is a bar count. MIDI channels are 1–16, controller numbers are 0–127, and note mappings use MIDI pitches. A controller mapping may specify a range in the target parameter's unit.
+**Types and units:** Launch timing is `now`, `beat`, `bar`, `2bars`, `4bars`, or `phrase`. Phrase length is 1–64 bars. At most 16 macros have unitless values in 0–1 and nonnegative smoothing durations in ms or s. Layers reference a declared macro and track IDs, with at most 3 distinct thresholds in 0–1. Only `attack 1bar` is built; release is 1–16 bars. Thresholds round to `value * 255` for the kernel: equal packed values share a level, and packed zero joins level 0. Tracks without a rule are on at every level. Record quantization is a musical fraction. Count-in is a bar count. MIDI channels are 1–16, controller numbers are 0–127, and note mappings use MIDI pitches. A controller mapping may specify a range in the target parameter's unit.
 
-**Defaults:** Launches land on a bar; record quantization is 1/16; count-in is one bar. Omitting a MIDI channel accepts any channel. Device names are resolved from `cicada.local`, not the shared score.
+**Defaults:** Macro smoothing is 0 ms, layer attack is 1 bar, and release is 3 bars. Omitted phrase length emits no phrase command. Launches are planned to land on a bar; record quantization is 1/16; count-in is one bar. Omitting a MIDI channel accepts any channel. Device names are resolved from `cicada.local`, not the shared score.
 
-**Errors:** Unknown ports, tracks, actions, parameter paths, channels, or controller numbers must be rejected. Device names unavailable on the current machine and invalid mapping ranges must produce a clear diagnostic. These source diagnostics have not landed.
+**Errors:** Unknown ports, tracks, actions, parameter paths, channels, or controller numbers must be rejected. Device names unavailable on the current machine and invalid mapping ranges must produce a clear diagnostic. Built live diagnostics use `CICADA-LIVE-MACRO` for unknown macros and range or unit errors, `CICADA-LIVE-TRACK` for unknown or repeated tracks, and `CICADA-LIVE-LIMIT` for macro and threshold limits. Block placement and duplicate settings use `CICADA-LIVE-BLOCK`; landing, phrase, attack, and release errors use `CICADA-LIVE-LAND`, `CICADA-LIVE-PHRASE`, `CICADA-LIVE-ATTACK`, and `CICADA-LIVE-RELEASE`. Each source diagnostic includes a file, line, and column. MIDI diagnostics remain accepted-only.
 
 **Example:** The score stores logical mappings; the local file supplies machine-specific device names:
 
@@ -200,7 +206,7 @@ midi {
 port keys = "KeyStep 37 MIDI 1"
 ```
 
-**Edition history:** Source-level live and MIDI settings are accepted additions to edition 1. Device names and Studio view state remain local settings.
+**Edition history:** The built macro, layers, and phrase forms require edition 2. Expanded live and MIDI settings were accepted additions to edition 1. Device names and Studio view state remain local settings.
 
 ## Automation blocks
 

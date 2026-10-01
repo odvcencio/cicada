@@ -58,7 +58,11 @@ func Format(document *Document) ([]byte, error) {
 			if int(end) > len(document.source) || start > end {
 				return nil, fmt.Errorf("invalid syntax span")
 			}
-			section = formatDeclaration(document.source[start:end])
+			if kind == "live_decl" {
+				section = formatLiveDeclaration(node, document.Walker)
+			} else {
+				section = formatDeclaration(document.source[start:end])
+			}
 			if kind == "track_decl" || kind == "bus_decl" || kind == "master_decl" || kind == "export_decl" {
 				section = formatMixerDeclaration(section, kind)
 			}
@@ -300,13 +304,18 @@ func lexFormat(source []byte) []formatToken {
 			tokens = append(tokens, formatToken{text: string(source[start:i])})
 			continue
 		}
+		if c == '>' && i+1 < len(source) && source[i+1] == '=' {
+			i += 2
+			tokens = append(tokens, formatToken{text: ">="})
+			continue
+		}
 		if strings.ContainsRune("{}:;=(),|", rune(c)) {
 			i++
 			tokens = append(tokens, formatToken{text: string(c)})
 			continue
 		}
 		for i < len(source) {
-			if source[i] == ' ' || source[i] == '\t' || source[i] == '\r' || source[i] == '\n' || strings.ContainsRune("{}:;=(),|", rune(source[i])) || (source[i] == '/' && i+1 < len(source) && source[i+1] == '/') {
+			if source[i] == ' ' || source[i] == '\t' || source[i] == '\r' || source[i] == '\n' || (strings.ContainsRune("{}:;=(),|", rune(source[i])) || source[i] == '>' && i+1 < len(source) && source[i+1] == '=') || (source[i] == '/' && i+1 < len(source) && source[i+1] == '/') {
 				break
 			}
 			i++
@@ -409,6 +418,8 @@ func formatDeclaration(source []byte) string {
 			flush()
 		case ";":
 			flush()
+		case ">=":
+			line = strings.TrimRight(line, " ") + " >= "
 		case "=":
 			line = strings.TrimRight(line, " ") + " = "
 			if len(frames) > 0 {
@@ -553,4 +564,31 @@ func canonicalNumericUnit(value string) string {
 func endsWithName(line string) bool {
 	c := line[len(line)-1]
 	return c == '_' || c >= 'a' && c <= 'z' || c >= '0' && c <= '9'
+}
+
+// Use CST statement boundaries rather than line breaks: live statements may
+// share a source line, and smooth belongs to its macro declaration.
+func formatLiveDeclaration(node *gts.Node, w *walk.Walker) string {
+	var ends []uint32
+	var visit func(*gts.Node)
+	visit = func(n *gts.Node) {
+		switch w.Type(n) {
+		case "live_land", "live_phrase", "live_macro", "live_layer", "live_attack", "live_release":
+			ends = append(ends, n.EndByte())
+			return
+		}
+		for i := 0; i < n.NamedChildCount(); i++ {
+			visit(n.NamedChild(i))
+		}
+	}
+	visit(node)
+	var source bytes.Buffer
+	start := node.StartByte()
+	for _, end := range ends {
+		source.Write(w.Src[start:end])
+		source.WriteByte(';')
+		start = end
+	}
+	source.Write(w.Src[start:node.EndByte()])
+	return formatDeclaration(source.Bytes())
 }
