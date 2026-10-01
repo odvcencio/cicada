@@ -35,7 +35,7 @@ func inspectScore(path string) (scoreInspection, error) {
 		var projectDiagnostics []notation.Diagnostic
 		semantic, projectDiagnostics = project.FromScore(score)
 		diagnostics = appendUniqueDiagnostics(diagnostics, projectDiagnostics)
-		if semantic != nil {
+		if semantic != nil && !semantic.HasAudio() {
 			if _, err := project.CompileEngine(semantic, 48_000, 128); err != nil {
 				diagnostics = append(diagnostics, notation.Diagnostic{
 					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(),

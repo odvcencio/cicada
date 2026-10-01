@@ -1,0 +1,20 @@
+cicada 2
+asset vocal "audio/vocal.wav" {
+  sha256 = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  format = wav
+  frames = 4800
+  rate = 48000Hz
+  channels = 1
+  source = generated
+}
+clip vocal-a vocal {
+  start = 10ms
+  end = 4800frames
+  gain = -2dB
+}
+sampler hit { asset = vocal root = c3 mode = loop voices = 8 }
+track chops hit {}
+track vox audio {}
+pattern hits { c3 . c3 . }
+scene verse { chops = hits vox = vocal-a }
+song { verse*4 }

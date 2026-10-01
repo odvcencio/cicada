@@ -96,6 +96,13 @@ func parseEdition(src []byte, edition int) (*Score, []Diagnostic) {
 			s.SeedLiteral = w.Text(seed)
 			s.SeedPosition = pos(w, seed)
 			s.Seed, _ = strconv.ParseUint(s.SeedLiteral, 10, 64)
+		case "asset_decl":
+			path, _ := strconv.Unquote(w.Text(w.Field(n, "path")))
+			s.Assets = append(s.Assets, Asset{Name: w.Text(w.Field(n, "name")), Path: path, Params: audioParams(w, n), Position: pos(w, n)})
+		case "clip_decl":
+			s.Clips = append(s.Clips, Clip{Name: w.Text(w.Field(n, "name")), Asset: w.Text(w.Field(n, "asset")), Params: audioParams(w, n), Position: pos(w, n)})
+		case "sampler_decl":
+			s.Samplers = append(s.Samplers, Sampler{Name: w.Text(w.Field(n, "name")), Params: audioParams(w, n), Position: pos(w, n)})
 		case "instrument_decl":
 			s.Instruments = append(s.Instruments, parseInstrument(w, n))
 		case "kit_decl":
@@ -142,6 +149,7 @@ func parseEdition(src []byte, edition int) (*Score, []Diagnostic) {
 			Position: Position{1, 1},
 		})
 	}
+	s.Assets, s.Clips, s.Samplers, _ = resolveAudio(s)
 	diagnostics = append(diagnostics, expandPhrases(s)...)
 	diagnostics = append(diagnostics, Validate(s)...)
 	return s, diagnostics
@@ -474,6 +482,16 @@ func parseMilli(s string) int64 {
 		frac = v
 	}
 	return whole*1000 + frac
+}
+
+func audioParams(w *walk.Walker, n *gts.Node) []Param {
+	params := []Param{}
+	for i := 0; i < n.NamedChildCount(); i++ {
+		if child := n.NamedChild(i); w.Type(child) == "param_decl" {
+			params = append(params, parseParam(w, child))
+		}
+	}
+	return params
 }
 
 func parseLive(w *walk.Walker, n *gts.Node, ds []Diagnostic) (*Live, []Diagnostic) {
