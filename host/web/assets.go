@@ -3,6 +3,7 @@ package web
 
 import _ "embed"
 
+// Run make build-worklets to rebuild both profiles from processor.js.
 // processor.min.js is Terser 5.39.0 output (ECMA 2020, 5 compression passes, unsafe compression, top-level mangling).
 //
 //go:embed processor.min.js
@@ -13,3 +14,20 @@ var client []byte
 
 func Processor() []byte { return processor }
 func Client() []byte    { return client }
+
+//go:embed capture.js
+var captureAdapter []byte
+
+//go:embed processor-capture.min.js
+var captureProcessor []byte
+
+//go:embed capture-worker.js
+var captureWorker []byte
+
+//go:embed capture-client.js
+var captureClient []byte
+
+func CaptureAdapter() []byte   { return captureAdapter }
+func CaptureProcessor() []byte { return captureProcessor }
+func CaptureWorker() []byte    { return captureWorker }
+func CaptureClient() []byte    { return captureClient }

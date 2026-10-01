@@ -1,4 +1,4 @@
-.PHONY: test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report
+.PHONY: build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report
 
 export GOWORK := off
 
@@ -93,3 +93,8 @@ build-phrase-wasm:
 
 test-phrase-wasm: build-phrase-wasm
 	go test -tags wasm_integration ./cmd/cicada-phrase-wasm -run '^TestPhraseWASMParity$$' -count=1
+
+# One source, two profiles: the core asset keeps its existing 5 KiB gate.
+build-worklets:
+	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=false --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor.min.js
+	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=true --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor-capture.min.js
