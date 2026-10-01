@@ -117,17 +117,21 @@ velocity cannot be saved for acid notation. Live MIDI playback still uses
 incoming velocity. Live records MIDI note takes. Browser PCM capture is in the
 Record panel.
 
-#### Browser PCM capture and sampler audition
+#### PCM capture and shared sampler audition
 
-Select **Browser** audio, stop transport, and open **Record**. Choose mono or
-stereo, then **Arm microphone**. Arming requests microphone permission with
+Add an edition-2 audio track and a scene, stop transport, and open **Record**.
+Choose the target **Audio track** and **Scene** before arming. Synth tracks
+provide accompaniment during recording; recorded clips are auditioned separately.
+
+For browser capture, select **Browser** audio, choose mono or stereo, then
+**Arm microphone**. Arming requests microphone permission with
 echo cancellation, noise suppression, and automatic gain control disabled.
 The effective settings appear below the buttons; a browser may keep processing
 enabled or leave a setting unreported. The input remains active while armed,
 including when transport is stopped. Input monitoring stays off.
 
 Choose **Record PCM** for a one-bar count-in, then **Stop and save**. Stopping
-transport also finalizes an active recording. The worker stores raw interleaved
+transport also finalizes an active browser recording. The worker stores raw interleaved
 float32 PCM, including count-in, alongside lane D's capture block descriptors
 and placement metadata. A bounded 32-buffer transfer pool admits mono/stereo
 callbacks of up to 2,048 frames. A full pool or missing input marks the take
@@ -141,18 +145,34 @@ Browser storage remains subject to the browser's quota and eviction policy.
 an interrupted take, using a small local storage index. Every take gets a new
 storage ID; old PCM is never overwritten.
 
+**Stop and save** imports committed browser PCM and timing into the project take
+journal, publishes a verified immutable float32 WAV asset, and selects its clip
+on the chosen audio track and scene. Browser PCM is retained if publication fails.
+If the source changes during recording, the published take remains available and
+the source edit is preserved. **Recover last take** explicitly selects that take
+against the current source revision. Selection is one undoable source edit, and
+Save As carries the retained takes and their assets into the copied project.
+
+For native capture, select **Native**, enable duplex input in the device controls,
+and use the same arm, record and stop buttons. The configured device supplies the
+input layout. Native takes write directly to the project journal. Native monitoring
+uses the device controls; browser monitoring stays off.
+
 Web Audio does not expose microphone first-frame timestamps or a qualified
 duplex latency measurement. The status therefore shows **timing unavailable**
 and **uncalibrated**. Reported device settings are retained, but no latency
 correction is silently applied to the take.
 
-After recovery, **Play sample** auditions one region with one voice. Choose a
+After publication or recovery, **Play sample** auditions one region with one voice. Choose a
 root MIDI note, audition MIDI note, and optional basic loop. Audition skips
 negative count-in placement and inserts silence for known gaps; stored PCM
-stays unchanged. The maximum admitted audition is 30 minutes. Saving takes as
-project assets and using the shared sampler engine require the asset, sampler,
-and take-publication lanes. Hardware calibration and browser soak qualification
-are separate checks.
+stays unchanged. The shared Go sample voice prepares pitch conversion on the host;
+the browser plays the resulting float32 WAV at unity playback rate. Assets and
+rendered output are each limited to 8,388,608 frames; browser imports also have a
+64 MiB PCM limit. Imported mono/stereo PCM16/24/32 and float32 WAVs can be prepared
+as sampler regions. Non-finite samples and changed hashes are rejected before
+playback. Clip sequencing in the native/WASM arrangement, hardware calibration,
+and real-browser soak qualification remain separate work.
 
 #### Live keyboard shortcuts
 

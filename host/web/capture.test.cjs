@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const {OPFSStore,openStore,CaptureWriter,recoverJournal,placement}=require('./capture-worker.js');
-const {inspectSettings,BrowserCapture,TakeSampler}=require('./capture-client.js');
+const {inspectSettings,BrowserCapture,TakeSampler,publishTake,PublishedSampler}=require('./capture-client.js');
 
 function block(frames=4,gap=0) {
   return {EngineEpoch:1,DeviceEpoch:2,EngineFrame:0,DeviceFrame:0,SampleRate:48000,Period:frames,Frames:frames,Layout:1,Flags:gap?2:0,GapFrames:gap,InputLatencyValid:false,OutputLatencyValid:false,InputLatencyNano:0,OutputLatencyNano:0,Calibration:{DeviceEpoch:2,RemainingFrames:0,Valid:false}};
@@ -219,4 +219,34 @@ test('sampler aligns count-in when the first committed block follows an initial 
 test('fatal worker error releases microphone and permits recovery/re-arm',async()=>{
   const h=clientHarness();await h.client.arm();await h.client.record();h.client.receive({t:'fault',fatal:true,error:'worker terminated'});
   assert.equal(h.client.status.state,'stopped');assert.equal(h.client.status.incomplete,true);assert.equal(h.track.stopped,true);assert.equal(h.client.worker,null);
+});
+
+test('project publication retains worker PCM and exposes a recoverable revision conflict',async()=>{
+  const pcm=new Float32Array([.25,-.5]).buffer;
+  const take={metadata:{sampleRate:48000,channels:1},pcm,rawFrames:2,incomplete:false,blocks:[{timing:block(2),rawFrame:0,offset:0,length:8,placement:{engineFrame:0},type:'block'}]};
+  let sent;
+  const env={btoa,async fetch(url,options){assert.equal(url,'/api/takes');sent=JSON.parse(options.body);return {ok:false,async json(){return {error:'score changed during recording; take retained',take:'native-retained'};}};}};
+  await assert.rejects(publishTake(take,{track:'vox',scene:'main',revision:'before-recording'},env),error=>error.takeId==='native-retained');
+  assert.deepEqual(Buffer.from(sent.capture.pcm,'base64'),Buffer.from(pcm));
+  assert.equal(sent.revision,'before-recording');
+  assert.equal(sent.capture.blocks[0].timing.GapFrames,0);
+  assert.deepEqual(new Float32Array(take.pcm),new Float32Array([.25,-.5]));
+});
+
+test('published sampler uses shared DSP output once and Stop cancels pending audition',async()=>{
+  const voices=[],requests=[];
+  let release;
+  const gate=new Promise(resolve=>release=resolve);
+  const context={async decodeAudioData(bytes){await gate;return {rendered:bytes};},createBufferSource(){const voice={playbackRate:{value:99},connect(){},disconnect(){this.disconnected=true;},start(){this.started=true;},stop(){this.stopped=true;}};voices.push(voice);return voice;},destination:{}};
+  const env={async fetch(url,options){requests.push(JSON.parse(options.body));return {ok:true,async arrayBuffer(){return new ArrayBuffer(8);}};}};
+  const sampler=new PublishedSampler(context,'project-take','current-revision',env);
+  const pending=sampler.play(72,60,true);
+  sampler.stop();release();await pending;
+  assert.equal(voices.length,0);
+  await sampler.play(72,60,true);
+  assert.equal(voices.length,1);assert.equal(voices[0].playbackRate.value,1);assert.equal(voices[0].loop,true);
+  assert.deepEqual(requests[1].sample,{root:60,note:72,loop:true});
+  await sampler.play(60,60,false);
+  assert.equal(voices[0].stopped,true);assert.equal(voices[0].disconnected,true);
+  assert.equal(voices[1].started,true);
 });

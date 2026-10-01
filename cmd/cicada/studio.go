@@ -312,6 +312,8 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
+	Capture        *studioBrowserTake    `json:"capture,omitempty"`
+	Sample         *studioSampleRequest  `json:"sample,omitempty"`
 	TakeID         string                `json:"takeId,omitempty"`
 	Scene          string                `json:"scene,omitempty"`
 	Revision       string                `json:"revision"`
@@ -351,6 +353,10 @@ func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
 }
 
 func studioRequest(w http.ResponseWriter, r *http.Request) (studioEdit, bool) {
+	return studioRequestLimit(w, r, 2<<20)
+}
+
+func studioRequestLimit(w http.ResponseWriter, r *http.Request, limit int64) (studioEdit, bool) {
 	var edit studioEdit
 	if origin := r.Header.Get("Origin"); origin != "" {
 		parsed, err := url.Parse(origin)
@@ -363,7 +369,7 @@ func studioRequest(w http.ResponseWriter, r *http.Request) (studioEdit, bool) {
 		studioJSON(w, http.StatusUnsupportedMediaType, map[string]any{"error": "expected JSON"})
 		return edit, false
 	}
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, limit))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&edit); err != nil {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})

@@ -242,7 +242,15 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 		if err != nil {
 			return err
 		}
-		initial, err = compileLiveScoreAtRate(t.path, sampleRate)
+		if t.audio != nil && t.audio.Armed() {
+			p, loadErr := loadProject(t.path)
+			err = loadErr
+			if err == nil {
+				initial, err = compileLiveProjectAtRate(t.path, captureBacking(p), sampleRate)
+			}
+		} else {
+			initial, err = compileLiveScoreAtRate(t.path, sampleRate)
+		}
 		if err != nil {
 			return err
 		}
@@ -598,6 +606,7 @@ func (t *studioTransport) poll() {
 	}
 	stream := t.stream
 	sampleRate := t.sampleRate
+	capturing := t.audio != nil && t.audio.Armed()
 	t.mu.Unlock()
 	if stream == nil {
 		return
@@ -608,6 +617,9 @@ func (t *studioTransport) poll() {
 	project, err := compileStudioSource(t.path, source)
 	var next liveplay.Score
 	if err == nil {
+		if capturing {
+			project = captureBacking(project)
+		}
 		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
 	}
 	if err == nil {
