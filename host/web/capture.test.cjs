@@ -252,3 +252,34 @@ test('published sampler uses shared DSP output once and Stop cancels pending aud
   assert.equal(voices[0].stopped,true);assert.equal(voices[0].disconnected,true);
   assert.equal(voices[1].started,true);
 });
+
+for(const event of ['onerror','onmessageerror']) {
+ test(`fatal worker ${event} stops capture/accompaniment and permits a new take`,async()=>{
+  const h=clientHarness();await h.client.arm();await h.client.record();
+  const worker=h.client.worker,oldTake=h.client.take;
+  worker[event]({message:'fatal worker fault'});
+  assert.equal(h.audio.playing,false,'fatal faults must stop accompaniment');
+  assert.deepEqual(h.messages.at(-1),{t:'capture-control',op:'stop'},'fatal faults must stop worklet capture without awaiting the worker');
+  assert.equal(h.client.waiters.size,0);assert.equal(worker.terminated,true);assert.equal(h.track.stopped,true);
+  assert.equal(h.client.status.state,'stopped');assert.equal(h.client.status.incomplete,true);
+  assert.equal(h.client.take,oldTake,'retain the failed take for explicit recovery');
+  await h.client.arm();assert.equal(h.client.status.state,'armed');assert.notEqual(h.client.worker,worker);
+  await h.client.record();assert.equal(h.audio.playing,true);
+  const stopped=h.client.stop();h.client.receive({t:'finished',incomplete:false});await stopped;
+ });
+}
+
+test('fatal capture fault stops even a play command whose state acknowledgement is pending',async()=>{
+ const h=clientHarness(),window={};
+ vm.runInNewContext(fs.readFileSync(__dirname+'/client.js','utf8'),{window,Uint8Array,Uint32Array,DataView});
+ const audio=window.cicadaBrowserAudio;
+ audio.context={...h.audio.context,async resume(){}};audio.node=h.audio.node;audio.readyPromise=Promise.resolve();audio.bpmMilli=120000;audio.stageCurrentScore=async()=>{};
+ h.client.audio=audio;
+ await h.client.arm();await h.client.record();
+ assert.equal(audio.playing,false,'worklet has not acknowledged the queued play command yet');
+ h.client.worker.onerror({message:'worker failed before play acknowledgement'});
+ const commands=h.messages.filter(message=>message.t==='c');
+ assert.equal(new DataView(commands.at(-1).bytes.buffer).getUint8(0),2,'a stop command must follow the queued play command');
+ assert.ok(h.messages.some(message=>message.t==='capture-control'&&message.op==='stop'));
+ audio.receive({t:'s',p:false});await h.client.arm();assert.equal(h.client.status.state,'armed');
+});

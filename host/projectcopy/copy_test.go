@@ -3,8 +3,10 @@ package projectcopy
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/host/capture"
@@ -199,5 +201,117 @@ func TestSaveAsScoreWithoutAssetsCopiesAndKeepsManifest(t *testing.T) {
 	copied, _ = os.ReadFile(filepath.Join(targetDir, "cicada.mod"))
 	if !bytes.Equal(copied, kept) {
 		t.Fatal("existing manifest overwritten")
+	}
+}
+
+func TestSaveAsRefusesScoreDestinationCollisions(t *testing.T) {
+	for _, kind := range []string{"audio-same-project", "audio-new-project", "existing", "identical", "manifest"} {
+		t.Run(kind, func(t *testing.T) {
+			path, store, id := pending(t, t.TempDir(), true)
+			if err := store.Publish(id); err != nil {
+				t.Fatal(err)
+			}
+			take, _ := store.Get(id)
+			audio, err := os.ReadFile(filepath.Join(filepath.Dir(path), take.Asset.Path))
+			if err != nil {
+				t.Fatal(err)
+			}
+			take.Asset.Path = "saved.cicada"
+			source, err := takejournal.SelectSource([]byte(copyScore), take)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, source, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(filepath.Dir(path), take.Asset.Path), audio, 0600); err != nil {
+				t.Fatal(err)
+			}
+			dir := t.TempDir()
+			if kind == "audio-same-project" {
+				dir = filepath.Dir(path)
+			}
+			target := filepath.Join(dir, "saved.cicada")
+			if kind == "existing" || kind == "identical" {
+				target = filepath.Join(dir, "occupied.cicada")
+			}
+			var existing []byte
+			switch kind {
+			case "audio-same-project":
+				existing = audio
+			case "existing":
+				existing = []byte("unrelated file")
+			case "identical":
+				existing = source
+			case "manifest":
+				target = filepath.Join(dir, "cicada.mod")
+				if err := os.WriteFile(filepath.Join(filepath.Dir(path), "cicada.mod"), []byte("project source\ncicada 2\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if existing != nil {
+				if err := os.WriteFile(target, existing, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err = SaveAs(path, target)
+			if err == nil || !strings.Contains(err.Error(), "Save As") {
+				t.Errorf("destination collision must fail clearly: %v", err)
+			}
+			after, readErr := os.ReadFile(target)
+			if existing != nil && (readErr != nil || !bytes.Equal(after, existing)) {
+				t.Fatal("Save As changed the occupied destination")
+			}
+			if existing == nil && !os.IsNotExist(readErr) {
+				t.Fatal("destination dependency collision was not rejected before installation")
+			}
+			original, _ := os.ReadFile(path)
+			if !bytes.Equal(original, source) {
+				t.Fatal("Save As changed the original score")
+			}
+		})
+	}
+}
+
+type collisionReader struct {
+	reader io.Reader
+	create func()
+}
+
+func (r *collisionReader) Read(p []byte) (int, error) {
+	if r.create != nil {
+		r.create()
+		r.create = nil
+	}
+	return r.reader.Read(p)
+}
+
+func TestScoreInstallDoesNotReplaceConcurrentDestination(t *testing.T) {
+	root, err := os.OpenRoot(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer root.Close()
+	original := []byte("concurrent file")
+	reader := &collisionReader{reader: bytes.NewReader([]byte(copyScore)), create: func() {
+		if err := root.WriteFile("saved.cicada", original, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}}
+	if err := install(root, "saved.cicada", reader, -1, true); err == nil {
+		t.Error("installation replaced a destination created during staging")
+	}
+	after, err := root.ReadFile("saved.cicada")
+	if err != nil || !bytes.Equal(after, original) {
+		t.Fatal("concurrent destination was overwritten")
+	}
+	names, err := root.Open(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer names.Close()
+	entries, err := names.Readdirnames(-1)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("staging files leaked: %v (%v)", entries, err)
 	}
 }

@@ -223,7 +223,7 @@
       if (this.playing) return;
       this.sendCommands([{ op: 3, arg0: 0 }, { op: 1 }]);
     }
-    stop() { if (this.playing) this.sendCommands([{ op: 2 }]); }
+    stop(force = false) { if (this.playing || force) this.sendCommands([{ op: 2 }]); }
     launchScene(index) { this.sendCommands([{ op: 10, index, arg0: 2 }]); }
     selectPattern(track, slot) { this.sendCommands([{ op: 9, track, index: slot, arg0: 2 }]); }
     playFrom(bar) { this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
