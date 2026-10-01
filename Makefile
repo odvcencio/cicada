@@ -58,6 +58,7 @@ build-loudness-wasm:
 
 test-kernel-wasm: build-kernel-wasm build-loudness-wasm
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
+	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
 
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v
