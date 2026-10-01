@@ -11,6 +11,7 @@ import (
 type WAVHeader struct {
 	RateHz, Channels, BitDepth int
 	Frames                     int64
+	DataOffset                 int64  // first PCM byte, validated against RIFF size
 	Encoding                   string // pcm or float
 }
 
@@ -98,6 +99,7 @@ func ReadWAVHeader(r io.ReadSeeker) (WAVHeader, error) {
 			}
 			dataSeen = true
 			dataBytes = length
+			h.DataOffset = start
 		}
 		offset = start + length + (length & 1)
 		if offset > limit {
