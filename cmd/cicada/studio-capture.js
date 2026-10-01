@@ -6,7 +6,7 @@
   const capture=new api.BrowserCapture(window.cicadaBrowserAudio);
   window.cicadaPCM=capture;
   const status=byId('pcm-status'),settings=byId('pcm-settings'),receiptKey='cicada-project-take';
-  let sampler=null,working=false,native=false,target=null;
+  let sampler=null,working=false,native=false,target=null,auditionGeneration=0;
   let nativeStatus={state:'idle',storage:'project journal',timing:'device reported',calibration:'uncalibrated'};
   const revision=()=>window.cicadaStudio?.revision() || document.body.dataset.revision;
   const state=()=>native?nativeStatus:capture.status;
@@ -34,9 +34,13 @@
     if(!response.ok) throw new Error(result.error || 'Take operation failed');
     return result;
   }
+  function stopSampler() {
+    auditionGeneration++;
+    sampler?.stop();
+  }
   async function published(result,browserId) {
     receipt({takeId:result.take,browserId,track:target?.track,scene:target?.scene});
-    sampler?.stop();
+    stopSampler();
     await window.cicadaBrowserAudio.startAudio(true);
     sampler=new api.PublishedSampler(window.cicadaBrowserAudio.context,result.take,result.revision);
     byId('sampler-play').disabled=false;byId('sampler-stop').disabled=false;
@@ -64,7 +68,7 @@
     if(window.cicadaStudio?.dirty()) throw new Error('Save source edits before recording');
     target={track:byId('pcm-track').value,scene:byId('pcm-scene').value,revision:revision()};
     if(!target.track || !target.scene) throw new Error('Add an audio track and scene before recording');
-    sampler?.stop();native=byId('audio-mode').value==='native';
+    stopSampler();native=byId('audio-mode').value==='native';
     if(native) {
       const result=await command('arm');
       nativeStatus={...nativeStatus,state:'armed',error:'',incomplete:false};
@@ -91,7 +95,7 @@
     } else { await capture.stop();await publishBrowser(); }
   });
   action(recover,async()=>{
-    sampler?.stop();
+    stopSampler();
     const saved=receipt();
     if(saved?.takeId) {
       target={track:saved.track,scene:saved.scene,revision:revision()};
@@ -113,6 +117,12 @@
       await publishBrowser();
     }
   });
-  action(byId('sampler-play'),async()=>{await window.cicadaBrowserAudio.context.resume();await sampler.play(Number(byId('sampler-note').value),Number(byId('sampler-root').value),byId('sampler-loop').checked);});
-  action(byId('sampler-stop'),()=>sampler?.stop());
+  action(byId('sampler-play'),async()=>{
+    const generation=++auditionGeneration,audition=sampler;
+    await window.cicadaBrowserAudio.context.resume();
+    if(generation!==auditionGeneration || audition!==sampler) return;
+    await audition.play(Number(byId('sampler-note').value),Number(byId('sampler-root').value),byId('sampler-loop').checked);
+  });
+  // Stop must remain available while Play is awaiting resume, fetch or decode.
+  byId('sampler-stop').addEventListener('click',stopSampler);
 })();

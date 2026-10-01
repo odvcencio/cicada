@@ -338,6 +338,10 @@ func (t *studioTransport) pauseLocked() {
 func (t *studioTransport) stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.stopLocked()
+}
+
+func (t *studioTransport) stopLocked() {
 	t.pauseLocked()
 	if t.cancel != nil {
 		t.cancel()

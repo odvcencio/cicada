@@ -118,26 +118,34 @@ func Open(score string) (*Store, error) {
 		s.Close()
 		return nil, fmt.Errorf("take journal is already open or unavailable: %w", err)
 	}
-	d, err := root.Open(s.dir)
-	if err != nil {
+	if err := s.loadJournals(); err != nil {
 		s.Close()
 		return nil, err
+	}
+	return s, nil
+}
+
+// loadJournals reads the durable prefix and repairs only an unterminated tail.
+// Recovery discards volatile batches and faults before admitting another append.
+func (s *Store) loadJournals() error {
+	takes := map[string]*Take{}
+	d, err := s.root.Open(s.dir)
+	if err != nil {
+		return err
 	}
 	names, err := d.Readdirnames(-1)
 	d.Close()
 	if err != nil {
-		s.Close()
-		return nil, err
+		return err
 	}
 	sort.Strings(names)
 	for _, name := range names {
 		if filepath.Ext(name) != ".jsonl" {
 			continue
 		}
-		file, err := root.Open(s.dir + "/" + name)
+		file, err := s.root.Open(s.dir + "/" + name)
 		if err != nil {
-			s.Close()
-			return nil, err
+			return err
 		}
 		t, n, err := decode(file)
 		info, statErr := file.Stat()
@@ -146,11 +154,10 @@ func Open(score string) (*Store, error) {
 			err = statErr
 		}
 		if err != nil {
-			s.Close()
-			return nil, fmt.Errorf("%s: %w", name, err)
+			return fmt.Errorf("%s: %w", name, err)
 		}
 		if n < info.Size() {
-			f, e := root.OpenFile(s.dir+"/"+name, os.O_WRONLY, 0600)
+			f, e := s.root.OpenFile(s.dir+"/"+name, os.O_WRONLY, 0600)
 			if e == nil {
 				e = f.Truncate(int64(n))
 				if e == nil {
@@ -159,21 +166,24 @@ func Open(score string) (*Store, error) {
 				f.Close()
 			}
 			if e != nil {
-				s.Close()
-				return nil, e
+				return e
 			}
 		}
 		if t == nil {
 			continue
 		}
 		if name != t.ID+".jsonl" || !validID(t.ID) || !validID(t.Track) || !validID(t.Scene) || t.Rate < 8000 || t.Rate > 384000 || t.Channels < 1 || t.Channels > 2 {
-			s.Close()
-			return nil, errors.New("invalid take journal identity or format")
+			return errors.New("invalid take journal identity or format")
 		}
-		s.takes[t.ID] = t
+		takes[t.ID] = t
 	}
-	return s, nil
+
+	s.takes = takes
+	s.pending = map[string][]event{}
+	s.writeFaults = map[string]error{}
+	return nil
 }
+
 func (s *Store) Close() error {
 	if s.lock != nil {
 		s.lock.Close()
@@ -221,7 +231,17 @@ func (s *Store) logPath(id string) string      { return s.dir + "/" + id + ".jso
 func (s *Store) rawPath(id string) string      { return s.dir + "/" + id + ".pcm" }
 func (s *Store) wavPath(id string) string      { return s.dir + "/" + id + ".wav" }
 func (s *Store) append(t *Take, e event) error { return s.appendRecords(t, []event{e}) }
-func (s *Store) appendRecords(t *Take, events []event) error {
+func (s *Store) appendRecords(t *Take, events []event) (err error) {
+	if fault := s.writeFaults[t.ID]; fault != nil {
+		return fault
+	}
+	// Every event append can leave a torn record, including completion events.
+	// Block all retries until recovery has reread and repaired the durable tail.
+	defer func() {
+		if err != nil {
+			s.writeFaults[t.ID] = err
+		}
+	}()
 	var data bytes.Buffer
 	encoder := json.NewEncoder(&data)
 	for _, e := range events {
@@ -233,7 +253,10 @@ func (s *Store) appendRecords(t *Take, events []event) error {
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(data.Bytes())
+	n, err := f.Write(data.Bytes())
+	if err == nil && n != data.Len() {
+		err = io.ErrShortWrite
+	}
 	if err == nil {
 		err = f.Sync()
 	}
@@ -693,6 +716,9 @@ func (s *Store) Mark(id string, stage Stage) error {
 func (s *Store) Recover() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.loadJournals(); err != nil {
+		return err
+	}
 	for _, t := range s.takes {
 		if t.Frames == 0 {
 			continue
