@@ -84,6 +84,7 @@ type Config struct {
 	Patterns   []PatternBank
 	Scenes     []Scene
 	Song       []SongEntry
+	Schedule   []ScheduleEvent `json:",omitempty"`
 	LoopSong   bool
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
@@ -194,7 +195,7 @@ type Engine struct {
 	scenes                       []Scene
 	currentScene                 int
 	sceneSequence                uint64
-	song                         []SongEntry
+	schedule                     []ScheduleEvent
 	loopSong, songMode           bool
 	songIndex                    int
 	songEndTick                  int64
@@ -556,7 +557,20 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 		e.scenes[i] = cfg.Scenes[i]
 		e.scenes[i].Settings = append([]SceneSetting(nil), cfg.Scenes[i].Settings...)
 	}
-	e.song = append([]SongEntry(nil), cfg.Song...)
+	if len(cfg.Song) != 0 && len(cfg.Schedule) != 0 {
+		return Error("song and schedule are mutually exclusive")
+	}
+	e.schedule = append([]ScheduleEvent(nil), cfg.Schedule...)
+	if len(cfg.Song) != 0 {
+		e.schedule = LowerSong(cfg.Song)
+	}
+	var end int64
+	for _, event := range e.schedule {
+		if event.Tick != end || event.EndTick <= event.Tick || int(event.Scene) >= len(e.scenes) {
+			return Error("schedule event is out of range")
+		}
+		end = event.EndTick
+	}
 	e.loopSong = cfg.LoopSong
 	return nil
 }
@@ -1009,7 +1023,7 @@ func (e *Engine) apply(c cmd.Command) {
 	switch c.Op {
 	case cmd.OpPlay:
 		e.transport.Play()
-		if len(e.song) > 0 && !e.songMode {
+		if len(e.schedule) > 0 && !e.songMode {
 			e.startSong()
 		}
 		if e.renderFrames > 0 {

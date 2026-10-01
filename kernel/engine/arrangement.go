@@ -215,17 +215,14 @@ func (e *Engine) applySceneSettingsMode(index uint16, snap bool) {
 }
 
 func (e *Engine) startSong() {
-	if len(e.song) == 0 {
+	if len(e.schedule) == 0 {
 		return
 	}
 	defer e.reapplyMacroLayers()
 	if !e.restoreSceneDefaults() {
 		return
 	}
-	var total int64
-	for _, entry := range e.song {
-		total += int64(entry.Bars) * seq.TicksPerBar
-	}
+	total := e.schedule[len(e.schedule)-1].EndTick
 	tick := e.transport.Tick()
 	if tick >= total && !e.loopSong {
 		_ = e.transport.SeekTick(0)
@@ -235,19 +232,18 @@ func (e *Engine) startSong() {
 	if e.loopSong {
 		cycleStart = tick / total * total
 	}
-	end := cycleStart
-	for i, entry := range e.song {
-		end += int64(entry.Bars) * seq.TicksPerBar
+	for i, entry := range e.schedule {
+		end := cycleStart + entry.EndTick
 		if tick < end {
 			e.songMode = true
 			e.songIndex = i
 			e.songEndTick = end
-			entryStart := end - int64(entry.Bars)*seq.TicksPerBar
+			entryStart := cycleStart + entry.Tick
 			// Parameter settings carry forward from every earlier song scene.
 			// A seek reconstructs the settled parameter state immediately; at an
 			// exact scene boundary the current scene still starts its normal glide.
 			for prior := 0; tick > cycleStart && prior < i; prior++ {
-				e.applySceneSettingsMode(e.song[prior].Scene, true)
+				e.applySceneSettingsMode(e.schedule[prior].Scene, true)
 				if e.faulted {
 					return
 				}
@@ -271,7 +267,7 @@ func (e *Engine) advanceSong() {
 		return
 	}
 	e.songIndex++
-	if e.songIndex == len(e.song) {
+	if e.songIndex == len(e.schedule) {
 		if !e.loopSong {
 			e.songMode = false
 			e.transport.Stop()
@@ -284,8 +280,8 @@ func (e *Engine) advanceSong() {
 		}
 		e.songIndex = 0
 	}
-	entry := e.song[e.songIndex]
-	e.songEndTick += int64(entry.Bars) * seq.TicksPerBar
+	entry := e.schedule[e.songIndex]
+	e.songEndTick += entry.EndTick - entry.Tick
 	if e.manualSceneTick != e.transport.Tick() {
 		e.launchSceneWithSkip(entry.Scene, true)
 	}
