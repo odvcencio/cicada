@@ -63,7 +63,44 @@ func UnpackStep(v uint32) (Step, error) {
 
 // Pattern is the fixed-size kernel representation. Slots and tracks are held
 // by the engine; this type describes one active pattern only.
+// ChordStep is an additive payload; Count zero retains the mono packed step.
+// A chord shares one gate, probability decision and deterministic cohort ID.
+type ChordStep struct {
+	Notes [4]uint8
+	Count uint8
+}
+
+func (c ChordStep) Validate(step Step) error {
+	if c.Count == 0 {
+		if c.Notes != [4]uint8{} {
+			return Error("unused chord pitches must be zero")
+		}
+		return nil
+	}
+	if c.Count < 2 || c.Count > 4 || !step.Gate || step.Tie || step.Slide || step.Ratchet != 1 || c.Notes[0] != step.Note {
+		return Error("chord needs 2 to 4 pitches, a gate, and no tie, slide or ratchet")
+	}
+	for i := uint8(0); i < 4; i++ {
+		if i >= c.Count {
+			if c.Notes[i] != 0 {
+				return Error("unused chord pitches must be zero")
+			}
+			continue
+		}
+		if c.Notes[i] > 127 {
+			return Error("chord pitch is out of range")
+		}
+		for j := uint8(0); j < i; j++ {
+			if c.Notes[j] == c.Notes[i] {
+				return Error("chord pitches must be distinct")
+			}
+		}
+	}
+	return nil
+}
+
 type Pattern struct {
+	Chords        [64]ChordStep
 	Steps         [64]uint32
 	Len           uint8
 	SwingPermille uint16 // fraction of one step, 0..500
@@ -85,10 +122,29 @@ func (p *Pattern) Validate() error {
 	if p.GatePercent < 10 || p.GatePercent > 100 {
 		return Error("gate must be 10 to 100 percent")
 	}
+	for i := int(p.Len); i < 64; i++ {
+		if p.Chords[i] != (ChordStep{}) {
+			return Error("chord payload exceeds pattern length")
+		}
+	}
 	for i := uint8(0); i < p.Len; i++ {
 		step, err := UnpackStep(p.Steps[i])
 		if err != nil {
 			return err
+		}
+		if err := p.Chords[i].Validate(step); err != nil {
+			return err
+		}
+		if p.Chords[i].Count > 0 {
+			prev, _ := UnpackStep(p.Steps[(int(i)+int(p.Len)-1)%int(p.Len)])
+			if prev.Slide {
+				return Error("a slide cannot target a chord")
+			}
+		}
+		for n := uint8(0); n < p.Chords[i].Count; n++ {
+			if int(p.Chords[i].Notes[n])+int(p.Transpose) < 0 || int(p.Chords[i].Notes[n])+int(p.Transpose) > 127 {
+				return Error("transposed chord pitch is out of range")
+			}
 		}
 		if step.Gate && !step.Tie && (int(step.Note)+int(p.Transpose) < 0 || int(step.Note)+int(p.Transpose) > 127) {
 			return Error("transposed note is out of range")

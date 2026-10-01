@@ -156,6 +156,7 @@ type Step struct {
 	Ratchet     uint8 `cicada:"Retrigger count" range:"1..8" json:"ratchet"`
 	Probability uint8 `cicada:"Playback probability percentage" unit:"percent" range:"0..100" json:"probability"`
 	Velocity    uint8 `cicada:"MIDI velocity" range:"0..127" json:"velocity"`
+	Notes       []int `cicada:"Optional 2 to 4 distinct chord pitches sharing one gate" json:"notes,omitempty"`
 }
 
 type Scene struct {
@@ -596,6 +597,12 @@ func projectSteps(source seq.Pattern) []*Step {
 			Note: decoded.Note, Accent: decoded.Accent, Slide: decoded.Slide,
 			Tie: decoded.Tie, Ratchet: decoded.Ratchet, Probability: decoded.Probability,
 			Velocity: decoded.Velocity,
+		}
+		if chord := source.Chords[i]; chord.Count > 0 {
+			steps[i].Notes = make([]int, chord.Count)
+			for n := uint8(0); n < chord.Count; n++ {
+				steps[i].Notes[n] = int(chord.Notes[n])
+			}
 		}
 	}
 	return steps
