@@ -35,6 +35,7 @@ type Score struct {
 	Patterns      []Pattern
 	Scenes        []Scene
 	Song          []SongEntry
+	Arrange       *Arrangement
 	SongPosition  Position
 	Effects       []Effect
 	Buses         []Bus

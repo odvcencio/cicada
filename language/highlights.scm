@@ -254,3 +254,11 @@
 (live_layers macro: (identifier) @variable.parameter)
 (live_layer track: (identifier) @variable.member)
 ">=" @operator
+
+["arrange" "place" "marker"] @keyword
+(place_decl name: (identifier) @function)
+(place_decl track: (identifier) @variable.member)
+(place_decl content: (identifier) @function.call)
+(marker_decl name: (identifier) @constant)
+(musical_position) @number.position
+(tick_count) @number.ticks

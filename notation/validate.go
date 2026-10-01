@@ -43,6 +43,7 @@ var scales = map[string]bool{
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) []Diagnostic {
 	ds := ValidateAudio(s)
+	ds = append(ds, ValidateArrangement(s)...)
 	ds = append(ds, ValidateLive(s.Live, s.Tracks)...)
 	add := func(code, message, severity string, p Position) {
 		ds = append(ds, Diagnostic{Code: code, Message: message, Severity: severity, Position: p})
@@ -385,7 +386,7 @@ func Validate(s *Score) []Diagnostic {
 			add("CICADA-LIMIT", "song entry must be 1 to 999 bars", "error", entry.Position)
 		}
 	}
-	if len(s.Song) == 0 {
+	if len(s.Song) == 0 && s.Arrange == nil {
 		position := s.SongPosition
 		if position.Line == 0 {
 			position = Position{1, 1}

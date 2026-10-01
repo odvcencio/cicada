@@ -15,6 +15,7 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
+const scheduleImageVersion = 14
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -106,7 +107,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
-	w.u16(imageVersion)
+	version := uint16(imageVersion)
+	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
+		version = scheduleImageVersion
+	}
+	w.u16(version)
 	w.byte(byte(cfg.Tracks))
 	w.byte(byte(cfg.MaxVoices))
 	if cfg.LoopSong {
@@ -227,7 +232,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			w.f64(spec.InsertDrive.Mix)
 		}
 		switch spec.Kind {
-		case engine.VoiceOff:
+		case engine.VoiceOff, engine.VoiceAudio:
 		case engine.VoiceAcid:
 			writeAcid(&w, spec.Acid)
 		case engine.VoiceDrums:
@@ -255,6 +260,14 @@ func Encode(cfg engine.Config) ([]byte, error) {
 					}
 				}
 			}
+		case engine.VoiceSample:
+			if spec.Sample == nil {
+				return nil, Error("nil sampler image")
+			}
+			w.u16(spec.Sample.Asset)
+			w.byte(spec.Sample.RootKey)
+			w.byte(spec.Sample.Voices)
+			w.byte(boolByte(spec.Sample.Loop))
 		case engine.VoiceGraph:
 			if err := writeGraph(&w, spec.Graph); err != nil {
 				return nil, err
@@ -308,6 +321,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		for _, binding := range scene.Track {
 			switch binding.Mode {
+			case engine.SceneClip:
+				w.byte(255)
+				w.u16(binding.Clip)
 			case engine.SceneKeep:
 				w.byte(0)
 			case engine.SceneOff:
@@ -332,6 +348,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	for _, entry := range cfg.Song {
 		w.u16(entry.Scene)
 		w.u16(entry.Bars)
+	}
+	if version >= scheduleImageVersion {
+		if err := writeSchedule(&w, &cfg); err != nil {
+			return nil, err
+		}
 	}
 	if len(w.data) > MaxImageBytes {
 		return nil, Error("project image exceeds 2 MiB")
@@ -372,7 +393,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != scheduleImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -581,7 +602,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			spec.InsertDrive = params
 		}
 		switch spec.Kind {
-		case engine.VoiceOff:
+		case engine.VoiceOff, engine.VoiceAudio:
 		case engine.VoiceAcid:
 			if spec.Acid, err = readAcid(&r); err != nil {
 				return err
@@ -623,6 +644,28 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					}
 				}
 			}
+		case engine.VoiceSample:
+			if version < scheduleImageVersion {
+				return Error("unsupported sampler image")
+			}
+			spec.Sample = &engine.SamplerConfig{}
+			spec.Sample.Asset, err = r.u16()
+			if err != nil {
+				return err
+			}
+			spec.Sample.RootKey, err = r.byte()
+			if err != nil {
+				return err
+			}
+			spec.Sample.Voices, err = r.byte()
+			if err != nil {
+				return err
+			}
+			loop, err := r.byte()
+			if err != nil || loop > 1 {
+				return Error("invalid sampler image loop")
+			}
+			spec.Sample.Loop = loop == 1
 		case engine.VoiceGraph:
 			if spec.Graph, err = readGraph(&r, version); err != nil {
 				return err
@@ -679,6 +722,12 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 			switch {
+			case binding == 255 && version >= scheduleImageVersion:
+				clip, err := r.u16()
+				if err != nil {
+					return err
+				}
+				cfg.Scenes[scene].Track[track] = engine.SceneBinding{Mode: engine.SceneClip, Clip: clip}
 			case binding == 0:
 			case binding == 1:
 				cfg.Scenes[scene].Track[track].Mode = engine.SceneOff
@@ -724,6 +773,11 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return err
 		}
 		if cfg.Song[i].Bars, err = r.u16(); err != nil {
+			return err
+		}
+	}
+	if version >= scheduleImageVersion {
+		if err := readSchedule(&r, cfg); err != nil {
 			return err
 		}
 	}

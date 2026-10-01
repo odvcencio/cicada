@@ -21,6 +21,7 @@ import (
 )
 
 type Options struct {
+	AssetRoot    string // project directory used only during asset preparation
 	SampleRate   int
 	Bits         int // 16, 24, or 32-bit IEEE float; zero defaults to 24
 	Bars         int // zero renders from From through the song end
@@ -148,6 +149,9 @@ func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, st
 }
 
 func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir string, outputGain float32) (Report, error) {
+	if score != nil && (score.Arrange != nil || len(score.Clips) > 0 || len(score.Samplers) > 0) {
+		return renderScheduleWAV(score, opts, writer, stemsDir, outputGain)
+	}
 	var report Report
 	if score == nil {
 		return report, fmt.Errorf("nil score")
@@ -384,7 +388,12 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	var events []scheduled
 	var position int64
 	bar := 0
-	for _, entry := range score.Song {
+	schedule, err := project.CompileSchedule(semantic)
+	if err != nil {
+		return report, err
+	}
+	for _, event := range schedule {
+		entry := notation.SongEntry{Scene: semantic.Scenes[event.Scene].ID, Bars: int((event.EndTick - event.Tick) / seq.TicksPerBar)}
 		if bar >= renderBars {
 			break
 		}

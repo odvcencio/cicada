@@ -27,6 +27,9 @@ func ValidateProject(p *Project) error {
 	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
 		return fmt.Errorf("unsupported project format or version")
 	}
+	if err := validateArrangementProject(p); err != nil {
+		return err
+	}
 	if err := validateAudioProject(p); err != nil {
 		return err
 	}
@@ -115,7 +118,7 @@ func ValidateProject(p *Project) error {
 	if kindCounts["delay"] > 1 || kindCounts["reverb"] > 1 {
 		return fmt.Errorf("CICADA-UNSUPPORTED: multiple delay or reverb instances are not implemented")
 	}
-	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 {
+	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 && p.Arrange == nil {
 		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
 	}
 	instruments := map[string]*instrument.Program{}

@@ -15,11 +15,13 @@ const (
 	SceneKeep SceneMode = iota
 	SceneOff
 	SceneSlot
+	SceneClip
 )
 
 type SceneBinding struct {
 	Mode SceneMode
 	Slot uint8
+	Clip uint16 `json:",omitempty"`
 }
 
 type SceneSetting struct {
@@ -157,7 +159,10 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 		p := &e.patterns[track]
 		switch binding.Mode {
 		case SceneKeep:
+		case SceneClip:
+			e.startClip(track, binding.Clip, -1, 0)
 		case SceneOff:
+			e.stopClips(track)
 			if p.active < 0 {
 				p.chainArmed = false
 				continue
@@ -215,6 +220,10 @@ func (e *Engine) applySceneSettingsMode(index uint16, snap bool) {
 }
 
 func (e *Engine) startSong() {
+	if e.placementSchedule {
+		e.startPlacementSchedule()
+		return
+	}
 	if len(e.schedule) == 0 {
 		return
 	}
@@ -254,6 +263,9 @@ func (e *Engine) startSong() {
 				e.settleSceneEffects()
 			}
 			e.launchSceneMode(entry.Scene, false, tick > entryStart)
+			if len(e.clipTemplates) > 0 {
+				e.restoreSongClips(i, cycleStart, tick)
+			}
 			if tick > entryStart {
 				e.settleSceneEffects()
 			}
@@ -263,6 +275,10 @@ func (e *Engine) startSong() {
 }
 
 func (e *Engine) advanceSong() {
+	if e.placementSchedule {
+		e.advancePlacementSchedule()
+		return
+	}
 	if !e.songMode || !e.transport.Playing() || e.transport.Tick() < e.songEndTick {
 		return
 	}
