@@ -92,6 +92,9 @@ func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 }
 
 func findCommandHelp(name string) (commandHelpEntry, bool) {
+	if name == "save-as" {
+		return commandHelpEntry{name: "save-as", summary: "copy a score and its audio dependencies", usage: "cicada save-as <score.cicada> <target.cicada>", flags: "  (no command flags)"}, true
+	}
 	for _, entry := range commandHelpEntries {
 		if entry.name == name {
 			return entry, true
