@@ -118,10 +118,7 @@ func (s *studio) auditionTake(w http.ResponseWriter, edit studioEdit) error {
 	if err != nil {
 		return err
 	}
-	start := int64(0)
-	if take.FirstBlock != nil && take.FirstBlock.Placement.EngineFrame < 0 {
-		start = int64(take.FirstBlock.RawFrame) - take.FirstBlock.Placement.EngineFrame
-	}
+	start := take.StartFrame()
 	region, err := sampleasset.LoadRegion(takeRoot(s.path), take.Asset, start, 0, edit.Sample.Root, edit.Sample.Loop)
 	if err != nil {
 		return err

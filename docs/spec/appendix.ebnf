@@ -52,7 +52,7 @@ phrase_use ::= "use" , identifier , [ "*" , integer ] ,
 drum_pattern ::= "pattern" , identifier , "drums" , { pattern_attr } , "{" , { pattern_attr } ,
                  { drum_lane } , "}" ;
 pattern_attr ::= identifier , "=" , number ;
-acid_step ::= "." | "-" | "|" | acid_note ;
+acid_step ::= "." | "-" | "|" | acid_note | chord_note ;
 acid_note ::= pitch , { octave_shift } , { modifier } ;
 pitch ::= degree | letter_pitch ;
 degree ::= /[1-7][#b]?/ ;
@@ -93,6 +93,8 @@ live_layer ::= identifier , ">=" , number , [ ";" ] ;
 live_attack ::= "attack" , bar_count , [ ";" ] ;
 live_release ::= "release" , bar_count , [ ";" ] ;
 bar_count ::= /-?[0-9]+(\.[0-9]+)?bars?/ ;
+chord_note ::= "[" , { chord_pitch } , "]" , { modifier } ;
+chord_pitch ::= pitch , { octave_shift } ;
 arrange_decl ::= "arrange" , "{" , { place_decl | marker_decl } , "}" ;
 place_decl ::= "place" , identifier , identifier , identifier , "{" , { param_decl } , "}" ;
 marker_decl ::= "marker" , identifier , "{" , { param_decl } , "}" ;

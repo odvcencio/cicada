@@ -28,6 +28,10 @@
           this.env.clearTimeout(w.timer); w.reject(new Error(data.error)); this.waiters.delete(type);
         }
         if (data.fatal) {
+          // The failed worker cannot finish a stop handshake. Stop both owners
+          // immediately, including Play that has not been acknowledged yet.
+          this.audio.node?.port.postMessage({t:'capture-control',op:'stop'});
+          if (this.audio.node) this.audio.stop(true);
           this.releaseInput(); this.status.state='stopped'; this.worker?.terminate(); this.worker=null;
         } else if (['armed','recording'].includes(this.status.state)) this.stop().catch(()=>{});
       } else {

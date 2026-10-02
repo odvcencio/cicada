@@ -62,6 +62,13 @@ func SaveAs(score, target string) error {
 		return err
 	}
 	defer dst.Close()
+	// Save As creates a new score. Check early for a clear error, and use an
+	// exclusive installation below to cover destinations created during copying.
+	if _, err := dst.Lstat(dstName); err == nil {
+		return fmt.Errorf("Save As refuses existing destination %s; choose a new score path", dstName)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
 	source, err := src.ReadFile(srcName)
 	if err != nil {
 		return err
@@ -135,6 +142,26 @@ func SaveAs(score, target string) error {
 				return err
 			}
 		}
+	}
+	// A destination may be absent now but scheduled for dependency installation.
+	// Check the full copy set before writing any of it, including retained passes.
+	dependencies := map[string]bool{"cicada.mod": true}
+	for path := range assets {
+		dependencies[filepath.Clean(path)] = true
+	}
+	for path := range histories {
+		dependencies[filepath.Clean(path)] = true
+	}
+	for _, snapshot := range ss {
+		to := takejournal.Namespace(target) + "/" + snapshot.Take.ID
+		dependencies[to+".pcm"], dependencies[to+".jsonl"] = true, true
+		if snapshot.Take.Asset.Path != "" {
+			dependencies[to+".wav"] = true
+			dependencies["audio/blobs/"+snapshot.Take.Asset.SHA256+".wav"] = true
+		}
+	}
+	if dependencies[filepath.Clean(dstName)] {
+		return fmt.Errorf("Save As destination %s conflicts with a project dependency; choose a new score path", dstName)
 	}
 	for path, a := range assets {
 		origin := path
@@ -235,7 +262,7 @@ func SaveAs(score, target string) error {
 	}
 	return install(dst, dstName, bytes.NewReader(source), -1, true)
 }
-func install(root *os.Root, path string, reader io.Reader, n int64, replace bool) error {
+func install(root *os.Root, path string, reader io.Reader, n int64, exclusive bool) error {
 	if !notation.ValidAssetPath(path) {
 		return fmt.Errorf("invalid destination path %s", path)
 	}
@@ -273,10 +300,14 @@ func install(root *os.Root, path string, reader io.Reader, n int64, replace bool
 		f.Close()
 		return err
 	}
-	if replace {
-		f.Close()
-		if err = root.Rename(stage, path); err != nil {
+	if exclusive {
+		if err = f.Close(); err != nil {
 			return err
+		}
+		// Link publishes the complete staged inode atomically and refuses any
+		// destination that appeared after preflight. Never exchange a dependency.
+		if err = root.Link(stage, path); err != nil {
+			return fmt.Errorf("Save As cannot install new score %s: %w", path, err)
 		}
 		return syncDir(root, parent)
 	}

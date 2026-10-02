@@ -965,7 +965,16 @@ func checkStepArray(value any, pointer string, fields []string) error {
 		if value == nil {
 			return nil
 		}
-		_, err := requiredObject(value, "step", child, fields, nil)
-		return err
+		object, err := requiredObject(value, "step", child, fields, []string{"notes"})
+		if err != nil {
+			return err
+		}
+		if value, exists := object["notes"]; exists {
+			notes, ok := value.([]any)
+			if !ok || len(notes) < 2 || len(notes) > 4 {
+				return &jsonFieldError{child + "/notes", fmt.Errorf("chord notes must be a 2 to 4 pitch array")}
+			}
+		}
+		return nil
 	})
 }

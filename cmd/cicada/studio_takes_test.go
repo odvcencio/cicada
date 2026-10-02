@@ -575,3 +575,108 @@ func TestNativeRecordAfterArmedPlayPauseTrimsCountIn(t *testing.T) {
 		t.Fatal("audition retained count-in audio")
 	}
 }
+
+func TestTakeStateRestoresActiveCapture(t *testing.T) {
+	s := newTakeStudio(t, t.TempDir())
+	a, _ := simulatedCaptureAudio(8, zeroAudioSource{})
+	s.transport.audio, s.transport.sampleRate = a, 48000
+	s.transport.audioOptions.InputEnabled = true
+	response := studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "arm", Track: "vox", Scene: "main", Revision: studioRevision([]byte(audioTakeScore))})
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Body.String())
+	}
+	for _, recording := range []bool{false, true} {
+		if recording {
+			countIn, _ := capture.DefaultCountIn(48000, 120000)
+			if err := s.captureRecorder.Begin(countIn, capture.Calibration{}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		response = studioCall(t, s.routes(), "/api/takes", nil)
+		var state struct {
+			Active  string             `json:"activeCapture"`
+			Capture *capture.Snapshot  `json:"capture"`
+			Takes   []takejournal.Take `json:"takes"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &state); err != nil {
+			t.Fatal(err)
+		}
+		if state.Active != s.captureID || state.Capture == nil || state.Capture.Recording != recording || len(state.Takes) != 1 || state.Takes[0].Track != "vox" || state.Takes[0].Scene != "main" {
+			t.Fatalf("active take cannot be restored: %s", response.Body.String())
+		}
+	}
+	if err := s.transport.disarmCapture(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestInitialGapAcrossCountInPublicationAndAudition(t *testing.T) {
+	for _, host := range []string{"native", "browser"} {
+		t.Run(host, func(t *testing.T) {
+			s := newTakeStudio(t, t.TempDir())
+			timing := capture.Block{SampleRate: 48000, Frames: 4, Period: 4, GapFrames: 6, EngineFrame: 2, Layout: capture.LayoutMono}
+			values := []float32{.25, .5, .75, 1}
+			var id string
+			if host == "native" {
+				var err error
+				id, err = s.takes.Begin("vox", "main", studioRevision([]byte(audioTakeScore)), 48000, 1)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := s.takes.Write(id, capture.RecordedBlock{RawFrame: 6, Timing: timing, Placement: capture.Place(timing)}, [][]float32{values}); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.takes.Finalize(id, true); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.takes.Publish(id); err != nil {
+					t.Fatal(err)
+				}
+				if err := s.commitTake(id, studioRevision([]byte(audioTakeScore)), nil); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				pcm := make([]byte, 16)
+				for i, value := range values {
+					binary.LittleEndian.PutUint32(pcm[i*4:], math.Float32bits(value))
+				}
+				response := studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "import", Track: "vox", Scene: "main", Revision: studioRevision([]byte(audioTakeScore)), Capture: &studioBrowserTake{Rate: 48000, Channels: 1, PCM: pcm, RawFrames: 10, Incomplete: true, Blocks: []studioBrowserBlock{{Timing: timing, RawFrame: 6, Length: 16}}}})
+				if response.Code != http.StatusOK {
+					t.Fatal(response.Body.String())
+				}
+				var result struct {
+					Take string `json:"take"`
+				}
+				if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				id = result.Take
+			}
+			source, err := os.ReadFile(s.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Contains(source, []byte("start = 4frames")) {
+				t.Error("publication retained count-in silence")
+			}
+			response := studioCall(t, s.routes(), "/api/takes", studioEdit{Action: "audition", TakeID: id, Revision: studioRevision(source), Sample: &studioSampleRequest{Root: 60, Note: 60}})
+			if response.Code != http.StatusOK {
+				t.Fatal(response.Body.String())
+			}
+			data := response.Body.Bytes()
+			if len(data) != 44+(6+48000/500)*8 {
+				t.Errorf("audition frame span=%d; expected six take frames plus release", (len(data)-44)/8)
+			}
+			for frame, want := range []float32{0, 0, .25, .5, .75, 1} {
+				got := math.Float32frombits(binary.LittleEndian.Uint32(data[44+frame*8:]))
+				if got != want {
+					t.Errorf("audition frame %d=%v, want %v (preserve only the post-count-in part of the loss)", frame, got, want)
+				}
+			}
+			take, _ := s.takes.Get(id)
+			if take.Asset.Frames != 10 || !take.Incomplete {
+				t.Fatal("raw take duration or loss metadata changed")
+			}
+		})
+	}
+}

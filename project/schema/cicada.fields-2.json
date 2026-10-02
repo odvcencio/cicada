@@ -159,7 +159,9 @@
     },
     {
       "name": "step",
-      "child_roles": [],
+      "child_roles": [
+        "notes"
+      ],
       "variants": [],
       "introduced": "cicada.project/1",
       "profile": "M0",
@@ -1720,6 +1722,20 @@
       "default": null,
       "meaning": "MIDI velocity",
       "order": 7,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "step",
+      "name": "notes",
+      "required": false,
+      "type": "array\u003cinteger\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Optional 2 to 4 distinct chord pitches sharing one gate",
+      "order": 8,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
