@@ -11,9 +11,9 @@
 
 source_file ::= [ "cicada" , integer ] , { _declaration } ;
 _declaration ::= import_decl | title_decl | tempo_decl | key_decl | seed_decl | instrument_decl |
-                 kit_decl | track_decl | phrase_decl | acid_pattern | note_pattern | drum_pattern |
-                 scene_decl | song_decl | fx_decl | bus_decl | master_decl | export_decl |
-                 asset_decl | clip_decl | sampler_decl | live_decl ;
+                 preset_decl | kit_decl | track_decl | phrase_decl | acid_pattern | note_pattern |
+                 drum_pattern | scene_decl | song_decl | fx_decl | bus_decl | master_decl |
+                 export_decl | asset_decl | clip_decl | sampler_decl | live_decl ;
 asset_decl ::= "asset" , _name , string , "{" , { param_decl } , "}" ;
 clip_decl ::= "clip" , _name , _name , "{" , { param_decl } , "}" ;
 sampler_decl ::= "sampler" , _name , "{" , { param_decl } , "}" ;
@@ -38,7 +38,7 @@ call_expr ::= identifier , "(" , [ expression , { "," , expression } ] , ")" ;
 param_decl ::= identifier , "=" , value ;
 send_decl ::= "send" , _name , "=" , number , [ "pre" ] ;
 mix_setting ::= send_decl | param_decl ;
-fx_decl ::= "fx" , _name , [ identifier ] , "{" , { param_decl } , "}" ;
+fx_decl ::= "fx" , _name , [ _name ] , "{" , { param_decl } , "}" ;
 bus_decl ::= "bus" , _name , "{" , { mix_setting } , "}" ;
 master_decl ::= "master" , "{" , { mix_setting } , "}" ;
 export_decl ::= "export" , _name , "{" , { param_decl } , "}" ;
@@ -83,6 +83,7 @@ string ::= /"([^"\\]|\\.)*"/ ;
 identifier ::= /[a-z_][a-z0-9_-]*/ ;
 _name ::= identifier | qualified_name ;
 qualified_name ::= identifier , "." , identifier , { "." , identifier } ;
+preset_decl ::= "preset" , _name , "{" , { param_decl } , "}" ;
 import_decl ::= "import" , string ;
 comment ::= /\/\/[^\n]*/ ;
 live_decl ::= "live" , "{" , { live_land | live_phrase | live_macro | live_layers } , "}" ;

@@ -16,7 +16,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	if score == nil {
 		return programs, nil
 	}
-	var diagnostics []notation.Diagnostic
+	score, diagnostics := notation.ResolvePresets(score)
 	for _, definition := range score.Instruments {
 		program, ds := instrument.Compile(definition)
 		diagnostics = append(diagnostics, ds...)

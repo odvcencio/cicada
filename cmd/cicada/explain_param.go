@@ -46,6 +46,9 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		fmt.Fprintf(output, "%s: library %s (source %s:%d:%d)\n", path, origin.Library, filepath.Base(origin.Position.File), origin.Position.Line, origin.Position.Column)
 		return nil
 	}
+	if handled, err := explainAuthoredParameter(score, compiled, lookup, loc, output); handled {
+		return err
+	}
 	resolved, err := project.ResolveParameterPath(compiled, lookup)
 	if err != nil {
 		return err
@@ -70,8 +73,9 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		}
 	}
 	fmt.Fprintf(output, "registry default: %s\n", explainDefault(resolved.Descriptor))
+	explainPresetLayers(score, resolved.Owner, resolved.Descriptor.Source, output)
 	if sourceHasBlockSetting(score, resolved) {
-		fmt.Fprintf(output, "%s block (%s): %s\n", resolved.OwnerKind, resolved.Owner, explainValue(value.Value, resolved.Descriptor))
+		fmt.Fprintf(output, "%s block (%s): %s\n", resolved.OwnerKind, resolved.Owner, explainBlockValue(score, resolved, value.Value))
 	}
 	computedText := explainValue(value.Value, resolved.Descriptor)
 	if active.set {
@@ -150,7 +154,7 @@ func sourceHasBlockSetting(score *notation.Score, resolved project.ResolvedParam
 				continue
 			}
 			for _, setting := range track.Params {
-				if setting.Name == resolved.Descriptor.Source {
+				if setting.Name == presetSourceParamName(score, resolved.Owner, resolved.Descriptor.Source) {
 					return true
 				}
 			}
@@ -161,7 +165,7 @@ func sourceHasBlockSetting(score *notation.Score, resolved project.ResolvedParam
 				continue
 			}
 			for _, setting := range effect.Params {
-				if setting.Name == resolved.Descriptor.Source {
+				if setting.Name == presetSourceParamName(score, resolved.Owner, resolved.Descriptor.Source) {
 					return true
 				}
 			}

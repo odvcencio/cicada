@@ -22,3 +22,5 @@
 "}" @indent.branch
 
 (comment) @indent.auto
+
+(preset_decl) @indent.begin
