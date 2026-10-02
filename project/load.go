@@ -32,10 +32,12 @@ type Sources struct {
 	LibraryOrder []string
 	Imports      []notation.Import
 	Bindings     map[string]map[string]string
+	librarySum   []byte
 }
 
 // ReadSources loads the closest explicit manifest, or the requested loose or
-// legacy single-file score. Overrides are indexed by absolute file path.
+// legacy single-file score. Overrides are indexed by absolute file path and
+// can include cicada.sum for validation before an editor commits new pins.
 func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -106,6 +108,7 @@ func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
 		}
 	}
 	if !set.Manifest.ExplicitSources() {
+		set.librarySum = overrides[filepath.Join(set.Root, "cicada.sum")]
 		data, ok := overrides[absolute]
 		if !ok {
 			data, err = os.ReadFile(absolute)
@@ -148,6 +151,7 @@ func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
 		}
 		set.Files = append(set.Files, notation.SourceFile{Path: full, Source: data})
 	}
+	set.librarySum = overrides[filepath.Join(set.Root, "cicada.sum")]
 	if err := set.readLibraries(overrides); err != nil {
 		return nil, err
 	}

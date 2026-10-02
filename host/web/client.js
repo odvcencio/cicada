@@ -13,6 +13,7 @@
       this.messages = new Set();
       this.errors = new Set();
       this.states = new Set();
+      this.beforePlay = new Set();
       this.meters = new Set();
       this.pendingMeters = new Map();
       this.meterFrame = 0;
@@ -203,6 +204,7 @@
     onMessage(callback) { this.messages.add(callback); return () => this.messages.delete(callback); }
     onError(callback) { this.errors.add(callback); return () => this.errors.delete(callback); }
     onState(callback) { this.states.add(callback); return () => this.states.delete(callback); }
+    onBeforePlay(callback) { this.beforePlay.add(callback); return () => this.beforePlay.delete(callback); }
     onMeters(callback) { this.meters.add(callback); return () => this.meters.delete(callback); }
 
     sendCommands(records) {
@@ -221,12 +223,13 @@
 
     play() {
       if (this.playing) return;
+      for (const callback of this.beforePlay) callback();
       this.sendCommands([{ op: 3, arg0: 0 }, { op: 1 }]);
     }
     stop(force = false) { if (this.playing || force) this.sendCommands([{ op: 2 }]); }
     launchScene(index) { this.sendCommands([{ op: 10, index, arg0: 2 }]); }
     selectPattern(track, slot) { this.sendCommands([{ op: 9, track, index: slot, arg0: 2 }]); }
-    playFrom(bar) { this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
+    playFrom(bar) { for (const callback of this.beforePlay) callback(); this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
 
     async stageCurrentScore(revision = '', capture = false) {
       if (!this.node) return false;
