@@ -542,6 +542,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 }
 
 func compileTracks(score *notation.Score, semantic *project.Project, sampleRate int) ([]trackRuntime, error) {
+	score, _ = notation.ResolvePresets(score)
 	programs := make(map[string]*instrument.Program, len(score.Instruments))
 	for _, definition := range score.Instruments {
 		program, ds := instrument.Compile(definition)

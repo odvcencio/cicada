@@ -116,6 +116,9 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			continue
 		}
 		w := &loweringWalker{Walker: walker, file: file.Path, library: file.Library, bindings: file.Bindings, origins: s.Origins, diagnostics: &diagnostics, declarations: file.Declarations}
+		if w.declarations == nil {
+			w.declarations = DeclarationNames(files)
+		}
 		headerEdition := 0
 		for i := 0; i < root.NamedChildCount(); i++ {
 			n := root.NamedChild(i)
@@ -138,7 +141,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				switch kind {
 				case "acid_pattern", "note_pattern", "drum_pattern", "clip_decl":
 					namespace = "pattern"
-				case "instrument_decl", "kit_decl", "sampler_decl":
+				case "instrument_decl", "kit_decl", "sampler_decl", "preset_decl":
 					namespace = "voice"
 				case "track_decl", "fx_decl", "bus_decl":
 					namespace = "mixer"
@@ -196,6 +199,8 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.Samplers = append(s.Samplers, Sampler{Name: w.declaration(w.Field(n, "name")), Params: audioParams(w, n), Position: w.position(n)})
 			case "instrument_decl":
 				s.Instruments = append(s.Instruments, parseInstrument(w, n))
+			case "preset_decl":
+				s.Presets = append(s.Presets, parsePreset(w, n))
 			case "kit_decl":
 				s.Kits = append(s.Kits, parseKit(w, n))
 			case "live_decl":
@@ -293,7 +298,10 @@ func parseKit(w *loweringWalker, n *gts.Node) Kit {
 }
 
 func parseEffect(w *loweringWalker, n *gts.Node) Effect {
-	e := Effect{Name: w.declaration(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: w.position(n)}
+	e := Effect{Name: w.declaration(w.Field(n, "name")), Kind: w.reference(w.Field(n, "kind")), Position: w.position(n)}
+	if w.Field(n, "kind") != nil && !strings.Contains(w.Text(w.Field(n, "kind")), ".") && (w.Text(w.Field(n, "kind")) == "delay" || w.Text(w.Field(n, "kind")) == "reverb" || w.Text(w.Field(n, "kind")) == "drive" || w.Text(w.Field(n, "kind")) == "comp") {
+		e.Kind = w.Text(w.Field(n, "kind"))
+	}
 	if e.Kind == "" { // edition-1 shorthand: fx delay { ... }
 		e.Kind = e.Name
 		e.Legacy = true

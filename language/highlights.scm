@@ -260,3 +260,6 @@
 
 (qualified_name (identifier) @property.parameter_path)
 (qualified_name "." @punctuation.delimiter)
+
+"preset" @keyword.type
+(preset_decl name: (identifier) @type.definition)

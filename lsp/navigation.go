@@ -47,7 +47,7 @@ func instrumentScope(source []byte, offset int) byteRange {
 }
 
 func sameSymbol(source []byte, selected, candidate language.Symbol, scope byteRange) bool {
-	if selected.Name != candidate.Name || selected.Kind != candidate.Kind {
+	if selected.Name != candidate.Name || symbolFamily(selected.Kind) != symbolFamily(candidate.Kind) {
 		return false
 	}
 	if selected.Kind == "parameter" || selected.Kind == "binding" {
