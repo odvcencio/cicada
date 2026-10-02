@@ -210,6 +210,28 @@ follow a track when a valid score edit keeps that track's ID. Source-level
 parameter paths are available in scene settings; see
 [parameter paths](../spec/accepted.md#parameter-paths-and-scene-settings).
 
+### Library
+
+The Library panel lists public instruments, kits, FX chains and presets from
+standard, project and user libraries. Filter by kind or search by name and
+library path. Select a track, or enter a new track name, then choose **Insert**.
+Studio adds the import once and updates the library pins before committing the
+validated source. Drive binds as an insert, delay and reverb bind as sends, and
+compression binds on the music bus. Unsupported combinations leave the score
+unchanged.
+
+**Preview** plays a fixed one-bar phrase at 120 BPM through the selected audio
+engine without changing the score. Only one preview plays at a time; starting
+transport or switching audio mode stops it. Stop playback and recording before
+previewing. Browser previews use the same kernel and AudioWorklet processor as
+score playback.
+
+To save a selected track's stored values, enter a preset name and choose
+**Save as preset**. Studio resolves any existing preset and writes the current
+non-default registry values into a new declaration in the score. Source edits
+and preset saves support History undo and redo. Pins remain available for redo.
+Studio continues to refuse multi-file source editing.
+
 ### History
 
 History groups this Studio session's edits by transport bar. It is a short
