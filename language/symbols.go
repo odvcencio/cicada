@@ -35,6 +35,16 @@ func Symbols(src []byte) ([]Symbol, error) {
 	tags := tagger.TagTree(tree)
 	sort.SliceStable(tags, func(i, j int) bool { return tags[i].NameRange.StartByte < tags[j].NameRange.StartByte })
 	kits := make(map[string]bool)
+	samplers := make(map[string]bool)
+	clips := make(map[string]bool)
+	for _, tag := range tags {
+		if tag.Kind == "definition.sampler" {
+			samplers[tag.Name] = true
+		}
+		if tag.Kind == "definition.clip" {
+			clips[tag.Name] = true
+		}
+	}
 	for _, tag := range tags {
 		if tag.Kind == "definition.kit" {
 			kits[tag.Name] = true
@@ -47,9 +57,14 @@ func Symbols(src []byte) ([]Symbol, error) {
 			kind = resolveBinding(tags, i)
 		} else if tag.Kind == "reference.voice" {
 			kind = "instrument"
+			if samplers[tag.Name] {
+				kind = "sampler"
+			}
 			if kits[tag.Name] {
 				kind = "kit"
 			}
+		} else if tag.Kind == "reference.pattern" && clips[tag.Name] {
+			kind = "clip"
 		} else if tag.Kind == "reference.mixer" {
 			kind = "bus"
 			for _, candidate := range tags {

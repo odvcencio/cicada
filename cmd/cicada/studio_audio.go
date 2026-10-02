@@ -384,6 +384,9 @@ func (s *studio) kernelImage(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
 	}
+	if r.URL.Query().Get("capture") == "1" {
+		p = captureBacking(p)
+	}
 	cfg, err := project.CompileEngine(p, rate, 128)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})

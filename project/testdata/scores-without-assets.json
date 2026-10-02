@@ -1,0 +1,290 @@
+{
+  "examples/acid-voice.cicada": [
+    "c3d9e3483e2c382f891ff083fa6d1b61492139c0db02790ecbb5494c6162038b",
+    "55cbbf46bcccfc5e400e9dabe55a685c3de4071c4d158b6f65113f9bbb5b7fa0"
+  ],
+  "examples/authored-kit.cicada": [
+    "13157fb12cbd5cec81269217b469899be98b4fff0ddb72c2edbe058d1ba4921e",
+    "78af75941fc90f6adf8df55ca8807285b63d823f2b06cf7c5a85034a1b88aca3"
+  ],
+  "examples/cicada-chorus.cicada": [
+    "cf357dbafb3b8f38fbb240b003494a2b1d1848c2b12cbae9f9ae277bd7a28ab2",
+    "e1ba61367e64395fa9f516b140df2c6b27015cdd1d20065e5772f7b0ea3f7248"
+  ],
+  "examples/circuit-kit.cicada": [
+    "ad4409a498c64cd645e3480cc6dabfb24daf9ea6f8b24e3b9d91c048c55e2971",
+    "04d50690fe3ce5bef5b1107dd8268bcb8247beb7cff9496e97ed1bc8497b1303"
+  ],
+  "examples/drums-kit.cicada": [
+    "b1b01ac55c18d148e1f4722ef67af873ba7ddc799eacf9cf778057e3da02d845",
+    "7115421feee20307a7dfd8219951334694bf3a9a6aaf1d22593b6fcb7e678cfd"
+  ],
+  "examples/first-acid.cicada": [
+    "2acba7244bfb5d2c36acfe707686d7bf37d5ac132318d1a41a7ec8f721123d89",
+    "fb92cb87d08b94fb681f0bddb91bdd0a574658a9f5aa84ffbdd0cb1dceffe2eb"
+  ],
+  "examples/fx-bus.cicada": [
+    "0b264f12fe3cddcb9a36b263d31d9b8a4516c17e36c5ef5f23bc62d3b70fd916",
+    "4464382170d918c1db2bd3730c9dea047907e4ca92abef0aa84a8a9d94da751e"
+  ],
+  "examples/fx/compressor-bus.cicada": [
+    "f103118298856161969615a4b169ec9e5174629e99f4c6d87342a1d56c6e98d0",
+    "f2294103857f1efd3d1d01467b539df9b8fa795e4350cbd09fb04f485ce26c87"
+  ],
+  "examples/fx/delay-send.cicada": [
+    "d08fc6265fd726268d47182cc3f399e3590651fd808b44d1554787dcaafd4489",
+    "3cf5c55f01961b6aeccdd7e5721569512434a590a1528a22d221402fb05a1f71"
+  ],
+  "examples/fx/drive-insert.cicada": [
+    "739cd746d852e9c69cf47398b909554d79f2fdead260fff3c0a85f65942e1ff9",
+    "223096addde04a5a512a14296260552b08e85565b05dcb20a008c9095b5d5c04"
+  ],
+  "examples/gen/seed-0000.cicada": [
+    "43e1d9305eb692d49f800326b91512c61cbfc7c1a99d6f9a088e06722cda845d",
+    "702720c9b6f3b0f26b3f5659e09897bfc628fbca52691fa400d47f8f3d181da1"
+  ],
+  "examples/gen/seed-0001.cicada": [
+    "cae1c1fcf6e266b62142a4c490e0cbcd119a84647009822c258fc27da2f1e148",
+    "a38239632f243274d71cdd75f3d5c63b5be6b70b5eb482f05545581328680d49"
+  ],
+  "examples/gen/seed-0002.cicada": [
+    "5c0bb13cdbae38781724ec6422395110af421de6f83e18272d89cf44a587635c",
+    "954688e4d65a7b397055fb89656ee0e679d51361ebd73b9e0c13827b18d5df42"
+  ],
+  "examples/gen/seed-0003.cicada": [
+    "a315a691e854b8c9688179c58b116ec55cf3b43ea017cce8de3d760bddef1bfd",
+    "771e016ccea94d668e3c565b2b3b112f99da32b431ffb3e476b01074fefe7b6f"
+  ],
+  "examples/gen/seed-0004.cicada": [
+    "066f4119824bd4e8cc1ab0092c7d7d30ee8a2b92c7fd0d15406302e4d382743e",
+    "92b1717acb0529433346c13327a843c5a17d1074e444be6141e0008d9e1a9fc4"
+  ],
+  "examples/gen/seed-0005.cicada": [
+    "9dc5b3eab2ef88c1e9eae23a46d69952c482546f8249e6dcf547a2ec25e6e212",
+    "8a120bd2058fa051fa526623078f6d0e8bcfaa650f7b36ae49ea6b11808a5591"
+  ],
+  "examples/gen/seed-0006.cicada": [
+    "d9e8683f8a7efe65600407b762da7aa9d8a5453a307b3f3651c70dcdba62fc21",
+    "c4e7d6ec9a9672ededd790704453e7b5b3faaf95053554a95d6d5649e8906f01"
+  ],
+  "examples/gen/seed-0007.cicada": [
+    "3fd18bde1dd74a036eb32e040179bb7bdbe9c042dfec14d730002012da1bf743",
+    "cb06ef934f46c745642fb5c403912751df69995b16ce322f710520164f97bcc7"
+  ],
+  "examples/gen/seed-0008.cicada": [
+    "1b71eb9eb912c8758d9aa9bd543c781c9d158418dca2587c82c0529f197bc27f",
+    "92fdd723cd8bd687b7b67231b4a6e882f0d3a6802aa84b5c614f4a6296444a15"
+  ],
+  "examples/gen/seed-0009.cicada": [
+    "ffe9d51574375276c560c0c16b138ae50027ff9df6001753ed66fd604f82ba3b",
+    "4f6a3f4ed680d9aa5f9100b1d1a73272e79515552de04c2462f2badd8849c26b"
+  ],
+  "examples/gen/seed-0010.cicada": [
+    "84c994f2d9ee48ea62a4b78c8b226de29d0ece392d8dc0f2c1b776d6222a0d1f",
+    "e67336bd785ebdde816499dede607773620224722092d77258cb89a1f253bb6c"
+  ],
+  "examples/gen/seed-0011.cicada": [
+    "3103832a983365c51fe667d27ef7832050ce333f07c66958c6ac61b8a3af7905",
+    "6a7468eab99614733886537c4184967ae63df439256674f6213b676344b1c08c"
+  ],
+  "examples/gen/seed-0012.cicada": [
+    "a04419cba5c91a8c8f9610dc7d817f9f3532df3ed25a3b06f16821fe67df3cf2",
+    "388a5fe454e9ae5f3e131a3cc11d4dae6142d570b6acf064e4bfd54d1a5feea2"
+  ],
+  "examples/gen/seed-0013.cicada": [
+    "a4391cc2c8c158b5675087ec618bfb4a1e3e2b85c543649d2a27a78758a8fd95",
+    "bdae00c31b7a572d20b2c1677e92c09e22fc52050e0faabd42fb546aa9cd0ebf"
+  ],
+  "examples/gen/seed-0014.cicada": [
+    "0be1e5e9eaf34512e664f48145dc8185f048967d506703194b25e9ccfc50ae1e",
+    "f2eb2ef4f7c70004a27a05f27ba525662fb55045fb05cff2f1ce17b0b068d5b1"
+  ],
+  "examples/gen/seed-0015.cicada": [
+    "3a571cb50688d2e115cdd60ca15c2a0119eadbc5a6f745f0a242d79060236de5",
+    "0adec1e93534a120e214c01fd74aa466d173d82e670010cd891454f347e6fe54"
+  ],
+  "examples/gen/seed-0016.cicada": [
+    "55ebcfb316e36716d130a7252ac54003ac092e0085a6f8212fb19f37528286db",
+    "a91ca7270af1f7a9016ebbc12cb18b6d851c2da721e521cc3ada00ee0fdafe25"
+  ],
+  "examples/gen/seed-0017.cicada": [
+    "7b773680b691de20148385f35cf8d624ac32fe13df1e908782aed09be3dac4a9",
+    "d99a6cd46c8d692161ff890ea1ceec747a905749f7a1d40767329cb8680c5719"
+  ],
+  "examples/gen/seed-0018.cicada": [
+    "15f490ec5a7396effe5ee359a193df92d8ab016a8885418ece7d099d9946bb62",
+    "c5a9268fe22f64524bbc58b1d60186d16659be25f71e375dd598509ab62fdedc"
+  ],
+  "examples/gen/seed-0019.cicada": [
+    "db7d58646143a25a05a0ce5f06d0ad3afb80869ff07fd1ea0669b02228be8372",
+    "30d3e5dcc31c703eb619abdf8dc3e091cd43b0ec864f180ba9ae09f26a1c8943"
+  ],
+  "examples/gen/seed-0020.cicada": [
+    "4b7c870fa0d11833dd67774c1aec092236b93d6218a8150b8411bc1c09ac4c6c",
+    "4d74959e02492c90f796aa1d0ab9b715c838e5770740553cdd4126eaf8abcf76"
+  ],
+  "examples/gen/seed-0021.cicada": [
+    "4f2acc541dfba9f62725c3771329cf2a179a28d473a316009938f350d7325a40",
+    "b37c795ce6b7ea3d5a38d85b45690911bd86ae0c4ed8203220ad7ed6800b22f3"
+  ],
+  "examples/gen/seed-0022.cicada": [
+    "f2971cc38bc22b8444dfb3cee12ef7935faa7ecb133a853c7b8a4cf1db8c422a",
+    "1524d13fe26281852c32f5120ae4152733866e3860cecfb16f06499c3ad99500"
+  ],
+  "examples/gen/seed-0023.cicada": [
+    "f968ed01a7169f25b30898a9c119bb98e3345d6e22037d26c7cdccb9eff7b7fb",
+    "791fe93cdeeb2edc51f61c5498c286da1c093d9909cbc6647affbd8b5f030325"
+  ],
+  "examples/glassbass.cicada": [
+    "ceb9dac0753511971bc88fd13bca98b8c28574fdbfc5acc7482f5a0f48dbf1fa",
+    "dee7e7de8e9766603a08646dcf1ddf9616d01f7266ce547d191aa69bb6237c57"
+  ],
+  "examples/sfx-bus.cicada": [
+    "d7a147e93c16c1789c2d17736f9084653c7883af69b4a7726bac8acb275fb7fb",
+    "b21bbf41ecada29c94b29c958abe7167dfd7b58c71741ff25c2f1c4c63d40d1f"
+  ],
+  "testdata/edition1/examples/acid-voice.cicada": [
+    "5a51ac731c71bc757253474a18640a4e613433e9b1f19ff34a090409ea74c755",
+    "55cbbf46bcccfc5e400e9dabe55a685c3de4071c4d158b6f65113f9bbb5b7fa0"
+  ],
+  "testdata/edition1/examples/authored-kit.cicada": [
+    "742d6657d5fed48b7296083b917ab65f1f0d31100d70a52716389b37402ea5da",
+    "78af75941fc90f6adf8df55ca8807285b63d823f2b06cf7c5a85034a1b88aca3"
+  ],
+  "testdata/edition1/examples/cicada-chorus.cicada": [
+    "a5001e7aa0fa8c6f3b419f97df5e17c783562030c8eb27780036b21d04c76145",
+    "e1ba61367e64395fa9f516b140df2c6b27015cdd1d20065e5772f7b0ea3f7248"
+  ],
+  "testdata/edition1/examples/circuit-kit.cicada": [
+    "67a3f2ae82d839f572df861f5130c59d621b947648652969d4a7d563d8b91a0e",
+    "04d50690fe3ce5bef5b1107dd8268bcb8247beb7cff9496e97ed1bc8497b1303"
+  ],
+  "testdata/edition1/examples/drums-kit.cicada": [
+    "9b13a1dad2841f9c3283502f0cdefe691a356941c3a0278623ed34c5e4737265",
+    "7115421feee20307a7dfd8219951334694bf3a9a6aaf1d22593b6fcb7e678cfd"
+  ],
+  "testdata/edition1/examples/first-acid.cicada": [
+    "8dac962824799e1f57a2e662ba155c1aa25cfabbb830be5a98ff9ce01435d07c",
+    "fb92cb87d08b94fb681f0bddb91bdd0a574658a9f5aa84ffbdd0cb1dceffe2eb"
+  ],
+  "testdata/edition1/examples/fx-bus.cicada": [
+    "cb1095094798f3b0f0fc78a31104ae8f1f9c067b0f38a4cb641a6ca38006b50f",
+    "4464382170d918c1db2bd3730c9dea047907e4ca92abef0aa84a8a9d94da751e"
+  ],
+  "testdata/edition1/examples/fx/compressor-bus.cicada": [
+    "3fc03ae4e0e6cdeccc017616869ef84bcd8c8fecb1e9f4bb9881b3c48e8106d6",
+    "f2294103857f1efd3d1d01467b539df9b8fa795e4350cbd09fb04f485ce26c87"
+  ],
+  "testdata/edition1/examples/fx/delay-send.cicada": [
+    "309c987881bd46912a8df2d4a0fb7c1d23deba258e673a3679a3d136a7e58b3a",
+    "3cf5c55f01961b6aeccdd7e5721569512434a590a1528a22d221402fb05a1f71"
+  ],
+  "testdata/edition1/examples/fx/drive-insert.cicada": [
+    "610b602a2ff01d9561a677ad9117019d9481b391f8505ea1dcde7d1b2e680c67",
+    "223096addde04a5a512a14296260552b08e85565b05dcb20a008c9095b5d5c04"
+  ],
+  "testdata/edition1/examples/gen/seed-0000.cicada": [
+    "69e995572b56658573bf2f673b9fe00c85602a1e93fa02dd7377dbe351101785",
+    "702720c9b6f3b0f26b3f5659e09897bfc628fbca52691fa400d47f8f3d181da1"
+  ],
+  "testdata/edition1/examples/gen/seed-0001.cicada": [
+    "80033e91e897267cbfb3be72e465809678377f4fbff0a8a6c271d7eea04ae92c",
+    "a38239632f243274d71cdd75f3d5c63b5be6b70b5eb482f05545581328680d49"
+  ],
+  "testdata/edition1/examples/gen/seed-0002.cicada": [
+    "cab6be2720aff81ad160d7d58a190423834dfa2d98c77b9c80c52433e61e1185",
+    "954688e4d65a7b397055fb89656ee0e679d51361ebd73b9e0c13827b18d5df42"
+  ],
+  "testdata/edition1/examples/gen/seed-0003.cicada": [
+    "5388522e1200e891fafe4bbe30194bdb34657b6785719a60bf1e34d26e47d7fc",
+    "771e016ccea94d668e3c565b2b3b112f99da32b431ffb3e476b01074fefe7b6f"
+  ],
+  "testdata/edition1/examples/gen/seed-0004.cicada": [
+    "b83d5f73ef9c3a27fa8613a598e0cd3d450c5d85eae123c3cab470b56589f1ed",
+    "92b1717acb0529433346c13327a843c5a17d1074e444be6141e0008d9e1a9fc4"
+  ],
+  "testdata/edition1/examples/gen/seed-0005.cicada": [
+    "9b4cbff9a9e19cef792fb5d7d492322759c5cb1618df1716124e49102d4388d3",
+    "8a120bd2058fa051fa526623078f6d0e8bcfaa650f7b36ae49ea6b11808a5591"
+  ],
+  "testdata/edition1/examples/gen/seed-0006.cicada": [
+    "5be659d323d67f55793869c48b2b853c375bca19bb752aea2d800b8c1ce3a74d",
+    "c4e7d6ec9a9672ededd790704453e7b5b3faaf95053554a95d6d5649e8906f01"
+  ],
+  "testdata/edition1/examples/gen/seed-0007.cicada": [
+    "43d58c2231d8e8972d1674e235b0c589c5a68e8cc79e422a4bfb85b329aa3e22",
+    "cb06ef934f46c745642fb5c403912751df69995b16ce322f710520164f97bcc7"
+  ],
+  "testdata/edition1/examples/gen/seed-0008.cicada": [
+    "cfd6e1dc45fb7b9284a76e5359b9cedecad066ed5ede0fa3e0338d49a96151ef",
+    "92fdd723cd8bd687b7b67231b4a6e882f0d3a6802aa84b5c614f4a6296444a15"
+  ],
+  "testdata/edition1/examples/gen/seed-0009.cicada": [
+    "e553170aa30642fa0587a18d4aa5f26410f23eb1ad1787e776d63e0cccf08070",
+    "4f6a3f4ed680d9aa5f9100b1d1a73272e79515552de04c2462f2badd8849c26b"
+  ],
+  "testdata/edition1/examples/gen/seed-0010.cicada": [
+    "8da525fde26da5ad4226dc0b699378f182d7b17b34cf1dd40fc191a1b10a9299",
+    "e67336bd785ebdde816499dede607773620224722092d77258cb89a1f253bb6c"
+  ],
+  "testdata/edition1/examples/gen/seed-0011.cicada": [
+    "4046f7724d42f0e0e41578a5971d9f70b549eb83cb0bea73daa543660f7e8a31",
+    "6a7468eab99614733886537c4184967ae63df439256674f6213b676344b1c08c"
+  ],
+  "testdata/edition1/examples/gen/seed-0012.cicada": [
+    "75e505afa6ed6f289b7561a5b71135414ff7acded54688d317fda11347fafa41",
+    "388a5fe454e9ae5f3e131a3cc11d4dae6142d570b6acf064e4bfd54d1a5feea2"
+  ],
+  "testdata/edition1/examples/gen/seed-0013.cicada": [
+    "d8db726c235f1171da30cf3b9ae29fe678cca1c94803bdbd2f493d8ee21fd0bf",
+    "bdae00c31b7a572d20b2c1677e92c09e22fc52050e0faabd42fb546aa9cd0ebf"
+  ],
+  "testdata/edition1/examples/gen/seed-0014.cicada": [
+    "d09c7229368a9ea798042c94d34f90c552e802b341641df1b60059d4fc76ce75",
+    "f2eb2ef4f7c70004a27a05f27ba525662fb55045fb05cff2f1ce17b0b068d5b1"
+  ],
+  "testdata/edition1/examples/gen/seed-0015.cicada": [
+    "c43f2d4acd0f2d615ba815e02add1f0cc4bc8000248f17dbdcd17793deedfae8",
+    "0adec1e93534a120e214c01fd74aa466d173d82e670010cd891454f347e6fe54"
+  ],
+  "testdata/edition1/examples/gen/seed-0016.cicada": [
+    "ba22293449afe82f09c20446040404c27106ed4fd90ae3694957a3574a64abf6",
+    "a91ca7270af1f7a9016ebbc12cb18b6d851c2da721e521cc3ada00ee0fdafe25"
+  ],
+  "testdata/edition1/examples/gen/seed-0017.cicada": [
+    "de8d640c61bc5a0483433ef43495331019f556b42245c68829bb24b3a66b6655",
+    "d99a6cd46c8d692161ff890ea1ceec747a905749f7a1d40767329cb8680c5719"
+  ],
+  "testdata/edition1/examples/gen/seed-0018.cicada": [
+    "f642770cd6639cec3f3ac4a73a209e9a0c778535ed602981fd30b67e4b4a8b39",
+    "c5a9268fe22f64524bbc58b1d60186d16659be25f71e375dd598509ab62fdedc"
+  ],
+  "testdata/edition1/examples/gen/seed-0019.cicada": [
+    "37e8dbdbca44149328cac2bdcac2dc758ebe5bd1d162785b135faee0126e6baf",
+    "30d3e5dcc31c703eb619abdf8dc3e091cd43b0ec864f180ba9ae09f26a1c8943"
+  ],
+  "testdata/edition1/examples/gen/seed-0020.cicada": [
+    "84deab33174a085f551acca3912dc5ade819f2057298e7770c5a95323b7abd1b",
+    "4d74959e02492c90f796aa1d0ab9b715c838e5770740553cdd4126eaf8abcf76"
+  ],
+  "testdata/edition1/examples/gen/seed-0021.cicada": [
+    "7d63d4e2b2e26558068305785adb63c0db55184fd33f307eef34d95bbec0d8d5",
+    "b37c795ce6b7ea3d5a38d85b45690911bd86ae0c4ed8203220ad7ed6800b22f3"
+  ],
+  "testdata/edition1/examples/gen/seed-0022.cicada": [
+    "a30a1e0e800749e71dce3e3164bdcddcfa61301e8029cc61c26f15d18e8bace3",
+    "1524d13fe26281852c32f5120ae4152733866e3860cecfb16f06499c3ad99500"
+  ],
+  "testdata/edition1/examples/gen/seed-0023.cicada": [
+    "137b453385a3504d9d6e117fc621c8fe38e41a9e5654156c131e6f521715b5ac",
+    "791fe93cdeeb2edc51f61c5498c286da1c093d9909cbc6647affbd8b5f030325"
+  ],
+  "testdata/edition1/examples/glassbass.cicada": [
+    "9d916264e945082faa5820c1998d72bebc059bada3437efc18d4f5601ba51dad",
+    "dee7e7de8e9766603a08646dcf1ddf9616d01f7266ce547d191aa69bb6237c57"
+  ],
+  "testdata/edition1/examples/sfx-bus.cicada": [
+    "b56ac0b07ae511c5281a636590dc9519683db5c0cb0dd97d57a6d0bf273bd575",
+    "b21bbf41ecada29c94b29c958abe7167dfd7b58c71741ff25c2f1c4c63d40d1f"
+  ]
+}
