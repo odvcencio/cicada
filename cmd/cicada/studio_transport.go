@@ -26,6 +26,8 @@ type studioTransport struct {
 	mu                sync.Mutex
 	pollMu            sync.Mutex
 	stream            *liveplay.Player
+	preview           *liveplay.Player
+	previewTimer      *time.Timer
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions
 	sampleRate        int
@@ -155,6 +157,9 @@ func (t *studioTransport) start() error { return t.startFrom(-1, "", nil, [32]by
 func (t *studioTransport) setBrowserAudioStatus(playing bool, sampleRate int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if playing {
+		t.stopPreviewLocked()
+	}
 	t.browserPlaying = playing
 	if playing {
 		t.browserSampleRate = sampleRate
@@ -179,6 +184,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.stopPreviewLocked()
 	if t.stream != nil {
 		audioFailed := false
 		if t.audio != nil {
@@ -342,6 +348,7 @@ func (t *studioTransport) stop() {
 }
 
 func (t *studioTransport) stopLocked() {
+	t.stopPreviewLocked()
 	t.pauseLocked()
 	if t.cancel != nil {
 		t.cancel()

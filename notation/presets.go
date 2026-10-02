@@ -184,7 +184,7 @@ func mergePresetParams(defaults, overrides []Param) []Param {
 // ResolvePresets returns a copy with bindings lowered to ordinary values.
 // The source score remains intact for formatting, explain, and editor writes.
 func ResolvePresets(source *Score) (*Score, []Diagnostic) {
-	if source == nil || len(source.Presets) == 0 {
+	if source == nil || len(source.Presets) == 0 && len(source.Origins) == 0 {
 		return source, nil
 	}
 	s := *source
@@ -335,7 +335,9 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 	}
 	effects := make([]Effect, 0, len(s.Effects))
 	for _, e := range s.Effects {
-		if !prototypes[e.Name] || routed[e.Name] {
+		// Imported effect declarations are available prototypes. Only routed
+		// or scene-addressed instances belong to this score's audio graph.
+		if (!prototypes[e.Name] && source.Origins[e.Name].Library == "") || routed[e.Name] {
 			effects = append(effects, e)
 		}
 	}
