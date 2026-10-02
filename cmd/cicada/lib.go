@@ -11,8 +11,22 @@ import (
 )
 
 func libCommand(args []string, output io.Writer) error {
+	if len(args) == 1 && args[0] == "list" {
+		root, err := projectRoot()
+		if err != nil {
+			return err
+		}
+		libraries, err := project.ListLibraries(root)
+		if err != nil {
+			return err
+		}
+		for _, library := range libraries {
+			fmt.Fprintf(output, "%s\t%s\n", library.Kind, library.Path)
+		}
+		return nil
+	}
 	if len(args) < 1 || args[0] != "update" || len(args) > 2 {
-		return fmt.Errorf("usage: cicada lib update [PATH]")
+		return fmt.Errorf("usage: cicada lib list | cicada lib update [PATH]")
 	}
 	root, err := projectRoot()
 	if err != nil {

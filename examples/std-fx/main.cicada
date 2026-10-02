@@ -1,0 +1,52 @@
+import "std/fx"
+
+title "Standard fx"
+
+tempo 128
+
+key a minor
+
+seed 4242
+
+track bass acid {
+  insert = fx.drive
+  send fx.delay = 0.3
+  send fx.reverb = 0.35
+  cutoff = 620Hz
+}
+
+track beat drums {
+  send fx.reverb = 0.2
+}
+
+pattern melody {
+  gate = 55%
+  1^ . 3 . 5~ 1 . 7,
+}
+
+pattern beat drums {
+  bd: X... x... X... x...
+  sd: .... X... .... X...
+  ch: x.x. x.x. x.x. x.x.
+  oh: .... .... ..x. ....
+}
+
+scene first {
+  bass = melody
+  beat = beat
+}
+
+scene second {
+  bass = keep
+  beat = keep
+  fx.delay.feedback = 0.4
+}
+
+song {
+  first
+  second
+}
+
+bus music {
+  insert = fx.comp
+}
