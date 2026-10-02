@@ -43,7 +43,11 @@ func multiFileExample(t testing.TB) (*notation.Score, *notation.Score, *project.
 }
 
 func TestMultiFileNativeAndOfflineByteParity(t *testing.T) {
-	score, single, p := multiFileExample(t)
+	verifySourceNativeAndOfflineByteParity(t, multiFileExample, "multifile")
+}
+
+func verifySourceNativeAndOfflineByteParity(t *testing.T, example func(testing.TB) (*notation.Score, *notation.Score, *project.Project), label string) {
+	score, single, p := example(t)
 	q, ds := project.FromScore(single)
 	if q == nil || len(ds) != 0 {
 		t.Fatalf("single project: %+v", ds)
@@ -96,13 +100,17 @@ func TestMultiFileNativeAndOfflineByteParity(t *testing.T) {
 				t.Fatal("offline WAV bytes differ")
 			}
 			assertSceneEngineMatchesWAV(t, score, multi.Bytes(), rate, 0, frames)
-			t.Logf("METRIC multifile rate=%d native_concat=byte-identical offline_concat=byte-identical frames=%d", rate, frames)
+			t.Logf("METRIC %s rate=%d native_inline=byte-identical offline_inline=byte-identical frames=%d", label, rate, frames)
 		})
 	}
 }
 
 func TestMultiFileRenderAllocationFree(t *testing.T) {
-	score, _, p := multiFileExample(t)
+	verifySourceRenderAllocationFree(t, multiFileExample, "multifile")
+}
+
+func verifySourceRenderAllocationFree(t *testing.T, example func(testing.TB) (*notation.Score, *notation.Score, *project.Project), label string) {
+	score, _, p := example(t)
 	for _, rate := range []int{44100, 48000} {
 		cfg, err := project.CompileEngine(p, rate, 128)
 		if err != nil {
@@ -140,7 +148,10 @@ func TestMultiFileRenderAllocationFree(t *testing.T) {
 		}
 		buffer := make([]byte, 128*8)
 		report := Report{SampleRate: rate}
-		events := []scheduled{{track: 0, event: seq.Event{Kind: seq.NoteOn, Note: 45, Velocity: 100}}, {track: 1, event: seq.Event{Kind: seq.NoteOn, Note: 57, Velocity: 100}}}
+		events := make([]scheduled, len(tracks))
+		for i := range tracks {
+			events[i] = scheduled{track: i, event: seq.Event{Kind: seq.NoteOn, Note: uint8(45 + i*12), Velocity: 100}}
+		}
 		var renderErr error
 		allocs = testing.AllocsPerRun(1000, func() {
 			renderErr = renderBlock(io.Discard, tracks, nil, nil, nil, 0, 0, 0, 1, busMixerState{}, limiter, nil, &encoder, events, 0, 128, buffer, &report)
@@ -148,14 +159,18 @@ func TestMultiFileRenderAllocationFree(t *testing.T) {
 		if renderErr != nil || allocs != 0 {
 			t.Fatalf("offline render block: allocs=%g err=%v", allocs, renderErr)
 		}
-		t.Logf("METRIC multifile rate=%d native_callback_allocs=0 offline_block_allocs=0", rate)
+		t.Logf("METRIC %s rate=%d native_callback_allocs=0 offline_block_allocs=0", label, rate)
 	}
 }
 
 var multiFileVoiceSample float32
 
 func BenchmarkMultiFileVoiceNext(b *testing.B) {
-	score, _, p := multiFileExample(b)
+	benchmarkSourceVoiceNext(b, multiFileExample)
+}
+
+func benchmarkSourceVoiceNext(b *testing.B, example func(testing.TB) (*notation.Score, *notation.Score, *project.Project)) {
+	score, _, p := example(b)
 	tracks, err := compileTracks(score, p, 48000)
 	if err != nil {
 		b.Fatal(err)
