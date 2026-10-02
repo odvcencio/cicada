@@ -48,6 +48,11 @@ func (s *server) projectDefinition(uri string, at position) any {
 	if err != nil {
 		return nil
 	}
+	if files != nil {
+		if target, found := libraryDefinition(files, uri, source, at); found {
+			return target
+		}
+	}
 	if files == nil || !files.Manifest.ExplicitSources() {
 		return definition(uri, source, at)
 	}
@@ -61,9 +66,17 @@ func (s *server) projectDefinition(uri string, at position) any {
 		if compiled == nil || hasErrors(ds) {
 			return nil
 		}
-		resolved, err := project.ResolveParameterPath(compiled, match.path)
+		resolved, err := project.ResolveParameterPath(compiled, libraryParameterPath(files, match.path))
 		if err != nil {
 			return nil
+		}
+		if origin, found := score.Origins[resolved.Owner]; found {
+			for _, file := range files.Files {
+				if file.Path == origin.Position.File {
+					start := scalarOffset(file.Source, origin.Position)
+					return map[string]any{"uri": fileURI(file.Path), "range": region{Start: utf16Position(file.Source, start), End: utf16Position(file.Source, start+len(strings.TrimPrefix(resolved.Owner, strings.ReplaceAll(origin.Library, "/", ".")+".")))}}
+				}
+			}
 		}
 		selected = language.Symbol{Name: resolved.Owner, Kind: resolved.OwnerKind}
 		ok = true
@@ -108,7 +121,13 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 	scope := instrumentScope(source, scalarOffset(source, selected.Position))
 	changes := map[string]any{}
 	updated := append([]notation.SourceFile(nil), files.Files...)
+	if strings.Contains(selected.Name, ".") {
+		return nil
+	}
 	for i, file := range files.Files {
+		if file.Library != "" {
+			continue
+		}
 		fileURI := fileURI(file.Path)
 		if local && fileURI != uri {
 			continue
@@ -196,7 +215,7 @@ func (s *server) projectHover(uri string, at position) any {
 	if compiled == nil || hasErrors(ds) {
 		return nil
 	}
-	resolved, err := project.ResolveParameterPath(compiled, match.path)
+	resolved, err := project.ResolveParameterPath(compiled, libraryParameterPath(files, match.path))
 	if err != nil {
 		return nil
 	}
@@ -205,12 +224,20 @@ func (s *server) projectHover(uri string, at position) any {
 
 func (s *server) projectCompletion(uri string, at position) any {
 	source := bytes.Clone(s.documents[uri])
+	if items, ok := importCompletion(uri, source, at); ok {
+		return items
+	}
 	files, err := s.projectSources(uri)
+	if files != nil {
+		if items := libraryItems(files, uri, source, at); len(items) > 0 {
+			return items
+		}
+	}
 	if err != nil || files == nil || !files.Manifest.ExplicitSources() {
 		return parameterPathCompletion(source, at)
 	}
 	for _, file := range files.Files {
-		if fileURI(file.Path) == uri {
+		if file.Library != "" || fileURI(file.Path) == uri {
 			continue
 		}
 		source = append(source, '\n')

@@ -63,6 +63,9 @@ func FixFiles(files []notation.SourceFile, edition int) ([]notation.SourceFile, 
 	legacy := append([]notation.SourceFile(nil), files...)
 	if edition == 2 {
 		for i, file := range legacy {
+			if file.Library != "" {
+				continue
+			}
 			root, w, err := notation.ParseTree(file.Source)
 			if err != nil {
 				return nil, false, err
@@ -101,6 +104,9 @@ func FixFiles(files []notation.SourceFile, edition int) ([]notation.SourceFile, 
 	fixed := append([]notation.SourceFile(nil), legacy...)
 	changed := false
 	for i, file := range legacy {
+		if file.Library != "" {
+			continue
+		}
 		data, _, err := rewriteSource(file.Source, before, i == musicBusFile)
 		if err != nil {
 			return nil, false, err
