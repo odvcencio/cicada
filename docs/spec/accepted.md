@@ -4,6 +4,16 @@ These owner-accepted designs extend Cicada's source language. Each section says 
 
 Runnable examples in this file use source edition 2. Examples marked `cicada-accepted` are designs for later support.
 
+## Authored graph delay and comb
+
+**Status:** Implemented. Authored pluck and slapback voices are experimental pending owner listening acceptance.
+
+**Syntax and meaning:** `delay(audio, ms)` provides a linearly interpolated tap. `comb(audio, ms, unit, unit)` provides allpass interpolation, feedback, and one-pole damping, with the complete loop period tuned at its fundamental. `1 / pitch` has type ms. See [graph delays and plucked strings](edition-2.md#graph-delays-and-plucked-strings) for units, limits, diagnostics, interpolation, and image compatibility.
+
+**Core budget:** 4,096 float32 samples per delay or comb, at most 8,192 per voice (32,768 bytes of rings). Storage is allocated before rendering. A third node reports `CICADA-LIMIT`; invalid units and constant controls report `CICADA-UNIT` and `CICADA-PARAM`.
+
+**Edition history:** Additive in editions 1 and 2. No new declarations or expression syntax are required. [pluck.cicada](../../examples/pluck.cicada) demonstrates a graph-only Karplus–Strong voice and slapback.
+
 ## Parameter paths and scene settings
 
 **Status:** Implemented. Scene parameter paths use the shared registry for type, unit, range, and engine validation.

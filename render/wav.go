@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
+	"slices"
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/engine"
@@ -381,7 +381,14 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	var eventBuf [128]seq.Event
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
-	var events []scheduled
+	eventCapacity := 0
+	for i := range tracks {
+		eventCapacity += 2*len(eventBuf) + 1 // active, pending releases, and transition
+		if tracks[i].drums != nil {
+			eventCapacity += (int(drum.LaneCount) - 1) * len(eventBuf)
+		}
+	}
+	events := make([]scheduled, 0, eventCapacity)
 	var position int64
 	bar := 0
 	for _, entry := range score.Song {
@@ -464,17 +471,23 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 						}
 					}
 				}
-				sort.Slice(events, func(i, j int) bool {
-					if events[i].event.Sample != events[j].event.Sample {
-						return events[i].event.Sample < events[j].event.Sample
+				slices.SortFunc(events, func(a, b scheduled) int {
+					if a.event.Sample != b.event.Sample {
+						if a.event.Sample < b.event.Sample {
+							return -1
+						}
+						return 1
 					}
-					if events[i].event.Kind != events[j].event.Kind {
-						return events[i].event.Kind == seq.NoteOff
+					if a.event.Kind != b.event.Kind {
+						if a.event.Kind == seq.NoteOff {
+							return -1
+						}
+						return 1
 					}
-					if events[i].track != events[j].track {
-						return events[i].track < events[j].track
+					if a.track != b.track {
+						return a.track - b.track
 					}
-					if events[i].lane != events[j].lane {
+					if a.lane != b.lane {
 						priority := func(lane drum.Lane) int {
 							if lane == drum.OH {
 								return int(drum.CH)
@@ -484,9 +497,15 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 							}
 							return int(lane)
 						}
-						return priority(events[i].lane) < priority(events[j].lane)
+						return priority(a.lane) - priority(b.lane)
 					}
-					return events[i].event.NoteID < events[j].event.NoteID
+					if a.event.NoteID < b.event.NoteID {
+						return -1
+					}
+					if a.event.NoteID > b.event.NoteID {
+						return 1
+					}
+					return 0
 				})
 				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
 					return report, err
