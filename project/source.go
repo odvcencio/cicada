@@ -556,6 +556,13 @@ func noteStepSource(step *Step) (string, error) {
 		return "-", nil
 	}
 	text := absolutePitch(step.Note)
+	if len(step.Notes) > 0 {
+		pitches := make([]string, len(step.Notes))
+		for i, note := range step.Notes {
+			pitches[i] = absolutePitch(uint8(note))
+		}
+		text = "[" + strings.Join(pitches, " ") + "]"
+	}
 	if step.Accent {
 		text += "^"
 	}

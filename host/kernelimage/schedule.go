@@ -5,13 +5,14 @@ import (
 	"math"
 )
 
-// Version 14 appends schedules and prepared PCM. Legacy projects continue
+// Version 15 always appends the schedule/asset/clip footer, even when empty.
+// Legacy projects continue
 // encoding as version 13, so old fixtures and consumers stay byte-identical.
 func writeSchedule(w *writer, cfg *engine.Config) error {
 	if len(cfg.Schedule) > 65535 || len(cfg.Clips) > 65535 || len(cfg.Assets) > 65535 || len(cfg.Schedule) > 0 && len(cfg.Song) > 0 {
 		return Error("invalid schedule image counts or authority")
 	}
-	needed := int64(16 + 26*len(cfg.Schedule) + 42*len(cfg.Clips))
+	needed := int64(24 + 26*len(cfg.Schedule) + 42*len(cfg.Clips))
 	for _, a := range cfg.Assets {
 		if a.SampleRate < 8000 || a.SampleRate > 192000 || len(a.Left) == 0 || len(a.Right) > 0 && len(a.Right) != len(a.Left) {
 			return Error("invalid audio asset dimensions")
@@ -23,6 +24,7 @@ func writeSchedule(w *writer, cfg *engine.Config) error {
 	}
 	w.f32(cfg.MasterBiasL)
 	w.f32(cfg.MasterBiasR)
+	w.f64(cfg.MasterGainDB)
 	w.u32(uint32(len(cfg.Schedule)))
 	w.u16(uint16(len(cfg.Assets)))
 	w.u16(uint16(len(cfg.Clips)))
@@ -66,6 +68,9 @@ func readSchedule(r *reader, cfg *engine.Config) error {
 	if cfg.MasterBiasR, err = r.f32(); err != nil {
 		return err
 	}
+	if cfg.MasterGainDB, err = r.f64(); err != nil {
+		return err
+	}
 	count, err := r.u32()
 	if err != nil {
 		return err
@@ -81,9 +86,15 @@ func readSchedule(r *reader, cfg *engine.Config) error {
 	if count > 65535 || uint64(count)*26+uint64(assets)*9+uint64(clips)*42 > uint64(len(r.data)-r.at) {
 		return Error("invalid schedule image counts")
 	}
-	cfg.Schedule = make([]engine.ScheduleEvent, int(count))
-	cfg.Assets = make([]engine.AudioAsset, int(assets))
-	cfg.Clips = make([]engine.ClipConfig, int(clips))
+	if count > 0 {
+		cfg.Schedule = make([]engine.ScheduleEvent, int(count))
+	}
+	if assets > 0 {
+		cfg.Assets = make([]engine.AudioAsset, int(assets))
+	}
+	if clips > 0 {
+		cfg.Clips = make([]engine.ClipConfig, int(clips))
+	}
 	for i := range cfg.Schedule {
 		v := &cfg.Schedule[i]
 		tick, err := r.u64()

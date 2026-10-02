@@ -10,6 +10,14 @@ import (
 	"m31labs.dev/cicada/kernel/voice/acid"
 )
 
+// Bit0 retains chord-command support; bit1 explicitly negotiates image15.
+// Neither capability permits either ambiguous development image14 dialect.
+//
+//go:wasmexport gosx_audio_capabilities
+func capabilities() uint32 {
+	return kernelimage.CapabilityChords | kernelimage.CapabilityUnifiedImage
+}
+
 var audioEngine *engine.Engine
 var maxFrames int
 var trackKinds = [16]engine.VoiceKind{engine.VoiceAcid}

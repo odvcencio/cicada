@@ -66,14 +66,14 @@ func TestFirstAcidProjectImageRoundTrip(t *testing.T) {
 	}
 }
 
-func TestAudioTrackRequiresVersion14(t *testing.T) {
+func TestAudioTrackRequiresUnifiedVersion15(t *testing.T) {
 	cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120000}
 	cfg.Track[0].Kind = engine.VoiceAudio
 	data, err := kernelimage.Encode(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if binary.LittleEndian.Uint16(data[4:6]) != 14 {
+	if binary.LittleEndian.Uint16(data[4:6]) != kernelimage.UnifiedImageVersion {
 		t.Fatal("audio track encoded with legacy version")
 	}
 	if _, err = kernelimage.Decode(data, 48000, 128); err != nil {

@@ -171,7 +171,9 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 			}
 			p.active = -1
 			p.chainArmed = false
-			p.generation++
+			if !e.nextPatternGeneration(track) {
+				return
+			}
 			p.playingNote = 0
 			p.heldValid = false
 			p.eventCount, p.eventIndex = 0, 0

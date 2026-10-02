@@ -38,7 +38,9 @@ stems retain the existing whole-bar export convention: a partial final bar is
 included, followed by the requested effect tail. Placement boundaries remain
 exact within that span. Export removes engine output latency.
 
-Kernel image version 14 carries placements and prepared planar audio. Legacy
+Unified kernel image version 15 carries placements, prepared planar audio and
+explicit graph chord fields. The two incompatible development-v14 dialects are
+rejected; recompile their project source. See [the exact v15 contract](kernel-image-v15.md). Legacy
 projects still encode as version 13, and versions 8–13 remain readable. Hosts
 verify and decode assets before rendering; the current resident loader and
 2 MiB image limit remain in force. Streamed page ownership and admission

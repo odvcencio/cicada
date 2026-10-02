@@ -297,3 +297,33 @@ func TestJournalRecoverChecksLiveTail(t *testing.T) {
 		})
 	}
 }
+
+func TestSourceTrimsInitialGapAcrossCountIn(t *testing.T) {
+	s, _ := testStore(t)
+	id, err := s.Begin("vox", "main", Revision(nil), 48000, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	timing := capture.Block{SampleRate: 48000, Frames: 4, GapFrames: 6, EngineFrame: 2}
+	first := capture.RecordedBlock{RawFrame: 6, Timing: timing, Placement: capture.Place(timing)}
+	if err := s.Write(id, first, [][]float32{{.25, .5, .75, 1}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Finalize(id, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Publish(id); err != nil {
+		t.Fatal(err)
+	}
+	take, _ := s.Get(id)
+	selected, err := SelectSource([]byte("cicada 2\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { vox = off bass = pulse }\nsong { main }\n"), take)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(selected), "start = 4frames") {
+		t.Fatalf("count-in silence was not trimmed across the initial gap: %s", selected)
+	}
+	if !strings.Contains(string(selected), "end = 10frames") {
+		t.Fatal("initial loss duration was closed")
+	}
+}

@@ -9,6 +9,16 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+// StartFrame is the raw asset offset corresponding to frame zero of the take.
+// Initial loss can cross the count-in boundary and leave the first saved block
+// with positive placement. Keep the part of that gap after the origin as silence.
+func (t Take) StartFrame() int64 {
+	if t.FirstBlock == nil {
+		return 0
+	}
+	return max(0, int64(t.FirstBlock.RawFrame)-t.FirstBlock.Placement.EngineFrame)
+}
+
 // SelectSource retains every asset and clip declaration and changes only the
 // selected scene binding. Timing before frame zero becomes clip preroll trim;
 // full raw PCM and placement metadata remain in the journal and asset.
@@ -85,10 +95,7 @@ func SelectSource(source []byte, t Take) ([]byte, error) {
 		fmt.Fprintf(&text, "\nasset %s %s {\n  sha256 = %s\n  format = wav\n  frames = %d\n  rate = %dHz\n  channels = %d\n  source = recorded\n}\n", a.Name, strconv.Quote(a.Path), strconv.Quote(a.SHA256), a.Frames, a.RateHz, a.Channels)
 	}
 	if !hasClip {
-		start := int64(0)
-		if t.FirstBlock != nil && t.FirstBlock.Placement.EngineFrame < 0 {
-			start = int64(t.FirstBlock.RawFrame) - t.FirstBlock.Placement.EngineFrame
-		}
+		start := t.StartFrame()
 		if start >= t.Asset.Frames {
 			return nil, errors.New("take contains only preroll; retained for recovery")
 		}

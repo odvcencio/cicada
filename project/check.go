@@ -198,6 +198,8 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 				voices += drumVoices[trackID]
 			} else if count, ok := kitVoices[kind]; ok {
 				voices += count
+			} else if sourceTrackIsPoly(score, kind) {
+				voices += 4
 			} else {
 				voices++
 			}
@@ -238,4 +240,13 @@ func patternCompileDiagnostic(err error, position notation.Position) notation.Di
 		code = "CICADA-SCALE-DEGREE"
 	}
 	return notation.Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: position}
+}
+
+func sourceTrackIsPoly(score *notation.Score, kind string) bool {
+	for _, inst := range score.Instruments {
+		if inst.Name == kind {
+			return inst.Mode == "poly"
+		}
+	}
+	return false
 }

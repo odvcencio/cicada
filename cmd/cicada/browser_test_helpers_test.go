@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -43,6 +44,53 @@ var browserEvidenceDir = func() string {
 
 const windowsBrowserProfile = `C:\Temp\cicada-ws-m2c3`
 const windowsBrowserProfileWSL = `/mnt/c/Temp/cicada-ws-m2c3`
+
+// Keep the WSL runner usable while allowing precompiled Windows test binaries
+// to use the installed Windows tools and the same isolated lane profile directly.
+func windowsChromePaths(goos string, getenv func(string) string) []string {
+	if path := getenv("CHROME_BIN"); path != "" {
+		return []string{path}
+	}
+	if goos != "windows" {
+		return []string{
+			"/mnt/c/Program Files/Google/Chrome/Application/chrome.exe",
+			"/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe",
+		}
+	}
+	programFiles, programFilesX86 := getenv("ProgramFiles"), getenv("ProgramFiles(x86)")
+	if programFiles == "" {
+		programFiles = `C:\Program Files`
+	}
+	if programFilesX86 == "" {
+		programFilesX86 = `C:\Program Files (x86)`
+	}
+	paths := []string{
+		strings.TrimRight(programFiles, `\/`) + `\Google\Chrome\Application\chrome.exe`,
+		strings.TrimRight(programFilesX86, `\/`) + `\Google\Chrome\Application\chrome.exe`,
+	}
+	if local := getenv("LOCALAPPDATA"); local != "" {
+		paths = append(paths, strings.TrimRight(local, `\/`)+`\Google\Chrome\Application\chrome.exe`)
+	}
+	return paths
+}
+
+func windowsPowerShellHostPath(goos string, getenv func(string) string) string {
+	if goos != "windows" {
+		return "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+	}
+	root := getenv("SystemRoot")
+	if root == "" {
+		root = `C:\Windows`
+	}
+	return strings.TrimRight(root, `\/`) + `\System32\WindowsPowerShell\v1.0\powershell.exe`
+}
+
+func windowsBrowserProfileHostPath(goos string) string {
+	if goos == "windows" {
+		return windowsBrowserProfile
+	}
+	return windowsBrowserProfileWSL
+}
 
 func windowsStudioBaseURL() string {
 	return "http://localhost:" + strings.TrimPrefix(browserStudioAddress, "127.0.0.1:")
@@ -173,8 +221,20 @@ type browserStudioServer struct {
 }
 
 func startBrowserStudio(t *testing.T, source, reference []byte) *browserStudioServer {
+	return startBrowserStudioFiles(t, source, reference, nil)
+}
+
+func startBrowserStudioFiles(t *testing.T, source, reference []byte, files map[string][]byte) *browserStudioServer {
 	t.Helper()
 	root := t.TempDir()
+	for name, data := range files {
+		if filepath.Base(name) != name {
+			t.Fatal("fixture filename must be a basename")
+		}
+		if err := os.WriteFile(filepath.Join(root, name), data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	path := filepath.Join(root, "first-acid.cicada")
 	if err := os.WriteFile(path, source, 0600); err != nil {
 		t.Fatal(err)
@@ -389,20 +449,24 @@ func startBrowserChrome(t *testing.T, server *browserStudioServer) *browserChrom
 func startWindowsBrowserChrome(t *testing.T, server *browserStudioServer) *browserChrome {
 	t.Helper()
 	if server == nil || server.bridge == nil {
-		t.Fatal("Windows Chrome requires the WSL page-result collector")
+		t.Fatal("Windows Chrome requires the page-result collector")
 	}
-	bin := "/mnt/c/Program Files/Google/Chrome/Application/chrome.exe"
-	if _, err := os.Stat(bin); err != nil {
-		bin = "/mnt/c/Program Files (x86)/Google/Chrome/Application/chrome.exe"
+	paths := windowsChromePaths(runtime.GOOS, os.Getenv)
+	var bin string
+	for _, path := range paths {
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			bin = path
+			break
+		}
 	}
-	if _, err := os.Stat(bin); err != nil {
-		t.Fatalf("Windows Chrome was not found at the standard install paths: %v", err)
+	if bin == "" {
+		t.Fatalf("Windows Chrome was not found at %v; set CHROME_BIN if installed elsewhere", paths)
 	}
 	powershell, err := windowsPowerShellPath()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(windowsBrowserProfileWSL, 0700); err != nil {
+	if err := os.MkdirAll(windowsBrowserProfileHostPath(runtime.GOOS), 0700); err != nil {
 		t.Fatalf("create Windows Chrome profile directory: %v", err)
 	}
 	stopWindowsChrome(t, powershell)
@@ -428,7 +492,7 @@ func startWindowsBrowserChrome(t *testing.T, server *browserStudioServer) *brows
 	process.Stdout, process.Stderr = logFile, logFile
 	if err := process.Start(); err != nil {
 		_ = logFile.Close()
-		t.Fatalf("start chrome.exe through WSL interop: %v", err)
+		t.Fatalf("start Windows Chrome: %v", err)
 	}
 	chrome := &browserChrome{t: t, process: process, done: make(chan struct{}), log: logFile, windows: true, bridge: server.bridge, outerW: 1440, outerH: 1000}
 	go func() { _ = process.Wait(); close(chrome.done) }()
@@ -443,9 +507,9 @@ func startWindowsBrowserChrome(t *testing.T, server *browserStudioServer) *brows
 }
 
 func windowsPowerShellPath() (string, error) {
-	path := "/mnt/c/Windows/System32/WindowsPowerShell/v1.0/powershell.exe"
+	path := windowsPowerShellHostPath(runtime.GOOS, os.Getenv)
 	if _, err := os.Stat(path); err != nil {
-		return "", fmt.Errorf("Windows PowerShell interop was not found at %s: %w", path, err)
+		return "", fmt.Errorf("Windows PowerShell was not found at %s: %w", path, err)
 	}
 	return path, nil
 }
@@ -751,10 +815,16 @@ func (b *browserChrome) setWindowsViewport(width, height int) {
 		}
 		b.outerW += width - current.Width
 		b.outerH += height - current.Height
-		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CicadaWindow { [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); }'; $laneUserData='%s'; $window=$null; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like ('*' + $laneUserData + '*') } | ForEach-Object { $p=Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { $window=$p.MainWindowHandle } }; if (-not $window) { throw 'lane Chrome window not found' }; [CicadaWindow]::SetWindowPos([IntPtr]$window,[IntPtr]::Zero,30,30,%d,%d,0x0040) | Out-Null; [CicadaWindow]::SetForegroundWindow([IntPtr]$window) | Out-Null`, windowsBrowserProfile, b.outerW, b.outerH)
-		command := exec.Command(powershell, "-NoProfile", "-NonInteractive", "-Command", script)
-		if output, err := command.CombinedOutput(); err != nil {
-			b.t.Fatalf("resize Windows Chrome window: %v: %s", err, strings.TrimSpace(string(output)))
+		if runtime.GOOS == "windows" {
+			if err := resizeNativeWindowsChromeWindow(powershell, b.outerW, b.outerH); err != nil {
+				b.t.Fatalf("resize Windows Chrome window: %v", err)
+			}
+		} else {
+			script := fmt.Sprintf(`$ErrorActionPreference='Stop'; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CicadaWindow { [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); }'; $laneUserData='%s'; $window=$null; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like ('*' + $laneUserData + '*') } | ForEach-Object { $p=Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { $window=$p.MainWindowHandle } }; if (-not $window) { throw 'lane Chrome window not found' }; [CicadaWindow]::SetWindowPos([IntPtr]$window,[IntPtr]::Zero,30,30,%d,%d,0x0040) | Out-Null; [CicadaWindow]::SetForegroundWindow([IntPtr]$window) | Out-Null`, windowsBrowserProfile, b.outerW, b.outerH)
+			command := exec.Command(powershell, "-NoProfile", "-NonInteractive", "-Command", script)
+			if output, err := command.CombinedOutput(); err != nil {
+				b.t.Fatalf("resize Windows Chrome window: %v: %s", err, strings.TrimSpace(string(output)))
+			}
 		}
 		time.Sleep(250 * time.Millisecond)
 	}
@@ -768,16 +838,23 @@ func (b *browserChrome) captureWindowsScreenshot(name string) {
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	if err := os.MkdirAll(windowsBrowserProfileWSL, 0700); err != nil {
+	profilePath := windowsBrowserProfileHostPath(runtime.GOOS)
+	if err := os.MkdirAll(profilePath, 0700); err != nil {
 		b.t.Fatal(err)
 	}
-	windowsPath := windowsBrowserProfile + `\` + strings.ReplaceAll(filepath.Base(name), "'", "''")
-	script := fmt.Sprintf(`$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Drawing; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CicadaCapture { [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left; public int Top; public int Right; public int Bottom; } [StructLayout(LayoutKind.Sequential)] public struct Point { public int X; public int Y; } [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out Rect rect); [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref Point point); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); }'; $laneUserData='%s'; $window=$null; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like ('*' + $laneUserData + '*') } | ForEach-Object { $p=Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { $window=$p.MainWindowHandle } }; if (-not $window) { throw 'lane Chrome window not found' }; [CicadaCapture]::SetForegroundWindow([IntPtr]$window) | Out-Null; $rect=New-Object CicadaCapture+Rect; if (-not [CicadaCapture]::GetClientRect([IntPtr]$window,[ref]$rect)) { throw 'GetClientRect failed' }; $point=New-Object CicadaCapture+Point; if (-not [CicadaCapture]::ClientToScreen([IntPtr]$window,[ref]$point)) { throw 'ClientToScreen failed' }; $bitmap=New-Object System.Drawing.Bitmap($rect.Right,$rect.Bottom); $graphics=[System.Drawing.Graphics]::FromImage($bitmap); $graphics.CopyFromScreen($point.X,$point.Y,0,0,$bitmap.Size); $bitmap.Save('%s',[System.Drawing.Imaging.ImageFormat]::Png); $graphics.Dispose(); $bitmap.Dispose()`, windowsBrowserProfile, windowsPath)
-	command := exec.Command(powershell, "-NoProfile", "-NonInteractive", "-Command", script)
-	if output, err := command.CombinedOutput(); err != nil {
-		b.t.Fatalf("capture headed Windows Chrome screenshot: %v: %s", err, strings.TrimSpace(string(output)))
+	source := filepath.Join(profilePath, filepath.Base(name))
+	if runtime.GOOS == "windows" {
+		if err := captureNativeWindowsChromeScreenshot(powershell, source); err != nil {
+			b.t.Fatalf("capture headed Windows Chrome screenshot: %v", err)
+		}
+	} else {
+		windowsPath := windowsBrowserProfile + `\` + strings.ReplaceAll(filepath.Base(name), "'", "''")
+		script := fmt.Sprintf(`$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Drawing; Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class CicadaCapture { [StructLayout(LayoutKind.Sequential)] public struct Rect { public int Left; public int Top; public int Right; public int Bottom; } [StructLayout(LayoutKind.Sequential)] public struct Point { public int X; public int Y; } [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out Rect rect); [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref Point point); [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd); }'; $laneUserData='%s'; $window=$null; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like ('*' + $laneUserData + '*') } | ForEach-Object { $p=Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { $window=$p.MainWindowHandle } }; if (-not $window) { throw 'lane Chrome window not found' }; [CicadaCapture]::SetForegroundWindow([IntPtr]$window) | Out-Null; $rect=New-Object CicadaCapture+Rect; if (-not [CicadaCapture]::GetClientRect([IntPtr]$window,[ref]$rect)) { throw 'GetClientRect failed' }; $point=New-Object CicadaCapture+Point; if (-not [CicadaCapture]::ClientToScreen([IntPtr]$window,[ref]$point)) { throw 'ClientToScreen failed' }; $bitmap=New-Object System.Drawing.Bitmap($rect.Right,$rect.Bottom); $graphics=[System.Drawing.Graphics]::FromImage($bitmap); $graphics.CopyFromScreen($point.X,$point.Y,0,0,$bitmap.Size); $bitmap.Save('%s',[System.Drawing.Imaging.ImageFormat]::Png); $graphics.Dispose(); $bitmap.Dispose()`, windowsBrowserProfile, windowsPath)
+		command := exec.Command(powershell, "-NoProfile", "-NonInteractive", "-Command", script)
+		if output, err := command.CombinedOutput(); err != nil {
+			b.t.Fatalf("capture headed Windows Chrome screenshot: %v: %s", err, strings.TrimSpace(string(output)))
+		}
 	}
-	source := filepath.Join(windowsBrowserProfileWSL, filepath.Base(name))
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if _, err := os.Stat(source); err == nil {
@@ -815,6 +892,11 @@ func nativeReference(t *testing.T, source []byte, bars int, rate int) []byte {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return nativeConfigReference(t, cfg, bars)
+}
+
+func nativeConfigReference(t *testing.T, cfg engine.Config, bars int) []byte {
+	t.Helper()
 	e, err := engine.New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -822,7 +904,7 @@ func nativeReference(t *testing.T, source []byte, bars int, rate int) []byte {
 	if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 		t.Fatal("native reference rejected play")
 	}
-	clock, err := seq.NewClock(rate, int64(p.TempoMilli))
+	clock, err := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
 	if err != nil {
 		t.Fatal(err)
 	}
