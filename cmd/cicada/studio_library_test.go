@@ -118,6 +118,19 @@ func TestStudioLibraryInsertPinsAndUndoRedo(t *testing.T) {
 			if item.Kind == "instrument" || item.Kind == "preset" {
 				hand := strings.Replace(studioLibraryScore, "track lead acid", "track lead "+libraryReference(item), 1) + "\nimport \"" + item.Path + "\"\n"
 				studioLibraryPCMEqual(t, filename, current, []byte(hand))
+			} else {
+				route := "insert=fx.drive"
+				if item.Name == "delay" || item.Name == "reverb" {
+					route = "send fx." + item.Name + "=0.4"
+				}
+				if item.Name == "comp" {
+					route = "out=music"
+				}
+				hand := strings.Replace(studioLibraryScore, "pan=0.2 }", "pan=0.2 "+route+" }", 1) + "\nimport \"std/fx\"\n"
+				if item.Name == "comp" {
+					hand += "bus music { insert=fx.comp }\n"
+				}
+				studioLibraryPCMEqual(t, filename, current, []byte(hand))
 			}
 			r = studioCall(t, h, "/api/undo", studioEdit{Revision: studioRevision(current)})
 			if r.Code != 200 {
@@ -382,4 +395,23 @@ func TestStudioLibrarySavesTransitivePresetWithDirectImport(t *testing.T) {
 		t.Fatal(err)
 	}
 	studioLibraryPCMEqual(t, filename, updated, source)
+}
+
+func TestStudioLibraryKitInsertHandwrittenPCM(t *testing.T) {
+	_, filename := libraryStudio(t)
+	source := []byte("cicada 2\ntempo 120\ntrack beat drums {}\npattern rhythm drums { bd: X...x...X...x... ch: x.x.x.x.x.x.x.x. }\nscene main { beat=rhythm }\nsong { main }\n")
+	if err := os.WriteFile(filename, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := studioHandler(filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := studioCall(t, h, "/api/library/insert", studioEdit{Revision: studioRevision(source), Path: "std/drums", Item: "steel", Track: "beat"})
+	if r.Code != 200 {
+		t.Fatalf("kit insert: %d %s", r.Code, r.Body.String())
+	}
+	current, _ := os.ReadFile(filename)
+	hand := strings.Replace(string(source), "track beat drums", "track beat drums.steel", 1) + "\nimport \"std/drums\"\n"
+	studioLibraryPCMEqual(t, filename, current, []byte(hand))
 }
