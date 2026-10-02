@@ -20,6 +20,9 @@ const MaxImageBytes = 2 << 20
 // reserved header word carries required capabilities without changing version
 // 13's layout. Older readers reject its nonzero value before loading new ops.
 const DelayCapability uint16 = 1 << 1
+
+// PMCapability uses the next capability bit without changing node records.
+const PMCapability uint16 = 1 << 2
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -128,14 +131,10 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	var capabilities uint16
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
-		if graphNeedsDelay(spec.Graph) {
-			capabilities |= DelayCapability
-		}
+		capabilities |= graphCapabilities(&spec.Graph)
 		if spec.Kit != nil {
 			for _, binding := range spec.Kit {
-				if graphNeedsDelay(binding.Program) {
-					capabilities |= DelayCapability
-				}
+				capabilities |= graphCapabilities(&binding.Program)
 			}
 		}
 	}
@@ -391,7 +390,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^DelayCapability != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PMCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -780,14 +779,19 @@ func writeGraph(w *writer, program graph.Program) error {
 	return nil
 }
 
-func graphNeedsDelay(program graph.Program) bool {
+// Inspect by pointer: a Program contains the full 128-node array. Copying it
+// for each capability check expands the WASM reader without adding behavior.
+func graphCapabilities(program *graph.Program) uint16 {
+	var required uint16
 	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
 		switch program.Nodes[i].Op {
 		case graph.Delay, graph.Comb, graph.Period:
-			return true
+			required |= DelayCapability
+		case graph.PM:
+			required |= PMCapability
 		}
 	}
-	return false
+	return required
 }
 
 func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, error) {
@@ -828,8 +832,12 @@ func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, e
 		}
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
 	}
-	if graphNeedsDelay(program) && capabilities&DelayCapability == 0 {
+	required := graphCapabilities(&program)
+	if required&DelayCapability != 0 && capabilities&DelayCapability == 0 {
 		return program, Error("graph delay operations require capability bit 1")
+	}
+	if required&PMCapability != 0 && capabilities&PMCapability == 0 {
+		return program, Error("graph phase modulation requires capability bit 2")
 	}
 	return program, nil
 }

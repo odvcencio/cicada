@@ -27,6 +27,10 @@ func TestAudioWASMGraphDelaySampleParity(t *testing.T) {
 	compareWASMFixture(t, "pluck.cicada", 2)
 }
 
+func TestAudioWASMGraphPMSampleParity(t *testing.T) {
+	compareWASMFixture(t, "fm-bell.cicada", 2)
+}
+
 func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
 	compareWASMFixture(t, "authored-kit.cicada", 1)
 }
@@ -278,6 +282,9 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 				return result[0]
 			}
 			call("_initialize")
+			if fixture == "fm-bell.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.PMCapability) == 0 {
+				t.Fatal("kernel does not advertise graph PM capability")
+			}
 			if fixture == "pluck.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.DelayCapability) == 0 {
 				t.Fatal("kernel does not advertise graph delay capability")
 			}
@@ -308,7 +315,7 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 			var nonzero bool
 			var stableMemory uint32
 			var initialAllocations uint64
-			if fixture == "pluck.cicada" {
+			if fixture == "pluck.cicada" || fixture == "fm-bell.cicada" {
 				initialAllocations = call("gosx_audio_alloc_bytes")
 			}
 			for block := 0; block*blockSize < frames; block++ {
@@ -359,12 +366,12 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 			if stableMemory == 0 || module.Memory().Size() != stableMemory {
 				t.Fatalf("WASM memory grew after warm-up: %d -> %d", stableMemory, module.Memory().Size())
 			}
-			if fixture == "pluck.cicada" {
+			if fixture == "pluck.cicada" || fixture == "fm-bell.cicada" {
 				allocated := call("gosx_audio_alloc_bytes") - initialAllocations
 				if allocated != 0 {
 					t.Fatalf("WASM callback allocated %d bytes", allocated)
 				}
-				t.Logf("METRIC: graph delay WASM callback allocated bytes | rate=%d bytes=%d", rate, allocated)
+				t.Logf("METRIC: WASM callback allocated bytes | fixture=%s rate=%d bytes=%d", fixture, rate, allocated)
 			}
 			if exactMessages {
 				compareMessageLogs(t, wasmEvents, nativeEvents)
@@ -374,7 +381,7 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 			if peakDifference > 1e-6 {
 				t.Fatalf("native/WASM peak sample difference %.9g at frame %d channel %d exceeds 1e-6", peakDifference, peakSample, peakChannel)
 			}
-			t.Logf("%s: %d bars at %d Hz, peak native/WASM sample difference %.9g", fixture, bars, rate, peakDifference)
+			t.Logf("METRIC: native/WASM PCM parity | fixture=%s bars=%d rate=%d peak_difference=%.9g tolerance=1e-6", fixture, bars, rate, peakDifference)
 		})
 	}
 }
