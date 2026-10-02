@@ -28,7 +28,7 @@ func EBNF() (string, error) {
 	out.WriteString("   Edition-specific limits are in edition-1.md and edition-2.md. *)\n\n")
 	for _, name := range g.RuleOrder {
 		if name == "call_expr" {
-			out.WriteString("(* Typed functions include delay(audio, ms) and comb(audio, ms, unit, unit).\n   Unit / Hz yields a period in ms, so 1 / pitch tunes a delay loop. *)\n")
+			out.WriteString("(* Typed functions include delay(audio, ms), comb(audio, ms, unit, unit), and pm(hz, audio, unit).\n   Unit / Hz yields a period in ms, so 1 / pitch tunes a delay loop. *)\n")
 		}
 		rule := g.Rules[name]
 		rhs, err := renderEBNF(rule, grammargen.RuleKind(-1))

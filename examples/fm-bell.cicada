@@ -1,0 +1,58 @@
+cicada 2
+
+title "Experimental two-operator FM bell and PM bass"
+
+tempo 120
+
+key a minor
+
+seed 42
+
+// Sinusoidal phase modulation gives the classic two-operator FM spectrum.
+// Index is in radians and decays faster than amplitude. No antialiasing:
+// keep this bell in the demonstrated register; high index folds sidebands.
+instrument bell {
+  param index: unit = 4
+  voice mono {
+    let modulator = sine(pitch * 3.5)
+    let brightness = index * env(gate, 260ms)
+    let carrier = pm(pitch, modulator, brightness)
+    out = carrier * env(gate, 1800ms) * velocity * 0.3
+  }
+}
+
+// Feedback-free bass: two sine operators, a 1:1 ratio, and a gentler index.
+instrument pm-bass {
+  voice mono {
+    let modulator = sine(pitch)
+    let carrier = pm(pitch, modulator, 1.5 * env(gate, 180ms))
+    out = carrier * env(gate, 650ms) * velocity * 0.3
+  }
+}
+
+track chime bell {
+  level = -6dB
+  pan = -0.2
+}
+
+track bass pm-bass {
+  level = -6dB
+  pan = 0.2
+}
+
+pattern melody notes steps = 16 {
+  a4 . . . c5 . . . e5 . . . a4 . . .
+}
+
+pattern low notes steps = 16 {
+  a1 . . . a1 . e2 . a1 . . . e2 . . .
+}
+
+scene main {
+  chime = melody
+  bass = low
+}
+
+song {
+  main*2
+}

@@ -174,7 +174,7 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 		result, stateful, ok := callResult(e.Text, types)
 		if !ok {
 			code := "CICADA-PARAM"
-			if e.Text == "delay" && len(types) == 2 || e.Text == "comb" && len(types) == 4 {
+			if e.Text == "delay" && len(types) == 2 || e.Text == "comb" && len(types) == 4 || e.Text == "pm" && len(types) == 3 {
 				code = "CICADA-UNIT"
 			}
 			c.errorAt(code, fmt.Sprintf("unknown function or wrong argument types: %s", e.Text), e.Position)
@@ -263,6 +263,8 @@ func callResult(name string, args []Type) (Type, bool, bool) {
 	switch name {
 	case "saw", "square", "sine":
 		return Audio, true, matches(Hz)
+	case "pm":
+		return Audio, true, matches(Hz, Audio, Unit)
 	case "noise":
 		return Audio, true, matches()
 	case "env":
