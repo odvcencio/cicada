@@ -59,12 +59,18 @@ func SaveAs(score, target string) error {
 		return err
 	}
 	if len(sources.Libraries) > 0 {
-		return errors.New("CICADA-UNSUPPORTED: Save As with imports requires library vendoring")
+		// Reject changed or unpinned imports before copying project dependencies.
+		_, ds := sources.Parse()
+		for _, d := range ds {
+			if d.Severity == "error" {
+				return &project.SourceError{Diagnostic: d}
+			}
+		}
 	}
 	additional := map[string][]byte{}
 	if sources.Manifest.ExplicitSources() {
 		for _, file := range sources.Files {
-			if file.Path == score {
+			if file.Path == score || file.Library != "" {
 				continue
 			}
 			name, err := filepath.Rel(srcDir, file.Path)
@@ -175,7 +181,10 @@ func SaveAs(score, target string) error {
 	}
 	// A destination may be absent now but scheduled for dependency installation.
 	// Check the full copy set before writing any of it, including retained passes.
-	dependencies := map[string]bool{"cicada.mod": true}
+	dependencies := map[string]bool{"cicada.mod": true, "cicada.sum": true}
+	for name := range sources.Libraries {
+		dependencies[filepath.Join("lib", filepath.FromSlash(name), "cicada.mod")] = true
+	}
 	for path := range additional {
 		dependencies[filepath.Clean(path)] = true
 	}
@@ -325,6 +334,9 @@ func SaveAs(score, target string) error {
 	}
 	if !bytes.Equal(source, latest) {
 		return errors.New("score changed during Save As; retry")
+	}
+	if _, err := sources.VendorLibraries(dstDir); err != nil {
+		return err
 	}
 	return install(dst, dstName, bytes.NewReader(source), -1, true)
 }
