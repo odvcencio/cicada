@@ -93,7 +93,7 @@ func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 
 func findCommandHelp(name string) (commandHelpEntry, bool) {
 	if name == "lib" {
-		return commandHelpEntry{name: "lib", summary: "pin imported library content", usage: "cicada lib update [PATH]", flags: "  --help   show this help", notes: "Update one imported library, or all imported libraries when PATH is omitted. Prints the old and new resolution kinds and SHA-256 hashes."}, true
+		return commandHelpEntry{name: "lib", summary: "list libraries and pin imported content", usage: "cicada lib list\ncicada lib update [PATH]", flags: "  --help   show this help", notes: "List available std, project, and user library paths with their resolution kinds. Update one imported library, or all imported libraries when PATH is omitted. Prints the old and new resolution kinds and SHA-256 hashes."}, true
 	}
 	if name == "save-as" {
 		return commandHelpEntry{name: "save-as", summary: "copy a score and its audio dependencies", usage: "cicada save-as <score.cicada> <target.cicada>", flags: "  (no command flags)"}, true

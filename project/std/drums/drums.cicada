@@ -1,0 +1,41 @@
+instrument kick {
+  octave = 2
+  voice mono {
+    out = sine(pitch) * env(gate, 120ms)
+  }
+}
+
+instrument circuit-kick {
+  octave = 2
+  voice mono {
+    let shape = env(gate, 180ms)
+    out = sine(48Hz * exp2(shape * 2.5)) * shape
+  }
+}
+
+instrument snare {
+  octave = 2
+  voice mono {
+    let shape = env(gate, 110ms)
+    out = highpass(noise(), 1400Hz) * shape
+  }
+}
+
+instrument hat {
+  octave = 2
+  voice mono {
+    let shape = env(gate, 45ms)
+    out = highpass(noise(), 4900Hz) * shape
+  }
+}
+
+kit steel {
+  bd = kick
+  ch = builtin.ch
+}
+
+kit circuit {
+  bd = circuit-kick
+  sd = snare
+  ch = hat
+}
