@@ -1,0 +1,44 @@
+Narrow PR105 defensive fixes, based on 9e94e33512ff2efd07508ec9ecf23de2ab09595a.
+
+BEFORE: NewAmp(-1) yields a nonfinite first sample; NewAmp(-48000) reaches a peak of 2.1005296934377885e70 within 256 samples. Unsupported rates now use the same 48000 fallback as voice constructors.
+
+BEFORE: a directory at metrics.json caused the old CLI to render audio, ignore the metadata write failure, print success JSON, and exit 0.
+AFTER: the same CLI setup exits nonzero without printing success JSON.
+open /tmp/cicada-105-metrics-repro/metrics.json: is a directory
+exit status 1
+
+Injected regression tests additionally cover header/sample write errors, short writes, close errors, preserving both write and close errors, output directory failures and metadata failures.
+
+HEADLESS BEFORE (expected failing regression):
+{"executablePath":"/usr/bin/chromium","browserVersion":"151.0.7922.173","headless":true,"acousticListening":false}
+Ready · 44100 Hz · 1024 frames (23.2 ms per callback). Play a note.
+AssertionError [ERR_ASSERTION]: held repeat must not reopen note after stop
+
+2 !== 1
+
+    at /workspace/cicada-105-fix/experimental/expressive/web/check-browser.cjs:53:12 {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: 2,
+  expected: 1,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+HEADLESS AFTER:
+{"executablePath":"/usr/bin/chromium","browserVersion":"151.0.7922.173","headless":true,"acousticListening":false}
+Ready · 44100 Hz · 1024 frames (23.2 ms per callback). Play a note.
+PASS: held key repeat after All notes off is suppressed; release and fresh keydown still play.
+{"instrument":"bow","sliderSweep":{"blocks":33,"nonfinite":0,"energy":1693.9196679510612,"peak":0.9283552169799805}}
+{"instrument":"brass","sliderSweep":{"blocks":30,"nonfinite":0,"energy":55.32690085602593,"peak":0.11647509038448334}}
+{"instrument":"guitar","sliderSweep":{"blocks":31,"nonfinite":0,"energy":1345.2781512859347,"peak":0.8796257376670837}}
+PASS: WASM initialization, live audio callbacks, keyboard release/repeat after stop, continuous sliders, switch resets/repeat/silence; no page errors. No acoustic listening performed.
+
+Native and actual Node/WASM DSP suites pass. Scoped Go vet passes. Native benchmarks remain allocation-free: bow 420.5, brass 354.9, guitar 383.3 ns/sample, all zero B/op and zero allocs/op. Browser WASM built with -buildvcs=false to avoid local worktree VCS-stamping failure; this does not alter DSP code.
+
+All five fresh valid-rate demo WAVs are byte-identical to the preserved original artifacts. Original artifacts and the separate articulation branch remain unchanged. Verified SHA-256:
+bow-dry.wav da1d749aa1577e95b5c521a5baf027d603b8409b5691e18fdc93bad18a148bce
+brass-dry.wav 507e7be5d54fa2bf6ff06056eb2b17e82118a76c12b90144a07a45e97aa96d9d
+guitar-clean.wav bb22436e015a25053ddc1463d39a1b3443cf14e509f04ce29cb7d5aff61b46f6
+guitar-drive.wav 3f16abc506f999d09bbb0db587db76322db9ad7a59f089292154dd2d1491b007
+trio-mix.wav 973898b8cb3398c9783cc3c89d3ec68b1012459cc4d0fead899492ff859f2774
