@@ -25,6 +25,9 @@ type Project struct {
 	TempoMilli  int          `cicada:"Tempo in thousandths of a beat per minute" unit:"milli-BPM" range:"20000..300000" json:"tempo_milli"`
 	Key         Key          `cicada:"Tonal root and scale" json:"key"`
 	Seed        uint32       `cicada:"Project random seed" json:"seed"`
+	Assets      []Asset      `cicada:"Immutable audio asset table" json:"assets,omitempty" introduced:"cicada.project/2"`
+	Clips       []Clip       `cicada:"Audio regions" json:"clips,omitempty" introduced:"cicada.project/2"`
+	Samplers    []Sampler    `cicada:"Single-region sampler instruments" json:"samplers,omitempty" introduced:"cicada.project/2"`
 	Instruments []Instrument `cicada:"Programmable sound generators" json:"instruments"`
 	Kits        []Kit        `cicada:"Drum instrument assignments" json:"kits"`
 	Tracks      []Track      `cicada:"Mixer tracks" json:"tracks"`
@@ -271,6 +274,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		Instruments: []Instrument{}, Kits: []Kit{}, Tracks: []Track{}, Patterns: []Pattern{},
 		Scenes: []Scene{}, Song: []SongEntry{}, Effects: []Effect{},
 	}
+	lowerAudio(p, score)
 	for _, source := range score.Instruments {
 		octave := source.Octave
 		inst := Instrument{ID: source.Name, Octave: &octave, Mode: source.Mode, Params: []InstrumentParam{}, Lets: []Binding{}}
@@ -298,7 +302,7 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 		}
 		p.Kits = append(p.Kits, kit)
 	}
-	needsProject2 := sourceUsesNamedMixer(score) || score.Live != nil
+	needsProject2 := sourceUsesNamedMixer(score) || sourceHasAudio(score) || score.Live != nil
 	p.Live = liveFromScore(score.Live)
 	for _, scene := range score.Scenes {
 		needsProject2 = needsProject2 || len(scene.Settings) > 0
@@ -514,20 +518,15 @@ func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
 }
 
 func projectDiagnosticCode(err error) string {
-	if err != nil && strings.HasPrefix(err.Error(), "CICADA-LIVE-") {
+	if err != nil {
 		code, _, ok := strings.Cut(err.Error(), ":")
-		if ok {
+		if ok && strings.HasPrefix(code, "CICADA-") {
 			return code
 		}
-	}
-	if err != nil && strings.HasPrefix(err.Error(), "CICADA-UNSUPPORTED:") {
-		return "CICADA-UNSUPPORTED"
 	}
 	return "CICADA-PARAM"
 }
 
-// Melodic notation can omit its kind. For a pattern used only by built-in
-// acid tracks, retain the existing project-1 "acid" kind in semantic JSON.
 func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string {
 	if pattern.Kind != "notes" {
 		return pattern.Kind

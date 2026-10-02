@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"m31labs.dev/cicada/host/takejournal"
 )
 
 var errStudioSwapUnavailable = errors.New("atomic score exchange is unavailable on this filesystem; edit the score in your text editor")
@@ -16,6 +18,10 @@ var errStudioSwapUnavailable = errors.New("atomic score exchange is unavailable 
 // On conflict the displaced version is exchanged back into place. Displaced
 // files stay linked: an editor can still write through an open file handle.
 func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expected string, beforeSwap func()) (bool, string, error) {
+	return studioWriteTakeIfRevision(path, updated, mode, expected, beforeSwap, nil)
+}
+
+func studioWriteTakeIfRevision(path string, updated []byte, mode os.FileMode, expected string, beforeSwap func(), checkpoint func(takejournal.Stage)) (bool, string, error) {
 	stage, err := os.CreateTemp(filepath.Dir(path), studioRecoveryPattern(path))
 	if err != nil {
 		return false, "", err
@@ -42,6 +48,9 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 	if err := stage.Close(); err != nil {
 		return false, "", err
 	}
+	if checkpoint != nil {
+		checkpoint(takejournal.SourceStaged)
+	}
 	if beforeSwap != nil {
 		beforeSwap()
 	}
@@ -57,9 +66,18 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 		return false, "", err
 	}
 	removeStage = false
+	if checkpoint != nil {
+		if err := takejournal.SyncDirectory(filepath.Dir(path)); err != nil {
+			return false, displacedPath, err
+		}
+		checkpoint(takejournal.SourceSwapped)
+	}
 	displaced, err := os.ReadFile(displacedPath)
 	if err == nil && studioRevision(displaced) == expected {
 		if err := studioKeepRecovery(displacedPath, expected); err != nil {
+			return false, displacedPath, err
+		}
+		if err := takejournal.SyncDirectory(filepath.Dir(path)); err != nil {
 			return false, displacedPath, err
 		}
 		return true, displacedPath, nil
@@ -71,6 +89,9 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 		return false, displacedPath, fmt.Errorf("score changed during commit; saved files remain at %s; rollback failed: %w", displacedPath, rollbackErr)
 	}
 	if err := studioKeepRecovery(interveningPath, studioRevision(updated)); err != nil {
+		return false, interveningPath, err
+	}
+	if err := takejournal.SyncDirectory(filepath.Dir(path)); err != nil {
 		return false, interveningPath, err
 	}
 	return false, interveningPath, fmt.Errorf("score changed during commit; the external score was restored; another version remains at %s", interveningPath)

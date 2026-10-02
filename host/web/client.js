@@ -27,7 +27,7 @@
       this.maxCallbackDurationMs = 0;
     }
 
-    async startAudio() {
+    async startAudio(capture = false) {
       if (this.context) {
         await this.context.resume();
         return { sampleRate: this.context.sampleRate, clock: this.clock };
@@ -41,14 +41,16 @@
             if (!r.ok) throw new Error('Cannot load the audio kernel');
             return r.arrayBuffer();
           }).then(bytes => WebAssembly.compile(bytes))),
-          fetch(`/api/kernel-image?rate=${this.context.sampleRate}`, { cache: 'no-store' })
+          fetch(`/api/kernel-image?rate=${this.context.sampleRate}${capture?'&capture=1':''}`, { cache: 'no-store' })
         ]);
         if (!imageResponse.ok) throw new Error((await imageResponse.text()) || 'Cannot load the score image');
         const revision = imageResponse.headers.get('X-Cicada-Revision') || '';
         const image = await imageResponse.arrayBuffer();
-        await this.context.audioWorklet.addModule('/audio/cicada-processor.js');
+        this.bpmMilli = new DataView(image).getUint32(12, true);
+        await this.context.audioWorklet.addModule('/audio/cicada-capture.js');
+        await this.context.audioWorklet.addModule('/audio/cicada-capture-processor.js');
         this.node = new AudioWorkletNode(this.context, 'cicada', {
-          numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2],
+          numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: 'max', channelInterpretation: 'discrete', outputChannelCount: [2],
           processorOptions: { m: module, i: image, r: revision, l: this.contextLatencyMs() }
         });
         this.readyPromise = new Promise((resolve, reject) => {
@@ -221,20 +223,21 @@
       if (this.playing) return;
       this.sendCommands([{ op: 3, arg0: 0 }, { op: 1 }]);
     }
-    stop() { if (this.playing) this.sendCommands([{ op: 2 }]); }
+    stop(force = false) { if (this.playing || force) this.sendCommands([{ op: 2 }]); }
     launchScene(index) { this.sendCommands([{ op: 10, index, arg0: 2 }]); }
     selectPattern(track, slot) { this.sendCommands([{ op: 9, track, index: slot, arg0: 2 }]); }
     playFrom(bar) { this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
 
-    async stageCurrentScore(revision = '') {
+    async stageCurrentScore(revision = '', capture = false) {
       if (!this.node) return false;
       if (revision && revision === this.revision) return true;
       const started = performance.now();
-      const response = await fetch(`/api/kernel-image?rate=${this.context.sampleRate}`, { cache: 'no-store' });
+      const response = await fetch(`/api/kernel-image?rate=${this.context.sampleRate}${capture?'&capture=1':''}`, { cache: 'no-store' });
       if (!response.ok) throw new Error((await response.text()) || 'Cannot prepare the edited score');
       const imageRevision = response.headers.get('X-Cicada-Revision') || '';
       if (revision && imageRevision !== revision) throw new Error('Score changed while preparing the browser kernel');
       const image = await response.arrayBuffer();
+      this.bpmMilli = new DataView(image).getUint32(12, true);
       const ready = new Promise((resolve, reject) => this.stageWaiters.set(imageRevision, { resolve, reject }));
       this.node.port.postMessage({ t: 'i', i: image, r: imageRevision }, [image]);
       await ready;

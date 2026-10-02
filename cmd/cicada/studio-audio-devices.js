@@ -121,6 +121,7 @@
 
   function render(state, syncOptions = false) {
     latest = state;
+    window.dispatchEvent(new CustomEvent('cicada:audiostate', {detail: state}));
     if (statusBar) {
       statusBar.textContent = state.status || 'Audio status unavailable';
       statusBar.dataset.state = state.runtime?.error ? 'error' : '';
