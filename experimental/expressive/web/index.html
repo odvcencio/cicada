@@ -44,7 +44,7 @@ function up(token){if(!held.delete(token))return;if(held.size){const next=[...he
 function stop(){held.clear();if(synth)synth.noteOff();refresh();}
 const keyboard='awsedftgyhujk',names=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B','C'];
 for(let i=0;i<13;i++){const midi=48+i,b=document.createElement('button');b.textContent=names[i]+(i===12?'4':'3');b.setAttribute('aria-label',`Play ${b.textContent}`);buttons.set(midi,b);b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);down('pointer'+e.pointerId,midi)});for(const ev of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(ev,e=>up('pointer'+e.pointerId));document.querySelector('#keys').append(b);}
-window.addEventListener('keydown',e=>{if(e.target.matches('input,select,textarea')||e.ctrlKey||e.metaKey||e.altKey)return;const i=keyboard.indexOf(e.key.toLowerCase());if(i>=0){e.preventDefault();down('key'+e.code,48+i)}});
+window.addEventListener('keydown',e=>{if(e.repeat||e.target.matches('input,select,textarea')||e.ctrlKey||e.metaKey||e.altKey)return;const i=keyboard.indexOf(e.key.toLowerCase());if(i>=0){e.preventDefault();down('key'+e.code,48+i)}});
 window.addEventListener('keyup',e=>up('key'+e.code));window.addEventListener('blur',stop);document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});document.querySelector('#stop').onclick=stop;
 selector.onchange=()=>{stop();if(context){synth.init(context.sampleRate,selector.value);expression()}};
 start.onclick=async()=>{try{
