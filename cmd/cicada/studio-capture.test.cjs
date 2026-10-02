@@ -190,3 +190,13 @@ test('a failed explicit import keeps the local take available to retry',async()=
  assert.equal(ui.byId('pcm-commit').disabled,false);assert.equal(attempts,1);
  await ui.byId('pcm-commit').click();assert.equal(attempts,2);
 });
+
+test('native recovery cannot commit an older retained browser take under the displayed project take',async()=>{
+ const ui=captureUI({activeCapture:'',takes:[{id:'project',frames:1,created:'2026-10-02'}]});await ui.ready();
+ ui.byId('audio-mode').value='browser';await ui.byId('pcm-recover').click();
+ assert.equal(ui.byId('pcm-commit').disabled,false);
+ ui.byId('audio-mode').value='native';await ui.byId('pcm-recover').click();
+ assert.match(ui.byId('sampler-status').textContent,/Project take active/);
+ assert.equal(ui.byId('pcm-commit').disabled,true);assert.equal(ui.byId('pcm-commit').hidden,true);
+ await ui.byId('pcm-commit').click();assert.equal(ui.commands.filter(c=>c.action==='import').length,0);
+});

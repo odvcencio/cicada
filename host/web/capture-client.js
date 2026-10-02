@@ -31,13 +31,16 @@
     }
     notify() { for (const f of this.listeners) f({...this.status}); }
     onStatus(f) { this.listeners.add(f); f({...this.status}); return ()=>this.listeners.delete(f); }
-    wait(type) {
+    wait(type, expectedID = '') {
       return new Promise((resolve,reject)=>{
         const timer=this.env.setTimeout(()=>{this.waiters.delete(type);reject(new Error('Capture worker timed out'));},15000);
-        this.waiters.set(type,{resolve,reject,timer});
+        this.waiters.set(type,{resolve,reject,timer,expectedID});
       });
     }
     receive(data) {
+      const waiting=this.waiters.get(data.t);
+      if (waiting?.expectedID && data.id !== waiting.expectedID) return;
+      if (data.id && ['opened','finished'].includes(data.t) && this.take?.id !== data.id) return;
       if (data.t==='fault') {
         this.status.error=data.error; this.status.incomplete=true;
         for (const [type,w] of this.waiters) {
@@ -63,7 +66,10 @@
       return (await this.env.navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
     }
     saveIndex() {
-      if (this.take) try { this.env.localStorage?.setItem('cicada-last-take',JSON.stringify({...this.take,incomplete:!!this.status.incomplete})); } catch (_) {}
+      if (this.take) {
+        this.take.incomplete=!!this.status.incomplete;
+        try { this.env.localStorage?.setItem('cicada-last-take',JSON.stringify(this.take)); } catch (_) {}
+      }
     }
     interrupt(message) {
       if (this.status.state === 'arming') {
@@ -78,6 +84,8 @@
     async arm(channels = 1, deviceId = '') {
       if(this.busy || this.status.state==='armed' || this.status.state==='recording' || this.status.state==='saving') throw new Error('Capture is already armed');
       if (![1,2].includes(channels)) throw new Error('Choose mono or stereo input');
+      let previousTake=this.take;
+      if (!previousTake) try { previousTake=JSON.parse(this.env.localStorage?.getItem('cicada-last-take') || 'null'); } catch (_) {}
       this.busy=true; this.status.error=''; this.status.incomplete=false;
       const generation=++this.armGeneration;
       const current=()=>{if(generation!==this.armGeneration || this.env.document?.hidden) throw new Error('Microphone arming was interrupted');};
@@ -124,7 +132,7 @@
         this.status.state='armed'; this.notify();
       } catch(error) {
         if (this.status.storage==='checking') this.status.storage='unavailable';
-        this.releaseInput(); this.worker?.terminate(); this.status.state='idle'; this.status.error=error.message; this.notify(); throw error;
+        this.releaseInput(); this.worker?.terminate(); this.worker=null; this.take=previousTake; this.status.state='idle'; this.status.incomplete=!!this.take?.incomplete; this.saveIndex(); this.status.error=error.message; this.notify(); throw error;
       } finally { this.busy=false; }
     }
     async record() {
@@ -148,8 +156,11 @@
       this.status.state='saving'; this.notify();
       this.audio.node.port.postMessage({t:'capture-control',op:'stop'});
       this.audio.stop(true);
+      // Stop admission immediately: a hidden/suspended worklet may never send
+      // end/finished. Journal finalization must not keep the microphone live.
+      this.releaseInput();
       try { await finished; return this.take; }
-      catch (error) { this.status.state='stopped'; this.status.error=error.message; this.status.incomplete=true; this.worker?.terminate(); this.worker=null; this.notify(); throw error; }
+      catch (error) { this.status.state='stopped'; this.status.error=error.message; this.status.incomplete=true; this.saveIndex(); this.worker?.terminate(); this.worker=null; this.notify(); throw error; }
       finally { this.releaseInput(); }
     }
     releaseInput() {
@@ -161,17 +172,20 @@
       this.stream=null;
     }
     async recover(take = this.take) {
-      if (['armed','recording','saving'].includes(this.status.state)) throw new Error('Stop capture before recovering a take');
+      if (this.busy || ['arming','armed','recording','saving','recovering'].includes(this.status.state)) throw new Error('Stop capture before recovering a take');
       if(!take) { try { take=JSON.parse(this.env.localStorage?.getItem('cicada-last-take') || 'null'); } catch (_) {} }
       if(!take) throw new Error('No stored take to recover');
-      if(!this.worker) { this.worker=new this.env.Worker('/audio/cicada-capture-worker.js'); this.worker.onmessage=e=>this.receive(e.data); this.worker.onerror=e=>this.receive({t:'fault',fatal:true,error:e.message || 'Capture worker failed'}); }
-      const recovered=this.wait('recovered');
-      this.worker.postMessage({t:'recover',id:take.id,mode:take.mode});
-      const result = await recovered;
-      result.incomplete = !!(result.incomplete || take.incomplete || this.status.incomplete);
-      this.take = {...take,incomplete:result.incomplete};
-      this.status.incomplete=result.incomplete; this.status.state='stopped'; this.saveIndex(); this.notify();
-      return result;
+      this.busy=true; this.status.state='recovering'; this.notify();
+      try {
+        if(!this.worker) { this.worker=new this.env.Worker('/audio/cicada-capture-worker.js'); this.worker.onmessage=e=>this.receive(e.data); this.worker.onerror=e=>this.receive({t:'fault',fatal:true,error:e.message || 'Capture worker failed'}); }
+        const recovered=this.wait('recovered',take.id);
+        this.worker.postMessage({t:'recover',id:take.id,mode:take.mode});
+        const result = await recovered;
+        result.incomplete = !!(result.incomplete || take.incomplete || this.take?.id===take.id && this.status.incomplete);
+        this.take = {...take,incomplete:result.incomplete};
+        this.status.incomplete=result.incomplete; this.saveIndex();
+        return result;
+      } finally { this.busy=false; this.status.state='stopped'; this.notify(); }
     }
   }
   // The original browser-local audition remains available for stored takes.

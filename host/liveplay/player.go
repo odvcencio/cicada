@@ -103,6 +103,7 @@ type noteBatch struct {
 	inputs  [256]noteInput
 	count   uint16
 	presses uint16
+	epoch   uint64
 }
 
 type sceneLaunch struct {
@@ -170,6 +171,7 @@ type Player struct {
 	pendingStart      atomic.Uint64
 	slotLaunches      atomic.Pointer[slotLaunchBatch]
 	notes             atomic.Pointer[noteBatch]
+	noteEpoch         atomic.Uint64 // odd: release overload; batches carry their admission epoch
 	heldNotes         [128]noteInput
 	heldOrder         [128]uint64
 	noteOrder         uint64
@@ -317,6 +319,7 @@ func (p *Player) Note(track string, note, velocity int, on bool) error {
 // NoteID binds a press to an immutable owner. Held state is a fixed array owned
 // by Read; the existing command ABI and audio callback allocation budget stay intact.
 func (p *Player) NoteID(track string, note, velocity int, on bool, id string) error {
+	pressEpoch := p.noteEpoch.Load()
 	if id == "" || len(id) > 1024 {
 		return fmt.Errorf("note owner ID is required and must be bounded")
 	}
@@ -347,26 +350,48 @@ func (p *Player) NoteID(track string, note, velocity int, on bool, id string) er
 			return fmt.Errorf("track %q is not an acid or drum track", track)
 		}
 		input := noteInput{ID: id, Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on}
-		for {
-			old := p.notes.Load()
-			next := &noteBatch{}
-			if old != nil {
-				*next = *old
-			}
-			if next.count == uint16(len(next.inputs)) || on && next.presses >= 128 {
-				return fmt.Errorf("live note queue is full")
-			}
-			next.inputs[next.count] = input
-			next.count++
-			if on {
-				next.presses++
-			}
-			if p.notes.CompareAndSwap(old, next) {
-				return nil
-			}
-		}
+		return p.queueOwnedNote(input, pressEpoch)
 	}
 	return fmt.Errorf("track %q is not in the playing score", track)
+}
+
+func (p *Player) queueOwnedNote(input noteInput, pressEpoch uint64) error {
+	for {
+		epoch := p.noteEpoch.Load()
+		if input.On && (epoch&1 != 0 || epoch != pressEpoch) {
+			return fmt.Errorf("live note release overload interrupted this press")
+		}
+		if epoch&1 != 0 {
+			return nil // The barrier already owns this release.
+		}
+		old := p.notes.Load()
+		next := &noteBatch{epoch: epoch}
+		if old != nil && old.epoch == epoch {
+			*next = *old
+		}
+		if next.count == uint16(len(next.inputs)) || input.On && next.presses >= 128 {
+			if !input.On {
+				// Odd epochs release every native live owner and discard presses.
+				// Reader-side epoch checks also reject a producer paused before CAS.
+				if p.noteEpoch.CompareAndSwap(epoch, epoch+1) {
+					return nil
+				}
+				continue
+			}
+			return fmt.Errorf("live note queue is full")
+		}
+		next.inputs[next.count] = input
+		next.count++
+		if input.On {
+			next.presses++
+		}
+		if p.notes.CompareAndSwap(old, next) {
+			if input.On && p.noteEpoch.Load() != pressEpoch {
+				return fmt.Errorf("live note release overload interrupted this press")
+			}
+			return nil
+		}
+	}
 }
 
 // GMDrumLane returns Cicada's lane index for the supported General MIDI
@@ -939,6 +964,9 @@ func (p *Player) renderBlock() {
 	tick := p.clock.TickAtSample(p.sample)
 	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
 	p.queueLiveNotes()
+	if p.fault != nil {
+		return
+	}
 	p.queueSceneLaunch()
 	p.queueSlotLaunches()
 	p.applyOverrides(p.current.Engine, p.current, false)
@@ -999,12 +1027,43 @@ func (p *Player) renderBlock() {
 }
 
 func (p *Player) queueLiveNotes() {
+	epoch := p.noteEpoch.Load()
 	batch := p.notes.Swap(nil)
-	if batch == nil {
+	releaseAll := epoch&1 != 0
+	if batch != nil && batch.epoch != epoch {
+		batch = nil // An in-flight producer from before the barrier cannot replay.
+	}
+	if batch == nil && !releaseAll {
 		return
 	}
 	snapshot := p.trackNames.Load()
-	for index := 0; index < int(batch.count); index++ {
+	// The kernel intentionally orders same-tick NoteOff before NoteOn. Reduce
+	// this reader's burst to the final gate command per route so a release/panic
+	// cannot be reordered ahead of its queued press and reopen the voice.
+	var final [16][12]cmd.Command
+	var touched [16][12]bool
+	if releaseAll {
+		p.noteEpoch.CompareAndSwap(epoch, epoch+1)
+		for i, held := range p.heldNotes {
+			if p.heldOrder[i] == 0 {
+				continue
+			}
+			track, kind, found := findTrack(snapshot, held.Track)
+			if !found {
+				continue
+			}
+			lane, command := uint16(0), cmd.Command{Op: cmd.OpNoteOff, Track: track, Index: 0xffff}
+			if kind == "drums" {
+				lane, _ = GMDrumLane(int(held.Note))
+				command.Index = lane
+			}
+			final[track][lane], touched[track][lane] = command, true
+		}
+		p.heldNotes, p.heldOrder = [128]noteInput{}, [128]uint64{}
+		batch = nil
+		p.emit(Event{Name: "live note release overload cleared held inputs and queued presses", Kind: "note-error"})
+	}
+	for index := 0; batch != nil && index < int(batch.count); index++ {
 		input := batch.inputs[index]
 		track, kind, found := findTrack(snapshot, input.Track)
 		if !found {
@@ -1091,15 +1150,24 @@ func (p *Player) queueLiveNotes() {
 			p.emit(Event{Track: input.Track, Name: "track is not an acid or drum track", Kind: "note-error"})
 			continue
 		}
-		if !p.current.Engine.Push(command) {
-			p.emit(Event{Track: input.Track, Name: "live note command queue is full", Kind: "note-error"})
-			continue
+		lane := uint16(0)
+		if kind == "drums" {
+			lane = command.Index
 		}
+		final[track][lane], touched[track][lane] = command, true
 		eventKind := "note-on"
 		if !input.On {
 			eventKind = "note-off"
 		}
 		p.emit(Event{Bar: p.Position().Bar, Name: liveNoteNames[input.Note], Track: input.Track, Kind: eventKind})
+	}
+	for track := range final {
+		for lane := range final[track] {
+			if touched[track][lane] && !p.current.Engine.Push(final[track][lane]) {
+				p.emit(Event{Track: snapshot.ids[track], Name: "live note command queue is full", Kind: "note-error"})
+				p.fault = io.ErrShortBuffer
+			}
+		}
 	}
 }
 

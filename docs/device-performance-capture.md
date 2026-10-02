@@ -46,6 +46,15 @@ connection, binds it at admission, ignores repeated/unknown messages, and
 releases remaining connection owners on teardown. `liveplay.Player.NoteID`
 maintains 128 fixed held slots on its audio reader. Its 256-entry input queue
 admits at most 128 presses and reserves the remaining capacity for releases.
+Each reader burst is reduced to its final command per track/drum lane: the
+kernel's same-tick Off-before-On ordering cannot reopen a queued released gate.
+If releases saturate the queue, a reader-owned overload barrier clears all
+native live owners and discards pending presses; new presses are rejected until
+the barrier is consumed. A rejected engine command stops the reader with an
+error instead of continuing with uncertain gate state. This is gate release,
+not acoustic silence, and does not reset effect tails.
+Presses and queued batches carry an admission epoch, so a producer paused across
+the overload barrier cannot restore an old press after the barrier clears.
 Regular native note events now use precomputed strings, avoiding the old
 per-note `fmt.Sprintf` callback allocation.
 
@@ -141,6 +150,13 @@ separate explicit import to the selected current audio track/scene and revision.
 Import errors/conflicts retain the browser data for retry. Native **Stop and
 save** keeps the existing local project-journal behavior. Public-demo capture
 policy and any upload allowance remain separate owners' decisions.
+Switching to native recovery clears browser Commit eligibility; Commit checks
+the selected backend again before importing. The shared recovery adapter
+serializes recovery against arming/other recovery and accepts only the requested
+take ID's worker response. Old finished messages cannot replace another take.
+Failed microphone/storage arming restores the previous recoverable take/index
+and discards its failed worker; refusal cannot strand recovery on a terminated
+worker or an unusable new take ID.
 
 Track end/mute, selected-device loss, hidden page, pagehide, audio-context interruption
 and acknowledged playback interruption stop accompaniment/input and retain an
@@ -151,12 +167,28 @@ Play's acknowledgement still queues a forced Stop. Record always waits for
 that forced staging with a same-revision shortcut. Navigation may terminate the
 worker before finalization; recovery keeps only committed journal blocks and
 reports an incomplete take. Timing remains uncalibrated/unavailable.
+Stop and interruption detach the source and stop microphone tracks immediately,
+before waiting for worker finalization. A suspended worklet cannot keep the
+input open during its finalization timeout; the recovery index remains local.
+
+## Independent review and regression evidence
+
+A separate read-only reviewer examined exact initial PR head
+`ea80454db51b3154e2bdd0af7494b17115daa758`. It reproduced queued-note ordering,
+delayed microphone teardown, native/browser Commit owner mismatch, and
+concurrent recovery waiter/PCM mismatch. The follow-up fixes above include
+regressions for each. The native queued On/Off PCM test fails on that initial
+head with a nonzero sample (`0.031465176`) after release, and passes with final
+per-route command reduction. Queue saturation, immediate microphone release
+without a finished acknowledgement, wrong recovery IDs, and backend owner
+switching are exercised synthetically. These tests do not qualify actual
+hardware or actual PR109/WASM output silence.
 
 ## Acceptance matrix
 
 | Surface | Implemented/verified in this checkout | Remaining acceptance |
 |---|---|---|
-| Native acid/GM drums | Note IDs, overlapping client/source ownership, restoration, idempotent/pitch-aware releases, reserved release capacity; native tests pass | Studio WebSocket integration tests/CI are blocked locally by a dependency download; physical listening/device output not tested |
+| Native acid/GM drums | Note IDs, overlapping client/source ownership, restoration, idempotent/pitch-aware releases, queued On/Off PCM-zero and overflow-barrier tests; native tests pass | Studio WebSocket integration tests/CI are blocked locally by a dependency download; physical listening/device output not tested |
 | Native input callback | Fixed held arrays; zero allocations/run measured over 100 prepared input/render runs | Max-burst CPU/deadline and hardware soak |
 | WASM/kernel ABI | No image/opcode/parameter/worklet asset changes | No local TinyGo installed; no new actual-WASM acceptance claimed |
 | Browser acid/graph/drums | Adapter contract for exact PR #109 API and reset barrier tested synthetically | PR #109 and GoSX owner must wire/requalify actual migrated app; current legacy Browser live is unavailable until binding |
