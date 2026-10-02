@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 
+	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 )
 
 type projectFormatEdit struct {
@@ -96,8 +98,29 @@ func collectProjectFormatEdits(root string) ([]projectFormatEdit, error) {
 }
 
 func projectScorePaths(root string) ([]string, error) {
+	data, err := os.ReadFile(filepath.Join(root, "cicada.mod"))
+	if err == nil {
+		manifest, err := edition.ParseProjectManifest(data)
+		if err != nil {
+			return nil, err
+		}
+		if manifest.ExplicitSources() {
+			sources, err := project.ReadSources(filepath.Join(root, filepath.FromSlash(manifest.Entry)), nil)
+			if err != nil {
+				return nil, err
+			}
+			paths := make([]string, len(sources.Files))
+			for i, file := range sources.Files {
+				paths[i] = file.Path
+			}
+			return paths, nil
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+
 	var paths []string
-	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
