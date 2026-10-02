@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cicada · Expressive instrument lab</title>
+<style>
+:root { color-scheme:dark; font:16px/1.5 system-ui,sans-serif; background:#111818; color:#e7eeee }
+body { max-width:850px; margin:4vh auto; padding:24px } h1 { line-height:1.1;font-size:2.5rem } p { color:#b4c4c1 }
+button,select { font:inherit; padding:10px 16px;border:1px solid #526562;background:#24332f;color:inherit;border-radius:8px }
+button { cursor:pointer } button:disabled { opacity:.45;cursor:wait } .row {display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.controls {display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:20px;margin:30px 0}
+label {display:block} label output {float:right;color:#abe0c0} input[type=range] {width:100%;accent-color:#abe0c0}
+.keys {display:flex;gap:5px;flex-wrap:wrap}.keys button {min-width:52px;height:90px;touch-action:none}.keys button.active {background:#aee7c4;color:#15261c}
+small {color:#a5b8b1} #status {min-height:2em} a {color:#abe0c0}
+</style>
+<h1>Cicada instrument lab</h1>
+<p>Bowed string, lip-reed brass, and plucked electric guitar. Experimental monophonic models: move the controls while holding a note to hear their response.</p>
+<div class="row"><button id="start" disabled>Loading synth…</button><select id="instrument" aria-label="Instrument"><option value="bow">Bowed string</option><option value="brass">Brass</option><option value="guitar">Electric guitar + amp</option></select><button id="stop">All notes off</button></div>
+<p id="status" role="status">Loading Go/WASM…</p>
+<div class="controls" id="controls"></div>
+<div class="keys" id="keys" aria-label="Playable notes"></div>
+<p>Play <strong>A W S E D F T G Y H U J K</strong> (C3–C4), or hold a note button. Last held note wins. Pitch bend returns to center on double-click. Arrow keys operate focused sliders.</p>
+<small>This local audition uses a 1024-frame ScriptProcessor callback on the main thread, not a production AudioWorklet. Busy pages can glitch. Start at a low listening level. Pressure drives bow or breath and is unused by guitar; position changes bow/pluck location, guitar pickup response, or brass radiation color. Drive affects the guitar amp. Models and control ranges are research candidates, not a realism claim.</small>
+<script src="wasm_exec.js"></script>
+<script>
+'use strict';
+const status=document.querySelector('#status'),start=document.querySelector('#start');
+const selector=document.querySelector('#instrument');
+const definitions=[['pressure','Pressure',0,1,.55,.01],['position','Excitation position',0,1,.24,.01],['brightness','Brightness',0,1,.6,.01],['vibrato','Vibrato · cents',0,60,8,1],['drive','Guitar amp drive',0,1,.45,.01],['damping','Damping',0,1,.15,.01],['bend','Pitch bend · semitones',-2,2,0,.01],['volume','Listening level',0,.8,.3,.01]];
+const sliders={}; let context,node,gain,synth,activeMidi=48;
+const held=new Map(),buttons=new Map();
+function expression(){if(!synth)return;synth.expression({pitch:440*2**((activeMidi-69+Number(sliders.bend.value))/12),pressure:+sliders.pressure.value,position:+sliders.position.value,brightness:+sliders.brightness.value,vibrato:+sliders.vibrato.value,drive:+sliders.drive.value,damping:+sliders.damping.value});}
+for(const [id,title,min,max,value,step] of definitions){
+ const label=document.createElement('label');label.textContent=title;
+ const out=document.createElement('output');out.textContent=value;
+ const input=document.createElement('input');Object.assign(input,{type:'range',min,max,value,step});input.setAttribute('aria-label',title);sliders[id]=input;
+ input.addEventListener('input',()=>{out.textContent=input.value;if(id==='volume'){if(gain)gain.gain.setTargetAtTime(+input.value,context.currentTime,.015)}else expression()});
+ if(id==='bend')input.addEventListener('dblclick',()=>{input.value=0;input.dispatchEvent(new Event('input'))});
+ label.append(out,input);document.querySelector('#controls').append(label);
+}
+function refresh(){for(const [midi,button] of buttons)button.classList.toggle('active',[...held.values()].includes(midi));}
+function down(token,midi){if(!context||context.state!=='running'||held.has(token))return;held.set(token,midi);activeMidi=midi;expression();synth.noteOn(440*2**((midi-69+Number(sliders.bend.value))/12),.8);refresh();}
+function up(token){if(!held.delete(token))return;if(held.size){const next=[...held.values()].at(-1);if(next!==activeMidi){activeMidi=next;expression();synth.noteOn(440*2**((next-69+Number(sliders.bend.value))/12),.8)}}else if(synth)synth.noteOff();refresh();}
+function stop(){held.clear();if(synth)synth.noteOff();refresh();}
+const keyboard='awsedftgyhujk',names=['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B','C'];
+for(let i=0;i<13;i++){const midi=48+i,b=document.createElement('button');b.textContent=names[i]+(i===12?'4':'3');b.setAttribute('aria-label',`Play ${b.textContent}`);buttons.set(midi,b);b.addEventListener('pointerdown',e=>{e.preventDefault();b.setPointerCapture(e.pointerId);down('pointer'+e.pointerId,midi)});for(const ev of ['pointerup','pointercancel','lostpointercapture'])b.addEventListener(ev,e=>up('pointer'+e.pointerId));document.querySelector('#keys').append(b);}
+window.addEventListener('keydown',e=>{if(e.target.matches('input,select,textarea')||e.ctrlKey||e.metaKey||e.altKey)return;const i=keyboard.indexOf(e.key.toLowerCase());if(i>=0){e.preventDefault();down('key'+e.code,48+i)}});
+window.addEventListener('keyup',e=>up('key'+e.code));window.addEventListener('blur',stop);document.addEventListener('visibilitychange',()=>{if(document.hidden)stop()});document.querySelector('#stop').onclick=stop;
+selector.onchange=()=>{stop();if(context){synth.init(context.sampleRate,selector.value);expression()}};
+start.onclick=async()=>{try{
+ if(!context){context=new AudioContext({latencyHint:'interactive'});synth.init(context.sampleRate,selector.value);expression();gain=context.createGain();gain.gain.value=+sliders.volume.value;node=context.createScriptProcessor(1024,0,1);const samples=new Float32Array(1024),bytes=new Uint8Array(samples.buffer);node.onaudioprocess=e=>{if(!synth.render(bytes)){e.outputBuffer.getChannelData(0).fill(0);return}e.outputBuffer.getChannelData(0).set(samples)};node.connect(gain);gain.connect(context.destination);}
+ await context.resume();start.textContent='Audio enabled';status.textContent=`Ready · ${context.sampleRate} Hz · 1024 frames (${(1024/context.sampleRate*1000).toFixed(1)} ms per callback). Play a note.`;
+ }catch(error){status.textContent='Audio failed: '+error.message;}};
+(async()=>{try{const go=new Go();const response=await fetch('expressive.wasm');if(!response.ok)throw new Error('Build expressive.wasm first (see README).');const {instance}=await WebAssembly.instantiate(await response.arrayBuffer(),go.importObject);go.run(instance).catch(error=>{stop();if(node)node.disconnect();status.textContent='Synth stopped: '+error.message});synth=globalThis.cicadaExpressive;if(!synth)throw new Error('WASM bridge did not initialize');start.disabled=false;start.textContent='Enable audio';status.textContent='Ready to enable audio.';}catch(error){status.textContent='Loading failed: '+error.message;}})();
+</script>
+</html>
