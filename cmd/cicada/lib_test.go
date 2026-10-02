@@ -82,7 +82,7 @@ func TestLibUpdateCheckAndExplain(t *testing.T) {
 }
 
 func TestLibraryCommandHelp(t *testing.T) {
-	for _, args := range [][]string{{"help", "lib"}, {"lib", "--help"}, {"lib", "list", "--help"}, {"lib", "update", "--help"}} {
+	for _, args := range [][]string{{"help", "lib"}, {"lib", "--help"}} {
 		var output, stderr bytes.Buffer
 		handled, status := handleCLIHelp(args, &output, &stderr)
 		if !handled || status != 0 || !strings.Contains(output.String(), "cicada lib update [PATH]") || !strings.Contains(output.String(), "cicada lib list") || stderr.Len() != 0 {
@@ -123,5 +123,97 @@ func TestLibListStdProjectAndUserWithoutScores(t *testing.T) {
 	}
 	if err := libCommand([]string{"list", "extra"}, &output); err == nil {
 		t.Fatal("list accepted an argument")
+	}
+}
+
+func TestLibrarySubcommandHelp(t *testing.T) {
+	for _, name := range []string{"list", "show", "new", "update", "vendor"} {
+		for _, args := range [][]string{{"help", "lib", name}, {"lib", name, "--help"}} {
+			var output, stderr bytes.Buffer
+			handled, status := handleCLIHelp(args, &output, &stderr)
+			if !handled || status != 0 || !strings.Contains(output.String(), "cicada lib "+name) || stderr.Len() != 0 {
+				t.Fatalf("help: %v %d %s %s", args, status, &output, &stderr)
+			}
+		}
+	}
+}
+
+func TestLibNewShowAndVendor(t *testing.T) {
+	root, user := t.TempDir(), t.TempDir()
+	t.Setenv("CICADA_LIBRARY", user)
+	t.Chdir(root)
+	var output bytes.Buffer
+	if err := libCommand([]string{"new", "demo/tone"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := libCommand([]string{"new", "demo/tone"}, &output); err == nil {
+		t.Fatal("overwrote existing library")
+	}
+	if err := libCommand([]string{"show", "demo/tone"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, text := range []string{"library demo/tone", "resolved: user", "hash: sha256:", "Declarations:\n  tone", "Assets:"} {
+		if !strings.Contains(output.String(), text) {
+			t.Fatalf("show missing %s: %s", text, &output)
+		}
+	}
+	for name, text := range map[string]string{"cicada.mod": "project score\ncicada 2\nentry \"main.cicada\"\n", "main.cicada": "import \"demo/tone\"\ntrack lead tone.tone {}\npattern melody { 1 . 5 . }\nscene main { lead = melody }\nsong { main }\n"} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := libCommand([]string{"update"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := libCommand([]string{"vendor"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loadProject(filepath.Join(root, "main.cicada")); err != nil {
+		t.Fatal(err)
+	}
+	if err := libCommand([]string{"vendor"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "already vendored") {
+		t.Fatal(&output)
+	}
+	explicit := filepath.Join(t.TempDir(), "nested", "library")
+	if err := libCommand([]string{"new", "other/sound", "--dir", explicit}, &output); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(filepath.Join(explicit, "cicada.mod"))
+	if err != nil || !strings.Contains(string(data), "library other/sound") {
+		t.Fatalf("explicit scaffold: %s %v", data, err)
+	}
+	if err := libCommand([]string{"new", filepath.Join(t.TempDir(), "tone")}, &output); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestLibVendorVerifiesEveryLegacyScore(t *testing.T) {
+	root, user := t.TempDir(), t.TempDir()
+	t.Setenv("CICADA_LIBRARY", user)
+	t.Chdir(root)
+	if err := project.NewLibrary("demo/tone", filepath.Join(user, "demo", "tone")); err != nil {
+		t.Fatal(err)
+	}
+	for name, source := range map[string]string{
+		"cicada.mod": "project legacy\ncicada 2\n",
+		"a.cicada":   "track lead acid {}\npattern melody acid { 1 . }\nscene main { lead = melody }\nsong { main }\n",
+		"b.cicada":   "import \"demo/tone\"\ntrack lead tone.tone {}\npattern melody { 1 . }\nscene main { lead = melody }\nsong { main }\n",
+	} {
+		if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var output bytes.Buffer
+	if err := libCommand([]string{"vendor"}, &output); err == nil || !strings.Contains(err.Error(), "CICADA-LIB-HASH") {
+		t.Fatalf("vendor accepted unpinned second score: %v", err)
+	}
+	if err := libCommand([]string{"update"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := libCommand([]string{"vendor"}, &output); err != nil {
+		t.Fatal(err)
 	}
 }
