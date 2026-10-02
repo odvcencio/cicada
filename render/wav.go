@@ -16,6 +16,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -627,6 +628,29 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 					}
 				}
 				track.drumPatterns[pattern.Name] = lanes
+			}
+			tracks = append(tracks, track)
+			continue
+		}
+		if source.Kind == "guitar" {
+			params, err := project.CompileGuitarParams(source)
+			if err != nil {
+				return nil, err
+			}
+			voice, err := guitar.New(sampleRate, params)
+			if err != nil {
+				return nil, err
+			}
+			track := trackRuntime{name: source.Name, mixer: trackMix, voice: voice, patterns: map[string]seq.Pattern{}}
+			for _, pattern := range score.Patterns {
+				if pattern.Kind != "notes" {
+					continue
+				}
+				compiled, err := project.CompilePattern(score, pattern, source)
+				if err != nil {
+					return nil, err
+				}
+				track.patterns[pattern.Name] = compiled[0].Pattern
 			}
 			tracks = append(tracks, track)
 			continue

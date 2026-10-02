@@ -121,8 +121,8 @@ func ValidateProject(p *Project) error {
 	instruments := map[string]*instrument.Program{}
 	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
-		if p.Edition == 2 && inst.ID == "audio" {
-			return fmt.Errorf("instrument name is reserved: audio")
+		if inst.ID == "guitar" || p.Edition == 2 && inst.ID == "audio" {
+			return fmt.Errorf("instrument name is reserved: %s", inst.ID)
 		}
 		if inst.Octave == nil || *inst.Octave < 0 || *inst.Octave > 6 {
 			return fmt.Errorf("instrument %s octave must be 0 to 6", inst.ID)
@@ -162,7 +162,7 @@ func ValidateProject(p *Project) error {
 	}
 	kits := map[string]Kit{}
 	for _, kit := range p.Kits {
-		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || p.Edition == 2 && kit.ID == "audio" || instruments[kit.ID] != nil {
+		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || kit.ID == "guitar" || p.Edition == 2 && kit.ID == "audio" || instruments[kit.ID] != nil {
 			return fmt.Errorf("kit %s has an invalid or reserved ID", kit.ID)
 		}
 		if _, exists := kits[kit.ID]; exists {
@@ -188,7 +188,7 @@ func ValidateProject(p *Project) error {
 		}
 		tracks[track.ID] = track
 		_, isKit := kits[track.Kind]
-		if track.Kind != "acid" && track.Kind != "drums" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
+		if track.Kind != "acid" && track.Kind != "drums" && track.Kind != "guitar" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
 			return fmt.Errorf("track %s has unknown instrument %s", track.ID, track.Kind)
 		}
 		if (p.Edition == 2 && track.Kind == "audio" || samplers[track.Kind].Name != "") && len(track.Params) > 0 {
@@ -196,6 +196,14 @@ func ValidateProject(p *Project) error {
 		}
 		if track.Params == nil {
 			return fmt.Errorf("track %s params must be explicit", track.ID)
+		}
+		if track.Kind == "guitar" {
+			if p.Edition != 2 {
+				return fmt.Errorf("CICADA-VERSION: experimental guitar requires edition 2")
+			}
+			if _, err := guitarParamsFromValues(track.Params); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
 		}
 		if track.Kind == "acid" {
 			if _, err := acidParamsFromValues(track.Params); err != nil {

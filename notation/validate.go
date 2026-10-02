@@ -1,6 +1,7 @@
 package notation
 
 import (
+	"m31labs.dev/cicada/internal/paramdefs"
 	"math"
 	"strconv"
 	"strings"
@@ -92,7 +93,7 @@ func Validate(s *Score) []Diagnostic {
 	instruments := make(map[string]Instrument, len(s.Instruments))
 	for _, inst := range s.Instruments {
 		checkID(inst.Name, inst.Position)
-		if inst.Name == "acid" || inst.Name == "drums" || s.Version == 2 && inst.Name == "audio" {
+		if inst.Name == "acid" || inst.Name == "drums" || inst.Name == "guitar" || s.Version == 2 && inst.Name == "audio" {
 			add("CICADA-DUPLICATE", "instrument name is reserved: "+inst.Name, "error", inst.Position)
 		}
 		if _, exists := instruments[inst.Name]; exists {
@@ -129,7 +130,7 @@ func Validate(s *Score) []Diagnostic {
 	for _, kit := range s.Kits {
 		checkID(kit.Name, kit.Position)
 		_, instrumentNameTaken := instruments[kit.Name]
-		if kit.Name == "acid" || kit.Name == "drums" || s.Version == 2 && kit.Name == "audio" || instrumentNameTaken {
+		if kit.Name == "acid" || kit.Name == "drums" || kit.Name == "guitar" || s.Version == 2 && kit.Name == "audio" || instrumentNameTaken {
 			add("CICADA-DUPLICATE", "kit name is reserved or already declared: "+kit.Name, "error", kit.Position)
 		}
 		if _, exists := kits[kit.Name]; exists {
@@ -168,11 +169,25 @@ func Validate(s *Score) []Diagnostic {
 		}
 		trackByName[t.Name] = t
 		namespace[t.Name] = "track"
-		if t.Kind != "acid" && t.Kind != "drums" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
+		if t.Kind != "acid" && t.Kind != "drums" && t.Kind != "guitar" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
 			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
 				if _, kitOK := kits[t.Kind]; !kitOK {
 					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
 				}
+			}
+		}
+		if t.Kind == "guitar" {
+			if s.Version != 2 {
+				add("CICADA-VERSION", "experimental guitar requires edition 2", "error", t.Position)
+			}
+			optIn := false
+			for _, param := range t.Params {
+				if param.Name == "experimental" && param.Value == "on" {
+					optIn = true
+				}
+			}
+			if !optIn {
+				add("CICADA-EXPERIMENTAL", "guitar requires experimental = on", "error", t.Position)
 			}
 		}
 		seen := map[string]bool{}
@@ -551,6 +566,13 @@ func Validate(s *Score) []Diagnostic {
 func validTrackParam(kind, name string, instruments map[string]Instrument) bool {
 	if mixerParams[name] {
 		return true
+	}
+	if kind == "guitar" {
+		for _, descriptor := range paramdefs.Registry {
+			if descriptor.ID == "guitar."+name {
+				return true
+			}
+		}
 	}
 	if kind == "acid" {
 		return acidParams[name]

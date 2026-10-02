@@ -74,8 +74,11 @@ func scoreVoices(p *project.Project) []viewVoice {
 		}
 		voices = append(voices, voice)
 	}
-	for _, builtin := range []string{"acid", "drums"} {
+	for _, builtin := range []string{"acid", "drums", "guitar"} {
 		voice := viewVoice{ID: builtin, Kind: "built-in", Mode: "native", Description: "Native Cicada voice"}
+		if builtin == "guitar" {
+			voice.Description = "Experimental physical model and amp; no listening acceptance"
+		}
 		for _, track := range p.Tracks {
 			if track.Kind != builtin {
 				continue

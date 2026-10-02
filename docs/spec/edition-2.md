@@ -59,6 +59,74 @@ song { main }
 
 Unknown effect and bus names report `CICADA-REFERENCE`. Supported effect kinds, send levels, insert placement, and bus controls are specified in edition 1's mixer sections.
 
+## Experimental guitar voice
+
+**Status:** Experimental research prototype. No human listening acceptance is claimed.
+
+**Syntax:** Select the built-in `guitar` voice with an explicit, saved opt-in:
+
+```cicada
+cicada 2
+track lead guitar { experimental = on brightness = 0.7 pickup = 0.22 }
+pattern riff { 1^ . 3 5~ 6 - . . }
+scene clean { lead = riff }
+scene muted { lead = riff lead.damping = 0.8 lead.drive = 0.7 }
+song { clean muted }
+```
+
+`guitar` is a reserved built-in name. Edition 1 reports `CICADA-VERSION`;
+omitting the opt-in or selecting `experimental = off` reports
+`CICADA-EXPERIMENTAL`. JSON stores the opt-in in `track.params.experimental`
+and validates it before engine compilation. The opt-in cannot be changed by
+a scene or live command.
+
+**Controls:** These numeric controls use the shared parameter registry. The
+language server, Studio parameter addresses/MIDI mappings and `cicada explain`
+use the same types, units, ranges and smoothing. Bend and vibrato use bare
+numbers, as do other pitch offsets; ratios also accept percent literals.
+
+| Parameter | Type / unit | Range | Default | Smoothing | Model mapping |
+| --- | --- | --- | --- | --- | --- |
+| `bend` | number / semitones | −12..12 | 0 | 8 ms | Sequenced Hz × 2^(bend/12) |
+| `vibrato` | number / cents | 0..100 | 0 | 8 ms | Depth of the model's 5 Hz pitch modulation |
+| `brightness` | number / ratio | 0..1 | 0.7 | 8 ms | Frequency-dependent string loss |
+| `damping` | number / ratio | 0..1 | 0 | 8 ms | Palm damping; higher values shorten decay |
+| `pickup` | number / string length ratio | 0.05..0.45 | 0.22 | 8 ms | Pickup comb and pluck position |
+| `drive` | number / ratio | 0..1 | 0 | 8 ms | Built-in 4× oversampled, antialiased amp |
+
+`octave` is an integer in 0..6, defaults to 2, and applies when compiling
+relative pitches. Ordinary mixer settings still apply. Wrong control units
+report `CICADA-UNIT`; unknown controls and out-of-range track controls report
+`CICADA-PARAM`. Scene settings use the existing registry diagnostics.
+
+**Articulation:** Each note-on replucks one modeled string. A `~` slide changes
+pitch with the same 8 ms glide while its gate remains open; it does not repluck.
+A slide from a closed gate starts a new pluck. Ties retain the string and gate;
+note-off releases the string. Velocity sets pluck strength. The guitar ignores
+the acid-specific accent timbre flag. Bend changes the sounding pitch without
+re-excitation. The model clamps pitch, including bend, to 40..2000 Hz.
+
+**Runtime:** Native playback, the production TinyGo AudioWorklet kernel and
+offline WAV/stem rendering use the same physical model and amp. One track uses
+one voice from the unchanged 32-voice, 16-track core limits. Storage is prepared
+before rendering; note/control/render callbacks allocate nothing. At 48 kHz the
+string delay stores 2,408 float64 samples (19,264 bytes), plus fixed voice/amp
+state. Guitar is available in the core profile within its unchanged size gates.
+
+**Image format:** Guitar images use version 15 with voice kind 4 and six
+float64 control values in registry order. Existing voices retain version 13
+encoding; shipped versions 8..13 remain readable. Version 14 and capability
+bit 0 are reserved for the chord/schedule lanes (#100/#103). This extension
+does not change graph opcodes, the 24-byte command ABI or the worklet asset.
+Integration with those lanes must preserve their version-14 payloads before
+combining features in version 15; their unmerged layouts are not interpreted
+as legacy images here.
+
+See [the riff example](../../examples/expressive-guitar.cicada) for held-note
+bends, slides, palm mutes and clean/drive contrast. Zero drive still includes
+the prototype amp's coloration. It is neither a measured pickup nor a circuit
+or cabinet emulation; it has no sympathetic strings, fret buzz or feedback.
+
 ## Migrating with `cicada fix`
 
 **Status:** Implemented.

@@ -12,6 +12,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
 )
 
 type Error string
@@ -25,6 +26,7 @@ const (
 	VoiceAcid
 	VoiceDrums
 	VoiceGraph
+	VoiceGuitar // explicitly experimental physical model and amp
 )
 
 type KitLaneKind uint8
@@ -44,23 +46,25 @@ type KitLaneBinding struct {
 }
 
 type TrackConfig struct {
-	Kind        VoiceKind
-	Acid        acid.Params
-	Drums       [drum.LaneCount]drum.Params
-	Kit         *[drum.LaneCount]KitLaneBinding
-	Graph       graph.Program
-	GainDB      float64
-	GainSet     bool
-	Pan         float64
-	Mute        bool
-	Solo        bool
-	InsertDrive *fx.DriveParams
-	SendA       float64
-	SendB       float64
-	SendPre     bool
-	SendAPre    bool
-	SendBPre    bool
-	BusSFX      bool
+	Kind         VoiceKind
+	Experimental bool          `json:",omitempty"`
+	Guitar       guitar.Params `json:",omitzero"`
+	Acid         acid.Params
+	Drums        [drum.LaneCount]drum.Params
+	Kit          *[drum.LaneCount]KitLaneBinding
+	Graph        graph.Program
+	GainDB       float64
+	GainSet      bool
+	Pan          float64
+	Mute         bool
+	Solo         bool
+	InsertDrive  *fx.DriveParams
+	SendA        float64
+	SendB        float64
+	SendPre      bool
+	SendAPre     bool
+	SendBPre     bool
+	BusSFX       bool
 }
 
 // SFXSidechain selects the post-fader SFX bus as the music compressor detector.
@@ -105,6 +109,7 @@ type Config struct {
 
 type voiceSlot struct {
 	kind                           VoiceKind
+	guitar                         *guitar.Voice
 	acid                           *acid.Voice
 	drums                          *drum.Kit
 	graph                          *graph.Voice
@@ -391,6 +396,12 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		}
 		switch spec.Kind {
 		case VoiceOff:
+		case VoiceGuitar:
+			if !spec.Experimental {
+				return 0, Error("guitar requires explicit experimental opt-in")
+			}
+			voices++
+			v.guitar, err = guitar.New(cfg.SampleRate, spec.Guitar)
 		case VoiceAcid:
 			voices++
 			v.acid, err = acid.New(cfg.SampleRate)
@@ -739,6 +750,9 @@ func (e *Engine) Render(outL, outR []float32) {
 					clear(outR[frame:])
 					return
 				}
+			case VoiceGuitar:
+				sample := v.guitar.Next()
+				left, right = sample, sample
 			case VoiceGraph:
 				sample := v.graph.Next()
 				left, right = sample, sample
@@ -1120,6 +1134,8 @@ func (e *Engine) apply(c cmd.Command) {
 		switch v.kind {
 		case VoiceAcid:
 			v.acid.NoteOn(note, accent, slide, velocity)
+		case VoiceGuitar:
+			v.guitar.NoteOn(note, velocity, accent, slide)
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
 		case VoiceDrums:
@@ -1236,6 +1252,10 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 					e.soloCount--
 				}
 				e.updateMuteTargets()
+			}
+		case kernel.ParamGuitarBend, kernel.ParamGuitarVibrato, kernel.ParamGuitarBrightness, kernel.ParamGuitarDamping, kernel.ParamGuitarPickup, kernel.ParamGuitarDrive:
+			if v.kind != VoiceGuitar || v.guitar == nil || v.guitar.SetParam(kernel.ParamID(c.Index), float64(value)) != nil {
+				e.fault(18)
 			}
 		case kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:
 			if v.kind != VoiceAcid || v.acid == nil {
@@ -1532,6 +1552,8 @@ func (e *Engine) noteOff(track int, lane uint16) {
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.NoteOff()
+	case VoiceGuitar:
+		v.guitar.NoteOff()
 	case VoiceGraph:
 		v.graph.NoteOff()
 	case VoiceDrums:
@@ -1556,6 +1578,8 @@ func (e *Engine) resetVoice(track int) {
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.Reset()
+	case VoiceGuitar:
+		v.guitar.Reset()
 	case VoiceGraph:
 		v.graph.Reset()
 	case VoiceDrums:
