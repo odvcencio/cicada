@@ -45,6 +45,41 @@ Run those commands from the project directory. `check` validates every score
 in the project. `fmt --check` reports files that need formatting without
 changing them.
 
+## Split a score into files
+
+List the files in `cicada.mod` when patterns or instruments need their own source file:
+
+```text
+project multifile
+cicada 2
+entry "main.cicada"
+source "main.cicada"
+source "parts/patterns.cicada"
+source "parts/voices.cicada"
+license "MIT"
+author "Cicada contributors"
+```
+
+The [multi-file example](../../examples/multifile/main.cicada) puts scenes and the song in `main.cicada`, a phrase and patterns in `parts/patterns.cicada`, and instruments and tracks in `parts/voices.cicada`. Every file shares the project's declarations. References can point forward or into another file without an import. Each file must contain complete declarations.
+
+The entry loads first; the remaining sources load in sorted path order. The entry is included even without its own `source` line. Files outside the explicit list are ignored. Paths must stay inside the project, including through symlinks; use ordinary relative paths without `..`, absolute paths, or globs. `license` stores one SPDX identifier, quoted or bare. `author` stores a quoted string. Both are optional. Existing manifests with only `project` and `cicada` keep working unchanged.
+
+Run these commands from the example folder:
+
+```sh
+cicada check
+cicada fmt --check
+cicada explain main.cicada bass.cutoff @1.1.1
+cicada play main.cicada
+cicada render main.cicada -o shared.wav --rate 48000 --bits 24
+```
+
+A command given any listed source loads the whole project. `check` reports errors at the right file, line, and column; a duplicate also identifies the first declaration. `fmt` keeps files separate and retains comments and source spelling. To migrate an edition-1 project, use `cicada fix --all`; the command checks the complete project before writing each file and upgrading the manifest.
+
+The language server uses unsaved buffers alongside the other listed files. Go to definition and rename work across files. Save As copies all sources and their assets. Studio currently refuses projects with more than one source file with a message directing you to a text editor, check, play, or render. Its editing and undo history remain available for single-file projects.
+
+Imports, libraries, `require`, and `cicada.sum` are planned follow-up work.
+
 ## Tracks and patterns
 
 A track chooses a sound source: the built-in `acid` or `drums` voice, a
