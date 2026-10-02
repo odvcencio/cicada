@@ -154,7 +154,7 @@ func sourceHasBlockSetting(score *notation.Score, resolved project.ResolvedParam
 				continue
 			}
 			for _, setting := range track.Params {
-				if setting.Name == resolved.Descriptor.Source {
+				if setting.Name == presetSourceParamName(score, resolved.Owner, resolved.Descriptor.Source) {
 					return true
 				}
 			}
@@ -165,7 +165,7 @@ func sourceHasBlockSetting(score *notation.Score, resolved project.ResolvedParam
 				continue
 			}
 			for _, setting := range effect.Params {
-				if setting.Name == resolved.Descriptor.Source {
+				if setting.Name == presetSourceParamName(score, resolved.Owner, resolved.Descriptor.Source) {
 					return true
 				}
 			}
