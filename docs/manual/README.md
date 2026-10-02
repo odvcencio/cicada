@@ -54,6 +54,8 @@ together.
   and inspect edit history.
 - [Editors and notation tools](editors.md) — use the LSP, VS Code extension,
   formatter, quick fixes, highlighting, and symbol lookup.
+- [Managing libraries](libraries.md) — create, inspect, pin, and vendor reusable
+  declarations and audio; copy projects with Save As.
 - [Exporting](exporting.md) — render WAV, stems, and MIDI.
 - [Live playback, mixing, and what comes next](next-level.md) — what the
   current engine does and which larger features are still ahead.

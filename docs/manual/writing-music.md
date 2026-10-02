@@ -105,7 +105,7 @@ song { verse*2 }
 
 Libraries can import other libraries. Imports in all files of a project or library share that scope. A library's unqualified references select its own declarations; dependency references use the imported namespace. Dependencies are not re-exported. Names beginning with `_` are private to their library; referring to `tone._hook` from outside it produces `CICADA-LIB-PRIVATE`. Import cycles produce `CICADA-LIB-CYCLE`.
 
-Paths use slash-separated source identifiers; `builtin` is a reserved namespace. Resolution checks embedded `std/` libraries, the project's `lib/`, and the user library in that order. The user library is Go's per-OS user config directory plus `cicada/lib`; `$CICADA_LIBRARY` overrides it. Direct imports from it are allowed. If the same path exists in more than one location, two imports share the same final component, or an import namespace conflicts with a local declaration, loading fails with `CICADA-LIB-SHADOW`.
+Paths use slash-separated source identifiers; `builtin` is a reserved namespace. Resolution checks embedded `std/` libraries, the project's `lib/`, and the user library in that order. The user library is Go's per-OS user config directory plus `cicada/lib`; `$CICADA_LIBRARY` overrides it. Direct imports from it are allowed. A project pin explicitly selects its vendored copy while a user copy exists. Otherwise, if the same path exists in more than one location, two imports share the same final component, or an import namespace conflicts with a local declaration, loading fails with `CICADA-LIB-SHADOW`.
 
 Library assets live under the library's `audio/` folder. Their source paths resolve from that library root, and their own declared audio hashes are verified as well. Source and asset paths cannot escape the library through traversal or symlinks.
 
@@ -124,7 +124,7 @@ cicada render main.cicada -o library.wav --rate 48000 --bits 24
 
 Every load recomputes the hashes. Missing pins, changed content, and changed resolution kinds produce `CICADA-LIB-HASH` at the importing file, line, and column. `check` reports them; playback and rendering refuse them. After an intended edit, run `cicada lib update demo/tone` to update that pin, or omit the path to update every imported library and remove unused pins. The command prints the old and new location kinds and hashes. A targeted update leaves dependency pins unchanged; update those dependencies explicitly or update all imports.
 
-The language server completes import paths and public qualified names and goes to definitions in library source. Unsaved library changes also trigger hash diagnostics. `explain` identifies the library behind a declaration or instrument value. Project-wide formatting and notation fixes keep imported library files untouched. Library vendoring, Save As with imports, bundle provenance, and `require` versions remain follow-up work.
+The language server completes import paths and public qualified names and goes to definitions in library source. Unsaved library changes also trigger hash diagnostics. `explain` identifies the library behind a declaration or instrument value. Project-wide formatting and notation fixes keep imported library files untouched. Use `cicada lib vendor` to keep imported user libraries in the project; Save As does this automatically. See [Managing libraries](libraries.md). Bundle provenance and `require` versions remain follow-up work.
 
 ## Tracks and patterns
 
