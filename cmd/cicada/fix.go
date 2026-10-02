@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -36,6 +37,19 @@ func fixCommandWithWriter(args []string, writeScore func(string, []byte, os.File
 	root, currentEdition, manifest, err := fixProjectLocation(path)
 	if err != nil {
 		return err
+	}
+	if manifest != "" {
+		data, err := os.ReadFile(manifest)
+		if err != nil {
+			return err
+		}
+		parsed, err := ed.ParseProjectManifest(data)
+		if err != nil {
+			return err
+		}
+		if parsed.ExplicitSources() {
+			return fixMultiFile(root, parsed, path, all, check, writeScore)
+		}
 	}
 	paths, err := projectScorePaths(root)
 	if err != nil {
@@ -436,4 +450,93 @@ func writeFixedScore(path string, source []byte, mode os.FileMode) error {
 
 func fixSource(source []byte) ([]byte, bool, error) {
 	return migration.FixSource(source)
+}
+
+func fixMultiFile(root string, manifest ed.Manifest, path string, all, check bool, writeScore func(string, []byte, os.FileMode) error) error {
+	entry := filepath.Join(root, filepath.FromSlash(manifest.Entry))
+	requested := entry
+	if path != "" {
+		requested = path
+	}
+	sources, err := project.ReadSources(requested, nil)
+	if err != nil {
+		return err
+	}
+	fixed, changed, err := migration.FixFiles(sources.Files, manifest.Edition)
+	if err != nil {
+		return err
+	}
+	upgrade := manifest.Edition == 1
+	if !changed && !upgrade {
+		fmt.Println("already fixed:", root)
+		return nil
+	}
+	if !all && len(sources.Files) > 1 {
+		return fmt.Errorf("multi-file projects must migrate together; run cicada fix --all")
+	}
+	if check {
+		return fmt.Errorf("fix needed: multi-file project")
+	}
+	beforeManifest, err := os.ReadFile(sources.ManifestPath)
+	if err != nil {
+		return err
+	}
+	afterManifest, _, err := ed.UpgradeManifestEdition(beforeManifest)
+	if err != nil {
+		return err
+	}
+	info, err := os.Stat(sources.ManifestPath)
+	if err != nil {
+		return err
+	}
+	// Check every revision before the first write, then check each file again
+	// immediately before installing it. A changed file stops the migration.
+	for _, file := range sources.Files {
+		current, err := os.ReadFile(file.Path)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(current, file.Source) {
+			return fmt.Errorf("source changed during fix: %s; retry", file.Path)
+		}
+	}
+	var written []fixScoreEdit
+	rollback := func() {
+		for i := len(written) - 1; i >= 0; i-- {
+			e := written[i]
+			_ = writeFixedScore(e.path, e.before, e.mode)
+		}
+	}
+	for i, file := range fixed {
+		if string(file.Source) == string(sources.Files[i].Source) {
+			continue
+		}
+		current, err := os.ReadFile(file.Path)
+		if err != nil {
+			rollback()
+			return err
+		}
+		if !bytes.Equal(current, sources.Files[i].Source) {
+			rollback()
+			return fmt.Errorf("source changed during fix: %s; retry", file.Path)
+		}
+		stat, err := os.Stat(file.Path)
+		if err != nil {
+			rollback()
+			return err
+		}
+		if err := writeScore(file.Path, file.Source, stat.Mode().Perm()); err != nil {
+			rollback()
+			return err
+		}
+		written = append(written, fixScoreEdit{path: file.Path, before: sources.Files[i].Source, mode: stat.Mode().Perm()})
+	}
+	if upgrade {
+		if err := writeFixedScore(sources.ManifestPath, afterManifest, info.Mode().Perm()); err != nil {
+			rollback()
+			return err
+		}
+	}
+	fmt.Printf("fixed %d source(s); edition manifest %s\n", len(written), sources.ManifestPath)
+	return nil
 }
