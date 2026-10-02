@@ -92,6 +92,20 @@ song { main }
 
 **Kernel images:** Delay graphs keep the version-13 layout and require capability bit 1 in the previously reserved 16-bit header word. `gosx_audio_capabilities` advertises that bit. Legacy images keep a zero capability word, and versions 8–13 remain readable. Older readers reject a required capability before playback. Graph opcodes 24 and 25 carry delay and comb; opcode 26 converts a Hz-derived period to ms. The comb's fourth input occupies the existing node value word as an exact integer index, so node records stay eight bytes. Graph and command opcodes have separate namespaces.
 
+## Graph phase modulation
+
+**Status:** Implemented. The authored bell and PM bass are experimental pending owner listening acceptance. Choose them through instrument declarations and tracks in the score.
+
+**Syntax and types:** `pm(carrier_hz, modulator, index)` takes Hz, audio, and unit and returns audio. Index is the phase deviation in radians for a unit-amplitude modulator; it accepts an envelope and negative values. `pm(pitch, sine(pitch * 3.5), 4 * env(gate, 260ms))` makes a two-operator voice. The sine modulator gives the classic FM sideband spectrum, with brightness controlled by the index envelope. No feedback edge is permitted.
+
+**Meaning:** The carrier emits `sin(2*pi*phase + modulator*index)`. Its stored float32 phase advances by the carrier frequency divided by the render sample rate and wraps into `[0,1)`. The offset product is evaluated in float64 and reduced modulo one turn before sine evaluation; it never accumulates into carrier state. Very large controls lose fractional phase precision. Carrier frequency clamps to `0..0.49*sample_rate`; zero emits silence. A non-finite frequency clamps to zero; a non-finite offset emits silence while carrier phase continues. A fresh note resets both operators; slides preserve phase and use the existing pitch glide. Reset clears phase. Execution uses the same graph on native, WASM, and offline paths.
+
+**Limits and errors:** PM adds one stateful node and no delay storage. The existing limits of 128 graph nodes and 32 stateful nodes remain. Wrong units report `CICADA-UNIT`; wrong arity reports `CICADA-PARAM`. Source conversion and semantic JSON retain the three typed inputs. Language-server hover and `cicada explain graph.pm` share the operation description. Existing one-input oscillators retain their signatures.
+
+**Aliasing:** PM is not antialiased. Clamping carrier frequency does not bound modulation sidebands. A two-second, 16-times-rate reference using the rendered float32 phase trajectory measured the example's highest bell note, E5 (659.255 Hz), at its 3.5 modulator ratio and frozen peak index of 4. Hann-windowed reference energy above Nyquist was -71.03 dB at 44.1 kHz and -85.59 dB at 48 kHz, relative to total signal energy; comparison with the reference after removing that energy measured the same folded residual. At index 16 those values rose to -2.24 dB and -2.91 dB (59.70% and 51.19%). These measurements cover a frozen peak-index snapshot, not every transient or control combination. Keep the example's bell at or below E5 with index at or below 4; higher pitch, ratio, or index can alias strongly. This is a measured example range, not an antialiasing guarantee. The feedback-free bass uses a 1:1 ratio and peak index 1.5. See [fm-bell.cicada](../../examples/fm-bell.cicada).
+
+**Image compatibility:** Additive in source editions 1 and 2. Graph opcode 27 is PM; the eight-byte node record uses its three existing input indices. Image version 13 requires capability bit 2 for PM in tracks or kit lanes, alongside I-1's delay bit 1; bit 0 stays reserved for chords. `gosx_audio_capabilities` advertises both supported bits. Legacy images retain their capability word and versions 8–13 remain readable. Readers without PM reject its required capability before playback.
+
 ## Migrating with `cicada fix`
 
 **Status:** Implemented.

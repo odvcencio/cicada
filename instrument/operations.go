@@ -9,6 +9,8 @@ type OperationInfo struct {
 
 func Operation(name string) (OperationInfo, bool) {
 	switch name {
+	case "pm":
+		return OperationInfo{name, "pm(hz, audio, unit) -> audio", "Sine carrier with phase offset modulator * index in radians; index may be enveloped or negative. Carrier phase stays in [0,1), frequency clamps to 0..0.49 * sample_rate, and zero frequency emits silence. No feedback or antialiasing: high pitch, ratio, or index folds sidebands above Nyquist. Experimental pending listening acceptance."}, true
 	case "delay":
 		return OperationInfo{name, "delay(audio, ms) -> audio", "Linear fractional delay; 1..4096 samples at the render rate. Reserves 16384 bytes per voice. Use 1 / pitch for a period in ms."}, true
 	case "comb":
