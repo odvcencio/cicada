@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 	"time"
 )
 
@@ -23,6 +24,8 @@ type studioParamsResponse struct {
 	Registry  json.RawMessage        `json:"registry"`
 	Addresses []project.ParamAddress `json:"addresses"`
 }
+
+var studioAudioSessionID atomic.Uint64
 
 func (s *studio) params(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
@@ -64,6 +67,7 @@ func (s *studio) liveProject() (*project.Project, []byte, error) {
 
 type audioClientMessage struct {
 	Type     string          `json:"type"`
+	NoteID   string          `json:"noteId,omitempty"`
 	Address  string          `json:"address"`
 	Track    string          `json:"track"`
 	Value    json.RawMessage `json:"value"`
@@ -89,6 +93,16 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer connection.CloseNow()
+	session := strconv.FormatUint(studioAudioSessionID.Add(1), 10) + ":"
+	held := make(map[string]audioClientMessage)
+	defer func() {
+		for _, message := range held {
+			off := false
+			zero := 0
+			message.On, message.Velocity = &off, &zero
+			_ = s.applyAudioMessage(message)
+		}
+	}()
 	connection.SetReadLimit(16 * 1024)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
@@ -149,8 +163,37 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 			s.queueAudioError(ctx, outgoing, audioErrorMessage{Type: "error", Code: "CICADA-PARAM", Message: "invalid audio message", Address: ""})
 			continue
 		}
+		if message.Type == "note" && message.Note != nil && message.On != nil {
+			if len(message.NoteID) > 512 {
+				s.queueAudioError(ctx, outgoing, audioErrorResponse(message, fmt.Errorf("note ID exceeds limit")))
+				continue
+			}
+			id := message.NoteID
+			if id == "" {
+				id = message.Track + ":" + strconv.Itoa(*message.Note)
+			}
+			message.NoteID = session + id
+			if original, ok := held[message.NoteID]; ok {
+				if *message.On {
+					continue
+				} // Idempotent repeated press.
+				message.Track, message.Note = original.Track, original.Note
+			} else if !*message.On {
+				continue
+			} // Unknown releases have no owner.
+			if *message.On && len(held) >= 128 {
+				s.queueAudioError(ctx, outgoing, audioErrorResponse(message, fmt.Errorf("held note capacity exceeded")))
+				continue
+			}
+		}
 		if err := s.applyAudioMessage(message); err != nil {
 			s.queueAudioError(ctx, outgoing, audioErrorResponse(message, err))
+		} else if message.Type == "note" && message.On != nil {
+			if *message.On {
+				held[message.NoteID] = message
+			} else {
+				delete(held, message.NoteID)
+			}
 		}
 	}
 }
@@ -198,6 +241,9 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 		s.transport.mu.Unlock()
 		if stream == nil {
 			return fmt.Errorf("audio transport is not running")
+		}
+		if message.NoteID != "" {
+			return stream.NoteID(message.Track, *message.Note, *message.Velocity, *message.On, message.NoteID)
 		}
 		return stream.Note(message.Track, *message.Note, *message.Velocity, *message.On)
 	}

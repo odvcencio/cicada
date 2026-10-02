@@ -48,6 +48,7 @@ for(const phase of ['resume','fetch','decode']) {
     });
     await new Promise(resolve=>setImmediate(resolve));
     await byId('pcm-recover').click();
+    await byId('pcm-commit').click();
     blocked=true;
     const playing=byId('sampler-play').click();
     await entered.promise;
@@ -84,9 +85,12 @@ function captureUI(server={activeCapture:'',takes:[]},tracks=['vox'],scenes=['ma
     addEventListener(name,fn){listeners.set(name,fn);},dispatchEvent(event){listeners.get(event.type)?.(event);},
     CicadaBrowserCapture:{
       BrowserCapture:class {
-        constructor(){this.status={state:'idle'};}
+        constructor(){this.status={state:'idle'};this.take={id:'local',target:null};}
         onStatus(){} async arm(){this.status.state='armed';} async record(){this.status.state='recording';}
-      },PublishedSampler:class {stop(){}},
+        async stop(){this.status.state='stopped';}
+        async recover(){return {id:'local',metadata:{},incomplete:!!this.status.incomplete};}
+      },PublishedSampler:class {stop(){}},TakeSampler:class {load(){}stop(){}},
+      async publishTake(take,target){commands.push({action:'import',takeId:take.id,...target});return {take:'committed',revision:'saved'};},
     },
     cicadaStudio:{revision(){return 'current';},dirty(){return false;}},
     cicadaBrowserAudio:{async startAudio(){},context:{}}
@@ -116,7 +120,7 @@ function captureUI(server={activeCapture:'',takes:[]},tracks=['vox'],scenes=['ma
     });
     await window.cicadaRefreshProjection();
   }
-  return {byId,window,commands,refresh,ready:()=>new Promise(resolve=>setImmediate(resolve))};
+  return {byId,window,commands,refresh,storage,ready:()=>new Promise(resolve=>setImmediate(resolve))};
 }
 
 for(const recording of [false,true]) {
@@ -164,4 +168,25 @@ test('source target changes preserve an active take and keep Stop available',asy
   assert.equal(ui.commands.at(-1).track,'vox','never silently retarget an active take');
   assert.equal(ui.commands.at(-1).scene,'main');
   assert.equal(ui.byId('pcm-track').value,'renamed');assert.equal(ui.byId('pcm-scene').value,'new-scene');
+});
+
+test('browser Stop and Recover retain local PCM; only explicit Commit imports the take',async()=>{
+ const ui=captureUI();await ui.ready();ui.byId('audio-mode').value='browser';
+ await ui.byId('pcm-arm').click();await ui.byId('pcm-record').click();await ui.byId('pcm-stop').click();
+ assert.equal(ui.commands.length,0,'Stop must never import browser recordings');
+ assert.match(ui.byId('sampler-status').textContent,/Local take retained/);
+ assert.equal(ui.byId('pcm-commit').disabled,false);
+ await ui.byId('pcm-recover').click();assert.equal(ui.commands.length,0,'recovery is a local read');
+ await ui.byId('pcm-commit').click();assert.equal(ui.commands.length,1);
+ assert.deepEqual(ui.commands[0],{action:'import',takeId:'local',track:'vox',scene:'main',revision:'current'});
+});
+
+test('a failed explicit import keeps the local take available to retry',async()=>{
+ const ui=captureUI();await ui.ready();ui.byId('audio-mode').value='browser';
+ await ui.byId('pcm-recover').click();let attempts=0;
+ ui.window.CicadaBrowserCapture.publishTake=async()=>{attempts++;throw Error('Conflict: local PCM retained');};
+ await ui.byId('pcm-commit').click();
+ assert.match(ui.byId('pcm-status').textContent,/local PCM retained/);
+ assert.equal(ui.byId('pcm-commit').disabled,false);assert.equal(attempts,1);
+ await ui.byId('pcm-commit').click();assert.equal(attempts,2);
 });

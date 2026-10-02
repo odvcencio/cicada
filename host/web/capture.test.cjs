@@ -283,3 +283,74 @@ test('fatal capture fault stops even a play command whose state acknowledgement 
  assert.ok(h.messages.some(message=>message.t==='capture-control'&&message.op==='stop'));
  audio.receive({t:'s',p:false});await h.client.arm();assert.equal(h.client.status.state,'armed');
 });
+
+test('input inventory and exact selection are independent of a standard gamepad',async()=>{
+  const h=clientHarness(),devices=[{kind:'audioinput',deviceId:'os-controller-mic',label:'OS audio input'},{kind:'videoinput',deviceId:'camera'}];
+  h.client.env.navigator.mediaDevices.enumerateDevices=async()=>devices;
+  assert.deepEqual(await h.client.listInputs(),[devices[0]]);
+  assert.equal(h.requests.length,0,'enumeration must never request microphone permission');
+  await h.client.arm(1,'os-controller-mic');
+  assert.deepEqual(h.requests[0].audio.deviceId,{exact:'os-controller-mic'});
+  const stopped=h.client.stop();h.client.receive({t:'finished'});await stopped;
+});
+
+test('an unavailable selected microphone fails without silently switching to the default',async()=>{
+  const h=clientHarness();let attempts=0;
+  h.client.env.navigator.mediaDevices.getUserMedia=async(request)=>{attempts++;assert.deepEqual(request.audio.deviceId,{exact:'missing'});throw new Error('OverconstrainedError');};
+  await assert.rejects(h.client.arm(1,'missing'),/Overconstrained/);
+  assert.equal(attempts,1);assert.equal(h.client.status.state,'idle');assert.equal(h.client.stream,null);
+});
+
+for(const kind of ['track-ended','track-muted','devicechange','visibilitychange','pagehide','context-interruption']) {
+  test(`${kind} stops capture, marks incomplete and retains the local take without publication`,async()=>{
+    const h=clientHarness(),events=new Map(),media=h.client.env.navigator.mediaDevices;
+    h.client.env.addEventListener=(name,fn)=>events.set(name,fn);
+    h.client.env.document={hidden:false,addEventListener:(name,fn)=>events.set(name,fn)};
+    media.addEventListener=(name,fn)=>events.set(name,fn);
+    media.enumerateDevices=async()=>[];
+    h.audio.context.state='running';h.audio.context.addEventListener=(name,fn)=>events.set(name,fn);h.audio.context.removeEventListener=()=>{};
+    let uploads=0;h.client.env.fetch=async()=>{uploads++;throw new Error('Should retain locally');};
+    // Rebuild after the test's browser event sources are installed.
+    h.client=new BrowserCapture(h.audio,h.client.env);
+    await h.client.arm(1,'selected');await h.client.record();const retained=h.client.take;
+    if(kind==='track-ended') h.track.onended();
+    if(kind==='track-muted') h.track.onmute();
+    if(kind==='devicechange') await events.get('devicechange')();
+    if(kind==='visibilitychange') {h.client.env.document.hidden=true;events.get('visibilitychange')();}
+    if(kind==='pagehide') events.get('pagehide')();
+    if(kind==='context-interruption') {h.audio.context.state='suspended';events.get('statechange')();}
+    assert.equal(h.client.status.state,'saving');assert.equal(h.client.status.incomplete,true);assert.equal(h.audio.playing,false);
+    h.client.receive({t:'finished',incomplete:true});await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(h.client.take.id,retained.id);assert.equal(h.client.status.state,'stopped');assert.equal(h.track.stopped,true);assert.equal(uploads,0);
+  });
+}
+
+test('user Stop while the browser Play acknowledgement is pending also cancels accompaniment',async()=>{
+ const h=clientHarness(),window={};
+ vm.runInNewContext(fs.readFileSync(__dirname+'/client.js','utf8'),{window,Uint8Array,Uint32Array,DataView});
+ const audio=window.cicadaBrowserAudio;
+ audio.context={...h.audio.context,async resume(){}};audio.node=h.audio.node;audio.readyPromise=Promise.resolve();audio.bpmMilli=120000;audio.stageCurrentScore=async()=>{};
+ h.client.audio=audio;
+ await h.client.arm();await h.client.record();assert.equal(audio.playing,false);
+ const stopping=h.client.stop();h.client.receive({t:'finished'});await stopping;
+ const commands=h.messages.filter(message=>message.t==='c');
+ assert.equal(new DataView(commands.at(-1).bytes.buffer).getUint8(0),2,'Stop must follow an unacknowledged Play');
+});
+
+test('an interrupted finalized take remains marked incomplete after local recovery',async()=>{
+ const h=clientHarness();await h.client.arm();await h.client.record();
+ const stopping=h.client.interrupt('Context suspended');h.client.receive({t:'finished',incomplete:false});await stopping;
+ const recovered=await h.client.recover();assert.equal(recovered.incomplete,true);assert.equal(h.client.status.incomplete,true);
+});
+
+test('a microphone permission result arriving after page hide is immediately released and never records',async()=>{
+ const h=clientHarness(),events=new Map();let grant;
+ const env=h.client.env;env.document={hidden:false,addEventListener:(event,fn)=>events.set(event,fn)};
+ env.navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>{grant=resolve;});
+ h.client=new BrowserCapture(h.audio,env);
+ const arming=h.client.arm();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(h.client.status.state,'arming');env.document.hidden=true;events.get('visibilitychange')();
+ grant({getAudioTracks:()=>[h.track],getTracks:()=>[h.track]});
+ await assert.rejects(arming,/interrupted/);
+ assert.equal(h.track.stopped,true);assert.equal(h.client.status.state,'idle');assert.equal(h.workerMessages.length,0);
+});

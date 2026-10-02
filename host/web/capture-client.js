@@ -10,6 +10,23 @@
     constructor(audio, env = root) {
       this.audio=audio; this.env=env; this.stream=null; this.source=null; this.worker=null; this.take=null;
       this.listeners=new Set(); this.waiters=new Map(); this.busy=false;
+      this.inputDevice = ''; this.deviceGeneration = 0; this.armGeneration=0; this.capturePlayed=false;
+      audio.onState?.(playing => {
+        if (this.status?.state !== 'recording') return;
+        if (playing) this.capturePlayed=true;
+        else if (this.capturePlayed) this.interrupt('Playback interrupted during recording');
+      });
+      const interrupt = message => { if (['arming','armed','recording'].includes(this.status.state)) this.interrupt(message); };
+      env.addEventListener?.('pagehide', () => interrupt('Page closed or navigated away'));
+      env.document?.addEventListener?.('visibilitychange', () => { if (env.document.hidden) interrupt('Recording interrupted while page was hidden'); });
+      env.navigator?.mediaDevices?.addEventListener?.('devicechange', async () => {
+        const generation = ++this.deviceGeneration;
+        if (!this.inputDevice || !['armed','recording'].includes(this.status.state)) return;
+        try {
+          const devices = await this.listInputs();
+          if (generation === this.deviceGeneration && !devices.some(d => d.deviceId === this.inputDevice)) interrupt('Selected audio input disconnected');
+        } catch (_) { /* An ended track is still authoritative on browsers that hide the inventory. */ }
+      });
       this.status={state:'idle',storage:'unchecked',timing:'unavailable',calibration:'uncalibrated',monitoring:false,settings:null,error:''};
     }
     notify() { for (const f of this.listeners) f({...this.status}); }
@@ -32,27 +49,50 @@
           // immediately, including Play that has not been acknowledged yet.
           this.audio.node?.port.postMessage({t:'capture-control',op:'stop'});
           if (this.audio.node) this.audio.stop(true);
-          this.releaseInput(); this.status.state='stopped'; this.worker?.terminate(); this.worker=null;
+          this.saveIndex(); this.releaseInput(); this.status.state='stopped'; this.worker?.terminate(); this.worker=null;
         } else if (['armed','recording'].includes(this.status.state)) this.stop().catch(()=>{});
       } else {
         const w=this.waiters.get(data.t);
         if(w) { this.waiters.delete(data.t); this.env.clearTimeout(w.timer); w.resolve(data); }
-        if(data.t==='finished') { this.status.error=data.error || this.status.error; this.status.incomplete=data.incomplete || this.status.incomplete; this.take={...this.take,...data}; this.status.state='stopped'; this.status.incomplete=data.incomplete || this.status.incomplete; this.releaseInput(); }
+        if(data.t==='finished') { this.status.error=data.error || this.status.error; this.status.incomplete=data.incomplete || this.status.incomplete; this.take={...this.take,...data}; this.status.state='stopped'; this.status.incomplete=data.incomplete || this.status.incomplete; this.saveIndex(); this.releaseInput(); }
       }
       this.notify();
     }
-    async arm(channels = 1) {
-      if(this.busy || this.status.state==='armed' || this.status.state==='recording') throw new Error('Capture is already armed');
+    async listInputs() {
+      if (!this.env.navigator?.mediaDevices?.enumerateDevices) throw new Error('Audio input enumeration unavailable');
+      return (await this.env.navigator.mediaDevices.enumerateDevices()).filter(device => device.kind === 'audioinput');
+    }
+    saveIndex() {
+      if (this.take) try { this.env.localStorage?.setItem('cicada-last-take',JSON.stringify({...this.take,incomplete:!!this.status.incomplete})); } catch (_) {}
+    }
+    interrupt(message) {
+      if (this.status.state === 'arming') {
+        this.armGeneration++; this.status.error=message; this.status.state='idle';
+        this.releaseInput(); this.worker?.terminate(); this.worker=null;
+        for (const waiter of this.waiters.values()) { this.env.clearTimeout(waiter.timer); waiter.reject(new Error(message)); }
+        this.waiters.clear(); this.notify(); return Promise.resolve();
+      }
+      this.status.error = message; this.status.incomplete = true; this.saveIndex();
+      return this.stop().catch(() => {});
+    }
+    async arm(channels = 1, deviceId = '') {
+      if(this.busy || this.status.state==='armed' || this.status.state==='recording' || this.status.state==='saving') throw new Error('Capture is already armed');
       if (![1,2].includes(channels)) throw new Error('Choose mono or stereo input');
       this.busy=true; this.status.error=''; this.status.incomplete=false;
+      const generation=++this.armGeneration;
+      const current=()=>{if(generation!==this.armGeneration || this.env.document?.hidden) throw new Error('Microphone arming was interrupted');};
+      this.status.state='arming'; this.notify();
       try {
         if (!this.env.navigator?.mediaDevices?.getUserMedia) throw new Error('Microphone capture unavailable; use a secure context');
-        await this.audio.startAudio(true);
+        await this.audio.startAudio(true); current();
         if (this.audio.playing) throw new Error('Stop the transport before arming');
-        this.stream=await this.env.navigator.mediaDevices.getUserMedia({audio:{channelCount:{ideal:channels},echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false});
+        if (typeof deviceId !== 'string') throw new Error('Input device ID must be a string');
+        this.inputDevice = deviceId;
+        this.stream=await this.env.navigator.mediaDevices.getUserMedia({audio:{...(deviceId ? {deviceId:{exact:deviceId}} : {}),channelCount:{ideal:channels},echoCancellation:false,noiseSuppression:false,autoGainControl:false},video:false}); current();
         const track=this.stream.getAudioTracks()[0];
         if (!track) throw new Error('Microphone returned no audio track');
         this.status.settings=inspectSettings(track);
+        this.inputDevice=this.status.settings.deviceId || deviceId;
         if (this.status.settings.channelCount && this.status.settings.channelCount !== channels) throw new Error('Input channel count differs from the requested layout');
         const latency=this.status.settings.latency;
         // Track latency alone is not a duplex first-frame measurement. Keep
@@ -70,14 +110,17 @@
         this.status.storage='checking';
         const opened=this.wait('opened');
         this.worker.postMessage({t:'open',id,metadata,port:channel.port1},[channel.port1]);
-        const result=await opened;
+        const result=await opened; current();
         this.take.mode=this.status.storage=result.mode;
         // Persist a small recovery index only after the store is usable.
         try { this.env.localStorage?.setItem('cicada-last-take',JSON.stringify(this.take)); } catch (_) {}
         this.audio.node.port.postMessage({t:'capture-init',port:channel.port2,channels,epoch:Date.now(),inputLatencyNano:Number.isFinite(latency)?Math.round(latency*1e9):0,inputLatencyValid:false,outputLatencyNano:Math.round(this.audio.contextLatencyMs()*1e6),outputLatencyValid:false},[channel.port2]);
         this.source=this.audio.context.createMediaStreamSource(this.stream);
         this.source.connect(this.audio.node);
-        track.onended=()=>{this.status.error='Microphone disconnected';this.status.incomplete=true;this.stop().catch(()=>{});};
+        track.onended=()=>this.interrupt('Microphone disconnected');
+        track.onmute=()=>this.interrupt('Microphone input muted or interrupted');
+        this.contextStateChanged = () => { if (this.audio.context.state !== 'running' && ['armed','recording'].includes(this.status.state)) this.interrupt('Audio context interrupted'); };
+        this.audio.context.addEventListener?.('statechange', this.contextStateChanged);
         this.status.state='armed'; this.notify();
       } catch(error) {
         if (this.status.storage==='checking') this.status.storage='unavailable';
@@ -93,22 +136,28 @@
       if (!bpm) throw new Error('Score tempo unavailable');
       const countInFrames=Math.ceil(3840*60000*this.audio.context.sampleRate/(bpm*960));
       this.audio.node.port.postMessage({t:'capture-control',op:'begin',countInFrames});
+      this.capturePlayed=false;
       this.audio.play();
+      this.capturePlayed=!!this.audio.playing;
       this.status.state='recording'; this.status.countInFrames=countInFrames; this.notify();
     }
     async stop() {
+      if (this.status.state === 'arming') { await this.interrupt('Microphone arming canceled'); return this.take; }
       if (!['armed','recording'].includes(this.status.state)) return this.take;
       const finished=this.wait('finished');
       this.status.state='saving'; this.notify();
       this.audio.node.port.postMessage({t:'capture-control',op:'stop'});
-      this.audio.stop();
+      this.audio.stop(true);
       try { await finished; return this.take; }
       catch (error) { this.status.state='stopped'; this.status.error=error.message; this.status.incomplete=true; this.worker?.terminate(); this.worker=null; this.notify(); throw error; }
       finally { this.releaseInput(); }
     }
     releaseInput() {
+      this.deviceGeneration++;
+      this.audio.context?.removeEventListener?.('statechange', this.contextStateChanged);
+      this.contextStateChanged = null;
       this.source?.disconnect(); this.source=null;
-      for (const track of this.stream?.getTracks() || []) { track.onended=null; track.stop(); }
+      for (const track of this.stream?.getTracks() || []) { track.onended=null; track.onmute=null; track.stop(); }
       this.stream=null;
     }
     async recover(take = this.take) {
@@ -118,7 +167,11 @@
       if(!this.worker) { this.worker=new this.env.Worker('/audio/cicada-capture-worker.js'); this.worker.onmessage=e=>this.receive(e.data); this.worker.onerror=e=>this.receive({t:'fault',fatal:true,error:e.message || 'Capture worker failed'}); }
       const recovered=this.wait('recovered');
       this.worker.postMessage({t:'recover',id:take.id,mode:take.mode});
-      return recovered;
+      const result = await recovered;
+      result.incomplete = !!(result.incomplete || take.incomplete || this.status.incomplete);
+      this.take = {...take,incomplete:result.incomplete};
+      this.status.incomplete=result.incomplete; this.status.state='stopped'; this.saveIndex(); this.notify();
+      return result;
     }
   }
   // The original browser-local audition remains available for stored takes.

@@ -70,3 +70,28 @@ test('note facade sends note on and note off messages and validates MIDI ranges'
   assert.throws(() => audio.noteOff('bass', -1), RangeError);
   audio.close();
 });
+
+test('native notes never queue while disconnected or replay on reconnect; close sends panic', () => {
+  FakeSocket.instances.length = 0;
+  const timers = [];
+  const root = {WebSocket:FakeSocket,location:{protocol:'http:',host:'127.0.0.1:8161'}};
+  const audio = createCicadaAudio({window:root,setTimeout:fn=>{timers.push(fn);return 1;},clearTimeout(){}});
+  const first = FakeSocket.instances[0];
+  first.readyState=0;assert.equal(audio.noteOn('bass',60,100,'held-a'),false);
+  first.readyState=1;first.listeners.open();assert.deepEqual(first.sent,[]);
+  audio.noteOn('bass',64,100,'held-b');first.readyState=3;first.listeners.close();
+  assert.equal(timers.length,1);timers.shift()();
+  const second=FakeSocket.instances[1];second.listeners.open();assert.deepEqual(second.sent,[]);
+  audio.noteOff('bass',64,'held-b');assert.deepEqual(second.sent,[]);
+  audio.noteOn('bass',67,100,'held-c');audio.close();
+  assert.equal(second.sent.at(-1).on,false);assert.equal(second.sent.at(-1).noteId,'held-c');
+});
+
+test('browser mode routes live notes and controls locally through the audio facade', () => {
+  FakeSocket.instances.length=0;const calls=[];
+  const browser={noteOn:(...x)=>calls.push(['on',...x]),noteOff:(...x)=>calls.push(['off',...x]),setParam:(...x)=>calls.push(['param',...x]),setMute:(...x)=>calls.push(['mute',...x]),setSolo:(...x)=>calls.push(['solo',...x]),panic(){}};
+  const root={WebSocket:FakeSocket,location:{protocol:'http:',host:'localhost'},document:{getElementById:()=>({value:'browser',addEventListener(){}})},cicadaBrowserPerformance:browser};
+  const audio=createCicadaAudio({window:root});
+  audio.noteOn('bass',60,100,'owner');audio.noteOff('bass',60,'owner');audio.setParam('bass.cutoff',1000);audio.setMute('bass',true);audio.setSolo('bass',true);
+  assert.equal(calls.length,5);assert.deepEqual(FakeSocket.instances[0].sent,[]);audio.close();
+});
