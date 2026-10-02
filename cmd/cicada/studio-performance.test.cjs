@@ -160,6 +160,24 @@ test('failed browser panic detaches the worklet rather than allowing an audible 
  sink.noteOn('bass',60,100,'owner');assert.throws(()=>sink.panic(),/send failed/);assert.equal(disconnected,1);
 });
 
+test('sustained acid/graph owners and independent drums all release before explicit browser output detachment',()=>{
+ const commands=[],tokens=new Set();let detached=0;
+ const sink=createBrowserPerformanceSink({
+  down(token,track,note){commands.push(['on',track,note]);tokens.add(token);return '';},
+  up(token){tokens.delete(token);return '';},setParam(){return '';},panic(){tokens.clear();commands.push(['panic']);return '';},
+  disconnect(){detached++;},getCatalog(){return {};}
+ });
+ const router=createInputRouter({noteOn:(...args)=>sink.noteOn(...args),noteOff:(...args)=>sink.noteOff(...args)});
+ const acid={source:'midi',device:'keys',channel:0,track:'acid',note:60,velocity:100};
+ const graph={...acid,device:'pad',track:'graph',note:64};
+ const drum={...acid,channel:9,track:'drums',note:36,drum:true};
+ router.press(acid);router.sustain(acid,true);router.release(acid);router.press(graph);router.press(drum);
+ router.panic();assert.equal(router.size,0);assert.equal(tokens.size,0);assert.equal(detached,0,'normal Up cannot establish acoustic silence');
+ sink.silence();assert.equal(detached,1);assert.equal(commands.at(-1)[0],'panic');
+ assert.equal(router.press(graph),null,'held graph input cannot replay after panic');
+ router.release(graph);
+});
+
 test('gamepad shoulder buttons dispatch authored pattern/scene actions and sticks use a deadzone',()=>{
  const h=harness(),actions=[],controls=[];
  const gamepad=createGamepadPerformance({router:h.router,getTrack:()=> 'bass',action:x=>actions.push(x),dispatchCC:(...x)=>controls.push(x),getAddresses:()=>({timbre:'bass.cutoff'})});

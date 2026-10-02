@@ -57,7 +57,7 @@
     record.disabled=working || s.state!=='armed' || !!targetChanged();
     stop.disabled=working || !['armed','recording'].includes(s.state);
     recover.disabled=working || !idle;
-    if (commit) { commit.disabled=working || !idle || native || !retained || !byId('pcm-track').value || !byId('pcm-scene').value; commit.hidden=native; }
+    if (commit) { commit.disabled=working || !idle || native || byId('audio-mode').value!=='browser' || !retained || !byId('pcm-track').value || !byId('pcm-scene').value; commit.hidden=native || byId('audio-mode').value!=='browser'; }
     if (captureMode) { captureMode.disabled=working || !idle; captureMode.value=byId('audio-mode').value; }
     if (input) input.disabled=working || !idle || byId('audio-mode').value==='native';
     stop.textContent=byId('audio-mode').value==='native'?'Stop and save':'Stop and retain locally';
@@ -152,6 +152,7 @@
     return retained;
   }
   if (commit) action(commit,async()=>{
+    if (native || byId('audio-mode').value!=='browser' || !retained) throw new Error('Recover a browser take before importing');
     if (window.cicadaStudio?.dirty?.()) throw new Error('Save source edits before importing a take');
     target={track:byId('pcm-track').value,scene:byId('pcm-scene').value,revision:revision()};
     if (!target.track || !target.scene) throw new Error('Select an audio track and scene before committing');
@@ -159,6 +160,8 @@
   });
   action(recover,async()=>{
     stopSampler();
+    native=byId('audio-mode').value==='native';
+    if (native) retained=null;
     const saved=receipt();
     if(byId('audio-mode').value==='native' && saved?.takeId) {
       target={track:saved.track,scene:saved.scene,revision:revision()};

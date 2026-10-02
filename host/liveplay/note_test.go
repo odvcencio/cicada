@@ -1,7 +1,9 @@
 package liveplay
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/engine"
@@ -304,4 +306,134 @@ func TestLiveNoteQueueReservesReleaseCapacityWhenPressAdmissionIsFull(t *testing
 			t.Fatal("panic left a held owner")
 		}
 	}
+}
+
+func TestLiveNoteReleaseInSameReaderBurstDoesNotReopenTheGate(t *testing.T) {
+	p, err := New(noteScore(t), 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	for _, track := range []string{"bass", "drums"} {
+		note := 60
+		if track == "drums" {
+			note = 36
+		}
+		if err := p.NoteID(track, note, 100, true, track); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.NoteID(track, note, 0, false, track); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var pcm [blockFrames * 8]byte
+	for block := 0; block < 8; block++ {
+		if _, err := p.Read(pcm[:]); err != nil {
+			t.Fatal(err)
+		}
+		for at := 0; at < len(pcm); at += 4 {
+			if sample := math.Float32frombits(binary.LittleEndian.Uint32(pcm[at:])); sample != 0 {
+				t.Fatalf("released queued press reopened a voice: block %d sample %g", block, sample)
+			}
+		}
+	}
+}
+
+func TestLiveNoteReleaseOverloadClearsHeldInputsAndQueuedPresses(t *testing.T) {
+	p, err := New(noteScore(t), 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	for i := 0; i < 128; i++ {
+		if err := p.NoteID("bass", i, 100, true, fmt.Sprint("old:", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drainNotes(t, p)
+	// Each interleaved old release/new press fits the normal burst budget.
+	// Teardown of the new owners must still succeed after all 256 entries fill.
+	for i := 0; i < 128; i++ {
+		if err := p.NoteID("bass", i, 0, false, fmt.Sprint("old:", i)); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.NoteID("bass", i, 100, true, fmt.Sprint("new:", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 128; i++ {
+		if err := p.NoteID("bass", i, 0, false, fmt.Sprint("new:", i)); err != nil {
+			t.Fatalf("overload lost a release: %v", err)
+		}
+	}
+	if err := p.NoteID("bass", 60, 100, true, "during-overload"); err == nil {
+		t.Fatal("admitted a press before the overload barrier cleared")
+	}
+	drainNotes(t, p)
+	for _, order := range p.heldOrder {
+		if order != 0 {
+			t.Fatal("overload left a held owner")
+		}
+	}
+	if p.notes.Load() != nil || p.noteEpoch.Load()&1 != 0 {
+		t.Fatal("overload left queued input")
+	}
+	if err := p.NoteID("bass", 60, 100, true, "fresh"); err != nil {
+		t.Fatal(err)
+	}
+	if got := drainNotes(t, p); len(got) != 1 || got[0].Kind != "note-on" {
+		t.Fatalf("fresh press was not admitted after overload: %+v", got)
+	}
+}
+
+func TestLiveNoteOverloadEpochRejectsAPressPausedBeforeTheBarrier(t *testing.T) {
+	p, err := New(noteScore(t), 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	oldEpoch := p.noteEpoch.Load()
+	p.noteEpoch.Add(1) // Release overload occurs while the producer is paused.
+	p.queueLiveNotes()
+	input := noteInput{ID: "paused", Track: "bass", Note: 60, Velocity: 100, On: true}
+	if err := p.queueOwnedNote(input, oldEpoch); err == nil {
+		t.Fatal("press resumed across the overload epoch")
+	}
+	// Model a producer whose old-epoch CAS completed just after the reader swap.
+	// The next reader must discard that batch even though the flag is now clear.
+	p.notes.Store(&noteBatch{epoch: oldEpoch, count: 1, presses: 1, inputs: [256]noteInput{input}})
+	if got := drainNotes(t, p); len(got) != 0 {
+		t.Fatalf("old-epoch input replayed: %+v", got)
+	}
+	for _, order := range p.heldOrder {
+		if order != 0 {
+			t.Fatal("old producer reopened ownership")
+		}
+	}
+}
+
+func TestLiveNoteOverloadAudioReaderDoesNotAllocate(t *testing.T) {
+	p, err := New(noteScore(t), 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	input := noteInput{ID: "held", Track: "bass", Note: 60, Velocity: 100, On: true}
+	queued := &noteBatch{epoch: 0, count: 1, presses: 1, inputs: [256]noteInput{input}}
+	var pcm [blockFrames * 8]byte
+	allocs := testing.AllocsPerRun(100, func() {
+		p.heldNotes[0], p.heldOrder[0] = input, 1
+		p.notes.Store(queued)
+		p.noteEpoch.Store(1)
+		if _, err := p.Read(pcm[:]); err != nil {
+			panic(err)
+		}
+		for len(p.events) > 0 {
+			<-p.events
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("overload audio reader allocated: %g", allocs)
+	}
+	t.Logf("native overload callback allocations/run: %g", allocs)
 }

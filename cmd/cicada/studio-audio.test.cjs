@@ -95,3 +95,15 @@ test('browser mode routes live notes and controls locally through the audio faca
   audio.noteOn('bass',60,100,'owner');audio.noteOff('bass',60,'owner');audio.setParam('bass.cutoff',1000);audio.setMute('bass',true);audio.setSolo('bass',true);
   assert.equal(calls.length,5);assert.deepEqual(FakeSocket.instances[0].sent,[]);audio.close();
 });
+
+test('normal panic releases native owners; explicit silence discards native playback separately',async()=>{
+ FakeSocket.instances.length=0;const requests=[];
+ const root={WebSocket:FakeSocket,location:{protocol:'http:',host:'localhost'},document:{body:{dataset:{revision:'current'}},getElementById(){return null;}}};
+ const audio=createCicadaAudio({window:root,fetch:async(url,options)=>{requests.push([url,JSON.parse(options.body)]);return {ok:true,json:async()=>({playing:false})};}});
+ const socket=FakeSocket.instances[0];
+ audio.noteOn('bass',60,100,'acid-owner');audio.noteOn('drums',36,100,'drum-owner');
+ audio.panic();assert.equal(requests.length,0,'gate release permits voice/effect tails');
+ assert.equal(socket.sent.filter(message=>message.on===false).length,2);
+ await audio.silence();assert.deepEqual(requests,[['/api/transport',{action:'stop',revision:'current'}]]);
+ audio.close();
+});
