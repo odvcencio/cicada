@@ -264,7 +264,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			ctx := context.Background()
 			var wasmAllocations uint64
 			var allocatorFound bool
-			if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
+			if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") {
 				ctx = experimental.WithFunctionListenerFactory(ctx, experimental.FunctionListenerFactoryFunc(func(def api.FunctionDefinition) experimental.FunctionListener {
 					if !strings.Contains(def.DebugName(), "runtime.alloc") {
 						return nil
@@ -327,7 +327,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			allocationsBeforeRender := wasmAllocations
 			for block := 0; block*blockSize < frames; block++ {
 				call("gosx_audio_render", blockSize)
-				if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
+				if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") {
 					data, ok := module.Memory().Read(outputPtr, blockSize*2*4)
 					if !ok {
 						t.Fatal("WASM PCM block out of bounds")
@@ -374,7 +374,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 					stableMemory = module.Memory().Size()
 				}
 			}
-			if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
+			if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") {
 				copyHash := [32]byte{}
 				copy(copyHash[:], pcm.Sum(nil))
 				hashes[rate] = copyHash
@@ -519,5 +519,40 @@ func TestAudioWASMLibrariesSampleParity(t *testing.T) {
 			t.Fatalf("imported and inlined WASM PCM differs at %d Hz", rate)
 		}
 		t.Logf("METRIC libraries rate=%d wasm_inline_pcm=byte-identical", rate)
+	}
+}
+
+func TestAudioWASMPresetsSampleParity(t *testing.T) {
+	score, ds, err := project.LoadScore(filepath.Join("..", "..", "examples", "presets", "main.cicada"), nil)
+	if err != nil || score == nil || len(ds) != 0 {
+		t.Fatalf("preset example: %+v %v", ds, err)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil || len(ds) != 0 {
+		t.Fatalf("preset compile: %+v", ds)
+	}
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "presets-inline.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inline, ds := notation.Parse(source)
+	if inline == nil || len(ds) != 0 {
+		t.Fatalf("inline: %+v", ds)
+	}
+	q, ds := project.FromScore(inline)
+	if q == nil || len(ds) != 0 {
+		t.Fatalf("inline compile: %+v", ds)
+	}
+	wasm, err := os.ReadFile(wasmModulePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	presetPCM := compareWASMProject(t, "presets", p, 2, true, wasm)
+	inlinePCM := compareWASMProject(t, "presets-inline", q, 2, true, wasm)
+	for rate, hash := range presetPCM {
+		if hash != inlinePCM[rate] {
+			t.Fatalf("preset and inline WASM bytes differ at %d", rate)
+		}
+		t.Logf("METRIC presets rate=%d wasm_inline_pcm=byte-identical", rate)
 	}
 }

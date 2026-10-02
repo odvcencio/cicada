@@ -32,7 +32,7 @@ func (s *server) projectSources(uri string) (*project.Sources, error) {
 
 func symbolFamily(kind string) string {
 	switch kind {
-	case "instrument", "kit", "sampler":
+	case "instrument", "kit", "sampler", "preset":
 		return "voice"
 	case "pattern", "clip":
 		return "pattern"
@@ -228,6 +228,9 @@ func (s *server) projectCompletion(uri string, at position) any {
 		return items
 	}
 	files, err := s.projectSources(uri)
+	if items, ok := presetCompletion(files, source, at); ok {
+		return items
+	}
 	if files != nil {
 		if items := libraryItems(files, uri, source, at); len(items) > 0 {
 			return items

@@ -43,3 +43,37 @@ func TestParseExplainLocationCountsFromOne(t *testing.T) {
 		}
 	}
 }
+
+func TestExplainPresetLayers(t *testing.T) {
+	source := []byte("preset bright { instrument=acid cutoff=900Hz }\ntrack bass bright { cutoff=1100Hz }\npattern notes { 1 . }\nscene verse { bass=notes bass.cutoff=1400Hz }\nsong { verse }\n")
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := explainParameter(path, "bass.cutoff", "@1", &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"registry default: 600Hz", "preset (bright): 900Hz", "track block (bass): 1100Hz", "scene verse (entered bar 1): 1400Hz", "computed: 1400Hz"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("missing %s: %s", want, output.String())
+		}
+	}
+}
+
+func TestExplainAuthoredPresetLayers(t *testing.T) {
+	source := []byte("instrument tone { param bite=0.4 voice mono { out=sine(pitch)*bite } }\npreset bright { instrument=tone bite=0.7 }\ntrack bass bright { bite=0.8 }\npattern notes { 1 . }\nscene verse { bass=notes }\nsong { verse }\n")
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := explainParameter(path, "bass.bite", "@1", &output); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"registry default: none (authored parameter)", "instrument default (tone): 0.4", "preset (bright): 0.7", "track block (bass): 0.8", "computed: 0.8"} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("missing %s: %s", want, output.String())
+		}
+	}
+}

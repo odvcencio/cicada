@@ -135,6 +135,7 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 		return err
 	}
 	for i := range s.Files {
+		s.Files[i].Declarations = declarations[""]
 		if len(s.Bindings[""]) > 0 {
 			s.Files[i].Bindings = s.Bindings[""]
 		}

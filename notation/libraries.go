@@ -64,7 +64,7 @@ func CheckLibrary(file SourceFile) []Diagnostic {
 		n := root.NamedChild(i)
 		kind := w.Type(n)
 		switch kind {
-		case "integer", "comment", "import_decl", "instrument_decl", "kit_decl", "fx_decl", "phrase_decl", "acid_pattern", "note_pattern", "drum_pattern", "sampler_decl", "asset_decl":
+		case "integer", "comment", "import_decl", "instrument_decl", "preset_decl", "kit_decl", "fx_decl", "phrase_decl", "acid_pattern", "note_pattern", "drum_pattern", "sampler_decl", "asset_decl":
 		default:
 			ds = append(ds, Diagnostic{Code: "CICADA-LIB-DECL", Severity: "error", Message: strings.TrimSuffix(kind, "_decl") + " cannot be declared in a library", Position: w.position(n)})
 		}
@@ -74,7 +74,7 @@ func CheckLibrary(file SourceFile) []Diagnostic {
 				ds = append(ds, Diagnostic{Code: "CICADA-ASSET-PATH", Severity: "error", Message: "library assets must live under audio/", Position: w.position(n)})
 			}
 		}
-		if name := w.Field(n, "name"); name != nil && strings.Contains(w.Text(name), ".") {
+		if name := w.Field(n, "name"); name != nil && kind != "preset_decl" && strings.Contains(w.Text(name), ".") {
 			ds = append(ds, Diagnostic{Code: "CICADA-LIB-DECL", Severity: "error", Message: "library declaration names must be unqualified", Position: w.position(name)})
 		}
 	}
@@ -93,10 +93,19 @@ func (w *loweringWalker) declaration(n *gts.Node) string {
 }
 
 func (w *loweringWalker) reference(n *gts.Node) string {
+	if n == nil {
+		return ""
+	}
 	return w.referenceText(w.Text(n), w.position(n))
 }
 func (w *loweringWalker) referenceText(name string, position Position) string {
 	name = strings.Join(strings.Fields(name), "")
+	if w.declarations[name] {
+		if w.library != "" {
+			return strings.ReplaceAll(w.library, "/", ".") + "." + name
+		}
+		return name
+	}
 	first, rest, qualified := strings.Cut(name, ".")
 	if qualified && first == "builtin" {
 		return name
