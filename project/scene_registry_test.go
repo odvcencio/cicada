@@ -158,6 +158,9 @@ func sceneRegistryScore(descriptor paramdefs.Descriptor, value string) string {
 		parts := strings.SplitN(descriptor.ID, ".", 3)
 		fmt.Fprintf(&source, "fx %s {}\n", parts[1])
 	}
+	if strings.HasPrefix(descriptor.ID, "guitar.") {
+		return fmt.Sprintf("cicada 2\ntrack lane guitar { experimental = on }\npattern riff steps=1 { 1 }\nscene main { lane = riff lane.%s = %s }\nsong { main }\n", descriptor.Path, value)
+	}
 	trackKind := "acid"
 	patternKind := "acid"
 	if descriptor.Scope == "track" && !sceneRegistryHasVoice(descriptor, "acid") {
@@ -195,7 +198,7 @@ func sceneRegistryHasVoice(descriptor paramdefs.Descriptor, voice string) bool {
 func sceneRegistryNumber(descriptor paramdefs.Descriptor, value float64) string {
 	source := strconv.FormatFloat(value, 'g', -1, 64)
 	switch strings.ToLower(descriptor.Unit) {
-	case "", "unit", "ratio", "semitone":
+	case "", "unit", "ratio", "semitone", "cent":
 		return source
 	case "hz":
 		return source + "Hz"

@@ -37,6 +37,21 @@ song { verse*4 chorus*4 }
 
 **Edition history:** Registry-backed paths and scene parameter settings are implemented. Studio, the language server, and `cicada explain` use the same parameter registry.
 
+## Experimental guitar voice
+
+**Status:** Implemented as an explicitly experimental built-in voice in
+edition 2. It remains a research prototype without human listening acceptance.
+
+Use `track lead guitar { experimental = on }` with an ordinary note pattern.
+Sequenced notes and gates drive a single physical string and its built-in amp;
+slides change pitch without replucking. The shared registry exposes `bend`,
+`vibrato`, `brightness`, `damping`, `pickup` and `drive` with 8 ms smoothing.
+Native playback, the TinyGo AudioWorklet and offline rendering support it
+within the existing core voice and size limits. Guitar images use version 15;
+legacy encoding and versions 8..13 remain supported. See the
+[edition-2 reference](edition-2.md#experimental-guitar-voice) for opt-in,
+units, ranges, model limits and coordination with the version-14 lanes.
+
 ## Named mixer forms
 
 **Status:** Implemented for the supported routes in source editions 1 and 2.

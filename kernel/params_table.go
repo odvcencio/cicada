@@ -142,7 +142,15 @@ const (
 	ParamMixMasterSendDelay  ParamID = 128
 	ParamMixMasterSendReverb ParamID = 129
 	ParamMixMasterOut        ParamID = 130
-	ParamCount                       = 131
+	ParamGuitarBend          ParamID = 131
+	ParamGuitarVibrato       ParamID = 132
+	ParamGuitarBrightness    ParamID = 133
+	ParamGuitarDamping       ParamID = 134
+	ParamGuitarPickup        ParamID = 135
+	ParamGuitarDrive         ParamID = 136
+	ParamGuitarExperimental  ParamID = 137
+	ParamGuitarOctave        ParamID = 138
+	ParamCount                       = 139
 )
 
 var Params = [...]ParamSpec{
@@ -277,6 +285,14 @@ var Params = [...]ParamSpec{
 	{128, "mix.master.send.delay", "send.delay", "master", "send", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{129, "mix.master.send.reverb", "send.reverb", "master", "send", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{130, "mix.master.out", "out", "master", "out", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{131, "guitar.bend", "bend", "track", "bend", "semitone", "linear", "source", -12, 12, 0, 0.01, 8, true, true, false},
+	{132, "guitar.vibrato", "vibrato", "track", "vibrato", "cent", "linear", "source", 0, 100, 0, 1, 8, true, true, false},
+	{133, "guitar.brightness", "brightness", "track", "brightness", "ratio", "linear", "source", 0, 1, 0.7, 0.01, 8, true, true, false},
+	{134, "guitar.damping", "damping", "track", "damping", "ratio", "linear", "source", 0, 1, 0, 0.01, 8, true, true, false},
+	{135, "guitar.pickup", "pickup", "track", "pickup", "ratio", "linear", "source", 0.05, 0.45, 0.22, 0.01, 8, true, true, false},
+	{136, "guitar.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 8, true, true, false},
+	{137, "guitar.experimental", "experimental", "track", "experimental", "", "toggle", "source", 0, 1, 0, 1, 0, false, false, false},
+	{138, "guitar.octave", "octave", "track", "octave", "", "linear", "source", 0, 6, 2, 1, 0, false, false, false},
 }
 
 func Param(id ParamID) (ParamSpec, bool) {

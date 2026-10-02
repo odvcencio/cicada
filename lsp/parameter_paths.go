@@ -67,9 +67,19 @@ func parameterPathHover(source []byte, match pathRegion) string {
 	if unit == "" {
 		unit = "unitless"
 	}
-	return fmt.Sprintf("**%s** — %s `%s`\n\nUnit: %s  \nRange: %s  \nDefault: %s  \nLive: %t  \nDisplay step: %s",
-		match.path, resolved.OwnerKind, resolved.Owner, unit,
-		formatRange(d.Min, d.Max, d.Unit), formatDescriptorDefault(d), d.Live, formatDescriptorStep(d.DisplayStep, d.Unit))
+	typeName := d.Type
+	if typeName == "" {
+		typeName = "number"
+		if d.Curve == "enum" {
+			typeName = "enum"
+		}
+		if d.Curve == "toggle" {
+			typeName = "boolean"
+		}
+	}
+	return fmt.Sprintf("**%s** — %s `%s`\n\nType: %s  \nUnit: %s  \nRange: %s  \nDefault: %s  \nSmoothing: %g ms  \nLive: %t  \nDisplay step: %s",
+		match.path, resolved.OwnerKind, resolved.Owner, typeName, unit,
+		formatRange(d.Min, d.Max, d.Unit), formatDescriptorDefault(d), d.SmoothingMS, d.Live, formatDescriptorStep(d.DisplayStep, d.Unit))
 }
 
 func parameterPathDefinition(uri string, source []byte, match pathRegion) any {

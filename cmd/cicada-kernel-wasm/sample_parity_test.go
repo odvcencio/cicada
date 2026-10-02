@@ -19,6 +19,10 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
+func TestAudioWASMGuitarSampleParity(t *testing.T) {
+	compareWASMFixture(t, "expressive-guitar.cicada", 4)
+}
+
 func TestAudioWASMFirstAcidSampleParity(t *testing.T) {
 	compareWASMFixture(t, "first-acid.cicada", 16)
 }
@@ -300,6 +304,10 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 			var peakChannel int
 			var nonzero bool
 			var stableMemory uint32
+			var allocationsBefore uint64
+			if fixture == "expressive-guitar.cicada" {
+				allocationsBefore = call("gosx_audio_allocation_count")
+			}
 			for block := 0; block*blockSize < frames; block++ {
 				call("gosx_audio_render", blockSize)
 				native.Render(nativeL[:], nativeR[:])
@@ -341,6 +349,13 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 				if block == 10 {
 					stableMemory = module.Memory().Size()
 				}
+			}
+			if fixture == "expressive-guitar.cicada" {
+				allocations := call("gosx_audio_allocation_count") - allocationsBefore
+				if allocations != 0 {
+					t.Fatalf("guitar WASM callback allocated %d times", allocations)
+				}
+				t.Logf("METRIC: WASM guitar callback allocations | %d | %d Hz, %d frames", allocations, rate, frames)
 			}
 			if !nonzero {
 				t.Fatalf("%s rendered silence", fixture)
