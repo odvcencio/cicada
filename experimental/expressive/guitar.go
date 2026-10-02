@@ -112,7 +112,12 @@ type Amp struct {
 	low, dcIn, dcOut, alpha float64
 }
 
+// NewAmp uses the same supported-rate policy as the research voices: rates
+// outside 8000..192000 select 48000. Valid rates retain their exact coefficients.
 func NewAmp(sr int) Amp {
+	if sr < 8000 || sr > 192000 {
+		sr = 48000
+	}
 	return Amp{up1: halfband.New(), up2: halfband.New(), down1: halfband.New(), down2: halfband.New(), alpha: 1 - math.Exp(-2*math.Pi*5500/float64(sr))}
 }
 func (a *Amp) Reset() {

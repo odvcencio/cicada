@@ -33,6 +33,31 @@ const assert = require('node:assert/strict');
     await page.click('#start');
     await page.waitForFunction(() => document.querySelector('#status').textContent.startsWith('Ready ·'));
     console.log(await page.locator('#status').textContent());
+    // Keep the physical key held through stop and switch, then send the
+    // browser's repeated keydown. Only a subsequent release and fresh press
+    // may start another note.
+    await page.evaluate(() => {
+      const api = globalThis.cicadaExpressive, noteOn = api.noteOn;
+      globalThis.noteOnCount = 0;
+      globalThis.keyRepeats = [];
+      api.noteOn = (...args) => { globalThis.noteOnCount++; return noteOn(...args); };
+      window.addEventListener('keydown', e => globalThis.keyRepeats.push(e.repeat));
+    });
+    await page.locator('h1').click();
+    await page.keyboard.down('a');
+    assert.equal(await page.evaluate(() => globalThis.noteOnCount), 1, 'first keydown plays');
+    await page.click('#stop');
+    assert.equal(await page.locator('.keys button.active').count(), 0, 'stop clears held-note UI');
+    await page.keyboard.down('a'); // Playwright marks a still-held key as repeat.
+    assert.equal(await page.evaluate(() => globalThis.keyRepeats.at(-1)), true, 'exercise a real repeated keydown');
+    assert.equal(await page.evaluate(() => globalThis.noteOnCount), 1, 'held repeat must not reopen note after stop');
+    assert.equal(await page.locator('.keys button.active').count(), 0, 'repeat leaves stop effective');
+    await page.keyboard.up('a');
+    await page.keyboard.down('a');
+    assert.equal(await page.evaluate(() => globalThis.noteOnCount), 2, 'release and fresh press play normally');
+    assert.equal(await page.locator('.keys button.active').count(), 1, 'fresh press updates UI');
+    await page.keyboard.up('a');
+    console.log('PASS: held key repeat after All notes off is suppressed; release and fresh keydown still play.');
     // Observe actual ScriptProcessor buffers while the UI changes controls.
     await page.evaluate(() => {
       const api = globalThis.cicadaExpressive, render = api.render;
@@ -74,6 +99,12 @@ const assert = require('node:assert/strict');
       await page.keyboard.down('s');
       await page.selectOption('#instrument', instrument === 'bow' ? 'brass' : 'bow');
       assert.equal(await page.locator('.keys button.active').count(), 0, 'held note cleared by switch');
+      const beforeRepeat = await page.evaluate(() => globalThis.noteOnCount);
+      await page.locator('h1').click(); // Remove select focus without releasing S.
+      await page.keyboard.down('s');
+      assert.equal(await page.evaluate(() => globalThis.keyRepeats.at(-1)), true, 'switch regression exercises repeat');
+      assert.equal(await page.evaluate(() => globalThis.noteOnCount), beforeRepeat, 'repeat must not reopen note after switch');
+      assert.equal(await page.locator('.keys button.active').count(), 0, 'switch remains silent while key held');
       await page.keyboard.up('s');
       // Long enough for constructor/transient filter state to settle; a new
       // unexcited model must remain silent after switching away from a note.
@@ -87,7 +118,7 @@ const assert = require('node:assert/strict');
     }
     await page.click('#stop');
     assert.deepEqual(errors, [], 'page errors');
-    console.log('PASS: WASM initialization, live audio callbacks, keyboard release, continuous sliders, switch resets/silence; no page errors. No acoustic listening performed.');
+    console.log('PASS: WASM initialization, live audio callbacks, keyboard release/repeat after stop, continuous sliders, switch resets/repeat/silence; no page errors. No acoustic listening performed.');
   } finally {
     if (browser) await browser.close();
     await new Promise(resolve => server.close(resolve));
