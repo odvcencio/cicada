@@ -232,7 +232,11 @@ func ToSource(p *Project) ([]byte, error) {
 		}
 	}
 	song.WriteString("\n}")
-	sections = append(sections, song.String())
+	if p.Arrange == nil {
+		sections = append(sections, song.String())
+	} else {
+		sections = append(sections, arrangementSource(p.Arrange))
+	}
 	source := strings.Join(sections, "\n\n") + "\n"
 	if p.Edition == 2 {
 		source = "cicada 2\n" + source
@@ -552,6 +556,13 @@ func noteStepSource(step *Step) (string, error) {
 		return "-", nil
 	}
 	text := absolutePitch(step.Note)
+	if len(step.Notes) > 0 {
+		pitches := make([]string, len(step.Notes))
+		for i, note := range step.Notes {
+			pitches[i] = absolutePitch(uint8(note))
+		}
+		text = "[" + strings.Join(pitches, " ") + "]"
+	}
 	if step.Accent {
 		text += "^"
 	}

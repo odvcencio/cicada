@@ -1,4 +1,4 @@
-.PHONY: build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report
+.PHONY: build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-chord-wasm test-worklet-negotiation test-browser test-browser-soak budget-size budget-browser release-cpu-report
 
 export GOWORK := off
 
@@ -63,12 +63,20 @@ test-kernel-wasm: build-kernel-wasm build-loudness-wasm
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v
 
-test-wasm: build-kernel-wasm
+test-wasm: build-kernel-wasm test-chord-wasm
 	bash -o pipefail -c "GOWORK=off nice -n 10 go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1 -v | tee build/test-wasm.log"
+
+# Required unified image and opcode negotiation gates use the freshly built reactor.
+test-worklet-negotiation: build-worklets
+	node host/web/chord_capability_test.cjs
+	node host/web/client_capability_test.cjs
+
+test-chord-wasm: build-kernel-wasm test-worklet-negotiation
+	bash -o pipefail -c "CICADA_CHORD_WASM_PATH=$(CURDIR)/build/cicada-kernel.wasm GOWORK=off nice -n 10 go test -timeout=20m -tags chord_wasm ./cmd/cicada-kernel-wasm -run '^TestChordWASM' -count=1 -v | tee build/test-chord-wasm.log"
 
 test-browser: build-kernel-wasm
 	mkdir -p build
-	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|UnifiedMixedParity|ChordGridIntegration|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression)$$' 5m build/test-browser.log
 
 budget-size: build-kernel-wasm
 	bash -o pipefail -c "go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm host/web/processor.min.js | tee build/budget-size-report.txt"

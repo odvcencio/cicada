@@ -8,11 +8,26 @@ import (
 )
 
 // captureBacking prepares synth accompaniment while audio tracks are recording.
-// Track/scene indices remain stable. Clip sequencing is not yet a kernel feature;
-// stored audio is played by the host sampler audition instead.
+// Track/scene indices remain stable. Named arrangements keep their timeline
+// and silence audio/sample tracks through the mixer during capture.
 func captureBacking(p *project.Project) *project.Project {
 	if !p.HasAudio() {
 		return p
+	}
+	if p.Arrange != nil {
+		backing := *p
+		backing.Tracks = append([]project.Track(nil), p.Tracks...)
+		for i := range backing.Tracks {
+			track := &backing.Tracks[i]
+			audio := track.Kind == "audio"
+			for _, sampler := range p.Samplers {
+				audio = audio || track.Kind == sampler.Name
+			}
+			if audio {
+				track.Mixer.Mute = true
+			}
+		}
+		return &backing
 	}
 	backing := *p
 	backing.Assets, backing.Clips, backing.Samplers = nil, nil, nil

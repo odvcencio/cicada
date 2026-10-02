@@ -19,6 +19,7 @@
 ; the colors, take precedence in last-match editors.
 
 (acid_note (modifier "^")) @markup.strong
+(chord_note (modifier "^")) @markup.strong
 (acid_note (modifier "~")) @markup.italic
 (acid_note (modifier (ratchet))) @markup.underline
 (drum_hit (accent_hit)) @markup.strong
@@ -234,7 +235,7 @@
 
 "=" @operator
 [":" ";"] @punctuation.delimiter
-["{" "}" "(" ")"] @punctuation.bracket
+["{" "}" "(" ")" "[" "]"] @punctuation.bracket
 
 (comment) @comment
 
@@ -254,3 +255,11 @@
 (live_layers macro: (identifier) @variable.parameter)
 (live_layer track: (identifier) @variable.member)
 ">=" @operator
+
+["arrange" "place" "marker"] @keyword
+(place_decl name: (identifier) @function)
+(place_decl track: (identifier) @variable.member)
+(place_decl content: (identifier) @function.call)
+(marker_decl name: (identifier) @constant)
+(musical_position) @number.position
+(tick_count) @number.ticks

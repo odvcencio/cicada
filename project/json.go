@@ -322,7 +322,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	// already imply, matching headerless source after a round trip.
 	normalized := *p
 	normalized.Format, normalized.Version = FormatID, 1
-	useV2 := p.HasAudio() || p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
+	useV2 := p.Arrange != nil || p.HasAudio() || p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
 	for _, effect := range p.Effects {
 		useV2 = useV2 || effect.Kind != ""
 	}
@@ -357,7 +357,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 			normalized.Patterns[i].Kind = "acid"
 		}
 	}
-	normalized.Scenes = append([]Scene(nil), p.Scenes...)
+	normalized.Scenes = append([]Scene{}, p.Scenes...)
 	for i := range normalized.Scenes {
 		bindings := make(map[string]string, len(p.Scenes[i].Bindings))
 		for track, pattern := range p.Scenes[i].Bindings {
@@ -390,6 +390,18 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 
 func projectPatternUsedOnlyByAcid(p *Project, patternID string) bool {
 	used := false
+	for _, v := range arrangementPlacements(p) {
+		if v.Content == patternID {
+			for _, t := range p.Tracks {
+				if t.ID == v.Track {
+					if t.Kind != "acid" {
+						return false
+					}
+					used = true
+				}
+			}
+		}
+	}
 	for _, scene := range p.Scenes {
 		for trackID, assigned := range scene.Bindings {
 			if assigned != patternID {
@@ -544,7 +556,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 	if err := json.Unmarshal(data, &root); err != nil {
 		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
 	}
-	p.p2Syntax = p.Format == FormatID2 && (p.Live != nil || projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
+	p.p2Syntax = p.Format == FormatID2 && (p.Arrange != nil || p.Live != nil || projectHasSceneSettings(&p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0)
 	for _, effect := range p.Effects {
 		p.p2Syntax = p.p2Syntax || effect.Kind != ""
 	}
@@ -701,7 +713,7 @@ func checkRequiredFields(data []byte) error {
 		optionalByConstruct["mixer"] = nil
 		fieldsByConstruct["effect"] = []string{"id", "params"}
 		optionalByConstruct["effect"] = nil
-		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers", "live")
+		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers", "live", "arrange")
 	}
 	require := func(value any, construct, name, pointer string) (map[string]any, error) {
 		fields, ok := fieldsByConstruct[construct]
@@ -814,6 +826,20 @@ func checkRequiredFields(data []byte) error {
 		return err
 	}
 	if version2 {
+		if rawArrange, exists := root["arrange"]; exists {
+			arrange, err := require(rawArrange, "arrangement", "arrangement", "/arrange")
+			if err != nil {
+				return err
+			}
+			for _, child := range []struct{ array, construct string }{{"placements", "placement"}, {"markers", "marker"}} {
+				if err := checkObjectArray(arrange[child.array], child.array, "/arrange/"+child.array, func(value any, pointer string) error {
+					_, err := require(value, child.construct, child.construct, pointer)
+					return err
+				}); err != nil {
+					return err
+				}
+			}
+		}
 		if rawLive, exists := root["live"]; exists {
 			live, err := require(rawLive, "live", "live", "/live")
 			if err != nil {
@@ -939,7 +965,16 @@ func checkStepArray(value any, pointer string, fields []string) error {
 		if value == nil {
 			return nil
 		}
-		_, err := requiredObject(value, "step", child, fields, nil)
-		return err
+		object, err := requiredObject(value, "step", child, fields, []string{"notes"})
+		if err != nil {
+			return err
+		}
+		if value, exists := object["notes"]; exists {
+			notes, ok := value.([]any)
+			if !ok || len(notes) < 2 || len(notes) > 4 {
+				return &jsonFieldError{child + "/notes", fmt.Errorf("chord notes must be a 2 to 4 pitch array")}
+			}
+		}
+		return nil
 	})
 }

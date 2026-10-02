@@ -155,7 +155,22 @@ func (v *Voice) NoteOff() {
 	}
 }
 
-func (v *Voice) Active() bool    { return v.active || v.tailRemaining > 0 }
+func (v *Voice) Active() bool { return v.active || v.tailRemaining > 0 }
+
+// SeekFrames positions a started voice without decoding, rendering skipped
+// frames, or allocating. The caller supplies elapsed output frames.
+func (v *Voice) SeekFrames(frames int64) {
+	if frames < 0 {
+		return
+	}
+	v.phase = float64(v.region.Start) + float64(frames)*v.ratio
+	if v.region.Loop && v.phase >= float64(v.region.LoopEnd) {
+		v.phase = float64(v.region.LoopStart) + math.Mod(v.phase-float64(v.region.LoopStart), float64(v.region.LoopEnd-v.region.LoopStart))
+		v.looped = true
+	} else if v.phase >= float64(v.region.End) {
+		v.Reset()
+	}
+}
 func (v *Voice) Releasing() bool { return v.releasing || (!v.active && v.tailRemaining > 0) }
 func (v *Voice) Ratio() float64  { return v.ratio }
 func (v *Voice) KernelTaps() int {

@@ -42,3 +42,8 @@
 
 ((sampler_decl (param_decl name: (identifier) @field value: (value (identifier) @name))) @reference.asset
   (#eq? @field "asset"))
+
+(place_decl name: (identifier) @name) @definition.placement
+(marker_decl name: (identifier) @name) @definition.marker
+(place_decl track: (identifier) @name) @reference.track
+(place_decl content: (identifier) @name) @reference.pattern

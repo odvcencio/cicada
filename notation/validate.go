@@ -43,6 +43,7 @@ var scales = map[string]bool{
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) []Diagnostic {
 	ds := ValidateAudio(s)
+	ds = append(ds, ValidateArrangement(s)...)
 	ds = append(ds, ValidateLive(s.Live, s.Tracks)...)
 	add := func(code, message, severity string, p Position) {
 		ds = append(ds, Diagnostic{Code: code, Message: message, Severity: severity, Position: p})
@@ -104,8 +105,7 @@ func Validate(s *Score) []Diagnostic {
 		}
 		if inst.Mode != "mono" && inst.Mode != "poly" {
 			add("CICADA-PARAM", "voice mode must be mono or poly", "error", inst.Position)
-		} else if inst.Mode == "poly" {
-			add("CICADA-UNSUPPORTED", "poly voices are not implemented", "error", inst.Position)
+
 		}
 		if inst.Output == nil {
 			add("CICADA-PARAM", "voice needs an out expression", "error", inst.Position)
@@ -150,8 +150,10 @@ func Validate(s *Score) []Diagnostic {
 				if drumParams[lane] == nil {
 					add("CICADA-REFERENCE", "unknown built-in drum "+lane, "error", binding.Position)
 				}
-			} else if _, exists := instruments[binding.Target]; !exists {
+			} else if inst, exists := instruments[binding.Target]; !exists {
 				add("CICADA-REFERENCE", "unknown kit instrument "+binding.Target, "error", binding.Position)
+			} else if inst.Mode == "poly" {
+				add("CICADA-UNSUPPORTED", "poly instruments cannot be kit lanes", "error", binding.Position)
 			}
 		}
 	}
@@ -382,7 +384,7 @@ func Validate(s *Score) []Diagnostic {
 			add("CICADA-LIMIT", "song entry must be 1 to 999 bars", "error", entry.Position)
 		}
 	}
-	if len(s.Song) == 0 {
+	if len(s.Song) == 0 && s.Arrange == nil {
 		position := s.SongPosition
 		if position.Line == 0 {
 			position = Position{1, 1}

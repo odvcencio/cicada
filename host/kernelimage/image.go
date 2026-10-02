@@ -15,6 +15,14 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
+
+// UnifiedImageVersion is the single graph-chord, schedule and resident-audio
+// format. Development version 14 was assigned two incompatible layouts and is
+// deliberately never accepted. See docs/spec/kernel-image-v15.md.
+const UnifiedImageVersion = 15
+
+// ChordImageVersion names the current format carrying graph chord fields.
+const ChordImageVersion = UnifiedImageVersion
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -93,7 +101,8 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 13. The decoded Config is separately
+// Encode writes byte-identical version 13 for legacy projects and the fixed
+// version 15 layout for graph polyphony, schedules, and prepared audio. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -104,9 +113,50 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
 		return nil, Error("project image configuration is out of range")
 	}
+	version := uint16(imageVersion)
+	for track := 0; track < cfg.Tracks; track++ {
+		spec := cfg.Track[track]
+		if spec.Polyphony != 0 && (spec.Polyphony != 4 || spec.Kind != engine.VoiceGraph) {
+			return nil, Error("invalid polyphony image mode")
+		}
+		if spec.Polyphony == 4 {
+			version = ChordImageVersion
+		}
+		if len(cfg.Patterns) > 0 {
+			for _, pattern := range cfg.Patterns[track].Slots {
+				if pattern.Len == 0 && pattern.Chords != [64]seq.ChordStep{} {
+					return nil, Error("unused slot contains chord payload")
+				}
+				for i, chord := range pattern.Chords {
+					if chord.Count > 0 && (spec.Polyphony != 4 || i >= int(pattern.Len)) {
+						return nil, Error("chord payload requires an active polyphonic graph step")
+					}
+				}
+				if pattern.Len > 0 {
+					if err := pattern.Validate(); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
-	w.u16(imageVersion)
+	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
+		version = UnifiedImageVersion
+	}
+	for _, track := range cfg.Track[:cfg.Tracks] {
+		if track.Kind == engine.VoiceAudio || track.Kind == engine.VoiceSample {
+			version = UnifiedImageVersion
+		}
+	}
+
+	if version == UnifiedImageVersion {
+		if err := validateUnifiedFields(&cfg); err != nil {
+			return nil, err
+		}
+	}
+	w.u16(version)
 	w.byte(byte(cfg.Tracks))
 	w.byte(byte(cfg.MaxVoices))
 	if cfg.LoopSong {
@@ -197,6 +247,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		w.byte(byte(spec.Kind))
+		if version == UnifiedImageVersion {
+			w.byte(spec.Polyphony)
+		}
 		w.byte(boolByte(spec.Mute))
 		w.byte(boolByte(spec.GainSet))
 		w.byte(boolByte(spec.BusSFX))
@@ -227,7 +280,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			w.f64(spec.InsertDrive.Mix)
 		}
 		switch spec.Kind {
-		case engine.VoiceOff:
+		case engine.VoiceOff, engine.VoiceAudio:
 		case engine.VoiceAcid:
 			writeAcid(&w, spec.Acid)
 		case engine.VoiceDrums:
@@ -255,6 +308,14 @@ func Encode(cfg engine.Config) ([]byte, error) {
 					}
 				}
 			}
+		case engine.VoiceSample:
+			if spec.Sample == nil {
+				return nil, Error("nil sampler image")
+			}
+			w.u16(spec.Sample.Asset)
+			w.byte(spec.Sample.RootKey)
+			w.byte(spec.Sample.Voices)
+			w.byte(boolByte(spec.Sample.Loop))
 		case engine.VoiceGraph:
 			if err := writeGraph(&w, spec.Graph); err != nil {
 				return nil, err
@@ -288,6 +349,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			} else {
 				for step := uint8(0); step < pattern.Len; step++ {
 					w.u32(pattern.Steps[step])
+					if version == UnifiedImageVersion {
+						chord := pattern.Chords[step]
+						w.byte(chord.Count)
+						for _, note := range chord.Notes {
+							w.byte(note)
+						}
+					}
 				}
 			}
 		}
@@ -308,6 +376,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		for _, binding := range scene.Track {
 			switch binding.Mode {
+			case engine.SceneClip:
+				w.byte(255)
+				w.u16(binding.Clip)
 			case engine.SceneKeep:
 				w.byte(0)
 			case engine.SceneOff:
@@ -332,6 +403,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	for _, entry := range cfg.Song {
 		w.u16(entry.Scene)
 		w.u16(entry.Bars)
+	}
+	if version == UnifiedImageVersion {
+		if err := writeSchedule(&w, &cfg); err != nil {
+			return nil, err
+		}
 	}
 	if len(w.data) > MaxImageBytes {
 		return nil, Error("project image exceeds 2 MiB")
@@ -362,6 +438,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		return Error("invalid project image magic")
 	}
 	version, _ := r.u16()
+	if version == 14 {
+		return Error("ambiguous development image version 14; recompile project source for version 15")
+	}
 	tracks, _ := r.byte()
 	voices, _ := r.byte()
 	flags, _ := r.u32()
@@ -372,7 +451,8 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -511,6 +591,13 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		if err != nil {
 			return err
 		}
+		if version == UnifiedImageVersion {
+			mode, err := r.byte()
+			if err != nil || mode != 0 && (mode != 4 || engine.VoiceKind(kind) != engine.VoiceGraph) {
+				return Error("invalid polyphony image mode")
+			}
+			spec.Polyphony = mode
+		}
 		mute, err := r.byte()
 		if err != nil {
 			return err
@@ -582,6 +669,10 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		switch spec.Kind {
 		case engine.VoiceOff:
+		case engine.VoiceAudio:
+			if version != UnifiedImageVersion {
+				return Error("unsupported audio track image")
+			}
 		case engine.VoiceAcid:
 			if spec.Acid, err = readAcid(&r); err != nil {
 				return err
@@ -623,6 +714,28 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					}
 				}
 			}
+		case engine.VoiceSample:
+			if version != UnifiedImageVersion {
+				return Error("unsupported sampler image")
+			}
+			spec.Sample = &engine.SamplerConfig{}
+			spec.Sample.Asset, err = r.u16()
+			if err != nil {
+				return err
+			}
+			spec.Sample.RootKey, err = r.byte()
+			if err != nil {
+				return err
+			}
+			spec.Sample.Voices, err = r.byte()
+			if err != nil {
+				return err
+			}
+			loop, err := r.byte()
+			if err != nil || loop > 1 {
+				return Error("invalid sampler image loop")
+			}
+			spec.Sample.Loop = loop == 1
 		case engine.VoiceGraph:
 			if spec.Graph, err = readGraph(&r, version); err != nil {
 				return err
@@ -651,25 +764,42 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			if err != nil {
 				return err
 			}
-			pattern := seq.Pattern{Len: length, SwingPermille: swing, Transpose: int8(transpose), GatePercent: gate, Seed: seed}
+			// Decode directly into fresh destination storage. Copying a full
+			// fixed chord pattern makes TinyGo expand hundreds of scalar loads
+			// and stores, without adding ownership or validation guarantees.
+			pattern := &cfg.Patterns[track].Slots[slot]
+			pattern.Len, pattern.SwingPermille = length, swing
+			pattern.Transpose, pattern.GatePercent, pattern.Seed = int8(transpose), gate, seed
 			if spec.Kind == engine.VoiceDrums {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-					compiled := pattern
+					compiled := &cfg.Patterns[track].Drums[slot][lane]
+					compiled.Len, compiled.SwingPermille = length, swing
+					compiled.Transpose, compiled.GatePercent, compiled.Seed = int8(transpose), gate, seed
 					for step := uint8(0); step < length; step++ {
 						if compiled.Steps[step], err = r.u32(); err != nil {
 							return err
 						}
 					}
-					cfg.Patterns[track].Drums[slot][lane] = compiled
 				}
 			} else {
 				for step := uint8(0); step < length; step++ {
 					if pattern.Steps[step], err = r.u32(); err != nil {
 						return err
 					}
+					if version == UnifiedImageVersion {
+						chord := &pattern.Chords[step]
+						if chord.Count, err = r.byte(); err != nil {
+							return err
+						}
+						for i := range chord.Notes {
+							if chord.Notes[i], err = r.byte(); err != nil {
+								return err
+							}
+						}
+					}
+
 				}
 			}
-			cfg.Patterns[track].Slots[slot] = pattern
 		}
 	}
 	for scene := range cfg.Scenes {
@@ -679,6 +809,12 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 			switch {
+			case binding == 255 && version == UnifiedImageVersion:
+				clip, err := r.u16()
+				if err != nil {
+					return err
+				}
+				cfg.Scenes[scene].Track[track] = engine.SceneBinding{Mode: engine.SceneClip, Clip: clip}
 			case binding == 0:
 			case binding == 1:
 				cfg.Scenes[scene].Track[track].Mode = engine.SceneOff
@@ -727,8 +863,16 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return err
 		}
 	}
+	if version == UnifiedImageVersion {
+		if err := readSchedule(&r, cfg); err != nil {
+			return err
+		}
+	}
 	if r.at != len(r.data) {
 		return Error("project image has trailing bytes")
+	}
+	if version == UnifiedImageVersion {
+		return validateUnifiedFields(cfg)
 	}
 	return nil
 }

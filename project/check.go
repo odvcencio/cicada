@@ -100,7 +100,13 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	reached := make(map[string]bool, len(score.Patterns))
 	compiledByPattern := make(map[string][]CompiledPattern)
 	firstTrack := make(map[string]string)
-	for _, scene := range score.Scenes {
+	scenes := append([]notation.Scene(nil), score.Scenes...)
+	if score.Arrange != nil {
+		for _, p := range score.Arrange.Placements {
+			scenes = append(scenes, notation.Scene{Bindings: []notation.Binding{{Track: p.Track, Pattern: p.Content, Position: p.Position}}})
+		}
+	}
+	for _, scene := range scenes {
 		for _, binding := range scene.Bindings {
 			if binding.Pattern == "off" || binding.Pattern == "keep" || binding.Pattern == "stop" && !scoreHasPattern(score, "stop") {
 				continue
@@ -192,6 +198,8 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 				voices += drumVoices[trackID]
 			} else if count, ok := kitVoices[kind]; ok {
 				voices += count
+			} else if sourceTrackIsPoly(score, kind) {
+				voices += 4
 			} else {
 				voices++
 			}
@@ -232,4 +240,13 @@ func patternCompileDiagnostic(err error, position notation.Position) notation.Di
 		code = "CICADA-SCALE-DEGREE"
 	}
 	return notation.Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: position}
+}
+
+func sourceTrackIsPoly(score *notation.Score, kind string) bool {
+	for _, inst := range score.Instruments {
+		if inst.Name == kind {
+			return inst.Mode == "poly"
+		}
+	}
+	return false
 }

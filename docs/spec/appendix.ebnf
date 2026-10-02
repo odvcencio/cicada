@@ -12,8 +12,8 @@
 source_file ::= [ "cicada" , integer ] , { _declaration } ;
 _declaration ::= title_decl | tempo_decl | key_decl | seed_decl | instrument_decl | kit_decl |
                  track_decl | phrase_decl | acid_pattern | note_pattern | drum_pattern | scene_decl |
-                 song_decl | fx_decl | bus_decl | master_decl | export_decl | asset_decl | clip_decl |
-                 sampler_decl | live_decl ;
+                 song_decl | fx_decl | bus_decl | master_decl | export_decl | arrange_decl |
+                 asset_decl | clip_decl | sampler_decl | live_decl ;
 asset_decl ::= "asset" , identifier , string , "{" , { param_decl } , "}" ;
 clip_decl ::= "clip" , identifier , identifier , "{" , { param_decl } , "}" ;
 sampler_decl ::= "sampler" , identifier , "{" , { param_decl } , "}" ;
@@ -52,7 +52,7 @@ phrase_use ::= "use" , identifier , [ "*" , integer ] ,
 drum_pattern ::= "pattern" , identifier , "drums" , { pattern_attr } , "{" , { pattern_attr } ,
                  { drum_lane } , "}" ;
 pattern_attr ::= identifier , "=" , number ;
-acid_step ::= "." | "-" | "|" | acid_note ;
+acid_step ::= "." | "-" | "|" | acid_note | chord_note ;
 acid_note ::= pitch , { octave_shift } , { modifier } ;
 pitch ::= degree | letter_pitch ;
 degree ::= /[1-7][#b]?/ ;
@@ -74,7 +74,8 @@ scene_value ::= number | identifier | string | fraction ;
 parameter_path ::= /[a-z_][a-z0-9_-]*(\.[a-z_][a-z0-9_-]*)+/ ;
 song_decl ::= "song" , "{" , { song_entry } , "}" ;
 song_entry ::= identifier , [ "*" , integer ] ;
-value ::= number | insert_chain | identifier | string | fraction ;
+value ::= musical_position | bar_count | tick_count | number | insert_chain | identifier | string |
+          fraction ;
 insert_chain ::= identifier , { "->" , identifier } ;
 fraction ::= /[0-9]+\/[0-9]+[tT.]?/ ;
 number ::= /-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?/ ;
@@ -92,3 +93,10 @@ live_layer ::= identifier , ">=" , number , [ ";" ] ;
 live_attack ::= "attack" , bar_count , [ ";" ] ;
 live_release ::= "release" , bar_count , [ ";" ] ;
 bar_count ::= /-?[0-9]+(\.[0-9]+)?bars?/ ;
+chord_note ::= "[" , { chord_pitch } , "]" , { modifier } ;
+chord_pitch ::= pitch , { octave_shift } ;
+arrange_decl ::= "arrange" , "{" , { place_decl | marker_decl } , "}" ;
+place_decl ::= "place" , identifier , identifier , identifier , "{" , { param_decl } , "}" ;
+marker_decl ::= "marker" , identifier , "{" , { param_decl } , "}" ;
+musical_position ::= /@[0-9]+\.[0-9]+\.[0-9]+/ ;
+tick_count ::= /[0-9]+ticks/ ;

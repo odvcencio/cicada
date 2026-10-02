@@ -2,6 +2,7 @@ package engine
 
 import (
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
 )
@@ -19,7 +20,7 @@ type patternTrack struct {
 	slots       [16]seq.Pattern
 	drumSlots   *[16][drum.LaneCount]seq.Pattern
 	active      int8 // -1 until a slot is selected
-	startStep   int64
+	startTick   int64
 	generation  uint32
 	playingNote int64
 	playingGen  uint32
@@ -49,6 +50,9 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 	track := int(c.Track)
 	p := &e.patterns[track]
 	slot := int(c.Arg1)
+	if c.Op == cmd.OpSetChordStep {
+		slot = int(c.Arg1 & 15)
+	}
 	if c.Op == cmd.OpSelectPattern {
 		if e.voices[track].kind == VoiceOff {
 			e.fault(9)
@@ -60,9 +64,9 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			length = p.slots[p.active].Len
 		}
 		at, err := seq.QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), length)
-		if c.Arg0 == 3 && p.active >= 0 && p.startStep != 0 {
+		if c.Arg0 == 3 && p.active >= 0 && p.startTick != 0 {
 			patternTicks := int64(length) * seq.TicksPerStep
-			startTick := p.startStep * seq.TicksPerStep
+			startTick := p.startTick
 			if e.transport.Tick() <= startTick {
 				at = startTick
 			} else {
@@ -115,8 +119,23 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			return
 		}
 		updated.Steps[c.Index] = c.Arg0
+		updated.Chords[c.Index] = seq.ChordStep{}
+	case cmd.OpSetChordStep:
+		if e.voices[track].poly == nil {
+			e.fault(17)
+			return
+		}
+		notes, count, err := cmd.DecodeChordPayload(c)
+		if err != nil {
+			e.fault(15)
+			return
+		}
+		updated.Chords[c.Index] = seq.ChordStep{Notes: notes, Count: count}
 	case cmd.OpSetPatternLen:
 		updated.Len = uint8(c.Index)
+		for i := int(updated.Len); i < 64; i++ {
+			updated.Chords[i] = seq.ChordStep{}
+		}
 	case cmd.OpSetPatternMeta:
 		updated.SwingPermille = uint16(c.Arg0)
 		updated.Transpose = int8(int16(c.Arg0 >> 16))
@@ -132,10 +151,12 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 	if p.active == int8(slot) && p.playingNote != 0 && p.playingGen == p.generation {
 		p.held = p.slots[slot]
 		p.heldSlot = uint8(slot)
-		p.heldStart = p.startStep
+		p.heldStart = p.startTick
 		p.heldGen = p.generation
 		p.heldValid = true
-		p.generation++
+		if !e.nextPatternGeneration(track) {
+			return
+		}
 	}
 	p.slots[slot] = updated
 	if c.Op == cmd.OpSetPatternLen && p.active == int8(slot) && p.chainArmed {
@@ -165,7 +186,7 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 	if p.playingNote != 0 && p.playingGen == p.generation && p.active >= 0 {
 		p.held = p.slots[p.active]
 		p.heldSlot = uint8(p.active)
-		p.heldStart = p.startStep
+		p.heldStart = p.startTick
 		p.heldGen = p.generation
 		p.heldValid = true
 	}
@@ -178,10 +199,12 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 		p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
 	}
 	p.active = int8(slot)
-	p.generation++
-	p.startStep = 0
+	if !e.nextPatternGeneration(track) {
+		return
+	}
+	p.startTick = 0
 	if restart {
-		p.startStep = (e.transport.Tick() + seq.TicksPerStep - 1) / seq.TicksPerStep
+		p.startTick = (e.transport.Tick() + seq.TicksPerStep - 1) / seq.TicksPerStep * seq.TicksPerStep
 	}
 	if e.renderFrames > 0 {
 		e.scheduleTrack(track)
@@ -209,7 +232,7 @@ func (e *Engine) scheduleTrack(track int) {
 		var overflow bool
 		if e.voices[track].kind == VoiceDrums {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-				n, overflow = seq.EventsOffsetInBlock(&p.drumSlots[p.active][lane], clock, uint8(track), uint8(p.active), p.startStep, startSample, frames, e.eventScratch[:])
+				n, overflow = seq.EventsAtTickInBlock(&p.drumSlots[p.active][lane], clock, uint8(track), uint8(p.active), p.startTick, startSample, frames, e.eventScratch[:])
 				if overflow || p.eventCount+n > len(p.events) {
 					e.fault(16)
 					return
@@ -220,7 +243,7 @@ func (e *Engine) scheduleTrack(track int) {
 				}
 			}
 		} else {
-			n, overflow = seq.EventsWithGatesOffsetInBlock(&p.slots[p.active], clock, uint8(track), uint8(p.active), p.startStep, startSample, frames, e.eventScratch[:])
+			n, overflow = seq.EventsWithGatesAtTickInBlock(&p.slots[p.active], clock, uint8(track), uint8(p.active), p.startTick, startSample, frames, e.eventScratch[:])
 			if overflow || p.eventCount+n > len(p.events) {
 				e.fault(16)
 				return
@@ -235,7 +258,7 @@ func (e *Engine) scheduleTrack(track int) {
 		}
 	}
 	if p.heldValid && p.playingNote != 0 {
-		n, overflow := seq.EventsWithGatesOffsetInBlock(&p.held, clock, uint8(track), p.heldSlot, p.heldStart, startSample, frames, e.eventScratch[:])
+		n, overflow := seq.EventsWithGatesAtTickInBlock(&p.held, clock, uint8(track), p.heldSlot, p.heldStart, startSample, frames, e.eventScratch[:])
 		if overflow {
 			e.fault(16)
 			return
@@ -317,13 +340,14 @@ func (e *Engine) switchWouldSlide(track, slot int, tick int64, restart bool) boo
 	}
 	targetStep := tick / seq.TicksPerStep
 	sourceStep := targetStep - 1
-	if sourceStep < p.startStep {
+	if tick < p.startTick+seq.TicksPerStep || (tick-p.startTick)%seq.TicksPerStep != 0 {
 		return false
 	}
 	source := &p.slots[p.active]
-	sourceIndex := (sourceStep - p.startStep) % int64(source.Len)
+	startStep := p.startTick / seq.TicksPerStep
+	sourceIndex := (sourceStep - startStep) % int64(source.Len)
 	old, err := seq.UnpackStep(source.Steps[sourceIndex])
-	if err != nil || !old.Gate || !old.Slide || !seq.ProbabilityHit(old.Probability, source.Seed, uint8(track), uint8(p.active), (sourceStep-p.startStep)/int64(source.Len), uint8(sourceIndex)) {
+	if err != nil || !old.Gate || !old.Slide || !seq.ProbabilityHit(old.Probability, source.Seed, uint8(track), uint8(p.active), (sourceStep-startStep)/int64(source.Len), uint8(sourceIndex)) {
 		return false
 	}
 	target := &p.slots[slot]
@@ -333,7 +357,7 @@ func (e *Engine) switchWouldSlide(track, slot int, tick int64, restart bool) boo
 	}
 	targetIndex := uint8(localStep % int64(target.Len))
 	next, err := seq.UnpackStep(target.Steps[targetIndex])
-	return err == nil && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, uint8(track), uint8(slot), localStep/int64(target.Len), targetIndex)
+	return err == nil && target.Chords[targetIndex].Count == 0 && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, uint8(track), uint8(slot), localStep/int64(target.Len), targetIndex)
 }
 
 func (e *Engine) scheduleSwitchRelease(track int, clock seq.Clock, startSample int64, frames int) {
@@ -364,9 +388,9 @@ func (e *Engine) scheduleSwitchRelease(track int, clock seq.Clock, startSample i
 		}
 		e.scheduleNormalRelease(track, slot, c.Tick, restart, clock, startSample, frames)
 	}
-	if e.songMode && (e.songIndex+1 < len(e.song) || e.loopSong) {
-		next := (e.songIndex + 1) % len(e.song)
-		binding := e.scenes[e.song[next].Scene].Track[track]
+	if !e.placementSchedule && e.songMode && (e.songIndex+1 < len(e.schedule) || e.loopSong) {
+		next := (e.songIndex + 1) % len(e.schedule)
+		binding := e.scenes[e.schedule[next].Scene].Track[track]
 		if binding.Mode == SceneSlot && p.active != int8(binding.Slot) {
 			e.scheduleNormalRelease(track, int(binding.Slot), e.songEndTick, false, clock, startSample, frames)
 		}
@@ -404,11 +428,11 @@ func (e *Engine) scheduleNormalRelease(track, slot int, switchTick int64, restar
 
 func (e *Engine) normalSlideRelease(track int, switchTick int64, clock seq.Clock) (seq.Event, bool) {
 	p := &e.patterns[track]
-	if p.active < 0 || switchTick < seq.TicksPerStep || switchTick%seq.TicksPerStep != 0 {
+	if p.active < 0 || switchTick < p.startTick+seq.TicksPerStep || (switchTick-p.startTick)%seq.TicksPerStep != 0 {
 		return seq.Event{}, false
 	}
-	step := switchTick/seq.TicksPerStep - 1
-	local := step - p.startStep
+	local := (switchTick-p.startTick)/seq.TicksPerStep - 1
+	step := p.startTick/seq.TicksPerStep + local
 	source := &p.slots[p.active]
 	if local < 0 {
 		return seq.Event{}, false
@@ -418,7 +442,7 @@ func (e *Engine) normalSlideRelease(track int, switchTick int64, clock seq.Clock
 	if err != nil || !old.Gate || !old.Slide || !seq.ProbabilityHit(old.Probability, source.Seed, uint8(track), uint8(p.active), local/int64(source.Len), index) {
 		return seq.Event{}, false
 	}
-	startTick := step * seq.TicksPerStep
+	startTick := p.startTick + local*seq.TicksPerStep
 	endTick := switchTick
 	if step&1 != 0 {
 		startTick += seq.SwingDelayTicks(source.SwingPermille)
@@ -445,7 +469,7 @@ func (e *Engine) pendingSwitchSlides(track int, off seq.Event) bool {
 	if p.active < 0 || p.playingNote != off.NoteID {
 		return false
 	}
-	switchTick := ((off.NoteID-1)/8 + 1) * seq.TicksPerStep
+	switchTick := ((off.NoteID-1)/8+1)*seq.TicksPerStep + p.startTick%seq.TicksPerStep
 	for i := 0; i < e.pendingLen; i++ {
 		c := e.pending[i]
 		if c.Tick != switchTick {
@@ -465,9 +489,9 @@ func (e *Engine) pendingSwitchSlides(track int, off seq.Event) bool {
 			}
 		}
 	}
-	if e.songMode && e.songEndTick == switchTick && (e.songIndex+1 < len(e.song) || e.loopSong) {
-		next := (e.songIndex + 1) % len(e.song)
-		binding := e.scenes[e.song[next].Scene].Track[track]
+	if !e.placementSchedule && e.songMode && e.songEndTick == switchTick && (e.songIndex+1 < len(e.schedule) || e.loopSong) {
+		next := (e.songIndex + 1) % len(e.schedule)
+		binding := e.scenes[e.schedule[next].Scene].Track[track]
 		return binding.Mode == SceneSlot && p.active != int8(binding.Slot) && e.switchSlideTarget(track, int(binding.Slot), switchTick, false)
 	}
 	if slot, ok := e.chainTargetAt(track, switchTick); ok {
@@ -493,14 +517,25 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				continue
 			}
 			if kind == seq.NoteOff {
-				if p.playingNote == item.event.NoteID && p.playingGen == item.generation {
-					if p.slideFrom == item.event.NoteID && sample <= p.slideAt || e.pendingSwitchSlides(track, item.event) {
-						continue
+				matching := p.playingNote == item.event.NoteID && p.playingGen == item.generation
+				if matching && (p.slideFrom == item.event.NoteID && sample <= p.slideAt || e.pendingSwitchSlides(track, item.event)) {
+					continue
+				}
+				released := false
+				pool := e.voices[track].poly
+				if pool != nil {
+					released = pool.Release(graph.Cohort{NoteID: item.event.NoteID, Generation: uint64(item.generation)})
+				}
+				if matching {
+					if pool == nil {
+						e.noteOff(track, 0xffff)
+						released = true
 					}
-					e.noteOff(track, 0xffff)
 					p.playingNote = 0
 					p.heldValid = false
 					p.forceValid = false
+				}
+				if released {
 					e.emit(cmd.Message{Kind: cmd.NoteOff, Track: uint8(track), Tick: item.event.Tick})
 				}
 				continue
@@ -512,8 +547,31 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			switch e.voices[track].kind {
 			case VoiceAcid:
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
+			case VoiceSample:
+				v := &e.voices[track]
+				var err error
+				v.samplerNote, err = v.sampler.NoteOn(event.Note, event.Velocity)
+				if err != nil {
+					e.fault(9)
+					return
+				}
 			case VoiceGraph:
-				e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
+				if pool := e.voices[track].poly; pool != nil {
+					if !event.Slide {
+						pool.ReleaseAll()
+					}
+					notes, count := event.Notes, event.NoteCount
+					if count == 0 {
+						notes[0] = event.Note
+						count = 1
+					}
+					if _, err := pool.NoteOn(notes, count, event.Velocity, event.Slide, graph.Cohort{NoteID: event.NoteID, Generation: uint64(item.generation)}); err != nil {
+						e.fault(17)
+						return
+					}
+				} else {
+					e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
+				}
 			case VoiceDrums:
 				if event.Note >= uint8(drum.LaneCount) {
 					e.fault(15)
@@ -533,4 +591,16 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			e.emit(cmd.Message{Kind: cmd.NoteOn, Track: uint8(track), A: uint16(event.Note), Tick: event.Tick})
 		}
 	}
+}
+
+// Polyphonic generations must never wrap into an old cohort's identity.
+// Legacy mono wrapping behavior is retained for compatibility.
+func (e *Engine) nextPatternGeneration(track int) bool {
+	p := &e.patterns[track]
+	if p.generation == ^uint32(0) && e.voices[track].poly != nil {
+		e.fault(17)
+		return false
+	}
+	p.generation++
+	return true
 }

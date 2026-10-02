@@ -20,6 +20,8 @@ type Event struct {
 	StepIndex    uint8
 	RatchetIndex uint8
 	Note         uint8
+	Notes        [4]uint8
+	NoteCount    uint8 // zero means the unchanged mono Note field
 	Velocity     uint8
 	Accent       bool
 	Slide        bool
@@ -74,11 +76,18 @@ func EventsInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64
 // EventsOffsetInBlock starts step zero at startStep. It supports a pattern
 // restart without changing the stored pattern or allocating in the callback.
 func EventsOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, startSample int64, frames int, dst []Event) (written int, overflow bool) {
+	return EventsAtTickInBlock(p, clock, track, slot, startStep*TicksPerStep, startSample, frames, dst)
+}
+
+// EventsAtTickInBlock starts step zero at an exact tick origin, including
+// origins between global steps. Aligned origins retain the global swing phase.
+func EventsAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, originTick, startSample int64, frames int, dst []Event) (written int, overflow bool) {
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
 	}
-	startTick := clock.TickAtSample(startSample)
-	endTick := clock.TickAtSample(startSample + int64(frames))
+	startStep, offsetTick := originTick/TicksPerStep, originTick%TicksPerStep
+	startTick := clock.TickAtSample(startSample) - offsetTick
+	endTick := clock.TickAtSample(startSample+int64(frames)) - offsetTick
 	firstStep := startTick/TicksPerStep - 1
 	if firstStep < 0 {
 		firstStep = 0
@@ -108,8 +117,8 @@ func EventsOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, 
 				incomingSlide = ProbabilityHit(previousStep.Probability, p.Seed, track, slot, previousIteration, previousIndex)
 			}
 		}
-		start := absoluteStep*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep)
-		end := (absoluteStep+1)*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep+1)
+		start := absoluteStep*TicksPerStep + offsetTick + swingDelay(p.SwingPermille, absoluteStep)
+		end := (absoluteStep+1)*TicksPerStep + offsetTick + swingDelay(p.SwingPermille, absoluteStep+1)
 		for r := uint8(0); r < step.Ratchet; r++ {
 			tick := RatchetTick(start, end, step.Ratchet, r)
 			sample := clock.SampleAtTick(tick)
@@ -125,6 +134,11 @@ func EventsOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, 
 				Tick: tick, Sample: sample, Offset: int32(sample - startSample),
 				Track: track, Slot: slot, StepIndex: stepIndex, RatchetIndex: r,
 				Note: uint8(int(step.Note) + int(p.Transpose)), Velocity: step.Velocity, Accent: step.Accent, Slide: incomingSlide && r == 0,
+			}
+			chord := p.Chords[stepIndex]
+			dst[written].NoteCount = chord.Count
+			for n := uint8(0); n < chord.Count; n++ {
+				dst[written].Notes[n] = uint8(int(chord.Notes[n]) + int(p.Transpose))
 			}
 			written++
 		}
@@ -143,12 +157,19 @@ func EventsWithGatesInBlock(p *Pattern, clock Clock, track, slot uint8, startSam
 // EventsWithGatesOffsetInBlock emits notes and releases for a restarted
 // pattern whose step zero is at startStep in the global transport grid.
 func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, startSample int64, frames int, dst []Event) (written int, overflow bool) {
+	return EventsWithGatesAtTickInBlock(p, clock, track, slot, startStep*TicksPerStep, startSample, frames, dst)
+}
+
+// EventsWithGatesAtTickInBlock emits onsets and releases relative to an exact
+// tick origin without rounding the origin or allocating callback storage.
+func EventsWithGatesAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, originTick, startSample int64, frames int, dst []Event) (written int, overflow bool) {
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
 	}
-	written, overflow = EventsOffsetInBlock(p, clock, track, slot, startStep, startSample, frames, dst)
-	startTick := clock.TickAtSample(startSample)
-	endTick := clock.TickAtSample(startSample + int64(frames))
+	startStep, offsetTick := originTick/TicksPerStep, originTick%TicksPerStep
+	written, overflow = EventsAtTickInBlock(p, clock, track, slot, originTick, startSample, frames, dst)
+	startTick := clock.TickAtSample(startSample) - offsetTick
+	endTick := clock.TickAtSample(startSample+int64(frames)) - offsetTick
 	firstStep := startTick/TicksPerStep - int64(p.Len) - 2
 	if firstStep < 0 {
 		firstStep = 0
@@ -168,8 +189,8 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 		if !ProbabilityHit(step.Probability, p.Seed, track, slot, iteration, stepIndex) {
 			continue
 		}
-		start := absoluteStep*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep)
-		end := (absoluteStep+1)*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep+1)
+		start := absoluteStep*TicksPerStep + offsetTick + swingDelay(p.SwingPermille, absoluteStep)
+		end := (absoluteStep+1)*TicksPerStep + offsetTick + swingDelay(p.SwingPermille, absoluteStep+1)
 		for r := uint8(0); r < step.Ratchet; r++ {
 			onset := RatchetTick(start, end, step.Ratchet, r)
 			segmentEnd := end
@@ -183,7 +204,7 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 			offTick := onset + gateTicks
 			offSample := clock.SampleAtTick(offTick)
 			if r+1 == step.Ratchet {
-				offTick, offSample = extendedGateEnd(p, clock, track, slot, absoluteStep, startStep, step, offTick)
+				offTick, offSample = extendedGateEnd(p, clock, track, slot, absoluteStep, startStep, offsetTick, step, offTick)
 			}
 			if offSample < startSample || offSample >= startSample+int64(frames) {
 				continue
@@ -197,6 +218,11 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 				Tick: offTick, Sample: offSample, Offset: int32(offSample - startSample),
 				Track: track, Slot: slot, StepIndex: stepIndex, RatchetIndex: r,
 				Note: step.Note,
+			}
+			chord := p.Chords[stepIndex]
+			dst[written].NoteCount = chord.Count
+			for n := uint8(0); n < chord.Count; n++ {
+				dst[written].Notes[n] = uint8(int(chord.Notes[n]) + int(p.Transpose))
 			}
 			written++
 		}
@@ -214,7 +240,7 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 	return written, overflow
 }
 
-func extendedGateEnd(p *Pattern, clock Clock, track, slot uint8, absoluteStep, startStep int64, step Step, normalEnd int64) (int64, int64) {
+func extendedGateEnd(p *Pattern, clock Clock, track, slot uint8, absoluteStep, startStep, offsetTick int64, step Step, normalEnd int64) (int64, int64) {
 	lastEnd := normalEnd
 	for offset := int64(1); offset <= int64(p.Len); offset++ {
 		nextAbsolute := absoluteStep + offset
@@ -224,9 +250,9 @@ func extendedGateEnd(p *Pattern, clock Clock, track, slot uint8, absoluteStep, s
 		if err != nil || !next.Gate || !ProbabilityHit(next.Probability, p.Seed, track, slot, nextLocal/int64(p.Len), nextIndex) {
 			break
 		}
-		nextOnset := nextAbsolute*TicksPerStep + swingDelay(p.SwingPermille, nextAbsolute)
+		nextOnset := nextAbsolute*TicksPerStep + offsetTick + swingDelay(p.SwingPermille, nextAbsolute)
 		if next.Tie {
-			lastEnd = (nextAbsolute+1)*TicksPerStep + swingDelay(p.SwingPermille, nextAbsolute+1)
+			lastEnd = (nextAbsolute+1)*TicksPerStep + offsetTick + swingDelay(p.SwingPermille, nextAbsolute+1)
 			continue
 		}
 		if offset == 1 && step.Slide {

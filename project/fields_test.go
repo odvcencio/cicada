@@ -25,8 +25,8 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 	if catalog.Format != "cicada.fields/2" || len(catalog.Fields) < 70 {
 		t.Fatalf("incomplete field catalog: %s, %d fields", catalog.Format, len(catalog.Fields))
 	}
-	if len(catalog.Constructs) != 28 {
-		t.Fatalf("expected 28 semantic constructs, got %d", len(catalog.Constructs))
+	if len(catalog.Constructs) != 31 {
+		t.Fatalf("expected 31 semantic constructs, got %d", len(catalog.Constructs))
 	}
 	for _, construct := range catalog.Constructs {
 		if construct.Name == "expr" && len(construct.Variants) != 3 {
@@ -52,6 +52,12 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 			}
 			if field.Required || field.Default == nil || *field.Default != expected {
 				t.Errorf("legacy default is missing: %+v", field)
+			}
+			continue
+		}
+		if field.Construct == "step" && field.Name == "notes" {
+			if field.Required || field.Default != nil {
+				t.Errorf("chord payload must remain optional: %+v", field)
 			}
 			continue
 		}

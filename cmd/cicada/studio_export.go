@@ -77,7 +77,7 @@ func (c *studioExportController) start(score *notation.Score, path string, reque
 	runner := c.render
 	c.mu.Unlock()
 
-	options := render.Options{SampleRate: request.Rate, Bits: request.Bits, TailSec: 3}
+	options := render.Options{AssetRoot: filepath.Dir(filepath.Dir(path)), SampleRate: request.Rate, Bits: request.Bits, TailSec: 3}
 	target := renderTargetOptions{LoudnessTarget: request.TargetLUFS, TruePeakMaxDBTP: request.TruePeakMax, Tolerance: request.Tolerance}
 	go func() {
 		c.update(sequence, func(status *studioExportStatus) { status.State = "rendering" })
