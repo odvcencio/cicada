@@ -2,6 +2,7 @@
 package main
 
 import (
+	"runtime"
 	"unsafe"
 
 	"m31labs.dev/cicada/host/kernelimage"
@@ -25,6 +26,17 @@ var oscillatorBankBytes []byte
 var oscillatorBankStorage [acid.MaxOscillatorBankImageBytes]byte
 var audioSampleRate int
 var legacyConfigured bool
+
+var allocationStats runtime.MemStats
+
+// Allocation counters let the host verify the kernel callback directly, even
+// when an allocation would fit inside already reserved linear memory.
+//
+//go:wasmexport gosx_audio_allocation_count
+func allocationCount() uint64 {
+	runtime.ReadMemStats(&allocationStats)
+	return allocationStats.Mallocs
+}
 
 //go:wasmexport gosx_audio_bank_image_ptr
 func bankImagePtr() uint32 {

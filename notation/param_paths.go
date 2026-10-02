@@ -109,6 +109,8 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 
 func notationParameterVoiceKind(score *Score, kind string) string {
 	switch kind {
+	case "guitar":
+		return "guitar"
 	case "acid":
 		return "acid"
 	case "drums":
@@ -141,7 +143,7 @@ func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {
 		return err
 	}
 	want := strings.ToLower(descriptor.Unit)
-	if want == "ratio" || want == "" || want == "semitone" {
+	if want == "ratio" || want == "" || want == "semitone" || want == "cent" {
 		want = "unit"
 	}
 	if unit != want {

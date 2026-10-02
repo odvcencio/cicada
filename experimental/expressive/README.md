@@ -2,13 +2,20 @@
 
 Experimental monophonic bowed-string, brass and electric-guitar voices, with
 continuous expression, deterministic dry auditions and a small trio arrangement.
-Based on main `01569e19e5e6b07d0b52277626b96819fbdd7485`. This additive package does
-not change the existing instrument ABI, graph opcodes, score syntax, modal pack,
-or frozen-v15 DAW integration. No samples or measured impulse responses are used.
+Based on main `01569e19e5e6b07d0b52277626b96819fbdd7485`. The research models remain
+independent of the authored graph ABI; guitar has a separate score adapter.
+Graph opcodes, the modal pack and frozen-v15 DAW integration are unchanged.
+No samples or measured impulse responses are used.
 
 These are playable physical-model prototypes, not qualified realistic instruments.
 No human acoustic listening acceptance is claimed. Passing DSP tests, tuning
 measurements and headless browser execution does not establish convincing timbre.
+
+The guitar is also available from edition-2 scores as the explicitly experimental
+built-in `guitar` voice with `experimental = on`. The
+[score reference](../../docs/spec/edition-2.md#experimental-guitar-voice) covers
+its registry controls and production native, TinyGo AudioWorklet and offline
+paths. This adapter does not confer listening acceptance on the model.
 
 ## Models and controls
 

@@ -105,6 +105,10 @@ func projectValidatorAccepts(descriptor paramdefs.Descriptor, number float64) bo
 		_, err := CompileMixerParams(notation.Track{Params: []notation.Param{parameter}})
 		return err == nil
 	}
+	if strings.HasPrefix(descriptor.ID, "guitar.") {
+		_, err := CompileGuitarParams(notation.Track{Params: []notation.Param{{Name: "experimental", Value: "on"}, {Name: descriptor.Source, Value: strconv.FormatFloat(number, 'f', -1, 64)}}})
+		return err == nil
+	}
 	if strings.HasPrefix(descriptor.ID, "acid.") {
 		value := strconv.FormatFloat(number, 'f', -1, 64)
 		if descriptor.Unit == "Hz" {

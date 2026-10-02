@@ -12,9 +12,11 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
 )
 
 const MaxImageBytes = 2 << 20
+const guitarImageVersion = 15        // experimental guitar; version 14 belongs to chord/schedule lanes
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -93,7 +95,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 13. The decoded Config is separately
+// Encode preserves version 13 for existing voices and uses version 15 for guitar. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -106,7 +108,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
-	w.u16(imageVersion)
+	version := uint16(imageVersion)
+	for i := 0; i < cfg.Tracks; i++ {
+		if cfg.Track[i].Kind == engine.VoiceGuitar {
+			version = guitarImageVersion
+		}
+	}
+	w.u16(version)
 	w.byte(byte(cfg.Tracks))
 	w.byte(byte(cfg.MaxVoices))
 	if cfg.LoopSong {
@@ -228,6 +236,16 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		switch spec.Kind {
 		case engine.VoiceOff:
+		case engine.VoiceGuitar:
+			if !spec.Experimental {
+				return nil, Error("guitar requires explicit experimental opt-in")
+			}
+			if err := spec.Guitar.Validate(); err != nil {
+				return nil, err
+			}
+			for id := kernel.ParamGuitarBend; id <= kernel.ParamGuitarDrive; id++ {
+				w.f64(spec.Guitar.Value(id))
+			}
 		case engine.VoiceAcid:
 			writeAcid(&w, spec.Acid)
 		case engine.VoiceDrums:
@@ -372,7 +390,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != guitarImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -582,6 +600,21 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		switch spec.Kind {
 		case engine.VoiceOff:
+		case engine.VoiceGuitar:
+			if version != guitarImageVersion {
+				return Error("guitar requires image version 15")
+			}
+			spec.Experimental = true
+			spec.Guitar = guitar.DefaultParams()
+			for id := kernel.ParamGuitarBend; id <= kernel.ParamGuitarDrive; id++ {
+				value, err := r.f64()
+				if err != nil {
+					return err
+				}
+				if err := spec.Guitar.Set(id, value); err != nil {
+					return err
+				}
+			}
 		case engine.VoiceAcid:
 			if spec.Acid, err = readAcid(&r); err != nil {
 				return err
@@ -712,6 +745,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					return err
 				}
 				setting.Division = fx.DelayDivision(division)
+				if version != guitarImageVersion && setting.ID >= kernel.ParamGuitarBend {
+					return Error("guitar controls require image version 15")
+				}
 				if err := validateSceneSetting(cfg, *setting); err != nil {
 					return err
 				}
@@ -810,6 +846,9 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 	if spec.Scope == "track" {
 		if int(setting.Track) >= cfg.Tracks {
 			return Error("scene parameter track is out of range")
+		}
+		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
+			return Error("guitar setting requires a guitar track")
 		}
 	} else if setting.Track != 0xff {
 		return Error("global scene parameter needs the global owner")

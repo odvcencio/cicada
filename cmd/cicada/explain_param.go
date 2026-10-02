@@ -53,6 +53,10 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		return err
 	}
 	fmt.Fprintf(output, "%s at bar %d, beat %d, step %d\n", path, loc.bar, loc.beat, loc.step)
+	if strings.HasPrefix(resolved.Descriptor.ID, "guitar.") {
+		d := resolved.Descriptor
+		fmt.Fprintf(output, "type: %s; unit: %s; range: %g..%g; smoothing: %g ms\n", d.Type, d.Unit, d.Min, d.Max, d.SmoothingMS)
+	}
 	fmt.Fprintf(output, "registry default: %s\n", explainDefault(resolved.Descriptor))
 	if sourceHasBlockSetting(score, resolved) {
 		fmt.Fprintf(output, "%s block (%s): %s\n", resolved.OwnerKind, resolved.Owner, explainValue(value.Value, resolved.Descriptor))
@@ -196,7 +200,7 @@ func explainValue(value any, descriptor paramdefs.Descriptor) string {
 	}
 	formatted := strconv.FormatFloat(number, 'f', -1, 64)
 	unit := descriptor.Unit
-	if unit == "unit" || unit == "ratio" || unit == "semitone" {
+	if unit == "unit" || unit == "ratio" || unit == "semitone" || unit == "cent" {
 		unit = ""
 	}
 	if unit == "" {
