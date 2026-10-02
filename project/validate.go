@@ -689,7 +689,7 @@ func validateExpr(expr Expr, depth int) (int, error) {
 
 func validExprArity(op string, n int) bool {
 	switch op {
-	case "+", "-", "*", "/", "env", "lowpass", "highpass":
+	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay":
 		return n == 2
 	case "saw", "square", "sine", "tanh", "exp2":
 		return n == 1
@@ -697,6 +697,8 @@ func validExprArity(op string, n int) bool {
 		return n == 0
 	case "ladder", "diode", "mix", "clamp":
 		return n == 3
+	case "comb":
+		return n == 4
 	}
 	return false
 }

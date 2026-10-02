@@ -1,0 +1,35 @@
+cicada 2
+title "Graph pluck and slapback"
+tempo 120
+key a minor
+seed 42
+
+// Karplus-Strong: an exponential noise burst excites a damped feedback loop.
+// Unit / Hz produces milliseconds, so 1 / pitch is one complete loop period.
+// Comb compensates the damping filter's phase at that fundamental.
+instrument plucked {
+  param feedback: unit = 0.995
+  param damping: unit = 0.5
+  voice mono {
+    let burst = noise() * env(gate, 1ms) * velocity
+    let string = comb(burst, 1 / pitch, feedback, damping)
+    out = string * env(gate, 1600ms) * 0.3
+  }
+}
+
+// A second ring gives this voice a 60 ms slapback, entirely inside the graph.
+instrument slapback {
+  voice mono {
+    let burst = noise() * env(gate, 1ms) * velocity
+    let string = comb(burst, 1 / pitch, 0.99, 0.35)
+    let echo = delay(string, 60ms)
+    out = mix(string, echo, 0.3) * env(gate, 1200ms) * 0.3
+  }
+}
+
+track dry plucked { level = -6dB pan = -0.25 }
+track echo slapback { level = -9dB pan = 0.25 }
+pattern melody notes steps=16 { a2 . . . c3 . . . e3 . . . a3 . . . }
+pattern answer notes steps=16 { . . e3 . . . . . . . c3 . . . a2 . }
+scene main { dry = melody echo = answer }
+song { main*2 }

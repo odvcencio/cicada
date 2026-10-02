@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/edition"
+	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/language"
 	"m31labs.dev/cicada/migration"
 	"m31labs.dev/cicada/notation"
@@ -554,6 +555,11 @@ func mixerSymbolHover(source []byte, symbol language.Symbol) string {
 }
 
 func hoverText(capture, value string, source []byte, offset int) string {
+	if strings.HasPrefix(capture, "function") {
+		if operation, ok := instrument.Operation(value); ok {
+			return "`" + operation.Signature + "`\n\n" + operation.Meaning
+		}
+	}
 	switch {
 	case strings.HasPrefix(capture, "number.probability"):
 		return "Plays **" + value + "%** of the time."
