@@ -30,6 +30,7 @@ func NewPool(sampleRate, maximum int, region Region) (*Pool, error) {
 	if err := region.Validate(); err != nil {
 		return nil, err
 	}
+	prepareBanks()
 	p := &Pool{limit: maximum}
 	for i := 0; i < maximum; i++ {
 		p.voices[i].configure(sampleRate, region)

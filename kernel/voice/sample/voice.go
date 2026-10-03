@@ -74,6 +74,7 @@ func New(sampleRate int, region Region) (*Voice, error) {
 	if err := region.Validate(); err != nil {
 		return nil, err
 	}
+	prepareBanks()
 	v := &Voice{}
 	v.configure(sampleRate, region)
 	return v, nil
