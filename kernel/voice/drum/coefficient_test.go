@@ -17,6 +17,14 @@ func TestBassDrumDecaysMatchPerSampleFormula(t *testing.T) {
 			t.Fatal(err)
 		}
 		for sample := 0; sample < 16000; sample++ {
+			if sample%4096 == 4095 {
+				if err := kit.SetRecipe(SD, SD); err != nil {
+					t.Fatal(err)
+				}
+				if err := kit.SetRecipe(SD, BD); err != nil {
+					t.Fatal(err)
+				}
+			}
 			for _, lane := range []Lane{BD, SD} {
 				p := kit.Params(lane)
 				if sample%1024 == 0 {
