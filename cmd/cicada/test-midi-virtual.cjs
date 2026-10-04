@@ -119,7 +119,7 @@ async function main() {
     if (!fs.existsSync(binary)) throw new Error(`missing Studio binary: ${binary}`);
     if (!fs.existsSync(chromeBinary)) throw new Error(`missing headless Chrome: ${chromeBinary}`);
 
-    const studio = launch(binary, ['studio', scorePath, '--listen', '127.0.0.1:8161', '--audio', 'null'], {env: {PULSE_SERVER: 'unix:/nonexistent'}});
+    const studio = launch(binary, ['studio', scorePath, '--service', '--listen', '127.0.0.1:8161', '--audio', 'null'], {env: {PULSE_SERVER: 'unix:/nonexistent'}});
     await waitForHTTP('http://127.0.0.1:8161/', studio);
     launch(chromeBinary, [
       '--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--mute-audio',

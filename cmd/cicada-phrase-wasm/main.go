@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"unsafe"
 
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/phrase"
 )
 
@@ -32,6 +33,42 @@ func generate() uint32 {
 		return 1
 	}
 	result, err := phrase.Generate(params)
+	return writeResult(result, err)
+}
+
+type mutationRequest struct {
+	Params     phrase.Params
+	Base       seq.Pattern
+	Ops        []phrase.Op
+	Locked     uint64
+	Generation uint64
+}
+
+//go:wasmexport cicada_phrase_mutate
+func mutate() uint32 {
+	resultBuffer = nil
+	var request mutationRequest
+	if err := json.Unmarshal(paramsBuffer, &request); err != nil {
+		resultBuffer = []byte(err.Error())
+		return 1
+	}
+	result, err := phrase.Mutate(request.Params, request.Base, request.Ops, request.Locked)
+	return writeResult(result, err)
+}
+
+//go:wasmexport cicada_phrase_evolve
+func evolve() uint32 {
+	resultBuffer = nil
+	var request mutationRequest
+	if err := json.Unmarshal(paramsBuffer, &request); err != nil {
+		resultBuffer = []byte(err.Error())
+		return 1
+	}
+	result, err := phrase.Evolve(request.Params, request.Base, request.Generation, request.Locked)
+	return writeResult(result, err)
+}
+
+func writeResult(result phrase.Result, err error) uint32 {
 	if err != nil {
 		resultBuffer = []byte(err.Error())
 		return 2

@@ -27,12 +27,12 @@ type studioExportRequest struct {
 
 type studioExportStatus struct {
 	State      string              `json:"state"`
-	Path       string              `json:"path,omitempty"`
+	Path       string              `json:"path"`
 	TargetLUFS float64             `json:"target_lufs,omitempty"`
 	Pass       int                 `json:"pass,omitempty"`
 	PassLimit  int                 `json:"pass_limit,omitempty"`
 	Report     *loudnessFileReport `json:"report,omitempty"`
-	Error      string              `json:"error,omitempty"`
+	Error      string              `json:"error"`
 }
 
 type studioExportController struct {
