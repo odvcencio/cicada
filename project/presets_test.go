@@ -1,6 +1,7 @@
 package project
 
 import (
+	"fmt"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -235,5 +236,24 @@ func TestEffectPresetUsesDeclaredDefaultsWithoutExtraInstance(t *testing.T) {
 	}
 	if _, err := CompileEngine(p, 48000, 128); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestEffectPresetRetainsLegacySendTargets(t *testing.T) {
+	for _, test := range []struct{ kind, send string }{{"delay", "send_a"}, {"reverb", "send_b"}} {
+		t.Run(test.kind, func(t *testing.T) {
+			score, ds := notation.Parse([]byte("cicada 1\nfx " + test.kind + " { mix=0.2 }\npreset wet { instrument=" + test.kind + " mix=0.8 }\nfx echo wet {}\ntrack lead acid { " + test.send + "=0.5 }" + presetSong))
+			if score == nil {
+				t.Fatalf("parse: %+v", ds)
+			}
+			resolved, ds := notation.ResolvePresets(score)
+			if hasErrors(ds) || len(resolved.Effects) != 2 || resolved.Effects[0].Name != test.kind {
+				t.Fatalf("legacy target pruned: %+v %+v", resolved.Effects, ds)
+			}
+			p, ds := FromScore(score)
+			if p != nil || !strings.Contains(fmt.Sprint(ds), "multiple "+test.kind+" instances") {
+				t.Fatalf("expected existing instance limit: %+v %+v", p, ds)
+			}
+		})
 	}
 }
