@@ -126,7 +126,11 @@ func PresetDescriptors(s *Score, target string) []paramdefs.Descriptor {
 		}
 	}
 	if kind == "acid" || kind == "instrument" && !hasOctaveParameter {
-		descriptors = append(descriptors, paramdefs.Descriptor{ID: "source.octave", Path: "octave", Source: "octave", Unit: "unit", Min: 0, Max: 6, Default: 3, Curve: "integer"})
+		octave := 3
+		if kind == "acid" {
+			octave = DefaultAcidOctave
+		}
+		descriptors = append(descriptors, paramdefs.Descriptor{ID: "source.octave", Path: "octave", Source: "octave", Unit: "unit", Min: 0, Max: 6, Default: float64(octave), Curve: "integer"})
 	}
 	if kind == "sampler" {
 		descriptors = append(descriptors, paramdefs.SamplerSettings...)
@@ -237,7 +241,7 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 			lane := strings.TrimPrefix(p.Target, "builtin.")
 			t.Kind = "drums"
 			for j := range t.Params {
-				if t.Params[j].Name != "send" && t.Params[j].Name != "insert" && t.Params[j].Name != "out" && t.Params[j].Name != "bus" {
+				if t.Params[j].Name != "send" && t.Params[j].Name != "insert" && t.Params[j].Name != "out" && t.Params[j].Name != "bus" && t.Params[j].Name != "send_a" && t.Params[j].Name != "send_b" && t.Params[j].Name != "send_pre" {
 					t.Params[j].Name = lane + "_" + t.Params[j].Name
 				}
 			}
@@ -274,7 +278,13 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 			fail("fx requires an effect preset", e.Position)
 			continue
 		}
-		ds = append(ds, validatePresetParams(source, p.Target, e.Params)...)
+		var values []Param
+		for _, param := range e.Params {
+			if param.Name != "sidechain" {
+				values = append(values, param)
+			}
+		}
+		ds = append(ds, validatePresetParams(source, p.Target, values)...)
 		if strings.HasPrefix(p.Target, "builtin.") {
 			e.Kind = strings.TrimPrefix(p.Target, "builtin.")
 			e.Params = mergePresetParams(p.Params, e.Params)

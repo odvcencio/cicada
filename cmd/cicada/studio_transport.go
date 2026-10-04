@@ -28,6 +28,7 @@ type studioTransport struct {
 	stream            *liveplay.Player
 	preview           *liveplay.Player
 	previewTimer      *time.Timer
+	previewGeneration uint64
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions
 	sampleRate        int

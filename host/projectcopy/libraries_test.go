@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/host/sampleasset"
+	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/internal/vendortest"
 	"m31labs.dev/cicada/kernel/voice/sample"
@@ -173,5 +174,88 @@ func TestSaveAsLibraryFailuresDoNotPublishScore(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestSaveAsVendorsLibrariesFromRetainedRevisionsAndCandidates(t *testing.T) {
+	for _, kind := range []string{"revision", "candidate"} {
+		t.Run(kind, func(t *testing.T) {
+			root, user, _ := vendortest.Setup(t)
+			score := filepath.Join(root, "main.cicada")
+			retained, err := os.ReadFile(score)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Keep the original imported score only in retained state.
+			current := []byte("cicada 2\ntrack lead acid {}\npattern melody { 1 . }\nscene verse { lead=melody }\nsong { verse }\n")
+			vendortest.Write(t, root, "main.cicada", current)
+			if kind == "revision" {
+				prefix := ".cicada-studio-" + takejournal.Revision([]byte(score))[:16] + "-retained"
+				vendortest.Write(t, root, prefix, retained)
+				vendortest.Write(t, root, prefix+".revision", []byte(takejournal.Revision(retained)))
+			} else {
+				_, recorder, id := pending(t, root, true)
+				if err := recorder.Publish(id); err != nil {
+					t.Fatal(err)
+				}
+				if err := recorder.Prepare(id, []byte(copyScore), retained); err != nil {
+					t.Fatal(err)
+				}
+			}
+			target := filepath.Join(t.TempDir(), "copy.cicada")
+			if err := SaveAs(score, target); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.RemoveAll(user); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.RemoveAll(root); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(target, retained, 0600); err != nil {
+				t.Fatal(err)
+			}
+			restored, ds, err := project.LoadScore(target, nil)
+			if err != nil || restored == nil || len(ds) != 0 {
+				t.Fatalf("retained import cannot be restored: %v %+v", err, ds)
+			}
+		})
+	}
+}
+
+func TestSaveAsRejectsDestinationInsideVendoredLibrary(t *testing.T) {
+	root, _, _ := vendortest.Setup(t)
+	// A legacy manifest does not impose a separate source-path restriction.
+	vendortest.Write(t, root, "cicada.mod", []byte("project score\ncicada 2\n"))
+	targetRoot := t.TempDir()
+	vendortest.Write(t, targetRoot, "cicada.mod", []byte("project score\ncicada 2\n"))
+	target := filepath.Join(targetRoot, "lib/demo/tone/copy.cicada")
+	if err := SaveAs(filepath.Join(root, "main.cicada"), target); err == nil {
+		t.Fatal("score was published inside a library")
+	}
+	if _, err := os.Stat(target); !os.IsNotExist(err) {
+		t.Fatal("rejected destination was written")
+	}
+	if _, err := os.Stat(filepath.Join(targetRoot, "lib/demo/tone/cicada.mod")); !os.IsNotExist(err) {
+		t.Fatal("dependency copied before rejecting destination")
+	}
+}
+
+func TestSaveAsAcceptsSourceDirectoryAlias(t *testing.T) {
+	root, user, _ := vendortest.Setup(t)
+	vendortest.Write(t, root, "cicada.mod", []byte("project score\ncicada 2\n"))
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Skip(err)
+	}
+	target := filepath.Join(alias, "copy.cicada")
+	if err := SaveAs(filepath.Join(root, "main.cicada"), target); err != nil {
+		t.Fatalf("alias Save As: %v", err)
+	}
+	if err := os.RemoveAll(user); err != nil {
+		t.Fatal(err)
+	}
+	if score, ds, err := project.LoadScore(target, nil); err != nil || score == nil || len(ds) != 0 {
+		t.Fatalf("alias copy: %v %+v", err, ds)
 	}
 }

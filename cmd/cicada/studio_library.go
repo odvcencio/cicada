@@ -289,6 +289,10 @@ func (s *studio) libraryPreview(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, 400, map[string]any{"error": "preview mode must be native or browser"})
 		return
 	}
+	var generation uint64
+	if edit.Mode == "native" {
+		generation = s.transport.beginPreview()
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	current, err := os.ReadFile(s.path)
@@ -306,7 +310,7 @@ func (s *studio) libraryPreview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if edit.Mode == "native" {
-		if err := s.transport.startPreview(s.path, p); err != nil {
+		if err := s.transport.startPreviewRequest(s.path, p, generation); err != nil {
 			studioJSON(w, 409, map[string]any{"error": err.Error()})
 			return
 		}

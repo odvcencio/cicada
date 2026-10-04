@@ -103,7 +103,11 @@
             const response = await post('/api/library/preview',{path:item.path,item:item.name,mode,rate:browser.context?.sampleRate || 48000});
             if (!response.ok) throw new Error((await response.json()).error || 'Preview failed');
             if (ticket !== request) return;
-            if (mode==='browser') await preview.play(await response.arrayBuffer());
+            if (mode==='browser') {
+              const image = await response.arrayBuffer();
+              if (ticket !== request) return;
+              await preview.play(image);
+            }
             status(`Previewing ${item.name} for one bar.`);
           } catch (error) { if (ticket === request) { preview.stop(); status(error.message); } }
           finally { audition.disabled=false; }

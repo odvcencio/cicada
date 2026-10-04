@@ -6,7 +6,9 @@ import (
 	"embed"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -96,7 +98,17 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 				if active[imp.Path] {
 					return fail("CICADA-LIB-CYCLE", "import cycle through "+imp.Path, nil)
 				}
-				if s.Libraries[imp.Path] != nil {
+				if cached := s.Libraries[imp.Path]; cached != nil {
+					ed := s.Manifest.Edition
+					if scope != "" {
+						ed = s.Libraries[scope].Manifest.Edition
+					}
+					if ed == 0 {
+						ed = notation.SourceEdition(s.Files[0])
+					}
+					if cached.Manifest.Edition > ed {
+						return fail("CICADA-VERSION", "library source edition exceeds the score edition", nil)
+					}
 					continue
 				}
 				lib, err := s.resolveLibrary(imp.Path, overrides)
@@ -277,6 +289,7 @@ func readLibrary(name, kind, root string, files fs.FS, overrides map[string][]by
 		}
 		lib.Files = append(lib.Files, file)
 	}
+	audioFiles := map[string]bool{}
 	if _, err := fs.Stat(files, "audio"); err == nil {
 		if err := fs.WalkDir(files, "audio", func(name string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -288,12 +301,12 @@ func readLibrary(name, kind, root string, files fs.FS, overrides map[string][]by
 			if !entry.Type().IsRegular() {
 				return fmt.Errorf("library audio must contain regular files")
 			}
-			data, err := fs.ReadFile(files, name)
-			if err == nil {
-				content[name] = data
-				lib.Assets = append(lib.Assets, name)
+			lib.Assets = append(lib.Assets, name)
+			if _, source := content[name]; !source {
+				content[name] = nil
+				audioFiles[name] = true
 			}
-			return err
+			return nil
 		}); err != nil {
 			return nil, sourceError("", 1, 1, "CICADA-LIB-PATH", err.Error(), err)
 		}
@@ -312,9 +325,34 @@ func readLibrary(name, kind, root string, files fs.FS, overrides map[string][]by
 		binary.BigEndian.PutUint64(size[:], uint64(len(name)))
 		hash.Write(size[:])
 		hash.Write([]byte(name))
-		binary.BigEndian.PutUint64(size[:], uint64(len(content[name])))
+		if !audioFiles[name] {
+			binary.BigEndian.PutUint64(size[:], uint64(len(content[name])))
+			hash.Write(size[:])
+			hash.Write(content[name])
+			continue
+		}
+		file, err := files.Open(name)
+		if err != nil {
+			return nil, err
+		}
+		info, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return nil, err
+		}
+		binary.BigEndian.PutUint64(size[:], uint64(info.Size()))
 		hash.Write(size[:])
-		hash.Write(content[name])
+		n, copyErr := io.Copy(hash, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return nil, copyErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		if n != info.Size() {
+			return nil, fmt.Errorf("library audio changed during hashing")
+		}
 	}
 	lib.SHA256 = hex.EncodeToString(hash.Sum(nil))
 	lib.content = content
@@ -462,10 +500,12 @@ type LibraryLocation struct{ Path, Kind string }
 // shadowed path. It neither verifies nor changes the project's pins.
 func ListLibraries(projectDir string) ([]LibraryLocation, error) {
 	var libraries []LibraryLocation
+	var discoveryErr error
 	collect := func(files fs.FS, kind string) error {
 		return fs.WalkDir(files, ".", func(name string, entry fs.DirEntry, err error) error {
 			if err != nil {
-				return err
+				discoveryErr = errors.Join(discoveryErr, err)
+				return nil
 			}
 			if !entry.IsDir() && path.Base(name) == "cicada.mod" && edition.ValidLibraryPath(path.Dir(name)) {
 				libraries = append(libraries, LibraryLocation{Path: path.Dir(name), Kind: kind})
@@ -474,29 +514,33 @@ func ListLibraries(projectDir string) ([]LibraryLocation, error) {
 		})
 	}
 	if err := collect(standardLibraries, "std"); err != nil {
-		return libraries, err
+		discoveryErr = errors.Join(discoveryErr, err)
 	}
 	user, err := UserLibraryDir()
 	if err != nil {
-		return libraries, err
+		discoveryErr = errors.Join(discoveryErr, err)
 	}
 	for _, base := range []struct{ kind, dir string }{{"project", filepath.Join(projectDir, "lib")}, {"user", user}} {
+		if base.dir == "" {
+			continue
+		}
 		root, err := os.OpenRoot(base.dir)
 		if os.IsNotExist(err) {
 			continue
 		}
 		if err != nil {
-			return libraries, err
+			discoveryErr = errors.Join(discoveryErr, err)
+			continue
 		}
 		err = collect(root.FS(), base.kind)
 		root.Close()
 		if err != nil {
-			return libraries, err
+			discoveryErr = errors.Join(discoveryErr, err)
 		}
 	}
 	// Stable order preserves std, project, user precedence for a shared path.
 	sort.SliceStable(libraries, func(i, j int) bool { return libraries[i].Path < libraries[j].Path })
-	return libraries, nil
+	return libraries, discoveryErr
 }
 
 // LibraryPaths lists unique available paths for completion. Resolution still

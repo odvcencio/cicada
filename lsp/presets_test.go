@@ -3,6 +3,7 @@ package lsp
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -46,5 +47,40 @@ func TestPresetImportedParameterCompletion(t *testing.T) {
 	data, _ := json.Marshal(items)
 	if !ok || !bytes.Contains(data, []byte(`"label":"bite"`)) {
 		t.Fatalf("imported params: %s", data)
+	}
+}
+
+func TestEffectPresetDefinitionAndRename(t *testing.T) {
+	source := []byte("cicada 2\nfx prototype delay { feedback=0.2 }\npreset wet { instrument=prototype feedback=0.3 }\nfx echo wet {}\ntrack lead acid { send echo=0.4 }\npattern melody { 1 . }\nscene main { lead=melody }\nsong { main }\n")
+	for _, test := range []struct {
+		word, newName  string
+		definitionLine int
+	}{{"prototype feedback", "base", 1}, {"wet {}", "long", 2}} {
+		at := utf16Position(source, bytes.Index(source, []byte(test.word)))
+		target, _ := json.Marshal(definition("file:///score.cicada", source, at))
+		if !bytes.Contains(target, []byte(fmt.Sprintf(`"line":%d`, test.definitionLine))) {
+			t.Fatalf("%s definition: %s", test.word, target)
+		}
+		edits, _ := json.Marshal(rename("file:///score.cicada", source, at, test.newName))
+		if bytes.Count(edits, []byte(`"newText":"`+test.newName+`"`)) != 2 {
+			t.Fatalf("%s rename: %s", test.word, edits)
+		}
+	}
+}
+
+func TestEffectPresetNavigationAcrossSourceFiles(t *testing.T) {
+	s, main, part := multifileServer(t)
+	s.documents[main] = []byte("preset wet { instrument=prototype feedback=0.3 }\nfx echo wet {}\ntrack bass acid { send echo=0.4 }\nscene verse { bass=pulse }\nsong { verse }\n")
+	s.documents[part] = []byte("fx prototype delay { feedback=0.2 }\npattern pulse { 1 . }\n")
+	for _, test := range []struct{ word, newName, uri string }{{"prototype feedback", "base", part}, {"wet {}", "long", main}} {
+		at := utf16Position(s.documents[main], bytes.Index(s.documents[main], []byte(test.word)))
+		target, _ := json.Marshal(s.projectDefinition(main, at))
+		if !bytes.Contains(target, []byte(test.uri)) {
+			t.Fatalf("cross-file definition: %s", target)
+		}
+		edits, _ := json.Marshal(s.projectRename(main, at, test.newName))
+		if bytes.Count(edits, []byte(`"newText":"`+test.newName+`"`)) != 2 {
+			t.Fatalf("cross-file rename: %s", edits)
+		}
 	}
 }

@@ -57,6 +57,10 @@ func (s *server) projectDefinition(uri string, at position) any {
 		return definition(uri, source, at)
 	}
 	selected, _, ok := symbolAt(source, at)
+	if selected.Kind == "preset-target" {
+		score, _ := files.Parse()
+		selected = resolvePresetSymbols([]language.Symbol{selected}, score)[0]
+	}
 	if match, found := parameterPathAt(source, byteOffset(source, at)); found {
 		score, ds := files.Parse()
 		if score == nil || hasErrors(ds) {
@@ -74,7 +78,11 @@ func (s *server) projectDefinition(uri string, at position) any {
 			for _, file := range files.Files {
 				if file.Path == origin.Position.File {
 					start := scalarOffset(file.Source, origin.Position)
-					return map[string]any{"uri": fileURI(file.Path), "range": region{Start: utf16Position(file.Source, start), End: utf16Position(file.Source, start+len(strings.TrimPrefix(resolved.Owner, strings.ReplaceAll(origin.Library, "/", ".")+".")))}}
+					uri, err := librarySourceURI(files.Libraries[file.Library], file)
+					if err != nil {
+						return nil
+					}
+					return map[string]any{"uri": uri, "range": region{Start: utf16Position(file.Source, start), End: utf16Position(file.Source, start+len(strings.TrimPrefix(resolved.Owner, strings.ReplaceAll(origin.Library, "/", ".")+".")))}}
 				}
 			}
 		}
@@ -94,7 +102,11 @@ func (s *server) projectDefinition(uri string, at position) any {
 		}
 		for _, symbol := range symbols {
 			if symbol.Role == "definition" && symbol.Name == selected.Name && symbolFamily(symbol.Kind) == symbolFamily(selected.Kind) {
-				return map[string]any{"uri": fileURI(file.Path), "range": symbolRegion(file.Source, symbol)}
+				uri, err := librarySourceURI(files.Libraries[file.Library], file)
+				if err != nil {
+					return nil
+				}
+				return map[string]any{"uri": uri, "range": symbolRegion(file.Source, symbol)}
 			}
 		}
 	}
@@ -107,6 +119,19 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 		return nil
 	}
 	source := s.documents[uri]
+	if files != nil {
+		if files.Manifest.Library != "" {
+			return nil
+		}
+		for _, file := range files.Files {
+			if fileURI(file.Path) == uri && file.Library != "" {
+				return nil
+			}
+		}
+		if _, collision := files.Bindings[""][newName]; collision {
+			return nil
+		}
+	}
 	if files == nil || !files.Manifest.ExplicitSources() {
 		return rename(uri, source, at, newName)
 	}
@@ -115,8 +140,28 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 	}
 	selected, _, ok := symbolAt(source, at)
 	if !ok {
+		if match, found := parameterPathAt(source, byteOffset(source, at)); found {
+			score, ds := files.Parse()
+			if score == nil || hasErrors(ds) {
+				return nil
+			}
+			compiled, ds := project.FromScore(score)
+			if compiled == nil || hasErrors(ds) {
+				return nil
+			}
+			resolved, err := project.ResolveParameterPath(compiled, match.path)
+			if err != nil {
+				return nil
+			}
+			selected = language.Symbol{Name: resolved.Owner, Kind: resolved.OwnerKind}
+			ok = true
+		}
+	}
+	if !ok {
 		return nil
 	}
+	originalScore, _ := files.Parse()
+	selected = resolvePresetSymbols([]language.Symbol{selected}, originalScore)[0]
 	local := selected.Kind == "binding" || selected.Kind == "parameter"
 	scope := instrumentScope(source, scalarOffset(source, selected.Position))
 	changes := map[string]any{}
@@ -136,6 +181,7 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 		if err != nil {
 			return nil
 		}
+		symbols = resolvePresetSymbols(symbols, originalScore)
 		var edits []map[string]any
 		var replacements []replacement
 		for _, symbol := range symbols {
@@ -200,9 +246,6 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 func (s *server) projectHover(uri string, at position) any {
 	source := s.documents[uri]
 	match, ok := parameterPathAt(source, byteOffset(source, at))
-	if !ok {
-		return hover(source, at)
-	}
 	files, err := s.projectSources(uri)
 	if err != nil || files == nil || !files.Manifest.ExplicitSources() {
 		return hover(source, at)
@@ -210,6 +253,9 @@ func (s *server) projectHover(uri string, at position) any {
 	score, ds := files.Parse()
 	if score == nil || hasErrors(ds) {
 		return nil
+	}
+	if !ok {
+		return hoverWithScore(source, at, score)
 	}
 	compiled, ds := project.FromScore(score)
 	if compiled == nil || hasErrors(ds) {
