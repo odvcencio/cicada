@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -32,6 +33,15 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 		return nil, err
 	}
 	defer dst.Close()
+	sourceInfo, err := os.Stat(s.Root)
+	if err != nil {
+		return nil, err
+	}
+	targetInfo, err := dst.Stat(".")
+	if err != nil {
+		return nil, err
+	}
+	sameProject := os.SameFile(sourceInfo, targetInfo)
 	lock, err := dst.OpenFile(".cicada-vendor.lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		return nil, fmt.Errorf("cannot lock library vendoring: %w", err)
@@ -104,7 +114,7 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 					if e := dst.MkdirAll(filepath.Dir(to), 0755); e != nil {
 						return nil, e
 					}
-					if e := writeVendorFile(dst, to, data); e != nil {
+					if e := copyVendorLibraryFile(dst, to, lib.Root, file, data); e != nil {
 						return nil, e
 					}
 				}
@@ -116,7 +126,7 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 			}
 			pin.Kind = "project"
 		}
-		if previous, found := pins[name]; found && previous != pin && target != s.Root {
+		if previous, found := pins[name]; found && previous != pin && !sameProject {
 			return nil, fmt.Errorf("vendoring refuses conflicting target pin for %s", name)
 		}
 		if pins[name] != pin {
@@ -178,12 +188,33 @@ func verifyVendor(root *os.Root, path string, expected *Library) error {
 	return nil
 }
 
+func copyVendorLibraryFile(dst *os.Root, to, libraryRoot, name string, data []byte) error {
+	if data != nil {
+		return writeVendorFile(dst, to, data)
+	}
+	src, err := os.OpenRoot(libraryRoot)
+	if err != nil {
+		return err
+	}
+	defer src.Close()
+	file, err := src.Open(filepath.FromSlash(name))
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	return writeVendorReader(dst, to, file)
+}
+
 func writeVendorFile(root *os.Root, name string, data []byte) error {
+	return writeVendorReader(root, name, bytes.NewReader(data))
+}
+
+func writeVendorReader(root *os.Root, name string, reader io.Reader) error {
 	f, err := root.OpenFile(name, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
 	if err != nil {
 		return err
 	}
-	_, err = f.Write(data)
+	_, err = io.Copy(f, reader)
 	if err == nil {
 		err = f.Sync()
 	}

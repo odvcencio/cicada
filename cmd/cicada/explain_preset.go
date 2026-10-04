@@ -124,7 +124,7 @@ func explainAuthoredParameter(score *notation.Score, compiled *project.Project, 
 			}
 		}
 		if target == "acid" && name == "octave" {
-			value, registry, found = "3", "3", true
+			value, registry, found = strconv.Itoa(notation.DefaultAcidOctave), strconv.Itoa(notation.DefaultAcidOctave), true
 		}
 		for _, sampler := range score.Samplers {
 			if sampler.Name != target || name != "root" && name != "mode" && name != "voices" {
