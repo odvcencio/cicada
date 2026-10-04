@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"path"
@@ -93,7 +94,17 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 				if active[imp.Path] {
 					return fail("CICADA-LIB-CYCLE", "import cycle through "+imp.Path, nil)
 				}
-				if s.Libraries[imp.Path] != nil {
+				if cached := s.Libraries[imp.Path]; cached != nil {
+					ed := s.Manifest.Edition
+					if scope != "" {
+						ed = s.Libraries[scope].Manifest.Edition
+					}
+					if ed == 0 {
+						ed = notation.SourceEdition(s.Files[0])
+					}
+					if cached.Manifest.Edition > ed {
+						return fail("CICADA-VERSION", "library source edition exceeds the score edition", nil)
+					}
 					continue
 				}
 				lib, err := s.resolveLibrary(imp.Path, overrides)
@@ -135,6 +146,7 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 		return err
 	}
 	for i := range s.Files {
+		s.Files[i].Declarations = declarations[""]
 		if len(s.Bindings[""]) > 0 {
 			s.Files[i].Bindings = s.Bindings[""]
 		}
@@ -234,6 +246,7 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 		}
 		lib.Files = append(lib.Files, file)
 	}
+	audioFiles := map[string]bool{}
 	if _, err := fs.Stat(c.files, "audio"); err == nil {
 		if err := fs.WalkDir(c.files, "audio", func(name string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
@@ -245,11 +258,11 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 			if !entry.Type().IsRegular() {
 				return fmt.Errorf("library audio must contain regular files")
 			}
-			data, err := fs.ReadFile(c.files, name)
-			if err == nil {
-				content[name] = data
+			if _, source := content[name]; !source {
+				content[name] = nil
+				audioFiles[name] = true
 			}
-			return err
+			return nil
 		}); err != nil {
 			return nil, sourceError("", 1, 1, "CICADA-LIB-PATH", err.Error(), err)
 		}
@@ -268,9 +281,34 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 		binary.BigEndian.PutUint64(size[:], uint64(len(name)))
 		hash.Write(size[:])
 		hash.Write([]byte(name))
-		binary.BigEndian.PutUint64(size[:], uint64(len(content[name])))
+		if !audioFiles[name] {
+			binary.BigEndian.PutUint64(size[:], uint64(len(content[name])))
+			hash.Write(size[:])
+			hash.Write(content[name])
+			continue
+		}
+		file, err := c.files.Open(name)
+		if err != nil {
+			return nil, err
+		}
+		info, err := file.Stat()
+		if err != nil {
+			file.Close()
+			return nil, err
+		}
+		binary.BigEndian.PutUint64(size[:], uint64(info.Size()))
 		hash.Write(size[:])
-		hash.Write(content[name])
+		n, copyErr := io.Copy(hash, file)
+		closeErr := file.Close()
+		if copyErr != nil {
+			return nil, copyErr
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
+		if n != info.Size() {
+			return nil, fmt.Errorf("library audio changed during hashing")
+		}
 	}
 	lib.SHA256 = hex.EncodeToString(hash.Sum(nil))
 	return lib, nil

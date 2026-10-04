@@ -295,7 +295,7 @@ func parseKit(w *loweringWalker, n *gts.Node) Kit {
 func parseEffect(w *loweringWalker, n *gts.Node) Effect {
 	e := Effect{Name: w.declaration(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: w.position(n)}
 	if e.Kind == "" { // edition-1 shorthand: fx delay { ... }
-		e.Kind = e.Name
+		e.Kind = w.Text(w.Field(n, "name"))
 		e.Legacy = true
 	}
 	for i := 0; i < n.NamedChildCount(); i++ {
@@ -693,6 +693,21 @@ func parseDurationMS(text string) float64 {
 func (w *loweringWalker) parameterPath(value string, position Position) string {
 	first, _, _ := strings.Cut(value, ".")
 	if _, ok := w.bindings[first]; ok {
+		_, rest, _ := strings.Cut(value, ".")
+		owner, suffix, _ := strings.Cut(rest, ".")
+		if strings.Contains(suffix, ".") {
+			*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-LIB-REFERENCE", Severity: "error", Message: "library parameter paths require a directly imported effect owner", Position: position})
+			return value
+		}
+		resolved := w.referenceText(first+"."+owner, position)
+		if suffix != "" {
+			resolved += "." + suffix
+		}
+		return resolved
+	}
+	// Local owners have no dots in their names. A raw library namespace
+	// cannot become an owner without a direct import binding.
+	if w.bindings != nil && len(strings.Split(value, ".")) > 2 && !w.declarations[first] {
 		return w.referenceText(value, position)
 	}
 	return value
