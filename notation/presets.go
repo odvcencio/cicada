@@ -1,6 +1,7 @@
 package notation
 
 import (
+	"strconv"
 	"strings"
 
 	gts "github.com/odvcencio/gotreesitter"
@@ -307,6 +308,18 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 	routed := map[string]bool{}
 	collect := func(params []Param) {
 		for _, q := range params {
+			value, _ := strconv.ParseFloat(q.Value, 64)
+			if (q.Name == "send_a" || q.Name == "send_b") && value > 0 {
+				kind := "delay"
+				if q.Name == "send_b" {
+					kind = "reverb"
+				}
+				for _, effect := range s.Effects {
+					if effect.Kind == kind {
+						routed[effect.Name] = true
+					}
+				}
+			}
 			if q.Target != "" {
 				routed[q.Target] = true
 			}
