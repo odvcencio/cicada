@@ -131,6 +131,26 @@ func SaveAs(score, target string) error {
 			return err
 		}
 	}
+	collectRetained := func(data []byte) error {
+		if err := collect(data); err != nil {
+			return err
+		}
+		if len(notation.ReadImports(notation.SourceFile{Path: score, Source: data})) == 0 {
+			return nil
+		}
+		retained, err := project.ReadSources(score, map[string][]byte{score: data})
+		if err != nil {
+			return err
+		}
+		for name, lib := range retained.Libraries {
+			if old := sources.Libraries[name]; old != nil && old.LibraryPin != lib.LibraryPin {
+				return fmt.Errorf("retained library identity differs: %s", name)
+			}
+			sources.Libraries[name] = lib
+		}
+		sources.Imports = append(sources.Imports, retained.Imports...)
+		return nil
+	}
 	ss, err := takejournal.Snapshots(src, score)
 	if err != nil {
 		return err
@@ -146,7 +166,7 @@ func SaveAs(score, target string) error {
 			}
 		}
 		if len(s.Take.Candidate) > 0 {
-			if err = collect(s.Take.Candidate); err != nil {
+			if err = collectRetained(s.Take.Candidate); err != nil {
 				return err
 			}
 		}
@@ -174,7 +194,7 @@ func SaveAs(score, target string) error {
 		}
 		histories[filepath.Join(filepath.Dir(dstName), newPrefix+strings.TrimPrefix(name, oldPrefix))] = data
 		if !strings.HasSuffix(name, ".revision") {
-			if err = collect(data); err != nil {
+			if err = collectRetained(data); err != nil {
 				return err
 			}
 		}
@@ -182,8 +202,12 @@ func SaveAs(score, target string) error {
 	// A destination may be absent now but scheduled for dependency installation.
 	// Check the full copy set before writing any of it, including retained passes.
 	dependencies := map[string]bool{"cicada.mod": true, "cicada.sum": true}
-	for name := range sources.Libraries {
-		dependencies[filepath.Join("lib", filepath.FromSlash(name), "cicada.mod")] = true
+	for name, lib := range sources.Libraries {
+		directory := filepath.Join("lib", filepath.FromSlash(name))
+		if lib.Kind != "std" && (filepath.Clean(dstName) == directory || strings.HasPrefix(filepath.Clean(dstName), directory+string(filepath.Separator))) {
+			return fmt.Errorf("Save As destination is inside a vendored library; choose a new score path")
+		}
+		dependencies[filepath.Join(directory, "cicada.mod")] = true
 	}
 	for path := range additional {
 		dependencies[filepath.Clean(path)] = true
