@@ -200,6 +200,7 @@ func (s *server) handle(message request) error {
 					return s.publish(peer)
 				}
 			}
+			return s.publish(params.TextDocument.URI)
 		}
 		return nil
 	case "textDocument/hover":
@@ -547,6 +548,10 @@ func byteOffset(source []byte, at position) int {
 }
 
 func hover(source []byte, at position) any {
+	return hoverWithScore(source, at, nil)
+}
+
+func hoverWithScore(source []byte, at position, score *notation.Score) any {
 	if len(source) == 0 {
 		return nil
 	}
@@ -578,7 +583,7 @@ func hover(source []byte, at position) any {
 		return nil
 	}
 	value := string(source[selected.Start:selected.End])
-	message := hoverText(selected.Capture, value, source, selected.Start)
+	message := hoverText(selected.Capture, value, source, selected.Start, score)
 	if message == "" {
 		return nil
 	}
@@ -610,7 +615,7 @@ func mixerSymbolHover(source []byte, symbol language.Symbol) string {
 	return ""
 }
 
-func hoverText(capture, value string, source []byte, offset int) string {
+func hoverText(capture, value string, source []byte, offset int, score *notation.Score) string {
 	switch {
 	case strings.HasPrefix(capture, "number.probability"):
 		return "Plays **" + value + "%** of the time."
@@ -621,7 +626,9 @@ func hoverText(capture, value string, source []byte, offset int) string {
 	case strings.HasPrefix(capture, "constant.hit.accent"):
 		return "Accented drum hit at velocity **127/127**."
 	case strings.HasPrefix(capture, "constant.pitch.degree") && len(value) > 0:
-		score, _ := notation.Parse(source)
+		if score == nil {
+			score, _ = notation.Parse(source)
+		}
 		if score == nil {
 			return "Scale degree **" + value + "**."
 		}
