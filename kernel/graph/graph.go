@@ -197,6 +197,16 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 
 func (v *Voice) NoteOff() { v.gate = 0 }
 
+// CopyStateFrom copies a voice constructed with the same program into this
+// voice's preallocated storage. Neither delay state nor ring memory is shared.
+func (v *Voice) CopyStateFrom(source *Voice) {
+	delays, memory := v.delays, v.delayMemory
+	*v = *source
+	v.delays, v.delayMemory = delays, memory
+	copy(v.delays, source.delays)
+	copy(v.delayMemory, source.delayMemory)
+}
+
 func (v *Voice) Reset() {
 	v.pitch, v.gate, v.velocity = 0, 0, 0
 	v.pitchLog, v.targetLog, v.gliding = 0, 0, false

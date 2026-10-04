@@ -2,7 +2,6 @@ package project
 
 import (
 	"errors"
-	"math"
 	"reflect"
 	"strings"
 
@@ -178,8 +177,7 @@ func checkDelayNotes(program *instrument.Program, track notation.Track, patterns
 				continue
 			}
 			note := int(step.Note) + int(pattern.Pattern.Transpose)
-			pitch := float32(440 * math.Exp2(float64(note-69)/12))
-			if err := graph.ValidateDelayPitch(lowered, 48_000, pitch); err != nil {
+			if err := validateGraphDelayNote(lowered, 48_000, note); err != nil {
 				return []notation.Diagnostic{{Code: "CICADA-PARAM", Severity: "error", Position: position, Message: err.Error()}}
 			}
 		}
