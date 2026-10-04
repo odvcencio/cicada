@@ -102,6 +102,24 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 	}
 	selected, _, ok := symbolAt(source, at)
 	if !ok {
+		if match, found := parameterPathAt(source, byteOffset(source, at)); found {
+			score, ds := files.Parse()
+			if score == nil || hasErrors(ds) {
+				return nil
+			}
+			compiled, ds := project.FromScore(score)
+			if compiled == nil || hasErrors(ds) {
+				return nil
+			}
+			resolved, err := project.ResolveParameterPath(compiled, match.path)
+			if err != nil {
+				return nil
+			}
+			selected = language.Symbol{Name: resolved.Owner, Kind: resolved.OwnerKind}
+			ok = true
+		}
+	}
+	if !ok {
 		return nil
 	}
 	local := selected.Kind == "binding" || selected.Kind == "parameter"
@@ -181,9 +199,6 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 func (s *server) projectHover(uri string, at position) any {
 	source := s.documents[uri]
 	match, ok := parameterPathAt(source, byteOffset(source, at))
-	if !ok {
-		return hover(source, at)
-	}
 	files, err := s.projectSources(uri)
 	if err != nil || files == nil || !files.Manifest.ExplicitSources() {
 		return hover(source, at)
@@ -191,6 +206,9 @@ func (s *server) projectHover(uri string, at position) any {
 	score, ds := files.Parse()
 	if score == nil || hasErrors(ds) {
 		return nil
+	}
+	if !ok {
+		return hoverWithScore(source, at, score)
 	}
 	compiled, ds := project.FromScore(score)
 	if compiled == nil || hasErrors(ds) {
