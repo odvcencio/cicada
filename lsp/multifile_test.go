@@ -73,3 +73,50 @@ func TestProjectPublishRoutesDiagnosticsAndClearsPeers(t *testing.T) {
 		t.Fatalf("clearing package diagnostics: %s", output.Bytes())
 	}
 }
+
+func TestProjectNoteHoverUsesEntryKey(t *testing.T) {
+	s, main, part := multifileServer(t)
+	s.documents[main] = append([]byte("key e minor\n"), s.documents[main]...)
+	path, _ := scorePathFromURI(part)
+	s.documents[part], _ = os.ReadFile(path)
+	at := utf16Position(s.documents[part], bytes.Index(s.documents[part], []byte("1 .")))
+	encoded, _ := json.Marshal(s.projectHover(part, at))
+	if !bytes.Contains(encoded, []byte("E")) || !bytes.Contains(encoded, []byte("E minor")) {
+		t.Fatalf("project key hover: %s", encoded)
+	}
+	s.documents[main] = bytes.Replace(s.documents[main], []byte("key e minor"), []byte("key d major"), 1)
+	encoded, _ = json.Marshal(s.projectHover(part, at))
+	if !bytes.Contains(encoded, []byte("D major")) {
+		t.Fatalf("unsaved key hover: %s", encoded)
+	}
+}
+
+func TestProjectRenameFromParameterPath(t *testing.T) {
+	s, main, part := multifileServer(t)
+	at := utf16Position(s.documents[main], bytes.Index(s.documents[main], []byte("bass.cutoff"))+len("bass."))
+	encoded, _ := json.Marshal(s.projectRename(main, at, "low"))
+	if !bytes.Contains(encoded, []byte(part)) || bytes.Count(encoded, []byte(`"newText":"low"`)) != 3 {
+		t.Fatalf("path rename: %s", encoded)
+	}
+}
+
+func TestProjectLastCloseClearsPeerDiagnostics(t *testing.T) {
+	s, main, part := multifileServer(t)
+	delete(s.documents, main)
+	s.documents[part] = []byte("track other acid {}\npattern pulse { 1 . }\n")
+	if err := s.publish(part); err != nil {
+		t.Fatal(err)
+	}
+	out := s.out.(*bytes.Buffer)
+	if !bytes.Contains(out.Bytes(), []byte("unknown track bass")) {
+		t.Fatalf("missing peer error: %s", out.Bytes())
+	}
+	out.Reset()
+	params, _ := json.Marshal(map[string]any{"textDocument": map[string]string{"uri": part}})
+	if err := s.handle(request{Method: "textDocument/didClose", Params: params}); err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(out.Bytes(), []byte(main)) || bytes.Contains(out.Bytes(), []byte("CICADA-REFERENCE")) {
+		t.Fatalf("stale peer diagnostics: %s", out.Bytes())
+	}
+}

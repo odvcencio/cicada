@@ -406,3 +406,21 @@ func studioMixerTestHandler(t *testing.T, source string) (http.Handler, string) 
 	}
 	return handler, path
 }
+
+func TestStudioMixerResolvesPresetEffectKinds(t *testing.T) {
+	source := []byte("cicada 2\npreset wet { instrument=builtin.delay feedback=0.3 }\nfx echo wet {}\ntrack lead acid { send echo=0.4 }\npattern melody { 1 . }\nscene main { lead=melody }\nsong { main }\n")
+	filename := filepath.Join(t.TempDir(), "main.cicada")
+	if err := os.WriteFile(filename, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	view, err := buildStudioMixerView(filename, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Tracks) != 1 || len(view.Tracks[0].Sends) != 1 || view.Tracks[0].Sends[0].Kind != "delay" || len(view.Returns) != 1 || view.Returns[0].Kind != "delay" {
+		t.Fatalf("preset sends and returns missing: tracks=%d sends=%d returns=%d", len(view.Tracks), len(view.Tracks[0].Sends), len(view.Returns))
+	}
+	if view.Returns[0].SourceRange == (mixerLineRange{}) {
+		t.Fatal("source range for preset instance lost")
+	}
+}

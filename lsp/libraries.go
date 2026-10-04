@@ -112,6 +112,10 @@ func libraryDefinition(files *project.Sources, uri string, source []byte, at pos
 	if !ok {
 		return nil, false
 	}
+	if selected.Kind == "preset-target" {
+		score, _ := files.Parse()
+		selected = resolvePresetSymbols([]language.Symbol{selected}, score)[0]
+	}
 	alias, name, qualified := strings.Cut(selected.Name, ".")
 	filename, _ := scorePathFromURI(uri)
 	scope := ""
