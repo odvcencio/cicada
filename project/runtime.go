@@ -226,6 +226,11 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 					if err != nil {
 						return cfg, fmt.Errorf("pattern %s: %w", pattern.ID, err)
 					}
+					if config.Graph.DelaySamples() > 0 && source != nil && !source.Tie {
+						if err := validateGraphDelayNote(config.Graph, sampleRate, int(source.Note)+int(pattern.Transpose)); err != nil {
+							return cfg, fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
+						}
+					}
 				}
 			}
 			if err := base.Validate(); err != nil {

@@ -356,3 +356,72 @@ func TestAuthoredGraphLaneReceivesSourcePitch(t *testing.T) {
 		}
 	}
 }
+
+func TestAuthoredGraphDelayRetriggerIndependentAndAllocationFree(t *testing.T) {
+	for _, op := range []graph.Op{graph.Delay, graph.Comb} {
+		t.Run(map[graph.Op]string{graph.Delay: "delay", graph.Comb: "comb"}[op], func(t *testing.T) {
+			program := graph.Program{Len: 5, Output: 4, Nodes: [graph.MaxNodes]graph.Node{
+				{Op: graph.Noise}, {Op: graph.Constant, Value: .25},
+				{Op: graph.Constant, Value: .8}, {Op: graph.Constant, Value: .3},
+				{Op: op, A: 0, B: 1, C: 2, Value: 3},
+			}}
+			kit, err := New(48_000, 73)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for lane := Lane(0); lane < LaneCount; lane++ {
+				if err := kit.Disable(lane); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := kit.SetGraph(BD, program); err != nil {
+				t.Fatal(err)
+			}
+			current, err := graph.NewVoice(program, 48_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			old, err := graph.NewVoice(program, 48_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			kit.Hit(BD, 100, false)
+			current.NoteOn(MIDINotes[BD], 100, false)
+			old.NoteOn(MIDINotes[BD], 100, false)
+			v := &kit.lanes[BD]
+			check := func(sample int, fading bool) {
+				t.Helper()
+				want := float64(current.Next()) * v.customAccent
+				if fading {
+					previous := old.Next()
+					if sample < 48 {
+						want += float64(previous) * v.customOldAccent * float64(48-sample) / 48
+					}
+				} else {
+					old.Next()
+				}
+				left, right := kit.NextStereo()
+				if left != float32(want*v.level*v.panL) || right != float32(want*v.level*v.panR) {
+					t.Fatalf("independent voices differ at sample %d (fading=%v): %g, %g", sample, fading, left, right)
+				}
+			}
+			for i := 0; i < 137; i++ {
+				check(i, false)
+			}
+			kit.Hit(BD, 127, true)
+			current.NoteOn(MIDINotes[BD], 127, false)
+			for i := 0; i < 256; i++ {
+				check(i, true)
+			}
+			allocs := testing.AllocsPerRun(100, func() {
+				kit.Hit(BD, 90, false)
+				for range 64 {
+					kit.NextStereo()
+				}
+			})
+			if allocs != 0 {
+				t.Fatalf("delay retrigger allocated %g objects", allocs)
+			}
+		})
+	}
+}
