@@ -504,7 +504,10 @@ func fixMultiFile(root string, manifest ed.Manifest, path string, all, check boo
 	rollback := func() {
 		for i := len(written) - 1; i >= 0; i-- {
 			e := written[i]
-			_ = writeFixedScore(e.path, e.before, e.mode)
+			current, err := os.ReadFile(e.path)
+			if err == nil && bytes.Equal(current, e.fixed) {
+				_ = writeFixedScore(e.path, e.before, e.mode)
+			}
 		}
 	}
 	for i, file := range fixed {
@@ -529,7 +532,7 @@ func fixMultiFile(root string, manifest ed.Manifest, path string, all, check boo
 			rollback()
 			return err
 		}
-		written = append(written, fixScoreEdit{path: file.Path, before: sources.Files[i].Source, mode: stat.Mode().Perm()})
+		written = append(written, fixScoreEdit{path: file.Path, before: sources.Files[i].Source, fixed: file.Source, mode: stat.Mode().Perm()})
 	}
 	if upgrade {
 		if err := writeFixedScore(sources.ManifestPath, afterManifest, info.Mode().Perm()); err != nil {
