@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -114,5 +115,65 @@ func TestPlayWatchHashesEverySource(t *testing.T) {
 	after, err := playSourceHash(entry)
 	if err != nil || before == after {
 		t.Fatalf("play watch missed peer source change: %v", err)
+	}
+}
+
+func TestMultiFileFixRollbackPreservesConcurrentEdits(t *testing.T) {
+	for _, competingEdit := range []bool{false, true} {
+		t.Run(fmt.Sprint(competingEdit), func(t *testing.T) {
+			root := t.TempDir()
+			files := map[string]string{
+				"cicada.mod":  "project score\ncicada 1\nentry \"main.cicada\"\nsource \"a.cicada\"\nsource \"b.cicada\"\nsource \"c.cicada\"\n",
+				"main.cicada": "scene verse { bass=pulse }\nsong { verse }\n",
+				"a.cicada":    "track bass acid { send_a=0.2 }\n",
+				"b.cicada":    "track other acid { send_a=0.3 }\n",
+				"c.cicada":    "fx delay {}\npattern pulse acid steps=4 { 1 . 5 . }\n",
+			}
+			for name, source := range files {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			first := filepath.Join(root, "a.cicada")
+			second := filepath.Join(root, "b.cicada")
+			later := filepath.Join(root, "c.cicada")
+			var saved []byte
+			err := fixCommandWithWriter([]string{filepath.Join(root, "main.cicada"), "--all"}, func(path string, source []byte, mode os.FileMode) error {
+				if err := writeFixedScore(path, source, mode); err != nil {
+					return err
+				}
+				if path == second {
+					if competingEdit {
+						current, err := os.ReadFile(first)
+						if err != nil {
+							return err
+						}
+						saved = append(current, []byte("// concurrent editor save\n")...)
+						if err := os.WriteFile(first, saved, mode); err != nil {
+							return err
+						}
+					}
+					return os.WriteFile(later, []byte(files["c.cicada"]+"// changed\n"), mode)
+				}
+				return nil
+			})
+			if err == nil || !strings.Contains(err.Error(), "source changed during fix") {
+				t.Fatalf("expected revision conflict: %v", err)
+			}
+			want := []byte(files["a.cicada"])
+			if competingEdit {
+				want = saved
+			}
+			got, err := os.ReadFile(first)
+			if err != nil || !bytes.Equal(got, want) {
+				t.Fatalf("rollback lost first source: %v %s", err, got)
+			}
+			for _, name := range []string{"b.cicada", "cicada.mod"} {
+				got, err := os.ReadFile(filepath.Join(root, name))
+				if err != nil || string(got) != files[name] {
+					t.Fatalf("rollback failed for %s: %v %s", name, err, got)
+				}
+			}
+		})
 	}
 }
