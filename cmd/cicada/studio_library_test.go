@@ -415,3 +415,44 @@ func TestStudioLibraryKitInsertHandwrittenPCM(t *testing.T) {
 	hand := strings.Replace(string(source), "track beat drums", "track beat drums.steel", 1) + "\nimport \"std/drums\"\n"
 	studioLibraryPCMEqual(t, filename, current, []byte(hand))
 }
+
+func TestStudioLibrarySavedPresetPreservesAudibleDefaultOverrides(t *testing.T) {
+	_, filename := libraryStudio(t)
+	wav := testwav.Bytes(48000, 1, 16, 480, 1)
+	if err := os.WriteFile(filepath.Join(filepath.Dir(filename), "wave.wav"), wav, 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct{ name, declaration, target, settings string }{
+		{"acid octave", "", "acid", "octave=3"},
+		{"sampler settings", fmt.Sprintf("asset wave \"wave.wav\" { sha256=\"%x\" format=wav frames=480 rate=48000Hz channels=1 }\nsampler hit { asset=wave root=c3 mode=loop voices=8 }\n", sha256.Sum256(wav)), "hit", "root=c0 mode=oneshot voices=1"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			track := "track lead " + test.target + " { " + test.settings + " }"
+			declaration := test.declaration
+			if test.target == "hit" {
+				declaration += "preset original { instrument=hit " + test.settings + " }\n"
+				track = "track lead original {}"
+			}
+			source := []byte("cicada 2\n" + declaration + track + "\npattern melody { 1 . 5 . }\nscene main { lead=melody }\nsong { main }\n")
+			updated, err := studioSavedPresetSource(filename, source, "lead", "saved")
+			if err != nil {
+				t.Fatal(err)
+			}
+			bound := bytes.Replace(updated, []byte(track), []byte("track lead saved {}"), 1)
+			if test.target == "hit" {
+				for _, text := range [][]byte{source, bound} {
+					p, err := compileStudioSource(filename, text)
+					if err != nil {
+						t.Fatal(err)
+					}
+					sampler := p.Samplers[len(p.Samplers)-1]
+					if sampler.Mode != "oneshot" || sampler.Voices != 1 || sampler.RootMIDI != 12 {
+						t.Fatalf("audible sampler settings changed: %+v", sampler)
+					}
+				}
+			} else {
+				studioLibraryPCMEqual(t, filename, source, bound)
+			}
+		})
+	}
+}

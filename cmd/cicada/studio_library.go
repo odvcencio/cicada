@@ -530,13 +530,16 @@ func studioSavedPresetSource(scorePath string, source []byte, track, name string
 			if code, err := paramdefs.ValidateLiteral(d, literal); err != nil {
 				return nil, fmt.Errorf("%s: %w", code, err)
 			}
-			if n, _, ok := paramdefs.LiteralNumber(literal); ok && n == d.Default {
+			// Voice octave and sampler settings inherit declaration defaults,
+			// which can differ from the registry. Retain their explicit values.
+			preserve := d.ID == "source.octave" || d.Scope == "sampler"
+			if n, _, ok := paramdefs.LiteralNumber(literal); !preserve && ok && n == d.Default {
 				continue
 			}
-			if d.Curve == "toggle" && (literal == "off" || literal == "false") && d.Default == 0 {
+			if !preserve && d.Curve == "toggle" && (literal == "off" || literal == "false") && d.Default == 0 {
 				continue
 			}
-			if d.Curve == "enum" && int(d.Default) >= 0 && int(d.Default) < len(d.Values) && literal == d.Values[int(d.Default)] {
+			if !preserve && d.Curve == "enum" && int(d.Default) >= 0 && int(d.Default) < len(d.Values) && literal == d.Values[int(d.Default)] {
 				continue
 			}
 			fmt.Fprintf(&out, "  %s = %s\n", d.Source, literal)
