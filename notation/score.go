@@ -2,6 +2,9 @@ package notation
 
 import "fmt"
 
+// DefaultAcidOctave is the home octave for acid notes without an octave override.
+const DefaultAcidOctave = 2
+
 // Position refers to the source file, with one-based line and Unicode scalar column.
 type Position struct {
 	File   string `json:",omitempty"`

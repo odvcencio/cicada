@@ -131,3 +131,18 @@ func TestExplainHostOnlyParameterLayers(t *testing.T) {
 		}
 	}
 }
+
+func TestExplainPresetAcidOctaveMatchesPlaybackDefault(t *testing.T) {
+	source := []byte("cicada 2\npreset round { instrument=acid cutoff=900Hz }\ntrack bass round {}\npattern melody { 1 . }\nscene main { bass=melody }\nsong { main*2 }\n")
+	filename := filepath.Join(t.TempDir(), "main.cicada")
+	if err := os.WriteFile(filename, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := explainParameter(filename, "bass.octave", "@2", &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "computed: 2") {
+		t.Fatalf("octave differs from playback: %s", output.String())
+	}
+}
