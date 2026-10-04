@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/project"
@@ -121,5 +122,46 @@ func TestLibraryImportCompletionUsesProjectLibraryRoot(t *testing.T) {
 	encoded, _ := json.Marshal(s.projectCompletion(library, at))
 	if !bytes.Contains(encoded, []byte("demo/tone")) {
 		t.Fatalf("library import paths: %s", encoded)
+	}
+}
+
+func TestStandardLibraryDefinitionsHaveReadableSources(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	s, main, _ := libraryServer(t)
+	for _, test := range []struct{ library, binding, reference string }{
+		{"std/synth", "track lead synth.glassbass {}", "synth.glassbass"},
+		{"std/drums", "track lead drums.steel {}", "drums.steel"},
+		{"std/presets", "track lead presets.acid-round {}", "presets.acid-round"},
+		{"std/fx", "track lead acid { send fx.delay=0.4 }", "fx.delay"},
+	} {
+		t.Run(test.library, func(t *testing.T) {
+			source := []byte("import \"" + test.library + "\"\n" + test.binding + "\npattern melody { 1 . }\nscene main { lead=melody }\nsong { main }\n")
+			s.documents[main] = source
+			at := utf16Position(source, bytes.Index(source, []byte(test.reference)))
+			target := s.projectDefinition(main, at)
+			if target == nil {
+				t.Fatal("missing std definition")
+			}
+			uri := target.(map[string]any)["uri"].(string)
+			filename, ok := scorePathFromURI(uri)
+			if !ok {
+				t.Fatalf("invalid URI: %s", uri)
+			}
+			data, err := os.ReadFile(filename)
+			if err != nil || !bytes.Contains(data, []byte(strings.Split(test.reference, ".")[1])) {
+				t.Fatalf("unreadable std definition: %v %s", err, data)
+			}
+			// A damaged cache entry must be repaired from embedded bytes.
+			if err := os.WriteFile(filename, []byte("damaged cache"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if again := s.projectDefinition(main, at); again == nil {
+				t.Fatal("cache repair lost definition")
+			}
+			repaired, err := os.ReadFile(filename)
+			if err != nil || !bytes.Equal(repaired, data) {
+				t.Fatalf("cache repair: %v", err)
+			}
+		})
 	}
 }
