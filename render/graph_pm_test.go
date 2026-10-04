@@ -92,7 +92,7 @@ func TestGraphPMOfflineRenderAllocs(t *testing.T) {
 	for _, rate := range []int{44_100, 48_000} {
 		for _, bits := range []int{24, 32} {
 			var writer allocationWriter
-			_, err := WAV(score, Options{SampleRate: rate, Bits: bits, Bars: 2, Block: 128}, &writer)
+			err := renderWAVMeasuringAllocs(score, Options{SampleRate: rate, Bits: bits, Bars: 2, Block: 128}, &writer)
 			if err != nil {
 				t.Fatal(err)
 			}
