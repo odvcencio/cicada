@@ -166,6 +166,10 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 	if hasDiagnosticErrors(diagnostics) {
 		return studioMixerView{}, fmt.Errorf("score must validate before the Mix view can load")
 	}
+	score, diagnostics = notation.ResolvePresets(score)
+	if hasDiagnosticErrors(diagnostics) {
+		return studioMixerView{}, fmt.Errorf("invalid presets: %v", diagnostics)
+	}
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {
 		return studioMixerView{}, err

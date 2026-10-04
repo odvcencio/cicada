@@ -8,9 +8,20 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
+func (t *studioTransport) beginPreview() uint64 {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.previewGeneration++
+	return t.previewGeneration
+}
+
+func (t *studioTransport) startPreview(path string, p *project.Project) error {
+	return t.startPreviewRequest(path, p, t.beginPreview())
+}
+
 // Preview swaps a prepared Player onto the existing native audio endpoint.
 // All preparation and timer work happens outside the render callback.
-func (t *studioTransport) startPreview(path string, p *project.Project) error {
+func (t *studioTransport) startPreviewRequest(path string, p *project.Project, generation uint64) error {
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
 	rate, err := t.ensureSampleRate()
@@ -27,11 +38,15 @@ func (t *studioTransport) startPreview(path string, p *project.Project) error {
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if generation != t.previewGeneration {
+		preview.Close()
+		return fmt.Errorf("preview was canceled")
+	}
 	if t.playing || t.browserPlaying || t.audio != nil && t.audio.Armed() {
 		preview.Close()
 		return fmt.Errorf("stop playback and recording before previewing")
 	}
-	t.stopPreviewLocked()
+	t.clearPreviewLocked()
 	if t.audio == nil {
 		t.audio, err = openStudioAudio(preview, t.audioOptions, t.selectedAudioBackend(), rate)
 		if err != nil {
@@ -53,7 +68,7 @@ func (t *studioTransport) startPreview(path string, p *project.Project) error {
 		t.mu.Lock()
 		defer t.mu.Unlock()
 		if t.preview == preview {
-			t.stopPreviewLocked()
+			t.clearPreviewLocked()
 		}
 	})
 	return nil
@@ -66,6 +81,11 @@ func (t *studioTransport) stopPreview() {
 }
 
 func (t *studioTransport) stopPreviewLocked() {
+	t.previewGeneration++
+	t.clearPreviewLocked()
+}
+
+func (t *studioTransport) clearPreviewLocked() {
 	if t.preview == nil {
 		return
 	}

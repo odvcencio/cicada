@@ -156,3 +156,21 @@ func TestVendorAcceptsIdenticalCopyAndIgnoresChangedUserAfterPinning(t *testing.
 		t.Fatal(ds)
 	}
 }
+
+func TestVendorAcceptsSameProjectDirectoryAlias(t *testing.T) {
+	root, _, sources := userVendorFixture(t)
+	alias := filepath.Join(t.TempDir(), "alias")
+	if err := os.Symlink(root, alias); err != nil {
+		t.Skip(err)
+	}
+	if _, err := sources.VendorLibraries(alias); err != nil {
+		t.Fatalf("same-project alias rejected: %v", err)
+	}
+	loaded, err := ReadSources(filepath.Join(root, "main.cicada"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ds := loaded.Parse(); len(ds) != 0 {
+		t.Fatal(ds)
+	}
+}

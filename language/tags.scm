@@ -59,7 +59,11 @@
 (preset_decl name: (identifier) @name) @definition.preset
 (preset_decl name: (qualified_name) @name) @definition.preset
 
-((preset_decl (param_decl name: (identifier) @field value: (value (identifier) @name))) @reference.voice
+((preset_decl (param_decl name: (identifier) @field value: (value (identifier) @name))) @reference.preset-target
   (#eq? @field "instrument"))
-((preset_decl (param_decl name: (identifier) @field value: (value (qualified_name) @name))) @reference.voice
+((preset_decl (param_decl name: (identifier) @field value: (value (qualified_name) @name))) @reference.preset-target
   (#eq? @field "instrument"))
+
+((fx_decl kind: (identifier) @name) @reference.preset
+  (#not-any-of? @name "delay" "reverb" "drive" "comp"))
+(fx_decl kind: (qualified_name) @name) @reference.preset

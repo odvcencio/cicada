@@ -49,3 +49,40 @@ test('browser transport stops preview before play and playFrom enqueue commands'
  audio.play();audio.playFrom(2);
  assert.deepEqual(calls,['stop-preview','play','stop-preview','play']);
 });
+
+test('Stop and audio-mode changes cancel previews while the response body loads', async () => {
+ const {mount}=require('./studio-library.js');
+ class Element {
+  constructor(){this.value='';this.listeners={};this.children=[];}
+  addEventListener(type,fn){this.listeners[type]=fn;}
+  setAttribute(){}
+  append(...children){this.children.push(...children);}
+  replaceChildren(...children){this.children=children;}
+ }
+ const priorListener=globalThis.addEventListener;
+ globalThis.addEventListener=()=>{};
+ try {
+  for(const action of ['stop','mode']) {
+   const controls=Object.fromEntries(['kind','query','list','track','new-track','preset-name','save','stop','status'].map(name=>[name,new Element()]));
+   const mode=new Element();mode.value='browser';
+   const section={querySelector:selector=>controls[selector.slice('#library-'.length)]};
+   const document={querySelector:()=>mode,createElement:()=>new Element(),addEventListener(){}};
+   let releaseBody,enteredBody;
+   const loading=new Promise(resolve=>{enteredBody=resolve;});
+   const calls=[];
+   const ui=mount({document,section,studio:{revision:()=>'',playing:()=>false},browser:{playing:false,onState(){},onBeforePlay(){},startAudio:async()=>{},context:{sampleRate:48000}},preview:{stop:()=>calls.push('stop'),play:async()=>calls.push('play')},fetcher:async(url,options)=>{
+    if(url==='/api/library')return {ok:true,json:async()=>({items:[items[0]],tracks:['lead']})};
+    if(JSON.parse(options.body).action==='stop')return {ok:true};
+    return {ok:true,arrayBuffer:()=>{enteredBody();return new Promise(resolve=>{releaseBody=resolve;});}};
+   }});
+   await ui.refresh();
+   const pending=controls.list.children[0].children[1].listeners.click();
+   await loading;
+   if(action==='stop')await ui.stop();else {mode.value='native';await mode.listeners.change();}
+   releaseBody(new ArrayBuffer(32));await pending;
+   assert.equal(calls.includes('play'),false,`${action} restarted a canceled preview`);
+  }
+ } finally {
+  if(priorListener===undefined)delete globalThis.addEventListener;else globalThis.addEventListener=priorListener;
+ }
+});
