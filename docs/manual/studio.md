@@ -1,237 +1,127 @@
 # Cicada Studio
 
-Studio shows your source and the project it compiles into. When you change a
-pitch, drum hit, or song block in the grid, Studio writes that change back to
-the score file.
+Studio is a GoSX workstation for the score on disk. Its editor, forms,
+navigation, and live meters use GoSX; Tymbal handles native audio devices.
+Changes to patterns, mixer settings, and arrangements write back to the score.
 
-Open a score from the repository root:
+From a source checkout, build both executables and open a score:
 
 ```sh
-./cicada studio examples/first-acid.cicada
+make build
+./build/cicada studio examples/first-acid.cicada
 ```
 
-Studio prints a loopback URL. Open it in your browser. The transport starts
-stopped; the page does not play sound until you select **Play**.
+Open the printed loopback URL. Playback starts only when you select **Play**.
+`--audio null` exercises transport without an output device. On Windows and
+Linux, the default is Tymbal. Use **Audio** to select its devices and input
+monitoring settings while stopped.
 
-![Studio at 1440 pixels wide: source is on the left, with the scene matrix, song lane, and pitch grid on the right; the top transport includes a master peak meter.](screenshots/studio-desktop-1440.png)
+![GoSX Studio's desktop mixer and output meter surface.](screenshots/studio-desktop-1440.png)
 
-![Studio at 390 pixels wide: the transport and master peak meter sit above the stacked source and session panes, with the scene launch matrix below.](screenshots/studio-mobile-390.png)
+![GoSX Studio's pattern controls on a narrow screen.](screenshots/studio-mobile-390.png)
 
-## The Studio page
+## Transport and session
 
-The top bar shows the score title, tempo, key, track count, and pattern count.
-The navigation links jump to **Code**, **Session**, **History**, and **Voice**.
-The transport button and its bar-and-step position sit beside the navigation.
+**Play**, **Pause**, **Stop**, and **Return to start** control native playback.
+The bar, step, backend, and errors update through GoSX live bindings. Valid
+score edits become active at the next bar; an invalid external edit leaves the
+last valid score playing.
 
-### Code: the source pane
+**Session** shows a scene-by-track matrix. Select a scene header to launch its
+assignments, a pattern cell to queue one track, or **Stop** to stop a track.
+Launches are quantized to the next bar. **Keep** preserves that track's slot.
 
-The left pane names the score file and marks it as the source of truth. Select
-**Edit source** to open the text editor. **Save score** validates and compiles
-the source before writing it; a rejected edit leaves the file unchanged.
-**Discard** restores the last saved text. The status line reports validation,
-save, and conflict results.
+The arrangement lists scene entries and their bar ranges. **Set bars** changes
+an entry's duration; **Move earlier** and **Move later** change its order.
+**Play from here** starts the song at that entry. All edits check the current
+disk revision.
 
-The file on disk remains authoritative. If another editor saves first, Studio
-rejects its stale revision so you can reload and combine the changes.
+## Patterns
 
-### Session: scenes and pattern grids
+**Patterns** shows pitched steps and the declared drum lanes. Select a step to
+toggle a note or hit. Pitched patterns also have a MIDI-pitch form. Step numbers
+in the modifier and pitch forms start at zero.
 
-The scene matrix has one column per scene and one row per track. A scene header
-launches all of its assignments. A pattern cell queues that pattern on one
-track. These launches take effect at the next bar while the transport runs.
-Cells marked **keep** or **stop** describe the scene but are not launch buttons.
+Select **accent**, **slide**, **tie**, **ratchet**, or **chance**, choose a step,
+and apply the modifier. Choose the lane ID for a drum edit. Ratchet and chance
+use Cicada's existing articulation cycles. Successful edits refresh the score
+projection. For reused phrases, the definition changes and every use follows.
 
-Open a pattern card to see its step grid:
+## Phrase generation
 
-- In a pitched pattern, click a pitch-row cell to set that step to the row's
-  note. Click the active pitch again to clear it. The **Note** row toggles a
-  note and a rest; the **Velocity** row displays the compiled velocity.
-- **Accent** and **Slide** toggle their modifiers on an existing note.
-- **Ratchet** cycles through one to eight hits.
-- **Chance** cycles through 100%, 75%, 50%, and 25%.
-- In a drum pattern, click a lane cell to switch between silence and a normal
-  hit. Edit drum velocity and modifiers in the source pane.
+**Generate** creates deterministic acid phrases from a 64-bit seed, key,
+scale, structure, density, articulation, swing, and gate. Eight scales and
+8, 16, 32, or 64 steps are available. Seeds remain exact even above JavaScript's
+integer precision limit.
 
-Each successful grid edit changes the source file and refreshes the
-projection. If the step came from a reused phrase, the edit changes the phrase
-definition, so every use changes with it. The source editor and grid cannot
-save over one another: save or discard an open source draft before editing a
-grid cell.
+**Preview phrase** leaves the open score unchanged. The preview belongs to
+your browser session and expires after thirty minutes. Open **Mutate or evolve
+the first bar** to select an operation or generation index. Check the steps
+that must remain locked. A variation preserves those steps and the preview's
+other patterns and arrangement. If an operation requires changing a lock,
+Studio reports the conflict.
 
-### Session: song lane
+**Replace open score with this phrase** applies the complete reviewed preview.
+It checks the original revision; it cannot overwrite another editor's save.
+**Undo** restores the previous score.
 
-The song lane shows each scene entry, its bar count, and its song-bar range.
-Use the left and right arrows to move an entry by one position, and the minus
-and plus buttons to shorten or lengthen it by one bar. Drag the grip to reorder
-an entry or the edge handle to resize it. These controls edit the score's
-`song` declaration.
+## Mixer and instruments
 
-Select the play button on a song block to start the arrangement from that
-entry. Studio resolves the selected entry against the current score and
-continues through the later entries.
+**Mixer** edits track, bus, return, effect, and master fields supported by the
+source patcher. Each **Set** writes one parameter. Unsupported fields explain
+their limitation and remain available in **Score**.
+Ranges, units, enum choices, and On/Off controls come from Cicada's parameter
+registry. Existing track sends are included in their mixer strip.
+For an edition 1 score, first check **Upgrade score to edition 2 for this change**.
+The domain service performs the migration and parameter edit together.
 
-### Live transport
+The GoSX meter surface shows track and master peaks during playback. It stops
+polling when you leave the mixer. These dBFS readings do not replace offline
+integrated-loudness verification.
 
-Select **Play** to start the score's song; the button becomes **Stop**.
-Studio shows the current bar and step, and reports when a scene, pattern slot,
-edit, or song start is queued or has landed. Selecting **Stop** stops the
-native transport.
+**Instruments** lists declared voices, exposed parameters, and track overrides.
+Edit instrument definitions in **Score**.
 
-The native player watches the score file. A valid save becomes active at the
-next bar with a short crossfade. If a save has a syntax or semantic error, the
-last valid score keeps playing and the status reports the problem. The
-[live-playback chapter](next-level.md#available-on-main) covers the
-boundaries of the current engine.
+## Score and history
 
-#### Live mode
+**Score** uses the GoSX code editor with syntax highlighting, a gutter, and
+two-space indentation. **Save score** validates before writing. A rejected edit
+keeps the file unchanged and retains the draft across reload and navigation.
+Rejected drafts expire after thirty minutes or when Studio closes.
 
-Select **Live** in the top bar to open the Live performance panel. It shows the
-bar and beat, a launch-quantize menu, a scene-by-track launch grid, MIDI note
-and drum track selectors, record-arm controls, and the take preview. Scene and
-track launches follow the selected quantize value.
+The file remains authoritative. If another editor saves first, Studio reports
+a conflict and retains your draft. Reload **Score** to see the current file
+beside it, combine the changes in the editor, and select **Save combined draft**.
+Another save in the meantime causes a new conflict. **Discard draft** restores
+the file without writing to it.
 
-#### Enable MIDI
+**History** shows source diffs and transport events. **Restore this revision**
+restores a selected edit. **Undo** and **Redo** are available in the toolbar.
+History changes also check the disk revision.
 
-Select **Enable MIDI** in the top bar and allow the browser to access MIDI
-devices. The page shows connected-device count and MIDI activity. Choose a
-note track and drum track in Live mode. Right-click or long-press a scene pad,
-track pad, or live parameter to learn a MIDI note or controller; use **Remove**
-in MIDI mappings to clear a mapping.
+## Audio, takes, and export
 
-MIDI permission and mappings belong to the browser session. The source-level
-`midi {}` mapping syntax is accepted for later work; it is not available in the
-current parser.
+**Audio** selects input and output devices, input enablement, monitoring mute,
+gain, and stereo or mono channel selection. Stop playback before applying these
+settings. Device errors stay visible; Cicada does not silently switch engines.
 
-#### Record and Arm
+**Takes** selects a track and scene for native input recording. Enable input in
+**Audio**, then **Arm take**, **Record**, and **Finish take**. The durable journal
+retains failed or conflicting takes. **Select take** commits a selected take;
+**Recover take** retries its recovery against the current revision.
 
-Start playback before recording. Check **Arm** for each track that should
-receive notes, then select **Record** and play the MIDI device. Select **Stop
-recording** to preview the buffered notes. Choose **Commit take** to write the
-notes into the score or **Discard** to clear the buffer. Nothing reaches the
-score before Commit.
+**Export** renders WAV with a target LUFS value, true-peak ceiling, tolerance,
+sample rate, and PCM depth. Status and the output path update through GoSX.
+Offline rendering uses the same Cicada kernel as Tymbal playback. See
+[exporting](exporting.md) for stems, MIDI, and verification commands.
 
-Drum takes keep simultaneous hits on separate lanes and quantize velocity to
-the nearest supported drum level. Acid takes save pitch and overlapping slides
-at the score format's fixed velocity. The preview explains that arbitrary MIDI
-velocity cannot be saved for acid notation. Live MIDI playback still uses
-incoming velocity. Live records MIDI note takes. Browser PCM capture is in the
-Record panel.
+## Browser support
 
-#### PCM capture and shared sampler audition
+Forms, editing, navigation, and transport commands also work with JavaScript
+disabled. Live bindings, editor enhancements, and animated meters require the
+GoSX browser runtime. The audio service continues to run natively.
 
-Add an edition-2 audio track and a scene, stop transport, and open **Record**.
-Choose the target **Audio track** and **Scene** before arming. Synth tracks
-provide accompaniment during recording; recorded clips are auditioned separately.
-
-For browser capture, select **Browser** audio, choose mono or stereo, then
-**Arm microphone**. Arming requests microphone permission with
-echo cancellation, noise suppression, and automatic gain control disabled.
-The effective settings appear below the buttons; a browser may keep processing
-enabled or leave a setting unreported. The input remains active while armed,
-including when transport is stopped. Input monitoring stays off.
-
-Choose **Record PCM** for a one-bar count-in, then **Stop and save**. Stopping
-transport also finalizes an active browser recording. The worker stores raw interleaved
-float32 PCM, including count-in, alongside lane D's capture block descriptors
-and placement metadata. A bounded 32-buffer transfer pool admits mono/stereo
-callbacks of up to 2,048 frames. A full pool or missing input marks the take
-incomplete and records a known frame gap, including any trailing gap.
-
-Storage uses OPFS with synchronous worker handles when available, or durable
-IndexedDB transactions otherwise. Recording is refused when neither works.
-PCM is flushed before its journal entry; recovery ignores uncommitted tails.
-Browser storage remains subject to the browser's quota and eviction policy.
-**Recover last take** reopens the last admitted take across reloads, including
-an interrupted take, using a small local storage index. Every take gets a new
-storage ID; old PCM is never overwritten.
-
-**Stop and save** imports committed browser PCM and timing into the project take
-journal, publishes a verified immutable float32 WAV asset, and selects its clip
-on the chosen audio track and scene. Browser PCM is retained if publication fails.
-If the source changes during recording, the published take remains available and
-the source edit is preserved. **Recover last take** explicitly selects that take
-against the current source revision. Selection is one undoable source edit, and
-Save As carries the retained takes and their assets into the copied project.
-
-For native capture, select **Native**, enable duplex input in the device controls,
-and use the same arm, record and stop buttons. The configured device supplies the
-input layout. Native takes write directly to the project journal. Native monitoring
-uses the device controls; browser monitoring stays off.
-
-Web Audio does not expose microphone first-frame timestamps or a qualified
-duplex latency measurement. The status therefore shows **timing unavailable**
-and **uncalibrated**. Reported device settings are retained, but no latency
-correction is silently applied to the take.
-
-After publication or recovery, **Play sample** auditions one region with one voice. Choose a
-root MIDI note, audition MIDI note, and optional basic loop. Audition skips
-negative count-in placement and inserts silence for known gaps; stored PCM
-stays unchanged. The shared Go sample voice prepares pitch conversion on the host;
-the browser plays the resulting float32 WAV at unity playback rate. Assets and
-rendered output are each limited to 8,388,608 frames; browser imports also have a
-64 MiB PCM limit. Imported mono/stereo PCM16/24/32 and float32 WAVs can be prepared
-as sampler regions. Non-finite samples and changed hashes are rejected before
-playback. Clip sequencing in the native/WASM arrangement, hardware calibration,
-and real-browser soak qualification remain separate work.
-
-#### Live keyboard shortcuts
-
-With Live mode on and focus outside a text field:
-
-- **F1–F8** launch scenes 1–8.
-- **Left/Up** and **Right/Down** select the previous or next scene.
-- **Enter** or **Shift+Space** launches the selected scene.
-- **Escape** closes the MIDI learn menu.
-
-While transport runs, Studio shows track and master peak levels in dBFS. These
-are peak meters, not integrated-loudness measurements. Run
-`./cicada studio examples/first-acid.cicada --audio null` to render silently
-in real time without opening an audio device.
-
-On Windows and Linux, Studio uses Tymbal with WASAPI and ALSA, respectively.
-The **Audio devices and input monitor** panel lists available input and output
-devices, sample rate, stream period, callback count, and dropout counters.
-Cicada opens the selected endpoints when playback starts and releases them when
-it stops. Change device selections while stopped. Input capture is enabled by
-default on Windows; input monitoring starts muted to prevent feedback. Use the
-gain and stereo/mono channel controls to monitor an input. Device latency is
-shown only when the host reports it. macOS keeps Oto's system-default output.
-While the transport runs, the audio status line names the active backend and
-output device. If Tymbal cannot open a device, Studio shows the device error in
-its status bar and keeps playback stopped. Use `--audio oto` or
-`CICADA_AUDIO=oto` to choose Oto explicitly.
-
-Studio also exposes live controls to same-origin page tools through
-`window.cicadaAudio`. Call `params()` to read the supported addresses and their
-types, units, and ranges. `setParam(address, value)`, `setMute(track, on)`, and
-`setSolo(track, on)` apply validated runtime changes during playback. They do
-not write the score; the source file remains authoritative. Live overrides
-follow a track when a valid score edit keeps that track's ID. Source-level
-parameter paths are available in scene settings; see
-[parameter paths](../spec/accepted.md#parameter-paths-and-scene-settings).
-
-### History
-
-History groups this Studio session's edits by transport bar. It is a short
-session record held in memory and is cleared when Studio exits; the score file
-and Git remain your durable history. Studio retains at most the latest 512
-events.
-
-### Voice
-
-Voice cards explain each sound source in the score. Depending on the voice,
-you can inspect its declared parameters and track overrides, the tracks that
-use it, its signal bindings and output graph, or the drum-lane routing for an
-authored kit. These cards are a read-only view of the validated project.
-
-## Safe editing
-
-Studio edits the same `.cicada` source you can open in a text editor. It
-validates a proposed change before writing, checks that the file revision has
-not changed, and refuses writes when it detects an unresolved external
-recovery file. If Studio reports a conflict, read the message, compare the
-named recovery file with your current score, and resolve the edits before
-continuing.
-
-If you want Studio beside VS Code, install or run the extension described in
-[Editors and notation tools](editors.md#vs-code).
+Browser AudioWorklet capture, Web MIDI learning, and live note recording remain
+portable-host qualification features. They are not exposed by this GoSX Studio
+yet. The current Tymbal backend does not run in a browser AudioWorklet; its
+native playback is independent of browser audio permission.

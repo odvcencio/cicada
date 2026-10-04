@@ -59,7 +59,7 @@ type studioMeterSnapshot struct {
 type transportSnapshot struct {
 	Type                string            `json:"type"`
 	Sequence            uint64            `json:"sequence"`
-	ActiveBackend       string            `json:"activeBackend,omitempty"`
+	ActiveBackend       string            `json:"activeBackend"`
 	BrowserPlaying      bool              `json:"browserPlaying,omitempty"`
 	Playing             bool              `json:"playing"`
 	Bar                 int64             `json:"bar"`
@@ -74,7 +74,7 @@ type transportSnapshot struct {
 	ActiveSlots         map[string]string `json:"activeSlots,omitempty"`
 	Scene               string            `json:"scene,omitempty"`
 	Landed              int64             `json:"landedBar,omitempty"`
-	Error               string            `json:"error,omitempty"`
+	Error               string            `json:"error"`
 }
 
 func newStudioTransport(path string) *studioTransport {

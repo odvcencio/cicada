@@ -52,8 +52,13 @@ func studioCommand(args []string) error {
 	path, address := "main.cicada", "127.0.0.1:0"
 	seenPath := false
 	lspStdio := false
+	serviceOnly := false
 	audioNull := backendName == audiobackend.Null
 	for i := 0; i < len(args); i++ {
+		if args[i] == "--service" {
+			serviceOnly = true
+			continue
+		}
 		if args[i] == "--lsp-stdio" {
 			lspStdio = true
 			continue
@@ -79,6 +84,15 @@ func studioCommand(args []string) error {
 	if err != nil || host != "127.0.0.1" && host != "localhost" && host != "::1" {
 		return fmt.Errorf("studio listen address must be loopback host:port")
 	}
+	frontAddress := address
+	workstationPath := ""
+	if !serviceOnly {
+		workstationPath, err = findStudioWorkstation()
+		if err != nil {
+			return err
+		}
+		address = "127.0.0.1:0"
+	}
 	studio, err := newStudioWithInvalid(path, lspStdio)
 	if err != nil {
 		return err
@@ -92,6 +106,13 @@ func studioCommand(args []string) error {
 	studio.transport.audioBackend = string(backendName)
 	studio.transport.audioOptions = defaultStudioAudioOptionsFor(backendName)
 	handler := studio.routes()
+	var serviceToken string
+	if !serviceOnly {
+		handler, serviceToken, err = privateStudioService(handler)
+		if err != nil {
+			return err
+		}
+	}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
@@ -113,10 +134,24 @@ func studioCommand(args []string) error {
 	go studio.watchHistory(ctx)
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
+	var appFinished <-chan error
+	if !serviceOnly {
+		output := io.Writer(os.Stdout)
+		if lspStdio {
+			output = os.Stderr
+		}
+		cancelApp, done, launchErr := launchStudioWorkstation(workstationPath, "http://"+listener.Addr().String(), frontAddress, serviceToken, output)
+		if launchErr != nil {
+			_ = server.Close()
+			return launchErr
+		}
+		defer cancelApp()
+		appFinished = done
+	}
 	addressLine := fmt.Sprintf("Cicada Studio: http://%s/\n", listener.Addr().String())
-	if lspStdio {
+	if serviceOnly && lspStdio {
 		fmt.Fprint(os.Stderr, addressLine)
-	} else {
+	} else if serviceOnly {
 		fmt.Print(addressLine)
 	}
 	select {
@@ -129,6 +164,11 @@ func studioCommand(args []string) error {
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return server.Shutdown(shutdown)
+	case err := <-appFinished:
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdown)
+		return err
 	}
 }
 
@@ -183,6 +223,8 @@ func (s *studio) routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /", s.page)
 	mux.HandleFunc("GET /api/state", s.state)
+	mux.HandleFunc("GET /api/workspace", s.workspace)
+	mux.HandleFunc("GET /api/meters", s.meters)
 	mux.HandleFunc("GET /api/takes", s.takeState)
 	mux.HandleFunc("POST /api/takes", s.takeCommand)
 	mux.HandleFunc("POST /api/source", s.replaceSource)

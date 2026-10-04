@@ -56,7 +56,7 @@ jobs:
       - name: M0 CLI acceptance
         run: |
           set -euo pipefail
-          make build
+          make build-core
           {
             ./build/cicada validate examples/first-acid.cicada
             ./build/cicada render examples/first-acid.cicada -o build/first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s
@@ -100,6 +100,39 @@ jobs:
             build/m1-ci/generated.trace.json
             build/m1-ci/first-acid.mid
             build/first-acid.wav
+
+  workstation:
+    name: GoSX workstation and Tymbal boundary
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 20
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.4'
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'false'
+      - name: Framework generation, race checks, and production bundle
+        run: |
+          set -euo pipefail
+          make test-workstation
+          (cd workstation && go vet ./...)
+          make build-workstation-release
+          git diff --exit-code -- workstation/ui
+      - name: Windows workstation and desktop
+        run: |
+          set -euo pipefail
+          (cd workstation && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o ../build/cicada-workstation.exe .)
+          (cd desktop && go test ./... && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o ../build/cicada-studio.exe .)
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gosx-workstation-build
+          path: workstation/dist/build.json
 
   m2-pr:
     name: M2 AudioWorklet gates

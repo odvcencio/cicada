@@ -29,7 +29,9 @@ func TestStudioAndLSPShareOneProcess(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, binary, "studio", score, "--lsp-stdio")
+	// This core test owns the native/LSP service. The GoSX module exercises
+	// the public app separately, without changing the core's toolchain.
+	cmd := exec.CommandContext(ctx, binary, "studio", score, "--service", "--lsp-stdio")
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
