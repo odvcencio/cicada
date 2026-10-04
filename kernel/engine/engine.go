@@ -1254,7 +1254,17 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				e.updateMuteTargets()
 			}
 		case kernel.ParamGuitarBend, kernel.ParamGuitarVibrato, kernel.ParamGuitarBrightness, kernel.ParamGuitarDamping, kernel.ParamGuitarPickup, kernel.ParamGuitarDrive:
-			if v.kind != VoiceGuitar || v.guitar == nil || v.guitar.SetParam(kernel.ParamID(c.Index), float64(value)) != nil {
+			if v.kind != VoiceGuitar || v.guitar == nil {
+				e.fault(18)
+				return
+			}
+			var setErr error
+			if immediate {
+				setErr = v.guitar.SetParamImmediate(kernel.ParamID(c.Index), float64(value))
+			} else {
+				setErr = v.guitar.SetParam(kernel.ParamID(c.Index), float64(value))
+			}
+			if setErr != nil {
 				e.fault(18)
 			}
 		case kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:

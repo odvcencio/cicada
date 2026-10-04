@@ -121,6 +121,24 @@ func (v *Voice) SetParam(id kernel.ParamID, value float64) error {
 	return nil
 }
 
+// SetParams restores all controls immediately during scene reconstruction.
+func (v *Voice) SetParams(params Params) error {
+	if err := params.Validate(); err != nil {
+		return err
+	}
+	v.params = params
+	v.model.SetExpressionImmediate(v.expression())
+	return nil
+}
+
+func (v *Voice) SetParamImmediate(id kernel.ParamID, value float64) error {
+	if err := v.SetParam(id, value); err != nil {
+		return err
+	}
+	v.model.SetExpressionImmediate(v.expression())
+	return nil
+}
+
 func (v *Voice) Reset() {
 	v.gate = false
 	v.pitch = 110
