@@ -2,10 +2,17 @@ package project
 
 import (
 	"fmt"
+	"math"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/notation"
 )
+
+func validateGraphDelayNote(program graph.Program, sampleRate, note int) error {
+	pitch := float32(440 * math.Exp2(float64(note-69)/12))
+	return graph.ValidateDelayPitch(program, sampleRate, pitch)
+}
 
 // compileInstrument uses the same notation and DSP compilers as source input,
 // without requiring unrelated project fields to round-trip through source v1.
