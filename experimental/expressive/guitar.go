@@ -83,6 +83,14 @@ func (g *Guitar) SetExpression(e Expression) {
 	e.Drive = clamp(e.Drive, 0, 1)
 	g.e = e
 }
+
+// SetExpressionImmediate restores settled controls without clearing a note's
+// string or amplifier state. Ordinary expression updates remain smoothed.
+func (g *Guitar) SetExpressionImmediate(e Expression) {
+	g.SetExpression(e)
+	g.control = g.e
+	g.hz = g.target
+}
 func (g *Guitar) Next() float64 {
 	alpha := 1 - math.Exp(-1/(.008*g.sr))
 	g.control.Position += alpha * (g.e.Position - g.control.Position)

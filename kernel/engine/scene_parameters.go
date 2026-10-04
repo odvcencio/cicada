@@ -5,6 +5,7 @@ import (
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
 )
 
 // Scene reconstruction starts from the authored parameter state, not the
@@ -24,6 +25,7 @@ type sceneTrackParameters struct {
 	sourceOff                 bool
 	acid                      acid.Params
 	drums                     [drum.LaneCount]drum.Params
+	guitar                    guitar.Params
 	drive                     fx.DriveParams
 }
 
@@ -46,6 +48,9 @@ func (e *Engine) captureSceneDefaults() {
 		p.mix, p.gainDB, p.pan = v.mix, v.gainDB, v.pan
 		p.sendA, p.sendB, p.sourceOff = v.sendA, v.sendB, v.sourceOff
 		p.acid, p.drums = v.acidTarget, v.drumTargets
+		if v.guitar != nil {
+			p.guitar = v.guitar.Params()
+		}
 		if v.insert != nil {
 			p.drive = v.insert.Params()
 		}
@@ -77,6 +82,10 @@ func (e *Engine) restoreSceneDefaults() bool {
 		v.muted, v.soloed = false, false
 		v.muteGain, v.muteTarget = 1, 1
 		v.acidTarget, v.drumTargets = p.acid, p.drums
+		if v.guitar != nil && v.guitar.SetParams(p.guitar) != nil {
+			e.fault(18)
+			return false
+		}
 		if v.acid != nil && v.acid.SetParams(p.acid) != nil {
 			e.fault(18)
 			return false

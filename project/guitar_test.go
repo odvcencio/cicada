@@ -2,6 +2,7 @@ package project
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"strings"
 	"testing"
@@ -81,6 +82,57 @@ func TestExperimentalGuitarRoundTripAndRegistry(t *testing.T) {
 	}
 	if kernel.Params[kernel.ParamGuitarBend].ID != 131 {
 		t.Fatal("guitar moved existing parameter IDs")
+	}
+}
+
+func TestNumericGuitarOptInJSONSourceRoundTrip(t *testing.T) {
+	score, ds := notation.Parse([]byte("cicada 2\ntrack lead guitar { experimental = on }\npattern p { 1 . }\nscene main { lead = p\nlead.drive = 0.2 }\nsong { main }\n"))
+	p, ds := FromScore(score)
+	if p == nil || hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	one := float64(1)
+	p.Format, p.Version = FormatID2, 2
+	p.Tracks[0].Mixer.wireV2 = true
+	p.Tracks[0].Params["experimental"] = Value{Unit: "unit", Number: &one}
+	data, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeJSON(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CompileEngine(decoded, 48_000, 128); err != nil {
+		t.Fatal(err)
+	}
+	for _, original := range []*Project{p, decoded} {
+		source, err := ToSource(original)
+		if err != nil {
+			t.Fatalf("accepted numeric opt-in cannot export to source: %v", err)
+		}
+		if !bytes.Contains(source, []byte("experimental = on")) {
+			t.Fatalf("numeric opt-in was not normalized: %s", source)
+		}
+		score, ds := notation.Parse(source)
+		recompiled, ds := FromScore(score)
+		if recompiled == nil || hasErrors(ds) || !SemanticEqual(original, recompiled) {
+			t.Fatalf("numeric opt-in changed in source round trip: %+v", ds)
+		}
+		canonical, err := CanonicalJSON(original)
+		if err != nil {
+			t.Fatal(err)
+		}
+		fromJSON, err := DecodeJSON(canonical)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if value := fromJSON.Tracks[0].Params["experimental"]; value.Unit != "enum" || value.Text != "on" {
+			t.Fatalf("canonical JSON retained numeric opt-in: %+v", value)
+		}
+	}
+	if p.Tracks[0].Params["experimental"].Number == nil {
+		t.Fatal("normalization mutated the input project")
 	}
 }
 

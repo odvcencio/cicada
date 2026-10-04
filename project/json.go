@@ -331,6 +331,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	}
 	normalized.Tracks = append([]Track(nil), p.Tracks...)
 	for i := range normalized.Tracks {
+		normalized.Tracks[i] = normalizeGuitarOptIn(normalized.Tracks[i])
 		normalized.Tracks[i].Mixer.wireV2 = useV2
 	}
 	normalized.Buses = append([]Bus(nil), p.Buses...)

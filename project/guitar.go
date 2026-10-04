@@ -2,11 +2,23 @@ package project
 
 import (
 	"fmt"
+	"maps"
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/voice/guitar"
 	"m31labs.dev/cicada/notation"
 )
+
+// Numeric opt-ins accepted by semantic JSON have the same canonical meaning
+// as the literal required by source notation. Preserve the caller's map.
+func normalizeGuitarOptIn(track Track) Track {
+	value := track.Params["experimental"]
+	if track.Kind == "guitar" && value.Unit == "unit" && value.Number != nil && *value.Number == 1 {
+		track.Params = maps.Clone(track.Params)
+		track.Params["experimental"] = Value{Unit: "enum", Text: "on"}
+	}
+	return track
+}
 
 func CompileGuitarParams(track notation.Track) (guitar.Params, error) {
 	values := make(map[string]Value, len(track.Params))
