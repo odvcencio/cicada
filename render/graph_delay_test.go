@@ -96,6 +96,17 @@ type allocationWriter struct {
 	blocks              int
 }
 
+// renderWAVMeasuringAllocs renders with GOMAXPROCS pinned to 1 after a GC,
+// the same isolation testing.AllocsPerRun uses: MemStats.TotalAlloc is
+// process-wide, so concurrently running goroutines would otherwise be counted
+// as allocations of the render loop.
+func renderWAVMeasuringAllocs(score *notation.Score, options Options, writer *allocationWriter) error {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	runtime.GC()
+	_, err := WAV(score, options, writer)
+	return err
+}
+
 func (w *allocationWriter) Write(data []byte) (int, error) {
 	if len(data) <= 44 {
 		return len(data), nil
@@ -114,7 +125,7 @@ func TestGraphDelayOfflineRenderAllocs(t *testing.T) {
 	for _, rate := range []int{44_100, 48_000} {
 		for _, bits := range []int{24, 32} {
 			var writer allocationWriter
-			_, err := WAV(score, Options{SampleRate: rate, Bits: bits, Bars: 2, Block: 128}, &writer)
+			err := renderWAVMeasuringAllocs(score, Options{SampleRate: rate, Bits: bits, Bars: 2, Block: 128}, &writer)
 			if err != nil {
 				t.Fatal(err)
 			}
