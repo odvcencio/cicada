@@ -20,9 +20,24 @@ rather than assuming that examples on `main` are supported by the pinned version
   workspace. Navigation changes the selected panel without a client router.
   The framework handles history, managed forms, runtime loading, and disposal.
 - Mutations are typed GoSX server actions behind encrypted cookie sessions and
-  CSRF protection. Native forms and managed forms use the same handlers and
-  POST-redirect-GET behavior. Every source mutation carries a disk revision;
+  CSRF protection. Native forms use POST-redirect-GET. The registered GoSX
+  workspace engine serializes enhanced edits and applies the canonical response
+  through GoSX's `vm.ReconcileTrees` and framework DOM patch receiver, without
+  a document fetch or navigation. Every source mutation carries a disk revision;
   Cicada's existing CST patchers remain authoritative.
+- Routine edits must preserve page and nested-grid scroll, focus, selection,
+  expanded controls, unrelated unsaved fields, and mounted audio/input engines.
+  Same-panel selection uses a workspace projection and replaces only the deep
+  link in browser history. A save conflict stops queued writes and retains the
+  draft; refreshing saved state is an explicit recovery action. A failed UI
+  projection after a successful save must never blindly repeat the mutation.
+  Focus does not make a clean field an unsaved draft: canonical Undo/Redo must
+  update clean values in place. The Score editor receives its own input event
+  when canonical text changes, retaining its mount and true unsaved edits.
+  Its clean baseline follows the editor's own whitespace-only-line normalization;
+  the exact canonical source remains separate so Undo still preserves file bytes.
+  New editing features must pass the browser continuity check as well as source
+  persistence, validation, and Undo checks.
 - Arrangement blocks, the piano roll, drum lanes, step dynamics, range edits,
   pattern variations, and project metadata use server-rendered GoSX controls
   and these same actions. Step numbers are one-based in the UI and lowered once
@@ -39,7 +54,7 @@ rather than assuming that examples on `main` are supported by the pinned version
 - The GoSX editor supplies the code surface, gutter, keyboard behavior, form
   submission, and initial parser-derived highlighting. Parser byte offsets are
   mapped to UTF-16 in one pass. Invalid enhanced submissions retain the draft;
-native submissions store a bounded, session-owned draft with a small receipt.
+  native submissions store a bounded, session-owned draft with a small receipt.
 - Transport and export use GoSX live bindings. Output meters use a registered
   GoSX Go/WASM engine and reactive signals. Each mount owns its watcher and
   polling context; disposal cancels both. Meter code never produces audio.
@@ -50,9 +65,11 @@ native submissions store a bounded, session-owned draft with a small receipt.
   Session-owned note previews require explicit commit and retain revision
   conflicts. Native sample audition stays a private, no-store WAV stream,
   rendered by the existing sample voice. GoSX disposal stops its media element.
-  Live and Takes keep their SSR controls inside their engine mount. Stable
-  props preserve that subtree during navigation; changed preview receipts or
-  take projections cause a remount with fresh controls.
+  Live performance controls retain their engine mount across workspace edits;
+  launch forms and retained-note previews receive canonical projections beside
+  it. Takes projects its forms while keeping mounted media and capture polling.
+  Confirmed workspace edits advance the live concurrency token without releasing
+  held notes.
 - Native capture forms work without browser scripting. A GoSX engine polls a
   compact capture projection for count-in, durable frames, and incomplete-input
   status. It never transfers PCM or retained source candidates in polling data.
@@ -110,9 +127,36 @@ make test-workstation
 make build-workstation-release
 ```
 
+The browser continuity gate runs against a disposable, marked score. It refuses
+to edit an ordinary user score. With Playwright and Chrome available:
+
+```sh
+node workstation/browser/continuity.test.cjs --write-fixture /tmp/cicada-continuity.cicada
+./build/cicada studio /tmp/cicada-continuity.cicada --audio null --listen 127.0.0.1:8190
+# In another terminal:
+CICADA_STUDIO_URL=http://127.0.0.1:8190 make test-studio-continuity
+```
+
+Use CICADA_PLAYWRIGHT_MODULE for an existing Playwright package or require
+anchor, and CICADA_CHROME_PATH for an installed Chrome. On Windows, keep the
+disposable score on NTFS so the native atomic-save contract is available. The
+gate checks Select versus Draw, serialized rapid edits, Undo, validation and
+conflict recovery, scroll and draft continuity, playback, mounted meters, Live
+note leases and take review, and Score saves and canonical Undo.
+
+Piano-roll interaction follows established DAW conventions: Select is the
+default, Draw is explicit, B toggles tools, and keyboard edits use the existing
+atomic source commands and Undo history. A selected-step draft stays associated
+with that step when the inspector changes. Short patterns fill the available
+grid width; wider screens keep note controls beside the grid, with a stacked
+layout on smaller screens. See the official
+[Ableton MIDI editing manual](https://www.ableton.com/en/live-manual/12/editing-midi/)
+and [Bitwig note-event manual](https://www.bitwig.com/userguide/latest/working_with_note_events/).
+
 Core tests still run from the root module; workstation and desktop tests run
 from their separate modules. The CI workstation job checks generation, races,
-vet, a production build, and Windows cross-compilation. Kernel WASM and golden
+vet, a production build, Windows cross-compilation, and this browser continuity
+gate with pinned Playwright and Chrome. Kernel WASM and golden
 audio gates remain in the core jobs.
 
 ## Primary sources

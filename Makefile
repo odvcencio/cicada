@@ -48,6 +48,11 @@ build-workstation-release:
 test-workstation:
 	cd workstation && go generate ./... && go test -race ./... -count=1
 
+.PHONY: test-studio-continuity
+# Requires a running Studio with the marked disposable browser-test score.
+test-studio-continuity:
+	node --test workstation/browser/continuity.test.cjs
+
 test-kernel:
 	go test ./kernel/... -count=1
 

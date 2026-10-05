@@ -63,9 +63,9 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 			input := gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("step", "any"), gosx.Attr("name", "value"), gosx.Attr("value", value)))
 			reset := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", "reset-parameter"), gosx.BoolAttr("formnovalidate")), gosx.Text("Use default"))
 			form := s.form(v, csrf, "instruments", "instrument", hidden("track", track.ID), hidden("newName", param.ID), field(label, input), submit("action", "set-parameter", "Apply"), reset)
-			parameters = append(parameters, gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-control")), form, gosx.El("small", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Default: "+defaultText))))
+			parameters = append(parameters, gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-control"), gosx.Attr("data-gosx-key", "parameter-"+param.ID)), form, gosx.El("small", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Default: "+defaultText))))
 		}
-		tracks = append(tracks, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-instrument-track", track.ID)), gosx.El("h3", gosx.Text(track.ID)), gosx.El("p", gosx.Text(definition.ID+" · "+mode)), gosx.Fragment(parameters...)))
+		tracks = append(tracks, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-instrument-track", track.ID), gosx.Attr("data-gosx-key", "instrument-"+track.ID)), gosx.El("h3", gosx.Text(track.ID)), gosx.El("p", gosx.Text(definition.ID+" · "+mode)), gosx.Fragment(parameters...)))
 	}
 	if len(tracks) == 0 {
 		tracks = append(tracks, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Add a patch to create your first programmable instrument track.")))
