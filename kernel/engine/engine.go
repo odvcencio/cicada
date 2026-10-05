@@ -25,6 +25,7 @@ const (
 	VoiceAcid
 	VoiceDrums
 	VoiceGraph
+	VoicePrepared
 )
 
 type KitLaneKind uint8
@@ -44,23 +45,25 @@ type KitLaneBinding struct {
 }
 
 type TrackConfig struct {
-	Kind        VoiceKind
-	Acid        acid.Params
-	Drums       [drum.LaneCount]drum.Params
-	Kit         *[drum.LaneCount]KitLaneBinding
-	Graph       graph.Program
-	GainDB      float64
-	GainSet     bool
-	Pan         float64
-	Mute        bool
-	Solo        bool
-	InsertDrive *fx.DriveParams
-	SendA       float64
-	SendB       float64
-	SendPre     bool
-	SendAPre    bool
-	SendBPre    bool
-	BusSFX      bool
+	Kind         VoiceKind
+	Acid         acid.Params
+	Drums        [drum.LaneCount]drum.Params
+	Kit          *[drum.LaneCount]KitLaneBinding
+	Graph        graph.Program
+	Prepared     StereoVoiceFactory `json:"-"`
+	PreparedClip bool               `json:"-"`
+	GainDB       float64
+	GainSet      bool
+	Pan          float64
+	Mute         bool
+	Solo         bool
+	InsertDrive  *fx.DriveParams
+	SendA        float64
+	SendB        float64
+	SendPre      bool
+	SendAPre     bool
+	SendBPre     bool
+	BusSFX       bool
 }
 
 // SFXSidechain selects the post-fader SFX bus as the music compressor detector.
@@ -108,6 +111,8 @@ type voiceSlot struct {
 	acid                           *acid.Voice
 	drums                          *drum.Kit
 	graph                          *graph.Voice
+	prepared                       StereoVoice
+	preparedClip                   bool
 	mix                            mix.Track
 	targetMix                      mix.Track
 	mixSmooth                      float32
@@ -444,6 +449,16 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceGraph:
 			voices++
 			v.graph, err = graph.NewVoice(spec.Graph, cfg.SampleRate)
+		case VoicePrepared:
+			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
+				return 0, Error("prepared audio voice budget is invalid")
+			}
+			voices += spec.Prepared.VoiceCount()
+			v.preparedClip = spec.PreparedClip
+			v.prepared, err = spec.Prepared.NewStereoVoice(cfg.SampleRate)
+			if err == nil && v.prepared == nil {
+				return 0, Error("prepared audio factory returned no voice")
+			}
 		default:
 			return 0, Error("unknown voice kind")
 		}
@@ -742,6 +757,8 @@ func (e *Engine) Render(outL, outR []float32) {
 			case VoiceGraph:
 				sample := v.graph.Next()
 				left, right = sample, sample
+			case VoicePrepared:
+				left, right = v.prepared.NextStereo()
 			}
 			if v.insert != nil {
 				left, right = v.insert.Process(left, right)
@@ -1012,6 +1029,16 @@ func (e *Engine) apply(c cmd.Command) {
 		if len(e.song) > 0 && !e.songMode {
 			e.startSong()
 		}
+		for i := 0; i < e.tracks; i++ {
+			v := &e.voices[i]
+			if v.preparedClip && e.patterns[i].active < 0 {
+				continue
+			}
+			if v.prepared != nil && v.prepared.Play() != nil {
+				e.fault(19)
+				return
+			}
+		}
 		if e.renderFrames > 0 {
 			e.scheduleAll()
 		}
@@ -1122,6 +1149,11 @@ func (e *Engine) apply(c cmd.Command) {
 			v.acid.NoteOn(note, accent, slide, velocity)
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
+		case VoicePrepared:
+			if v.prepared.NoteOn(note, velocity) != nil {
+				e.fault(19)
+				return
+			}
 		case VoiceDrums:
 			if c.Index >= uint16(drum.LaneCount) {
 				e.fault(8)
@@ -1534,6 +1566,8 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		v.acid.NoteOff()
 	case VoiceGraph:
 		v.graph.NoteOff()
+	case VoicePrepared:
+		v.prepared.NoteOff()
 	case VoiceDrums:
 		if lane < uint16(drum.LaneCount) {
 			v.drums.NoteOff(drum.Lane(lane))
@@ -1558,6 +1592,8 @@ func (e *Engine) resetVoice(track int) {
 		v.acid.Reset()
 	case VoiceGraph:
 		v.graph.Reset()
+	case VoicePrepared:
+		v.prepared.Reset()
 	case VoiceDrums:
 		v.drums.Reset()
 	}

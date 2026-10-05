@@ -452,6 +452,21 @@ func ValidateProject(p *Project) error {
 	}
 	for _, track := range p.Tracks {
 		seen := map[string]bool{}
+		if p.Edition == 2 && track.Kind == "audio" {
+			if _, err := ClipSlots(p, track); err != nil {
+				return err
+			}
+			for _, slot := range track.Slots {
+				if slot == nil {
+					continue
+				}
+				if _, ok := clips[*slot]; !ok || seen[*slot] {
+					return fmt.Errorf("audio track %s has invalid or duplicate clip slot %s", track.ID, *slot)
+				}
+				seen[*slot] = true
+			}
+			continue
+		}
 		for _, slot := range track.Slots {
 			if slot == nil {
 				continue

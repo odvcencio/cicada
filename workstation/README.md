@@ -56,6 +56,12 @@ native submissions store a bounded, session-owned draft with a small receipt.
 - Native capture forms work without browser scripting. A GoSX engine polls a
   compact capture projection for count-in, durable frames, and incomplete-input
   status. It never transfers PCM or retained source candidates in polling data.
+- GoSX managed/native forms create edition-2 audio tracks, edit clip regions,
+  gain and fades, and place clips in scenes. Source edits preserve comments and
+  check revisions before committing. The native host verifies and shares
+  bounded immutable PCM before playback. Prepared stereo voices join the
+  sequencer and existing mixer/effects; Tymbal owns output. The same prepared
+  voices supply offline WAV/stems renders. No PCM enters the GoSX asset bundle.
 - Use `gosx build --prod` from the pinned module for production runtimes and
   content hashes. Scene3D, video, payments, and relay are excluded. Keep scores,
   recordings, and secrets outside `public/` and the deployment bundle.

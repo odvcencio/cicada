@@ -287,6 +287,15 @@ func studioEditLabel(edit studioEdit) string {
 	if edit.Action == "project" {
 		return "Project title, tempo, and key changed"
 	}
+	if edit.Action == "audio-track" {
+		return "Audio track added · " + edit.NewName
+	}
+	if edit.Action == "clip-settings" {
+		return "Audio region edited · " + edit.Pattern
+	}
+	if edit.Action == "clip-bind" {
+		return fmt.Sprintf("Audio clip · %s assigned to %s / %s", edit.Pattern, edit.Scene, edit.Track)
+	}
 	if edit.Action == "undo" || edit.Action == "redo" {
 		return edit.Label
 	}
