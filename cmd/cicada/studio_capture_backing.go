@@ -7,9 +7,9 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
-// captureBacking prepares synth accompaniment while audio tracks are recording.
-// Track/scene indices remain stable. Clip sequencing is not yet a kernel feature;
-// stored audio is played by the host sampler audition instead.
+// captureBacking prepares the synth-only portable qualification image. Native
+// Tymbal playback and capture use host-prepared clip and sampler voices instead.
+// Track/scene indices remain stable for the legacy browser capture fixtures.
 func captureBacking(p *project.Project) *project.Project {
 	if !p.HasAudio() {
 		return p

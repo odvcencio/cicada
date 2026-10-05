@@ -584,7 +584,7 @@ func bindPatternSource(source []byte, sceneID, trackID, patternID string) ([]byt
 		return nil, err
 	}
 	if patternID != "off" && patternID != "keep" {
-		if _, _, err := studioDeclaration(source, studioPatternTypes, patternID); err != nil {
+		if _, _, err := studioDeclaration(source, append(append([]string{}, studioPatternTypes...), "clip_decl"), patternID); err != nil {
 			return nil, err
 		}
 	}

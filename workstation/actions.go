@@ -110,6 +110,26 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
+		"clip": s.mutation("/api/clip", func(f map[string]string) (any, error) {
+			payload := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"], "newName": f["newName"], "scene": f["scene"], "track": f["track"]}
+			if f["action"] == "clip-settings" {
+				settings := map[string]any{}
+				for _, name := range []string{"start", "end", "fadeIn", "fadeOut"} {
+					value, err := integer(f, name)
+					if err != nil {
+						return nil, err
+					}
+					settings[name] = value
+				}
+				gain, err := finiteNumber(f, "gainDB")
+				if err != nil {
+					return nil, err
+				}
+				settings["gainDB"] = gain
+				payload["clipSettings"] = settings
+			}
+			return payload, nil
+		}),
 		"project": s.mutation("/api/project", func(f map[string]string) (any, error) {
 			tempo, err := finiteNumber(f, "tempo")
 			if err != nil || tempo < 20 || tempo > 300 || math.Abs(tempo*1000-math.Round(tempo*1000)) > 1e-6 {

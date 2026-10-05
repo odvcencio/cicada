@@ -21,7 +21,7 @@ func TestTakeAuditionUsesPrivateNativeVoiceAndRejectsInvalidNotes(t *testing.T) 
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/api/workspace":
-			_ = json.NewEncoder(w).Encode(workspace{Revision: "rev", Project: &project.Project{Title: "Capture", Tracks: []project.Track{{ID: "input", Kind: "audio"}, {ID: "bass", Kind: "acid"}}}})
+			_ = json.NewEncoder(w).Encode(workspace{Revision: "rev", Project: &project.Project{Title: "Capture", Edition:2, Tracks: []project.Track{{ID: "input", Kind: "audio"}, {ID: "bass", Kind: "acid"}}}})
 		case "/api/transport":
 			_, _ = io.WriteString(w, `{}`)
 		case "/api/takes":

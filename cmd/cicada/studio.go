@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/lsp"
@@ -247,6 +248,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("POST /api/song", s.editSong)
 	mux.HandleFunc("POST /api/pattern", s.editPattern)
 	mux.HandleFunc("POST /api/project", s.editProject)
+	mux.HandleFunc("POST /api/clip", s.editClip)
 	mux.HandleFunc("POST /api/undo", s.undo)
 	mux.HandleFunc("POST /api/redo", s.redo)
 	mux.HandleFunc("POST /api/history/{id}/revert", s.revertHistory)
@@ -374,6 +376,7 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
+	ClipSettings   *studioClipSettings    `json:"clipSettings,omitempty"`
 	Metadata       *studioProjectSettings `json:"metadata,omitempty"`
 	Range          *studioPatternRange    `json:"range,omitempty"`
 	Length         int                    `json:"length,omitempty"`
@@ -640,6 +643,10 @@ func compileStudioSource(path string, source []byte) (*project.Project, error) {
 	}
 	if !p.HasAudio() {
 		if _, err := project.CompileEngine(p, 48000, 128); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := sampleasset.CompileEngine(filepath.Dir(path), p, 48000, 128); err != nil {
 			return nil, err
 		}
 	}

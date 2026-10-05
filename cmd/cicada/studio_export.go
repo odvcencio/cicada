@@ -20,6 +20,7 @@ import (
 )
 
 type studioExportRequest struct {
+	ProjectDir  string  `json:"-"`
 	Revision    string  `json:"revision,omitempty"`
 	TargetLUFS  float64 `json:"target_lufs"`
 	TruePeakMax float64 `json:"true_peak_max"`
@@ -82,7 +83,7 @@ func (c *studioExportController) start(score *notation.Score, path string, reque
 	runner := c.render
 	c.mu.Unlock()
 
-	options := render.Options{SampleRate: request.Rate, Bits: request.Bits, TailSec: 3}
+	options := render.Options{AssetDir: request.ProjectDir, SampleRate: request.Rate, Bits: request.Bits, TailSec: 3}
 	target := renderTargetOptions{LoudnessTarget: request.TargetLUFS, TruePeakMaxDBTP: request.TruePeakMax, Tolerance: request.Tolerance}
 	go func() {
 		c.update(sequence, func(status *studioExportStatus) { status.State = "rendering" })
@@ -210,6 +211,7 @@ func (s *studio) startExport(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	input.Revision = studioRevision(inspection.source)
+	input.ProjectDir = filepath.Dir(s.path)
 	targetText := studioTargetFilename(input.TargetLUFS)
 	scoreName := strings.TrimSuffix(filepath.Base(s.path), filepath.Ext(s.path))
 	path := filepath.Join(filepath.Dir(s.path), "exports", scoreName+"-"+targetText+"LUFS.wav")

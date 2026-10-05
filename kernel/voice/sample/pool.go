@@ -113,6 +113,23 @@ func (p *Pool) Reset() {
 	// Keep serial monotonic so handles from before Reset remain stale.
 }
 
+func (p *Pool) NoteOffAll() {
+	for i := 0; i < p.limit; i++ {
+		p.voices[i].NoteOff()
+	}
+}
+
+// NextStereo uses the same fixed slot order and single rounding as Render.
+func (p *Pool) NextStereo() (float32, float32) {
+	var left, right float64
+	for i := 0; i < p.limit; i++ {
+		l, r := p.voices[i].NextStereo()
+		left += float64(l)
+		right += float64(r)
+	}
+	return float32(left), float32(right)
+}
+
 // Render overwrites outputs. Each frame sums float64 voice outputs in slot
 // order, then rounds once to float32, independent of the requested block size.
 func (p *Pool) Render(left, right []float32) {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net/url"
 	"strconv"
 	"strings"
 
@@ -68,8 +69,12 @@ func (s *studioApp) arrangement(v workspace, csrf string) gosx.Node {
 				class += " inherited"
 			}
 			attrs := gosx.Attrs(gosx.Attr("class", class), gosx.Attr("title", entry.Scene+" / "+track.ID))
-			if inherited != "off" && track.Kind != "audio" {
-				cells = append(cells, gosx.El("a", append(attrs, gosx.Attr("href", patternURL(inherited, 1, "", ""))), gosx.Text(text)))
+			if inherited != "off" {
+				href := patternURL(inherited, 1, "", "")
+				if track.Kind == "audio" && p.Edition == 2 {
+					href = "/?panel=takes&clip=" + url.QueryEscape(inherited)
+				}
+				cells = append(cells, gosx.El("a", append(attrs, gosx.Attr("href", href)), gosx.Text(text)))
 			} else {
 				cells = append(cells, gosx.El("span", attrs, gosx.Text(text)))
 			}

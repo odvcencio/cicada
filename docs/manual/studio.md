@@ -169,15 +169,34 @@ input. The durable journal
 retains failed or conflicting takes. **Select take** commits a selected take;
 **Recover take** retries its recovery against the current revision.
 
+Use **Add audio track** to create a recording lane in an edition-2 score. An
+edition-1 score uses the explicit upgrade option in Mixer first. The Audio
+tracks and clips section edits the source-frame start, exclusive end, gain, and
+linear fades of each recorded region. **Place clip in scene** assigns it to an
+audio track without modifying the recorded file. Region and assignment edits
+check the source revision and support Undo. Arrangement audio blocks link here.
+
 **Audition sample** opens a private preview of a published take. Choose its
 root and playback MIDI notes and optional full-region looping, then **Update
 audition** and use the audio controls. The native sample voice renders the WAV;
 audition leaves the score unchanged and stops when you leave the panel.
 
-Current arrangement playback provides synth accompaniment for audio capture.
-Selected audio clips and declared samplers are retained in the score, but their
-sequencing is not yet integrated into the playback kernel. Audition is the
-available playback path for recorded takes.
+Audio clips and declared sampler instruments play through the native mixer,
+effects, meters, and Tymbal output, and are included in WAV and stems exports.
+An explicit clip assignment starts its region when the scene is launched or a
+song entry begins; `keep` continues it, and `off` releases it. A multi-bar entry
+does not retrigger the clip each bar. Pause retains the source position, and
+playing from a later block reconstructs an inherited clip's elapsed position.
+Clips play once at their source rate; they are not stretched to fit scene bars.
+Sampler patterns use the declared root pitch, voice budget, and oneshot or loop
+mode; note gates release their voices. Supported playback ratios are 0.125–8.
+Live keyboard input currently targets the existing acid and drum controls.
+
+Assets are verified and decoded before playback, confined to the project
+directory, and shared immutably between regions. Native playback admits up to
+64 MiB of resident PCM per prepared project and 16 clips per audio track. File
+I/O and decoding never run in the audio callback. Existing audio accompanies
+new native recordings; the old portable qualification image remains synth-only.
 
 **Export** renders WAV with a target LUFS value, true-peak ceiling, tolerance,
 sample rate, and PCM depth. Progress, measured LUFS, true peak, applied gain,

@@ -627,6 +627,14 @@ func assignSlots(p *Project, score *notation.Score) error {
 	}
 	for ti := range p.Tracks {
 		track := &p.Tracks[ti]
+		if p.Edition == 2 && track.Kind == "audio" {
+			var err error
+			track.Slots, err = ClipSlots(p, *track)
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		for _, pattern := range p.Patterns {
 			if !used[track.ID][pattern.ID] {
 				continue

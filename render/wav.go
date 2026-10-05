@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"m31labs.dev/cicada/host/sampleasset"
 	"math"
 	"sort"
 
@@ -21,6 +22,7 @@ import (
 )
 
 type Options struct {
+	AssetDir     string // explicit project root for immutable audio assets
 	SampleRate   int
 	Bits         int // 16, 24, or 32-bit IEEE float; zero defaults to 24
 	Bars         int // zero renders from From through the song end
@@ -55,6 +57,8 @@ type Report struct {
 }
 
 type trackRuntime struct {
+	prepared       *preparedVoice
+	audioSlots     map[string]uint8
 	name           string
 	voice          monoVoice
 	mixer          mix.Track
@@ -114,6 +118,16 @@ func (voice customVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
 }
 
 type acidVoice struct{ *acid.Voice }
+
+type preparedVoice struct {
+	engine.StereoVoice
+	err error
+}
+
+func (v *preparedVoice) NoteOn(note, velocity uint8, _, _ bool) {
+	v.err = v.StereoVoice.NoteOn(note, velocity)
+}
+func (v *preparedVoice) Next() float32 { return 0 } // stereo output is read directly
 
 func (voice acidVoice) NoteOn(note, velocity uint8, accent, slide bool) {
 	voice.Voice.NoteOn(note, accent, slide, velocity)
@@ -241,7 +255,17 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if dataBytes > int64(^uint32(0))-60 {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
-	tracks, err := compileTracks(score, semantic, opts.SampleRate)
+	var prepared []engine.StereoVoiceFactory
+	if semantic.HasAudio() {
+		prepared, err = sampleasset.Prepare(opts.AssetDir, semantic)
+		if err != nil {
+			return report, err
+		}
+		if err := sampleasset.ValidatePatterns(semantic, prepared, opts.SampleRate); err != nil {
+			return report, err
+		}
+	}
+	tracks, err := compileTracksPrepared(score, semantic, opts.SampleRate, prepared)
 	if err != nil {
 		return report, err
 	}
@@ -396,7 +420,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			if bar >= renderBars {
 				break
 			}
-			if err := applyScene(tracks, scene, stopIsAction); err != nil {
+			if err := applySceneBoundary(tracks, scene, stopIsAction, entryBar == 0); err != nil {
 				return report, err
 			}
 			if entryBar == 0 {
@@ -542,6 +566,9 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 }
 
 func compileTracks(score *notation.Score, semantic *project.Project, sampleRate int) ([]trackRuntime, error) {
+	return compileTracksPrepared(score, semantic, sampleRate, nil)
+}
+func compileTracksPrepared(score *notation.Score, semantic *project.Project, sampleRate int, prepared []engine.StereoVoiceFactory) ([]trackRuntime, error) {
 	programs := make(map[string]*instrument.Program, len(score.Instruments))
 	for _, definition := range score.Instruments {
 		program, ds := instrument.Compile(definition)
@@ -565,6 +592,39 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 			return nil, fmt.Errorf("track %s: %w", source.Name, err)
 		}
 		trackMix := mix.NewTrack(mixerParams.GainDB, mixerParams.Pan, mixerParams.Mute)
+		if len(prepared) == len(score.Tracks) && prepared[len(tracks)] != nil {
+			voice, err := prepared[len(tracks)].NewStereoVoice(sampleRate)
+			if err != nil {
+				return nil, err
+			}
+			wrapper := &preparedVoice{StereoVoice: voice}
+			track := trackRuntime{name: source.Name, mixer: trackMix, voice: wrapper, prepared: wrapper, patterns: map[string]seq.Pattern{}}
+			if source.Kind == "audio" && score.Version == 2 {
+				track.audioSlots = map[string]uint8{}
+				slots, err := project.ClipSlots(semantic, semantic.Tracks[len(tracks)])
+				if err != nil {
+					return nil, err
+				}
+				for slot, name := range slots {
+					if name != nil {
+						track.audioSlots[*name] = uint8(slot)
+					}
+				}
+			} else {
+				for _, pattern := range score.Patterns {
+					if pattern.Kind != "notes" {
+						continue
+					}
+					compiled, err := project.CompilePattern(score, pattern, source)
+					if err != nil {
+						return nil, err
+					}
+					track.patterns[pattern.Name] = compiled[0].Pattern
+				}
+			}
+			tracks = append(tracks, track)
+			continue
+		}
 		kitDefinition, isAuthoredKit := authoredKits[source.Kind]
 		if source.Kind == "drums" || isAuthoredKit {
 			kit, err := drum.New(sampleRate, uint32(score.Seed))
@@ -868,6 +928,9 @@ func sceneTransitionFor(source, target *seq.Pattern, track uint8, boundaryTick i
 }
 
 func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool) error {
+	return applySceneBoundary(tracks, scene, stopIsAction, false)
+}
+func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsAction, restartClips bool) error {
 	for _, binding := range scene.Bindings {
 		for ti := range tracks {
 			if tracks[ti].name != binding.Track {
@@ -893,7 +956,18 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool)
 				tracks[ti].activeGen = 0
 				tracks[ti].voice.NoteOff()
 			default:
-				if tracks[ti].currentName == binding.Pattern {
+				if tracks[ti].currentName == binding.Pattern && !(restartClips && tracks[ti].audioSlots != nil) {
+					continue
+				}
+				if tracks[ti].audioSlots != nil {
+					slot, ok := tracks[ti].audioSlots[binding.Pattern]
+					if !ok {
+						return fmt.Errorf("track %s cannot play clip %s", binding.Track, binding.Pattern)
+					}
+					if err := tracks[ti].prepared.SelectSlot(slot, 0, true); err != nil {
+						return err
+					}
+					tracks[ti].currentName = binding.Pattern
 					continue
 				}
 				if tracks[ti].drums != nil {
@@ -954,6 +1028,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				}
 			} else {
 				track.voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Accent, event.event.Slide)
+				if track.prepared != nil && track.prepared.err != nil {
+					return fmt.Errorf("sampler %s: %w", track.name, track.prepared.err)
+				}
 				track.activeGen = event.generation
 				track.activeNoteID = event.event.NoteID
 				track.hasPendingGate = false
@@ -973,6 +1050,8 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				if tracks[ti].drums.Fault() {
 					return fmt.Errorf("drum DSP fault on %s", tracks[ti].name)
 				}
+			} else if tracks[ti].prepared != nil {
+				l, r = tracks[ti].prepared.NextStereo()
 			} else {
 				mono := tracks[ti].voice.Next()
 				l, r = mono, mono

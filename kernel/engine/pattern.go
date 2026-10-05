@@ -178,6 +178,12 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 		p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
 	}
 	p.active = int8(slot)
+	if v := &e.voices[track]; v.prepared != nil {
+		if v.prepared.SelectSlot(uint8(slot), 0, e.transport.Playing()) != nil {
+			e.fault(19)
+			return
+		}
+	}
 	p.generation++
 	p.startStep = 0
 	if restart {
@@ -514,6 +520,11 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
 			case VoiceGraph:
 				e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
+			case VoicePrepared:
+				if e.voices[track].prepared.NoteOn(event.Note, event.Velocity) != nil {
+					e.fault(19)
+					return
+				}
 			case VoiceDrums:
 				if event.Note >= uint8(drum.LaneCount) {
 					e.fault(15)
