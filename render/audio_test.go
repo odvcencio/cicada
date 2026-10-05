@@ -53,6 +53,18 @@ func hasAudioErrors(ds []notation.Diagnostic) bool {
 
 func TestNativeAudioMatchesWAVAndRange(t *testing.T) {
 	dir, score := audioRenderFixture(t, false)
+	checkNativeAudioMatchesWAVAndRange(t, dir, score)
+}
+
+func TestAudioSceneAutomationMatchesNativeWAVAndRange(t *testing.T) {
+	dir, score := audioRenderFixture(t, false)
+	score.Scenes[0].Settings = []notation.SceneSetting{{Path: "vox.level", Value: "-12.25dB"}, {Path: "vox.pan", Value: "-0.375"}}
+	score.Scenes[1].Settings = []notation.SceneSetting{{Path: "vox.level", Value: "-3.75dB"}, {Path: "vox.pan", Value: "0.625"}}
+	checkNativeAudioMatchesWAVAndRange(t, dir, score)
+}
+
+func checkNativeAudioMatchesWAVAndRange(t *testing.T, dir string, score *notation.Score) {
+	t.Helper()
 	var wav, small, ranged bytes.Buffer
 	opts := Options{AssetDir: dir, SampleRate: 48000, Bits: 32, Block: 128}
 	report, err := WAV(score, opts, &wav)

@@ -24,7 +24,7 @@ func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 			_ = json.NewEncoder(w).Encode(workspace{Revision: "current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}})
 		case "/api/transport":
 			_ = json.NewEncoder(w).Encode(transport{Bar: 1, Step: 1})
-		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/project", "/api/export", "/api/clip":
+		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/project", "/api/export", "/api/clip", "/api/automation":
 			var edit map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 				t.Error(err)
