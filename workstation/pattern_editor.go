@@ -141,7 +141,7 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	step = max(1, min(int(p.Steps), step))
 	var library []gosx.Node
 	for _, candidate := range v.Project.Patterns {
-		attrs := gosx.Attrs(gosx.Attr("href", patternURL(candidate.ID, 1, "", "")), gosx.Attr("class", "pattern-choice"))
+		attrs := gosx.Attrs(gosx.Attr("href", patternURL(candidate.ID, 1, "", "")), gosx.Attr("class", "pattern-choice"), gosx.Attr("data-gosx-key", "pattern-"+candidate.ID))
 		if candidate.ID == p.ID {
 			attrs = append(attrs, gosx.Attr("aria-current", "true"))
 		}
@@ -184,7 +184,10 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		base = (octave + 1) * 12
 	}
 	octave := strconv.Itoa(base/12 - 1)
-	ceiling := min(127, min(base+47, max(base+23, highest+2)))
+	// Start with one octave and grow to the authored notes. An ordinary
+	// phrase should be visible immediately instead of sitting below a blank
+	// extra octave in the initial piano-roll viewport.
+	ceiling := min(127, min(base+47, max(base+11, highest+2)))
 	outside := 0
 	for _, note := range p.Data {
 		if note != nil && !note.Tie && (int(note.Note) < base || int(note.Note) > ceiling) {
@@ -208,7 +211,7 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 		ruler = append(ruler, gosx.El("a", attrs, gosx.Text(strconv.Itoa(i))))
 	}
 	var rows []gosx.Node
-	rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "roll-row ruler")), gosx.Fragment(ruler...)))
+	rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "roll-row ruler"), gosx.Attr("data-gosx-key", "ruler")), gosx.Fragment(ruler...)))
 	var viewport gosx.Node = gosx.Fragment()
 	if p.Kind == "drums" {
 		for _, name := range laneNames {
@@ -221,7 +224,7 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 				}
 				buttons = append(buttons, rollButton(i+1, fmt.Sprintf("%s %s step %d", p.ID, name, i+1), text, note, note != nil, i+1 == step && name == lane))
 			}
-			rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "roll-row drum-row")), form("pattern", buttons...)))
+			rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "roll-row drum-row"), gosx.Attr("data-gosx-key", "lane-"+name)), form("pattern", buttons...)))
 		}
 	} else {
 		viewport = gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/"), gosx.Attr("class", "actions")), hidden("panel", "patterns"), hidden("pattern", p.ID), hidden("step", strconv.Itoa(step)), field("Lowest octave", wholeInput("octave", base/12-1, -1, 8)), submit("", "", "View register"))
@@ -240,7 +243,7 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 			if strings.Contains(noteNames[pitch%12], "♯") {
 				class += " black-key"
 			}
-			rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", class)), form("pattern", buttons...)))
+			rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", class), gosx.Attr("data-gosx-key", "pitch-"+strconv.Itoa(pitch))), form("pattern", buttons...)))
 		}
 		// A dedicated tie row keeps held steps visible even outside the register.
 		var ties []gosx.Node
@@ -252,7 +255,7 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 			}
 			ties = append(ties, gosx.El("a", gosx.Attrs(gosx.Attr("class", "tie-step"), gosx.Attr("href", patternURL(p.ID, i+1, "", octave))), gosx.Text(text)))
 		}
-		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "roll-row ruler")), gosx.Fragment(ties...)))
+		rows = append(rows, gosx.El("div", gosx.Attrs(gosx.Attr("class", "roll-row ruler"), gosx.Attr("data-gosx-key", "ties")), gosx.Fragment(ties...)))
 		if outside > 0 {
 			viewport = gosx.Fragment(viewport, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text(fmt.Sprintf("%d notes are outside this register. View another octave to edit them.", outside))))
 		}
@@ -268,7 +271,8 @@ func (s *studioApp) patterns(ctx *server.Context, v workspace, csrf string) gosx
 	span := min(4, max(1, int(p.Steps)/2))
 	rangeEdit := form("pattern", hidden("action", "range"), hidden("pattern", p.ID), hidden("lane", lane), field("Operation", selectInput("operation", "copy", operations)), field("First step", wholeInput("first", 1, 1, int(p.Steps))), field("Last step", wholeInput("last", span, 1, int(p.Steps))), field("Copy to step", wholeInput("target", min(span+1, int(p.Steps)), 1, int(p.Steps))), field("Shift (steps / semitones)", wholeInput("amount", 1, -127, 127)), submit("", "", "Apply to range"))
 	resize := form("pattern", hidden("action", "resize"), hidden("pattern", p.ID), field("Pattern length", wholeInput("length", int(p.Steps), 1, 64)), submit("", "", "Resize pattern"))
-	roll := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("h3", gosx.Text(p.ID+" · "+rollTitle)), viewport), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll")), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, form), gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))), gosx.El("details", gosx.El("summary", gosx.Text("Range editing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), rangeEdit), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Copy writes the selected steps at the destination. Rotate shifts within the range; transpose changes note pitches. Each operation has one Undo entry."))))
+	tools := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions"), gosx.BoolAttr("data-workspace-tools"), gosx.BoolAttr("hidden"), gosx.Attr("role", "group"), gosx.Attr("aria-label", "Piano-roll tools")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "select"), gosx.Attr("aria-pressed", "true")), gosx.Text("Select")), gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-workspace-tool", "draw"), gosx.Attr("aria-pressed", "false"), gosx.Attr("aria-keyshortcuts", "B")), gosx.Text("Draw (B)")))
+	roll := gosx.El("section", gosx.Attrs(gosx.Attr("class", "pattern-workspace")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.El("h3", gosx.Text(p.ID+" · "+rollTitle)), viewport), tools, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.BoolAttr("data-workspace-help")), gosx.Text("Click a cell to write or clear it. Choose a step number to edit its articulation.")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-canvas")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll piano-roll"), gosx.Attr("data-pattern-kind", p.Kind), gosx.Attr("data-pattern-id", p.ID)), gosx.Fragment(rows...)), s.stepInspector(ctx, p, step, lane, v.Revision, form)), gosx.El("details", gosx.El("summary", gosx.Text("Pattern timing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), settings, resize), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Shortening removes steps from the end of every lane. Undo restores them."))), gosx.El("details", gosx.El("summary", gosx.Text("Range editing")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), rangeEdit), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Copy writes the selected steps at the destination. Rotate shifts within the range; transpose changes note pitches. Each operation has one Undo entry."))))
 	newName := nextPatternName(v.Project, p.ID)
 	if state := action.States(ctx.Request)["pattern"]; !state.OK() && state.Value("action") == "duplicate" && state.Value("pattern") == p.ID {
 		newName = state.Value("newName")

@@ -90,6 +90,11 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.loadSettings()
 	u.refreshPatterns()
 	watch := signal.Watch(func() { root.Call("querySelector", "[data-live-status]").Set("textContent", u.status.Get()) })
+	revisionWatch := signal.Watch(func() {
+		if revision := confirmedWorkspaceRevision.Get(); revision != "" && !u.closed.Load() {
+			u.props.Revision = revision
+		}
+	})
 	u.bindControls()
 	u.renderMappings()
 	u.restoreTake()
@@ -108,6 +113,7 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 		}
 		u.cancel()
 		watch.Dispose()
+		revisionWatch.Dispose()
 		// A released lease rejects late note-ons from an unmounted surface.
 		sequence := u.sequence + 1
 		go func() {
@@ -207,7 +213,9 @@ func (u *liveUI) runCommands() {
 				u.takes = nil
 				u.active = map[string]int{}
 				u.saveTake()
-				js.Global().Get("location").Set("href", "/?panel=live")
+				u.syncControls()
+				u.status.Set("Note take retained for review. Commit it to patterns, or discard it.")
+				workspaceRefreshRequested.Set(workspaceRefreshRequested.Get() + 1)
 			}
 		}
 	}
@@ -274,8 +282,17 @@ func (u *liveUI) poll() {
 			if !t.Playing {
 				launch = "Transport stopped."
 			}
-			u.query("[data-live-launch-status]").Set("textContent", launch)
-			pads := u.root.Call("querySelectorAll", "[data-live-slot]")
+			// Launch forms receive workspace projections beside the retained
+			// performance mount. Resolve their current DOM on each poll.
+			panel := u.root.Call("closest", "#live")
+			if panel.IsNull() || panel.IsUndefined() {
+				continue
+			}
+			launchStatus := panel.Call("querySelector", "[data-live-launch-status]")
+			if !launchStatus.IsNull() && !launchStatus.IsUndefined() {
+				launchStatus.Set("textContent", launch)
+			}
+			pads := panel.Call("querySelectorAll", "[data-live-slot]")
 			for i := 0; i < pads.Length(); i++ {
 				pad := pads.Index(i)
 				track := pad.Call("getAttribute", "data-live-track").String()
@@ -312,6 +329,7 @@ func (u *liveUI) noteOn(id, track string, note, velocity int) {
 	if _, ok := u.held[id]; ok {
 		return
 	}
+	defer u.syncControls()
 	h := liveHeld{track, note}
 	u.held[id] = h
 	u.counts[h]++
@@ -357,6 +375,7 @@ func (u *liveUI) noteOff(id string) {
 	if !ok {
 		return
 	}
+	defer u.syncControls()
 	delete(u.held, id)
 	u.counts[h]--
 	if u.counts[h] <= 0 {
@@ -388,8 +407,9 @@ func (u *liveUI) syncControls() {
 	u.query("[data-live-control=finish]").Set("disabled", len(u.takes) == 0)
 	buttons := u.root.Call("querySelectorAll", "[data-live-note],[data-live-drum]")
 	for i := 0; i < buttons.Length(); i++ {
-		track, _ := u.buttonNote(buttons.Index(i))
+		track, note := u.buttonNote(buttons.Index(i))
 		buttons.Index(i).Set("disabled", !u.playing || track == "")
+		buttons.Index(i).Call("setAttribute", "aria-pressed", strconv.FormatBool(u.counts[liveHeld{track, note}] > 0))
 	}
 }
 

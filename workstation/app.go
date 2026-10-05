@@ -87,9 +87,10 @@ func newApp(b *backend) (http.Handler, error) {
 	}
 	for name, handler := range s.actions() {
 		app.Mount("POST /__actions/"+name, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			action.ServeHandlerWithOptions(w, r, handler, action.ServeHandlerOptions{MaxBodyBytes: 2 << 20})
+			s.serveAction(w, r, name, handler)
 		}))
 	}
+	app.Mount("GET /__workspace", http.HandlerFunc(s.workspaceProjection))
 	app.Mount("GET /studio.css", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
 		_, _ = w.Write(ui.CSS)
@@ -116,9 +117,14 @@ func newApp(b *backend) (http.Handler, error) {
 }
 
 func (s *studioApp) page(ctx *server.Context) gosx.Node {
+	body, view := s.workspaceContent(ctx)
+	return s.reactiveWorkspace(ctx, view, body)
+}
+
+func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace) {
 	ctx.NoStore()
 	if s.backend == nil {
-		return gosx.El("p", gosx.Text("Open a score with cicada studio to start the workspace."))
+		return gosx.El("p", gosx.Text("Open a score with cicada studio to start the workspace.")), workspace{}
 	}
 	// Studio is an editing session. GoSX leaves anonymous reads cookie-free;
 	// establish state before requesting the CSRF token used by every action.
@@ -130,7 +136,7 @@ func (s *studioApp) page(ctx *server.Context) gosx.Node {
 	var view workspace
 	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/workspace", nil, &view); err != nil {
 		ctx.SetStatus(http.StatusServiceUnavailable)
-		return ui.Panel(ui.PanelProps{ID: "workspace", Title: "Studio unavailable", Description: err.Error()})
+		return ui.Panel(ui.PanelProps{ID: "workspace", Title: "Studio unavailable", Description: err.Error()}), workspace{}
 	}
 	props := ui.ShellProps{Title: view.Filename, Filename: view.Filename, Message: view.Error, HasMessage: view.Error != ""}
 	view.DiskSource, view.DiskRevision = view.Source, view.Revision
@@ -174,7 +180,7 @@ func (s *studioApp) page(ctx *server.Context) gosx.Node {
 	if runtimeRoot() != "" && panel == "mixer" {
 		meters = gosx.El("section", gosx.Attrs(gosx.Attr("aria-label", "Master loudness")), ctx.Engine(engine.Config{Name: "CicadaMeters", Kind: engine.KindSurface, MountID: "cicada-meters", Runtime: engine.RuntimeGoWASM, WASMPath: ui.MeterEnginePath, Capabilities: []engine.Capability{engine.CapCanvas, engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapCanvas, engine.CapWASM, engine.CapFetch}}, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Live output meters require browser WASM and canvas support."))), s.form(view, csrf, "mixer", "loudness-reset", submit("", "", "Reset live loudness")))
 	}
-	return ui.Shell(props, s.toolbar(view, csrf, panel, state), s.navigation(panel), gosx.El("main", gosx.Attrs(gosx.Attr("id", "workspace")), meters, s.panel(ctx, view, csrf, panel)))
+	return ui.Shell(props, s.toolbar(view, csrf, panel, state), s.navigation(panel), gosx.El("main", gosx.Attrs(gosx.Attr("id", "workspace")), meters, s.panel(ctx, view, csrf, panel))), view
 }
 
 func (s *studioApp) form(view workspace, csrf, panel, name string, children ...gosx.Node) gosx.Node {
