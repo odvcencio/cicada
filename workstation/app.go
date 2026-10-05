@@ -99,7 +99,9 @@ func newApp(b *backend) (http.Handler, error) {
 		r.SetPathValue("id", strings.TrimSuffix(r.PathValue("id"), ".wav"))
 		s.takeAudio(w, r)
 	}))
-	for _, path := range []string{"/api/state", "/api/transport", "/api/meters", "/api/audio/config", "/api/export", "/api/takes", "/api/capture", "/api/history", "/api/params"} {
+	app.Mount("GET /media/exports/{id}", http.HandlerFunc(s.exportAudio))
+	app.Mount("GET /api/export", http.HandlerFunc(s.exportStatus))
+	for _, path := range []string{"/api/state", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var data json.RawMessage
 			if err := b.call(r.Context(), http.MethodGet, path, nil, &data); err != nil {

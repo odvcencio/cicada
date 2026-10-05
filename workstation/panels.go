@@ -9,7 +9,6 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/language"
-	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
 	"m31labs.dev/gosx/action"
@@ -26,7 +25,7 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 	case "session":
 		return s.session(v, csrf)
 	case "patterns":
-		return s.patterns(v, csrf)
+		return s.patterns(ctx, v, csrf)
 	case "generator":
 		return s.generator(ctx, v, csrf)
 	case "voices":
@@ -124,88 +123,10 @@ func (s *studioApp) session(v workspace, csrf string) gosx.Node {
 		}
 		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
 	}
-	var song []gosx.Node
-	bar := 1
-	for index, entry := range p.Song {
-		i := strconv.Itoa(index)
-		controls := []gosx.Node{s.form(v, csrf, "session", "transport", hidden("entry", i), submit("action", "playFrom", "Play from here")),
-			s.form(v, csrf, "session", "song", hidden("action", "bars"), hidden("index", i), field("Bars", gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", "bars"), gosx.Attr("value", strconv.Itoa(int(entry.Bars))), gosx.Attr("min", "1"), gosx.Attr("max", "64")))), submit("", "", "Set bars"))}
-		if index > 0 {
-			controls = append(controls, s.form(v, csrf, "session", "song", hidden("action", "move"), hidden("index", i), hidden("target", strconv.Itoa(index-1)), submit("", "", "Move earlier")))
-		}
-		if index+1 < len(p.Song) {
-			controls = append(controls, s.form(v, csrf, "session", "song", hidden("action", "move"), hidden("index", i), hidden("target", strconv.Itoa(index+1)), submit("", "", "Move later")))
-		}
-		song = append(song, gosx.El("li", gosx.El("h3", gosx.Text(fmt.Sprintf("%s · bars %d–%d", entry.Scene, bar, bar+int(entry.Bars)-1))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), gosx.Fragment(controls...))))
-		bar += int(entry.Bars)
-	}
-	return gosx.Fragment(ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Scene launches are quantized to the next bar."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))), ui.Panel(ui.PanelProps{ID: "arrangement", Title: "Arrangement", Description: "Source-backed scene order and bar lengths."}, gosx.El("ol", gosx.Fragment(song...))))
+	return gosx.Fragment(s.arrangement(v, csrf), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Scene launches are quantized to the next bar."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
 }
 
 var drumOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
-
-func (s *studioApp) patterns(v workspace, csrf string) gosx.Node {
-	if v.Project == nil {
-		return failure(fmt.Errorf("save a valid score to edit patterns"))
-	}
-	var cards []gosx.Node
-	for _, p := range v.Project.Patterns {
-		var lanes []gosx.Node
-		if p.Kind == "drums" {
-			for _, lane := range drumOrder {
-				if steps, ok := p.Lanes[lane]; ok {
-					lanes = append(lanes, s.lane(v, csrf, p, lane, steps))
-				}
-			}
-		} else {
-			lanes = append(lanes, s.lane(v, csrf, p, "", p.Data))
-		}
-		// Every modifier uses the same typed Go action and source patcher.
-		modifier := s.form(v, csrf, "patterns", "toggle", hidden("pattern", p.ID), field("Step (zero based)", gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", "step"), gosx.Attr("min", "0"), gosx.Attr("max", strconv.Itoa(int(p.Steps)-1)), gosx.Attr("value", "0")))), field("Lane", textInput("lane", "")), field("Modifier", selectInput("modifier", "accent", []string{"accent", "slide", "tie", "ratchet", "chance"})), submit("", "", "Apply modifier"))
-		pitch := gosx.Fragment()
-		if p.Kind != "drums" {
-			pitch = s.form(v, csrf, "patterns", "toggle", hidden("pattern", p.ID), field("Step (zero based)", numberInput("step", "0", "0", strconv.Itoa(int(p.Steps)-1))), field("MIDI pitch", numberInput("pitch", "60", "0", "127")), submit("", "", "Set pitch"))
-		}
-		cards = append(cards, gosx.El("details", gosx.Attrs(gosx.Attr("class", "pattern-card"), gosx.BoolAttr("open"), gosx.Attr("data-pattern", p.ID)), gosx.El("summary", gosx.Text(fmt.Sprintf("%s · %s · %d steps", p.ID, p.Kind, p.Steps))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.Fragment(lanes...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), modifier, pitch)))
-	}
-	return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Patterns", Description: "Toggle a step, set its pitch, or edit articulation."}, gosx.Fragment(cards...))
-}
-
-func (s *studioApp) lane(v workspace, csrf string, p project.Pattern, lane string, steps []*project.Step) gosx.Node {
-	label := strings.ToUpper(lane)
-	if label == "" {
-		label = "NOTES"
-	}
-	children := []gosx.Node{hidden("pattern", p.ID), hidden("lane", lane), gosx.El("span", gosx.Attrs(gosx.Attr("class", "lane-label")), gosx.Text(label))}
-	for index := 0; index < int(p.Steps); index++ {
-		var step *project.Step
-		if index < len(steps) {
-			step = steps[index]
-		}
-		text := "·"
-		if step != nil {
-			if p.Kind == "drums" {
-				text = "×"
-			} else {
-				text = strconv.Itoa(int(step.Note))
-			}
-			if step.Tie {
-				text = "—"
-			}
-			if step.Accent {
-				text += "^"
-			}
-			if step.Slide {
-				text += "~"
-			}
-			if step.Ratchet > 1 {
-				text += fmt.Sprintf("×%d", step.Ratchet)
-			}
-		}
-		children = append(children, ui.Step(ui.StepProps{Label: fmt.Sprintf("%s %s step %d: %s", p.ID, label, index+1, text), Text: text, Active: step != nil, Index: index, Pattern: p.ID, Lane: lane}))
-	}
-	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "lane")), s.form(v, csrf, "patterns", "toggle", children...))
-}
 
 func field(label string, input gosx.Node) gosx.Node {
 	return gosx.El("label", gosx.Attrs(gosx.Attr("class", "field")), gosx.El("span", gosx.Text(label)), input)
@@ -406,16 +327,13 @@ func (s *studioApp) voices(v workspace) gosx.Node {
 }
 
 func (s *studioApp) export(ctx *server.Context, v workspace, csrf string) gosx.Node {
-	var status struct {
-		State string `json:"state"`
-		Path  string `json:"path"`
-		Error string `json:"error"`
-		Pass  int    `json:"pass"`
-	}
+	var status exportView
 	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/export", nil, &status); err != nil {
 		return failure(err)
 	}
-	form := s.form(v, csrf, "export", "export", field("Target LUFS", numberInput("target_lufs", "-16", "-36", "-5")), field("True peak ceiling (dBTP)", numberInput("true_peak_max", "-1", "-12", "0")), field("Tolerance (LU)", numberInput("tolerance", "1", "0.1", "2")), field("Sample rate", selectInput("rate", "48000", []string{"44100", "48000", "96000"})), field("PCM bits", selectInput("bits", "24", []string{"16", "24", "32"})), submit("", "", "Render WAV"))
-	progress := gosx.El("div", gosx.Attrs(gosx.Attr("data-gosx-live-src", "/api/export"), gosx.Attr("data-gosx-live-interval", "1s")), gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "state")), gosx.Text(status.State)), gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "path")), gosx.Text(status.Path)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "error"), gosx.Attr("data-gosx-live-bind", "error")), gosx.Text(status.Error)))
-	return ui.Panel(ui.PanelProps{ID: "export", Title: "Render & export", Description: "Offline rendering uses the same score and kernel as Tymbal playback."}, form, progress)
+	status.project()
+	button := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("disabled", status.Busy), gosx.Attr("data-gosx-live-bind-attr", "disabled:busy")), gosx.Text("Render WAV"))
+	form := s.form(v, csrf, "export", "export", field("Target LUFS", numberInput("target_lufs", "-16", "-70", "0")), field("True peak ceiling (dBTP)", numberInput("true_peak_max", "-1", "-24", "0")), field("Tolerance (LU)", numberInput("tolerance", "1", "0", "10")), field("Sample rate", selectInput("rate", "48000", []string{"44100", "48000", "96000"})), field("PCM bits", selectInput("bits", "24", []string{"16", "24", "32"})), button)
+	progress := gosx.El("section", gosx.Attrs(gosx.Attr("class", "export-result")), gosx.El("h3", gosx.Text("Render delivery")), gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "progress"), gosx.Attr("role", "status")), gosx.Text(status.Progress)), gosx.El("p", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "quality")), gosx.Text(status.Quality)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-gosx-live-bind", "path")), gosx.Text(status.Path)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "error"), gosx.Attr("data-gosx-live-bind", "error")), gosx.Text(status.Error)), gosx.El("a", gosx.Attrs(gosx.Attr("href", status.DownloadURL), gosx.BoolAttr("download"), gosx.Attr("hidden", status.DownloadHidden), gosx.Attr("data-gosx-live-bind-attr", "href:downloadURL,hidden:downloadHidden"), gosx.Attr("data-gosx-live-bind", "downloadLabel")), gosx.Text(status.DownloadLabel)))
+	return ui.Panel(ui.PanelProps{ID: "export", Title: "Render & export", Description: "Offline rendering uses the same score and kernel as Tymbal playback."}, gosx.El("div", gosx.Attrs(gosx.Attr("data-gosx-live-src", "/api/export"), gosx.Attr("data-gosx-live-interval", "1s")), gosx.El("div", gosx.Attrs(gosx.Attr("class", "editor-fields")), form), progress))
 }
