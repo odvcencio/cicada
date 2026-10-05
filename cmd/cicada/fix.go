@@ -48,7 +48,7 @@ func fixCommandWithWriter(args []string, writeScore func(string, []byte, os.File
 			return err
 		}
 		if parsed.ExplicitSources() {
-			return fixMultiFile(root, parsed, path, all, check, writeScore)
+			return fixMultiFile(root, parsed, data, path, all, check, writeScore)
 		}
 	}
 	paths, err := projectScorePaths(root)
@@ -452,7 +452,7 @@ func fixSource(source []byte) ([]byte, bool, error) {
 	return migration.FixSource(source)
 }
 
-func fixMultiFile(root string, manifest ed.Manifest, path string, all, check bool, writeScore func(string, []byte, os.FileMode) error) error {
+func fixMultiFile(root string, manifest ed.Manifest, beforeManifest []byte, path string, all, check bool, writeScore func(string, []byte, os.FileMode) error) error {
 	entry := filepath.Join(root, filepath.FromSlash(manifest.Entry))
 	requested := entry
 	if path != "" {
@@ -477,8 +477,17 @@ func fixMultiFile(root string, manifest ed.Manifest, path string, all, check boo
 	if check {
 		return fmt.Errorf("fix needed: multi-file project")
 	}
-	beforeManifest, err := os.ReadFile(sources.ManifestPath)
-	if err != nil {
+	checkManifestRevision := func() error {
+		current, err := os.ReadFile(sources.ManifestPath)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(current, beforeManifest) {
+			return fmt.Errorf("manifest changed during fix: %s; retry", sources.ManifestPath)
+		}
+		return nil
+	}
+	if err := checkManifestRevision(); err != nil {
 		return err
 	}
 	afterManifest, _, err := ed.UpgradeManifestEdition(beforeManifest)
@@ -533,6 +542,12 @@ func fixMultiFile(root string, manifest ed.Manifest, path string, all, check boo
 			return err
 		}
 		written = append(written, fixScoreEdit{path: file.Path, before: sources.Files[i].Source, fixed: file.Source, mode: stat.Mode().Perm()})
+	}
+	// The manifest participates in the migration revision just like a source.
+	// Preserve an editor's metadata or source-list change and undo our own writes.
+	if err := checkManifestRevision(); err != nil {
+		rollback()
+		return err
 	}
 	if upgrade {
 		if err := writeFixedScore(sources.ManifestPath, afterManifest, info.Mode().Perm()); err != nil {
