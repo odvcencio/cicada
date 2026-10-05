@@ -236,6 +236,12 @@ func callResult(name string, args []Type) (Type, bool, bool) {
 		return Audio, true, matches()
 	case "env":
 		return Unit, true, matches(Gate, MS)
+	case "adsr":
+		return Unit, true, matches(Gate, MS, MS, Unit, MS)
+	case "pulse":
+		return Audio, true, matches(Hz, Unit)
+	case "svf":
+		return Audio, true, matches(Audio, Hz, Unit)
 	case "ladder", "diode":
 		return Audio, true, matches(Audio, Hz, Unit)
 	case "lowpass", "highpass":

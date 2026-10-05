@@ -144,11 +144,18 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	if v.Project == nil {
 		return failure(fmt.Errorf("save a valid score before live performance"))
 	}
-	var acid, drums, targets []string
+	var pitched, drums, targets []string
 	trackPatterns := map[string][]string{}
 	for _, t := range v.Project.Tracks {
 		if t.Kind == "acid" {
-			acid = append(acid, t.ID)
+			pitched = append(pitched, t.ID)
+		} else {
+			for _, voice := range v.Project.Instruments {
+				if voice.ID == t.Kind {
+					pitched = append(pitched, t.ID)
+					break
+				}
+			}
 		}
 		if t.Kind == "drums" {
 			drums = append(drums, t.ID)
@@ -208,7 +215,9 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		}
 		return nil
 	}
-	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Acid track", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-acid", "")), options(acid))), field("Acid pattern", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-pattern", "")), options(patternsFor(acid)))), field("Drum track", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-drums", "")), options(drums))), field("Drum pattern", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-drumpattern", "")), options(patternsFor(drums)))), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
+	// The Go/WASM surface retains its existing selector hook; the pitched
+	// targets now include both built-in acid and authored mono/poly graphs.
+	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Pitched track", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-acid", "")), options(pitched))), field("Pitched pattern", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-pattern", "")), options(patternsFor(pitched)))), field("Drum track", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-drums", "")), options(drums))), field("Drum pattern", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-drumpattern", "")), options(patternsFor(drums)))), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
 	var quantize []gosx.Node
 	for _, q := range []struct{ value, label string }{{"1", "Next beat"}, {"2", "Next bar"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
 		quantize = append(quantize, gosx.El("option", gosx.Attrs(gosx.Attr("value", q.value), gosx.Attr("selected", q.value == "2")), gosx.Text(q.label)))
@@ -227,7 +236,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	// subtree when props are unchanged without retaining detached listeners.
 	content := gosx.Fragment(s.liveLaunch(v, csrf), controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))), preview)
 	surface := ctx.Engine(engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, WASMPath: ui.MeterEnginePath, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
-	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and Web MIDI drive Tymbal. Record notes for review before changing patterns."}, surface)
+	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and Web MIDI play acid, authored instruments, and drums through Tymbal. Note patterns retain single-note takes; overlapping polyphonic takes need separate patterns."}, surface)
 }
 
 type liveLaunchCommand struct {

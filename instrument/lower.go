@@ -49,6 +49,12 @@ func Lower(program *Program, overrides map[string]string) (graph.Program, error)
 		if len(node.Inputs) > 2 {
 			kn.C = uint8(node.Inputs[2])
 		}
+		if len(node.Inputs) > 3 {
+			kn.D = uint8(node.Inputs[3])
+		}
+		if len(node.Inputs) > 4 {
+			kn.E = uint8(node.Inputs[4])
+		}
 		if node.Op == "literal" || node.Op == "param" {
 			literal := node.Literal
 			if node.Op == "param" {
@@ -103,6 +109,12 @@ func kernelOp(n Node) (graph.Op, error) {
 		return graph.Noise, nil
 	case "env":
 		return graph.Envelope, nil
+	case "adsr":
+		return graph.ADSR, nil
+	case "pulse":
+		return graph.Pulse, nil
+	case "svf":
+		return graph.SVF, nil
 	case "ladder":
 		return graph.Ladder, nil
 	case "diode":

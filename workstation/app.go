@@ -197,7 +197,7 @@ func (s *studioApp) toolbar(view workspace, csrf, panel string, t transport) gos
 
 func (s *studioApp) navigation(panel string) gosx.Node {
 	var links []gosx.Node
-	for _, item := range []struct{ key, label string }{{"session", "Session"}, {"patterns", "Patterns"}, {"generator", "Generate"}, {"live", "Live"}, {"mixer", "Mixer"}, {"voices", "Instruments"}, {"code", "Score"}, {"takes", "Takes"}, {"history", "History"}, {"audio", "Audio"}, {"export", "Export"}} {
+	for _, item := range []struct{ key, label string }{{"session", "Session"}, {"patterns", "Patterns"}, {"generator", "Generate"}, {"live", "Live"}, {"mixer", "Mixer"}, {"instruments", "Instruments"}, {"code", "Score"}, {"takes", "Takes"}, {"history", "History"}, {"audio", "Audio"}, {"export", "Export"}} {
 		attrs := gosx.Attrs(gosx.Attr("href", "/?panel="+item.key))
 		if panel == item.key {
 			attrs = append(attrs, gosx.Attr("aria-current", "page"))

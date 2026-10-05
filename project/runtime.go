@@ -212,6 +212,9 @@ func CompileEnginePrepared(p *Project, sampleRate, maxBlock int, prepared []engi
 				if program == nil {
 					return cfg, fmt.Errorf("track %s has no compiled instrument", track.ID)
 				}
+				if program.Mode == "poly" {
+					config.Kind = engine.VoiceGraphPoly
+				}
 				overrides := map[string]string{}
 				for name, value := range track.Params {
 					if name == "octave" && !program.HasParameter("octave") {

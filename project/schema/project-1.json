@@ -84,7 +84,7 @@
       "properties": {
         "id": {"$ref": "#/$defs/id"},
         "octave": {"type": "integer", "minimum": 0, "maximum": 6},
-        "mode": {"const": "mono"},
+        "mode": {"enum": ["mono", "poly"]},
         "params": {"type": "array", "items": {"$ref": "#/$defs/instrument_param"}},
         "lets": {"type": "array", "items": {"$ref": "#/$defs/binding"}},
         "out": {"$ref": "#/$defs/expr"}

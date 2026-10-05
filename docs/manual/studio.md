@@ -154,8 +154,19 @@ short-term and integrated LUFS, loudness range, true peak, and dropped blocks.
 when you leave the mixer. Offline export still provides the final loudness
 verification.
 
-**Instruments** lists declared voices, exposed parameters, and track overrides.
-Edit instrument definitions in **Score**.
+**Instruments** offers six starting patches: Warm pad, Wide strings, Poly brass,
+Silk pluck, Round bass, and Soft bell. **Add instrument and track** saves an
+editable graph and its track in one Undo step. Five patches have eight-note
+polyphony; Round bass is monophonic. Choose the new track in **Live** to play
+it using the on-screen keyboard, typing keyboard, or MIDI. Bind a notes pattern
+in **Session** to sequence it and include it in WAV exports.
+
+Declared parameters show their default and current track override. Apply a
+value to shape just that track; **Use default** removes its override. Values
+use the parameter's declared unit. Each change is revision checked and can be
+undone. Edit the complete graph in **Score**. Notes patterns and committed note
+takes currently store one pitch per step; overlapping polyphonic takes explain
+this limit instead of discarding chord notes.
 
 ## Score and history
 

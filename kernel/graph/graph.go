@@ -35,6 +35,9 @@ const (
 	Tanh
 	Exp2
 	Clamp
+	ADSR
+	Pulse
+	SVF
 )
 
 type Node struct {
@@ -42,6 +45,8 @@ type Node struct {
 	A     uint8
 	B     uint8
 	C     uint8
+	D     uint8 `json:",omitempty"`
+	E     uint8 `json:",omitempty"`
 	Value float32
 }
 
@@ -77,8 +82,10 @@ type Voice struct {
 	gliding    bool
 	gate       float32
 	velocity   float32
+	quality    *qualityState
 }
 
+//go:noinline
 func NewVoice(program Program, sampleRate int) (*Voice, error) {
 	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
 		return nil, Error("invalid graph program")
@@ -96,23 +103,31 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 		case Pitch, Gate, Velocity, SampleRate, Constant, Noise:
 		case Saw, Square, Sine, Tanh, Exp2:
 			inputs = 1
-		case Add, Subtract, Multiply, Divide, Envelope, Lowpass, Highpass:
+		case Add, Subtract, Multiply, Divide, Envelope, Lowpass, Highpass, Pulse:
 			inputs = 2
-		case Ladder, Diode, Mix, Clamp:
+		case Ladder, Diode, Mix, Clamp, SVF:
 			inputs = 3
+		case ADSR:
+			inputs = 5
 		default:
 			return nil, Error("unknown graph operation")
 		}
-		if (inputs > 0 && int(n.A) >= i) || (inputs > 1 && int(n.B) >= i) || (inputs > 2 && int(n.C) >= i) {
+		if (inputs > 0 && int(n.A) >= i) || (inputs > 1 && int(n.B) >= i) || (inputs > 2 && int(n.C) >= i) || (inputs > 3 && int(n.D) >= i) || (inputs > 4 && int(n.E) >= i) {
 			return nil, Error("graph input must precede its node")
 		}
 		if n.Op == Constant && (math.IsNaN(float64(n.Value)) || math.IsInf(float64(n.Value), 0)) {
 			return nil, Error("non-finite graph constant")
 		}
 	}
-	v := &Voice{program: program, sampleRate: float32(sampleRate)}
+	v := new(Voice)
+	v.program = program
+	v.sampleRate = float32(sampleRate)
+	if usesQuality(program) {
+		v.quality = newQualityState(program, sampleRate)
+		v.sampleRate *= 2
+	}
 	if program.GlideMS > 0 {
-		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(sampleRate)))
+		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(v.sampleRate)))
 	}
 	for i := 0; i < int(program.Len); i++ {
 		v.states[i].noise = uint32(i+1)*0x9e3779b9 ^ 0xa5a5a5a5
@@ -139,6 +154,9 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	v.pitch = float32(440 * math.Exp2((float64(note)-69)/12))
 	v.pitchLog, v.targetLog = targetLog, targetLog
 	v.gliding = false
+	if v.quality != nil {
+		v.quality.retrigger()
+	}
 	for i := 0; i < int(v.program.Len); i++ {
 		s := &v.states[i]
 		switch v.program.Nodes[i].Op {
@@ -155,6 +173,9 @@ func (v *Voice) NoteOff() { v.gate = 0 }
 func (v *Voice) Reset() {
 	v.pitch, v.gate, v.velocity = 0, 0, 0
 	v.pitchLog, v.targetLog, v.gliding = 0, 0, false
+	if v.quality != nil {
+		v.quality.reset()
+	}
 	for i := 0; i < int(v.program.Len); i++ {
 		v.values[i] = 0
 		v.states[i].phase = 0
@@ -164,6 +185,22 @@ func (v *Voice) Reset() {
 }
 
 func (v *Voice) Next() float32 {
+	if v.quality == nil {
+		return v.nextSample()
+	}
+	first, second := v.nextSample(), v.nextSample()
+	out := float32(v.quality.down.Downsample(float64(first), float64(second)))
+	if v.quality.fade > 0 {
+		blend := float32(v.quality.fade) / float32(v.quality.fadeFrames)
+		out = out*(1-blend) + v.quality.previous*blend
+		v.quality.fade--
+	}
+	v.quality.last = out
+	return out
+}
+
+//go:noinline
+func (v *Voice) nextSample() float32 {
 	if v.gliding {
 		v.pitchLog += (v.targetLog - v.pitchLog) * v.pitchAlpha
 		v.pitch = float32(fastmath.Exp2(v.pitchLog))
@@ -195,6 +232,10 @@ func (v *Voice) Next() float32 {
 				y = a / b
 			}
 		case Saw, Square, Sine:
+			if v.quality != nil {
+				y = v.quality.oscillate(i, n.Op, a, 0.5, v.sampleRate)
+				break
+			}
 			frequency := clamp(a, 0, v.sampleRate*0.49)
 			dt := frequency / v.sampleRate
 			phase := s.phase
@@ -229,6 +270,12 @@ func (v *Voice) Next() float32 {
 			}
 			y = s.env
 			s.env *= float32(math.Exp(-4600 / float64(ms*v.sampleRate)))
+		case Pulse:
+			y = v.quality.oscillate(i, Pulse, a, b, v.sampleRate)
+		case ADSR:
+			y = v.quality.nodes[i].envelope.next(a > 0, b, c, v.values[n.D], v.values[n.E], v.sampleRate)
+		case SVF:
+			y = v.quality.nodes[i].filter.next(a, b, c, v.sampleRate, v.quality.baseRate)
 		case Ladder, Diode:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
 			g := float32(math.Tan(math.Pi * float64(frequency/v.sampleRate)))

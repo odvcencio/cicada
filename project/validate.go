@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -130,7 +131,7 @@ func ValidateProject(p *Project) error {
 		if err := uniqueID(inst.ID, seenInstruments); err != nil {
 			return fmt.Errorf("instrument: %w", err)
 		}
-		if inst.Mode != "mono" || inst.Params == nil || inst.Lets == nil {
+		if (inst.Mode != "mono" && inst.Mode != "poly") || inst.Params == nil || inst.Lets == nil {
 			return fmt.Errorf("instrument %s uses an unsupported voice mode or incomplete fields", inst.ID)
 		}
 		params := map[string]bool{}
@@ -404,6 +405,8 @@ func ValidateProject(p *Project) error {
 			allocatedVoices += drumVoiceCount(projectDrumLanes(p, track))
 		} else if kit, ok := kits[track.Kind]; ok {
 			allocatedVoices += len(kit.Lanes)
+		} else if inst := instruments[track.Kind]; inst != nil && inst.Mode == "poly" {
+			allocatedVoices += graph.PolyVoices
 		} else {
 			allocatedVoices++
 		}
@@ -557,6 +560,8 @@ func ValidateProject(p *Project) error {
 				voices += drumVoiceCount(projectDrumLanes(p, tracks[trackID]))
 			} else if kit, ok := kits[kind]; ok {
 				voices += len(kit.Lanes)
+			} else if inst := instruments[kind]; inst != nil && inst.Mode == "poly" {
+				voices += graph.PolyVoices
 			} else {
 				voices++
 			}
@@ -704,14 +709,16 @@ func validateExpr(expr Expr, depth int) (int, error) {
 
 func validExprArity(op string, n int) bool {
 	switch op {
-	case "+", "-", "*", "/", "env", "lowpass", "highpass":
+	case "+", "-", "*", "/", "env", "lowpass", "highpass", "pulse":
 		return n == 2
 	case "saw", "square", "sine", "tanh", "exp2":
 		return n == 1
 	case "noise":
 		return n == 0
-	case "ladder", "diode", "mix", "clamp":
+	case "ladder", "diode", "mix", "clamp", "svf":
 		return n == 3
+	case "adsr":
+		return n == 5
 	}
 	return false
 }

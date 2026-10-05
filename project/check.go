@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -157,6 +158,11 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 	kitVoices := make(map[string]int, len(score.Kits))
 	for _, kit := range score.Kits {
 		kitVoices[kit.Name] = len(kit.Bindings)
+	}
+	for _, inst := range score.Instruments {
+		if inst.Mode == "poly" {
+			kitVoices[inst.Name] = graph.PolyVoices
+		}
 	}
 	drumVoices := make(map[string]int, len(tracks))
 	for id, track := range tracks {
