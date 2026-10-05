@@ -31,8 +31,9 @@ audio device. For WAV output, render the score:
 ```
 
 Studio uses GoSX components, server actions, managed navigation, and the GoSX
-score editor. Its live meter surface runs as a GoSX Go/WASM engine. HTML forms
-also work with JavaScript disabled. `make build-workstation-release` builds the
+score editor. Live meters, keyboard/MIDI input, note takes, and capture status
+run as GoSX Go/WASM engines. HTML forms also work with JavaScript disabled.
+`make build-workstation-release` builds the
 production framework runtime with TinyGo. See [workstation architecture](workstation/README.md).
 
 For command-line rendering alone, `make build-core` needs no workstation build.

@@ -292,6 +292,11 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 	return stream.SetParam(track, id, value)
 }
 
+func (s *studio) resetLiveLoudness(w http.ResponseWriter, r *http.Request) {
+	s.transport.resetLoudness()
+	studioJSON(w, http.StatusOK, map[string]any{"ok": true})
+}
+
 func mustJSON(value any) []byte {
 	encoded, err := json.Marshal(value)
 	if err != nil {

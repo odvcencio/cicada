@@ -95,7 +95,11 @@ func newApp(b *backend) (http.Handler, error) {
 		_, _ = w.Write(ui.CSS)
 	}))
 	app.Mount("/editor/", http.StripPrefix("/editor/", editor.AssetHandler()))
-	for _, path := range []string{"/api/state", "/api/transport", "/api/meters", "/api/audio/config", "/api/export", "/api/takes", "/api/history"} {
+	app.Mount("GET /media/takes/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("id", strings.TrimSuffix(r.PathValue("id"), ".wav"))
+		s.takeAudio(w, r)
+	}))
+	for _, path := range []string{"/api/state", "/api/transport", "/api/meters", "/api/audio/config", "/api/export", "/api/takes", "/api/capture", "/api/history", "/api/params"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var data json.RawMessage
 			if err := b.call(r.Context(), http.MethodGet, path, nil, &data); err != nil {
@@ -166,7 +170,7 @@ func (s *studioApp) page(ctx *server.Context) gosx.Node {
 	_ = s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/transport", nil, &state)
 	var meters gosx.Node = gosx.Fragment()
 	if runtimeRoot() != "" && panel == "mixer" {
-		meters = ctx.Engine(engine.Config{Name: "CicadaMeters", Kind: engine.KindSurface, MountID: "cicada-meters", Runtime: engine.RuntimeGoWASM, WASMPath: ui.MeterEnginePath, Capabilities: []engine.Capability{engine.CapCanvas, engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapCanvas, engine.CapWASM, engine.CapFetch}}, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Live output meters require browser WASM and canvas support.")))
+		meters = gosx.El("section", gosx.Attrs(gosx.Attr("aria-label", "Master loudness")), ctx.Engine(engine.Config{Name: "CicadaMeters", Kind: engine.KindSurface, MountID: "cicada-meters", Runtime: engine.RuntimeGoWASM, WASMPath: ui.MeterEnginePath, Capabilities: []engine.Capability{engine.CapCanvas, engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapCanvas, engine.CapWASM, engine.CapFetch}}, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Live output meters require browser WASM and canvas support."))), s.form(view, csrf, "mixer", "loudness-reset", submit("", "", "Reset live loudness")))
 	}
 	return ui.Shell(props, s.toolbar(view, csrf, panel, state), s.navigation(panel), gosx.El("main", gosx.Attrs(gosx.Attr("id", "workspace")), meters, s.panel(ctx, view, csrf, panel)))
 }
@@ -191,7 +195,7 @@ func (s *studioApp) toolbar(view workspace, csrf, panel string, t transport) gos
 
 func (s *studioApp) navigation(panel string) gosx.Node {
 	var links []gosx.Node
-	for _, item := range []struct{ key, label string }{{"session", "Session"}, {"patterns", "Patterns"}, {"generator", "Generate"}, {"mixer", "Mixer"}, {"voices", "Instruments"}, {"code", "Score"}, {"takes", "Takes"}, {"history", "History"}, {"audio", "Audio"}, {"export", "Export"}} {
+	for _, item := range []struct{ key, label string }{{"session", "Session"}, {"patterns", "Patterns"}, {"generator", "Generate"}, {"live", "Live"}, {"mixer", "Mixer"}, {"voices", "Instruments"}, {"code", "Score"}, {"takes", "Takes"}, {"history", "History"}, {"audio", "Audio"}, {"export", "Export"}} {
 		attrs := gosx.Attrs(gosx.Attr("href", "/?panel="+item.key))
 		if panel == item.key {
 			attrs = append(attrs, gosx.Attr("aria-current", "page"))

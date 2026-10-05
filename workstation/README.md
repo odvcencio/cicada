@@ -2,7 +2,8 @@
 
 Studio is a GoSX server application. Tymbal opens native audio devices; Cicada's
 allocation-free kernel renders their buffers. The workstation handles the score
-editor, session, pattern grid, mixer, takes, history, audio settings, and export.
+editor, session, pattern grid, generator, live performance, mixer, takes,
+history, audio settings, and export.
 It does not put a web framework inside the realtime callback.
 
 ## Framework conventions
@@ -13,7 +14,7 @@ rather than assuming that examples on `main` are supported by the pinned version
 - Author strict components in `app/ui/components.gsx`, with same-file props,
   scalar fields, slots, and boolean conditions. Generated Go is a projection.
   `go generate ./...` transpiles components, includes their stylesheet, and
-  builds the content-addressed Go/WASM meter module. Generation is part of the
+  builds the content-addressed Go/WASM engine module. Generation is part of the
   GoSX build hook and CI checks that checked-in projections remain reproducible.
 - Use GoSX's programmatic `server.Page` API for this private, single-score
   workspace. Navigation changes the selected panel without a client router.
@@ -29,6 +30,19 @@ native submissions store a bounded, session-owned draft with a small receipt.
 - Transport and export use GoSX live bindings. Output meters use a registered
   GoSX Go/WASM engine and reactive signals. Each mount owns its watcher and
   polling context; disposal cancels both. Meter code never produces audio.
+- Live keyboard, pointer, and explicitly permitted Web MIDI input run in a
+  registered GoSX Go/WASM engine. MIDI curves come from the domain parameter
+  registry. Ordered mount leases release owned notes on blur or disposal and
+  reject late commands; releasing one mount cannot stop another's held pitch.
+  Session-owned note previews require explicit commit and retain revision
+  conflicts. Native sample audition stays a private, no-store WAV stream,
+  rendered by the existing sample voice. GoSX disposal stops its media element.
+  Live and Takes keep their SSR controls inside their engine mount. Stable
+  props preserve that subtree during navigation; changed preview receipts or
+  take projections cause a remount with fresh controls.
+- Native capture forms work without browser scripting. A GoSX engine polls a
+  compact capture projection for count-in, durable frames, and incomplete-input
+  status. It never transfers PCM or retained source candidates in polling data.
 - Use `gosx build --prod` from the pinned module for production runtimes and
   content hashes. Scene3D, video, payments, and relay are excluded. Keep scores,
   recordings, and secrets outside `public/` and the deployment bundle.
@@ -57,10 +71,13 @@ not provide a browser AudioWorklet backend. GoSX's sample audio player does not
 replace Tymbal or Cicada's audio kernel.
 
 Legacy browser audio/MIDI adapters remain for portable-host qualification.
-Studio's public GoSX server does not serve the old `studio-*.js` application or
-proxy its audio adapters. The hidden core `--service` mode supports the existing
-host qualification fixtures. Porting browser audio and MIDI needs their own
-supported engine boundary; production capability names cannot be invented.
+Both Studio's public GoSX server and its private production domain service
+exclude the old `studio-*.js` application, WebSocket audio bridge, kernel WASM,
+and browser capture adapters. The explicit core `--service` mode supports the
+existing host qualification fixtures. Browser AudioWorklet input is not an
+alternate production recording path: recording uses Tymbal's selected native
+input. Web MIDI is explicitly feature-detected inside the unrestricted
+Go/WASM engine; no nonexistent framework MIDI capability is declared.
 
 Realtime hubs and CRDT collaboration are appropriate for shared documents and
 presence, once Cicada's collaboration milestone defines ownership and auth.
