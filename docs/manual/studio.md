@@ -31,21 +31,50 @@ last valid score playing.
 assignments, a pattern cell to queue one track, or **Stop** to stop a track.
 Launches are quantized to the next bar. **Keep** preserves that track's slot.
 
-The arrangement lists scene entries and their bar ranges. **Set bars** changes
-an entry's duration; **Move earlier** and **Move later** change its order.
-**Play from here** starts the song at that entry. All edits check the current
-disk revision.
+The arrangement timeline shows scene blocks across all tracks, their bar
+ranges, and inherited patterns. Click a scene header to play from that block,
+or a pattern clip to open its editor. Expand a block to replace its scene,
+set its length, duplicate it, remove it, or move it earlier or later.
+**Add to arrangement** appends an existing scene. At least one block remains.
+Structural changes to songs with intervening comments require a Score edit
+so those comments keep their attachment. Local scene and bar edits preserve them.
+
+**Project settings** changes the title, tempo, key, and scale. Tempo keeps up
+to three decimal places. Changing the key retunes scale-degree notes; explicit
+letter pitches keep their pitch. Every edit validates and checks the current
+disk revision before saving, and has an Undo entry.
+
+![GoSX Studio's arrangement timeline and block controls.](screenshots/studio-arrangement-1440.png)
 
 ## Patterns
 
-**Patterns** shows pitched steps and the declared drum lanes. Select a step to
-toggle a note or hit. Pitched patterns also have a MIDI-pitch form. Step numbers
-in the modifier and pitch forms start at zero.
+Choose a pattern from the library. The piano roll shows pitched patterns;
+drum patterns show their authored lanes. Click a cell to write or clear a note
+or hit. Choose a step number (starting at **1**) to inspect it without changing
+it. **View register** moves the piano roll to another octave; the editor reports
+notes outside the displayed register.
 
-Select **accent**, **slide**, **tie**, **ratchet**, or **chance**, choose a step,
-and apply the modifier. Choose the lane ID for a drum edit. Ratchet and chance
-use Cicada's existing articulation cycles. Successful edits refresh the score
-projection. For reused phrases, the definition changes and every use follows.
+The step inspector sets note, tie, or rest; MIDI pitch; accent and slide;
+ratchet from 1–8; and chance from 1–100%. Drum hits offer velocity levels
+**1–9**, normal **x** (100), or accented **X** (127). Melodic dynamics use the
+voice's accent behavior. **Pattern timing** edits swing, gate, and transpose,
+and resizes patterns to 1–64 steps. Shortening removes the ending steps from
+every lane; Undo restores them.
+
+**Range editing** copies, clears, reverses, rotates, or transposes selected
+steps. Copy writes at its destination without extending the pattern; overlapping
+copies read the original range. Rotate wraps inside the selection. Transpose
+changes note pitches while retaining articulation, rests, and ties. Drum lanes
+support the first four operations. Each operation commits as one Undo entry.
+
+**Create variation** duplicates a pattern with independent notes and no reserved
+slot. Its current pitches are written explicitly, including a custom voice's
+home octave. **Assign to scene** places it on a compatible track. Editing a
+phrase-based pattern expands its phrase uses locally, preserving the shared
+phrase and other patterns. Comments inside a phrase-use expression require a
+Score edit instead of being discarded.
+
+![GoSX Studio's piano roll and step inspector.](screenshots/studio-piano-roll-1440.png)
 
 ## Phrase generation
 
@@ -145,8 +174,18 @@ root and playback MIDI notes and optional full-region looping, then **Update
 audition** and use the audio controls. The native sample voice renders the WAV;
 audition leaves the score unchanged and stops when you leave the panel.
 
+Current arrangement playback provides synth accompaniment for audio capture.
+Selected audio clips and declared samplers are retained in the score, but their
+sequencing is not yet integrated into the playback kernel. Audition is the
+available playback path for recorded takes.
+
 **Export** renders WAV with a target LUFS value, true-peak ceiling, tolerance,
-sample rate, and PCM depth. Status and the output path update through GoSX.
+sample rate, and PCM depth. Progress, measured LUFS, true peak, applied gain,
+limiter reduction, and the output path update through GoSX. **Download WAV**
+appears when the current job completes. A shortfall render is labeled explicitly
+for inspection before delivery. Rendering checks the displayed source revision;
+starting another job invalidates its previous download link. Audio stays outside
+the public asset bundle, and long downloads stream through the private service.
 Offline rendering uses the same Cicada kernel as Tymbal playback. See
 [exporting](exporting.md) for stems, MIDI, and verification commands.
 

@@ -23,6 +23,19 @@ rather than assuming that examples on `main` are supported by the pinned version
   CSRF protection. Native forms and managed forms use the same handlers and
   POST-redirect-GET behavior. Every source mutation carries a disk revision;
   Cicada's existing CST patchers remain authoritative.
+- Arrangement blocks, the piano roll, drum lanes, step dynamics, range edits,
+  pattern variations, and project metadata use server-rendered GoSX controls
+  and these same actions. Step numbers are one-based in the UI and lowered once
+  at the action boundary. Phrase uses expand inside the edited pattern rather
+  than modifying a shared definition. Variations preserve current MIDI pitches
+  and drop explicit slot placement; scene assignment allocates a free slot.
+  Copy/reverse/rotate/transpose/clear and resize are atomic source edits with one
+  Undo entry. No additional application JavaScript is required.
+- Export delivery uses GoSX live text and attribute bindings for progress,
+  measurements, button availability, and the completed WAV link. Rendering
+  carries the displayed revision; an opaque job ID can select only the current
+  finished artifact. The server streams it privately without exposing a client
+  filesystem selector, placing audio in public/, or limiting it to JSON size.
 - The GoSX editor supplies the code surface, gutter, keyboard behavior, form
   submission, and initial parser-derived highlighting. Parser byte offsets are
   mapped to UTF-16 in one pass. Invalid enhanced submissions retain the draft;

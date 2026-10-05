@@ -245,6 +245,8 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("POST /api/live", s.liveControl)
 	mux.HandleFunc("POST /api/loudness/reset", s.resetLiveLoudness)
 	mux.HandleFunc("POST /api/song", s.editSong)
+	mux.HandleFunc("POST /api/pattern", s.editPattern)
+	mux.HandleFunc("POST /api/project", s.editProject)
 	mux.HandleFunc("POST /api/undo", s.undo)
 	mux.HandleFunc("POST /api/redo", s.redo)
 	mux.HandleFunc("POST /api/history/{id}/revert", s.revertHistory)
@@ -256,6 +258,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /api/audio/config", s.audioConfig)
 	mux.HandleFunc("POST /api/audio/config", s.audioConfig)
 	mux.HandleFunc("GET /api/export", s.exportStatus)
+	mux.HandleFunc("GET /api/export/file/{id}", s.exportFile)
 	mux.HandleFunc("POST /api/export", s.startExport)
 	mux.HandleFunc("GET /api/history", s.historyState)
 	if qualification {
@@ -371,30 +374,36 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
-	Capture        *studioBrowserTake    `json:"capture,omitempty"`
-	Sample         *studioSampleRequest  `json:"sample,omitempty"`
-	TakeID         string                `json:"takeId,omitempty"`
-	Scene          string                `json:"scene,omitempty"`
-	Revision       string                `json:"revision"`
-	Label          string                `json:"label,omitempty"`
-	Action         string                `json:"action,omitempty"`
-	Index          int                   `json:"index,omitempty"`
-	Target         int                   `json:"target,omitempty"`
-	Bars           int                   `json:"bars,omitempty"`
-	Source         string                `json:"source"`
-	Pattern        string                `json:"pattern"`
-	Track          string                `json:"track,omitempty"`
-	Count          int                   `json:"count,omitempty"`
-	Take           []studioTakeNote      `json:"take,omitempty"`
-	Recordings     []studioTakeRecording `json:"recordings,omitempty"`
-	PatternCount   int                   `json:"patternCount,omitempty"`
-	Lane           string                `json:"lane"`
-	Step           int                   `json:"step"`
-	Pitch          *int                  `json:"pitch,omitempty"`
-	Modifier       string                `json:"modifier,omitempty"`
-	Path           string                `json:"path,omitempty"`
-	Value          json.RawMessage       `json:"value,omitempty"`
-	ConfirmUpgrade bool                  `json:"confirmUpgrade,omitempty"`
+	Metadata       *studioProjectSettings `json:"metadata,omitempty"`
+	Range          *studioPatternRange    `json:"range,omitempty"`
+	Length         int                    `json:"length,omitempty"`
+	Settings       *studioPatternSettings `json:"settings,omitempty"`
+	NoteEdit       *studioStepEdit        `json:"noteEdit,omitempty"`
+	NewName        string                 `json:"newName,omitempty"`
+	Capture        *studioBrowserTake     `json:"capture,omitempty"`
+	Sample         *studioSampleRequest   `json:"sample,omitempty"`
+	TakeID         string                 `json:"takeId,omitempty"`
+	Scene          string                 `json:"scene,omitempty"`
+	Revision       string                 `json:"revision"`
+	Label          string                 `json:"label,omitempty"`
+	Action         string                 `json:"action,omitempty"`
+	Index          int                    `json:"index,omitempty"`
+	Target         int                    `json:"target,omitempty"`
+	Bars           int                    `json:"bars,omitempty"`
+	Source         string                 `json:"source"`
+	Pattern        string                 `json:"pattern"`
+	Track          string                 `json:"track,omitempty"`
+	Count          int                    `json:"count,omitempty"`
+	Take           []studioTakeNote       `json:"take,omitempty"`
+	Recordings     []studioTakeRecording  `json:"recordings,omitempty"`
+	PatternCount   int                    `json:"patternCount,omitempty"`
+	Lane           string                 `json:"lane"`
+	Step           int                    `json:"step"`
+	Pitch          *int                   `json:"pitch,omitempty"`
+	Modifier       string                 `json:"modifier,omitempty"`
+	Path           string                 `json:"path,omitempty"`
+	Value          json.RawMessage        `json:"value,omitempty"`
+	ConfirmUpgrade bool                   `json:"confirmUpgrade,omitempty"`
 }
 
 func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
@@ -402,12 +411,12 @@ func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if edit.Action != "move" && edit.Action != "bars" {
-		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "song action must be move or bars"})
+	if edit.Action != "move" && edit.Action != "bars" && edit.Action != "append" && edit.Action != "duplicate" && edit.Action != "delete" && edit.Action != "scene" {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "unknown arrangement action"})
 		return
 	}
 	s.apply(w, edit, func(source []byte) ([]byte, error) {
-		return editedSongSource(source, edit.Action, edit.Index, edit.Target, edit.Bars)
+		return editedSongBlockSource(source, edit.Action, edit.Index, edit.Target, edit.Bars, edit.Scene)
 	})
 }
 

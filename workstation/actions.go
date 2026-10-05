@@ -110,6 +110,14 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
+		"project": s.mutation("/api/project", func(f map[string]string) (any, error) {
+			tempo, err := finiteNumber(f, "tempo")
+			if err != nil || tempo < 20 || tempo > 300 || math.Abs(tempo*1000-math.Round(tempo*1000)) > 1e-6 {
+				return nil, fmt.Errorf("tempo must be 20–300 BPM with up to three decimal places")
+			}
+			return map[string]any{"revision": f["revision"], "metadata": map[string]any{"title": f["title"], "tempoMilli": int(math.Round(tempo * 1000)), "root": f["root"], "scale": f["scale"]}}, nil
+		}),
+		"pattern":        s.patternAction,
 		"live":           s.liveAction,
 		"launch":         s.launchAction,
 		"note-preview":   s.previewNotes,
@@ -164,6 +172,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 		"song": s.mutation("/api/song", func(f map[string]string) (any, error) {
 			p := edit(f)
 			p["action"] = f["action"]
+			p["scene"] = f["scene"]
 			for _, key := range []string{"index", "target", "bars"} {
 				if f[key] != "" {
 					v, e := integer(f, key)
@@ -224,7 +233,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 			return audioOptions{InputDevice: f["inputDevice"], OutputDevice: f["outputDevice"], InputEnabled: f["inputEnabled"] == "on", MonitorMuted: f["monitorMuted"] == "on", MonitorGain: gain, MonitorMode: f["monitorMode"]}, nil
 		}),
 		"export": s.mutation("/api/export", func(f map[string]string) (any, error) {
-			p := map[string]any{}
+			p := map[string]any{"revision": f["revision"]}
 			for _, key := range []string{"target_lufs", "true_peak_max", "tolerance"} {
 				v, e := finiteNumber(f, key)
 				if e != nil {
