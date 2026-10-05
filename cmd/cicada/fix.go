@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,10 +27,18 @@ type fixScoreEdit struct {
 // fixCommand migrates edition-1 spellings wherever they appear, including in
 // a project whose manifest already selects edition 2.
 func fixCommand(args []string) error {
-	return fixCommandWithWriter(args, writeFixedScore)
+	return fixCommandWithHooks(args, nil, nil)
 }
 
 func fixCommandWithWriter(args []string, writeScore func(string, []byte, os.FileMode) error) error {
+	return fixCommandWithHooks(args, writeScore, nil)
+}
+
+func fixCommandWithHooks(args []string, writeScore func(string, []byte, os.FileMode) error, beforeManifestSwap func()) error {
+	defaultWriter := writeScore == nil
+	if defaultWriter {
+		writeScore = writeFixedScore
+	}
 	path, all, check, err := parseFixArgs(args)
 	if err != nil {
 		return err
@@ -48,7 +57,10 @@ func fixCommandWithWriter(args []string, writeScore func(string, []byte, os.File
 			return err
 		}
 		if parsed.ExplicitSources() {
-			return fixMultiFile(root, parsed, data, path, all, check, writeScore)
+			if defaultWriter {
+				writeScore = nil
+			}
+			return fixMultiFile(root, parsed, data, path, all, check, writeScore, beforeManifestSwap)
 		}
 	}
 	paths, err := projectScorePaths(root)
@@ -452,7 +464,7 @@ func fixSource(source []byte) ([]byte, bool, error) {
 	return migration.FixSource(source)
 }
 
-func fixMultiFile(root string, manifest ed.Manifest, beforeManifest []byte, path string, all, check bool, writeScore func(string, []byte, os.FileMode) error) error {
+func fixMultiFile(root string, manifest ed.Manifest, beforeManifest []byte, path string, all, check bool, writeScore func(string, []byte, os.FileMode) error, beforeManifestSwap func()) error {
 	entry := filepath.Join(root, filepath.FromSlash(manifest.Entry))
 	requested := entry
 	if path != "" {
@@ -461,6 +473,15 @@ func fixMultiFile(root string, manifest ed.Manifest, beforeManifest []byte, path
 	sources, err := project.ReadSources(requested, nil)
 	if err != nil {
 		return err
+	}
+	pathsToCheck := []string{sources.ManifestPath}
+	for _, file := range sources.Files {
+		pathsToCheck = append(pathsToCheck, file.Path)
+	}
+	for _, filePath := range pathsToCheck {
+		if err := studioRecoveryConflict(filePath); err != nil {
+			return fmt.Errorf("fix refused: %w", err)
+		}
 	}
 	fixed, changed, err := migration.FixFiles(sources.Files, manifest.Edition)
 	if err != nil {
@@ -509,52 +530,83 @@ func fixMultiFile(root string, manifest ed.Manifest, beforeManifest []byte, path
 			return fmt.Errorf("source changed during fix: %s; retry", file.Path)
 		}
 	}
+	// Probe each target filesystem before writing any project file. Unsupported
+	// exchange operations must not strand a partially migrated project.
+	probed := make(map[string]bool)
+	paths := []string{}
+	if upgrade {
+		paths = append(paths, sources.ManifestPath)
+	}
+	for i, file := range fixed {
+		if !bytes.Equal(file.Source, sources.Files[i].Source) {
+			paths = append(paths, file.Path)
+		}
+	}
+	for _, path := range paths {
+		dir := filepath.Dir(path)
+		if !probed[dir] {
+			if err := fixCheckExchange(dir); err != nil {
+				return err
+			}
+			probed[dir] = true
+		}
+	}
 	var written []fixScoreEdit
-	rollback := func() {
+	rollback := func(cause error) error {
 		for i := len(written) - 1; i >= 0; i-- {
 			e := written[i]
 			current, err := os.ReadFile(e.path)
-			if err == nil && bytes.Equal(current, e.fixed) {
-				_ = writeFixedScore(e.path, e.before, e.mode)
+			if err != nil {
+				if !os.IsNotExist(err) {
+					cause = errors.Join(cause, fmt.Errorf("rollback %s: %w", e.path, err))
+				}
+				continue
+			}
+			if bytes.Equal(current, e.fixed) {
+				if err := writeFixedRevision(e.path, e.fixed, e.before, e.mode, nil); err != nil {
+					cause = errors.Join(cause, fmt.Errorf("rollback %s: %w", e.path, err))
+				}
 			}
 		}
+		return cause
 	}
 	for i, file := range fixed {
-		if string(file.Source) == string(sources.Files[i].Source) {
+		if bytes.Equal(file.Source, sources.Files[i].Source) {
 			continue
 		}
 		current, err := os.ReadFile(file.Path)
 		if err != nil {
-			rollback()
-			return err
+			return rollback(err)
 		}
 		if !bytes.Equal(current, sources.Files[i].Source) {
-			rollback()
-			return fmt.Errorf("source changed during fix: %s; retry", file.Path)
+			return rollback(fmt.Errorf("source changed during fix: %s; retry", file.Path))
 		}
 		stat, err := os.Stat(file.Path)
 		if err != nil {
-			rollback()
-			return err
+			return rollback(err)
 		}
-		if err := writeScore(file.Path, file.Source, stat.Mode().Perm()); err != nil {
-			rollback()
-			return err
-		}
+		// Record an attempted publication too: an I/O error can occur after the
+		// exchange, and a test writer can fail after installing the new bytes.
 		written = append(written, fixScoreEdit{path: file.Path, before: sources.Files[i].Source, fixed: file.Source, mode: stat.Mode().Perm()})
-	}
-	// The manifest participates in the migration revision just like a source.
-	// Preserve an editor's metadata or source-list change and undo our own writes.
-	if err := checkManifestRevision(); err != nil {
-		rollback()
-		return err
-	}
-	if upgrade {
-		if err := writeFixedScore(sources.ManifestPath, afterManifest, info.Mode().Perm()); err != nil {
-			rollback()
-			return err
+		if writeScore == nil {
+			err = writeFixedRevision(file.Path, sources.Files[i].Source, file.Source, stat.Mode().Perm(), nil)
+		} else {
+			err = writeScore(file.Path, file.Source, stat.Mode().Perm())
+		}
+		if err != nil {
+			return rollback(fmt.Errorf("source changed during fix: %s; retry: %w", file.Path, err))
 		}
 	}
-	fmt.Printf("fixed %d source(s); edition manifest %s\n", len(written), sources.ManifestPath)
+	if err := checkManifestRevision(); err != nil {
+		return rollback(err)
+	}
+	sourceCount := len(written)
+	if upgrade {
+		written = append(written, fixScoreEdit{path: sources.ManifestPath, before: beforeManifest, fixed: afterManifest, mode: info.Mode().Perm()})
+		if err := writeFixedRevision(sources.ManifestPath, beforeManifest, afterManifest, info.Mode().Perm(), beforeManifestSwap); err != nil {
+			return rollback(fmt.Errorf("manifest changed during fix: %s; retry: %w", sources.ManifestPath, err))
+		}
+	}
+	fmt.Printf("fixed %d source(s); edition manifest %s\n", sourceCount, sources.ManifestPath)
 	return nil
 }
