@@ -42,12 +42,12 @@ type backendError struct {
 
 func (e *backendError) Error() string { return e.Message }
 
-func (b *backend) call(ctx context.Context, method, path string, input, output any) error {
+func (b *backend) request(ctx context.Context, method, path string, input any) (*http.Response, error) {
 	var body io.Reader
 	if input != nil {
 		data, err := json.Marshal(input)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		body = bytes.NewReader(data)
 	}
@@ -55,7 +55,7 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 	u.Path, u.RawQuery = path, ""
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if input != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -65,7 +65,15 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 	}
 	response, err := b.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("Tymbal service is unavailable: %w", err)
+		return nil, fmt.Errorf("Tymbal service is unavailable: %w", err)
+	}
+	return response, nil
+}
+
+func (b *backend) call(ctx context.Context, method, path string, input, output any) error {
+	response, err := b.request(ctx, method, path, input)
+	if err != nil {
+		return err
 	}
 	defer response.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(response.Body, 8<<20+1))

@@ -30,6 +30,7 @@ import (
 )
 
 type studio struct {
+	liveControls    studioLiveControls
 	takes           *takejournal.Store
 	captureID       string
 	captureRecorder *capture.Recorder
@@ -108,6 +109,7 @@ func studioCommand(args []string) error {
 	handler := studio.routes()
 	var serviceToken string
 	if !serviceOnly {
+		handler = studio.domainRoutes()
 		handler, serviceToken, err = privateStudioService(handler)
 		if err != nil {
 			return err
@@ -220,16 +222,28 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 }
 
 func (s *studio) routes() http.Handler {
+	return s.studioRoutes(true)
+}
+
+// Production GoSX uses only native domain commands. The original browser host
+// remains reachable only through the explicit --service qualification mode.
+func (s *studio) domainRoutes() http.Handler {
+	return s.studioRoutes(false)
+}
+
+func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", s.page)
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/workspace", s.workspace)
 	mux.HandleFunc("GET /api/meters", s.meters)
 	mux.HandleFunc("GET /api/takes", s.takeState)
+	mux.HandleFunc("GET /api/capture", s.captureState)
 	mux.HandleFunc("POST /api/takes", s.takeCommand)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
 	mux.HandleFunc("POST /api/record", s.recordTake)
+	mux.HandleFunc("POST /api/live", s.liveControl)
+	mux.HandleFunc("POST /api/loudness/reset", s.resetLiveLoudness)
 	mux.HandleFunc("POST /api/song", s.editSong)
 	mux.HandleFunc("POST /api/undo", s.undo)
 	mux.HandleFunc("POST /api/redo", s.redo)
@@ -238,32 +252,35 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("POST /api/mixer", s.editMixer)
 	mux.HandleFunc("POST /api/transport", s.transportCommand)
 	mux.HandleFunc("GET /api/transport", s.transportState)
-	mux.HandleFunc("POST /api/transport/browser-audio", s.browserAudioStatus)
-	mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
 	mux.HandleFunc("GET /api/params", s.params)
-	mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
 	mux.HandleFunc("GET /api/audio/config", s.audioConfig)
 	mux.HandleFunc("POST /api/audio/config", s.audioConfig)
-	mux.HandleFunc("GET /studio-workspace.js", s.workspaceScript)
-	mux.HandleFunc("GET /studio-audio.js", s.audioScript)
-	mux.HandleFunc("GET /studio-audio-devices.js", s.audioDeviceScript)
-	mux.HandleFunc("GET /studio-midi.js", s.midiScript)
-	mux.HandleFunc("GET /studio-live.js", s.liveScript)
-	mux.HandleFunc("GET /studio-master.js", s.masterScript)
-	mux.HandleFunc("GET /studio-mix.js", s.mixScript)
 	mux.HandleFunc("GET /api/export", s.exportStatus)
 	mux.HandleFunc("POST /api/export", s.startExport)
 	mux.HandleFunc("GET /api/history", s.historyState)
-	mux.HandleFunc("GET /api/kernel-image", s.kernelImage)
-	mux.HandleFunc("GET /api/kernel.wasm", s.kernelWASM)
-	mux.HandleFunc("GET /audio/cicada-processor.js", s.processorAsset)
-	mux.HandleFunc("GET /audio/cicada-client.js", s.clientAsset)
-	mux.HandleFunc("GET /audio/cicada-capture.js", s.captureAdapterAsset)
-	mux.HandleFunc("GET /audio/cicada-capture-processor.js", s.captureProcessorAsset)
-	mux.HandleFunc("GET /audio/cicada-capture-worker.js", s.captureWorkerAsset)
-	mux.HandleFunc("GET /audio/cicada-capture-client.js", s.captureClientAsset)
-	mux.HandleFunc("GET /studio-capture.js", s.captureUIScript)
-	mux.HandleFunc("GET /studio-history.js", s.historyScript)
+	if qualification {
+		mux.HandleFunc("GET /", s.page)
+		mux.HandleFunc("POST /api/transport/browser-audio", s.browserAudioStatus)
+		mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
+		mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
+		mux.HandleFunc("GET /studio-workspace.js", s.workspaceScript)
+		mux.HandleFunc("GET /studio-audio.js", s.audioScript)
+		mux.HandleFunc("GET /studio-audio-devices.js", s.audioDeviceScript)
+		mux.HandleFunc("GET /studio-midi.js", s.midiScript)
+		mux.HandleFunc("GET /studio-live.js", s.liveScript)
+		mux.HandleFunc("GET /studio-master.js", s.masterScript)
+		mux.HandleFunc("GET /studio-mix.js", s.mixScript)
+		mux.HandleFunc("GET /api/kernel-image", s.kernelImage)
+		mux.HandleFunc("GET /api/kernel.wasm", s.kernelWASM)
+		mux.HandleFunc("GET /audio/cicada-processor.js", s.processorAsset)
+		mux.HandleFunc("GET /audio/cicada-client.js", s.clientAsset)
+		mux.HandleFunc("GET /audio/cicada-capture.js", s.captureAdapterAsset)
+		mux.HandleFunc("GET /audio/cicada-capture-processor.js", s.captureProcessorAsset)
+		mux.HandleFunc("GET /audio/cicada-capture-worker.js", s.captureWorkerAsset)
+		mux.HandleFunc("GET /audio/cicada-capture-client.js", s.captureClientAsset)
+		mux.HandleFunc("GET /studio-capture.js", s.captureUIScript)
+		mux.HandleFunc("GET /studio-history.js", s.historyScript)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !studioLoopbackHost(r.Host) {
 			http.Error(w, "Studio requires a loopback host", http.StatusForbidden)

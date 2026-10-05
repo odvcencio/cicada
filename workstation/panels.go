@@ -19,6 +19,8 @@ import (
 
 func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) gosx.Node {
 	switch panel {
+	case "live":
+		return s.live(ctx, v, csrf)
 	case "code":
 		return s.code(ctx, v, csrf)
 	case "session":
@@ -342,36 +344,6 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 	button := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("disabled", state.Playing)), gosx.Text("Apply audio settings"))
 	form := s.form(v, csrf, "audio", "audio", field("Input", gosx.El("select", gosx.Attrs(gosx.Attr("name", "inputDevice")), gosx.Fragment(inputs...))), field("Output", gosx.El("select", gosx.Attrs(gosx.Attr("name", "outputDevice")), gosx.Fragment(outputs...))), checkbox("inputEnabled", "Enable input", state.Options.InputEnabled), checkbox("monitorMuted", "Mute monitoring", state.Options.MonitorMuted), field("Monitor gain", numberInput("monitorGain", strconv.FormatFloat(state.Options.MonitorGain, 'f', -1, 64), "0", "2")), field("Monitor mode", selectInput("monitorMode", state.Options.MonitorMode, []string{"stereo", "mono1", "mono2"})), button)
 	return ui.Panel(ui.PanelProps{ID: "audio", Title: "Audio devices", Description: state.Status}, gosx.El("p", gosx.Text(state.Inventory.BackendName+" · "+state.Inventory.Message)), form)
-}
-
-func (s *studioApp) takes(ctx *server.Context, v workspace, csrf string) gosx.Node {
-	var state struct {
-		Active string `json:"activeCapture"`
-		Takes  []struct {
-			ID     string `json:"id"`
-			Track  string `json:"track"`
-			Stage  string `json:"stage"`
-			Frames int64  `json:"frames"`
-		} `json:"takes"`
-	}
-	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/takes", nil, &state); err != nil {
-		return failure(err)
-	}
-	var tracks, scenes []string
-	if v.Project != nil {
-		for _, track := range v.Project.Tracks {
-			tracks = append(tracks, track.ID)
-		}
-		for _, scene := range v.Project.Scenes {
-			scenes = append(scenes, scene.ID)
-		}
-	}
-	controls := s.form(v, csrf, "takes", "take", field("Track", selectInput("track", "", tracks)), field("Scene", selectInput("scene", "", scenes)), submit("action", "arm", "Arm take"), submit("action", "start", "Record"), submit("action", "stop", "Finish take"))
-	var rows []gosx.Node
-	for _, take := range state.Takes {
-		rows = append(rows, gosx.El("li", gosx.Text(fmt.Sprintf("%s · %s · %d frames · %s", take.ID, take.Track, take.Frames, take.Stage)), s.form(v, csrf, "takes", "take", hidden("takeId", take.ID), submit("action", "select", "Select take"), submit("action", "recover", "Recover take"))))
-	}
-	return ui.Panel(ui.PanelProps{ID: "takes", Title: "Recorded takes", Description: "Tymbal capture uses the durable take journal; completed audio is committed to the score."}, controls, gosx.El("p", gosx.Text("Active take: "+state.Active)), gosx.El("ul", gosx.Fragment(rows...)))
 }
 
 func (s *studioApp) history(ctx *server.Context, v workspace, csrf string) gosx.Node {

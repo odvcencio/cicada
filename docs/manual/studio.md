@@ -1,7 +1,7 @@
 # Cicada Studio
 
 Studio is a GoSX workstation for the score on disk. Its editor, forms,
-navigation, and live meters use GoSX; Tymbal handles native audio devices.
+navigation, meters, and live performance use GoSX; Tymbal handles native audio devices.
 Changes to patterns, mixer settings, and arrangements write back to the score.
 
 From a source checkout, build both executables and open a score:
@@ -65,6 +65,32 @@ Studio reports the conflict.
 It checks the original revision; it cannot overwrite another editor's save.
 **Undo** restores the previous score.
 
+## Live performance
+
+![GoSX Live performance with scene launches, note input, and MIDI learning.](screenshots/studio-live-1440.png)
+
+**Live** plays an acid track from the A/W/S/E/D/F/T/G/Y/H/U/J/K keys or the
+onscreen keyboard. Drum pads use General MIDI notes. Press **Play** first;
+changing tracks, leaving the panel, or losing focus releases held notes.
+The launch matrix queues scenes or individual slots with the selected timing;
+mint marks a playing slot and amber marks a queued slot. Its forms also work
+without browser scripting.
+
+**Enable MIDI** asks for browser permission without system-exclusive access.
+Select a parameter, scene, slot, track stop, or transport target, then **Learn
+next input**. Parameters learn controller messages; launches learn note
+messages. **MIDI launch timing** chooses next beat, next bar, or one, two, or four
+bars. Mapping and track selections are saved in this browser. **Clear mappings**
+removes them. Browsers without Web MIDI can still use keyboard and drum pads.
+
+Choose each track's pattern, then **Record notes**. Acid and drum recordings
+use separate pattern targets. **Finish note take** retains the notes for
+review without changing the score. **Commit notes to patterns** quantizes them
+to the nearest step; **Undo** restores the previous patterns. An interrupted
+take is retained in the tab's session storage when available. A source conflict
+keeps the preview; applying it to the current score requires explicit review.
+Server previews expire after thirty minutes or when Studio closes.
+
 ## Mixer and instruments
 
 **Mixer** edits track, bus, return, effect, and master fields supported by the
@@ -75,9 +101,11 @@ registry. Existing track sends are included in their mixer strip.
 For an edition 1 score, first check **Upgrade score to edition 2 for this change**.
 The domain service performs the migration and parameter edit together.
 
-The GoSX meter surface shows track and master peaks during playback. It stops
-polling when you leave the mixer. These dBFS readings do not replace offline
-integrated-loudness verification.
+The GoSX meter surface shows track and master peaks, RMS, momentary,
+short-term and integrated LUFS, loudness range, true peak, and dropped blocks.
+**Reset live loudness** begins a new measurement. The surface stops polling
+when you leave the mixer. Offline export still provides the final loudness
+verification.
 
 **Instruments** lists declared voices, exposed parameters, and track overrides.
 Edit instrument definitions in **Score**.
@@ -105,10 +133,17 @@ History changes also check the disk revision.
 gain, and stereo or mono channel selection. Stop playback before applying these
 settings. Device errors stay visible; Cicada does not silently switch engines.
 
-**Takes** selects a track and scene for native input recording. Enable input in
-**Audio**, then **Arm take**, **Record**, and **Finish take**. The durable journal
+**Takes** selects an audio track and scene for native input recording. Enable input in
+**Audio**, then **Arm take**, **Record**, and **Finish take**. Recording begins
+after a two-bar count-in; status shows saved frames or seconds and incomplete
+input. The durable journal
 retains failed or conflicting takes. **Select take** commits a selected take;
 **Recover take** retries its recovery against the current revision.
+
+**Audition sample** opens a private preview of a published take. Choose its
+root and playback MIDI notes and optional full-region looping, then **Update
+audition** and use the audio controls. The native sample voice renders the WAV;
+audition leaves the score unchanged and stops when you leave the panel.
 
 **Export** renders WAV with a target LUFS value, true-peak ceiling, tolerance,
 sample rate, and PCM depth. Status and the output path update through GoSX.
@@ -118,10 +153,11 @@ Offline rendering uses the same Cicada kernel as Tymbal playback. See
 ## Browser support
 
 Forms, editing, navigation, and transport commands also work with JavaScript
-disabled. Live bindings, editor enhancements, and animated meters require the
+disabled. Live bindings, editor enhancements, MIDI, note input, and meters require the
 GoSX browser runtime. The audio service continues to run natively.
 
-Browser AudioWorklet capture, Web MIDI learning, and live note recording remain
-portable-host qualification features. They are not exposed by this GoSX Studio
-yet. The current Tymbal backend does not run in a browser AudioWorklet; its
-native playback is independent of browser audio permission.
+Input recording uses the native device selected in **Audio**. The current
+Tymbal backend does not run in a browser AudioWorklet; native playback and
+capture are independent of browser microphone permission. Legacy portable-host
+adapters remain qualification fixtures and are excluded from Studio's
+production routes.

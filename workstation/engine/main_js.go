@@ -23,14 +23,28 @@ type pair struct {
 	RMS  float64 `json:"rms"`
 }
 type meterFrame struct {
-	Tracks map[string]pair `json:"tracks"`
-	Master pair            `json:"master"`
+	Tracks   map[string]pair `json:"tracks"`
+	Master   pair            `json:"master"`
+	Loudness struct {
+		Momentary  *float64 `json:"momentary"`
+		Short      *float64 `json:"short_term"`
+		Integrated *float64 `json:"integrated"`
+		Range      *float64 `json:"range"`
+		TruePeak   *float64 `json:"true_peak"`
+		Dropped    uint64   `json:"dropped_blocks"`
+	} `json:"loudness"`
 }
 
 // The engine owns only this meter mount. Tymbal and Cicada's kernel remain in
 // the native service. GoSX owns module boot, registration, remount and disposal.
 func main() {
 	if err := enginewasm.Register("CicadaMeters", mountMeters); err != nil {
+		panic(err)
+	}
+	if err := enginewasm.Register("CicadaLive", mountLive); err != nil {
+		panic(err)
+	}
+	if err := enginewasm.Register("CicadaTakes", mountTakes); err != nil {
 		panic(err)
 	}
 	select {}
@@ -53,6 +67,7 @@ func mountMeters(host enginewasm.Context) (enginewasm.Handle, error) {
 	canvas.Get("style").Set("display", "block")
 	readout := document.Call("createElement", "p")
 	readout.Set("className", "muted")
+	readout.Get("style").Set("whiteSpace", "pre-line")
 	readout.Call("setAttribute", "aria-live", "off")
 	mount.Call("replaceChildren", canvas, readout)
 	graphics := canvas.Call("getContext", "2d")
@@ -106,7 +121,14 @@ func mountMeters(host enginewasm.Context) (enginewasm.Handle, error) {
 			graphics.Call("fillText", key, x+4, 126, width-8)
 		}
 		if time.Since(lastAnnounced) >= time.Second {
-			readout.Set("textContent", fmt.Sprintf("Master peak %.1f dBFS · RMS %.1f dBFS", frame.Master.Peak, frame.Master.RMS))
+			value := func(v *float64, unit string) string {
+				if v == nil || math.IsNaN(*v) || math.IsInf(*v, 0) {
+					return "—"
+				}
+				return fmt.Sprintf("%.1f %s", *v, unit)
+			}
+			l := frame.Loudness
+			readout.Set("textContent", fmt.Sprintf("Master peak %.1f dBFS · RMS %.1f dBFS\nMomentary %s · Short-term %s · Integrated %s\nLoudness range %s · True peak %s · Dropped blocks %d", frame.Master.Peak, frame.Master.RMS, value(l.Momentary, "LUFS"), value(l.Short, "LUFS"), value(l.Integrated, "LUFS"), value(l.Range, "LU"), value(l.TruePeak, "dBTP"), l.Dropped))
 			lastAnnounced = time.Now()
 		}
 	})

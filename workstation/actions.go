@@ -16,6 +16,9 @@ import (
 // domain commands. They never write scores or operate audio devices themselves.
 func (s *studioApp) mutation(path string, payload func(map[string]string) (any, error)) action.Handler {
 	return func(ctx *action.Context) error {
+		if err := actionValues(ctx); err != nil {
+			return err
+		}
 		data, err := payload(ctx.FormData)
 		if err != nil {
 			return action.Validation(err.Error(), nil, ctx.FormData)
@@ -57,6 +60,20 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 	}
 }
 
+// Native/managed forms supply FormData; Go/WASM engines invoke the same
+// actions with JSON. GoSX keeps JSON in Payload for explicitly typed decoding.
+func actionValues(ctx *action.Context) error {
+	if len(ctx.Payload) == 0 {
+		return nil
+	}
+	var values map[string]string
+	if err := json.Unmarshal(ctx.Payload, &values); err != nil {
+		return action.Validation("Action fields must be strings.", nil, nil)
+	}
+	ctx.FormData = values
+	return nil
+}
+
 func integer(form map[string]string, key string) (int, error) {
 	value, err := strconv.Atoi(form[key])
 	if err != nil {
@@ -93,9 +110,14 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
-		"generate": s.generatePhrase,
-		"mutate":   s.mutatePhrase,
-		"source":   s.saveSource,
+		"live":           s.liveAction,
+		"launch":         s.launchAction,
+		"note-preview":   s.previewNotes,
+		"note-commit":    s.commitNotes,
+		"loudness-reset": s.mutation("/api/loudness/reset", func(f map[string]string) (any, error) { return edit(f), nil }),
+		"generate":       s.generatePhrase,
+		"mutate":         s.mutatePhrase,
+		"source":         s.saveSource,
 		"toggle": s.mutation("/api/toggle", func(f map[string]string) (any, error) {
 			step, err := integer(f, "step")
 			if err != nil {
