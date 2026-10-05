@@ -46,6 +46,24 @@ disk revision before saving, and has an Undo entry.
 
 ![GoSX Studio's arrangement timeline and block controls.](screenshots/studio-arrangement-1440.png)
 
+**Scene automation** shows parameter lanes alongside the song's scene blocks.
+Choose a parameter and **Inspect parameter**, then choose a scene and **Add or
+replace point**. Track level and pan, sends, supported synth controls, and
+effect parameters use the shared parameter catalog. Values accept their units
+(for example `1.25kHz`, `250ms`, or `-6.25dB`), and controls report the allowed
+range and alternatives. Existing points can be edited or removed.
+
+A point applies each time its scene starts, with the engine's parameter
+smoothing. **●** marks an explicit point; **↳** carries the previous value.
+Removing a point keeps that inherited value; add the score's default value
+explicitly to reset it. Repeated uses of a scene share its points. Playback,
+seek reconstruction, WAV exports, and stems use the same scene settings.
+Edits preserve surrounding source comments and support Undo. These lanes
+currently place points at scene boundaries; continuous curves and recording
+control movement remain future work.
+
+![GoSX scene automation with explicit points and inherited levels.](screenshots/studio-automation-1440.png)
+
 ## Patterns
 
 Choose a pattern from the library. The piano roll shows pitched patterns;
@@ -175,6 +193,8 @@ tracks and clips section edits the source-frame start, exclusive end, gain, and
 linear fades of each recorded region. **Place clip in scene** assigns it to an
 audio track without modifying the recorded file. Region and assignment edits
 check the source revision and support Undo. Arrangement audio blocks link here.
+
+![GoSX audio track, clip region, gain, fade, and scene assignment controls.](screenshots/studio-audio-clips-1440.png)
 
 **Audition sample** opens a private preview of a published take. Choose its
 root and playback MIDI notes and optional full-region looping, then **Update

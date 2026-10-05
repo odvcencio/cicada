@@ -110,6 +110,9 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
+		"automation": s.mutation("/api/automation", func(f map[string]string) (any, error) {
+			return map[string]any{"revision": f["revision"], "action": f["action"], "scene": f["scene"], "path": f["path"], "value": f["value"]}, nil
+		}),
 		"clip": s.mutation("/api/clip", func(f map[string]string) (any, error) {
 			payload := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"], "newName": f["newName"], "scene": f["scene"], "track": f["track"]}
 			if f["action"] == "clip-settings" {

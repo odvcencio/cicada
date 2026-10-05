@@ -296,6 +296,12 @@ func studioEditLabel(edit studioEdit) string {
 	if edit.Action == "clip-bind" {
 		return fmt.Sprintf("Audio clip · %s assigned to %s / %s", edit.Pattern, edit.Scene, edit.Track)
 	}
+	if edit.Action == "automation-set" {
+		return fmt.Sprintf("Automation · %s / %s set", edit.Scene, edit.Path)
+	}
+	if edit.Action == "automation-remove" {
+		return fmt.Sprintf("Automation · %s / %s removed", edit.Scene, edit.Path)
+	}
 	if edit.Action == "undo" || edit.Action == "redo" {
 		return edit.Label
 	}

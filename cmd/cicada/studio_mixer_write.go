@@ -995,6 +995,9 @@ func jsonBool(raw json.RawMessage) (bool, error) {
 
 func finiteMixer(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
 func roundMixer(value, step float64) float64 {
+	if step <= 0 {
+		return value
+	}
 	rounded := math.Round(value/step) * step
 	return math.Round(rounded*1e8) / 1e8
 }
