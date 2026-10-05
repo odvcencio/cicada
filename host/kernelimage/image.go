@@ -15,7 +15,8 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
+const imageVersion = 14              // eight-voice graphs and five-input ADSR nodes
+const masterSoloImageVersion = 13    // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
 const sceneSettingsImageVersion = 10 // scene settings with synced delay divisions
@@ -93,7 +94,7 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 13. The decoded Config is separately
+// Encode writes project image version 14. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
@@ -255,7 +256,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 					}
 				}
 			}
-		case engine.VoiceGraph:
+		case engine.VoiceGraph, engine.VoiceGraphPoly:
 			if err := writeGraph(&w, spec.Graph); err != nil {
 				return nil, err
 			}
@@ -372,7 +373,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != imageVersion && version != masterSoloImageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -494,7 +495,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	if version >= busMixerImageVersion {
 		busFlags, err := r.u16()
 		allowed := uint16(0x1f)
-		if version >= imageVersion {
+		if version >= masterSoloImageVersion {
 			allowed = 0x3f
 		}
 		if err != nil || busFlags&^allowed != 0 {
@@ -623,7 +624,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					}
 				}
 			}
-		case engine.VoiceGraph:
+		case engine.VoiceGraph, engine.VoiceGraphPoly:
 			if spec.Graph, err = readGraph(&r, version); err != nil {
 				return err
 			}
@@ -757,6 +758,10 @@ func writeGraph(w *writer, program graph.Program) error {
 		w.byte(node.B)
 		w.byte(node.C)
 		w.f32(node.Value)
+		if node.Op == graph.ADSR {
+			w.byte(node.D)
+			w.byte(node.E)
+		}
 	}
 	return nil
 }
@@ -798,6 +803,17 @@ func readGraph(r *reader, version uint16) (graph.Program, error) {
 			return program, err
 		}
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
+		if graph.Op(op) == graph.ADSR {
+			if version < imageVersion {
+				return program, Error("ADSR needs project image version 14")
+			}
+			if program.Nodes[i].D, err = r.byte(); err != nil {
+				return program, err
+			}
+			if program.Nodes[i].E, err = r.byte(); err != nil {
+				return program, err
+			}
+		}
 	}
 	return program, nil
 }

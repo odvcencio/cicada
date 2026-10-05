@@ -20,12 +20,17 @@ func (e Error) Error() string { return string(e) }
 
 type VoiceKind uint8
 
+// MonoNoteOffPitchFlag opts a mono graph command into pitch-specific release.
+// Unflagged note-off commands retain the historical all-notes-off behavior.
+const MonoNoteOffPitchFlag uint16 = 0x100
+
 const (
 	VoiceOff VoiceKind = iota
 	VoiceAcid
 	VoiceDrums
 	VoiceGraph
 	VoicePrepared
+	VoiceGraphPoly
 )
 
 type KitLaneKind uint8
@@ -111,6 +116,9 @@ type voiceSlot struct {
 	acid                           *acid.Voice
 	drums                          *drum.Kit
 	graph                          *graph.Voice
+	poly                           *graph.Poly
+	graphNote                      uint8
+	graphHeld                      bool
 	prepared                       StereoVoice
 	preparedClip                   bool
 	mix                            mix.Track
@@ -449,6 +457,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceGraph:
 			voices++
 			v.graph, err = graph.NewVoice(spec.Graph, cfg.SampleRate)
+		case VoiceGraphPoly:
+			voices += graph.PolyVoices
+			v.poly, err = graph.NewPoly(spec.Graph, cfg.SampleRate)
 		case VoicePrepared:
 			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
 				return 0, Error("prepared audio voice budget is invalid")
@@ -757,6 +768,8 @@ func (e *Engine) Render(outL, outR []float32) {
 			case VoiceGraph:
 				sample := v.graph.Next()
 				left, right = sample, sample
+			case VoiceGraphPoly:
+				left, right = v.poly.NextStereo()
 			case VoicePrepared:
 				left, right = v.prepared.NextStereo()
 			}
@@ -1149,6 +1162,9 @@ func (e *Engine) apply(c cmd.Command) {
 			v.acid.NoteOn(note, accent, slide, velocity)
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
+			v.graphNote, v.graphHeld = note, true
+		case VoiceGraphPoly:
+			v.poly.NoteOn(note, velocity, slide)
 		case VoicePrepared:
 			if v.prepared.NoteOn(note, velocity) != nil {
 				e.fault(19)
@@ -1565,7 +1581,17 @@ func (e *Engine) noteOff(track int, lane uint16) {
 	case VoiceAcid:
 		v.acid.NoteOff()
 	case VoiceGraph:
-		v.graph.NoteOff()
+		pitchSpecific := lane >= MonoNoteOffPitchFlag && lane < MonoNoteOffPitchFlag+128
+		if !pitchSpecific || v.graphHeld && v.graphNote == uint8(lane&127) {
+			v.graph.NoteOff()
+			v.graphHeld = false
+		}
+	case VoiceGraphPoly:
+		if lane < 128 {
+			v.poly.NoteOffNote(uint8(lane))
+		} else {
+			v.poly.NoteOff()
+		}
 	case VoicePrepared:
 		v.prepared.NoteOff()
 	case VoiceDrums:
@@ -1592,6 +1618,9 @@ func (e *Engine) resetVoice(track int) {
 		v.acid.Reset()
 	case VoiceGraph:
 		v.graph.Reset()
+		v.graphHeld = false
+	case VoiceGraphPoly:
+		v.poly.Reset()
 	case VoicePrepared:
 		v.prepared.Reset()
 	case VoiceDrums:

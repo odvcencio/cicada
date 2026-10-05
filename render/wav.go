@@ -58,6 +58,7 @@ type Report struct {
 
 type trackRuntime struct {
 	prepared       *preparedVoice
+	poly           *graph.Poly
 	audioSlots     map[string]uint8
 	name           string
 	voice          monoVoice
@@ -112,6 +113,13 @@ type monoVoice interface {
 }
 
 type customVoice struct{ *graph.Voice }
+
+type polyVoice struct{ *graph.Poly }
+
+func (v polyVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
+	v.Poly.NoteOn(note, velocity, slide)
+}
+func (v polyVoice) Next() float32 { return 0 } // stereo output is read directly
 
 func (voice customVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
 	voice.Voice.NoteOn(note, velocity, slide)
@@ -721,9 +729,6 @@ func compileTracksPrepared(score *notation.Score, semantic *project.Project, sam
 		if program == nil {
 			return nil, fmt.Errorf("audio renderer does not yet implement %s track %s", source.Kind, source.Name)
 		}
-		if program.Mode != "mono" {
-			return nil, fmt.Errorf("audio renderer does not yet implement poly voices")
-		}
 		overrides := make(map[string]string, len(source.Params))
 		for _, param := range source.Params {
 			if param.Name == "octave" && !program.HasParameter("octave") {
@@ -738,11 +743,18 @@ func compileTracksPrepared(score *notation.Score, semantic *project.Project, sam
 		if err != nil {
 			return nil, fmt.Errorf("track %s: %w", source.Name, err)
 		}
-		voice, err := graph.NewVoice(kernelProgram, sampleRate)
+		track := trackRuntime{name: source.Name, mixer: trackMix, patterns: map[string]seq.Pattern{}}
+		if program.Mode == "poly" {
+			track.poly, err = graph.NewPoly(kernelProgram, sampleRate)
+			track.voice = polyVoice{track.poly}
+		} else {
+			var voice *graph.Voice
+			voice, err = graph.NewVoice(kernelProgram, sampleRate)
+			track.voice = customVoice{voice}
+		}
 		if err != nil {
 			return nil, err
 		}
-		track := trackRuntime{name: source.Name, mixer: trackMix, voice: customVoice{voice}, patterns: map[string]seq.Pattern{}}
 		for _, pattern := range score.Patterns {
 			if pattern.Kind != "notes" {
 				continue
@@ -1052,6 +1064,8 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				}
 			} else if tracks[ti].prepared != nil {
 				l, r = tracks[ti].prepared.NextStereo()
+			} else if tracks[ti].poly != nil {
+				l, r = tracks[ti].poly.NextStereo()
 			} else {
 				mono := tracks[ti].voice.Next()
 				l, r = mono, mono

@@ -320,7 +320,7 @@
           "maximum": 6
         },
         "mode": {
-          "const": "mono"
+          "enum": ["mono", "poly"]
         },
         "params": {
           "type": "array",

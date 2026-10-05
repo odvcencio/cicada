@@ -28,8 +28,8 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 		return s.patterns(ctx, v, csrf)
 	case "generator":
 		return s.generator(ctx, v, csrf)
-	case "voices":
-		return s.voices(v)
+	case "voices", "instruments":
+		return s.instruments(ctx, v, csrf)
 	case "mixer":
 		return s.mixer(ctx, v, csrf)
 	case "audio":

@@ -293,7 +293,7 @@ func (p *Player) TrackIndex(id string) (uint8, bool) {
 	return 0, false
 }
 
-// Note queues a live note for the named acid or drum track. Requests are
+// Note queues a live note for an acid, authored instrument, or drum track. Requests are
 // resolved and applied by Read, so the control path never touches engine state.
 func (p *Player) Note(track string, note, velocity int, on bool) error {
 	if track == "" {
@@ -318,8 +318,8 @@ func (p *Player) Note(track string, note, velocity int, on bool) error {
 			if _, ok := GMDrumLane(note); !ok {
 				return fmt.Errorf("MIDI drum note %d is not in the General MIDI map", note)
 			}
-		} else if kind != "acid" {
-			return fmt.Errorf("track %q is not an acid or drum track", track)
+		} else if kind != "acid" && kind != "graph" && kind != "poly" {
+			return fmt.Errorf("track %q is not a playable pitched instrument or drum track", track)
 		}
 		input := noteInput{Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on}
 		for {
@@ -980,12 +980,18 @@ func (p *Player) queueLiveNotes() {
 			continue
 		}
 		command := cmd.Command{Track: track}
-		if kind == "acid" {
+		if kind == "acid" || kind == "graph" || kind == "poly" {
 			if input.On {
 				command.Op = cmd.OpNoteOn
 				command.Arg0 = uint32(input.Note) | uint32(input.Velocity)<<8
 			} else {
 				command.Op, command.Index = cmd.OpNoteOff, 0xffff
+				if kind == "graph" || kind == "poly" {
+					command.Index = uint16(input.Note)
+					if kind == "graph" {
+						command.Index |= engine.MonoNoteOffPitchFlag
+					}
+				}
 			}
 		} else if kind == "drums" {
 			lane, ok := GMDrumLane(int(input.Note))
@@ -1001,7 +1007,7 @@ func (p *Player) queueLiveNotes() {
 				command.Op = cmd.OpNoteOff
 			}
 		} else {
-			p.emit(Event{Track: input.Track, Name: fmt.Sprintf("track %q is not an acid or drum track", input.Track), Kind: "note-error"})
+			p.emit(Event{Track: input.Track, Name: fmt.Sprintf("track %q is not a playable pitched instrument or drum track", input.Track), Kind: "note-error"})
 			continue
 		}
 		if !p.current.Engine.Push(command) {

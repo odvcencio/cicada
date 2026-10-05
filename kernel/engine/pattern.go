@@ -520,6 +520,9 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
 			case VoiceGraph:
 				e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
+				e.voices[track].graphNote, e.voices[track].graphHeld = event.Note, true
+			case VoiceGraphPoly:
+				e.voices[track].poly.NoteOn(event.Note, event.Velocity, event.Slide)
 			case VoicePrepared:
 				if e.voices[track].prepared.NoteOn(event.Note, event.Velocity) != nil {
 					e.fault(19)

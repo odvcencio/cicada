@@ -6,6 +6,9 @@ export GOWORK := off
 
 # Keep a TinyGo/Binaryen regression from consuming the full CI job budget.
 KERNEL_WASM_BUILD_TIMEOUT ?= 180s
+# Size optimization keeps the richer bounded voice engine within its existing
+# download budget. Audio parity and browser callback budgets gate this build.
+KERNEL_WASM_OPT ?= s
 
 test:
 	go test ./... -count=1
@@ -67,7 +70,7 @@ probe-wasm:
 
 build-kernel-wasm:
 	mkdir -p build
-	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
+	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
 		status=$$?; \
 		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
 			echo "FAIL build-kernel-wasm: TinyGo kernel build exceeded $(KERNEL_WASM_BUILD_TIMEOUT) budget" >&2; \
