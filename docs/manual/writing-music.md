@@ -76,6 +76,8 @@ cicada render main.cicada -o shared.wav --rate 48000 --bits 24
 
 A command given any listed source loads the whole project. `check` reports errors at the right file, line, and column; a duplicate also identifies the first declaration. `fmt` keeps files separate and retains comments and source spelling. To migrate an edition-1 project, use `cicada fix --all`; the command checks the complete project before writing each file and upgrading the manifest.
 
+Multi-file migration requires atomic file exchange, available on supported Linux and Windows filesystems. It refuses before writing project files when that operation is unavailable. Editor saves made during publication cause a revision conflict and rollback. Displaced versions and their `.revision` receipts remain in the project directory so writes through already-open editor handles can be recovered. If a later command reports an external write or incomplete save in a recovery file, close other editors, compare and merge that version with the project file, then move the recovery file and its receipt out of the project directory before retrying.
+
 The language server uses unsaved buffers alongside the other listed files. Go to definition and rename work across files. Save As copies all sources and their assets. Studio currently refuses projects with more than one source file with a message directing you to a text editor, check, play, or render. Its editing and undo history remain available for single-file projects.
 
 Imports, libraries, `require`, and `cicada.sum` are planned follow-up work.
