@@ -519,7 +519,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 						case KitLaneBuiltin:
 							err = v.drums.SetRecipe(lane, binding.Recipe)
 						case KitLaneGraph:
-							err = v.drums.SetGraph(lane, binding.Program)
+							err = v.drums.SetGraphFromProgram(lane, &binding.Program)
 						case KitLaneModeled:
 							err = v.drums.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
 						default:

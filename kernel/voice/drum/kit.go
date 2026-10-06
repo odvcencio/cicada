@@ -292,14 +292,19 @@ func (k *Kit) SetRecipe(lane, recipe Lane) error {
 // ignore or shape pitch in their instrument code. The lane retains one current
 // voice and a single old state for the 1 ms retrigger fade.
 func (k *Kit) SetGraph(lane Lane, program graph.Program) error {
+	return k.SetGraphFromProgram(lane, &program)
+}
+
+// SetGraphFromProgram prepares both retrigger voices without copying the node array.
+func (k *Kit) SetGraphFromProgram(lane Lane, program *graph.Program) error {
 	if lane >= LaneCount {
 		return Error("unsupported drum lane")
 	}
-	current, err := graph.NewVoice(program, int(k.rate))
+	current, err := graph.NewVoiceFromProgram(program, int(k.rate))
 	if err != nil {
 		return err
 	}
-	old, err := graph.NewVoice(program, int(k.rate))
+	old, err := graph.NewVoiceFromProgram(program, int(k.rate))
 	if err != nil {
 		return err
 	}
