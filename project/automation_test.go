@@ -64,8 +64,28 @@ func TestAutomationControlSpaceAndRoundTrip(t *testing.T) {
 	if hasErrors(ds) {
 		t.Fatal(ds)
 	}
-	a, _ := CanonicalJSON(p)
-	b, _ := CanonicalJSON(restored)
+	a, err := CanonicalJSON(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := DecodeJSON(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded.Format != FormatID2 || len(decoded.Automation) != 2 {
+		t.Fatal("automation lost its version-2 wire form")
+	}
+	decodedSource, err := ToSource(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(decodedSource), "automate bass.cutoff") {
+		t.Fatal("decoded automation lost source")
+	}
+	b, err := CanonicalJSON(restored)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if string(a) != string(b) {
 		t.Fatal("automation round trip changed semantics")
 	}

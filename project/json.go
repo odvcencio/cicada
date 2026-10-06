@@ -322,7 +322,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	// already imply, matching headerless source after a round trip.
 	normalized := *p
 	normalized.Format, normalized.Version = FormatID, 1
-	useV2 := p.HasAudio() || p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
+	useV2 := len(p.Automation) > 0 || p.HasAudio() || p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
 	for _, effect := range p.Effects {
 		useV2 = useV2 || effect.Kind != ""
 	}
