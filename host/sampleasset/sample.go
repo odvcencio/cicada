@@ -53,7 +53,7 @@ func LoadRegion(dir string, asset project.Asset, start, end int64, rootKey int, 
 	if !notation.ValidAssetPath(asset.Path) || asset.Format != "wav" || rootKey < 0 || rootKey > 127 {
 		return region, fmt.Errorf("invalid sample asset path, format or root key")
 	}
-	root, err := os.OpenRoot(dir)
+	root, err := os.OpenRoot(asset.Directory(dir))
 	if err != nil {
 		return region, err
 	}

@@ -50,6 +50,12 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 		return fail("CICADA-REFERENCE", "unknown parameter path "+path)
 	}
 	owner := parts[0]
+	for _, effect := range p.Effects {
+		if strings.HasPrefix(path, effect.ID+".") && len(effect.ID) > len(owner) {
+			owner = effect.ID
+		}
+	}
+	parts = append([]string{owner}, strings.Split(strings.TrimPrefix(path, owner+"."), ".")...)
 	trackIndex, trackOK := -1, false
 	for i, track := range p.Tracks {
 		if track.ID == owner {
