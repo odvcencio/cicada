@@ -34,6 +34,8 @@ let_stmt ::= "let" , identifier , "=" , expression , [ ";" ] ;
 out_stmt ::= "out" , "=" , expression , [ ";" ] ;
 expression ::= expression , ("+" | "-") , expression | expression , ("*" | "/") , expression |
                call_expr | number | identifier | "(" , expression , ")" ;
+(* Typed functions include delay(audio, ms) and comb(audio, ms, unit, unit).
+   Unit / Hz yields a period in ms, so 1 / pitch tunes a delay loop. *)
 call_expr ::= identifier , "(" , [ expression , { "," , expression } ] , ")" ;
 param_decl ::= identifier , "=" , value ;
 send_decl ::= "send" , _name , "=" , number , [ "pre" ] ;

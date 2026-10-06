@@ -158,6 +158,7 @@ type state struct {
 	noise                               uint32
 	band, high1                         filter
 	chokeRemaining                      int
+	sweepDecay, ampDecay                float64
 }
 
 type laneVoice struct {
@@ -178,17 +179,18 @@ type laneVoice struct {
 }
 
 type Kit struct {
-	rate  float64
-	seed  uint32
-	lanes [LaneCount]laneVoice
-	fault bool
+	rate       float64
+	clickDecay float64
+	seed       uint32
+	lanes      [LaneCount]laneVoice
+	fault      bool
 }
 
 func New(sampleRate int, seed uint32) (*Kit, error) {
 	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
 		return nil, Error("drum sample rate must be 44100, 48000, or 96000")
 	}
-	k := &Kit{rate: float64(sampleRate), seed: seed}
+	k := &Kit{rate: float64(sampleRate), seed: seed, clickDecay: math.Exp(-1 / (.002 * float64(sampleRate)))}
 	for lane := Lane(0); lane < LaneCount; lane++ {
 		k.lanes[lane].recipe = lane
 		k.lanes[lane].enabled = true
@@ -209,6 +211,7 @@ func (k *Kit) SetParams(lane Lane, params Params) error {
 	}
 	v := &k.lanes[lane]
 	v.params, v.targetParams, v.paramAlpha = params, params, 0
+	v.updateDecays(k.rate)
 	angle := (params.Pan + 1) * math.Pi / 4
 	v.panL, v.panR = math.Cos(angle), math.Sin(angle)
 	v.targetPanL, v.targetPanR = v.panL, v.panR
@@ -219,6 +222,18 @@ func (k *Kit) SetParams(lane Lane, params Params) error {
 	}
 	v.targetLevel = v.level
 	return nil
+}
+
+// updateDecays preserves the per-sample formulas while reusing unchanged inputs.
+// The current and retrigger-fade states share the lane's live parameters.
+func (v *laneVoice) updateDecays(rate float64) {
+	if v.recipe != BD {
+		return
+	}
+	sweep := math.Exp(-1 / (v.params.SweepTime * rate))
+	amp := math.Exp(-1 / (v.params.Decay * rate))
+	v.current.sweepDecay, v.old.sweepDecay = sweep, sweep
+	v.current.ampDecay, v.old.ampDecay = amp, amp
 }
 
 // SetParamsTarget smooths live lane controls in NextStereo without allocating.
@@ -311,7 +326,7 @@ func (k *Kit) Reset() {
 	k.fault = false
 	for lane := Lane(0); lane < LaneCount; lane++ {
 		v := &k.lanes[lane]
-		v.current = state{noise: k.seed ^ uint32(lane+1)*0x9e3779b9}
+		v.current = state{noise: k.seed ^ uint32(lane+1)*0x9e3779b9, sweepDecay: v.current.sweepDecay, ampDecay: v.current.ampDecay}
 		v.old = state{}
 		v.fadeRemaining = 0
 		v.customActive = false
@@ -336,7 +351,7 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 	v := &k.lanes[lane]
 	if v.custom != nil {
 		if v.customActive {
-			*v.customOld = *v.custom
+			v.customOld.CopyStateFrom(v.custom)
 			v.customOldAccent = v.customAccent
 			v.fadeRemaining = max(1, int(k.rate/1000))
 		}
@@ -357,7 +372,7 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 		v.fadeRemaining = max(1, int(k.rate/1000))
 	}
 	noise := v.current.noise
-	v.current = state{active: true, noise: noise, amp: 1, sweep: 1, click: 1}
+	v.current = state{active: true, noise: noise, amp: 1, sweep: 1, click: 1, sweepDecay: v.current.sweepDecay, ampDecay: v.current.ampDecay}
 	if accent {
 		velocity = 127
 		v.current.accentGain = math.Sqrt2
@@ -401,7 +416,12 @@ func (k *Kit) NextStereo() (left, right float32) {
 		if v.paramAlpha > 0 {
 			alpha := v.paramAlpha
 			v.params.Tune += (v.targetParams.Tune - v.params.Tune) * alpha
+			decay := v.params.Decay
 			v.params.Decay += (v.targetParams.Decay - v.params.Decay) * alpha
+			if v.recipe == BD && v.params.Decay != decay {
+				coefficient := math.Exp(-1 / (v.params.Decay * k.rate))
+				v.current.ampDecay, v.old.ampDecay = coefficient, coefficient
+			}
 			v.level += (v.targetLevel - v.level) * alpha
 			v.panL += (v.targetPanL - v.panL) * alpha
 			v.panR += (v.targetPanR - v.panR) * alpha
@@ -494,9 +514,9 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		body := math.Sin(2*math.Pi*s.phase[0]) * s.amp * s.velocity
 		click := nextNoise(&s.noise) * s.click * p.Click * s.noiseVelocity
 		output = fastmath.Tanh((body+click)*(1+p.Drive*3)) / (1 + p.Drive*.7)
-		s.sweep *= math.Exp(-1 / (p.SweepTime * k.rate))
-		s.amp *= math.Exp(-1 / (p.Decay * k.rate))
-		s.click *= math.Exp(-1 / (.002 * k.rate))
+		s.sweep *= s.sweepDecay
+		s.amp *= s.ampDecay
+		s.click *= k.clickDecay
 	case SD:
 		sweep := 1 + math.Exp(-age/.008)
 		s.phase[0] = wrap(s.phase[0] + 180*p.Tune*sweep/k.rate)

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
+	"slices"
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/engine"
@@ -72,7 +72,9 @@ type trackRuntime struct {
 	drumPatterns   map[string][drum.LaneCount]*seq.Pattern
 	activeDrums    [drum.LaneCount]*seq.Pattern
 	patterns       map[string]seq.Pattern
+	patternSlots   map[string]uint8
 	currentName    string
+	currentSlot    uint8
 	current        seq.Pattern
 	active         *seq.Pattern
 	generation     uint64
@@ -80,6 +82,7 @@ type trackRuntime struct {
 	activeNoteID   int64
 	pending        seq.Pattern
 	pendingGen     uint64
+	pendingSlot    uint8
 	hasPendingGate bool
 	parameters     *sceneTrackParameters
 	transition     sceneTransition
@@ -381,7 +384,14 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	var eventBuf [128]seq.Event
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
-	var events []scheduled
+	eventCapacity := 0
+	for i := range tracks {
+		eventCapacity += 2*len(eventBuf) + 1 // active, pending releases, and transition
+		if tracks[i].drums != nil {
+			eventCapacity += (int(drum.LaneCount) - 1) * len(eventBuf)
+		}
+	}
+	events := make([]scheduled, 0, eventCapacity)
 	var position int64
 	bar := 0
 	for _, entry := range score.Song {
@@ -422,7 +432,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 							if pattern == nil {
 								continue
 							}
-							n, overflow := seq.EventsInBlock(pattern, clock, uint8(ti), uint8(lane), position, frames, eventBuf[:])
+							n, overflow := seq.EventsInBlock(pattern, clock, uint8(ti), tracks[ti].currentSlot, position, frames, eventBuf[:])
 							if overflow {
 								return report, fmt.Errorf("too many drum events in render block")
 							}
@@ -435,7 +445,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 					if tracks[ti].active == nil {
 						continue
 					}
-					n, overflow := seq.EventsWithGatesInBlock(tracks[ti].active, clock, uint8(ti), 0, position, frames, eventBuf[:])
+					n, overflow := seq.EventsWithGatesInBlock(tracks[ti].active, clock, uint8(ti), tracks[ti].currentSlot, position, frames, eventBuf[:])
 					if overflow {
 						return report, fmt.Errorf("too many events in render block")
 					}
@@ -453,7 +463,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 						events = append(events, scheduled{track: ti, generation: tracks[ti].generation, event: transition.release})
 					}
 					if tracks[ti].hasPendingGate {
-						n, overflow = seq.EventsWithGatesInBlock(&tracks[ti].pending, clock, uint8(ti), 0, position, frames, eventBuf[:])
+						n, overflow = seq.EventsWithGatesInBlock(&tracks[ti].pending, clock, uint8(ti), tracks[ti].pendingSlot, position, frames, eventBuf[:])
 						if overflow {
 							return report, fmt.Errorf("too many pending gate events in render block")
 						}
@@ -464,17 +474,23 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 						}
 					}
 				}
-				sort.Slice(events, func(i, j int) bool {
-					if events[i].event.Sample != events[j].event.Sample {
-						return events[i].event.Sample < events[j].event.Sample
+				slices.SortFunc(events, func(a, b scheduled) int {
+					if a.event.Sample != b.event.Sample {
+						if a.event.Sample < b.event.Sample {
+							return -1
+						}
+						return 1
 					}
-					if events[i].event.Kind != events[j].event.Kind {
-						return events[i].event.Kind == seq.NoteOff
+					if a.event.Kind != b.event.Kind {
+						if a.event.Kind == seq.NoteOff {
+							return -1
+						}
+						return 1
 					}
-					if events[i].track != events[j].track {
-						return events[i].track < events[j].track
+					if a.track != b.track {
+						return a.track - b.track
 					}
-					if events[i].lane != events[j].lane {
+					if a.lane != b.lane {
 						priority := func(lane drum.Lane) int {
 							if lane == drum.OH {
 								return int(drum.CH)
@@ -484,9 +500,15 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 							}
 							return int(lane)
 						}
-						return priority(events[i].lane) < priority(events[j].lane)
+						return priority(a.lane) - priority(b.lane)
 					}
-					return events[i].event.NoteID < events[j].event.NoteID
+					if a.event.NoteID < b.event.NoteID {
+						return -1
+					}
+					if a.event.NoteID > b.event.NoteID {
+						return 1
+					}
+					return 0
 				})
 				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
 					return report, err
@@ -560,7 +582,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 		authoredKits[kit.ID] = kit
 	}
 	tracks := make([]trackRuntime, 0, len(score.Tracks))
-	for _, source := range score.Tracks {
+	for sourceIndex, source := range score.Tracks {
 		mixerParams, err := project.CompileMixerParams(source)
 		if err != nil {
 			return nil, fmt.Errorf("track %s: %w", source.Name, err)
@@ -573,7 +595,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 				return nil, err
 			}
 			if isAuthoredKit {
-				bindings, err := project.CompileKit(kitDefinition, programs)
+				bindings, err := project.CompileKitAtSampleRate(kitDefinition, programs, sampleRate)
 				if err != nil {
 					return nil, err
 				}
@@ -684,6 +706,12 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 			return nil, err
 		}
 		track := trackRuntime{name: source.Name, mixer: trackMix, voice: customVoice{voice}, patterns: map[string]seq.Pattern{}}
+		assignedPatterns := make(map[string]bool)
+		for _, slot := range semantic.Tracks[sourceIndex].Slots {
+			if slot != nil {
+				assignedPatterns[*slot] = true
+			}
+		}
 		for _, pattern := range score.Patterns {
 			if pattern.Kind != "notes" {
 				continue
@@ -692,11 +720,24 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 			if err != nil {
 				return nil, err
 			}
+			if assignedPatterns[pattern.Name] {
+				if err := project.ValidateGraphDelayPattern(kernelProgram, sampleRate, compiled[0].Pattern); err != nil {
+					return nil, fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", source.Name, pattern.Name, err)
+				}
+			}
 			track.patterns[pattern.Name] = compiled[0].Pattern
 		}
 		tracks = append(tracks, track)
 	}
 	for i := range tracks {
+		// Chance uses the compiled per-track pattern slot, just as playback
+		// does. A lane number (or a constant zero) selects a different stream.
+		tracks[i].patternSlots = make(map[string]uint8)
+		for slot, pattern := range semantic.Tracks[i].Slots {
+			if pattern != nil {
+				tracks[i].patternSlots[*pattern] = uint8(slot)
+			}
+		}
 		tracks[i].sendPreGain = 1
 		tracks[i].sendA = float32(semantic.Tracks[i].Mixer.SendA)
 		tracks[i].sendB = float32(semantic.Tracks[i].Mixer.SendB)
@@ -830,20 +871,20 @@ func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryT
 			if !ok {
 				continue // applyScene reports the invalid binding at the boundary
 			}
-			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), boundaryTick, clock)
+			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), track.currentSlot, track.patternSlots[binding.Pattern], boundaryTick, clock)
 			break
 		}
 	}
 }
 
-func sceneTransitionFor(source, target *seq.Pattern, track uint8, boundaryTick int64, clock seq.Clock) sceneTransition {
+func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSlot uint8, boundaryTick int64, clock seq.Clock) sceneTransition {
 	if boundaryTick < seq.TicksPerStep || boundaryTick%seq.TicksPerStep != 0 {
 		return sceneTransition{}
 	}
 	lastStep := boundaryTick/seq.TicksPerStep - 1
 	index := uint8(lastStep % int64(source.Len))
 	step, err := seq.UnpackStep(source.Steps[index])
-	if err != nil || !step.Gate || !step.Slide || !seq.ProbabilityHit(step.Probability, source.Seed, track, 0, lastStep/int64(source.Len), index) {
+	if err != nil || !step.Gate || !step.Slide || !seq.ProbabilityHit(step.Probability, source.Seed, track, sourceSlot, lastStep/int64(source.Len), index) {
 		return sceneTransition{}
 	}
 	startTick := lastStep * seq.TicksPerStep
@@ -860,7 +901,7 @@ func sceneTransitionFor(source, target *seq.Pattern, track uint8, boundaryTick i
 	targetStep := boundaryTick / seq.TicksPerStep
 	targetIndex := uint8(targetStep % int64(target.Len))
 	next, err := seq.UnpackStep(target.Steps[targetIndex])
-	carry := err == nil && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, track, 0, targetStep/int64(target.Len), targetIndex)
+	carry := err == nil && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, track, targetSlot, targetStep/int64(target.Len), targetIndex)
 	return sceneTransition{
 		valid: true, carry: carry, sourceNoteID: sourceNoteID,
 		boundarySample: clock.SampleAtTick(boundaryTick), targetSample: clock.SampleAtTick(boundaryTick),
@@ -904,6 +945,7 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool)
 					}
 					tracks[ti].activeDrums = lanes
 					tracks[ti].currentName = binding.Pattern
+					tracks[ti].currentSlot = tracks[ti].patternSlots[binding.Pattern]
 					continue
 				}
 				pattern, ok := tracks[ti].patterns[binding.Pattern]
@@ -922,10 +964,12 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool)
 				if tracks[ti].active != nil && tracks[ti].activeGen == tracks[ti].generation {
 					tracks[ti].pending = tracks[ti].current
 					tracks[ti].pendingGen = tracks[ti].generation
+					tracks[ti].pendingSlot = tracks[ti].currentSlot
 					tracks[ti].hasPendingGate = true
 				}
 				tracks[ti].generation++
 				tracks[ti].currentName = binding.Pattern
+				tracks[ti].currentSlot = tracks[ti].patternSlots[binding.Pattern]
 				tracks[ti].current = pattern
 				tracks[ti].active = &tracks[ti].current
 			}

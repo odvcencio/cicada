@@ -7,10 +7,20 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/project"
 )
 
 func explain(name string, asJSON bool) error {
+	if strings.HasPrefix(name, "graph.") {
+		if operation, ok := instrument.Operation(strings.TrimPrefix(name, "graph.")); ok {
+			if asJSON {
+				return json.NewEncoder(os.Stdout).Encode(operation)
+			}
+			fmt.Printf("%s\n%s\n", operation.Signature, operation.Meaning)
+			return nil
+		}
+	}
 	parts := strings.Split(name, ".")
 	if len(parts) > 2 || parts[0] == "" || (len(parts) == 2 && parts[1] == "") {
 		return fmt.Errorf("expected construct or construct.field, such as pattern or pattern.steps")

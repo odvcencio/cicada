@@ -9,7 +9,9 @@ import (
 	"github.com/andybalholm/brotli"
 )
 
-const rawLimit = 300 * 1024
+// 320 KiB: raised from 300 KiB on 2026-10-04 by owner decision so the graph delay/comb,
+// experimental guitar and phase-modulation voices fit together (about 321.7 KB raw).
+const rawLimit = 320 * 1024
 const brotliLimit = 120 * 1024
 const processorLimit = 5 * 1024
 

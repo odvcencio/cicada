@@ -70,6 +70,57 @@ func TestPresetLayers(t *testing.T) {
 	}
 }
 
+func TestPresetOverridesRejectDuplicateRouting(t *testing.T) {
+	for _, settings := range []string{
+		"send echo=0.2 send echo=0.8",
+		"out=music out=sfx",
+		"insert=echo insert=none",
+		"send_a=0.2 send_a=0.8",
+		"send_pre=true send_pre=false",
+	} {
+		t.Run(settings, func(t *testing.T) {
+			_, ds := notation.Parse([]byte("cicada 2\nfx echo delay {}\npreset bright { instrument=acid }\ntrack lead bright { " + settings + " }" + presetSong))
+			for _, d := range ds {
+				if d.Code == "CICADA-DUPLICATE" {
+					return
+				}
+			}
+			t.Fatalf("duplicate routing accepted: %+v", ds)
+		})
+	}
+	_, ds := notation.Parse([]byte("cicada 2\nfx echo delay {}\nfx room reverb {}\npreset bright { instrument=acid }\ntrack lead bright { send echo=0.2 send room=0.8 }" + presetSong))
+	if hasErrors(ds) {
+		t.Fatalf("distinct sends rejected: %+v", ds)
+	}
+}
+
+func TestPresetOverridesRejectDuplicateSidechains(t *testing.T) {
+	_, ds := notation.Parse([]byte("cicada 2\npreset squeeze { instrument=builtin.comp }\nfx duck squeeze { sidechain=lead sidechain=music }\nbus music { insert=duck }\ntrack lead acid {}" + presetSong))
+	for _, d := range ds {
+		if d.Code == "CICADA-DUPLICATE" {
+			return
+		}
+	}
+	t.Fatalf("duplicate sidechains accepted: %+v", ds)
+}
+
+func TestDottedLibraryPresets(t *testing.T) {
+	root, _ := libraryFixture(t)
+	libraryWrite(t, root, "lib/demo/tone/tone.cicada", libraryVoice+"preset glass.bright { instrument=glass level=-9dB }\npreset _glass.bright { instrument=glass }\n")
+	libraryWrite(t, root, "main.cicada", "import \"demo/tone\"\ntrack lead tone.glass.bright {}\nscene verse { lead=tone.melody }\nsong { verse }\n")
+	pinLibraryFixture(t, root)
+	score, ds, err := LoadScore(filepath.Join(root, "main.cicada"), nil)
+	if err != nil || score == nil || hasErrors(ds) {
+		t.Fatalf("dotted imported preset: %v %+v", err, ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil || p.Tracks[0].Kind != "demo.tone.glass" || p.Tracks[0].Mixer.GainDB != -9 {
+		t.Fatalf("dotted preset lowering: %+v %+v", p, ds)
+	}
+	libraryWrite(t, root, "main.cicada", "import \"demo/tone\"\ntrack lead tone._glass.bright {}\nscene verse { lead=tone.melody }\nsong { verse }\n")
+	requireLibraryDiagnostic(t, root, "CICADA-LIB-PRIVATE")
+}
+
 func TestPresetDiagnosticsHaveFileAndValuePosition(t *testing.T) {
 	for _, test := range []struct{ body, code string }{
 		{"instrument=acid mystery=2", "CICADA-PRESET-PARAM"},

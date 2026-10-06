@@ -10,6 +10,7 @@ import (
 
 	"m31labs.dev/cicada/audioasset"
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/notation"
 )
 
 func testStore(t *testing.T) (*Store, string) {
@@ -325,5 +326,35 @@ func TestSourceTrimsInitialGapAcrossCountIn(t *testing.T) {
 	}
 	if !strings.Contains(string(selected), "end = 10frames") {
 		t.Fatal("initial loss duration was closed")
+	}
+}
+
+func TestSelectSourceOnAudioPresetTrack(t *testing.T) {
+	s, _ := testStore(t)
+	id, err := s.Begin("vox", "main", Revision(nil), 48000, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeBlock(t, s, id, 0, []float32{.25, .5, .75, 1}, 0)
+	if err := s.Finalize(id, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Publish(id); err != nil {
+		t.Fatal(err)
+	}
+	take, err := s.Get(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := []byte("cicada 2\npreset captured { instrument=audio level=-9dB }\ntrack vox captured {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { vox=off bass=pulse }\nsong { main }\n")
+	selected, err := SelectSource(source, take)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(selected, []byte("preset captured { instrument=audio level=-9dB }")) || !bytes.Contains(selected, []byte("track vox captured {}")) || !bytes.Contains(selected, []byte("vox="+id+"-clip")) {
+		t.Fatalf("preset or scene binding changed incorrectly: %s", selected)
+	}
+	if score, ds := notation.ParseEdition(selected, 2); score == nil || len(ds) != 0 {
+		t.Fatalf("selected source invalid: %+v", ds)
 	}
 }

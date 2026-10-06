@@ -1,0 +1,44 @@
+cicada 2
+title "Mix processor audition"
+tempo 112
+key c minor
+seed 4242
+instrument keys {
+  octave = 3
+  voice mono {
+    let envelope = env(gate, 240ms)
+    out = lowpass(saw(pitch), 2800Hz) * envelope * velocity
+  }
+}
+track left keys {
+  level = -9dB
+  pan = -0.55
+}
+track right keys {
+  octave = 4
+  level = -12dB
+  pan = 0.55
+}
+track drums drums {
+  level = -8dB
+  bd_decay = 280ms
+}
+pattern low {
+  c3 . g3 . eb3 . bb3 . | c3^ c3 . g3 . eb3 . .
+}
+pattern high {
+  . g4 . eb4 . bb4 . c5 | g4 . eb4 . bb4 . c5 .
+}
+pattern beat drums {
+  bd: X... x... X... x...
+  sd: .... X... .... X...
+  ch: x.x. x.x. x.x. x.x.
+}
+scene demo {
+  left = low
+  right = high
+  drums = beat
+}
+song {
+  demo*4
+}
