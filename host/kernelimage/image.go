@@ -22,6 +22,10 @@ const ChordImageVersion = 14 // opt-in bounded graph polyphony and chord payload
 // 13's layout. Older readers reject its nonzero value before loading new ops.
 const DelayCapability uint16 = 1 << 1
 
+// ExpressionCapability enables the per-step expression extension and graph
+// expression inputs. Older readers reject the required bit before decoding.
+const ExpressionCapability uint16 = 1 << 2
+
 // NeuralAmpCapability requires the pinned causal neural amp operation (28).
 const NeuralAmpCapability uint16 = 1 << 4
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
@@ -162,7 +166,19 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	var capabilities uint16
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
-		if graphNeedsDelay(spec.Graph) {
+		if graphNeedsExpression(&spec.Graph) {
+			capabilities |= ExpressionCapability
+		}
+		if len(cfg.Patterns) != 0 {
+			for _, pattern := range cfg.Patterns[track].Slots {
+				for step := uint8(0); step < pattern.Len && step < 64; step++ {
+					if pattern.ExpressionAt(int(step)).Set {
+						capabilities |= ExpressionCapability
+					}
+				}
+			}
+		}
+		if graphNeedsDelay(&spec.Graph) {
 			capabilities |= DelayCapability
 		}
 		if graphNeedsNeuralAmp(&spec.Graph) {
@@ -170,7 +186,10 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		if spec.Kit != nil {
 			for _, binding := range spec.Kit {
-				if graphNeedsDelay(binding.Program) {
+				if graphNeedsExpression(&binding.Program) {
+					capabilities |= ExpressionCapability
+				}
+				if graphNeedsDelay(&binding.Program) {
 					capabilities |= DelayCapability
 				}
 				if graphNeedsNeuralAmp(&binding.Program) {
@@ -359,6 +378,20 @@ func Encode(cfg engine.Config) ([]byte, error) {
 					}
 				}
 			}
+			if capabilities&ExpressionCapability != 0 {
+				for step := uint8(0); step < pattern.Len; step++ {
+					expression := pattern.ExpressionAt(int(step))
+					if err := expression.Validate(); err != nil {
+						return nil, err
+					}
+					w.byte(boolByte(expression.Set))
+					w.f32(expression.PitchCents)
+					w.f32(expression.Pressure)
+					w.f32(expression.Timbre)
+					w.f32(expression.VibratoRateHz)
+					w.f32(expression.VibratoDepthCents)
+				}
+			}
 		}
 	}
 	for _, scene := range cfg.Scenes {
@@ -441,7 +474,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|NeuralAmpCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|ExpressionCapability|NeuralAmpCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -691,7 +724,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						}
 						binding.Recipe = drum.Lane(recipe)
 					case engine.KitLaneGraph:
-						if binding.Program, err = readGraph(&r, version, reserved); err != nil {
+						if err = readGraphInto(&r, version, reserved, &binding.Program); err != nil {
 							return err
 						}
 					default:
@@ -700,7 +733,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				}
 			}
 		case engine.VoiceGraph:
-			if spec.Graph, err = readGraph(&r, version, reserved); err != nil {
+			if err = readGraphInto(&r, version, reserved, &spec.Graph); err != nil {
 				return err
 			}
 		default:
@@ -755,6 +788,20 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						}
 					}
 
+				}
+			}
+			if reserved&ExpressionCapability != 0 {
+				for step := uint8(0); step < length; step++ {
+					expression, err := readExpression(&r)
+					if err != nil {
+						return err
+					}
+					if expression != (seq.Expression{}) {
+						if pattern.Expression == nil {
+							pattern.Expression = new([64]seq.Expression)
+						}
+						pattern.Expression[step] = expression
+					}
 				}
 			}
 			cfg.Patterns[track].Slots[slot] = pattern
@@ -849,7 +896,7 @@ func writeGraph(w *writer, program graph.Program) error {
 	return nil
 }
 
-func graphNeedsDelay(program graph.Program) bool {
+func graphNeedsDelay(program *graph.Program) bool {
 	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
 		switch program.Nodes[i].Op {
 		case graph.Delay, graph.Comb, graph.Period:
@@ -868,51 +915,55 @@ func graphNeedsNeuralAmp(program *graph.Program) bool {
 	return false
 }
 
-func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, error) {
-	var program graph.Program
+// readGraphInto fills prepared configuration storage so decoder failures never
+// copy the 128-node graph program across a return boundary.
+func readGraphInto(r *reader, version uint16, capabilities uint16, program *graph.Program) error {
 	length, err := r.byte()
 	if err != nil || length == 0 || length > graph.MaxNodes {
-		return program, Error("invalid graph image length")
+		return Error("invalid graph image length")
 	}
 	program.Len = length
 	if program.Output, err = r.byte(); err != nil || program.Output >= length {
-		return program, Error("invalid graph image output")
+		return Error("invalid graph image output")
 	}
 	if version >= priorImageVersion {
 		if program.GlideMS, err = r.f64(); err != nil || math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
-			return program, Error("invalid graph glide time image")
+			return Error("invalid graph glide time image")
 		}
 	}
 	for i := uint8(0); i < length; i++ {
 		op, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		a, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		b, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		c, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		value, err := r.f32()
 		if err != nil {
-			return program, err
+			return err
 		}
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
 	}
+	if graphNeedsExpression(program) && capabilities&ExpressionCapability == 0 {
+		return Error("graph expression inputs require capability bit 2")
+	}
 	if graphNeedsDelay(program) && capabilities&DelayCapability == 0 {
-		return program, Error("graph delay operations require capability bit 1")
+		return Error("graph delay operations require capability bit 1")
 	}
-	if graphNeedsNeuralAmp(&program) && capabilities&NeuralAmpCapability == 0 {
-		return program, Error("neural amp operation requires capability bit 4")
+	if graphNeedsNeuralAmp(program) && capabilities&NeuralAmpCapability == 0 {
+		return Error("neural amp operation requires capability bit 4")
 	}
-	return program, nil
+	return nil
 }
 
 func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error {
@@ -998,4 +1049,35 @@ func readDrum(r *reader) (drum.Params, error) {
 	}
 	p.Metal = metal == 1
 	return p, nil
+}
+
+func graphNeedsExpression(program *graph.Program) bool {
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		switch program.Nodes[i].Op {
+		case graph.PitchBend, graph.Pressure, graph.Timbre:
+			return true
+		}
+	}
+	return false
+}
+
+// readExpression validates a complete record once before reading its floats.
+// Keeping the fixed wire record together avoids repeated bounds/error paths.
+func readExpression(r *reader) (seq.Expression, error) {
+	var expression seq.Expression
+	record, err := r.take(21)
+	if err != nil {
+		return expression, err
+	}
+	if record[0] > 1 {
+		return expression, Error("invalid note expression presence")
+	}
+	expression.Set = record[0] == 1
+	values := [...]*float32{&expression.PitchCents, &expression.Pressure, &expression.Timbre, &expression.VibratoRateHz, &expression.VibratoDepthCents}
+	for i, value := range values {
+		offset := 1 + i*4
+		bits := uint32(record[offset]) | uint32(record[offset+1])<<8 | uint32(record[offset+2])<<16 | uint32(record[offset+3])<<24
+		*value = math.Float32frombits(bits)
+	}
+	return expression, expression.Validate()
 }

@@ -1,5 +1,10 @@
 package seq
 
+import "m31labs.dev/cicada/kernel/expression"
+
+// Expression is the resolved per-step expression shared by the score and voices.
+type Expression = expression.Params
+
 // Step is the unpacked form of Cicada's 32-bit wire-format step.
 type Step struct {
 	Note        uint8
@@ -100,7 +105,9 @@ func (c ChordStep) Validate(step Step) error {
 }
 
 type Pattern struct {
-	Chords        [64]ChordStep `json:",omitzero"`
+	// Expression is immutable once loaded by the engine; nil is neutral.
+	Expression    *[64]Expression `json:",omitempty"`
+	Chords        [64]ChordStep   `json:",omitzero"`
 	Steps         [64]uint32
 	Len           uint8
 	SwingPermille uint16 // fraction of one step, 0..500
@@ -128,6 +135,9 @@ func (p *Pattern) Validate() error {
 		}
 	}
 	for i := uint8(0); i < p.Len; i++ {
+		if err := p.ExpressionAt(int(i)).Validate(); err != nil {
+			return err
+		}
 		step, err := UnpackStep(p.Steps[i])
 		if err != nil {
 			return err
@@ -151,4 +161,13 @@ func (p *Pattern) Validate() error {
 		}
 	}
 	return nil
+}
+
+// ExpressionAt reads optional score expression without allocating. The voice
+// resolves an unset value to its neutral defaults when it receives the value.
+func (p *Pattern) ExpressionAt(index int) Expression {
+	if p.Expression == nil || index < 0 || index >= len(p.Steps) {
+		return Expression{}
+	}
+	return p.Expression[index]
 }

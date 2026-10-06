@@ -112,6 +112,8 @@ type voiceSlot struct {
 	acid                           *acid.Voice
 	drums                          *drum.Kit
 	graph                          *graph.Voice
+	noteIdentity                   uint16
+	noteActive                     bool
 	poly                           *graph.Pool
 	mix                            mix.Track
 	targetMix                      mix.Track
@@ -520,7 +522,15 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 					return Error("chord pattern requires a polyphonic graph track")
 				}
 			}
-			e.patterns[track].slots[slot] = *pattern
+			loaded := *pattern
+			// Copy expression once before rendering. Internal pattern revisions and
+			// held gates share this immutable storage, never caller-owned memory.
+			if pattern.Expression != nil {
+				cloned := new([64]seq.Expression)
+				*cloned = *pattern.Expression
+				loaded.Expression = cloned
+			}
+			e.patterns[track].slots[slot] = loaded
 			if !isDrum {
 				continue
 			}
@@ -534,6 +544,11 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 					if decoded.Gate && (decoded.Tie || decoded.Note != uint8(lane)) {
 						return Error("drum lane step has wrong routing")
 					}
+				}
+				if lanePattern.Expression != nil {
+					cloned := new([64]seq.Expression)
+					*cloned = *lanePattern.Expression
+					lanePattern.Expression = cloned
 				}
 				e.patterns[track].drumSlots[slot][lane] = lanePattern
 			}
@@ -749,6 +764,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			return
 		}
 		e.processPatternEvents(seq.NoteOn)
+		e.processPatternEvents(seq.NoteExpression)
 		if e.faulted {
 			clear(outL[frame:])
 			clear(outR[frame:])
@@ -1063,6 +1079,8 @@ func commandPriority(op cmd.Op) int {
 		return 1
 	case cmd.OpNoteOn, cmd.OpPlay:
 		return 3
+	case cmd.OpNoteExpression:
+		return 4
 	default:
 		return 2
 	}
@@ -1203,10 +1221,31 @@ func (e *Engine) apply(c cmd.Command) {
 			e.fault(9)
 			return
 		}
+		v.noteIdentity, v.noteActive = c.Index, true
 		e.emit(cmd.Message{Kind: cmd.NoteOn, Track: c.Track, A: uint16(note), Tick: e.transport.Tick()})
+	case cmd.OpNoteExpression:
+		v := &e.voices[c.Track]
+		if v.poly != nil {
+			e.fault(cmd.FaultPolyLive)
+			return
+		}
+		if !v.noteActive || c.Index != v.noteIdentity {
+			return // stale controls must not change a newer monophonic note
+		}
+		pitch, pressure, timbre := math.Float32frombits(c.Arg0), math.Float32frombits(c.Arg1), math.Float32frombits(c.Pad)
+		switch v.kind {
+		case VoiceGraph:
+			v.graph.NoteExpression(pitch, pressure, timbre)
+		case VoiceAcid:
+			v.acid.NoteExpression(pitch, pressure, timbre)
+		}
 	case cmd.OpNoteOff:
 		if e.voices[c.Track].poly != nil {
 			e.fault(cmd.FaultPolyLive)
+			return
+		}
+		v := &e.voices[c.Track]
+		if v.kind != VoiceDrums && c.Index != 0 && c.Index != 0xffff && (!v.noteActive || c.Index != v.noteIdentity) {
 			return
 		}
 		if e.voices[c.Track].kind == VoiceDrums && c.Index >= uint16(drum.LaneCount) {
@@ -1604,6 +1643,7 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 
 func (e *Engine) noteOff(track int, lane uint16) {
 	v := &e.voices[track]
+	v.noteActive = false
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.NoteOff()
@@ -1626,6 +1666,7 @@ func (e *Engine) noteOff(track int, lane uint16) {
 
 func (e *Engine) resetVoice(track int) {
 	v := &e.voices[track]
+	v.noteActive = false
 	if v.insert != nil {
 		v.insert.Reset()
 	}

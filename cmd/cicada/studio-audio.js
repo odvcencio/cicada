@@ -85,6 +85,13 @@
     }
     if (options.connect !== false) connect();
 
+    function noteIdentity(identity) {
+      if (!identity) return {};
+      if (!Number.isInteger(identity.noteId) || identity.noteId < 1 || identity.noteId > 65534) throw new RangeError('note ID must be from 1 to 65534');
+      if (!Number.isInteger(identity.channel) || identity.channel < 0 || identity.channel > 15) throw new RangeError('MIDI channel must be from 0 to 15');
+      return {noteId: identity.noteId, channel: identity.channel};
+    }
+
     return {
       backend: 'native',
       params() {
@@ -101,16 +108,23 @@
       },
       setMute(track, on) { send({type: 'mute', track, on: !!on}); },
       setSolo(track, on) { send({type: 'solo', track, on: !!on}); },
-      noteOn(track, note, velocity) {
+      noteOn(track, note, velocity, identity) {
         if (typeof track !== 'string' || !track) throw new TypeError('note track is required');
         if (!Number.isInteger(note) || note < 0 || note > 127) throw new RangeError('note must be an integer from 0 to 127');
         if (!Number.isInteger(velocity) || velocity < 0 || velocity > 127) throw new RangeError('velocity must be an integer from 0 to 127');
-        send({type: 'note', track, note, velocity, on: true});
+        send({type: 'note', track, note, velocity, on: true, ...noteIdentity(identity)});
       },
-      noteOff(track, note) {
+      noteOff(track, note, identity) {
         if (typeof track !== 'string' || !track) throw new TypeError('note track is required');
         if (!Number.isInteger(note) || note < 0 || note > 127) throw new RangeError('note must be an integer from 0 to 127');
-        send({type: 'note', track, note, velocity: 0, on: false});
+        send({type: 'note', track, note, velocity: 0, on: false, ...noteIdentity(identity)});
+      },
+      noteExpression(track, expression) {
+        if (typeof track !== 'string' || !track) throw new TypeError('note track is required');
+        if (!expression || !Number.isFinite(expression.pitchCents) || expression.pitchCents < -9600 || expression.pitchCents > 9600) throw new RangeError('pitch must be finite cents from -9600 to 9600');
+        if (!Number.isFinite(expression.pressure) || expression.pressure < 0 || expression.pressure > 1) throw new RangeError('pressure must be from 0 to 1');
+        if (!Number.isFinite(expression.timbre) || expression.timbre < 0 || expression.timbre > 1) throw new RangeError('timbre must be from 0 to 1');
+        send({type: 'note-expression', track, ...noteIdentity(expression), pitchCents: expression.pitchCents, pressure: expression.pressure, timbre: expression.timbre});
       },
       resetLoudness() { send({type: 'loudness-reset'}); },
       onMeters(callback) { listeners.meters.add(callback); return () => listeners.meters.delete(callback); },

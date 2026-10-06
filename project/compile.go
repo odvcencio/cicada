@@ -82,6 +82,9 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		return nil, fmt.Errorf("project seed exceeds 32-bit kernel seed")
 	}
 	base := seq.Pattern{Len: uint8(count), GatePercent: 55, Seed: uint32(score.Seed)}
+	if err := compileExpression(source, &base); err != nil {
+		return nil, err
+	}
 	if track.Kind == "acid" {
 		for _, param := range track.Params {
 			if param.Name == "gate" {
