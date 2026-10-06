@@ -175,6 +175,8 @@ type Player struct {
 	noteEpoch         atomic.Uint64 // odd: release overload; batches carry their admission epoch
 	heldNotes         [128]noteInput
 	heldOrder         [128]uint64
+	noteFinal         [16][128]cmd.Command
+	noteTouched       [16][128]bool
 	noteOrder         uint64
 	events            chan Event
 	left, right       [blockFrames]float32
@@ -1058,8 +1060,10 @@ func (p *Player) queueLiveNotes() {
 	// The kernel intentionally orders same-tick NoteOff before NoteOn. Reduce
 	// this reader's burst to the final gate command per route so a release/panic
 	// cannot be reordered ahead of its queued press and reopen the voice.
-	var final [16][12]cmd.Command
-	var touched [16][12]bool
+	final, touched := &p.noteFinal, &p.noteTouched
+	for track := range touched {
+		clear(touched[track][:])
+	}
 	if releaseAll {
 		p.noteEpoch.CompareAndSwap(epoch, epoch+1)
 		for i, held := range p.heldNotes {
@@ -1074,6 +1078,8 @@ func (p *Player) queueLiveNotes() {
 			if kind == "drums" {
 				lane, _ = GMDrumLane(int(held.Note))
 				command.Index = lane
+			} else if kind == "piano" || kind == "poly" {
+				lane, command.Index = uint16(held.Note), uint16(held.Note)
 			}
 			final[track][lane], touched[track][lane] = command, true
 		}
@@ -1096,6 +1102,9 @@ func (p *Player) queueLiveNotes() {
 		sameRoute := func(a noteInput) bool {
 			if a.Track != input.Track {
 				return false
+			}
+			if kind == "piano" || kind == "poly" {
+				return a.Note == input.Note
 			}
 			if kind != "drums" {
 				return true
@@ -1183,8 +1192,11 @@ func (p *Player) queueLiveNotes() {
 			continue
 		}
 		lane := uint16(0)
-		if kind == "drums" {
+		if kind == "drums" || kind == "piano" || kind == "poly" {
 			lane = command.Index
+			if input.On && kind != "drums" {
+				lane = uint16(input.Note)
+			}
 		}
 		final[track][lane], touched[track][lane] = command, true
 		eventKind := "note-on"
