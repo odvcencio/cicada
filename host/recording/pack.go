@@ -53,7 +53,7 @@ func Build(name string, hits []Hit, layers int) (*Pack, error) {
 	p.Manifest.Config.Humanize.Seed = 0
 	groups := map[int][]int{}
 	for i, h := range hits {
-		if h.Root < 12 || h.Root > 95 || h.Rate < 8000 || h.Rate > 192000 || len(h.PCM) == 0 || len(h.PCM) > MaxFrames || len(h.SourceSHA256) != 64 || h.Peak <= 0 {
+		if h.Root < 0 || h.Root > 127 || h.Rate < 8000 || h.Rate > 192000 || len(h.PCM) == 0 || len(h.PCM) > MaxFrames || len(h.SourceSHA256) != 64 || h.Peak <= 0 {
 			return nil, fmt.Errorf("invalid analyzed hit %d", i+1)
 		}
 		id := fmt.Sprintf("hit_%03d", i+1)
