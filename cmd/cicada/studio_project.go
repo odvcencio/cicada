@@ -25,7 +25,7 @@ func (s *studio) editProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	edit.Action = "project"
-	s.apply(w, edit, func(source []byte) ([]byte, error) { return projectSettingsSource(source, edit.Metadata) })
+	s.apply(w, edit, s.sourceTransform(func(source []byte) ([]byte, error) { return projectSettingsSource(source, edit.Metadata) }))
 }
 
 func projectSettingsSource(source []byte, settings *studioProjectSettings) ([]byte, error) {

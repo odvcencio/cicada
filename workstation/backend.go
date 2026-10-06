@@ -93,6 +93,14 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 		}
 		return &backendError{response.StatusCode, failure.Error}
 	}
+	if method == http.MethodPost {
+		if receipt, ok := ctx.Value(workspaceWriteReceiptKey{}).(*workspaceWriteReceipt); ok {
+			var acknowledgment workspaceWriteReceipt
+			if json.Unmarshal(data, &acknowledgment) == nil && acknowledgment.Revision != "" {
+				receipt.Revision = acknowledgment.Revision
+			}
+		}
+	}
 	if output == nil {
 		return nil
 	}

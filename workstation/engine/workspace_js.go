@@ -32,10 +32,12 @@ type workspaceProps struct {
 }
 
 type workspaceProjection struct {
-	HTML     string `json:"html"`
-	Revision string `json:"revision"`
-	Location string `json:"location"`
-	Title    string `json:"title"`
+	HTML            string `json:"html"`
+	Revision        string `json:"revision"`
+	Location        string `json:"location"`
+	Title           string `json:"title"`
+	WriteRevision   string `json:"writeRevision"`
+	RefreshRequired bool   `json:"refreshRequired"`
 }
 
 type workspaceControl struct {
@@ -776,7 +778,7 @@ func (u *workspaceUI) run() {
 				u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained.")
 				continue
 			}
-			if job.method == http.MethodGet && projection.Revision != u.revision.Get() {
+			if projection.WriteRevision == "" && projection.Revision != u.revision.Get() {
 				// A read can discover somebody else's edit. Queued gestures
 				// based on the old projection must not be rebased over it.
 				u.clearQueue()
@@ -854,6 +856,12 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 			result.Message += " " + name + ": " + message
 		}
 		return projection, "", &workspaceRequestError{response.StatusCode, result.Message}
+	}
+	if result.Data.RefreshRequired || (result.Data.WriteRevision != "" && result.Data.WriteRevision != result.Data.Revision) {
+		if result.Message == "" {
+			result.Message = "Saved. The score changed before the workspace refreshed."
+		}
+		return projection, "", fmt.Errorf("%s", result.Message)
 	}
 	return result.Data, result.Message, nil
 }

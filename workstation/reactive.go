@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -20,11 +21,22 @@ import (
 // forms retain GoSX's redirect-after-POST contract; the mounted GoSX workspace
 // uses the framework's incremental tree diff and patch receiver instead.
 type workspaceProjection struct {
-	HTML     string `json:"html"`
-	Revision string `json:"revision"`
-	Location string `json:"location"`
-	Title    string `json:"title"`
+	HTML            string `json:"html"`
+	Revision        string `json:"revision"`
+	Location        string `json:"location"`
+	Title           string `json:"title"`
+	WriteRevision   string `json:"writeRevision,omitempty"`
+	Saved           bool   `json:"saved,omitempty"`
+	RefreshRequired bool   `json:"refreshRequired,omitempty"`
 }
+
+// Keep the native acknowledgment outside the action result: selecting a
+// redirect replaces that result, and the subsequent read may see another save.
+type workspaceWriteReceipt struct {
+	Revision string `json:"revision"`
+}
+
+type workspaceWriteReceiptKey struct{}
 
 func (s *studioApp) reactiveWorkspace(ctx *server.Context, view workspace, body gosx.Node) gosx.Node {
 	runtime := gosx.Fragment()
@@ -119,6 +131,8 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 		return
 	}
 	var fields map[string]string
+	receipt := &workspaceWriteReceipt{}
+	r = r.WithContext(context.WithValue(r.Context(), workspaceWriteReceiptKey{}, receipt))
 	capture := &actionCapture{header: make(http.Header)}
 	action.ServeHandlerWithOptions(capture, r, func(ctx *action.Context) error {
 		if err := actionValues(ctx); err != nil {
@@ -155,8 +169,14 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 		if err != nil {
 			// The write succeeded; never encourage a blind POST retry.
 			result.Message = "Saved. " + err.Error()
-			result.Data, _ = json.Marshal(map[string]any{"saved": true, "refreshRequired": true})
+			result.Data, _ = json.Marshal(map[string]any{"saved": true, "refreshRequired": true, "writeRevision": receipt.Revision})
 		} else {
+			projection.WriteRevision = receipt.Revision
+			projection.Saved = receipt.Revision != ""
+			projection.RefreshRequired = receipt.Revision != "" && receipt.Revision != projection.Revision
+			if projection.RefreshRequired {
+				result.Message = "Saved. The score changed before the workspace refreshed."
+			}
 			result.Data, _ = json.Marshal(projection)
 		}
 		result.Redirect, result.Values = "", nil

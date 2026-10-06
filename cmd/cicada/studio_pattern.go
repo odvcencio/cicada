@@ -50,7 +50,7 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown pattern action"})
 		return
 	}
-	s.apply(w, edit, func(source []byte) ([]byte, error) {
+	s.apply(w, edit, s.sourceTransform(func(source []byte) ([]byte, error) {
 		switch edit.Action {
 		case "settings":
 			return patternSettingsSource(source, edit.Pattern, edit.Settings)
@@ -77,7 +77,7 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 		default:
 			return bindPatternSource(source, edit.Scene, edit.Track, edit.Pattern)
 		}
-	})
+	}))
 }
 
 type studioSpanEdit struct {
