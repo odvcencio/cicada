@@ -5,12 +5,16 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/tetratelabs/wazero"
+	"github.com/tetratelabs/wazero/api"
+	"github.com/tetratelabs/wazero/experimental"
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -240,6 +244,12 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 	if p == nil {
 		t.Fatalf("project: %+v", diagnostics)
 	}
+	compareWASMProject(t, fixture, p, bars, exactMessages, wasm)
+}
+
+func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars int, exactMessages bool, wasm []byte) map[int][32]byte {
+	t.Helper()
+	hashes := map[int][32]byte{}
 	for _, rate := range []int{44_100, 48_000} {
 		t.Run(sampleRateName(rate), func(t *testing.T) {
 			const blockSize = 128
@@ -256,6 +266,19 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 				t.Fatal(err)
 			}
 			ctx := context.Background()
+			var wasmAllocations uint64
+			var allocatorFound bool
+			if strings.HasPrefix(fixture, "multifile") {
+				ctx = experimental.WithFunctionListenerFactory(ctx, experimental.FunctionListenerFactoryFunc(func(def api.FunctionDefinition) experimental.FunctionListener {
+					if !strings.Contains(def.DebugName(), "runtime.alloc") {
+						return nil
+					}
+					allocatorFound = true
+					return experimental.FunctionListenerFunc(func(context.Context, api.Module, api.FunctionDefinition, []uint64, experimental.StackIterator) {
+						wasmAllocations++
+					})
+				}))
+			}
 			runtime := wazero.NewRuntime(ctx)
 			t.Cleanup(func() { _ = runtime.Close(ctx) })
 			module, err := runtime.Instantiate(ctx, wasm)
@@ -311,8 +334,17 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 			if fixture == "pluck.cicada" {
 				initialAllocations = call("gosx_audio_alloc_bytes")
 			}
+			pcm := sha256.New()
+			allocationsBeforeRender := wasmAllocations
 			for block := 0; block*blockSize < frames; block++ {
 				call("gosx_audio_render", blockSize)
+				if strings.HasPrefix(fixture, "multifile") {
+					data, ok := module.Memory().Read(outputPtr, blockSize*2*4)
+					if !ok {
+						t.Fatal("WASM PCM block out of bounds")
+					}
+					_, _ = pcm.Write(data)
+				}
 				native.Render(nativeL[:], nativeR[:])
 				for channel := 0; channel < 2; channel++ {
 					for frame := 0; frame < blockSize && block*blockSize+frame < frames; frame++ {
@@ -353,6 +385,18 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 					stableMemory = module.Memory().Size()
 				}
 			}
+			if strings.HasPrefix(fixture, "multifile") {
+				copyHash := [32]byte{}
+				copy(copyHash[:], pcm.Sum(nil))
+				hashes[rate] = copyHash
+				if !allocatorFound || allocationsBeforeRender == 0 {
+					t.Fatal("WASM allocator probe did not observe initialization allocations")
+				}
+				if wasmAllocations != allocationsBeforeRender {
+					t.Fatalf("WASM render allocated %d times", wasmAllocations-allocationsBeforeRender)
+				}
+				t.Logf("METRIC %s rate=%d wasm_render_allocs=0", fixture, rate)
+			}
 			if !nonzero {
 				t.Fatalf("%s rendered silence", fixture)
 			}
@@ -377,6 +421,7 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 			t.Logf("%s: %d bars at %d Hz, peak native/WASM sample difference %.9g", fixture, bars, rate, peakDifference)
 		})
 	}
+	return hashes
 }
 
 func compareMessageLogs(t *testing.T, wasm, native []cmd.Message) {
@@ -400,4 +445,62 @@ func sampleRateName(rate int) string {
 		return "44.1kHz"
 	}
 	return "48kHz"
+}
+
+func TestAudioWASMMultiFileSampleParity(t *testing.T) {
+	files, err := project.ReadSources(filepath.Join("..", "..", "examples", "multifile", "main.cicada"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	score, ds := files.Parse()
+	if score == nil {
+		t.Fatalf("multi-file parse: %+v", ds)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("multi-file project: %+v", ds)
+	}
+	source := []byte("cicada 2\n")
+	for _, file := range files.Files {
+		source = append(source, file.Source...)
+		source = append(source, '\n')
+	}
+	single, ds := notation.Parse(source)
+	q, ds := project.FromScore(single)
+	if q == nil {
+		t.Fatalf("concatenated project: %+v", ds)
+	}
+	for _, rate := range []int{44100, 48000} {
+		a, err := project.CompileEngine(p, rate, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, err := project.CompileEngine(q, rate, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		multiImage, err := kernelimage.Encode(a)
+		if err != nil {
+			t.Fatal(err)
+		}
+		concatImage, err := kernelimage.Encode(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(multiImage, concatImage) {
+			t.Fatal("WASM project image differs from concatenation")
+		}
+	}
+	wasm, err := os.ReadFile(wasmModulePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	multiPCM := compareWASMProject(t, "multifile", p, 2, true, wasm)
+	concatPCM := compareWASMProject(t, "multifile-concatenated", q, 2, true, wasm)
+	for _, rate := range []int{44100, 48000} {
+		if multiPCM[rate] != concatPCM[rate] {
+			t.Fatalf("WASM PCM bytes differ from concatenation at %d Hz", rate)
+		}
+		t.Logf("METRIC multifile rate=%d wasm_concat_pcm=byte-identical", rate)
+	}
 }

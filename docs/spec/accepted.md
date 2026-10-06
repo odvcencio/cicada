@@ -340,7 +340,7 @@ track bass acid { chain = intro triplet chorus }
 
 ## Multi-file projects and manifest metadata
 
-**Status:** Accepted; not available in the current build.
+**Status:** Multi-file loading and manifest metadata are implemented. Imports, qualified library names, private library declarations, `require`, `cicada.sum`, and bundle provenance remain accepted-only.
 
 **Syntax (EBNF):**
 
@@ -348,7 +348,7 @@ track bass acid { chain = intro triplet chorus }
 import_decl ::= "import" , string ;
 manifest_metadata ::= "entry" , string
                     | "source" , string
-                    | "license" , spdx_identifier
+                    | "license" , ( spdx_identifier | string )
                     | "author" , string ;
 sum_file ::= { generated_sum_record } ;
 ```
@@ -359,9 +359,26 @@ sum_file ::= { generated_sum_record } ;
 
 **Defaults:** Files in one project need no import to reference one another. A single-file project remains valid without changes. The entry is loaded first; remaining source files are loaded in sorted path order.
 
-**Errors:** Duplicate declarations across files must report both source locations. Unresolved cross-file references, path escapes, missing dependencies, and hash mismatches must be rejected. Loader and lock diagnostics have not landed.
+**Errors:** Duplicate declarations report `CICADA-DUPLICATE` with both file:line:column locations. Unresolved references report `CICADA-REFERENCE` at the reference. `CICADA-SOURCE-PATH` rejects absolute paths, traversal components, glob patterns, unlisted scores, and symlinks that escape the project. `CICADA-SOURCE-MISSING` reports missing or unreadable listed files at their manifest directives. Invalid or repeated manifest directives report `CICADA-MANIFEST`. Dependency and hash diagnostics remain accepted-only.
 
-**Example:** The manifest lists every source file and the score imports a pinned library:
+**Built example:** [Shared circuit](../../examples/multifile/main.cicada) separates its song, patterns, and voices into three files:
+
+```text
+project multifile
+cicada 2
+entry "main.cicada"
+source "main.cicada"
+source "parts/patterns.cicada"
+source "parts/voices.cicada"
+license "MIT"
+author "Cicada contributors"
+```
+
+The entry is included automatically, even if it has no `source` line. Repeating it once in the source list is allowed. Repeated `source` directives for the same path are rejected. An explicit source list requires an entry. Existing manifests without `entry` or `source` keep loading each requested score independently. Source headers are optional and must match the manifest when present. Names retain their existing declaration-kind rules across all files; a track and pattern may share a spelling.
+
+`check`, `fmt`, `fix --all`, `explain`, `play`, and `render` load the project from any listed score. Project-wide `check` compiles it once; `fmt` formats each listed file separately. The language server resolves diagnostics, definitions, renames, parameter hover, completion, and notation fixes across files, including unsaved buffers. Studio refuses projects with more than one source file before opening recovery, editing, or undo history. Save As copies every listed source and updates the manifest if the requested score is renamed.
+
+**Accepted-only example:** Imports and dependency locking are planned follow-up work:
 
 ```cicada-accepted
 cicada 2
@@ -387,4 +404,4 @@ scene main {
 song { main*8 }
 ```
 
-**Edition history:** Accepted as additive edition-1 project support. Current project tools can walk multiple files, but compile each score independently and cannot resolve declarations across files. Manifest metadata and `cicada.sum` are not available yet.
+**Edition history:** Multi-file projects and manifest metadata work in editions 1 and 2 without changing source grammar, semantic JSON, or the kernel image format. Imports, `require`, and `cicada.sum` remain accepted follow-up work.
