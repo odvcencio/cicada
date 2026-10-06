@@ -53,7 +53,7 @@ phrase_use ::= "use" , _name , [ "*" , integer ] , [ "transpose" , "=" , number 
 drum_pattern ::= "pattern" , _name , "drums" , { pattern_attr } , "{" , { pattern_attr } ,
                  { drum_lane } , "}" ;
 pattern_attr ::= identifier , "=" , number ;
-acid_step ::= "." | "-" | "|" | acid_note ;
+acid_step ::= "." | "-" | "|" | acid_note | chord_note ;
 acid_note ::= pitch , { octave_shift } , { modifier } ;
 pitch ::= degree | letter_pitch ;
 degree ::= /[1-7][#b]?/ ;
@@ -98,6 +98,8 @@ live_layer ::= identifier , ">=" , number , [ ";" ] ;
 live_attack ::= "attack" , bar_count , [ ";" ] ;
 live_release ::= "release" , bar_count , [ ";" ] ;
 bar_count ::= /-?[0-9]+(\.[0-9]+)?bars?/ ;
+chord_note ::= "[" , { chord_pitch } , "]" , { modifier } ;
+chord_pitch ::= pitch , { octave_shift } ;
 live_state ::= "state" , identifier , "=" , identifier , [ ";" ] ;
 live_stinger ::= "stinger" , identifier , "=" , identifier , "." , identifier ,
                  [ "quantize" , identifier ] , [ "crossfade" , number ] , [ ";" ] ;

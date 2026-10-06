@@ -46,6 +46,17 @@ Open a pattern card to see its step grid:
 - In a pitched pattern, click a pitch-row cell to set that step to the row's
   note. Click the active pitch again to clear it. The **Note** row toggles a
   note and a rest; the **Velocity** row displays the compiled velocity.
+- Existing chord steps show every pitch in the grid and Note row. Click a lit
+  chord pitch to remove only that note, or an empty pitch to add one. A chord
+  holds at most four pitches; remove one before adding a fifth. These gestures
+  edit individual pitches, not the whole chord's transposition. The **Note**
+  row explicitly clears the whole chord to a rest. If only one pitch remains,
+  it becomes a normal mono step with the set/clear behavior above; ordinary
+  mono cells never gain extra pitches implicitly. Write bracket chords in the
+  source pane to create a new chord. Untouched pitch spellings and shared
+  modifier values stay intact, and following ties continue the remaining pitches.
+  When a chord becomes a single note, spaces in its modifier suffix are removed
+  because mono notation requires adjacent modifiers.
 - **Accent** and **Slide** toggle their modifiers on an existing note.
 - **Ratchet** cycles through one to eight hits.
 - **Chance** cycles through 100%, 75%, 50%, and 25%.
@@ -109,6 +120,10 @@ receive notes, then select **Record** and play the MIDI device. Select **Stop
 recording** to preview the buffered notes. Choose **Commit take** to write the
 notes into the score or **Discard** to clear the buffer. Nothing reaches the
 score before Commit.
+
+MIDI take commits currently support acid and drum tracks. Custom/poly tracks
+are refused without changing the score; edit their chords in the grid or source
+pane instead. Chord recording is not available through the scalar take editor.
 
 Drum takes keep simultaneous hits on separate lanes and quantize velocity to
 the nearest supported drum level. Acid takes save pitch and overlapping slides
