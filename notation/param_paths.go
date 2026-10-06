@@ -18,6 +18,18 @@ func validateSceneSettings(score *Score, add func(string, string, string, Positi
 				add("CICADA-DUPLICATE", "scene sets path more than once: "+setting.Path, "error", setting.Position)
 			}
 			seen[setting.Path] = true
+			masterControl := false
+			for _, param := range score.Master {
+				if param.Name == "insert" {
+					for _, name := range strings.Fields(param.Value) {
+						masterControl = masterControl || name != "->" && strings.HasPrefix(setting.Path, name+".")
+					}
+				}
+			}
+			if masterControl {
+				add("CICADA-UNSUPPORTED", "master effect controls are fixed until the score is recompiled", "error", setting.Position)
+				continue
+			}
 			descriptor, _, _, code, message := resolveNotationPath(score, setting.Path)
 			if code != "" {
 				add(code, message, "error", setting.Position)

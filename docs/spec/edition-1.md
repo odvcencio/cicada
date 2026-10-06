@@ -607,7 +607,7 @@ song { main*4 }
 
 **Defaults:** Music is trimmed by -3 dB, SFX is at unity, and both built-in buses are unmuted and unsoloed. The master limiter stays last with its existing ceiling and lookahead.
 
-**Errors:** A user-declared bus, bus send, non-fixed bus level, bus pan, master send, master output, master pan, or a non-empty master insert reports `CICADA-UNSUPPORTED`. A master `insert = none` is valid.
+**Errors:** A user-declared bus, bus send, non-fixed bus level, bus pan, master send, master output, or master pan reports `CICADA-UNSUPPORTED`. Master inserts support the ordered [master effect chain](accepted.md#mastering-targets-and-the-master-insert-chain), including `insert = none`.
 
 **Example:** The built-in buses and master can be named when their defaults need to be stated:
 

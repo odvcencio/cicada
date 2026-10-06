@@ -496,6 +496,8 @@ func callArgumentTypes(op string) ([]instrument.Type, bool) {
 		return []instrument.Type{instrument.Unit, instrument.Hz}, true
 	case "comb":
 		return []instrument.Type{instrument.Audio, instrument.MS, instrument.Unit, instrument.Unit}, true
+	case "neural_amp":
+		return []instrument.Type{instrument.Audio, instrument.Unit}, true
 	case "mix":
 		return []instrument.Type{instrument.Audio, instrument.Audio, instrument.Unit}, true
 	case "tanh":
@@ -512,7 +514,7 @@ func callOutputType(op string) instrument.Type {
 	switch op {
 	case "period":
 		return instrument.MS
-	case "saw", "square", "sine", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh", "delay", "comb":
+	case "saw", "square", "sine", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh", "delay", "comb", "neural_amp":
 		return instrument.Audio
 	case "env", "exp2", "clamp":
 		return instrument.Unit
@@ -676,6 +678,8 @@ func typedNumber(value float64, unit instrument.Type) (string, error) {
 		return decimal(value) + "LU", nil
 	case "lufs":
 		return decimal(value) + "LUFS", nil
+	case "frames":
+		return decimal(value) + "frames", nil
 	case "dbtp":
 		return decimal(value) + "dBTP", nil
 	case "ratio":
