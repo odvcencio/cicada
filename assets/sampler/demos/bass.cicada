@@ -1,0 +1,33 @@
+cicada 2
+
+title "Sample bass dynamics and repetition"
+
+tempo 100
+
+key c major
+
+seed 4242
+
+sampler sound {
+  pack = "packs/bass/manifest.json"
+  sha256 = "8d8ddae6d577ed6aba313752f817801acfffdf305d4201ca7c7ce4ef6fab8883"
+  root = c4
+  voices = 16
+}
+
+track lead sound {
+  level = -6dB
+}
+
+pattern demo {
+  gate = 65%
+  e2 . e2 . g2 . b2 . | a2 . a2 . c3 . e3 . | e2 e2 e2 e2 b2 . e2 .
+}
+
+scene main {
+  lead = demo
+}
+
+song {
+  main*4
+}

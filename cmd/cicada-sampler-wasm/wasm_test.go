@@ -53,7 +53,9 @@ func TestSamplerWASMABIParity(t *testing.T) {
 		}
 	}
 	write(uint32(call("sampler_config_ptr")), []float64{3, 3, 8, .7, 20, 4, 8, .5, 12, 400, 5000, .2, 0, 0, 0, 0, 4242, 0})
-	write(uint32(call("sampler_zone_ptr", 0)), []float64{float64(id), 60, 48, 72, 1, 127, 64, 0, 0, 1, 0, 1, 0, 0, 513, 1, 31, 501, 101, 0})
+	// Sustain-group membership must survive ABI packing: repeated strikes in
+	// block 16 overlap, while key-up and pedal still control this looped fixture.
+	write(uint32(call("sampler_zone_ptr", 0)), []float64{float64(id), 60, 48, 72, 1, 127, 64, 0, 0, 1, 0, 1, 0, 0, 513, 1, 31, 501, 101, 517})
 	t.Run("RejectOverflowingCrossfade", func(t *testing.T) {
 		ptr := uint32(call("sampler_zone_ptr", 0)) + 18*8
 		m.Memory().WriteFloat64Le(ptr, 1<<30)
@@ -73,7 +75,7 @@ func TestSamplerWASMABIParity(t *testing.T) {
 	c.FilterDepth = 5000
 	c.Gain = .2
 	c.Humanize.Seed = 4242
-	z := sample.Zone{Region: sample.Region{Left: pcm, SampleRate: 48000, RootKey: 60, End: 513, Loop: true, LoopStart: 31, LoopEnd: 501, Crossfade: 101}, KeyLow: 48, KeyHigh: 72, VelocityLow: 1, VelocityHigh: 127, Layer: 64, Count: 1, Gain: 1}
+	z := sample.Zone{ChokeGroup: 5, ChokeSustain: true, Region: sample.Region{Left: pcm, SampleRate: 48000, RootKey: 60, End: 513, Loop: true, LoopStart: 31, LoopEnd: 501, Crossfade: 101}, KeyLow: 48, KeyHigh: 72, VelocityLow: 1, VelocityHigh: 127, Layer: 64, Count: 1, Gain: 1}
 	native, err := sample.NewInstrument(48000, []sample.Zone{z}, c)
 	if err != nil {
 		t.Fatal(err)

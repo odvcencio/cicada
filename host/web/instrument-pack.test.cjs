@@ -41,3 +41,20 @@ test('checkedFetch rejects corrupt network bytes before caching', async () => {
   }), /hash mismatch/);
   assert.equal(puts, 0);
 });
+
+test('loadPack rejects encoded traversal before fetching any sample', async () => {
+  const { loadPack, sha256 } = await loader;
+  const url = 'https://example.org/packs/trumpet/manifest.json';
+  for (const path of ['%2e%2e/%2e%2e/private.wav.gz', '%2E%2E/private.wav.gz', '.%2e/private.wav.gz', '%2e./private.wav.gz', 'samples%2f..%2fprivate.wav.gz', 'samples%5cprivate.wav.gz']) {
+    const manifest = {
+      format: 'cicada.instrument-pack/1', id: 'trumpet',
+      assets: [{ id: 'take', path }], zones: [{}]
+    };
+    const bytes = new TextEncoder().encode(JSON.stringify(manifest));
+    const calls = [];
+    await assert.rejects(loadPack(url, await sha256(bytes), {
+      fetch: async requested => { calls.push(requested); return new Response(bytes); }
+    }), /sample path/);
+    assert.deepEqual(calls, [url]);
+  }
+});

@@ -1,0 +1,33 @@
+cicada 2
+
+title "Sample violin dynamics and repetition"
+
+tempo 100
+
+key c major
+
+seed 4242
+
+sampler sound {
+  pack = "packs/violin/manifest.json"
+  sha256 = "1ed859eddf261fa241d5452cf778666b67b529e22a7e2d27f0db159228a8ef60"
+  root = c4
+  voices = 16
+}
+
+track lead sound {
+  level = -6dB
+}
+
+pattern demo {
+  gate = 65%
+  g3 . b3 . d4 . g4 . | a4 . g4 . d4 . b3 . | g3 . b3 . d4 . g4 .
+}
+
+scene main {
+  lead = demo
+}
+
+song {
+  main*4
+}

@@ -96,6 +96,8 @@ func Cicada() *grammargen.Grammar {
 		sym("identifier"),
 		seq(str("("), sym("expression"), str(")")),
 	))
+	// Functions remain identifiers: typing checks delay(audio, ms) and
+	// comb(audio, ms, unit, unit), and unit / Hz yields a period in ms.
 	g.Define("call_expr", seq(field("function", sym("identifier")), str("("), commaSep(sym("expression")), str(")")))
 
 	// Parameters of tracks and effects. Mixer routing has its own typed source
@@ -140,7 +142,7 @@ func Cicada() *grammargen.Grammar {
 	// A step is a rest, a tie, a bar line (which takes no time), or a note.
 	// A note is a scale degree or a letter pitch, then octave marks, then
 	// modifiers: accent ^, slide ~, ratchet *n, and chance ?n (%n is legacy).
-	g.Define("acid_step", choice(str("."), str("-"), str("|"), sym("acid_note")))
+	g.Define("acid_step", choice(str("."), str("-"), str("|"), sym("acid_note"), sym("chord_note")))
 	g.Define("acid_note", seq(field("pitch", sym("pitch")), repeat(sym("octave_shift")), repeat(sym("modifier"))))
 	g.Define("pitch", choice(sym("degree"), sym("letter_pitch")))
 	g.Define("degree", token(pat(`[1-7][#b]?`)))
@@ -203,6 +205,9 @@ func Cicada() *grammargen.Grammar {
 	g.Define("live_release", seq(str("release"), field("value", sym("bar_count")), optional(str(";"))))
 	g.Define("bar_count", token(pat(`-?[0-9]+(\.[0-9]+)?bars?`)))
 
+	g.Define("chord_note", seq(str("["), repeat(sym("chord_pitch")), str("]"), repeat(sym("modifier"))))
+	g.Define("chord_pitch", seq(sym("pitch"), repeat(sym("octave_shift"))))
+
 	g.SetExtras(pat(`[ \t\r\n]+`), sym("comment"))
 	g.SetWord("identifier")
 
@@ -216,6 +221,7 @@ func Cicada() *grammargen.Grammar {
 	g.Test("steps", "cicada 1 pattern p notes { 1^.5,~*2%70 - | c#3' use hook*2 transpose = -12 }",
 		"(source_file (integer) (note_pattern (identifier) (acid_step (acid_note (pitch (degree)) (modifier))) (acid_step) (acid_step (acid_note (pitch (degree)) (octave_shift) (modifier) (modifier (ratchet (integer))) (modifier (probability (integer))))) (acid_step) (acid_step) (acid_step (acid_note (pitch (letter_pitch)) (octave_shift))) (phrase_use (identifier) (integer) (number))))")
 	g.Test("instrument", "cicada 1 instrument i { param c: hz = 1hz; voice mono { let s = env(gate, 9ms); out = saw(pitch - c) * (s * 2); } }", "")
+	g.Test("graph delays", "cicada 2 instrument i { voice mono { let s = comb(noise() * env(gate, 1ms), 1 / pitch, 0.99, 0.5); out = delay(s, 20ms); } }", "")
 	g.Test("inferred instrument units", "instrument i { param cutoff = 720Hz param decay = 0.3s param level = -6dB param amount = 50% voice mono { out = saw(cutoff) * amount } }", "")
 	g.Test("scene parameter paths", "scene drop { bass = bass-b bass.cutoff = 900Hz drums.bd_level = off }", "")
 	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
