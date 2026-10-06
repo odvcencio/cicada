@@ -26,6 +26,14 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 	}
 	tracks := make(map[string]notation.Track, len(score.Tracks))
+	kits := make(map[string]Kit, len(score.Kits))
+	for _, definition := range score.Kits {
+		kit := Kit{ID: definition.Name, Lanes: map[string]string{}}
+		for _, binding := range definition.Bindings {
+			kit.Lanes[binding.Lane] = binding.Target
+		}
+		kits[kit.ID] = kit
+	}
 	for _, track := range score.Tracks {
 		tracks[track.Name] = track
 		if _, err := CompileMixerParams(track); err != nil {
@@ -62,6 +70,29 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 					return err
 				})
 				diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: position})
+			}
+		}
+		if kit, ok := kits[track.Kind]; ok {
+			check := func(source notation.Track) error {
+				values := make(map[string]Value, len(source.Params))
+				for _, param := range source.Params {
+					if isMixerSourceParam(param.Name) {
+						continue
+					}
+					value, err := projectValue(param.Value)
+					if err != nil {
+						return err
+					}
+					values[param.Name] = value
+				}
+				_, err := CompileKitTrack(kit, programs, values)
+				return err
+			}
+			if err := check(track); err != nil {
+				diagnostics = append(diagnostics, notation.Diagnostic{
+					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(),
+					Position: parameterErrorPosition(track, check),
+				})
 			}
 		}
 		program := programs[track.Kind]

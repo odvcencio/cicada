@@ -566,7 +566,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 		authoredKits[kit.ID] = kit
 	}
 	tracks := make([]trackRuntime, 0, len(score.Tracks))
-	for _, source := range score.Tracks {
+	for ti, source := range score.Tracks {
 		mixerParams, err := project.CompileMixerParams(source)
 		if err != nil {
 			return nil, fmt.Errorf("track %s: %w", source.Name, err)
@@ -579,7 +579,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 				return nil, err
 			}
 			if isAuthoredKit {
-				bindings, err := project.CompileKit(kitDefinition, programs)
+				bindings, err := project.CompileKitTrack(kitDefinition, programs, semantic.Tracks[ti].Params)
 				if err != nil {
 					return nil, err
 				}
@@ -592,6 +592,8 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 						err = kit.SetRecipe(lane, binding.Recipe)
 					case engine.KitLaneGraph:
 						err = kit.SetGraph(lane, binding.Program)
+					case engine.KitLaneModeled:
+						err = kit.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
 					}
 					if err != nil {
 						return nil, fmt.Errorf("track %s lane %s: %w", source.Name, drum.Names[lane], err)
