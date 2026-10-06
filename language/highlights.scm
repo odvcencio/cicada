@@ -78,12 +78,12 @@
 ; Graph primitives.
 ((call_expr function: (identifier) @function.builtin)
   (#any-of? @function.builtin
-    "saw" "square" "sine" "noise" "env" "ladder" "diode"
-    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp"))
+    "saw" "square" "sine" "noise" "env" "adsr" "pulse" "svf" "ladder" "diode"
+    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp" "pm" "ddsp" "neural_amp" "delay" "comb"))
 ((call_expr function: (identifier) @function.call)
   (#not-any-of? @function.call
-    "saw" "square" "sine" "noise" "env" "ladder" "diode"
-    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp"))
+    "saw" "square" "sine" "noise" "env" "adsr" "pulse" "svf" "ladder" "diode"
+    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp" "pm" "ddsp" "neural_amp" "delay" "comb"))
 
 (expression ["+" "-" "*" "/"] @operator)
 ("->" @operator)
@@ -115,9 +115,10 @@
   (#not-any-of? @type "acid" "drums" "audio"))
 (fx_decl name: (identifier) @type.definition)
 
-; Authored kits bind each drum lane to instrument code or a built-in voice.
+; Authored kits bind lanes to instrument code, built-in voices, or modeled pieces.
 "kit" @keyword.type
 "builtin" @keyword.builtin
+"model" @keyword.builtin
 (kit_decl name: (identifier) @type.definition)
 (kit_binding lane: (identifier) @tag.builtin)
 (kit_target instrument: (identifier) @type)
@@ -284,8 +285,16 @@
 (chain_decl (identifier) @function)
 
 (automate_decl "automate" @keyword)
-(musical_position) @number
 (automation_point shape: (identifier) @attribute)
 
 (velocity_row "velocity" @attribute)
 (velocity_row "." @punctuation.special.rest)
+"preset" @keyword.type
+(preset_decl name: (identifier) @type.definition)
+["arrange" "place" "marker"] @keyword
+(place_decl name: (identifier) @function)
+(place_decl track: (identifier) @variable.member)
+(place_decl content: (identifier) @function.call)
+(marker_decl name: (identifier) @constant)
+(musical_position) @number.position
+(tick_count) @number.ticks

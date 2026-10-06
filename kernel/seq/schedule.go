@@ -237,7 +237,7 @@ func EventsWithGatesAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, st
 		}
 	}
 	// Tied steps update expression without retriggering or changing the note ID.
-	for absoluteStep := max(startStep, startTick/grid-1); absoluteStep <= lastStep; absoluteStep++ {
+	for absoluteStep := max(startStep, startTick/TicksPerStep-1); absoluteStep <= lastStep; absoluteStep++ {
 		localStep := absoluteStep - startStep
 		stepIndex := uint8(localStep % int64(p.Len))
 		step, err := UnpackStep(p.Steps[stepIndex])

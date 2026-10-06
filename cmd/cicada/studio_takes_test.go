@@ -304,7 +304,7 @@ func TestTakeConflictAtSourceExchangeRetainsBothVersions(t *testing.T) {
 	}
 }
 
-func TestTakeAPIArmStopUsesLaneDCaptureWriter(t *testing.T) {
+func TestTakeAPIArmStopUsesCaptureWriter(t *testing.T) {
 	s := newTakeStudio(t, t.TempDir())
 	a, _ := simulatedCaptureAudio(8, zeroAudioSource{})
 	s.transport.mu.Lock()

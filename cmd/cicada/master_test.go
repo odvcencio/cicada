@@ -12,7 +12,7 @@ import (
 
 func acceptedMasterScore(t *testing.T) []byte {
 	t.Helper()
-	data, err := os.ReadFile(filepath.Join(repositoryRoot(), "docs", "spec", "accepted.md"))
+	data, err := os.ReadFile(filepath.Join(repositoryRoot(), "docs", "spec", "features.md"))
 	if err != nil {
 		t.Fatal(err)
 	}

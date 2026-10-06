@@ -12,7 +12,11 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
+	"m31labs.dev/cicada/kernel/voice/modal"
+	"m31labs.dev/cicada/kernel/voice/modeledkit"
 	"m31labs.dev/cicada/kernel/voice/piano"
+	"m31labs.dev/cicada/kernel/voice/sample"
 )
 
 type Error string
@@ -21,12 +25,22 @@ func (e Error) Error() string { return string(e) }
 
 type VoiceKind uint8
 
+// MonoNoteOffPitchFlag opts a mono graph command into pitch-specific release.
+// Unflagged note-off commands retain the historical all-notes-off behavior.
+const MonoNoteOffPitchFlag uint16 = 0x100
+
 const (
 	VoiceOff VoiceKind = iota
 	VoiceAcid
 	VoiceDrums
 	VoiceGraph
 	VoicePiano
+	VoiceGuitar              // explicitly experimental physical model and amp
+	VoiceModal     VoiceKind = 6
+	VoiceAudio     VoiceKind = 8
+	VoiceSample    VoiceKind = 9
+	VoicePrepared  VoiceKind = 10
+	VoiceGraphPoly VoiceKind = 11
 )
 
 type KitLaneKind uint8
@@ -35,24 +49,35 @@ const (
 	KitLaneOff KitLaneKind = iota
 	KitLaneBuiltin
 	KitLaneGraph
+	KitLaneModeled
 )
 
 // KitLaneBinding selects one voice for a named drum source lane. Zero means
 // the lane is omitted and silent. Programs are compiled before Engine.New.
 type KitLaneBinding struct {
-	Kind    KitLaneKind
-	Recipe  drum.Lane
-	Program graph.Program
+	Kind         KitLaneKind
+	Recipe       drum.Lane
+	Program      graph.Program
+	Model        modeledkit.Profile `json:",omitempty"`
+	ModelParams  modeledkit.Params  `json:",omitzero"`
+	ModelLevelDB float64            `json:",omitempty"`
+	ModelPan     float64            `json:",omitempty"`
 }
 
 type TrackConfig struct {
 	Kind         VoiceKind
+	Sample       *SamplerConfig `json:",omitempty"`
+	Experimental bool           `json:",omitempty"`
+	Guitar       guitar.Params  `json:",omitzero"`
 	Acid         acid.Params
 	Drums        [drum.LaneCount]drum.Params
 	Kit          *[drum.LaneCount]KitLaneBinding
+	Modal        modal.Profile `json:",omitempty"`
 	Graph        graph.Program
-	Polyphony    uint8   `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
-	PianoSustain float32 `json:",omitempty"`
+	Polyphony    uint8              `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
+	PianoSustain float32            `json:",omitempty"`
+	Prepared     StereoVoiceFactory `json:"-"`
+	PreparedClip bool               `json:"-"`
 	GainDB       float64
 	GainSet      bool
 	Pan          float64
@@ -90,11 +115,17 @@ type Config struct {
 	Scenes     []Scene
 	Song       []SongEntry
 
-	Automation []cmd.Command `json:",omitempty"`
+	Automation []cmd.Command   `json:",omitempty"`
+	Schedule   []ScheduleEvent `json:",omitempty"`
+	Assets     []AudioAsset    `json:",omitempty"`
+	Clips      []ClipConfig    `json:",omitempty"`
 	LoopSong   bool
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
 	CompMusic  *fx.CompParams
+	// MasterBias is an optional DC correction before gain and limiting.
+	MasterBiasL float32 `json:",omitempty"`
+	MasterBiasR float32 `json:",omitempty"`
 	// MasterGainDB is a static gain applied immediately before the master
 	// limiter. Zero leaves the existing master path bit-identical.
 	MasterGainDB float64
@@ -115,6 +146,7 @@ type Config struct {
 
 type voiceSlot struct {
 	kind                           VoiceKind
+	guitar                         *guitar.Voice
 	acid                           *acid.Voice
 	drums                          *drum.Kit
 	graph                          *graph.Voice
@@ -122,7 +154,15 @@ type voiceSlot struct {
 	noteActive                     bool
 	piano                          *piano.Instrument
 	pianoSustain                   float32
+	legacyPoly                     *graph.Poly
+	graphNote                      uint8
+	graphHeld                      bool
+	prepared                       StereoVoice
+	preparedClip                   bool
 	poly                           *graph.Pool
+	modal                          *modal.Voice
+	sampler                        *sample.Pool
+	samplerNote                    sample.Handle
 	mix                            mix.Track
 	targetMix                      mix.Track
 	mixSmooth                      float32
@@ -181,6 +221,8 @@ type Engine struct {
 	compSidechainTrack           int
 	masterGain                   float32
 	masterProcessor              StereoProcessor
+	masterBiasL, masterBiasR     float32
+	taps                         []TapFrame
 	musicBusMute, musicBusSolo   bool
 	sfxBusMute, sfxBusSolo       bool
 	masterMute, masterSolo       bool
@@ -216,7 +258,16 @@ type Engine struct {
 	scenes                       []Scene
 	currentScene                 int
 	sceneSequence                uint64
-	song                         []SongEntry
+	schedule                     []ScheduleEvent
+	scheduleIntervals            []scheduleInterval
+	scheduleDuration, cycleStart int64
+	placementSchedule            bool
+	placementID                  [16]uint32
+	clipLimit                    int
+	clipTemplates                []sample.Voice
+	clipSpecs                    []ClipConfig
+	clipMaxFrames                int64
+	clipVoices                   [32]clipPlayback
 	loopSong, songMode           bool
 	songIndex                    int
 	songEndTick                  int64
@@ -268,6 +319,9 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if math.IsNaN(cfg.MasterGainDB) || math.IsInf(cfg.MasterGainDB, 0) || cfg.MasterGainDB < -120 || cfg.MasterGainDB > 24 {
 		return nil, Error("master gain is out of range")
 	}
+	if math.IsNaN(float64(cfg.MasterBiasL)) || math.IsInf(float64(cfg.MasterBiasL), 0) || math.IsNaN(float64(cfg.MasterBiasR)) || math.IsInf(float64(cfg.MasterBiasR), 0) {
+		return nil, Error("invalid master bias")
+	}
 	bpmMilli := cfg.BPMMilli
 	if bpmMilli == 0 {
 		bpmMilli = 120_000
@@ -284,7 +338,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if cfg.MasterGainDB != 0 {
 		masterGain = float32(math.Pow(10, cfg.MasterGainDB/20))
 	}
-	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain,
+	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
 		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
 	for id := 0; id < len(kernel.Params); id++ {
@@ -301,6 +355,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 		return nil, err
 	}
 	e.updateMuteTargets()
+	e.clipLimit = cfg.MaxVoices - voices
 	if voices > cfg.MaxVoices {
 		return nil, Error("engine exceeds maximum voices")
 	}
@@ -380,7 +435,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		for slot := range e.patterns[i].slots {
 			e.patterns[i].slots[slot] = seq.Pattern{Len: 16, GatePercent: 55, Seed: cfg.Seed}
 		}
-		spec := cfg.Track[i]
+		spec := &cfg.Track[i]
 		gain := spec.GainDB
 		if !spec.GainSet {
 			gain = -6
@@ -441,6 +496,12 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		}
 		switch spec.Kind {
 		case VoiceOff:
+		case VoiceGuitar:
+			if !spec.Experimental {
+				return 0, Error("guitar requires explicit experimental opt-in")
+			}
+			voices++
+			v.guitar, err = guitar.New(cfg.SampleRate, spec.Guitar)
 		case VoiceAcid:
 			voices++
 			v.acid, err = acid.New(cfg.SampleRate)
@@ -461,14 +522,16 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			if err == nil {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 					if spec.Kit != nil {
-						binding := spec.Kit[lane]
+						binding := &spec.Kit[lane]
 						switch binding.Kind {
 						case KitLaneOff:
 							err = v.drums.Disable(lane)
 						case KitLaneBuiltin:
 							err = v.drums.SetRecipe(lane, binding.Recipe)
 						case KitLaneGraph:
-							err = v.drums.SetGraph(lane, binding.Program)
+							err = v.drums.SetGraphFromProgram(lane, &binding.Program)
+						case KitLaneModeled:
+							err = v.drums.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
 						default:
 							return 0, Error("unknown kit lane kind")
 						}
@@ -491,13 +554,25 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 					v.drumTargets[lane] = v.drums.Params(lane)
 				}
 			}
+		case VoiceModal:
+			voices += modal.MaxVoices
+			v.modal, err = modal.NewVoice(spec.Modal, cfg.SampleRate)
+		case VoiceSample:
+			if spec.Sample == nil || int(spec.Sample.Asset) >= len(cfg.Assets) || spec.Sample.Voices < 1 || spec.Sample.Voices > 32 {
+				return 0, Error("invalid sampler configuration")
+			}
+			a := cfg.Assets[spec.Sample.Asset]
+			region := sample.Region{Left: a.Left, Right: a.Right, SampleRate: a.SampleRate, RootKey: spec.Sample.RootKey, End: len(a.Left), Loop: spec.Sample.Loop, LoopEnd: len(a.Left)}
+			v.sampler, err = sample.NewPool(cfg.SampleRate, int(spec.Sample.Voices), region)
+			voices += int(spec.Sample.Voices)
+		case VoiceAudio:
 		case VoiceGraph:
 			if spec.Polyphony == 4 {
 				voices += 4
-				v.poly, err = graph.NewPool(spec.Graph, cfg.SampleRate)
+				v.poly, err = graph.NewPoolFromProgram(&spec.Graph, cfg.SampleRate)
 			} else {
 				voices++
-				v.graph, err = graph.NewVoice(spec.Graph, cfg.SampleRate)
+				v.graph, err = graph.NewVoiceFromProgram(&spec.Graph, cfg.SampleRate)
 			}
 		case VoicePiano:
 			voices += piano.MaxVoices
@@ -505,6 +580,19 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			if err == nil {
 				err = v.piano.SetSustain(spec.PianoSustain)
 				v.pianoSustain = spec.PianoSustain
+			}
+		case VoiceGraphPoly:
+			voices += graph.PolyVoices
+			v.legacyPoly, err = graph.NewPolyFromProgram(&spec.Graph, cfg.SampleRate)
+		case VoicePrepared:
+			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
+				return 0, Error("prepared audio voice budget is invalid")
+			}
+			voices += spec.Prepared.VoiceCount()
+			v.preparedClip = spec.PreparedClip
+			v.prepared, err = spec.Prepared.NewStereoVoice(cfg.SampleRate)
+			if err == nil && v.prepared == nil {
+				return 0, Error("prepared audio factory returned no voice")
 			}
 		default:
 			return 0, Error("unknown voice kind")
@@ -581,7 +669,7 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 				continue
 			}
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-				lanePattern := bank.Drums[slot][lane]
+				lanePattern := &bank.Drums[slot][lane]
 				if lanePattern.Len != pattern.Len || lanePattern.StepTicks != pattern.StepTicks || lanePattern.SwingPermille != pattern.SwingPermille || lanePattern.GatePercent != pattern.GatePercent || lanePattern.Seed != pattern.Seed || lanePattern.Transpose != 0 || lanePattern.Validate() != nil {
 					return Error("invalid preloaded drum lane")
 				}
@@ -591,12 +679,12 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 						return Error("drum lane step has wrong routing")
 					}
 				}
+				e.patterns[track].drumSlots[slot][lane] = *lanePattern
 				if lanePattern.Expression != nil {
 					cloned := new([64]seq.Expression)
 					*cloned = *lanePattern.Expression
-					lanePattern.Expression = cloned
+					e.patterns[track].drumSlots[slot][lane].Expression = cloned
 				}
-				e.patterns[track].drumSlots[slot][lane] = lanePattern
 			}
 		}
 	}
@@ -610,7 +698,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	}
 	for _, scene := range cfg.Scenes {
 		for track, binding := range scene.Track {
-			if binding.Mode > SceneSlot || track >= cfg.Tracks && binding.Mode != SceneKeep || binding.Mode == SceneSlot && binding.Slot >= 16 {
+			if binding.Mode > SceneClip || track >= cfg.Tracks && binding.Mode != SceneKeep || binding.Mode == SceneSlot && binding.Slot >= 16 || binding.Mode == SceneClip && (int(binding.Clip) >= len(cfg.Clips) || cfg.Track[track].Kind != VoiceAudio) {
 				return Error("scene binding is out of range")
 			}
 		}
@@ -659,7 +747,19 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 		e.scenes[i] = cfg.Scenes[i]
 		e.scenes[i].Settings = append([]SceneSetting(nil), cfg.Scenes[i].Settings...)
 	}
-	e.song = append([]SongEntry(nil), cfg.Song...)
+	if len(cfg.Song) != 0 && len(cfg.Schedule) != 0 {
+		return Error("song and schedule are mutually exclusive")
+	}
+	e.schedule = append([]ScheduleEvent(nil), cfg.Schedule...)
+	if len(cfg.Song) != 0 {
+		e.schedule = LowerSong(cfg.Song)
+	}
+	if err := e.prepareClips(cfg); err != nil {
+		return err
+	}
+	if err := e.validateSchedule(); err != nil {
+		return err
+	}
 	e.loopSong = cfg.LoopSong
 	return nil
 }
@@ -745,6 +845,7 @@ func (e *Engine) Reset() {
 	e.renderFrame, e.renderFrames = 0, 0
 	e.layerMask, e.layerAuthored = (1<<e.tracks)-1, (1<<e.tracks)-1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
+	e.resetClips()
 	e.manualSceneTick = -1
 	e.currentScene = -1
 	for i := range e.manualPatternTick {
@@ -850,6 +951,16 @@ func (e *Engine) Render(outL, outR []float32) {
 					clear(outR[frame:])
 					return
 				}
+			case VoiceGuitar:
+				sample := v.guitar.Next()
+				left, right = sample, sample
+			case VoiceModal:
+				sample := v.modal.Next()
+				left, right = sample, sample
+			case VoiceSample:
+				left, right = v.sampler.NextStereo()
+			case VoiceAudio:
+				left, right = e.nextClipStereo(track)
 			case VoiceGraph:
 				var sample float32
 				if v.poly != nil {
@@ -860,6 +971,10 @@ func (e *Engine) Render(outL, outR []float32) {
 				left, right = sample, sample
 			case VoicePiano:
 				left, right = v.piano.NextStereo()
+			case VoiceGraphPoly:
+				left, right = v.legacyPoly.NextStereo()
+			case VoicePrepared:
+				left, right = v.prepared.NextStereo()
 			}
 			if v.insert != nil {
 				left, right = v.insert.Process(left, right)
@@ -905,6 +1020,9 @@ func (e *Engine) Render(outL, outR []float32) {
 					sideL, sideR = trackL, trackR
 				}
 			}
+			if e.taps != nil {
+				e.taps[frame].Tracks[track] = Stereo{trackL, trackR}
+			}
 			accumulateMeter(&e.trackMeter[track], trackL, trackR)
 		}
 		if e.delayA != nil {
@@ -914,6 +1032,9 @@ func (e *Engine) Render(outL, outR []float32) {
 				clear(outL[frame:])
 				clear(outR[frame:])
 				return
+			}
+			if e.taps != nil {
+				e.taps[frame].ReturnA = Stereo{returnL, returnR}
 			}
 			accumulateMeter(&e.returnAMeter, returnL, returnR)
 			dry.AddReturn(returnL, returnR)
@@ -926,11 +1047,18 @@ func (e *Engine) Render(outL, outR []float32) {
 				clear(outR[frame:])
 				return
 			}
+			if e.taps != nil {
+				e.taps[frame].ReturnB = Stereo{returnL, returnR}
+			}
 			accumulateMeter(&e.returnBMeter, returnL, returnR)
 			dry.AddReturn(returnL, returnR)
 		}
 		left, right := dry.Music()
 		sfxL, sfxR := dry.SFX()
+		if e.taps != nil {
+			e.taps[frame].Music = Stereo{left, right}
+			e.taps[frame].SFX = Stereo{sfxL, sfxR}
+		}
 		accumulateMeter(&e.sfxMeter, sfxL, sfxR)
 		if e.sfxBusMute || e.musicBusSolo && !e.sfxBusSolo {
 			sfxL, sfxR = 0, 0
@@ -959,9 +1087,14 @@ func (e *Engine) Render(outL, outR []float32) {
 		if e.masterMute {
 			left, right = 0, 0
 		}
+		left += e.masterBiasL
+		right += e.masterBiasR
 		if e.masterGain != 1 {
 			left *= e.masterGain
 			right *= e.masterGain
+		}
+		if e.taps != nil {
+			e.taps[frame].PreMaster = Stereo{left, right}
 		}
 		if e.masterProcessor != nil {
 			left, right = e.masterProcessor.Process(left, right)
@@ -979,6 +1112,9 @@ func (e *Engine) Render(outL, outR []float32) {
 			clear(outL[frame:])
 			clear(outR[frame:])
 			return
+		}
+		if e.taps != nil {
+			e.taps[frame].LimiterReductionDB = e.limiter.GainReductionDB()
 		}
 		e.limiterGR = max(e.limiterGR, float32(e.limiter.GainReductionDB()))
 		accumulateMeter(&e.masterMeter, outL[frame], outR[frame])
@@ -1143,10 +1279,20 @@ func (e *Engine) apply(c cmd.Command) {
 	case cmd.OpPlay:
 		e.automationTick = -1
 		e.transport.Play()
-		if len(e.song) > 0 && !e.songMode {
+		if len(e.schedule) > 0 && !e.songMode {
 			e.startSong()
-		} else if len(e.song) == 0 {
+		} else if len(e.schedule) == 0 {
 			e.restoreSourceChains(e.transport.Tick())
+		}
+		for i := 0; i < e.tracks; i++ {
+			v := &e.voices[i]
+			if v.preparedClip && e.patterns[i].active < 0 {
+				continue
+			}
+			if v.prepared != nil && v.prepared.Play() != nil {
+				e.fault(19)
+				return
+			}
 		}
 		if e.renderFrames > 0 {
 			e.scheduleAll()
@@ -1164,6 +1310,7 @@ func (e *Engine) apply(c cmd.Command) {
 	case cmd.OpSeek:
 		e.automationTick = -1
 		e.resetDirector()
+		e.resetClips()
 		if e.transport.SeekTick(int64(c.Arg0)*seq.TicksPerBar+int64(c.Arg1)) != nil {
 			e.fault(6)
 			return
@@ -1268,11 +1415,30 @@ func (e *Engine) apply(c cmd.Command) {
 		switch v.kind {
 		case VoiceAcid:
 			v.acid.NoteOn(note, accent, slide, velocity)
+		case VoiceGuitar:
+			v.guitar.NoteOn(note, velocity, accent, slide)
+		case VoiceModal:
+			v.modal.NoteOn(note, velocity, slide)
+		case VoiceSample:
+			var err error
+			v.samplerNote, err = v.sampler.NoteOn(note, velocity)
+			if err != nil {
+				e.fault(9)
+				return
+			}
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
+			v.graphNote, v.graphHeld = note, true
 		case VoicePiano:
 			if v.piano.NoteOn(note, velocity) != nil {
 				e.fault(8)
+				return
+			}
+		case VoiceGraphPoly:
+			v.legacyPoly.NoteOn(note, velocity, slide)
+		case VoicePrepared:
+			if v.prepared.NoteOn(note, velocity) != nil {
+				e.fault(19)
 				return
 			}
 		case VoiceDrums:
@@ -1317,14 +1483,18 @@ func (e *Engine) apply(c cmd.Command) {
 			e.fault(8)
 			return
 		}
-		if v.kind != VoiceDrums && v.kind != VoicePiano && c.Index != 0 && c.Index != 0xffff && (!v.noteActive || c.Index != v.noteIdentity) {
+		if v.kind != VoiceDrums && v.kind != VoicePiano && c.Index != 0 && c.Index != 0xffff && (!v.noteActive || c.Index != v.noteIdentity) && !(v.kind == VoiceGraph && v.noteIdentity == 0 && c.Index >= MonoNoteOffPitchFlag && c.Index < MonoNoteOffPitchFlag+128) && v.kind != VoiceGraphPoly {
 			return
 		}
 		if e.voices[c.Track].kind == VoiceDrums && c.Index >= uint16(drum.LaneCount) {
 			e.fault(8)
 			return
 		}
-		e.noteOff(int(c.Track), c.Index)
+		index := c.Index
+		if v.kind == VoiceGraph && v.noteIdentity != 0 && c.Index == v.noteIdentity {
+			index = 0xffff
+		}
+		e.noteOff(int(c.Track), index)
 		if e.voices[c.Track].kind != VoicePiano || c.Index == 0xffff {
 			e.patterns[c.Track].playingNote = 0
 			e.patterns[c.Track].heldValid = false
@@ -1431,6 +1601,20 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				return
 			}
 			v.pianoSustain = value
+		case kernel.ParamGuitarBend, kernel.ParamGuitarVibrato, kernel.ParamGuitarBrightness, kernel.ParamGuitarDamping, kernel.ParamGuitarPickup, kernel.ParamGuitarDrive:
+			if v.kind != VoiceGuitar || v.guitar == nil {
+				e.fault(18)
+				return
+			}
+			var setErr error
+			if immediate {
+				setErr = v.guitar.SetParamImmediate(kernel.ParamID(c.Index), float64(value))
+			} else {
+				setErr = v.guitar.SetParam(kernel.ParamID(c.Index), float64(value))
+			}
+			if setErr != nil {
+				e.fault(18)
+			}
 		case kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:
 			if v.kind != VoiceAcid || v.acid == nil {
 				e.fault(18)
@@ -1727,11 +1911,21 @@ func (e *Engine) noteOff(track int, lane uint16) {
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.NoteOff()
+	case VoiceGuitar:
+		v.guitar.NoteOff()
+	case VoiceModal:
+		v.modal.NoteOff()
+	case VoiceSample:
+		v.sampler.NoteOffAll()
 	case VoiceGraph:
 		if v.poly != nil {
 			v.poly.ReleaseAll()
 		} else {
-			v.graph.NoteOff()
+			pitchSpecific := lane >= MonoNoteOffPitchFlag && lane < MonoNoteOffPitchFlag+128
+			if !pitchSpecific || v.graphHeld && v.graphNote == uint8(lane&127) {
+				v.graph.NoteOff()
+				v.graphHeld = false
+			}
 		}
 	case VoicePiano:
 		if lane == 0xffff {
@@ -1739,6 +1933,14 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		} else {
 			v.piano.NoteOff(uint8(lane))
 		}
+	case VoiceGraphPoly:
+		if lane < 128 {
+			v.legacyPoly.NoteOffNote(uint8(lane))
+		} else {
+			v.legacyPoly.NoteOff()
+		}
+	case VoicePrepared:
+		v.prepared.NoteOff()
 	case VoiceDrums:
 		if lane < uint16(drum.LaneCount) {
 			v.drums.NoteOff(drum.Lane(lane))
@@ -1762,12 +1964,23 @@ func (e *Engine) resetVoice(track int) {
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.Reset()
+	case VoiceGuitar:
+		v.guitar.Reset()
+	case VoiceModal:
+		v.modal.Reset()
+	case VoiceSample:
+		v.sampler.Reset()
 	case VoiceGraph:
 		if v.poly != nil {
 			v.poly.Reset()
 		} else {
 			v.graph.Reset()
 		}
+		v.graphHeld = false
+	case VoiceGraphPoly:
+		v.legacyPoly.Reset()
+	case VoicePrepared:
+		v.prepared.Reset()
 	case VoicePiano:
 		v.piano.Reset()
 		_ = v.piano.SetSustain(v.pianoSustain)

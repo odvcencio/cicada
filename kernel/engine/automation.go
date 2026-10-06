@@ -18,9 +18,7 @@ func (e *Engine) loadAutomation(cfg *Config) error {
 	}
 	e.automation = append([]cmd.Command(nil), cfg.Automation...)
 	e.automationTick = -1
-	for _, entry := range cfg.Song {
-		e.automationCycle += int64(entry.Bars) * 3840
-	}
+	e.automationCycle = e.scheduleDuration
 	return nil
 }
 

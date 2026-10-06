@@ -4,8 +4,6 @@ This reference describes source edition 1. The complete grammar is in the [EBNF 
 
 ## Notation conventions
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** A source file is `source_file`: an optional `cicada 1` header followed by zero or more declarations. Declarations use braces; whitespace and newlines separate tokens. See `source_file` and `_declaration` in the appendix.
 
 **Meaning:** Declaration order does not affect name resolution. `//` begins a comment through the end of its line. Semicolons are optional on instrument statements, kit bindings, and drum rows. A vertical bar in a note pattern is a visual group separator; it does not add a step.
@@ -37,8 +35,6 @@ song { main*8 }
 
 ## Lexical elements
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** `identifier`, `string`, `integer`, `number`, `fraction`, and `comment` define the tokens. Keywords are lowercase literals. The full token rules are in the appendix.
 
 **Meaning:** A string is double-quoted and may contain escaped characters. A fraction token represents a musical division such as `1/8`, `1/8T`, or `1/8.`. A fraction is accepted as a value; its interpretation depends on the field.
@@ -55,25 +51,21 @@ song { main*8 }
 
 ## Source files and projects
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** A `.cicada` file contains one `source_file`. A project manifest is a separate `cicada.mod` file with one `project <name>` line and one `cicada 1` line; blank lines and `#` comments are allowed.
 
-**Meaning:** The nearest `cicada.mod` supplies the project name and source edition. A loose score defaults to edition 1. Project commands such as `check` and `fmt` walk score files under the manifest. Each score is parsed and compiled independently; declarations in one file are not visible in another.
+**Meaning:** The nearest `cicada.mod` supplies the project name and source edition. A loose score defaults to edition 1. Project commands such as `check` and `fmt` walk score files under the manifest. A manifest with `entry` or `source` directives compiles its listed files together; a manifest without them checks scores independently. See [multi-file projects](features.md#multi-file-projects-and-manifest-metadata).
 
 **Types and units:** Manifest project names begin with an ASCII letter or digit and then contain letters, digits, hyphens, or underscores. Source identifiers follow the stricter lowercase rule above.
 
 **Defaults:** `cicada new <name>` creates a project directory containing `cicada.mod` and `main.cicada`.
 
-**Errors:** A manifest must contain exactly one valid project name and one supported `cicada` edition. Unknown or duplicate directives are rejected. Cross-file references report `CICADA-REFERENCE` because there is no shared namespace in the current implementation.
+**Errors:** A manifest must contain exactly one valid project name and one supported `cicada` edition. Unknown or duplicate directives are rejected. Unresolved references report `CICADA-REFERENCE`. Listed source files share a namespace.
 
 **Example:** The manifest form is `project night-circuit` followed by `cicada 1`; a matching score uses the first example on this page.
 
-**Edition history:** Edition 1 adds the manifest while keeping loose scores and the legacy source header usable. Multi-file shared namespaces are accepted for later implementation; see [accepted syntax](accepted.md#multi-file-projects-and-manifest-metadata).
+**Edition history:** Edition 1 adds the manifest while keeping loose scores and the legacy source header usable. Multi-file shared namespaces and manifest metadata are supported; see [multi-file projects](features.md#multi-file-projects-and-manifest-metadata).
 
 ## Edition directive
-
-**Status:** Implemented.
 
 **Syntax (EBNF):** The optional source header is `"cicada" , integer`; the manifest directive is `cicada 1`.
 
@@ -91,8 +83,6 @@ song { main*8 }
 
 ## Title declaration
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** `title_decl ::= "title" , string`.
 
 **Meaning:** Sets the human-readable project title.
@@ -108,8 +98,6 @@ song { main*8 }
 **Edition history:** Available in edition 1.
 
 ## Tempo declaration
-
-**Status:** Implemented.
 
 **Syntax (EBNF):** `tempo_decl ::= "tempo" , number`.
 
@@ -127,8 +115,6 @@ song { main*8 }
 
 ## Key declaration
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** `key_decl ::= "key" , key_root , identifier`.
 
 **Meaning:** Sets the root and scale used to resolve numbered scale degrees.
@@ -144,8 +130,6 @@ song { main*8 }
 **Edition history:** Available in edition 1.
 
 ## Seed declaration
-
-**Status:** Implemented.
 
 **Syntax (EBNF):** `seed_decl ::= "seed" , integer`.
 
@@ -163,19 +147,23 @@ song { main*8 }
 
 ## Instruments and voices
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** `instrument_decl` contains an optional `instrument_octave`, zero or more `instrument_param` declarations, and one `voice_decl`. A voice contains zero or more ordered `let_stmt` bindings and one `out_stmt`.
 
-**Meaning:** An instrument compiles a bounded expression graph into a mono sound source. A binding may use declared parameters, built-in inputs, and earlier bindings. The output expression must produce audio.
+**Meaning:** An instrument compiles a bounded expression graph into a monophonic or eight-voice polyphonic sound source. A binding may use declared parameters, built-in inputs, and earlier bindings. The output expression must produce audio.
 
-**Types and units:** Parameter units are `unit`, `hz`, `ms`, and `db`. Built-in inputs are `pitch` (Hz), `gate` (gate signal), `velocity` (unit value), and `sample_rate` (Hz). The graph functions are `saw`, `square`, and `sine` (Hz to audio); `noise` (no inputs to audio); `env` (gate and ms to unit); `ladder` and `diode` (audio, Hz, unit to audio); `lowpass` and `highpass` (audio and Hz to audio); `mix` (two audio inputs and unit to audio); `tanh` (audio to audio); `exp2` (unit to unit); and `clamp` (three unit inputs to unit). Expressions are type-checked before playback. The implemented voice mode is `mono`.
+**Types and units:** Parameter units are `unit`, `hz`, `ms`, and `db`. Built-in inputs are `pitch` (Hz), `gate` (gate signal), `velocity` (unit value), and `sample_rate` (Hz). The graph functions are `saw`, `square`, and `sine` (Hz to audio); `pulse` (Hz and unit pulse width to audio); `noise` (no inputs to audio); `env` (gate and ms to unit); `adsr` (gate, attack ms, decay ms, unit sustain, release ms to unit); `ladder`, `diode`, and `svf` (audio, Hz cutoff, unit resonance to audio); `lowpass` and `highpass` (audio and Hz to audio); `mix` (two audio inputs and unit to audio); `tanh` (audio to audio); `exp2` (unit to unit); and `clamp` (three unit inputs to unit). Expressions are type-checked before playback. Both `mono` and `poly` modes are implemented.
 
 `delay(audio, ms)` and `comb(audio, ms, unit, unit)` add bounded delay lines and damped feedback loops. Unit divided by Hz produces a period in ms (`1 / pitch`). Their interpolation, memory, ranges, and diagnostics are specified in [graph delays and plucked strings](edition-2.md#graph-delays-and-plucked-strings).
 
-**Defaults:** Home octave is 2. A parameter's unit may be inferred from its default literal. `voice mono` is required. A track may override home octave from 0–6 unless its instrument declares a synthesis parameter named `octave`; in that case the track value sets the synthesis parameter and the instrument's home octave remains in effect.
+`ddsp(hz, unit)` produces a neural harmonic-plus-noise voice from fundamental frequency and linear loudness. The [model reference](../../kernel/voice/ddsp/README.md) specifies its trained range, integer arithmetic, 64-frame control rate, CC0 model license, and image capability bit 7. `cicada explain graph.ddsp` describes the operation.
 
-**Errors:** Duplicate or reserved names report `CICADA-DUPLICATE`; unknown symbols report `CICADA-REFERENCE`; incompatible types or units report `CICADA-UNIT`. Graphs above 128 nodes or 32 stateful nodes report `CICADA-LIMIT`. `voice poly` parses but reports `CICADA-UNSUPPORTED`.
+**Defaults:** Home octave is 2. A parameter's unit may be inferred from its default literal. Choose `voice mono` or `voice poly`. A track may override home octave from 0–6 unless its instrument declares a synthesis parameter named `octave`; in that case the track value sets the synthesis parameter and the instrument's home octave remains in effect.
+
+**Errors:** Duplicate or reserved names report `CICADA-DUPLICATE`; unknown symbols report `CICADA-REFERENCE`; incompatible types or units report `CICADA-UNIT`. Graphs above 128 nodes or 32 stateful nodes report `CICADA-LIMIT`. Every poly track reserves eight voices within the 32-voice project limit, including release tails.
+
+Graphs containing `adsr`, `pulse`, or `svf` run at twice the output sample rate and use FIR decimation. Their saw and pulse oscillators use harmonic-limited tables selected at the output sample rate; oscillators at or above 49% of that rate are silent so high additive partials cannot create unrelated pitches. Pulse output has zero DC offset. `svf` is a trapezoidal-integrator lowpass based on [Andrew Simper's linear SVF derivation](https://cytomic.com/files/dsp/SvfLinearTrapOptimised2.pdf). Cutoff clamps to 20 Hz through 45% of the output sample rate, resonance to 0–1, and pulse width to 0.02–0.98. ADSR segments clamp to 0–30 seconds, sustain to 0–1, and release begins at the envelope's current level. Existing graphs without these primitives keep their original rendering behavior.
+
+Poly notes have independent envelopes. When all eight voices are occupied, allocation prefers the quietest released voice, then the oldest held voice, with a 2 ms transition. Repeated pitches release their oldest held instance first. Output gain is fixed by the authored graph; it does not change with note count. Graph output is mono, with stereo positioning and effects supplied by the mixer. Live keyboard/MIDI supports chords; notes patterns currently store one pitch per step.
 
 **Example:**
 
@@ -201,15 +189,28 @@ song { main }
 
 ## Authored kits
 
-**Status:** Implemented.
+**Syntax (EBNF):** `kit_decl` contains `kit_binding` entries. A target is an instrument name, `builtin.<lane>`, or `model.<piece>`.
 
-**Syntax (EBNF):** `kit_decl` contains `kit_binding` entries. A target is an instrument name or `builtin.<lane>`.
-
-**Meaning:** A kit maps drum lanes to compiled mono instruments or built-in drum recipes. An unbound lane is silent.
+**Meaning:** A kit maps drum lanes to compiled mono instruments, built-in drum recipes, or modeled acoustic kit pieces. An unbound lane is silent. Modeled pieces synthesize each strike internally, without recordings or external assets.
 
 **Types and units:** Lane names are `bd`, `sd`, `ch`, `oh`, `cp`, `rs`, `lt`, `mt`, `ht`, `cb`, and `cy`. Each instrument binding receives that lane's trigger pitch and hit velocity.
 
 **Defaults:** There are no implicit authored bindings.
+
+Modeled piece names are `kick`, `snare`, `rimshot`, `cross_stick`, `tom_low`, `tom_mid`, `tom_high`, `hat_closed`, `hat_pedal`, `hat_half_open`, `hat_open`, `ride_bow`, `ride_bell`, `crash`, and `splash`. Any source lane may select any piece. Within a kit, a hi-hat strike chokes the other hi-hat pieces, even when mapped to different source lanes.
+
+For a modeled lane, its source lane prefix selects the following track controls. For example, `bd_tune = 0.9` tunes the piece assigned to `bd`. Built-in and instrument bindings retain their existing parameter rules.
+
+| Track control | Unit | Range | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<lane>_tune` | unitless | 0.5–2 | 1 | Resonant frequency multiplier |
+| `<lane>_decay` | unitless | 0.25–2 | 1 | Natural decay multiplier |
+| `<lane>_position` | unitless | 0–1 | 0.35 | Strike position from center to edge |
+| `<lane>_humanize` | unitless | 0–0.1 | 0.015 | Bounded timbre, strength, and pitch variation |
+| `<lane>_level` | dB | −60–+6 | −6 | Piece level |
+| `<lane>_pan` | unitless | −1–1 | 0 | Piece pan |
+
+Modeled synthesis controls are prepared with the track. Scene settings may change piece level and pan; synthesis changes require a different configured track. Humanization does not move scheduled event times. Keep interacting hi-hat pieces in the same kit, because separate tracks have separate choke groups.
 
 **Errors:** Unknown lanes or instrument targets report `CICADA-REFERENCE`; duplicate lane bindings report `CICADA-DUPLICATE`.
 
@@ -233,8 +234,6 @@ song { main*4 }
 **Edition history:** Authored kits and the eleven built-in lane names are available in edition 1.
 
 ## Tracks and patterns
-
-**Status:** Implemented.
 
 **Syntax (EBNF):** `track_decl` names a built-in voice (`acid` or `drums`), an instrument, or a kit. `acid_pattern`, `note_pattern`, and `drum_pattern` define reusable patterns. A pattern can place attributes before or inside its braces.
 
@@ -262,8 +261,6 @@ song { main }
 
 ## Pitch, octaves, and degrees
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** `pitch` is a `degree` or `letter_pitch`, optionally followed by octave shifts and modifiers.
 
 **Meaning:** A degree resolves against the score key. A letter pitch is absolute. Each apostrophe raises a note by one octave; each comma lowers it by one octave.
@@ -279,8 +276,6 @@ song { main }
 **Edition history:** Available in edition 1. Source spelling is retained by the concrete syntax tree; JSON stores resolved MIDI note numbers.
 
 ## Drum rows and beats
-
-**Status:** Implemented.
 
 **Syntax (EBNF):** A `drum_pattern` contains `drum_lane` rows. Each row begins with a lane and colon, then contains one hit per step. A trailing semicolon is optional.
 
@@ -310,8 +305,6 @@ song { main*4 }
 
 ## Accents, ties, slides, ratchets, and chance
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** `acid_step` accepts rest `.`, tie `-`, separator `|`, or `acid_note`. A note may be followed by `^`, `~`, `*N`, and `?N`; legacy `%N` is also parsed for chance.
 
 **Meaning:** `^` accents a note. `-` extends the preceding note. `~` slides to the next playable note without retriggering the outgoing note. `*N` divides one step into N retriggers. `?N` gives an event an N-percent chance on each seeded pass.
@@ -327,8 +320,6 @@ song { main*4 }
 **Edition history:** `?N` is the current spelling. `%N` remains accepted for edition-1 compatibility; `cicada fix` rewrites `%N` to `?N`.
 
 ## SI literals and musical units
-
-**Status:** Implemented.
 
 **Syntax (EBNF):** `number` accepts a number with an optional unit suffix; `fraction` accepts a note division.
 
@@ -346,8 +337,6 @@ song { main*4 }
 
 ## Scenes and actions
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** A `scene_decl` contains zero or more `scene_assignment` entries of the form `track = pattern`.
 
 **Meaning:** A named pattern starts or replaces the pattern on that track. `off` stops the track. `keep` leaves that track unchanged when a scene launches. An omitted track entry also keeps its current state.
@@ -363,8 +352,6 @@ song { main*4 }
 **Edition history:** `stop` is accepted as the canonical stop word when no pattern named `stop` exists. `off` remains valid in edition 1; `cicada fix` rewrites it to `stop` when that spelling is unambiguous.
 
 ## Parameter paths
-
-**Status:** Implemented.
 
 **Syntax (EBNF):** A `parameter_path` has the form `owner.setting` and is accepted as a scene target; see `parameter_path`, `scene_target`, and `scene_assignment` in the [EBNF appendix](appendix.ebnf). Its first part names the owner. The remaining part names a registered setting and may contain another dot, as in `bass.send.delay`.
 
@@ -406,8 +393,6 @@ Use `cicada explain score.cicada bass.cutoff @3.2.4` to inspect the registry def
 **Edition history:** Parameter paths and live scene settings are edition-1 features. Named mixer paths and scene settings use `cicada.project/2`.
 
 ## Scene parameter settings
-
-**Status:** Implemented.
 
 **Syntax (EBNF):** A scene assignment is `scene_target = scene_value`. The target is either a track identifier for a pattern binding or a `parameter_path` for a setting. The appendix defines the accepted number, identifier, string, and fraction value tokens.
 
@@ -479,8 +464,6 @@ song { main }
 
 ## Songs
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** `song_decl` is a sequence of `song_entry` values. Each entry is a scene name with optional `*N` bar count.
 
 **Meaning:** Entries play in order. The song repeats according to the transport's loop behavior.
@@ -495,27 +478,7 @@ song { main }
 
 **Edition history:** Available in edition 1. Editing a song's order or duration in Studio patches only the `song` declaration.
 
-## Pattern chains
-
-**Status:** Accepted; not available in the current build.
-
-**Syntax (EBNF):** See `chain_decl` in [accepted syntax](accepted.md#flexible-grid-and-pattern-chains).
-
-**Meaning:** A track chain plays a listed sequence of patterns, repeating the chain after the last entry. The runtime engine supports chain playback; edition 1 source does not yet declare chains.
-
-**Types and units:** Each item names a pattern assigned to that track. The accepted source design caps a chain at 32 entries.
-
-**Defaults:** No source chain is configured.
-
-**Errors:** The accepted design requires valid patterns and a chain within the runtime limit. Source diagnostics are not implemented.
-
-**Example:** `chain = intro verse chorus`.
-
-**Edition history:** Chain playback exists in the engine; source syntax is accepted for a later additive edition-1 change and has not merged.
-
 ## Phrases and the generator
-
-**Status:** Implemented.
 
 **Syntax (EBNF):** `phrase_decl` names a sequence of acid steps. `phrase_use` inserts it into a note pattern with optional `*N` repetition and optional `transpose=N` or `+N`.
 
@@ -542,8 +505,6 @@ song { main*8 }
 
 ## Phrase generator command
 
-**Status:** Implemented.
-
 **Syntax:** `cicada gen` takes flags: `--seed N --key ROOT --scale SCALE`, with optional `--root-octave`, `--steps`, density controls, `--swing`, `--gate`, `--structure`, `--rest-downbeat`, `-o FILE`, and `--trace`.
 
 **Meaning:** The generator creates a deterministic, parseable acid score from the seed and music settings. It writes source to stdout unless `-o` names a new output file. A trace writes the random draw log as JSON to stdout.
@@ -563,10 +524,6 @@ cicada gen --seed 4242 --key a --scale minor --trace -o generated.cicada
 **Edition history:** The generator emits edition-1 source and runs before the audio callback. Its output is parsed and compiled by the same project pipeline as authored scores.
 
 ## Named effects
-
-**Status:** Implemented for `drive`, `delay`, `reverb`, and `comp` on the engine routes listed below.
-
-Unknown effect kinds, repeated delay or reverb instances, compressor track inserts, and insert chains longer than one are rejected with `CICADA-UNSUPPORTED`.
 
 **Syntax (EBNF):** `fx <name> <kind> { settings }` declares an effect instance. The edition-1 shorthand `fx <kind> { settings }` keeps the kind as its name. Effect names share the namespace with tracks and buses.
 
@@ -597,8 +554,6 @@ song { main*4 }
 
 ## Buses and master
 
-**Status:** Implemented for the built-in `music` and `sfx` buses and the master level, mute, and solo controls. Unsupported routes report `CICADA-UNSUPPORTED`.
-
 **Syntax (EBNF):** `bus music { settings }` and `bus sfx { settings }` set a built-in bus. Both buses exist without declarations. `master { settings }` configures the final master path.
 
 **Meaning:** The music bus keeps its fixed -3 dB trim. The SFX bus joins after music compression. `bus music { insert = comp }` selects the existing music compressor. `insert = none` leaves that bus without a compressor; on the master it leaves the safety limiter in place. Bus mute and solo are applied at load. Master mute gates the complete output; its level is applied before the final limiter.
@@ -607,7 +562,7 @@ song { main*4 }
 
 **Defaults:** Music is trimmed by -3 dB, SFX is at unity, and both built-in buses are unmuted and unsoloed. The master limiter stays last with its existing ceiling and lookahead.
 
-**Errors:** A user-declared bus, bus send, non-fixed bus level, bus pan, master send, master output, or master pan reports `CICADA-UNSUPPORTED`. Master inserts support the ordered [master effect chain](accepted.md#mastering-targets-and-the-master-insert-chain), including `insert = none`.
+**Errors:** A user-declared bus, bus send, non-fixed bus level, bus pan, master send, master output, or master pan reports `CICADA-UNSUPPORTED`. Master inserts support the ordered [master effect chain](features.md#mastering-targets-and-the-master-insert-chain), including `insert = none`.
 
 **Example:** The built-in buses and master can be named when their defaults need to be stated:
 
@@ -634,10 +589,6 @@ song { main }
 **Edition history:** Built-in bus controls and the master block use `cicada.project/2`. Edition 2 rejects the legacy track `bus` setting; `cicada fix` rewrites `bus = sfx` to `out = sfx` and removes the default `bus = music` setting.
 
 ## Track mixer settings
-
-**Status:** Implemented for tracks on the built-in buses.
-
-Insert chains longer than one, sends to buses, and sends to unsupported effect kinds report `CICADA-UNSUPPORTED`.
 
 **Syntax (EBNF):** Track blocks accept `level`, `pan`, `mute`, `solo`, `insert`, `send <effect> = <level> [pre]`, and `out`. Inserts use `a -> b` notation; P2a runs at most one insert.
 
@@ -682,10 +633,6 @@ song { main }
 **Edition history:** Mixer source settings are available in editions 1 and 2 and write semantic project `/2`. Edition 2 rejects legacy `send_a`, `send_b`, `send_pre`, `bus`, and track-block `level = off`; `cicada fix` rewrites them to named sends, per-send taps, `out`, and `mute`.
 
 ## Export profiles
-
-**Status:** Implemented.
-
-True peak without loudness targeting and loudness targeting with normalization are accepted, engine support pending.
 
 **Syntax (EBNF):** `export <name> { rate bits tail loudness true_peak normalize }` declares a named render target. All settings are optional.
 

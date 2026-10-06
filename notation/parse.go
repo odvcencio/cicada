@@ -74,13 +74,14 @@ func parseEdition(src []byte, edition int) (*Score, []Diagnostic) {
 
 type loweringWalker struct {
 	*walk.Walker
-	file         string
-	library      string
-	edition      int
-	bindings     map[string]string
-	origins      map[string]Origin
-	diagnostics  *[]Diagnostic
-	declarations map[string]bool
+	file                string
+	library             string
+	edition             int
+	bindings            map[string]string
+	origins             map[string]Origin
+	diagnostics         *[]Diagnostic
+	declarations        map[string]bool
+	libraryDeclarations map[string]map[string]bool
 }
 
 func (w *loweringWalker) position(n *gts.Node) Position {
@@ -107,6 +108,17 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 	seenDeclarations := map[string]Position{}
 	seenNames := map[string]Position{}
 	duplicateLocations := map[Position]Position{}
+	// Collect names owned by each library before resolving any import reference.
+	libraryFiles := map[string][]SourceFile{}
+	for _, file := range files {
+		if file.Library != "" {
+			libraryFiles[file.Library] = append(libraryFiles[file.Library], file)
+		}
+	}
+	libraryDeclarations := map[string]map[string]bool{}
+	for library, sources := range libraryFiles {
+		libraryDeclarations[strings.ReplaceAll(library, "/", ".")] = DeclarationNames(sources)
+	}
 	for _, file := range files {
 		root, walker, err := ParseTree(file.Source)
 		if err != nil {
@@ -116,13 +128,16 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			diagnostics = append(diagnostics, d)
 			continue
 		}
-		w := &loweringWalker{Walker: walker, file: file.Path, library: file.Library, edition: file.Edition, bindings: file.Bindings, origins: s.Origins, diagnostics: &diagnostics, declarations: file.Declarations}
+		w := &loweringWalker{Walker: walker, file: file.Path, library: file.Library, edition: file.Edition, bindings: file.Bindings, origins: s.Origins, diagnostics: &diagnostics, declarations: file.Declarations, libraryDeclarations: libraryDeclarations}
+		if w.declarations == nil {
+			w.declarations = DeclarationNames(files)
+		}
 		headerEdition := 0
 		for i := 0; i < root.NamedChildCount(); i++ {
 			n := root.NamedChild(i)
 			kind := w.Type(n)
 			switch kind {
-			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl":
+			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl", "arrange_decl":
 				if first, exists := seenDeclarations[kind]; exists {
 					diagnostics = append(diagnostics, Diagnostic{
 						Code: "CICADA-DUPLICATE", Severity: "error",
@@ -139,7 +154,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				switch kind {
 				case "acid_pattern", "note_pattern", "drum_pattern", "clip_decl":
 					namespace = "pattern"
-				case "instrument_decl", "kit_decl", "sampler_decl":
+				case "instrument_decl", "kit_decl", "sampler_decl", "preset_decl":
 					namespace = "voice"
 				case "track_decl", "fx_decl", "bus_decl":
 					namespace = "mixer"
@@ -197,6 +212,8 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.Samplers = append(s.Samplers, Sampler{Name: w.declaration(w.Field(n, "name")), Params: audioParams(w, n), Position: w.position(n)})
 			case "instrument_decl":
 				s.Instruments = append(s.Instruments, parseInstrument(w, n))
+			case "preset_decl":
+				s.Presets = append(s.Presets, parsePreset(w, n))
 			case "kit_decl":
 				s.Kits = append(s.Kits, parseKit(w, n))
 			case "live_decl":
@@ -232,6 +249,8 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.Automation = append(s.Automation, lane)
 			case "scene_decl":
 				s.Scenes = append(s.Scenes, parseScene(w, n))
+			case "arrange_decl":
+				s.Arrange = parseArrangement(w, n)
 			case "song_decl":
 				s.SongPosition = w.position(n)
 				for j := 0; j < n.NamedChildCount(); j++ {
@@ -315,7 +334,10 @@ func parseKit(w *loweringWalker, n *gts.Node) Kit {
 }
 
 func parseEffect(w *loweringWalker, n *gts.Node) Effect {
-	e := Effect{Name: w.declaration(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: w.position(n)}
+	e := Effect{Name: w.declaration(w.Field(n, "name")), Kind: w.reference(w.Field(n, "kind")), Position: w.position(n)}
+	if w.Field(n, "kind") != nil && !strings.Contains(w.Text(w.Field(n, "kind")), ".") && (w.Text(w.Field(n, "kind")) == "delay" || w.Text(w.Field(n, "kind")) == "reverb" || w.Text(w.Field(n, "kind")) == "drive" || w.Text(w.Field(n, "kind")) == "comp") {
+		e.Kind = w.Text(w.Field(n, "kind"))
+	}
 	if e.Kind == "" { // edition-1 shorthand: fx delay { ... }
 		e.Kind = w.Text(w.Field(n, "name"))
 		// An edition-1 library exports a named effect after scoping. Keep its

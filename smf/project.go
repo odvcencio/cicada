@@ -238,13 +238,14 @@ func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tic
 		}
 		return
 	}
+	chord := pattern.Chords[index]
 	for ratchet := uint8(0); ratchet < step.Ratchet; ratchet++ {
 		onset := seq.RatchetTick(start, end, step.Ratchet, ratchet)
 		segmentEnd := end
 		if ratchet+1 < step.Ratchet {
 			segmentEnd = seq.RatchetTick(start, end, step.Ratchet, ratchet+1)
 		}
-		if ratchet == 0 && held.valid && held.end == start && held.slide && !isDrum {
+		if ratchet == 0 && held.valid && held.end == start && held.slide && !isDrum && chord.Count == 0 {
 			previous := &track.Notes[held.index]
 			previous.Dur = max(int64(1), onset+1-previous.Tick)
 		}
@@ -260,7 +261,6 @@ func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tic
 			velocity = 127
 		}
 		held.index, held.count = len(track.Notes), 1
-		chord := pattern.Chords[index]
 		if !isDrum && chord.Count > 0 {
 			held.count = int(chord.Count)
 		}

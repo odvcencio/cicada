@@ -8,6 +8,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -155,7 +156,10 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		base.StepTicks = groupGrid
 	}
 	if source.Kind == "acid" || source.Kind == "notes" {
-		octave := 2
+		octave := notation.DefaultAcidOctave
+		if _, ok := modal.ParseTrackKind(track.Kind); ok {
+			octave = 4
+		}
 		for _, sampler := range score.Samplers {
 			if sampler.Name == track.Kind {
 				octave = sampler.RootMIDI/12 - 1

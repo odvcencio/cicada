@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/audioasset"
+	"m31labs.dev/cicada/host/audioencoding"
 	"m31labs.dev/cicada/kernel/voice/sample"
 )
 
@@ -26,20 +27,42 @@ const MaxPCMBytes = 256 << 20
 const MaxManifestBytes = 2 << 20
 
 type Asset struct {
-	ID           string `json:"id"`
-	Path         string `json:"path"`
-	SHA256       string `json:"sha256"`
-	Bytes        int64  `json:"bytes"`
-	WAVSHA256    string `json:"wav_sha256"`
-	WAVBytes     int64  `json:"wav_bytes"`
-	Frames       int    `json:"frames"`
-	Rate         int    `json:"rate"`
-	Channels     int    `json:"channels"`
-	SourceURL    string `json:"source_url"`
-	SourceSHA256 string `json:"source_sha256"`
-	License      string `json:"license"`
-	LicenseURL   string `json:"license_url"`
-	Attribution  string `json:"attribution,omitempty"`
+	ID           string  `json:"id"`
+	Path         string  `json:"path"`
+	SHA256       string  `json:"sha256"`
+	Bytes        int64   `json:"bytes"`
+	WAVSHA256    string  `json:"wav_sha256,omitempty"`
+	WAVBytes     int64   `json:"wav_bytes,omitempty"`
+	Encoding     string  `json:"encoding,omitempty"`
+	PCMHash      string  `json:"pcm_sha256,omitempty"`
+	Scale        float32 `json:"scale,omitempty"`
+	Frames       int     `json:"frames"`
+	Rate         int     `json:"rate"`
+	Channels     int     `json:"channels"`
+	SourceURL    string  `json:"source_url"`
+	SourceSHA256 string  `json:"source_sha256"`
+	License      string  `json:"license"`
+	LicenseURL   string  `json:"license_url"`
+	Attribution  string  `json:"attribution,omitempty"`
+}
+
+func (a Asset) encodedAudio() audioencoding.Asset {
+	return audioencoding.Asset{Encoding: a.Encoding, SHA256: a.SHA256, Bytes: a.Bytes,
+		DecodedBytes: a.WAVBytes, PCMHash: a.PCMHash, Frames: a.Frames,
+		Rate: a.Rate, Channels: a.Channels, Scale: a.Scale}
+}
+
+func (a Asset) validEncoding() bool {
+	if a.Encoding == "" {
+		return strings.HasSuffix(a.Path, ".wav.gz") && validHash(a.WAVSHA256) && a.WAVBytes >= 44 && a.WAVBytes <= MaxPCMBytes && a.PCMHash == "" && a.Scale == 0
+	}
+	if a.encodedAudio().Validate() != nil {
+		return false
+	}
+	if a.Encoding == "flac" {
+		return strings.HasSuffix(a.Path, ".flac") && a.WAVBytes == 0 && a.WAVSHA256 == ""
+	}
+	return strings.HasSuffix(a.Path, ".wav.gz") && validHash(a.WAVSHA256)
 }
 
 type Zone struct {
@@ -83,10 +106,10 @@ func remoteURL(s string) bool {
 	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
 }
 
-// Owner recordings retain their source checksum without inventing remote
+// User recordings retain their source checksum without inventing remote
 // URLs or granting a public redistribution license.
 func validLicense(a Asset) bool {
-	if a.License == "owner recording" {
+	if a.License == "user recording" || a.License == "owner recording" {
 		return a.SourceURL == "" && a.LicenseURL == "" && a.Attribution == ""
 	}
 	return remoteURL(a.SourceURL) && remoteURL(a.LicenseURL) &&
@@ -115,7 +138,7 @@ func DecodeManifest(data []byte) (Manifest, error) {
 	ids := map[string]bool{}
 	var total int64
 	for _, a := range m.Assets {
-		if a.ID == "" || ids[a.ID] || !ValidPath(a.Path) || !strings.HasSuffix(a.Path, ".wav.gz") || !validHash(a.SHA256) || !validHash(a.WAVSHA256) || !validHash(a.SourceSHA256) || a.Bytes < 1 || a.Bytes > MaxPCMBytes || a.WAVBytes < 44 || a.WAVBytes > MaxPCMBytes || a.Frames < 1 || a.Frames > 8<<20 || a.Rate < 8000 || a.Rate > 192000 || a.Channels < 1 || a.Channels > 2 || !validLicense(a) {
+		if a.ID == "" || ids[a.ID] || !ValidPath(a.Path) || !a.validEncoding() || !validHash(a.SHA256) || !validHash(a.SourceSHA256) || a.Bytes < 1 || a.Bytes > MaxPCMBytes || a.Frames < 1 || a.Frames > 8<<20 || a.Rate < 8000 || a.Rate > 192000 || a.Channels < 1 || a.Channels > 2 || !validLicense(a) {
 			return m, fmt.Errorf("invalid asset or licence: %s", a.ID)
 		}
 		ids[a.ID] = true
@@ -205,6 +228,32 @@ func LoadAtRate(dir, manifestPath, pin string, rate int) (*Prepared, error) {
 
 func DecodeAsset(a Asset, compressed []byte) (sample.Region, error) {
 	var r sample.Region
+	if !a.validEncoding() {
+		return r, fmt.Errorf("invalid sample encoding: %s", a.ID)
+	}
+	if a.Encoding != "" {
+		pcm, err := audioencoding.Decode(a.encodedAudio(), compressed)
+		if err != nil {
+			return r, fmt.Errorf("sample %s: %w", a.ID, err)
+		}
+		if a.Encoding == "wav-gzip" {
+			g, err := gzip.NewReader(bytes.NewReader(compressed))
+			if err != nil {
+				return r, err
+			}
+			h := sha256.New()
+			n, err := io.Copy(h, io.LimitReader(g, a.WAVBytes+1))
+			g.Close()
+			if err != nil || n != a.WAVBytes || hex.EncodeToString(h.Sum(nil)) != a.WAVSHA256 {
+				return r, fmt.Errorf("decoded WAV hash/size mismatch: %s", a.ID)
+			}
+		}
+		r = sample.Region{Left: pcm[0], SampleRate: a.Rate, End: a.Frames}
+		if a.Channels == 2 {
+			r.Right = pcm[1]
+		}
+		return r, nil
+	}
 	if int64(len(compressed)) != a.Bytes || digest(compressed) != a.SHA256 {
 		return r, fmt.Errorf("compressed sample hash/size mismatch: %s", a.ID)
 	}

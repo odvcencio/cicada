@@ -15,8 +15,7 @@ valid but still fail a name, type, unit, range, or engine check.
 ## Notation errors
 
 - **`CICADA-SYNTAX`** — check braces, spelling, separators, and whether the
-  construct exists in edition 2. The [accepted syntax list](../spec/accepted.md)
-  is not available in the current build.
+  construct exists in edition 2; see the [language reference](../spec/README.md).
 - **`CICADA-REFERENCE`** — check that a track, pattern, scene, instrument, kit,
   or phrase name exists and is spelled consistently.
 - **`CICADA-PARAM`** or **`CICADA-UNIT`** — check the field's range and unit in
@@ -41,6 +40,10 @@ valid but still fail a name, type, unit, range, or engine check.
   `cicada.serverPath` when the executable is not on `PATH`.
 - When Studio is open beside VS Code, save one editor at a time. Studio and
   the extension exchange changes through the score file.
+- Windows Studio needs a filesystem that supports its atomic replacement
+  operation. A WSL UNC share can report `ReplaceFileW: The request is not
+  supported`; the score remains unchanged. Run Studio inside WSL for that
+  checkout, or use a Windows filesystem for a native Windows score.
 
 ## No sound or unexpected sound
 
@@ -51,6 +54,9 @@ valid but still fail a name, type, unit, range, or engine check.
   `CICADA_AUDIO=oto` to select Oto explicitly. Use `--audio null` for real-time
   transport without an output device. macOS uses Oto by default.
 - To check a score without live playback, render a WAV.
+- If WSL has no ALSA playback device, use a native Windows build with Tymbal
+  and WASAPI to audition the instruments. Keep its editable score on a Windows
+  filesystem, as described above.
 - If playback continues after an invalid save, Studio or `play` is keeping the
   last valid compiled score. Correct the reported diagnostic and save again.
 - If a scene sounds incomplete, check that each track has a compatible

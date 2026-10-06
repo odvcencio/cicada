@@ -5,9 +5,7 @@ music in Cicada. You write a score as text, then use Studio's grids and
 arrangement views to edit the same source.
 
 The [Cicada Language Specification](../spec/README.md) documents source
-editions 1 and 2, with edition 2 used by new projects. Syntax marked
-**accepted** is approved for later work but is not available in the current
-build.
+editions 1 and 2, with edition 2 used by new projects.
 
 For game integration, see [Game Director and the Go/JS SDKs](game-director.md).
 
@@ -56,9 +54,10 @@ together.
   and inspect edit history.
 - [Editors and notation tools](editors.md) — use the LSP, VS Code extension,
   formatter, quick fixes, highlighting, and symbol lookup.
+- [Managing libraries](libraries.md) — create, inspect, pin, and vendor reusable
+  declarations and audio; copy projects with Save As.
 - [Exporting](exporting.md) — render WAV, stems, and MIDI.
-- [Live playback, mixing, and what comes next](next-level.md) — what the
-  current engine does and which larger features are still ahead.
+- [Live playback and mixing](next-level.md) — use native audio, host macros, MIDI, and mixer settings.
 - [Hosting the engine](engine-host.md) — integrate Cicada's Go or TinyGo audio
   engine.
 - [Engine scaling measurements](engine-metrics.md) — run synthetic sessions

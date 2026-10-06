@@ -10,7 +10,8 @@ func (p Program) DelaySamples() int {
 func delaySamples(p *Program) int {
 	count := 0
 	for i := 0; i < int(p.Len); i++ {
-		if p.Nodes[i].Op == Delay || p.Nodes[i].Op == Comb {
+		n := p.Nodes[i]
+		if n.Op == Delay || n.Op == Comb {
 			count += MaxDelaySamples
 		}
 	}
@@ -37,6 +38,9 @@ func ValidateDelayPitch(p Program, rate int, pitch float32) error {
 }
 
 func validateDelayPitch(p *Program, rate int, pitch float32) error {
+	if usesQuality(p) {
+		rate *= 2
+	}
 	var values [MaxNodes]float32
 	var known [MaxNodes]bool
 	staticValuesInto(p, float32(rate), pitch, &values, &known)
@@ -69,14 +73,16 @@ func validateDelayPitch(p *Program, rate int, pitch float32) error {
 // StaticValues evaluates control arithmetic only. A positive pitch makes
 // pitch-derived times known, for score-note validation outside rendering.
 func (p Program) StaticValues(rate, pitch float32) ([MaxNodes]float32, [MaxNodes]bool) {
+	return staticValues(&p, rate, pitch)
+}
+
+func staticValues(p *Program, rate, pitch float32) ([MaxNodes]float32, [MaxNodes]bool) {
 	var values [MaxNodes]float32
 	var known [MaxNodes]bool
-	staticValuesInto(&p, rate, pitch, &values, &known)
+	staticValuesInto(p, rate, pitch, &values, &known)
 	return values, known
 }
 
-// Fill prepared validation buffers without returning fixed arrays by value;
-// TinyGo would otherwise flatten them into graph-construction code.
 func staticValuesInto(p *Program, rate, pitch float32, values *[MaxNodes]float32, known *[MaxNodes]bool) {
 	clear(values[:])
 	clear(known[:])

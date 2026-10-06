@@ -45,10 +45,21 @@ TinyGo audio module:
 
 The image allocation accepts 32 bytes through 2 MiB and happens before audio
 initialization. A new module instance is required to load a different project.
-The current encoded image is version 10, with a little-endian header. It carries
+Legacy projects encode as version 13. Graph chords, schedules, prepared audio,
+and the experimental guitar use version 15. Versions 8–13 remain readable;
+version 14 is rejected. See the [image format](../spec/kernel-image-v15.md). The little-endian image carries
 mixer routing, effects, instrument graphs, authored kits, patterns, scenes,
 and song entries. Use `kernelimage.Encode` instead of constructing the image
 bytes yourself.
+
+The guitar runs through the same production AudioWorklet callback as other
+voices. Select it in an edition-2 score with `experimental = on` before
+compilation. It uses an experimental physical model;
+see [its controls and limits](../spec/edition-2.md#experimental-guitar-voice).
+`gosx_audio_allocation_count` returns the TinyGo heap allocation count so
+hosts can verify that rendering, including sequenced note/control changes,
+does not allocate. Read it outside a timed callback; memory size alone cannot
+detect allocations that fit within the existing heap.
 
 The older direct-setup exports remain available when a host needs to set track
 kinds and arrangement tables itself. Set up to sixteen track kinds with
@@ -122,8 +133,7 @@ replaces and arms the list; later positions append or replace an entry.
 Patterns finish before the chain begins, and each entry plays its pattern for
 the requested number of full cycles. Seek restarts a configured chain from
 its first entry. A direct pattern selection or scene assignment takes over
-that track. This command is an engine interface, not the accepted but
-unavailable source-level `chain` syntax.
+that track. Source-level `chain` declarations are not supported.
 
 A layer-mask command can mute tracks at the scheduled bar while their
 sequencers and voices keep advancing. At a quantized switch, a sliding note

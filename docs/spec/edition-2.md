@@ -4,8 +4,6 @@ Edition 2 keeps the validated language and mixer behavior of edition 1 while req
 
 ## Selecting the edition
 
-**Status:** Implemented.
-
 **Syntax:** A loose score can begin with `cicada 2`. A project selects the edition in `cicada.mod`:
 
 ```text
@@ -21,11 +19,9 @@ cicada 2
 
 A manifest may add `entry "main.cicada"`, repeated `source "parts/voice.cicada"` directives, `license "MIT"`, and `author "Cicada contributors"`. These project directives also work in edition 1. They do not change the source grammar. Paths are explicit project-relative `.cicada` files; traversal, absolute paths, glob patterns, and escaping symlinks are rejected.
 
-All listed files compile together. The entry loads first, followed by the remaining files in sorted path order. Source headers are optional and must match the manifest. A manifest without `entry` or `source` keeps its existing single-file behavior. See [multi-file projects](accepted.md#multi-file-projects-and-manifest-metadata) for load errors and the implemented tool support. Imports, `require`, and `cicada.sum` remain accepted-only.
+All listed files compile together. The entry loads first, followed by the remaining files in sorted path order. Source headers are optional and must match the manifest. A manifest without `entry` or `source` keeps its existing single-file behavior. See [multi-file projects](features.md#multi-file-projects-and-manifest-metadata) for load errors and the implemented tool support. Library imports and `cicada.sum` hash pins are supported; version requirements are not supported.
 
 ## Named mixer forms
-
-**Status:** Implemented for the routes listed in [edition 1](edition-1.md#named-effects), [buses and master](edition-1.md#buses-and-master), and [track mixer settings](edition-1.md#track-mixer-settings).
 
 **Syntax:** Edition 2 uses named effect declarations, named sends, per-send taps, named inserts, built-in bus declarations, and a separate mute switch:
 
@@ -65,9 +61,72 @@ song { main }
 
 Unknown effect and bus names report `CICADA-REFERENCE`. Supported effect kinds, send levels, insert placement, and bus controls are specified in edition 1's mixer sections.
 
-## Graph delays and plucked strings
+## Experimental guitar voice
 
-**Status:** Implemented in source editions 1 and 2; the example voices remain experimental pending listening acceptance.
+**Syntax:** Select the built-in `guitar` voice with an explicit, saved opt-in:
+
+```cicada
+cicada 2
+track lead guitar { experimental = on brightness = 0.7 pickup = 0.22 }
+pattern riff { 1^ . 3 5~ 6 - . . }
+scene clean { lead = riff }
+scene muted { lead = riff lead.damping = 0.8 lead.drive = 0.7 }
+song { clean muted }
+```
+
+`guitar` is a reserved built-in name. Edition 1 reports `CICADA-VERSION`;
+omitting the opt-in or selecting `experimental = off` reports
+`CICADA-EXPERIMENTAL`. JSON stores the opt-in in `track.params.experimental`
+and validates it before engine compilation. The opt-in cannot be changed by
+a scene or live command.
+
+**Controls:** These numeric controls use the shared parameter registry. The
+language server, Studio parameter addresses/MIDI mappings and `cicada explain`
+use the same types, units, ranges and smoothing. Bend and vibrato use bare
+numbers, as do other pitch offsets; ratios also accept percent literals.
+
+| Parameter | Type / unit | Range | Default | Smoothing | Model mapping |
+| --- | --- | --- | --- | --- | --- |
+| `bend` | number / semitones | −12..12 | 0 | 8 ms | Sequenced Hz × 2^(bend/12) |
+| `vibrato` | number / cents | 0..100 | 0 | 8 ms | Depth of the model's 5 Hz pitch modulation |
+| `brightness` | number / ratio | 0..1 | 0.7 | 8 ms | Frequency-dependent string loss |
+| `damping` | number / ratio | 0..1 | 0 | 8 ms | Palm damping; higher values shorten decay |
+| `pickup` | number / string length ratio | 0.05..0.45 | 0.22 | 8 ms | Pickup comb and pluck position |
+| `drive` | number / ratio | 0..1 | 0 | 8 ms | Built-in 4× oversampled, antialiased amp |
+
+`octave` is an integer in 0..6, defaults to 2, and applies when compiling
+relative pitches. Ordinary mixer settings still apply. Wrong control units
+report `CICADA-UNIT`; unknown controls and out-of-range track controls report
+`CICADA-PARAM`. Scene settings use the existing registry diagnostics.
+
+**Articulation:** Each note-on replucks one modeled string. A `~` slide changes
+pitch with the same 8 ms glide while its gate remains open; it does not repluck.
+A slide from a closed gate starts a new pluck. Ties retain the string and gate;
+note-off releases the string. Velocity sets pluck strength. The guitar ignores
+the acid-specific accent timbre flag. Bend changes the sounding pitch without
+re-excitation. The model clamps pitch, including bend, to 40..2000 Hz.
+
+**Runtime:** Native playback, the production TinyGo AudioWorklet kernel and
+offline WAV/stem rendering use the same physical model and amp. One track uses
+one voice from the unchanged 32-voice, 16-track core limits. Storage is prepared
+before rendering; note/control/render callbacks allocate nothing. At 48 kHz the
+string delay stores 2,408 float64 samples (19,264 bytes), plus fixed voice/amp
+state. Guitar is available in the core profile within its unchanged size gates.
+
+**Image format:** Guitar images use version 15 with voice kind 4 and six
+float64 control values in registry order. Existing voices retain version 13
+encoding; shipped versions 8..13 remain readable. Version 14 and capability
+bit 0 support chords and bounded graph polyphony. Version 15 retains that
+layout and adds the guitar payload, so guitar and chord tracks can share a
+project. This extension does not change graph opcodes or the 24-byte command
+ABI.
+
+See [the riff example](../../examples/expressive-guitar.cicada) for held-note
+bends, slides, palm mutes and clean/drive contrast. Zero drive still includes
+the prototype amp's coloration. It is neither a measured pickup nor a circuit
+or cabinet emulation; it has no sympathetic strings, fret buzz or feedback.
+
+## Graph delays and plucked strings
 
 **Syntax:** `delay(audio, ms)` and `comb(audio, ms, unit, unit)` are ordinary typed function calls in an instrument's mono voice. Unit divided by Hz produces ms: `1 / pitch` is one period, and `2 / pitch` is two periods. Bare `1 / 440` remains a unit value and cannot supply a delay time. Semantic JSON preserves Hz-derived division as the two-argument `period` expression operator; source conversion writes it back as `/`, retaining the numerator's unit type and denominator's Hz type even for numeric literals.
 
@@ -98,9 +157,19 @@ song { main }
 
 **Kernel images:** Delay graphs keep the version-13 layout and require capability bit 1 in the previously reserved 16-bit header word. `gosx_audio_capabilities` advertises that bit. Legacy images keep a zero capability word, and versions 8–13 remain readable. Older readers reject a required capability before playback. Graph opcodes 24 and 25 carry delay and comb; opcode 26 converts a Hz-derived period to ms. The comb's fourth input occupies the existing node value word as an exact integer index, so node records stay eight bytes. Graph and command opcodes have separate namespaces.
 
-## Migrating with `cicada fix`
+## Graph phase modulation
 
-**Status:** Implemented.
+**Syntax and types:** `pm(carrier_hz, modulator, index)` takes Hz, audio, and unit and returns audio. Index is the phase deviation in radians for a unit-amplitude modulator; it accepts an envelope and negative values. `pm(pitch, sine(pitch * 3.5), 4 * env(gate, 260ms))` makes a two-operator voice. The sine modulator gives the classic FM sideband spectrum, with brightness controlled by the index envelope. No feedback edge is permitted.
+
+**Meaning:** The carrier emits `sin(2*pi*phase + modulator*index)`. Its stored float32 phase advances by the carrier frequency divided by the render sample rate and wraps into `[0,1)`. The offset product is evaluated in float64 and reduced modulo one turn before sine evaluation; it never accumulates into carrier state. Very large controls lose fractional phase precision. Carrier frequency clamps to `0..0.49*sample_rate`; zero emits silence. A non-finite frequency clamps to zero; a non-finite offset emits silence while carrier phase continues. A fresh note resets both operators; slides preserve phase and use the existing pitch glide. Reset clears phase. Execution uses the same graph on native, WASM, and offline paths.
+
+**Limits and errors:** PM adds one stateful node and no delay storage. The existing limits of 128 graph nodes and 32 stateful nodes remain. Wrong units report `CICADA-UNIT`; wrong arity reports `CICADA-PARAM`. Source conversion and semantic JSON retain the three typed inputs. Language-server hover and `cicada explain graph.pm` share the operation description. Existing one-input oscillators retain their signatures.
+
+**Aliasing:** PM is not antialiased. Clamping carrier frequency does not bound modulation sidebands. Keep the example's bell at or below E5 (659.255 Hz), with modulator ratio 3.5 and index at or below 4; higher pitch, ratio, or index can alias strongly. These settings do not guarantee alias-free output. The feedback-free bass uses a 1:1 ratio and peak index 1.5. See [fm-bell.cicada](../../examples/fm-bell.cicada).
+
+**Image compatibility:** Additive in source editions 1 and 2. Graph opcode 32 is PM; the eight-byte node record uses its three existing input indices. Image version 13 requires capability bit 5 for PM in tracks or kit lanes, alongside I-1's delay bit 1; bit 0 stays reserved for chords. `gosx_audio_capabilities` advertises both supported bits. Legacy images retain their capability word and versions 8–13 remain readable. Readers without PM reject its required capability before playback.
+
+## Migrating with `cicada fix`
 
 **Syntax:** Run `cicada fix score.cicada`; use `cicada fix score.cicada --check` to check whether a source rewrite or manifest update is needed. From the project folder, `cicada fix --all` migrates all edition-1 scores together; `--check` can be combined with either form.
 

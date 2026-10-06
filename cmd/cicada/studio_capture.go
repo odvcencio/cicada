@@ -21,9 +21,14 @@ func (t *studioTransport) armCapture(recorder *capture.Recorder) error {
 	if !t.audioOptions.InputEnabled {
 		return fmt.Errorf("enable duplex input before arming capture")
 	}
+	t.stopPreviewLocked()
 	opened := false
 	if t.audio == nil {
-		t.audio, err = openStudioAudio(t.stream, t.audioOptions, t.selectedAudioBackend(), rate)
+		open := t.takeInputOpener
+		if open == nil {
+			open = openStudioAudio
+		}
+		t.audio, err = open(t.stream, t.audioOptions, t.selectedAudioBackend(), rate)
 		if err != nil {
 			return err
 		}

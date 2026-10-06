@@ -96,6 +96,16 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 		if !found {
 			return fail("CICADA-PARAM", "unknown setting in parameter path "+path)
 		}
+		if strings.HasPrefix(descriptor.ID, "drum.") {
+			laneControl := strings.SplitN(descriptor.Source, "_", 2)
+			if len(laneControl) == 2 && laneControl[1] != "level" && laneControl[1] != "pan" {
+				for _, kit := range p.Kits {
+					if kit.ID == p.Tracks[trackIndex].Kind && strings.HasPrefix(kit.Lanes[laneControl[0]], "model.") {
+						return fail("CICADA-UNSUPPORTED", "modeled kit synthesis controls must be set on the track: "+path)
+					}
+				}
+			}
+		}
 	} else if effectOK {
 		setting := strings.Join(parts[1:], ".")
 		for _, candidate := range paramdefs.Registry {
@@ -156,6 +166,8 @@ func descriptorHasVoice(descriptor paramdefs.Descriptor, kind string) bool {
 
 func parameterVoiceKind(p *Project, kind string) string {
 	switch kind {
+	case "guitar":
+		return "guitar"
 	case "acid":
 		return "acid"
 	case "drums":
@@ -220,7 +232,7 @@ func validateParameterValue(descriptor paramdefs.Descriptor, value Value) error 
 		return fmt.Errorf("expected a finite numeric value")
 	}
 	want := strings.ToLower(descriptor.Unit)
-	if want == "" || want == "ratio" || want == "semitone" {
+	if want == "" || want == "ratio" || want == "semitone" || want == "cent" {
 		want = "unit"
 	}
 	if value.Unit != want {

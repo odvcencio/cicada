@@ -210,6 +210,33 @@
       "layer": "semantic"
     },
     {
+      "name": "arrangement",
+      "child_roles": [
+        "placements",
+        "markers"
+      ],
+      "variants": [],
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "name": "placement",
+      "child_roles": [],
+      "variants": [],
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "name": "marker",
+      "child_roles": [],
+      "variants": [],
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
       "name": "song_entry",
       "child_roles": [],
       "variants": [],
@@ -547,6 +574,20 @@
     },
     {
       "construct": "project",
+      "name": "arrange",
+      "required": false,
+      "type": "nullable\u003carrangement\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Named timeline placements",
+      "order": 16,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "project",
       "name": "song",
       "required": true,
       "type": "array\u003csong_entry\u003e",
@@ -554,7 +595,7 @@
       "range": null,
       "default": null,
       "meaning": "Ordered scene playback",
-      "order": 16,
+      "order": 17,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -568,7 +609,7 @@
       "range": null,
       "default": null,
       "meaning": "Project effects",
-      "order": 17,
+      "order": 18,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -582,7 +623,7 @@
       "range": null,
       "default": null,
       "meaning": "Named mixer buses",
-      "order": 18,
+      "order": 19,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -596,7 +637,7 @@
       "range": null,
       "default": null,
       "meaning": "Master mixer",
-      "order": 19,
+      "order": 20,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -610,7 +651,7 @@
       "range": null,
       "default": null,
       "meaning": "Named render delivery targets",
-      "order": 20,
+      "order": 21,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -624,7 +665,7 @@
       "range": null,
       "default": null,
       "meaning": "Declared host controls",
-      "order": 21,
+      "order": 22,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -638,7 +679,7 @@
       "range": null,
       "default": null,
       "meaning": "Continuous song parameter lanes",
-      "order": 22,
+      "order": 23,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -2009,6 +2050,132 @@
       "profile": "M0",
       "layer": "semantic",
       "variant": "text"
+    },
+    {
+      "construct": "arrangement",
+      "name": "placements",
+      "required": true,
+      "type": "array\u003cplacement\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Named regions in source order",
+      "order": 1,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "arrangement",
+      "name": "markers",
+      "required": true,
+      "type": "array\u003cmarker\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Named musical positions",
+      "order": 2,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "placement",
+      "name": "id",
+      "required": true,
+      "type": "string",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Stable placement identity",
+      "order": 1,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "placement",
+      "name": "track",
+      "required": true,
+      "type": "string",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Track identifier",
+      "order": 2,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "placement",
+      "name": "content",
+      "required": true,
+      "type": "string",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Pattern or audio clip identifier",
+      "order": 3,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "placement",
+      "name": "at_tick",
+      "required": true,
+      "type": "integer",
+      "unit": "tick",
+      "range": null,
+      "default": null,
+      "meaning": "Absolute start tick",
+      "order": 4,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "placement",
+      "name": "length_ticks",
+      "required": true,
+      "type": "integer",
+      "unit": "tick",
+      "range": null,
+      "default": null,
+      "meaning": "Exclusive duration",
+      "order": 5,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "marker",
+      "name": "id",
+      "required": true,
+      "type": "string",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Stable marker identity",
+      "order": 1,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "marker",
+      "name": "at_tick",
+      "required": true,
+      "type": "integer",
+      "unit": "tick",
+      "range": null,
+      "default": null,
+      "meaning": "Absolute marker tick",
+      "order": 2,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
     },
     {
       "construct": "song_entry",

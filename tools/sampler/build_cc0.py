@@ -102,6 +102,11 @@ def zone(root, layer=64, pos=0, count=1, release=False):
 
 
 def build(args):
+    if args.tier != "gzip":
+        from pack_tiers import build_tier
+        if not args.from_packs:
+            raise ValueError("tier conversion requires --from-packs")
+        return build_tier(args)
     destination = pathlib.Path(args.out)
     destination.parent.mkdir(parents=True, exist_ok=True)
     out = pathlib.Path(
@@ -466,4 +471,6 @@ if __name__ == "__main__":
     parser.add_argument("--cache", required=True)
     parser.add_argument("--jobs", type=int, default=4)
     parser.add_argument("--verify-catalog")
+    from pack_tiers import tier_arguments
+    tier_arguments(parser, "assets/sampler/catalog.json")
     build(parser.parse_args())

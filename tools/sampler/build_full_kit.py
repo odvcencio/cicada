@@ -137,6 +137,11 @@ def wav_bytes(pcm, channels, floating=False):
 
 
 def build(args):
+    if args.tier != "gzip":
+        from pack_tiers import build_tier
+        if not args.from_packs:
+            raise ValueError("tier conversion requires --from-packs")
+        return build_tier(args)
     cache = pathlib.Path(args.cache)
     cache.mkdir(parents=True, exist_ok=True)
     archive = cache / "CrocellKit_Stereo_MIX.rar"
@@ -485,4 +490,6 @@ if __name__ == "__main__":
     p.add_argument("--cache", required=True)
     p.add_argument("--verify", help="published catalog.json to verify on rebuild")
     p.add_argument("--jobs", type=int, default=4)
+    from pack_tiers import tier_arguments
+    tier_arguments(p, "assets/sampler/full-kit/catalog.json")
     build(p.parse_args())

@@ -211,6 +211,12 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 		p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
 	}
 	p.active = int8(slot)
+	if v := &e.voices[track]; v.prepared != nil {
+		if v.prepared.SelectSlot(uint8(slot), 0, e.transport.Playing()) != nil {
+			e.fault(19)
+			return
+		}
+	}
 	if !e.nextPatternGeneration(track) {
 		return
 	}
@@ -400,9 +406,9 @@ func (e *Engine) scheduleSwitchRelease(track int, clock seq.Clock, startSample i
 		}
 		e.scheduleNormalRelease(track, slot, c.Tick, restart, clock, startSample, frames)
 	}
-	if e.songMode && (e.songIndex+1 < len(e.song) || e.loopSong) {
-		next := (e.songIndex + 1) % len(e.song)
-		binding := e.scenes[e.song[next].Scene].Track[track]
+	if !e.placementSchedule && e.songMode && (e.songIndex+1 < len(e.schedule) || e.loopSong) {
+		next := (e.songIndex + 1) % len(e.schedule)
+		binding := e.scenes[e.schedule[next].Scene].Track[track]
 		if binding.Mode == SceneSlot && p.active != int8(binding.Slot) {
 			e.scheduleNormalRelease(track, int(binding.Slot), e.songEndTick, false, clock, startSample, frames)
 		}
@@ -503,9 +509,9 @@ func (e *Engine) pendingSwitchSlides(track int, off seq.Event) bool {
 			}
 		}
 	}
-	if e.songMode && e.songEndTick == switchTick && (e.songIndex+1 < len(e.song) || e.loopSong) {
-		next := (e.songIndex + 1) % len(e.song)
-		binding := e.scenes[e.song[next].Scene].Track[track]
+	if !e.placementSchedule && e.songMode && e.songEndTick == switchTick && (e.songIndex+1 < len(e.schedule) || e.loopSong) {
+		next := (e.songIndex + 1) % len(e.schedule)
+		binding := e.scenes[e.schedule[next].Scene].Track[track]
 		return binding.Mode == SceneSlot && p.active != int8(binding.Slot) && e.switchSlideTarget(track, int(binding.Slot), switchTick, false)
 	}
 	if slot, ok := e.chainTargetAt(track, switchTick); ok {
@@ -571,6 +577,18 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			switch e.voices[track].kind {
 			case VoiceAcid:
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
+			case VoiceGuitar:
+				e.voices[track].guitar.NoteOn(event.Note, event.Velocity, event.Accent, event.Slide)
+			case VoiceModal:
+				e.voices[track].modal.NoteOn(event.Note, event.Velocity, event.Slide)
+			case VoiceSample:
+				v := &e.voices[track]
+				var err error
+				v.samplerNote, err = v.sampler.NoteOn(event.Note, event.Velocity)
+				if err != nil {
+					e.fault(9)
+					return
+				}
 			case VoiceGraph:
 				if pool := e.voices[track].poly; pool != nil {
 					if !event.Slide {
@@ -587,6 +605,14 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 					}
 				} else {
 					e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
+					e.voices[track].graphNote, e.voices[track].graphHeld = event.Note, true
+				}
+			case VoiceGraphPoly:
+				e.voices[track].legacyPoly.NoteOn(event.Note, event.Velocity, event.Slide)
+			case VoicePrepared:
+				if e.voices[track].prepared.NoteOn(event.Note, event.Velocity) != nil {
+					e.fault(19)
+					return
 				}
 			case VoicePiano:
 				if event.Slide && p.playingNote != 0 {

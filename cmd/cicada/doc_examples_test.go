@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -11,6 +12,19 @@ import (
 	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/language/grammar"
 )
+
+func TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot(t *testing.T) {
+	path := filepath.Join(repositoryRoot(), "docs", "experimental-polyphony.md")
+	doc, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	measurements := regexp.MustCompile(`(?i)(?:raw|brotli|worklet)\s*(?:is\s*)?\d+\s*/\s*\d+\s*bytes`)
+	qualification := regexp.MustCompile(`(?i)\b(?:remain|remains|are|is)\s+unverified\b`)
+	if measurements.Match(doc) || qualification.Match(doc) {
+		t.Fatal("keep build measurements and qualification status in PR descriptions or CI artifacts")
+	}
+}
 
 type documentationExample struct {
 	path     string
@@ -56,7 +70,7 @@ func TestDocumentationCicadaExamples(t *testing.T) {
 		}
 	}
 
-	valid, invalid, accepted := 0, 0, 0
+	valid, invalid := 0, 0
 	temp := t.TempDir()
 	if err := os.Mkdir(filepath.Join(temp, "audio"), 0700); err != nil {
 		t.Fatal(err)
@@ -65,10 +79,6 @@ func TestDocumentationCicadaExamples(t *testing.T) {
 		t.Fatal(err)
 	}
 	for index, example := range examples {
-		if example.kind == "cicada-accepted" {
-			accepted++
-			continue
-		}
 		path := filepath.Join(temp, fmt.Sprintf("example-%03d.cicada", index))
 		if err := os.WriteFile(path, []byte(example.source), 0o600); err != nil {
 			t.Fatal(err)
@@ -100,7 +110,7 @@ func TestDocumentationCicadaExamples(t *testing.T) {
 	if valid+invalid == 0 {
 		t.Fatal("no Cicada examples found under docs/spec or docs/manual")
 	}
-	t.Logf("checked %d Cicada blocks: %d valid, %d invalid; skipped %d accepted", valid+invalid, valid, invalid, accepted)
+	t.Logf("checked %d Cicada blocks: %d valid, %d invalid", valid+invalid, valid, invalid)
 }
 
 func TestDocumentationExamplesUseEditionTwo(t *testing.T) {
@@ -137,7 +147,7 @@ func TestDocumentationExamplesUseEditionTwo(t *testing.T) {
 		}
 	}
 	for _, example := range examples {
-		if example.kind == "cicada-accepted" || example.kind == "cicada-invalid" || example.kind == "cicada" {
+		if example.kind == "cicada-invalid" || example.kind == "cicada" {
 			first := ""
 			for _, line := range strings.Split(example.source, "\n") {
 				if strings.TrimSpace(line) != "" {
@@ -170,7 +180,7 @@ func readDocumentationExamples(path string) ([]documentationExample, error) {
 			continue
 		}
 		kind := info[0]
-		if kind != "cicada" && kind != "cicada-invalid" && kind != "cicada-accepted" {
+		if kind != "cicada" && kind != "cicada-invalid" {
 			continue
 		}
 		startLine := i + 1

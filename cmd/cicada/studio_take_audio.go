@@ -41,7 +41,7 @@ func (s *studio) importBrowserTake(edit studioEdit) (string, error) {
 		return "", errors.New("browser take has an invalid or oversized format")
 	}
 	// Admit only the worker's committed, contiguous byte prefix. Raw frame gaps
-	// remain separate from PCM offsets, and placement is recomputed by lane D.
+	// remain separate from PCM offsets, and placement is recomputed by the capture adapter.
 	offset, cursor := 0, uint64(0)
 	for _, block := range take.Blocks {
 		b := block.Timing

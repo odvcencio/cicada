@@ -82,7 +82,7 @@ The language server uses unsaved buffers alongside the other listed files. Go to
 
 ## Import a library
 
-A library packages instruments, effects, kits, phrases, patterns, samplers, and audio assets for reuse. The [library example](../../examples/libraries/main.cicada) imports `demo/tone` from the project's `lib/demo/tone/` folder. Its manifest uses `library` instead of `project`:
+A library packages instruments, effects, kits, phrases, patterns, samplers, presets, and audio assets for reuse. The [library example](../../examples/libraries/main.cicada) imports `demo/tone` from the project's `lib/demo/tone/` folder. Its manifest uses `library` instead of `project`:
 
 ```text
 library demo/tone
@@ -107,7 +107,7 @@ song { verse*2 }
 
 Libraries can import other libraries. Imports in all files of a project or library share that scope. A library's unqualified references select its own declarations; dependency references use the imported namespace. Dependencies are not re-exported. Names beginning with `_` are private to their library; referring to `tone._hook` from outside it produces `CICADA-LIB-PRIVATE`. Import cycles produce `CICADA-LIB-CYCLE`.
 
-Paths use slash-separated source identifiers. `builtin` is reserved as an import namespace and as the first component of a library path; built-in drum recipes such as `builtin.ch` remain available. Resolution checks embedded `std/` libraries, the project's `lib/`, and the user library in that order. The embedded standard namespace is initially empty. The user library is Go's per-OS user config directory plus `cicada/lib`; `$CICADA_LIBRARY` overrides it. Direct imports from it are allowed. If the same path exists in more than one location, two imports share the same final component, or an import namespace conflicts with a local declaration, loading fails with `CICADA-LIB-SHADOW`.
+Paths use slash-separated source identifiers. `builtin` is reserved as an import namespace and as the first component of a library path; built-in drum recipes such as `builtin.ch` remain available. Resolution checks embedded `std/` libraries, the project's `lib/`, and the user library in that order. The user library is Go's per-OS user config directory plus `cicada/lib`; `$CICADA_LIBRARY` overrides it. Direct imports from it are allowed. A project pin explicitly selects its vendored copy while a user copy exists. Otherwise, if the same path exists in more than one location, two imports share the same final component, or an import namespace conflicts with a local declaration, loading fails with `CICADA-LIB-SHADOW`.
 
 Library assets live under the library's `audio/` folder. Their source paths resolve from that library root, and their own declared audio hashes are verified as well. Source and asset paths cannot escape the library through traversal or symlinks. `cicada convert` refuses library-owned audio with `CICADA-LIB-ASSET` before writing output. Keep the score imports until asset vendoring is supported.
 
@@ -126,12 +126,12 @@ cicada render main.cicada -o library.wav --rate 48000 --bits 24
 
 Every load recomputes the hashes. Missing pins, changed content, and changed resolution kinds produce `CICADA-LIB-HASH` at the importing file, line, and column. `check` reports them; playback and rendering refuse them. After an intended edit, run `cicada lib update demo/tone` to update that pin, or omit the path to update every imported library and remove unused pins. The command prints the old and new location kinds and hashes. A targeted update leaves dependency pins unchanged; update those dependencies explicitly or update all imports. A loose score uses `cicada.sum` in its own directory. An update scan containing loose scores from different directories is refused with `CICADA-LIB-ROOT`; run from each score directory or add a shared `cicada.mod`.
 
-The language server completes import paths and public qualified names and goes to definitions in library source. Unsaved library changes also trigger hash diagnostics. `explain` identifies the library behind a declaration or instrument value. Project-wide formatting and notation fixes keep imported library files untouched. Notation fixes, local rename, and parameter hover retain import context for loose and independent scores too. Notation fixes stop on changed library pins. Library vendoring, Save As with imports, bundle provenance, and `require` versions remain follow-up work.
+The language server completes import paths and public qualified names and goes to definitions in library source. Unsaved library changes also trigger hash diagnostics. `explain` identifies the library behind a declaration or instrument value. Project-wide formatting and notation fixes keep imported library files untouched. Notation fixes, local rename, and parameter hover retain import context for loose and independent scores too. Notation fixes stop on changed library pins. Use `cicada lib vendor` to keep imported user libraries in the project; Save As does this automatically. See [Managing libraries](libraries.md). Version requirements are not supported.
 
 ## Tracks and patterns
 
 A track chooses a sound source: the built-in `acid` or `drums` voice, a
-declared mono instrument, or an authored drum kit. A pattern describes steps
+declared mono or poly instrument, or an authored drum kit. A pattern describes steps
 for that source. The scene connects a pattern to a track by name.
 
 The current grid uses sixteenth-note steps. A 16-step pattern fills one bar;
@@ -151,6 +151,24 @@ Pattern settings go inside the braces before the steps. `swing` ranges from
 to 55%. `transpose` changes note patterns by −24 to +24 semitones. A pattern
 without its own `seed` inherits the project seed. The project defaults are
 130 BPM, A minor, and seed 0.
+
+## Try the experimental guitar
+
+Edition 2 can play the physical string and amp prototype with
+`track lead guitar { experimental = on }`. It uses an experimental physical model; acoustic realism is unverified.
+
+The [guitar riff](../../examples/expressive-guitar.cicada) demonstrates bends,
+slides, palm mutes and clean versus driven amp settings. Render it with
+`cicada render examples/expressive-guitar.cicada -o guitar.wav`, or open the
+score in Studio. Native playback, the AudioWorklet and offline rendering all
+run the model. `~` slides into the next pitch; a new note replucks the string.
+Scene settings such as `lead.bend = 2` and `lead.damping = 0.8` change the
+sounding string. Bend is in semitones and vibrato is in cents, both written
+without a suffix. All six continuous controls smooth over 8 ms.
+
+See [controls and limits](../spec/edition-2.md#experimental-guitar-voice).
+Drive zero still has amp coloration. This voice models one string and a
+generic amp; it does not emulate a measured guitar, circuit or cabinet.
 
 ## Shape a note
 
@@ -219,7 +237,7 @@ its built-in recipe. See the [kit and lane reference](../spec/edition-1.md#autho
 ## Define an instrument
 
 Use an instrument when you want a sound made from Cicada's typed synthesis
-primitives. A `voice mono` block has ordered `let` bindings and one audio
+primitives. A `voice mono` or `voice poly` block has ordered `let` bindings and one audio
 output. Parameters and inputs carry types and units, so a frequency cannot
 silently be used where a time value is expected.
 
@@ -242,15 +260,28 @@ scene main { lead = lead-a }
 song { main*4 }
 ```
 
-The current profile supports mono graphs with at most 128 nodes and 32
-stateful nodes. Polyphony, plugins, and sample assets are not in edition 1.
+Graphs have at most 128 nodes and 32 stateful nodes. `voice poly` provides eight
+independent notes and release tails. In Studio, **Instruments** offers Warm pad,
+Wide strings, Poly brass, Silk pluck, Round bass, and Soft bell. Adding a patch
+saves its editable graph and a new track together. Use `adsr` for sustained
+amplitude and filter envelopes, `pulse` for variable-width oscillation, and
+`svf` for resonant lowpass filtering. The mixer provides stereo positioning,
+delay, and reverb. Play chords from **Live** using the keyboard or MIDI; the
+current notes grid and saved note takes hold one pitch per step.
+
 Use `comb(noise() * env(gate, 1ms), 1 / pitch, 0.995, 0.5)` for a plucked
 string: a short noise burst excites a damped feedback loop. `1 / pitch` is
 typed as milliseconds. `delay(sound, 60ms)` adds a slapback tap. Each primitive
 reserves 16 KiB of ring storage, and each voice can contain at most two.
 The [pluck example](../../examples/pluck.cicada) combines both operations;
 [graph delay limits](../spec/edition-2.md#graph-delays-and-plucked-strings)
-describe interpolation, time bounds, and experimental listening status.
+describe interpolation, time bounds, and current synthesis limits.
+
+`ddsp(pitch, loudness)` renders a quantized neural reed from eight harmonics and
+filtered noise. Use `env(gate, 620ms) * velocity` for linear loudness. The
+[neural reed example](../../examples/neural-reed.cicada) runs in the native and
+WASM kernels; its [model documentation](../../kernel/voice/ddsp/README.md)
+describes the original CC0 training data, pinned weights, and validation.
 
 The [instrument reference](../spec/edition-1.md#instruments-and-voices) lists
 every primitive signature.
@@ -335,6 +366,123 @@ channels and frame count. Asset paths resolve from the directory containing the
 nearest `cicada.mod`, including scores in subdirectories. Exact `frames` literals
 support sample editing; seconds and milliseconds must land on exact source frames.
 
-These declarations compile to project data. Playback and recording support arrive
-in the other Phase 1 lanes; the current engine reports `CICADA-UNSUPPORTED` for
-projects containing audio data.
+The host prepares these assets before playback. Native playback and offline rendering support audio tracks and declared samplers; project images carry prepared PCM within the 2 MiB image limit. Streamed PCM uses a separate host reader.
+
+
+## Standard libraries
+
+Cicada embeds four MIT-licensed source libraries in its host binary. Use
+`cicada lib list` to see their paths alongside project and user libraries.
+
+| Import | Contents | Complete example |
+| --- | --- | --- |
+| `std/synth` | `glassbass`, `nightbass`, `tymbal`, `subline`, `glass` graph instruments | [Standard synth](../../examples/std-synth/main.cicada) |
+| `std/drums` | `kick`, `circuit-kick`, `snare`, `hat`; authored `steel` and `circuit` kits | [Standard drums](../../examples/std-drums/main.cicada) |
+| `std/fx` | `drive`, `delay`, `reverb`, `comp` defaults for inserts, sends, and bus compression | [Standard effects](../../examples/std-fx/main.cicada) |
+| `std/presets` | `acid-squelch`, `acid-round`, `acid-bite`; built-in drum-kit `kit-tight`, `kit-roomy`, `kit-lofi` presets | [Standard presets](../../examples/std-presets/main.cicada) |
+
+For a filtered bass graph from the Glassbass study:
+
+```text
+cicada 2
+import "std/synth"
+track bass synth.glassbass { cutoff = 680Hz }
+```
+
+For the three graph drum voices from Circuit kit, grouped into one kit:
+
+```text
+cicada 2
+import "std/drums"
+track beat drums.circuit {}
+```
+
+For a drive insert, delay and reverb sends, and music-bus compression:
+
+```text
+cicada 2
+import "std/fx"
+track bass acid {
+  insert = fx.drive
+  send fx.delay = 0.3
+  send fx.reverb = 0.35
+}
+bus music { insert = fx.comp }
+```
+
+For an acid sound and a short-decay built-in drum kit:
+
+```text
+cicada 2
+import "std/presets"
+track bass presets.acid-squelch {}
+track beat presets.kit-tight {}
+```
+
+Add patterns, a scene, and a song as in the complete examples. Track and scene
+values can override preset values. `acid-round` uses a darker cutoff and square
+wave; `acid-bite` uses a brighter cutoff, more resonance, and shorter decay.
+`kit-roomy` extends the drum decays; `kit-lofi` lowers the kick tuning and darkens
+the snare and hats. These kit presets target built-in `drums`; authored kits keep
+their source graphs. See the [std README](../../project/std/README.md) for source
+origins and import paths.
+
+Run `cicada lib update` before the first check or render, and commit `cicada.sum`
+with the score. Std imports are pinned with `kind std` and a hash of the exact
+embedded manifest and source bytes. Upgrading Cicada does not rewrite the pins.
+If that binary ships changed std content, `cicada check` reports
+`CICADA-LIB-HASH`; playback and rendering refuse it. Review the change and run
+`cicada lib update std/presets` to accept the new bytes, or omit the path to
+re-pin every import. Unchanged content keeps its hash. Std source compiles on the
+host and leaves the WASM audio kernel unchanged.
+
+## Reuse values with a preset
+
+A preset keeps a named set of values for an existing sound. Define it in your score or in an imported library:
+
+```cicada
+cicada 2
+
+instrument glassbass {
+  octave = 2
+  param cutoff = 540Hz
+  param bite = 0.58
+  voice mono {
+    out = lowpass(saw(pitch), cutoff) * bite * env(gate, 330ms)
+  }
+}
+
+preset glassbass.bright {
+  instrument = glassbass
+  cutoff = 900Hz
+  bite = 0.7
+}
+
+preset acid-bright {
+  instrument = acid
+  cutoff = 900Hz
+  decay = 180ms
+}
+
+track lead glassbass.bright { bite = 0.65 }
+track bass acid-bright { cutoff = 1100Hz }
+pattern melody { 1 . 3 . }
+scene verse { lead = melody bass = melody }
+song { verse }
+```
+
+`glassbass` must be a declared instrument. A library target can use a qualified name such as `tone.glass`. Library presets are also qualified at use: `track bell tone.soft {}`. Their source bytes are included in the library's `cicada.sum` hash, so changing a preset requires an explicit `cicada lib update`.
+
+Values resolve in this order: registry default, instrument default, preset, track setting, scene setting. For example, `bass.cutoff = 1400Hz` in a scene overrides both the preset's 900Hz and the track's 1100Hz. Run `cicada explain examples/presets/main.cicada bass.cutoff @2` to see the layers. Authored numeric parameters use their instrument defaults; they have no separate registry default. Scene settings support the engine's existing registry paths, including built-in voice and mixer parameters.
+
+For built-in drums, target `drums` and use lane-prefixed names such as `bd_tune` and `sd_decay`. To save one lane's values, target `builtin.bd` and use `tune` or `decay`; a track using this preset resolves to the same drum track with those lane values. An authored kit can bind an authored instrument preset to a lane. Kit presets can set mixer values. Use a drums track for built-in recipe settings; kit bindings cannot change those settings yet.
+
+For effects, use `preset warm { instrument = builtin.drive gain = 18dB mix = 0.75 }` and `fx grit warm { mix = 0.8 }`, then route the declared effect as usual. A declared effect can also supply defaults for an effect preset. An unreferenced effect used this way supplies defaults without creating a second runtime instance; a routed or scene-addressed target stays active. Existing effect instance limits still apply.
+
+A sampler preset targets a declared sampler and can change `root`, `mode`, `voices`, and mixer values. Track settings can override those values. The asset remains the sampler's original asset. The built-in `audio` target accepts mixer values. The experimental guitar is not a score voice in this edition.
+
+Presets cannot add DSP expressions, change routing, replace an asset, or inherit another preset. Unknown parameters, wrong types or units, out-of-range values, and a voice preset used as an effect (or an effect preset used as a track) produce typed errors with file, line, and column. Built-in bounds come from the shared registry. Authored parameters retain their declared units and must fit finite float32; authored bounds are not declared in this edition.
+
+The language server completes preset targets and their parameters, including imported instrument parameters. `cicada fmt` preserves preset declarations; conversion to semantic JSON or generated source writes their resolved values. Try [Preset circuit](../../examples/presets/main.cicada) for an authored instrument preset, an acid preset, and a preset imported from the vendored examples library.
+
+Studio has no “save as preset” action in this version. Write the declaration in the score editor. Studio refuses multi-file projects; use the [library commands](libraries.md) to manage declarations in libraries.

@@ -1,8 +1,7 @@
 # Experimental opt-in graph chords
 
-This private candidate adds a bounded source-to-audio vertical slice. It is not
-release or merge approval. Existing `voice mono` behavior and mono project
-images remain the default.
+Opt-in graph tracks support bounded four-voice chords from source to audio.
+Existing `voice mono` behavior and mono project images remain the default.
 
 ```cicada
 instrument piano {
@@ -17,7 +16,8 @@ song { verse }
 ## Musical contract and limits
 
 - `voice poly` is explicit and applies only to typed graph instruments. A track
-  allocates exactly four voice slots against the existing 32-voice project limit
+  assigned chord patterns allocates four slots against the 32-voice project limit.
+  Scalar polyphonic patterns retain the eight-voice Live instrument mode
 - Chords contain 2–4 distinct resolved MIDI pitches. Octave marks and phrase
   transpose work. Suffix accent/chance applies to the complete cohort; `-`
   holds all its pitches with one gate and release
@@ -36,10 +36,12 @@ song { verse }
   mono graph reset behavior is unchanged
 - A chord stays one mixer track and one track stem. Legacy direct live `NoteOn`
   and `NoteOff` on poly tracks are rejected with fault20 and a handle-aware-command
-  explanation. This candidate does not add polyphonic keyboard/MIDI-input editing
+  explanation. Polyphonic keyboard/MIDI-input editing is not supported
 - Graph accent metadata is shared. As with legacy graph instruments, a graph
   author controls dynamics through the `velocity` input; there is no separate
   graph `accent` input. MIDI export maps accent to velocity127
+- Studio pitch edits add or remove only the clicked chord pitch, preserving
+  the other pitches and shared modifiers. Phrase edits update their shared source
 
 ## Interchange and host compatibility
 
@@ -49,15 +51,17 @@ existing 24-byte command records/opcode numbers remain unchanged.
 
 Complete project image upload is the supported path for arbitrary gate/seed
 metadata. Mono images stay byte-exact version13. An opted-in poly project uses
-version14, which includes per-track polyphony and fixed chord payloads. Older
+version15, which includes per-track polyphony, fixed chord payloads and an
+explicit schedule/asset/clip footer, even when empty. Both incompatible
+development-v14 dialects are rejected; recompile project source. Older
 readers reject the new image version; the worklet checks capability before
 allocation/upload and rejects unsupported kernels explicitly.
 The host must call the reactor's `_initialize()` before querying capability;
-TinyGo exports trap if called before runtime initialization. Both worklet
-assets are tested against an actual reactor with a version14 image and audio.
-
-The WASM export `gosx_audio_capabilities()` advertises bit0 (`1`) for image14 and
-`OpSetChordStep` (appended opcode22). Opcode22 uses four 7-bit pitches in `Arg0`;
+TinyGo exports trap if called before runtime initialization.
+The WASM export `gosx_audio_capabilities()` retains bit0 (`1`) for
+`OpSetChordStep` (appended opcode22). Bit16 (`65536`) independently negotiates the
+[unified v15 image layout](spec/kernel-image-v15.md); bit0 alone never authorizes
+a v15 image. Opcode22 uses four 7-bit pitches in `Arg0`;
 `Arg1` low4bits selects slot0–15 and bits4–6 contain count2–4. `Index` is step0–63.
 Padding and reserved bits remain zero. It supplements a normal `OpSetStep` and
 cannot turn a mono track into a polyphonic one.
@@ -68,31 +72,20 @@ kernel, not the source project. Source gate/seed must match that slot's preloade
 metadata (blank-slot defaults are gate55 and the engine seed); mismatches reject
 before producing any commands. Existing opcodes cannot represent a different
 pattern gate/seed. Use a complete image when those values change. The batch
-clears the loaded slot before replacing length/meta/notes, avoiding invalid
-intermediate old-chord/new-slide or transpose states. Submit it as one batch;
-do not interleave a playback callback between its records.
+clears the loaded and replacement step ranges before replacing length/meta/notes,
+avoiding invalid intermediate old-chord/new-slide or transpose states. Submit it
+as one batch; do not interleave a playback callback between its records.
 
-## Verification boundary and inherited limitations
+Fixed pattern banks are validated by address and then copied into engine
+storage, so the engine owns its patterns without whole-bank scalarization.
 
-Tests cover source/JSON/source roundtrip; malformed modes/pitches/counts; voice
-budget; ties/shared chance; scene switches; real image and command uploads;
-stealing/reset/bounds/stale releases; zero native render allocations; one-track
-stems; numeric MIDI pitch/timing export; offline/native block parity; and native
-versus Go1.26 WASI and TinyGo0.41.1/Go1.25.5 reactors. Poly offline probability hashing uses the semantic
-assigned slot, including later scenes and pending gates.
+## Inherited interchange limitations
+
+Offline probability hashing uses the semantic assigned slot for every track,
+including later scenes and pending gates.
 
 Inherited mono probability behavior remains untouched. In particular, MIDI
 export deliberately uses iteration0 on repeated pattern steps. Thus realized
 MIDI chance events can differ from playback: the regression with seed7 and a
-one-step `[d4 f4]?50` yields 10 audio cohorts and 16 MIDI cohorts in one bar. This
-is a separately recorded interchange limitation, not chance-event parity.
-The existing mono offline slot0 hashing limitation is also not changed here.
-
-The Go1.26 WASI reactor remains a separate validation artifact. The corrected
-TinyGo build uses the existing flags and size caps: raw277015/307200 bytes,
-Brotli82297/122880 bytes. Fixed pattern banks are validated by address and then
-copied into engine storage, avoiding TinyGo scalarizing an entire value-copied
-16-slot chord bank; no payload, validation, or feature is removed. The minified
-worklet is5119/5120 bytes. Actual browser AudioWorklet performance, the Windows
-Chrome release CPU gate, keyboard interaction, and formal Buckley review remain
-unverified. No mono golden is regenerated and no merge/release/host job occurs.
+one-step `[d4 f4]?50` yields 10 audio cohorts and 16 MIDI cohorts in one bar. MIDI chance realization can therefore differ from audio playback.
+Mono offline rendering also retains its slot0 hashing limitation.
