@@ -88,8 +88,8 @@ func TestDirectorQuantizedStingerAndCrossfade(t *testing.T) {
 			}
 			end := int(clock.SampleAtTick(quantum + seq.PPQ))
 			messages = renderDirector(t, e, end-start)
-			if e.patterns[2].active != -1 || e.director[2].stinger {
-				t.Fatal("stinger looped")
+			if e.patterns[2].active != -1 || e.director[2].stinger || e.director[2].gain != 0 {
+				t.Fatal("stinger looped or restored its faded tail")
 			}
 			found = false
 			for _, m := range messages {
