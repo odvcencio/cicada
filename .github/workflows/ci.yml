@@ -16,6 +16,78 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  parity-amd64:
+    name: PCM24 parity (amd64, WASM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'false'
+      - name: Render all examples with amd64 and WASM
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = amd64
+          make test-parity
+      - name: Save amd64 PCM and the tested kernel
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: parity-amd64
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            build/cicada-kernel.wasm
+            build/parity/*.pcm24
+            build/parity/report.txt
+
+  parity-arm64:
+    name: PCM24 parity (amd64, arm64, WASM)
+    needs: parity-amd64
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    env:
+      GOWORK: off
+    steps:
+      - name: Require the amd64 parity gate to pass
+        env:
+          AMD64_PARITY_RESULT: ${{ needs.parity-amd64.result }}
+        run: test "$AMD64_PARITY_RESULT" = success
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: parity-amd64
+          path: build/amd64-reference
+      - name: Require identical amd64, arm64, and WASM PCM24
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = arm64
+          mkdir -p build/parity
+          CICADA_WASM_PATH="$PWD/build/amd64-reference/cicada-kernel.wasm" \
+          CICADA_PARITY_REFERENCE="$PWD/build/amd64-reference/parity" \
+          CICADA_PARITY_DIR="$PWD/build/parity" \
+          go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm \
+            -run '^TestExamplesPCM24Parity$' -count=1 -v | tee build/parity/report.txt
+      - name: Save arm64 parity report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: parity-arm64-report
+          if-no-files-found: warn
+          path: build/parity/report.txt
+
   m0:
     name: M0 language and kernel
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
