@@ -115,9 +115,27 @@ alternate production recording path: recording uses Tymbal's selected native
 input. Web MIDI is explicitly feature-detected inside the unrestricted
 Go/WASM engine; no nonexistent framework MIDI capability is declared.
 
-Realtime hubs and CRDT collaboration are appropriate for shared documents and
-presence, once Cicada's collaboration milestone defines ownership and auth.
-They do not replace revision checks for files on disk. Optional CMS, admin,
+The **Collaborate** panel shares a score draft over a GoSX hub. The first active
+session owns the workspace; later sessions start as viewers. The owner can
+create single-use editor or viewer invitation codes that expire after 15 minutes.
+The server checks roles on every score operation, save, and workspace action.
+Presence shows each connected editor's role and cursor line. **Undo my edit**
+and **Redo my edit** affect that editor's operations and preserve other users'
+insertions and deletions.
+
+Disconnected editors keep their text, pending operations, and undo history in
+private tab storage and merge on reconnect. Studio stores the shared draft in a
+private `.collaboration` file beside the score, including invalid drafts. **Save
+shared score** validates the current synchronized draft and checks the disk
+revision before changing the score. File changes from another editor produce a
+conflict and retain the shared draft. Access remains loopback-only, and roles
+are issued anew after restarting Studio. Shared draft history is bounded to
+20,000 operations and 8 MiB of inserted text; automatic compaction is not yet
+available. Run `make test-collaboration` for the seeded convergence, offline
+PCM24, role, undo, and reconnect checks, and `make test-studio-collaboration`
+against a disposable Studio for browser interaction checks.
+
+Optional CMS, admin,
 payments, Scene3D, and simulation packages are not dependencies of this editor.
 
 ## Checks
