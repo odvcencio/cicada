@@ -165,6 +165,12 @@ Keep modifiers next to the note they change:
 A note without `?` has a 100% chance. The legacy `%70` spelling is still
 accepted; `cicada fix` changes it to `?70`.
 
+Chance uses the pattern seed, track index, compiled pattern slot, pass number,
+and step index. The same score therefore makes the same decisions in playback
+and WAV export, independent of audio block size. All lanes of a drum pattern
+use its compiled slot; a lane number does not replace the slot in the chance
+hash. Changing a pattern's slot can change its seeded decisions.
+
 You can reuse a phrase and transpose a use:
 
 ```cicada
