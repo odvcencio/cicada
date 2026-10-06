@@ -42,13 +42,13 @@ func (s *studioApp) recorded(ctx *server.Context, v workspace, csrf string) gosx
 			media := "/media/instrument-hit?sha256=" + url.QueryEscape(p.Pin) + "&hit=" + strconv.Itoa(i+1)
 			hits = append(hits, gosx.El("li", gosx.Attrs(gosx.Attr("class", "arrangement-block")), gosx.El("p", gosx.Text(fmt.Sprintf("Hit %d · %.3f s · %.1f dB", i+1, float64(h.End-h.Start)/float64(h.Rate), h.LoudnessDB))), gosx.El("audio", gosx.Attrs(gosx.BoolAttr("controls"), gosx.Attr("preload", "none"), gosx.Attr("src", media), gosx.Attr("aria-label", fmt.Sprintf("Play hit %d", i+1)))), s.form(v, csrf, "instruments", "instrument-build", hidden("action", "remove"), hidden("takeId", p.Pin), hidden("index", strconv.Itoa(i)), submit("", "", "Remove hit"))))
 		}
-		scenes := []string{}
+		scenes := []gosx.Node{gosx.El("option", gosx.Attrs(gosx.Attr("value", "")), gosx.Text("Current scene"))}
 		if v.Project != nil {
 			for _, scene := range v.Project.Scenes {
-				scenes = append(scenes, scene.ID)
+				scenes = append(scenes, gosx.El("option", gosx.Attrs(gosx.Attr("value", scene.ID)), gosx.Text(scene.ID)))
 			}
 		}
-		review = append(review, gosx.El("ul", gosx.Fragment(hits...)), s.form(v, csrf, "instruments", "instrument-build", hidden("takeId", p.Pin), field("Current scene", selectInput("scene", "", scenes)), submit("", "", "Build kept hits")))
+		review = append(review, gosx.El("ul", gosx.Fragment(hits...)), s.form(v, csrf, "instruments", "instrument-build", hidden("takeId", p.Pin), field("Assign to scene", gosx.El("select", gosx.Attrs(gosx.Attr("name", "scene")), gosx.Fragment(scenes...))), submit("", "", "Build kept hits")))
 	}
 	var instruments []gosx.Node
 	if state.Sampled != "" {
