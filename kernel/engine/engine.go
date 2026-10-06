@@ -147,6 +147,8 @@ type voiceSlot struct {
 	acid                           *acid.Voice
 	drums                          *drum.Kit
 	graph                          *graph.Voice
+	noteIdentity                   uint16
+	noteActive                     bool
 	piano                          *piano.Instrument
 	pianoSustain                   float32
 	legacyPoly                     *graph.Poly
@@ -607,6 +609,9 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 		}
 		for slot := range bank.Slots {
 			pattern := &bank.Slots[slot]
+			if e.voices[track].kind == VoicePiano && pattern.Expression != nil {
+				return Error("piano voices do not support per-note expression")
+			}
 			if pattern.Len == 0 {
 				if pattern.Chords != [64]seq.ChordStep{} {
 					return Error("unused slot contains chord payload")
@@ -623,7 +628,7 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			if pattern.Validate() != nil {
 				return Error("invalid preloaded pattern")
 			}
-			if e.voices[track].kind == VoicePiano && !validPianoPattern(*pattern) {
+			if e.voices[track].kind == VoicePiano && !validPianoPattern(pattern) {
 				return Error("piano notes must be MIDI 21 to 108")
 			}
 			for step := uint8(0); step < pattern.Len; step++ {
@@ -631,7 +636,15 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 					return Error("chord pattern requires a polyphonic graph track")
 				}
 			}
-			e.patterns[track].slots[slot] = *pattern
+			loaded := *pattern
+			// Copy expression once before rendering. Internal pattern revisions and
+			// held gates share this immutable storage, never caller-owned memory.
+			if pattern.Expression != nil {
+				cloned := new([64]seq.Expression)
+				*cloned = *pattern.Expression
+				loaded.Expression = cloned
+			}
+			e.patterns[track].slots[slot] = loaded
 			if !isDrum {
 				continue
 			}
@@ -647,6 +660,11 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 					}
 				}
 				e.patterns[track].drumSlots[slot][lane] = *lanePattern
+				if lanePattern.Expression != nil {
+					cloned := new([64]seq.Expression)
+					*cloned = *lanePattern.Expression
+					e.patterns[track].drumSlots[slot][lane].Expression = cloned
+				}
 			}
 		}
 	}
@@ -873,6 +891,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			return
 		}
 		e.processPatternEvents(seq.NoteOn)
+		e.processPatternEvents(seq.NoteExpression)
 		if e.faulted {
 			clear(outL[frame:])
 			clear(outR[frame:])
@@ -1224,6 +1243,8 @@ func commandPriority(op cmd.Op) int {
 		return 1
 	case cmd.OpNoteOn, cmd.OpPlay:
 		return 3
+	case cmd.OpNoteExpression:
+		return 4
 	default:
 		return 2
 	}
@@ -1402,21 +1423,50 @@ func (e *Engine) apply(c cmd.Command) {
 			e.fault(9)
 			return
 		}
+		v.noteIdentity, v.noteActive = c.Index, true
 		e.emit(cmd.Message{Kind: cmd.NoteOn, Track: c.Track, A: uint16(note), Tick: e.transport.Tick()})
+	case cmd.OpNoteExpression:
+		v := &e.voices[c.Track]
+		if v.kind == VoicePiano {
+			e.fault(9)
+			return
+		}
+		if v.poly != nil {
+			e.fault(cmd.FaultPolyLive)
+			return
+		}
+		if !v.noteActive || c.Index != v.noteIdentity {
+			return // stale controls must not change a newer monophonic note
+		}
+		pitch, pressure, timbre := math.Float32frombits(c.Arg0), math.Float32frombits(c.Arg1), math.Float32frombits(c.Pad)
+		switch v.kind {
+		case VoiceGraph:
+			v.graph.NoteExpression(pitch, pressure, timbre)
+		case VoiceAcid:
+			v.acid.NoteExpression(pitch, pressure, timbre)
+		}
 	case cmd.OpNoteOff:
 		if e.voices[c.Track].poly != nil {
 			e.fault(cmd.FaultPolyLive)
 			return
 		}
-		if e.voices[c.Track].kind == VoicePiano && c.Index != 0xffff && (c.Index < 21 || c.Index > 108) {
+		v := &e.voices[c.Track]
+		if v.kind == VoicePiano && c.Index != 0xffff && (c.Index < 21 || c.Index > 108) {
 			e.fault(8)
+			return
+		}
+		if v.kind != VoiceDrums && v.kind != VoicePiano && c.Index != 0 && c.Index != 0xffff && (!v.noteActive || c.Index != v.noteIdentity) && !(v.kind == VoiceGraph && v.noteIdentity == 0 && c.Index >= MonoNoteOffPitchFlag && c.Index < MonoNoteOffPitchFlag+128) && v.kind != VoiceGraphPoly {
 			return
 		}
 		if e.voices[c.Track].kind == VoiceDrums && c.Index >= uint16(drum.LaneCount) {
 			e.fault(8)
 			return
 		}
-		e.noteOff(int(c.Track), c.Index)
+		index := c.Index
+		if v.kind == VoiceGraph && v.noteIdentity != 0 && c.Index == v.noteIdentity {
+			index = 0xffff
+		}
+		e.noteOff(int(c.Track), index)
 		if e.voices[c.Track].kind != VoicePiano || c.Index == 0xffff {
 			e.patterns[c.Track].playingNote = 0
 			e.patterns[c.Track].heldValid = false
@@ -1829,6 +1879,7 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 
 func (e *Engine) noteOff(track int, lane uint16) {
 	v := &e.voices[track]
+	v.noteActive = false
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.NoteOff()
@@ -1875,6 +1926,7 @@ func (e *Engine) noteOff(track int, lane uint16) {
 
 func (e *Engine) resetVoice(track int) {
 	v := &e.voices[track]
+	v.noteActive = false
 	if v.insert != nil {
 		v.insert.Reset()
 	}

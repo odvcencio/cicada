@@ -87,17 +87,21 @@ type SongEntry struct {
 }
 
 type TrackSlots struct {
-	ID    string
-	Kind  string
-	Slots [16]string
+	ID      string
+	Kind    string
+	Pitched bool // custom graph instrument; Kind retains its source name
+	Slots   [16]string
 }
 
 type noteInput struct {
-	ID       string
-	Track    string
-	Note     uint8
-	Velocity uint8
-	On       bool
+	ID                           string
+	Track                        string
+	Note                         uint8
+	Velocity                     uint8
+	On                           bool
+	NoteID                       uint16
+	Expression                   bool
+	PitchCents, Pressure, Timbre float32
 }
 
 type noteBatch struct {
@@ -298,6 +302,9 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 		if snapshot.kinds[index] == "piano" && score.Engine != nil && score.Engine.TrackVoiceKind(index) != engine.VoicePiano {
 			snapshot.kinds[index] = "instrument"
 		}
+		if score.Tracks[index].Pitched {
+			snapshot.kinds[index] = "graph"
+		}
 		if score.Engine != nil {
 			snapshot.poly[index] = score.Engine.TrackPolyphonic(index)
 		}
@@ -325,14 +332,25 @@ func (p *Player) Note(track string, note, velocity int, on bool) error {
 	return p.NoteID(track, note, velocity, on, fmt.Sprintf("legacy:%s:%d", track, note))
 }
 
-// NoteID binds a press to an immutable owner. Held state is a fixed array owned
-// by Read; the existing command ABI and audio callback allocation budget stay intact.
+// NoteWithID preserves the numeric identity of an expressive note.
+func (p *Player) NoteWithID(track string, note, velocity int, on bool, noteID uint16) error {
+	return p.NoteOwnerID(track, note, velocity, on, fmt.Sprintf("mpe:%s:%d", track, noteID), noteID)
+}
+
+// NoteID binds a note to an immutable input owner.
 func (p *Player) NoteID(track string, note, velocity int, on bool, id string) error {
+	return p.NoteOwnerID(track, note, velocity, on, id, 0)
+}
+
+// NoteOwnerID retains both session ownership and the expressive command identity.
+func (p *Player) NoteOwnerID(track string, note, velocity int, on bool, id string, noteID uint16) error {
 	pressEpoch := p.noteEpoch.Load()
 	if id == "" || len(id) > 1024 {
 		return fmt.Errorf("note owner ID is required and must be bounded")
 	}
-
+	if noteID == 0xffff {
+		return fmt.Errorf("note identity 65535 is reserved")
+	}
 	if track == "" {
 		return fmt.Errorf("track is required")
 	}
@@ -365,10 +383,33 @@ func (p *Player) NoteID(track string, note, velocity int, on bool, id string) er
 		} else if kind != "acid" && kind != "graph" && kind != "poly" {
 			return fmt.Errorf("track %q does not accept live notes", track)
 		}
-		input := noteInput{ID: id, Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on}
+		input := noteInput{ID: id, Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on, NoteID: noteID}
 		return p.queueOwnedNote(input, pressEpoch)
 	}
 	return fmt.Errorf("track %q is not in the playing score", track)
+}
+
+// NoteExpression queues a complete expression snapshot for one note. Values
+// remain float32 throughout the host and command path, without MIDI 1.0's
+// seven-bit controller reduction. The audio reader owns voice mutation.
+func (p *Player) NoteExpression(track string, noteID uint16, pitchCents, pressure, timbre float32) error {
+	if noteID == 0 || noteID == 0xffff {
+		return fmt.Errorf("expression needs a note identity from 1 to 65534")
+	}
+	if math.IsNaN(float64(pitchCents)) || math.IsInf(float64(pitchCents), 0) || pitchCents < -9600 || pitchCents > 9600 ||
+		math.IsNaN(float64(pressure)) || math.IsInf(float64(pressure), 0) || pressure < 0 || pressure > 1 ||
+		math.IsNaN(float64(timbre)) || math.IsInf(float64(timbre), 0) || timbre < 0 || timbre > 1 {
+		return fmt.Errorf("expression needs finite pitch cents in -9600 to 9600 and pressure/timbre in 0 to 1")
+	}
+	snapshot := p.trackNames.Load()
+	index, kind, found := findTrack(snapshot, track)
+	if !found || kind != "acid" && kind != "graph" {
+		return fmt.Errorf("track %q is not a pitched track in the playing score", track)
+	}
+	if snapshot.poly[index] {
+		return fmt.Errorf("%s", cmd.PolyLiveUnsupported)
+	}
+	return p.queueOwnedNote(noteInput{Track: track, NoteID: noteID, Expression: true, PitchCents: pitchCents, Pressure: pressure, Timbre: timbre}, p.noteEpoch.Load())
 }
 
 func (p *Player) queueOwnedNote(input noteInput, pressEpoch uint64) error {
@@ -386,7 +427,7 @@ func (p *Player) queueOwnedNote(input noteInput, pressEpoch uint64) error {
 			*next = *old
 		}
 		if next.count == uint16(len(next.inputs)) || input.On && next.presses >= 128 {
-			if !input.On {
+			if !input.On && !input.Expression {
 				// Odd epochs release every native live owner and discard presses.
 				// Reader-side epoch checks also reject a producer paused before CAS.
 				if p.noteEpoch.CompareAndSwap(epoch, epoch+1) {
@@ -1098,6 +1139,15 @@ func (p *Player) queueLiveNotes() {
 			p.emit(Event{Track: input.Track, Name: cmd.PolyLiveUnsupported, Kind: "note-error"})
 			continue
 		}
+		if input.Expression {
+			if kind == "acid" || kind == "graph" {
+				command := cmd.Command{Track: track, Index: input.NoteID, Op: cmd.OpNoteExpression, Arg0: math.Float32bits(input.PitchCents), Arg1: math.Float32bits(input.Pressure), Pad: math.Float32bits(input.Timbre)}
+				if !p.current.Engine.Push(command) {
+					p.fault = io.ErrShortBuffer
+				}
+			}
+			continue
+		}
 		slot, free, latest := -1, -1, -1
 		sameRoute := func(a noteInput) bool {
 			if a.Track != input.Track {
@@ -1156,7 +1206,7 @@ func (p *Player) queueLiveNotes() {
 				input = p.heldNotes[prior]
 			}
 		}
-		command := cmd.Command{Track: track}
+		command := cmd.Command{Track: track, Index: input.NoteID}
 		if kind == "acid" || kind == "piano" || kind == "graph" || kind == "poly" {
 			if kind == "piano" && (input.Note < 21 || input.Note > 108) {
 				p.emit(Event{Track: input.Track, Name: "piano note must be in MIDI range 21–108", Kind: "note-error"})
@@ -1167,7 +1217,11 @@ func (p *Player) queueLiveNotes() {
 				command.Arg0 = uint32(input.Note) | uint32(input.Velocity)<<8
 			} else {
 				command.Op, command.Index = cmd.OpNoteOff, 0xffff
-				if kind == "piano" || kind == "graph" || kind == "poly" {
+				if kind == "piano" || kind == "poly" {
+					command.Index = uint16(input.Note)
+				} else if input.NoteID != 0 {
+					command.Index = input.NoteID
+				} else if kind == "piano" || kind == "graph" || kind == "poly" {
 					command.Index = uint16(input.Note)
 					if kind == "graph" {
 						command.Index |= engine.MonoNoteOffPitchFlag

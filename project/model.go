@@ -150,6 +150,14 @@ type Pattern struct {
 	Seed            uint32             `cicada:"Pattern random seed" json:"seed"`
 	Data            []*Step            `cicada:"Melodic steps" json:"data"`
 	Lanes           map[string][]*Step `cicada:"Drum lane steps" json:"lanes"`
+	Expression      []NoteExpression   `cicada:"Resolved expression at each melodic step" json:"expression,omitempty"`
+}
+
+type NoteExpression struct {
+	PitchCents        float32 `cicada:"Per-note pitch offset" unit:"ct" range:"-9600..9600" json:"pitch_cents"`
+	Pressure          float32 `cicada:"Normalized per-note pressure" range:"0..1" json:"pressure"`
+	Timbre            float32 `cicada:"Normalized per-note timbre" range:"0..1" json:"timbre"`
+	VibratoDepthCents float32 `cicada:"Per-note vibrato depth at 5 Hz" unit:"ct" range:"0..9600" json:"vibrato_depth_cents"`
 }
 
 type Step struct {
@@ -467,6 +475,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 			Transpose: compiled[0].Pattern.Transpose, Seed: compiled[0].Pattern.Seed,
 			Data: []*Step{}, Lanes: map[string][]*Step{},
 		}
+		pattern.Expression = projectExpression(compiled[0].Pattern)
 		for _, attr := range source.Attrs {
 			if attr.Name == "swing" {
 				pattern.SwingPercent100, _ = parsePercent100(attr.Value)

@@ -791,6 +791,14 @@ func checkRequiredFields(data []byte) error {
 		if err := checkStepArray(object["data"], pointer+"/data", fieldsByConstruct["step"]); err != nil {
 			return err
 		}
+		if expression, present := object["expression"]; present {
+			if err := checkObjectArray(expression, "expression", pointer+"/expression", func(value any, child string) error {
+				_, err := require(value, "note_expression", "note expression", child)
+				return err
+			}); err != nil {
+				return err
+			}
+		}
 		lanes, ok := object["lanes"].(map[string]any)
 		if !ok {
 			return &jsonFieldError{pointer + "/lanes", fmt.Errorf("pattern lanes must be an object")}

@@ -69,6 +69,7 @@ type trackRuntime struct {
 	audioSlots     map[string]uint8
 	name           string
 	voice          monoVoice
+	expressive     expressionVoice
 	poly           *graph.Pool
 	mixer          mix.Track
 	insert         *fx.Drive
@@ -123,6 +124,18 @@ type monoVoice interface {
 	NoteOn(note, velocity uint8, accent, slide bool)
 	NoteOff()
 	Next() float32
+}
+
+type expressionVoice interface {
+	SetExpression(seq.Expression)
+}
+
+func (track *trackRuntime) applyExpression(params seq.Expression) {
+	if track.poly != nil {
+		track.poly.SetExpression(graph.Cohort{NoteID: track.activeNoteID, Generation: track.activeGen}, params)
+	} else if track.expressive != nil {
+		track.expressive.SetExpression(params)
+	}
 }
 
 type polyVoice struct{ *graph.Pool }
@@ -621,10 +634,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 						return 1
 					}
 					if a.event.Kind != b.event.Kind {
-						if a.event.Kind == seq.NoteOff {
-							return -1
-						}
-						return 1
+						return expressionEventPriority(a.event.Kind) - expressionEventPriority(b.event.Kind)
 					}
 					if a.track != b.track {
 						return a.track - b.track
@@ -787,9 +797,15 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 				if pattern.Kind != "notes" {
 					continue
 				}
+				if !patternBoundToTrack(score, pattern.Name, source.Name) {
+					continue
+				}
 				compiled, err := project.CompilePattern(score, pattern, source)
 				if err != nil {
 					return nil, err
+				}
+				if compiled[0].Pattern.Expression != nil {
+					return nil, fmt.Errorf("track %s: sample voices do not support per-note expression", source.Name)
 				}
 				track.patterns[pattern.Name] = compiled[0].Pattern
 			}
@@ -910,7 +926,7 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 			if err := voice.SetParams(params); err != nil {
 				return nil, err
 			}
-			track := trackRuntime{name: source.Name, mixer: trackMix, voice: acidVoice{voice}, patterns: map[string]seq.Pattern{}}
+			track := trackRuntime{name: source.Name, mixer: trackMix, voice: acidVoice{voice}, expressive: acidVoice{voice}, patterns: map[string]seq.Pattern{}}
 			for _, pattern := range score.Patterns {
 				if pattern.Kind != "acid" && pattern.Kind != "notes" {
 					continue
@@ -944,9 +960,15 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 				if pattern.Kind != "notes" {
 					continue
 				}
+				if !patternBoundToTrack(score, pattern.Name, source.Name) {
+					continue
+				}
 				compiled, err := project.CompilePattern(score, pattern, source)
 				if err != nil {
 					return nil, err
+				}
+				if compiled[0].Pattern.Expression != nil {
+					return nil, fmt.Errorf("track %s: piano voices do not support per-note expression", source.Name)
 				}
 				track.patterns[pattern.Name] = compiled[0].Pattern
 			}
@@ -1003,9 +1025,11 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 				track.voice = legacyPolyVoice{track.legacyPoly}
 			}
 		} else {
-			var voice *graph.Voice
-			voice, err = graph.NewVoice(kernelProgram, sampleRate)
-			track.voice = customVoice{voice}
+			voice, err := graph.NewVoice(kernelProgram, sampleRate)
+			if err != nil {
+				return nil, err
+			}
+			track.voice, track.expressive = customVoice{voice}, customVoice{voice}
 		}
 		if err != nil {
 			return nil, err
@@ -1315,7 +1339,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				key := graph.Cohort{NoteID: event.event.NoteID, Generation: event.generation}
 				if event.event.Kind == seq.NoteOff {
 					track.poly.Release(key)
-				} else {
+				} else if event.event.Kind == seq.NoteOn {
 					if !event.event.Slide {
 						track.poly.ReleaseAll()
 					}
@@ -1337,6 +1361,10 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 					track.activeGen = 0
 					track.hasPendingGate = false
 				}
+			} else if event.event.Kind == seq.NoteExpression {
+				if track.activeGen == event.generation && track.activeNoteID != 0 && track.active != nil {
+					track.applyExpression(track.active.ExpressionAt(int(event.event.StepIndex)))
+				}
 			} else {
 				if track.poly == nil {
 					if voice, ok := track.voice.(*pianoVoice); ok {
@@ -1356,6 +1384,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				}
 				track.activeGen = event.generation
 				track.activeNoteID = event.event.NoteID
+				if track.active != nil {
+					track.applyExpression(track.active.ExpressionAt(int(event.event.StepIndex)))
+				}
 				track.hasPendingGate = false
 				track.slideFrom, track.slideAt = 0, 0
 			}
@@ -1610,6 +1641,16 @@ func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32) error {
 		return io.ErrShortWrite
 	}
 	return nil
+}
+
+func expressionEventPriority(kind seq.EventKind) int {
+	if kind == seq.NoteOff {
+		return 0
+	}
+	if kind == seq.NoteOn {
+		return 1
+	}
+	return 2
 }
 
 func patternBoundToTrack(score *notation.Score, pattern, track string) bool {

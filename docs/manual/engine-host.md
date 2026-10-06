@@ -85,6 +85,30 @@ rejected batch faults the engine. `gosx_audio_msg_drain` reads fixed 16-byte
 status records. Drain messages regularly so the host can report queued scenes,
 transport changes, and engine errors.
 
+`OpNoteExpression` uses the existing 24-byte record. `Index` identifies the
+note started by `OpNoteOn`; `Arg0`, `Arg1`, and the word at byte 12 carry
+float32 pitch offset in cents, pressure, and timbre respectively. Pitch is
+bounded to −9600…9600 cents; pressure and timbre are 0…1. Other commands still
+require the byte-12 word to be zero. A note starts with zero bend and pressure
+and centered timbre (0.5). Expression and note-off commands for an old identity
+cannot change its replacement. Identity zero preserves the legacy path, and
+65535 selects all-off. Live host adapters use identities 1…65534.
+
+Graph instruments expose `pitch_bend` in cents and normalized `pressure` and
+`timbre`. The existing `pitch` input includes bend and score vibrato. Built-in
+acid voices apply pitch expression; pressure and timbre need a graph that uses
+those inputs. Live expression targets monophonic tracks. [`host/midi`](../../host/midi) retains
+32-bit MIDI 2.0 pressure and timbre until normalization to the float32 ABI.
+It supplies pitch-sensitivity conversion, without a UMP transport or device
+negotiation layer. MIDI 2.0 defines high-resolution controllers and per-note
+pitch independently of MIDI 1.0 byte messages; see the
+[MIDI Association overview](https://midi.org/what-musicians-artists-need-to-know-about-midi-2-0).
+
+Images containing expression rows or graph inputs require
+`kernelimage.ExpressionCapability` (bit 3) from `gosx_audio_capabilities`. Existing
+images keep their layout; the capability appends expression records to each
+pattern record and is rejected by older readers.
+
 `gosx_audio_render(frames)` writes planar float32 stereo to
 `gosx_audio_out_ptr`. The right channel starts `maxBlock` frames after the
 left. Keep block sizes within the configured limit and drain messages while

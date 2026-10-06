@@ -488,10 +488,17 @@ func kernelPattern(pattern Pattern) (seq.Pattern, error) {
 	if err != nil {
 		return seq.Pattern{}, err
 	}
-	return seq.Pattern{
+	compiled := seq.Pattern{
 		Len: pattern.Steps, SwingPermille: swing, GatePercent: pattern.GatePercent,
 		Transpose: pattern.Transpose, Seed: pattern.Seed,
-	}, nil
+	}
+	if len(pattern.Expression) > 0 {
+		compiled.Expression = new([64]seq.Expression)
+	}
+	for i, expression := range pattern.Expression {
+		compiled.Expression[i] = kernelExpression(expression)
+	}
+	return compiled, nil
 }
 
 func packProjectStep(source *Step, isDrum bool, drumLane uint8) (uint32, error) {

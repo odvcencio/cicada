@@ -127,6 +127,7 @@ song { main }
 | <code>kit</code> | <code>kits[]</code> | Lane names map to an instrument ID or a <code>builtin.&lt;lane&gt;</code> recipe. |
 | <code>track</code> | <code>tracks[]</code> | Parameters are typed values; the mixer is a separate record; each track has 16 pattern slots. Project /1 uses fixed send and bus fields; /2 uses named sends, taps, inserts, and output. |
 | Note pattern | <code>patterns[].data[]</code> | Source degrees and spelling resolve to MIDI note numbers. |
+| Expression rows | <code>patterns[].expression[]</code> | Optional array aligned with melodic steps, including ties and rests. Each record contains <code>pitch_cents</code>, <code>pressure</code>, <code>timbre</code>, and <code>vibrato_depth_cents</code>. Holds resolve from zero pitch, pressure, and depth, with timbre centered at 0.5. Vibrato uses 5 Hz. |
 | Drum pattern | <code>patterns[].lanes</code> | Each lane stores one nullable step per pattern position. |
 | Scene | <code>scenes[].bindings</code>; <code>scenes[].settings[]</code> in /2 | Track names map to pattern IDs or the <code>off</code> action. <code>keep</code> is omitted from the resolved map. Version /2 settings preserve the path and typed value in source order. |
 | Song | <code>song[]</code> | Each entry contains a scene ID and bar count. |

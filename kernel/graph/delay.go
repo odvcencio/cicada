@@ -27,8 +27,8 @@ type ParameterError struct {
 
 func (e *ParameterError) Error() string { return e.Message }
 
-func validateDelayControls(p Program, rate int) error {
-	return validateDelayPitch(&p, rate, 0)
+func validateDelayControls(p *Program, rate int) error {
+	return validateDelayPitch(p, rate, 0)
 }
 
 // ValidateDelayPitch checks pitch-derived controls for a score note. Zero
@@ -84,6 +84,8 @@ func staticValues(p *Program, rate, pitch float32) ([MaxNodes]float32, [MaxNodes
 }
 
 func staticValuesInto(p *Program, rate, pitch float32, values *[MaxNodes]float32, known *[MaxNodes]bool) {
+	clear(values[:])
+	clear(known[:])
 	for i := 0; i < int(p.Len); i++ {
 		n := p.Nodes[i]
 		a, b := values[n.A], values[n.B]
