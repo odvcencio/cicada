@@ -20,6 +20,13 @@ func symbolAt(source []byte, at position) (language.Symbol, []language.Symbol, b
 	if err != nil {
 		return language.Symbol{}, nil, false
 	}
+	for _, symbol := range symbols {
+		if symbol.Kind == "preset-target" {
+			score, _ := notation.Parse(source)
+			symbols = resolvePresetSymbols(symbols, score)
+			break
+		}
+	}
 	offset := byteOffset(source, at)
 	for _, symbol := range symbols {
 		start := scalarOffset(source, symbol.Position)
@@ -28,6 +35,32 @@ func symbolAt(source []byte, at position) (language.Symbol, []language.Symbol, b
 		}
 	}
 	return language.Symbol{}, symbols, false
+}
+
+func resolvePresetSymbols(symbols []language.Symbol, score *notation.Score) []language.Symbol {
+	if score == nil {
+		return symbols
+	}
+	for i, symbol := range symbols {
+		if symbol.Kind != "preset-target" {
+			continue
+		}
+		name := symbol.Name
+		if first, rest, ok := strings.Cut(name, "."); ok {
+			if namespace, found := score.LibraryAliases[first]; found {
+				name = namespace + "." + rest
+			}
+		}
+		kind, found := notation.PresetTarget(score, name)
+		if !found {
+			continue
+		}
+		symbols[i].Kind = "voice"
+		if kind == "effect" {
+			symbols[i].Kind = "effect"
+		}
+	}
+	return symbols
 }
 
 type byteRange struct{ start, end int }
@@ -47,7 +80,7 @@ func instrumentScope(source []byte, offset int) byteRange {
 }
 
 func sameSymbol(source []byte, selected, candidate language.Symbol, scope byteRange) bool {
-	if selected.Name != candidate.Name || selected.Kind != candidate.Kind {
+	if selected.Name != candidate.Name || symbolFamily(selected.Kind) != symbolFamily(candidate.Kind) {
 		return false
 	}
 	if selected.Kind == "parameter" || selected.Kind == "binding" {

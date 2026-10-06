@@ -25,10 +25,14 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 	if catalog.Format != "cicada.fields/2" || len(catalog.Fields) < 70 {
 		t.Fatalf("incomplete field catalog: %s, %d fields", catalog.Format, len(catalog.Fields))
 	}
-	if len(catalog.Constructs) != 31 {
-		t.Fatalf("expected 31 semantic constructs, got %d", len(catalog.Constructs))
+	if len(catalog.Constructs) != 35 {
+		t.Fatalf("expected 35 semantic constructs, got %d", len(catalog.Constructs))
 	}
+	arrangementConstructs := map[string]bool{"arrangement": false, "placement": false, "marker": false}
 	for _, construct := range catalog.Constructs {
+		if _, ok := arrangementConstructs[construct.Name]; ok {
+			arrangementConstructs[construct.Name] = true
+		}
 		if construct.Name == "expr" && len(construct.Variants) != 3 {
 			t.Errorf("expression variants = %v", construct.Variants)
 		}
@@ -39,6 +43,11 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 			if construct.Introduced != "cicada.project/2" {
 				t.Errorf("%s construct introduced = %q", construct.Name, construct.Introduced)
 			}
+		}
+	}
+	for name, present := range arrangementConstructs {
+		if !present {
+			t.Errorf("missing arrangement construct %s", name)
 		}
 	}
 	for _, field := range catalog.Fields {
@@ -68,6 +77,12 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 			continue
 		}
 		if field.Introduced == "cicada.project/2" {
+			continue
+		}
+		if field.Construct == "pattern" && field.Name == "expression" {
+			if field.Required {
+				t.Error("pattern expression must remain optional for existing projects")
+			}
 			continue
 		}
 		if !field.Required {

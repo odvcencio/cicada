@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
@@ -17,6 +18,15 @@ import (
 )
 
 const blockFrames = 256
+
+// Human-readable note names are prepared once, outside the audio reader.
+var liveNoteNames = func() [128]string {
+	var names [128]string
+	for i := range names {
+		names[i] = strconv.Itoa(i)
+	}
+	return names
+}()
 
 type Score struct {
 	Engine     *engine.Engine
@@ -77,21 +87,28 @@ type SongEntry struct {
 }
 
 type TrackSlots struct {
-	ID    string
-	Kind  string
-	Slots [16]string
+	ID      string
+	Kind    string
+	Pitched bool // custom graph instrument; Kind retains its source name
+	Slots   [16]string
 }
 
 type noteInput struct {
-	Track    string
-	Note     uint8
-	Velocity uint8
-	On       bool
+	ID                           string
+	Track                        string
+	Note                         uint8
+	Velocity                     uint8
+	On                           bool
+	NoteID                       uint16
+	Expression                   bool
+	PitchCents, Pressure, Timbre float32
 }
 
 type noteBatch struct {
-	inputs [128]noteInput
-	count  uint16
+	inputs  [256]noteInput
+	count   uint16
+	presses uint16
+	epoch   uint64
 }
 
 type sceneLaunch struct {
@@ -159,6 +176,12 @@ type Player struct {
 	pendingStart      atomic.Uint64
 	slotLaunches      atomic.Pointer[slotLaunchBatch]
 	notes             atomic.Pointer[noteBatch]
+	noteEpoch         atomic.Uint64 // odd: release overload; batches carry their admission epoch
+	heldNotes         [128]noteInput
+	heldOrder         [128]uint64
+	noteFinal         [16][128]cmd.Command
+	noteTouched       [16][128]bool
+	noteOrder         uint64
 	events            chan Event
 	left, right       [blockFrames]float32
 	oldL, oldR        [blockFrames]float32
@@ -279,6 +302,9 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 		if snapshot.kinds[index] == "piano" && score.Engine != nil && score.Engine.TrackVoiceKind(index) != engine.VoicePiano {
 			snapshot.kinds[index] = "instrument"
 		}
+		if score.Tracks[index].Pitched {
+			snapshot.kinds[index] = "graph"
+		}
 		if score.Engine != nil {
 			snapshot.poly[index] = score.Engine.TrackPolyphonic(index)
 		}
@@ -300,9 +326,31 @@ func (p *Player) TrackIndex(id string) (uint8, bool) {
 	return 0, false
 }
 
-// Note queues a live note for a named built-in instrument track. Requests are
+// Note queues a live note for an acid, authored instrument, or drum track. Requests are
 // resolved and applied by Read, so the control path never touches engine state.
 func (p *Player) Note(track string, note, velocity int, on bool) error {
+	return p.NoteID(track, note, velocity, on, fmt.Sprintf("legacy:%s:%d", track, note))
+}
+
+// NoteWithID preserves the numeric identity of an expressive note.
+func (p *Player) NoteWithID(track string, note, velocity int, on bool, noteID uint16) error {
+	return p.NoteOwnerID(track, note, velocity, on, fmt.Sprintf("mpe:%s:%d", track, noteID), noteID)
+}
+
+// NoteID binds a note to an immutable input owner.
+func (p *Player) NoteID(track string, note, velocity int, on bool, id string) error {
+	return p.NoteOwnerID(track, note, velocity, on, id, 0)
+}
+
+// NoteOwnerID retains both session ownership and the expressive command identity.
+func (p *Player) NoteOwnerID(track string, note, velocity int, on bool, id string, noteID uint16) error {
+	pressEpoch := p.noteEpoch.Load()
+	if id == "" || len(id) > 1024 {
+		return fmt.Errorf("note owner ID is required and must be bounded")
+	}
+	if noteID == 0xffff {
+		return fmt.Errorf("note identity 65535 is reserved")
+	}
 	if track == "" {
 		return fmt.Errorf("track is required")
 	}
@@ -332,27 +380,75 @@ func (p *Player) Note(track string, note, velocity int, on bool) error {
 			if note < 21 || note > 108 {
 				return fmt.Errorf("piano note must be in MIDI range 21–108")
 			}
-		} else if kind != "acid" {
+		} else if kind != "acid" && kind != "graph" && kind != "poly" {
 			return fmt.Errorf("track %q does not accept live notes", track)
 		}
-		input := noteInput{Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on}
-		for {
-			old := p.notes.Load()
-			next := &noteBatch{}
-			if old != nil {
-				*next = *old
-			}
-			if next.count == uint16(len(next.inputs)) {
-				return fmt.Errorf("live note queue is full")
-			}
-			next.inputs[next.count] = input
-			next.count++
-			if p.notes.CompareAndSwap(old, next) {
-				return nil
-			}
-		}
+		input := noteInput{ID: id, Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on, NoteID: noteID}
+		return p.queueOwnedNote(input, pressEpoch)
 	}
 	return fmt.Errorf("track %q is not in the playing score", track)
+}
+
+// NoteExpression queues a complete expression snapshot for one note. Values
+// remain float32 throughout the host and command path, without MIDI 1.0's
+// seven-bit controller reduction. The audio reader owns voice mutation.
+func (p *Player) NoteExpression(track string, noteID uint16, pitchCents, pressure, timbre float32) error {
+	if noteID == 0 || noteID == 0xffff {
+		return fmt.Errorf("expression needs a note identity from 1 to 65534")
+	}
+	if math.IsNaN(float64(pitchCents)) || math.IsInf(float64(pitchCents), 0) || pitchCents < -9600 || pitchCents > 9600 ||
+		math.IsNaN(float64(pressure)) || math.IsInf(float64(pressure), 0) || pressure < 0 || pressure > 1 ||
+		math.IsNaN(float64(timbre)) || math.IsInf(float64(timbre), 0) || timbre < 0 || timbre > 1 {
+		return fmt.Errorf("expression needs finite pitch cents in -9600 to 9600 and pressure/timbre in 0 to 1")
+	}
+	snapshot := p.trackNames.Load()
+	index, kind, found := findTrack(snapshot, track)
+	if !found || kind != "acid" && kind != "graph" {
+		return fmt.Errorf("track %q is not a pitched track in the playing score", track)
+	}
+	if snapshot.poly[index] {
+		return fmt.Errorf("%s", cmd.PolyLiveUnsupported)
+	}
+	return p.queueOwnedNote(noteInput{Track: track, NoteID: noteID, Expression: true, PitchCents: pitchCents, Pressure: pressure, Timbre: timbre}, p.noteEpoch.Load())
+}
+
+func (p *Player) queueOwnedNote(input noteInput, pressEpoch uint64) error {
+	for {
+		epoch := p.noteEpoch.Load()
+		if input.On && (epoch&1 != 0 || epoch != pressEpoch) {
+			return fmt.Errorf("live note release overload interrupted this press")
+		}
+		if epoch&1 != 0 {
+			return nil // The barrier already owns this release.
+		}
+		old := p.notes.Load()
+		next := &noteBatch{epoch: epoch}
+		if old != nil && old.epoch == epoch {
+			*next = *old
+		}
+		if next.count == uint16(len(next.inputs)) || input.On && next.presses >= 128 {
+			if !input.On && !input.Expression {
+				// Odd epochs release every native live owner and discard presses.
+				// Reader-side epoch checks also reject a producer paused before CAS.
+				if p.noteEpoch.CompareAndSwap(epoch, epoch+1) {
+					return nil
+				}
+				continue
+			}
+			return fmt.Errorf("live note queue is full")
+		}
+		next.inputs[next.count] = input
+		next.count++
+		if input.On {
+			next.presses++
+		}
+		if p.notes.CompareAndSwap(old, next) {
+			if input.On && p.noteEpoch.Load() != pressEpoch {
+				return fmt.Errorf("live note release overload interrupted this press")
+			}
+			return nil
+		}
+	}
 }
 
 // GMDrumLane returns Cicada's lane index for the supported General MIDI
@@ -853,6 +949,8 @@ func (p *Player) beginRequestedSong() {
 		if hasOffer {
 			p.previous = p.current.Engine
 			p.applyOverrides(next.Engine, next, true)
+			p.heldNotes = [128]noteInput{}
+			p.heldOrder = [128]uint64{}
 			p.current = next
 			p.trackCount.Store(uint32(next.Engine.TrackCount()))
 			p.trackNames.Store(next.trackNames)
@@ -892,6 +990,8 @@ func (p *Player) renderBlock() {
 			p.applyOverrides(next.Engine, next, true)
 			p.fadeTotal = p.rate / 200 // five milliseconds
 			p.fadeRemaining = p.fadeTotal
+			p.heldNotes = [128]noteInput{}
+			p.heldOrder = [128]uint64{}
 			p.current = next
 			p.trackCount.Store(uint32(next.Engine.TrackCount()))
 			p.trackNames.Store(next.trackNames)
@@ -921,6 +1021,9 @@ func (p *Player) renderBlock() {
 	tick := p.clock.TickAtSample(p.sample)
 	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
 	p.queueLiveNotes()
+	if p.fault != nil {
+		return
+	}
 	p.queueSceneLaunch()
 	p.queueSlotLaunches()
 	p.applyOverrides(p.current.Engine, p.current, false)
@@ -985,24 +1088,126 @@ func (p *Player) renderBlock() {
 }
 
 func (p *Player) queueLiveNotes() {
+	epoch := p.noteEpoch.Load()
 	batch := p.notes.Swap(nil)
-	if batch == nil {
+	releaseAll := epoch&1 != 0
+	if batch != nil && batch.epoch != epoch {
+		batch = nil // An in-flight producer from before the barrier cannot replay.
+	}
+	if batch == nil && !releaseAll {
 		return
 	}
 	snapshot := p.trackNames.Load()
-	for index := 0; index < int(batch.count); index++ {
+	// The kernel intentionally orders same-tick NoteOff before NoteOn. Reduce
+	// this reader's burst to the final gate command per route so a release/panic
+	// cannot be reordered ahead of its queued press and reopen the voice.
+	final, touched := &p.noteFinal, &p.noteTouched
+	for track := range touched {
+		clear(touched[track][:])
+	}
+	if releaseAll {
+		p.noteEpoch.CompareAndSwap(epoch, epoch+1)
+		for i, held := range p.heldNotes {
+			if p.heldOrder[i] == 0 {
+				continue
+			}
+			track, kind, found := findTrack(snapshot, held.Track)
+			if !found {
+				continue
+			}
+			lane, command := uint16(0), cmd.Command{Op: cmd.OpNoteOff, Track: track, Index: 0xffff}
+			if kind == "drums" {
+				lane, _ = GMDrumLane(int(held.Note))
+				command.Index = lane
+			} else if kind == "piano" || kind == "poly" {
+				lane, command.Index = uint16(held.Note), uint16(held.Note)
+			}
+			final[track][lane], touched[track][lane] = command, true
+		}
+		p.heldNotes, p.heldOrder = [128]noteInput{}, [128]uint64{}
+		batch = nil
+		p.emit(Event{Name: "live note release overload cleared held inputs and queued presses", Kind: "note-error"})
+	}
+	for index := 0; batch != nil && index < int(batch.count); index++ {
 		input := batch.inputs[index]
 		track, kind, found := findTrack(snapshot, input.Track)
 		if !found {
-			p.emit(Event{Track: input.Track, Name: fmt.Sprintf("track %q is no longer in the playing score", input.Track), Kind: "note-error"})
+			p.emit(Event{Track: input.Track, Name: "track is no longer in the playing score", Kind: "note-error"})
 			continue
 		}
 		if snapshot.poly[track] {
 			p.emit(Event{Track: input.Track, Name: cmd.PolyLiveUnsupported, Kind: "note-error"})
 			continue
 		}
-		command := cmd.Command{Track: track}
-		if kind == "acid" || kind == "piano" {
+		if input.Expression {
+			if kind == "acid" || kind == "graph" {
+				command := cmd.Command{Track: track, Index: input.NoteID, Op: cmd.OpNoteExpression, Arg0: math.Float32bits(input.PitchCents), Arg1: math.Float32bits(input.Pressure), Pad: math.Float32bits(input.Timbre)}
+				if !p.current.Engine.Push(command) {
+					p.fault = io.ErrShortBuffer
+				}
+			}
+			continue
+		}
+		slot, free, latest := -1, -1, -1
+		sameRoute := func(a noteInput) bool {
+			if a.Track != input.Track {
+				return false
+			}
+			if kind == "piano" || kind == "poly" {
+				return a.Note == input.Note
+			}
+			if kind != "drums" {
+				return true
+			}
+			x, _ := GMDrumLane(int(a.Note))
+			y, _ := GMDrumLane(int(input.Note))
+			return x == y
+		}
+		for i := range p.heldNotes {
+			if p.heldOrder[i] == 0 {
+				if free < 0 {
+					free = i
+				}
+				continue
+			}
+			held := p.heldNotes[i]
+			if held.ID == input.ID {
+				slot = i
+			}
+			if sameRoute(held) && (latest < 0 || p.heldOrder[i] > p.heldOrder[latest]) {
+				latest = i
+			}
+		}
+		if input.On {
+			if slot >= 0 {
+				continue
+			} // Duplicate press never changes its owner.
+			if free < 0 {
+				p.emit(Event{Track: input.Track, Name: "held note capacity exceeded", Kind: "note-error"})
+				continue
+			}
+			p.noteOrder++
+			p.heldNotes[free], p.heldOrder[free] = input, p.noteOrder
+		} else {
+			if slot < 0 || p.heldNotes[slot].Track != input.Track || p.heldNotes[slot].Note != input.Note {
+				continue
+			}
+			p.heldNotes[slot], p.heldOrder[slot] = noteInput{}, 0
+			if slot != latest {
+				continue
+			} // A late release cannot close the current voice.
+			prior := -1
+			for i, held := range p.heldNotes {
+				if p.heldOrder[i] != 0 && sameRoute(held) && (prior < 0 || p.heldOrder[i] > p.heldOrder[prior]) {
+					prior = i
+				}
+			}
+			if prior >= 0 {
+				input = p.heldNotes[prior]
+			}
+		}
+		command := cmd.Command{Track: track, Index: input.NoteID}
+		if kind == "acid" || kind == "piano" || kind == "graph" || kind == "poly" {
 			if kind == "piano" && (input.Note < 21 || input.Note > 108) {
 				p.emit(Event{Track: input.Track, Name: "piano note must be in MIDI range 21–108", Kind: "note-error"})
 				continue
@@ -1012,14 +1217,21 @@ func (p *Player) queueLiveNotes() {
 				command.Arg0 = uint32(input.Note) | uint32(input.Velocity)<<8
 			} else {
 				command.Op, command.Index = cmd.OpNoteOff, 0xffff
-				if kind == "piano" {
+				if kind == "piano" || kind == "poly" {
 					command.Index = uint16(input.Note)
+				} else if input.NoteID != 0 {
+					command.Index = input.NoteID
+				} else if kind == "piano" || kind == "graph" || kind == "poly" {
+					command.Index = uint16(input.Note)
+					if kind == "graph" {
+						command.Index |= engine.MonoNoteOffPitchFlag
+					}
 				}
 			}
 		} else if kind == "drums" {
 			lane, ok := GMDrumLane(int(input.Note))
 			if !ok {
-				p.emit(Event{Track: input.Track, Name: fmt.Sprintf("MIDI drum note %d is not in the General MIDI map", input.Note), Kind: "note-error"})
+				p.emit(Event{Track: input.Track, Name: "MIDI note is not in the General MIDI drum map", Kind: "note-error"})
 				continue
 			}
 			command.Index = lane
@@ -1033,15 +1245,27 @@ func (p *Player) queueLiveNotes() {
 			p.emit(Event{Track: input.Track, Name: fmt.Sprintf("track %q does not accept live notes", input.Track), Kind: "note-error"})
 			continue
 		}
-		if !p.current.Engine.Push(command) {
-			p.emit(Event{Track: input.Track, Name: "live note command queue is full", Kind: "note-error"})
-			continue
+		lane := uint16(0)
+		if kind == "drums" || kind == "piano" || kind == "poly" {
+			lane = command.Index
+			if input.On && kind != "drums" {
+				lane = uint16(input.Note)
+			}
 		}
+		final[track][lane], touched[track][lane] = command, true
 		eventKind := "note-on"
 		if !input.On {
 			eventKind = "note-off"
 		}
-		p.emit(Event{Bar: p.Position().Bar, Name: fmt.Sprintf("%d", input.Note), Track: input.Track, Kind: eventKind})
+		p.emit(Event{Bar: p.Position().Bar, Name: liveNoteNames[input.Note], Track: input.Track, Kind: eventKind})
+	}
+	for track := range final {
+		for lane := range final[track] {
+			if touched[track][lane] && !p.current.Engine.Push(final[track][lane]) {
+				p.emit(Event{Track: snapshot.ids[track], Name: "live note command queue is full", Kind: "note-error"})
+				p.fault = io.ErrShortBuffer
+			}
+		}
 	}
 }
 

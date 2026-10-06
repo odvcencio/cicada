@@ -12,9 +12,15 @@ func Log2(x float64) float64 {
 	exponent := int((bits>>52)&0x7ff) - 1023
 	mantissa := math.Float64frombits((bits & ((uint64(1) << 52) - 1)) | (uint64(1023) << 52))
 	z := (mantissa - 1) / (mantissa + 1)
-	z2 := z * z
-	series := 1 + z2*(1.0/3+z2*(1.0/5+z2*(1.0/7+z2*(1.0/9+z2*(1.0/11+z2*(1.0/13))))))
-	return float64(exponent) + 2*z*series*math.Log2E
+	z2 := float64(z * z)
+	series := 1.0 / 13
+	series = 1.0/11 + float64(z2*series)
+	series = 1.0/9 + float64(z2*series)
+	series = 1.0/7 + float64(z2*series)
+	series = 1.0/5 + float64(z2*series)
+	series = 1.0/3 + float64(z2*series)
+	series = 1 + float64(z2*series)
+	return float64(exponent) + float64(2*z*series*math.Log2E)
 }
 
 // Exp2 evaluates 2^x over [-32,32]. The fractional part uses a degree-five
@@ -52,17 +58,17 @@ func Exp2(x float64) float64 {
 	t := 2 * frac
 	b1, b2 := 0.0, 0.0
 	// Unroll the fixed terms without changing their evaluation order or rounding.
-	b := 2*t*b1 - b2 + c5
+	b := float64(2*t*b1) - b2 + c5
 	b2, b1 = b1, b
-	b = 2*t*b1 - b2 + c4
+	b = float64(2*t*b1) - b2 + c4
 	b2, b1 = b1, b
-	b = 2*t*b1 - b2 + c3
+	b = float64(2*t*b1) - b2 + c3
 	b2, b1 = b1, b
-	b = 2*t*b1 - b2 + c2
+	b = float64(2*t*b1) - b2 + c2
 	b2, b1 = b1, b
-	b = 2*t*b1 - b2 + c1
+	b = float64(2*t*b1) - b2 + c1
 	b2, b1 = b1, b
-	return scale * (t*b1 - b2 + c0)
+	return scale * (float64(t*b1) - b2 + c0)
 }
 
 // Tanh is the specified Padé 7/6 approximation. Its input is clamped to
@@ -76,9 +82,13 @@ func Tanh(x float64) float64 {
 	} else if x > 4.97 {
 		x = 4.97
 	}
-	x2 := x * x
-	return x * (135135 + x2*(17325+x2*(378+x2))) /
-		(135135 + x2*(62370+x2*(3150+28*x2)))
+	// Round every polynomial product before addition, including x squared,
+	// so native arm64 FMA contraction cannot change the feedback state.
+	x2 := float64(x * x)
+	numerator := 17325 + float64(x2*(378+x2))
+	denominator := 3150 + float64(28*x2)
+	denominator = 62370 + float64(x2*denominator)
+	return x * (135135 + float64(x2*numerator)) / (135135 + float64(x2*denominator))
 }
 
 // TanSmall approximates tan(x) through the acid filter's 0.45*sampleRate
@@ -93,12 +103,15 @@ func TanSmall(x float64) float64 {
 	}
 	if x < -0.3 || x > 0.3 {
 		half := tanCentral(x * .5)
-		return 2 * half / (1 - half*half)
+		return 2 * half / (1 - float64(half*half))
 	}
 	return tanCentral(x)
 }
 
 func tanCentral(x float64) float64 {
-	x2 := x * x
-	return x * (1 + x2*(1.0/3+x2*(2.0/15+x2*(17.0/315+x2*(62.0/2835)))))
+	x2 := float64(x * x)
+	p := 17.0/315 + float64(x2*(62.0/2835))
+	p = 2.0/15 + float64(x2*p)
+	p = 1.0/3 + float64(x2*p)
+	return x * (1 + float64(x2*p))
 }

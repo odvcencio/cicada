@@ -1,0 +1,10 @@
+SPDX-License-Identifier: CC0-1.0
+
+To the extent possible under law, the Cicada project has waived all copyright
+and related or neighboring rights to the synthetic-reed-v1 model parameters,
+generated training corpus, and held-out targets produced by tools/train-ddsp.py.
+These materials are provided under the CC0 1.0 Universal public domain dedication:
+https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+There are no downloaded model weights, recordings, or third-party datasets.
+The Python script and Go implementation remain under the repository MIT license.

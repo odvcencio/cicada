@@ -10,10 +10,11 @@ import (
 	"m31labs.dev/cicada/kernel/graph"
 )
 
-func testScore(t *testing.T, name string, bpmMilli int64) Score {
+func testScore(t *testing.T, name string, bpmMilli int64, scenes ...engine.Scene) Score {
 	t.Helper()
 	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: bpmMilli}
 	cfg.Track[0].Kind = engine.VoiceAcid
+	cfg.Scenes = scenes
 	created, err := engine.New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -366,9 +367,9 @@ func TestCanceledSceneDoesNotLaunchOnResume(t *testing.T) {
 	}
 }
 
-func slotScore(t *testing.T, pattern string, slot int) Score {
+func slotScore(t *testing.T, pattern string, slot int, scenes ...engine.Scene) Score {
 	t.Helper()
-	score := testScore(t, "slots", 120_000)
+	score := testScore(t, "slots", 120_000, scenes...)
 	var track TrackSlots
 	track.ID = "bass"
 	track.Slots[slot] = pattern

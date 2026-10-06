@@ -1,4 +1,5 @@
 // Optional immutable sample-pack preparation. No fetch/decode runs in process().
+import {decodeEncodedAudio, validateAudioEncoding, pcmHash} from './audio-encoding.js';
 export const MAX_PCM_BYTES = 256 * 1024 * 1024;
 const MAX_MANIFEST_BYTES = 2 * 1024 * 1024;
 const hashPattern = /^[a-f0-9]{64}$/;
@@ -14,10 +15,18 @@ export function validateManifest(m) {
   requireThat(Array.isArray(m.assets) && m.assets.length && m.assets.length <= 4096 && Array.isArray(m.zones) && m.zones.length && m.zones.length <= 4096, 'invalid pack dimensions');
   const ids = new Set(); let pcmBytes = 0;
   for (const a of m.assets) {
-    requireThat(typeof a.id === 'string' && a.id && !ids.has(a.id) && safePath(a.path) && a.path.endsWith('.wav.gz'), 'invalid/duplicate sample path');
-    requireThat([a.sha256, a.wav_sha256, a.source_sha256].every(x => hashPattern.test(x)), 'invalid sample hash');
-    requireThat([a.bytes,a.wav_bytes,a.frames,a.rate,a.channels].every(Number.isSafeInteger) && a.bytes > 0 && a.bytes <= MAX_PCM_BYTES && a.wav_bytes >= 44 && a.wav_bytes <= MAX_PCM_BYTES && a.frames > 0 && a.frames <= 8*1024*1024 && a.rate >= 8000 && a.rate <= 192000 && a.channels >= 1 && a.channels <= 2, 'invalid sample bounds');
-    requireThat(https(a.source_url) && https(a.license_url) && (a.license === 'CC0-1.0' || a.license === 'CC-BY-4.0' && a.attribution), 'sample needs redistributable licence/provenance');
+    requireThat(typeof a.id === 'string' && a.id && !ids.has(a.id) && safePath(a.path), 'invalid/duplicate sample path');
+    requireThat([a.sha256, a.source_sha256].every(x => hashPattern.test(x)), 'invalid sample hash');
+    requireThat([a.bytes,a.frames,a.rate,a.channels].every(Number.isSafeInteger) && a.bytes > 0 && a.bytes <= MAX_PCM_BYTES && a.frames > 0 && a.frames <= 8*1024*1024 && a.rate >= 8000 && a.rate <= 192000 && a.channels >= 1 && a.channels <= 2, 'invalid sample bounds');
+    if (a.encoding !== undefined && a.encoding !== '') {
+      validateAudioEncoding(a);
+      requireThat(a.encoding === 'flac' && a.path.endsWith('.flac') && !a.wav_bytes && !a.wav_sha256 || a.encoding === 'wav-gzip' && a.path.endsWith('.wav.gz') && a.scale === 1, 'invalid sample encoding/path');
+    } else {
+      requireThat(a.path.endsWith('.wav.gz') && !a.pcm_sha256 && !a.scale, 'invalid legacy sample encoding/path');
+    }
+    if (a.encoding !== 'flac') requireThat(hashPattern.test(a.wav_sha256) && Number.isSafeInteger(a.wav_bytes) && a.wav_bytes >= 44 && a.wav_bytes <= MAX_PCM_BYTES, 'invalid WAV hash/bounds');
+    const ownerRecording=a.license==='owner recording' && a.source_url==='' && a.license_url==='' && !a.attribution;
+    requireThat(ownerRecording || https(a.source_url) && https(a.license_url) && (a.license === 'CC0-1.0' || a.license === 'CC-BY-4.0' && a.attribution), 'sample needs a valid licence/provenance');
     ids.add(a.id); pcmBytes += a.frames*a.channels*4;
   }
   requireThat(pcmBytes <= MAX_PCM_BYTES, 'pack exceeds resident PCM budget');
@@ -80,12 +89,33 @@ export async function loadPack(manifestURL,pin,options={}) {
   for(const a of manifest.assets) {
     const compressed=await checkedFetch(new URL(a.path,manifestURL).href,a.sha256,a.bytes,options);
     requireThat(compressed.length===a.bytes,'compressed sample size mismatch');
+    if(a.encoding==='flac') {
+      pcm.set(a.id,await decodeEncodedAudio(compressed,{...a,decoded_bytes:a.wav_bytes},options));
+      continue;
+    }
     const stream=new Blob([compressed]).stream().pipeThrough(new DecompressionStream('gzip'));
     const wav=await limitedBytes(new Response(stream),a.wav_bytes);
     requireThat(wav.length===a.wav_bytes&&await sha256(wav)===a.wav_sha256,'decoded WAV hash mismatch');
-    pcm.set(a.id,decodeWAV(wav,a));
+    const decoded=decodeWAV(wav,a);
+    if(a.encoding) requireThat(await pcmHash(decoded)===a.pcm_sha256,'decoded PCM hash mismatch');
+    pcm.set(a.id,decoded);
   }
   return {manifest,pcm};
+}
+
+// Catalog pins are part of the caller's trusted distribution metadata.
+// Explicit manifest URLs always retain their original pin and encoding.
+export function selectPack(catalog,id,tier='hq16') {
+  const pack=catalog.packs?.find(p=>p.id===id);
+  requireThat(pack,'unknown instrument pack');
+  requireThat(['hq16','lossless','gzip'].includes(tier),'unknown pack tier');
+  const selected=tier==='gzip'||!pack.tiers&&tier==='hq16'?pack:pack.tiers?.[tier];
+  requireThat(selected && safePath(selected.manifest) && hashPattern.test(selected.sha256),'pack tier unavailable or invalid');
+  return {...pack,...selected};
+}
+export async function loadCatalogPack(catalogURL,catalog,id,options={}) {
+  const selected=selectPack(catalog,id,options.tier);
+  return loadPack(new URL(selected.manifest,catalogURL).href,selected.sha256,options);
 }
 
 // Upload only before sealing. A fresh memory view follows each allocation.
@@ -105,7 +135,7 @@ export function prepareSampler(exports,rate,pack,seedOverride) {
 
 // Fetch outside the worklet, then publish the fully prepared immutable pack.
 export async function createSampleInstrument(context,options) {
-  const pack=await loadPack(new URL(options.manifestURL,location.href).href,options.sha256,options);
+  const pack=options.catalog ? await loadCatalogPack(new URL(options.catalogURL,location.href).href,options.catalog,options.id,options) : await loadPack(new URL(options.manifestURL,location.href).href,options.sha256,options);
   const wasmResponse=await fetch(options.wasmURL,{signal:options.signal});requireThat(wasmResponse.ok,'sampler kernel fetch failed');const module=await WebAssembly.compile(await wasmResponse.arrayBuffer());
   await context.audioWorklet.addModule(options.processorURL);
   const node=new AudioWorkletNode(context,'cicada-sampler',{numberOfInputs:0,numberOfOutputs:1,outputChannelCount:[2],processorOptions:{module,pack,seed:options.seed}});

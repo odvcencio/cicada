@@ -12,22 +12,46 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
+	"m31labs.dev/cicada/kernel/voice/modal"
+	"m31labs.dev/cicada/kernel/voice/modeledkit"
 )
 
-const MaxImageBytes = 2 << 20
-const ChordImageVersion = 14 // opt-in bounded graph polyphony and chord payloads
+// ModalCapability requires the four-strike modeled percussion voice.
+const ModalCapability uint16 = 1 << 6
 
-// DelayCapability uses bit 1; bit 0 is reserved by the chord lane. The existing
-// reserved header word carries required capabilities without changing version
-// 13's layout. Older readers reject its nonzero value before loading new ops.
+// ModeledKitCapability opts version 13 images into modeled kit lane bindings.
+const ModeledKitCapability uint16 = 1 << 8
+
+const Capabilities = ModalCapability | ModeledKitCapability
+
+const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | Capabilities
+
+const MaxImageBytes = 2 << 20
+const guitarImageVersion = 15  // experimental guitar; version 14 belongs to chord/schedule lanes
+const UnifiedImageVersion = 15 // unified chords, schedules, guitar and resident audio
+const ChordImageVersion = UnifiedImageVersion
+const qualityImageVersion = 14 // internal graph decoder only; complete image14 is rejected
+const masterSoloImageVersion = 13
+
+// Delay images retain the capability bit used by version 13.
 const DelayCapability uint16 = 1 << 1
 
 // PianoCapability requires the modeled piano voice and its sustain state.
 const PianoCapability uint16 = 1 << 2
 
+// ExpressionCapability enables the per-step expression extension and graph
+// expression inputs. Older readers reject the required bit before decoding.
+const ExpressionCapability uint16 = 1 << 3
+
 // NeuralAmpCapability requires the pinned causal neural amp operation (28).
 const NeuralAmpCapability uint16 = 1 << 4
 
+// PMCapability uses the next capability bit without changing node records.
+const PMCapability uint16 = 1 << 5
+
+// DDSPCapability requires the pinned integer harmonic-plus-noise model.
+const DDSPCapability uint16 = 1 << 7
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -106,7 +130,8 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 13. The decoded Config is separately
+// Encode writes byte-identical version 13 for legacy projects and the fixed
+// version 15 layout for graph polyphony, schedules, and prepared audio. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.MasterProcessor != nil {
@@ -120,14 +145,27 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
 		return nil, Error("project image configuration is out of range")
 	}
-	version := uint16(imageVersion)
+	version := uint16(masterSoloImageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
+		if spec.Kind == engine.VoiceGuitar {
+			version = guitarImageVersion
+		}
 		if spec.Polyphony != 0 && (spec.Polyphony != 4 || spec.Kind != engine.VoiceGraph) {
 			return nil, Error("invalid polyphony image mode")
 		}
+		if version < UnifiedImageVersion && (spec.Kind == engine.VoiceGraphPoly || graphNeedsQuality(&spec.Graph)) {
+			version = UnifiedImageVersion
+		}
+		if spec.Kit != nil {
+			for _, binding := range spec.Kit {
+				if version < UnifiedImageVersion && graphNeedsQuality(&binding.Program) {
+					version = UnifiedImageVersion
+				}
+			}
+		}
 		if spec.Polyphony == 4 {
-			version = ChordImageVersion
+			version = max(version, uint16(ChordImageVersion))
 		}
 		if len(cfg.Patterns) > 0 {
 			for _, pattern := range cfg.Patterns[track].Slots {
@@ -139,7 +177,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 						return nil, Error("chord payload requires an active polyphonic step")
 					}
 					if chord.Count > 0 {
-						version = ChordImageVersion
+						version = max(version, uint16(ChordImageVersion))
 					}
 				}
 				if pattern.Len > 0 {
@@ -152,6 +190,20 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
+	if len(cfg.Schedule) > 0 || len(cfg.Clips) > 0 || len(cfg.Assets) > 0 || cfg.MasterBiasL != 0 || cfg.MasterBiasR != 0 {
+		version = UnifiedImageVersion
+	}
+	for _, track := range cfg.Track[:cfg.Tracks] {
+		if track.Kind == engine.VoiceAudio || track.Kind == engine.VoiceSample {
+			version = UnifiedImageVersion
+		}
+	}
+
+	if version == UnifiedImageVersion {
+		if err := validateUnifiedFields(&cfg); err != nil {
+			return nil, err
+		}
+	}
 	w.u16(version)
 	w.byte(byte(cfg.Tracks))
 	w.byte(byte(cfg.MaxVoices))
@@ -172,19 +224,32 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		if spec.Kind == engine.VoicePiano {
 			capabilities |= PianoCapability
 		}
-		if graphNeedsDelay(spec.Graph) {
-			capabilities |= DelayCapability
-		}
-		if graphNeedsNeuralAmp(&spec.Graph) {
-			capabilities |= NeuralAmpCapability
+		capabilities |= graphCapabilities(&spec.Graph)
+		if len(cfg.Patterns) != 0 {
+			for slot := range cfg.Patterns[track].Slots {
+				pattern := &cfg.Patterns[track].Slots[slot]
+				for step := uint8(0); step < pattern.Len && step < 64; step++ {
+					if pattern.ExpressionAt(int(step)).Set {
+						capabilities |= ExpressionCapability
+					}
+				}
+			}
 		}
 		if spec.Kit != nil {
 			for _, binding := range spec.Kit {
-				if graphNeedsDelay(binding.Program) {
-					capabilities |= DelayCapability
+				capabilities |= graphCapabilities(&binding.Program)
+			}
+		}
+		if cfg.Track[track].Kind == engine.VoiceModal {
+			capabilities |= ModalCapability
+		}
+		if kit := cfg.Track[track].Kit; cfg.Track[track].Kind == engine.VoiceDrums && kit != nil {
+			for _, binding := range kit {
+				if binding.Kind == engine.KitLaneModeled {
+					capabilities |= ModeledKitCapability
 				}
-				if graphNeedsNeuralAmp(&binding.Program) {
-					capabilities |= NeuralAmpCapability
+				if graphNeedsDDSP(&binding.Program) {
+					capabilities |= DDSPCapability
 				}
 			}
 		}
@@ -266,7 +331,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		w.byte(byte(spec.Kind))
-		if version >= ChordImageVersion {
+		if version == UnifiedImageVersion {
 			w.byte(spec.Polyphony)
 		}
 		w.byte(boolByte(spec.Mute))
@@ -299,7 +364,17 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			w.f64(spec.InsertDrive.Mix)
 		}
 		switch spec.Kind {
-		case engine.VoiceOff:
+		case engine.VoiceOff, engine.VoiceAudio:
+		case engine.VoiceGuitar:
+			if !spec.Experimental {
+				return nil, Error("guitar requires explicit experimental opt-in")
+			}
+			if err := spec.Guitar.Validate(); err != nil {
+				return nil, err
+			}
+			for id := kernel.ParamGuitarBend; id <= kernel.ParamGuitarDrive; id++ {
+				w.f64(spec.Guitar.Value(id))
+			}
 		case engine.VoiceAcid:
 			writeAcid(&w, spec.Acid)
 		case engine.VoiceDrums:
@@ -322,12 +397,36 @@ func Encode(cfg engine.Config) ([]byte, error) {
 						if err := writeGraph(&w, binding.Program); err != nil {
 							return nil, err
 						}
+					case engine.KitLaneModeled:
+						if err := validateModeledBinding(binding); err != nil {
+							return nil, err
+						}
+						w.byte(byte(binding.Model))
+						w.f64(binding.ModelParams.Tune)
+						w.f64(binding.ModelParams.Decay)
+						w.f64(binding.ModelParams.Position)
+						w.f64(binding.ModelParams.Humanize)
+						w.f64(binding.ModelLevelDB)
+						w.f64(binding.ModelPan)
 					default:
 						return nil, Error("invalid kit lane kind")
 					}
 				}
 			}
-		case engine.VoiceGraph:
+		case engine.VoiceModal:
+			if spec.Modal >= modal.ProfileCount {
+				return nil, Error("invalid modal profile")
+			}
+			w.byte(byte(spec.Modal))
+		case engine.VoiceSample:
+			if spec.Sample == nil {
+				return nil, Error("nil sampler image")
+			}
+			w.u16(spec.Sample.Asset)
+			w.byte(spec.Sample.RootKey)
+			w.byte(spec.Sample.Voices)
+			w.byte(boolByte(spec.Sample.Loop))
+		case engine.VoiceGraph, engine.VoiceGraphPoly:
 			if err := writeGraph(&w, spec.Graph); err != nil {
 				return nil, err
 			}
@@ -345,6 +444,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				bank = cfg.Patterns[track]
 			}
 			pattern := bank.Slots[slot]
+			if spec.Kind == engine.VoicePiano && pattern.Expression != nil {
+				return nil, Error("piano voices do not support per-note expression")
+			}
 			w.byte(pattern.Len)
 			w.u16(pattern.SwingPermille)
 			w.byte(byte(pattern.Transpose))
@@ -365,13 +467,27 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			} else {
 				for step := uint8(0); step < pattern.Len; step++ {
 					w.u32(pattern.Steps[step])
-					if version >= ChordImageVersion {
+					if version == UnifiedImageVersion {
 						chord := pattern.Chords[step]
 						w.byte(chord.Count)
 						for _, note := range chord.Notes {
 							w.byte(note)
 						}
 					}
+				}
+			}
+			if capabilities&ExpressionCapability != 0 {
+				for step := uint8(0); step < pattern.Len; step++ {
+					expression := pattern.ExpressionAt(int(step))
+					if err := expression.Validate(); err != nil {
+						return nil, err
+					}
+					w.byte(boolByte(expression.Set))
+					w.f32(expression.PitchCents)
+					w.f32(expression.Pressure)
+					w.f32(expression.Timbre)
+					w.f32(expression.VibratoRateHz)
+					w.f32(expression.VibratoDepthCents)
 				}
 			}
 		}
@@ -392,6 +508,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		for _, binding := range scene.Track {
 			switch binding.Mode {
+			case engine.SceneClip:
+				w.byte(255)
+				w.u16(binding.Clip)
 			case engine.SceneKeep:
 				w.byte(0)
 			case engine.SceneOff:
@@ -416,6 +535,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	for _, entry := range cfg.Song {
 		w.u16(entry.Scene)
 		w.u16(entry.Bars)
+	}
+	if version == UnifiedImageVersion {
+		if err := writeSchedule(&w, &cfg); err != nil {
+			return nil, err
+		}
 	}
 	if len(w.data) > MaxImageBytes {
 		return nil, Error("project image exceeds 2 MiB")
@@ -446,6 +570,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		return Error("invalid project image magic")
 	}
 	version, _ := r.u16()
+	if version == 14 {
+		return Error("ambiguous development image version 14; recompile project source for version 15")
+	}
 	tracks, _ := r.byte()
 	voices, _ := r.byte()
 	flags, _ := r.u32()
@@ -456,7 +583,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|NeuralAmpCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|PMCapability|ExpressionCapability|NeuralAmpCapability|ModalCapability|ModeledKitCapability|DDSPCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -578,7 +705,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	if version >= busMixerImageVersion {
 		busFlags, err := r.u16()
 		allowed := uint16(0x1f)
-		if version >= imageVersion {
+		if version >= masterSoloImageVersion {
 			allowed = 0x3f
 		}
 		if err != nil || busFlags&^allowed != 0 {
@@ -595,7 +722,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		if err != nil {
 			return err
 		}
-		if version >= ChordImageVersion {
+		if version == UnifiedImageVersion {
 			mode, err := r.byte()
 			if err != nil || mode != 0 && (mode != 4 || engine.VoiceKind(kind) != engine.VoiceGraph) {
 				return Error("invalid polyphony image mode")
@@ -673,6 +800,25 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		switch spec.Kind {
 		case engine.VoiceOff:
+		case engine.VoiceGuitar:
+			if version != guitarImageVersion {
+				return Error("guitar requires image version 15")
+			}
+			spec.Experimental = true
+			spec.Guitar = guitar.DefaultParams()
+			for id := kernel.ParamGuitarBend; id <= kernel.ParamGuitarDrive; id++ {
+				value, err := r.f64()
+				if err != nil {
+					return err
+				}
+				if err := spec.Guitar.Set(id, value); err != nil {
+					return err
+				}
+			}
+		case engine.VoiceAudio:
+			if version != UnifiedImageVersion {
+				return Error("unsupported audio track image")
+			}
 		case engine.VoiceAcid:
 			if spec.Acid, err = readAcid(&r); err != nil {
 				return err
@@ -706,7 +852,24 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						}
 						binding.Recipe = drum.Lane(recipe)
 					case engine.KitLaneGraph:
-						if binding.Program, err = readGraph(&r, version, reserved); err != nil {
+						if err = readGraphInto(&r, version, reserved, &binding.Program); err != nil {
+							return err
+						}
+					case engine.KitLaneModeled:
+						if reserved&ModeledKitCapability == 0 {
+							return Error("modeled kit image requires capability")
+						}
+						profile, err := r.byte()
+						if err != nil {
+							return err
+						}
+						binding.Model = modeledkit.Profile(profile)
+						for _, value := range []*float64{&binding.ModelParams.Tune, &binding.ModelParams.Decay, &binding.ModelParams.Position, &binding.ModelParams.Humanize, &binding.ModelLevelDB, &binding.ModelPan} {
+							if *value, err = r.f64(); err != nil {
+								return err
+							}
+						}
+						if err := validateModeledBinding(*binding); err != nil {
 							return err
 						}
 					default:
@@ -714,8 +877,39 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					}
 				}
 			}
-		case engine.VoiceGraph:
-			if spec.Graph, err = readGraph(&r, version, reserved); err != nil {
+		case engine.VoiceModal:
+			if reserved&ModalCapability == 0 {
+				return Error("modal image requires capability")
+			}
+			profile, readErr := r.byte()
+			if readErr != nil || profile >= byte(modal.ProfileCount) {
+				return Error("invalid modal profile image")
+			}
+			spec.Modal = modal.Profile(profile)
+		case engine.VoiceSample:
+			if version != UnifiedImageVersion {
+				return Error("unsupported sampler image")
+			}
+			spec.Sample = &engine.SamplerConfig{}
+			spec.Sample.Asset, err = r.u16()
+			if err != nil {
+				return err
+			}
+			spec.Sample.RootKey, err = r.byte()
+			if err != nil {
+				return err
+			}
+			spec.Sample.Voices, err = r.byte()
+			if err != nil {
+				return err
+			}
+			loop, err := r.byte()
+			if err != nil || loop > 1 {
+				return Error("invalid sampler image loop")
+			}
+			spec.Sample.Loop = loop == 1
+		case engine.VoiceGraph, engine.VoiceGraphPoly:
+			if err = readGraphInto(&r, version, reserved, &spec.Graph); err != nil {
 				return err
 			}
 		case engine.VoicePiano:
@@ -752,23 +946,29 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			if err != nil {
 				return err
 			}
-			pattern := seq.Pattern{Len: length, SwingPermille: swing, Transpose: int8(transpose), GatePercent: gate, Seed: seed}
+			// Decode directly into fresh destination storage. Copying a full
+			// fixed chord pattern makes TinyGo expand hundreds of scalar loads
+			// and stores, without adding ownership or validation guarantees.
+			pattern := &cfg.Patterns[track].Slots[slot]
+			pattern.Len, pattern.SwingPermille = length, swing
+			pattern.Transpose, pattern.GatePercent, pattern.Seed = int8(transpose), gate, seed
 			if spec.Kind == engine.VoiceDrums {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-					compiled := pattern
+					compiled := &cfg.Patterns[track].Drums[slot][lane]
+					compiled.Len, compiled.SwingPermille = length, swing
+					compiled.Transpose, compiled.GatePercent, compiled.Seed = int8(transpose), gate, seed
 					for step := uint8(0); step < length; step++ {
 						if compiled.Steps[step], err = r.u32(); err != nil {
 							return err
 						}
 					}
-					cfg.Patterns[track].Drums[slot][lane] = compiled
 				}
 			} else {
 				for step := uint8(0); step < length; step++ {
 					if pattern.Steps[step], err = r.u32(); err != nil {
 						return err
 					}
-					if version >= ChordImageVersion {
+					if version == UnifiedImageVersion {
 						chord := &pattern.Chords[step]
 						if chord.Count, err = r.byte(); err != nil {
 							return err
@@ -782,7 +982,20 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 
 				}
 			}
-			cfg.Patterns[track].Slots[slot] = pattern
+			if reserved&ExpressionCapability != 0 {
+				for step := uint8(0); step < length; step++ {
+					expression, err := readExpression(&r)
+					if err != nil {
+						return err
+					}
+					if expression != (seq.Expression{}) {
+						if pattern.Expression == nil {
+							pattern.Expression = new([64]seq.Expression)
+						}
+						pattern.Expression[step] = expression
+					}
+				}
+			}
 		}
 	}
 	for scene := range cfg.Scenes {
@@ -792,6 +1005,12 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 			switch {
+			case binding == 255 && version == UnifiedImageVersion:
+				clip, err := r.u16()
+				if err != nil {
+					return err
+				}
+				cfg.Scenes[scene].Track[track] = engine.SceneBinding{Mode: engine.SceneClip, Clip: clip}
 			case binding == 0:
 			case binding == 1:
 				cfg.Scenes[scene].Track[track].Mode = engine.SceneOff
@@ -825,6 +1044,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					return err
 				}
 				setting.Division = fx.DelayDivision(division)
+				if version != guitarImageVersion && setting.ID >= kernel.ParamGuitarBend {
+					return Error("guitar controls require image version 15")
+				}
 				if err := validateSceneSetting(cfg, *setting); err != nil {
 					return err
 				}
@@ -840,8 +1062,16 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return err
 		}
 	}
+	if version == UnifiedImageVersion {
+		if err := readSchedule(&r, cfg); err != nil {
+			return err
+		}
+	}
 	if r.at != len(r.data) {
 		return Error("project image has trailing bytes")
+	}
+	if version == UnifiedImageVersion {
+		return validateUnifiedFields(cfg)
 	}
 	return nil
 }
@@ -870,18 +1100,43 @@ func writeGraph(w *writer, program graph.Program) error {
 		w.byte(node.B)
 		w.byte(node.C)
 		w.f32(node.Value)
+		if node.Op == graph.ADSR {
+			w.byte(node.D)
+			w.byte(node.E)
+		}
 	}
 	return nil
 }
 
-func graphNeedsDelay(program graph.Program) bool {
+// Inspect by pointer: a Program contains the full 128-node array. Copying it
+// for each capability check expands the WASM reader without adding behavior.
+func graphNeedsQuality(program *graph.Program) bool {
 	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
 		switch program.Nodes[i].Op {
-		case graph.Delay, graph.Comb, graph.Period:
+		case graph.ADSR, graph.Pulse, graph.SVF:
 			return true
 		}
 	}
 	return false
+}
+
+func graphCapabilities(program *graph.Program) uint16 {
+	var required uint16
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		switch program.Nodes[i].Op {
+		case graph.Delay, graph.Comb, graph.Period:
+			required |= DelayCapability
+		case graph.PM:
+			required |= PMCapability
+		case graph.PitchBend, graph.Pressure, graph.Timbre:
+			required |= ExpressionCapability
+		case graph.DDSP:
+			required |= DDSPCapability
+		case graph.NeuralAmp:
+			required |= NeuralAmpCapability
+		}
+	}
+	return required
 }
 
 func graphNeedsNeuralAmp(program *graph.Program) bool {
@@ -893,51 +1148,95 @@ func graphNeedsNeuralAmp(program *graph.Program) bool {
 	return false
 }
 
+func graphNeedsDDSP(program *graph.Program) bool {
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		if program.Nodes[i].Op == graph.DDSP {
+			return true
+		}
+	}
+	return false
+}
+
 func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, error) {
 	var program graph.Program
+	err := readGraphInto(r, version, capabilities, &program)
+	return program, err
+}
+
+func readGraphInto(r *reader, version uint16, capabilities uint16, program *graph.Program) error {
 	length, err := r.byte()
 	if err != nil || length == 0 || length > graph.MaxNodes {
-		return program, Error("invalid graph image length")
+		return Error("invalid graph image length")
 	}
 	program.Len = length
 	if program.Output, err = r.byte(); err != nil || program.Output >= length {
-		return program, Error("invalid graph image output")
+		return Error("invalid graph image output")
 	}
 	if version >= priorImageVersion {
 		if program.GlideMS, err = r.f64(); err != nil || math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
-			return program, Error("invalid graph glide time image")
+			return Error("invalid graph glide time image")
 		}
 	}
 	for i := uint8(0); i < length; i++ {
 		op, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		a, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		b, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		c, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		value, err := r.f32()
 		if err != nil {
-			return program, err
+			return err
+		}
+		// Decode early graph payloads for migration tools; DecodeInto still refuses
+		// both ambiguous complete version-14 image layouts before reading tracks.
+		if version == qualityImageVersion && capabilities == 0 {
+			if op == 24 {
+				op = byte(graph.Pulse)
+			} else if op == 25 {
+				op = byte(graph.SVF)
+			}
 		}
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
+		if graph.Op(op) == graph.ADSR {
+			if version < qualityImageVersion {
+				return Error("ADSR needs project image version 15")
+			}
+			if program.Nodes[i].D, err = r.byte(); err != nil {
+				return err
+			}
+			if program.Nodes[i].E, err = r.byte(); err != nil {
+				return err
+			}
+		}
 	}
-	if graphNeedsDelay(program) && capabilities&DelayCapability == 0 {
-		return program, Error("graph delay operations require capability bit 1")
+	if graphNeedsExpression(program) && capabilities&ExpressionCapability == 0 {
+		return Error("graph expression inputs require capability bit 3")
 	}
-	if graphNeedsNeuralAmp(&program) && capabilities&NeuralAmpCapability == 0 {
-		return program, Error("neural amp operation requires capability bit 4")
+	required := graphCapabilities(program)
+	if required&DelayCapability != 0 && capabilities&DelayCapability == 0 {
+		return Error("graph delay operations require capability bit 1")
 	}
-	return program, nil
+	if graphNeedsNeuralAmp(program) && capabilities&NeuralAmpCapability == 0 {
+		return Error("neural amp operation requires capability bit 4")
+	}
+	if required&PMCapability != 0 && capabilities&PMCapability == 0 {
+		return Error("graph phase modulation requires capability bit 5")
+	}
+	if graphNeedsDDSP(program) && capabilities&DDSPCapability == 0 {
+		return Error("DDSP operations require capability bit 7")
+	}
+	return nil
 }
 
 func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error {
@@ -948,6 +1247,9 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 	if spec.Scope == "track" {
 		if int(setting.Track) >= cfg.Tracks {
 			return Error("scene parameter track is out of range")
+		}
+		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
+			return Error("guitar setting requires a guitar track")
 		}
 	} else if setting.Track != 0xff {
 		return Error("global scene parameter needs the global owner")
@@ -1023,4 +1325,50 @@ func readDrum(r *reader) (drum.Params, error) {
 	}
 	p.Metal = metal == 1
 	return p, nil
+}
+
+func validateModeledBinding(binding engine.KitLaneBinding) error {
+	if binding.Model >= modeledkit.ProfileCount {
+		return Error("invalid modeled kit profile")
+	}
+	if err := binding.ModelParams.Validate(); err != nil {
+		return err
+	}
+	if math.IsNaN(binding.ModelLevelDB) || math.IsInf(binding.ModelLevelDB, 0) ||
+		(binding.ModelLevelDB != -1000 && binding.ModelLevelDB < -60) || binding.ModelLevelDB > 6 ||
+		math.IsNaN(binding.ModelPan) || math.IsInf(binding.ModelPan, 0) || binding.ModelPan < -1 || binding.ModelPan > 1 {
+		return Error("invalid modeled kit mixer controls")
+	}
+	return nil
+}
+
+func graphNeedsExpression(program *graph.Program) bool {
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		switch program.Nodes[i].Op {
+		case graph.PitchBend, graph.Pressure, graph.Timbre:
+			return true
+		}
+	}
+	return false
+}
+
+// readExpression validates a complete record once before reading its floats.
+// Keeping the fixed wire record together avoids repeated bounds/error paths.
+func readExpression(r *reader) (seq.Expression, error) {
+	var expression seq.Expression
+	record, err := r.take(21)
+	if err != nil {
+		return expression, err
+	}
+	if record[0] > 1 {
+		return expression, Error("invalid note expression presence")
+	}
+	expression.Set = record[0] == 1
+	values := [...]*float32{&expression.PitchCents, &expression.Pressure, &expression.Timbre, &expression.VibratoRateHz, &expression.VibratoDepthCents}
+	for i, value := range values {
+		offset := 1 + i*4
+		bits := uint32(record[offset]) | uint32(record[offset+1])<<8 | uint32(record[offset+2])<<16 | uint32(record[offset+3])<<24
+		*value = math.Float32frombits(bits)
+	}
+	return expression, expression.Validate()
 }

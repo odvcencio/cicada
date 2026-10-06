@@ -1,0 +1,63 @@
+preset acid-squelch {
+  instrument = acid
+  cutoff = 620Hz
+  reso = 0.7
+  envmod = 0.65
+  decay = 380ms
+  accent = 0.8
+  drive = 0.25
+  filter = diode
+}
+
+preset acid-round {
+  instrument = acid
+  cutoff = 360Hz
+  reso = 0.3
+  envmod = 0.25
+  decay = 520ms
+  wave = 1
+  accent = 0.5
+  drive = 0.1
+  filter = ladder
+}
+
+preset acid-bite {
+  instrument = acid
+  cutoff = 1400Hz
+  reso = 0.8
+  envmod = 0.85
+  decay = 180ms
+  wave = 0
+  accent = 0.9
+  drive = 0.45
+  filter = diode
+}
+
+preset kit-tight {
+  instrument = drums
+  bd_tune = 60Hz
+  bd_decay = 180ms
+  sd_decay = 60ms
+  ch_decay = 25ms
+  oh_decay = 150ms
+}
+
+preset kit-roomy {
+  instrument = drums
+  bd_tune = 48Hz
+  bd_decay = 700ms
+  sd_decay = 220ms
+  ch_decay = 100ms
+  oh_decay = 700ms
+}
+
+preset kit-lofi {
+  instrument = drums
+  bd_tune = 44Hz
+  bd_decay = 300ms
+  sd_tone = 0.6
+  sd_decay = 140ms
+  ch_tone = 5000Hz
+  ch_decay = 45ms
+  ch_level = -12dB
+}

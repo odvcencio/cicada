@@ -101,4 +101,48 @@ func TestPhraseWASMParity(t *testing.T) {
 		params.Density, params.AccentDensity, params.SlideDensity, params.OctaveJump = .75, .25, .6, .5
 		t.Run(fmt.Sprintf("steps-%d", steps), func(t *testing.T) { check(t, params) })
 	}
+	params := phrase.DefaultParams()
+	params.Seed, params.Structure = 18446744073709551615, phrase.A
+	base, err := phrase.Generate(params)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, fn := range []string{"cicada_phrase_mutate", "cicada_phrase_evolve"} {
+		for _, locked := range []uint64{0, 1, 0xffff} {
+			request := mutationRequest{Params: params, Base: base.Bars[0], Ops: []phrase.Op{{Kind: phrase.ToggleAccent}}, Locked: locked, Generation: 42}
+			var native phrase.Result
+			if fn == "cicada_phrase_mutate" {
+				native, err = phrase.Mutate(params, request.Base, request.Ops, locked)
+			} else {
+				native, err = phrase.Evolve(params, request.Base, request.Generation, locked)
+			}
+			input, e := json.Marshal(request)
+			if e != nil {
+				t.Fatal(e)
+			}
+			ptr := uint32(call("cicada_phrase_params_alloc", uint64(len(input))))
+			if ptr == 0 || !module.Memory().Write(ptr, input) {
+				t.Fatal("mutation buffer unavailable")
+			}
+			status := call(fn)
+			result, ok := module.Memory().Read(uint32(call("cicada_phrase_result_ptr")), uint32(call("cicada_phrase_result_len")))
+			if !ok {
+				t.Fatal("mutation result unavailable")
+			}
+			if err != nil {
+				if status != 2 || string(result) != err.Error() {
+					t.Fatalf("%s error parity: native=%v wasm=%d %s", fn, err, status, result)
+				}
+				continue
+			}
+			trace, e := json.Marshal(native.Trace)
+			if e != nil {
+				t.Fatal(e)
+			}
+			want := append(append([]byte(native.Notation), 0), trace...)
+			if status != 0 || !bytes.Equal(result, want) {
+				t.Fatalf("%s source or trace differs with locks %x", fn, locked)
+			}
+		}
+	}
 }

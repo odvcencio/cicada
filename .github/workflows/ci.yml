@@ -16,6 +16,78 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  parity-amd64:
+    name: PCM24 parity (amd64, WASM)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    env:
+      GOWORK: off
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'false'
+      - name: Render all examples with amd64 and WASM
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = amd64
+          make test-parity
+      - name: Save amd64 PCM and the tested kernel
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: parity-amd64
+          if-no-files-found: error
+          retention-days: 7
+          path: |
+            build/cicada-kernel.wasm
+            build/parity/*.pcm24
+            build/parity/report.txt
+
+  parity-arm64:
+    name: PCM24 parity (amd64, arm64, WASM)
+    needs: parity-amd64
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 25
+    env:
+      GOWORK: off
+    steps:
+      - name: Require the amd64 parity gate to pass
+        env:
+          AMD64_PARITY_RESULT: ${{ needs.parity-amd64.result }}
+        run: test "$AMD64_PARITY_RESULT" = success
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: actions/download-artifact@018cc2cf5baa6db3ef3c5f8a56943fffe632ef53 # v6
+        with:
+          name: parity-amd64
+          path: build/amd64-reference
+      - name: Require identical amd64, arm64, and WASM PCM24
+        run: |
+          set -euo pipefail
+          test "$(go env GOARCH)" = arm64
+          mkdir -p build/parity
+          CICADA_WASM_PATH="$PWD/build/amd64-reference/cicada-kernel.wasm" \
+          CICADA_PARITY_REFERENCE="$PWD/build/amd64-reference/parity" \
+          CICADA_PARITY_DIR="$PWD/build/parity" \
+          go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm \
+            -run '^TestExamplesPCM24Parity$' -count=1 -v | tee build/parity/report.txt
+      - name: Save arm64 parity report
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: parity-arm64-report
+          if-no-files-found: warn
+          path: build/parity/report.txt
+
   m0:
     name: M0 language and kernel
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
@@ -57,7 +129,7 @@ jobs:
       - name: M0 CLI acceptance
         run: |
           set -euo pipefail
-          make build
+          make build-core
           {
             ./build/cicada validate examples/first-acid.cicada
             ./build/cicada render examples/first-acid.cicada -o build/first-acid.wav --rate 48000 --bits 24 --bars 16 --tail 3s
@@ -103,6 +175,83 @@ jobs:
             build/m1-ci/first-acid.mid
             build/first-acid.wav
 
+  workstation:
+    name: GoSX workstation and Tymbal boundary
+    runs-on: [self-hosted, linux, x64]
+    timeout-minutes: 20
+    env:
+      GOWORK: off
+      CHROME_VERSION: 152.0.7977.64
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.4'
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'false'
+      - name: Supported Node for browser checks
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
+          package-manager-cache: false
+      - name: Framework generation, race checks, and production bundle
+        run: |
+          set -euo pipefail
+          make test-workstation
+          (cd workstation && go vet ./...)
+          make build-workstation-release
+          git diff --exit-code -- workstation/ui
+      - name: Windows workstation and desktop
+        run: |
+          set -euo pipefail
+          (cd workstation && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o ../build/cicada-workstation.exe .)
+          (cd desktop && go test ./... && GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o ../build/cicada-studio.exe .)
+      - name: Studio browser continuity
+        shell: bash
+        run: |
+          set -euo pipefail
+          browser_root="$RUNNER_TEMP/cicada-studio-browser-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          mkdir -p "$browser_root"
+          npm install --prefix "$browser_root" --no-save --ignore-scripts playwright@1.62.1
+          export CICADA_PLAYWRIGHT_MODULE="$browser_root/node_modules/playwright"
+          tool_root="$RUNNER_TOOL_CACHE/chrome-for-testing/$CHROME_VERSION/linux64"
+          export CICADA_CHROME_PATH="$tool_root/chrome-headless-shell-linux64/chrome-headless-shell"
+          if [[ ! -x "$CICADA_CHROME_PATH" ]]; then
+            mkdir -p "$tool_root"
+            curl --fail --location --retry 3 --output "$browser_root/chrome.zip" "https://storage.googleapis.com/chrome-for-testing-public/$CHROME_VERSION/linux64/chrome-headless-shell-linux64.zip"
+            unzip -q "$browser_root/chrome.zip" -d "$browser_root"
+            mv "$browser_root/chrome-headless-shell-linux64" "$tool_root/"
+          fi
+          node workstation/browser/continuity.test.cjs --write-fixture "$browser_root/continuity.cicada"
+          make build-core
+          studio_port="$(node -e 'const server=require("node:net").createServer(); server.listen(0,"127.0.0.1",()=>{process.stdout.write(String(server.address().port));server.close()})')"
+          export CICADA_STUDIO_URL="http://127.0.0.1:$studio_port"
+          ./build/cicada studio "$browser_root/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-continuity-server.log 2>&1 &
+          studio_pid=$!
+          trap 'kill "$studio_pid" 2>/dev/null || true; wait "$studio_pid" 2>/dev/null || true' EXIT
+          for attempt in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          make test-studio-continuity | tee build/studio-continuity-report.txt
+      - name: Save Studio continuity reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: studio-continuity-reports
+          if-no-files-found: warn
+          path: |
+            build/studio-continuity-report.txt
+            build/studio-continuity-server.log
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: gosx-workstation-build
+          path: workstation/dist/build.json
+
   m2-pr:
     name: M2 AudioWorklet gates
     if: github.event_name == 'pull_request' || github.event_name == 'push'
@@ -142,7 +291,7 @@ jobs:
           tinygo version
           node --version
       - name: M2 parity, browser, and budgets
-        run: make test-wasm test-browser budget-size budget-browser
+        run: make test-wasm test-chord-wasm test-browser budget-size budget-browser
       - name: Save M2 gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -151,6 +300,8 @@ jobs:
           if-no-files-found: warn
           path: |
             build/test-wasm.log
+            build/test-chord-wasm.log
+            build/chord-wasm-report.txt
             build/test-browser.log
             build/budget-size-report.txt
             build/budget-browser.log

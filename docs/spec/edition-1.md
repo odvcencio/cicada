@@ -167,15 +167,21 @@ song { main*8 }
 
 **Syntax (EBNF):** `instrument_decl` contains an optional `instrument_octave`, zero or more `instrument_param` declarations, and one `voice_decl`. A voice contains zero or more ordered `let_stmt` bindings and one `out_stmt`.
 
-**Meaning:** An instrument compiles a bounded expression graph into a mono sound source. A binding may use declared parameters, built-in inputs, and earlier bindings. The output expression must produce audio.
+**Meaning:** An instrument compiles a bounded expression graph into a monophonic or eight-voice polyphonic sound source. A binding may use declared parameters, built-in inputs, and earlier bindings. The output expression must produce audio.
 
-**Types and units:** Parameter units are `unit`, `hz`, `ms`, and `db`. Built-in inputs are `pitch` (Hz), `gate` (gate signal), `velocity` (unit value), and `sample_rate` (Hz). The graph functions are `saw`, `square`, and `sine` (Hz to audio); `noise` (no inputs to audio); `env` (gate and ms to unit); `ladder` and `diode` (audio, Hz, unit to audio); `lowpass` and `highpass` (audio and Hz to audio); `mix` (two audio inputs and unit to audio); `tanh` (audio to audio); `exp2` (unit to unit); and `clamp` (three unit inputs to unit). Expressions are type-checked before playback. The implemented voice mode is `mono`.
+**Types and units:** Parameter units are `unit`, `hz`, `ms`, and `db`. Built-in inputs are `pitch` (Hz), `gate` (gate signal), `velocity` (unit value), and `sample_rate` (Hz). The graph functions are `saw`, `square`, and `sine` (Hz to audio); `pulse` (Hz and unit pulse width to audio); `noise` (no inputs to audio); `env` (gate and ms to unit); `adsr` (gate, attack ms, decay ms, unit sustain, release ms to unit); `ladder`, `diode`, and `svf` (audio, Hz cutoff, unit resonance to audio); `lowpass` and `highpass` (audio and Hz to audio); `mix` (two audio inputs and unit to audio); `tanh` (audio to audio); `exp2` (unit to unit); and `clamp` (three unit inputs to unit). Expressions are type-checked before playback. Both `mono` and `poly` modes are implemented.
 
 `delay(audio, ms)` and `comb(audio, ms, unit, unit)` add bounded delay lines and damped feedback loops. Unit divided by Hz produces a period in ms (`1 / pitch`). Their interpolation, memory, ranges, and diagnostics are specified in [graph delays and plucked strings](edition-2.md#graph-delays-and-plucked-strings).
 
-**Defaults:** Home octave is 2. A parameter's unit may be inferred from its default literal. `voice mono` is required. A track may override home octave from 0–6 unless its instrument declares a synthesis parameter named `octave`; in that case the track value sets the synthesis parameter and the instrument's home octave remains in effect.
+`ddsp(hz, unit)` produces a neural harmonic-plus-noise voice from fundamental frequency and linear loudness. The [model reference](../../kernel/voice/ddsp/README.md) specifies its trained range, integer arithmetic, 64-frame control rate, CC0 model license, and image capability bit 7. `cicada explain graph.ddsp` describes the operation.
 
-**Errors:** Duplicate or reserved names report `CICADA-DUPLICATE`; unknown symbols report `CICADA-REFERENCE`; incompatible types or units report `CICADA-UNIT`. Graphs above 128 nodes or 32 stateful nodes report `CICADA-LIMIT`. `voice poly` parses but reports `CICADA-UNSUPPORTED`.
+**Defaults:** Home octave is 2. A parameter's unit may be inferred from its default literal. Choose `voice mono` or `voice poly`. A track may override home octave from 0–6 unless its instrument declares a synthesis parameter named `octave`; in that case the track value sets the synthesis parameter and the instrument's home octave remains in effect.
+
+**Errors:** Duplicate or reserved names report `CICADA-DUPLICATE`; unknown symbols report `CICADA-REFERENCE`; incompatible types or units report `CICADA-UNIT`. Graphs above 128 nodes or 32 stateful nodes report `CICADA-LIMIT`. Every poly track reserves eight voices within the 32-voice project limit, including release tails.
+
+Graphs containing `adsr`, `pulse`, or `svf` run at twice the output sample rate and use FIR decimation. Their saw and pulse oscillators use harmonic-limited tables selected at the output sample rate; oscillators at or above 49% of that rate are silent so high additive partials cannot create unrelated pitches. Pulse output has zero DC offset. `svf` is a trapezoidal-integrator lowpass based on [Andrew Simper's linear SVF derivation](https://cytomic.com/files/dsp/SvfLinearTrapOptimised2.pdf). Cutoff clamps to 20 Hz through 45% of the output sample rate, resonance to 0–1, and pulse width to 0.02–0.98. ADSR segments clamp to 0–30 seconds, sustain to 0–1, and release begins at the envelope's current level. Existing graphs without these primitives keep their original rendering behavior.
+
+Poly notes have independent envelopes. When all eight voices are occupied, allocation prefers the quietest released voice, then the oldest held voice, with a 2 ms transition. Repeated pitches release their oldest held instance first. Output gain is fixed by the authored graph; it does not change with note count. Graph output is mono, with stereo positioning and effects supplied by the mixer. Live keyboard/MIDI supports chords; notes patterns currently store one pitch per step.
 
 **Example:**
 
@@ -203,13 +209,28 @@ song { main }
 
 **Status:** Implemented.
 
-**Syntax (EBNF):** `kit_decl` contains `kit_binding` entries. A target is an instrument name or `builtin.<lane>`.
+**Syntax (EBNF):** `kit_decl` contains `kit_binding` entries. A target is an instrument name, `builtin.<lane>`, or `model.<piece>`.
 
-**Meaning:** A kit maps drum lanes to compiled mono instruments or built-in drum recipes. An unbound lane is silent.
+**Meaning:** A kit maps drum lanes to compiled mono instruments, built-in drum recipes, or modeled acoustic kit pieces. An unbound lane is silent. Modeled pieces synthesize each strike internally, without recordings or external assets.
 
 **Types and units:** Lane names are `bd`, `sd`, `ch`, `oh`, `cp`, `rs`, `lt`, `mt`, `ht`, `cb`, and `cy`. Each instrument binding receives that lane's trigger pitch and hit velocity.
 
 **Defaults:** There are no implicit authored bindings.
+
+Modeled piece names are `kick`, `snare`, `rimshot`, `cross_stick`, `tom_low`, `tom_mid`, `tom_high`, `hat_closed`, `hat_pedal`, `hat_half_open`, `hat_open`, `ride_bow`, `ride_bell`, `crash`, and `splash`. Any source lane may select any piece. Within a kit, a hi-hat strike chokes the other hi-hat pieces, even when mapped to different source lanes.
+
+For a modeled lane, its source lane prefix selects the following track controls. For example, `bd_tune = 0.9` tunes the piece assigned to `bd`. Built-in and instrument bindings retain their existing parameter rules.
+
+| Track control | Unit | Range | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<lane>_tune` | unitless | 0.5–2 | 1 | Resonant frequency multiplier |
+| `<lane>_decay` | unitless | 0.25–2 | 1 | Natural decay multiplier |
+| `<lane>_position` | unitless | 0–1 | 0.35 | Strike position from center to edge |
+| `<lane>_humanize` | unitless | 0–0.1 | 0.015 | Bounded timbre, strength, and pitch variation |
+| `<lane>_level` | dB | −60–+6 | −6 | Piece level |
+| `<lane>_pan` | unitless | −1–1 | 0 | Piece pan |
+
+Modeled synthesis controls are prepared with the track. Scene settings may change piece level and pan; synthesis changes require a different configured track. Humanization does not move scheduled event times. Keep interacting hi-hat pieces in the same kit, because separate tracks have separate choke groups.
 
 **Errors:** Unknown lanes or instrument targets report `CICADA-REFERENCE`; duplicate lane bindings report `CICADA-DUPLICATE`.
 
