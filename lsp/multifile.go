@@ -30,6 +30,17 @@ func (s *server) projectSources(uri string) (*project.Sources, error) {
 	return project.ReadSources(path, overrides)
 }
 
+func usesSourceSet(files *project.Sources) bool {
+	return files != nil && (files.Manifest.ExplicitSources() || len(files.Libraries) > 0)
+}
+
+func sourceSetEdition(files *project.Sources) int {
+	if files.Manifest.Edition != 0 {
+		return files.Manifest.Edition
+	}
+	return notation.SourceEdition(files.Files[0])
+}
+
 func symbolFamily(kind string) string {
 	switch kind {
 	case "instrument", "kit", "sampler", "preset":
@@ -53,7 +64,7 @@ func (s *server) projectDefinition(uri string, at position) any {
 			return target
 		}
 	}
-	if files == nil || !files.Manifest.ExplicitSources() {
+	if !usesSourceSet(files) {
 		return definition(uri, source, at)
 	}
 	selected, _, ok := symbolAt(source, at)
@@ -132,7 +143,7 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 			return nil
 		}
 	}
-	if files == nil || !files.Manifest.ExplicitSources() {
+	if !usesSourceSet(files) {
 		return rename(uri, source, at, newName)
 	}
 	if !identifier.MatchString(newName) {
@@ -233,7 +244,9 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 		updated[i].Source = data
 		changes[fileURI] = edits
 	}
-	score, ds := notation.ParseFiles(updated, files.Manifest.Edition)
+	validation := *files
+	validation.Files = updated
+	score, ds := validation.Parse()
 	if score == nil || hasErrors(ds) {
 		return nil
 	}
@@ -247,7 +260,7 @@ func (s *server) projectHover(uri string, at position) any {
 	source := s.documents[uri]
 	match, ok := parameterPathAt(source, byteOffset(source, at))
 	files, err := s.projectSources(uri)
-	if err != nil || files == nil || !files.Manifest.ExplicitSources() {
+	if err != nil || !usesSourceSet(files) {
 		return hover(source, at)
 	}
 	score, ds := files.Parse()
@@ -282,7 +295,7 @@ func (s *server) projectCompletion(uri string, at position) any {
 			return items
 		}
 	}
-	if err != nil || files == nil || !files.Manifest.ExplicitSources() {
+	if err != nil || !usesSourceSet(files) {
 		return parameterPathCompletion(source, at)
 	}
 	for _, file := range files.Files {
@@ -296,12 +309,29 @@ func (s *server) projectCompletion(uri string, at position) any {
 }
 
 func (s *server) projectFixAction(files *project.Sources) []any {
-	fixed, changed, err := migration.FixFiles(files.Files, files.Manifest.Edition)
-	if err != nil || !changed && files.Manifest.Edition == 2 {
+	editionNumber := sourceSetEdition(files)
+	_, diagnostics := files.Parse()
+	for _, d := range diagnostics {
+		if d.Severity == "error" && (strings.HasPrefix(d.Code, "CICADA-LIB-") || strings.HasPrefix(d.Code, "CICADA-ASSET-")) {
+			return []any{}
+		}
+	}
+	fixed, changed, err := migration.FixFiles(files.Files, editionNumber)
+	if err != nil || !changed && editionNumber == 2 {
 		return []any{}
 	}
 	var changes []any
-	if files.Manifest.Edition == 1 {
+	if files.ManifestPath == "" {
+		name := strings.TrimSuffix(filepath.Base(files.Files[0].Path), ".cicada")
+		if !s.canCreateFiles || !edition.ValidProjectName(name) {
+			return []any{}
+		}
+		uri := fileURI(filepath.Join(files.Root, "cicada.mod"))
+		changes = append(changes,
+			map[string]any{"kind": "create", "uri": uri},
+			map[string]any{"textDocument": map[string]any{"uri": uri, "version": nil}, "edits": []any{map[string]any{"range": region{}, "newText": "project " + name + "\ncicada 2\n"}}},
+		)
+	} else if editionNumber == 1 {
 		before, err := os.ReadFile(files.ManifestPath)
 		if err != nil {
 			return []any{}
