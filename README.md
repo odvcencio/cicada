@@ -60,7 +60,7 @@ by default. `CICADA_AUDIO` selects a backend when `--audio` is omitted.
 - [User manual](docs/manual/README.md) — write scores, use Studio, and export
   audio.
 - [Language specification](docs/spec/README.md) — edition 1 and 2 syntax,
-  defaults, diagnostics, and accepted designs that are not yet available.
+  defaults, diagnostics, and supported language extensions.
 - [Examples](examples/) — complete Cicada scores, including
   [first acid](examples/first-acid.cicada) and
   [circuit kit](examples/circuit-kit.cicada).

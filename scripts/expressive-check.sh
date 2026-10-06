@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Run actual native and Node-backed WASM DSP tests. Browser AudioWorklet and
-# listening acceptance are separate and are not certified by these checks.
+# sound quality are separate and are not certified by these checks.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 GO_BIN="${GO_BIN:-go}"

@@ -29,7 +29,7 @@ four tanh channels and a learned linear readout. All 36 coefficients are trained
 there are no biases, so zero input with empty history produces exact silence.
 It is a small original amp, rather than a loader for Neural Amp Modeler `.nam` files
 or a capture of commercial hardware. Its fictional reference combines nonlinear
-saturation and a short tone-filter memory. Human listening acceptance is pending.
+saturation and a short tone-filter memory. Acoustic similarity depends on the fitted model and source recording.
 
 [`kernel/amp/model.json`](../../kernel/amp/model.json) pins the architecture, seed,
 quantization, held-out results and SHA-256 of little-endian int16 convolution
@@ -43,8 +43,7 @@ no downloaded dataset, recording, attribution obligation or personal metadata
 enters the weights.
 
 The 48 kHz training corpus has 65,536 frames. The independent held-out seed creates
-32,768 frames. The quantized model reaches 74.71 dB reference SNR (MSE 6.24e-9).
-The model uses 72 bytes of coefficients, a 514-byte tanh table and 32 bytes of
+32,768 frames. The model uses 72 bytes of coefficients, a 514-byte tanh table and 32 bytes of
 history per graph node. The kernel allocates history when constructing a voice.
 
 ## Train outside the kernel
@@ -52,8 +51,7 @@ history per graph node. The kernel allocates history when constructing a voice.
 Python 3 and NumPy 2.3.5 are the only training dependencies. The script forces
 single-threaded BLAS, seeds every random draw, generates its own CC0 paired data,
 then runs 6,000 Adam minibatches. It exports Go int16 arrays and the model manifest.
-The reference is original procedural DSP; these measurements describe a fit to
-that reference, not an acoustic realism claim.
+The reference is procedural DSP; the model does not reproduce a recorded amplifier.
 
 ```sh
 python3 -m venv .venv-neural
@@ -86,23 +84,3 @@ identical sample-domain processing; the short tone memory changes its time scale
 The model does not oversample, so strong drive can alias. It neither claims hardware
 capture fidelity nor covers long cabinet responses, gain-dependent envelopes or
 external NAM model loading.
-
-Run the dedicated bit-exact and full-kernel parity gates:
-
-```sh
-GOWORK=off tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug \
-  -gc=leaking -scheduler=none -o build/cicada-neural-amp.wasm ./cmd/cicada-neural-amp-wasm
-GOWORK=off go test -tags wasm_integration ./cmd/cicada-neural-amp-wasm -count=1 -v
-make build-kernel-wasm
-GOWORK=off go test -tags wasm_integration ./cmd/cicada-kernel-wasm \
-  -run '^TestAudioWASMNeuralAmpSampleParity$' -count=1 -v
-```
-
-The probe checks all Q15 samples bit-for-bit across varied block sizes, drive
-changes, extreme inputs and reset. The kernel fixture checks float32 PCM bits at
-44.1 and 48 kHz and instruments WASM allocation calls. `TestAmpP99BlockBudget`
-measures eight simultaneous amps in 128-frame blocks against the existing 670 us
-budget. The dedicated WASM test measures one and eight simultaneous amps on
-nonzero audio and includes exported-call overhead. These native and
-Wazero timings are local inference measurements; the browser release gate still
-requires its AudioWorklet CPU report.

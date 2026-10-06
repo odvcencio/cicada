@@ -16,6 +16,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  commit-hygiene:
+    name: Commit metadata hygiene
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check every pull request commit
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: bash scripts/check-commit-hygiene.sh "$PR_BASE_SHA" "$PR_HEAD_SHA"
+
   parity-amd64:
     name: PCM24 parity (amd64, WASM)
     runs-on: ubuntu-24.04
@@ -255,7 +271,7 @@ jobs:
   m2-pr:
     name: M2 AudioWorklet gates
     if: github.event_name == 'pull_request' || github.event_name == 'push'
-    runs-on: [self-hosted, buildbox, linux, x64]
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 40
     env:
       GOWORK: off
@@ -322,7 +338,7 @@ jobs:
   m2-soak:
     name: M2 AudioWorklet nightly soak
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, buildbox, linux, x64]
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 55
     env:
       GOWORK: off

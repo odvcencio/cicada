@@ -44,7 +44,7 @@ func TestBrowserCaptureFakes(t *testing.T) {
 	t.Logf("%s", output)
 }
 
-// Check the browser adapter against lane D's actual Go descriptor and Place,
+// Check the browser adapter against the Go capture descriptor and Place,
 // rather than relying only on a parallel set of JavaScript assertions.
 func TestBrowserBlockUsesCaptureDescriptor(t *testing.T) {
 	const script = `require('../../host/web/capture.js');let block;const port={postMessage(p){block=p.timing}};const adapter=new CicadaCapture({port,channels:1,epoch:7},48000,{postMessage(){}});adapter.receive({op:'begin',countInFrames:4});adapter.process([[new Float32Array(8)]],8,100,120000,true);console.log(JSON.stringify(block));`

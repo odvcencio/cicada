@@ -59,8 +59,7 @@ Removing a point keeps that inherited value; add the score's default value
 explicitly to reset it. Repeated uses of a scene share its points. Playback,
 seek reconstruction, WAV exports, and stems use the same scene settings.
 Edits preserve surrounding source comments and support Undo. These lanes
-currently place points at scene boundaries; continuous curves and recording
-control movement remain future work.
+place points at scene boundaries. Continuous curves and recording control movement are not supported.
 
 ![GoSX scene automation with explicit points and inherited levels.](screenshots/studio-automation-1440.png)
 
