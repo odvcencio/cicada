@@ -126,14 +126,19 @@ def build(args):
         description="CC0 acoustic grand: four recorded dynamics where available, mapped keys and recorded dampening.",
         config=config(release=200),
     )
-    roots = {42, 46, 48, 52, 54, 58, 60, 64, 66, 70, 72, 78, 84}
+    # Piano and trumpet contributors label middle C as C3. Bass file names
+    # and its SFZ map use written pitch, one octave above sounding bass.
+    # Cicada uses sounding MIDI pitch (middle C = 60); qualify the recordings.
+    roots = {10, 18, 24, 30, 36, 42, 48, 54, 60, 66, 72, 84, 96}
     for p in trees["vcsl"]:
         m = re.search(
             r"Grand Piano, Kawai/(Sustains|Releases)/GPiano_(?:sus|rel)_(.*?)_v(\d+)_rr1_Player.wav$",
             p,
         )
         if m and midi(m[2]) in roots:
-            root = midi(m[2])
+            # The lowest labelled A#-1 recording rings at A0 (its 4th
+            # partial is about 110 Hz), not Bb0; preserve sounding pitch.
+            root = 21 if midi(m[2]) == 10 else midi(m[2]) + 12
             layer = {1: 24, 2: 56, 3: 88, 4: 120}[int(m[3])]
             add("grand", "vcsl", p, zone(root, layer, release=m[1] == "Releases"))
     manifests["nylon"] = dict(
@@ -153,13 +158,13 @@ def build(args):
             r"Samples/darkblack/(reg|rel)/darkblack_(.*?)_(p|mp|mf|f|rel)_rr([1-4]).wav",
             p,
         )
-        if m and midi(m[2]) in {35, 38, 43, 48, 53, 58, 60}:
+        if m and midi(m[2]) in {35, 40, 45, 50, 55, 60, 65, 72, 76}:
             layer = {"p": 24, "mp": 56, "mf": 88, "f": 120, "rel": 64}[m[3]]
             add(
                 "bass",
                 "bass",
                 p,
-                zone(midi(m[2]), layer, int(m[4]) - 1, 4, m[1] == "rel"),
+                zone(midi(m[2]) - 12, layer, int(m[4]) - 1, 4, m[1] == "rel"),
             )
     manifests["kit"] = dict(
         description="CC0 acoustic kit: kick, snare, closed/open hats; recorded dynamics and two takes.",
@@ -218,7 +223,7 @@ def build(args):
             r"Brass/Trumpet/sus/Sum_SHTrumpet_sus_(.*?)_v([13])_rr1.wav", p
         )
         if m and 48 <= midi(m[1]) <= 76:
-            add("trumpet", "vsco", p, zone(midi(m[1]), 32 if m[2] == "1" else 112))
+            add("trumpet", "vsco", p, zone(midi(m[1]) + 12, 32 if m[2] == "1" else 112))
     selected = {k: [] for k in manifests}
 
     def convert(job):
@@ -356,12 +361,23 @@ def build(args):
             z["OneShot"] = name == "kit"
             if name != "kit":
                 z["KeyLow"] = (
-                    (roots[i - 1] + z["Root"]) // 2 + 1 if i else max(0, z["Root"] - 2)
+                    (roots[i - 1] + z["Root"]) // 2 + 1
+                    if i
+                    else max(
+                        {
+                            "grand": 21,
+                            "nylon": 40,
+                            "bass": 23,
+                            "violin": 55,
+                            "trumpet": 58,
+                        }[name],
+                        z["Root"] - 2,
+                    )
                 )
                 z["KeyHigh"] = (
                     (z["Root"] + roots[i + 1]) // 2
                     if i + 1 < len(roots)
-                    else min(127, z["Root"] + 2)
+                    else min(108 if name == "grand" else 127, z["Root"] + 2)
                 )
         entries.sort(
             key=lambda e: (

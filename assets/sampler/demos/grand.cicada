@@ -10,7 +10,7 @@ seed 4242
 
 sampler sound {
   pack = "packs/grand/manifest.json"
-  sha256 = "08073ba8347e43aa20f9bdb437f10a95e9ce548cef79fa09abbf53ee16a3ee07"
+  sha256 = "1389e182f19bb0235ae3cf535434afee8ff2961f160c56042210ab18361402b6"
   root = c4
   voices = 16
 }

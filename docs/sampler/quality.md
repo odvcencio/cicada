@@ -12,6 +12,7 @@ The behaviour reference is Kontakt's documented mapping zones, velocity crossfad
 | Loops and stealing | Crossfade loop endpoints; new notes ramp from zero; one bounded old-output tail per slot | Discontinuous constant fixtures bound first differences to 0.03 at 48 kHz |
 | Envelopes and filter | Per-note attack/decay/sustain/release; finite filter output; exact silence after completion | Timed envelope fixtures, extreme parameter tests |
 | Legato and tuning | Retune an owned voice without replaying its attack; cents tuning and seeded timing/velocity/pitch variation | Phase continuity and block-size independent PCM |
+| Recording roots | Selected tonal recordings match sounding MIDI keys within 35 cents, periodicity confidence >=0.8 | Licensed-root pitch analysis; an octave mismatch must fail even when PCM fidelity passes |
 | Resampling | Alias rejection >=80 dB; residual <=-90 dB; passband ripple <=0.05 dB for qualified ratios | Existing least-squares tone and stopband sweep in kernel/voice/sample/quality_test.go |
 | Noise | Inactive engine produces bit-exact zero; source noise remains separately reported | Silence fixture and sample-file tail/DC/peak measurements |
 | Runtime | No allocation or asset I/O on callback; bounded layers/voices; native/TinyGo parity; 128-frame timing reported per voice | Allocation tests, standalone WASM fixture, benchmarks |

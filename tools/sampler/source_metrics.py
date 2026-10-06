@@ -18,16 +18,60 @@ def sha(b):
     return hashlib.sha256(b).hexdigest()
 
 
+def fundamental(signal):
+    """YIN-style periodicity estimate, including overtone-rich bass/brass."""
+    x = signal[12000:44768].mean(axis=1)
+    n = len(x)
+    if n < 8192:
+        raise ValueError("tonal reference is too short for pitch qualification")
+    correlation = np.fft.irfft(abs(np.fft.rfft(x, 2 * n)) ** 2, 2 * n)[:n]
+    energy = np.r_[0, np.cumsum(x * x)]
+    lags = np.arange(1, min(4000, n // 2))
+    difference = (
+        energy[n - lags] + energy[n] - energy[lags] - 2 * correlation[lags]
+    ) / (n - lags)
+    normalized = (
+        difference
+        * np.arange(1, len(difference) + 1)
+        / np.maximum(np.cumsum(difference), 1e-20)
+    )
+    minima = (
+        np.where(
+            (normalized[1:-1] < normalized[:-2])
+            & (normalized[1:-1] < normalized[2:])
+            & (normalized[1:-1] < 0.15)
+        )[0]
+        + 1
+    )
+    minima = [i for i in minima if lags[i] >= 8]
+    if not minima:
+        raise ValueError("tonal reference has no qualified periodic pitch")
+    i = minima[0]
+    offset = (
+        0.5
+        * (normalized[i - 1] - normalized[i + 1])
+        / (normalized[i - 1] - 2 * normalized[i] + normalized[i + 1])
+    )
+    return float(48000 / (lags[i] + offset)), float(1 - normalized[i])
+
+
 def main(args):
     selections = {}
     for line in pathlib.Path(args.selections).read_text().splitlines():
-        match = re.fullmatch(r"(\w+) asset=(\w+) frames=(\d+) velocity=(\d+)", line)
+        match = re.fullmatch(
+            r"(\w+) asset=(\w+) frames=(\d+) velocity=(\d+) root=(\d+)", line
+        )
         if match:
-            selections[match[1]] = (match[2], int(match[3]), int(match[4]))
+            selections[match[1]] = (
+                match[2],
+                int(match[3]),
+                int(match[4]),
+                int(match[5]),
+            )
     if set(selections) != {"grand", "nylon", "bass", "kit", "violin", "trumpet"}:
         raise ValueError("reference selections must cover all six catalog instruments")
     result = []
-    for name, (ident, frames, velocity) in selections.items():
+    for name, (ident, frames, velocity, root) in selections.items():
         m = json.loads((pathlib.Path(args.packs) / name / "manifest.json").read_text())
         a = next(a for a in m["assets"] if a["id"] == ident)
         suffix = pathlib.Path(a["source_url"]).suffix
@@ -118,9 +162,23 @@ def main(args):
             recorded_excerpt_tail_rms_dbfs=20 * np.log10(max(rms(tail), 1e-30)),
             source_dc_dbfs=20 * np.log10(max(abs(float(np.mean(original))), 1e-30)),
         )
+        pitch_pass = True
+        if name != "kit":
+            measured, confidence = fundamental(rendered)
+            expected = 440 * 2 ** ((root - 69) / 12)
+            cents = float(1200 * np.log2(measured / expected))
+            item.update(
+                root=root,
+                expected_frequency_hz=expected,
+                measured_fundamental_hz=measured,
+                root_error_cents=cents,
+                pitch_confidence=confidence,
+            )
+            pitch_pass = abs(cents) <= 35 and confidence >= 0.8
         item["status"] = (
             "pass"
-            if item["source_relative_residual_db"] <= -75
+            if pitch_pass
+            and item["source_relative_residual_db"] <= -75
             and spectrum <= 0.1
             and envelope <= 0.01
             else "miss"

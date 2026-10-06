@@ -10,7 +10,7 @@ seed 4242
 
 sampler sound {
   pack = "packs/nylon/manifest.json"
-  sha256 = "f3d118676730ae76bae5d4db97774ab25459433fb920fc57586f470335e282f9"
+  sha256 = "f60df9a609fe87f479922b77cebd4cdc084ec6c8ae4134231203f7850abca9b6"
   root = c4
   voices = 16
 }

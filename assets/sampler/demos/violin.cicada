@@ -10,7 +10,7 @@ seed 4242
 
 sampler sound {
   pack = "packs/violin/manifest.json"
-  sha256 = "d038e1e6c94e9855233a0b0b8605d727195c5ff6129705f8491e5f139ed560bc"
+  sha256 = "1ed859eddf261fa241d5452cf778666b67b529e22a7e2d27f0db159228a8ef60"
   root = c4
   voices = 16
 }

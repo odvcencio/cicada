@@ -10,7 +10,7 @@ seed 4242
 
 sampler sound {
   pack = "packs/bass/manifest.json"
-  sha256 = "19ec495747ca4418280abce0c10942ee0adb85c27a725ac89bbe0d9c912ecac7"
+  sha256 = "8d8ddae6d577ed6aba313752f817801acfffdf305d4201ca7c7ce4ef6fab8883"
   root = c4
   voices = 16
 }
