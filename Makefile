@@ -23,6 +23,19 @@ test:
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs
 
+.PHONY: test-audio-ideation test-editor-transcription test-record-worklet
+
+test-audio-ideation:
+	go test ./host/transcription -count=1 -v
+
+test-editor-transcription:
+	go test ./cmd/cicada -run 'Test.*Transcri' -count=1
+	node --test cmd/cicada/studio-transcribe.test.cjs
+	cd workstation && go test ./... -run 'Test.*Transcri' -count=1
+
+test-record-worklet:
+	node --test host/web/capture.test.cjs cmd/cicada/studio-capture.test.cjs cmd/cicada/studio-transcribe.test.cjs
+
 engine-metrics:
 	GOMAXPROCS=1 go run ./cmd/cicada-engine-metrics $(ENGINE_METRICS_ARGS)
 
