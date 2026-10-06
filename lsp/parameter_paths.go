@@ -62,6 +62,10 @@ func parameterPathHover(source []byte, match pathRegion) string {
 	if err != nil {
 		return ""
 	}
+	return resolvedParameterHover(match.path, resolved)
+}
+
+func resolvedParameterHover(path string, resolved project.ResolvedParam) string {
 	d := resolved.Descriptor
 	unit := d.Unit
 	if unit == "" {
@@ -78,7 +82,7 @@ func parameterPathHover(source []byte, match pathRegion) string {
 		}
 	}
 	return fmt.Sprintf("**%s** — %s `%s`\n\nType: %s  \nUnit: %s  \nRange: %s  \nDefault: %s  \nSmoothing: %g ms  \nLive: %t  \nDisplay step: %s",
-		match.path, resolved.OwnerKind, resolved.Owner, typeName, unit,
+		path, resolved.OwnerKind, resolved.Owner, typeName, unit,
 		formatRange(d.Min, d.Max, d.Unit), formatDescriptorDefault(d), d.SmoothingMS, d.Live, formatDescriptorStep(d.DisplayStep, d.Unit))
 }
 
