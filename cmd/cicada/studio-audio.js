@@ -108,6 +108,16 @@
     root?.document?.addEventListener?.('visibilitychange', () => { if (root.document.hidden) { panic(); inputPanic(); } });
     root?.document?.getElementById('audio-mode')?.addEventListener('change', () => { panic(); inputPanic(); });
 
+    function noteIdentity(identity) {
+      if (!identity) return {};
+      if (typeof identity === 'string') { if (identity.length > 512) throw new RangeError('note ID exceeds limit'); return {noteId:identity}; }
+      if (!Number.isInteger(identity.noteId) || identity.noteId < 1 || identity.noteId > 65534) throw new RangeError('note ID must be from 1 to 65534');
+      if (!Number.isInteger(identity.channel) || identity.channel < 0 || identity.channel > 15) throw new RangeError('MIDI channel must be from 0 to 15');
+      return {noteId: identity.noteId, channel: identity.channel};
+    }
+
+    function ownerKey(track, note, identity) { const id = noteIdentity(identity).noteId; return typeof id === 'number' ? `${track}:${id}` : id || `${track}:${note}`; }
+
     return {
       backend: 'native',
       params() {
@@ -126,25 +136,36 @@
       },
       setMute(track, on) { if (browser()) return browser().setMute(track, on); send({type: 'mute', track, on: !!on}); },
       setSolo(track, on) { if (browser()) return browser().setSolo(track, on); send({type: 'solo', track, on: !!on}); },
-      noteOn(track, note, velocity, noteId) {
+      noteOn(track, note, velocity, identity) {
         if (typeof track !== 'string' || !track) throw new TypeError('note track is required');
         if (!Number.isInteger(note) || note < 0 || note > 127) throw new RangeError('note must be an integer from 0 to 127');
         if (!Number.isInteger(velocity) || velocity < 0 || velocity > 127) throw new RangeError('velocity must be an integer from 0 to 127');
-        if (browser()) return browser().noteOn(track, note, velocity, noteId || `${track}:${note}`);
+        if (browser()) return browser().noteOn(track, note, velocity, ownerKey(track, note, identity));
         if (!socket || socket.readyState !== 1 || closed) return false;
-        const held = {track, note, ...(noteId ? {noteId} : {})};
-        liveNotes.set(noteId || `${track}:${note}`, held);
+        const held = {track, note, ...noteIdentity(identity)};
+        liveNotes.set(ownerKey(track, note, identity), held);
         socket.send(JSON.stringify({type: 'note', ...held, velocity, on: true}));
         return true;
       },
-      noteOff(track, note, noteId) {
+      noteOff(track, note, identity) {
         if (typeof track !== 'string' || !track) throw new TypeError('note track is required');
         if (!Number.isInteger(note) || note < 0 || note > 127) throw new RangeError('note must be an integer from 0 to 127');
-        if (browser()) return browser().noteOff(track, note, noteId || `${track}:${note}`);
-        const key = noteId || `${track}:${note}`, held = liveNotes.get(key);
+        noteIdentity(identity);
+        if (browser()) return browser().noteOff(track, note, ownerKey(track, note, identity));
+        const key = ownerKey(track, note, identity), held = liveNotes.get(key);
         if (!held) return false;
         liveNotes.delete(key);
         if (socket?.readyState === 1) socket.send(JSON.stringify({type: 'note', ...held, velocity: 0, on: false}));
+        return true;
+      },
+      noteExpression(track, expression) {
+        if (typeof track !== 'string' || !track) throw new TypeError('note track is required');
+        if (!expression || !Number.isFinite(expression.pitchCents) || expression.pitchCents < -9600 || expression.pitchCents > 9600) throw new RangeError('pitch must be finite cents from -9600 to 9600');
+        if (!Number.isFinite(expression.pressure) || expression.pressure < 0 || expression.pressure > 1) throw new RangeError('pressure must be from 0 to 1');
+        if (!Number.isFinite(expression.timbre) || expression.timbre < 0 || expression.timbre > 1) throw new RangeError('timbre must be from 0 to 1');
+        if (browser()) { if (!browser().noteExpression) throw new Error('The browser input adapter does not support per-note expression'); return browser().noteExpression(track, expression); }
+        if (!socket || socket.readyState !== 1 || closed) return false;
+        socket.send(JSON.stringify({type: 'note-expression', track, ...noteIdentity(expression), pitchCents: expression.pitchCents, pressure: expression.pressure, timbre: expression.timbre}));
         return true;
       },
       resetLoudness() { send({type: 'loudness-reset'}); },

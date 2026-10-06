@@ -123,6 +123,22 @@ The launch matrix queues scenes or individual slots with the selected timing;
 mint marks a playing slot and amber marks a queued slot. Its forms also work
 without browser scripting.
 
+Live accepts MIDI Polyphonic Expression (MPE) lower and upper zones. Send the
+controller's MPE zone setup (RPN 0,6) before playing. Member-channel pitch bend
+uses a default range of ±48 semitones; pitch-bend sensitivity RPN 0,0 overrides
+that range. Channel pressure, polyphonic pressure, and CC74 become per-note
+pressure and timbre. Each input device, channel, and note-on has its own note
+identity, so equal pitches on different channels remain independent.
+
+Without a zone setup, expression received on a non-master channel enables the
+default lower zone. Until expression or zone setup identifies MPE, channel 10
+keeps its General MIDI drum routing. Choose a monophonic programmable instrument
+track or an acid track as the note destination. Experimental poly tracks cannot
+audition MPE input live. Web MIDI supplies MIDI 1 packets; this
+input does not decode MIDI 2 Universal MIDI Packets.
+
+#### Record and Arm
+
 **Enable MIDI** asks for browser permission without system-exclusive access.
 Select a parameter, scene, slot, track stop, or transport target, then **Learn
 next input**. Parameters learn controller messages; launches learn note
@@ -137,6 +153,30 @@ to the nearest step; **Undo** restores the previous patterns. An interrupted
 take is retained in the tab's session storage when available. A source conflict
 keeps the preview; applying it to the current score requires explicit review.
 Server previews expire after thirty minutes or when Studio closes.
+Ordinary MIDI take commits support acid, drum, and eight-voice programmable tracks with single-note takes. Expressive takes also
+support programmable instrument tracks with scalar note patterns. Existing
+chord patterns are refused without changing the score; edit their chords in
+the grid or source pane. Chord recording is not available through the take editor.
+
+Expression takes write `bend:`, `vibrato:`, `pressure:`, and `timbre:` rows and
+use ties for held notes. Samples and note durations quantize to the pattern's
+step grid. A one-way bend keeps its cents value. Pitch samples with at least
+two direction reversals within a step become a bend center and vibrato depth;
+playback uses the score's fixed 5 Hz vibrato rate. Other steps use `0ct` vibrato
+depth. This estimate preserves depth rather than the original oscillation rate
+or every controller sample. The raw samples remain in the page's take buffer
+until commit or discard.
+
+Expression takes use one note per step. Studio keeps the take buffered and
+refuses to commit overlapping expressive notes, notes that occupy the same
+quantized step, or notes longer than one pattern loop. Record those voices into
+separate tracks and patterns without chord steps. Expression recording also
+requires directly authored note steps rather than a reused phrase. Ordinary acid takes retain
+their existing overlapping-slide behavior.
+
+![A committed MPE take adds bend, vibrato, pressure, and timbre rows beside the pitch grid.](screenshots/studio-mpe-score.png)
+
+![The recorded take preview and commit controls at 390 pixels wide.](screenshots/studio-mpe-mobile-390.png)
 
 ## Mixer and instruments
 
@@ -147,6 +187,7 @@ Ranges, units, enum choices, and On/Off controls come from Cicada's parameter
 registry. Existing track sends are included in their mixer strip.
 For an edition 1 score, first check **Upgrade score to edition 2 for this change**.
 The domain service performs the migration and parameter edit together.
+#### PCM capture and shared sampler audition
 
 For tap slicing, velocity layers and round robins, use **Record your own
 instrument** in the Record panel. See [recording instruments](recording-instruments.md)

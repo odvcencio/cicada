@@ -67,14 +67,19 @@ func (s *studio) liveProject() (*project.Project, []byte, error) {
 }
 
 type audioClientMessage struct {
-	Type     string          `json:"type"`
-	NoteID   string          `json:"noteId,omitempty"`
-	Address  string          `json:"address"`
-	Track    string          `json:"track"`
-	Value    json.RawMessage `json:"value"`
-	Note     *int            `json:"note,omitempty"`
-	Velocity *int            `json:"velocity,omitempty"`
-	On       *bool           `json:"on,omitempty"`
+	Type       string          `json:"type"`
+	Address    string          `json:"address"`
+	Track      string          `json:"track"`
+	Value      json.RawMessage `json:"value"`
+	Note       *int            `json:"note,omitempty"`
+	Velocity   *int            `json:"velocity,omitempty"`
+	On         *bool           `json:"on,omitempty"`
+	NoteID     any             `json:"noteId,omitempty"`
+	Channel    *int            `json:"channel,omitempty"`
+	PitchCents *float32        `json:"pitchCents,omitempty"`
+	Pressure   *float32        `json:"pressure,omitempty"`
+	Timbre     *float32        `json:"timbre,omitempty"`
+	owner      string
 }
 
 type audioErrorMessage struct {
@@ -165,16 +170,16 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if message.Type == "note" && message.Note != nil && message.On != nil {
-			if len(message.NoteID) > 512 {
-				s.queueAudioError(ctx, outgoing, audioErrorResponse(message, fmt.Errorf("note ID exceeds limit")))
+			id, _, identityErr := audioNoteIdentity(message.NoteID)
+			if identityErr != nil {
+				s.queueAudioError(ctx, outgoing, audioErrorResponse(message, identityErr))
 				continue
 			}
-			id := message.NoteID
 			if id == "" {
 				id = message.Track + ":" + strconv.Itoa(*message.Note)
 			}
-			message.NoteID = session + id
-			if original, ok := held[message.NoteID]; ok {
+			message.owner = session + id
+			if original, ok := held[message.owner]; ok {
 				if *message.On {
 					continue
 				} // Idempotent repeated press.
@@ -191,9 +196,9 @@ func (s *studio) audioSocket(w http.ResponseWriter, r *http.Request) {
 			s.queueAudioError(ctx, outgoing, audioErrorResponse(message, err))
 		} else if message.Type == "note" && message.On != nil {
 			if *message.On {
-				held[message.NoteID] = message
+				held[message.owner] = message
 			} else {
-				delete(held, message.NoteID)
+				delete(held, message.owner)
 			}
 		}
 	}
@@ -204,11 +209,11 @@ func audioErrorResponse(message audioClientMessage, err error) audioErrorMessage
 	if address == "" && (message.Type == "mute" || message.Type == "solo") {
 		address = message.Track + "." + message.Type
 	}
-	if address == "" && message.Type == "note" {
+	if address == "" && (message.Type == "note" || message.Type == "note-expression") {
 		address = message.Track
 	}
 	code := "CICADA-PARAM"
-	if message.Type == "note" {
+	if message.Type == "note" || message.Type == "note-expression" {
 		code = "CICADA-NOTE"
 	}
 	return audioErrorMessage{Type: "error", Code: code, Message: err.Error(), Address: address}
@@ -220,6 +225,39 @@ func (s *studio) queueAudioError(ctx context.Context, outgoing chan<- any, messa
 	case <-ctx.Done():
 	default:
 	}
+}
+
+// audioNoteIdentity accepts legacy owner strings and numeric expressive identities.
+func audioNoteIdentity(value any) (string, uint16, error) {
+	if value == nil {
+		return "", 0, nil
+	}
+	if owner, ok := value.(string); ok {
+		if len(owner) > 512 {
+			return "", 0, fmt.Errorf("note ID exceeds limit")
+		}
+		return owner, 0, nil
+	}
+	var number float64
+	switch id := value.(type) {
+	case float64:
+		number = id
+	case int:
+		number = float64(id)
+	case *int:
+		if id == nil {
+			return "", 0, nil
+		}
+		number = float64(*id)
+	case uint16:
+		number = float64(id)
+	default:
+		return "", 0, fmt.Errorf("invalid note identity")
+	}
+	if number < 1 || number > 65534 || number != float64(uint16(number)) {
+		return "", 0, fmt.Errorf("note identity must be from 1 to 65534")
+	}
+	return fmt.Sprintf("mpe:%d", uint16(number)), uint16(number), nil
 }
 
 func validateAudioNote(message audioClientMessage) error {
@@ -240,7 +278,29 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 		s.transport.resetLoudness()
 		return nil
 	}
-	if message.Type == "note" {
+	if message.Type == "note" || message.Type == "note-expression" {
+		owner, noteID, err := audioNoteIdentity(message.NoteID)
+		if err != nil {
+			return err
+		}
+		if message.owner != "" {
+			owner = message.owner
+		}
+		if message.Channel != nil && (*message.Channel < 0 || *message.Channel > 15) {
+			return fmt.Errorf("MIDI channel must be from 0 to 15")
+		}
+		if message.Type == "note-expression" {
+			if noteID == 0 || message.PitchCents == nil || message.Pressure == nil || message.Timbre == nil {
+				return fmt.Errorf("expression needs noteId, pitchCents, pressure, and timbre fields")
+			}
+			s.transport.mu.Lock()
+			stream := s.transport.stream
+			s.transport.mu.Unlock()
+			if stream == nil {
+				return fmt.Errorf("audio transport is not running")
+			}
+			return stream.NoteExpression(message.Track, noteID, *message.PitchCents, *message.Pressure, *message.Timbre)
+		}
 		if err := validateAudioNote(message); err != nil {
 			return err
 		}
@@ -250,10 +310,10 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 		if stream == nil {
 			return fmt.Errorf("audio transport is not running")
 		}
-		if message.NoteID != "" {
-			return stream.NoteID(message.Track, *message.Note, *message.Velocity, *message.On, message.NoteID)
+		if owner != "" {
+			return stream.NoteOwnerID(message.Track, *message.Note, *message.Velocity, *message.On, owner, noteID)
 		}
-		return stream.Note(message.Track, *message.Note, *message.Velocity, *message.On)
+		return stream.NoteWithID(message.Track, *message.Note, *message.Velocity, *message.On, noteID)
 	}
 	p, _, err := s.liveProject()
 	if err != nil {

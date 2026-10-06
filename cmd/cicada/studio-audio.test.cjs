@@ -107,3 +107,24 @@ test('normal panic releases native owners; explicit silence discards native play
  await audio.silence();assert.deepEqual(requests,[['/api/transport',{action:'stop',revision:'current'}]]);
  audio.close();
 });
+
+test('note expression facade preserves identities and high resolution snapshots', () => {
+  FakeSocket.instances.length = 0;
+  const root = {WebSocket: FakeSocket, location: {protocol: 'http:', host: '127.0.0.1:8161'}};
+  const audio = createCicadaAudio({window: root});
+  const identity = {noteId: 1234, channel: 14};
+  const expression = {...identity, pitchCents: 12.345, pressure: .123456, timbre: .765432};
+  audio.noteOn('voice', 60, 100, identity);
+  audio.noteExpression('voice', expression);
+  audio.noteOff('voice', 60, identity);
+  assert.deepEqual(FakeSocket.instances[0].sent, [
+    {type: 'note', track: 'voice', note: 60, velocity: 100, on: true, ...identity},
+    {type: 'note-expression', track: 'voice', ...expression},
+    {type: 'note', track: 'voice', note: 60, velocity: 0, on: false, ...identity}
+  ]);
+  assert.throws(() => audio.noteExpression('voice', {...expression, pitchCents: NaN}), RangeError);
+  assert.throws(() => audio.noteExpression('voice', {...expression, pressure: 1.01}), RangeError);
+  assert.throws(() => audio.noteExpression('voice', {...expression, noteId: 65535}), RangeError);
+  assert.throws(() => audio.noteOff('voice', 60, {...identity, channel: 16}), RangeError);
+  audio.close();
+});

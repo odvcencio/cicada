@@ -174,6 +174,7 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 	for i, track := range p.Tracks {
 		tracks[i].ID = track.ID
 		tracks[i].Kind = track.Kind
+		tracks[i].Pitched = cfg.Track[i].Kind == engine.VoiceGraph
 		for _, kit := range p.Kits {
 			if track.Kind == kit.ID {
 				tracks[i].Kind = "drums"

@@ -73,6 +73,11 @@ func Compile(src notation.Instrument) (*Program, []notation.Diagnostic) {
 	}{{"pitch", Hz}, {"gate", Gate}, {"velocity", Unit}, {"sample_rate", Hz}} {
 		c.symbols[input.name] = c.emit(Node{Op: "input", Name: input.name, Type: input.typeOf})
 	}
+	// Reserve expression names but emit their inputs only when used, preserving
+	// the serialized graph and runtime cost of existing instruments.
+	for _, name := range []string{"pitch_bend", "pressure", "timbre"} {
+		c.symbols[name] = -1
+	}
 	for _, param := range src.Params {
 		typ := Type(param.Unit)
 		if typ == "" {
@@ -147,6 +152,10 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 		if !ok {
 			c.errorAt("CICADA-REFERENCE", "unknown symbol "+e.Text, e.Position)
 			return -1, ""
+		}
+		if index < 0 {
+			index = c.emit(Node{Op: "input", Name: e.Text, Type: Unit})
+			c.symbols[e.Text] = index
 		}
 		return index, c.program.Nodes[index].Type
 	case "binary":

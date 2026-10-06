@@ -252,6 +252,28 @@ func Validate(s *Score) (ds []Diagnostic) {
 		if steps < 1 || steps > 64 {
 			add("CICADA-LIMIT", "pattern must have 1 to 64 steps", "error", p.Position)
 		}
+		seenExpression := map[string]bool{}
+		for _, row := range p.Expression {
+			if seenExpression[row.Name] {
+				add("CICADA-DUPLICATE", "duplicate expression row "+row.Name, "error", row.Position)
+			}
+			seenExpression[row.Name] = true
+			if len(row.Values) != steps {
+				add("CICADA-PARAM", "expression row length differs from pattern", "error", row.Position)
+			}
+			if row.Name != "bend" && row.Name != "vibrato" && row.Name != "pressure" && row.Name != "timbre" {
+				add("CICADA-PARAM", "unknown expression row "+row.Name, "error", row.Position)
+				continue
+			}
+			for _, token := range row.Values {
+				if token.Text == "." {
+					continue
+				}
+				if _, err := ExpressionValue(row.Name, token.Text); err != nil {
+					add("CICADA-PARAM", err.Error(), "error", token.Position)
+				}
+			}
+		}
 		seenAttrs := map[string]bool{}
 		for _, a := range p.Attrs {
 			if seenAttrs[a.Name] {

@@ -22,6 +22,9 @@ func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8,
 	if cfg == nil || cfg.Tracks < 1 || cfg.Tracks > 16 || int(track) >= cfg.Tracks || slot >= 16 || len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks || cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph {
 		return nil, Error("invalid melodic pattern upload target")
 	}
+	if pattern.Expression != nil || len(cfg.Patterns) > 0 && cfg.Patterns[track].Slots[slot].Expression != nil {
+		return nil, Error("step expression requires a complete project image")
+	}
 	gate, seed := uint8(55), cfg.Seed
 	if len(cfg.Patterns) > 0 {
 		loaded := cfg.Patterns[track].Slots[slot]

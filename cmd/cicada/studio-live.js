@@ -30,6 +30,8 @@
   const getStorage = () => { try { return window.localStorage; } catch { return null; } };
   const storage = getStorage();
   const mappings = midi.createMappingStore(storage);
+  const mpeInput = midi.createMPEInput();
+  const midiNoteTracks = new Map();
 
   let patternMeta = new Map();
   let sceneNames = [];
@@ -65,7 +67,7 @@
         const kind = card.dataset.sourceKind?.toLowerCase() || '';
         const cells = sceneRows.get(id) || [];
         const drum = kind.includes('drum') || cells.some(cell => cell.pattern && patternMeta.get(cell.pattern)?.drums);
-        return {id, kind, drum, acid: kind === 'acid'};
+        return {id, kind, drum, acid: kind === 'acid', pitched: !drum && kind !== 'audio'};
       }).filter(track => track.id);
       trackByID = new Map(tracks.map(track => [track.id, track]));
     }
@@ -117,7 +119,7 @@
   }
   const acidSelect = $('#live-acid-track');
   const drumSelect = $('#live-drum-track');
-  fillTrackSelect(acidSelect, track => track.acid, settings.acidTrack);
+  fillTrackSelect(acidSelect, track => track.pitched, settings.acidTrack);
   fillTrackSelect(drumSelect, track => track.drum, settings.drumTrack);
   if (acidSelect) settings.acidTrack = acidSelect.value;
   if (drumSelect) settings.drumTrack = drumSelect.value;
@@ -263,18 +265,18 @@
   selectScene(selectedSceneIndex, false);
 
   function quantizeTicks(value) {
-    const map = {1: 480, 2: 1920, 5: 1920, 6: 3840, 8: 7680};
-    return map[value] || 1920;
+    const map = {1: 960, 2: 3840, 5: 3840, 6: 7680, 8: 15360};
+    return map[value] || 3840;
   }
   function stateTick(state = transportState) {
-    return Math.max(0, (Number(state.bar || 1) - 1) * 1920 + (Number(state.step || 1) - 1) * 120);
+    return Math.max(0, (Number(state.bar || 1) - 1) * 3840 + (Number(state.step || 1) - 1) * 240);
   }
   function queuedBars(state, selectedQuantize = state.pendingQuantize || quantizeSelect?.value || 2) {
     const current = stateTick(state);
     const quantum = quantizeTicks(Number(selectedQuantize));
     let target = Math.ceil(current / quantum) * quantum;
     if (target <= current) target += quantum;
-    return Math.max(1, Math.ceil((target - current) / 1920));
+    return Math.max(1, Math.ceil((target - current) / 3840));
   }
   function setPadState(pad, state, statusText, ariaLabel) {
     pad.dataset.state = state;
@@ -460,7 +462,10 @@
     if (!document.hidden) gamepad.poll(navigator.getGamepads?.() || []);
     gamepadFrame = requestAnimationFrame(pollGamepads);
   }
-  function panicInputs() { router.panic(); gamepad.panic(); }
+  function panicInputs() {
+    router.panic(); gamepad.panic();
+    for (const input of boundMIDIInputs.values()) { releaseMIDIInput(input); if (input.state !== 'disconnected') input.onmidimessage = event => handleMIDIMessage(input,event); }
+  }
   for (const event of ['blur', 'pagehide', 'cicada:inputpanic']) window.addEventListener(event, panicInputs);
   document.addEventListener('visibilitychange', () => { if (document.hidden) panicInputs(); });
   window.cicadaPerformance = {router, midi: midiPerformance, gamepad, panic: panicInputs, releaseAll: panicInputs,
@@ -516,6 +521,11 @@
     }
     liveSurface.append(button, help);
   }
+  function sendNoteExpression(track, expression) {
+    if (!track || !window.cicadaAudio) return;
+    try { window.cicadaAudio.noteExpression(track, expression); }
+    catch (error) { setStatus(error.message, 'error'); }
+  }
 
   function deviceMappings(device, channel, type, value) {
     return mappings.findInput(device, channel, type, value);
@@ -534,7 +544,7 @@
     const tempoText = $('.meta span')?.textContent || '';
     const tempo = Number(tempoText.match(/[0-9]+(?:\.[0-9]+)?/)?.[0] || 120);
     const elapsedMS = Math.max(0, Math.min(500, time - transportState.receivedAt));
-    return base + elapsedMS * tempo * 480 / 60000;
+    return base + elapsedMS * tempo * midi.MIDI_PPQ / 60000;
   }
   function activePatternFor(track) {
     const manual = transportState.activeSlots?.[track];
@@ -547,30 +557,43 @@
   let recording = false;
   let capturedNotes = [];
   const activeNotes = new Map();
-  function captureKey(track, note) { return `${track}:${note}`; }
-  function captureNoteOn(track, note, velocity, eventTime, owner) {
+  function captureKey(track, noteId) { return `${track}:${noteId}`; }
+  function captureNoteOn(track, note, velocity, eventTime, identity) {
+    const owner = typeof identity === 'string' ? identity : '';
+    identity = typeof identity === 'object' && identity ? identity : {noteId:0, channel:0};
     if (!recording || !armedTracks.has(track) || !transportState.playing) return;
     const pattern = activePatternFor(track);
     if (!pattern) { setStatus(`No active pattern is assigned to ${track}`, 'error'); return; }
     const tick = Math.max(0, transportTickAt(eventTime));
-    const record = {track, pattern, note, velocity, tick, endTick: tick};
+    const record = {track, pattern, note, velocity, tick, endTick: tick, noteId: identity.noteId, channel: identity.channel, expressions: []};
     capturedNotes.push(record);
-    const key = owner || captureKey(track, note);
+    const key = owner || captureKey(track, identity.noteId);
     const stack = activeNotes.get(key) || [];
     stack.push(record);
     activeNotes.set(key, stack);
+    if (identity.mpe) captureNoteExpression(track, identity, eventTime);
   }
-  function captureNoteOff(track, note, eventTime, owner) {
-    const key = owner || captureKey(track, note);
+  function captureNoteOff(track, noteId, eventTime, owner) {
+    const key = owner || captureKey(track, noteId);
     const stack = activeNotes.get(key);
     if (!stack?.length) return;
     const record = stack.pop();
-    record.endTick = Math.max(record.tick, transportTickAt(eventTime));
+    record.endTick = Math.max(record.tick, record.expressions.at(-1)?.tick || 0, transportTickAt(eventTime));
     if (!stack.length) activeNotes.delete(key);
+  }
+  function captureNoteExpression(track, expression, eventTime) {
+    const stack = activeNotes.get(captureKey(track, expression.noteId));
+    if (!stack?.length) return;
+    const record = stack[stack.length - 1];
+    const prior = record.expressions[record.expressions.length - 1];
+    const tick = Math.max(record.tick, prior?.tick || 0, transportTickAt(eventTime));
+    const value = {tick, pitchCents: expression.pitchCents, pressure: expression.pressure, timbre: expression.timbre};
+    if (prior && prior.pitchCents === value.pitchCents && prior.pressure === value.pressure && prior.timbre === value.timbre) return;
+    record.expressions.push(value);
   }
   function closeOpenNotes() {
     const tick = Math.max(0, transportTickAt());
-    for (const stack of activeNotes.values()) for (const record of stack) record.endTick = Math.max(record.tick, tick);
+    for (const stack of activeNotes.values()) for (const record of stack) record.endTick = Math.max(record.tick, record.expressions.at(-1)?.tick || 0, tick);
     activeNotes.clear();
   }
   function recordingsFromBuffer() {
@@ -578,7 +601,8 @@
     for (const note of capturedNotes) {
       const key = `${note.track}\u0000${note.pattern}`;
       if (!groups.has(key)) groups.set(key, {track: note.track, pattern: note.pattern, notes: []});
-      groups.get(key).notes.push({tick: Math.round(note.tick), endTick: Math.round(note.endTick), note: note.note, velocity: note.velocity});
+      groups.get(key).notes.push({tick: Math.round(note.tick), endTick: Math.round(note.endTick), note: note.note, velocity: note.velocity,
+        noteId: note.noteId, channel: note.channel, expressions: note.expressions.map(value => ({...value, tick: Math.round(value.tick)}))});
     }
     return [...groups.values()];
   }
@@ -627,8 +651,10 @@
       takePreview.append(group);
     }
     const velocityNotice = recordings.some(item => !patternMeta.get(item.pattern)?.drums)
-      ? ' Acid takes save pitch and slides at fixed velocity; MIDI velocity is not saved.' : '';
-    $('#live-take-summary').textContent = `${capturedNotes.length} note${capturedNotes.length === 1 ? '' : 's'} quantized to the nearest pattern step.${velocityNotice} Nothing has been written to the score.`;
+      ? ' Note takes use the score format’s fixed velocity.' : '';
+    const expressionNotice = recordings.some(item => item.notes.some(note => note.expressions.length))
+      ? ' Expression is sampled on the step grid; detected vibrato uses 5 Hz. Overlapping expressive notes cannot be committed to one pattern.' : '';
+    $('#live-take-summary').textContent = `${capturedNotes.length} note${capturedNotes.length === 1 ? '' : 's'} quantized to the nearest pattern step.${velocityNotice}${expressionNotice} Nothing has been written to the score.`;
     takePanel.hidden = false;
   }
   function finishRecording() {
@@ -865,22 +891,83 @@
   const boundMIDIInputs = new Map();
   function handleMIDIMessage(input, event) {
     if (input.state === 'disconnected') return;
-    flashMIDIActivity(); midiPerformance.receive(input, event);
+    const data = event.data;
+    if (!data || data.length < 2) return;
+    flashMIDIActivity();
+    const statusByte = data[0] & 0xff;
+    const command = statusByte & 0xf0;
+    const channel = statusByte & 0x0f;
+    const first = data[1] & 0x7f;
+    const second = data.length > 2 ? data[2] & 0x7f : 0;
+    const device = midiDeviceName(input || event.target);
+    const source = input?.id || event.target?.id || device;
+    const normalized = mpeInput.process(source, data);
+    if (command === 0xb0) {
+      if (storeLearnedInput(device, channel, 'cc', first)) return;
+      const mapping = deviceMappings(device, channel, 'cc', first);
+      if (mapping?.address) dispatchCC(mapping.address, second);
+    }
+    const noteOn = command === 0x90 && second > 0;
+    const noteOff = command === 0x80 || command === 0x90 && second === 0;
+    if (noteOn && storeLearnedInput(device, channel, 'note', first)) return;
+    const learned = deviceMappings(device, channel, 'note', first);
+    if (learned?.action) {
+      if (noteOn) invokeMappedAction(learned.action);
+      return;
+    }
+    for (const message of normalized) {
+      const time = Number(event.timeStamp) || performance.now();
+      if (message.type === 'note-on') {
+        const drums = message.channel === 9 && !message.mpe;
+        const track = drums ? drumSelect?.value : acidSelect?.value;
+        if (!track) { setStatus(drums ? 'No drum track is available' : 'No note track is available', 'error'); continue; }
+        if (drums && !midi.mapGeneralMIDIDrum(message.note)) continue;
+        if (!drums && !trackByID.get(track)?.pitched) continue;
+        // Retain the original track even if the selector changes while held.
+        midiNoteTracks.set(message.noteId, {track, drums, note:message.note, identity:message});
+        captureNoteOn(track, message.note, message.velocity, time, message);
+        sendNoteOn(track, message.note, message.velocity, message);
+        if (!drums) sendNoteExpression(track, message);
+      } else {
+        const target = midiNoteTracks.get(message.noteId);
+        if (!target) continue;
+        if (message.type === 'note-off') {
+          captureNoteOff(target.track, message.noteId, time);
+          sendNoteOff(target.track, message.note, message);
+          midiNoteTracks.delete(message.noteId);
+        } else if (!target.drums) {
+          captureNoteExpression(target.track, message, time);
+          sendNoteExpression(target.track, message);
+        }
+      }
+    }
   }
-  function bindMIDIInputs() {
+
+  function releaseMIDIInput(input) {
+    for (const message of mpeInput.disconnect(input.id || midiDeviceName(input))) {
+      const target = midiNoteTracks.get(message.noteId);
+      if (!target) continue;
+      captureNoteOff(target.track, message.noteId, performance.now());
+      sendNoteOff(target.track, message.note, message);
+      midiNoteTracks.delete(message.noteId);
+    }
+    input.onmidimessage = null;
+  }
+  function bindMIDIInputs(event) {
     if (!currentMidiAccess) return;
     const connected = new Set();
+    if (event?.port?.type === 'input' && event.port.state === 'disconnected') releaseMIDIInput(event.port);
     for (const input of currentMidiAccess.inputs.values()) {
       const key = input.id || input.name;
-      if (input.state === 'disconnected') continue;
+      if (input.state === 'disconnected') { releaseMIDIInput(input); continue; }
       connected.add(key);
       const prior = boundMIDIInputs.get(key);
-      if (prior && prior !== input) { prior.onmidimessage = null; midiPerformance.disconnect(prior); }
+      if (prior && prior !== input) releaseMIDIInput(prior);
       boundMIDIInputs.set(key, input);
       input.onmidimessage = event => handleMIDIMessage(input, event);
     }
     for (const [key, input] of boundMIDIInputs) if (!connected.has(key)) {
-      input.onmidimessage = null; midiPerformance.disconnect(input); boundMIDIInputs.delete(key);
+      releaseMIDIInput(input); midiPerformance.disconnect(input); boundMIDIInputs.delete(key);
     }
     updateMIDIStatus();
   }
@@ -925,7 +1012,7 @@
     panicInputs(); window.cicadaAudio?.panic?.();
     refreshParameterCatalog();
     readProjection();
-    fillTrackSelect(acidSelect, track => track.acid, settings.acidTrack);
+    fillTrackSelect(acidSelect, track => track.pitched, settings.acidTrack);
     fillTrackSelect(drumSelect, track => track.drum, settings.drumTrack);
     if (acidSelect) settings.acidTrack = acidSelect.value;
     if (drumSelect) settings.drumTrack = drumSelect.value;
