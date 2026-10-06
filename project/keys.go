@@ -79,6 +79,9 @@ func KeysSpecFromValues(kind string, values map[string]Value) (keyvoice.Spec, er
 			if p.Unit == "s" && unit == "unit" {
 				unit = "s"
 			}
+			if p.Unit == "cents" && unit == "unit" {
+				unit = "cents"
+			}
 			want := p.Unit
 			if want == "" {
 				want = "unit"

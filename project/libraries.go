@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -25,18 +26,21 @@ import (
 var standardLibraries embed.FS
 
 // LibraryEngineEdition and LibraryCapabilities describe this host's engine.
-// No optional graph capability bits are present in this kernel image version.
+// Native hosts prepare the optional modeled keyboard family before rendering.
 const LibraryEngineEdition = 2
-const LibraryCapabilities uint64 = 0
+const LibraryCapabilities uint64 = 1 << 9
 
 // LibraryPin records portable identity, resolution kind and exact content.
 type LibraryPin struct{ Path, Kind, SHA256 string }
 
 type Library struct {
 	LibraryPin
-	Root     string
-	Manifest edition.Manifest
-	Files    []notation.SourceFile
+	Root           string
+	Manifest       edition.Manifest
+	Files          []notation.SourceFile
+	ManifestSource []byte
+	Assets         []string
+	content        map[string][]byte
 }
 
 // UserLibraryDir follows the per-OS config directory, with an explicit override.
@@ -207,6 +211,17 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 			return nil, err
 		}
 		candidates = append(candidates, location{kind: base.kind, root: filepath.Join(base.dir, filepath.FromSlash(name)), files: child.FS(), close: child.Close})
+		if base.kind == "project" && !strings.HasPrefix(name, "std/") {
+			pins, err := s.readSum()
+			if err != nil {
+				child.Close()
+				return nil, err
+			}
+			if pins[name].Kind == "project" {
+				defer child.Close()
+				return readLibrary(name, "project", filepath.Join(base.dir, filepath.FromSlash(name)), child.FS(), overrides)
+			}
+		}
 	}
 	defer func() {
 		for _, c := range candidates {
@@ -219,10 +234,49 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 		return nil, fmt.Errorf("library %q not found", name)
 	}
 	if len(candidates) > 1 {
+		// A project pin explicitly selects a vendored copy. A user pin may
+		// coexist with an identical project copy during an idempotent vendor.
+		pins, err := s.readSum()
+		if err != nil {
+			return nil, err
+		}
+		pin, pinned := pins[name]
+		if pinned && len(candidates) == 2 && candidates[0].kind == "project" && candidates[1].kind == "user" {
+			local, err := readLibrary(name, "project", candidates[0].root, candidates[0].files, overrides)
+			if err != nil {
+				return nil, err
+			}
+			if pin.Kind == "project" {
+				return local, nil
+			}
+			personal, err := readLibrary(name, "user", candidates[1].root, candidates[1].files, overrides)
+			if err != nil {
+				return nil, err
+			}
+			if pin.Kind == "user" && local.SHA256 == personal.SHA256 && personal.SHA256 == pin.SHA256 {
+				return personal, nil
+			}
+		}
 		return nil, sourceError("", 1, 1, "CICADA-LIB-SHADOW", "library "+name+" exists in more than one search location", nil)
 	}
 	c := candidates[0]
-	data, err := fs.ReadFile(c.files, "cicada.mod")
+	return readLibrary(name, c.kind, c.root, c.files, overrides)
+}
+
+// InspectLibrary resolves and hashes a library without requiring a score.
+func InspectLibrary(projectDir, name string) (*Library, error) {
+	if !edition.ValidLibraryPath(name) {
+		return nil, fmt.Errorf("CICADA-LIB-PATH: invalid library path")
+	}
+	lib, err := (&Sources{Root: projectDir}).resolveLibrary(name, nil)
+	if err == nil && lib.Manifest.Library != name {
+		return nil, sourceError("", 1, 1, "CICADA-LIB-PATH", "library manifest path does not match "+name, nil)
+	}
+	return lib, err
+}
+
+func readLibrary(name, kind, root string, files fs.FS, overrides map[string][]byte) (*Library, error) {
+	data, err := fs.ReadFile(files, "cicada.mod")
 	if err != nil {
 		return nil, err
 	}
@@ -230,14 +284,14 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 	if err != nil {
 		return nil, sourceError("", 1, 1, "CICADA-MANIFEST", err.Error(), err)
 	}
-	lib := &Library{LibraryPin: LibraryPin{Path: name, Kind: c.kind}, Root: c.root, Manifest: m}
+	lib := &Library{LibraryPin: LibraryPin{Path: name, Kind: kind}, Root: root, Manifest: m, ManifestSource: data}
 	content := map[string][]byte{"cicada.mod": data}
 	for _, source := range m.SourcePaths() {
-		data, err := fs.ReadFile(c.files, source)
+		data, err := fs.ReadFile(files, source)
 		if err != nil {
 			return nil, sourceError("", 1, 1, "CICADA-LIB-SOURCE", "cannot read library source "+source, err)
 		}
-		full := filepath.Join(c.root, filepath.FromSlash(source))
+		full := filepath.Join(root, filepath.FromSlash(source))
 		if changed, ok := overrides[full]; ok {
 			data = changed
 		}
@@ -249,8 +303,8 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 		lib.Files = append(lib.Files, file)
 	}
 	audioFiles := map[string]bool{}
-	if _, err := fs.Stat(c.files, "audio"); err == nil {
-		if err := fs.WalkDir(c.files, "audio", func(name string, entry fs.DirEntry, walkErr error) error {
+	if _, err := fs.Stat(files, "audio"); err == nil {
+		if err := fs.WalkDir(files, "audio", func(name string, entry fs.DirEntry, walkErr error) error {
 			if walkErr != nil {
 				return walkErr
 			}
@@ -260,6 +314,7 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 			if !entry.Type().IsRegular() {
 				return fmt.Errorf("library audio must contain regular files")
 			}
+			lib.Assets = append(lib.Assets, name)
 			if _, source := content[name]; !source {
 				content[name] = nil
 				audioFiles[name] = true
@@ -289,7 +344,7 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 			hash.Write(content[name])
 			continue
 		}
-		file, err := c.files.Open(name)
+		file, err := files.Open(name)
 		if err != nil {
 			return nil, err
 		}
@@ -313,6 +368,7 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 		}
 	}
 	lib.SHA256 = hex.EncodeToString(hash.Sum(nil))
+	lib.content = content
 	return lib, nil
 }
 
@@ -384,6 +440,13 @@ func (s *Sources) verifyLibraries() []notation.Diagnostic {
 
 func (s *Sources) readSum() (map[string]LibraryPin, error) {
 	filename := filepath.Join(s.Root, "cicada.sum")
+	if s.librarySum != nil {
+		pins, err := ParseLibrarySum(s.librarySum)
+		if err != nil {
+			err.(*SourceError).Diagnostic.Position.File = filename
+		}
+		return pins, err
+	}
 	data, err := os.ReadFile(filename)
 	if os.IsNotExist(err) {
 		return map[string]LibraryPin{}, nil
@@ -443,28 +506,63 @@ func (s *Sources) UpdateLibraries(name string) ([]byte, []string, error) {
 	return FormatLibrarySum(pins), changes, nil
 }
 
-// LibraryPaths lists available paths for completion. Resolution still checks
-// shadowing when a path is imported.
-func LibraryPaths(projectDir string) []string {
-	seen := map[string]bool{}
-	collect := func(files fs.FS) {
-		fs.WalkDir(files, ".", func(name string, entry fs.DirEntry, err error) error {
-			if err == nil && !entry.IsDir() && path.Base(name) == "cicada.mod" && edition.ValidLibraryPath(path.Dir(name)) {
-				seen[path.Dir(name)] = true
+// LibraryLocation identifies an available library without loading its source.
+type LibraryLocation struct{ Path, Kind string }
+
+// ListLibraries lists manifests in path order, retaining each location of a
+// shadowed path. It neither verifies nor changes the project's pins.
+func ListLibraries(projectDir string) ([]LibraryLocation, error) {
+	var libraries []LibraryLocation
+	var discoveryErr error
+	collect := func(files fs.FS, kind string) error {
+		return fs.WalkDir(files, ".", func(name string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				discoveryErr = errors.Join(discoveryErr, err)
+				return nil
+			}
+			if !entry.IsDir() && path.Base(name) == "cicada.mod" && edition.ValidLibraryPath(path.Dir(name)) {
+				libraries = append(libraries, LibraryLocation{Path: path.Dir(name), Kind: kind})
 			}
 			return nil
 		})
 	}
-	collect(standardLibraries)
-	user, _ := UserLibraryDir()
-	for _, dir := range []string{filepath.Join(projectDir, "lib"), user} {
-		if dir == "" {
+	if err := collect(standardLibraries, "std"); err != nil {
+		discoveryErr = errors.Join(discoveryErr, err)
+	}
+	user, err := UserLibraryDir()
+	if err != nil {
+		discoveryErr = errors.Join(discoveryErr, err)
+	}
+	for _, base := range []struct{ kind, dir string }{{"project", filepath.Join(projectDir, "lib")}, {"user", user}} {
+		if base.dir == "" {
 			continue
 		}
-		if root, err := os.OpenRoot(dir); err == nil {
-			collect(root.FS())
-			root.Close()
+		root, err := os.OpenRoot(base.dir)
+		if os.IsNotExist(err) {
+			continue
 		}
+		if err != nil {
+			discoveryErr = errors.Join(discoveryErr, err)
+			continue
+		}
+		err = collect(root.FS(), base.kind)
+		root.Close()
+		if err != nil {
+			discoveryErr = errors.Join(discoveryErr, err)
+		}
+	}
+	// Stable order preserves std, project, user precedence for a shared path.
+	sort.SliceStable(libraries, func(i, j int) bool { return libraries[i].Path < libraries[j].Path })
+	return libraries, discoveryErr
+}
+
+// LibraryPaths lists unique available paths for completion. Resolution still
+// checks shadowing when a path is imported.
+func LibraryPaths(projectDir string) []string {
+	libraries, _ := ListLibraries(projectDir)
+	seen := map[string]bool{}
+	for _, library := range libraries {
+		seen[library.Path] = true
 	}
 	names := make([]string, 0, len(seen))
 	for name := range seen {

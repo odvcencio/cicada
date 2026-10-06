@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -68,13 +70,29 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 	}
 	var committedRevision string
 	s.applyWithHook(w, edit, func(source []byte) ([]byte, error) {
-		updated := source
+		score, ds, err := parseScoreForPath(s.path, source)
+		if err != nil {
+			return nil, err
+		}
+		if score == nil || hasDiagnosticErrors(ds) {
+			return nil, fmt.Errorf("score must validate before recording a take")
+		}
+		updated, prefix, err := studioTransformSource(source, score.Version)
+		if err != nil {
+			return nil, err
+		}
 		for _, recording := range edit.Recordings {
 			var err error
 			updated, err = recordedTakeSource(updated, recording.Track, recording.Pattern, recording.Notes)
 			if err != nil {
 				return nil, err
 			}
+		}
+		if len(prefix) > 0 {
+			if !bytes.HasPrefix(updated, prefix) {
+				return nil, fmt.Errorf("recorded source no longer matches its inherited edition")
+			}
+			updated = bytes.Clone(updated[len(prefix):])
 		}
 		committedRevision = studioRevision(updated)
 		return updated, nil
@@ -83,6 +101,30 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 			s.history.expectRecordedTake(committedRevision)
 		}
 	})
+}
+
+// Existing grid transforms parse standalone source. A temporary edition header
+// supplies manifest context during that in-memory transform, and is stripped
+// before revision hashing or saving. Authored headers are never changed.
+func studioTransformSource(source []byte, edition int) ([]byte, []byte, error) {
+	if edition != 2 {
+		return source, nil, nil
+	}
+	root, walker, err := notation.ParseTree(source)
+	if err != nil {
+		return nil, nil, err
+	}
+	for i := 0; i < root.NamedChildCount(); i++ {
+		if walker.Type(root.NamedChild(i)) == "integer" {
+			return source, nil, nil
+		}
+	}
+	newline := "\n"
+	if bytes.Contains(source, []byte("\r\n")) {
+		newline = "\r\n"
+	}
+	prefix := []byte("cicada 2" + newline)
+	return append(bytes.Clone(prefix), source...), prefix, nil
 }
 
 func recordedTakeSource(source []byte, trackID, patternID string, take []studioTakeNote) ([]byte, error) {
@@ -128,9 +170,17 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 		return nil, fmt.Errorf("pattern %q is not on track %q", patternID, trackID)
 	}
 	drumTrack := track.Kind == "drums"
+	modeledKeys := keyboard.ID(track.Kind) != 0
 	for _, kit := range semantic.Kits {
 		if kit.ID == track.Kind {
 			drumTrack = true
+			modeledKeys = false
+			break
+		}
+	}
+	for _, sampler := range semantic.Samplers {
+		if sampler.Name == track.Kind {
+			modeledKeys = false
 			break
 		}
 	}
@@ -138,12 +188,16 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 	if drums != drumTrack {
 		return nil, fmt.Errorf("pattern %q does not match track %q", patternID, trackID)
 	}
-	pitched := track.Kind == "acid"
-	for _, instrument := range semantic.Instruments {
-		pitched = pitched || instrument.ID == track.Kind
+	pitched, polyphonic := track.Kind == "acid" || modeledKeys, modeledKeys
+	for _, voice := range semantic.Instruments {
+		if voice.ID == track.Kind {
+			pitched, polyphonic = true, voice.Mode == "poly"
+			modeledKeys = false
+			break
+		}
 	}
 	if !drums && !pitched {
-		return nil, fmt.Errorf("track %q is not a note track", trackID)
+		return nil, fmt.Errorf("track %q is not a pitched instrument track", trackID)
 	}
 	if pattern.Steps < 1 || pattern.Steps > 64 {
 		return nil, fmt.Errorf("pattern %q has an invalid length", patternID)
@@ -157,6 +211,9 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 		}
 		if note.Note < 0 || note.Note > 127 {
 			return nil, fmt.Errorf("recorded note must be in MIDI range 0–127")
+		}
+		if modeledKeys && (note.Note < keyboard.MinNote || note.Note > keyboard.MaxNote || note.Note+int(pattern.Transpose) < keyboard.MinNote || note.Note+int(pattern.Transpose) > keyboard.MaxNote) {
+			return nil, fmt.Errorf("recorded keyboard note must stay in MIDI range 21–108 after pattern transposition")
 		}
 		if note.Velocity < 1 || note.Velocity > 127 {
 			return nil, fmt.Errorf("recorded velocity must be in MIDI range 1–127")
@@ -180,17 +237,29 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 		steps[key] = recordedStep{note: note.Note, velocity: note.Velocity, step: step}
 	}
 	if expressive {
+		if modeledKeys {
+			return nil, fmt.Errorf("CICADA-UNSUPPORTED: modeled keyboard track %q cannot record per-note expression", trackID)
+		}
 		if drums {
 			return nil, fmt.Errorf("drum takes cannot contain per-note expression")
 		}
 		return recordedExpressionSource(source, score, pattern, take)
 	}
-	// Ordinary scalar takes keep their existing acid/drum contract. Custom
-	// tracks may have chord steps whose pitch-grid edits toggle single pitches.
-	if !drums && track.Kind != "acid" {
+	if polyphonic && project.GraphPolyphony(semantic, track.Kind) == 4 {
 		return nil, fmt.Errorf("track %q is not an acid track", trackID)
 	}
-	if !drums {
+	if polyphonic {
+		// Existing notes patterns hold one pitch per step. Refuse a chord take
+		// before editing any steps, preserving every retained performance note.
+		for i, note := range take {
+			for _, other := range take[i+1:] {
+				if note.Tick < other.EndTick && other.Tick < note.EndTick {
+					return nil, fmt.Errorf("notes patterns hold one pitch per step; record a single-note take for polyphonic track %q", trackID)
+				}
+			}
+		}
+	}
+	if !drums && !polyphonic {
 		for _, prior := range take {
 			priorStep := int((prior.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
 			for _, next := range take {

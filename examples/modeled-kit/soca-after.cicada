@@ -1,0 +1,55 @@
+cicada 2
+title "Soca: modeled"
+tempo 132
+seed 4242
+
+kit acoustic {
+  bd = model.kick
+  sd = model.snare
+  ch = model.hat_closed
+  oh = model.hat_open
+  cp = model.hat_pedal
+  rs = model.cross_stick
+  lt = model.tom_low
+  mt = model.tom_mid
+  ht = model.tom_high
+  cb = model.ride_bow
+  cy = model.crash
+}
+
+kit articulations {
+  sd = model.rimshot
+  ch = model.hat_half_open
+  cb = model.ride_bell
+  cy = model.splash
+}
+
+track kit acoustic {
+  level = -12dB
+}
+
+track extra articulations {
+  level = -12dB
+}
+
+pattern main drums steps=32 {
+  bd: x8... x8... x8... x8... x8... x8... x8... x8...
+  sd: .... x7... ..x2. x8... .... x7... ..x2. x8...
+  ch: x4.x6. x4.x6. x4.x6. x4.x6. x4.x6. x4.x6. x4.x6. x4.x6.
+  oh: .... ..x5. .... .... .... ..x5. .... ....
+  ht: .... .... .... .... .... .... .... .x6..
+  mt: .... .... .... .... .... .... .... ..x7.
+  lt: .... .... .... .... .... .... .... ...x8
+  cy: x7... .... .... .... .... .... .... ....
+}
+
+pattern extra drums steps=32 {
+  ch: .... .... .... ..x5. .... .... .... ..x6.
+  sd: .... .... .... .... .... .... .... x8...
+}
+
+scene groove {
+  kit = main
+  extra = extra
+}
+song { groove*4 }

@@ -153,3 +153,27 @@ func TestKeysExpressionRejectsModeledSourcesAndPreservesAuthoredOverrides(t *tes
 		})
 	}
 }
+
+func TestKeysNumericDetuneControlsUseCents(t *testing.T) {
+	for _, test := range []struct {
+		kind, params string
+		indices      []int
+		values       []float32
+	}{
+		{"fm_ep", "op1_detune=12 op6_detune=-7", []int{4, 64}, []float32{12, -7}},
+		{"poly_keys", "detune=9 drift=2", []int{7, 8}, []float32{9, 2}},
+	} {
+		t.Run(test.kind, func(t *testing.T) {
+			p := keysScore(t, fmt.Sprintf("cicada 2\ntrack part %s { %s }\npattern p notes { c4 . }\nscene main { part=p }\nsong { main }\n", test.kind, test.params))
+			cfg, err := CompileEngine(p, 48000, 128)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i, index := range test.indices {
+				if got := cfg.Track[0].Keys.Controls[index]; got != test.values[i] {
+					t.Fatalf("control %d=%g want %g", index, got, test.values[i])
+				}
+			}
+		})
+	}
+}

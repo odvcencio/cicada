@@ -1,7 +1,10 @@
 package notation
 
 import (
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
+	"m31labs.dev/cicada/kernel/voice/modal"
+	"m31labs.dev/cicada/kernel/voice/modeledkit"
 	"math"
 	"strconv"
 	"strings"
@@ -44,7 +47,10 @@ var scales = map[string]bool{
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) (ds []Diagnostic) {
 	defer func() { LocateDiagnostics(ds, s.Position) }()
-	ds = ValidateAudio(s)
+	sourceEffects := s.Effects
+	s, ds = ResolvePresets(s)
+	ds = append(ds, ValidateAudio(s)...)
+	ds = append(ds, ValidateArrangement(s)...)
 	ds = append(ds, ValidateLive(s.Live, s.Tracks)...)
 	ds = append(ds, ValidateDirector(s.Live, s.Tracks, s.Patterns, s.Scenes, s.Kits)...)
 	add := func(code, message, severity string, p Position) {
@@ -62,7 +68,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 		add("CICADA-VERSION", "only cicada 1 and 2 are supported", "error", Position{Line: 1, Column: 1})
 	}
 	if s.Version == 2 {
-		for _, effect := range s.Effects {
+		for _, effect := range sourceEffects {
 			if effect.Legacy {
 				add("CICADA-VERSION", "legacy fx shorthand requires an explicit effect kind in edition 2", "error", effect.Position)
 			}
@@ -95,7 +101,8 @@ func Validate(s *Score) (ds []Diagnostic) {
 	instruments := make(map[string]Instrument, len(s.Instruments))
 	for _, inst := range s.Instruments {
 		checkID(inst.Name, inst.Position)
-		if inst.Name == "acid" || inst.Name == "drums" || s.Version == 2 && inst.Name == "audio" {
+		_, isModal := modal.ParseTrackKind(inst.Name)
+		if isModal || inst.Name == "acid" || inst.Name == "drums" || inst.Name == "guitar" || s.Version == 2 && inst.Name == "audio" {
 			add("CICADA-DUPLICATE", "instrument name is reserved: "+inst.Name, "error", inst.Position)
 		}
 		if _, exists := instruments[inst.Name]; exists {
@@ -107,7 +114,6 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 		if inst.Mode != "mono" && inst.Mode != "poly" {
 			add("CICADA-PARAM", "voice mode must be mono or poly", "error", inst.Position)
-
 		}
 		if inst.Output == nil {
 			add("CICADA-PARAM", "voice needs an out expression", "error", inst.Position)
@@ -131,7 +137,8 @@ func Validate(s *Score) (ds []Diagnostic) {
 	for _, kit := range s.Kits {
 		checkID(kit.Name, kit.Position)
 		_, instrumentNameTaken := instruments[kit.Name]
-		if kit.Name == "acid" || kit.Name == "drums" || s.Version == 2 && kit.Name == "audio" || instrumentNameTaken {
+		_, isModal := modal.ParseTrackKind(kit.Name)
+		if isModal || kit.Name == "acid" || kit.Name == "drums" || kit.Name == "guitar" || s.Version == 2 && kit.Name == "audio" || instrumentNameTaken {
 			add("CICADA-DUPLICATE", "kit name is reserved or already declared: "+kit.Name, "error", kit.Position)
 		}
 		if _, exists := kits[kit.Name]; exists {
@@ -151,6 +158,10 @@ func Validate(s *Score) (ds []Diagnostic) {
 				lane := strings.TrimPrefix(binding.Target, "builtin.")
 				if drumParams[lane] == nil {
 					add("CICADA-REFERENCE", "unknown built-in drum "+lane, "error", binding.Position)
+				}
+			} else if strings.HasPrefix(binding.Target, "model.") {
+				if _, ok := modeledkit.ParseProfile(strings.TrimPrefix(binding.Target, "model.")); !ok {
+					add("CICADA-REFERENCE", "unknown modeled drum "+binding.Target, "error", binding.Position)
 				}
 			} else if inst, exists := instruments[binding.Target]; !exists {
 				add("CICADA-REFERENCE", "unknown kit instrument "+binding.Target, "error", binding.Position)
@@ -172,11 +183,26 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 		trackByName[t.Name] = t
 		namespace[t.Name] = "track"
-		if t.Kind != "acid" && t.Kind != "drums" && t.Kind != "piano" && keyboard.ID(t.Kind) == 0 && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
+		_, isModal := modal.ParseTrackKind(t.Kind)
+		if t.Kind != "acid" && !isModal && t.Kind != "drums" && t.Kind != "piano" && keyboard.ID(t.Kind) == 0 && t.Kind != "guitar" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
 			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
 				if _, kitOK := kits[t.Kind]; !kitOK {
 					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
 				}
+			}
+		}
+		if t.Kind == "guitar" {
+			if s.Version != 2 {
+				add("CICADA-VERSION", "experimental guitar requires edition 2", "error", t.Position)
+			}
+			optIn := false
+			for _, param := range t.Params {
+				if param.Name == "experimental" && param.Value == "on" {
+					optIn = true
+				}
+			}
+			if !optIn {
+				add("CICADA-EXPERIMENTAL", "guitar requires experimental = on", "error", t.Position)
 			}
 		}
 		seen := map[string]bool{}
@@ -190,7 +216,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 				add("CICADA-DUPLICATE", "duplicate parameter "+key, "error", param.Position)
 			}
 			seen[key] = true
-			if !validTrackParam(t.Kind, param.Name, instruments) {
+			if !validTrackParam(t.Kind, param.Name, instruments, kits) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
 			}
 			if notationModeledPiano(s, t.Kind) && param.Name == "sustain" {
@@ -422,7 +448,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 			add("CICADA-LIMIT", "song entry must be 1 to 999 bars", "error", entry.Position)
 		}
 	}
-	if len(s.Song) == 0 {
+	if len(s.Song) == 0 && s.Arrange == nil {
 		position := s.SongPosition
 		if position.Line == 0 {
 			position = Position{Line: 1, Column: 1}
@@ -615,9 +641,19 @@ func Validate(s *Score) (ds []Diagnostic) {
 	return ds
 }
 
-func validTrackParam(kind, name string, instruments map[string]Instrument) bool {
+func validTrackParam(kind, name string, instruments map[string]Instrument, kits map[string]Kit) bool {
 	if mixerParams[name] {
 		return true
+	}
+	if kind == "guitar" {
+		for _, descriptor := range paramdefs.Registry {
+			if descriptor.ID == "guitar."+name {
+				return true
+			}
+		}
+	}
+	if _, ok := modal.ParseTrackKind(kind); ok {
+		return name == "octave"
 	}
 	if kind == "acid" {
 		return acidParams[name]
@@ -634,6 +670,27 @@ func validTrackParam(kind, name string, instruments map[string]Instrument) bool 
 			return true
 		}
 		return len(parts) == 2 && drumParams[parts[0]][parts[1]]
+	}
+	if kit, ok := kits[kind]; ok {
+		parts := strings.SplitN(name, "_", 2)
+		if len(parts) != 2 {
+			return false
+		}
+		modeled := false
+		for _, binding := range kit.Bindings {
+			if binding.Lane == parts[0] && strings.HasPrefix(binding.Target, "model.") {
+				modeled = true
+				break
+			}
+		}
+		if !modeled {
+			return false
+		}
+		switch parts[1] {
+		case "tune", "decay", "position", "humanize", "level", "pan":
+			return true
+		}
+		return false
 	}
 	if inst, ok := instruments[kind]; ok {
 		if name == "octave" {

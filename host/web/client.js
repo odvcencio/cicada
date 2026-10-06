@@ -1,4 +1,15 @@
 (() => {
+  const CapabilityChords = 1, CapabilityUnifiedImage = 65536;
+  // Match the worklet allowlist, including when an older cached worklet runs.
+  const imageInfo = (image, capabilities) => {
+    const bytes = new Uint8Array(image);
+    if (bytes.length < 32 || bytes[0] !== 67 || bytes[1] !== 73 || bytes[2] !== 67 || bytes[3] !== 49) throw new Error('Invalid CIC1 image header');
+    const version = bytes[4] | bytes[5] << 8;
+    if (version === 14) throw new Error('Ambiguous development image14; recompile source for unified image15');
+    if (![8, 9, 10, 11, 12, 13, 15].includes(version)) throw new Error(`Unsupported image version ${version}`);
+    if (version === 15 && capabilities !== undefined && !(capabilities & CapabilityUnifiedImage)) throw new Error('Unified image15 requires CapabilityUnifiedImage (bit16); update the audio kernel');
+    return new DataView(image).getUint32(12, true);
+  };
   const audioFault = code => new Error(code === 20 ? "Polyphonic tracks require handle-aware live commands; legacy NoteOn/NoteOff are unsupported" : `Audio fault ${code}`);
   class CicadaBrowserAudio {
     constructor() {
@@ -17,11 +28,13 @@
       this.messages = new Set();
       this.errors = new Set();
       this.states = new Set();
+      this.beforePlay = new Set();
       this.meters = new Set();
       this.pendingMeters = new Map();
       this.meterFrame = 0;
       this.playing = false;
       this.clock = false;
+      this.capabilities = 0;
       this.transportTick = 0;
       this.transportTime = 0;
       this.outputTimeline = { available: false, samples: 0, misses: 0, maxLagMs: 0, maxExcessMs: 0, lastMiss: null };
@@ -66,6 +79,7 @@
         this.moduleKind = kind;
         this.revision = prepared.ready.r;
         this.clock = prepared.ready.c;
+        this.capabilities = prepared.ready.p || 0;
         await this.context.resume();
         this.node.port.postMessage({ t: 'q', l: this.contextLatencyMs() });
         if (!this.outputTimelineTimer) this.outputTimelineTimer = setInterval(() => this.sampleOutputTimeline(), 5);
@@ -76,6 +90,7 @@
         this.context = null;
         this.node = null;
         this.readyPromise = null;
+        this.capabilities = 0;
         this.moduleKind = '';
         if (failed && failed.close) failed.close().catch(() => {});
         throw error;
@@ -86,8 +101,10 @@
     imageModuleKind(image) {
       const bytes = new Uint8Array(image);
       if (bytes.length < 32 || bytes[0] !== 67 || bytes[1] !== 73 || bytes[2] !== 67 || bytes[3] !== 49) throw new Error('Score image header is invalid');
-      // Image versions 13/14 carry required capabilities at byte offset 30.
-      return new DataView(image).getUint16(30, true) & 32 ? 'keys' : 'core';
+      imageInfo(image);
+      // Image versions 13 and 15 carry required capabilities at byte offset 30.
+      const view = new DataView(image);
+      return view.getUint16(4, true) >= 13 && view.getUint16(30, true) & 512 ? 'keys' : 'core';
     }
 
     loadModule(kind) {
@@ -114,7 +131,10 @@
         timeout = setTimeout(() => reject(new Error('AudioWorklet did not initialize')), 10000);
         node.port.onmessage = event => {
           const data = event.data;
-          if (data.t === 'r') { clearTimeout(timeout); resolve(data); }
+          if (data.t === 'r') {
+            clearTimeout(timeout);
+            try { imageInfo(image, data.p || 0); resolve(data); } catch (error) { reject(error); }
+          }
           else if (data.t === 'e' && node !== this.node) { clearTimeout(timeout); reject(new Error(data.e)); }
           if (node === this.node) this.receive(data, node);
         };
@@ -159,6 +179,7 @@
         this.moduleKind = kind;
         this.revision = prepared.ready.r;
         this.clock = prepared.ready.c;
+        this.capabilities = prepared.ready.p || 0;
         this.bpmMilli = new DataView(image).getUint32(12, true);
         this.anchorTick(tick);
         this.pendingMeters.clear();
@@ -219,6 +240,7 @@
         this.raise(audioFault(data.a));
       } else if (data.t === 'r') {
         this.clock = data.c;
+        this.capabilities = data.p || 0;
       } else if (data.t === 't') {
         this.revision = data.r;
         const waiter = this.stageWaiters.get(data.r);
@@ -294,10 +316,12 @@
     onMessage(callback) { this.messages.add(callback); return () => this.messages.delete(callback); }
     onError(callback) { this.errors.add(callback); return () => this.errors.delete(callback); }
     onState(callback) { this.states.add(callback); return () => this.states.delete(callback); }
+    onBeforePlay(callback) { this.beforePlay.add(callback); return () => this.beforePlay.delete(callback); }
     onMeters(callback) { this.meters.add(callback); return () => this.meters.delete(callback); }
 
     sendCommands(records, node = this.node) {
       if (!node) throw new Error('Select Browser mode and start audio first');
+      if (records.some(record => record.op === 22) && !(this.capabilities & CapabilityChords)) throw new Error('Unsupported chord opcode22');
       const bytes = new Uint8Array(records.length * 24), view = new DataView(bytes.buffer);
       records.forEach((record, index) => {
         const at = index * 24;
@@ -313,12 +337,13 @@
 
     play() {
       if (this.playing) return;
+      for (const callback of this.beforePlay) callback();
       this.sendCommands([{ op: 3, arg0: 0 }, { op: 1 }]);
     }
     stop(force = false) { if (this.playing || force) this.sendCommands([{ op: 2 }]); }
     launchScene(index) { this.sendCommands([{ op: 10, index, arg0: 2 }]); }
     selectPattern(track, slot) { this.sendCommands([{ op: 9, track, index: slot, arg0: 2 }]); }
-    playFrom(bar) { this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
+    playFrom(bar) { for (const callback of this.beforePlay) callback(); this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
 
     stageCurrentScore(revision = '', capture = false) {
       const pending = this.stagePromise.catch(() => {}).then(() => this.prepareScore(revision, capture));
@@ -341,10 +366,11 @@
         this.lastStageDurationMs = performance.now() - started;
         return true;
       }
-      this.bpmMilli = new DataView(image).getUint32(12, true);
+      const bpmMilli = imageInfo(image, this.capabilities);
       const ready = new Promise((resolve, reject) => this.stageWaiters.set(imageRevision, { resolve, reject }));
       this.node.port.postMessage({ t: 'i', i: image, r: imageRevision }, [image]);
       await ready;
+      this.bpmMilli = bpmMilli;
       this.lastStageDurationMs = performance.now() - started;
       return true;
     }

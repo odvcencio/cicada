@@ -46,7 +46,7 @@ named `tine_ep` overrides that built-in patch in its score.
 ## Native and browser playback
 
 Native Cicada contains the family. Studio loads `cicada-keys.wasm` only when an
-image advertises capability bit 5. Build it with `make build-keys-wasm` and
+image advertises capability bit 9. Build it with `make build-keys-wasm` and
 place it beside the CLI, or set `CICADA_KEYS_WASM`. The core kernel and worklet
 keep their existing budgets; the heavier keyboard DSP is separately loaded.
 Switching between core and keyboard modules retains the AudioContext and
@@ -205,9 +205,24 @@ Routing is an original acyclic network with six independent envelopes.
 Analog `filter` accepts `ladder` or `state_variable`.
 
 `decay`, `attack` and `release` accept seconds or milliseconds. Frequency
-controls require `hz`, detuning requires `cents`, and `output` requires `dB`.
+controls require `hz`, and `output` requires `dB`. Detuning values are cents.
 Other controls are numbers; integer selectors reject fractional values.
 `sustain` also accepts `off`/`on`.
+
+Detune and drift controls use plain numeric values interpreted as cents, such as
+`op1_detune=12` or `detune=9 drift=2`. Time controls accept seconds or `ms`;
+frequency and output controls retain their documented `hz` and `db` units.
+
+Standard-library keyboard presets are available through `import "std/keys"`.
+Use qualified names such as `track part keys.fm_ep { voices = 4 }`. All 21
+exports preserve the matching native patch defaults and accept the controls
+listed above; preset defaults are applied before track overrides. Examples for
+every export are in `examples/keys/std/`, with the exact embedded-library pin.
+
+Presets resolve to the same patch names as direct tracks. A local instrument,
+kit, or sampler declaration with that name takes precedence. The library
+manifest requires keyboard capability bit 9 (512); native hosts prepare the
+modeled voices and Studio loads the optional keyboard module for their images.
 
 ## Owned samples
 

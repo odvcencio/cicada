@@ -10,6 +10,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
@@ -138,6 +139,45 @@ func verifySourceRenderAllocationFree(t *testing.T, example func(testing.TB) (*n
 		if err := applyScene(tracks, &score.Scenes[0], true); err != nil {
 			t.Fatal(err)
 		}
+		var delay *fx.Delay
+		var reverb *fx.Reverb
+		var compressor *fx.Compressor
+		if cfg.DelayA != nil {
+			delay, err = fx.NewDelay(rate, score.TempoMilli)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := delay.SetParams(*cfg.DelayA); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if cfg.ReverbB != nil {
+			reverb, err = fx.NewReverb(rate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := reverb.SetParams(*cfg.ReverbB); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if cfg.CompMusic != nil {
+			compressor, err = fx.NewCompressor(rate)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := compressor.SetParams(*cfg.CompMusic); err != nil {
+				t.Fatal(err)
+			}
+		}
+		parameters, err := compileSceneParameters(p, tracks, rate, delay, reverb, compressor)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, scene := range score.Scenes {
+			if err := parameters.apply(scene.Name); err != nil {
+				t.Fatal(err)
+			}
+		}
 		limiter, err := mix.NewLimiter(rate)
 		if err != nil {
 			t.Fatal(err)
@@ -154,7 +194,7 @@ func verifySourceRenderAllocationFree(t *testing.T, example func(testing.TB) (*n
 		}
 		var renderErr error
 		allocs = testing.AllocsPerRun(1000, func() {
-			renderErr = renderBlock(io.Discard, tracks, nil, nil, nil, 0, 0, 0, 1, busMixerState{}, limiter, nil, &encoder, events, 0, 128, buffer, &report)
+			renderErr = renderBlock(io.Discard, tracks, delay, reverb, compressor, cfg.CompSidechainTrack, 0, 0, 1, busMixerState{}, limiter, nil, &encoder, events, 0, 128, buffer, &report)
 		})
 		if renderErr != nil || allocs != 0 {
 			t.Fatalf("offline render block: allocs=%g err=%v", allocs, renderErr)

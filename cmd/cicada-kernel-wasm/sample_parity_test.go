@@ -23,6 +23,10 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
+func TestAudioWASMGuitarSampleParity(t *testing.T) {
+	compareWASMFixture(t, "expressive-guitar.cicada", 4)
+}
+
 func TestAudioWASMFirstAcidSampleParity(t *testing.T) {
 	compareWASMFixture(t, "first-acid.cicada", 16)
 }
@@ -46,6 +50,10 @@ func TestAudioWASMPianoSampleParity(t *testing.T) {
 func TestAudioWASMPianoChordSampleParity(t *testing.T) {
 	source := []byte("cicada 2\ntempo 120\ntrack grand piano {}\npattern p notes { [c3 e3 g3] . [c4 e4 g4] . }\nscene dry { grand=p }\nscene pedal { grand=p grand.sustain=1 }\nsong { dry pedal }")
 	compareWASMSource(t, "modeled-piano.cicada", source, 2, true)
+}
+
+func TestAudioWASMGraphPMSampleParity(t *testing.T) {
+	compareWASMFixture(t, "fm-bell.cicada", 2)
 }
 
 func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
@@ -286,7 +294,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			ctx := context.Background()
 			var wasmAllocations uint64
 			var allocatorFound bool
-			if exactPCM || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
+			if exactPCM || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") || strings.HasPrefix(fixture, "std/") {
 				ctx = experimental.WithFunctionListenerFactory(ctx, experimental.FunctionListenerFactoryFunc(func(def api.FunctionDefinition) experimental.FunctionListener {
 					if !strings.Contains(def.DebugName(), "runtime.alloc") {
 						return nil
@@ -321,6 +329,9 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			call("_initialize")
 			if fixture == "modeled-piano.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.PianoCapability) == 0 {
 				t.Fatal("kernel does not advertise modeled piano capability")
+			}
+			if fixture == "fm-bell.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.PMCapability) == 0 {
+				t.Fatal("kernel does not advertise graph PM capability")
 			}
 			if fixture == "pluck.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.DelayCapability) == 0 {
 				t.Fatal("kernel does not advertise graph delay capability")
@@ -357,15 +368,19 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			var peakChannel int
 			var nonzero bool
 			var stableMemory uint32
+			var allocationsBefore uint64
+			if fixture == "expressive-guitar.cicada" {
+				allocationsBefore = call("gosx_audio_allocation_count")
+			}
 			var initialAllocations uint64
-			if fixture == "pluck.cicada" || fixture == "expression-graph" || fixture == "modeled-piano.cicada" {
+			if fixture == "pluck.cicada" || fixture == "expression-graph" || fixture == "modeled-piano.cicada" || fixture == "fm-bell.cicada" {
 				initialAllocations = call("gosx_audio_alloc_bytes")
 			}
 			pcm := sha256.New()
 			allocationsBeforeRender := wasmAllocations
 			for block := 0; block*blockSize < frames; block++ {
 				call("gosx_audio_render", blockSize)
-				if exactPCM || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
+				if exactPCM || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") || strings.HasPrefix(fixture, "std/") {
 					data, ok := module.Memory().Read(outputPtr, blockSize*2*4)
 					if !ok {
 						t.Fatal("WASM PCM block out of bounds")
@@ -418,7 +433,14 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 					stableMemory = module.Memory().Size()
 				}
 			}
-			if exactPCM || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
+			if fixture == "expressive-guitar.cicada" {
+				allocations := call("gosx_audio_allocation_count") - allocationsBefore
+				if allocations != 0 {
+					t.Fatalf("guitar WASM callback allocated %d times", allocations)
+				}
+				t.Logf("METRIC: WASM guitar callback allocations | %d | %d Hz, %d frames", allocations, rate, frames)
+			}
+			if exactPCM || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") || strings.HasPrefix(fixture, "std/") {
 				copyHash := [32]byte{}
 				copy(copyHash[:], pcm.Sum(nil))
 				hashes[rate] = copyHash
@@ -436,12 +458,15 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			if stableMemory == 0 || module.Memory().Size() != stableMemory {
 				t.Fatalf("WASM memory grew after warm-up: %d -> %d", stableMemory, module.Memory().Size())
 			}
-			if fixture == "pluck.cicada" || fixture == "expression-graph" || fixture == "modeled-piano.cicada" {
+			if fixture == "modeled-piano.cicada" && peakDifference != 0 {
+				t.Fatalf("modeled piano native/WASM PCM differs at sample %d channel %d by %.9g", peakSample, peakChannel, peakDifference)
+			}
+			if fixture == "pluck.cicada" || fixture == "expression-graph" || fixture == "modeled-piano.cicada" || fixture == "fm-bell.cicada" {
 				allocated := call("gosx_audio_alloc_bytes") - initialAllocations
 				if allocated != 0 {
 					t.Fatalf("WASM callback allocated %d bytes", allocated)
 				}
-				t.Logf("METRIC: %s WASM callback allocated bytes | rate=%d bytes=%d", fixture, rate, allocated)
+				t.Logf("METRIC: WASM callback allocated bytes | fixture=%s rate=%d bytes=%d", fixture, rate, allocated)
 			}
 			if exactMessages {
 				compareMessageLogs(t, wasmEvents, nativeEvents)
@@ -451,7 +476,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			if peakDifference > 1e-6 {
 				t.Fatalf("native/WASM peak sample difference %.9g at frame %d channel %d exceeds 1e-6", peakDifference, peakSample, peakChannel)
 			}
-			t.Logf("%s: %d bars at %d Hz, peak native/WASM sample difference %.9g", fixture, bars, rate, peakDifference)
+			t.Logf("METRIC: native/WASM PCM parity | fixture=%s bars=%d rate=%d peak_difference=%.9g tolerance=1e-6", fixture, bars, rate, peakDifference)
 		})
 	}
 	return hashes
@@ -570,5 +595,40 @@ func TestAudioWASMLibrariesSampleParity(t *testing.T) {
 			t.Fatalf("imported and inlined WASM PCM differs at %d Hz", rate)
 		}
 		t.Logf("METRIC libraries rate=%d wasm_inline_pcm=byte-identical", rate)
+	}
+}
+
+func TestAudioWASMPresetsSampleParity(t *testing.T) {
+	score, ds, err := project.LoadScore(filepath.Join("..", "..", "examples", "presets", "main.cicada"), nil)
+	if err != nil || score == nil || len(ds) != 0 {
+		t.Fatalf("preset example: %+v %v", ds, err)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil || len(ds) != 0 {
+		t.Fatalf("preset compile: %+v", ds)
+	}
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "presets-inline.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inline, ds := notation.Parse(source)
+	if inline == nil || len(ds) != 0 {
+		t.Fatalf("inline: %+v", ds)
+	}
+	q, ds := project.FromScore(inline)
+	if q == nil || len(ds) != 0 {
+		t.Fatalf("inline compile: %+v", ds)
+	}
+	wasm, err := os.ReadFile(wasmModulePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	presetPCM := compareWASMProject(t, "presets", p, 2, true, wasm)
+	inlinePCM := compareWASMProject(t, "presets-inline", q, 2, true, wasm)
+	for rate, hash := range presetPCM {
+		if hash != inlinePCM[rate] {
+			t.Fatalf("preset and inline WASM bytes differ at %d", rate)
+		}
+		t.Logf("METRIC presets rate=%d wasm_inline_pcm=byte-identical", rate)
 	}
 }

@@ -1,0 +1,98 @@
+cicada 2
+
+instrument kick {
+  octave = 2
+  voice mono {
+    out = sine(pitch) * env(gate, 120ms)
+  }
+}
+
+instrument circuit-kick {
+  octave = 2
+  voice mono {
+    let shape = env(gate, 180ms)
+    out = sine(48Hz * exp2(shape * 2.5)) * shape
+  }
+}
+
+instrument snare {
+  octave = 2
+  voice mono {
+    let shape = env(gate, 110ms)
+    out = highpass(noise(), 1400Hz) * shape
+  }
+}
+
+instrument hat {
+  octave = 2
+  voice mono {
+    let shape = env(gate, 45ms)
+    out = highpass(noise(), 4900Hz) * shape
+  }
+}
+
+kit steel {
+  bd = kick
+  ch = builtin.ch
+}
+
+kit circuit {
+  bd = circuit-kick
+  sd = snare
+  ch = hat
+}
+
+title "Standard drums"
+
+tempo 128
+
+key a minor
+
+seed 4242
+
+track kick kick { level = -18dB }
+
+track circuit-kick circuit-kick { level = -18dB }
+
+track snare snare { level = -18dB }
+
+track hat hat { level = -18dB }
+
+track steel steel { level = -18dB }
+
+track circuit circuit { level = -18dB }
+
+pattern melody {
+  gate = 55%
+  1^ . 3 . 5~ 1 . 7,
+}
+
+pattern beat drums {
+  bd: X... x... X... x...
+  sd: .... X... .... X...
+  ch: x.x. x.x. x.x. x.x.
+  oh: .... .... ..x. ....
+}
+
+scene first {
+  kick = melody
+  circuit-kick = melody
+  snare = melody
+  hat = melody
+  steel = beat
+  circuit = beat
+}
+
+scene second {
+  kick = keep
+  circuit-kick = keep
+  snare = keep
+  hat = keep
+  steel = keep
+  circuit = keep
+}
+
+song {
+  first
+  second
+}

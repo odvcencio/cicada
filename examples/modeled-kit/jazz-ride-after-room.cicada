@@ -1,0 +1,63 @@
+cicada 2
+title "Jazz ride: modeled"
+tempo 144
+seed 4242
+
+fx room reverb {
+  size = 0.7
+  decay = 0.8s
+  damp = 6kHz
+  highpass = 120Hz
+  predelay = 12ms
+  mix = 1
+}
+
+kit acoustic {
+  bd = model.kick
+  sd = model.snare
+  ch = model.hat_closed
+  oh = model.hat_open
+  cp = model.hat_pedal
+  rs = model.cross_stick
+  lt = model.tom_low
+  mt = model.tom_mid
+  ht = model.tom_high
+  cb = model.ride_bow
+  cy = model.crash
+}
+
+kit articulations {
+  sd = model.rimshot
+  ch = model.hat_half_open
+  cb = model.ride_bell
+  cy = model.splash
+}
+
+track kit acoustic {
+  level = -12dB
+  send room = 0.16
+}
+
+track extra articulations {
+  level = -12dB
+  send room = 0.16
+}
+
+pattern main drums steps=32 {
+  bd: x2... .... .... .... x2... .... x3... ....
+  sd: .... ...x2 .... x4... .... ...x2 .... x4...
+  cp: .... x5... .... x5... .... x5... .... x5...
+  cb: x6... x5..x4 x6... x5..x4 x6... x5..x4 x6... x5..x4
+  rs: .... .... ..x3. .... .... .... ..x3. ....
+}
+
+pattern extra drums steps=32 {
+  cb: .... .... .... .... x6... .... x5... ....
+  cy: x4... .... .... .... .... .... .... ....
+}
+
+scene groove {
+  kit = main
+  extra = extra
+}
+song { groove*4 }

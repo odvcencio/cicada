@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "library": "Versilian Community Sample Library",
+  "source_commit": "c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e",
+  "license": "CC0-1.0",
+  "attribution": "Versilian Community Sample Library; CC0 attribution is optional.",
+  "assets": [
+    {
+      "id": "kick",
+      "model": "model.kick",
+      "comparison_velocity": 88,
+      "source_url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Membranophones/Struck%20Membranophones/Bass%20Drum%201/BDrumNew_hit_v5_rr1_Sum.wav",
+      "license": "CC0-1.0",
+      "license_url": "https://github.com/sgossner/VCSL/blob/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/README.md",
+      "sha256": "642aaf3375eaff1307973f7de3ccbf74d18e71fb3cf9412e021b08fc3bf1981c",
+      "bytes": 588092,
+      "file": "kick.wav",
+      "purpose": "Optional separately fetched spectral/envelope comparison; never used by synthesis."
+    },
+    {
+      "id": "snare",
+      "model": "model.snare",
+      "comparison_velocity": 80,
+      "source_url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Membranophones/Struck%20Membranophones/Snare%20Drum%2C%20Modern%201/Snare2_HitSN_v5_rr1_Mid.wav",
+      "license": "CC0-1.0",
+      "license_url": "https://github.com/sgossner/VCSL/blob/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/README.md",
+      "sha256": "6ec8445cb207df8f1178d8c3894f47969fd53fb2b81c404317e466de4598dc3e",
+      "bytes": 240496,
+      "file": "snare.wav",
+      "purpose": "Optional separately fetched spectral/envelope comparison; never used by synthesis."
+    },
+    {
+      "id": "hat_closed",
+      "model": "model.hat_closed",
+      "comparison_velocity": 88,
+      "source_url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Idiophones/Struck%20Idiophones/Hi-Hat%20Cymbal/HiHat_HitC_v3_rr1_Mid.wav",
+      "license": "CC0-1.0",
+      "license_url": "https://github.com/sgossner/VCSL/blob/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/README.md",
+      "sha256": "b65ca06ea4f8b5209fc8d98912094be1212911f21e01bd949cc9960db049d37c",
+      "bytes": 218792,
+      "file": "hat_closed.wav",
+      "purpose": "Optional separately fetched spectral/envelope comparison; never used by synthesis."
+    },
+    {
+      "id": "hat_open",
+      "model": "model.hat_open",
+      "comparison_velocity": 64,
+      "source_url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Idiophones/Struck%20Idiophones/Hi-Hat%20Cymbal/HiHat_HitO_rr1_Mid.wav",
+      "license": "CC0-1.0",
+      "license_url": "https://github.com/sgossner/VCSL/blob/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/README.md",
+      "sha256": "fa492ec14cc6924b43ad5fcf9e9a0f406d926998835bde2eb5847cd15ad25be7",
+      "bytes": 1026612,
+      "file": "hat_open.wav",
+      "purpose": "Optional separately fetched spectral/envelope comparison; never used by synthesis."
+    },
+    {
+      "id": "ride_bow",
+      "model": "model.ride_bow",
+      "comparison_velocity": 64,
+      "source_url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Idiophones/Struck%20Idiophones/Suspended%20Cymbal%201/susCymb1_hit_stick_mp1.wav",
+      "license": "CC0-1.0",
+      "license_url": "https://github.com/sgossner/VCSL/blob/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/README.md",
+      "sha256": "17294cefa7f50367d1d9ae885a5f63a52eab372b90aeb7c3a8b400942cc95b9f",
+      "bytes": 1399926,
+      "file": "ride_bow.wav",
+      "purpose": "Suspended cymbal stick hit; related cymbal reference, not a recorded ride of matching dimensions."
+    }
+  ]
+}
