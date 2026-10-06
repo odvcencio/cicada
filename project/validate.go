@@ -65,6 +65,9 @@ func ValidateProject(p *Project) error {
 	if p.Format == FormatID && projectHasSceneSettings(p) {
 		return fmt.Errorf("scene settings require cicada.project/2")
 	}
+	if err := validateAutomation(p); err != nil {
+		return err
+	}
 	if p.Edition != 1 && p.Edition != 2 {
 		return fmt.Errorf("CICADA-VERSION: only cicada 1 and 2 are supported")
 	}

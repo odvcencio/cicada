@@ -12,8 +12,11 @@
 source_file ::= [ "cicada" , integer ] , { _declaration } ;
 _declaration ::= import_decl | title_decl | tempo_decl | key_decl | seed_decl | instrument_decl |
                  kit_decl | track_decl | phrase_decl | acid_pattern | note_pattern | drum_pattern |
-                 scene_decl | song_decl | fx_decl | bus_decl | master_decl | export_decl |
-                 asset_decl | clip_decl | sampler_decl | live_decl ;
+                 automate_decl | scene_decl | song_decl | fx_decl | bus_decl | master_decl |
+                 export_decl | asset_decl | clip_decl | sampler_decl | live_decl ;
+automate_decl ::= "automate" , parameter_path , "{" , { automation_point } , "}" ;
+automation_point ::= musical_position , number , [ identifier , [ number ] ] ;
+musical_position ::= /@[0-9]+\.[0-9]+\.[0-9]+/ ;
 asset_decl ::= "asset" , _name , string , "{" , { param_decl } , "}" ;
 clip_decl ::= "clip" , _name , _name , "{" , { param_decl } , "}" ;
 sampler_decl ::= "sampler" , _name , "{" , { param_decl } , "}" ;

@@ -254,3 +254,7 @@ continuing.
 
 If you want Studio beside VS Code, install or run the extension described in
 [Editors and notation tools](editors.md#vs-code).
+
+Continuous automation appears below the Song lane. Each graph labels its parameter, range and musical endpoints; point descriptions retain positions, values and shapes for assistive technology. Edit `automate` blocks in the score and reload to update the curves. See [automation blocks](../spec/accepted.md#automation-blocks) and [the runnable example](../../examples/continuous-automation.cicada).
+
+The continuous-lane view was checked in Chrome at 1440×1000 and 390×1000. [Desktop screenshot](screenshots/continuous-automation-1440.png) · [Narrow screenshot](screenshots/continuous-automation-390.png).

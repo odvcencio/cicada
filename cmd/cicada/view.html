@@ -1,3 +1,4 @@
+{{define "automation"}}{{if .Automation}}<div class="automation-lanes" aria-label="Continuous automation lanes"><h3>Automation</h3>{{range .Automation}}<figure class="automation-lane"><figcaption><strong>{{.Path}}</strong><span>{{len .Points}} points{{if .Unit}} · {{.Unit}}{{end}}</span></figcaption><div class="automation-scale"><span>{{.High}}{{.Unit}}</span><span>{{.Low}}{{.Unit}}</span></div><svg viewBox="0 0 1000 128" preserveAspectRatio="none" role="img" aria-label="{{.Path}} automation"><desc>{{.Description}}</desc><path class="automation-grid" d="M16 16H984 M16 64H984 M16 112H984"/><path class="automation-curve" d="{{.Curve}}"/>{{range .Points}}<path class="automation-point" d="M{{.X}} {{.Y}}h0.001"><title>{{.Label}}</title></path>{{end}}</svg><div class="automation-time"><span>Bar 1</span><span>Bar {{.EndBar}}</span></div></figure>{{end}}</div>{{end}}{{end}}
 {{define "signal"}}<li class="signal-branch"><span class="signal-chip {{.Kind}}">{{.Label}}</span>{{if .Children}}<ol class="signal-children">{{range .Children}}{{template "signal" .}}{{end}}</ol>{{end}}</li>{{end}}
 <!doctype html>
 <html lang="en">
@@ -42,6 +43,18 @@ h2 { font-size:1.42rem; margin:0 0 14px; letter-spacing:-.025em; }
 .master-meter > span { color:var(--mint); text-transform:uppercase; letter-spacing:.08em; }
 .master-meter output { min-width:56px; text-align:right; }
 .track.muted { opacity:.68; border-style:dashed; }
+.automation-lanes { margin-top:24px; }
+.automation-lanes h3 { margin:0 0 12px; font-size:1rem; }
+.automation-lane { position:relative; margin:0 0 12px; padding:14px 16px 12px; border:1px solid var(--border); border-radius:11px; background:var(--panel); }
+.automation-lane figcaption { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px; font-size:.86rem; }
+.automation-lane figcaption strong { color:var(--mint); overflow-wrap:anywhere; }
+.automation-lane figcaption span, .automation-time, .automation-scale { color:var(--muted); font:.7rem/1.3 ui-monospace,SFMono-Regular,Consolas,monospace; }
+.automation-lane svg { display:block; width:calc(100% - 60px); height:128px; margin-left:60px; overflow:visible; }
+.automation-scale { position:absolute; top:47px; bottom:33px; left:16px; display:flex; flex-direction:column; justify-content:space-between; }
+.automation-grid { stroke:var(--grid); stroke-width:1; fill:none; vector-effect:non-scaling-stroke; }
+.automation-curve { stroke:var(--mint); stroke-width:2; fill:none; vector-effect:non-scaling-stroke; }
+.automation-point { stroke:var(--amber); stroke-width:6; stroke-linecap:round; vector-effect:non-scaling-stroke; }
+.automation-time { display:flex; justify-content:space-between; margin-left:60px; }
 .song { display:flex; gap:8px; overflow-x:auto; padding-bottom:9px; }
 .song-block { min-width:135px; border:1px solid #756643; border-radius:11px; background:linear-gradient(130deg,#3b3220,#29291c); padding:12px 16px; }
 .song-block strong { display:block; overflow-wrap:anywhere; color:var(--amber); }
@@ -539,6 +552,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     {{if .Studio}}<section id="song" data-workspace-panel="song" aria-labelledby="song-heading">
       <h2 id="song-heading">Song</h2>
       <div class="song timeline" aria-label="Song lane">{{range .Song}}<div class="song-block" style="--bars:{{.Bars}}" data-index="{{.Index}}" data-bars="{{.Bars}}" data-start-bar="{{.StartBar}}" data-scene="{{.Scene}}"><div class="song-block-head"><button type="button" class="song-grip" aria-label="Drag {{.Scene}} to reorder">↔</button><button type="button" class="song-play" aria-label="Play song from {{.Scene}}, bar {{.StartBar}}">▶</button><strong>{{.Scene}}</strong></div><span class="song-duration">{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}}</span><span class="song-range">Bars {{.StartBar}}–{{.EndBar}}</span><div class="song-controls"><button type="button" data-song-action="left" aria-label="Move {{.Scene}} earlier">←</button><button type="button" data-song-action="right" aria-label="Move {{.Scene}} later">→</button><button type="button" data-song-action="shorter" aria-label="Shorten {{.Scene}} by one bar">−</button><button type="button" data-song-action="longer" aria-label="Lengthen {{.Scene}} by one bar">+</button></div><button type="button" class="song-resize" aria-label="Drag to change {{.Scene}} duration">⋮</button></div>{{end}}</div>
+      {{template "automation" .}}
     </section>{{end}}
     <section id="patterns" data-workspace-panel="session" aria-labelledby="patterns-heading">
       <h2 id="patterns-heading">Patterns</h2>
@@ -650,6 +664,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       <h2 id="arrangement-heading">Scenes and song</h2>
       {{if .Scenes}}<div class="scene-pads" role="group" aria-label="Scenes">{{range .Scenes}}<span class="scene-pad">{{.ID}}</span>{{end}}</div>{{end}}
       <div class="song">{{range .Song}}<div class="song-block" style="--bars:{{.Bars}}"><strong>{{.Scene}}</strong><span>{{.Bars}} {{if eq .Bars 1}}bar{{else}}bars{{end}} · bars {{.StartBar}}–{{.EndBar}}</span></div>{{end}}</div>
+    {{template "automation" .}}
     </section>{{end}}
     {{if .Studio}}<section id="record" data-workspace-panel="record" aria-labelledby="record-heading">
       <h2 id="record-heading">Record</h2>

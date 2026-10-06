@@ -276,3 +276,7 @@
 
 (chain_decl "chain" @attribute)
 (chain_decl (identifier) @function)
+
+(automate_decl "automate" @keyword)
+(musical_position) @number
+(automation_point shape: (identifier) @attribute)

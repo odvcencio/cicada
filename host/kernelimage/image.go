@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
@@ -33,6 +34,9 @@ const GridCapability uint16 = 1 << 5
 
 // ChainCapability appends an ordered slot list after each track bank.
 const ChainCapability uint16 = 1 << 6
+
+// AutomationCapability appends prepared tick-addressed parameter controls.
+const AutomationCapability uint16 = 1 << 7
 
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
@@ -173,6 +177,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w.u16(uint16(len(cfg.Scenes)))
 	w.u16(uint16(len(cfg.Song)))
 	var capabilities uint16
+	if len(cfg.Automation) > 0 {
+		capabilities |= AutomationCapability
+	}
 	for _, bank := range cfg.Patterns {
 		if len(bank.Chain) > 0 {
 			capabilities |= ChainCapability
@@ -453,6 +460,22 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		w.u16(entry.Scene)
 		w.u16(entry.Bars)
 	}
+	if capabilities&AutomationCapability != 0 {
+		if len(cfg.Automation) > 65535 {
+			return nil, Error("automation exceeds 65535 controls")
+		}
+		w.u16(uint16(len(cfg.Automation)))
+		for i, control := range cfg.Automation {
+			if control.Op != cmd.OpSetParam || i > 0 && control.Tick < cfg.Automation[i-1].Tick {
+				return nil, Error("invalid automation timeline")
+			}
+			data, err := cmd.EncodeCommand(control, uint8(cfg.Tracks))
+			if err != nil {
+				return nil, err
+			}
+			w.data = append(w.data, data[:]...)
+		}
+	}
 	if len(w.data) > MaxImageBytes {
 		return nil, Error("project image exceeds 2 MiB")
 	}
@@ -492,7 +515,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|NeuralAmpCapability|GridCapability|ChainCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|NeuralAmpCapability|GridCapability|ChainCapability|AutomationCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -897,6 +920,24 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		if cfg.Song[i].Bars, err = r.u16(); err != nil {
 			return err
+		}
+	}
+	if reserved&AutomationCapability != 0 {
+		count, err := r.u16()
+		if err != nil || count == 0 || len(r.data)-r.at < int(count)*cmd.CommandSize {
+			return Error("invalid automation control count")
+		}
+		cfg.Automation = make([]cmd.Command, int(count))
+		for i := range cfg.Automation {
+			control, err := cmd.DecodeCommand(r.data[r.at:r.at+cmd.CommandSize], tracks)
+			if err != nil {
+				return err
+			}
+			if control.Op != cmd.OpSetParam || i > 0 && control.Tick < cfg.Automation[i-1].Tick {
+				return Error("invalid automation timeline")
+			}
+			cfg.Automation[i] = control
+			r.at += cmd.CommandSize
 		}
 	}
 	if r.at != len(r.data) {

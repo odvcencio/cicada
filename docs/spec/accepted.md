@@ -224,7 +224,7 @@ port keys = "KeyStep 37 MIDI 1"
 
 ## Automation blocks
 
-**Status:** Accepted; not available in the current build.
+**Status:** Song-scoped continuous numeric lanes are implemented in source, semantic JSON, native/WASM playback and Studio. Scene and pattern scopes remain follow-up work.
 
 **Syntax (EBNF):**
 
@@ -235,25 +235,32 @@ position ::= "@" , integer , "." , integer , "." , integer ;
 shape ::= "step" | "linear" | "smooth" | "exponential" | "curve" , number ;
 ```
 
-**Meaning:** A lane changes a registered parameter over song time. Lanes may live at song, scene, or pattern scope. Interpolation uses the parameter's control space: for frequency and time parameters that space is logarithmic, so `exponential` has the same meaning as `linear` there. `linear_period` is not a supported shape.
+**Meaning:** A lane changes a registered parameter over song time. Lanes are top-level declarations with absolute song positions. Interpolation uses the parameter's control space: for frequency and time parameters that space is logarithmic, so `exponential` has the same meaning as `linear` there. `linear_period` is not a supported shape.
 
-**Types and units:** Positions are one-based bar.beat.step values. Point values use the addressed parameter's registered type and unit. Shapes are step, linear, smooth, exponential-as-linear-in-control-space, or a curve with numeric tension.
+**Types and units:** Positions are one-based bar.beat.sixteenth values (beats and steps 1–4), within the song including its end boundary. Point values use the addressed parameter's registered type and unit. Shapes are step, linear, smooth, exponential-as-linear-in-control-space, or a curve with numeric tension.
 
-**Defaults:** `linear` is the default shape. An omitted lane contributes no automation.
+**Defaults:** `linear` is the default incoming segment shape. The lane contributes no value before its first point and holds its last value afterward. Song loops repeat the lane; seeks reconstruct the current value. At authored scene boundaries, automation takes precedence over scene settings on the same path.
 
-**Errors:** Invalid positions, unresolved paths, incompatible units, and out-of-order points must be rejected. `linear_period` reports `CICADA-UNSUPPORTED`; stable diagnostics and boundary behavior for the other cases have not landed.
+**Errors:** Invalid positions and out-of-order points report `CICADA-POSITION`; unresolved paths report `CICADA-REFERENCE`; incompatible units report `CICADA-UNIT`. Unsupported shapes, including `linear_period`, report `CICADA-UNSUPPORTED`. Duplicate paths report `CICADA-DUPLICATE`.
 
 **Example:** `exponential` uses the existing linear interpolation rule in control space:
 
-```cicada-accepted
+```cicada
 cicada 2
+tempo 120
+track bass acid {}
+pattern triplet { step = 1/8t 1 3 5 }
 automate bass.cutoff {
   @1.1.1 400Hz
   @5.1.1 2400Hz exponential
 }
+scene main { bass = triplet }
+song { main*4 }
 ```
 
-**Edition history:** Accepted as additive edition-1 syntax and semantic JSON version 2 work. The current build has no automation record or Studio lane.
+**Edition history:** Additive in source editions 1 and 2, using semantic JSON version 2. Kernel images advertise capability bit 7 and append immutable parameter controls. Older readers reject that capability. The renderer remains allocation-free.
+
+The host prepares numeric targets every four ticks at 960 PPQ (2.08 ms at 120 BPM); the existing parameter smoothing connects them continuously. This uses the same float32 controls in native and WASM playback. Limits are 32 lanes, 1024 authored points per lane and 65535 prepared controls per project. Step segments and flat spans need only endpoints. Enum/toggle controls and static master inserts cannot be automated. `smooth` uses smoothstep; `curve n` uses `t^(2^n)` in control space with tension −8 to 8. Frequency/time lanes follow their registered logarithmic curve; other controls follow the registry curve.
 
 ## Continuous pitch settings and rows (P7)
 

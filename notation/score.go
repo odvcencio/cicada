@@ -42,6 +42,7 @@ type Score struct {
 	Tracks         []Track
 	Phrases        []Phrase
 	Patterns       []Pattern
+	Automation     []Automation
 	Scenes         []Scene
 	Song           []SongEntry
 	SongPosition   Position

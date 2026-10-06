@@ -308,6 +308,11 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	for i, entry := range p.Song {
 		cfg.Song[i] = engine.SongEntry{Scene: sceneIndex[entry.Scene], Bars: entry.Bars}
 	}
+	var automationErr error
+	cfg.Automation, automationErr = CompileAutomation(p)
+	if automationErr != nil {
+		return cfg, automationErr
+	}
 	return cfg, nil
 }
 
