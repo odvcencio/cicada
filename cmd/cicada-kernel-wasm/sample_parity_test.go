@@ -23,6 +23,10 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
+func TestAudioWASMGuitarSampleParity(t *testing.T) {
+	compareWASMFixture(t, "expressive-guitar.cicada", 4)
+}
+
 func TestAudioWASMFirstAcidSampleParity(t *testing.T) {
 	compareWASMFixture(t, "first-acid.cicada", 16)
 }
@@ -353,6 +357,10 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			var peakChannel int
 			var nonzero bool
 			var stableMemory uint32
+			var allocationsBefore uint64
+			if fixture == "expressive-guitar.cicada" {
+				allocationsBefore = call("gosx_audio_allocation_count")
+			}
 			var initialAllocations uint64
 			if fixture == "pluck.cicada" || fixture == "modeled-piano.cicada" || fixture == "fm-bell.cicada" {
 				initialAllocations = call("gosx_audio_alloc_bytes")
@@ -410,6 +418,13 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 				if block == 10 {
 					stableMemory = module.Memory().Size()
 				}
+			}
+			if fixture == "expressive-guitar.cicada" {
+				allocations := call("gosx_audio_allocation_count") - allocationsBefore
+				if allocations != 0 {
+					t.Fatalf("guitar WASM callback allocated %d times", allocations)
+				}
+				t.Logf("METRIC: WASM guitar callback allocations | %d | %d Hz, %d frames", allocations, rate, frames)
 			}
 			if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
 				copyHash := [32]byte{}

@@ -51,7 +51,7 @@ probe-wasm:
 
 build-kernel-wasm:
 	mkdir -p build
-	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
+	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
 		status=$$?; \
 		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
 			echo "FAIL build-kernel-wasm: TinyGo kernel build exceeded $(KERNEL_WASM_BUILD_TIMEOUT) budget" >&2; \
@@ -110,7 +110,7 @@ build-worklets:
 	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=true --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor-capture.min.js
 
 # Optional sample kernel: one prepared immutable instrument per instance.
-# Audio packs stay external; the core kernel and its 300 KiB gate are unchanged.
+# Audio packs stay external; the core kernel keeps its shared size gate.
 .PHONY: build-sampler-wasm test-sampler-wasm
 build-sampler-wasm:
 	mkdir -p build

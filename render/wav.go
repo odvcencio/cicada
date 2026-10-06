@@ -17,6 +17,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
 	"m31labs.dev/cicada/kernel/voice/piano"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -750,6 +751,37 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 					}
 				}
 				track.drumPatterns[pattern.Name] = lanes
+			}
+			tracks = append(tracks, track)
+			continue
+		}
+		if source.Kind == "guitar" {
+			params, err := project.CompileGuitarParams(source)
+			if err != nil {
+				return nil, err
+			}
+			voice, err := guitar.New(sampleRate, params)
+			if err != nil {
+				return nil, err
+			}
+			track := trackRuntime{name: source.Name, mixer: trackMix, voice: voice, patterns: map[string]seq.Pattern{}}
+			used := make(map[string]bool)
+			for _, scene := range score.Scenes {
+				for _, binding := range scene.Bindings {
+					if binding.Track == source.Name {
+						used[binding.Pattern] = true
+					}
+				}
+			}
+			for _, pattern := range score.Patterns {
+				if pattern.Kind != "notes" || !used[pattern.Name] {
+					continue
+				}
+				compiled, err := project.CompilePattern(score, pattern, source)
+				if err != nil {
+					return nil, err
+				}
+				track.patterns[pattern.Name] = compiled[0].Pattern
 			}
 			tracks = append(tracks, track)
 			continue

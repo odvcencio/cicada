@@ -12,10 +12,12 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
 )
 
 const MaxImageBytes = 2 << 20
-const ChordImageVersion = 14 // opt-in bounded graph polyphony and chord payloads
+const guitarImageVersion = 15 // experimental guitar; version 14 belongs to chord/schedule lanes
+const ChordImageVersion = 14  // opt-in bounded graph polyphony and chord payloads
 
 // DelayCapability uses bit 1; bit 0 is reserved by the chord lane. The existing
 // reserved header word carries required capabilities without changing version
@@ -108,8 +110,9 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 13. The decoded Config is separately
-// validated by engine.New before any audio is produced.
+// Encode keeps legacy voices on version 13, chords on version 14, and guitar
+// on version 15. Version 15 retains the chord layout for mixed projects.
+// The decoded Config is validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
 	if cfg.MasterProcessor != nil {
 		return nil, Error("prepared master processor must be loaded separately from the project image")
@@ -125,11 +128,14 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	version := uint16(imageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
+		if spec.Kind == engine.VoiceGuitar {
+			version = guitarImageVersion
+		}
 		if spec.Polyphony != 0 && (spec.Polyphony != 4 || spec.Kind != engine.VoiceGraph) {
 			return nil, Error("invalid polyphony image mode")
 		}
 		if spec.Polyphony == 4 {
-			version = ChordImageVersion
+			version = max(version, uint16(ChordImageVersion))
 		}
 		if len(cfg.Patterns) > 0 {
 			for _, pattern := range cfg.Patterns[track].Slots {
@@ -141,7 +147,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 						return nil, Error("chord payload requires an active polyphonic step")
 					}
 					if chord.Count > 0 {
-						version = ChordImageVersion
+						version = max(version, uint16(ChordImageVersion))
 					}
 				}
 				if pattern.Len > 0 {
@@ -292,6 +298,16 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		switch spec.Kind {
 		case engine.VoiceOff:
+		case engine.VoiceGuitar:
+			if !spec.Experimental {
+				return nil, Error("guitar requires explicit experimental opt-in")
+			}
+			if err := spec.Guitar.Validate(); err != nil {
+				return nil, err
+			}
+			for id := kernel.ParamGuitarBend; id <= kernel.ParamGuitarDrive; id++ {
+				w.f64(spec.Guitar.Value(id))
+			}
 		case engine.VoiceAcid:
 			writeAcid(&w, spec.Acid)
 		case engine.VoiceDrums:
@@ -448,7 +464,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|PMCapability|NeuralAmpCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|PMCapability|NeuralAmpCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -665,6 +681,21 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		switch spec.Kind {
 		case engine.VoiceOff:
+		case engine.VoiceGuitar:
+			if version != guitarImageVersion {
+				return Error("guitar requires image version 15")
+			}
+			spec.Experimental = true
+			spec.Guitar = guitar.DefaultParams()
+			for id := kernel.ParamGuitarBend; id <= kernel.ParamGuitarDrive; id++ {
+				value, err := r.f64()
+				if err != nil {
+					return err
+				}
+				if err := spec.Guitar.Set(id, value); err != nil {
+					return err
+				}
+			}
 		case engine.VoiceAcid:
 			if spec.Acid, err = readAcid(&r); err != nil {
 				return err
@@ -817,6 +848,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					return err
 				}
 				setting.Division = fx.DelayDivision(division)
+				if version != guitarImageVersion && setting.ID >= kernel.ParamGuitarBend {
+					return Error("guitar controls require image version 15")
+				}
 				if err := validateSceneSetting(cfg, *setting); err != nil {
 					return err
 				}
@@ -951,6 +985,9 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 	if spec.Scope == "track" {
 		if int(setting.Track) >= cfg.Tracks {
 			return Error("scene parameter track is out of range")
+		}
+		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
+			return Error("guitar setting requires a guitar track")
 		}
 	} else if setting.Track != 0xff {
 		return Error("global scene parameter needs the global owner")

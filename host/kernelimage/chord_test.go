@@ -129,7 +129,7 @@ func TestChordImageAndRealCommandUploadPlayback(t *testing.T) {
 	if err != nil || dc.Patterns[0].Slots[0].GatePercent != 60 || dc.Patterns[0].Slots[0].Seed != 7 {
 		t.Fatal("complete image dropped gate/seed")
 	}
-	image[4] = 15
+	image[4] = 16
 	if _, err := kernelimage.Decode(image, 48000, 128); err == nil {
 		t.Fatal("unsupported image version accepted")
 	}

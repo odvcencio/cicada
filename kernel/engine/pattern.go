@@ -557,6 +557,8 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			switch e.voices[track].kind {
 			case VoiceAcid:
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
+			case VoiceGuitar:
+				e.voices[track].guitar.NoteOn(event.Note, event.Velocity, event.Accent, event.Slide)
 			case VoiceGraph:
 				if pool := e.voices[track].poly; pool != nil {
 					if !event.Slide {

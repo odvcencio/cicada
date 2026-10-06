@@ -127,6 +127,7 @@ func ToSource(p *Project) ([]byte, error) {
 	}
 	for _, track := range p.Tracks {
 		var out strings.Builder
+		track = normalizeGuitarOptIn(track)
 		out.WriteString("track " + track.ID + " " + track.Kind)
 		if p.p2Syntax {
 			source, err := trackMixerSource(track)

@@ -12,6 +12,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
 	"m31labs.dev/cicada/kernel/voice/piano"
 )
 
@@ -27,6 +28,7 @@ const (
 	VoiceDrums
 	VoiceGraph
 	VoicePiano
+	VoiceGuitar // explicitly experimental physical model and amp
 )
 
 type KitLaneKind uint8
@@ -47,6 +49,8 @@ type KitLaneBinding struct {
 
 type TrackConfig struct {
 	Kind         VoiceKind
+	Experimental bool          `json:",omitempty"`
+	Guitar       guitar.Params `json:",omitzero"`
 	Acid         acid.Params
 	Drums        [drum.LaneCount]drum.Params
 	Kit          *[drum.LaneCount]KitLaneBinding
@@ -112,6 +116,7 @@ type Config struct {
 
 type voiceSlot struct {
 	kind                           VoiceKind
+	guitar                         *guitar.Voice
 	acid                           *acid.Voice
 	drums                          *drum.Kit
 	graph                          *graph.Voice
@@ -429,6 +434,12 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		}
 		switch spec.Kind {
 		case VoiceOff:
+		case VoiceGuitar:
+			if !spec.Experimental {
+				return 0, Error("guitar requires explicit experimental opt-in")
+			}
+			voices++
+			v.guitar, err = guitar.New(cfg.SampleRate, spec.Guitar)
 		case VoiceAcid:
 			voices++
 			v.acid, err = acid.New(cfg.SampleRate)
@@ -809,6 +820,9 @@ func (e *Engine) Render(outL, outR []float32) {
 					clear(outR[frame:])
 					return
 				}
+			case VoiceGuitar:
+				sample := v.guitar.Next()
+				left, right = sample, sample
 			case VoiceGraph:
 				var sample float32
 				if v.poly != nil {
@@ -1219,6 +1233,8 @@ func (e *Engine) apply(c cmd.Command) {
 		switch v.kind {
 		case VoiceAcid:
 			v.acid.NoteOn(note, accent, slide, velocity)
+		case VoiceGuitar:
+			v.guitar.NoteOn(note, velocity, accent, slide)
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
 		case VoicePiano:
@@ -1357,6 +1373,20 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				return
 			}
 			v.pianoSustain = value
+		case kernel.ParamGuitarBend, kernel.ParamGuitarVibrato, kernel.ParamGuitarBrightness, kernel.ParamGuitarDamping, kernel.ParamGuitarPickup, kernel.ParamGuitarDrive:
+			if v.kind != VoiceGuitar || v.guitar == nil {
+				e.fault(18)
+				return
+			}
+			var setErr error
+			if immediate {
+				setErr = v.guitar.SetParamImmediate(kernel.ParamID(c.Index), float64(value))
+			} else {
+				setErr = v.guitar.SetParam(kernel.ParamID(c.Index), float64(value))
+			}
+			if setErr != nil {
+				e.fault(18)
+			}
 		case kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:
 			if v.kind != VoiceAcid || v.acid == nil {
 				e.fault(18)
@@ -1652,6 +1682,8 @@ func (e *Engine) noteOff(track int, lane uint16) {
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.NoteOff()
+	case VoiceGuitar:
+		v.guitar.NoteOff()
 	case VoiceGraph:
 		if v.poly != nil {
 			v.poly.ReleaseAll()
@@ -1686,6 +1718,8 @@ func (e *Engine) resetVoice(track int) {
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.Reset()
+	case VoiceGuitar:
+		v.guitar.Reset()
 	case VoiceGraph:
 		if v.poly != nil {
 			v.poly.Reset()
