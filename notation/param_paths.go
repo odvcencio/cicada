@@ -119,15 +119,33 @@ func notationParameterVoiceKind(score *Score, kind string) string {
 		return "acid"
 	case "drums":
 		return "drums"
-	case "piano":
-		return "piano"
 	}
 	for _, kit := range score.Kits {
 		if kit.Name == kind {
 			return "drums"
 		}
 	}
+	if notationModeledPiano(score, kind) {
+		return "piano"
+	}
 	return "instrument"
+}
+
+func notationModeledPiano(score *Score, kind string) bool {
+	if kind != "piano" || scoreHasSampler(score, kind) {
+		return false
+	}
+	for _, instrument := range score.Instruments {
+		if instrument.Name == kind {
+			return false
+		}
+	}
+	for _, kit := range score.Kits {
+		if kit.Name == kind {
+			return false
+		}
+	}
+	return true
 }
 
 func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {

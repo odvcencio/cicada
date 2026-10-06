@@ -28,8 +28,12 @@ func ParamAddresses(p *Project) []ParamAddress {
 	}
 	addresses := make([]ParamAddress, 0, len(p.Tracks)*8+len(p.Effects)*8)
 	for _, track := range p.Tracks {
+		kind := track.Kind
+		if kind == "piano" && !isModeledPiano(p, kind) {
+			kind = "instrument"
+		}
 		for _, descriptor := range paramdefs.Registry {
-			if descriptor.Scope != "track" || !descriptorApplies(descriptor.ID, track.Kind) {
+			if descriptor.Scope != "track" || !descriptorApplies(descriptor.ID, kind) {
 				continue
 			}
 			value := trackParamValue(track, descriptor)

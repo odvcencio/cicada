@@ -51,6 +51,7 @@ type TrackConfig struct {
 	Drums        [drum.LaneCount]drum.Params
 	Kit          *[drum.LaneCount]KitLaneBinding
 	Graph        graph.Program
+	Polyphony    uint8 `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
 	PianoSustain float32
 	GainDB       float64
 	GainSet      bool
@@ -116,6 +117,7 @@ type voiceSlot struct {
 	graph                          *graph.Voice
 	piano                          *piano.Instrument
 	pianoSustain                   float32
+	poly                           *graph.Pool
 	mix                            mix.Track
 	targetMix                      mix.Track
 	mixSmooth                      float32
@@ -213,6 +215,19 @@ type Engine struct {
 
 // TrackCount reports the immutable track count established by New.
 func (e *Engine) TrackCount() int { return e.tracks }
+
+// TrackVoiceKind reports the source selected at construction.
+func (e *Engine) TrackVoiceKind(track int) VoiceKind {
+	if track < 0 || track >= e.tracks {
+		return VoiceOff
+	}
+	return e.voices[track].kind
+}
+
+// TrackPolyphonic reports an immutable voice-mode capability to native hosts.
+func (e *Engine) TrackPolyphonic(track int) bool {
+	return track >= 0 && track < e.tracks && e.voices[track].poly != nil
+}
 
 // MacroValue reports the current and target values for a macro ID. Invalid IDs return zero values.
 func (e *Engine) MacroValue(id int) (current, target float32) {
@@ -366,6 +381,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			return 0, Error("track send B is invalid or has no reverb return")
 		}
 		v := &e.voices[i]
+		if spec.Polyphony != 0 && spec.Polyphony != 4 || spec.Polyphony == 4 && spec.Kind != VoiceGraph {
+			return 0, Error("polyphony requires a graph track and a four-voice limit")
+		}
 		v.kind = spec.Kind
 		v.mix = mix.NewTrack(gain, spec.Pan, false)
 		if spec.Mute {
@@ -459,8 +477,13 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 				}
 			}
 		case VoiceGraph:
-			voices++
-			v.graph, err = graph.NewVoice(spec.Graph, cfg.SampleRate)
+			if spec.Polyphony == 4 {
+				voices += 4
+				v.poly, err = graph.NewPool(spec.Graph, cfg.SampleRate)
+			} else {
+				voices++
+				v.graph, err = graph.NewVoice(spec.Graph, cfg.SampleRate)
+			}
 		case VoicePiano:
 			voices += piano.MaxVoices
 			v.piano, err = piano.New(cfg.SampleRate)
@@ -483,13 +506,20 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 	if len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
 		return Error("pattern bank count must match tracks")
 	}
-	for track, bank := range cfg.Patterns {
+	// Iterate the fixed banks by address. Copying the bank before validation
+	// makes TinyGo scalarize all 16 chord arrays into a large load routine.
+	for track := range cfg.Patterns {
+		bank := &cfg.Patterns[track]
 		isDrum := e.voices[track].kind == VoiceDrums
 		if isDrum != (bank.Drums != nil) {
 			return Error("pattern bank kind differs from track")
 		}
-		for slot, pattern := range bank.Slots {
+		for slot := range bank.Slots {
+			pattern := &bank.Slots[slot]
 			if pattern.Len == 0 {
+				if pattern.Chords != [64]seq.ChordStep{} {
+					return Error("unused slot contains chord payload")
+				}
 				if isDrum {
 					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 						if bank.Drums[slot][lane].Len != 0 {
@@ -502,10 +532,15 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			if pattern.Validate() != nil {
 				return Error("invalid preloaded pattern")
 			}
-			if e.voices[track].kind == VoicePiano && !validPianoPattern(pattern) {
+			if e.voices[track].kind == VoicePiano && !validPianoPattern(*pattern) {
 				return Error("piano notes must be MIDI 21 to 108")
 			}
-			e.patterns[track].slots[slot] = pattern
+			for step := uint8(0); step < pattern.Len; step++ {
+				if pattern.Chords[step].Count > 0 && e.voices[track].poly == nil && e.voices[track].kind != VoicePiano {
+					return Error("chord pattern requires a polyphonic graph track")
+				}
+			}
+			e.patterns[track].slots[slot] = *pattern
 			if !isDrum {
 				continue
 			}
@@ -770,7 +805,12 @@ func (e *Engine) Render(outL, outR []float32) {
 					return
 				}
 			case VoiceGraph:
-				sample := v.graph.Next()
+				var sample float32
+				if v.poly != nil {
+					sample = v.poly.Next()
+				} else {
+					sample = v.graph.Next()
+				}
 				left, right = sample, sample
 			case VoicePiano:
 				left, right = v.piano.NextStereo()
@@ -984,7 +1024,7 @@ func (e *Engine) drainCommands() {
 		if c.Op == cmd.OpSetLayerMask && c.Tick == 0 {
 			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
 		}
-		if e.transport.Playing() && c.Tick == 0 && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
+		if e.transport.Playing() && c.Tick == 0 && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
 			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
 		}
 		if e.pendingLen == len(e.pending) {
@@ -1152,12 +1192,16 @@ func (e *Engine) apply(c cmd.Command) {
 		e.liveEvents = true
 		e.phraseBars = c.Arg0
 	case cmd.OpNoteOn:
+		if e.voices[c.Track].poly != nil {
+			e.fault(cmd.FaultPolyLive)
+			return
+		}
 		track := int(c.Track)
 		note, velocity := uint8(c.Arg0), uint8(c.Arg0>>8)
 		accent, slide := c.Arg0&(1<<16) != 0, c.Arg0&(1<<17) != 0
 		v := &e.voices[track]
 		if v.kind == VoicePiano && e.patterns[track].playingNote != 0 {
-			v.piano.NoteOff(e.patterns[track].playingPitch)
+			e.releasePianoPattern(track)
 		}
 		e.patterns[track].playingNote = 0
 		e.patterns[track].heldValid = false
@@ -1183,6 +1227,10 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		e.emit(cmd.Message{Kind: cmd.NoteOn, Track: c.Track, A: uint16(note), Tick: e.transport.Tick()})
 	case cmd.OpNoteOff:
+		if e.voices[c.Track].poly != nil {
+			e.fault(cmd.FaultPolyLive)
+			return
+		}
 		if e.voices[c.Track].kind == VoicePiano && c.Index != 0xffff && (c.Index < 21 || c.Index > 108) {
 			e.fault(8)
 			return
@@ -1192,12 +1240,12 @@ func (e *Engine) apply(c cmd.Command) {
 			return
 		}
 		e.noteOff(int(c.Track), c.Index)
-		if e.voices[c.Track].kind != VoicePiano || c.Index == 0xffff || c.Index == uint16(e.patterns[c.Track].playingPitch) {
+		if e.voices[c.Track].kind != VoicePiano || c.Index == 0xffff {
 			e.patterns[c.Track].playingNote = 0
 			e.patterns[c.Track].heldValid = false
 		}
 		e.emit(cmd.Message{Kind: cmd.NoteOff, Track: c.Track, Tick: e.transport.Tick()})
-	case cmd.OpSetStep, cmd.OpSetPatternLen, cmd.OpSetPatternMeta, cmd.OpSelectPattern:
+	case cmd.OpSetStep, cmd.OpSetChordStep, cmd.OpSetPatternLen, cmd.OpSetPatternMeta, cmd.OpSelectPattern:
 		if c.Op == cmd.OpSelectPattern && c.Arg0 == 0 {
 			e.manualPatternTick[c.Track] = e.transport.Tick()
 		}
@@ -1594,7 +1642,11 @@ func (e *Engine) noteOff(track int, lane uint16) {
 	case VoiceAcid:
 		v.acid.NoteOff()
 	case VoiceGraph:
-		v.graph.NoteOff()
+		if v.poly != nil {
+			v.poly.ReleaseAll()
+		} else {
+			v.graph.NoteOff()
+		}
 	case VoicePiano:
 		if lane == 0xffff {
 			v.piano.AllNotesOff()
@@ -1624,7 +1676,11 @@ func (e *Engine) resetVoice(track int) {
 	case VoiceAcid:
 		v.acid.Reset()
 	case VoiceGraph:
-		v.graph.Reset()
+		if v.poly != nil {
+			v.poly.Reset()
+		} else {
+			v.graph.Reset()
+		}
 	case VoicePiano:
 		v.piano.Reset()
 		_ = v.piano.SetSustain(v.pianoSustain)

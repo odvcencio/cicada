@@ -27,8 +27,14 @@ func ValidateGraphDelayPattern(program graph.Program, sampleRate int, pattern se
 		if !step.Gate || step.Tie {
 			continue
 		}
-		if err := validateGraphDelayNote(program, sampleRate, int(step.Note)+int(pattern.Transpose)); err != nil {
-			return err
+		notes, count := pattern.Chords[i].Notes, pattern.Chords[i].Count
+		if count == 0 {
+			notes[0], count = step.Note, 1
+		}
+		for _, note := range notes[:count] {
+			if err := validateGraphDelayNote(program, sampleRate, int(note)+int(pattern.Transpose)); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

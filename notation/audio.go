@@ -32,6 +32,7 @@ type Clip struct {
 
 type Sampler struct {
 	Name, Asset, Mode string
+	Pack, SHA256      string
 	RootMIDI, Voices  int
 	Params            []Param
 	Position          Position
@@ -261,9 +262,21 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 	for _, sampler := range s.Samplers {
 		declaration("sampler", sampler.Name, sampler.Position)
 		if sampler.Params != nil {
-			f := fields(sampler.Params, []string{"asset", "root", "mode", "voices"}, []string{"asset", "root", "mode", "voices"}, "CICADA-SAMPLER-PARAM", sampler.Position)
+			required := []string{"asset", "root", "mode", "voices"}
+			for _, p := range sampler.Params {
+				if p.Name == "pack" {
+					required = []string{"pack", "sha256", "root", "voices"}
+					break
+				}
+			}
+			f := fields(sampler.Params, required, []string{"asset", "root", "mode", "voices", "pack", "sha256"}, "CICADA-SAMPLER-PARAM", sampler.Position)
+			sampler.Pack, _ = strconv.Unquote(f["pack"].Value)
+			sampler.SHA256, _ = strconv.Unquote(f["sha256"].Value)
 			sampler.Asset = f["asset"].Value
 			sampler.Mode = f["mode"].Value
+			if sampler.Pack != "" && sampler.Mode == "" {
+				sampler.Mode = "oneshot"
+			}
 			sampler.Voices = int(integer(f["voices"], 1, 32, "CICADA-SAMPLER-PARAM"))
 			sampler.RootMIDI = -1
 			root := f["root"].Value
@@ -281,7 +294,16 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 				sampler.RootMIDI = 12*(int(root[len(root)-1]-'0')+1) + pitch
 			}
 		}
-		reference(sampler.Asset, audioFieldPosition(sampler.Params, "asset", sampler.Position))
+		if sampler.Pack != "" {
+			if sampler.Asset != "" || sampler.Mode != "oneshot" || !ValidAssetPath(sampler.Pack) || !strings.HasSuffix(sampler.Pack, ".json") || !ValidSHA256(sampler.SHA256) {
+				add("CICADA-SAMPLER-PACK", "relative JSON pack, SHA-256 pin, no asset or loop mode", sampler.Pack, sampler.Position)
+			}
+		} else {
+			reference(sampler.Asset, audioFieldPosition(sampler.Params, "asset", sampler.Position))
+			if sampler.SHA256 != "" {
+				add("CICADA-SAMPLER-PACK", "pack with hash pin", sampler.SHA256, sampler.Position)
+			}
+		}
 		if sampler.RootMIDI < 12 || sampler.RootMIDI > 95 || sampler.Mode != "oneshot" && sampler.Mode != "loop" || sampler.Voices < 1 || sampler.Voices > 32 {
 			add("CICADA-SAMPLER-PARAM", "absolute root c0..b6, mode oneshot or loop, voices 1..32", fmt.Sprintf("root MIDI=%d mode=%q voices=%d", sampler.RootMIDI, sampler.Mode, sampler.Voices), sampler.Position)
 		}
@@ -295,7 +317,7 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 				add("CICADA-DUPLICATE", "unique instrument name", sampler.Name, sampler.Position)
 			}
 		}
-		if sampler.Name == "acid" || sampler.Name == "drums" || sampler.Name == "piano" || sampler.Name == "audio" {
+		if sampler.Name == "acid" || sampler.Name == "drums" || sampler.Name == "audio" {
 			add("CICADA-DUPLICATE", "unreserved sampler name", sampler.Name, sampler.Position)
 		}
 		samplers = append(samplers, sampler)
@@ -332,7 +354,7 @@ func ValidateAudio(s *Score) []Diagnostic {
 	}
 	for i, v := range s.Samplers {
 		resolved := samplers[i]
-		if v.Asset != resolved.Asset || v.RootMIDI != resolved.RootMIDI || v.Mode != resolved.Mode || v.Voices != resolved.Voices {
+		if v.Pack != resolved.Pack || v.SHA256 != resolved.SHA256 || v.Asset != resolved.Asset || v.RootMIDI != resolved.RootMIDI || v.Mode != resolved.Mode || v.Voices != resolved.Voices {
 			ds = append(ds, audioDiagnostic("CICADA-SAMPLER-PARAM", fmt.Sprintf("source asset=%s root=%d mode=%s voices=%d", resolved.Asset, resolved.RootMIDI, resolved.Mode, resolved.Voices), fmt.Sprintf("typed asset=%s root=%d mode=%s voices=%d", v.Asset, v.RootMIDI, v.Mode, v.Voices), v.Position))
 		}
 	}

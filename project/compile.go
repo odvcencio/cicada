@@ -153,7 +153,33 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 				octave = n
 			}
 		}
+		poly := track.Kind == "piano" || track.Kind == "unused_notes" && track.Name == ""
+		for _, sampler := range score.Samplers {
+			if sampler.Name == track.Kind {
+				poly = false
+			}
+		}
+		for _, inst := range score.Instruments {
+			if inst.Name == track.Kind {
+				poly = inst.Mode == "poly"
+			}
+		}
 		for i, token := range source.Steps {
+			if strings.HasPrefix(strings.TrimSpace(token.Text), "[") {
+				if !poly || source.Kind != "notes" {
+					return nil, &patternCompileError{position: token.Position, err: fmt.Errorf("chords require a voice poly instrument and a notes pattern")}
+				}
+				step, chord, err := chordStep(score, token, octave, token.Transpose)
+				if err != nil {
+					return nil, &patternCompileError{position: token.Position, err: err}
+				}
+				base.Steps[i], err = seq.PackStep(step)
+				if err != nil {
+					return nil, &patternCompileError{position: token.Position, err: err}
+				}
+				base.Chords[i] = chord
+				continue
+			}
 			step, err := acidStep(score, token.Text, octave, token.Transpose)
 			if err != nil {
 				return nil, &patternCompileError{position: token.Position, err: err}
@@ -162,6 +188,9 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 			if err != nil {
 				return nil, &patternCompileError{position: token.Position, err: err}
 			}
+		}
+		if err := base.Validate(); err != nil {
+			return nil, err
 		}
 		return []CompiledPattern{{Name: source.Name, Kind: source.Kind, Pattern: base}}, nil
 	}
@@ -188,6 +217,38 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		compiled = append(compiled, CompiledPattern{Name: source.Name, Kind: "drums", Lane: lane.Name, Pattern: p})
 	}
 	return compiled, nil
+}
+
+func chordStep(score *notation.Score, token notation.StepToken, octave, transpose int) (seq.Step, seq.ChordStep, error) {
+	var chord seq.ChordStep
+	pitches := make([]string, len(token.ChordPitches))
+	for i, pitch := range token.ChordPitches {
+		pitches[i] = pitch.Text
+	}
+	if len(pitches) < 2 || len(pitches) > 4 {
+		return seq.Step{}, chord, fmt.Errorf("chord must have 2 to 4 distinct pitches")
+	}
+	chord.Count = uint8(len(pitches))
+	var step seq.Step
+	for i, pitch := range pitches {
+		note, err := acidStep(score, pitch, octave, transpose)
+		if err != nil {
+			return seq.Step{}, chord, err
+		}
+		if !note.Gate || note.Tie || note.Accent || note.Slide || note.Ratchet != 1 || note.Probability != 100 {
+			return seq.Step{}, chord, fmt.Errorf("chord pitches cannot carry individual modifiers")
+		}
+		chord.Notes[i] = note.Note
+		if i == 0 {
+			step = note
+		}
+	}
+	shared, err := acidStep(score, pitches[0]+token.ChordModifiers, octave, transpose)
+	if err != nil {
+		return seq.Step{}, chord, err
+	}
+	step.Accent, step.Slide, step.Ratchet, step.Probability = shared.Accent, shared.Slide, shared.Ratchet, shared.Probability
+	return step, chord, chord.Validate(step)
 }
 
 func acidStep(score *notation.Score, token string, octave, transpose int) (seq.Step, error) {

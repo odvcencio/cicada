@@ -7,6 +7,28 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+func isModeledPiano(p *Project, kind string) bool {
+	if kind != "piano" {
+		return false
+	}
+	for _, instrument := range p.Instruments {
+		if instrument.ID == kind {
+			return false
+		}
+	}
+	for _, kit := range p.Kits {
+		if kit.ID == kind {
+			return false
+		}
+	}
+	for _, sampler := range p.Samplers {
+		if sampler.Name == kind {
+			return false
+		}
+	}
+	return true
+}
+
 // PianoSustainFromValues validates the modeled piano's authored controls.
 func PianoSustainFromValues(values map[string]Value) (float32, error) {
 	var sustain float32

@@ -9,6 +9,7 @@ import (
 
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 func TestPianoCapabilityImage(t *testing.T) {
@@ -52,5 +53,28 @@ func TestPianoCapabilityImage(t *testing.T) {
 		if _, err := kernelimage.Encode(cfg); err == nil {
 			t.Fatalf("image encoded invalid sustain %g", value)
 		}
+	}
+}
+
+func TestPianoChordCapabilityImage(t *testing.T) {
+	cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 8, BPMMilli: 120000, Patterns: make([]engine.PatternBank, 1)}
+	cfg.Track[0].Kind = engine.VoicePiano
+	pattern := &cfg.Patterns[0].Slots[0]
+	pattern.Len, pattern.GatePercent = 1, 55
+	pattern.Steps[0], _ = seq.PackStep(seq.Step{Note: 60, Gate: true, Velocity: 100, Ratchet: 1, Probability: 100})
+	pattern.Chords[0] = seq.ChordStep{Count: 3, Notes: [4]uint8{60, 64, 67}}
+	data, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binary.LittleEndian.Uint16(data[4:6]) != kernelimage.ChordImageVersion || binary.LittleEndian.Uint16(data[30:32]) != kernelimage.PianoCapability {
+		t.Fatal("piano chord format/capability missing")
+	}
+	decoded, err := kernelimage.Decode(data, 48000, 128)
+	if err != nil || !reflect.DeepEqual(cfg.Patterns, decoded.Patterns) {
+		t.Fatalf("piano chord roundtrip: %v", err)
+	}
+	if _, err := engine.New(decoded); err != nil {
+		t.Fatal(err)
 	}
 }
