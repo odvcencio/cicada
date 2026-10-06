@@ -122,6 +122,9 @@ func EventsAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, startTickOf
 		end := (absoluteStep+1)*grid + offset + swingDelayForGrid(p, absoluteStep+1)
 		for r := uint8(0); r < step.Ratchet; r++ {
 			tick := RatchetTick(start, end, step.Ratchet, r)
+			if tick < clock.AnchorTick {
+				continue
+			}
 			sample := clock.SampleAtTick(tick)
 			if sample < startSample || sample >= startSample+int64(frames) {
 				continue
@@ -207,6 +210,9 @@ func EventsWithGatesAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, st
 			offSample := clock.SampleAtTick(offTick)
 			if r+1 == step.Ratchet {
 				offTick, offSample = extendedGateEnd(p, clock, track, slot, absoluteStep, startStep, offset, step, offTick)
+			}
+			if offTick < clock.AnchorTick {
+				continue
 			}
 			if offSample < startSample || offSample >= startSample+int64(frames) {
 				continue

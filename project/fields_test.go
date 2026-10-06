@@ -67,6 +67,12 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 			}
 			continue
 		}
+		if field.Construct == "track" && field.Name == "chain" {
+			if field.Required || field.Range == nil || *field.Range != "0..32" {
+				t.Errorf("chain metadata is wrong: %+v", field)
+			}
+			continue
+		}
 		if field.Construct == "pattern" && field.Name == "step_ticks" {
 			if field.Required || field.Range == nil || *field.Range != "0..3840" {
 				t.Errorf("grid field metadata is wrong: %+v", field)

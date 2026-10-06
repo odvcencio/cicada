@@ -21,7 +21,8 @@ title_decl ::= "title" , string ;
 tempo_decl ::= "tempo" , number ;
 key_decl ::= "key" , key_root , identifier ;
 seed_decl ::= "seed" , integer ;
-track_decl ::= "track" , _name , _name , "{" , { mix_setting } , "}" ;
+track_decl ::= "track" , _name , _name , "{" , { mix_setting | chain_decl } , "}" ;
+chain_decl ::= "chain" , "=" , { _name } ;
 instrument_decl ::= "instrument" , _name , "{" , [ instrument_octave ] , { instrument_param } ,
                     voice_decl , "}" ;
 instrument_octave ::= "octave" , "=" , integer , [ ";" ] ;

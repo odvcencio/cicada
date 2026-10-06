@@ -108,6 +108,7 @@
     {
       "name": "track",
       "child_roles": [
+        "chain",
         "params",
         "slots"
       ],
@@ -1180,6 +1181,20 @@
     },
     {
       "construct": "track",
+      "name": "chain",
+      "required": false,
+      "type": "array\u003cstring\u003e",
+      "unit": null,
+      "range": "0..32",
+      "default": null,
+      "meaning": "Ordered looping source patterns",
+      "order": 1,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "track",
       "name": "id",
       "required": true,
       "type": "string",
@@ -1187,7 +1202,7 @@
       "range": null,
       "default": null,
       "meaning": "Track identifier",
-      "order": 1,
+      "order": 2,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1201,7 +1216,7 @@
       "range": null,
       "default": null,
       "meaning": "Track instrument kind",
-      "order": 2,
+      "order": 3,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1215,7 +1230,7 @@
       "range": null,
       "default": null,
       "meaning": "Track instrument parameters",
-      "order": 3,
+      "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1229,7 +1244,7 @@
       "range": null,
       "default": null,
       "meaning": "Track mixer state",
-      "order": 4,
+      "order": 5,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1243,7 +1258,7 @@
       "range": null,
       "default": null,
       "meaning": "Sixteen pattern slots",
-      "order": 5,
+      "order": 6,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"

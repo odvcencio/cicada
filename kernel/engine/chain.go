@@ -70,3 +70,40 @@ func (e *Engine) chainTargetAt(track int, tick int64) (slot int, ok bool) {
 	}
 	return int(p.chain[p.chainNext].slot), true
 }
+
+// restoreSourceChains reconstructs the authored phase after a song start or
+// seek. Runtime chain commands keep their existing edit semantics.
+//
+//go:noinline
+func (e *Engine) restoreSourceChains(tick int64) {
+	for track := 0; track < e.tracks; track++ {
+		p := &e.patterns[track]
+		if p.sourceChainLen == 0 {
+			continue
+		}
+		var period int64
+		for i := uint8(0); i < p.sourceChainLen; i++ {
+			slot := p.sourceChain[i]
+			p.chain[i] = chainEntry{slot: slot, repeats: 1}
+			period += int64(p.slots[slot].Len) * p.slots[slot].GridTicks()
+		}
+		position := tick % period
+		for i := uint8(0); i < p.sourceChainLen; i++ {
+			slot := p.sourceChain[i]
+			length := int64(p.slots[slot].Len) * p.slots[slot].GridTicks()
+			if position >= length {
+				position -= length
+				continue
+			}
+			e.selectPatternNow(track, int(slot), true)
+			p.startTick = tick - position
+			p.chainLen = p.sourceChainLen
+			p.chainNext = (i + 1) % p.chainLen
+			p.chainRepeat = 1
+			p.chainStart = p.startTick
+			p.chainDue = p.startTick + length
+			p.chainArmed = true
+			break
+		}
+	}
+}

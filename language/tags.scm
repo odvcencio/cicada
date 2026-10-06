@@ -63,3 +63,5 @@
 (live_stinger pattern: (identifier) @name) @reference.pattern
 (live_transition from: (identifier) @name) @reference.state
 (live_transition to: (identifier) @name) @reference.state
+
+(chain_decl (identifier) @name) @reference.pattern

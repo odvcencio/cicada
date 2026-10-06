@@ -29,7 +29,7 @@ var legacyConfigured bool
 
 //go:wasmexport gosx_audio_capabilities
 func capabilities() uint32 {
-	return kernelimage.CapabilityChords | uint32(kernelimage.DelayCapability|kernelimage.PianoCapability|kernelimage.NeuralAmpCapability|kernelimage.GridCapability)
+	return kernelimage.CapabilityChords | uint32(kernelimage.DelayCapability|kernelimage.PianoCapability|kernelimage.NeuralAmpCapability|kernelimage.GridCapability|kernelimage.ChainCapability)
 }
 
 // Allocation telemetry is queried by hosts outside the render callback.

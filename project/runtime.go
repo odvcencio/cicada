@@ -267,6 +267,17 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			cfg.Patterns[ti].Slots[slot] = base
 		}
 	}
+	for ti, track := range p.Tracks {
+		for _, id := range track.Chain {
+			for slot, stored := range track.Slots {
+				if stored != nil && *stored == id {
+					cfg.Patterns[ti].Chain = append(cfg.Patterns[ti].Chain, uint8(slot))
+					break
+				}
+			}
+		}
+	}
+
 	sceneIndex := make(map[string]uint16, len(p.Scenes))
 	for si, scene := range p.Scenes {
 		sceneIndex[scene.ID] = uint16(si)

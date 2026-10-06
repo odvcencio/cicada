@@ -273,3 +273,6 @@
 (live_transition to: (identifier) @variable.parameter)
 (live_transition quantize: (identifier) @constant.builtin)
 (live_stinger "." @punctuation.delimiter)
+
+(chain_decl "chain" @attribute)
+(chain_decl (identifier) @function)
