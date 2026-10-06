@@ -30,3 +30,50 @@ The limiter reconstructs intersample peaks with a finite polyphase windowed-sinc
 Tests measure frequency response, dynamics gain, stereo linking, attack/release, exact reset silence, tails, allocations, latency, THD, and a high-rate residual on selected steady tones. The high-rate comparison is not full transient or wideband alias qualification. Human listening and actual AudioWorklet/device deadline qualification remain acceptance gates. The new chain is opt-in; legacy score goldens and default processing retain their output.
 
 The integrated loudness meter now waits for a complete 400 ms gate before adding it to the histogram. Previously it included 100/200/300 ms startup fragments, biasing short programmes. A startup regression and the existing EBU suite cover the fix. This follows the [EBU programme loudness guidance](https://tech.ebu.ch/docs/tech/tech3343.pdf); incomplete gating blocks are discarded. Programmes shorter than 400 ms remain unchanged and report no integrated loudness.
+
+## Score master effects
+
+A score can declare each processor and order it on the master. Native playback,
+WAV export, and stems export prepare these effects before audio rendering.
+Studio shows the saved chain, followed by the built-in safety limiter.
+
+```cicada
+cicada 2
+track bass acid {}
+pattern pulse acid { 1 . 3 . 5 . 3 . }
+scene main { bass = pulse }
+song { main*16 }
+fx tone eq { type = highpass frequency = 25Hz q = 0.707 }
+fx glue comp { threshold = -18dB ratio = 2 makeup = 1dB }
+fx punch transient { attack = 2dB sustain = -1dB }
+fx stereo width { amount = 1.08 bass_mono = 100Hz }
+fx ceiling limiter { ceiling = -1dBTP lookahead = 3ms release = 100ms }
+master { insert = tone -> glue -> punch -> stereo -> ceiling }
+export streaming { loudness = -14LUFS true_peak = -1dBTP normalize = off }
+```
+
+Run `cicada render score.cicada --export streaming --bars 16 -o streaming.wav`.
+The export target uses the existing iterative BS.1770 loudness renderer and
+measures the delivered WAV. Live playback does not apply programme normalization.
+An unreachable target returns an error instead of claiming success.
+
+| Kind | Controls (defaults; ranges) |
+| --- | --- |
+| `eq` | `type = peak` (`peak`, `low_shelf`, `high_shelf`, `highpass`, `lowpass`); `frequency = 1000Hz` (10 Hz to 0.45 × render rate); `q = 1` (0.1–20); `gain = 0dB` (−24 to +24 dB). Declare separate EQ effects for multiple bands. |
+| `comp` | Existing compressor controls: `threshold`, `ratio`, `knee`, `attack`, `release`, `makeup`, `detect`, `mix`. Master compression detects its own stereo input. |
+| `transient` | `attack = 0dB`, `sustain = 0dB` (−18 to +18 dB); `fast = 1ms` (0.1–10 ms), `slow = 30ms` (10–100 ms, greater than fast), `release = 120ms` (20–1000 ms). |
+| `width` | `amount = 1` (0–2); `bass_mono = 0Hz` (bypass, or 20–500 Hz). |
+| `limiter` | `ceiling = -1dBTP` (−12 to 0 dBTP); `lookahead = 3ms` (1–10 ms); `release = 100ms` (20–1000 ms). |
+| `convolution` | Required `asset` name; `mix = 0.15` (0–1); `partition = 128frames` (power of two, 64–2048). See [score impulses](convolution.md#score-impulses). |
+
+The chain accepts at most 16 distinct effect names, in any order. Processing and
+reset allocate no memory. Offline export removes the summed processor latency
+and drains delayed final samples. Omission or `insert = none` preserves legacy
+output. Track and music-bus insert limits are unchanged. Master effects have
+fixed controls until recompilation; scene settings and live parameter paths for
+them are rejected. A compressor cannot share state between music and master.
+
+Prepared processors cannot be encoded into a core WASM project image. Browser
+score playback needs the companion modules connected by its host; that wiring
+is separate from native playback and Studio's saved-chain display. The core
+kernel ABI, worklet and size gates remain unchanged.

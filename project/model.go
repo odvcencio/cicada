@@ -511,6 +511,22 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	if err := assignSlots(p, score); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
+	// Attribute immutable master controls to their declaration before the
+	// whole-project check, which also validates imported semantic JSON.
+	for _, effect := range p.Effects {
+		if !MasterHasInsert(p, effect.ID) {
+			continue
+		}
+		if err := validateMasterEffect(p, effect); err != nil {
+			position := notation.Position{Line: 1, Column: 1}
+			for _, source := range score.Effects {
+				if source.Name == effect.ID {
+					position = source.Position
+				}
+			}
+			return nil, append(diagnostics, notation.Diagnostic{Code: masterDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: position})
+		}
+	}
 	if err := ValidateProject(p); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
@@ -723,7 +739,7 @@ func parseBaseValue(source string) (float64, string, error) {
 	for _, suffix := range []struct {
 		name, unit string
 		places     int
-	}{{"lufs", "lufs", 0}, {"dbtp", "dbtp", 0}, {"khz", "hz", 3}, {"hz", "hz", 0}, {"ms", "ms", 0}, {"db", "db", 0}, {"lu", "lu", 0}, {"s", "ms", 3}, {"%", "unit", -2}} {
+	}{{"frames", "frames", 0}, {"lufs", "lufs", 0}, {"dbtp", "dbtp", 0}, {"khz", "hz", 3}, {"hz", "hz", 0}, {"ms", "ms", 0}, {"db", "db", 0}, {"lu", "lu", 0}, {"s", "ms", 3}, {"%", "unit", -2}} {
 		if strings.HasSuffix(strings.ToLower(source), suffix.name) {
 			unit, places = suffix.unit, suffix.places
 			source = source[:len(source)-len(suffix.name)]
