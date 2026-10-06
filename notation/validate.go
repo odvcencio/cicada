@@ -45,6 +45,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 	defer func() { LocateDiagnostics(ds, s.Position) }()
 	ds = ValidateAudio(s)
 	ds = append(ds, ValidateLive(s.Live, s.Tracks)...)
+	ds = append(ds, ValidateDirector(s.Live, s.Tracks, s.Patterns, s.Scenes, s.Kits)...)
 	add := func(code, message, severity string, p Position) {
 		ds = append(ds, Diagnostic{Code: code, Message: message, Severity: severity, Position: p})
 	}
@@ -354,6 +355,14 @@ func Validate(s *Score) (ds []Diagnostic) {
 				usedPatterns[binding.Track] = make(map[string]bool)
 			}
 			usedPatterns[binding.Track][binding.Pattern] = true
+		}
+	}
+	if s.Live != nil {
+		for _, stinger := range s.Live.Stingers {
+			if usedPatterns[stinger.Track] == nil {
+				usedPatterns[stinger.Track] = map[string]bool{}
+			}
+			usedPatterns[stinger.Track][stinger.Pattern] = true
 		}
 	}
 	for _, track := range s.Tracks {
