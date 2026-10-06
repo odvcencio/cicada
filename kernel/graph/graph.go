@@ -228,7 +228,7 @@ func (v *Voice) Reset() {
 
 func (v *Voice) Next() float32 {
 	if v.gliding {
-		v.pitchLog += (v.targetLog - v.pitchLog) * v.pitchAlpha
+		v.pitchLog += float64((v.targetLog - v.pitchLog) * v.pitchAlpha)
 		v.pitch = float32(fastmath.Exp2(v.pitchLog))
 	}
 	// NewVoice validates the 128-node limit and all used input indices.
@@ -321,9 +321,10 @@ func (v *Voice) Next() float32 {
 			if n.Op == Diode {
 				feedback = 2.8 * clamp(c, 0, 1)
 			}
-			input := float32(math.Tanh(float64(a - feedback*s.filter[3])))
+			// Products round before additions so arm64 cannot contract an FMA.
+			input := float32(math.Tanh(float64(a - float32(feedback*s.filter[3]))))
 			for stage := 0; stage < 4; stage++ {
-				s.filter[stage] += coef * (input - s.filter[stage])
+				s.filter[stage] += float32(coef * (input - s.filter[stage]))
 				input = s.filter[stage]
 			}
 			y = s.filter[3]
@@ -334,14 +335,14 @@ func (v *Voice) Next() float32 {
 				s.coefficientInput = frequency
 			}
 			coef := s.coefficient
-			s.filter[0] += coef * (a - s.filter[0])
+			s.filter[0] += float32(coef * (a - s.filter[0]))
 			y = s.filter[0]
 			if n.Op == Highpass {
 				y = a - y
 			}
 		case Mix:
 			blend := clamp(c, 0, 1)
-			y = a*(1-blend) + b*blend
+			y = float32(a*(1-blend)) + float32(b*blend)
 		case Tanh:
 			y = float32(math.Tanh(float64(a)))
 		case Exp2:
@@ -379,11 +380,11 @@ func frac(x float32) float32 {
 func polyBLEP(phase, dt float32) float32 {
 	if phase < dt {
 		t := phase / dt
-		return t + t - t*t - 1
+		return t + t - float32(t*t) - 1
 	}
 	if phase > 1-dt {
 		t := (phase - 1) / dt
-		return t*t + t + t + 1
+		return float32(t*t) + t + t + 1
 	}
 	return 0
 }

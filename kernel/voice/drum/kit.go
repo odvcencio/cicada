@@ -549,14 +549,16 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		band, _ := s.band.next(nextNoise(&s.noise))
 		bursts := 0.0
 		for i := 0; i < 4; i++ {
-			delta := age - float64(i)*p.Spread
+			// Round the burst time before subtraction. FMA can otherwise make
+			// delta negative at the exact onset and omit a whole clap burst.
+			delta := age - float64(float64(i)*p.Spread)
 			if delta >= 0 {
 				bursts += math.Exp(-delta / .006)
 			}
 		}
 		tail := 0.0
 		if age >= 3*p.Spread {
-			tail = .3981071705534972 * math.Exp(-(age-3*p.Spread)/p.Decay)
+			tail = .3981071705534972 * math.Exp(-(age-float64(3*p.Spread))/p.Decay)
 		}
 		output = band * (bursts + tail) * s.noiseVelocity * .4
 	case RS:
