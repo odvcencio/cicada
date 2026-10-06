@@ -32,7 +32,7 @@ import (
 
 var browserStudioAddress = "127.0.0.1:8166"
 
-const browserDebugAddress = "127.0.0.1:8165"
+var browserDebugAddress = "127.0.0.1:8165"
 
 var browserEvidenceDir = func() string {
 	if dir := os.Getenv("CICADA_BROWSER_EVIDENCE_DIR"); dir != "" {
@@ -329,7 +329,7 @@ func startBrowserChrome(t *testing.T, server *browserStudioServer) *browserChrom
 		process := exec.Command(bin,
 			"--headless=new", "--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage",
 			"--no-first-run", "--no-default-browser-check", "--mute-audio",
-			"--remote-debugging-address=127.0.0.1", "--remote-debugging-port=8165",
+			"--remote-debugging-address=127.0.0.1", "--remote-debugging-port="+strings.TrimPrefix(browserDebugAddress, "127.0.0.1:"),
 			"--user-data-dir="+profile, "about:blank",
 		)
 		process.Env = mutedAudioEnv()
