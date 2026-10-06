@@ -22,7 +22,7 @@
     "effects": {"type": "array", "maxItems": 4, "items": {"$ref": "#/$defs/effect"}}
   },
   "$defs": {
-    "id": {"type": "string", "pattern": "^[a-z_][a-z0-9_-]{0,63}$"},
+    "id": {"type": "string", "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$", "maxLength": 64},
     "key": {
       "type": "object", "additionalProperties": false, "required": ["root", "scale"],
       "properties": {
@@ -97,7 +97,7 @@
         "lanes": {
           "type": "object",
           "propertyNames": {"enum": ["bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"]},
-          "additionalProperties": {"type": "string", "pattern": "^(?:[a-z_][a-z0-9_-]*|builtin\\.(?:bd|sd|ch|oh|cp|rs|lt|mt|ht|cb|cy))$"}
+          "additionalProperties": {"type": "string", "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$", "maxLength": 64}
         }
       }
     },

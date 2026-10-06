@@ -20,35 +20,37 @@ type Diagnostic struct {
 // Score is the typed source model. Runtime project compilation is a separate
 // stage, so pitch spelling and source positions remain available to tools.
 type Score struct {
-	Position      Position // entry location for project-wide diagnostics
-	Version       int
-	Title         string
-	TitlePosition Position
-	TempoMilli    int64
-	TempoPosition Position
-	KeyRoot       string
-	KeyPosition   Position
-	Scale         string
-	Seed          uint64
-	SeedLiteral   string
-	SeedPosition  Position
-	Assets        []Asset
-	Clips         []Clip
-	Samplers      []Sampler
-	Instruments   []Instrument
-	Kits          []Kit
-	Tracks        []Track
-	Phrases       []Phrase
-	Patterns      []Pattern
-	Scenes        []Scene
-	Song          []SongEntry
-	SongPosition  Position
-	Effects       []Effect
-	Buses         []Bus
-	Master        []Param
-	HasMaster     bool
-	Live          *Live
-	Exports       []Export
+	Origins        map[string]Origin `json:",omitempty"`
+	LibraryAliases map[string]string `json:",omitempty"`
+	Position       Position          // entry location for project-wide diagnostics
+	Version        int
+	Title          string
+	TitlePosition  Position
+	TempoMilli     int64
+	TempoPosition  Position
+	KeyRoot        string
+	KeyPosition    Position
+	Scale          string
+	Seed           uint64
+	SeedLiteral    string
+	SeedPosition   Position
+	Assets         []Asset
+	Clips          []Clip
+	Samplers       []Sampler
+	Instruments    []Instrument
+	Kits           []Kit
+	Tracks         []Track
+	Phrases        []Phrase
+	Patterns       []Pattern
+	Scenes         []Scene
+	Song           []SongEntry
+	SongPosition   Position
+	Effects        []Effect
+	Buses          []Bus
+	Master         []Param
+	HasMaster      bool
+	Live           *Live
+	Exports        []Export
 }
 
 type Track struct {

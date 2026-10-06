@@ -50,8 +50,13 @@ func ParseSource(file SourceFile) (*Score, []Diagnostic) {
 
 // SourceFile keeps a source's identity and exact bytes for project tooling.
 type SourceFile struct {
-	Path   string
-	Source []byte
+	Path         string
+	Source       []byte
+	Library      string
+	Bindings     map[string]string
+	Root         string
+	Edition      int
+	Declarations map[string]bool
 }
 
 // ParseFiles lowers files in the supplied order into one score. References and
@@ -69,7 +74,13 @@ func parseEdition(src []byte, edition int) (*Score, []Diagnostic) {
 
 type loweringWalker struct {
 	*walk.Walker
-	file string
+	file         string
+	library      string
+	edition      int
+	bindings     map[string]string
+	origins      map[string]Origin
+	diagnostics  *[]Diagnostic
+	declarations map[string]bool
 }
 
 func (w *loweringWalker) position(n *gts.Node) Position {
@@ -88,6 +99,10 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 		s.Position.File = files[0].Path
 	}
 	var diagnostics []Diagnostic
+	s.Origins = map[string]Origin{}
+	if len(files) > 0 {
+		s.LibraryAliases = files[0].Bindings
+	}
 	syntaxFailed := false
 	seenDeclarations := map[string]Position{}
 	seenNames := map[string]Position{}
@@ -101,7 +116,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			diagnostics = append(diagnostics, d)
 			continue
 		}
-		w := &loweringWalker{Walker: walker, file: file.Path}
+		w := &loweringWalker{Walker: walker, file: file.Path, library: file.Library, edition: file.Edition, bindings: file.Bindings, origins: s.Origins, diagnostics: &diagnostics, declarations: file.Declarations}
 		headerEdition := 0
 		for i := 0; i < root.NamedChildCount(); i++ {
 			n := root.NamedChild(i)
@@ -129,7 +144,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				case "track_decl", "fx_decl", "bus_decl":
 					namespace = "mixer"
 				}
-				key := namespace + ":" + w.Text(name)
+				key := namespace + ":" + w.declaration(name)
 				if first, exists := seenNames[key]; exists {
 					duplicateLocations[w.position(n)] = first
 					if first.File != file.Path {
@@ -140,9 +155,13 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				}
 			}
 			switch kind {
+			case "import_decl":
+				if file.Bindings == nil {
+					diagnostics = append(diagnostics, Diagnostic{Code: "CICADA-LIB-IMPORT", Severity: "error", Message: "imports require the project source loader", Position: w.position(n)})
+				}
 			case "integer":
 				headerEdition, _ = strconv.Atoi(w.Text(n))
-				if requestedEdition == 0 {
+				if requestedEdition == 0 && file.Library == "" {
 					s.Version = headerEdition
 				}
 			case "title_decl":
@@ -171,11 +190,11 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.Seed, _ = strconv.ParseUint(s.SeedLiteral, 10, 64)
 			case "asset_decl":
 				path, _ := strconv.Unquote(w.Text(w.Field(n, "path")))
-				s.Assets = append(s.Assets, Asset{Name: w.Text(w.Field(n, "name")), Path: path, Params: audioParams(w, n), Position: w.position(n)})
+				s.Assets = append(s.Assets, Asset{Root: file.Root, Name: w.declaration(w.Field(n, "name")), Path: path, Params: audioParams(w, n), Position: w.position(n)})
 			case "clip_decl":
-				s.Clips = append(s.Clips, Clip{Name: w.Text(w.Field(n, "name")), Asset: w.Text(w.Field(n, "asset")), Params: audioParams(w, n), Position: w.position(n)})
+				s.Clips = append(s.Clips, Clip{Name: w.declaration(w.Field(n, "name")), Asset: w.reference(w.Field(n, "asset")), Params: audioParams(w, n), Position: w.position(n)})
 			case "sampler_decl":
-				s.Samplers = append(s.Samplers, Sampler{Name: w.Text(w.Field(n, "name")), Params: audioParams(w, n), Position: w.position(n)})
+				s.Samplers = append(s.Samplers, Sampler{Name: w.declaration(w.Field(n, "name")), Params: audioParams(w, n), Position: w.position(n)})
 			case "instrument_decl":
 				s.Instruments = append(s.Instruments, parseInstrument(w, n))
 			case "kit_decl":
@@ -216,7 +235,11 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.Effects = append(s.Effects, parseEffect(w, n))
 			}
 		}
-		if headerEdition != 0 && requestedEdition != 0 && headerEdition != requestedEdition {
+		expectedEdition := requestedEdition
+		if file.Edition != 0 {
+			expectedEdition = file.Edition
+		}
+		if headerEdition != 0 && expectedEdition != 0 && headerEdition != expectedEdition {
 			diagnostics = append(diagnostics, Diagnostic{
 				Code: "CICADA-VERSION", Severity: "error", Message: "source header does not match the project edition",
 				Position: Position{File: file.Path, Line: 1, Column: 1},
@@ -246,7 +269,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 }
 
 func parseTrack(w *loweringWalker, n *gts.Node) Track {
-	t := Track{Name: w.Text(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: w.position(n)}
+	t := Track{Name: w.declaration(w.Field(n, "name")), Kind: w.reference(w.Field(n, "kind")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		if w.Type(c) == "mix_setting" {
@@ -257,24 +280,26 @@ func parseTrack(w *loweringWalker, n *gts.Node) Track {
 }
 
 func parseKit(w *loweringWalker, n *gts.Node) Kit {
-	k := Kit{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
+	k := Kit{Name: w.declaration(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		binding := n.NamedChild(i)
 		if w.Type(binding) != "kit_binding" {
 			continue
 		}
 		k.Bindings = append(k.Bindings, KitBinding{
-			Lane: w.Text(w.Field(binding, "lane")), Target: w.Text(w.Field(binding, "target")), Position: w.position(binding),
+			Lane: w.Text(w.Field(binding, "lane")), Target: w.reference(w.Field(binding, "target")), Position: w.position(binding),
 		})
 	}
 	return k
 }
 
 func parseEffect(w *loweringWalker, n *gts.Node) Effect {
-	e := Effect{Name: w.Text(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: w.position(n)}
+	e := Effect{Name: w.declaration(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: w.position(n)}
 	if e.Kind == "" { // edition-1 shorthand: fx delay { ... }
-		e.Kind = e.Name
-		e.Legacy = true
+		e.Kind = w.Text(w.Field(n, "name"))
+		// An edition-1 library exports a named effect after scoping. Keep its
+		// original kind without applying the importing score's syntax edition.
+		e.Legacy = w.library == "" || w.edition != 1
 	}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
@@ -286,7 +311,7 @@ func parseEffect(w *loweringWalker, n *gts.Node) Effect {
 }
 
 func parseBus(w *loweringWalker, n *gts.Node) Bus {
-	b := Bus{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
+	b := Bus{Name: w.declaration(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		if w.Type(n.NamedChild(i)) == "mix_setting" {
 			b.Params = append(b.Params, parseMixSetting(w, n.NamedChild(i)))
@@ -306,7 +331,7 @@ func parseMixBlock(w *loweringWalker, n *gts.Node) []Param {
 }
 
 func parseExport(w *loweringWalker, n *gts.Node) Export {
-	e := Export{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
+	e := Export{Name: w.declaration(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		if w.Type(n.NamedChild(i)) == "param_decl" {
 			e.Params = append(e.Params, parseParam(w, n.NamedChild(i)))
@@ -321,7 +346,7 @@ func parseMixSetting(w *loweringWalker, n *gts.Node) Param {
 		switch w.Type(child) {
 		case "send_decl":
 			level := w.Field(child, "level")
-			return Param{Name: "send", Target: w.Text(w.Field(child, "to")), Value: w.Text(level),
+			return Param{Name: "send", Target: w.reference(w.Field(child, "to")), Value: w.Text(level),
 				Pre: w.Field(child, "tap") != nil, Position: w.position(child), ValuePosition: w.position(level)}
 		case "param_decl":
 			return parseParam(w, child)
@@ -331,7 +356,7 @@ func parseMixSetting(w *loweringWalker, n *gts.Node) Param {
 }
 
 func parseInstrument(w *loweringWalker, n *gts.Node) Instrument {
-	inst := Instrument{Name: w.Text(w.Field(n, "name")), Octave: 2, Position: w.position(n)}
+	inst := Instrument{Name: w.declaration(w.Field(n, "name")), Octave: 2, Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		switch w.Type(c) {
@@ -406,11 +431,19 @@ func parseExpr(w *loweringWalker, n *gts.Node) *Expr {
 func parseParam(w *loweringWalker, n *gts.Node) Param {
 	value := w.Field(n, "value")
 	text := strings.Join(strings.Fields(w.Text(value)), " ")
-	return Param{Name: w.Text(w.Field(n, "name")), Value: text, Position: w.position(n), ValuePosition: w.position(value)}
+	name := w.Text(w.Field(n, "name"))
+	if name == "asset" || name == "insert" || name == "out" || name == "bus" {
+		parts := strings.Split(text, "->")
+		for i, part := range parts {
+			parts[i] = w.referenceText(strings.TrimSpace(part), w.position(value))
+		}
+		text = strings.Join(parts, " -> ")
+	}
+	return Param{Name: name, Value: text, Position: w.position(n), ValuePosition: w.position(value)}
 }
 
 func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
-	p := Pattern{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
+	p := Pattern{Name: w.declaration(w.Field(n, "name")), Position: w.position(n)}
 	if w.Type(n) == "acid_pattern" {
 		p.Kind = "acid"
 	} else if w.Type(n) == "note_pattern" {
@@ -446,7 +479,7 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 }
 
 func parsePhrase(w *loweringWalker, n *gts.Node) Phrase {
-	p := Phrase{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
+	p := Phrase{Name: w.declaration(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		if w.Type(c) == "acid_step" && w.Text(c) != "|" {
@@ -490,7 +523,7 @@ func stepNodeText(w *loweringWalker, n *gts.Node) string {
 }
 
 func parsePhraseUse(w *loweringWalker, n *gts.Node) PhraseUse {
-	u := PhraseUse{Name: w.Text(w.Field(n, "name")), Repeat: 1, Position: w.position(n)}
+	u := PhraseUse{Name: w.reference(w.Field(n, "name")), Repeat: 1, Position: w.position(n)}
 	if count := childText(w, n, "integer"); count != "" {
 		u.Repeat, _ = strconv.Atoi(count)
 	}
@@ -501,7 +534,7 @@ func parsePhraseUse(w *loweringWalker, n *gts.Node) PhraseUse {
 }
 
 func parseScene(w *loweringWalker, n *gts.Node) Scene {
-	s := Scene{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
+	s := Scene{Name: w.declaration(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		if w.Type(c) == "scene_assignment" {
@@ -509,10 +542,10 @@ func parseScene(w *loweringWalker, n *gts.Node) Scene {
 			value := w.Field(c, "value")
 			if strings.Contains(target, ".") {
 				s.Settings = append(s.Settings, SceneSetting{
-					Path: target, Value: w.Text(value), Position: w.position(c), ValuePosition: w.position(value),
+					Path: w.parameterPath(target, w.position(c)), Value: w.Text(value), Position: w.position(c), ValuePosition: w.position(value),
 				})
 			} else {
-				s.Bindings = append(s.Bindings, Binding{Track: target, Pattern: w.Text(value), Position: w.position(c)})
+				s.Bindings = append(s.Bindings, Binding{Track: target, Pattern: w.reference(value), Position: w.position(c)})
 			}
 		}
 	}
@@ -691,4 +724,27 @@ func parseDurationMS(text string) float64 {
 		return parseLiveNumber(strings.TrimSuffix(text, "s")) * 1000
 	}
 	return math.NaN()
+}
+
+func (w *loweringWalker) parameterPath(value string, position Position) string {
+	first, _, _ := strings.Cut(value, ".")
+	if _, ok := w.bindings[first]; ok {
+		_, rest, _ := strings.Cut(value, ".")
+		owner, suffix, _ := strings.Cut(rest, ".")
+		if strings.Contains(suffix, ".") {
+			*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-LIB-REFERENCE", Severity: "error", Message: "library parameter paths require a directly imported effect owner", Position: position})
+			return value
+		}
+		resolved := w.referenceText(first+"."+owner, position)
+		if suffix != "" {
+			resolved += "." + suffix
+		}
+		return resolved
+	}
+	// Local owners have no dots in their names. A raw library namespace
+	// cannot become an owner without a direct import binding.
+	if w.bindings != nil && len(strings.Split(value, ".")) > 2 && !w.declarations[first] {
+		return w.referenceText(value, position)
+	}
+	return value
 }

@@ -55,39 +55,40 @@ type Report struct {
 }
 
 type trackRuntime struct {
-	name                         string
-	voice                        monoVoice
-	poly                         *graph.Pool
-	patternSlots                 map[string]uint8 // opt-in poly probability identities
-	probabilitySlot, pendingSlot uint8
-	mixer                        mix.Track
-	insert                       *fx.Drive
-	align                        *mix.Delay
-	sendA                        float32
-	sendB                        float32
-	sendPreGain                  float32
-	sendAPre                     bool
-	sendBPre                     bool
-	solo                         bool
-	muted                        bool
-	busSFX                       bool
-	drums                        *drum.Kit
-	drumPatterns                 map[string][drum.LaneCount]*seq.Pattern
-	activeDrums                  [drum.LaneCount]*seq.Pattern
-	patterns                     map[string]seq.Pattern
-	currentName                  string
-	current                      seq.Pattern
-	active                       *seq.Pattern
-	generation                   uint64
-	activeGen                    uint64
-	activeNoteID                 int64
-	pending                      seq.Pattern
-	pendingGen                   uint64
-	hasPendingGate               bool
-	parameters                   *sceneTrackParameters
-	transition                   sceneTransition
-	slideFrom                    int64
-	slideAt                      int64
+	name           string
+	voice          monoVoice
+	poly           *graph.Pool
+	mixer          mix.Track
+	insert         *fx.Drive
+	align          *mix.Delay
+	sendA          float32
+	sendB          float32
+	sendPreGain    float32
+	sendAPre       bool
+	sendBPre       bool
+	solo           bool
+	muted          bool
+	busSFX         bool
+	drums          *drum.Kit
+	drumPatterns   map[string][drum.LaneCount]*seq.Pattern
+	activeDrums    [drum.LaneCount]*seq.Pattern
+	patterns       map[string]seq.Pattern
+	patternSlots   map[string]uint8
+	currentName    string
+	currentSlot    uint8
+	current        seq.Pattern
+	active         *seq.Pattern
+	generation     uint64
+	activeGen      uint64
+	activeNoteID   int64
+	pending        seq.Pattern
+	pendingGen     uint64
+	pendingSlot    uint8
+	hasPendingGate bool
+	parameters     *sceneTrackParameters
+	transition     sceneTransition
+	slideFrom      int64
+	slideAt        int64
 }
 
 type busMixerState struct {
@@ -432,7 +433,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 							if pattern == nil {
 								continue
 							}
-							n, overflow := seq.EventsInBlock(pattern, clock, uint8(ti), uint8(lane), position, frames, eventBuf[:])
+							n, overflow := seq.EventsInBlock(pattern, clock, uint8(ti), tracks[ti].currentSlot, position, frames, eventBuf[:])
 							if overflow {
 								return report, fmt.Errorf("too many drum events in render block")
 							}
@@ -445,7 +446,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 					if tracks[ti].active == nil {
 						continue
 					}
-					n, overflow := seq.EventsWithGatesInBlock(tracks[ti].active, clock, uint8(ti), tracks[ti].probabilitySlot, position, frames, eventBuf[:])
+					n, overflow := seq.EventsWithGatesInBlock(tracks[ti].active, clock, uint8(ti), tracks[ti].currentSlot, position, frames, eventBuf[:])
 					if overflow {
 						return report, fmt.Errorf("too many events in render block")
 					}
@@ -721,12 +722,12 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 		tracks = append(tracks, track)
 	}
 	for i := range tracks {
-		if tracks[i].poly != nil {
-			tracks[i].patternSlots = make(map[string]uint8)
-			for slot, id := range semantic.Tracks[i].Slots {
-				if id != nil {
-					tracks[i].patternSlots[*id] = uint8(slot)
-				}
+		// Chance uses the compiled per-track pattern slot, just as playback
+		// does. A lane number (or a constant zero) selects a different stream.
+		tracks[i].patternSlots = make(map[string]uint8)
+		for slot, pattern := range semantic.Tracks[i].Slots {
+			if pattern != nil {
+				tracks[i].patternSlots[*pattern] = uint8(slot)
 			}
 		}
 		tracks[i].sendPreGain = 1
@@ -862,13 +863,13 @@ func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryT
 			if !ok {
 				continue // applyScene reports the invalid binding at the boundary
 			}
-			track.transition = sceneTransitionForSlots(track.active, &target, uint8(ti), track.probabilitySlot, track.patternSlots[binding.Pattern], boundaryTick, clock)
+			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), track.currentSlot, track.patternSlots[binding.Pattern], boundaryTick, clock)
 			break
 		}
 	}
 }
 
-func sceneTransitionForSlots(source, target *seq.Pattern, track, sourceSlot, targetSlot uint8, boundaryTick int64, clock seq.Clock) sceneTransition {
+func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSlot uint8, boundaryTick int64, clock seq.Clock) sceneTransition {
 	if boundaryTick < seq.TicksPerStep || boundaryTick%seq.TicksPerStep != 0 {
 		return sceneTransition{}
 	}
@@ -936,6 +937,7 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool)
 					}
 					tracks[ti].activeDrums = lanes
 					tracks[ti].currentName = binding.Pattern
+					tracks[ti].currentSlot = tracks[ti].patternSlots[binding.Pattern]
 					continue
 				}
 				pattern, ok := tracks[ti].patterns[binding.Pattern]
@@ -954,12 +956,12 @@ func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool)
 				if tracks[ti].active != nil && tracks[ti].activeGen == tracks[ti].generation {
 					tracks[ti].pending = tracks[ti].current
 					tracks[ti].pendingGen = tracks[ti].generation
-					tracks[ti].pendingSlot = tracks[ti].probabilitySlot
+					tracks[ti].pendingSlot = tracks[ti].currentSlot
 					tracks[ti].hasPendingGate = true
 				}
 				tracks[ti].generation++
 				tracks[ti].currentName = binding.Pattern
-				tracks[ti].probabilitySlot = tracks[ti].patternSlots[binding.Pattern]
+				tracks[ti].currentSlot = tracks[ti].patternSlots[binding.Pattern]
 				tracks[ti].current = pattern
 				tracks[ti].active = &tracks[ti].current
 			}
