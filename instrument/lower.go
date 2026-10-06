@@ -83,6 +83,12 @@ func kernelOp(n Node) (graph.Op, error) {
 			return graph.Gate, nil
 		case "velocity":
 			return graph.Velocity, nil
+		case "pitch_bend":
+			return graph.PitchBend, nil
+		case "pressure":
+			return graph.Pressure, nil
+		case "timbre":
+			return graph.Timbre, nil
 		case "sample_rate":
 			return graph.SampleRate, nil
 		}

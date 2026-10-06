@@ -50,6 +50,9 @@ const (
 	OpSetState
 	// OpTriggerStinger: Track=dedicated track, Index=slot, Arg0=quantize, Arg1=fade frames.
 	OpTriggerStinger
+	// OpNoteExpression targets the OpNoteOn identity in Index. Arg0 carries
+	// float32 pitch cents, Arg1 pressure, and Pad timbre (both normalized 0..1).
+	OpNoteExpression Op = 25
 )
 
 type Quantize uint32
@@ -60,7 +63,9 @@ const QuantizePhrase Quantize = 21
 // Command is one audio-kernel operation. For OpSetParam, Arg0 contains the
 // float32 bits of the registry value in its declared unit. A descriptor with
 // off=true uses negative infinity to carry the source value off; all other
-// parameters must be finite.
+// parameters must be finite. OpNoteOn and OpNoteOff use Index as a melodic
+// note identity (drum commands retain their lane index). OpNoteExpression uses
+// all three payload words as float32 controls; other commands require Pad=0.
 type Command struct {
 	Op    Op
 	Track uint8
@@ -109,6 +114,7 @@ func EncodeCommand(c Command, tracks uint8) ([CommandSize]byte, error) {
 	put16(data[2:4], c.Index)
 	put32(data[4:8], c.Arg0)
 	put32(data[8:12], c.Arg1)
+	put32(data[12:16], c.Pad)
 	put64(data[16:24], uint64(c.Tick))
 	return data, nil
 }
@@ -152,10 +158,10 @@ func (c Command) Validate(tracks uint8) error {
 	if tracks < 1 || tracks > 16 {
 		return Error("track count must be 1 to 16")
 	}
-	if c.Op < OpPlay || c.Op > OpTriggerStinger {
+	if c.Op < OpPlay || c.Op > OpNoteExpression {
 		return Error("unknown command opcode")
 	}
-	if c.Pad != 0 || c.Tick < 0 {
+	if c.Op != OpNoteExpression && c.Pad != 0 || c.Tick < 0 {
 		return Error("nonzero command padding or negative tick")
 	}
 	if globalOp(c.Op) {
@@ -235,6 +241,11 @@ func (c Command) Validate(tracks uint8) error {
 	case OpNoteOn:
 		if c.Arg0&0xff >= 128 || c.Arg0>>8&0xff >= 128 || c.Arg0>>18 != 0 {
 			return Error("live note is out of range")
+		}
+	case OpNoteExpression:
+		pitch, pressure, timbre := math.Float32frombits(c.Arg0), math.Float32frombits(c.Arg1), math.Float32frombits(c.Pad)
+		if math.IsNaN(float64(pitch)) || math.IsInf(float64(pitch), 0) || pitch < -9600 || pitch > 9600 || math.IsNaN(float64(pressure)) || pressure < 0 || pressure > 1 || math.IsNaN(float64(timbre)) || timbre < 0 || timbre > 1 {
+			return Error("note expression is out of range")
 		}
 	case OpSetLayerMask:
 		if c.Arg0>>tracks != 0 {

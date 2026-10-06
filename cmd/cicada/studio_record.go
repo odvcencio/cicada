@@ -12,10 +12,21 @@ import (
 )
 
 type studioTakeNote struct {
-	Tick     int64 `json:"tick"`
-	EndTick  int64 `json:"endTick"`
-	Note     int   `json:"note"`
-	Velocity int   `json:"velocity"`
+	Tick        int64                  `json:"tick"`
+	EndTick     int64                  `json:"endTick"`
+	Note        int                    `json:"note"`
+	Velocity    int                    `json:"velocity"`
+	NoteID      uint16                 `json:"noteId,omitempty"`
+	Channel     uint8                  `json:"channel,omitempty"`
+	Expressions []studioTakeExpression `json:"expressions,omitempty"`
+}
+
+type studioTakeExpression struct {
+	Tick              int64    `json:"tick"`
+	PitchCents        float64  `json:"pitchCents"`
+	Pressure          float64  `json:"pressure"`
+	Timbre            float64  `json:"timbre"`
+	VibratoDepthCents *float64 `json:"vibratoDepthCents,omitempty"`
 }
 
 type studioTakeRecording struct {
@@ -127,16 +138,19 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 	if drums != drumTrack {
 		return nil, fmt.Errorf("pattern %q does not match track %q", patternID, trackID)
 	}
-	// The scalar take editor excludes custom/poly tracks before pitchedSource,
-	// whose grid semantics add/remove individual pitches on existing chords.
-	if !drums && track.Kind != "acid" {
-		return nil, fmt.Errorf("track %q is not an acid track", trackID)
+	pitched := track.Kind == "acid"
+	for _, instrument := range semantic.Instruments {
+		pitched = pitched || instrument.ID == track.Kind
+	}
+	if !drums && !pitched {
+		return nil, fmt.Errorf("track %q is not a note track", trackID)
 	}
 	if pattern.Steps < 1 || pattern.Steps > 64 {
 		return nil, fmt.Errorf("pattern %q has an invalid length", patternID)
 	}
 
 	steps := make(map[int]recordedStep)
+	expressive := false
 	for _, note := range take {
 		if note.Tick < 0 || note.EndTick < note.Tick || note.Tick > 1<<60 || note.EndTick > 1<<60 {
 			return nil, fmt.Errorf("recorded note time is out of range")
@@ -147,6 +161,13 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 		if note.Velocity < 1 || note.Velocity > 127 {
 			return nil, fmt.Errorf("recorded velocity must be in MIDI range 1–127")
 		}
+		if note.Channel > 15 || note.NoteID == 65535 {
+			return nil, fmt.Errorf("recorded note identity is out of range")
+		}
+		if err := validateTakeExpression(note); err != nil {
+			return nil, err
+		}
+		expressive = expressive || len(note.Expressions) != 0
 		step := int((note.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
 		key := step
 		if drums {
@@ -157,6 +178,17 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 			key += int(lane) * 64
 		}
 		steps[key] = recordedStep{note: note.Note, velocity: note.Velocity, step: step}
+	}
+	if expressive {
+		if drums {
+			return nil, fmt.Errorf("drum takes cannot contain per-note expression")
+		}
+		return recordedExpressionSource(source, score, pattern, take)
+	}
+	// Ordinary scalar takes keep their existing acid/drum contract. Custom
+	// tracks may have chord steps whose pitch-grid edits toggle single pitches.
+	if !drums && track.Kind != "acid" {
+		return nil, fmt.Errorf("track %q is not an acid track", trackID)
 	}
 	if !drums {
 		for _, prior := range take {

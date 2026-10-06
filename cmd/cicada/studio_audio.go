@@ -63,13 +63,18 @@ func (s *studio) liveProject() (*project.Project, []byte, error) {
 }
 
 type audioClientMessage struct {
-	Type     string          `json:"type"`
-	Address  string          `json:"address"`
-	Track    string          `json:"track"`
-	Value    json.RawMessage `json:"value"`
-	Note     *int            `json:"note,omitempty"`
-	Velocity *int            `json:"velocity,omitempty"`
-	On       *bool           `json:"on,omitempty"`
+	Type       string          `json:"type"`
+	Address    string          `json:"address"`
+	Track      string          `json:"track"`
+	Value      json.RawMessage `json:"value"`
+	Note       *int            `json:"note,omitempty"`
+	Velocity   *int            `json:"velocity,omitempty"`
+	On         *bool           `json:"on,omitempty"`
+	NoteID     *int            `json:"noteId,omitempty"`
+	Channel    *int            `json:"channel,omitempty"`
+	PitchCents *float32        `json:"pitchCents,omitempty"`
+	Pressure   *float32        `json:"pressure,omitempty"`
+	Timbre     *float32        `json:"timbre,omitempty"`
 }
 
 type audioErrorMessage struct {
@@ -160,11 +165,11 @@ func audioErrorResponse(message audioClientMessage, err error) audioErrorMessage
 	if address == "" && (message.Type == "mute" || message.Type == "solo") {
 		address = message.Track + "." + message.Type
 	}
-	if address == "" && message.Type == "note" {
+	if address == "" && (message.Type == "note" || message.Type == "note-expression") {
 		address = message.Track
 	}
 	code := "CICADA-PARAM"
-	if message.Type == "note" {
+	if message.Type == "note" || message.Type == "note-expression" {
 		code = "CICADA-NOTE"
 	}
 	return audioErrorMessage{Type: "error", Code: code, Message: err.Error(), Address: address}
@@ -183,7 +188,29 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 		s.transport.resetLoudness()
 		return nil
 	}
-	if message.Type == "note" {
+	if message.Type == "note" || message.Type == "note-expression" {
+		var noteID uint16
+		if message.NoteID != nil {
+			if *message.NoteID < 1 || *message.NoteID > 65534 {
+				return fmt.Errorf("note identity must be from 1 to 65534")
+			}
+			noteID = uint16(*message.NoteID)
+		}
+		if message.Channel != nil && (*message.Channel < 0 || *message.Channel > 15) {
+			return fmt.Errorf("MIDI channel must be from 0 to 15")
+		}
+		if message.Type == "note-expression" {
+			if message.NoteID == nil || message.PitchCents == nil || message.Pressure == nil || message.Timbre == nil {
+				return fmt.Errorf("expression needs noteId, pitchCents, pressure, and timbre fields")
+			}
+			s.transport.mu.Lock()
+			stream := s.transport.stream
+			s.transport.mu.Unlock()
+			if stream == nil {
+				return fmt.Errorf("audio transport is not running")
+			}
+			return stream.NoteExpression(message.Track, noteID, *message.PitchCents, *message.Pressure, *message.Timbre)
+		}
 		if message.Note == nil || message.Velocity == nil || message.On == nil {
 			return fmt.Errorf("note message needs note, velocity, and on fields")
 		}
@@ -199,7 +226,7 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 		if stream == nil {
 			return fmt.Errorf("audio transport is not running")
 		}
-		return stream.Note(message.Track, *message.Note, *message.Velocity, *message.On)
+		return stream.NoteWithID(message.Track, *message.Note, *message.Velocity, *message.On, noteID)
 	}
 	p, _, err := s.liveProject()
 	if err != nil {
