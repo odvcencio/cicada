@@ -32,7 +32,7 @@ type Params struct {
 }
 
 func DefaultParams() Params {
-	return Params{Model: Tine, PickupPosition: .32, PickupDistance: .8, HammerFelt: .6, Decay: 5.8, Release: .12, TremoloRate: 4.6, Gain: .7, Oversample: 2}
+	return Params{Model: Tine, PickupPosition: .32, PickupDistance: .8, HammerFelt: .6, Decay: 20, Release: .12, TremoloRate: 4.6, Gain: .7, Oversample: 2}
 }
 func Patch(name string) (Params, error) {
 	p := DefaultParams()
@@ -73,6 +73,7 @@ type state struct{ q, p float32 }
 type key struct {
 	modes               [modeCount]rotation
 	release, derivative float32
+	velocityLoss        float32
 	lifetime            int
 }
 type voice struct {
@@ -82,6 +83,7 @@ type voice struct {
 	modes                                     [modeCount]state
 	age                                       int
 	lastField, thump, thumpP, click, velocity float32
+	strikeDecay                               float32
 	rng                                       uint32
 }
 
@@ -97,6 +99,7 @@ type Instrument struct {
 	thumpC, thumpS, thumpR, clickR            float32
 	lfoC, lfoS, lfoQ, lfoP                    float32
 	stealL, stealR, stealDecay, lastL, lastR  float32
+	voiceLimit                                int
 }
 
 func New(rate int, p Params) (*Instrument, error) {
@@ -146,12 +149,20 @@ func New(rate int, p Params) (*Instrument, error) {
 			if p.Model == Tine && m == 1 {
 				t60 *= .82
 			}
+			if p.Model == Tine && m >= 2 {
+				h := float64(m - 2)
+				t60 = min(t60, 1.8*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
+			}
 			k.modes[m] = rotation{c: float32(math.Cos(a)), s: float32(math.Sin(a)), r: float32(math.Exp(-6.907755 / (t60 * fs))), weight: float32(weights[m])}
+		}
+		if p.Model == Tine {
+			k.velocityLoss = float32(6.907755 * .7 / (p.Decay * math.Exp2(float64(60-n)/35) * fs))
 		}
 		k.release = float32(math.Exp(-6.907755 / (p.Release * fs)))
 		k.derivative = float32(fs / (2 * math.Pi * f))
 		k.lifetime = int(min(40., p.Decay*math.Exp2(float64(60-n)/35)*1.4) * float64(rate))
 	}
+	i.voiceLimit = MaxVoices
 	return i, nil
 }
 
@@ -177,7 +188,7 @@ func (i *Instrument) NoteOn(note, velocity uint8) error {
 	}
 	slot := 0
 	oldest := -1
-	for n := range i.voices {
+	for n := range i.voices[:i.voiceLimit] {
 		if !i.voices[n].active {
 			slot = n
 			oldest = -2
@@ -197,11 +208,16 @@ func (i *Instrument) NoteOn(note, velocity uint8) error {
 	*v = voice{key: &i.keys[int(note)-MinNote], note: note, held: true, active: true, rng: 0x9e3779b9 ^ uint32(note)*7919 ^ i.serial}
 	x := float32(velocity) / 127
 	v.velocity = x
+	v.strikeDecay = 1 - float32(float32(x*x)*v.key.velocityLoss)
 	strike := float32(.018) + float32(.55*float32(x*x))
 	for m := range v.modes {
 		brightness := float32(1)
 		if m > 1 || i.params.Model == Reed && m > 0 {
-			brightness = float32(.18) + float32(x*x)*float32(1.5-i.params.HammerFelt)
+			excitation := 1.5 - i.params.HammerFelt
+			if i.params.Model == Tine {
+				excitation = 1.85 - i.params.HammerFelt
+			}
+			brightness = float32(.18) + float32(x*x)*float32(excitation)
 		}
 		v.modes[m].p = float32(strike * brightness)
 	}
@@ -283,7 +299,7 @@ func (i *Instrument) NextStereo() (float32, float32) {
 				s := &v.modes[m]
 				q1 := float32(c.c*s.q) + float32(c.s*s.p)
 				p1 := float32(c.c*s.p) - float32(c.s*s.q)
-				d := c.r
+				d := float32(c.r * v.strikeDecay)
 				if !v.held && !i.pedal {
 					d = float32(d * k.release)
 				}
@@ -335,4 +351,17 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	i.lastL = l
 	i.lastR = r
 	return l, r
+}
+
+// SetVoiceLimit configures bounded polyphony before playback. Reducing it
+// clears the removed slots; Reset retains the limit.
+func (i *Instrument) SetVoiceLimit(limit int) error {
+	if limit < 1 || limit > MaxVoices {
+		return Error("keyboard voice limit must be 1 to 8")
+	}
+	for j := limit; j < MaxVoices; j++ {
+		i.voices[j] = voice{}
+	}
+	i.voiceLimit = limit
+	return nil
 }

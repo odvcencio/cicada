@@ -133,7 +133,7 @@ func TestElectricPianoGolden(t *testing.T) {
 				}
 			}
 		}
-		expected := map[string]uint64{"tine_ep": 0x2fbc5d7a6c0a6a31, "reed_ep": 0x4945223fda6ec6c9}[name]
+		expected := map[string]uint64{"tine_ep": 0xc9e52a336e7cb905, "reed_ep": 0x4945223fda6ec6c9}[name]
 		if expected != 0 && hash != expected {
 			t.Fatalf("%s golden changed: %016x", name, hash)
 		}
@@ -164,6 +164,30 @@ func BenchmarkElectricPiano(b *testing.B) {
 					}
 				}
 			})
+		}
+	}
+}
+
+func TestConfiguredVoiceLimit(t *testing.T) {
+	i, _ := New(48000, DefaultParams())
+	if i.SetVoiceLimit(0) == nil || i.SetVoiceLimit(9) == nil {
+		t.Fatal("invalid voice limit accepted")
+	}
+	for _, limit := range []int{1, 2, 4, 8} {
+		i.Reset()
+		_ = i.SetVoiceLimit(limit)
+		for n := 0; n < 12; n++ {
+			_ = i.NoteOn(uint8(36+n*3), 100)
+		}
+		if i.Active() != limit {
+			t.Fatalf("active=%d limit=%d", i.Active(), limit)
+		}
+		i.Reset()
+		for n := 0; n < 12; n++ {
+			_ = i.NoteOn(uint8(36+n*3), 100)
+		}
+		if i.Active() != limit {
+			t.Fatal("reset lost voice limit")
 		}
 	}
 }
