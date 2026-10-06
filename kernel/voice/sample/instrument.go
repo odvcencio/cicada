@@ -89,6 +89,7 @@ type instrumentVoice struct {
 	zones                                 [2]int
 	id                                    uint64
 	note, velocity                        uint8
+	tuneCents                             float64
 	gain                                  [2]float64
 	releaseGain                           [2]float64
 	amp, filter                           envState
@@ -253,6 +254,29 @@ func (p *Instrument) NoteOn(note, velocity uint8) (Handle, error) {
 	}
 	cents := p.jitter() * h.Cents
 	delay := int((p.jitter() + 1) * .5 * h.DelayMS * float64(p.rate) / 1000)
+	choke := p.zones[zs[0]].ChokeGroup
+	if choke != 0 && !p.zones[zs[0]].ChokeSustain {
+		for i := range p.voices {
+			old := &p.voices[i]
+			if old.active && p.zones[old.zones[0]].ChokeGroup == choke {
+				old.off, old.choked, old.deferred = true, true, false
+				for j := range old.release {
+					old.release[j].NoteOff()
+				}
+			}
+		}
+		// Zero-gain choke zones are commands and need no playback slot.
+		silent := true
+		for _, index := range zs {
+			if index >= 0 && p.zones[index].Gain != 0 {
+				silent = false
+			}
+		}
+		if silent {
+			p.rr[group]++
+			return Handle{}, nil
+		}
+	}
 	slot := -1
 	for i := range p.voices {
 		v := &p.voices[i]
@@ -264,22 +288,12 @@ func (p *Instrument) NoteOn(note, velocity uint8) (Handle, error) {
 			slot = i
 		}
 	}
-
-	choke := p.zones[zs[0]].ChokeGroup
-	if choke != 0 && !p.zones[zs[0]].ChokeSustain {
-		for i := range p.voices {
-			old := &p.voices[i]
-			if old.active && p.zones[old.zones[0]].ChokeGroup == choke {
-				old.off, old.choked, old.deferred = true, true, false
-			}
-		}
-	}
 	v := &p.voices[slot]
 	tl, tr, tail := v.lastL, v.lastR, 0
 	if v.active || v.tail > 0 {
 		tail = p.rate / 500
 	}
-	*v = instrumentVoice{active: true, note: note, velocity: vel, zones: zs, delay: delay, cycle: p.rr[group], tailL: tl, tailR: tr, tail: tail}
+	*v = instrumentVoice{active: true, note: note, velocity: vel, tuneCents: cents, zones: zs, delay: delay, cycle: p.rr[group], tailL: tl, tailR: tr, tail: tail}
 	p.serial++
 	v.id = p.serial
 	v.cutoffLow = 1 - math.Exp(-2*math.Pi*p.config.Cutoff/float64(p.rate))
@@ -324,7 +338,7 @@ func (p *Instrument) releaseNote(v *instrumentVoice) {
 			}
 			z := p.zones[index]
 			v.release[i].configure(p.rate, z.Region)
-			v.release[i].params = Params{Gain: 1, FineTuneCents: p.config.TuneCents + z.TuneCents}
+			v.release[i].params = Params{Gain: 1, FineTuneCents: p.config.TuneCents + z.TuneCents + v.tuneCents}
 			_ = v.release[i].NoteOn(v.note, 127)
 			v.releaseGain[i] = weights[i] * z.Gain * p.config.Gain * float64(v.velocity) / 127
 		}
@@ -374,16 +388,18 @@ func (p *Instrument) Legato(h Handle, note uint8, cents float64) error {
 			return Error("legato crosses a recorded sample zone")
 		}
 	}
+	// Prepare both layers before publishing any pitch change.
+	attack := v.attack
 	for i, index := range v.zones {
 		if index < 0 {
 			continue
 		}
 		z := p.zones[index]
-		if err := v.attack[i].Retune(note, p.config.TuneCents+z.TuneCents+cents); err != nil {
+		if err := attack[i].Retune(note, p.config.TuneCents+z.TuneCents+cents); err != nil {
 			return err
 		}
 	}
-	v.note = note
+	v.attack, v.note, v.tuneCents = attack, note, cents
 	return nil
 }
 

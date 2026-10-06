@@ -56,6 +56,14 @@ func TestSamplerWASMABIParity(t *testing.T) {
 	// Sustain-group membership must survive ABI packing: repeated strikes in
 	// block 16 overlap, while key-up and pedal still control this looped fixture.
 	write(uint32(call("sampler_zone_ptr", 0)), []float64{float64(id), 60, 48, 72, 1, 127, 64, 0, 0, 1, 0, 1, 0, 0, 513, 1, 31, 501, 101, 517})
+	t.Run("RejectOverflowingCrossfade", func(t *testing.T) {
+		ptr := uint32(call("sampler_zone_ptr", 0)) + 18*8
+		m.Memory().WriteFloat64Le(ptr, 1<<30)
+		if int32(call("sampler_prepare")) == 0 {
+			t.Fatal("WASM ABI admitted an overflowing crossfade")
+		}
+		m.Memory().WriteFloat64Le(ptr, 101)
+	})
 	if int32(call("sampler_prepare")) != 0 {
 		t.Fatal("prepare")
 	}

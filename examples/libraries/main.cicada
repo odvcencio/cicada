@@ -1,0 +1,19 @@
+import "demo/tone"
+
+title "Library circuit"
+
+tempo 138
+
+key a minor
+
+seed 4242
+
+track lead tone.glass {}
+
+scene verse {
+  lead = tone.melody
+}
+
+song {
+  verse*2
+}

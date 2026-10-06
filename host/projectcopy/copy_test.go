@@ -11,6 +11,7 @@ import (
 
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/project"
 )
 
 const copyScore = "cicada 2\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off }\nsong { main }\n"
@@ -313,5 +314,38 @@ func TestScoreInstallDoesNotReplaceConcurrentDestination(t *testing.T) {
 	entries, err := names.Readdirnames(-1)
 	if err != nil || len(entries) != 1 {
 		t.Fatalf("staging files leaked: %v (%v)", entries, err)
+	}
+}
+
+func TestSaveAsCopiesMultiFileProjectAndUpdatesEntry(t *testing.T) {
+	root := t.TempDir()
+	files := map[string]string{
+		"cicada.mod":         "project score\ncicada 2\nentry \"main.cicada\"\nsource \"main.cicada\"\nsource \"parts/voice.cicada\"\nlicense \"MIT\"\nauthor \"Cicada contributors\"\n",
+		"main.cicada":        "scene verse { bass = pulse }\nsong { verse }\n",
+		"parts/voice.cicada": "// preserve bytes\ntrack bass acid {}\npattern pulse { 1 . 5 . }\n",
+	}
+	for name, data := range files {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target := filepath.Join(t.TempDir(), "copy.cicada")
+	if err := SaveAs(filepath.Join(root, "main.cicada"), target); err != nil {
+		t.Fatal(err)
+	}
+	set, err := project.ReadSources(target, nil)
+	if err != nil || len(set.Files) != 2 || set.Manifest.Entry != "copy.cicada" {
+		t.Fatalf("copied manifest: %+v %v", set, err)
+	}
+	if string(set.Files[0].Source) != files["main.cicada"] || string(set.Files[1].Source) != files["parts/voice.cicada"] {
+		t.Fatal("Save As changed source bytes")
+	}
+	score, ds := set.Parse()
+	if p, _ := project.FromScore(score); p == nil || len(ds) != 0 {
+		t.Fatalf("copied project: %+v", ds)
 	}
 }

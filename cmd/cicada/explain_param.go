@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -25,34 +25,50 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		}
 		loc = parsed
 	}
-	source, err := os.ReadFile(scorePath)
+	score, diagnostics, err := project.LoadScore(scorePath, nil)
 	if err != nil {
 		return err
 	}
-	score, diagnostics, err := parseScoreForPath(scorePath, source)
-	if err != nil {
-		return err
-	}
-	if score == nil {
+	if score == nil || hasDiagnosticErrors(diagnostics) {
 		return diagnosticError(diagnostics)
 	}
 	compiled, diagnostics := project.FromScore(score)
 	if compiled == nil {
 		return diagnosticError(diagnostics)
 	}
-	resolved, err := project.ResolveParameterPath(compiled, path)
+	lookup := path
+	if alias, rest, found := strings.Cut(path, "."); found {
+		if namespace, ok := score.LibraryAliases[alias]; ok {
+			lookup = namespace + "." + rest
+		}
+	}
+	if origin, ok := score.Origins[lookup]; ok {
+		fmt.Fprintf(output, "%s: library %s (source %s:%d:%d)\n", path, origin.Library, filepath.Base(origin.Position.File), origin.Position.Line, origin.Position.Column)
+		return nil
+	}
+	resolved, err := project.ResolveParameterPath(compiled, lookup)
 	if err != nil {
 		return err
 	}
-	value, err := project.ParamAddressByName(compiled, path)
+	value, err := project.ParamAddressByName(compiled, lookup)
 	if err != nil {
 		return err
 	}
-	active, err := sceneValueAtBar(compiled, path, loc.bar)
+	active, err := sceneValueAtBar(compiled, lookup, loc.bar)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(output, "%s at bar %d, beat %d, step %d\n", path, loc.bar, loc.beat, loc.step)
+	if origin, ok := score.Origins[resolved.Owner]; ok {
+		fmt.Fprintf(output, "library: %s\n", origin.Library)
+	}
+	for _, track := range score.Tracks {
+		if track.Name == resolved.Owner {
+			if origin, ok := score.Origins[track.Kind]; ok {
+				fmt.Fprintf(output, "instrument: %s (library %s)\n", track.Kind, origin.Library)
+			}
+		}
+	}
 	fmt.Fprintf(output, "registry default: %s\n", explainDefault(resolved.Descriptor))
 	if sourceHasBlockSetting(score, resolved) {
 		fmt.Fprintf(output, "%s block (%s): %s\n", resolved.OwnerKind, resolved.Owner, explainValue(value.Value, resolved.Descriptor))
@@ -208,7 +224,7 @@ func explainValue(value any, descriptor paramdefs.Descriptor) string {
 func diagnosticError(diagnostics []notation.Diagnostic) error {
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Severity == "error" {
-			return fmt.Errorf("%s: %s", diagnostic.Code, diagnostic.Message)
+			return &project.SourceError{Diagnostic: diagnostic}
 		}
 	}
 	return fmt.Errorf("score could not be parsed")
