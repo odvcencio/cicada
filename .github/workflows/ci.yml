@@ -238,6 +238,17 @@ jobs:
             sleep 0.1
           done
           make test-studio-continuity | tee build/studio-continuity-report.txt
+          # Use a new Studio process so its first authenticated session owns it.
+          kill "$studio_pid"
+          wait "$studio_pid" || true
+          ./build/cicada studio "$browser_root/continuity.cicada" --audio null --listen "127.0.0.1:$studio_port" > build/studio-collaboration-server.log 2>&1 &
+          studio_pid=$!
+          for attempt in $(seq 1 100); do
+            if curl --silent --fail "$CICADA_STUDIO_URL/" > /dev/null; then break; fi
+            kill -0 "$studio_pid"
+            sleep 0.1
+          done
+          make test-studio-collaboration | tee build/studio-collaboration-report.txt
       - name: Save Studio continuity reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -247,6 +258,8 @@ jobs:
           path: |
             build/studio-continuity-report.txt
             build/studio-continuity-server.log
+            build/studio-collaboration-report.txt
+            build/studio-collaboration-server.log
       - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: gosx-workstation-build
