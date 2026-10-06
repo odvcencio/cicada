@@ -35,8 +35,8 @@ func New() FIR {
 			sinc = sign / (math.Pi * float64(m) / 2)
 		}
 		ratio := float64(m) / center
-		window := besselI0(beta*math.Sqrt(1-ratio*ratio)) / denominator
-		f.coefficients[n] = sinc * window
+		window := besselI0(beta*math.Sqrt(1-float64(ratio*ratio))) / denominator
+		f.coefficients[n] = float64(sinc * window)
 		sum += f.coefficients[n]
 	}
 	for n := range f.coefficients {
@@ -48,7 +48,7 @@ func New() FIR {
 func besselI0(x float64) float64 {
 	term, sum := 1.0, 1.0
 	for k := 1; k <= 24; k++ {
-		term *= x * x / (4 * float64(k*k))
+		term = float64(term * (x * x / (4 * float64(k*k))))
 		sum += term
 	}
 	return sum
@@ -76,29 +76,29 @@ func (f *FIR) push(input float64) float64 {
 	// The mirrored history removes wrap branches while keeping the same
 	// increasing-tap accumulation order and exact sample values.
 	base := f.position + Taps
-	output += f.coefficients[0] * f.history[base]
-	output += f.coefficients[2] * f.history[base-2]
-	output += f.coefficients[4] * f.history[base-4]
-	output += f.coefficients[6] * f.history[base-6]
-	output += f.coefficients[8] * f.history[base-8]
-	output += f.coefficients[10] * f.history[base-10]
-	output += f.coefficients[12] * f.history[base-12]
-	output += f.coefficients[14] * f.history[base-14]
-	output += f.coefficients[16] * f.history[base-16]
-	output += f.coefficients[18] * f.history[base-18]
-	output += f.coefficients[20] * f.history[base-20]
-	output += f.coefficients[center] * f.history[base-center]
-	output += f.coefficients[22] * f.history[base-22]
-	output += f.coefficients[24] * f.history[base-24]
-	output += f.coefficients[26] * f.history[base-26]
-	output += f.coefficients[28] * f.history[base-28]
-	output += f.coefficients[30] * f.history[base-30]
-	output += f.coefficients[32] * f.history[base-32]
-	output += f.coefficients[34] * f.history[base-34]
-	output += f.coefficients[36] * f.history[base-36]
-	output += f.coefficients[38] * f.history[base-38]
-	output += f.coefficients[40] * f.history[base-40]
-	output += f.coefficients[42] * f.history[base-42]
+	output += float64(f.coefficients[0] * f.history[base])
+	output += float64(f.coefficients[2] * f.history[base-2])
+	output += float64(f.coefficients[4] * f.history[base-4])
+	output += float64(f.coefficients[6] * f.history[base-6])
+	output += float64(f.coefficients[8] * f.history[base-8])
+	output += float64(f.coefficients[10] * f.history[base-10])
+	output += float64(f.coefficients[12] * f.history[base-12])
+	output += float64(f.coefficients[14] * f.history[base-14])
+	output += float64(f.coefficients[16] * f.history[base-16])
+	output += float64(f.coefficients[18] * f.history[base-18])
+	output += float64(f.coefficients[20] * f.history[base-20])
+	output += float64(f.coefficients[center] * f.history[base-center])
+	output += float64(f.coefficients[22] * f.history[base-22])
+	output += float64(f.coefficients[24] * f.history[base-24])
+	output += float64(f.coefficients[26] * f.history[base-26])
+	output += float64(f.coefficients[28] * f.history[base-28])
+	output += float64(f.coefficients[30] * f.history[base-30])
+	output += float64(f.coefficients[32] * f.history[base-32])
+	output += float64(f.coefficients[34] * f.history[base-34])
+	output += float64(f.coefficients[36] * f.history[base-36])
+	output += float64(f.coefficients[38] * f.history[base-38])
+	output += float64(f.coefficients[40] * f.history[base-40])
+	output += float64(f.coefficients[42] * f.history[base-42])
 	f.position++
 	if f.position == Taps {
 		f.position = 0

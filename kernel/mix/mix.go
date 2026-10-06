@@ -131,7 +131,7 @@ func (l *Limiter) Process(left, right float32) (float32, float32, bool) {
 	if target < l.gain {
 		l.gain = target
 	} else {
-		l.gain += (target - l.gain) * l.releaseAlpha
+		l.gain += float64((target - l.gain) * l.releaseAlpha)
 	}
 	delayed := l.ring[(n-int64(l.lookahead))%int64(capacity)]
 	outL := float64(delayed.left) * l.gain
