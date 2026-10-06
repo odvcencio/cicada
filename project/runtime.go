@@ -167,7 +167,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		default:
 			if kit, ok := kits[track.Kind]; ok {
 				config.Kind = engine.VoiceDrums
-				bindings, err := CompileKit(kit, programs)
+				bindings, err := CompileKitAtSampleRate(kit, programs, sampleRate)
 				if err != nil {
 					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 				}
@@ -226,15 +226,15 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 					if err != nil {
 						return cfg, fmt.Errorf("pattern %s: %w", pattern.ID, err)
 					}
-					if config.Graph.DelaySamples() > 0 && source != nil && !source.Tie {
-						if err := validateGraphDelayNote(config.Graph, sampleRate, int(source.Note)+int(pattern.Transpose)); err != nil {
-							return cfg, fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
-						}
-					}
 				}
 			}
 			if err := base.Validate(); err != nil {
 				return cfg, fmt.Errorf("pattern %s: %w", pattern.ID, err)
+			}
+			if config.Kind == engine.VoiceGraph {
+				if err := ValidateGraphDelayPattern(config.Graph, sampleRate, base); err != nil {
+					return cfg, fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
+				}
 			}
 			cfg.Patterns[ti].Slots[slot] = base
 		}

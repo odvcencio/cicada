@@ -2,9 +2,12 @@ package render
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/cmd"
@@ -14,6 +17,91 @@ import (
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
+
+func TestGraphDelayOfflineRejectsOutOfRangeNotes(t *testing.T) {
+	for _, primitive := range []string{"delay(noise(), 1 / pitch)", "comb(noise(), 1 / pitch, 0.8, 0.3)"} {
+		for _, note := range []struct {
+			pitch     string
+			transpose int
+		}{{"c0", 0}, {"c1", -12}} {
+			t.Run(fmt.Sprintf("%s/%s/%d", primitive, note.pitch, note.transpose), func(t *testing.T) {
+				source := fmt.Sprintf("instrument sound { voice mono { out = %s } } track t sound {} pattern p notes steps=1 transpose=%d { %s } scene s { t=p } song { s }", primitive, note.transpose, note.pitch)
+				score, ds := notation.Parse([]byte(source))
+				if score == nil || len(ds) != 0 {
+					t.Fatalf("parse: %+v", ds)
+				}
+				p, ds := project.FromScore(score)
+				if p == nil {
+					t.Fatalf("project: %+v", ds)
+				}
+				for _, rate := range []int{48_000, 96_000} {
+					_, liveErr := project.CompileEngine(p, rate, 128)
+					var output bytes.Buffer
+					opts := Options{SampleRate: rate, Bars: 1, Block: 128}
+					_, err := WAV(score, opts, &output)
+					if (err != nil) != (liveErr != nil) || (err != nil) != (rate == 96_000) {
+						t.Fatalf("rate %d: live=%v offline=%v", rate, liveErr, err)
+					}
+					if err != nil {
+						if !strings.Contains(err.Error(), "CICADA-PARAM") || !strings.Contains(err.Error(), "delay time is out of range") || output.Len() != 0 {
+							t.Fatalf("invalid export wrote %d bytes: %v", output.Len(), err)
+						}
+						dir := filepath.Join(t.TempDir(), "stems")
+						if _, err := Stems(score, opts, dir); err == nil || !strings.Contains(err.Error(), "delay time is out of range") {
+							t.Fatalf("invalid stems accepted: %v", err)
+						}
+						if _, err := os.Stat(dir); !os.IsNotExist(err) {
+							t.Fatalf("invalid stems created output: %v", err)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestGraphDelayOfflineKitLaneValidation(t *testing.T) {
+	for _, primitive := range []string{"delay(noise(), %d / pitch)", "comb(noise(), %d / pitch, 0.8, 0.3)"} {
+		for _, test := range []struct {
+			periods, rate int
+			invalid       bool
+		}{{8, 48_000, true}, {4, 48_000, false}, {4, 96_000, true}} {
+			t.Run(fmt.Sprintf("%s/%d/%d", primitive, test.periods, test.rate), func(t *testing.T) {
+				source := fmt.Sprintf("instrument sound { voice mono { out = %s } } kit kit { bd = sound } track t kit {} pattern p drums steps=1 { bd: x } scene s { t=p } song { s }", fmt.Sprintf(primitive, test.periods))
+				score, ds := notation.Parse([]byte(source))
+				if score == nil || len(ds) != 0 {
+					t.Fatalf("parse: %+v", ds)
+				}
+				var output bytes.Buffer
+				_, err := WAV(score, Options{SampleRate: test.rate, Bars: 1}, &output)
+				if (err != nil) != test.invalid {
+					t.Fatalf("kit export: %v", err)
+				}
+				if test.invalid && (!strings.Contains(err.Error(), "delay time is out of range") || !strings.Contains(err.Error(), "lane bd") || output.Len() != 0) {
+					t.Fatalf("invalid kit wrote %d bytes: %v", output.Len(), err)
+				}
+			})
+		}
+	}
+}
+
+func TestGraphDelayOfflineValidatesAssignedPatterns(t *testing.T) {
+	source := []byte("instrument pluck { voice mono { out = comb(noise(), 1 / pitch, 0.8, 0.3) } } instrument tone { voice mono { out = sine(pitch) } } track strings pluck {} track bass tone {} pattern high notes steps=1 { a3 } pattern low notes steps=1 { c0 } pattern unused notes steps=1 { c0 } scene s { strings=high bass=low } song { s }")
+	score, ds := notation.Parse(source)
+	if score == nil || len(ds) != 0 {
+		t.Fatalf("parse: %+v", ds)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil {
+		t.Fatalf("project: %+v", ds)
+	}
+	if _, err := project.CompileEngine(p, 96_000, 128); err != nil {
+		t.Fatalf("valid live score: %v", err)
+	}
+	if _, err := WAV(score, Options{SampleRate: 96_000, Bars: 1}, io.Discard); err != nil {
+		t.Fatalf("unassigned notes rejected: %v", err)
+	}
+}
 
 func delayScore(t *testing.T) *notation.Score {
 	t.Helper()
