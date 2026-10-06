@@ -217,6 +217,9 @@ type Live struct {
 	PhraseBars     int
 	PhrasePosition Position
 	Macros         []LiveMacro
+	States         []LiveState
+	Stingers       []LiveStinger
+	Transitions    []LiveTransition
 	Layers         []LiveLayers
 	Position       Position
 }
@@ -275,4 +278,24 @@ func LocateDiagnostics(ds []Diagnostic, entry Position) {
 			ds[i].Position.Column = 1
 		}
 	}
+}
+
+// LiveState maps a game state to a score scene.
+type LiveState struct {
+	Name, Scene string
+	Position    Position
+}
+
+// LiveStinger plays one pattern once on a dedicated track.
+type LiveStinger struct {
+	Name, Track, Pattern, Quantize string
+	CrossfadeMS                    float64
+	Position                       Position
+}
+
+// LiveTransition sets the landing and track crossfade for a state change.
+type LiveTransition struct {
+	From, To, Quantize string
+	CrossfadeMS        float64
+	Position           Position
 }

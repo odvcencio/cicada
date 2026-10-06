@@ -1,4 +1,4 @@
-.PHONY: build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics
+.PHONY: test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics
 
 export GOWORK := off
 
@@ -105,3 +105,9 @@ test-phrase-wasm: build-phrase-wasm
 build-worklets:
 	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=false --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor.min.js
 	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=true --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor-capture.min.js
+
+# M5: SDK and layer-state parity over 64 bars across four native/WASM clients.
+test-director: build-kernel-wasm
+	node --test sdk/js/index.test.js
+	go test ./sdk/director ./notation ./project ./kernel/cmd ./kernel/engine -run 'TestDirector' -count=1
+	go test -timeout=5m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASMDirectorM5$$' -count=1 -v

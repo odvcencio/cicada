@@ -195,7 +195,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("comment", token(pat(`\/\/[^\n]*`)))
 
 	// Live controls use ordinary numbers so unit and range errors get semantic diagnostics.
-	g.Define("live_decl", seq(str("live"), str("{"), repeat(choice(sym("live_land"), sym("live_phrase"), sym("live_macro"), sym("live_layers"))), str("}")))
+	g.Define("live_decl", seq(str("live"), str("{"), repeat(choice(sym("live_land"), sym("live_phrase"), sym("live_macro"), sym("live_layers"), sym("live_state"), sym("live_stinger"), sym("live_transition"))), str("}")))
 	g.Define("live_land", seq(str("land"), str("="), field("value", choice(sym("identifier"), sym("bar_count"))), optional(str(";"))))
 	g.Define("live_phrase", seq(str("phrase"), str("="), field("value", sym("bar_count")), optional(str(";"))))
 	g.Define("live_macro", seq(str("macro"), field("name", sym("identifier")), str("="), field("value", sym("number")), optional(seq(str("smooth"), field("smooth", sym("number")))), optional(str(";"))))
@@ -227,6 +227,11 @@ func Cicada() *grammargen.Grammar {
 	g.Test("pattern settings inside braces", "pattern p { swing = 56% gate = 60% seed = 7 1 . } pattern beat drums { swing = 54% bd: x.; }", "")
 	g.Test("line-based statements", "instrument i { param cutoff: hz = 720Hz voice mono { let osc = saw(pitch) out = osc } } kit k { bd = i ch = builtin.ch } pattern b drums { bd: x... sd: .x.. }", "")
 	g.Test("short transpose", "phrase hook { 1 . } pattern p { use hook +7 }", "")
+	g.Define("live_state", seq(str("state"), field("name", sym("identifier")), str("="), field("scene", sym("identifier")), optional(str(";"))))
+	g.Define("live_stinger", seq(str("stinger"), field("name", sym("identifier")), str("="), field("track", sym("identifier")), str("."), field("pattern", sym("identifier")), optional(seq(str("quantize"), field("quantize", sym("identifier")))), optional(seq(str("crossfade"), field("crossfade", sym("number")))), optional(str(";"))))
+	g.Define("live_transition", seq(str("transition"), field("from", sym("identifier")), str("->"), field("to", sym("identifier")), optional(seq(str("quantize"), field("quantize", sym("identifier")))), optional(seq(str("crossfade"), field("crossfade", sym("number")))), optional(str(";"))))
+	g.Test("game director", "live { state explore = calm state combat = battle stinger hit = cue.hit quantize beat crossfade 10ms transition explore -> combat quantize phrase crossfade 200ms }", "")
+
 	g.Test("live controls", "live { land = bar phrase = 8bars macro intensity = 0.3 smooth 400ms layers intensity { drums >= 0.25 attack 1bar release 3bars } }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 

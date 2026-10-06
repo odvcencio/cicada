@@ -643,6 +643,22 @@ func parseLive(w *loweringWalker, n *gts.Node, ds []Diagnostic) (*Live, []Diagno
 				ms = parseDurationMS(w.Text(smooth))
 			}
 			live.Macros = append(live.Macros, LiveMacro{Name: w.Text(w.Field(c, "name")), Value: parseLiveNumber(w.Text(value)), SmoothMS: ms, Position: w.position(c), ValuePosition: w.position(value), SmoothPosition: w.position(smooth)})
+		case "live_state":
+			live.States = append(live.States, LiveState{Name: w.Text(w.Field(c, "name")), Scene: w.Text(w.Field(c, "scene")), Position: w.position(c)})
+		case "live_stinger", "live_transition":
+			quantize := w.Text(w.Field(c, "quantize"))
+			if quantize == "" {
+				quantize = "bar"
+			}
+			crossfade := float64(0)
+			if value := w.Field(c, "crossfade"); value != nil {
+				crossfade = parseDurationMS(w.Text(value))
+			}
+			if w.Type(c) == "live_stinger" {
+				live.Stingers = append(live.Stingers, LiveStinger{Name: w.Text(w.Field(c, "name")), Track: w.Text(w.Field(c, "track")), Pattern: w.Text(w.Field(c, "pattern")), Quantize: quantize, CrossfadeMS: crossfade, Position: w.position(c)})
+			} else {
+				live.Transitions = append(live.Transitions, LiveTransition{From: w.Text(w.Field(c, "from")), To: w.Text(w.Field(c, "to")), Quantize: quantize, CrossfadeMS: crossfade, Position: w.position(c)})
+			}
 		case "live_layers":
 			macro := w.Field(c, "macro")
 			layers := LiveLayers{Macro: w.Text(macro), AttackBars: 1, ReleaseBars: 3, Position: w.position(c), MacroPosition: w.position(macro)}
