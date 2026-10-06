@@ -35,9 +35,14 @@ type Pool struct {
 }
 
 func NewPool(program Program, sampleRate int) (*Pool, error) {
+	return NewPoolFromProgram(&program, sampleRate)
+}
+
+// NewPoolFromProgram prepares the fixed voice pool from an immutable program.
+func NewPoolFromProgram(program *Program, sampleRate int) (*Pool, error) {
 	p := &Pool{releaseFrames: sampleRate * 30 / 1000, tailFrames: sampleRate * 5 / 1000}
 	for i := range p.slots {
-		v, err := NewVoice(program, sampleRate)
+		v, err := NewVoiceFromProgram(program, sampleRate)
 		if err != nil {
 			return nil, err
 		}

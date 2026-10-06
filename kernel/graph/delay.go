@@ -28,16 +28,22 @@ type ParameterError struct {
 func (e *ParameterError) Error() string { return e.Message }
 
 func validateDelayControls(p Program, rate int) error {
-	return ValidateDelayPitch(p, rate, 0)
+	return validateDelayPitch(&p, rate, 0)
 }
 
 // ValidateDelayPitch checks pitch-derived controls for a score note. Zero
 // leaves pitch unknown, so instrument defaults can be checked independently.
 func ValidateDelayPitch(p Program, rate int, pitch float32) error {
-	if usesQuality(&p) {
+	return validateDelayPitch(&p, rate, pitch)
+}
+
+func validateDelayPitch(p *Program, rate int, pitch float32) error {
+	if usesQuality(p) {
 		rate *= 2
 	}
-	values, known := staticValues(&p, float32(rate), pitch)
+	var values [MaxNodes]float32
+	var known [MaxNodes]bool
+	staticValuesInto(p, float32(rate), pitch, &values, &known)
 	for i := 0; i < int(p.Len); i++ {
 		n := p.Nodes[i]
 		if n.Op != Delay && n.Op != Comb {
@@ -73,6 +79,11 @@ func (p Program) StaticValues(rate, pitch float32) ([MaxNodes]float32, [MaxNodes
 func staticValues(p *Program, rate, pitch float32) ([MaxNodes]float32, [MaxNodes]bool) {
 	var values [MaxNodes]float32
 	var known [MaxNodes]bool
+	staticValuesInto(p, rate, pitch, &values, &known)
+	return values, known
+}
+
+func staticValuesInto(p *Program, rate, pitch float32, values *[MaxNodes]float32, known *[MaxNodes]bool) {
 	for i := 0; i < int(p.Len); i++ {
 		n := p.Nodes[i]
 		a, b := values[n.A], values[n.B]
@@ -109,7 +120,6 @@ func staticValues(p *Program, rate, pitch float32) ([MaxNodes]float32, [MaxNodes
 			values[i] = float32(math.Exp2(float64(clamp(a, -8, 8))))
 		}
 	}
-	return values, known
 }
 
 func finite(x float32) bool { return !math.IsNaN(float64(x)) && !math.IsInf(float64(x), 0) }

@@ -510,7 +510,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			if err == nil {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 					if spec.Kit != nil {
-						binding := spec.Kit[lane]
+						binding := &spec.Kit[lane]
 						switch binding.Kind {
 						case KitLaneOff:
 							err = v.drums.Disable(lane)
@@ -557,10 +557,10 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceGraph:
 			if spec.Polyphony == 4 {
 				voices += 4
-				v.poly, err = graph.NewPool(spec.Graph, cfg.SampleRate)
+				v.poly, err = graph.NewPoolFromProgram(&spec.Graph, cfg.SampleRate)
 			} else {
 				voices++
-				v.graph, err = graph.NewVoice(spec.Graph, cfg.SampleRate)
+				v.graph, err = graph.NewVoiceFromProgram(&spec.Graph, cfg.SampleRate)
 			}
 		case VoicePiano:
 			voices += piano.MaxVoices
@@ -571,7 +571,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 			}
 		case VoiceGraphPoly:
 			voices += graph.PolyVoices
-			v.legacyPoly, err = graph.NewPoly(spec.Graph, cfg.SampleRate)
+			v.legacyPoly, err = graph.NewPolyFromProgram(&spec.Graph, cfg.SampleRate)
 		case VoicePrepared:
 			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
 				return 0, Error("prepared audio voice budget is invalid")

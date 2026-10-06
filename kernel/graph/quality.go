@@ -33,7 +33,7 @@ func usesQuality(p *Program) bool {
 }
 
 //go:noinline
-func newQualityState(p Program, rate int) *qualityState {
+func newQualityState(p *Program, rate int) *qualityState {
 	q := new(qualityState)
 	// Allocate only the validated node count during voice construction. A
 	// giant embedded zero array expands into individual stores in TinyGo.

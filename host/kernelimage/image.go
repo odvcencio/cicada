@@ -821,7 +821,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						}
 						binding.Recipe = drum.Lane(recipe)
 					case engine.KitLaneGraph:
-						if binding.Program, err = readGraph(&r, version, reserved); err != nil {
+						if err = readGraphInto(&r, version, reserved, &binding.Program); err != nil {
 							return err
 						}
 					case engine.KitLaneModeled:
@@ -878,7 +878,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			}
 			spec.Sample.Loop = loop == 1
 		case engine.VoiceGraph, engine.VoiceGraphPoly:
-			if spec.Graph, err = readGraph(&r, version, reserved); err != nil {
+			if err = readGraphInto(&r, version, reserved, &spec.Graph); err != nil {
 				return err
 			}
 		case engine.VoicePiano:
@@ -1112,39 +1112,44 @@ func graphNeedsDDSP(program *graph.Program) bool {
 
 func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, error) {
 	var program graph.Program
+	err := readGraphInto(r, version, capabilities, &program)
+	return program, err
+}
+
+func readGraphInto(r *reader, version uint16, capabilities uint16, program *graph.Program) error {
 	length, err := r.byte()
 	if err != nil || length == 0 || length > graph.MaxNodes {
-		return program, Error("invalid graph image length")
+		return Error("invalid graph image length")
 	}
 	program.Len = length
 	if program.Output, err = r.byte(); err != nil || program.Output >= length {
-		return program, Error("invalid graph image output")
+		return Error("invalid graph image output")
 	}
 	if version >= priorImageVersion {
 		if program.GlideMS, err = r.f64(); err != nil || math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
-			return program, Error("invalid graph glide time image")
+			return Error("invalid graph glide time image")
 		}
 	}
 	for i := uint8(0); i < length; i++ {
 		op, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		a, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		b, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		c, err := r.byte()
 		if err != nil {
-			return program, err
+			return err
 		}
 		value, err := r.f32()
 		if err != nil {
-			return program, err
+			return err
 		}
 		// Decode early graph payloads for migration tools; DecodeInto still refuses
 		// both ambiguous complete version-14 image layouts before reading tracks.
@@ -1158,30 +1163,30 @@ func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, e
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
 		if graph.Op(op) == graph.ADSR {
 			if version < qualityImageVersion {
-				return program, Error("ADSR needs project image version 15")
+				return Error("ADSR needs project image version 15")
 			}
 			if program.Nodes[i].D, err = r.byte(); err != nil {
-				return program, err
+				return err
 			}
 			if program.Nodes[i].E, err = r.byte(); err != nil {
-				return program, err
+				return err
 			}
 		}
 	}
-	required := graphCapabilities(&program)
+	required := graphCapabilities(program)
 	if required&DelayCapability != 0 && capabilities&DelayCapability == 0 {
-		return program, Error("graph delay operations require capability bit 1")
+		return Error("graph delay operations require capability bit 1")
 	}
-	if graphNeedsNeuralAmp(&program) && capabilities&NeuralAmpCapability == 0 {
-		return program, Error("neural amp operation requires capability bit 4")
+	if graphNeedsNeuralAmp(program) && capabilities&NeuralAmpCapability == 0 {
+		return Error("neural amp operation requires capability bit 4")
 	}
 	if required&PMCapability != 0 && capabilities&PMCapability == 0 {
-		return program, Error("graph phase modulation requires capability bit 5")
+		return Error("graph phase modulation requires capability bit 5")
 	}
-	if graphNeedsDDSP(&program) && capabilities&DDSPCapability == 0 {
-		return program, Error("DDSP operations require capability bit 7")
+	if graphNeedsDDSP(program) && capabilities&DDSPCapability == 0 {
+		return Error("DDSP operations require capability bit 7")
 	}
-	return program, nil
+	return nil
 }
 
 func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error {
