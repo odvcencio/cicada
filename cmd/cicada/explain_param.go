@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -35,19 +36,39 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 	if compiled == nil {
 		return diagnosticError(diagnostics)
 	}
-	resolved, err := project.ResolveParameterPath(compiled, path)
+	lookup := path
+	if alias, rest, found := strings.Cut(path, "."); found {
+		if namespace, ok := score.LibraryAliases[alias]; ok {
+			lookup = namespace + "." + rest
+		}
+	}
+	if origin, ok := score.Origins[lookup]; ok {
+		fmt.Fprintf(output, "%s: library %s (source %s:%d:%d)\n", path, origin.Library, filepath.Base(origin.Position.File), origin.Position.Line, origin.Position.Column)
+		return nil
+	}
+	resolved, err := project.ResolveParameterPath(compiled, lookup)
 	if err != nil {
 		return err
 	}
-	value, err := project.ParamAddressByName(compiled, path)
+	value, err := project.ParamAddressByName(compiled, lookup)
 	if err != nil {
 		return err
 	}
-	active, err := sceneValueAtBar(compiled, path, loc.bar)
+	active, err := sceneValueAtBar(compiled, lookup, loc.bar)
 	if err != nil {
 		return err
 	}
 	fmt.Fprintf(output, "%s at bar %d, beat %d, step %d\n", path, loc.bar, loc.beat, loc.step)
+	if origin, ok := score.Origins[resolved.Owner]; ok {
+		fmt.Fprintf(output, "library: %s\n", origin.Library)
+	}
+	for _, track := range score.Tracks {
+		if track.Name == resolved.Owner {
+			if origin, ok := score.Origins[track.Kind]; ok {
+				fmt.Fprintf(output, "instrument: %s (library %s)\n", track.Kind, origin.Library)
+			}
+		}
+	}
 	fmt.Fprintf(output, "registry default: %s\n", explainDefault(resolved.Descriptor))
 	if sourceHasBlockSetting(score, resolved) {
 		fmt.Fprintf(output, "%s block (%s): %s\n", resolved.OwnerKind, resolved.Owner, explainValue(value.Value, resolved.Descriptor))

@@ -28,6 +28,10 @@ type Sources struct {
 	ManifestPath string
 	Manifest     edition.Manifest
 	Files        []notation.SourceFile
+	Libraries    map[string]*Library
+	LibraryOrder []string
+	Imports      []notation.Import
+	Bindings     map[string]map[string]string
 }
 
 // ReadSources loads the closest explicit manifest, or the requested loose or
@@ -57,6 +61,37 @@ func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
 		if err != nil {
 			return nil, err
 		}
+		if set.Manifest.Library != "" {
+			// A vendored library source belongs to the containing score for
+			// tooling. Load that score only if it actually imports this file.
+			dir := filepath.Dir(set.Root)
+			for {
+				data, readErr := os.ReadFile(filepath.Join(dir, "cicada.mod"))
+				if readErr == nil {
+					parent, parseErr := edition.ParseProjectManifest(data)
+					if parseErr != nil {
+						return nil, parseErr
+					}
+					if parent.Project != "" && parent.Entry != "" {
+						containing, loadErr := ReadSources(filepath.Join(dir, filepath.FromSlash(parent.Entry)), overrides)
+						if loadErr != nil {
+							return nil, loadErr
+						}
+						for _, file := range containing.Files {
+							if file.Path == absolute {
+								return containing, nil
+							}
+						}
+						return nil, sourceError(path, 1, 1, "CICADA-SOURCE-PATH", "library source is not imported by the project", nil)
+					}
+				}
+				next := filepath.Dir(dir)
+				if next == dir {
+					break
+				}
+				dir = next
+			}
+		}
 		if set.Manifest.ExplicitSources() {
 			paths = nil
 			listed := false
@@ -79,6 +114,9 @@ func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
 			}
 		}
 		set.Files = []notation.SourceFile{{Path: path, Source: data}}
+		if err := set.readLibraries(overrides); err != nil {
+			return nil, err
+		}
 		return set, nil
 	}
 	root, err := os.OpenRoot(set.Root)
@@ -110,6 +148,9 @@ func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
 		}
 		set.Files = append(set.Files, notation.SourceFile{Path: full, Source: data})
 	}
+	if err := set.readLibraries(overrides); err != nil {
+		return nil, err
+	}
 	return set, nil
 }
 
@@ -122,11 +163,12 @@ func sourceError(file string, line, col int, code, message string, cause error) 
 func (s *Sources) Parse() (*notation.Score, []notation.Diagnostic) {
 	var score *notation.Score
 	var diagnostics []notation.Diagnostic
-	if s.ManifestPath == "" {
+	if s.ManifestPath == "" && len(s.Libraries) == 0 {
 		score, diagnostics = notation.ParseSource(s.Files[0])
 	} else {
-		score, diagnostics = notation.ParseFiles(s.Files, s.Manifest.Edition)
+		score, diagnostics = notation.ParseFiles(s.Files, s.sourceEdition())
 	}
+	diagnostics = append(diagnostics, s.verifyLibraries()...)
 	diagnostics = append(diagnostics, VerifyAssets(score, s.Root)...)
 	return score, diagnostics
 }
@@ -140,4 +182,11 @@ func LoadScore(path string, overrides map[string][]byte) (*notation.Score, []not
 	}
 	score, diagnostics := sources.Parse()
 	return score, diagnostics, nil
+}
+
+func (s *Sources) sourceEdition() int {
+	if s.Manifest.Edition != 0 {
+		return s.Manifest.Edition
+	}
+	return notation.SourceEdition(s.Files[0])
 }

@@ -3,6 +3,7 @@ package project
 import (
 	"fmt"
 	"math"
+	"strings"
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
@@ -571,6 +572,17 @@ func validateMixerLevel(mixer Mixer) error {
 }
 
 func validID(id string) bool {
+	if strings.Contains(id, ".") {
+		if len(id) > 64 {
+			return false
+		}
+		for _, part := range strings.Split(id, ".") {
+			if !validID(part) {
+				return false
+			}
+		}
+		return true
+	}
 	if len(id) < 1 || len(id) > 64 || !(id[0] == '_' || id[0] >= 'a' && id[0] <= 'z') {
 		return false
 	}
