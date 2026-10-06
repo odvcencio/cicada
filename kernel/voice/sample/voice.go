@@ -18,6 +18,9 @@ type Region struct {
 	Start, End         int
 	LoopStart, LoopEnd int
 	Loop               bool
+	// Crossfade is a source-frame overlap at the end of a sustain loop.
+	// Wrapping skips the overlapped head so each source frame sounds once.
+	Crossfade int
 }
 
 func (r Region) Validate() error {
@@ -30,6 +33,9 @@ func (r Region) Validate() error {
 	}
 	if r.Loop && (r.LoopStart < r.Start || r.LoopEnd > r.End || r.LoopStart >= r.LoopEnd) {
 		return Error("sample loop bounds are invalid")
+	}
+	if r.Crossfade < 0 || r.Crossfade > 0 && (!r.Loop || r.Crossfade > (r.LoopEnd-r.LoopStart)/2) {
+		return Error("sample loop crossfade is invalid")
 	}
 	return nil
 }
@@ -142,7 +148,7 @@ func (v *Voice) NoteOn(note, velocity uint8) error {
 	v.velocity = float64(velocity) / 127
 	v.gain, v.targetGain, v.gainAlpha = v.params.Gain*v.velocity, v.params.Gain*v.velocity, 0
 	v.active, v.releasing, v.looped, v.held = velocity != 0, false, false, false
-	v.looped = v.region.Loop && v.region.Start == v.region.LoopStart
+	v.looped = v.region.Loop && v.region.Crossfade == 0 && v.region.Start == v.region.LoopStart
 	v.remaining = 0
 	return nil
 }
@@ -158,6 +164,24 @@ func (v *Voice) NoteOff() {
 func (v *Voice) Active() bool    { return v.active || v.tailRemaining > 0 }
 func (v *Voice) Releasing() bool { return v.releasing || (!v.active && v.tailRemaining > 0) }
 func (v *Voice) Ratio() float64  { return v.ratio }
+
+// Retune preserves phase and attack. The region must cover the new note.
+func (v *Voice) Retune(note uint8, cents float64) error {
+	params := v.params
+	params.FineTuneCents = cents
+	if err := params.Validate(); err != nil {
+		return err
+	}
+	old := v.params
+	v.params = params
+	ratio, err := v.playbackRatio(note)
+	if err != nil {
+		v.params = old
+		return err
+	}
+	v.ratio, v.bank = ratio, bankFor(ratio)
+	return nil
+}
 func (v *Voice) KernelTaps() int {
 	if v.ratio == 1 || v.bank == nil {
 		return 0
@@ -208,8 +232,8 @@ func (v *Voice) NextStereo() (float32, float32) {
 		if !v.held {
 			v.phase += v.ratio
 			if v.region.Loop && v.phase >= float64(v.region.LoopEnd) {
-				length := float64(v.region.LoopEnd - v.region.LoopStart)
-				wraps := int((v.phase - float64(v.region.LoopStart)) / length)
+				length := float64(v.region.LoopEnd - v.region.LoopStart - v.region.Crossfade)
+				wraps := int((v.phase - float64(v.region.LoopStart+v.region.Crossfade)) / length)
 				v.phase -= float64(float64(wraps) * length)
 				v.looped = true
 			} else if !v.region.Loop && v.phase >= float64(v.region.End) {

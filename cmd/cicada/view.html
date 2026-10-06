@@ -90,6 +90,8 @@ button.scene-slot:hover, button.scene-slot[data-state="queued"] { border-color:v
 .cell.beat { min-height:27px; background:transparent; border-color:transparent; font-size:.7rem; }
 .cell.beat.downbeat { color:var(--amber); border-bottom:2px solid #8d7446; }
 .cell.note.on { color:var(--amber); background:#393320; border-color:#6b5937; font-size:.88rem; }
+.cell.note.chord { font-size:.7rem; white-space:normal; overflow-wrap:anywhere; text-align:center; padding:3px 2px; }
+.chord-grid-help { padding:0 12px; font-size:.8rem; color:var(--muted); }
 .cell.note.accent { background:#58342b; border-color:#a6634a; color:#ffe0a7; }
 .cell.note.tie { color:var(--mint); background:#1e3a32; }
 .cell.velocity-cell { position:relative; overflow:hidden; color:var(--mint); }
@@ -361,7 +363,7 @@ body[data-studio] .hero { min-height:0; padding:4px 14px; border-bottom:1px soli
 body[data-studio] .hero h1 { font-size:.95rem; margin:0; }
 body[data-studio] .hero .lede, body[data-studio] .hero .meta { display:none; }
 body[data-studio] .nav { position:relative; top:auto; z-index:10; padding:6px 12px; overflow:hidden; }
-body[data-studio] .nav a { display:none; }
+body[data-studio] .nav a:not(.bar-error) { display:none; }
 body[data-studio] .transport { width:100%; margin:0; display:flex; flex-wrap:wrap; gap:6px 8px; align-items:center; }
 body[data-studio] .transport button { min-height:38px; white-space:nowrap; padding:4px 12px; }
 body[data-studio] .transport-position { min-width:150px; white-space:nowrap; font:700 .8rem/1.2 ui-monospace,monospace; }
@@ -536,13 +538,14 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       <div class="patterns">{{range .Patterns}}{{$pattern := .}}
         <details class="pattern{{if .Drums}} drum{{end}}" open>
           <summary><span class="pattern-title">{{.ID}} <small>{{.Kind}}</small></span><span class="pattern-metrics">{{.Steps}} steps · swing {{.Swing}} · gate {{.Gate}} · transpose {{.Transpose}}</span></summary>
+          {{if and $.Studio .HasChords}}<p class="chord-grid-help">Chord steps: click a lit pitch to remove only that note, or an empty pitch to add one (up to 4). The Note row clears the whole chord to a rest. A single remaining note uses normal set/clear editing.</p>{{end}}
           <div class="grid-wrap" role="group" aria-label="{{.ID}} pattern">
             <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Step</span>{{range .Numbers}}<span class="cell beat{{if .Downbeat}} downbeat{{end}}">{{.Value}}</span>{{end}}</div>
             {{if .Drums}}
               {{range .Lanes}}{{$lane := .}}<div class="grid-line" style="--steps:{{len .Cells}}"><span class="row-label">{{.Name}}</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell drum-cell step-edit{{if .Accent}} accent{{end}}" data-pattern="{{$pattern.ID}}" data-lane="{{$lane.ID}}" data-step="{{.Index}}" aria-label="Toggle {{$pattern.ID}} {{$lane.Name}} {{.Label}}">{{if .Active}}<span class="fill" style="--velocity:{{.FillPercent}}%"></span><span class="glyph">●</span>{{else}}·{{end}}</button>{{else}}<span class="cell drum-cell{{if .Accent}} accent{{end}}" aria-label="{{.Label}}">{{if .Active}}<span class="fill" style="--velocity:{{.FillPercent}}%"></span><span class="glyph">●</span>{{else}}·{{end}}</span>{{end}}{{end}}</div>{{end}}
             {{else}}
-              {{range .PitchRows}}{{$row := .}}<div class="grid-line pitch-row" style="--steps:{{len .Cells}}"><span class="row-label pitch-label">{{.Name}}</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell pitch-cell step-edit{{if .On}} on{{end}}{{if .Accent}} accent{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-pitch="{{$row.Note}}" aria-label="{{if .On}}Clear{{else}}Set{{end}} {{$pattern.ID}} step {{.Number}} {{if .On}}at{{else}}to{{end}} {{$row.Name}}">{{if .On}}●{{end}}</button>{{else}}<span class="cell pitch-cell{{if .On}} on{{end}}{{if .Accent}} accent{{end}}"{{if .On}} aria-label="{{.Label}}"{{end}}>{{if .On}}●{{end}}</span>{{end}}{{end}}</div>{{end}}
-              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Note</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell note step-edit{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" aria-label="Toggle {{$pattern.ID}} {{.Label}}">{{.Note}}</button>{{else}}<span class="cell note{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" aria-label="{{.Label}}">{{.Note}}</span>{{end}}{{end}}</div>
+              {{range .PitchRows}}{{$row := .}}<div class="grid-line pitch-row" style="--steps:{{len .Cells}}"><span class="row-label pitch-label">{{.Name}}</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell pitch-cell step-edit{{if .On}} on{{end}}{{if .Accent}} accent{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-pitch="{{$row.Note}}" aria-label="{{if .Chord}}{{if .On}}Remove {{$row.Name}} from{{else}}Add {{$row.Name}} to{{end}} {{$pattern.ID}} step {{.Number}} chord{{else}}{{if .On}}Clear{{else}}Set{{end}} {{$pattern.ID}} step {{.Number}} {{if .On}}at{{else}}to{{end}} {{$row.Name}}{{end}}">{{if .On}}●{{end}}</button>{{else}}<span class="cell pitch-cell{{if .On}} on{{end}}{{if .Accent}} accent{{end}}"{{if .On}} aria-label="{{.Label}}"{{end}}>{{if .On}}●{{end}}</span>{{end}}{{end}}</div>{{end}}
+              <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Note</span>{{range .Cells}}{{if $.Studio}}<button type="button" class="cell note step-edit{{if .Chord}} chord{{end}}{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" aria-label="{{if .Chord}}Clear chord to rest in{{else}}Toggle{{end}} {{$pattern.ID}} {{.Label}}">{{.Note}}</button>{{else}}<span class="cell note{{if .Chord}} chord{{end}}{{if .Active}} on{{end}}{{if .Accent}} accent{{end}}{{if .Tie}} tie{{end}}" aria-label="{{.Label}}">{{.Note}}</span>{{end}}{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Velocity</span>{{range .Cells}}<span class="cell velocity-cell{{if and .Active (not .Tie)}} active{{end}}" aria-label="{{if and .Active (not .Tie)}}Velocity {{.Velocity}}{{else}}No note{{end}}">{{if and .Active (not .Tie)}}<span class="velocity-fill" style="--velocity:{{.FillPercent}}%"></span><span class="velocity-value">{{.Velocity}}</span>{{else}}—{{end}}</span>{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Accent</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell flag step-edit{{if .Accent}} on{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="accent" aria-label="Toggle accent on {{$pattern.ID}} {{.Label}}" aria-pressed="{{.Accent}}">{{if .Accent}}◆{{else}}·{{end}}</button>{{else}}<span class="cell flag{{if .Accent}} on{{end}}">{{if .Accent}}◆{{else}}·{{end}}</span>{{end}}{{end}}</div>
               <div class="grid-line" style="--steps:{{.Steps}}"><span class="row-label">Slide</span>{{range .Cells}}{{if and $.Studio .Active (not .Tie)}}<button type="button" class="cell flag slide step-edit{{if .Slide}} on{{end}}" data-pattern="{{$pattern.ID}}" data-step="{{.Index}}" data-modifier="slide" aria-label="Toggle slide on {{$pattern.ID}} {{.Label}}" aria-pressed="{{.Slide}}">{{if .Slide}}↗{{else}}·{{end}}</button>{{else}}<span class="cell flag slide{{if .Slide}} on{{end}}">{{if .Slide}}↗{{else if .Tie}}━{{else}}·{{end}}</span>{{end}}{{end}}</div>
@@ -1094,7 +1097,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   // sections. The page, MIDI access, armed tracks, active panel, focus, and scroll stay.
   async function refreshProjection(hint = {}) {
     const focused = document.activeElement;
-    const key = focused?.classList?.contains('step-edit') ? ['pattern', 'lane', 'step'].map(name => focused.dataset[name] ?? '').join('|') : '';
+    const key = focused?.classList?.contains('step-edit') ? ['pattern', 'lane', 'step', 'pitch', 'modifier'].map(name => focused.dataset[name] ?? '').join('|') : '';
     const scrolls = [...document.querySelectorAll('.projection, .source-pane')].map(node => [node, node.scrollTop]);
     const [page, stateResponse] = await Promise.all([fetch('/', {cache:'no-store'}), fetch('/api/state', {cache:'no-store'})]);
     if (!page.ok) throw new Error('projection unavailable');
@@ -1109,8 +1112,10 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     if (!dirty()) { original = state.source ?? hint.source ?? original; editor.value = original; }
     for (const [node, top] of scrolls) node.scrollTop = top;
     if (key) {
-      const [pattern, lane, step] = key.split('|');
-      const match = [...document.querySelectorAll('.step-edit')].find(cell => (cell.dataset.pattern || '') === pattern && (cell.dataset.lane || '') === lane && (cell.dataset.step || '') === step);
+      const [pattern, lane, step, pitch, modifier] = key.split('|');
+      const cells = [...document.querySelectorAll('.step-edit')].filter(cell => (cell.dataset.pattern || '') === pattern && (cell.dataset.lane || '') === lane && (cell.dataset.step || '') === step);
+      // If removing an outer pitch shrinks the rows, retain the step on its Note cell.
+      const match = cells.find(cell => (cell.dataset.pitch || '') === pitch && (cell.dataset.modifier || '') === modifier) || cells.find(cell => cell.dataset.pitch === undefined && cell.dataset.modifier === undefined);
       if (match) { setRovingTarget(match); match.focus({preventScroll:true}); }
     }
     updateBar();

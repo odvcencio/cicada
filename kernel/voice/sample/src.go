@@ -86,7 +86,7 @@ func (v *Voice) interpolate() (float64, float64) {
 	var left, right float64
 	// Explicit float64 conversions round products before addition, preventing
 	// native FMA contraction. Taps always accumulate in ascending source order.
-	if first >= v.region.Start && first+bank.taps <= v.region.End &&
+	if v.region.Crossfade == 0 && first >= v.region.Start && first+bank.taps <= v.region.End &&
 		(!v.region.Loop || (first >= v.region.LoopStart && first+bank.taps <= v.region.LoopEnd) ||
 			(!v.looped && first+bank.taps <= v.region.LoopEnd)) {
 		l := v.region.Left[first : first+bank.taps]
@@ -132,20 +132,31 @@ func (v *Voice) interpolate() (float64, float64) {
 
 func (v *Voice) frame(index int) (float32, float32) {
 	r := &v.region
-	if r.Loop && (index >= r.LoopEnd || (v.looped && index < r.LoopStart)) {
-		length := r.LoopEnd - r.LoopStart
-		index = (index - r.LoopStart) % length
+	if r.Loop && (index >= r.LoopEnd || (v.looped && index < r.LoopStart+r.Crossfade)) {
+		length := r.LoopEnd - r.LoopStart - r.Crossfade
+		index = (index - r.LoopStart - r.Crossfade) % length
 		if index < 0 {
 			index += length
 		}
-		index += r.LoopStart
+		index += r.LoopStart + r.Crossfade
 	}
 	if index < r.Start || index >= r.End {
 		return 0, 0
 	}
 	left := r.Left[index]
-	if len(r.Right) == 0 {
-		return left, left
+	right := left
+	if len(r.Right) != 0 {
+		right = r.Right[index]
 	}
-	return left, r.Right[index]
+	if r.Crossfade > 0 && index >= r.LoopEnd-r.Crossfade && index < r.LoopEnd {
+		head := r.LoopStart + index - (r.LoopEnd - r.Crossfade)
+		blend := float64(index-(r.LoopEnd-r.Crossfade)) / float64(r.Crossfade)
+		left = float32(float64(left)*(1-blend) + float64(r.Left[head])*blend)
+		h := r.Left[head]
+		if len(r.Right) != 0 {
+			h = r.Right[head]
+		}
+		right = float32(float64(right)*(1-blend) + float64(h)*blend)
+	}
+	return left, right
 }

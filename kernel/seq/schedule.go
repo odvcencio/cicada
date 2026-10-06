@@ -20,6 +20,8 @@ type Event struct {
 	StepIndex    uint8
 	RatchetIndex uint8
 	Note         uint8
+	Notes        [4]uint8
+	NoteCount    uint8 // zero means the unchanged mono Note field
 	Velocity     uint8
 	Accent       bool
 	Slide        bool
@@ -126,6 +128,11 @@ func EventsOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, 
 				Track: track, Slot: slot, StepIndex: stepIndex, RatchetIndex: r,
 				Note: uint8(int(step.Note) + int(p.Transpose)), Velocity: step.Velocity, Accent: step.Accent, Slide: incomingSlide && r == 0,
 			}
+			chord := p.Chords[stepIndex]
+			dst[written].NoteCount = chord.Count
+			for n := uint8(0); n < chord.Count; n++ {
+				dst[written].Notes[n] = uint8(int(chord.Notes[n]) + int(p.Transpose))
+			}
 			written++
 		}
 	}
@@ -197,6 +204,11 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 				Tick: offTick, Sample: offSample, Offset: int32(offSample - startSample),
 				Track: track, Slot: slot, StepIndex: stepIndex, RatchetIndex: r,
 				Note: step.Note,
+			}
+			chord := p.Chords[stepIndex]
+			dst[written].NoteCount = chord.Count
+			for n := uint8(0); n < chord.Count; n++ {
+				dst[written].Notes[n] = uint8(int(chord.Notes[n]) + int(p.Transpose))
 			}
 			written++
 		}
