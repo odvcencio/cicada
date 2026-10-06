@@ -265,3 +265,58 @@ func TestKeysSceneSeekAndResetRestoreSustain(t *testing.T) {
 		t.Fatal("backward seek/reset did not restore initial keys sustain")
 	}
 }
+
+func TestKeysRejectPerNoteExpressionBeforePlayback(t *testing.T) {
+	installFakeKeys(t)
+	for _, params := range []seq.Expression{{}, {Set: true, PitchCents: 25, Pressure: .5, Timbre: .75}} {
+		cfg := keysConfig()
+		pattern := seq.Pattern{Len: 1, GatePercent: 50, Expression: new([64]seq.Expression)}
+		pattern.Steps[0], _ = seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100, Velocity: 100})
+		pattern.Expression[0] = params
+		cfg.Patterns = []PatternBank{{Slots: [16]seq.Pattern{pattern}}}
+		if e, err := New(cfg); err == nil || e != nil {
+			t.Fatal("keys accepted unsupported expression storage")
+		}
+	}
+	for _, identity := range []uint16{0, 7} {
+		e, err := New(keysConfig())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !e.Push(expressionCommand(identity, .5)) {
+			t.Fatal("valid expression command rejected before voice support validation")
+		}
+		var left, right [128]float32
+		e.Render(left[:], right[:])
+		var message cmd.Message
+		found := false
+		for e.Poll(&message) {
+			found = found || message.Kind == cmd.Fault && message.A == 9
+		}
+		if !e.faulted || !found || left != [128]float32{} || right != [128]float32{} {
+			t.Fatal("keys failed to reject live expression explicitly and silence playback")
+		}
+	}
+}
+
+func TestKeysReleaseTargetsMIDIPitchInsteadOfLiveIdentity(t *testing.T) {
+	installFakeKeys(t)
+	e, err := New(keysConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, note := range []uint32{60, 64, 67} {
+		e.apply(cmd.Command{Op: cmd.OpNoteOn, Track: 0, Index: uint16(500 + i), Arg0: note | 100<<8})
+	}
+	f := e.voices[0].keys.(*fakeKeys)
+	for _, note := range []uint16{60, 64} {
+		e.apply(cmd.Command{Op: cmd.OpNoteOff, Track: 0, Index: note})
+		if e.faulted || !f.released[note] || f.notes[note] != 0 || f.notes[67] != 100 {
+			t.Fatalf("keys release %d used live identity or affected another pitch", note)
+		}
+	}
+	e.apply(cmd.Command{Op: cmd.OpNoteOff, Track: 0, Index: 502})
+	if !e.faulted {
+		t.Fatal("keys accepted a note identity as a MIDI release pitch")
+	}
+}

@@ -267,7 +267,9 @@ func patternCompileDiagnostic(err error, position notation.Position) notation.Di
 		position = stepError.position
 	}
 	code := "CICADA-PARAM"
-	if strings.Contains(err.Error(), "seed") {
+	if strings.HasPrefix(err.Error(), "CICADA-UNSUPPORTED:") {
+		code = "CICADA-UNSUPPORTED"
+	} else if strings.Contains(err.Error(), "seed") {
 		code = "CICADA-SEED"
 	} else if strings.Contains(err.Error(), "has no degree") {
 		code = "CICADA-SCALE-DEGREE"

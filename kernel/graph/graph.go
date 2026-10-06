@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/amp"
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
+	"m31labs.dev/cicada/kernel/expression"
 )
 
 const MaxNodes = 128
@@ -46,7 +47,10 @@ const (
 	Delay     Op = 24
 	Comb      Op = 25
 	Period    Op = 26 // unit / Hz, converted from seconds to milliseconds
+	PitchBend Op = 27 // pitch cents; zero is neutral
 	NeuralAmp Op = 28 // pinned quantized causal amp: audio, unit drive
+	Pressure  Op = 29 // normalized 0..1; zero is neutral
+	Timbre    Op = 30 // normalized 0..1; 0.5 is neutral
 )
 
 type Node struct {
@@ -98,20 +102,22 @@ type Voice struct {
 	gliding     bool
 	gate        float32
 	velocity    float32
+	expression  expression.State
 	delays      []delayState
 	delayMemory []float32
 	amps        []amp.Model
 }
 
 func NewVoice(program Program, sampleRate int) (*Voice, error) {
-	if err := Validate(program, sampleRate); err != nil {
+	if err := validateProgram(&program, sampleRate); err != nil {
 		return nil, err
 	}
 	v := &Voice{program: program, sampleRate: float32(sampleRate)}
 	if program.GlideMS > 0 {
 		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(sampleRate)))
 	}
-	count := program.DelaySamples() / MaxDelaySamples
+	v.expression.Reset()
+	count := delaySamples(&program) / MaxDelaySamples
 	if count > 0 {
 		v.delayMemory = make([]float32, count*MaxDelaySamples)
 		v.delays = make([]delayState, count)
@@ -140,6 +146,10 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 // Validate checks untrusted images and statically known delay controls without
 // allocating voice storage. Dynamic controls are bounded again in Next.
 func Validate(program Program, sampleRate int) error {
+	return validateProgram(&program, sampleRate)
+}
+
+func validateProgram(program *Program, sampleRate int) error {
 	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
 		return Error("invalid graph program")
 	}
@@ -156,7 +166,7 @@ func Validate(program Program, sampleRate int) error {
 		}
 		var inputs int
 		switch n.Op {
-		case Pitch, Gate, Velocity, SampleRate, Constant, Noise:
+		case Pitch, Gate, Velocity, SampleRate, Constant, Noise, PitchBend, Pressure, Timbre:
 		case Saw, Square, Sine, Tanh, Exp2:
 			inputs = 1
 		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay, NeuralAmp:
@@ -178,13 +188,14 @@ func Validate(program Program, sampleRate int) error {
 			return Error("non-finite graph constant")
 		}
 	}
-	if program.DelaySamples() > MaxVoiceDelaySamples {
+	if delaySamples(program) > MaxVoiceDelaySamples {
 		return Error("voice graph exceeds 8192 delay samples (two delay nodes)")
 	}
 	return validateDelayControls(program, sampleRate)
 }
 
 func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
+	v.expression.Reset()
 	wasGated := v.gate > 0
 	targetLog := math.Log2(440) + (float64(note)-69)/12
 	v.velocity = float32(velocity) / 127
@@ -214,6 +225,14 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	}
 }
 
+// SetExpression applies resolved score controls without retriggering the voice.
+func (v *Voice) SetExpression(p expression.Params) { v.expression.SetParams(p, v.sampleRate) }
+
+// NoteExpression updates the three live controls, preserving vibrato phase.
+func (v *Voice) NoteExpression(pitchCents, pressure, timbre float32) {
+	v.expression.SetControls(pitchCents, pressure, timbre)
+}
+
 func (v *Voice) NoteOff() { v.gate = 0 }
 
 // CopyStateFrom copies a voice constructed with the same program into this
@@ -228,6 +247,7 @@ func (v *Voice) CopyStateFrom(source *Voice) {
 }
 
 func (v *Voice) Reset() {
+	v.expression.Reset()
 	v.pitch, v.gate, v.velocity = 0, 0, 0
 	v.pitchLog, v.targetLog, v.gliding = 0, 0, false
 	for i := uint8(0); i < v.program.Len; i++ {
@@ -244,8 +264,12 @@ func (v *Voice) Reset() {
 
 func (v *Voice) Next() float32 {
 	if v.gliding {
-		v.pitchLog += (v.targetLog - v.pitchLog) * v.pitchAlpha
+		v.pitchLog += float64((v.targetLog - v.pitchLog) * v.pitchAlpha)
 		v.pitch = float32(fastmath.Exp2(v.pitchLog))
+	}
+	pitch := v.pitch
+	if ratio := v.expression.NextRatio(); ratio != 1 {
+		pitch *= float32(ratio)
 	}
 	// NewVoice validates the 128-node limit and all used input indices.
 	for i := uint8(0); i < v.program.Len; i++ {
@@ -256,7 +280,13 @@ func (v *Voice) Next() float32 {
 		var y float32
 		switch n.Op {
 		case Pitch:
-			y = v.pitch
+			y = pitch
+		case PitchBend:
+			y = v.expression.PitchCents
+		case Pressure:
+			y = v.expression.Pressure
+		case Timbre:
+			y = v.expression.Timbre
 		case Gate:
 			y = v.gate
 		case Velocity:
@@ -339,9 +369,10 @@ func (v *Voice) Next() float32 {
 			if n.Op == Diode {
 				feedback = 2.8 * clamp(c, 0, 1)
 			}
-			input := float32(math.Tanh(float64(a - feedback*s.filter[3])))
+			// Products round before additions so arm64 cannot contract an FMA.
+			input := float32(math.Tanh(float64(a - float32(feedback*s.filter[3]))))
 			for stage := 0; stage < 4; stage++ {
-				s.filter[stage] += coef * (input - s.filter[stage])
+				s.filter[stage] += float32(coef * (input - s.filter[stage]))
 				input = s.filter[stage]
 			}
 			y = s.filter[3]
@@ -352,14 +383,14 @@ func (v *Voice) Next() float32 {
 				s.coefficientInput = frequency
 			}
 			coef := s.coefficient
-			s.filter[0] += coef * (a - s.filter[0])
+			s.filter[0] += float32(coef * (a - s.filter[0]))
 			y = s.filter[0]
 			if n.Op == Highpass {
 				y = a - y
 			}
 		case Mix:
 			blend := clamp(c, 0, 1)
-			y = a*(1-blend) + b*blend
+			y = float32(a*(1-blend)) + float32(b*blend)
 		case Tanh:
 			y = float32(math.Tanh(float64(a)))
 		case Exp2:
@@ -397,11 +428,11 @@ func frac(x float32) float32 {
 func polyBLEP(phase, dt float32) float32 {
 	if phase < dt {
 		t := phase / dt
-		return t + t - t*t - 1
+		return t + t - float32(t*t) - 1
 	}
 	if phase > 1-dt {
 		t := (phase - 1) / dt
-		return t*t + t + t + 1
+		return float32(t*t) + t + t + 1
 	}
 	return 0
 }

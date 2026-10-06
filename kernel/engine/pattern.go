@@ -151,11 +151,11 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		e.fault(15)
 		return
 	}
-	if e.voices[track].kind == VoicePiano && !validPianoPattern(updated) {
+	if e.voices[track].kind == VoicePiano && !validPianoPattern(&updated) {
 		e.fault(15)
 		return
 	}
-	if keysEnabled && e.voices[track].kind == VoiceKeys && !validPianoPattern(updated) {
+	if keysEnabled && e.voices[track].kind == VoiceKeys && !validPianoPattern(&updated) {
 		e.fault(15)
 		return
 	}
@@ -311,7 +311,7 @@ func patternEventBefore(a, b patternEvent, isDrum bool) bool {
 		return a.event.Sample < b.event.Sample
 	}
 	if a.event.Kind != b.event.Kind {
-		return a.event.Kind == seq.NoteOff
+		return patternEventPriority(a.event.Kind) < patternEventPriority(b.event.Kind)
 	}
 	if isDrum && a.event.Note != b.event.Note {
 		priority := func(lane uint8) uint8 {
@@ -560,6 +560,12 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				continue
 			}
 			event := item.event
+			if kind == seq.NoteExpression {
+				if p.playingNote != 0 && p.playingGen == item.generation {
+					e.applyStepExpression(track, p.slots[p.active].ExpressionAt(int(event.StepIndex)))
+				}
+				continue
+			}
 			switch e.voices[track].kind {
 			case VoiceAcid:
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
@@ -621,7 +627,9 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				return
 			}
 			if e.voices[track].kind != VoiceDrums {
+				e.voices[track].noteActive = false // score notes use scheduler identities
 				p.playingNote, p.playingGen = event.NoteID, item.generation
+				e.applyStepExpression(track, p.slots[p.active].ExpressionAt(int(event.StepIndex)))
 				p.playingPitch = event.Note
 				p.heldValid = false
 				p.slideFrom, p.slideAt = 0, 0
@@ -629,6 +637,30 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			}
 			e.emit(cmd.Message{Kind: cmd.NoteOn, Track: uint8(track), A: uint16(event.Note), Tick: event.Tick})
 		}
+	}
+}
+
+func patternEventPriority(kind seq.EventKind) int {
+	if kind == seq.NoteOff {
+		return 0
+	}
+	if kind == seq.NoteOn {
+		return 1
+	}
+	return 2
+}
+
+func (e *Engine) applyStepExpression(track int, params seq.Expression) {
+	switch e.voices[track].kind {
+	case VoiceGraph:
+		if pool := e.voices[track].poly; pool != nil {
+			p := &e.patterns[track]
+			pool.SetExpression(graph.Cohort{NoteID: p.playingNote, Generation: uint64(p.playingGen)}, params)
+		} else {
+			e.voices[track].graph.SetExpression(params)
+		}
+	case VoiceAcid:
+		e.voices[track].acid.SetExpression(params)
 	}
 }
 

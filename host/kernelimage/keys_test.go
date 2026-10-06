@@ -9,6 +9,7 @@ import (
 
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
@@ -119,5 +120,54 @@ func TestKeysChordImageAndCommandUpload(t *testing.T) {
 	}
 	if _, err := kernelimage.PatternCommands(*pattern, &decoded, 0, 0, 0); err == nil {
 		t.Fatal("uploaded chord without chord capability")
+	}
+}
+
+func TestKeysAndExpressionCapabilitiesRemainIndependent(t *testing.T) {
+	if kernelimage.ExpressionCapability != 1<<3 || kernelimage.NeuralAmpCapability != 1<<4 || kernelimage.KeysCapability != 1<<5 {
+		t.Fatal("published additive capability bits changed")
+	}
+	cfg := keysImageConfig()
+	cfg.Tracks, cfg.MaxVoices = 2, 9
+	cfg.Track[1].Kind = engine.VoiceGraph
+	cfg.Track[1].Graph = graph.Program{Len: 1, Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Pressure}}}
+	cfg.Patterns = make([]engine.PatternBank, 2)
+	keyPattern := &cfg.Patterns[0].Slots[0]
+	keyPattern.Len, keyPattern.GatePercent, keyPattern.Seed = 1, 55, 0x3152454b
+	keyPattern.Steps[0], _ = seq.PackStep(seq.Step{Note: 64, Gate: true, Velocity: 109, Ratchet: 1, Probability: 100})
+	graphPattern := *keyPattern
+	graphPattern.Expression = new([64]seq.Expression)
+	graphPattern.Expression[0] = seq.Expression{Set: true, PitchCents: 25, Pressure: .5, Timbre: .75}
+	cfg.Patterns[1].Slots[0] = graphPattern
+	data, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binary.LittleEndian.Uint16(data[30:32]) != kernelimage.KeysCapability|kernelimage.ExpressionCapability {
+		t.Fatal("mixed image lost keys or expression capability")
+	}
+	decoded, err := kernelimage.Decode(data, 48000, 128)
+	if err != nil || !reflect.DeepEqual(cfg.Track, decoded.Track) || !reflect.DeepEqual(cfg.Patterns, decoded.Patterns) {
+		t.Fatalf("mixed keys and expressive graph image changed: %v", err)
+	}
+	// Locate the unique keys pattern header and step, then change its blank
+	// expression record. A capability needed by another track cannot make
+	// unsupported keyboard expression playable.
+	var signature [13]byte
+	signature[0], signature[4] = keyPattern.Len, keyPattern.GatePercent
+	binary.LittleEndian.PutUint32(signature[5:9], keyPattern.Seed)
+	binary.LittleEndian.PutUint32(signature[9:], keyPattern.Steps[0])
+	offset := bytes.Index(data, signature[:])
+	if offset < 0 {
+		t.Fatal("unique keys pattern header not found")
+	}
+	bad := append([]byte(nil), data...)
+	bad[offset+len(signature)] = 1
+	if _, err := kernelimage.Decode(bad, 48000, 128); err == nil {
+		t.Fatal("mixed image silently accepted keyboard expression")
+	}
+	keyPattern.Expression = new([64]seq.Expression)
+	if data, err := kernelimage.Encode(cfg); err == nil || data != nil {
+		t.Fatal("unsupported keys expression produced a playable image")
 	}
 }

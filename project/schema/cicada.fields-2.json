@@ -150,7 +150,8 @@
       "name": "pattern",
       "child_roles": [
         "data",
-        "lanes"
+        "lanes",
+        "expression"
       ],
       "variants": [],
       "introduced": "cicada.project/1",
@@ -162,6 +163,14 @@
       "child_roles": [
         "notes"
       ],
+      "variants": [],
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "name": "note_expression",
+      "child_roles": [],
       "variants": [],
       "introduced": "cicada.project/1",
       "profile": "M0",
@@ -1643,6 +1652,20 @@
       "layer": "semantic"
     },
     {
+      "construct": "pattern",
+      "name": "expression",
+      "required": false,
+      "type": "array\u003cnote_expression\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Resolved expression at each melodic step",
+      "order": 10,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
       "construct": "step",
       "name": "note",
       "required": true,
@@ -1750,6 +1773,62 @@
       "default": null,
       "meaning": "Optional 2 to 4 distinct chord pitches sharing one gate",
       "order": 8,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "note_expression",
+      "name": "pitch_cents",
+      "required": true,
+      "type": "number",
+      "unit": "ct",
+      "range": "-9600..9600",
+      "default": null,
+      "meaning": "Per-note pitch offset",
+      "order": 1,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "note_expression",
+      "name": "pressure",
+      "required": true,
+      "type": "number",
+      "unit": null,
+      "range": "0..1",
+      "default": null,
+      "meaning": "Normalized per-note pressure",
+      "order": 2,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "note_expression",
+      "name": "timbre",
+      "required": true,
+      "type": "number",
+      "unit": null,
+      "range": "0..1",
+      "default": null,
+      "meaning": "Normalized per-note timbre",
+      "order": 3,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "note_expression",
+      "name": "vibrato_depth_cents",
+      "required": true,
+      "type": "number",
+      "unit": "ct",
+      "range": "0..9600",
+      "default": null,
+      "meaning": "Per-note vibrato depth at 5 Hz",
+      "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"

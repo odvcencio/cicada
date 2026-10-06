@@ -119,12 +119,21 @@ type Param struct {
 }
 
 type Pattern struct {
+	Name       string
+	Kind       string
+	Attrs      []Param
+	Parts      []PatternPart // source order before expansion
+	Steps      []StepToken
+	Lanes      []Lane
+	Expression []ExpressionRow
+	Position   Position
+}
+
+// ExpressionRow keeps source spelling and positions for per-step expression.
+// A dot holds the previous value; the project compiler resolves these holds.
+type ExpressionRow struct {
 	Name     string
-	Kind     string
-	Attrs    []Param
-	Parts    []PatternPart // source order before expansion
-	Steps    []StepToken
-	Lanes    []Lane
+	Values   []StepToken
 	Position Position
 }
 
