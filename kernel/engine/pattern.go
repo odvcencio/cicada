@@ -124,7 +124,7 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		updated.Steps[c.Index] = c.Arg0
 		updated.Chords[c.Index] = seq.ChordStep{}
 	case cmd.OpSetChordStep:
-		if e.voices[track].poly == nil && e.voices[track].kind != VoicePiano {
+		if e.voices[track].poly == nil && e.voices[track].kind != VoicePiano && (!keysEnabled || e.voices[track].kind != VoiceKeys) {
 			e.fault(17)
 			return
 		}
@@ -152,6 +152,10 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		return
 	}
 	if e.voices[track].kind == VoicePiano && !validPianoPattern(&updated) {
+		e.fault(15)
+		return
+	}
+	if keysEnabled && e.voices[track].kind == VoiceKeys && !validPianoPattern(&updated) {
 		e.fault(15)
 		return
 	}
@@ -543,6 +547,8 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 					if pool == nil {
 						if e.voices[track].kind == VoicePiano {
 							e.releasePianoPattern(track)
+						} else if keysEnabled && e.voices[track].kind == VoiceKeys {
+							e.releaseKeysPattern(track)
 						} else {
 							e.noteOff(track, 0xffff)
 						}
@@ -619,6 +625,22 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 					if e.voices[track].piano.NoteOn(p.playingPitches[n], event.Velocity) != nil {
 						e.fault(15)
 						return
+					}
+				}
+			case VoiceKeys:
+				if keysEnabled {
+					if event.Slide && p.playingNote != 0 {
+						e.releaseKeysPattern(track)
+					}
+					p.playingPitches, p.playingPitchCount = event.Notes, event.NoteCount
+					if p.playingPitchCount == 0 {
+						p.playingPitches[0], p.playingPitchCount = event.Note, 1
+					}
+					for n := uint8(0); n < p.playingPitchCount; n++ {
+						if e.voices[track].keys.NoteOn(p.playingPitches[n], event.Velocity) != nil {
+							e.fault(15)
+							return
+						}
 					}
 				}
 			case VoiceDrums:

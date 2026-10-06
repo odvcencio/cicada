@@ -22,7 +22,7 @@ const CapabilitySpatial uint32 = 1 << 17
 // seed must match its preloaded slot (or blank defaults). Submit the returned
 // commands in one batch before selecting/playing the slot.
 func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8, capabilities uint32) ([]cmd.Command, error) {
-	if cfg == nil || cfg.Tracks < 1 || cfg.Tracks > 16 || int(track) >= cfg.Tracks || slot >= 16 || len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks || cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph {
+	if cfg == nil || cfg.Tracks < 1 || cfg.Tracks > 16 || int(track) >= cfg.Tracks || slot >= 16 || len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks || cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph && (!keysImageEnabled || cfg.Track[track].Kind != engine.VoiceKeys) {
 		return nil, Error("invalid melodic pattern upload target")
 	}
 	if pattern.Expression != nil || len(cfg.Patterns) > 0 && cfg.Patterns[track].Slots[slot].Expression != nil {
@@ -42,7 +42,7 @@ func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8,
 		return nil, err
 	}
 	for _, chord := range pattern.Chords {
-		if chord.Count > 0 && (capabilities&CapabilityChords == 0 || cfg.Track[track].Polyphony != 4) {
+		if chord.Count > 0 && (capabilities&CapabilityChords == 0 || cfg.Track[track].Polyphony != 4 && (!keysImageEnabled || cfg.Track[track].Kind != engine.VoiceKeys)) {
 			return nil, Error("target kernel does not support polyphonic chord uploads")
 		}
 	}

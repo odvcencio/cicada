@@ -9,6 +9,7 @@
   class BrowserCapture {
     constructor(audio, env = root) {
       this.audio=audio; this.env=env; this.stream=null; this.source=null; this.worker=null; this.take=null;
+      this.audio.captureSession=this; this.stopPromise=null;
       this.listeners=new Set(); this.waiters=new Map(); this.busy=false;
       this.inputDevice = ''; this.deviceGeneration = 0; this.armGeneration=0; this.capturePlayed=false;
       audio.onState?.(playing => {
@@ -167,9 +168,14 @@
       this.capturePlayed=!!this.audio.playing;
       this.status.state='recording'; this.status.countInFrames=countInFrames; this.notify();
     }
-    async stop() {
-      if (this.status.state === 'arming') { await this.interrupt('Microphone arming canceled'); return this.take; }
-      if (!['armed','recording'].includes(this.status.state)) return this.take;
+    stop() {
+      if (this.status.state === 'arming') return this.interrupt('Microphone arming canceled').then(()=>this.take);
+      if (this.stopPromise) return this.stopPromise;
+      if (!['armed','recording'].includes(this.status.state)) return Promise.resolve(this.take);
+      this.stopPromise=this.finishStop().finally(()=>{this.stopPromise=null;});
+      return this.stopPromise;
+    }
+    async finishStop() {
       const finished=this.wait('finished');
       this.status.state='saving'; this.notify();
       this.audio.node.port.postMessage({t:'capture-control',op:'stop'});
