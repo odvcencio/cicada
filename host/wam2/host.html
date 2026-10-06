@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Cicada WAM2 instrument</title>
+<style>
+body{margin:0;background:#eee8d9;color:#182525;font:16px system-ui,sans-serif;padding:clamp(20px,6vw,72px)}
+main{max-width:720px;margin:auto}h1{font-size:30px}p{line-height:1.6}a{color:#235c49}#mount{margin:32px 0}pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px}
+</style>
+<main><h1>Cicada WAM2 instrument</h1><p>This host uses the <a href="https://github.com/webaudiomodules/sdk/tree/main/host">official WAM SDK host example</a> to load the exported plugin. Start the score in the instrument below.</p><div id="mount"></div><pre id="parameters"></pre><p id="error" role="alert"></p></main>
+<script type="module">
+import { initializeWamHost } from './sdk.js';
+import CicadaWam from './index.js';
+try {
+  const audioContext = new AudioContext({ sampleRate: 48000 });
+  const [groupId] = await initializeWamHost(audioContext);
+  const plugin = await CicadaWam.createInstance(groupId, audioContext);
+  plugin.audioNode.connect(audioContext.destination);
+  document.querySelector('#mount').append(await plugin.createGui());
+  document.querySelector('#parameters').textContent = JSON.stringify(await plugin.audioNode.getParameterInfo(), null, 2);
+  globalThis.cicadaWam = plugin;
+} catch (error) { document.querySelector('#error').textContent = error.message; }
+</script>
+</html>

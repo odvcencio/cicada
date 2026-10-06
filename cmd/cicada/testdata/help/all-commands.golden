@@ -245,6 +245,18 @@ Flags:
   --residual-max-db <dBFS> maximum bus-sum residual (default -80)
   --help                   show this help
 
+### wam2
+cicada wam2 <score.cicada> -o <directory> [flags]
+
+export a WAM2 instrument
+
+Flags:
+  -o <directory>  required output plugin directory
+  --kernel <file>  kernel WASM path (default build/cicada-kernel.wasm)
+  --sdk <directory> WAM SDK directory (default build/wam2-sdk/node_modules/@webaudiomodules/sdk)
+  --midi-track <id> MIDI instrument track (default first supported track)
+  --help          show this help
+
 ### midi
 cicada midi <score.cicada> [flags]
 

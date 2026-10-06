@@ -2,6 +2,16 @@
 
 export GOWORK := off
 
+# The official SDK stays in build output and is copied into exported plugins.
+.PHONY: build-wam2 test-wam2
+build-wam2: build-kernel-wasm
+	npm install --prefix build/wam2-sdk --ignore-scripts --no-package-lock --no-save @webaudiomodules/sdk@0.0.12
+
+test-wam2: build-wam2
+	node --test host/wam2/processor.test.cjs
+	go test ./host/wam2 ./cmd/cicada -run WAM2 -count=1
+	go test -tags browser ./cmd/cicada -run '^TestBrowserWAM2$$' -count=1 -timeout=3m -v
+
 .PHONY: test-chord-wasm
 .PHONY: build-core build-workstation build-workstation-release test-workstation
 

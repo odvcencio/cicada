@@ -292,6 +292,17 @@ jobs:
           node --version
       - name: M2 parity, browser, and budgets
         run: make test-wasm test-chord-wasm test-browser budget-size budget-browser
+      - name: WAM2 export and reference host
+        env:
+          CICADA_BROWSER_EVIDENCE_DIR: ${{ runner.temp }}/cicada-wam2-evidence
+        run: make test-wam2
+      - name: Save WAM2 GUI evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: wam2-gui-evidence
+          if-no-files-found: error
+          path: ${{ runner.temp }}/cicada-wam2-evidence/*.png
       - name: Save M2 gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
