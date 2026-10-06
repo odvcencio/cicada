@@ -84,7 +84,9 @@ func (s *Sources) readLibraries(overrides map[string][]byte) error {
 					return fail("CICADA-LIB-PATH", "expected a slash-separated library path without traversal", nil)
 				}
 				alias := path.Base(imp.Path)
-				if alias == "builtin" {
+				// Canonical declaration IDs use every path component. The builtin
+				// prefix is reserved for engine drum recipes, as is its import alias.
+				if alias == "builtin" || strings.HasPrefix(imp.Path, "builtin/") {
 					return fail("CICADA-LIB-SHADOW", "builtin is a reserved namespace", nil)
 				}
 				if declarations[scope][alias] {

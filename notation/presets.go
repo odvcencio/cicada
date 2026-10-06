@@ -358,9 +358,9 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 	}
 	effects := make([]Effect, 0, len(s.Effects))
 	for _, e := range s.Effects {
-		// Imported effect declarations are available prototypes. Only routed
-		// or scene-addressed instances belong to this score's audio graph.
-		if (!prototypes[e.Name] && source.Origins[e.Name].Library == "") || routed[e.Name] {
+		// Edition 1 retains imported effects as implicit global returns.
+		// Edition 2 includes imported effects only when routed or scene-addressed.
+		if (!prototypes[e.Name] && (source.Origins[e.Name].Library == "" || s.Version == 1)) || routed[e.Name] {
 			effects = append(effects, e)
 		}
 	}

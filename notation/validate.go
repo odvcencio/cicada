@@ -43,6 +43,7 @@ var scales = map[string]bool{
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) (ds []Diagnostic) {
 	defer func() { LocateDiagnostics(ds, s.Position) }()
+	sourceEffects := s.Effects
 	s, ds = ResolvePresets(s)
 	ds = append(ds, ValidateAudio(s)...)
 	ds = append(ds, ValidateLive(s.Live, s.Tracks)...)
@@ -61,7 +62,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 		add("CICADA-VERSION", "only cicada 1 and 2 are supported", "error", Position{Line: 1, Column: 1})
 	}
 	if s.Version == 2 {
-		for _, effect := range s.Effects {
+		for _, effect := range sourceEffects {
 			if effect.Legacy {
 				add("CICADA-VERSION", "legacy fx shorthand requires an explicit effect kind in edition 2", "error", effect.Position)
 			}
