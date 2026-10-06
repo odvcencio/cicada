@@ -7,7 +7,6 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/graph"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -24,6 +23,15 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		diagnostics = append(diagnostics, ds...)
 		if program != nil {
 			programs[definition.Name] = program
+		}
+	}
+	for _, source := range score.Kits {
+		kit := Kit{ID: source.Name, Lanes: map[string]string{}}
+		for _, binding := range source.Bindings {
+			kit.Lanes[binding.Lane] = binding.Target
+		}
+		if _, err := CompileKit(kit, programs); err != nil {
+			diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Position})
 		}
 	}
 	tracks := make(map[string]notation.Track, len(score.Tracks))
@@ -171,15 +179,8 @@ func checkDelayNotes(program *instrument.Program, track notation.Track, patterns
 		return nil
 	} // the track parameter check already reports it
 	for _, pattern := range patterns {
-		for i := 0; i < int(pattern.Pattern.Len); i++ {
-			step, _ := seq.UnpackStep(pattern.Pattern.Steps[i])
-			if !step.Gate || step.Tie {
-				continue
-			}
-			note := int(step.Note) + int(pattern.Pattern.Transpose)
-			if err := validateGraphDelayNote(lowered, 48_000, note); err != nil {
-				return []notation.Diagnostic{{Code: "CICADA-PARAM", Severity: "error", Position: position, Message: err.Error()}}
-			}
+		if err := ValidateGraphDelayPattern(lowered, 48_000, pattern.Pattern); err != nil {
+			return []notation.Diagnostic{{Code: "CICADA-PARAM", Severity: "error", Position: position, Message: err.Error()}}
 		}
 	}
 	return nil
