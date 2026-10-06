@@ -165,7 +165,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		if graphNeedsDelay(spec.Graph) {
 			capabilities |= DelayCapability
 		}
-		if graphNeedsDDSP(spec.Graph) {
+		if graphNeedsDDSP(&spec.Graph) {
 			capabilities |= DDSPCapability
 		}
 		if spec.Kit != nil {
@@ -173,7 +173,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				if graphNeedsDelay(binding.Program) {
 					capabilities |= DelayCapability
 				}
-				if graphNeedsDDSP(binding.Program) {
+				if graphNeedsDDSP(&binding.Program) {
 					capabilities |= DDSPCapability
 				}
 			}
@@ -859,7 +859,7 @@ func graphNeedsDelay(program graph.Program) bool {
 	return false
 }
 
-func graphNeedsDDSP(program graph.Program) bool {
+func graphNeedsDDSP(program *graph.Program) bool {
 	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
 		if program.Nodes[i].Op == graph.DDSP {
 			return true
@@ -909,7 +909,7 @@ func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, e
 	if graphNeedsDelay(program) && capabilities&DelayCapability == 0 {
 		return program, Error("graph delay operations require capability bit 1")
 	}
-	if graphNeedsDDSP(program) && capabilities&DDSPCapability == 0 {
+	if graphNeedsDDSP(&program) && capabilities&DDSPCapability == 0 {
 		return program, Error("DDSP operations require capability bit 3")
 	}
 	return program, nil

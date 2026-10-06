@@ -29,7 +29,11 @@ func Render(index, blockSize int, output []float32) bool {
 			if i == 2048 {
 				s.Reset()
 			}
-			output[i] = float32(s.Next(f0, l)) * (1.0 / 32768)
+			if i%2 == 0 {
+				output[i] = float32(s.Next(f0, l)) * (1.0 / 32768)
+			} else {
+				output[i] = s.NextFloat(float32(f0)/1000+0.0005, float32(l)/32767)
+			}
 		}
 	}
 	return true

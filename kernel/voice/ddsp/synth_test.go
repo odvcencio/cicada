@@ -150,7 +150,7 @@ func TestFrequencyAndNyquistMask(t *testing.T) {
 	if uint32(0)-s.phase > 48000 {
 		t.Fatalf("phase drift=%d", uint32(0)-s.phase)
 	}
-	// Above 0.49*sr only the first partial is admitted; high input cannot wrap.
+	// At 0.49*sr all partials are excluded; high input cannot wrap the phase step.
 	s.Reset()
 	for i := 0; i < 512; i++ {
 		s.Next(^uint32(0), 65535)

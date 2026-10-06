@@ -177,7 +177,9 @@ func (s *Synth) NextFloat(f0Hz, loudness float32) float32 {
 	if loudness > 1 {
 		loudness = 1
 	}
-	f0 := uint32(f0Hz*1000 + 0.5)
-	l := uint16(loudness*32767 + 0.5)
+	// Explicit rounding prevents native fused multiply-add contraction from
+	// changing a control at a half-integer boundary relative to WASM.
+	f0 := uint32(float32(f0Hz*1000) + 0.5)
+	l := uint16(float32(loudness*32767) + 0.5)
 	return float32(s.Next(f0, l)) * (1.0 / 32768)
 }
