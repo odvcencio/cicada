@@ -21,6 +21,7 @@ async function setup(asset, version, capability) {
     return capability;
   };
   const context = vm.createContext({
+    CICADA_CAPTURE: asset === 'processor-capture.min.js',
     sampleRate: 48000, performance, Date, ArrayBuffer, Uint8Array, Uint32Array, Float32Array, DataView,
     WebAssembly: { instantiate: async () => ({ exports }) },
     AudioWorkletProcessor: class { constructor() { this.port = port = { postMessage: data => messages.push(data), onmessage: null }; } },
@@ -33,7 +34,7 @@ async function setup(asset, version, capability) {
   return { processor, port, messages, exports, counts: () => ({ commits, projectAllocs }) };
 }
 (async () => {
-  for (const asset of ['processor.js', 'processor.min.js']) {
+  for (const asset of ['processor.js', 'processor.min.js', 'processor-capture.min.js']) {
     const old = await setup(asset,14,null);
     assert.match(old.messages.find(m => m.t === 'e').e,/chord image14/);
     assert.equal(old.counts().projectAllocs,0,'unsupported image mutated old kernel');

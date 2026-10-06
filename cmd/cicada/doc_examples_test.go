@@ -4,12 +4,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/language/grammar"
 )
+
+func TestExperimentalPolyphonyDocumentationContainsNoVerificationSnapshot(t *testing.T) {
+	path := filepath.Join(repositoryRoot(), "docs", "experimental-polyphony.md")
+	doc, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	measurements := regexp.MustCompile(`(?i)(?:raw|brotli|worklet)\s*(?:is\s*)?\d+\s*/\s*\d+\s*bytes`)
+	qualification := regexp.MustCompile(`(?i)\b(?:remain|remains|are|is)\s+unverified\b`)
+	if measurements.Match(doc) || qualification.Match(doc) {
+		t.Fatal("keep build measurements and qualification status in PR descriptions or CI artifacts")
+	}
+}
 
 type documentationExample struct {
 	path     string
@@ -57,6 +72,12 @@ func TestDocumentationCicadaExamples(t *testing.T) {
 
 	valid, invalid, accepted := 0, 0, 0
 	temp := t.TempDir()
+	if err := os.Mkdir(filepath.Join(temp, "audio"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(temp, "audio", "example.wav"), testwav.Bytes(48000, 1, 16, 4800, 1), 0600); err != nil {
+		t.Fatal(err)
+	}
 	for index, example := range examples {
 		if example.kind == "cicada-accepted" {
 			accepted++

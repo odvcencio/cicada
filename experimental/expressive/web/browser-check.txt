@@ -1,0 +1,6 @@
+{"executablePath":"/usr/bin/chromium","browserVersion":"151.0.7922.173","headless":true,"acousticListening":false}
+Ready · 44100 Hz · 1024 frames (23.2 ms per callback). Play a note.
+{"instrument":"bow","sliderSweep":{"blocks":30,"nonfinite":0,"energy":1464.6039429451514,"peak":0.93879634141922}}
+{"instrument":"brass","sliderSweep":{"blocks":29,"nonfinite":0,"energy":57.18154470360543,"peak":0.13029013574123383}}
+{"instrument":"guitar","sliderSweep":{"blocks":29,"nonfinite":0,"energy":1341.1179328705077,"peak":0.8930239081382751}}
+PASS: WASM initialization, live audio callbacks, keyboard release, continuous sliders, switch resets/silence; no page errors. No acoustic listening performed.

@@ -4,9 +4,38 @@ import (
 	"bytes"
 	"encoding/json"
 	"m31labs.dev/cicada/notation"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestChordCommentsCompileFromParsedPitches(t *testing.T) {
+	for _, chord := range []string{
+		"[d4 // root\n f4 a4]^?70",
+		"[// pitches\n d4 f4 // third ] is not the closing bracket\n a4 // fifth\n]^ // shared accent\n?70",
+	} {
+		for _, phrase := range []bool{false, true} {
+			source := strings.Replace(chordSource, "[d4 f4 a4]^?70", chord, 1)
+			wantPitches := []int{62, 65, 69}
+			if phrase {
+				source = strings.Replace(source, "pattern harmony notes { "+chord, "phrase triad { "+chord+" }\npattern harmony notes { use triad +12", 1)
+				wantPitches = []int{74, 77, 81}
+			}
+			score, ds := notation.Parse([]byte(source))
+			if score == nil || len(ds) != 0 {
+				t.Fatalf("parse commented chord: %+v", ds)
+			}
+			p, ds := FromScore(score)
+			if p == nil || len(ds) != 0 {
+				t.Fatalf("compile commented chord: %+v", ds)
+			}
+			step := p.Patterns[0].Data[0]
+			if !reflect.DeepEqual(step.Notes, wantPitches) || !step.Accent || step.Probability != 70 {
+				t.Fatalf("comments changed chord semantics: %+v", step)
+			}
+		}
+	}
+}
 
 const chordSource = `tempo 120
 key d minor

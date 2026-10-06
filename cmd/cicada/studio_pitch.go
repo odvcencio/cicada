@@ -45,6 +45,9 @@ func pitchedSource(source []byte, patternID, laneID string, index, pitch int) ([
 				break
 			}
 		}
+		if current != nil && len(current.Notes) > 0 {
+			return nil, fmt.Errorf("chord pitches must be edited in the source editor")
+		}
 		replacement := "."
 		if current == nil || current.Tie || int(current.Note) != pitch {
 			sourceNote := pitch - token.Transpose

@@ -1,8 +1,7 @@
 # Experimental opt-in graph chords
 
-This private candidate adds a bounded source-to-audio vertical slice. It is not
-release or merge approval. Existing `voice mono` behavior and mono project
-images remain the default.
+Opt-in graph tracks support bounded four-voice chords from source to audio.
+Existing `voice mono` behavior and mono project images remain the default.
 
 ```cicada
 instrument piano {
@@ -40,6 +39,8 @@ song { verse }
 - Graph accent metadata is shared. As with legacy graph instruments, a graph
   author controls dynamics through the `velocity` input; there is no separate
   graph `accent` input. MIDI export maps accent to velocity127
+- Studio scalar pitch edits reject chord steps. Edit their pitches in the source
+  editor to preserve the complete chord and its shared modifiers
 
 ## Interchange and host compatibility
 
@@ -68,18 +69,17 @@ kernel, not the source project. Source gate/seed must match that slot's preloade
 metadata (blank-slot defaults are gate55 and the engine seed); mismatches reject
 before producing any commands. Existing opcodes cannot represent a different
 pattern gate/seed. Use a complete image when those values change. The batch
-clears the loaded slot before replacing length/meta/notes, avoiding invalid
-intermediate old-chord/new-slide or transpose states. Submit it as one batch;
-do not interleave a playback callback between its records.
+clears the loaded and replacement step ranges before replacing length/meta/notes,
+avoiding invalid intermediate old-chord/new-slide or transpose states. Submit it
+as one batch; do not interleave a playback callback between its records.
 
-## Verification boundary and inherited limitations
+Fixed pattern banks are validated by address and then copied into engine
+storage, so the engine owns its patterns without whole-bank scalarization.
 
-Tests cover source/JSON/source roundtrip; malformed modes/pitches/counts; voice
-budget; ties/shared chance; scene switches; real image and command uploads;
-stealing/reset/bounds/stale releases; zero native render allocations; one-track
-stems; numeric MIDI pitch/timing export; offline/native block parity; and native
-versus Go1.26 WASI and TinyGo0.41.1/Go1.25.5 reactors. Poly offline probability hashing uses the semantic
-assigned slot, including later scenes and pending gates.
+## Inherited interchange limitations
+
+Poly offline probability hashing uses the semantic assigned slot, including
+later scenes and pending gates.
 
 Inherited mono probability behavior remains untouched. In particular, MIDI
 export deliberately uses iteration0 on repeated pattern steps. Thus realized
@@ -87,12 +87,3 @@ MIDI chance events can differ from playback: the regression with seed7 and a
 one-step `[d4 f4]?50` yields 10 audio cohorts and 16 MIDI cohorts in one bar. This
 is a separately recorded interchange limitation, not chance-event parity.
 The existing mono offline slot0 hashing limitation is also not changed here.
-
-The Go1.26 WASI reactor remains a separate validation artifact. The corrected
-TinyGo build uses the existing flags and size caps: raw277015/307200 bytes,
-Brotli82297/122880 bytes. Fixed pattern banks are validated by address and then
-copied into engine storage, avoiding TinyGo scalarizing an entire value-copied
-16-slot chord bank; no payload, validation, or feature is removed. The minified
-worklet is5119/5120 bytes. Actual browser AudioWorklet performance, the Windows
-Chrome release CPU gate, keyboard interaction, and formal Buckley review remain
-unverified. No mono golden is regenerated and no merge/release/host job occurs.
