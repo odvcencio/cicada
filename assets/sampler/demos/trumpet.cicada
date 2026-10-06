@@ -10,7 +10,7 @@ seed 4242
 
 sampler sound {
   pack = "packs/trumpet/manifest.json"
-  sha256 = "4a40d2a4df6f84a103242c7d0ae0e113d05fa09f3c31af61634674a661d13720"
+  sha256 = "e1894b3df5c264d85efa6518f16090d07a81fd45f3aa27b32d7da27485a6b0d7"
   root = c4
   voices = 16
 }
@@ -21,7 +21,7 @@ track lead sound {
 
 pattern demo {
   gate = 65%
-  c3 . e3 . g3 . c4 . | d4 . c4 . g3 . e3 . | c3 c3 e3 e3 g3 . c4 .
+  c4 . e4 . g4 . c5 . | d5 . c5 . g4 . e4 . | c4 c4 e4 e4 g4 . c5 .
 }
 
 scene main {

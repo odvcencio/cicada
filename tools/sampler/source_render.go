@@ -76,7 +76,7 @@ func main() {
 			}
 		}
 		f.Close()
-		fmt.Printf("%s asset=%s frames=%d velocity=%d\n", name, p.Manifest.Zones[chosen].Asset, frames, z.Layer)
+		fmt.Printf("%s asset=%s frames=%d velocity=%d root=%d\n", name, p.Manifest.Zones[chosen].Asset, frames, z.Layer, z.Region.RootKey)
 	}
 }
 func abs(x int) int {

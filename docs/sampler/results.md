@@ -18,7 +18,7 @@ Velocity fixtures cover all 128 velocities and crossfade boundaries. Round-robin
 
 SRC ratios are 0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4 and the 44.1/48 kHz conversions. The stopband figure refers to the downsampling sweep; the other ratios use the residual measurement. These gates reuse the existing windowed-sinc resampler rather than adding a second resampler.
 
-Selected root notes are also compared against the licensed original recordings decoded to 48 kHz float32. The first 128 attack frames and loop transitions are excluded. Significant spectral bins are within 0.00444 dB, significant 10 ms envelope frames within 0.000087 dB, and relative conversion/playback residual is at most -108.68 dB. The separate source-comparison gates are 0.1 dB spectral, 0.01 dB envelope and -75 dB residual. Exact selections, source URLs/hashes, tail RMS and DC measurements are in [the source report](evidence/source-reference.json). A sounding recording's excerpt tail is not an isolated noise-floor measurement; source noise, room sound and decay are preserved, not removed or claimed silent.
+Selected root notes are also compared against the licensed original recordings decoded to 48 kHz float32. The first 128 attack frames and loop transitions are excluded. Significant spectral bins are within 0.02228 dB, significant 10 ms envelope frames within 0.000206 dB, and relative conversion/playback residual is at most -106.33 dB. The separate source-comparison gates are 0.1 dB spectral, 0.01 dB envelope and -75 dB residual. The five selected tonal roots are within 10.43 cents of sounding MIDI pitch (gate: 35 cents, periodicity confidence >=0.8). This check rejects the earlier filename-octave assumptions by about 1,200 cents for piano/bass/trumpet. It qualifies those selected recordings, not every articulation or piano endpoint. Exact selections, source URLs/hashes, pitch, tail RMS and DC measurements are in [the source report](evidence/source-reference.json). A sounding recording's excerpt tail is not an isolated noise-floor measurement; source noise, room sound and decay are preserved, not removed or claimed silent.
 
 ## Runtime and size
 
@@ -40,7 +40,7 @@ Pinned CI Chromium 152.0.7977.64 passes actual AudioWorklet output/scheduling, e
 | Production kernel, Brotli | 80,800 B | 80,800 B | 0 B |
 | Optional sampler module, raw | Absent | 31,553 B | +31,553 B, separate module |
 
-The main raw budget remains 300 KiB; the optional module has a separate 64 KiB gate. Audio is external: 316 compressed assets total 264,739,133 B. [The catalog](../../assets/sampler/README.md) lists individual pack sizes, recording coverage, provenance and licences. Code is MIT; every recording is CC0-1.0. No impulse responses or proprietary reference recordings are distributed.
+The main raw budget remains 300 KiB; the optional module has a separate 64 KiB gate. Audio is external: 361 compressed assets total 290,679,811 B. [The catalog](../../assets/sampler/README.md) lists individual pack sizes, recording coverage, provenance and licences. Code is MIT; every recording is CC0-1.0. No impulse responses or proprietary reference recordings are distributed.
 
 Reproduce the source comparisons after building the pinned packs (NumPy and FFmpeg are required):
 

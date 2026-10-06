@@ -4,16 +4,16 @@
     {
       "id": "grand",
       "manifest": "grand/manifest.json",
-      "sha256": "08073ba8347e43aa20f9bdb437f10a95e9ce548cef79fa09abbf53ee16a3ee07",
-      "assets": 79,
-      "compressed_bytes": 74955796,
-      "pcm_bytes": 158992024,
+      "sha256": "1389e182f19bb0235ae3cf535434afee8ff2961f160c56042210ab18361402b6",
+      "assets": 84,
+      "compressed_bytes": 79386196,
+      "pcm_bytes": 155649208,
       "license": "CC0-1.0"
     },
     {
       "id": "nylon",
       "manifest": "nylon/manifest.json",
-      "sha256": "f3d118676730ae76bae5d4db97774ab25459433fb920fc57586f470335e282f9",
+      "sha256": "f60df9a609fe87f479922b77cebd4cdc084ec6c8ae4134231203f7850abca9b6",
       "assets": 31,
       "compressed_bytes": 13222317,
       "pcm_bytes": 19636248,
@@ -22,10 +22,10 @@
     {
       "id": "bass",
       "manifest": "bass/manifest.json",
-      "sha256": "19ec495747ca4418280abce0c10942ee0adb85c27a725ac89bbe0d9c912ecac7",
-      "assets": 140,
-      "compressed_bytes": 77285854,
-      "pcm_bytes": 113328548,
+      "sha256": "8d8ddae6d577ed6aba313752f817801acfffdf305d4201ca7c7ce4ef6fab8883",
+      "assets": 180,
+      "compressed_bytes": 98796132,
+      "pcm_bytes": 146117712,
       "license": "CC0-1.0"
     },
     {
@@ -40,7 +40,7 @@
     {
       "id": "violin",
       "manifest": "violin/manifest.json",
-      "sha256": "d038e1e6c94e9855233a0b0b8605d727195c5ff6129705f8491e5f139ed560bc",
+      "sha256": "1ed859eddf261fa241d5452cf778666b67b529e22a7e2d27f0db159228a8ef60",
       "assets": 22,
       "compressed_bytes": 46638714,
       "pcm_bytes": 67584000,
@@ -49,7 +49,7 @@
     {
       "id": "trumpet",
       "manifest": "trumpet/manifest.json",
-      "sha256": "4a40d2a4df6f84a103242c7d0ae0e113d05fa09f3c31af61634674a661d13720",
+      "sha256": "e1894b3df5c264d85efa6518f16090d07a81fd45f3aa27b32d7da27485a6b0d7",
       "assets": 16,
       "compressed_bytes": 33758832,
       "pcm_bytes": 48302184,
