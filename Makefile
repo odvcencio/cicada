@@ -10,6 +10,8 @@ ENGINE_METRICS_ARGS ?=
 
 test:
 	go test ./... -count=1
+	node --test cmd/cicada/studio-chord-grid.test.cjs
+	node host/web/chord_capability_test.cjs
 
 engine-metrics:
 	GOMAXPROCS=1 go run ./cmd/cicada-engine-metrics $(ENGINE_METRICS_ARGS)
@@ -63,6 +65,7 @@ build-loudness-wasm:
 	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-loudness.wasm ./cmd/cicada-loudness-wasm
 
 test-kernel-wasm: build-kernel-wasm build-loudness-wasm
+	CICADA_CHORD_WASM_PATH=$(CURDIR)/build/cicada-kernel.wasm go test -timeout=3m -tags chord_wasm ./cmd/cicada-kernel-wasm -count=1
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
 
