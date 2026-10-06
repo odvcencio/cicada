@@ -142,7 +142,7 @@ func Cicada() *grammargen.Grammar {
 	// A step is a rest, a tie, a bar line (which takes no time), or a note.
 	// A note is a scale degree or a letter pitch, then octave marks, then
 	// modifiers: accent ^, slide ~, ratchet *n, and chance ?n (%n is legacy).
-	g.Define("acid_step", choice(str("."), str("-"), str("|"), sym("acid_note")))
+	g.Define("acid_step", choice(str("."), str("-"), str("|"), sym("acid_note"), sym("chord_note")))
 	g.Define("acid_note", seq(field("pitch", sym("pitch")), repeat(sym("octave_shift")), repeat(sym("modifier"))))
 	g.Define("pitch", choice(sym("degree"), sym("letter_pitch")))
 	g.Define("degree", token(pat(`[1-7][#b]?`)))
@@ -204,6 +204,9 @@ func Cicada() *grammargen.Grammar {
 	g.Define("live_attack", seq(str("attack"), field("value", sym("bar_count")), optional(str(";"))))
 	g.Define("live_release", seq(str("release"), field("value", sym("bar_count")), optional(str(";"))))
 	g.Define("bar_count", token(pat(`-?[0-9]+(\.[0-9]+)?bars?`)))
+
+	g.Define("chord_note", seq(str("["), repeat(sym("chord_pitch")), str("]"), repeat(sym("modifier"))))
+	g.Define("chord_pitch", seq(sym("pitch"), repeat(sym("octave_shift"))))
 
 	g.SetExtras(pat(`[ \t\r\n]+`), sym("comment"))
 	g.SetWord("identifier")
