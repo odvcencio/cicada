@@ -675,7 +675,23 @@
         },
         "lanes": {
           "$ref": "#/$defs/lane_map"
+        },
+        "expression": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/note_expression"}
         }
+      }
+    },
+    "note_expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pitch_cents", "pressure", "timbre", "vibrato_depth_cents"],
+      "properties": {
+        "pitch_cents": {"type": "number", "minimum": -9600, "maximum": 9600},
+        "pressure": {"type": "number", "minimum": 0, "maximum": 1},
+        "timbre": {"type": "number", "minimum": 0, "maximum": 1},
+        "vibrato_depth_cents": {"type": "number", "minimum": 0, "maximum": 9600}
       }
     },
     "scene": {

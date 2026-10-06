@@ -125,11 +125,11 @@ func Cicada() *grammargen.Grammar {
 	))
 	g.Define("acid_pattern", seq(
 		str("pattern"), field("name", sym("_name")), str("acid"), repeat(sym("pattern_attr")),
-		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(sym("expression_row")), str("}"),
 	))
 	g.Define("note_pattern", seq(
 		str("pattern"), field("name", sym("_name")), optional(str("notes")), repeat(sym("pattern_attr")),
-		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(sym("expression_row")), str("}"),
 	))
 	g.Define("phrase_use", seq(
 		str("use"), field("name", sym("_name")),
@@ -144,6 +144,16 @@ func Cicada() *grammargen.Grammar {
 		str("{"), repeat(sym("pattern_attr")), repeat(sym("drum_lane")), str("}"),
 	))
 	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", choice(sym("number"), sym("fraction")))))
+
+	// Expression rows follow the melodic cells. Joined labels delimit rows
+	// even when semicolons and newlines are omitted.
+	g.Define("expression_row", seq(
+		choice(field("name", sym("expression_row_label")), seq(field("name", sym("identifier")), str(":"))),
+		repeat(sym("expression_cell")), optional(str(";")),
+	))
+	g.Define("expression_row_label", token(prec(3, pat(`(bend|vibrato|pressure|timbre):`))))
+	g.Define("expression_cell", choice(str("."), sym("expression_number")))
+	g.Define("expression_number", token(pat(`[+-]?[0-9]+(\.[0-9]+)?(ct)?`)))
 
 	// A step is a rest, a tie, a bar line (which takes no time), or a note.
 	// A note is a scale degree or a letter pitch, then octave marks, then

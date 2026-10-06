@@ -113,6 +113,20 @@ MIDI permission and mappings belong to the browser session. The source-level
 `midi {}` mapping syntax is accepted for later work; it is not available in the
 current parser.
 
+Live accepts MIDI Polyphonic Expression (MPE) lower and upper zones. Send the
+controller's MPE zone setup (RPN 0,6) before playing. Member-channel pitch bend
+uses a default range of ±48 semitones; pitch-bend sensitivity RPN 0,0 overrides
+that range. Channel pressure, polyphonic pressure, and CC74 become per-note
+pressure and timbre. Each input device, channel, and note-on has its own note
+identity, so equal pitches on different channels remain independent.
+
+Without a zone setup, expression received on a non-master channel enables the
+default lower zone. Until expression or zone setup identifies MPE, channel 10
+keeps its General MIDI drum routing. Choose a monophonic programmable instrument
+track or an acid track as the note destination. Experimental poly tracks cannot
+audition MPE input live. Web MIDI supplies MIDI 1 packets; this
+input does not decode MIDI 2 Universal MIDI Packets.
+
 #### Record and Arm
 
 Start playback before recording. Check **Arm** for each track that should
@@ -121,9 +135,10 @@ recording** to preview the buffered notes. Choose **Commit take** to write the
 notes into the score or **Discard** to clear the buffer. Nothing reaches the
 score before Commit.
 
-MIDI take commits currently support acid and drum tracks. Custom/poly tracks
-are refused without changing the score; edit their chords in the grid or source
-pane instead. Chord recording is not available through the scalar take editor.
+Ordinary MIDI take commits support acid and drum tracks. Expressive takes also
+support programmable instrument tracks with scalar note patterns. Existing
+chord patterns are refused without changing the score; edit their chords in
+the grid or source pane. Chord recording is not available through the take editor.
 
 Drum takes keep simultaneous hits on separate lanes and quantize velocity to
 the nearest supported drum level. Acid takes save pitch and overlapping slides
@@ -131,6 +146,26 @@ at the score format's fixed velocity. The preview explains that arbitrary MIDI
 velocity cannot be saved for acid notation. Live MIDI playback still uses
 incoming velocity. Live records MIDI note takes. Browser PCM capture is in the
 Record panel.
+
+Expression takes write `bend:`, `vibrato:`, `pressure:`, and `timbre:` rows and
+use ties for held notes. Samples and note durations quantize to the pattern's
+step grid. A one-way bend keeps its cents value. Pitch samples with at least
+two direction reversals within a step become a bend center and vibrato depth;
+playback uses the score's fixed 5 Hz vibrato rate. Other steps use `0ct` vibrato
+depth. This estimate preserves depth rather than the original oscillation rate
+or every controller sample. The raw samples remain in the page's take buffer
+until commit or discard.
+
+Expression takes use one note per step. Studio keeps the take buffered and
+refuses to commit overlapping expressive notes, notes that occupy the same
+quantized step, or notes longer than one pattern loop. Record those voices into
+separate tracks and patterns without chord steps. Expression recording also
+requires directly authored note steps rather than a reused phrase. Ordinary acid takes retain
+their existing overlapping-slide behavior.
+
+![A committed MPE take adds bend, vibrato, pressure, and timbre rows beside the pitch grid.](screenshots/studio-mpe-score.png)
+
+![The recorded take preview and commit controls at 390 pixels wide.](screenshots/studio-mpe-mobile-390.png)
 
 #### PCM capture and shared sampler audition
 

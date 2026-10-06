@@ -37,12 +37,17 @@ test-alloc:
 
 test-timing:
 	go test ./kernel/seq ./kernel/engine -run 'Test.*(Clock|Timing|Tick|Tempo|Quantize|Gate|Slide|Chain|Mask|Block|Swing|Ratchet|Tie|Probability|Restart|Scene)' -count=1 -v
+	CICADA_WALLCLOCK_TIMING=1 go test ./kernel/amp -run '^TestAmpP99BlockBudget$$' -count=1 -v
 
 test-golden:
 	go run ./cmd/cicada golden
 
 test-midi-virtual: build
 	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-midi-virtual.cjs
+
+.PHONY: test-mpe-virtual
+test-mpe-virtual: build
+	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-mpe-virtual.cjs
 
 # This builds only the sequencer probe, not the eventual audio kernel.
 probe-wasm:
