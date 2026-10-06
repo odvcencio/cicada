@@ -48,7 +48,7 @@ func TestDelayCapabilityImage(t *testing.T) {
 		if _, err := kernelimage.Decode(data, rate, 128); err == nil {
 			t.Fatal("delay image accepted without capability")
 		}
-		data[30] = 4
+		data[30] = 8
 		if _, err := kernelimage.Decode(data, rate, 128); err == nil {
 			t.Fatal("unknown capability accepted")
 		}

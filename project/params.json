@@ -6,7 +6,8 @@
     "voices": [
       "acid",
       "drums",
-      "instrument"
+      "instrument",
+      "piano"
     ],
     "source": "level",
     "unit": "dB",
@@ -29,7 +30,8 @@
     "voices": [
       "acid",
       "drums",
-      "instrument"
+      "instrument",
+      "piano"
     ],
     "source": "pan",
     "unit": "",
@@ -51,7 +53,8 @@
     "voices": [
       "acid",
       "drums",
-      "instrument"
+      "instrument",
+      "piano"
     ],
     "source": "send",
     "unit": "",
@@ -73,7 +76,8 @@
     "voices": [
       "acid",
       "drums",
-      "instrument"
+      "instrument",
+      "piano"
     ],
     "source": "send",
     "unit": "",
@@ -95,7 +99,8 @@
     "voices": [
       "acid",
       "drums",
-      "instrument"
+      "instrument",
+      "piano"
     ],
     "source": "mute",
     "unit": "",
@@ -116,7 +121,8 @@
     "voices": [
       "acid",
       "drums",
-      "instrument"
+      "instrument",
+      "piano"
     ],
     "source": "solo",
     "unit": "",
@@ -137,7 +143,8 @@
     "voices": [
       "acid",
       "drums",
-      "instrument"
+      "instrument",
+      "piano"
     ],
     "source": "send_pre",
     "unit": "",
@@ -162,7 +169,8 @@
     "voices": [
       "acid",
       "drums",
-      "instrument"
+      "instrument",
+      "piano"
     ],
     "source": "bus",
     "unit": "",
@@ -187,7 +195,8 @@
     "voices": [
       "acid",
       "drums",
-      "instrument"
+      "instrument",
+      "piano"
     ],
     "source": "insert",
     "unit": "",
@@ -2537,6 +2546,25 @@
     "smoothing_ms": 0,
     "live": false,
     "automatable": false,
+    "persist": "source"
+  },
+  {
+    "id": "piano.sustain",
+    "path": "sustain",
+    "scope": "track",
+    "voices": [
+      "piano"
+    ],
+    "source": "sustain",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 0,
+    "live": true,
+    "automatable": true,
     "persist": "source"
   }
 ]
