@@ -1,0 +1,2630 @@
+{
+  "articulations": [
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "kick",
+      "note": 36,
+      "round_robins": 3,
+      "source": "KDrumR"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "kick_left",
+      "note": 35,
+      "round_robins": 3,
+      "source": "KDrumL"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 8,
+      "name": "snare_center",
+      "note": 38,
+      "round_robins": 3,
+      "source": "Snare"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "snare_rimshot",
+      "note": 40,
+      "round_robins": 3,
+      "source": "SnareRimShot"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "snare_rim",
+      "note": 31,
+      "round_robins": 3,
+      "source": "SnareRim"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "tom_high",
+      "note": 48,
+      "round_robins": 3,
+      "source": "Tom1"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "tom_mid",
+      "note": 45,
+      "round_robins": 3,
+      "source": "Tom2"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "tom_floor",
+      "note": 43,
+      "round_robins": 3,
+      "source": "FTom1"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "tom_low_floor",
+      "note": 41,
+      "round_robins": 3,
+      "source": "FTom2"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 1,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "hat_closed",
+      "note": 42,
+      "round_robins": 3,
+      "source": "HihatClosed"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 1,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "hat_loose",
+      "note": 22,
+      "round_robins": 3,
+      "source": "HihatClosedNoPedal"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 1,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "hat_half_open",
+      "note": 23,
+      "round_robins": 3,
+      "source": "HihatSemiOpen"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 1,
+      "kind": "recorded",
+      "layers": 6,
+      "name": "hat_open",
+      "note": 46,
+      "round_robins": 3,
+      "source": "HihatOpen"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 1,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "hat_pedal",
+      "note": 44,
+      "round_robins": 2,
+      "source": "HihatPedal"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 7,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "ride_bow",
+      "note": 51,
+      "round_robins": 2,
+      "source": "RideR"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 7,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "ride_bell",
+      "note": 53,
+      "round_robins": 2,
+      "source": "RideRBell"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 2,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "crash_left",
+      "note": 49,
+      "round_robins": 3,
+      "source": "CrashL"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 3,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "crash_right",
+      "note": 57,
+      "round_robins": 3,
+      "source": "CrashR"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 4,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "splash",
+      "note": 55,
+      "round_robins": 2,
+      "source": "SplashL"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 5,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "splash_right",
+      "note": 32,
+      "round_robins": 2,
+      "source": "SplashR"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 6,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "china",
+      "note": 52,
+      "round_robins": 3,
+      "source": "ChinaR"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 2,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "crash_left_stopped",
+      "note": 24,
+      "round_robins": 2,
+      "source": "CrashLStopped"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 3,
+      "kind": "recorded",
+      "layers": 4,
+      "name": "crash_right_stopped",
+      "note": 25,
+      "round_robins": 2,
+      "source": "CrashRStopped"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "recorded",
+      "layers": 1,
+      "name": "snare_cross_stick",
+      "note": 37,
+      "round_robins": 2,
+      "source": "VCSL Snare4 Xstick"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "mapped subset",
+      "layers": 2,
+      "limitation": "Quiet center hits",
+      "name": "snare_ghost",
+      "note": 34,
+      "round_robins": 3,
+      "source": "Snare"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 7,
+      "kind": "mapped subset",
+      "layers": 2,
+      "limitation": "Hard bow hits; no separately labeled edge/crash-ride recordings",
+      "name": "ride_crash",
+      "note": 59,
+      "round_robins": 2,
+      "source": "RideR"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "GM alias",
+      "layers": 6,
+      "name": "tom_mid_gm",
+      "note": 47,
+      "round_robins": 3,
+      "source": "Tom2"
+    },
+    {
+      "bank": "full-kit-shells",
+      "choke_group": 0,
+      "kind": "GM alias",
+      "layers": 6,
+      "name": "tom_high_gm",
+      "note": 50,
+      "round_robins": 3,
+      "source": "Tom1"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 2,
+      "kind": "silent choke control",
+      "layers": 0,
+      "name": "crash_left_choke",
+      "note": 26,
+      "round_robins": 0,
+      "source": "CrashL"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 3,
+      "kind": "silent choke control",
+      "layers": 0,
+      "name": "crash_right_choke",
+      "note": 27,
+      "round_robins": 0,
+      "source": "CrashR"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 4,
+      "kind": "silent choke control",
+      "layers": 0,
+      "name": "splash_choke",
+      "note": 28,
+      "round_robins": 0,
+      "source": "SplashL"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 5,
+      "kind": "silent choke control",
+      "layers": 0,
+      "name": "splash_right_choke",
+      "note": 29,
+      "round_robins": 0,
+      "source": "SplashR"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 6,
+      "kind": "silent choke control",
+      "layers": 0,
+      "name": "china_choke",
+      "note": 30,
+      "round_robins": 0,
+      "source": "ChinaR"
+    },
+    {
+      "bank": "full-kit-metals",
+      "choke_group": 7,
+      "kind": "silent choke control",
+      "layers": 0,
+      "name": "ride_choke",
+      "note": 33,
+      "round_robins": 0,
+      "source": "RideR"
+    }
+  ],
+  "format": "cicada.full-kit/1",
+  "packs": [
+    {
+      "assets": 164,
+      "compressed_bytes": 60626915,
+      "id": "full-kit-shells",
+      "manifest": "full-kit-shells/manifest.json",
+      "pcm_bytes": 203902040,
+      "sha256": "e83e70037b3f7e140280e9335ac91f80e1fbfc329faef911b05961fceb0135fc",
+      "zones": 206
+    },
+    {
+      "assets": 158,
+      "compressed_bytes": 82062591,
+      "id": "full-kit-metals",
+      "manifest": "full-kit-metals/manifest.json",
+      "pcm_bytes": 252660624,
+      "sha256": "3949571269506466fae2c4eba4e54ede9b755920aa178b7a2dfd8321086d6253",
+      "zones": 168
+    }
+  ],
+  "processing": "48 kHz stereo, no decay trimming or normalization; 5 ms ending fade; source power-ranked hits partitioned into velocity/take bands",
+  "selections": [
+    {
+      "asset": "kdrumr-1",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/1-KDrumR.wav",
+      "power": 0.00833794,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-4",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/4-KDrumR.wav",
+      "power": 0.0751456,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-7",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/7-KDrumR.wav",
+      "power": 0.337554,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-9",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/9-KDrumR.wav",
+      "power": 0.427582,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-12",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/12-KDrumR.wav",
+      "power": 0.570584,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-15",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/15-KDrumR.wav",
+      "power": 0.735845,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-18",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/18-KDrumR.wav",
+      "power": 0.859598,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-21",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/21-KDrumR.wav",
+      "power": 1.06387,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-24",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/24-KDrumR.wav",
+      "power": 1.37812,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-26",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/26-KDrumR.wav",
+      "power": 1.53886,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-29",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/29-KDrumR.wav",
+      "power": 1.73131,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-32",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/32-KDrumR.wav",
+      "power": 2.50779,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-35",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/35-KDrumR.wav",
+      "power": 2.8324,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-38",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/38-KDrumR.wav",
+      "power": 3.07043,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-41",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/41-KDrumR.wav",
+      "power": 3.66706,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-43",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/43-KDrumR.wav",
+      "power": 3.85663,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-46",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/46-KDrumR.wav",
+      "power": 4.36538,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdrumr-49",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumR/samples/49-KDrumR.wav",
+      "power": 4.84377,
+      "xml_sha256": "ad0867ee2d4c507620886f0f227183374738afb9a63c8e3e9fc3dfbc082b669a"
+    },
+    {
+      "asset": "kdruml-1",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/1-KDrumL.wav",
+      "power": 0.00891907,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-4",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/4-KDrumL.wav",
+      "power": 0.0763539,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-7",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/7-KDrumL.wav",
+      "power": 0.154785,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-10",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/10-KDrumL.wav",
+      "power": 0.417196,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-13",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/13-KDrumL.wav",
+      "power": 0.721125,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-16",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/16-KDrumL.wav",
+      "power": 0.946879,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-19",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/19-KDrumL.wav",
+      "power": 1.16884,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-22",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/22-KDrumL.wav",
+      "power": 1.45381,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-25",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/25-KDrumL.wav",
+      "power": 1.65384,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-27",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/27-KDrumL.wav",
+      "power": 2.21245,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-30",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/30-KDrumL.wav",
+      "power": 2.55714,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-33",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/33-KDrumL.wav",
+      "power": 3.10467,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-36",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/36-KDrumL.wav",
+      "power": 3.19645,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-39",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/39-KDrumL.wav",
+      "power": 3.40011,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-42",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/42-KDrumL.wav",
+      "power": 3.89741,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-45",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/45-KDrumL.wav",
+      "power": 4.45633,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-48",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/48-KDrumL.wav",
+      "power": 4.9237,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "kdruml-51",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/KDrumL/samples/51-KDrumL.wav",
+      "power": 6.26855,
+      "xml_sha256": "1af7060efc29aecbec8ea328ccf92ebeffcc93f43b0e336d5d5c3e1a1088b8a3"
+    },
+    {
+      "asset": "snare-1",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/1-Snare.wav",
+      "power": 0.00985718,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-5",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/5-Snare.wav",
+      "power": 0.0186221,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-9",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/9-Snare.wav",
+      "power": 0.0803186,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-14",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/14-Snare.wav",
+      "power": 0.22282,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-18",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/18-Snare.wav",
+      "power": 0.322313,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-22",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/22-Snare.wav",
+      "power": 0.379897,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-26",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/26-Snare.wav",
+      "power": 0.509356,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-31",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/31-Snare.wav",
+      "power": 0.618736,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-35",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/35-Snare.wav",
+      "power": 0.66006,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-39",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/39-Snare.wav",
+      "power": 0.821344,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-43",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/43-Snare.wav",
+      "power": 0.96253,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-47",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/47-Snare.wav",
+      "power": 1.03336,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-52",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/52-Snare.wav",
+      "power": 1.11941,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-56",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/56-Snare.wav",
+      "power": 1.13778,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-60",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/60-Snare.wav",
+      "power": 1.26058,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-64",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/64-Snare.wav",
+      "power": 1.48559,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-68",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/68-Snare.wav",
+      "power": 1.57273,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-73",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/73-Snare.wav",
+      "power": 1.90179,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-77",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/77-Snare.wav",
+      "power": 2.02492,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-81",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/81-Snare.wav",
+      "power": 2.10502,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-85",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/85-Snare.wav",
+      "power": 2.25177,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-90",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/90-Snare.wav",
+      "power": 2.5932,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-94",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/94-Snare.wav",
+      "power": 2.94348,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snare-98",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Snare/samples/98-Snare.wav",
+      "power": 3.29455,
+      "xml_sha256": "4bffaf8759255ccbb1a89f1575d920f07347595e54992cc41c032ba45cc18f0a"
+    },
+    {
+      "asset": "snarerimshot-1",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/1-SnareRimShot.wav",
+      "power": 0.00187115,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-2",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/2-SnareRimShot.wav",
+      "power": 0.110043,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-3",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/3-SnareRimShot.wav",
+      "power": 0.427527,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-4",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/4-SnareRimShot.wav",
+      "power": 0.888807,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-5",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/5-SnareRimShot.wav",
+      "power": 0.962207,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-6",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/6-SnareRimShot.wav",
+      "power": 0.976914,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-8",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/8-SnareRimShot.wav",
+      "power": 2.40433,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-9",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/9-SnareRimShot.wav",
+      "power": 2.50341,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-10",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/10-SnareRimShot.wav",
+      "power": 2.70148,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-11",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/11-SnareRimShot.wav",
+      "power": 3.30232,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-12",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/12-SnareRimShot.wav",
+      "power": 3.85223,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerimshot-13",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRimShot/samples/13-SnareRimShot.wav",
+      "power": 4.65084,
+      "xml_sha256": "71bcb972b9c6be1a811fda2f4ed2eb9514611cff5060d8955cb6274771b2866e"
+    },
+    {
+      "asset": "snarerim-1",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/1-SnareRim.wav",
+      "power": 0.00543281,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-2",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/2-SnareRim.wav",
+      "power": 0.00756072,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-3",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/3-SnareRim.wav",
+      "power": 0.013727,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-4",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/4-SnareRim.wav",
+      "power": 0.0269733,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-5",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/5-SnareRim.wav",
+      "power": 0.0293965,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-6",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/6-SnareRim.wav",
+      "power": 0.0432173,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-7",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/7-SnareRim.wav",
+      "power": 0.0524995,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-8",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/8-SnareRim.wav",
+      "power": 0.0600642,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-9",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/9-SnareRim.wav",
+      "power": 0.0701587,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-10",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/10-SnareRim.wav",
+      "power": 0.0722391,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-11",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/11-SnareRim.wav",
+      "power": 0.0845248,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-12",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/12-SnareRim.wav",
+      "power": 0.0893936,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-13",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/13-SnareRim.wav",
+      "power": 0.0990958,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-14",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/14-SnareRim.wav",
+      "power": 0.103276,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-15",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/15-SnareRim.wav",
+      "power": 0.125404,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-16",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/16-SnareRim.wav",
+      "power": 0.152136,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-17",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/17-SnareRim.wav",
+      "power": 0.157658,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "snarerim-18",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/SnareRim/samples/18-SnareRim.wav",
+      "power": 0.164104,
+      "xml_sha256": "974bea32eb354b1e5d6c6be85b79d41d06a500f7380e766bc7032d9142302f45"
+    },
+    {
+      "asset": "tom1-1",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/1-Tom1.wav",
+      "power": 0.0224954,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-4",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/4-Tom1.wav",
+      "power": 0.148808,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-6",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/6-Tom1.wav",
+      "power": 0.255878,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-9",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/9-Tom1.wav",
+      "power": 0.639363,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-11",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/11-Tom1.wav",
+      "power": 0.80127,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-14",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/14-Tom1.wav",
+      "power": 0.948172,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-17",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/17-Tom1.wav",
+      "power": 1.3979,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-19",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/19-Tom1.wav",
+      "power": 1.71129,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-22",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/22-Tom1.wav",
+      "power": 1.95251,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-24",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/24-Tom1.wav",
+      "power": 2.32758,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-27",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/27-Tom1.wav",
+      "power": 2.66111,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-29",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/29-Tom1.wav",
+      "power": 2.80926,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-32",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/32-Tom1.wav",
+      "power": 3.37619,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-35",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/35-Tom1.wav",
+      "power": 3.5976,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-37",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/37-Tom1.wav",
+      "power": 3.72567,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-40",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/40-Tom1.wav",
+      "power": 4.1722,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-42",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/42-Tom1.wav",
+      "power": 4.73266,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom1-45",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom1/samples/45-Tom1.wav",
+      "power": 5.54889,
+      "xml_sha256": "5651e047faf3736a4a6766abf80b066b0e2caea9c8fd2a75597c13edc35c3bb6"
+    },
+    {
+      "asset": "tom2-1",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/1-Tom2.wav",
+      "power": 0.0371475,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-3",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/3-Tom2.wav",
+      "power": 0.0424079,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-5",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/5-Tom2.wav",
+      "power": 0.177029,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-8",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/8-Tom2.wav",
+      "power": 0.204162,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-10",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/10-Tom2.wav",
+      "power": 0.405242,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-12",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/12-Tom2.wav",
+      "power": 0.638142,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-14",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/14-Tom2.wav",
+      "power": 0.769146,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-17",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/17-Tom2.wav",
+      "power": 1.04703,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-19",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/19-Tom2.wav",
+      "power": 1.51298,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-21",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/21-Tom2.wav",
+      "power": 1.61398,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-23",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/23-Tom2.wav",
+      "power": 1.82434,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-26",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/26-Tom2.wav",
+      "power": 1.97908,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-28",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/28-Tom2.wav",
+      "power": 2.25762,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-30",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/30-Tom2.wav",
+      "power": 2.28665,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-32",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/32-Tom2.wav",
+      "power": 2.44901,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-35",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/35-Tom2.wav",
+      "power": 2.95276,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-37",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/37-Tom2.wav",
+      "power": 3.62368,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "tom2-39",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/Tom2/samples/39-Tom2.wav",
+      "power": 3.85788,
+      "xml_sha256": "ceae64ac540865fe168791715e2dc9743bdd67f404e8b8522ca65150f8d09200"
+    },
+    {
+      "asset": "ftom1-1",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/1-FTom1.wav",
+      "power": 0.00851433,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-3",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/3-FTom1.wav",
+      "power": 0.0178941,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-4",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/4-FTom1.wav",
+      "power": 0.034881,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-6",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/6-FTom1.wav",
+      "power": 0.0657158,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-8",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/8-FTom1.wav",
+      "power": 0.0862168,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-9",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/9-FTom1.wav",
+      "power": 0.0995491,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-11",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/11-FTom1.wav",
+      "power": 0.24826,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-13",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/13-FTom1.wav",
+      "power": 0.291009,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-14",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/14-FTom1.wav",
+      "power": 0.330963,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-16",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/16-FTom1.wav",
+      "power": 0.442347,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-17",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/17-FTom1.wav",
+      "power": 0.512053,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-19",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/19-FTom1.wav",
+      "power": 0.580147,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-21",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/21-FTom1.wav",
+      "power": 0.799002,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-22",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/22-FTom1.wav",
+      "power": 1.08801,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-24",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/24-FTom1.wav",
+      "power": 1.14736,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-26",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/26-FTom1.wav",
+      "power": 1.34086,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-27",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/27-FTom1.wav",
+      "power": 1.631,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom1-29",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom1/samples/29-FTom1.wav",
+      "power": 2.14108,
+      "xml_sha256": "44027e1d94bb7b61a65e4d566ff63b456cc24e0091d720065a20521cb608d0f5"
+    },
+    {
+      "asset": "ftom2-1",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/1-FTom2.wav",
+      "power": 0.01726,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-3",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/3-FTom2.wav",
+      "power": 0.0250847,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-5",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/5-FTom2.wav",
+      "power": 0.0599932,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-7",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/7-FTom2.wav",
+      "power": 0.0994884,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-9",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/9-FTom2.wav",
+      "power": 0.17054,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-11",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/11-FTom2.wav",
+      "power": 0.20557,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-13",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/13-FTom2.wav",
+      "power": 0.34016,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-15",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/15-FTom2.wav",
+      "power": 0.521306,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-17",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/17-FTom2.wav",
+      "power": 0.561007,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-18",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/18-FTom2.wav",
+      "power": 0.613199,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-20",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/20-FTom2.wav",
+      "power": 0.780568,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-22",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/22-FTom2.wav",
+      "power": 1.01247,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-24",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/24-FTom2.wav",
+      "power": 1.09014,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-26",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/26-FTom2.wav",
+      "power": 1.26133,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-28",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/28-FTom2.wav",
+      "power": 1.41203,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-30",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/30-FTom2.wav",
+      "power": 1.94101,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-32",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/32-FTom2.wav",
+      "power": 2.42739,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "ftom2-34",
+      "bank": "shells",
+      "member": "CrocellKit_Stereo_MIX/FTom2/samples/34-FTom2.wav",
+      "power": 2.78942,
+      "xml_sha256": "4aa11d3c32a0f5464d998b81cbd42aba0d5a336a6cb77a81d65fc3aee1cda9ab"
+    },
+    {
+      "asset": "hihatclosed-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/1-HihatClosed.wav",
+      "power": 0.000121854,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-3",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/3-HihatClosed.wav",
+      "power": 0.00163766,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-6",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/6-HihatClosed.wav",
+      "power": 0.0105367,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-8",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/8-HihatClosed.wav",
+      "power": 0.0188049,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-10",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/10-HihatClosed.wav",
+      "power": 0.0242907,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-13",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/13-HihatClosed.wav",
+      "power": 0.0459883,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-15",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/15-HihatClosed.wav",
+      "power": 0.0621507,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-17",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/17-HihatClosed.wav",
+      "power": 0.0740537,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-20",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/20-HihatClosed.wav",
+      "power": 0.0942432,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-22",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/22-HihatClosed.wav",
+      "power": 0.103766,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-25",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/25-HihatClosed.wav",
+      "power": 0.11291,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-27",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/27-HihatClosed.wav",
+      "power": 0.127339,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-29",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/29-HihatClosed.wav",
+      "power": 0.137801,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-32",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/32-HihatClosed.wav",
+      "power": 0.165917,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-34",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/34-HihatClosed.wav",
+      "power": 0.176613,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-36",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/36-HihatClosed.wav",
+      "power": 0.196682,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-39",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/39-HihatClosed.wav",
+      "power": 0.210005,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosed-41",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosed/samples/41-HihatClosed.wav",
+      "power": 0.263976,
+      "xml_sha256": "25bbc9fa17c307cb9b48439d188a11123edad388b5731b73b4184b93cf8476f8"
+    },
+    {
+      "asset": "hihatclosednopedal-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/1-HihatClosedNoPedal.wav",
+      "power": 0.000342184,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-5",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/5-HihatClosedNoPedal.wav",
+      "power": 0.00881755,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-8",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/8-HihatClosedNoPedal.wav",
+      "power": 0.0224178,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-12",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/12-HihatClosedNoPedal.wav",
+      "power": 0.0496434,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-16",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/16-HihatClosedNoPedal.wav",
+      "power": 0.0957075,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-20",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/20-HihatClosedNoPedal.wav",
+      "power": 0.120987,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-23",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/23-HihatClosedNoPedal.wav",
+      "power": 0.142295,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-27",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/27-HihatClosedNoPedal.wav",
+      "power": 0.166536,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-31",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/31-HihatClosedNoPedal.wav",
+      "power": 0.232829,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-35",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/35-HihatClosedNoPedal.wav",
+      "power": 0.302718,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-38",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/38-HihatClosedNoPedal.wav",
+      "power": 0.333259,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatclosednopedal-42",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/42-HihatClosedNoPedal.wav",
+      "power": 0.419853,
+      "xml_sha256": "ce0f03d66497d75d94a853dfbcad46521d7de788b68ff293f245863f35077935"
+    },
+    {
+      "asset": "hihatsemiopen-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/1-HihatSemiOpen.wav",
+      "power": 0.000692045,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-3",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/3-HihatSemiOpen.wav",
+      "power": 0.00168313,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-5",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/5-HihatSemiOpen.wav",
+      "power": 0.0107456,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-7",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/7-HihatSemiOpen.wav",
+      "power": 0.0245518,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-9",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/9-HihatSemiOpen.wav",
+      "power": 0.0362353,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-11",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/11-HihatSemiOpen.wav",
+      "power": 0.0607928,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-13",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/13-HihatSemiOpen.wav",
+      "power": 0.0725639,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-15",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/15-HihatSemiOpen.wav",
+      "power": 0.0845501,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-17",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/17-HihatSemiOpen.wav",
+      "power": 0.113951,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-20",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/20-HihatSemiOpen.wav",
+      "power": 0.136059,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-22",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/22-HihatSemiOpen.wav",
+      "power": 0.170646,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-24",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/24-HihatSemiOpen.wav",
+      "power": 0.181451,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-26",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/26-HihatSemiOpen.wav",
+      "power": 0.208566,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-28",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/28-HihatSemiOpen.wav",
+      "power": 0.247061,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-30",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/30-HihatSemiOpen.wav",
+      "power": 0.259574,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-32",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/32-HihatSemiOpen.wav",
+      "power": 0.281184,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-34",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/34-HihatSemiOpen.wav",
+      "power": 0.306549,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatsemiopen-36",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatSemiOpen/samples/36-HihatSemiOpen.wav",
+      "power": 0.328838,
+      "xml_sha256": "0cfe947be40033d2f6ae1040fbca4b128762f07e83ea1c7c7e8196d07ac08e26"
+    },
+    {
+      "asset": "hihatopen-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/1-HihatOpen.wav",
+      "power": 0.000146308,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-4",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/4-HihatOpen.wav",
+      "power": 0.00246265,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-6",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/6-HihatOpen.wav",
+      "power": 0.00947989,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-9",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/9-HihatOpen.wav",
+      "power": 0.022082,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-12",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/12-HihatOpen.wav",
+      "power": 0.0298887,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-15",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/15-HihatOpen.wav",
+      "power": 0.0334429,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-17",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/17-HihatOpen.wav",
+      "power": 0.0554078,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-20",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/20-HihatOpen.wav",
+      "power": 0.08067,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-23",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/23-HihatOpen.wav",
+      "power": 0.0902896,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-25",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/25-HihatOpen.wav",
+      "power": 0.103188,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-28",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/28-HihatOpen.wav",
+      "power": 0.109874,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-31",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/31-HihatOpen.wav",
+      "power": 0.117793,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-33",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/33-HihatOpen.wav",
+      "power": 0.122398,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-36",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/36-HihatOpen.wav",
+      "power": 0.141138,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-39",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/39-HihatOpen.wav",
+      "power": 0.150431,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-42",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/42-HihatOpen.wav",
+      "power": 0.183345,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-44",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/44-HihatOpen.wav",
+      "power": 0.186376,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatopen-47",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatOpen/samples/47-HihatOpen.wav",
+      "power": 0.21271,
+      "xml_sha256": "0abc6dcd347eb6c9d8308919982a174bf7a2c23b9c1caa622e0d3824f2088292"
+    },
+    {
+      "asset": "hihatpedal-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatPedal/samples/1-HihatPedal.wav",
+      "power": 7.43172e-05,
+      "xml_sha256": "c4ff88fe953492e801e3eb3fa891116a8cc1c9312fadac134f3ffe9b3a978ae5"
+    },
+    {
+      "asset": "hihatpedal-2",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatPedal/samples/2-HihatPedal.wav",
+      "power": 0.00042112,
+      "xml_sha256": "c4ff88fe953492e801e3eb3fa891116a8cc1c9312fadac134f3ffe9b3a978ae5"
+    },
+    {
+      "asset": "hihatpedal-4",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatPedal/samples/4-HihatPedal.wav",
+      "power": 0.00191475,
+      "xml_sha256": "c4ff88fe953492e801e3eb3fa891116a8cc1c9312fadac134f3ffe9b3a978ae5"
+    },
+    {
+      "asset": "hihatpedal-5",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatPedal/samples/5-HihatPedal.wav",
+      "power": 0.00391885,
+      "xml_sha256": "c4ff88fe953492e801e3eb3fa891116a8cc1c9312fadac134f3ffe9b3a978ae5"
+    },
+    {
+      "asset": "hihatpedal-6",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatPedal/samples/6-HihatPedal.wav",
+      "power": 0.00413788,
+      "xml_sha256": "c4ff88fe953492e801e3eb3fa891116a8cc1c9312fadac134f3ffe9b3a978ae5"
+    },
+    {
+      "asset": "hihatpedal-7",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatPedal/samples/7-HihatPedal.wav",
+      "power": 0.00426045,
+      "xml_sha256": "c4ff88fe953492e801e3eb3fa891116a8cc1c9312fadac134f3ffe9b3a978ae5"
+    },
+    {
+      "asset": "hihatpedal-9",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatPedal/samples/9-HihatPedal.wav",
+      "power": 0.01031,
+      "xml_sha256": "c4ff88fe953492e801e3eb3fa891116a8cc1c9312fadac134f3ffe9b3a978ae5"
+    },
+    {
+      "asset": "hihatpedal-10",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/HihatPedal/samples/10-HihatPedal.wav",
+      "power": 0.0128564,
+      "xml_sha256": "c4ff88fe953492e801e3eb3fa891116a8cc1c9312fadac134f3ffe9b3a978ae5"
+    },
+    {
+      "asset": "rider-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideR/samples/1-RideR.wav",
+      "power": 0.00295455,
+      "xml_sha256": "cae06c5d9b27367275d81fc5e639f6bb27c718c32182ee566956d9fb5e4895f3"
+    },
+    {
+      "asset": "rider-6",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideR/samples/6-RideR.wav",
+      "power": 0.00729045,
+      "xml_sha256": "cae06c5d9b27367275d81fc5e639f6bb27c718c32182ee566956d9fb5e4895f3"
+    },
+    {
+      "asset": "rider-11",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideR/samples/11-RideR.wav",
+      "power": 0.026162,
+      "xml_sha256": "cae06c5d9b27367275d81fc5e639f6bb27c718c32182ee566956d9fb5e4895f3"
+    },
+    {
+      "asset": "rider-16",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideR/samples/16-RideR.wav",
+      "power": 0.062322,
+      "xml_sha256": "cae06c5d9b27367275d81fc5e639f6bb27c718c32182ee566956d9fb5e4895f3"
+    },
+    {
+      "asset": "rider-22",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideR/samples/22-RideR.wav",
+      "power": 0.137506,
+      "xml_sha256": "cae06c5d9b27367275d81fc5e639f6bb27c718c32182ee566956d9fb5e4895f3"
+    },
+    {
+      "asset": "rider-27",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideR/samples/27-RideR.wav",
+      "power": 0.163742,
+      "xml_sha256": "cae06c5d9b27367275d81fc5e639f6bb27c718c32182ee566956d9fb5e4895f3"
+    },
+    {
+      "asset": "rider-32",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideR/samples/32-RideR.wav",
+      "power": 0.204482,
+      "xml_sha256": "cae06c5d9b27367275d81fc5e639f6bb27c718c32182ee566956d9fb5e4895f3"
+    },
+    {
+      "asset": "rider-37",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideR/samples/37-RideR.wav",
+      "power": 0.306652,
+      "xml_sha256": "cae06c5d9b27367275d81fc5e639f6bb27c718c32182ee566956d9fb5e4895f3"
+    },
+    {
+      "asset": "riderbell-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideRBell/samples/1-RideRBell.wav",
+      "power": 0.00388118,
+      "xml_sha256": "1a3e51b776bc9015934f19e688585d07e09b63654fcac30f0cb1769789013c0f"
+    },
+    {
+      "asset": "riderbell-3",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideRBell/samples/3-RideRBell.wav",
+      "power": 0.0192254,
+      "xml_sha256": "1a3e51b776bc9015934f19e688585d07e09b63654fcac30f0cb1769789013c0f"
+    },
+    {
+      "asset": "riderbell-6",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideRBell/samples/6-RideRBell.wav",
+      "power": 0.0437487,
+      "xml_sha256": "1a3e51b776bc9015934f19e688585d07e09b63654fcac30f0cb1769789013c0f"
+    },
+    {
+      "asset": "riderbell-8",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideRBell/samples/8-RideRBell.wav",
+      "power": 0.114028,
+      "xml_sha256": "1a3e51b776bc9015934f19e688585d07e09b63654fcac30f0cb1769789013c0f"
+    },
+    {
+      "asset": "riderbell-11",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideRBell/samples/11-RideRBell.wav",
+      "power": 0.233708,
+      "xml_sha256": "1a3e51b776bc9015934f19e688585d07e09b63654fcac30f0cb1769789013c0f"
+    },
+    {
+      "asset": "riderbell-13",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideRBell/samples/13-RideRBell.wav",
+      "power": 0.292983,
+      "xml_sha256": "1a3e51b776bc9015934f19e688585d07e09b63654fcac30f0cb1769789013c0f"
+    },
+    {
+      "asset": "riderbell-16",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideRBell/samples/16-RideRBell.wav",
+      "power": 0.565791,
+      "xml_sha256": "1a3e51b776bc9015934f19e688585d07e09b63654fcac30f0cb1769789013c0f"
+    },
+    {
+      "asset": "riderbell-18",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/RideRBell/samples/18-RideRBell.wav",
+      "power": 0.704931,
+      "xml_sha256": "1a3e51b776bc9015934f19e688585d07e09b63654fcac30f0cb1769789013c0f"
+    },
+    {
+      "asset": "crashl-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/1-CrashL.wav",
+      "power": 0.000298735,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-3",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/3-CrashL.wav",
+      "power": 0.00404778,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-5",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/5-CrashL.wav",
+      "power": 0.0105716,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-8",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/8-CrashL.wav",
+      "power": 0.0204118,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-10",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/10-CrashL.wav",
+      "power": 0.029562,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-12",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/12-CrashL.wav",
+      "power": 0.0414128,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-14",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/14-CrashL.wav",
+      "power": 0.0596746,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-16",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/16-CrashL.wav",
+      "power": 0.0716487,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-18",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/18-CrashL.wav",
+      "power": 0.124218,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-21",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/21-CrashL.wav",
+      "power": 0.173179,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-23",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/23-CrashL.wav",
+      "power": 0.325905,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashl-25",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashL/samples/25-CrashL.wav",
+      "power": 0.44145,
+      "xml_sha256": "649f5c893a7abaf8595b10a39489cb10e9f29722f0510f83be902fb79086b3fe"
+    },
+    {
+      "asset": "crashr-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/1-CrashR.wav",
+      "power": 0.000196221,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-3",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/3-CrashR.wav",
+      "power": 0.000585175,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-5",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/5-CrashR.wav",
+      "power": 0.00127693,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-6",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/6-CrashR.wav",
+      "power": 0.00149472,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-8",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/8-CrashR.wav",
+      "power": 0.00183986,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-10",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/10-CrashR.wav",
+      "power": 0.0027674,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-12",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/12-CrashR.wav",
+      "power": 0.00400972,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-14",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/14-CrashR.wav",
+      "power": 0.00525299,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-16",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/16-CrashR.wav",
+      "power": 0.00661231,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-17",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/17-CrashR.wav",
+      "power": 0.00670317,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-19",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/19-CrashR.wav",
+      "power": 0.00749217,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "crashr-21",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashR/samples/21-CrashR.wav",
+      "power": 0.0116969,
+      "xml_sha256": "75447451e0c8e733207dc62b14a743272c76625c2aaac824fa855160e8c1e21f"
+    },
+    {
+      "asset": "splashl-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashL/samples/1-SplashL.wav",
+      "power": 0.000202023,
+      "xml_sha256": "e61d28e9bff2e12785747967d7810cd623975f265761bd88bb55f7bf40753d94"
+    },
+    {
+      "asset": "splashl-2",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashL/samples/2-SplashL.wav",
+      "power": 0.000274182,
+      "xml_sha256": "e61d28e9bff2e12785747967d7810cd623975f265761bd88bb55f7bf40753d94"
+    },
+    {
+      "asset": "splashl-4",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashL/samples/4-SplashL.wav",
+      "power": 0.00105171,
+      "xml_sha256": "e61d28e9bff2e12785747967d7810cd623975f265761bd88bb55f7bf40753d94"
+    },
+    {
+      "asset": "splashl-5",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashL/samples/5-SplashL.wav",
+      "power": 0.00170203,
+      "xml_sha256": "e61d28e9bff2e12785747967d7810cd623975f265761bd88bb55f7bf40753d94"
+    },
+    {
+      "asset": "splashl-7",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashL/samples/7-SplashL.wav",
+      "power": 0.012956,
+      "xml_sha256": "e61d28e9bff2e12785747967d7810cd623975f265761bd88bb55f7bf40753d94"
+    },
+    {
+      "asset": "splashl-8",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashL/samples/8-SplashL.wav",
+      "power": 0.0156469,
+      "xml_sha256": "e61d28e9bff2e12785747967d7810cd623975f265761bd88bb55f7bf40753d94"
+    },
+    {
+      "asset": "splashl-10",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashL/samples/10-SplashL.wav",
+      "power": 0.0217122,
+      "xml_sha256": "e61d28e9bff2e12785747967d7810cd623975f265761bd88bb55f7bf40753d94"
+    },
+    {
+      "asset": "splashl-11",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashL/samples/11-SplashL.wav",
+      "power": 0.0292132,
+      "xml_sha256": "e61d28e9bff2e12785747967d7810cd623975f265761bd88bb55f7bf40753d94"
+    },
+    {
+      "asset": "splashr-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashR/samples/1-SplashR.wav",
+      "power": 0.000197667,
+      "xml_sha256": "603248c24cba2c24296ba73a17fc44199d6942cac2602797d3b1583261c110be"
+    },
+    {
+      "asset": "splashr-2",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashR/samples/2-SplashR.wav",
+      "power": 0.00081888,
+      "xml_sha256": "603248c24cba2c24296ba73a17fc44199d6942cac2602797d3b1583261c110be"
+    },
+    {
+      "asset": "splashr-3",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashR/samples/3-SplashR.wav",
+      "power": 0.00350163,
+      "xml_sha256": "603248c24cba2c24296ba73a17fc44199d6942cac2602797d3b1583261c110be"
+    },
+    {
+      "asset": "splashr-4",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashR/samples/4-SplashR.wav",
+      "power": 0.00858952,
+      "xml_sha256": "603248c24cba2c24296ba73a17fc44199d6942cac2602797d3b1583261c110be"
+    },
+    {
+      "asset": "splashr-5",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashR/samples/5-SplashR.wav",
+      "power": 0.0157247,
+      "xml_sha256": "603248c24cba2c24296ba73a17fc44199d6942cac2602797d3b1583261c110be"
+    },
+    {
+      "asset": "splashr-6",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashR/samples/6-SplashR.wav",
+      "power": 0.0206619,
+      "xml_sha256": "603248c24cba2c24296ba73a17fc44199d6942cac2602797d3b1583261c110be"
+    },
+    {
+      "asset": "splashr-7",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashR/samples/7-SplashR.wav",
+      "power": 0.021337,
+      "xml_sha256": "603248c24cba2c24296ba73a17fc44199d6942cac2602797d3b1583261c110be"
+    },
+    {
+      "asset": "splashr-8",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/SplashR/samples/8-SplashR.wav",
+      "power": 0.0372428,
+      "xml_sha256": "603248c24cba2c24296ba73a17fc44199d6942cac2602797d3b1583261c110be"
+    },
+    {
+      "asset": "chinar-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/1-ChinaR.wav",
+      "power": 0.000154701,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-3",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/3-ChinaR.wav",
+      "power": 0.000360768,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-5",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/5-ChinaR.wav",
+      "power": 0.000547298,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-8",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/8-ChinaR.wav",
+      "power": 0.00115883,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-10",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/10-ChinaR.wav",
+      "power": 0.0017448,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-12",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/12-ChinaR.wav",
+      "power": 0.00244521,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-14",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/14-ChinaR.wav",
+      "power": 0.00319484,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-16",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/16-ChinaR.wav",
+      "power": 0.00433019,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-18",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/18-ChinaR.wav",
+      "power": 0.005467,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-21",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/21-ChinaR.wav",
+      "power": 0.0089969,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-23",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/23-ChinaR.wav",
+      "power": 0.00987934,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "chinar-25",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/ChinaR/samples/25-ChinaR.wav",
+      "power": 0.0116242,
+      "xml_sha256": "ee261df6a9479a8eb846fda643624365b8096b6dbf20108636bbaefeaa06035d"
+    },
+    {
+      "asset": "crashlstopped-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashLStopped/samples/1-CrashLStopped.wav",
+      "power": 0.00932732,
+      "xml_sha256": "4fc1166dfbc15e1286cb65862d47065a746a628fff070a4bb1c136de2233f039"
+    },
+    {
+      "asset": "crashlstopped-3",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashLStopped/samples/3-CrashLStopped.wav",
+      "power": 0.0269968,
+      "xml_sha256": "4fc1166dfbc15e1286cb65862d47065a746a628fff070a4bb1c136de2233f039"
+    },
+    {
+      "asset": "crashlstopped-4",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashLStopped/samples/4-CrashLStopped.wav",
+      "power": 0.0418208,
+      "xml_sha256": "4fc1166dfbc15e1286cb65862d47065a746a628fff070a4bb1c136de2233f039"
+    },
+    {
+      "asset": "crashlstopped-6",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashLStopped/samples/6-CrashLStopped.wav",
+      "power": 0.0897089,
+      "xml_sha256": "4fc1166dfbc15e1286cb65862d47065a746a628fff070a4bb1c136de2233f039"
+    },
+    {
+      "asset": "crashlstopped-7",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashLStopped/samples/7-CrashLStopped.wav",
+      "power": 0.128574,
+      "xml_sha256": "4fc1166dfbc15e1286cb65862d47065a746a628fff070a4bb1c136de2233f039"
+    },
+    {
+      "asset": "crashlstopped-9",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashLStopped/samples/9-CrashLStopped.wav",
+      "power": 0.156605,
+      "xml_sha256": "4fc1166dfbc15e1286cb65862d47065a746a628fff070a4bb1c136de2233f039"
+    },
+    {
+      "asset": "crashlstopped-10",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashLStopped/samples/10-CrashLStopped.wav",
+      "power": 0.167559,
+      "xml_sha256": "4fc1166dfbc15e1286cb65862d47065a746a628fff070a4bb1c136de2233f039"
+    },
+    {
+      "asset": "crashlstopped-12",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashLStopped/samples/12-CrashLStopped.wav",
+      "power": 0.260844,
+      "xml_sha256": "4fc1166dfbc15e1286cb65862d47065a746a628fff070a4bb1c136de2233f039"
+    },
+    {
+      "asset": "crashrstopped-1",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashRStopped/samples/1-CrashRStopped.wav",
+      "power": 0.0017769,
+      "xml_sha256": "4e8c762e3cb7d6cc4402f1c9830d759e6828e63e2426f94b2d7a0de15b8731ed"
+    },
+    {
+      "asset": "crashrstopped-2",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashRStopped/samples/2-CrashRStopped.wav",
+      "power": 0.00663254,
+      "xml_sha256": "4e8c762e3cb7d6cc4402f1c9830d759e6828e63e2426f94b2d7a0de15b8731ed"
+    },
+    {
+      "asset": "crashrstopped-3",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashRStopped/samples/3-CrashRStopped.wav",
+      "power": 0.00905079,
+      "xml_sha256": "4e8c762e3cb7d6cc4402f1c9830d759e6828e63e2426f94b2d7a0de15b8731ed"
+    },
+    {
+      "asset": "crashrstopped-4",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashRStopped/samples/4-CrashRStopped.wav",
+      "power": 0.0228572,
+      "xml_sha256": "4e8c762e3cb7d6cc4402f1c9830d759e6828e63e2426f94b2d7a0de15b8731ed"
+    },
+    {
+      "asset": "crashrstopped-6",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashRStopped/samples/6-CrashRStopped.wav",
+      "power": 0.0275825,
+      "xml_sha256": "4e8c762e3cb7d6cc4402f1c9830d759e6828e63e2426f94b2d7a0de15b8731ed"
+    },
+    {
+      "asset": "crashrstopped-7",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashRStopped/samples/7-CrashRStopped.wav",
+      "power": 0.0290683,
+      "xml_sha256": "4e8c762e3cb7d6cc4402f1c9830d759e6828e63e2426f94b2d7a0de15b8731ed"
+    },
+    {
+      "asset": "crashrstopped-8",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashRStopped/samples/8-CrashRStopped.wav",
+      "power": 0.034803,
+      "xml_sha256": "4e8c762e3cb7d6cc4402f1c9830d759e6828e63e2426f94b2d7a0de15b8731ed"
+    },
+    {
+      "asset": "crashrstopped-9",
+      "bank": "metals",
+      "member": "CrocellKit_Stereo_MIX/CrashRStopped/samples/9-CrashRStopped.wav",
+      "power": 0.0660612,
+      "xml_sha256": "4e8c762e3cb7d6cc4402f1c9830d759e6828e63e2426f94b2d7a0de15b8731ed"
+    },
+    {
+      "asset": "cross-stick-1",
+      "bank": "shells",
+      "license_url": "https://github.com/sgossner/VCSL/blob/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/README.md",
+      "url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Membranophones/Struck%20Membranophones/Snare%20Drum%2C%20Modern%203/Snare4_Xstick_v2_rr1_Mid.wav"
+    },
+    {
+      "asset": "cross-stick-2",
+      "bank": "shells",
+      "license_url": "https://github.com/sgossner/VCSL/blob/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/README.md",
+      "url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Membranophones/Struck%20Membranophones/Snare%20Drum%2C%20Modern%203/Snare4_Xstick_v2_rr2_Mid.wav"
+    }
+  ],
+  "source_archive": {
+    "bytes": 561035551,
+    "credits_url": "https://drumgizmo.org/wiki/doku.php?id=kits:crocellkit",
+    "license": "CC-BY-4.0",
+    "sha256": "a6ec5a58987c90ba482f568005e01ed826a534fd9b3c041dc5efa07018c4d81d",
+    "url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar"
+  },
+  "tier": "lossless"
+}

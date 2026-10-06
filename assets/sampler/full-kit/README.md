@@ -79,3 +79,17 @@ The five scores cover rock, funk, reggae one-drop, soca and a jazz ride pattern.
 `full_kit_demos.py` writes paired scores with identical notes/timing/seed/gain and different bank declarations. It also writes the starter VCSL substitution maps: toms use its kick, extra snare strokes use its center snare, ride uses closed hat, cymbals use open hat, and missing silent choke controls use zero-gain zones. Starter ghosts use a documented 0.25 gain. This is a palette comparison with the old three-piece kit, not a DSP-only comparison. Raw pairs preserve dynamics; optional FFmpeg `loudnorm` level versions target -18 LUFS/-1 dBTP and must not be used to judge absolute velocity response.
 
 See [pack hosting](../../../docs/sampler/packs.md) for manifest fields, loading, and playback. Sound quality and realtime CPU usage depend on the recordings and target device.
+
+## Download quality
+
+Keep the original gzip banks for existing pinned scores. Build each new tier into its own directory from those verified banks:
+
+```sh
+GOWORK=off go build -o build/cicada-audio-encode ./cmd/cicada-audio-encode
+python3 tools/sampler/build_full_kit.py --tier lossless --from-packs demo/packs --out demo/packs/tiers/lossless --cache sample-source-cache --encoder "$PWD/build/cicada-audio-encode"
+python3 tools/sampler/build_full_kit.py --tier hq16 --from-packs demo/packs --out demo/packs/tiers/hq16 --cache sample-source-cache --encoder "$PWD/build/cicada-audio-encode"
+```
+
+The exact tier preserves original decoded PCM, using FLAC for integer recordings and gzip where float32 PCM cannot round-trip through FLAC. PCM16 FLAC quantizes after power-of-two scaling to preserve quiet recordings; it pins that reconstruction and is the default for new browser and Studio downloads. Both tiers retain the same maps, dynamics, takes, loops, licenses and resident float32 PCM. Catalog `tiers` entries pin each alternate manifest. Host admission verifies encoded hashes, dimensions and canonical decoded-PCM hashes before playback; codecs add no kernel code. The builder checks source pins, stages output and refuses to replace differing or corrupt packs. Use `--verify-catalog` (CC0) or `--verify` (full kit) with the corresponding published `tiers/<tier>/catalog.json` to verify a rebuild. Copy the published root catalog beside the generated banks to expose both tiers.
+
+The full kit contains 142,689,506 encoded bytes in the exact tier or 79,681,355 bytes in PCM16 FLAC, versus 252,612,372 gzip bytes.

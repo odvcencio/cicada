@@ -1,6 +1,6 @@
 # External sample instrument packs
 
-A pack is a pinned JSON map plus losslessly compressed PCM24/float32 WAV files. All file access, hashing, decompression and map validation finish before playback. The core kernel stays unchanged. `cmd/cicada-sampler-wasm` is an optional 64 KiB-budget kernel for one prepared bank per instance; the same DSP renders offline.
+A pack is a pinned JSON map plus encoded audio. New downloads default to scaled PCM16 FLAC; the exact tier uses FLAC with gzip WAV fallbacks for float32 recordings that integer FLAC cannot preserve. Existing gzip packs remain supported. All file access, hashing, decompression and map validation finish before playback. The core kernel stays unchanged. `cmd/cicada-sampler-wasm` is an optional 64 KiB-budget kernel for one prepared bank per instance; the same DSP renders offline.
 
 ```cicada
 cicada 2
@@ -22,7 +22,9 @@ song { main*4 }
 
 ## Manifest version 1
 
-`format` is `cicada.instrument-pack/1`. `config` holds `sample.InstrumentConfig`; `Humanize.Seed` is an exact uint64 decimal string. `assets` declare unique IDs, relative `.wav.gz` paths, compressed and WAV byte counts and SHA-256 hashes, source URLs/hashes, source rate/frame/channel dimensions, SPDX licence, licence URL and any required attribution. Accepted licences are CC0-1.0 and CC-BY-4.0; CC-BY needs attribution. Each pack is limited to 256 MiB decoded planar float32 PCM, 4096 assets/zones and 2 MiB JSON. Each asset is limited to 8 million frames. Code remains MIT; audio retains its own licence.
+`format` is `cicada.instrument-pack/1`. `config` holds `sample.InstrumentConfig`; `Humanize.Seed` is an exact uint64 decimal string. `assets` declare unique IDs, relative audio paths, byte counts and SHA-256 hashes, source URLs/hashes, source rate/frame/channel dimensions, SPDX licence, licence URL and any required attribution. Accepted licences are CC0-1.0 and CC-BY-4.0; CC-BY needs attribution. Each pack is limited to 256 MiB decoded planar float32 PCM, 4096 assets/zones and 2 MiB JSON. Each asset is limited to 8 million frames. Code remains MIT; audio retains its own licence.
+
+`encoding: "flac"` assets include `pcm_sha256` and a positive float32 power-of-two `scale`, with `.flac` paths. The PCM pin hashes channel-major float32 values in little-endian order after applying the scale. Declared frames, rate and channels must match the stream before PCM can reach playback. Exact FLAC uses scale 1. `encoding: "wav-gzip"` fallbacks also include `wav_bytes` and `wav_sha256`; scale is 1. Legacy assets omit `encoding`, `scale` and `pcm_sha256` and retain their existing compressed/WAV pins. Encoded bytes, dimensions and canonical PCM are admitted by the host APIs from `host/audioencoding`.
 
 Zones name an asset and declare `Root`, `KeyLow/High`, `VelocityLow/High`, velocity centre `Layer`, key `Group`, zero-based round-robin `Position` and `Count`, `Release`, linear `Gain`, `TuneCents`, source-frame region/loop bounds and `Crossfade`. `ChokeGroup` zero disables choking; matching nonzero groups release old notes in 2 ms. `OneShot` ignores key-up. Group maps may not overlap ambiguously; each declared cycle must be complete. Velocity crossfades use the neighbouring centres and linear amplitude weights. This preserves coherent recordings; unrelated samples can produce phase cancellation and still require listening review.
 
@@ -30,7 +32,7 @@ Zones name an asset and declare `Root`, `KeyLow/High`, `VelocityLow/High`, veloc
 
 ## Browser and game hosts
 
-Serve `web.InstrumentPack()` as `instrument-pack.js` and `web.SamplerProcessor()` as its sibling `sampler-processor.js`, plus the optional WASM kernel and external pack directory. These modules are opt-in; the existing Studio client/worklet and their size gates are unchanged.
+Serve `web.AudioEncoding()` as the sibling `audio-encoding.js`. Serve `web.InstrumentPack()` as `instrument-pack.js` and `web.SamplerProcessor()` as its sibling `sampler-processor.js`, plus the optional WASM kernel and external pack directory. These modules are opt-in; the existing Studio client/worklet and their size gates are unchanged.
 
 ```js
 import {createSampleInstrument} from './instrument-pack.js';
@@ -49,6 +51,8 @@ node.port.postMessage({kind: 'on', frame, id: 1, note: 60, velocity: 64});
 node.port.postMessage({kind: 'off', frame: frame + 24000, id: 1});
 ```
 
+For catalog-based downloads, pass `catalog`, `catalogURL` and `id` to `createSampleInstrument` instead of `manifestURL`/`sha256`. `selectPack(catalog, id)` and `loadCatalogPack(catalogURL, catalog, id)` choose `hq16` by default. Set `tier: 'lossless'` for exact PCM or `tier: 'gzip'` for the original bank. Catalog entries retain their legacy manifest and pin and add a `tiers` map containing each alternate manifest, pin and download size. Distribute catalogs as trusted metadata; native downloads require an explicit catalog SHA-256 pin. Studio's Instruments panel offers PCM16 FLAC and Exact download choices and provides the pinned sampler declaration after verification. Existing score declarations always load their explicit manifest/pin.
+
 Prepare instruments before resuming a suspended context: WAV admission occurs in the host, but WASM initialization and PCM upload occur in the worklet constructor and can interrupt an already running graph. The shared sinc banks use about 8.6 MB runtime memory per instance, in addition to pack PCM. Multiple large banks can therefore cost substantial memory. There is no disk streaming or acoustic resonance model.
 
-The loader fetches only a requested pack, verifies every compressed and decoded byte stream, and caches admitted compressed bytes in the Cache API. A cached pack works offline. PCM decoding uses a bounded RIFF decoder rather than `decodeAudioData`, preserving source frames and native float32 conversion. `loadPack` and `prepareSampler` are exported for custom hosts/workers. Notes use unique nonzero uint32 owner IDs and integer output-frame positions. An optional `seed` decimal string on `on` makes timing/velocity/pitch humanization independent of unrelated triggers; use the same game-event ID on every client. Round-robin selection still follows trigger order. Send events in frame order; late events land at the next frame. `pedal` uses `down`; `legato` uses `id`, `note`, `cents`; `reset` silences all notes. A fixed 512-event queue refuses overflow. Callback PCM, scheduling and ownership storage are preallocated.
+The loader fetches only a requested pack, verifies every compressed and decoded byte stream, and caches admitted compressed bytes in the Cache API. A cached pack works offline. Gzip PCM uses a bounded RIFF decoder. FLAC uses a rate-matched offline browser decoder and restores its integer grid if necessary; admission still requires the canonical PCM pin. `loadPack` and `prepareSampler` are exported for custom hosts/workers. Notes use unique nonzero uint32 owner IDs and integer output-frame positions. An optional `seed` decimal string on `on` makes timing/velocity/pitch humanization independent of unrelated triggers; use the same game-event ID on every client. Round-robin selection still follows trigger order. Send events in frame order; late events land at the next frame. `pedal` uses `down`; `legato` uses `id`, `note`, `cents`; `reset` silences all notes. A fixed 512-event queue refuses overflow. Callback PCM, scheduling and ownership storage are preallocated.
