@@ -1,0 +1,33 @@
+{
+  "date": "2026-10-06",
+  "platform": "windows/amd64",
+  "backend": "tymbal",
+  "webview2SDK": "1.0.4191.47",
+  "flags": [
+    "--mute",
+    "--smoke-out"
+  ],
+  "results": [
+    {
+      "case": "No score",
+      "pageLoaded": true,
+      "sidecarError": null,
+      "sidecarReadyMs": 418,
+      "studioLoadedMs": 718
+    },
+    {
+      "case": "Single-file example",
+      "pageLoaded": true,
+      "sidecarError": null,
+      "sidecarReadyMs": 208,
+      "studioLoadedMs": 492
+    },
+    {
+      "case": "Multi-file project",
+      "pageLoaded": true,
+      "sidecarError": null,
+      "sidecarReadyMs": 187,
+      "studioLoadedMs": 474
+    }
+  ]
+}

@@ -4,6 +4,7 @@
   if(!panel) return;
   const status=byId('instrument-status'), record=byId('instrument-mic'), stop=byId('instrument-stop');
   const capture=new window.CicadaBrowserCapture.BrowserCapture(window.cicadaBrowserAudio);
+  let preview=null, kept=new Set();
   let working=false, pack=null, sampledPack=null, modeledPack=null, timer=null, generation=0, sources=new Set(), cycle=0;
   const cache=new Map();
   function update() {
@@ -11,6 +12,7 @@
     record.disabled=working||recording; stop.disabled=working||!recording;
     for(const id of ['instrument-name','instrument-root','instrument-layers','instrument-pitch','instrument-files']) byId(id).disabled=working||recording;
     byId('instrument-save-score').disabled=!pack||working;
+    byId('instrument-build').disabled=!preview||!kept.size||working||recording;
     byId('instrument-fit').disabled=!sampledPack||working||recording;
     byId('instrument-fit-hit').disabled=!sampledPack||working||recording;
     byId('instrument-mode').disabled=!modeledPack||working||recording;
@@ -29,21 +31,46 @@
     if(!files.length || files.length>32) throw new Error('Choose 1–32 WAV files');
     if(files.reduce((size,file)=>size+file.size,0)>64*1024*1024) throw new Error('Choose WAV files totalling at most 64 MiB');
     const form=new FormData();
+    form.append('action','analyze');form.append('revision',window.cicadaStudio?.revision()||document.body.dataset.revision);
     form.append('name',byId('instrument-name').value);form.append('root',byId('instrument-root').value);
     form.append('layers',byId('instrument-layers').value);form.append('autoPitch',String(byId('instrument-pitch').checked));
     for(const file of files) form.append('wav',file,file.name||'microphone.wav');
     status.textContent='Finding hits, estimating pitch and building the pack…';
     const response=await fetch('/api/instrument-record',{method:'POST',body:form});
     const result=await response.json();if(!response.ok) throw new Error(result.error||'Cannot build instrument');
-    result.playRoot=Number(byId('instrument-root').value);sampledPack=result;modeledPack=null;byId('instrument-fit-hit').max=result.hits.length;
-    byId('instrument-fit-hit').value=1;selectPack(result);
+    result.playRoot=Number(byId('instrument-root').value);sampledPack=null;modeledPack=null;byId('instrument-fit-hit').max=result.hits.length;
+    byId('instrument-fit-hit').value=1;preview=result;kept=new Set(result.hits.map((_,index)=>index));reviewHits();
   }
+  function reviewHits() {
+    const list=byId('instrument-hits');list.replaceChildren();
+    for(const [index,hit] of preview.hits.entries()) {
+      const row=document.createElement('div');
+      const label=document.createElement('span');label.textContent=`Hit ${index+1} · ${hit.loudnessDB.toFixed(1)} dB `;
+      const audio=document.createElement('audio');audio.controls=true;audio.preload='none';audio.src=`/api/instrument-hit?sha256=${encodeURIComponent(preview.sha256)}&hit=${index+1}`;
+      audio.setAttribute('aria-label',`Play hit ${index+1}`);
+      const remove=document.createElement('button');remove.type='button';remove.textContent='Remove';
+      remove.addEventListener('click',()=>{kept.delete(index);row.remove();status.textContent=`${kept.size} hits kept`;byId('instrument-build').disabled=!kept.size;});
+      row.append(label,audio,remove);list.append(row);
+    }
+    status.textContent=`${kept.size} hits kept · play and remove unwanted hits before building`;
+    byId('instrument-build').hidden=false;
+  }
+  async function refresh(result) {
+    if(result.revision) document.body.dataset.revision=result.revision;
+    await window.cicadaRefreshProjection?.({revision:result.revision,source:result.source});
+  }
+  byId('instrument-build').addEventListener('click',()=>busy(async()=>{
+    const response=await fetch('/api/instrument-build',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({takeId:preview.sha256,hits:[...kept],revision:window.cicadaStudio?.revision()||document.body.dataset.revision})});
+    const result=await response.json();if(!response.ok)throw new Error(result.error||'Cannot build instrument');
+    result.playRoot=Number(byId('instrument-root').value);sampledPack=result;modeledPack=null;selectPack(result);
+    byId('instrument-build').hidden=true;byId('instrument-hits').replaceChildren();await refresh(result);
+  }));
   function selectPack(result) {
     stopVoices();cache.clear();pack=result;cycle=0;
     window.cicadaRecordedInstrument=pack;
-    byId('instrument-mode').textContent=pack.model?'Play sampled':'Play modeled';
+    byId('instrument-mode').textContent=pack.model?'Select sampled':'Sampled selected · audition model approximation';
     const layers=new Set(pack.manifest.zones.map(z=>z.Layer)), counts=new Set(pack.manifest.zones.map(z=>z.Count));
-    status.textContent=pack.model?`${pack.model.modes.length} fitted modes · root ${pack.model.rootHz.toFixed(1)} Hz · modeled instrument ready to play`:`${pack.hits.length} hits · ${layers.size} velocity layers · ${[...counts].join('/')} round robins · owner recording · ready to play`;
+    status.textContent=pack.model?`${pack.model.modes.length} fitted modes · root ${pack.model.rootHz.toFixed(1)} Hz · model approximation ready to audition`:`${pack.hits.length} hits kept · ${layers.size} velocity layers · ${[...counts].join('/')} round robins · owner recording · ready to play`;
     byId('instrument-root').value=pack.model?pack.model.rootMIDI:pack.playRoot;
     byId('instrument-map').textContent=pack.model?pack.model.modes.map((mode,index)=>`Mode ${index+1}: ${mode.frequencyHz.toFixed(1)} Hz · ratio ${mode.ratio.toFixed(3)} · decay T60 ${mode.t60.toFixed(3)} s (${Math.round(mode.decayConfidence*100)}% fit confidence)`).join('\n'):pack.hits.map((hit,index)=>`Take ${index+1}: ${(hit.start/hit.rate).toFixed(3)}–${(hit.end/hit.rate).toFixed(3)} s · ${hit.loudnessDB.toFixed(1)} dB · ${hit.pitchHz?hit.pitchHz.toFixed(1)+' Hz':'unpitched'} (${Math.round(hit.confidence*100)}% confidence) · root ${hit.root}`).join('\n');
     byId('instrument-declaration').textContent=pack.declaration;
@@ -53,9 +80,9 @@
   }
   byId('instrument-fit').addEventListener('click',()=>busy(async()=>{
     status.textContent='Fitting resonances and decay times…';
-    const response=await fetch('/api/instrument-fit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sha256:sampledPack.sha256,hit:Number(byId('instrument-fit-hit').value)})});
+    const response=await fetch('/api/instrument-fit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sha256:sampledPack.sha256,hit:Number(byId('instrument-fit-hit').value),revision:window.cicadaStudio?.revision()||document.body.dataset.revision})});
     const result=await response.json();if(!response.ok) throw new Error(result.error||'Cannot fit model');
-    modeledPack=result;window.cicadaModeledInstrument=result;selectPack(result);
+    modeledPack=result;window.cicadaModeledInstrument=result;selectPack(sampledPack);status.textContent += ' · model approximation saved separately; Sampled stays selected';await refresh(result);
   }));
   byId('instrument-mode').addEventListener('click',()=>selectPack(pack.model?sampledPack:modeledPack));
   // Preserve raw frame gaps while converting committed browser PCM to WAV.

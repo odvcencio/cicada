@@ -506,7 +506,12 @@ func (s *studio) kernelImage(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("capture") == "1" {
 		p = captureBacking(p)
 	}
-	cfg, err := schedule.Compile(p, filepath.Dir(s.path), rate, 128)
+	root, err := studioProjectRoot(s.path)
+	if err != nil {
+		studioJSON(w, 422, map[string]any{"error": err.Error()})
+		return
+	}
+	cfg, err := schedule.Compile(p, root, rate, 128)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return

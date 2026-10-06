@@ -1,7 +1,10 @@
 # Cicada Studio
 
-Studio is a GoSX workstation for the score on disk. Its editor, forms,
-navigation, meters, and live performance use GoSX; Tymbal handles native audio devices.
+Studio is a GoSX workstation for projects on disk. The Windows app starts
+without a score by creating an untitled project in Documents\Cicada; **File → New**
+creates another project. Explicit `cicada.mod` projects can contain several
+score files. Its editor, forms, navigation, meters, and live performance use
+GoSX; Tymbal handles native audio devices.
 Changes to patterns, mixer settings, and arrangements write back to the score.
 
 From a source checkout, build both executables and open a score:
@@ -63,6 +66,8 @@ currently place points at scene boundaries; continuous curves and recording
 control movement remain future work.
 
 ![GoSX scene automation with explicit points and inherited levels.](screenshots/studio-automation-1440.png)
+
+![Project files open in Studio’s score editor, captured at 1440 px.](screenshots/studio-project-files-1440.png)
 
 ## Patterns
 
@@ -219,7 +224,11 @@ this limit instead of discarding chord notes.
 ## Score and history
 
 **Score** uses the GoSX code editor with syntax highlighting, a gutter, and
-two-space indentation. **Save score** validates before writing. A rejected edit
+two-space indentation. **Score** lists the project files. Select a file, edit it, then use **Check file**
+to review its diagnostics or **Save file** to validate and write that file. Other
+score files retain their exact bytes. External changes refresh clean editors and
+project views; unsaved drafts remain available for an explicit merge. Saved
+revision files live in app data, with late writes from other editors retained. A rejected edit
 keeps the file unchanged and retains the draft across reload and navigation.
 Rejected drafts expire after thirty minutes or when Studio closes.
 
@@ -275,7 +284,9 @@ Assets are verified and decoded before playback, confined to the project
 directory, and shared immutably between regions. Native playback admits up to
 64 MiB of resident PCM per prepared project and 16 clips per audio track. File
 I/O and decoding never run in the audio callback. Existing audio accompanies
-new native recordings; the old portable qualification image remains synth-only.
+new native recordings; the portable AudioWorklet image uses the same sample-capable engine and
+verified pack map as native playback and offline render. The existing 2 MiB
+project-image and 64 MiB native resident-PCM limits still apply.
 
 ### Library
 

@@ -91,11 +91,11 @@ async function setup(asset, capture, version, capability, options = {}) {
       assert.equal(old.counts.projectAllocs, 0, 'unnegotiated image mutated old kernel');
       assert.equal(old.counts.initializations, 1);
     }
-    for (const capability of [65536, 65537, 65911, 66047]) {
+    for (const capability of [65536, 65537, 65911, 66047, 66559]) {
       const unified = await setup(asset, capture, 15, capability);
       assert.ok(unified.messages.some(m => m.t === 'r' && m.p === capability));
     }
-    for (const capability of [undefined, -1, 1.5, NaN, Infinity, 512, 1024, 0x100000000]) {
+    for (const capability of [undefined, -1, 1.5, NaN, Infinity, 1024, 2048, 0x100000000]) {
       const malformed = await setup(asset, capture, 13, capability);
       assert.match(malformed.messages.find(m => m.t === 'e')?.e || '', /Invalid capabilities/);
       assert.equal(malformed.counts.projectAllocs, 0);

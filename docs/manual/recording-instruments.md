@@ -1,15 +1,20 @@
 # Record your own instrument
 
-In Studio, open **Record → Record your own instrument**, choose **Record
-microphone**, tap 15 times from soft to hard, then choose **Stop and build**.
-There is no count-in or accompaniment. Microphone monitoring is
-off. You can instead choose or drop one or more PCM16/24/32 or float32 WAV files.
+In the Windows app, open **Instruments → Record an instrument**. Enable input
+in **Audio**, then choose **Record microphone**. Record several clear taps,
+from soft to loud, and choose **Stop and review hits**. The default instrument
+name is `recorded`. Capture uses Tymbal's native input and the durable take
+journal, with silent monitoring and no accompaniment or count-in.
 
-Play the root, third, fifth or octave buttons. **Playing velocity** selects the
-recorded dynamic and controls output level. Repeated notes cycle through the
-takes in each layer. **Silence** stops voices, including pending auditions.
-Microphone capture uses the existing worklet and recoverable browser journal;
-analysis and native pitch conversion run outside the audio callback.
+You can also import PCM16/24/32 or float32 WAV files. Review the detected hits:
+each has playback controls and **Remove hit**. The gate rejects onsets below
+10% of the take's loudest smoothed energy or six times its measured noise floor.
+Onsets must be at least 120 ms apart. Studio reports the number of hits kept.
+Choose the current scene and **Build kept hits** to save the sampled pack and
+add its pinned sampler declaration, track and starter pattern to the project.
+**Undo** removes this score edit; the immutable pack remains available for Redo.
+The portable qualification host uses browser microphone capture and the same
+analysis, review, pack builder and project insertion.
 
 The default is three velocity layers. Fifteen similar-pitch taps produce five
 round robins per layer. Hits are sorted by their first 40 ms RMS before
@@ -29,10 +34,12 @@ directory and renders immediately with `cicada render`. Studio displays its
 relative path. Pinned pack scores use the sampler-pack playback capability;
 the recording panel's audition uses the original sample voice.
 
+![Sampled and approximation packs appear as project instruments, captured at 1440 px.](screenshots/studio-recorded-instruments-1440.png)
+
 ## Offline WAV packs
 
 ```sh
-cicada record-pack -o assets/recorded/pencil --name pencil --root 60 --layers 3 taps.wav
+cicada record-pack -o assets/recorded/recorded --name recorded --root 60 --layers 3 taps.wav
 cicada record-pack -o assets/recorded/notes --name notes --auto-pitch=true take-a.wav take-b.wav
 cicada record-pack -o assets/recorded/taps --auto-pitch=false taps.wav
 ```
@@ -52,8 +59,9 @@ it records the supplied audio's provenance and grants no public redistribution
 rights.
 
 Admission limits are 32 WAV files, 64 MiB input, 8,388,608 total source frames,
-256 hits, eight layers and 32 takes per layer. Studio stops microphone capture
-after 60 seconds. Incomplete capture and non-finite PCM are rejected. Capture
+256 hits, eight layers and 32 takes per layer. Browser capture stops after
+60 seconds; native capture uses the frame limit and retains its raw journal.
+Incomplete capture and non-finite PCM are rejected. Capture
 timing is uncalibrated; hit detection uses source-frame coordinates rather than
 claiming calibrated score placement.
 
@@ -73,9 +81,10 @@ recorded-instrument render check measured zero allocations. Captured views:
 
 After recording or importing hits, choose a **Take** and press **Fit model**.
 Studio estimates up to ten resonant frequencies, their relative amplitudes and
-their decay times. The modeled instrument is selected automatically. Play the
-same note buttons and velocity slider; **Play sampled** returns to the original
-recording. The source WAV hash and the exact trimmed-hit WAV hash remain in
+their decay times. Studio saves both packs. **Sampled** stays selected; the model is clearly
+labeled as an approximation and added as a separate muted track. Taps, clicks
+and knocks often contain noisy transients that a modal fit cannot reproduce.
+Audition the approximation explicitly before choosing it for a track. The source WAV hash and the exact trimmed-hit WAV hash remain in
 `model.json`, with the `owner recording` license.
 
 The fitted voice uses the modal engine's bounded contact, resonator, glide and

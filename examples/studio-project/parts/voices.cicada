@@ -1,0 +1,3 @@
+instrument glass { voice mono { out = sine(pitch) * env(gate, 90ms) } }
+track lead glass { level = -12dB }
+track beat drums { level = -12dB }

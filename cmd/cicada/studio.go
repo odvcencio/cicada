@@ -21,11 +21,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/modalfit"
 	"m31labs.dev/cicada/host/recording"
-	"m31labs.dev/cicada/host/sampleasset"
+	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/lsp"
@@ -34,11 +33,16 @@ import (
 )
 
 type studio struct {
+	recordingPreview    string
+	recordedSampled     string
+	recordedModeled     string
+	captureInstrument   bool
 	recordedModels      map[string]modalfit.Model
 	recordedInstruments map[string]*recording.Pack
 	takes               *takejournal.Store
 	captureID           string
 	captureRecorder     *capture.Recorder
+	fileSessions        map[string]*studio
 	path                string
 	mu                  sync.Mutex
 	lastGoodSource      []byte
@@ -201,9 +205,6 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := refuseMultiFileStudio(absolute); err != nil {
-		return nil, err
-	}
 	s := &studio{path: absolute}
 	opened := false
 	defer func() {
@@ -244,6 +245,9 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/state", s.state)
 	mux.HandleFunc("GET /api/workspace", s.workspace)
+	mux.HandleFunc("GET /api/files", s.projectFiles)
+	mux.HandleFunc("GET /api/revision", s.projectRevision)
+	mux.HandleFunc("POST /api/files", s.editFile)
 	mux.HandleFunc("GET /api/meters", s.meters)
 	mux.HandleFunc("GET /api/takes", s.takeState)
 	mux.HandleFunc("GET /api/capture", s.captureState)
@@ -252,6 +256,10 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
 	mux.HandleFunc("POST /api/record", s.recordTake)
 	mux.HandleFunc("POST /api/instrument-record", s.instrumentRecord)
+	mux.HandleFunc("POST /api/instrument-build", s.buildRecorded)
+	mux.HandleFunc("POST /api/instrument-capture", s.instrumentCapture)
+	mux.HandleFunc("GET /api/instrument-state", s.instrumentState)
+	mux.HandleFunc("GET /api/instrument-hit", s.instrumentHit)
 	mux.HandleFunc("POST /api/instrument-fit", s.instrumentFit)
 	mux.HandleFunc("POST /api/instrument-audition", s.instrumentAudition)
 	mux.HandleFunc("GET /assets/recorded/{pack}/{file}", s.instrumentPackAsset)
@@ -397,6 +405,9 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
+	historyFiles   []studioAuxiliaryFile
+	Hits           []int                  `json:"hits,omitempty"`
+	File           string                 `json:"file,omitempty"`
 	Capture        *studioBrowserTake     `json:"capture,omitempty"`
 	Sample         *studioSampleRequest   `json:"sample,omitempty"`
 	TakeID         string                 `json:"takeId,omitempty"`
@@ -620,23 +631,22 @@ func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change 
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during commit; reload before saving"})
 		return
 	}
-	for _, file := range mutation.Files {
-		if err := studioWriteAuxiliaryFile(file); err != nil {
-			_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
-			message := "source auxiliary write failed: " + err.Error()
-			if rollbackErr != nil {
-				message += "; source rollback failed: " + rollbackErr.Error()
-			}
-			studioJSON(w, http.StatusConflict, map[string]any{"error": message})
-			return
+	if err := studioWriteAuxiliaryFiles(mutation.Files); err != nil {
+		_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
+		message := "source auxiliary write failed: " + err.Error()
+		if rollbackErr != nil {
+			message += "; source rollback failed: " + rollbackErr.Error()
 		}
+		studioJSON(w, http.StatusConflict, map[string]any{"error": message})
+		return
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
 	if s.history != nil {
 		if mutation.HistoryDetail != "" {
 			edit.Label = mutation.HistoryDetail
 		}
-		s.history.recordSourceWrite(current, updated, studioEditLabel(edit), studioHistoryWriteNew, 0)
+		entry := s.history.recordSourceWrite(current, updated, studioEditLabel(edit), studioHistoryWriteNew, 0)
+		s.history.attachFiles(entry.ID, mutation.Files)
 	}
 	response := map[string]any{"revision": studioRevision(updated), "valid": true, "source": string(updated), "preserved": preserved}
 	for key, value := range mutation.Response {
@@ -650,9 +660,6 @@ func compileStudioSource(path string, source []byte) (*project.Project, error) {
 }
 
 func compileStudioSourceWithOverrides(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
-	if err := refuseMultiFileStudio(path); err != nil {
-		return nil, err
-	}
 	if !utf8.Valid(source) {
 		return nil, fmt.Errorf("score is not UTF-8")
 	}
@@ -685,14 +692,12 @@ func compileStudioSourceWithOverrides(path string, source []byte, overrides map[
 	if err := project.ValidateProject(p); err != nil {
 		return nil, err
 	}
-	if !p.NeedsSampleEngine() {
-		if _, err := project.CompileEngine(p, 48000, 128); err != nil {
-			return nil, err
-		}
-	} else {
-		if _, err := sampleasset.CompileEngine(filepath.Dir(path), p, 48000, 128); err != nil {
-			return nil, err
-		}
+	root, err := studioProjectRoot(path)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := schedule.Compile(p, root, 48000, 128); err != nil {
+		return nil, err
 	}
 	return p, nil
 }
@@ -766,26 +771,4 @@ func studioJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
-}
-
-func refuseMultiFileStudio(path string) error {
-	_, manifestPath, err := scoreEdition(path)
-	if err != nil {
-		return err
-	}
-	if manifestPath == "" {
-		return nil
-	}
-	data, err := os.ReadFile(manifestPath)
-	if err != nil {
-		return err
-	}
-	manifest, err := edition.ParseProjectManifest(data)
-	if err != nil {
-		return err
-	}
-	if len(manifest.SourcePaths()) > 1 {
-		return fmt.Errorf("CICADA-UNSUPPORTED: Studio cannot edit multi-file projects yet; use a text editor and cicada check, play, or render")
-	}
-	return nil
 }

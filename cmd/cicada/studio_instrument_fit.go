@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
-	"path/filepath"
 
 	"m31labs.dev/cicada/host/modalfit"
 	"m31labs.dev/cicada/host/recording"
@@ -15,14 +14,19 @@ func (s *studio) instrumentFit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request struct {
-		Pin string `json:"sha256"`
-		Hit int    `json:"hit"`
+		Pin      string `json:"sha256"`
+		Hit      int    `json:"hit"`
+		Revision string `json:"revision"`
+		Scene    string `json:"scene"`
 	}
 	d := json.NewDecoder(http.MaxBytesReader(w, r.Body, 4096))
 	d.DisallowUnknownFields()
 	if d.Decode(&request) != nil || d.Decode(new(any)) != io.EOF {
 		studioJSON(w, 400, map[string]string{"error": "choose one recorded hit to fit"})
 		return
+	}
+	if request.Revision == "" {
+		request.Revision = s.recordedRevision()
 	}
 	s.mu.Lock()
 	source := s.recordedInstruments[request.Pin]
@@ -47,11 +51,7 @@ func (s *studio) instrumentFit(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, 422, map[string]string{"error": err.Error()})
 		return
 	}
-	relative := filepath.Join("assets", "recorded", name+"-"+pack.Pin[:16])
-	if err = pack.Write(filepath.Join(filepath.Dir(s.path), relative)); err != nil {
-		studioJSON(w, 500, map[string]string{"error": "cannot publish modeled instrument"})
-		return
-	}
+
 	s.mu.Lock()
 	s.recordedInstruments[pack.Pin] = pack
 	if s.recordedModels == nil {
@@ -59,5 +59,5 @@ func (s *studio) instrumentFit(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordedModels[pack.Pin] = model
 	s.mu.Unlock()
-	studioJSON(w, 200, map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": pack.Hits, "model": model, "modelSHA256": recording.Digest(pack.Files["model.json"]), "declaration": pack.Source(filepath.Join(relative, "manifest.json"), model.RootMIDI), "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "owner recording"})
+	s.publishRecorded(w, pack, model.RootMIDI, studioEdit{Revision: request.Revision, Scene: request.Scene}, map[string]any{"model": model, "modelSHA256": recording.Digest(pack.Files["model.json"]), "approximation": true})
 }

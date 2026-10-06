@@ -25,7 +25,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       for (const name in exports) x[name.replace('gosx_audio_', '')] = exports[name];
       if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability export');
       const capability = x.capabilities ? x.capabilities() : 0;
-      if (capability !== (capability >>> 0) || (capability & ~0x101ff)) invalid('Invalid capabilities');
+      if (capability !== (capability >>> 0) || (capability & ~0x103ff)) invalid('Invalid capabilities');
       if (version === 15 && !(capability & CapabilityUnifiedImage)) invalid('image15 requires CapabilityUnifiedImage bit16');
       if (bank) {
         const bankPtr = x.bank_alloc(bank.byteLength);

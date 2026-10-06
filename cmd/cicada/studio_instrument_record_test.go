@@ -18,7 +18,7 @@ func instrumentUpload(t *testing.T, handler http.Handler, data []byte, origin st
 	t.Helper()
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
-	for key, value := range map[string]string{"name": "pencil", "root": "60", "layers": "3", "autoPitch": "false"} {
+	for key, value := range map[string]string{"name": "recorded", "root": "60", "layers": "3", "autoPitch": "false"} {
 		if err := form.WriteField(key, value); err != nil {
 			t.Fatal(err)
 		}
@@ -69,8 +69,8 @@ func TestStudioRecordedInstrument(t *testing.T) {
 	if err != nil || recording.Digest(manifest) != result.Pin {
 		t.Fatal("published pack pin", err)
 	}
-	if source, err := os.ReadFile(path); err != nil || string(source) != studioScore {
-		t.Fatal("recording changed existing score")
+	if source, err := os.ReadFile(path); err != nil || !strings.Contains(string(source), "track recorded_track recorded") {
+		t.Fatal("recording did not appear in the open score")
 	}
 	asset := studioCall(t, handler, "/"+result.Path, nil)
 	if asset.Code != 200 || !bytes.Equal(asset.Body.Bytes(), manifest) {

@@ -223,13 +223,17 @@ func TestMultiFileFixRetainsLateOpenWriterRecovery(t *testing.T) {
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(root)
+	recoveryDir, err := studioRecoveryDir(part)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(recoveryDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	retained := false
 	for _, item := range entries {
-		data, err := os.ReadFile(filepath.Join(root, item.Name()))
+		data, err := os.ReadFile(filepath.Join(recoveryDir, item.Name()))
 		if err == nil && bytes.Equal(data, edited) {
 			retained = true
 		}
