@@ -113,7 +113,7 @@ func (d *Drive) SetParams(p DriveParams) error {
 	}
 	frac := position - float64(index)
 	for shape := range d.targetPost {
-		d.targetPost[shape] = d.table[shape][index]*(1-frac) + d.table[shape][index+1]*frac
+		d.targetPost[shape] = float64(d.table[shape][index]*(1-frac)) + float64(d.table[shape][index+1]*frac)
 		d.targetWeights[shape] = 0
 	}
 	d.targetWeights[p.Shape] = 1
@@ -147,7 +147,7 @@ func (d *Drive) buildTables() {
 			for sample := 0; sample < 1024; sample++ {
 				x := amplitude * math.Sin(2*math.Pi*float64(sample)/1024)
 				y := shapeSample(shape, x*pre)
-				power += y * y
+				power += float64(y * y)
 			}
 			d.table[shape][index] = inputRMS / math.Sqrt(power/1024)
 		}
@@ -181,12 +181,12 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 		d.fault = true
 		return 0, 0
 	}
-	d.pre += (d.targetPre - d.pre) * d.smooth
-	d.tone += (d.targetTone - d.tone) * d.smooth
-	d.mix += (d.targetMix - d.mix) * d.smooth
+	d.pre += float64((d.targetPre - d.pre) * d.smooth)
+	d.tone += float64((d.targetTone - d.tone) * d.smooth)
+	d.mix += float64((d.targetMix - d.mix) * d.smooth)
 	for shape := range d.post {
-		d.post[shape] += (d.targetPost[shape] - d.post[shape]) * d.smooth
-		d.weights[shape] += (d.targetWeights[shape] - d.weights[shape]) * d.smooth
+		d.post[shape] += float64((d.targetPost[shape] - d.post[shape]) * d.smooth)
+		d.weights[shape] += float64((d.targetWeights[shape] - d.weights[shape]) * d.smooth)
 	}
 	index := d.position
 	dry := d.dryDelay[index]
@@ -213,13 +213,13 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 	var wet stereo
 	for shape, signal := range shaped {
 		state := &d.toneState[shape]
-		state.left += (signal.left - state.left) * d.tone
-		state.right += (signal.right - state.right) * d.tone
-		wet.left += state.left * d.weights[shape]
-		wet.right += state.right * d.weights[shape]
+		state.left += float64((signal.left - state.left) * d.tone)
+		state.right += float64((signal.right - state.right) * d.tone)
+		wet.left += float64(state.left * d.weights[shape])
+		wet.right += float64(state.right * d.weights[shape])
 	}
-	outL := dry.left*(1-d.mix) + wet.left*d.mix
-	outR := dry.right*(1-d.mix) + wet.right*d.mix
+	outL := float64(dry.left*(1-d.mix)) + float64(wet.left*d.mix)
+	outR := float64(dry.right*(1-d.mix)) + float64(wet.right*d.mix)
 	if !finite(outL) || !finite(outR) || math.Abs(outL) > math.MaxFloat32 || math.Abs(outR) > math.MaxFloat32 {
 		d.fault = true
 		return 0, 0
