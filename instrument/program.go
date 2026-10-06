@@ -3,10 +3,12 @@
 package instrument
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -36,6 +38,9 @@ type Program struct {
 	Nodes         []Node
 	Output        int
 	StatefulNodes int
+	DelaySamples  int
+	// PeriodExpressions identifies the exact divisions converted from Hz to ms.
+	PeriodExpressions map[*notation.Expr]bool `json:"-"`
 }
 
 // HasParameter reports whether the graph declares a synthesis parameter.
@@ -102,6 +107,20 @@ func Compile(src notation.Instrument) (*Program, []notation.Diagnostic) {
 	if c.program.StatefulNodes > 32 {
 		c.errorAt("CICADA-LIMIT", "voice graph exceeds 32 stateful nodes", src.Position)
 	}
+	if c.program.DelaySamples > graph.MaxVoiceDelaySamples {
+		c.errorAt("CICADA-LIMIT", "voice graph exceeds 8192 delay samples (two delay nodes, 32768 bytes per voice)", src.Position)
+	}
+	if len(c.ds) == 0 {
+		if _, err := Lower(&c.program, nil); err != nil {
+			position := src.Position
+			var parameter *graph.ParameterError
+			if errors.As(err, &parameter) {
+				node := c.program.Nodes[parameter.Node]
+				position = c.program.Nodes[node.Inputs[parameter.Input]].Position
+			}
+			c.errorAt("CICADA-PARAM", err.Error(), position)
+		}
+	}
 	if len(c.ds) > 0 {
 		return nil, c.ds
 	}
@@ -138,7 +157,15 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 			c.errorAt("CICADA-UNIT", fmt.Sprintf("cannot apply %s to %s and %s", e.Text, leftType, rightType), e.Position)
 			return -1, ""
 		}
-		return c.emit(Node{Op: e.Text, Type: result, Inputs: []int{left, right}, Position: e.Position}), result
+		op := e.Text
+		if op == "/" && leftType == Unit && rightType == Hz {
+			op = "period"
+			if c.program.PeriodExpressions == nil {
+				c.program.PeriodExpressions = make(map[*notation.Expr]bool)
+			}
+			c.program.PeriodExpressions[e] = true
+		}
+		return c.emit(Node{Op: op, Type: result, Inputs: []int{left, right}, Position: e.Position}), result
 	case "call":
 		inputs := make([]int, 0, len(e.Args))
 		types := make([]Type, 0, len(e.Args))
@@ -152,11 +179,18 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 		}
 		result, stateful, ok := callResult(e.Text, types)
 		if !ok {
-			c.errorAt("CICADA-PARAM", fmt.Sprintf("unknown function or wrong argument types: %s", e.Text), e.Position)
+			code := "CICADA-PARAM"
+			if e.Text == "delay" && len(types) == 2 || e.Text == "comb" && len(types) == 4 {
+				code = "CICADA-UNIT"
+			}
+			c.errorAt(code, fmt.Sprintf("unknown function or wrong argument types: %s", e.Text), e.Position)
 			return -1, ""
 		}
 		if stateful {
 			c.program.StatefulNodes++
+		}
+		if e.Text == "delay" || e.Text == "comb" {
+			c.program.DelaySamples += graph.MaxDelaySamples
 		}
 		return c.emit(Node{Op: e.Text, Type: result, Inputs: inputs, Position: e.Position}), result
 	default:
@@ -207,6 +241,9 @@ func binaryResult(op string, left, right Type) (Type, bool) {
 			return left, true
 		}
 	case "/":
+		if left == Unit && right == Hz {
+			return MS, true
+		}
 		if right == Unit && left != Gate {
 			return left, true
 		}
@@ -240,6 +277,10 @@ func callResult(name string, args []Type) (Type, bool, bool) {
 		return Audio, true, matches(Audio, Hz, Unit)
 	case "lowpass", "highpass":
 		return Audio, true, matches(Audio, Hz)
+	case "delay":
+		return Audio, true, matches(Audio, MS)
+	case "comb":
+		return Audio, true, matches(Audio, MS, Unit, Unit)
 	case "mix":
 		return Audio, false, matches(Audio, Audio, Unit)
 	case "tanh":
