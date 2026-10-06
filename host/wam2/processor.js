@@ -142,7 +142,7 @@ export default function registerProcessor(moduleId) {
       if (this.manifest.midiPiano && (status === 144 || status === 128) && (note < 21 || note > 108)) return;
       const track = this.manifest.midiTrack;
       const id = this.manifest.midiDrums ? this.manifest.drumNotes.indexOf(note) : this.manifest.midiPiano ? note : 1 + channel * 128 + note;
-      if (id < 0) return;
+      if (id < 0 && (status === 144 || status === 128)) return;
       if (status === 144 && velocity > 0 && velocity < 128) this.send(12, track, id, note | velocity << 8);
       else if (status === 128 || status === 144 && velocity === 0) this.send(13, track, id);
       else if (status === 176 && (note === 120 || note === 123)) this.releaseNotes();

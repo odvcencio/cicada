@@ -85,6 +85,7 @@ test('WAM2 timed MIDI, automation, state and allocation-free processing', async 
     render();
     assert(output[0][0].some(value => value!==0),'MIDI drum note did not play');
     processor._onMidi({bytes:[0xb0,123,0]});
+    assert.equal(processor.command[0],13,'drum note-release controller was discarded as an unmapped pitch');
     render();
     processor.destroy();
     assert.equal(processor.process([],output),false);
