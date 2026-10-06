@@ -260,7 +260,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	diagnostics = notation.Validate(score)
 	score, _ = notation.ResolvePresets(score)
-	_, compiledDiagnostics := Check(score)
+	programs, compiledDiagnostics := Check(score)
 	diagnostics = append(diagnostics, compiledDiagnostics...)
 	for _, d := range diagnostics {
 		if d.Severity == "error" {
@@ -282,6 +282,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	lowerAudio(p, score)
 	for _, source := range score.Instruments {
+		periods := programs[source.Name].PeriodExpressions
 		octave := source.Octave
 		inst := Instrument{ID: source.Name, Octave: &octave, Mode: source.Mode, Params: []InstrumentParam{}, Lets: []Binding{}}
 		for _, param := range source.Params {
@@ -296,9 +297,9 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 			inst.Params = append(inst.Params, InstrumentParam{ID: param.Name, Unit: unit, Default: value})
 		}
 		for _, binding := range source.Lets {
-			inst.Lets = append(inst.Lets, Binding{ID: binding.Name, Value: projectExpr(binding.Value)})
+			inst.Lets = append(inst.Lets, Binding{ID: binding.Name, Value: projectExpr(binding.Value, periods)})
 		}
-		inst.Out = projectExpr(source.Output)
+		inst.Out = projectExpr(source.Output, periods)
 		p.Instruments = append(p.Instruments, inst)
 	}
 	for _, source := range score.Kits {
@@ -669,7 +670,7 @@ func assignSlots(p *Project, score *notation.Score) error {
 	return nil
 }
 
-func projectExpr(source *notation.Expr) Expr {
+func projectExpr(source *notation.Expr, periods map[*notation.Expr]bool) Expr {
 	if source == nil {
 		return Expr{}
 	}
@@ -680,11 +681,15 @@ func projectExpr(source *notation.Expr) Expr {
 	case "name":
 		return Expr{Name: source.Text}
 	case "binary":
-		return Expr{Op: source.Text, Args: []Expr{projectExpr(source.Left), projectExpr(source.Right)}}
+		op := source.Text
+		if op == "/" && periods[source] {
+			op = "period"
+		}
+		return Expr{Op: op, Args: []Expr{projectExpr(source.Left, periods), projectExpr(source.Right, periods)}}
 	case "call":
 		out := Expr{Op: source.Text, Args: []Expr{}}
 		for _, arg := range source.Args {
-			out.Args = append(out.Args, projectExpr(arg))
+			out.Args = append(out.Args, projectExpr(arg, periods))
 		}
 		return out
 	}

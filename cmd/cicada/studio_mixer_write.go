@@ -179,7 +179,11 @@ func studioMixerSource(source []byte, path string, raw json.RawMessage) ([]byte,
 		return nil, "", "", mixerLineRange{}, fmt.Errorf("unknown mixer owner %q", owner)
 	}
 	if declKind == "fx_decl" {
-		return editFXField(source, walker, decl, owner, field, raw)
+		resolved, diagnostics := notation.ResolvePresets(score)
+		if hasDiagnosticErrors(diagnostics) {
+			return nil, "", "", mixerLineRange{}, fmt.Errorf("score must validate before a mixer edit")
+		}
+		return editFXField(source, walker, decl, owner, field, raw, resolved)
 	}
 	if field == "send" || strings.HasPrefix(field, "send.") {
 		if declKind != "track_decl" || len(parts) != 3 || parts[1] != "send" {
@@ -193,10 +197,16 @@ func studioMixerSource(source []byte, path string, raw json.RawMessage) ([]byte,
 	return editMixerSetting(source, walker, decl, declKind, owner, field, raw, score)
 }
 
-func editFXField(source []byte, walker *walk.Walker, decl *gts.Node, owner, field string, raw json.RawMessage) ([]byte, string, string, mixerLineRange, error) {
+func editFXField(source []byte, walker *walk.Walker, decl *gts.Node, owner, field string, raw json.RawMessage, score *notation.Score) ([]byte, string, string, mixerLineRange, error) {
 	kind := walker.Text(walker.Field(decl, "kind"))
 	if kind == "" {
 		kind = owner
+	}
+	for _, effect := range score.Effects {
+		if effect.Name == owner {
+			kind = effect.Kind
+			break
+		}
 	}
 	descriptor, ok := mixerFXDescriptor(kind, field)
 	if !ok {

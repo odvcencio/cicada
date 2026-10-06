@@ -32,6 +32,12 @@ func SelectSource(source []byte, t Take) ([]byte, error) {
 			return nil, errors.New(d.Message)
 		}
 	}
+	score, ds = notation.ResolvePresets(score)
+	for _, d := range ds {
+		if d.Severity == "error" {
+			return nil, errors.New(d.Message)
+		}
+	}
 	found := false
 	for _, track := range score.Tracks {
 		if track.Name == t.Track && track.Kind == "audio" {

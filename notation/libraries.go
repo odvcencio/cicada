@@ -112,7 +112,7 @@ func (w *loweringWalker) referenceText(name string, position Position) string {
 	}
 	if qualified {
 		if namespace, found := w.bindings[first]; found {
-			if strings.Contains(rest, ".") {
+			if strings.Contains(rest, ".") && !w.libraryDeclarations[namespace][rest] {
 				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-LIB-REFERENCE", Severity: "error", Message: "import references must name a declaration directly owned by the bound library: " + name, Position: position})
 				return name
 			}

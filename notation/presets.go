@@ -138,15 +138,30 @@ func PresetDescriptors(s *Score, target string) []paramdefs.Descriptor {
 	return descriptors
 }
 
-func validatePresetParams(s *Score, target string, params []Param) []Diagnostic {
-	descriptors := PresetDescriptors(s, target)
+func validatePresetParamDuplicates(params []Param) []Diagnostic {
 	var ds []Diagnostic
 	seen := map[string]bool{}
 	for _, p := range params {
-		if seen[p.Name] {
-			ds = append(ds, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate preset parameter " + p.Name, Position: p.Position})
+		key := p.Name
+		if p.Name == "send" {
+			key += "." + p.Target
 		}
-		seen[p.Name] = true
+		if seen[key] {
+			ds = append(ds, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate preset parameter " + key, Position: p.Position})
+		}
+		seen[key] = true
+	}
+	return ds
+}
+
+func validatePresetParams(s *Score, target string, params []Param) []Diagnostic {
+	return append(validatePresetParamDuplicates(params), validatePresetValues(s, target, params)...)
+}
+
+func validatePresetValues(s *Score, target string, params []Param) []Diagnostic {
+	descriptors := PresetDescriptors(s, target)
+	var ds []Diagnostic
+	for _, p := range params {
 		found := false
 		// Authored declarations take precedence over generic mixer descriptors.
 		for i := len(descriptors) - 1; i >= 0; i-- {
@@ -234,7 +249,8 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 				valueOverrides = append(valueOverrides, q)
 			}
 		}
-		ds = append(ds, validatePresetParams(source, p.Target, valueOverrides)...)
+		ds = append(ds, validatePresetParamDuplicates(t.Params)...)
+		ds = append(ds, validatePresetValues(source, p.Target, valueOverrides)...)
 		t.Kind = p.Target
 		t.Params = mergePresetParams(p.Params, t.Params)
 		if kind == "lane" {
@@ -284,7 +300,8 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 				values = append(values, param)
 			}
 		}
-		ds = append(ds, validatePresetParams(source, p.Target, values)...)
+		ds = append(ds, validatePresetParamDuplicates(e.Params)...)
+		ds = append(ds, validatePresetValues(source, p.Target, values)...)
 		if strings.HasPrefix(p.Target, "builtin.") {
 			e.Kind = strings.TrimPrefix(p.Target, "builtin.")
 			e.Params = mergePresetParams(p.Params, e.Params)

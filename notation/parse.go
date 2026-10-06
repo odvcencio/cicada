@@ -74,13 +74,14 @@ func parseEdition(src []byte, edition int) (*Score, []Diagnostic) {
 
 type loweringWalker struct {
 	*walk.Walker
-	file         string
-	library      string
-	edition      int
-	bindings     map[string]string
-	origins      map[string]Origin
-	diagnostics  *[]Diagnostic
-	declarations map[string]bool
+	file                string
+	library             string
+	edition             int
+	bindings            map[string]string
+	origins             map[string]Origin
+	diagnostics         *[]Diagnostic
+	declarations        map[string]bool
+	libraryDeclarations map[string]map[string]bool
 }
 
 func (w *loweringWalker) position(n *gts.Node) Position {
@@ -107,6 +108,17 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 	seenDeclarations := map[string]Position{}
 	seenNames := map[string]Position{}
 	duplicateLocations := map[Position]Position{}
+	// Collect names owned by each library before resolving any import reference.
+	libraryFiles := map[string][]SourceFile{}
+	for _, file := range files {
+		if file.Library != "" {
+			libraryFiles[file.Library] = append(libraryFiles[file.Library], file)
+		}
+	}
+	libraryDeclarations := map[string]map[string]bool{}
+	for library, sources := range libraryFiles {
+		libraryDeclarations[strings.ReplaceAll(library, "/", ".")] = DeclarationNames(sources)
+	}
 	for _, file := range files {
 		root, walker, err := ParseTree(file.Source)
 		if err != nil {
@@ -116,7 +128,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			diagnostics = append(diagnostics, d)
 			continue
 		}
-		w := &loweringWalker{Walker: walker, file: file.Path, library: file.Library, edition: file.Edition, bindings: file.Bindings, origins: s.Origins, diagnostics: &diagnostics, declarations: file.Declarations}
+		w := &loweringWalker{Walker: walker, file: file.Path, library: file.Library, edition: file.Edition, bindings: file.Bindings, origins: s.Origins, diagnostics: &diagnostics, declarations: file.Declarations, libraryDeclarations: libraryDeclarations}
 		if w.declarations == nil {
 			w.declarations = DeclarationNames(files)
 		}
