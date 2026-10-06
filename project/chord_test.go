@@ -190,3 +190,27 @@ func TestChordGrammarExtrasCompile(t *testing.T) {
 		})
 	}
 }
+
+func TestChordGraphDelayChecksEveryPitch(t *testing.T) {
+	source := strings.Replace(chordSource, "sine(pitch)", "comb(noise(), 1 / pitch, 0.9, 0.5)", 1)
+	score, ds := notation.Parse([]byte(source))
+	if score == nil {
+		t.Fatal(ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	p.Patterns[0].Data[0].Notes[1] = 0
+	if err := ValidateProject(p); err == nil {
+		t.Fatal("second chord pitch exceeded graph delay storage without rejection")
+	}
+	source = strings.Replace(source, "[d4 f4 a4]", "[d4 c0, a4]", 1)
+	score, ds = notation.Parse([]byte(source))
+	if score == nil {
+		t.Fatal(ds)
+	}
+	if p, ds := FromScore(score); p != nil {
+		t.Fatalf("source accepted chord with unbounded delay pitch: %+v", ds)
+	}
+}
