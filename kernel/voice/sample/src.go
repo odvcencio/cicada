@@ -95,12 +95,21 @@ func (v *Voice) interpolate() (float64, float64) {
 	row := bank.coeff[index*bank.taps : (index+1)*bank.taps]
 	next := bank.coeff[(index+1)*bank.taps : (index+2)*bank.taps]
 	first := base - bank.taps/2 + 1
+	end := first + bank.taps
+	plainStart, plainEnd := v.region.Start, v.region.End
+	if v.region.Loop {
+		// Before the first wrap, the original attack remains contiguous. After
+		// wrapping, the overlapped head is skipped. The crossfade tail uses
+		// the separate fade path below, even before the first wrap.
+		plainEnd = min(plainEnd, v.region.LoopEnd-v.region.Crossfade)
+		if v.looped {
+			plainStart = max(plainStart, v.region.LoopStart+v.region.Crossfade)
+		}
+	}
 	var left, right float64
 	// Explicit float64 conversions round products before addition, preventing
 	// native FMA contraction. Taps always accumulate in ascending source order.
-	if v.region.Crossfade == 0 && first >= v.region.Start && first+bank.taps <= v.region.End &&
-		(!v.region.Loop || (first >= v.region.LoopStart && first+bank.taps <= v.region.LoopEnd) ||
-			(!v.looped && first+bank.taps <= v.region.LoopEnd)) {
+	if first >= plainStart && end <= plainEnd {
 		l := v.region.Left[first : first+bank.taps]
 		// Exact table phases need no row interpolation. This preserves the
 		// same tap order and rounding while reducing integer-ratio CPU cost.
@@ -130,6 +139,36 @@ func (v *Voice) interpolate() (float64, float64) {
 			c := float64(a) + float64((float64(next[i])-float64(a))*fraction)
 			left += float64(float64(l[i]) * c)
 			right += float64(float64(r[i]) * c)
+		}
+		return left, right
+	}
+	// A window entirely within the fade tail has two contiguous source
+	// spans. Read them directly, retaining the original per-frame division
+	// and float32 blend rounding before FIR multiplication. This avoids
+	// mapping/bounds/channel checks on every tap without prepared PCM copies.
+	if v.region.Crossfade > 0 && first >= v.region.LoopEnd-v.region.Crossfade && end <= v.region.LoopEnd {
+		offset := first - (v.region.LoopEnd - v.region.Crossfade)
+		head := v.region.LoopStart + offset
+		tl := v.region.Left[first:end]
+		hl := v.region.Left[head : head+bank.taps]
+		if len(v.region.Right) == 0 {
+			for i, a := range row {
+				c := float64(a) + float64((float64(next[i])-float64(a))*fraction)
+				blend := float64(offset+i) / float64(v.region.Crossfade)
+				l := float32(float64(tl[i])*(1-blend) + float64(hl[i])*blend)
+				left += float64(float64(l) * c)
+			}
+			return left, left
+		}
+		tr := v.region.Right[first:end]
+		hr := v.region.Right[head : head+bank.taps]
+		for i, a := range row {
+			c := float64(a) + float64((float64(next[i])-float64(a))*fraction)
+			blend := float64(offset+i) / float64(v.region.Crossfade)
+			l := float32(float64(tl[i])*(1-blend) + float64(hl[i])*blend)
+			r := float32(float64(tr[i])*(1-blend) + float64(hr[i])*blend)
+			left += float64(float64(l) * c)
+			right += float64(float64(r) * c)
 		}
 		return left, right
 	}

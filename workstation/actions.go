@@ -110,6 +110,7 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
+		"sample-pack": s.downloadSamplePack,
 		"instrument": s.mutation("/api/instrument", func(f map[string]string) (any, error) {
 			return map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"], "newName": f["newName"], "track": f["track"], "value": f["value"]}, nil
 		}),
