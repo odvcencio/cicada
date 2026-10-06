@@ -212,3 +212,14 @@ Other controls are numbers; integer selectors reject fractional values.
 Detune and drift controls use plain numeric values interpreted as cents, such as
 `op1_detune=12` or `detune=9 drift=2`. Time controls accept seconds or `ms`;
 frequency and output controls retain their documented `hz` and `db` units.
+
+Standard-library keyboard presets are available through `import "std/keys"`.
+Use qualified names such as `track part keys.fm_ep { voices = 4 }`. All 21
+exports preserve the matching native patch defaults and accept the controls
+listed above; preset defaults are applied before track overrides. Examples for
+every export are in `examples/keys/std/`, with the exact embedded-library pin.
+
+Presets resolve to the same patch names as direct tracks. A local instrument,
+kit, or sampler declaration with that name takes precedence. The library
+manifest requires keyboard capability bit 9 (512); native hosts prepare the
+modeled voices and Studio loads the optional keyboard module for their images.

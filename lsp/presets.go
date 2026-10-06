@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -59,6 +60,9 @@ func presetCompletion(files *project.Sources, source []byte, at position) ([]map
 	if equal := strings.IndexByte(prefix, '='); equal >= 0 && strings.TrimSpace(prefix[:equal]) == "instrument" {
 		targetPrefix := strings.TrimSpace(prefix[equal+1:])
 		names := []string{"acid", "drums", "audio", "builtin.bd", "builtin.sd", "builtin.ch", "builtin.oh", "builtin.cp", "builtin.rs", "builtin.lt", "builtin.mt", "builtin.ht", "builtin.cb", "builtin.cy", "builtin.delay", "builtin.reverb", "builtin.drive", "builtin.comp"}
+		for _, patch := range keyboard.Names {
+			names = append(names, "builtin."+patch)
+		}
 		for _, i := range score.Instruments {
 			names = append(names, i.Name)
 		}
