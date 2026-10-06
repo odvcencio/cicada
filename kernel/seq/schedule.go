@@ -237,14 +237,17 @@ func EventsWithGatesAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, st
 		}
 	}
 	// Tied steps update expression without retriggering or changing the note ID.
-	for absoluteStep := max(startStep, startTick/TicksPerStep-1); absoluteStep <= lastStep; absoluteStep++ {
+	for absoluteStep := max(startStep, startTick/grid-1); absoluteStep <= lastStep; absoluteStep++ {
 		localStep := absoluteStep - startStep
 		stepIndex := uint8(localStep % int64(p.Len))
 		step, err := UnpackStep(p.Steps[stepIndex])
 		if err != nil || !step.Tie || !p.ExpressionAt(int(stepIndex)).Set || !ProbabilityHit(step.Probability, p.Seed, track, slot, localStep/int64(p.Len), stepIndex) {
 			continue
 		}
-		tick := absoluteStep*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep)
+		tick := absoluteStep*grid + offset + swingDelayForGrid(p, absoluteStep)
+		if tick < clock.AnchorTick {
+			continue
+		}
 		sample := clock.SampleAtTick(tick)
 		if sample < startSample || sample >= startSample+int64(frames) {
 			continue

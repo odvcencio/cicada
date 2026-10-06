@@ -1,0 +1,18 @@
+cicada 2
+title "Grid, expression and automation"
+tempo 120
+track lead acid { chain = intro triplet chorus }
+pattern intro { 1 }
+pattern triplet {
+  step = 1/8t
+  1 - 3
+  velocity: 64 . 127
+  bend: 0ct 100ct .
+}
+pattern chorus { step = 1/8 5 7 }
+automate lead.pan {
+  @1.1.1 -0.5
+  @2.1.1 0.5 smooth
+}
+scene main {}
+song { main*2 }
