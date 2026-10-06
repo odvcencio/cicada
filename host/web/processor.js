@@ -202,7 +202,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       latency = l;
       post({ t: 'q', u: underruns,
         q: quantumMs, dl: durationLimit, gl: latency + durationLimit, m: active?.x.memory.buffer.byteLength || 0,
-        d: timingHistogram.slice() });
+        d: timingHistogram });
     };
     const process = (inputs, outputs) => {
       const start = clock();
@@ -210,8 +210,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       lastStart = start;
       callbacks++;
       const measuredPlaying = playing;
-      const channels = outputs[0];
-      const left = channels[0], right = channels[1];
+      const left = outputs[0][0], right = outputs[0][1];
       quantumMs = left.length * 1000 / rate;
       durationLimit = quantumMs + (preciseClock ? 0.1 : 1);
       left.fill(0); right.fill(0);
