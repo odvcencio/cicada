@@ -122,7 +122,8 @@ func TestPitchAndNotes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			options:=DefaultOptions();options.AutoPitch=true
+			options := DefaultOptions()
+			options.AutoPitch = true
 			h, err := Analyze([]Audio{a}, options)
 			if err != nil || len(h) != 1 {
 				t.Fatalf("%dHz %.0f: detected %d hits: %v", rate, frequency, len(h), err)
@@ -131,7 +132,9 @@ func TestPitchAndNotes(t *testing.T) {
 			if math.Abs(cents) > 15 || h[0].Confidence < .8 {
 				t.Fatalf("rate %d frequency %.0f pitch %.1f cents %.1f confidence %.2f", rate, frequency, h[0].PitchHz, cents, h[0].Confidence)
 			}
-			if want:=int(math.Round(69+12*math.Log2(frequency/440)));h[0].Root!=want {t.Fatal("pitched root",h[0].Root,want)}
+			if want := int(math.Round(69 + 12*math.Log2(frequency/440))); h[0].Root != want {
+				t.Fatal("pitched root", h[0].Root, want)
+			}
 		}
 	}
 }
