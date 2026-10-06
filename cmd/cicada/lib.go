@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -77,6 +78,21 @@ func libCommand(args []string, output io.Writer) error {
 	if len(paths) == 0 {
 		return fmt.Errorf("project has no scores")
 	}
+	if args[0] == "update" {
+		_, manifest, err := edition.ScoreEdition(paths[0])
+		if err != nil {
+			return err
+		}
+		pinRoot := filepath.Dir(paths[0])
+		if manifest != "" {
+			pinRoot = filepath.Dir(manifest)
+		}
+		unlock, err := project.LockLibraryPins(pinRoot)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+	}
 	var sources *project.Sources
 	// Legacy manifests load independent scores. Their imports share one sum.
 	for _, path := range paths {
@@ -119,13 +135,20 @@ func libCommand(args []string, output io.Writer) error {
 			return fmt.Errorf("CICADA-LIB-PATH: invalid library path")
 		}
 	}
-	changes, err := sources.WriteLibraryUpdates(name)
+	data, changes, err := sources.UpdateLibraries(name)
 	if err != nil {
 		return err
 	}
 	if len(changes) != 0 {
+		if err := writeNewAtomic(filepath.Join(sources.Root, "cicada.sum"), data); err != nil {
+			return err
+		}
 		for _, change := range changes {
 			fmt.Fprintln(output, change)
+		}
+	} else if _, err := os.Stat(filepath.Join(sources.Root, "cicada.sum")); os.IsNotExist(err) {
+		if err := writeNewAtomic(filepath.Join(sources.Root, "cicada.sum"), data); err != nil {
+			return err
 		}
 	}
 	if len(changes) == 0 {
