@@ -190,8 +190,12 @@ test('client requests processing off, reports effective settings and wires worke
   await h.client.record();assert.equal(h.messages[1].countInFrames,96000);assert.equal(h.audio.playing,true);
   const stopped=h.client.stop();h.client.receive({t:'finished',incomplete:false});await stopped;assert.equal(h.track.stopped,true);assert.equal(h.client.status.state,'stopped');
 });
-test('channel mismatch releases permission stream; worker faults mark incomplete and stop',async()=>{
-  const h=clientHarness({channelCount:2});await assert.rejects(h.client.arm(1),/channel count/);assert.equal(h.track.stopped,true);
+test('a stereo device is mixed to a mono take; worker faults mark incomplete and stop',async()=>{
+  const h=clientHarness({channelCount:2});await h.client.arm(1);
+  assert.equal(h.client.status.state,'armed');assert.equal(h.audio.node.channelCount,1);assert.equal(h.audio.node.channelCountMode,'explicit');
+  assert.equal(h.client.status.settings.mixedFrom,2);assert.equal(h.messages[0].channels,1);assert.equal(h.track.stopped,undefined);
+  const mono=clientHarness({channelCount:1});await mono.client.arm(2);assert.equal(mono.audio.node.channelCount,2);assert.equal(mono.client.status.settings.mixedFrom,1);
+  const same=clientHarness({channelCount:1});await same.client.arm(1);assert.equal(same.client.status.settings.mixedFrom,0);
   const h2=clientHarness();await h2.client.arm();await h2.client.record();h2.client.receive({t:'fault',error:'quota'});
   assert.equal(h2.client.status.incomplete,true);assert.equal(h2.client.status.state,'saving');
   h2.client.receive({t:'finished',incomplete:true,error:'quota'});
