@@ -211,6 +211,17 @@ func (p *Instrument) selectZones(note, velocity uint8, release bool, cycle uint6
 	return indices, weights, true
 }
 
+// NoteOnSeeded makes humanization independent of unrelated trigger order.
+// Use a shared game-event ID as the seed. Round-robin cycles still follow the
+// ordered trigger stream; the default random stream is left unchanged.
+func (p *Instrument) NoteOnSeeded(note, velocity uint8, seed uint64) (Handle, error) {
+	previous := p.random
+	p.random = seed
+	handle, err := p.NoteOn(note, velocity)
+	p.random = previous
+	return handle, err
+}
+
 func (p *Instrument) NoteOn(note, velocity uint8) (Handle, error) {
 	if note > 127 || velocity > 127 || p.serial == ^uint64(0) {
 		return Handle{}, Error("sample note, velocity or ID out of range")
