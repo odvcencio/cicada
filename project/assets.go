@@ -230,8 +230,11 @@ func audioSource(p *Project) []string {
 	for _, c := range p.Clips {
 		sections = append(sections, fmt.Sprintf("clip %s %s {\n  start = %dframes\n  end = %dframes\n  gain = %sdB\n  fade_in = %dframes\n  fade_out = %dframes\n}", c.Name, c.Asset, c.StartFrame, c.EndFrame, decimal(c.GainDB), c.FadeInFrames, c.FadeOutFrames))
 	}
+	// Flat spellings remain identifier tokens in sampler parameter values.
+	samplerPitchNames := pitchNames
+	samplerPitchNames[1], samplerPitchNames[3], samplerPitchNames[6], samplerPitchNames[8], samplerPitchNames[10] = "db", "eb", "gb", "ab", "bb"
 	for _, v := range p.Samplers {
-		root := pitchNames[v.RootMIDI%12] + strconv.Itoa(v.RootMIDI/12-1)
+		root := samplerPitchNames[v.RootMIDI%12] + strconv.Itoa(v.RootMIDI/12-1)
 		if v.Pack != "" {
 			sections = append(sections, fmt.Sprintf("sampler %s {\n  pack = %s\n  sha256 = %s\n  root = %s\n  voices = %d\n}", v.Name, strconv.Quote(v.Pack), strconv.Quote(v.SHA256), root, v.Voices))
 			continue

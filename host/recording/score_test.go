@@ -9,6 +9,7 @@ import (
 
 	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
 )
 
@@ -24,6 +25,25 @@ func TestRecordedRootNamesParseAcrossPitchClasses(t *testing.T) {
 		}
 		if score.Samplers[0].RootMIDI != root {
 			t.Fatal("changed root", root, score.Samplers[0].RootMIDI)
+		}
+		p, ds := project.FromScore(score)
+		for _, d := range ds {
+			if d.Severity == "error" {
+				t.Fatal(root, d)
+			}
+		}
+		regenerated, err := project.ToSource(p)
+		if err != nil {
+			t.Fatal(root, err)
+		}
+		roundTrip, ds := notation.Parse(regenerated)
+		for _, d := range ds {
+			if d.Severity == "error" {
+				t.Fatal(root, d)
+			}
+		}
+		if roundTrip.Samplers[0].RootMIDI != root {
+			t.Fatal("project changed root", root)
 		}
 	}
 }
