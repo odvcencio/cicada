@@ -53,7 +53,11 @@
         const track=this.stream.getAudioTracks()[0];
         if (!track) throw new Error('Microphone returned no audio track');
         this.status.settings=inspectSettings(track);
-        if (this.status.settings.channelCount && this.status.settings.channelCount !== channels) throw new Error('Input channel count differs from the requested layout');
+        // A device may deliver another layout than requested, such as a
+        // two-microphone webcam for a mono take. The explicit-mode node below
+        // mixes it to the requested layout; the take records the source count.
+        const delivered=this.status.settings.channelCount;
+        this.status.settings.mixedFrom=delivered && delivered !== channels ? delivered : 0;
         const latency=this.status.settings.latency;
         // Track latency alone is not a duplex first-frame measurement. Keep
         // timing confidence unavailable until a qualified mapping is provided.
