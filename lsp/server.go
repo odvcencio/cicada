@@ -54,6 +54,7 @@ type server struct {
 	versions         map[string]*int
 	canEditDocuments bool
 	canCreateFiles   bool
+	libraryContexts  map[string]libraryContext
 }
 
 // Serve reads Content-Length framed JSON-RPC messages until exit or EOF.

@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -101,7 +100,7 @@ func libCommand(args []string, output io.Writer) error {
 		}
 	}
 	if args[0] == "vendor" {
-		changes, err := sources.VendorLibraries(root)
+		changes, err := sources.VendorLibraries(sources.Root)
 		if err != nil {
 			return err
 		}
@@ -120,21 +119,13 @@ func libCommand(args []string, output io.Writer) error {
 			return fmt.Errorf("CICADA-LIB-PATH: invalid library path")
 		}
 	}
-	data, changes, err := sources.UpdateLibraries(name)
+	changes, err := sources.WriteLibraryUpdates(name)
 	if err != nil {
 		return err
 	}
-	sum := filepath.Join(sources.Root, "cicada.sum")
 	if len(changes) != 0 {
-		if err := writeNewAtomic(sum, data); err != nil {
-			return err
-		}
 		for _, change := range changes {
 			fmt.Fprintln(output, change)
-		}
-	} else if _, err := os.Stat(sum); os.IsNotExist(err) {
-		if err := writeNewAtomic(sum, data); err != nil {
-			return err
 		}
 	}
 	if len(changes) == 0 {
