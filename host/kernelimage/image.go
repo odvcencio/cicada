@@ -15,8 +15,12 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
-const imageVersion = 14              // eight-voice graphs and five-input ADSR nodes
-const masterSoloImageVersion = 13    // built-in bus mute/solo and master mute/solo state
+const imageVersion = 15           // quality opcodes distinct from version-13 delay operations
+const qualityImageVersion = 14    // eight-voice graphs and five-input ADSR nodes
+const masterSoloImageVersion = 13 // built-in bus mute/solo and master mute/solo state
+
+// Delay images retain the capability bit used by version 13.
+const DelayCapability uint16 = 1 << 1
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
 const sceneSettingsImageVersion = 10 // scene settings with synced delay divisions
@@ -94,9 +98,13 @@ func (r *reader) f64() (float64, error) {
 	return math.Float64frombits(bits), err
 }
 
-// Encode writes project image version 14. The decoded Config is separately
+// Encode writes version 13 for legacy/delay graphs and version 15 for quality
+// or polyphonic graphs. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
+	if cfg.MasterProcessor != nil {
+		return nil, Error("prepared master processor must be loaded separately from the project image")
+	}
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
 		cfg.SampleRate < 1 || uint64(cfg.SampleRate) > math.MaxUint32 ||
 		cfg.BPMMilli < 0 || uint64(cfg.BPMMilli) > math.MaxUint32 ||
@@ -107,7 +115,21 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
-	w.u16(imageVersion)
+	version := masterSoloImageVersion
+	for track := 0; track < cfg.Tracks; track++ {
+		spec := cfg.Track[track]
+		if spec.Kind == engine.VoiceGraphPoly || graphNeedsQuality(spec.Graph) {
+			version = imageVersion
+		}
+		if spec.Kit != nil {
+			for _, binding := range spec.Kit {
+				if graphNeedsQuality(binding.Program) {
+					version = imageVersion
+				}
+			}
+		}
+	}
+	w.u16(uint16(version))
 	w.byte(byte(cfg.Tracks))
 	w.byte(byte(cfg.MaxVoices))
 	if cfg.LoopSong {
@@ -121,7 +143,21 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w.u16(uint16(cfg.MaxBlock))
 	w.u16(uint16(len(cfg.Scenes)))
 	w.u16(uint16(len(cfg.Song)))
-	w.u16(0)
+	var capabilities uint16
+	for track := 0; track < cfg.Tracks; track++ {
+		spec := cfg.Track[track]
+		if graphNeedsDelay(spec.Graph) {
+			capabilities |= DelayCapability
+		}
+		if spec.Kit != nil {
+			for _, binding := range spec.Kit {
+				if graphNeedsDelay(binding.Program) {
+					capabilities |= DelayCapability
+				}
+			}
+		}
+	}
+	w.u16(capabilities)
 	if cfg.DelayA == nil {
 		w.byte(0)
 	} else {
@@ -373,7 +409,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != masterSoloImageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != imageVersion && version != qualityImageVersion && version != masterSoloImageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^DelayCapability != 0 || reserved != 0 && version < masterSoloImageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -616,7 +652,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						}
 						binding.Recipe = drum.Lane(recipe)
 					case engine.KitLaneGraph:
-						if binding.Program, err = readGraph(&r, version); err != nil {
+						if binding.Program, err = readGraph(&r, version, reserved); err != nil {
 							return err
 						}
 					default:
@@ -625,7 +661,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				}
 			}
 		case engine.VoiceGraph, engine.VoiceGraphPoly:
-			if spec.Graph, err = readGraph(&r, version); err != nil {
+			if spec.Graph, err = readGraph(&r, version, reserved); err != nil {
 				return err
 			}
 		default:
@@ -766,7 +802,27 @@ func writeGraph(w *writer, program graph.Program) error {
 	return nil
 }
 
-func readGraph(r *reader, version uint16) (graph.Program, error) {
+func graphNeedsQuality(program graph.Program) bool {
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		switch program.Nodes[i].Op {
+		case graph.ADSR, graph.Pulse, graph.SVF:
+			return true
+		}
+	}
+	return false
+}
+
+func graphNeedsDelay(program graph.Program) bool {
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		switch program.Nodes[i].Op {
+		case graph.Delay, graph.Comb, graph.Period:
+			return true
+		}
+	}
+	return false
+}
+
+func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, error) {
 	var program graph.Program
 	length, err := r.byte()
 	if err != nil || length == 0 || length > graph.MaxNodes {
@@ -802,9 +858,19 @@ func readGraph(r *reader, version uint16) (graph.Program, error) {
 		if err != nil {
 			return program, err
 		}
+		// Early version-14 quality images used the opcode slots later assigned
+		// to delay and comb in version 13. Their zero capability word identifies
+		// that layout; new quality images use distinct pulse/SVF opcodes.
+		if version == qualityImageVersion && capabilities == 0 {
+			if op == 24 {
+				op = byte(graph.Pulse)
+			} else if op == 25 {
+				op = byte(graph.SVF)
+			}
+		}
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
 		if graph.Op(op) == graph.ADSR {
-			if version < imageVersion {
+			if version < qualityImageVersion {
 				return program, Error("ADSR needs project image version 14")
 			}
 			if program.Nodes[i].D, err = r.byte(); err != nil {
@@ -814,6 +880,9 @@ func readGraph(r *reader, version uint16) (graph.Program, error) {
 				return program, err
 			}
 		}
+	}
+	if graphNeedsDelay(program) && capabilities&DelayCapability == 0 {
+		return program, Error("graph delay operations require capability bit 1")
 	}
 	return program, nil
 }

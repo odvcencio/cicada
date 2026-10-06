@@ -121,6 +121,7 @@ func ValidateProject(p *Project) error {
 		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
 	}
 	instruments := map[string]*instrument.Program{}
+	trackGraphs := map[string]graph.Program{}
 	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
 		if p.Edition == 2 && inst.ID == "audio" {
@@ -235,9 +236,11 @@ func ValidateProject(p *Project) error {
 				}
 				overrides[name] = literal
 			}
-			if _, err := instrument.Lower(program, overrides); err != nil {
+			lowered, err := instrument.Lower(program, overrides)
+			if err != nil {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
+			trackGraphs[track.ID] = lowered
 		}
 		if p.Format == FormatID && track.Mixer.Solo {
 			return fmt.Errorf("project/1 does not support solo")
@@ -480,6 +483,16 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("track %s has invalid or duplicate slot %s", track.ID, *slot)
 			}
 			seen[*slot] = true
+			if program := trackGraphs[track.ID]; program.DelaySamples() > 0 {
+				for _, step := range pattern.Data {
+					if step == nil || step.Tie {
+						continue
+					}
+					if err := validateGraphDelayNote(program, 48_000, int(step.Note)+int(pattern.Transpose)); err != nil {
+						return fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
+					}
+				}
+			}
 		}
 	}
 	scenes := map[string]Scene{}
@@ -721,7 +734,7 @@ func validateExpr(expr Expr, depth int) (int, error) {
 
 func validExprArity(op string, n int) bool {
 	switch op {
-	case "+", "-", "*", "/", "env", "lowpass", "highpass", "pulse":
+	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "pulse", "delay":
 		return n == 2
 	case "saw", "square", "sine", "tanh", "exp2":
 		return n == 1
@@ -731,6 +744,8 @@ func validExprArity(op string, n int) bool {
 		return n == 3
 	case "adsr":
 		return n == 5
+	case "comb":
+		return n == 4
 	}
 	return false
 }
