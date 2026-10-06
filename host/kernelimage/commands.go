@@ -6,7 +6,12 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 )
 
+// CapabilityChords retains the development opcode-22 command capability.
 const CapabilityChords uint32 = 1
+
+// CapabilityUnifiedImage is required for the explicit version-15 image layout.
+// CapabilityChords alone does not imply support for version 15.
+const CapabilityUnifiedImage uint32 = 1 << 16
 
 // PatternCommands uploads one melodic slot through the unchanged 24-byte ABI.
 // A chord requires an advertised capability; no mono fallback is permitted.

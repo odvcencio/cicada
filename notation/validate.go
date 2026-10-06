@@ -49,6 +49,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 	sourceEffects := s.Effects
 	s, ds = ResolvePresets(s)
 	ds = append(ds, ValidateAudio(s)...)
+	ds = append(ds, ValidateArrangement(s)...)
 	ds = append(ds, ValidateLive(s.Live, s.Tracks)...)
 	ds = append(ds, ValidateDirector(s.Live, s.Tracks, s.Patterns, s.Scenes, s.Kits)...)
 	add := func(code, message, severity string, p Position) {
@@ -425,7 +426,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 			add("CICADA-LIMIT", "song entry must be 1 to 999 bars", "error", entry.Position)
 		}
 	}
-	if len(s.Song) == 0 {
+	if len(s.Song) == 0 && s.Arrange == nil {
 		position := s.SongPosition
 		if position.Line == 0 {
 			position = Position{Line: 1, Column: 1}

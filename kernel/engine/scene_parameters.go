@@ -31,7 +31,7 @@ type sceneTrackParameters struct {
 }
 
 func (e *Engine) captureSceneDefaults() {
-	if len(e.song) == 0 {
+	if len(e.schedule) == 0 {
 		return
 	}
 	for _, scene := range e.scenes {

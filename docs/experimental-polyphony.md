@@ -49,15 +49,19 @@ existing 24-byte command records/opcode numbers remain unchanged.
 
 Complete project image upload is the supported path for arbitrary gate/seed
 metadata. Mono images stay byte-exact version13. An opted-in poly project uses
-version14, which includes per-track polyphony and fixed chord payloads. Older
+version15, which includes per-track polyphony, fixed chord payloads and an
+explicit schedule/asset/clip footer, even when empty. Both incompatible
+development-v14 dialects are rejected; recompile project source. Older
 readers reject the new image version; the worklet checks capability before
 allocation/upload and rejects unsupported kernels explicitly.
 The host must call the reactor's `_initialize()` before querying capability;
 TinyGo exports trap if called before runtime initialization. Both worklet
-assets are tested against an actual reactor with a version14 image and audio.
+assets have actual-reactor tests requiring a freshly built version15-capable module.
 
-The WASM export `gosx_audio_capabilities()` advertises bit0 (`1`) for image14 and
-`OpSetChordStep` (appended opcode22). Opcode22 uses four 7-bit pitches in `Arg0`;
+The WASM export `gosx_audio_capabilities()` retains bit0 (`1`) for
+`OpSetChordStep` (appended opcode22). Bit1 (`2`) independently negotiates the
+[unified v15 image layout](spec/kernel-image-v15.md); bit0 alone never authorizes
+a v15 image. Opcode22 uses four 7-bit pitches in `Arg0`;
 `Arg1` low4bits selects slot0–15 and bits4–6 contain count2–4. `Index` is step0–63.
 Padding and reserved bits remain zero. It supplements a normal `OpSetStep` and
 cannot turn a mono track into a polyphonic one.
@@ -88,11 +92,11 @@ one-step `[d4 f4]?50` yields 10 audio cohorts and 16 MIDI cohorts in one bar. Th
 is a separately recorded interchange limitation, not chance-event parity.
 The existing mono offline slot0 hashing limitation is also not changed here.
 
-The Go1.26 WASI reactor remains a separate validation artifact. The corrected
-TinyGo build uses the existing flags and size caps: raw277015/307200 bytes,
-Brotli82297/122880 bytes. Fixed pattern banks are validated by address and then
-copied into engine storage, avoiding TinyGo scalarizing an entire value-copied
-16-slot chord bank; no payload, validation, or feature is removed. The minified
-worklet is5119/5120 bytes. Actual browser AudioWorklet performance, the Windows
-Chrome release CPU gate, keyboard interaction, and formal Buckley review remain
-unverified. No mono golden is regenerated and no merge/release/host job occurs.
+The captured PR100-only TinyGo result (raw277015/307200, Brotli82297/122880,
+worklet5119/5120) is historical evidence and does not qualify this combined
+candidate. Fixed pattern banks must be validated by address and only copied
+when ownership transfers to the engine; TinyGo scalarizes value-copied banks
+into large initialization code. The combined candidate retains all size and
+callback-allocation gates and requires its own exact-tree native, WASM, stream
+and real-browser receipts. No mono golden is regenerated and no merge, release
+or host execution occurs as part of the cloud implementation handoff.

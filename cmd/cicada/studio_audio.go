@@ -7,6 +7,7 @@ import (
 	"github.com/coder/websocket"
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/host/schedule"
 	webhost "m31labs.dev/cicada/host/web"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/project"
@@ -387,7 +388,7 @@ func (s *studio) kernelImage(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("capture") == "1" {
 		p = captureBacking(p)
 	}
-	cfg, err := project.CompileEngine(p, rate, 128)
+	cfg, err := schedule.Compile(p, filepath.Dir(s.path), rate, 128)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return

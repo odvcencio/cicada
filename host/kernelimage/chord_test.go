@@ -62,12 +62,12 @@ func TestChordImageAndRealCommandUploadPlayback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if binary.LittleEndian.Uint16(image[4:6]) != 14 {
-		t.Fatal("poly image not version14")
+	if binary.LittleEndian.Uint16(image[4:6]) != kernelimage.UnifiedImageVersion {
+		t.Fatal("poly image not version15")
 	}
 	decoded, err := kernelimage.Decode(image, 48000, 128)
 	if err != nil || !reflect.DeepEqual(cfg, decoded) {
-		t.Fatalf("v14 changed config: %v", err)
+		t.Fatalf("v15 changed config: %v", err)
 	}
 	reference, err := engine.New(decoded)
 	if err != nil {
