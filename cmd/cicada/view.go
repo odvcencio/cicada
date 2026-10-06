@@ -75,6 +75,11 @@ type viewTrack struct {
 }
 
 type viewMixerParam struct{ Name, Value string }
+type viewMasterEffect struct {
+	ID, Kind string
+	Params   []viewMixerParam
+}
+type viewExportTarget struct{ ID, Loudness, TruePeak, Normalize string }
 
 type viewSongEntry struct {
 	Scene    string
@@ -113,6 +118,8 @@ type scoreView struct {
 	Scenes                        []viewScene
 	SceneRows                     []viewSceneRow
 	Song                          []viewSongEntry
+	MasterChain                   []viewMasterEffect
+	ExportTargets                 []viewExportTarget
 	MasterCompressor              []viewMixerParam
 	HasMasterCompressor           bool
 }
@@ -161,8 +168,38 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 		Scenes: make([]viewScene, 0, len(p.Scenes)), Song: make([]viewSongEntry, 0, len(p.Song)),
 		MasterCompressor: make([]viewMixerParam, 0),
 	}
+	if p.Master != nil {
+		for _, name := range p.Master.Mixer.Inserts {
+			for _, effect := range p.Effects {
+				if effect.ID == name {
+					stage := viewMasterEffect{ID: name, Kind: effect.Kind}
+					for _, key := range sortedMasterKeys(effect.Params) {
+						stage.Params = append(stage.Params, viewMixerParam{Name: key, Value: masterDisplayValue(effect.Params[key])})
+					}
+					view.MasterChain = append(view.MasterChain, stage)
+				}
+			}
+		}
+	}
+	for _, target := range p.Exports {
+		item := viewExportTarget{ID: target.ID, Normalize: "Renderer default"}
+		if target.Loudness != nil {
+			item.Loudness = masterDisplayValue(*target.Loudness)
+		}
+		if target.TruePeak != nil {
+			item.TruePeak = masterDisplayValue(*target.TruePeak)
+		}
+		if target.Normalize != nil {
+			if *target.Normalize {
+				item.Normalize = "On"
+			} else {
+				item.Normalize = "Off"
+			}
+		}
+		view.ExportTargets = append(view.ExportTargets, item)
+	}
 	for _, effect := range p.Effects {
-		if effect.ID != "comp" {
+		if effect.Kind != "comp" && effect.ID != "comp" || project.MasterHasInsert(p, effect.ID) {
 			continue
 		}
 		view.HasMasterCompressor = true
@@ -352,4 +389,24 @@ func makeViewCell(index int, step *project.Step, drum bool) viewCell {
 
 func midiNote(note uint8) string {
 	return pitchNames[int(note)%12] + strconv.Itoa(int(note)/12-1)
+}
+
+func sortedMasterKeys(values map[string]project.Value) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+func masterDisplayValue(value project.Value) string {
+	if value.Number == nil {
+		return value.Text
+	}
+	number := strconv.FormatFloat(*value.Number, 'f', -1, 64)
+	units := map[string]string{"db": "dB", "dbtp": "dBTP", "hz": "Hz", "ms": "ms", "frames": "frames", "lufs": "LUFS", "lu": "LU"}
+	if unit := units[value.Unit]; unit != "" {
+		return number + " " + unit
+	}
+	return number
 }
