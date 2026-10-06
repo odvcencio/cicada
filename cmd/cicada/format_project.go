@@ -109,9 +109,11 @@ func projectScorePaths(root string) ([]string, error) {
 			if err != nil {
 				return nil, err
 			}
-			paths := make([]string, len(sources.Files))
-			for i, file := range sources.Files {
-				paths[i] = file.Path
+			var paths []string
+			for _, file := range sources.Files {
+				if file.Library == "" {
+					paths = append(paths, file.Path)
+				}
 			}
 			return paths, nil
 		}
@@ -127,6 +129,9 @@ func projectScorePaths(root string) ([]string, error) {
 		if entry.IsDir() {
 			if path == root {
 				return nil
+			}
+			if entry.Name() == "lib" {
+				return filepath.SkipDir
 			}
 			if entry.Name() == ".git" {
 				return filepath.SkipDir

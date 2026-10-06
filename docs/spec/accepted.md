@@ -350,7 +350,7 @@ track bass acid { chain = intro triplet chorus }
 
 ## Multi-file projects and manifest metadata
 
-**Status:** Multi-file loading and manifest metadata are implemented. Imports, qualified library names, private library declarations, `require`, `cicada.sum`, and bundle provenance remain accepted-only.
+**Status:** Multi-file loading, manifest metadata, library imports, qualified names, private declarations, `cicada.sum`, and `cicada lib update` are implemented. `require` versions, library vendoring, and bundle provenance remain accepted-only.
 
 **Syntax (EBNF):**
 
@@ -363,13 +363,13 @@ manifest_metadata ::= "entry" , string
 sum_file ::= { generated_sum_record } ;
 ```
 
-**Meaning:** All listed `.cicada` files under one `cicada.mod` share one namespace, like files in one Go package. The manifest names the entry file and explicit source list and stores an SPDX license identifier and author. Imports are for libraries; a qualified name selects a library declaration. Library declarations whose names begin with underscore are private. `require` directives pin library versions. The generated `cicada.sum` records source hashes and dependency locks. `cicada bundle` writes provenance; the manifest does not.
+**Meaning:** All listed `.cicada` files under one `cicada.mod` share one namespace, like files in one Go package. The manifest names the entry file and explicit source list and stores an SPDX license identifier and author. Imports are for libraries; a qualified name selects a library declaration. Library declarations whose names begin with underscore are private. `require` directives are accepted-only version pins. The generated `cicada.sum` pins each imported library by path, resolution kind, and content hash. `cicada bundle` writes provenance; the manifest does not.
 
-**Types and units:** Entry and source values are project-relative file paths; the source list is explicit, not a glob. License is an SPDX identifier. Author is a string. Sum records contain SHA-256 hashes for source files and locked dependencies; the generated file is tool-owned.
+**Types and units:** Entry and source values are project-relative file paths; the source list is explicit, not a glob. License is an SPDX identifier. Author is a string. Sum records use `PATH std|project|user sha256:HASH`, sorted by path. Each hash covers the library manifest, sorted sources, and audio assets; transitive imports have their own records. The generated file is tool-owned.
 
 **Defaults:** Files in one project need no import to reference one another. A single-file project remains valid without changes. The entry is loaded first; remaining source files are loaded in sorted path order.
 
-**Errors:** Duplicate declarations report `CICADA-DUPLICATE` with both file:line:column locations. Unresolved references report `CICADA-REFERENCE` at the reference. `CICADA-SOURCE-PATH` rejects absolute paths, traversal components, glob patterns, unlisted scores, and symlinks that escape the project. `CICADA-SOURCE-MISSING` reports missing or unreadable listed files at their manifest directives. Invalid or repeated manifest directives report `CICADA-MANIFEST`. Dependency and hash diagnostics remain accepted-only.
+**Errors:** Duplicate declarations report `CICADA-DUPLICATE` with both file:line:column locations. Unresolved references report `CICADA-REFERENCE` at the reference. `CICADA-SOURCE-PATH` rejects absolute paths, traversal components, glob patterns, unlisted scores, and symlinks that escape the project. `CICADA-SOURCE-MISSING` reports missing or unreadable listed files at their manifest directives. Invalid or repeated manifest directives report `CICADA-MANIFEST`. `CICADA-LIB-HASH` rejects missing or changed pins at the import. `CICADA-LIB-SHADOW`, `CICADA-LIB-PRIVATE`, `CICADA-LIB-CYCLE`, `CICADA-LIB-DECL`, and `CICADA-LIB-CAPABILITY` diagnose ambiguous resolution, private access, cycles, score-only declarations, and unsupported engine requirements.
 
 **Built example:** [Shared circuit](../../examples/multifile/main.cicada) separates its song, patterns, and voices into three files:
 
@@ -388,7 +388,9 @@ The entry is included automatically, even if it has no `source` line. Repeating 
 
 `check`, `fmt`, `fix --all`, `explain`, `play`, and `render` load the project from any listed score. Project-wide `check` compiles it once; `fmt` formats each listed file separately. The language server resolves diagnostics, definitions, renames, parameter hover, completion, and notation fixes across files, including unsaved buffers. Studio refuses projects with more than one source file before opening recovery, editing, or undo history. Save As copies every listed source and updates the manifest if the requested score is renamed.
 
-**Accepted-only example:** Imports and dependency locking are planned follow-up work:
+**Library imports:** [Library circuit](../../examples/libraries/main.cicada) imports a project library. Library manifests declare `library PATH`, `cicada`, `source`, `license`, and `author`, with optional `engine` minimum edition and `capabilities` bit mask. `std/` is an embedded, initially empty namespace; project `lib/` and the per-OS user config directory plus `cicada/lib` are also searched. `$CICADA_LIBRARY` overrides the user location. Duplicate paths across locations are errors. Direct user imports are hash-pinned. See [the library manual](../manual/writing-music.md#import-a-library) for rules and update commands.
+
+**Accepted-only example:** Version requirements and the seeded standard library remain follow-up work:
 
 ```cicada-accepted
 cicada 2
@@ -414,4 +416,4 @@ scene main {
 song { main*8 }
 ```
 
-**Edition history:** Multi-file projects and manifest metadata work in editions 1 and 2 without changing source grammar, semantic JSON, or the kernel image format. Imports, `require`, and `cicada.sum` remain accepted follow-up work.
+**Edition history:** Multi-file projects and manifest metadata work in editions 1 and 2 without changing source grammar, semantic JSON, or the kernel image format. Imports and hash pinning work in editions 1 and 2 without changing the kernel image format. `require` versions remain accepted follow-up work.

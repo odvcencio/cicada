@@ -147,7 +147,7 @@ func (s *server) handle(message request) error {
 			}
 		}
 		return s.reply(message.ID, map[string]any{"capabilities": map[string]any{
-			"textDocumentSync": 1, "hoverProvider": true, "definitionProvider": true, "renameProvider": true, "completionProvider": map[string]any{"triggerCharacters": []string{"."}}, "inlayHintProvider": true, "codeActionProvider": true,
+			"textDocumentSync": 1, "hoverProvider": true, "definitionProvider": true, "renameProvider": true, "completionProvider": map[string]any{"triggerCharacters": []string{".", "\"", "/"}}, "inlayHintProvider": true, "codeActionProvider": true,
 			"semanticTokensProvider": map[string]any{"legend": map[string]any{"tokenTypes": tokenTypes, "tokenModifiers": []string{}}, "full": true},
 		}, "serverInfo": map[string]any{"name": "cicada-lsp", "version": "0.1"}})
 	case "shutdown":
@@ -283,7 +283,7 @@ func (s *server) handle(message request) error {
 		if err != nil || manifest == "" && !s.canCreateFiles {
 			return s.reply(message.ID, []any{})
 		}
-		if files, err := s.projectSources(uri); err == nil && files != nil && files.Manifest.ExplicitSources() {
+		if files, err := s.projectSources(uri); err == nil && usesSourceSet(files) {
 			return s.reply(message.ID, s.projectFixAction(files))
 		}
 		fixed, changed, err := migration.FixSource(source)
