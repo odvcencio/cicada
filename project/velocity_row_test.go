@@ -2,6 +2,7 @@ package project
 
 import (
 	"m31labs.dev/cicada/notation"
+	"reflect"
 	"testing"
 )
 
@@ -33,5 +34,28 @@ func TestVelocityRowRejectsInvalidValuesAndLengths(t *testing.T) {
 		if p, _ := FromScore(score); p != nil {
 			t.Fatalf("row %q accepted", row)
 		}
+	}
+}
+
+func TestVelocityAndExpressionRowsRoundTrip(t *testing.T) {
+	score, ds := notation.Parse([]byte("cicada 2 track lead acid {} pattern notes { step = 1/8t 1 - 5 velocity: 64 . 127 bend: 0ct 200ct 0ct } scene main {lead=notes} song {main}"))
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	source, err := ToSource(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, ds := notation.Parse([]byte(source))
+	if len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	roundTrip, ds := FromScore(parsed)
+	if roundTrip == nil || !reflect.DeepEqual(p.Patterns, roundTrip.Patterns) {
+		t.Fatalf("velocity/expression roundtrip changed patterns: %+v", ds)
 	}
 }

@@ -7,6 +7,7 @@ type EventKind uint8
 const (
 	NoteOn EventKind = iota
 	NoteOff
+	NoteExpression
 )
 
 type Event struct {
@@ -229,6 +230,26 @@ func EventsWithGatesAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, st
 			written++
 		}
 	}
+	// Tied steps update expression without retriggering or changing the note ID.
+	for absoluteStep := max(startStep, startTick/TicksPerStep-1); absoluteStep <= lastStep; absoluteStep++ {
+		localStep := absoluteStep - startStep
+		stepIndex := uint8(localStep % int64(p.Len))
+		step, err := UnpackStep(p.Steps[stepIndex])
+		if err != nil || !step.Tie || !p.ExpressionAt(int(stepIndex)).Set || !ProbabilityHit(step.Probability, p.Seed, track, slot, localStep/int64(p.Len), stepIndex) {
+			continue
+		}
+		tick := absoluteStep*grid + offset + swingDelayForGrid(p, absoluteStep)
+		sample := clock.SampleAtTick(tick)
+		if sample < startSample || sample >= startSample+int64(frames) {
+			continue
+		}
+		if written == len(dst) {
+			overflow = true
+			continue
+		}
+		dst[written] = Event{Kind: NoteExpression, Tick: tick, Sample: sample, Offset: int32(sample - startSample), Track: track, Slot: slot, StepIndex: stepIndex}
+		written++
+	}
 	// The fixed destination buffer keeps this sort allocation free.
 	for i := 1; i < written; i++ {
 		current := dst[i]
@@ -275,7 +296,7 @@ func eventBefore(a, b Event) bool {
 		return a.Sample < b.Sample
 	}
 	if a.Kind != b.Kind {
-		return a.Kind == NoteOff
+		return eventPriority(a.Kind) < eventPriority(b.Kind)
 	}
 	if a.Track != b.Track {
 		return a.Track < b.Track
@@ -295,4 +316,14 @@ func swingDelayForGrid(p *Pattern, step int64) int64 {
 		return 0
 	}
 	return (p.GridTicks()*int64(p.SwingPermille) + 500) / 1000
+}
+
+func eventPriority(kind EventKind) int {
+	if kind == NoteOff {
+		return 0
+	}
+	if kind == NoteOn {
+		return 1
+	}
+	return 2
 }

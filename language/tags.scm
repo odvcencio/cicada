@@ -63,3 +63,18 @@
 (live_stinger pattern: (identifier) @name) @reference.pattern
 (live_transition from: (identifier) @name) @reference.state
 (live_transition to: (identifier) @name) @reference.state
+(preset_decl name: (identifier) @name) @definition.preset
+(preset_decl name: (qualified_name) @name) @definition.preset
+
+((preset_decl (param_decl name: (identifier) @field value: (value (identifier) @name))) @reference.preset-target
+  (#eq? @field "instrument"))
+((preset_decl (param_decl name: (identifier) @field value: (value (qualified_name) @name))) @reference.preset-target
+  (#eq? @field "instrument"))
+
+((fx_decl kind: (identifier) @name) @reference.preset
+  (#not-any-of? @name "delay" "reverb" "drive" "comp"))
+(fx_decl kind: (qualified_name) @name) @reference.preset
+(place_decl name: (identifier) @name) @definition.placement
+(marker_decl name: (identifier) @name) @definition.marker
+(place_decl track: (identifier) @name) @reference.track
+(place_decl content: (identifier) @name) @reference.pattern

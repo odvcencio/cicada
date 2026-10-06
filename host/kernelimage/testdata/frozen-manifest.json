@@ -1,0 +1,58 @@
+{
+  "captured_from": {
+    "legacy": "01569e19e5e6b07d0b52277626b96819fbdd7485",
+    "development-chords": "b986efe5202ccc87301ac1c6ae1d9b0db3571eaa",
+    "development-schedule": "8759eb45aaf42301ed5954eec453b8985a7544bd"
+  },
+  "toolchain": "go1.26.0 linux/amd64",
+  "sample_rate": 48000,
+  "max_block": 128,
+  "render_frames_per_channel": 192000,
+  "PCM_encoding": "stereo interleaved IEEE754 float32 little endian",
+  "files": {
+    "legacy-first-acid-v13.cicimg": {
+      "sha256": "296533f622ae139512eec55dd97b3395704f6d52b03c9d7da07cbd6d7db0ce51",
+      "bytes": 2900
+    },
+    "legacy-first-acid-v13.cicada": {
+      "sha256": "71e838adb2e18d2899cb5e462d1486d33027d5852b0c2e2a9cdaa5a7a0c8404a",
+      "bytes": 1202
+    },
+    "development-chords-v14.f32le": {
+      "sha256": "53b400fdaa696bfe6ba3e3a2d924f1c883eee7aa2e5f5bff7827506b54d387f1",
+      "bytes": 1536000
+    },
+    "legacy-first-acid-v13.f32le": {
+      "sha256": "737dbeb7a584cab6ccfcbfcd312db6936aa1c83d48eb2b2c090253240d067439",
+      "bytes": 1536000
+    },
+    "legacy-graph-v13.cicada": {
+      "sha256": "bda656eedc8d069386530e983701921cc33495408adb62312abd3d60bd543452",
+      "bytes": 347
+    },
+    "legacy-graph-v13.f32le": {
+      "sha256": "1d57d124b55ed3f8bc7f0728e2987d45b1b7e9a7a510a6bcf46121cdb004aab9",
+      "bytes": 1536000
+    },
+    "legacy-graph-v13.cicimg": {
+      "sha256": "dabb4ddfecbca9b011b075b5b5badada16189608b6d26204456c87f26e8dc603",
+      "bytes": 438
+    },
+    "development-chords-v14.cicada": {
+      "sha256": "40b5ae946c976209f0bde166b3c71209b01d469e735460af855a8729b1522bb0",
+      "bytes": 321
+    },
+    "SHA256SUMS": {
+      "sha256": "1f2972969d4bf8a1a879a547a398c0c1364f9f1dcdbefd22a26294a7eb0f5e00",
+      "bytes": 1098
+    },
+    "development-chords-v14.cicimg": {
+      "sha256": "b09765aeba132dbd0d98d575d58d219e873fac649a572bdebac3a0e5131da005",
+      "bytes": 379
+    },
+    "development-schedule-v14.cicimg": {
+      "sha256": "0306257fdab02a7b9f16ae5cd6cccb13a118f1081275dcafe94eaff608ab994c",
+      "bytes": 238
+    }
+  }
+}

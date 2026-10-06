@@ -1,0 +1,101 @@
+cicada 2
+
+instrument glassbass {
+  octave = 2
+  param cutoff = 540Hz
+  param bite = 0.58
+  voice mono {
+    let osc = saw(pitch)
+    let sub = square(pitch / 2)
+    let body = mix(osc, sub, 0.32)
+    let shape = env(gate, 330ms)
+    out = ladder(body, cutoff * exp2(shape * 3.2), bite) * shape
+  }
+}
+
+instrument nightbass {
+  octave = 2
+  param cutoff = 480Hz
+  param decay = 0.3s
+  param bite = 60%
+  voice mono {
+    let body = mix(saw(pitch), square(pitch / 2), 0.3)
+    let shape = env(gate, decay)
+    let sweep = cutoff * exp2(shape * 2.5)
+    let dark = lowpass(ladder(body, sweep, bite), sample_rate / 4)
+    out = highpass(diode(dark, sweep + 120Hz, 0.2), 30Hz) * (shape * velocity)
+  }
+}
+
+instrument tymbal {
+  octave = 2
+  param body = 5200Hz
+  param snap = 18ms
+  param grit = 0.4
+  voice mono {
+    let buzz = highpass(noise(), body)
+    let click = env(gate, snap)
+    let ring = sine(pitch * 8 - 30Hz) * click
+    out = tanh(mix(buzz, ring, grit) * clamp(velocity * 2, 0, 1)) * click
+  }
+}
+
+instrument subline {
+  octave = 2
+  param cutoff = 540Hz
+  voice mono {
+    let body = saw(pitch)
+    let shape = env(gate, 260ms)
+    out = ladder(body, cutoff * exp2(shape * 2.2), 0.48) * shape
+  }
+}
+
+instrument glass {
+  voice mono {
+    out = sine(pitch) * env(gate, 90ms) * velocity
+  }
+}
+
+title "Standard synth"
+
+tempo 128
+
+key a minor
+
+seed 4242
+
+track glassbass glassbass { cutoff = 680Hz level = -18dB }
+
+track nightbass nightbass { cutoff = 360Hz level = -18dB }
+
+track tymbal tymbal { body = 6kHz level = -24dB }
+
+track subline subline { cutoff = 620Hz level = -18dB }
+
+track glass glass { level = -18dB }
+
+pattern melody {
+  gate = 55%
+  1^ . 3 . 5~ 1 . 7,
+}
+
+scene first {
+  glassbass = melody
+  nightbass = melody
+  tymbal = melody
+  subline = melody
+  glass = melody
+}
+
+scene second {
+  glassbass = keep
+  nightbass = keep
+  tymbal = keep
+  subline = keep
+  glass = keep
+}
+
+song {
+  first
+  second
+}

@@ -4,6 +4,16 @@ These owner-accepted designs extend Cicada's source language. Each section says 
 
 Runnable examples in this file use source edition 2. Examples marked `cicada-accepted` are designs for later support.
 
+## Authored graph phase modulation
+
+**Status:** Implemented. The bell and feedback-free PM bass are experimental pending owner listening acceptance; scores select them through authored instruments.
+
+**Syntax and meaning:** `pm(hz, audio, unit)` returns a sine carrier with an audio phase offset scaled by index in radians. An index envelope changes brightness independently of amplitude. Stored phase stays bounded; the graph remains acyclic and keeps its 128-node and 32-stateful-node limits. PM needs no delay storage. Wrong units and arity report `CICADA-UNIT` and `CICADA-PARAM`.
+
+**Aliasing and compatibility:** PM is not antialiased. The [edition-2 reference](edition-2.md#graph-phase-modulation) records measurements and the example's register/index limit. Opcode 32 requires image-version-15 capability bit 5 without changing node records; older images still load. Additive in editions 1 and 2, with shared language-server hover and `cicada explain graph.pm` descriptions.
+
+**Example:** [fm-bell.cicada](../../examples/fm-bell.cicada) authors a two-operator FM bell with a decaying index and a feedback-free PM bass.
+
 ## Authored graph delay and comb
 
 **Status:** Implemented. Authored pluck and slapback voices are experimental pending owner listening acceptance.
@@ -46,6 +56,21 @@ song { verse*4 chorus*4 }
 ```
 
 **Edition history:** Registry-backed paths and scene parameter settings are implemented. Studio, the language server, and `cicada explain` use the same parameter registry.
+
+## Experimental guitar voice
+
+**Status:** Implemented as an explicitly experimental built-in voice in
+edition 2. It remains a research prototype without human listening acceptance.
+
+Use `track lead guitar { experimental = on }` with an ordinary note pattern.
+Sequenced notes and gates drive a single physical string and its built-in amp;
+slides change pitch without replucking. The shared registry exposes `bend`,
+`vibrato`, `brightness`, `damping`, `pickup` and `drive` with 8 ms smoothing.
+Native playback, the TinyGo AudioWorklet and offline rendering support it
+within the existing core voice and size limits. Guitar images use version 15;
+legacy encoding and versions 8..13 remain supported. See the
+[edition-2 reference](edition-2.md#experimental-guitar-voice) for opt-in,
+units, ranges, model limits and coordination with the version-14 lanes.
 
 ## Named mixer forms
 
@@ -257,7 +282,7 @@ automate bass.cutoff {
 
 ## Continuous pitch settings and rows (P7)
 
-**Status:** Accepted; the `glide`, `vibrato`, `bend:`, and `vibrato:` source settings and rows are not available in the current build. Custom graph voices already glide for 60 ms on `~` notes, as implemented in #65.
+**Status:** Per-step `bend:`, `vibrato:`, `pressure:`, and `timbre:` rows are implemented. Instrument and track `glide`, `vibrato`, `vibrato_rate`, and `vibrato_delay` settings remain accepted for later support. Custom graph voices glide for 60 ms on `~` notes.
 
 **Syntax (EBNF):**
 
@@ -268,43 +293,43 @@ pitch_setting ::= "glide" , "=" , duration
                 | "vibrato_delay" , "=" , duration ;
 bend_row ::= "bend" , ":" , { signed_cents | "." } ;
 vibrato_row ::= "vibrato" , ":" , { number , "ct" | "." } ;
-signed_cents ::= ( "+" | "-" ) , number , "ct" ;
+pressure_row ::= "pressure" , ":" , { number | "." } ;
+timbre_row ::= "timbre" , ":" , { number | "." } ;
+signed_cents ::= [ "+" | "-" ] , number , "ct" ;
 ```
 
-**Meaning:** Instrument settings define continuous pitch behavior and tracks may override them. `bend:` gives a signed pitch offset per step. `vibrato:` gives vibrato depth per step. A dot holds the preceding row value; `0ct` resets it. A tie keeps its pitch state. A `~` note connects to the following note.
+**Meaning:** Rows follow the melodic cells and have one value per step. `bend:` gives a signed pitch offset; `vibrato:` gives vibrato depth; `pressure:` and `timbre:` provide normalized graph inputs. A dot holds the preceding row value; `0ct` resets pitch or depth. A tie keeps its note and applies that step's expression, so held dots preserve pitch while explicit values can move it. A `~` note connects to the following note. The accepted instrument settings will define continuous pitch behavior with track overrides when implemented.
 
-**Types and units:** Glide and vibrato delay use ms or seconds. Vibrato depth and bend use cents (`ct`); vibrato rate uses Hz. Bend values are signed cents per step, such as `+50ct` or `-1200ct`.
+**Types and units:** Bend is -9600 to 9600 cents (`ct`); vibrato depth is 0 to 9600 cents. Pressure and timbre are numbers from 0 to 1. Bend accepts `+50ct`, `-1200ct`, and `0ct`. The accepted glide and vibrato delay settings use ms or seconds; vibrato rate uses Hz.
 
-**Defaults:** Custom graph voices use a 60 ms glide on notes written with `~`; notes without `~` keep their existing onset behavior. The standard theremin library keeps its 70 ms glide. No vibrato is added unless a depth is set; the accepted design does not assign default vibrato rate or delay values.
+**Defaults:** Pitch, pressure, and vibrato depth start at zero; timbre starts at 0.5. A leading dot holds these defaults. Vibrato rows use 5 Hz with no delay; zero depth disables vibrato. No expression is added to a pattern without rows. Custom graph voices use a 60 ms glide on `~` notes, and the standard theremin library keeps its 70 ms glide.
 
-**Errors:** Negative durations, invalid pitch ranges, wrong units, or a row whose length differs from its pattern must be rejected. A dot before any row value has no value to hold and must be rejected. Diagnostics and the new row semantics have not landed.
+**Errors:** Duplicate rows, values outside the stated ranges, wrong units, and row lengths that differ from the melodic pattern report errors. Pitch-derived delay and comb times must stay within their ring bounds across bend and vibrato extrema, including tied steps. Drum patterns do not accept expression rows. Assigned sampler and modeled piano tracks reject expression rows because those voices do not yet implement note expression.
 
-**Example:** The settings belong to the instrument or its track override; the rows align with pattern steps:
+**Example:** Rows change a held note without retriggering its envelope:
 
-```cicada-accepted
+```cicada
 cicada 2
 instrument glassbass {
-  param glide = 60ms
-  param vibrato = 12ct
-  param vibrato_rate = 5.5Hz
-  param vibrato_delay = 200ms
   voice mono {
     let osc = saw(pitch)
-    out = osc
+    out = osc * env(gate, 300ms) * velocity
   }
 }
 
-track lead glassbass { glide = 60ms }
+track lead glassbass {}
 pattern glide-line {
-  1~ 3 . 5
+  1 - - 5
   bend: +50ct . -1200ct 0ct
   vibrato: 4ct . 12ct 0ct
+  pressure: 0 . 0.7 0
+  timbre: . 0.8 . 0.5
 }
 scene main { lead = glide-line }
 song { main }
 ```
 
-**Edition history:** Accepted P7 settings and rows add typed control to edition 1. The 60 ms custom-voice default is implemented in the engine; source overrides and per-step rows remain unavailable.
+**Edition history:** Expression rows are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and vibrato depth. Source overrides for the accepted continuous pitch settings remain unavailable.
 
 ## Flexible grid and pattern chains
 
@@ -356,7 +381,7 @@ track bass acid { chain = intro triplet chorus }
 
 ## Multi-file projects and manifest metadata
 
-**Status:** Multi-file loading, manifest metadata, library imports, qualified names, private declarations, `cicada.sum`, and `cicada lib update` are implemented. `require` versions, library vendoring, and bundle provenance remain accepted-only.
+**Status:** Multi-file loading, manifest metadata, library imports, qualified names, private declarations, `cicada.sum`, `cicada lib update`, and value-only presets are implemented. Studio preset saving remains follow-up work. `require` versions, library vendoring, and bundle provenance remain accepted-only.
 
 **Syntax (EBNF):**
 
@@ -423,3 +448,45 @@ song { main*8 }
 ```
 
 **Edition history:** Multi-file projects and manifest metadata work in editions 1 and 2 without changing source grammar, semantic JSON, or the kernel image format. Imports and hash pinning work in editions 1 and 2 without changing the kernel image format. `require` versions remain accepted follow-up work.
+
+
+## Presets
+
+**Status:** Implemented in scores and libraries. Studio “save as preset” and writing presets into a user library remain follow-up work.
+
+**Syntax:**
+
+```cicada
+cicada 2
+
+instrument glassbass {
+  octave = 2
+  param cutoff = 540Hz
+  param bite = 0.58
+  voice mono {
+    out = lowpass(saw(pitch), cutoff) * bite * env(gate, 330ms)
+  }
+}
+
+preset glassbass.bright {
+  instrument = glassbass
+  cutoff = 900Hz
+  bite = 0.7
+}
+track lead glassbass.bright { bite = 0.65 }
+pattern melody { 1 . 3 . }
+scene verse { lead = melody }
+song { verse }
+```
+
+**Meaning:** A preset names an existing target and replaces parameter values without changing its DSP expressions, routing, or asset binding. A track binds a voice preset in its instrument position. Registry default, instrument default, preset, track setting, and scene setting apply in that order. `cicada explain` reports explicit layers and the computed value. Authored parameters have instrument defaults and no separate registry default.
+
+**Targets:** Authored and library-qualified instruments; `acid`; `drums` with lane-prefixed values; a built-in drum lane such as `builtin.bd`; an authored kit's mixer values; `audio` mixer values; declared samplers' root, mode, voice count, and mixer values; and declared or built-in effects. Bind an effect preset with `fx NAME PRESET { ... }`. An unreferenced effect used as its target supplies defaults without creating an extra runtime instance; routed or scene-addressed targets remain active. Built-in effect targets are `builtin.drive`, `builtin.delay`, `builtin.reverb`, and `builtin.comp`. An authored kit lane can bind an authored instrument preset. The experimental guitar is not a score voice in this edition.
+
+**Types and units:** Built-in values use the shared parameter registry's type, unit, and bounds. Authored numeric parameters add host descriptors with their declared or inferred unit and the finite float32 range; the language has no authored parameter bounds syntax. Sampler settings use host descriptors. These descriptors do not extend the kernel parameter ABI. A preset cannot bind another preset or replace an asset, insert chain, or bus. Scene settings retain the engine's existing registry path support; arbitrary authored DSP parameters and sampler configuration are not scene parameters.
+
+**Diagnostics:** `CICADA-PRESET-PARAM` reports unknown or structural parameters; `CICADA-PRESET-TYPE`, `CICADA-PRESET-UNIT`, and `CICADA-PRESET-RANGE` report invalid values; `CICADA-PRESET-TARGET` reports missing or incompatible targets. Each diagnostic carries file, line, and column. Duplicate declarations carry both locations. Library presets follow the same privacy, qualification, and hash checks as other library declarations.
+
+**Example:** [Preset circuit](../../examples/presets/main.cicada) binds authored, acid, and imported presets and overrides a value on the track and in a scene. The imported library is vendored from the [library example](../../examples/libraries/main.cicada), with an added mixer preset.
+
+**Limits:** An authored kit lane cannot apply numeric settings to a built-in recipe through the kit binding; use a `drums` track's lane values or a `builtin.bd` preset instead. Existing limits on effect instances still apply. Studio continues to refuse multi-file editing and has no preset save action in this version. Semantic JSON and generated source contain resolved values; formatting the original source retains preset declarations.

@@ -20,7 +20,12 @@ func TestBrowserParity(t *testing.T) {
 		t.Fatal(err)
 	}
 	reference := nativeReference(t, source, 16, 48_000)
-	server := startBrowserStudio(t, source, reference)
+	checkBrowserParity(t, source, reference, nil, "examples/first-acid.cicada", 16, "browser-parity-report.json")
+}
+
+func checkBrowserParity(t *testing.T, source, reference []byte, files map[string][]byte, fixture string, bars int, reportName string) {
+	t.Helper()
+	server := startBrowserStudioFiles(t, source, reference, files)
 	chrome := startBrowserChrome(t, server)
 	chrome.setViewport(1440, 1000)
 	chrome.navigate("http://" + browserStudioAddress + "/")
@@ -99,8 +104,8 @@ func TestBrowserParity(t *testing.T) {
 		t.Fatalf("decode browser parity report %s: %v", result, err)
 	}
 	parityReport := map[string]any{
-		"fixture":             "examples/first-acid.cicada",
-		"bars":                16,
+		"fixture":             fixture,
+		"bars":                bars,
 		"sampleRate":          48_000,
 		"frames":              report.Frames,
 		"blocks":              report.Blocks,
@@ -114,7 +119,7 @@ func TestBrowserParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parityPath := filepath.Join("..", "..", "build", "browser-parity-report.json")
+	parityPath := filepath.Join("..", "..", "build", reportName)
 	if err := os.WriteFile(parityPath, append(parityBytes, '\n'), 0644); err != nil {
 		t.Fatal(err)
 	}

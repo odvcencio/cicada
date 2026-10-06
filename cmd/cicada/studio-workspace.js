@@ -3,7 +3,7 @@
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.CicadaWorkspace = api;
 })(typeof globalThis === 'object' ? globalThis : this, function () {
-  const panelNames = ['code', 'session', 'song', 'mix', 'master', 'record', 'voice', 'history'];
+  const panelNames = ['code', 'session', 'song', 'mix', 'master', 'record', 'voice', 'history', 'library'];
 
   function installWorkspaceKeyboard({document, selectPanel, command = () => {}, toggleDock = () => {}, showShortcuts = () => {}}) {
     document.addEventListener('keydown', event => {
@@ -15,7 +15,7 @@
         return;
       }
       if (inEditor) {
-        if (event.altKey && event.shiftKey && /^[1-8]$/.test(event.key)) {
+        if (event.altKey && event.shiftKey && /^[1-9]$/.test(event.key)) {
           event.preventDefault();
           selectPanel(panelNames[Number(event.key) - 1]);
         }
@@ -24,7 +24,7 @@
       if (event.ctrlKey || event.altKey || event.shiftKey && event.key !== '?') return;
       // Space and Enter activate a focused button, link, or summary (a pattern grid cell, for example).
       if (event.key === ' ' && /^(BUTTON|A|SUMMARY)$/.test(event.target?.tagName || '')) return;
-      if (/^[1-8]$/.test(event.key)) {
+      if (/^[1-9]$/.test(event.key)) {
         event.preventDefault();
         selectPanel(panelNames[Number(event.key) - 1]);
         return;

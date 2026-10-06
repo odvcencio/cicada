@@ -127,6 +127,7 @@ func ToSource(p *Project) ([]byte, error) {
 	}
 	for _, track := range p.Tracks {
 		var out strings.Builder
+		track = normalizeGuitarOptIn(track)
 		out.WriteString("track " + track.ID + " " + track.Kind)
 		if p.p2Syntax {
 			source, err := trackMixerSource(track)
@@ -232,7 +233,11 @@ func ToSource(p *Project) ([]byte, error) {
 		}
 	}
 	song.WriteString("\n}")
-	sections = append(sections, song.String())
+	if p.Arrange == nil {
+		sections = append(sections, song.String())
+	} else {
+		sections = append(sections, arrangementSource(p.Arrange))
+	}
 	source := strings.Join(sections, "\n\n") + "\n"
 	if p.Edition == 2 {
 		source = "cicada 2\n" + source
@@ -482,11 +487,19 @@ func callArgumentTypes(op string) ([]instrument.Type, bool) {
 	switch op {
 	case "saw", "square", "sine":
 		return []instrument.Type{instrument.Hz}, true
+	case "pm":
+		return []instrument.Type{instrument.Hz, instrument.Audio, instrument.Unit}, true
 	case "noise":
 		return []instrument.Type{}, true
+	case "ddsp":
+		return []instrument.Type{instrument.Hz, instrument.Unit}, true
 	case "env":
 		return []instrument.Type{instrument.Gate, instrument.MS}, true
-	case "ladder", "diode":
+	case "adsr":
+		return []instrument.Type{instrument.Gate, instrument.MS, instrument.MS, instrument.Unit, instrument.MS}, true
+	case "pulse":
+		return []instrument.Type{instrument.Hz, instrument.Unit}, true
+	case "ladder", "diode", "svf":
 		return []instrument.Type{instrument.Audio, instrument.Hz, instrument.Unit}, true
 	case "lowpass", "highpass":
 		return []instrument.Type{instrument.Audio, instrument.Hz}, true
@@ -514,9 +527,9 @@ func callOutputType(op string) instrument.Type {
 	switch op {
 	case "period":
 		return instrument.MS
-	case "saw", "square", "sine", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh", "delay", "comb", "neural_amp":
+	case "saw", "square", "sine", "pm", "pulse", "svf", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh", "delay", "comb", "neural_amp", "ddsp":
 		return instrument.Audio
-	case "env", "exp2", "clamp":
+	case "env", "exp2", "clamp", "adsr":
 		return instrument.Unit
 	}
 	return ""
@@ -589,6 +602,7 @@ func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, proj
 			}
 			out.WriteString("  velocity: " + strings.Join(values, " ") + "\n")
 		}
+		writeExpressionSource(&out, pattern.Expression)
 	}
 	out.WriteByte('}')
 	return out.String(), nil
