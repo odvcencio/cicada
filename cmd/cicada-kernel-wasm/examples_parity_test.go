@@ -48,7 +48,13 @@ func TestAudioWASMExamplesPCM24Parity(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	r := wazero.NewRuntime(ctx)
+	runtimeConfig := wazero.NewRuntimeConfig()
+	// The portable interpreter checks WASM semantics independently of arm64
+	// JIT lowering; the default compiler is also exercised on amd64.
+	if runtime.GOARCH == "arm64" {
+		runtimeConfig = wazero.NewRuntimeConfigInterpreter()
+	}
+	r := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
 	defer r.Close(ctx)
 	compiled, err := r.CompileModule(ctx, wasm)
 	if err != nil {
@@ -89,6 +95,7 @@ func TestAudioWASMExamplesPCM24Parity(t *testing.T) {
 						t.Fatal(err)
 					}
 					defer module.Close(ctx)
+					renderFrame := 0
 					call := func(name string, args ...uint64) uint64 {
 						t.Helper()
 						fn := module.ExportedFunction(name)
@@ -97,7 +104,7 @@ func TestAudioWASMExamplesPCM24Parity(t *testing.T) {
 						}
 						result, err := fn.Call(ctx, args...)
 						if err != nil {
-							t.Fatalf("%s: %v", name, err)
+							t.Fatalf("%s at frame %d: %v", name, renderFrame, err)
 						}
 						if len(result) == 0 {
 							return 0
@@ -150,6 +157,7 @@ func TestAudioWASMExamplesPCM24Parity(t *testing.T) {
 					var nativePCM, wasmPCM, referencePCM [blockSize * 6]byte
 					var sounded bool
 					for at := 0; at < frames; at += blockSize {
+						renderFrame = at
 						n := min(blockSize, frames-at)
 						native.Render(left[:n], right[:n])
 						call("gosx_audio_render", uint64(n))
