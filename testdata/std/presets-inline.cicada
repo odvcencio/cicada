@@ -1,0 +1,109 @@
+cicada 2
+
+title "Standard presets"
+
+tempo 128
+
+key a minor
+
+seed 4242
+
+track acid-squelch acid {
+  cutoff = 620Hz
+  reso = 0.7
+  envmod = 0.65
+  decay = 380ms
+  accent = 0.8
+  drive = 0.25
+  filter = diode
+  level = -18dB
+}
+
+track acid-round acid {
+  cutoff = 360Hz
+  reso = 0.3
+  envmod = 0.25
+  decay = 520ms
+  wave = 1
+  accent = 0.5
+  drive = 0.1
+  filter = ladder
+  level = -18dB
+}
+
+track acid-bite acid {
+  cutoff = 1400Hz
+  reso = 0.8
+  envmod = 0.85
+  decay = 180ms
+  wave = 0
+  accent = 0.9
+  drive = 0.45
+  filter = diode
+  level = -18dB
+}
+
+track kit-tight drums {
+  bd_tune = 60Hz
+  bd_decay = 180ms
+  sd_decay = 60ms
+  ch_decay = 25ms
+  oh_decay = 150ms
+  level = -18dB
+}
+
+track kit-roomy drums {
+  bd_tune = 48Hz
+  bd_decay = 700ms
+  sd_decay = 220ms
+  ch_decay = 100ms
+  oh_decay = 700ms
+  level = -18dB
+}
+
+track kit-lofi drums {
+  bd_tune = 44Hz
+  bd_decay = 300ms
+  sd_tone = 0.6
+  sd_decay = 140ms
+  ch_tone = 5000Hz
+  ch_decay = 45ms
+  ch_level = -12dB
+  level = -18dB
+}
+
+pattern melody {
+  gate = 55%
+  1^ . 3 . 5~ 1 . 7,
+}
+
+pattern beat drums {
+  bd: X... x... X... x...
+  sd: .... X... .... X...
+  ch: x.x. x.x. x.x. x.x.
+  oh: .... .... ..x. ....
+}
+
+scene first {
+  acid-squelch = melody
+  acid-round = melody
+  acid-bite = melody
+  kit-tight = beat
+  kit-roomy = beat
+  kit-lofi = beat
+}
+
+scene second {
+  acid-squelch = keep
+  acid-round = keep
+  acid-bite = keep
+  kit-tight = keep
+  kit-roomy = keep
+  kit-lofi = keep
+  acid-squelch.cutoff = 900Hz
+}
+
+song {
+  first
+  second
+}

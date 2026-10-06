@@ -1,0 +1,59 @@
+import "std/synth"
+
+title "Standard synth"
+
+tempo 128
+
+key a minor
+
+seed 4242
+
+track glassbass synth.glassbass {
+  level = -18dB
+  cutoff = 680Hz
+}
+
+track nightbass synth.nightbass {
+  level = -18dB
+  cutoff = 360Hz
+}
+
+track tymbal synth.tymbal {
+  level = -24dB
+  body = 6kHz
+}
+
+track subline synth.subline {
+  level = -18dB
+  cutoff = 620Hz
+}
+
+track glass synth.glass {
+  level = -18dB
+}
+
+pattern melody {
+  gate = 55%
+  1^ . 3 . 5~ 1 . 7,
+}
+
+scene first {
+  glassbass = melody
+  nightbass = melody
+  tymbal = melody
+  subline = melody
+  glass = melody
+}
+
+scene second {
+  glassbass = keep
+  nightbass = keep
+  tymbal = keep
+  subline = keep
+  glass = keep
+}
+
+song {
+  first
+  second
+}

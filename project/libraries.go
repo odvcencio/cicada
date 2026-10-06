@@ -6,6 +6,7 @@ import (
 	"embed"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -443,28 +444,63 @@ func (s *Sources) UpdateLibraries(name string) ([]byte, []string, error) {
 	return FormatLibrarySum(pins), changes, nil
 }
 
-// LibraryPaths lists available paths for completion. Resolution still checks
-// shadowing when a path is imported.
-func LibraryPaths(projectDir string) []string {
-	seen := map[string]bool{}
-	collect := func(files fs.FS) {
-		fs.WalkDir(files, ".", func(name string, entry fs.DirEntry, err error) error {
-			if err == nil && !entry.IsDir() && path.Base(name) == "cicada.mod" && edition.ValidLibraryPath(path.Dir(name)) {
-				seen[path.Dir(name)] = true
+// LibraryLocation identifies an available library without loading its source.
+type LibraryLocation struct{ Path, Kind string }
+
+// ListLibraries lists manifests in path order, retaining each location of a
+// shadowed path. It neither verifies nor changes the project's pins.
+func ListLibraries(projectDir string) ([]LibraryLocation, error) {
+	var libraries []LibraryLocation
+	var discoveryErr error
+	collect := func(files fs.FS, kind string) error {
+		return fs.WalkDir(files, ".", func(name string, entry fs.DirEntry, err error) error {
+			if err != nil {
+				discoveryErr = errors.Join(discoveryErr, err)
+				return nil
+			}
+			if !entry.IsDir() && path.Base(name) == "cicada.mod" && edition.ValidLibraryPath(path.Dir(name)) {
+				libraries = append(libraries, LibraryLocation{Path: path.Dir(name), Kind: kind})
 			}
 			return nil
 		})
 	}
-	collect(standardLibraries)
-	user, _ := UserLibraryDir()
-	for _, dir := range []string{filepath.Join(projectDir, "lib"), user} {
-		if dir == "" {
+	if err := collect(standardLibraries, "std"); err != nil {
+		discoveryErr = errors.Join(discoveryErr, err)
+	}
+	user, err := UserLibraryDir()
+	if err != nil {
+		discoveryErr = errors.Join(discoveryErr, err)
+	}
+	for _, base := range []struct{ kind, dir string }{{"project", filepath.Join(projectDir, "lib")}, {"user", user}} {
+		if base.dir == "" {
 			continue
 		}
-		if root, err := os.OpenRoot(dir); err == nil {
-			collect(root.FS())
-			root.Close()
+		root, err := os.OpenRoot(base.dir)
+		if os.IsNotExist(err) {
+			continue
 		}
+		if err != nil {
+			discoveryErr = errors.Join(discoveryErr, err)
+			continue
+		}
+		err = collect(root.FS(), base.kind)
+		root.Close()
+		if err != nil {
+			discoveryErr = errors.Join(discoveryErr, err)
+		}
+	}
+	// Stable order preserves std, project, user precedence for a shared path.
+	sort.SliceStable(libraries, func(i, j int) bool { return libraries[i].Path < libraries[j].Path })
+	return libraries, discoveryErr
+}
+
+// LibraryPaths lists unique available paths for completion. Resolution still
+// checks shadowing when a path is imported.
+func LibraryPaths(projectDir string) []string {
+	libraries, _ := ListLibraries(projectDir)
+	seen := map[string]bool{}
+	for _, library := range libraries {
+		seen[library.Path] = true
 	}
 	names := make([]string, 0, len(seen))
 	for name := range seen {

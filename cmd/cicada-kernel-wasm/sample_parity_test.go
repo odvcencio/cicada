@@ -286,7 +286,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			ctx := context.Background()
 			var wasmAllocations uint64
 			var allocatorFound bool
-			if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") {
+			if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") || strings.HasPrefix(fixture, "std/") {
 				ctx = experimental.WithFunctionListenerFactory(ctx, experimental.FunctionListenerFactoryFunc(func(def api.FunctionDefinition) experimental.FunctionListener {
 					if !strings.Contains(def.DebugName(), "runtime.alloc") {
 						return nil
@@ -369,7 +369,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			allocationsBeforeRender := wasmAllocations
 			for block := 0; block*blockSize < frames; block++ {
 				call("gosx_audio_render", blockSize)
-				if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") {
+				if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") || strings.HasPrefix(fixture, "std/") {
 					data, ok := module.Memory().Read(outputPtr, blockSize*2*4)
 					if !ok {
 						t.Fatal("WASM PCM block out of bounds")
@@ -426,7 +426,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 				}
 				t.Logf("METRIC: WASM guitar callback allocations | %d | %d Hz, %d frames", allocations, rate, frames)
 			}
-			if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") {
+			if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") || strings.HasPrefix(fixture, "std/") {
 				copyHash := [32]byte{}
 				copy(copyHash[:], pcm.Sum(nil))
 				hashes[rate] = copyHash
