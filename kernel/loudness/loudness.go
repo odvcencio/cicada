@@ -271,7 +271,7 @@ func (m *Meter) ProcessSample(left, right float32) bool {
 			m.maxShortTermPower = power
 		}
 	}
-	if m.frames%uint64(m.hopFrames) == 0 {
+	if m.frames >= uint64(m.momentFrames) && m.frames%uint64(m.hopFrames) == 0 {
 		m.recordIntegrated()
 		if m.frames >= uint64(m.shortFrames) {
 			m.recordRange()

@@ -100,7 +100,7 @@ func (c ChordStep) Validate(step Step) error {
 }
 
 type Pattern struct {
-	Chords        [64]ChordStep
+	Chords        [64]ChordStep `json:",omitzero"`
 	Steps         [64]uint32
 	Len           uint8
 	SwingPermille uint16 // fraction of one step, 0..500
