@@ -1539,6 +1539,8 @@
         "voices"
       ],
       "properties": {
+        "pack": {"type": "string"},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
         "name": {
           "type": "string"
         },
