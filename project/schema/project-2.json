@@ -369,7 +369,7 @@
           },
           "additionalProperties": {
             "type": "string",
-            "pattern": "^(?:[a-z_][a-z0-9_-]*|builtin\\.(?:bd|sd|ch|oh|cp|rs|lt|mt|ht|cb|cy))$"
+            "pattern": "^(?:[a-z_][a-z0-9_-]*|builtin\\.(?:bd|sd|ch|oh|cp|rs|lt|mt|ht|cb|cy)|model\\.(?:kick|snare|rimshot|cross_stick|tom_low|tom_mid|tom_high|hat_closed|hat_pedal|hat_half_open|hat_open|ride_bow|ride_bell|crash|splash))$"
           }
         }
       }

@@ -114,9 +114,10 @@
   (#not-any-of? @type "acid" "drums" "audio"))
 (fx_decl name: (identifier) @type.definition)
 
-; Authored kits bind each drum lane to instrument code or a built-in voice.
+; Authored kits bind lanes to instrument code, built-in voices, or modeled pieces.
 "kit" @keyword.type
 "builtin" @keyword.builtin
+"model" @keyword.builtin
 (kit_decl name: (identifier) @type.definition)
 (kit_binding lane: (identifier) @tag.builtin)
 (kit_target instrument: (identifier) @type)

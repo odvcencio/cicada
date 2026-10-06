@@ -87,6 +87,16 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 		if !found {
 			return fail("CICADA-PARAM", "unknown setting in parameter path "+path)
 		}
+		if strings.HasPrefix(descriptor.ID, "drum.") {
+			laneControl := strings.SplitN(descriptor.Source, "_", 2)
+			if len(laneControl) == 2 && laneControl[1] != "level" && laneControl[1] != "pan" {
+				for _, kit := range p.Kits {
+					if kit.ID == p.Tracks[trackIndex].Kind && strings.HasPrefix(kit.Lanes[laneControl[0]], "model.") {
+						return fail("CICADA-UNSUPPORTED", "modeled kit synthesis controls must be set on the track: "+path)
+					}
+				}
+			}
+		}
 	} else if effectOK {
 		setting := strings.Join(parts[1:], ".")
 		for _, candidate := range paramdefs.Registry {

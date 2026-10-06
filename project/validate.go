@@ -222,8 +222,10 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
-		if isKit && len(track.Params) != 0 {
-			return fmt.Errorf("kit track %s does not accept drum or instrument parameters", track.ID)
+		if isKit {
+			if _, err := CompileKitTrack(kits[track.Kind], instruments, track.Params); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
 		}
 		for name, value := range track.Params {
 			if name == "level" || name == "pan" {

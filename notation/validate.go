@@ -2,6 +2,7 @@ package notation
 
 import (
 	"m31labs.dev/cicada/kernel/voice/modal"
+	"m31labs.dev/cicada/kernel/voice/modeledkit"
 	"math"
 	"strconv"
 	"strings"
@@ -153,6 +154,10 @@ func Validate(s *Score) []Diagnostic {
 				if drumParams[lane] == nil {
 					add("CICADA-REFERENCE", "unknown built-in drum "+lane, "error", binding.Position)
 				}
+			} else if strings.HasPrefix(binding.Target, "model.") {
+				if _, ok := modeledkit.ParseProfile(strings.TrimPrefix(binding.Target, "model.")); !ok {
+					add("CICADA-REFERENCE", "unknown modeled drum "+binding.Target, "error", binding.Position)
+				}
 			} else if _, exists := instruments[binding.Target]; !exists {
 				add("CICADA-REFERENCE", "unknown kit instrument "+binding.Target, "error", binding.Position)
 			}
@@ -190,7 +195,7 @@ func Validate(s *Score) []Diagnostic {
 				add("CICADA-DUPLICATE", "duplicate parameter "+key, "error", param.Position)
 			}
 			seen[key] = true
-			if !validTrackParam(t.Kind, param.Name, instruments) {
+			if !validTrackParam(t.Kind, param.Name, instruments, kits) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
 			}
 		}
@@ -552,7 +557,7 @@ func Validate(s *Score) []Diagnostic {
 	return ds
 }
 
-func validTrackParam(kind, name string, instruments map[string]Instrument) bool {
+func validTrackParam(kind, name string, instruments map[string]Instrument, kits map[string]Kit) bool {
 	if mixerParams[name] {
 		return true
 	}
@@ -568,6 +573,27 @@ func validTrackParam(kind, name string, instruments map[string]Instrument) bool 
 			return true
 		}
 		return len(parts) == 2 && drumParams[parts[0]][parts[1]]
+	}
+	if kit, ok := kits[kind]; ok {
+		parts := strings.SplitN(name, "_", 2)
+		if len(parts) != 2 {
+			return false
+		}
+		modeled := false
+		for _, binding := range kit.Bindings {
+			if binding.Lane == parts[0] && strings.HasPrefix(binding.Target, "model.") {
+				modeled = true
+				break
+			}
+		}
+		if !modeled {
+			return false
+		}
+		switch parts[1] {
+		case "tune", "decay", "position", "humanize", "level", "pan":
+			return true
+		}
+		return false
 	}
 	if inst, ok := instruments[kind]; ok {
 		if name == "octave" {
