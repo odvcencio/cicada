@@ -1,0 +1,9 @@
+cicada 2
+track keys piano {}
+pattern touch {
+  step = 1/8t
+  c3 e3 g3
+  velocity: 64 . 127
+}
+scene main { keys = touch }
+song { main }

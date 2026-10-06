@@ -273,3 +273,6 @@
 (live_transition to: (identifier) @variable.parameter)
 (live_transition quantize: (identifier) @constant.builtin)
 (live_stinger "." @punctuation.delimiter)
+
+(velocity_row "velocity" @attribute)
+(velocity_row "." @punctuation.special.rest)

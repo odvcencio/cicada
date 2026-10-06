@@ -278,13 +278,17 @@ Flags:
   --help      show this help
 
 ### import-midi
-cicada import-midi
+cicada import-midi <file.mid> -o <score.cicada> [flags]
 
-show MIDI import status
+import MIDI notes as a score
 
 Flags:
-  (MIDI import is scheduled; no flags are available)
-  --help      show this help
+  -o <file>           required new score path
+  --quantize <step>    explicitly quantize onsets; default infers an exact grid
+  --report            write JSON import report to stderr
+  --help              show this help
+
+Imports fixed-tempo 4/4 notes and velocity. Timing edits, cross-bar retriggers, and drum velocity quantization are counted. Controller, program and expression events are not imported.
 
 ### golden
 cicada golden [flags]

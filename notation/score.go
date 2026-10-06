@@ -122,6 +122,7 @@ type Pattern struct {
 	Name     string
 	Kind     string
 	Attrs    []Param
+	Velocity []StepToken
 	Parts    []PatternPart // source order before expansion
 	Steps    []StepToken
 	Lanes    []Lane

@@ -211,6 +211,27 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 				return nil, &patternCompileError{position: token.Position, err: err}
 			}
 		}
+		if source.Velocity != nil {
+			if len(source.Velocity) != count {
+				return nil, fmt.Errorf("CICADA-ROW: velocity row must match the expanded pattern length")
+			}
+			velocity := 0
+			for i, token := range source.Velocity {
+				if token.Text != "." {
+					n, err := strconv.Atoi(token.Text)
+					if err != nil || n < 1 || n > 127 {
+						return nil, &patternCompileError{position: token.Position, err: fmt.Errorf("CICADA-ROW: velocity must be 1..127 or a holding dot")}
+					}
+					velocity = n
+				}
+				if velocity == 0 {
+					return nil, &patternCompileError{position: token.Position, err: fmt.Errorf("CICADA-ROW: a velocity dot needs an earlier value")}
+				}
+				step, _ := seq.UnpackStep(base.Steps[i])
+				step.Velocity = uint8(velocity)
+				base.Steps[i], _ = seq.PackStep(step)
+			}
+		}
 		if err := base.Validate(); err != nil {
 			return nil, err
 		}
