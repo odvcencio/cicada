@@ -145,3 +145,41 @@ func TestStdFixturesCoverEveryExport(t *testing.T) {
 		}
 	}
 }
+
+func TestStdEffectsCompileIndependently(t *testing.T) {
+	t.Setenv("CICADA_LIBRARY", t.TempDir())
+	for _, test := range []struct{ effect, routing string }{
+		{"drive", "insert = fx.drive"},
+		{"delay", "send fx.delay = 0.3"},
+		{"reverb", "send fx.reverb = 0.3"},
+		{"", ""},
+	} {
+		t.Run(test.effect, func(t *testing.T) {
+			root := t.TempDir()
+			libraryWrite(t, root, "cicada.mod", "project effects\ncicada 2\nentry \"main.cicada\"\n")
+			libraryWrite(t, root, "main.cicada", "import \"std/fx\"\ntrack bass acid { "+test.routing+" }\npattern riff { 1 . 5 . }\nscene main { bass = riff }\nsong { main }\n")
+			sources := pinLibraryFixture(t, root)
+			score, ds := sources.Parse()
+			if score == nil || len(ds) != 0 {
+				t.Fatal(ds)
+			}
+			compiled, ds := FromScore(score)
+			if compiled == nil || len(ds) != 0 {
+				t.Fatal(ds)
+			}
+			want := 1
+			if test.effect == "" {
+				want = 0
+			}
+			if len(compiled.Effects) != want {
+				t.Fatalf("materialized effects: %+v", compiled.Effects)
+			}
+			if want == 1 && compiled.Effects[0].ID != "std.fx."+test.effect {
+				t.Fatal(compiled.Effects)
+			}
+			if len(score.Effects) != 4 {
+				t.Fatal("compilation changed imported definitions")
+			}
+		})
+	}
+}
