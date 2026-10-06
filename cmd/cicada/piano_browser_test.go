@@ -73,7 +73,7 @@ song { sustained*999 }
 	})
 	// A fresh profile starts short-lived renderer processes. Let startup and
 	// V8 compilation settle before requiring a stable CPU-counter window.
-	time.Sleep(10 * time.Second)
+	time.Sleep(30 * time.Second)
 	attempt := 0
 sampleWindow:
 	attempt++
