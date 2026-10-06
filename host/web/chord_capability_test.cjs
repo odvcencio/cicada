@@ -95,7 +95,7 @@ async function setup(asset, capture, version, capability, options = {}) {
       const unified = await setup(asset, capture, 15, capability);
       assert.ok(unified.messages.some(m => m.t === 'r' && m.p === capability));
     }
-    for (const capability of [undefined, -1, 1.5, NaN, Infinity, 512, 1024, 0x100000000]) {
+    for (const capability of [undefined, -1, 1.5, NaN, Infinity, 1024, 0x100000000]) {
       const malformed = await setup(asset, capture, 13, capability);
       assert.match(malformed.messages.find(m => m.t === 'e')?.e || '', /Invalid capabilities/);
       assert.equal(malformed.counts.projectAllocs, 0);
@@ -129,6 +129,8 @@ async function setup(asset, capture, version, capability, options = {}) {
       assert.equal(mono.counts.renders, before.renders + 2, 'rejected load stopped active playback');
       assert.equal(mono.counts.projectAllocs, before.projectAllocs, 'rejected load uploaded image');
     }
+    const keys = await setup(asset, capture, 15, 65537 | 512);
+    assert.ok(keys.messages.some(m => m.t === 'r'), 'keyboard capability bit9 was rejected');
     const staged = await setup(asset, capture, 15, 65537);
     staged.send(commands(1));
     await staged.stage(image(15));

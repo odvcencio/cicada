@@ -16,7 +16,10 @@
       this.backend = 'browser';
       this.context = null;
       this.node = null;
-      this.modulePromise = null;
+      this.modulePromises = new Map();
+      this.moduleKind = '';
+      this.startPromise = null;
+      this.stagePromise = Promise.resolve();
       this.readyPromise = null;
       this.revision = '';
       this.lastStageDurationMs = 0;
@@ -32,6 +35,8 @@
       this.playing = false;
       this.clock = false;
       this.capabilities = 0;
+      this.transportTick = 0;
+      this.transportTime = 0;
       this.outputTimeline = { available: false, samples: 0, misses: 0, maxLagMs: 0, maxExcessMs: 0, lastMiss: null };
       this.outputTimelineTimer = 0;
       this.callbackDurations = new Uint32Array(256);
@@ -42,73 +47,154 @@
     }
 
     async startAudio(capture = false) {
+      if (this.startPromise) await this.startPromise;
       if (this.context) {
         await this.context.resume();
+        if (capture) await this.stageCurrentScore('', true);
         return { sampleRate: this.context.sampleRate, clock: this.clock };
       }
+      const pending = this.startContext(capture);
+      this.startPromise = pending;
+      try { return await pending; }
+      finally { if (this.startPromise === pending) this.startPromise = null; }
+    }
+
+    async startContext(capture) {
       const Context = window.AudioContext || window.webkitAudioContext;
       if (!Context) throw new Error('AudioWorklet is not available in this browser');
       this.context = new Context({ sampleRate: 48000, latencyHint: 'interactive' });
       try {
-        const [module, imageResponse] = await Promise.all([
-          this.modulePromise || (this.modulePromise = fetch('/api/kernel.wasm', { cache: 'no-store' }).then(r => {
-            if (!r.ok) throw new Error('Cannot load the audio kernel');
-            return r.arrayBuffer();
-          }).then(bytes => WebAssembly.compile(bytes))),
-          fetch(`/api/kernel-image?rate=${this.context.sampleRate}${capture?'&capture=1':''}`, { cache: 'no-store' })
-        ]);
+        const imageResponse = await fetch(`/api/kernel-image?rate=${this.context.sampleRate}${capture?'&capture=1':''}`, { cache: 'no-store' });
         if (!imageResponse.ok) throw new Error((await imageResponse.text()) || 'Cannot load the score image');
         const revision = imageResponse.headers.get('X-Cicada-Revision') || '';
         const image = await imageResponse.arrayBuffer();
-        const bpmMilli = imageInfo(image);
+        const kind = this.imageModuleKind(image);
+        const module = await this.loadModule(kind);
+        this.bpmMilli = new DataView(image).getUint32(12, true);
         await this.context.audioWorklet.addModule('/audio/cicada-capture.js');
         await this.context.audioWorklet.addModule('/audio/cicada-capture-processor.js');
-        this.node = new AudioWorkletNode(this.context, 'cicada', {
-          numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: 'max', channelInterpretation: 'discrete', outputChannelCount: [2],
-          processorOptions: { m: module, i: image, r: revision, l: this.contextLatencyMs() }
-        });
-        this.readyPromise = new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => reject(new Error('AudioWorklet did not initialize')), 10000);
-          this.node.port.onmessage = event => {
-            const data = event.data;
-            if (data.t === 'r') {
-              clearTimeout(timeout);
-              this.revision = data.r;
-              this.clock = data.c;
-              this.capabilities = data.p || 0;
-              try {
-                imageInfo(image, this.capabilities);
-                this.bpmMilli = bpmMilli;
-                resolve(data);
-              } catch (error) { reject(error); }
-            } else if (data.t === 'e') {
-              clearTimeout(timeout);
-              reject(new Error(data.e));
-            }
-            this.receive(data);
-          };
-          this.node.port.onmessageerror = () => { clearTimeout(timeout); reject(new Error('AudioWorklet message could not be decoded')); };
-        });
-        this.node.connect(this.context.destination);
-        await this.readyPromise;
+        const prepared = await this.createNode(module, image, revision);
+        this.node = prepared.node;
+        this.readyPromise = Promise.resolve(prepared.ready);
+        this.moduleKind = kind;
+        this.revision = prepared.ready.r;
+        this.clock = prepared.ready.c;
+        this.capabilities = prepared.ready.p || 0;
         await this.context.resume();
         this.node.port.postMessage({ t: 'q', l: this.contextLatencyMs() });
         if (!this.outputTimelineTimer) this.outputTimelineTimer = setInterval(() => this.sampleOutputTimeline(), 5);
       } catch (error) {
         // Leave no half-started context behind, so a later Start retries from scratch.
         const failed = this.context;
+        if (this.node) this.disposeNode(this.node);
         this.context = null;
         this.node = null;
         this.readyPromise = null;
-        this.modulePromise = null;
         this.capabilities = 0;
+        this.moduleKind = '';
         if (failed && failed.close) failed.close().catch(() => {});
         throw error;
       }
       return { sampleRate: this.context.sampleRate, clock: this.clock };
     }
 
-    receive(data) {
+    imageModuleKind(image) {
+      const bytes = new Uint8Array(image);
+      if (bytes.length < 32 || bytes[0] !== 67 || bytes[1] !== 73 || bytes[2] !== 67 || bytes[3] !== 49) throw new Error('Score image header is invalid');
+      imageInfo(image);
+      // Image versions 13 and 15 carry required capabilities at byte offset 30.
+      const view = new DataView(image);
+      return view.getUint16(4, true) >= 13 && view.getUint16(30, true) & 512 ? 'keys' : 'core';
+    }
+
+    loadModule(kind) {
+      if (!this.modulePromises.has(kind)) {
+        const pending = fetch(`/api/kernel.wasm${kind === 'keys' ? '?keys=1' : ''}`, { cache: 'no-store' }).then(async response => {
+          if (!response.ok) throw new Error((await response.text()) || 'Cannot load the audio kernel');
+          return WebAssembly.compile(await response.arrayBuffer());
+        }).catch(error => {
+          if (this.modulePromises.get(kind) === pending) this.modulePromises.delete(kind);
+          throw error;
+        });
+        this.modulePromises.set(kind, pending);
+      }
+      return this.modulePromises.get(kind);
+    }
+
+    async createNode(module, image, revision) {
+      const node = new AudioWorkletNode(this.context, 'cicada', {
+        numberOfInputs: 1, numberOfOutputs: 1, channelCount: 2, channelCountMode: 'max', channelInterpretation: 'discrete', outputChannelCount: [2],
+        processorOptions: { m: module, i: image, r: revision, l: this.contextLatencyMs() }
+      });
+      let timeout;
+      const ready = new Promise((resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error('AudioWorklet did not initialize')), 10000);
+        node.port.onmessage = event => {
+          const data = event.data;
+          if (data.t === 'r') {
+            clearTimeout(timeout);
+            try { imageInfo(image, data.p || 0); resolve(data); } catch (error) { reject(error); }
+          }
+          else if (data.t === 'e' && node !== this.node) { clearTimeout(timeout); reject(new Error(data.e)); }
+          if (node === this.node) this.receive(data, node);
+        };
+        node.port.onmessageerror = () => { clearTimeout(timeout); reject(new Error('AudioWorklet message could not be decoded')); };
+      });
+      node.connect(this.context.destination);
+      try { return { node, ready: await ready }; }
+      catch (error) { clearTimeout(timeout); this.disposeNode(node); throw error; }
+    }
+
+    disposeNode(node) {
+      try { this.sendCommands([{ op: 2 }], node); } catch (_) {}
+      node.disconnect();
+      node.port.onmessage = node.port.onmessageerror = null;
+      node.port.close?.();
+    }
+
+    currentTick() {
+      const seconds = this.playing && this.context ? Math.max(0, this.context.currentTime - this.transportTime) : 0;
+      return Math.max(0, Math.round(this.transportTick + seconds * (this.bpmMilli || 120000) * 960 / 60000));
+    }
+
+    anchorTick(tick) {
+      this.transportTick = Math.max(0, tick);
+      this.transportTime = this.context?.currentTime || 0;
+    }
+
+    async replaceModule(kind, image, revision) {
+      const module = await this.loadModule(kind);
+      const previous = this.node;
+      const prepared = await this.createNode(module, image, revision);
+      try {
+        const capture = this.captureSession;
+        if (capture && ['armed', 'recording', 'saving'].includes(capture.status.state)) {
+          capture.status.error = 'Capture stopped because the score changed audio modules. Arm the microphone again to record.';
+          capture.notify();
+          await capture.stop();
+        }
+        const tick = this.currentTick(), playing = this.playing;
+        this.node = prepared.node;
+        this.readyPromise = Promise.resolve(prepared.ready);
+        this.moduleKind = kind;
+        this.revision = prepared.ready.r;
+        this.clock = prepared.ready.c;
+        this.capabilities = prepared.ready.p || 0;
+        this.bpmMilli = new DataView(image).getUint32(12, true);
+        this.anchorTick(tick);
+        this.pendingMeters.clear();
+        this.callbackDurations.fill(0);
+        this.callbackSamples = this.callbackDurationExceedances = this.callbackGapExceedances = this.maxCallbackDurationMs = 0;
+        this.sendCommands([{ op: 3, arg0: Math.floor(tick / 3840), arg1: tick % 3840 }, ...(playing ? [{ op: 1 }] : [])]);
+        this.disposeNode(previous);
+        for (let i = 0; i < this.metricWaiters.length; i++) this.node.port.postMessage({ t: 'q', l: this.contextLatencyMs() });
+        this.notifyState();
+      } catch (error) { this.disposeNode(prepared.node); throw error; }
+      // Replacing an instance resets held notes and effect tails. The existing
+      // context clock continues; transport resumes at its estimated latest tick.
+    }
+
+    receive(data, node = this.node) {
       if (data.t === 'm') {
         try {
           const view = new DataView(data.bytes, 0, data.n);
@@ -119,6 +205,7 @@
               a: view.getUint16(offset + 2, true), b: view.getUint32(offset + 4, true),
               tick: Number(view.getBigInt64(offset + 8, true))
             };
+            if (message.kind === 1) this.anchorTick(message.tick);
             for (const callback of this.messages) callback(message);
             if (message.kind === 2) {
               this.pendingMeters.set(`${message.track}:${message.a}`, message);
@@ -138,10 +225,12 @@
         } catch (error) {
           this.raise(error);
         } finally {
-          this.node.port.postMessage({ t: 'b', bytes: data.bytes }, [data.bytes]);
+          node.port.postMessage({ t: 'b', bytes: data.bytes }, [data.bytes]);
         }
       } else if (data.t === 's') {
+        const tick = this.currentTick();
         this.playing = data.p;
+        this.anchorTick(tick);
         this.notifyState();
       } else if (data.t === 'f') {
         this.playing = false;
@@ -230,8 +319,8 @@
     onBeforePlay(callback) { this.beforePlay.add(callback); return () => this.beforePlay.delete(callback); }
     onMeters(callback) { this.meters.add(callback); return () => this.meters.delete(callback); }
 
-    sendCommands(records) {
-      if (!this.node || !this.readyPromise) throw new Error('Select Browser mode and start audio first');
+    sendCommands(records, node = this.node) {
+      if (!node) throw new Error('Select Browser mode and start audio first');
       if (records.some(record => record.op === 22) && !(this.capabilities & CapabilityChords)) throw new Error('Unsupported chord opcode22');
       const bytes = new Uint8Array(records.length * 24), view = new DataView(bytes.buffer);
       records.forEach((record, index) => {
@@ -241,8 +330,9 @@
         view.setUint32(at + 4, record.arg0 || 0, true);
         view.setUint32(at + 8, record.arg1 || 0, true);
         view.setBigInt64(at + 16, BigInt(record.tick || 0), true);
+        if (node === this.node && record.op === 3) this.anchorTick((record.arg0 || 0) * 3840 + (record.arg1 || 0));
       });
-      this.node.port.postMessage({ t: 'c', bytes }, [bytes.buffer]);
+      node.port.postMessage({ t: 'c', bytes }, [bytes.buffer]);
     }
 
     play() {
@@ -255,7 +345,13 @@
     selectPattern(track, slot) { this.sendCommands([{ op: 9, track, index: slot, arg0: 2 }]); }
     playFrom(bar) { for (const callback of this.beforePlay) callback(); this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
 
-    async stageCurrentScore(revision = '', capture = false) {
+    stageCurrentScore(revision = '', capture = false) {
+      const pending = this.stagePromise.catch(() => {}).then(() => this.prepareScore(revision, capture));
+      this.stagePromise = pending;
+      return pending;
+    }
+
+    async prepareScore(revision, capture) {
       if (!this.node) return false;
       if (revision && revision === this.revision) return true;
       const started = performance.now();
@@ -264,6 +360,12 @@
       const imageRevision = response.headers.get('X-Cicada-Revision') || '';
       if (revision && imageRevision !== revision) throw new Error('Score changed while preparing the browser kernel');
       const image = await response.arrayBuffer();
+      const kind = this.imageModuleKind(image);
+      if (kind !== this.moduleKind) {
+        await this.replaceModule(kind, image, imageRevision);
+        this.lastStageDurationMs = performance.now() - started;
+        return true;
+      }
       const bpmMilli = imageInfo(image, this.capabilities);
       const ready = new Promise((resolve, reject) => this.stageWaiters.set(imageRevision, { resolve, reject }));
       this.node.port.postMessage({ t: 'i', i: image, r: imageRevision }, [image]);
