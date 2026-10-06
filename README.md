@@ -40,6 +40,15 @@ For command-line rendering alone, `make build-core` needs no workstation build.
 
 ## Audio
 
+Cicada's example scores render to byte-identical PCM24 across its native amd64
+and arm64 kernels and its TinyGo WASM kernel. CI enforces this with the
+**PCM24 parity (amd64, arm64, WASM)** gate on GitHub-hosted runners. It renders every
+`examples/*.cicada` arrangement at 44.1 and 48 kHz, including a three-second
+tail, and compares every undithered stereo PCM24 byte across all three targets.
+The gate also requires zero WASM render allocations or memory growth. Run
+`make test-parity` locally to compare the native and WASM kernels; CI supplies
+the amd64 PCM reference to the native arm64 run.
+
 On Windows and Linux, `cicada play` and Studio use Tymbal by default: WASAPI
 shared mode on Windows and ALSA on Linux. Cicada reports device errors and does
 not switch engines silently. Use `--audio oto` to select Oto explicitly, or
