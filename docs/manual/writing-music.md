@@ -244,6 +244,14 @@ song { main*4 }
 
 The current profile supports mono graphs with at most 128 nodes and 32
 stateful nodes. Polyphony, plugins, and sample assets are not in edition 1.
+Use `comb(noise() * env(gate, 1ms), 1 / pitch, 0.995, 0.5)` for a plucked
+string: a short noise burst excites a damped feedback loop. `1 / pitch` is
+typed as milliseconds. `delay(sound, 60ms)` adds a slapback tap. Each primitive
+reserves 16 KiB of ring storage, and each voice can contain at most two.
+The [pluck example](../../examples/pluck.cicada) combines both operations;
+[graph delay limits](../spec/edition-2.md#graph-delays-and-plucked-strings)
+describe interpolation, time bounds, and experimental listening status.
+
 The [instrument reference](../spec/edition-1.md#instruments-and-voices) lists
 every primitive signature.
 

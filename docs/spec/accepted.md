@@ -4,6 +4,16 @@ These owner-accepted designs extend Cicada's source language. Each section says 
 
 Runnable examples in this file use source edition 2. Examples marked `cicada-accepted` are designs for later support.
 
+## Authored graph delay and comb
+
+**Status:** Implemented. Authored pluck and slapback voices are experimental pending owner listening acceptance.
+
+**Syntax and meaning:** `delay(audio, ms)` provides a linearly interpolated tap. `comb(audio, ms, unit, unit)` provides allpass interpolation, feedback, and one-pole damping, with the complete loop period tuned at its fundamental. `1 / pitch` has type ms. See [graph delays and plucked strings](edition-2.md#graph-delays-and-plucked-strings) for units, limits, diagnostics, interpolation, and image compatibility.
+
+**Core budget:** 4,096 float32 samples per delay or comb, at most 8,192 per voice (32,768 bytes of rings). Storage is allocated before rendering. A third node reports `CICADA-LIMIT`; invalid units and constant controls report `CICADA-UNIT` and `CICADA-PARAM`.
+
+**Edition history:** Additive in editions 1 and 2. No new declarations or expression syntax are required. [pluck.cicada](../../examples/pluck.cicada) demonstrates a graph-only Karplus–Strong voice and slapback.
+
 ## Parameter paths and scene settings
 
 **Status:** Implemented. Scene parameter paths use the shared registry for type, unit, range, and engine validation.
@@ -49,7 +59,7 @@ song { verse*4 chorus*4 }
 
 **Defaults:** Track level is -6 dB; mute and solo are off. The music bus has a fixed -3 dB trim, the SFX bus is at unity, and the master safety limiter remains last.
 
-**Errors:** Unknown mixer names report `CICADA-REFERENCE`. Unsupported routes, a non-empty master insert, or more than one insert on a route report `CICADA-UNSUPPORTED`. A saved solo reports `CICADA-SOLO` during render and check.
+**Errors:** Unknown mixer names report `CICADA-REFERENCE`. Unsupported routes or more than one insert on a track or bus report `CICADA-UNSUPPORTED`. A saved solo reports `CICADA-SOLO` during render and check.
 
 **Example:** Mute and solo are ordinary saved mixer settings:
 
@@ -117,7 +127,7 @@ song { verse*4 }
 
 ## Mastering targets and the master insert chain
 
-**Status:** Accepted; the mastering view and non-empty master insert chain are not available in the current build. Named export profiles and loudness-targeted WAV export are available; see [export profiles](edition-1.md#export-profiles).
+**Status:** Implemented for native playback, WAV and stems rendering, and the Studio master-chain view. Named export profiles select loudness and true-peak targets; see [export profiles](edition-1.md#export-profiles).
 
 **Syntax (EBNF):**
 
@@ -130,18 +140,22 @@ target_setting ::= "loudness" , "=" , number , ( "LUFS" | "LU" )
                  | "normalize" , "=" , switch ;
 ```
 
-**Meaning:** The mastering view will edit an ordered effect chain before the built-in safety limiter and save named delivery targets in the score. It will offer loudness-matched A/B bypass and Streaming (-14 LUFS, -1 dBTP), Apple Music (-16 LUFS, -1 dBTP), and EBU R128 broadcast (-23 LUFS, -1 dBTP) targets. Reference tracks stay in session settings, not in the score. Existing export profiles already support rate, bit depth, tail, and the implemented render target options.
+**Meaning:** The master insert runs an ordered effect chain before the built-in safety limiter. Studio shows its saved order, settings, and named delivery targets. Loudness-matched A/B bypass remains follow-up work. Streaming (-14 LUFS, -1 dBTP), Apple Music (-16 LUFS, -1 dBTP), and EBU R128 broadcast (-23 LUFS, -1 dBTP) targets can be authored as export profiles. Reference tracks stay in session settings, not in the score. Existing export profiles already support rate, bit depth, tail, and the implemented render target options.
 
-**Types and units:** Loudness uses LUFS or LU, true peak uses dBTP, and normalize is a switch. Target presets use the values above. An insert chain is an ordered list of declared effect names; the built-in safety limiter stays last.
+**Types and units:** Loudness uses LUFS or LU, true peak uses dBTP, and normalize is a switch. Target presets use the values above. An insert chain contains at most 16 distinct declared effect names. Supported master kinds are `eq`, `comp`, `transient`, `width`, `limiter`, and `convolution`; see [master effect controls](../audio/mix-chain.md#score-master-effects). The built-in safety limiter stays last. Master effect controls are fixed until recompilation; scene automation and external compressor sidechains are unavailable.
 
 **Defaults:** Streaming, Apple Music, and EBU R128 targets use the values above. An export profile field that is omitted keeps the renderer's default. The master chain is empty unless declared.
 
-**Errors:** Unknown profiles or effects report `CICADA-REFERENCE`. Invalid units and ranges report `CICADA-PARAM`. A true-peak ceiling without loudness targeting, normalization combined with loudness targeting, and a non-empty master insert currently report `CICADA-UNSUPPORTED`.
+**Errors:** Unknown profiles or effects report `CICADA-REFERENCE`. Invalid units and ranges report `CICADA-PARAM`. A true-peak ceiling without loudness targeting and normalization combined with loudness targeting report `CICADA-UNSUPPORTED`. Repeated inserts report `CICADA-DUPLICATE`; chains longer than 16 report `CICADA-LIMIT`.
 
-**Example:** This records a target and an ordered master chain. The chain and mastering-view behavior remain unavailable:
+**Example:** Check this score, then render it with `cicada render score.cicada --export streaming --bars 16 -o streaming.wav` and verify with `cicada verify-wav streaming.wav --bars 16 --lufs -14 --true-peak-max -1`:
 
-```cicada-accepted
+```cicada
 cicada 2
+track bass acid { level = 0dB }
+pattern pulse acid { 1 . 3 . 5 . 3 . }
+scene main { bass = pulse }
+song { main*16 }
 fx glue comp { threshold = -18dB }
 master { insert = glue }
 export streaming {
@@ -151,7 +165,7 @@ export streaming {
 }
 ```
 
-**Edition history:** Named export profiles landed with edition 2. The expanded mastering controls and master insert chain are accepted follow-up work; they do not change the current render limits.
+**Edition history:** Named export profiles landed with edition 2. The master insert chain is additive in editions 1 and 2 and uses existing semantic insert arrays. It does not change the core kernel ABI or budgets. Prepared processors cannot be serialized into a core WASM project image; browser score playback with these inserts requires companion-host wiring.
 
 ## Live settings and MIDI mappings
 

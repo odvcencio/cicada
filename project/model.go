@@ -260,7 +260,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		return nil, []notation.Diagnostic{{Code: "CICADA-SYNTAX", Severity: "error", Message: "nil score", Position: notation.Position{Line: 1, Column: 1}}}
 	}
 	diagnostics = notation.Validate(score)
-	_, compiledDiagnostics := Check(score)
+	programs, compiledDiagnostics := Check(score)
 	diagnostics = append(diagnostics, compiledDiagnostics...)
 	for _, d := range diagnostics {
 		if d.Severity == "error" {
@@ -282,6 +282,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	lowerAudio(p, score)
 	for _, source := range score.Instruments {
+		periods := programs[source.Name].PeriodExpressions
 		octave := source.Octave
 		inst := Instrument{ID: source.Name, Octave: &octave, Mode: source.Mode, Params: []InstrumentParam{}, Lets: []Binding{}}
 		for _, param := range source.Params {
@@ -296,9 +297,9 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 			inst.Params = append(inst.Params, InstrumentParam{ID: param.Name, Unit: unit, Default: value})
 		}
 		for _, binding := range source.Lets {
-			inst.Lets = append(inst.Lets, Binding{ID: binding.Name, Value: projectExpr(binding.Value)})
+			inst.Lets = append(inst.Lets, Binding{ID: binding.Name, Value: projectExpr(binding.Value, periods)})
 		}
-		inst.Out = projectExpr(source.Output)
+		inst.Out = projectExpr(source.Output, periods)
 		p.Instruments = append(p.Instruments, inst)
 	}
 	for _, source := range score.Kits {
@@ -510,6 +511,22 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	if err := assignSlots(p, score); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
+	// Attribute immutable master controls to their declaration before the
+	// whole-project check, which also validates imported semantic JSON.
+	for _, effect := range p.Effects {
+		if !MasterHasInsert(p, effect.ID) {
+			continue
+		}
+		if err := validateMasterEffect(p, effect); err != nil {
+			position := notation.Position{Line: 1, Column: 1}
+			for _, source := range score.Effects {
+				if source.Name == effect.ID {
+					position = source.Position
+				}
+			}
+			return nil, append(diagnostics, notation.Diagnostic{Code: masterDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: position})
+		}
+	}
 	if err := ValidateProject(p); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})
 	}
@@ -637,6 +654,14 @@ func assignSlots(p *Project, score *notation.Score) error {
 			used[track][pattern] = true
 		}
 	}
+	if p.Live != nil {
+		for _, stinger := range p.Live.Stingers {
+			if used[stinger.Track] == nil {
+				used[stinger.Track] = map[string]bool{}
+			}
+			used[stinger.Track][stinger.Pattern] = true
+		}
+	}
 	for ti := range p.Tracks {
 		track := &p.Tracks[ti]
 		for _, pattern := range p.Patterns {
@@ -675,7 +700,7 @@ func assignSlots(p *Project, score *notation.Score) error {
 	return nil
 }
 
-func projectExpr(source *notation.Expr) Expr {
+func projectExpr(source *notation.Expr, periods map[*notation.Expr]bool) Expr {
 	if source == nil {
 		return Expr{}
 	}
@@ -686,11 +711,15 @@ func projectExpr(source *notation.Expr) Expr {
 	case "name":
 		return Expr{Name: source.Text}
 	case "binary":
-		return Expr{Op: source.Text, Args: []Expr{projectExpr(source.Left), projectExpr(source.Right)}}
+		op := source.Text
+		if op == "/" && periods[source] {
+			op = "period"
+		}
+		return Expr{Op: op, Args: []Expr{projectExpr(source.Left, periods), projectExpr(source.Right, periods)}}
 	case "call":
 		out := Expr{Op: source.Text, Args: []Expr{}}
 		for _, arg := range source.Args {
-			out.Args = append(out.Args, projectExpr(arg))
+			out.Args = append(out.Args, projectExpr(arg, periods))
 		}
 		return out
 	}
@@ -718,7 +747,7 @@ func parseBaseValue(source string) (float64, string, error) {
 	for _, suffix := range []struct {
 		name, unit string
 		places     int
-	}{{"lufs", "lufs", 0}, {"dbtp", "dbtp", 0}, {"khz", "hz", 3}, {"hz", "hz", 0}, {"ms", "ms", 0}, {"db", "db", 0}, {"lu", "lu", 0}, {"s", "ms", 3}, {"%", "unit", -2}} {
+	}{{"frames", "frames", 0}, {"lufs", "lufs", 0}, {"dbtp", "dbtp", 0}, {"khz", "hz", 3}, {"hz", "hz", 0}, {"ms", "ms", 0}, {"db", "db", 0}, {"lu", "lu", 0}, {"s", "ms", 3}, {"%", "unit", -2}} {
 		if strings.HasSuffix(strings.ToLower(source), suffix.name) {
 			unit, places = suffix.unit, suffix.places
 			source = source[:len(source)-len(suffix.name)]

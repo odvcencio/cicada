@@ -65,6 +65,39 @@ song { main }
 
 Unknown effect and bus names report `CICADA-REFERENCE`. Supported effect kinds, send levels, insert placement, and bus controls are specified in edition 1's mixer sections.
 
+## Graph delays and plucked strings
+
+**Status:** Implemented in source editions 1 and 2; the example voices remain experimental pending listening acceptance.
+
+**Syntax:** `delay(audio, ms)` and `comb(audio, ms, unit, unit)` are ordinary typed function calls in an instrument's mono voice. Unit divided by Hz produces ms: `1 / pitch` is one period, and `2 / pitch` is two periods. Bare `1 / 440` remains a unit value and cannot supply a delay time. Semantic JSON preserves Hz-derived division as the two-argument `period` expression operator; source conversion writes it back as `/`, retaining the numerator's unit type and denominator's Hz type even for numeric literals.
+
+**Meaning:** `delay(x, time)` reads a fractional tap with linear interpolation. It suits slapback and moving taps because it has no recursive interpolation state. `comb(x, time, feedback, damping)` delays its input and feeds the output back through the one-pole filter `filtered[n] = (1-damping)*output[n] + damping*filtered[n-1]`. Zero damping passes the output unchanged; increasing damping removes high frequencies. Zero feedback makes a single delayed pass.
+
+The comb uses a first-order allpass fractional section to preserve loop gain. Its `time` denotes the complete loop period, including damping. The kernel subtracts the damping filter's phase delay at `1000/time` Hz and tunes the allpass phase at that same frequency. This avoids the pitch offset from a low-frequency allpass approximation or an uncompensated damping filter. Higher modes remain dispersive. Control changes reuse the existing rings and can produce transients; no crossfade is implied.
+
+**Limits:** Every delay or comb reserves 4,096 float32 samples (16,384 bytes) before rendering. A core voice can contain at most two such nodes, including unused bindings: 8,192 samples (32,768 bytes) of ring storage plus fixed executor and control state. Voices without delay nodes reserve no rings. `delay` admits 1–4,096 samples; `comb` admits 4–4,096 samples. Maximum time is 92.8798 ms at 44.1 kHz, 85.3333 ms at 48 kHz, and 42.6667 ms at 96 kHz. Feedback and damping are unit values from zero inclusive to one exclusive.
+
+**Errors:** Wrong units report `CICADA-UNIT`; invalid constant times, feedback, damping, track overrides, or pitch-derived times for sequenced graph notes report `CICADA-PARAM`. `cicada check` checks times at 48 kHz; voice construction checks constants at the selected render rate. A third ring reports `CICADA-LIMIT` before playback. Runtime modulation and live notes clamp controls to the render rate's sample bounds; non-finite controls use the lower bound. Reset clears rings; note on and slide retain their tails, as for the existing graph filters. The language server uses the same checks. `cicada explain graph.delay` and `cicada explain graph.comb` share their descriptions with editor hover.
+
+**Example:** A noise burst excites a tuned Karplus–Strong loop. [pluck.cicada](../../examples/pluck.cicada) also uses `delay` for a 60 ms slapback:
+
+```cicada
+cicada 2
+instrument plucked {
+  voice mono {
+    let burst = noise() * env(gate, 1ms) * velocity
+    let string = comb(burst, 1 / pitch, 0.995, 0.5)
+    out = string * env(gate, 1600ms) * 0.3
+  }
+}
+track strings plucked {}
+pattern melody notes { a2 . c3 . e3 . a3 . }
+scene main { strings = melody }
+song { main }
+```
+
+**Kernel images:** Delay graphs keep the version-13 layout and require capability bit 1 in the previously reserved 16-bit header word. `gosx_audio_capabilities` advertises that bit. Legacy images keep a zero capability word, and versions 8–13 remain readable. Older readers reject a required capability before playback. Graph opcodes 24 and 25 carry delay and comb; opcode 26 converts a Hz-derived period to ms. The comb's fourth input occupies the existing node value word as an exact integer index, so node records stay eight bytes. Graph and command opcodes have separate namespaces.
+
 ## Migrating with `cicada fix`
 
 **Status:** Implemented.

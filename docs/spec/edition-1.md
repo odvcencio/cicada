@@ -171,6 +171,8 @@ song { main*8 }
 
 **Types and units:** Parameter units are `unit`, `hz`, `ms`, and `db`. Built-in inputs are `pitch` (Hz), `gate` (gate signal), `velocity` (unit value), and `sample_rate` (Hz). The graph functions are `saw`, `square`, and `sine` (Hz to audio); `noise` (no inputs to audio); `env` (gate and ms to unit); `ladder` and `diode` (audio, Hz, unit to audio); `lowpass` and `highpass` (audio and Hz to audio); `mix` (two audio inputs and unit to audio); `tanh` (audio to audio); `exp2` (unit to unit); and `clamp` (three unit inputs to unit). Expressions are type-checked before playback. The implemented voice mode is `mono`.
 
+`delay(audio, ms)` and `comb(audio, ms, unit, unit)` add bounded delay lines and damped feedback loops. Unit divided by Hz produces a period in ms (`1 / pitch`). Their interpolation, memory, ranges, and diagnostics are specified in [graph delays and plucked strings](edition-2.md#graph-delays-and-plucked-strings).
+
 **Defaults:** Home octave is 2. A parameter's unit may be inferred from its default literal. `voice mono` is required. A track may override home octave from 0–6 unless its instrument declares a synthesis parameter named `octave`; in that case the track value sets the synthesis parameter and the instrument's home octave remains in effect.
 
 **Errors:** Duplicate or reserved names report `CICADA-DUPLICATE`; unknown symbols report `CICADA-REFERENCE`; incompatible types or units report `CICADA-UNIT`. Graphs above 128 nodes or 32 stateful nodes report `CICADA-LIMIT`. `voice poly` parses but reports `CICADA-UNSUPPORTED`.
@@ -605,7 +607,7 @@ song { main*4 }
 
 **Defaults:** Music is trimmed by -3 dB, SFX is at unity, and both built-in buses are unmuted and unsoloed. The master limiter stays last with its existing ceiling and lookahead.
 
-**Errors:** A user-declared bus, bus send, non-fixed bus level, bus pan, master send, master output, master pan, or a non-empty master insert reports `CICADA-UNSUPPORTED`. A master `insert = none` is valid.
+**Errors:** A user-declared bus, bus send, non-fixed bus level, bus pan, master send, master output, or master pan reports `CICADA-UNSUPPORTED`. Master inserts support the ordered [master effect chain](accepted.md#mastering-targets-and-the-master-insert-chain), including `insert = none`.
 
 **Example:** The built-in buses and master can be named when their defaults need to be stated:
 

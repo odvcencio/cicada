@@ -363,6 +363,17 @@ func propagateType(expr Expr, want instrument.Type, symbols map[string]instrumen
 }
 
 func exprSource(expr Expr, want instrument.Type, symbols map[string]instrument.Type, bindings map[string]Expr) (string, error) {
+	if expr.Op == "period" && len(expr.Args) == 2 {
+		left, err := exprSource(expr.Args[0], instrument.Unit, symbols, bindings)
+		if err != nil {
+			return "", err
+		}
+		right, err := exprSource(expr.Args[1], instrument.Hz, symbols, bindings)
+		if err != nil {
+			return "", err
+		}
+		return "(" + left + " / " + right + ")", nil
+	}
 	if expr.Literal != nil {
 		return typedNumber(*expr.Literal, want)
 	}
@@ -402,6 +413,9 @@ func binaryOperandTypes(expr Expr, want instrument.Type, symbols map[string]inst
 	left := inferExprType(expr.Args[0], symbols, bindings, map[string]bool{})
 	right := inferExprType(expr.Args[1], symbols, bindings, map[string]bool{})
 	if expr.Op == "/" {
+		if want == instrument.MS && right == instrument.Hz {
+			return instrument.Unit, instrument.Hz
+		}
 		if want == instrument.Unit && left != "" && left == right {
 			return left, right
 		}
@@ -452,6 +466,9 @@ func inferExprType(expr Expr, symbols map[string]instrument.Type, bindings map[s
 	if expr.Op == "/" && left == right && left != "" {
 		return instrument.Unit
 	}
+	if expr.Op == "/" && left == instrument.Unit && right == instrument.Hz {
+		return instrument.MS
+	}
 	if left != "" && left != instrument.Unit {
 		return left
 	}
@@ -473,6 +490,12 @@ func callArgumentTypes(op string) ([]instrument.Type, bool) {
 		return []instrument.Type{instrument.Audio, instrument.Hz, instrument.Unit}, true
 	case "lowpass", "highpass":
 		return []instrument.Type{instrument.Audio, instrument.Hz}, true
+	case "delay":
+		return []instrument.Type{instrument.Audio, instrument.MS}, true
+	case "period":
+		return []instrument.Type{instrument.Unit, instrument.Hz}, true
+	case "comb":
+		return []instrument.Type{instrument.Audio, instrument.MS, instrument.Unit, instrument.Unit}, true
 	case "mix":
 		return []instrument.Type{instrument.Audio, instrument.Audio, instrument.Unit}, true
 	case "tanh":
@@ -487,7 +510,9 @@ func callArgumentTypes(op string) ([]instrument.Type, bool) {
 
 func callOutputType(op string) instrument.Type {
 	switch op {
-	case "saw", "square", "sine", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh":
+	case "period":
+		return instrument.MS
+	case "saw", "square", "sine", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh", "delay", "comb":
 		return instrument.Audio
 	case "env", "exp2", "clamp":
 		return instrument.Unit
@@ -651,6 +676,8 @@ func typedNumber(value float64, unit instrument.Type) (string, error) {
 		return decimal(value) + "LU", nil
 	case "lufs":
 		return decimal(value) + "LUFS", nil
+	case "frames":
+		return decimal(value) + "frames", nil
 	case "dbtp":
 		return decimal(value) + "dBTP", nil
 	case "ratio":

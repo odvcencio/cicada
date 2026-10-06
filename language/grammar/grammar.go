@@ -96,6 +96,8 @@ func Cicada() *grammargen.Grammar {
 		sym("identifier"),
 		seq(str("("), sym("expression"), str(")")),
 	))
+	// Functions remain identifiers: typing checks delay(audio, ms) and
+	// comb(audio, ms, unit, unit), and unit / Hz yields a period in ms.
 	g.Define("call_expr", seq(field("function", sym("identifier")), str("("), commaSep(sym("expression")), str(")")))
 
 	// Parameters of tracks and effects. Mixer routing has its own typed source
@@ -193,7 +195,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("comment", token(pat(`\/\/[^\n]*`)))
 
 	// Live controls use ordinary numbers so unit and range errors get semantic diagnostics.
-	g.Define("live_decl", seq(str("live"), str("{"), repeat(choice(sym("live_land"), sym("live_phrase"), sym("live_macro"), sym("live_layers"))), str("}")))
+	g.Define("live_decl", seq(str("live"), str("{"), repeat(choice(sym("live_land"), sym("live_phrase"), sym("live_macro"), sym("live_layers"), sym("live_state"), sym("live_stinger"), sym("live_transition"))), str("}")))
 	g.Define("live_land", seq(str("land"), str("="), field("value", choice(sym("identifier"), sym("bar_count"))), optional(str(";"))))
 	g.Define("live_phrase", seq(str("phrase"), str("="), field("value", sym("bar_count")), optional(str(";"))))
 	g.Define("live_macro", seq(str("macro"), field("name", sym("identifier")), str("="), field("value", sym("number")), optional(seq(str("smooth"), field("smooth", sym("number")))), optional(str(";"))))
@@ -219,6 +221,7 @@ func Cicada() *grammargen.Grammar {
 	g.Test("steps", "cicada 1 pattern p notes { 1^.5,~*2%70 - | c#3' use hook*2 transpose = -12 }",
 		"(source_file (integer) (note_pattern (identifier) (acid_step (acid_note (pitch (degree)) (modifier))) (acid_step) (acid_step (acid_note (pitch (degree)) (octave_shift) (modifier) (modifier (ratchet (integer))) (modifier (probability (integer))))) (acid_step) (acid_step) (acid_step (acid_note (pitch (letter_pitch)) (octave_shift))) (phrase_use (identifier) (integer) (number))))")
 	g.Test("instrument", "cicada 1 instrument i { param c: hz = 1hz; voice mono { let s = env(gate, 9ms); out = saw(pitch - c) * (s * 2); } }", "")
+	g.Test("graph delays", "cicada 2 instrument i { voice mono { let s = comb(noise() * env(gate, 1ms), 1 / pitch, 0.99, 0.5); out = delay(s, 20ms); } }", "")
 	g.Test("inferred instrument units", "instrument i { param cutoff = 720Hz param decay = 0.3s param level = -6dB param amount = 50% voice mono { out = saw(cutoff) * amount } }", "")
 	g.Test("scene parameter paths", "scene drop { bass = bass-b bass.cutoff = 900Hz drums.bd_level = off }", "")
 	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
@@ -227,6 +230,11 @@ func Cicada() *grammargen.Grammar {
 	g.Test("pattern settings inside braces", "pattern p { swing = 56% gate = 60% seed = 7 1 . } pattern beat drums { swing = 54% bd: x.; }", "")
 	g.Test("line-based statements", "instrument i { param cutoff: hz = 720Hz voice mono { let osc = saw(pitch) out = osc } } kit k { bd = i ch = builtin.ch } pattern b drums { bd: x... sd: .x.. }", "")
 	g.Test("short transpose", "phrase hook { 1 . } pattern p { use hook +7 }", "")
+	g.Define("live_state", seq(str("state"), field("name", sym("identifier")), str("="), field("scene", sym("identifier")), optional(str(";"))))
+	g.Define("live_stinger", seq(str("stinger"), field("name", sym("identifier")), str("="), field("track", sym("identifier")), str("."), field("pattern", sym("identifier")), optional(seq(str("quantize"), field("quantize", sym("identifier")))), optional(seq(str("crossfade"), field("crossfade", sym("number")))), optional(str(";"))))
+	g.Define("live_transition", seq(str("transition"), field("from", sym("identifier")), str("->"), field("to", sym("identifier")), optional(seq(str("quantize"), field("quantize", sym("identifier")))), optional(seq(str("crossfade"), field("crossfade", sym("number")))), optional(str(";"))))
+	g.Test("game director", "live { state explore = calm state combat = battle stinger hit = cue.hit quantize beat crossfade 10ms transition explore -> combat quantize phrase crossfade 200ms }", "")
+
 	g.Test("live controls", "live { land = bar phrase = 8bars macro intensity = 0.3 smooth 400ms layers intensity { drums >= 0.25 attack 1bar release 3bars } }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 

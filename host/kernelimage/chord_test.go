@@ -9,6 +9,7 @@ import (
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -254,4 +255,68 @@ func TestImageCannotDropInvalidUnusedChordPayload(t *testing.T) {
 	if data, err := kernelimage.Encode(cfg); err == nil || data != nil {
 		t.Fatal("image silently dropped unused invalid chord payload")
 	}
+}
+
+func TestPatternCommandGrowClearsDormantScalarSteps(t *testing.T) {
+	cfg := chordConfig(t)
+	loaded := cfg.Patterns[0].Slots[0]
+	loaded.Chords = [64]seq.ChordStep{}
+	for i := uint8(0); i < loaded.Len; i++ {
+		loaded.Steps[i], _ = seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100})
+	}
+	loaded.Steps[3], _ = seq.PackStep(seq.Step{Note: 127, Gate: true, Ratchet: 1, Probability: 100})
+	cfg.Patterns[0].Slots[0] = loaded
+	e, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.Push(cmd.Command{Op: cmd.OpSetPatternLen, Track: 0, Index: 1}) {
+		t.Fatal("shrink rejected")
+	}
+	var l, r [1]float32
+	e.Render(l[:], r[:])
+	loaded.Len = 1
+	cfg.Patterns[0].Slots[0] = loaded
+	replacement := loaded
+	replacement.Len, replacement.Transpose = 4, 1
+	for i := uint8(0); i < replacement.Len; i++ {
+		replacement.Steps[i], _ = seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100})
+	}
+	commands, err := kernelimage.PatternCommands(replacement, &cfg, 0, 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.PushBatch(commands) {
+		t.Fatal("grow rejected")
+	}
+	audioFrames(t, e)
+}
+
+func TestChordImageRetainsGraphDelayCapability(t *testing.T) {
+	source := strings.Replace(chordScore, "sine(pitch)", "comb(noise(), 1 / pitch, 0.9, 0.5)", 1)
+	score, ds := notation.Parse([]byte(source))
+	p, ds := project.FromScore(score)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	cfg, err := project.CompileEngine(p, 48000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binary.LittleEndian.Uint16(data[4:6]) != kernelimage.ChordImageVersion || binary.LittleEndian.Uint16(data[30:32]) != kernelimage.DelayCapability {
+		t.Fatal("chord image lost graph delay capability")
+	}
+	decoded, err := kernelimage.Decode(data, 48000, 128)
+	if err != nil || !reflect.DeepEqual(cfg, decoded) {
+		t.Fatalf("chord delay image roundtrip: %v", err)
+	}
+	e, err := engine.New(decoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audioFrames(t, e)
 }

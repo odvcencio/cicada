@@ -31,3 +31,14 @@ func CaptureAdapter() []byte   { return captureAdapter }
 func CaptureProcessor() []byte { return captureProcessor }
 func CaptureWorker() []byte    { return captureWorker }
 func CaptureClient() []byte    { return captureClient }
+
+// Optional sample instrument host; serve both modules at sibling URLs.
+//
+//go:embed instrument-pack.js
+var instrumentPack []byte
+
+//go:embed sampler-processor.js
+var samplerProcessor []byte
+
+func InstrumentPack() []byte   { return instrumentPack }
+func SamplerProcessor() []byte { return samplerProcessor }
