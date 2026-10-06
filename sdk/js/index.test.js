@@ -17,7 +17,7 @@ test('director uses landed states and preserves large absolute ticks', () => {
  assert.equal(view.getUint32(4, true), 1 | 21 << 16);
  assert.equal(view.getUint32(8, true), 9600); assert.equal(view.getBigInt64(16, true), tick);
  client.setMacro('intensity', 0.75); client.triggerStinger('pickup');
- assert.equal(records.at(-1)[0], 23);
+ assert.equal(records.at(-1)[0], 24);
  client.handle({ Kind: 11, B: 5 }); assert.equal(client.layerMask, 5);
  for (const call of [() => client.setState('missing'), () => client.setMacro('intensity', NaN), () => client.setMacro('intensity', 1.1), () => client.triggerStinger('missing'), () => client.setState('combat', -1n)]) assert.throws(call);
 });
@@ -26,7 +26,7 @@ test('wire codec and worklet transfer', () => {
  view.setUint8(0, 14); view.setUint8(1, 2); view.setUint16(2, 3, true); view.setBigInt64(8, tick, true);
  assert.deepEqual(decodeMessages(data), [{ Kind: 14, Track: 2, A: 3, B: 0, Tick: tick }]);
  assert.throws(() => decodeMessages(data.subarray(1)));
- assert.throws(() => encodeCommand({ Op: 22, Track: 255, Tick: Number.MAX_SAFE_INTEGER + 2 }));
+ assert.throws(() => encodeCommand({ Op: 23, Track: 255, Tick: Number.MAX_SAFE_INTEGER + 2 }));
  const sent = []; workletSender({ postMessage: (...args) => sent.push(args) })(data);
  assert.deepEqual(sent[0], [{ t: 'c', bytes: data }, [data.buffer]]);
 });

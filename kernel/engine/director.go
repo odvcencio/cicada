@@ -25,7 +25,7 @@ func (e *Engine) applyDirector(c cmd.Command) {
 	at := tick
 	if q == uint32(cmd.QuantizePhrase) {
 		if e.phraseBars == 0 {
-			e.fault(20)
+			e.fault(cmd.FaultDirectorQuantize)
 			return
 		}
 		quantum := int64(e.phraseBars) * seq.TicksPerBar
@@ -34,7 +34,7 @@ func (e *Engine) applyDirector(c cmd.Command) {
 		var err error
 		at, err = seq.QuantizeTick(tick, cmd.Quantize(q), 16)
 		if err != nil {
-			e.fault(20)
+			e.fault(cmd.FaultDirectorQuantize)
 			return
 		}
 	}
@@ -71,7 +71,7 @@ func (e *Engine) applyDirector(c cmd.Command) {
 	p := &e.patterns[track]
 	d := &e.director[track]
 	if e.voices[track].kind == VoiceOff || p.active >= 0 && !d.stinger {
-		e.fault(21)
+		e.fault(cmd.FaultDirectorStinger)
 		return
 	}
 	if d.stinger {

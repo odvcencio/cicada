@@ -1,4 +1,4 @@
-const OP_STATE = 22, OP_STINGER = 23, OP_MACRO = 18;
+const OP_STATE = 23, OP_STINGER = 24, OP_MACRO = 18;
 const STATE_CHANGED = 13, LAYER_CHANGED = 11;
 const uint = (n, max, label) => {
   if (!Number.isInteger(n) || n < 0 || n > max) throw new RangeError(`Invalid ${label}`);
@@ -16,7 +16,7 @@ const quantize = (name, phrase) => {
 
 /** Encode one fixed, little-endian 24-byte command. Tick uses bigint. */
 export function encodeCommand(c) {
-  uint(c.Op, 23, 'opcode');
+  uint(c.Op, 24, 'opcode');
   if (c.Op === 0) throw new RangeError('Invalid opcode');
   uint(c.Track, 255, 'track'); uint(c.Index ?? 0, 65535, 'index');
   uint(c.Arg0 ?? 0, 0xffffffff, 'arg0'); uint(c.Arg1 ?? 0, 0xffffffff, 'arg1');

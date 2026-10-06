@@ -43,6 +43,9 @@ const (
 	OpSetLayers
 	OpSetLayerMasks
 	OpSetPhraseBars
+	// OpSetChordStep (22) supplies an additive chord payload after OpSetStep.
+	// Arg0 packs four 7-bit pitches. Arg1 low4bits slot, bits4..6 count2..4.
+	OpSetChordStep
 	// OpSetState: Index=state ID, Arg0=scene ID | quantize<<16, Arg1=crossfade frames.
 	OpSetState
 	// OpTriggerStinger: Track=dedicated track, Index=slot, Arg0=quantize, Arg1=fade frames.
@@ -204,6 +207,10 @@ func (c Command) Validate(tracks uint8) error {
 		if c.Index >= 64 || c.Arg1 >= 16 || c.Arg0>>28 != 0 || c.Arg0>>14&0x7f > 100 || c.Arg0&(1<<10) != 0 && (c.Arg0&(1<<9) == 0 || c.Arg0>>11&7 != 0) {
 			return Error("step or slot is out of range")
 		}
+	case OpSetChordStep:
+		if _, _, err := DecodeChordPayload(c); err != nil {
+			return err
+		}
 	case OpSetPatternLen:
 		if c.Index < 1 || c.Index > 64 || c.Arg1 >= 16 {
 			return Error("pattern length or slot is out of range")
@@ -340,3 +347,57 @@ func get32(src []byte) uint32 {
 	return uint32(src[0]) | uint32(src[1])<<8 | uint32(src[2])<<16 | uint32(src[3])<<24
 }
 func get64(src []byte) uint64 { return uint64(get32(src)) | uint64(get32(src[4:]))<<32 }
+
+// ChordStepCommand encodes an additive payload without changing any existing
+// command record. Hosts must negotiate chord capability before use.
+func ChordStepCommand(track, slot, index uint8, notes [4]uint8, count uint8) (Command, error) {
+	if track >= 16 || slot >= 16 || index >= 64 {
+		return Command{}, Error("chord command target is out of range")
+	}
+	if count < 2 || count > 4 {
+		return Command{}, Error("chord count must be 2 to 4")
+	}
+	for i, note := range notes {
+		if note > 127 || i >= int(count) && note != 0 {
+			return Command{}, Error("invalid original chord pitch")
+		}
+		for j := 0; j < i && i < int(count); j++ {
+			if note == notes[j] {
+				return Command{}, Error("chord pitches must be distinct")
+			}
+		}
+	}
+	c := Command{Op: OpSetChordStep, Track: track, Index: uint16(index), Arg1: uint32(slot) | uint32(count)<<4}
+	for i := 0; i < 4; i++ {
+		c.Arg0 |= uint32(notes[i]) << uint(i*7)
+	}
+	_, _, err := DecodeChordPayload(c)
+	return c, err
+}
+
+func DecodeChordPayload(c Command) (notes [4]uint8, count uint8, err error) {
+	count = uint8(c.Arg1 >> 4)
+	if c.Index >= 64 || c.Arg1>>7 != 0 || count < 2 || count > 4 || c.Arg0>>28 != 0 {
+		return notes, count, Error("invalid chord step payload")
+	}
+	for i := 0; i < 4; i++ {
+		notes[i] = uint8(c.Arg0 >> uint(i*7) & 127)
+		if i >= int(count) && notes[i] != 0 {
+			return notes, count, Error("unused chord pitch must be zero")
+		}
+		for j := 0; j < i && i < int(count); j++ {
+			if notes[i] == notes[j] {
+				return notes, count, Error("chord pitches must be distinct")
+			}
+		}
+	}
+	return notes, count, nil
+}
+
+// FaultPolyLive is additive and distinct from the existing arrangement faults.
+const FaultPolyLive uint16 = 20
+const PolyLiveUnsupported = "polyphonic tracks require handle-aware live commands; legacy NoteOn/NoteOff are unsupported"
+
+// Director faults are distinct from the polyphonic live-command fault.
+const FaultDirectorQuantize uint16 = 21
+const FaultDirectorStinger uint16 = 22

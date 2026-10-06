@@ -4,7 +4,7 @@ Declare game states, transition timing, and one-shot cues in an edition-2 score.
 The Go and JavaScript SDKs resolve names to the same 24-byte kernel commands.
 The audio thread schedules their landings at exact musical sample boundaries.
 
-```cicada
+```text
 live {
   land = bar
   phrase = 8bars
@@ -139,8 +139,8 @@ All reserved bytes remain zero. Native and WASM use identical records.
 
 | Record | Payload |
 | --- | --- |
-| `OpSetState` (22) | Track 255; Index state ID 0–63; Arg0 scene ID in low 16 bits, quantize in high 16 bits; Arg1 crossfade frames |
-| `OpTriggerStinger` (23) | Track cue track; Index pattern slot; Arg0 quantize; Arg1 attack/release fade frames |
+| `OpSetState` (23) | Track 255; Index state ID 0–63; Arg0 scene ID in low 16 bits, quantize in high 16 bits; Arg1 crossfade frames |
+| `OpTriggerStinger` (24) | Track cue track; Index pattern slot; Arg0 quantize; Arg1 attack/release fade frames |
 | `StateChanged` (13) | A state ID; B scene ID; Tick actual landing |
 | `StingerStarted` (14) | Track cue track; A pattern slot; Tick actual landing |
 | `StingerEnded` (15) | Track cue track; A pattern slot; Tick end or replacement |

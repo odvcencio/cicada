@@ -128,10 +128,19 @@ type Pattern struct {
 	Position Position
 }
 
+// ChordPitch retains its spelling and byte span within a step's exact text.
+type ChordPitch struct {
+	Text       string
+	Start, End int
+}
+
 type StepToken struct {
-	Text      string
-	Transpose int // phrase-use transform, in semitones
-	Position  Position
+	ChordPitches   []ChordPitch
+	ChordModifiers string
+	ChordComments  []string
+	Text           string
+	Transpose      int // phrase-use transform, in semitones
+	Position       Position
 }
 
 type Phrase struct {
