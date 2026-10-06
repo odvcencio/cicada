@@ -41,8 +41,8 @@ var browserEvidenceDir = func() string {
 	return filepath.Join("build", "browser-evidence")
 }()
 
-const windowsBrowserProfile = `C:\Temp\cicada-ws-m2c3`
-const windowsBrowserProfileWSL = `/mnt/c/Temp/cicada-ws-m2c3`
+var windowsBrowserProfile = `C:\Temp\cicada-ws-m2c3`
+var windowsBrowserProfileWSL = `/mnt/c/Temp/cicada-ws-m2c3`
 
 func windowsStudioBaseURL() string {
 	return "http://localhost:" + strings.TrimPrefix(browserStudioAddress, "127.0.0.1:")
