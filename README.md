@@ -31,9 +31,9 @@ audio device. For WAV output, render the score:
 
 ## Audio
 
-Cicada's native amd64 and arm64 kernels and its TinyGo WASM kernel render the
-same score to byte-identical PCM24. CI enforces this with the **PCM24 parity
-(amd64, arm64, WASM)** gate on GitHub-hosted runners. It renders every
+Cicada's example scores render to byte-identical PCM24 across its native amd64
+and arm64 kernels and its TinyGo WASM kernel. CI enforces this with the
+**PCM24 parity (amd64, arm64, WASM)** gate on GitHub-hosted runners. It renders every
 `examples/*.cicada` arrangement at 44.1 and 48 kHz, including a three-second
 tail, and compares every undithered stereo PCM24 byte across all three targets.
 The gate also requires zero WASM render allocations or memory growth. Run

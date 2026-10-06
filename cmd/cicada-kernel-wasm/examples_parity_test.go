@@ -48,13 +48,7 @@ func TestAudioWASMExamplesPCM24Parity(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	runtimeConfig := wazero.NewRuntimeConfig()
-	// The portable interpreter checks WASM semantics independently of arm64
-	// JIT lowering; the default compiler is also exercised on amd64.
-	if runtime.GOARCH == "arm64" {
-		runtimeConfig = wazero.NewRuntimeConfigInterpreter()
-	}
-	r := wazero.NewRuntimeWithConfig(ctx, runtimeConfig)
+	r := wazero.NewRuntime(ctx)
 	defer r.Close(ctx)
 	compiled, err := r.CompileModule(ctx, wasm)
 	if err != nil {
