@@ -37,6 +37,7 @@ test-alloc:
 
 test-timing:
 	go test ./kernel/seq ./kernel/engine -run 'Test.*(Clock|Timing|Tick|Tempo|Quantize|Gate|Slide|Chain|Mask|Block|Swing|Ratchet|Tie|Probability|Restart|Scene)' -count=1 -v
+	CICADA_WALLCLOCK_TIMING=1 go test ./kernel/amp -run '^TestAmpP99BlockBudget$$' -count=1 -v
 
 test-golden:
 	go run ./cmd/cicada golden
