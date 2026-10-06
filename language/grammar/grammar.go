@@ -125,12 +125,13 @@ func Cicada() *grammargen.Grammar {
 	))
 	g.Define("acid_pattern", seq(
 		str("pattern"), field("name", sym("_name")), str("acid"), repeat(sym("pattern_attr")),
-		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(sym("expression_row")), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(choice(sym("expression_row"), sym("velocity_row"))), str("}"),
 	))
 	g.Define("note_pattern", seq(
 		str("pattern"), field("name", sym("_name")), optional(str("notes")), repeat(sym("pattern_attr")),
-		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(sym("expression_row")), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(choice(sym("expression_row"), sym("velocity_row"))), str("}"),
 	))
+	g.Define("velocity_row", seq(str("velocity"), str(":"), repeat(choice(sym("number"), str(".")))))
 	g.Define("phrase_use", seq(
 		str("use"), field("name", sym("_name")),
 		optional(seq(str("*"), field("repeat", sym("integer")))),

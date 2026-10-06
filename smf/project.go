@@ -250,10 +250,13 @@ func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tic
 		}
 		gate := max(int64(30), (segmentEnd-onset)*int64(pattern.GatePercent)/100)
 		pitch := uint8(int(step.Note) + int(pattern.Transpose))
-		velocity := uint8(100)
+		velocity := step.Velocity
+		if velocity == 0 {
+			velocity = 100
+		}
 		if isDrum {
 			pitch, velocity = drumPitch, step.Velocity
-		} else if step.Accent {
+		} else if step.Accent && velocity == 100 {
 			velocity = 127
 		}
 		held.index, held.count = len(track.Notes), 1

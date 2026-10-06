@@ -195,8 +195,11 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "import-midi" {
-		fmt.Fprintln(os.Stderr, "MIDI import is scheduled for M6; Cicada currently supports midi export and verify-midi")
-		os.Exit(1)
+		if err := importMIDICommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "golden" {
 		if err := goldenCommand(os.Args[2:]); err != nil {

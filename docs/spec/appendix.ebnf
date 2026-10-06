@@ -50,9 +50,10 @@ master_decl ::= "master" , "{" , { mix_setting } , "}" ;
 export_decl ::= "export" , _name , "{" , { param_decl } , "}" ;
 phrase_decl ::= "phrase" , _name , [ "acid" ] , "{" , { acid_step } , "}" ;
 acid_pattern ::= "pattern" , _name , "acid" , { pattern_attr } , "{" , { pattern_attr } ,
-                 { acid_step | phrase_use } , { expression_row } , "}" ;
+                 { acid_step | phrase_use } , { expression_row | velocity_row } , "}" ;
 note_pattern ::= "pattern" , _name , [ "notes" ] , { pattern_attr } , "{" , { pattern_attr } ,
-                 { acid_step | phrase_use } , { expression_row } , "}" ;
+                 { acid_step | phrase_use } , { expression_row | velocity_row } , "}" ;
+velocity_row ::= "velocity" , ":" , { number | "." } ;
 phrase_use ::= "use" , _name , [ "*" , integer ] , [ "transpose" , "=" , number | "+" , number ] ;
 drum_pattern ::= "pattern" , _name , "drums" , { pattern_attr } , "{" , { pattern_attr } ,
                  { drum_lane } , "}" ;

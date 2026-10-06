@@ -34,7 +34,7 @@ var commandHelpEntries = []commandHelpEntry{
 	{name: "midi", summary: "export a Standard MIDI File", usage: "cicada midi <score.cicada> [flags]", flags: "  -o <file>       required output MIDI path\n  --bars <n>      song bars; 0 means all (default 0)\n  --pattern <id>  export only one pattern\n  --report        write JSON report to stderr\n  --help          show this help"},
 	{name: "verify-midi", summary: "verify a Standard MIDI File", usage: "cicada verify-midi <file.mid> [flags]", flags: "  --ppq <n>     expected pulses per quarter note (default 960)\n  --type <n>    expected SMF type (default 1)\n  --report      write JSON report to stderr\n  --help        show this help"},
 	{name: "compare-midi", summary: "compare MIDI event streams", usage: "cicada compare-midi <a.mid> <b.mid>", flags: "  (no command flags)"},
-	{name: "import-midi", summary: "show MIDI import status", usage: "cicada import-midi", flags: "  (MIDI import is scheduled; no flags are available)"},
+	{name: "import-midi", summary: "import MIDI notes as a score", usage: "cicada import-midi <file.mid> -o <score.cicada> [flags]", flags: "  -o <file>           required new score path\n  --quantize <step>    explicitly quantize onsets; default infers an exact grid\n  --report            write JSON import report to stderr\n  --help              show this help", notes: "Imports fixed-tempo 4/4 notes and velocity. Timing edits, cross-bar retriggers, and drum velocity quantization are counted. Controller, program and expression events are not imported."},
 	{name: "golden", summary: "check the reference render fingerprint", usage: "cicada golden [flags]", flags: "  --update       write the golden fingerprint\n  --score <file> score to render (default examples/first-acid.cicada)\n  --out <file>   fingerprint path (default testdata/golden/first-acid.fp)\n  --rate <Hz>    sample rate (default 48000)\n  --bars <n>     bars to render (default 8)\n  --help         show this help"},
 	{name: "validate", summary: "validate one score", usage: "cicada validate <score.cicada>", flags: "  (no command flags)"},
 	{name: "ast", summary: "print the typed syntax tree as JSON", usage: "cicada ast <score.cicada>", flags: "  (no command flags)"},
@@ -46,7 +46,7 @@ var shortHelpText = "Usage: cicada <command> [arguments]\n\n" +
 	"Create a project, edit and validate scores, play them in Studio, or render files.\n\n" +
 	"Commands:\n" +
 	"  new, fix, check, fmt, play, studio, lsp\n" +
-	"  render, stems, verify-wav, verify-stems, midi, verify-midi, compare-midi\n" +
+	"  render, stems, verify-wav, verify-stems, midi, verify-midi, compare-midi, import-midi\n" +
 	"  gen, explain, view, highlight, symbols, convert, compare, validate, ast\n" +
 	"  events, graph, fields, params, golden, record-pack, fit-model\n\n" +
 	"Run \"cicada help <command>\" for usage and flags."

@@ -121,6 +121,7 @@ type Param struct {
 }
 
 type Pattern struct {
+	Velocity   []StepToken
 	Name       string
 	Kind       string
 	Attrs      []Param

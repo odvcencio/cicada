@@ -286,3 +286,6 @@
 (automate_decl "automate" @keyword)
 (musical_position) @number
 (automation_point shape: (identifier) @attribute)
+
+(velocity_row "velocity" @attribute)
+(velocity_row "." @punctuation.special.rest)
