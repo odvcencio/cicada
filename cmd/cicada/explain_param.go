@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 	"strconv"
 	"strings"
 
@@ -25,15 +24,11 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		}
 		loc = parsed
 	}
-	source, err := os.ReadFile(scorePath)
+	score, diagnostics, err := project.LoadScore(scorePath, nil)
 	if err != nil {
 		return err
 	}
-	score, diagnostics, err := parseScoreForPath(scorePath, source)
-	if err != nil {
-		return err
-	}
-	if score == nil {
+	if score == nil || hasDiagnosticErrors(diagnostics) {
 		return diagnosticError(diagnostics)
 	}
 	compiled, diagnostics := project.FromScore(score)
@@ -208,7 +203,7 @@ func explainValue(value any, descriptor paramdefs.Descriptor) string {
 func diagnosticError(diagnostics []notation.Diagnostic) error {
 	for _, diagnostic := range diagnostics {
 		if diagnostic.Severity == "error" {
-			return fmt.Errorf("%s: %s", diagnostic.Code, diagnostic.Message)
+			return &project.SourceError{Diagnostic: diagnostic}
 		}
 	}
 	return fmt.Errorf("score could not be parsed")
