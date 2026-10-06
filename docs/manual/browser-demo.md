@@ -23,6 +23,7 @@ the audio kernel runs on the worklet thread. These are separate downloads.
 The score tools load once per visit. Scores stay in the tab: the demo does
 not upload, save, or export them. External file imports are unavailable.
 Stop, focus loss, a hidden tab, and AudioContext suspension stop the transport.
+Press Play to resume suspended audio and finish loading the fresh kernel image.
 
 For public hosting, serve the executable behind HTTPS with the public demo
 host preserved in the HTTP Host header:

@@ -22,7 +22,8 @@
   };
   window.cicadaDemoError = fail;
   const refreshControls = () => {
-    ui.play.disabled = !api || failed || starting || !!resetPromise || state.playing;
+    const paused = context && context.state !== 'running';
+    ui.play.disabled = !api || failed || starting || (!paused && (!!resetPromise || state.playing));
     ui.stop.disabled = !node || !state.playing;
     ui.preset.disabled = !api || starting || !!resetPromise;
     for (const id of ['apply', 'reset']) $(id).disabled = !api || starting || !!resetPromise;
@@ -112,6 +113,7 @@
     const Context = window.AudioContext || window.webkitAudioContext;
     if (!Context || !window.AudioWorkletNode) throw new Error('Use a browser with AudioWorklet support over HTTPS.');
     context = new Context({sampleRate: 48000, latencyHint: 'interactive'});
+    context.addEventListener('statechange', refreshControls);
     try {
       modulePromise ||= fetch('/assets/kernel.wasm').then(response => {
         if (!response.ok) throw new Error('Cannot load the audio kernel; reload to retry.');
@@ -153,9 +155,11 @@
   ui.play.onclick = async () => {
     starting = true; refreshControls();
     try {
+      const paused = context && context.state !== 'running';
       if (!context) await start();
-      await resetPromise;
       await context.resume();
+      if (paused) { call('stop'); await resetKernel(); }
+      else await resetPromise;
       call('play');
       state.playing = true;
       ui.status.textContent = 'Playing locally. Stop, change a sketch, or edit the score below.';

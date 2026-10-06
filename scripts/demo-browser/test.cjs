@@ -108,6 +108,12 @@ async function until(run, timeout = 20000) {
     await evaluate(`window.dispatchEvent(new Event('blur'))`);
     await wait(`!cicadaDemoState.playing && !document.getElementById('play').disabled`);
     await sleep(200); assert.equal((await energy()).energy, 0, 'focus loss silences actual output');
+    await play();
+    await evaluate('cicadaDemoAudio.context.suspend()');
+    await wait(`!document.getElementById('play').disabled`);
+    await play();
+    assert.equal(await evaluate('cicadaDemoAudio.context.state'), 'running', 'Play resumes suspended audio before the fresh image waits for callbacks');
+    await click('#stop'); await wait(`!document.getElementById('play').disabled`);
     const original = await evaluate('cicadaDemo.snapshot().source');
     const revision = await evaluate('cicadaDemo.snapshot().revision');
     await edit('invalid score');
@@ -167,7 +173,7 @@ async function until(run, timeout = 20000) {
     assert.deepEqual(errors, []);
     await screenshot('demo-final-1440.png');
     fs.writeFileSync(path.join(evidence, 'build.json'), JSON.stringify(info, null, 2)+'\n');
-    console.log('PASS public browser demo: real AudioWorklet PCM and metrics, all instrument sketches, Stop/restart/focus loss, invalid edit, undo/redo/reset, mobile layout, no native or export APIs.');
+    console.log('PASS public browser demo: real AudioWorklet PCM and metrics, all instrument sketches, Stop/restart/focus loss/suspend/resume, invalid edit, undo/redo/reset, mobile layout, no native or export APIs.');
   } finally {
     for (const waiter of pending.values()) { clearTimeout(waiter.timer); waiter.reject(new Error('Browser closed')); }
     if (socket) socket.close();
