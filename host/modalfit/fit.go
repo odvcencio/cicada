@@ -113,7 +113,7 @@ func Fit(pcm []float32, rate int, sourceSHA256 string) (Model, error) {
 		return model, fmt.Errorf("no stable resonances found; choose a ringing hit")
 	}
 	sort.Slice(selected, func(i, j int) bool { return selected[i].frequency < selected[j].frequency })
-	model = Model{Format: Format, License: "owner recording", SourceSHA256: sourceSHA256, HitSHA256: recording.Digest(recording.EncodeWAV(pcm, rate)), SourceRate: rate, RootHz: selected[0].frequency}
+	model = Model{Format: Format, License: "user recording", SourceSHA256: sourceSHA256, HitSHA256: recording.Digest(recording.EncodeWAV(pcm, rate)), SourceRate: rate, RootHz: selected[0].frequency}
 	model.RootMIDI = max(12, min(95, int(math.Round(69+12*math.Log2(model.RootHz/440)))))
 	weightSum, covered := 0.0, 0.0
 	for _, p := range selected {

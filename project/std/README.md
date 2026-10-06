@@ -51,6 +51,3 @@ Try the new examples under `examples/std-synth`, `examples/std-drums`,
 The [manual](../../docs/manual/writing-music.md#standard-libraries) includes one
 usage example for each library. Libraries compile on the host; they add no source
 or bytes to the WASM audio kernel.
-
-Planned additions after their PRs merge: the delay/comb pluck from #106, guitar
-from #107, and PM voices from #108. These voices are not included here.

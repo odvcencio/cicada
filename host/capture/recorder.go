@@ -14,7 +14,8 @@ type RecordedBlock struct {
 }
 
 // Writer runs on a separate goroutine. Save raw PCM and its RecordedBlock before
-// returning; borrowed slices expire on return. Lane E owns persistence/recovery.
+// returning; borrowed slices expire on return. The take journal handles
+// persistence and recovery.
 type Writer func(RecordedBlock, [][]float32) error
 
 type recordPlan struct {

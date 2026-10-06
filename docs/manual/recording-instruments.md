@@ -32,7 +32,7 @@ the recording panel's audition uses the original sample voice.
 ## Offline WAV packs
 
 ```sh
-cicada record-pack -o assets/recorded/pencil --name pencil --root 60 --layers 3 taps.wav
+cicada record-pack -o assets/recorded/recorded --name recorded --root 60 --layers 3 taps.wav
 cicada record-pack -o assets/recorded/notes --name notes --auto-pitch=true take-a.wav take-b.wav
 cicada record-pack -o assets/recorded/taps --auto-pitch=false taps.wav
 ```
@@ -47,7 +47,7 @@ Each pack contains `manifest.json`, `analysis.json`, `instrument.cicada`,
 losslessly compressed float32 WAV per hit. The manifest pins each compressed
 file, decoded WAV and original input WAV with SHA-256. Its own checksum pins
 the zone map and configuration. No input file names, absolute paths or device
-identifiers are written into a pack. The license label is **owner recording**;
+identifiers are written into a pack. The license label is **user recording**;
 it records the supplied audio's provenance and grants no public redistribution
 rights.
 
@@ -57,17 +57,9 @@ after 60 seconds. Incomplete capture and non-finite PCM are rejected. Capture
 timing is uncalibrated; hit detection uses source-frame coordinates rather than
 claiming calibrated score placement.
 
-The fixture is synthetic inharmonic percussion, not acoustic listening
-acceptance. Pitch tests use known decaying tones at 16, 44.1, 48 and 96 kHz.
-Real pencils, rooms and microphones can need a different fallback root or
-layer count. The current panel selects one layer at a time; the sampler-pack
-host may blend neighbouring velocity centres when playing the pinned score.
+Your sound, room, and microphone can require a different fallback root or layer count. The panel selects one layer at a time; the sampler-pack host can blend neighbouring velocity centres when playing a pinned score.
 
-The real browser capture fixture reached playback in 4.1 seconds, including
-the 3.5-second recording, with three layers and five round robins. The native
-recorded-instrument render check measured zero allocations. Captured views:
-[desktop, 1440×1000](screenshots/recorded-instrument-1440.png) and
-[mobile, 390×900](screenshots/recorded-instrument-390.png).
+See the [recorded desktop](screenshots/recorded-instrument-1440.png) and [mobile](screenshots/recorded-instrument-390.png) views for the controls.
 
 ## Fit a playable model
 
@@ -76,7 +68,7 @@ Studio estimates up to ten resonant frequencies, their relative amplitudes and
 their decay times. The modeled instrument is selected automatically. Play the
 same note buttons and velocity slider; **Play sampled** returns to the original
 recording. The source WAV hash and the exact trimmed-hit WAV hash remain in
-`model.json`, with the `owner recording` license.
+`model.json`, with the `user recording` license.
 
 The fitted voice uses the modal engine's bounded contact, resonator, glide and
 four-strike variation paths. Measured ratios and decay poles replace the built-in
@@ -94,10 +86,10 @@ audition evaluates the fitted resonators directly at the requested pitch.
 The offline equivalent uses the same fitter and bank builder:
 
 ```sh
-GOWORK=off go run ./cmd/cicada fit-model -o assets/pencil_model \
-  --name pencil_model --hit 1 recordings/pencil-taps.wav
-GOWORK=off go run ./cmd/cicada render assets/pencil_model/instrument.cicada \
-  -o pencil-model.wav
+GOWORK=off go run ./cmd/cicada fit-model -o assets/recorded_model \
+  --name recorded_model --hit 1 recordings/taps.wav
+GOWORK=off go run ./cmd/cicada render assets/recorded_model/instrument.cicada \
+  -o recorded-model.wav
 ```
 
 Put flags before the WAV path. `--hit` is one-based after automatic slicing.
@@ -107,10 +99,4 @@ decay. Closely spaced modes, rapidly changing pitch, noisy rooms and nonlinear
 impacts can reduce fit quality. The displayed decay confidence describes that
 regression, not perceptual similarity. Try another take when a fit sounds poor.
 
-The synthetic microphone fixture plays both versions in about four seconds,
-including its 3.5-second recording. Known three-mode fixtures at 16, 44.1, 48 and
-96 kHz meet ten-cent frequency and 15% decay-error bounds. The fitted voice maps
-all 128 MIDI notes and matches 65,536 native/WASM samples exactly, without render
-memory growth. This is fixture evidence; a physical pencil recording still needs
-listening evaluation. Captured [modeled desktop](screenshots/modeled-instrument-1440.png)
-and [modeled mobile](screenshots/modeled-instrument-390.png) views show the controls.
+See the [modeled desktop](screenshots/modeled-instrument-1440.png) and [mobile](screenshots/modeled-instrument-390.png) views for the controls.

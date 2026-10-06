@@ -26,8 +26,8 @@ func TestBrowserPortabilityChromePaths(t *testing.T) {
 		},
 		{
 			name: "Windows configured installation roots", goos: "windows",
-			env:  map[string]string{"ProgramFiles": `D:\Apps\`, "ProgramFiles(x86)": `E:\Apps32/`, "LOCALAPPDATA": `C:\Users\Lane User\AppData\Local\`},
-			want: []string{`D:\Apps\Google\Chrome\Application\chrome.exe`, `E:\Apps32\Google\Chrome\Application\chrome.exe`, `C:\Users\Lane User\AppData\Local\Google\Chrome\Application\chrome.exe`},
+			env:  map[string]string{"ProgramFiles": `D:\Apps\`, "ProgramFiles(x86)": `E:\Apps32/`, "LOCALAPPDATA": `C:\Users\Test User\AppData\Local\`},
+			want: []string{`D:\Apps\Google\Chrome\Application\chrome.exe`, `E:\Apps32\Google\Chrome\Application\chrome.exe`, `C:\Users\Test User\AppData\Local\Google\Chrome\Application\chrome.exe`},
 		},
 		{
 			name: "Windows explicit Chrome path", goos: "windows",

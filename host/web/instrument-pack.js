@@ -25,8 +25,8 @@ export function validateManifest(m) {
       requireThat(a.path.endsWith('.wav.gz') && !a.pcm_sha256 && !a.scale, 'invalid legacy sample encoding/path');
     }
     if (a.encoding !== 'flac') requireThat(hashPattern.test(a.wav_sha256) && Number.isSafeInteger(a.wav_bytes) && a.wav_bytes >= 44 && a.wav_bytes <= MAX_PCM_BYTES, 'invalid WAV hash/bounds');
-    const ownerRecording=a.license==='owner recording' && a.source_url==='' && a.license_url==='' && !a.attribution;
-    requireThat(ownerRecording || https(a.source_url) && https(a.license_url) && (a.license === 'CC0-1.0' || a.license === 'CC-BY-4.0' && a.attribution), 'sample needs a valid licence/provenance');
+    const userRecording=['user recording','owner recording'].includes(a.license) && a.source_url==='' && a.license_url==='' && !a.attribution;
+    requireThat(userRecording || https(a.source_url) && https(a.license_url) && (a.license === 'CC0-1.0' || a.license === 'CC-BY-4.0' && a.attribution), 'sample needs a valid licence/provenance');
     ids.add(a.id); pcmBytes += a.frames*a.channels*4;
   }
   requireThat(pcmBytes <= MAX_PCM_BYTES, 'pack exceeds resident PCM budget');

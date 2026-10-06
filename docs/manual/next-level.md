@@ -1,10 +1,10 @@
-# Live playback, mixing, and what comes next
+# Live playback and mixing
 
 Cicada projects use source edition 2. A new project includes bass, drums, and
 two scenes. You can save mixer routes and scene parameter changes in the score,
 record MIDI note takes in Studio, and render a WAV.
 
-## Available on main
+## Start playing
 
 ### Start and check a project
 
@@ -105,9 +105,7 @@ immediately; the 400 ms smoothing default applies to later host changes.
 
 Layers rise one level per bar and fall one level after 3 quiet bars. Tracks
 without a rule stay on. Values and thresholds are 0–1; the kernel rounds
-thresholds to 8 bits, so nearby values can share a level. `land` is stored;
-launch scheduling, tempo controls, MIDI mappings, and parameter-mapped macros
-remain follow-up work.
+thresholds to 8 bits, so nearby values can share a level. `land` stores a launch preference. Tempo controls, saved MIDI mappings, and parameter-mapped macros are not supported.
 
 ### Live MIDI performance and note takes
 
@@ -120,8 +118,7 @@ Start playback before selecting **Record**. Play notes, select **Stop
 recording**, review the take, then choose **Commit take** or **Discard**. The
 take stays in page memory until you commit it. Drum hits keep separate lanes
 and supported velocities. Acid notation keeps pitch and slides at its fixed
-velocity; it cannot save arbitrary MIDI velocity. MIDI overdub and replace
-modes are not available yet, and Studio does not record audio input.
+velocity; it cannot save arbitrary MIDI velocity. MIDI overdub and replace modes are not available. See the [recording chapter](recording-instruments.md) for audio input.
 
 Open Studio without an audio device for a silent session:
 
@@ -185,41 +182,12 @@ scene main { lead = glide-line }
 song { main }
 ```
 
-Validate this score with `cicada check glide.cicada`. Source-level `glide`,
-`vibrato`, and per-step pitch rows remain accepted designs, not current
-syntax; see [accepted syntax](../spec/accepted.md#continuous-pitch-settings-and-rows-p7).
+Validate this score with `cicada check glide.cicada`. Per-step [expression rows](../spec/features.md#expression-rows) control bend, vibrato, pressure, and timbre.
 
 ### Language reference
 
 The [edition 2 reference](../spec/edition-2.md) describes the current named
 mixer forms. The [edition 1 reference](../spec/edition-1.md) documents the
-earlier source spelling. The [accepted syntax list](../spec/accepted.md)
-marks each future design as accepted and unavailable. The repository checks the
+earlier source spelling. The [language extensions](../spec/features.md) describe supported graph, expression, project, and preset features. The repository checks the
 runnable Cicada examples in the README, manual, and specification with
 `GOWORK=off go test ./cmd/cicada -run '^TestDocumentationCicadaExamples$' -count=1`.
-
-## Coming next
-
-The next workstation steps follow the order in the 28 September 2026 decision.
-The new-project and migration path is covered above.
-
-1. **Workspace shell and in-place updates.** Keep transport and status visible
-   while switching between panels. Apply edits without reloading the page so
-   MIDI access, armed tracks, and keyboard focus survive.
-
-2. **Undo and edit history.** Add undo and redo for source writes, with history
-   focused on edits instead of routine transport events.
-
-3. **Mix view.** Add a Studio panel for track, bus, effect-return, and master
-   strips. Its controls will write the named mixer settings already available
-   in the score.
-
-4. **Record panel.** Add audio-input takes that stay with the project. Each
-   pass will write a 32-bit float WAV at the engine rate under
-   `audio/takes/`; the score will refer to the take through a hash-checked
-   asset and clip.
-
-After these steps, the accepted feature order continues with the mastering
-view, automation lanes, expanded saved live settings and MIDI mappings, then
-the flexible grid and pattern chains. These are design directions, not release
-dates.

@@ -20,16 +20,16 @@ var browserGDI32 = windows.NewLazySystemDLL("gdi32.dll")
 func nativeWindowsChromeWindow(powershell string) (uintptr, error) {
 	// Window discovery retains the existing read-only, lane-profile selection.
 	// No Add-Type or compiler is invoked on the Windows computer.
-	script := `$ErrorActionPreference='Stop'; $laneUserData='` + windowsBrowserProfile + `'; $window=$null; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like ('*' + $laneUserData + '*') } | ForEach-Object { $p=Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { $window=$p.MainWindowHandle } }; if (-not $window) { throw 'lane Chrome window not found' }; [ordered]@{handle=$window.ToInt64()} | ConvertTo-Json -Compress`
+	script := `$ErrorActionPreference='Stop'; $browserUserData='` + windowsBrowserProfile + `'; $window=$null; Get-CimInstance Win32_Process | Where-Object { $_.Name -eq 'chrome.exe' -and $_.CommandLine -like ('*' + $browserUserData + '*') } | ForEach-Object { $p=Get-Process -Id $_.ProcessId -ErrorAction SilentlyContinue; if ($p -and $p.MainWindowHandle -ne 0) { $window=$p.MainWindowHandle } }; if (-not $window) { throw 'Chrome window not found' }; [ordered]@{handle=$window.ToInt64()} | ConvertTo-Json -Compress`
 	output, err := exec.Command(powershell, "-NoProfile", "-NonInteractive", "-Command", script).CombinedOutput()
 	if err != nil {
-		return 0, fmt.Errorf("discover lane Windows Chrome window: %w: %s", err, strings.TrimSpace(string(output)))
+		return 0, fmt.Errorf("discover Windows Chrome window: %w: %s", err, strings.TrimSpace(string(output)))
 	}
 	var result struct {
 		Handle uint64 `json:"handle"`
 	}
 	if err := json.Unmarshal(output, &result); err != nil || result.Handle == 0 {
-		return 0, fmt.Errorf("invalid lane Windows Chrome window %q: %v", strings.TrimSpace(string(output)), err)
+		return 0, fmt.Errorf("invalid Windows Chrome window %q: %v", strings.TrimSpace(string(output)), err)
 	}
 	return uintptr(result.Handle), nil
 }

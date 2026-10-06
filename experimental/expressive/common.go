@@ -1,4 +1,4 @@
-// Package expressive contains research voices, independent of Cicada's instrument ABI.
+// Package expressive contains experimental voices, independent of Cicada's instrument ABI.
 // Instances have a single audio-thread owner. Controls and Next must not race.
 package expressive
 
