@@ -1,0 +1,41 @@
+import assert from "node:assert/strict";
+import { createHash, webcrypto } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import { loadImpulse, conditionImpulse } from "./loader.mjs";
+
+globalThis.crypto ??= webcrypto;
+const wav = new Uint8Array(52);
+const view = new DataView(wav.buffer);
+const writeTag = (offset, tag) => wav.set(new TextEncoder().encode(tag), offset);
+writeTag(0, "RIFF"); view.setUint32(4, wav.length - 8, true);
+writeTag(8, "WAVE"); writeTag(12, "fmt "); view.setUint32(16, 16, true);
+view.setUint16(20, 1, true); view.setUint16(22, 2, true);
+view.setUint32(24, 48000, true); view.setUint32(28, 192000, true);
+view.setUint16(32, 4, true); view.setUint16(34, 16, true);
+writeTag(36, "data"); view.setUint32(40, 8, true);
+view.setInt16(44, 16384, true); view.setInt16(46, -16384, true);
+view.setInt16(48, 8192, true);
+const entry = { id: "test", name: "Test response", category: "room", url: "https://example.test/room.wav",
+  source_url: "https://example.test", license: "MIT", license_url: "https://example.test/LICENSE", attribution: "Test fixture",
+  sha256: createHash("sha256").update(wav).digest("hex"), bytes: wav.length, rate_hz: 48000, channels: 2, bit_depth: 16, frames: 2 };
+let fetched = 0;
+const fetcher = async () => { fetched++; return new Response(wav); };
+const impulse = await loadImpulse(entry, { fetcher });
+assert.equal(fetched, 1);
+assert.deepEqual([...impulse.left], [.5, .25]);
+assert.deepEqual([...impulse.right], [-.5, 0]);
+assert.equal(impulse.rateHz, 48000);
+const conditioned = conditionImpulse(impulse, { energyLimit: .1 });
+assert.ok(conditioned.left.length > impulse.left.length);
+assert.equal(impulse.left[0], .5);
+const energy = conditioned.left.reduce((sum, x) => sum + x * x, 0);
+assert.ok(energy <= .01000001);
+assert.ok(Math.abs(conditioned.left.reduce((sum, x) => sum + x, 0)) < .0001);
+assert.equal(conditioned.right.length, conditioned.left.length);
+await assert.rejects(loadImpulse({ ...entry, sha256: "0".repeat(64) }, { fetcher }), /checksum/);
+await assert.rejects(loadImpulse({ ...entry, bytes: 51 }, { fetcher }), /byte count/);
+await assert.rejects(loadImpulse({ ...entry, frames: 3 }, { fetcher }), /frame count/);
+await assert.rejects(loadImpulse({ ...entry, license: "personal-use-only" }, { fetcher }), /metadata/);
+const manifest = JSON.parse(await readFile(new URL("../../assets/ir/manifest.json", import.meta.url)));
+assert.equal(manifest.assets.length, 4);
+console.log("IR browser loader: verified PCM, checksum, bounds, dimensions, license, conditioning passed");

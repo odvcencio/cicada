@@ -128,10 +128,17 @@ type Pattern struct {
 	Position Position
 }
 
+// ChordPitch retains its spelling and byte span within a step's exact text.
+type ChordPitch struct {
+	Text       string
+	Start, End int
+}
+
 type StepToken struct {
-	Text           string
-	ChordPitches   []string // parsed pitch nodes, without comments or shared modifiers
+	ChordPitches   []ChordPitch
 	ChordModifiers string
+	ChordComments  []string
+	Text           string
 	Transpose      int // phrase-use transform, in semitones
 	Position       Position
 }
@@ -219,6 +226,9 @@ type Live struct {
 	PhraseBars     int
 	PhrasePosition Position
 	Macros         []LiveMacro
+	States         []LiveState
+	Stingers       []LiveStinger
+	Transitions    []LiveTransition
 	Layers         []LiveLayers
 	Position       Position
 }
@@ -277,4 +287,24 @@ func LocateDiagnostics(ds []Diagnostic, entry Position) {
 			ds[i].Position.Column = 1
 		}
 	}
+}
+
+// LiveState maps a game state to a score scene.
+type LiveState struct {
+	Name, Scene string
+	Position    Position
+}
+
+// LiveStinger plays one pattern once on a dedicated track.
+type LiveStinger struct {
+	Name, Track, Pattern, Quantize string
+	CrossfadeMS                    float64
+	Position                       Position
+}
+
+// LiveTransition sets the landing and track crossfade for a state change.
+type LiveTransition struct {
+	From, To, Quantize string
+	CrossfadeMS        float64
+	Position           Position
 }

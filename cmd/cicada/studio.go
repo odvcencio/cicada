@@ -577,7 +577,7 @@ func compileStudioSource(path string, source []byte) (*project.Project, error) {
 	if err := project.ValidateProject(p); err != nil {
 		return nil, err
 	}
-	if !p.HasAudio() {
+	if !p.NeedsSampleEngine() {
 		if _, err := project.CompileEngine(p, 48000, 128); err != nil {
 			return nil, err
 		}

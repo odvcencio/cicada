@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestStudioPitchEditRejectsChordsWithoutChangingSource(t *testing.T) {
+func TestStudioPitchEditPreservesOtherChordPitches(t *testing.T) {
 	for _, steps := range []string{"[d4 f4 a4]^?70", "use harmony"} {
 		for _, pitch := range []int{62, 64} {
 			t.Run(steps+"/"+sourcePitch(pitch), func(t *testing.T) {
@@ -25,12 +25,21 @@ func TestStudioPitchEditRejectsChordsWithoutChangingSource(t *testing.T) {
 					t.Fatal(err)
 				}
 				response := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(source), Pattern: "chords", Step: 0, Pitch: &pitch})
-				if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), "chord") {
-					t.Fatalf("scalar chord edit was not rejected: %d %s", response.Code, response.Body.String())
+				if response.Code != http.StatusOK {
+					t.Fatalf("chord edit failed: %d %s", response.Code, response.Body.String())
 				}
+				chord := "[d4 f4 a4 e4]^?70"
+				if pitch == 62 {
+					chord = "[f4 a4]^?70"
+				}
+				target := "pattern chords notes { [d4 f4 a4]^?70 }"
+				if steps == "use harmony" {
+					target = "phrase harmony { [d4 f4 a4]^?70 }"
+				}
+				want := strings.Replace(string(source), target, strings.Replace(target, "[d4 f4 a4]^?70", chord, 1), 1)
 				got, err := os.ReadFile(path)
-				if err != nil || !bytes.Equal(got, source) {
-					t.Fatalf("rejected chord edit changed source: %s, %v", got, err)
+				if err != nil || !bytes.Equal(got, []byte(want)) {
+					t.Fatalf("chord edit lost other pitches, modifiers, or surrounding source: %s, %v", got, err)
 				}
 			})
 		}

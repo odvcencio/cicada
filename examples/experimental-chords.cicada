@@ -1,13 +1,26 @@
 // Experimental graph polyphony: four allocated voices, one track/stem.
 tempo 120
+
 key d minor
+
 seed 7
+
 instrument piano {
   voice poly {
     out = sine(pitch) * env(gate, 300ms) * velocity * 0.1
   }
 }
+
 track keys piano {}
-pattern harmony notes { [d4 f4 a4]^?70 - . [c4 e4 g4] }
-scene verse { keys = harmony }
-song { verse }
+
+pattern harmony notes {
+  [d4 f4 a4]^?70 - . [c4 e4 g4]
+}
+
+scene verse {
+  keys = harmony
+}
+
+song {
+  verse
+}

@@ -153,7 +153,7 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 				octave = n
 			}
 		}
-		poly := false
+		poly := track.Kind == "unused_notes" && track.Name == ""
 		for _, inst := range score.Instruments {
 			if inst.Name == track.Kind {
 				poly = inst.Mode == "poly"
@@ -216,7 +216,10 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 
 func chordStep(score *notation.Score, token notation.StepToken, octave, transpose int) (seq.Step, seq.ChordStep, error) {
 	var chord seq.ChordStep
-	pitches := token.ChordPitches
+	pitches := make([]string, len(token.ChordPitches))
+	for i, pitch := range token.ChordPitches {
+		pitches[i] = pitch.Text
+	}
 	if len(pitches) < 2 || len(pitches) > 4 {
 		return seq.Step{}, chord, fmt.Errorf("chord must have 2 to 4 distinct pitches")
 	}

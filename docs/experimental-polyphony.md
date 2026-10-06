@@ -39,8 +39,8 @@ song { verse }
 - Graph accent metadata is shared. As with legacy graph instruments, a graph
   author controls dynamics through the `velocity` input; there is no separate
   graph `accent` input. MIDI export maps accent to velocity127
-- Studio scalar pitch edits reject chord steps. Edit their pitches in the source
-  editor to preserve the complete chord and its shared modifiers
+- Studio pitch edits add or remove only the clicked chord pitch, preserving
+  the other pitches and shared modifiers. Phrase edits update their shared source
 
 ## Interchange and host compatibility
 

@@ -442,6 +442,53 @@ func parseParam(w *loweringWalker, n *gts.Node) Param {
 	return Param{Name: name, Value: text, Position: w.position(n), ValuePosition: w.position(value)}
 }
 
+// compactStepText reads grammar leaves, excluding whitespace and comments.
+func compactStepText(w *loweringWalker, n *gts.Node) string {
+	if w.Type(n) == "comment" {
+		return ""
+	}
+	if n.ChildCount() == 0 {
+		return w.Text(n)
+	}
+	var text strings.Builder
+	for i := 0; i < n.ChildCount(); i++ {
+		text.WriteString(compactStepText(w, n.Child(i)))
+	}
+	return text.String()
+}
+
+func chordComments(w *loweringWalker, n *gts.Node) []string {
+	if w.Type(n) == "comment" {
+		return []string{w.Text(n)}
+	}
+	var comments []string
+	for i := 0; i < n.NamedChildCount(); i++ {
+		comments = append(comments, chordComments(w, n.NamedChild(i))...)
+	}
+	return comments
+}
+
+func parseStepToken(w *loweringWalker, n *gts.Node) StepToken {
+	step := StepToken{Text: w.Text(n), Position: w.position(n)}
+	for i := 0; i < n.NamedChildCount(); i++ {
+		chord := n.NamedChild(i)
+		if w.Type(chord) != "chord_note" {
+			continue
+		}
+		step.ChordComments = chordComments(w, chord)
+		for j := 0; j < chord.NamedChildCount(); j++ {
+			child := chord.NamedChild(j)
+			switch w.Type(child) {
+			case "chord_pitch":
+				step.ChordPitches = append(step.ChordPitches, ChordPitch{Text: compactStepText(w, child), Start: int(child.StartByte() - n.StartByte()), End: int(child.EndByte() - n.StartByte())})
+			case "modifier":
+				step.ChordModifiers += compactStepText(w, child)
+			}
+		}
+	}
+	return step
+}
+
 func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 	p := Pattern{Name: w.declaration(w.Field(n, "name")), Position: w.position(n)}
 	if w.Type(n) == "acid_pattern" {
@@ -487,39 +534,6 @@ func parsePhrase(w *loweringWalker, n *gts.Node) Phrase {
 		}
 	}
 	return p
-}
-
-func parseStepToken(w *loweringWalker, n *gts.Node) StepToken {
-	step := StepToken{Text: w.Text(n), Position: w.position(n)}
-	chord := w.ChildByType(n, "chord_note")
-	if chord == nil {
-		return step
-	}
-	for i := 0; i < chord.NamedChildCount(); i++ {
-		child := chord.NamedChild(i)
-		switch w.Type(child) {
-		case "chord_pitch":
-			step.ChordPitches = append(step.ChordPitches, stepNodeText(w, child))
-		case "modifier":
-			step.ChordModifiers += stepNodeText(w, child)
-		}
-	}
-	return step
-}
-
-// Joining leaf tokens preserves pitch spelling while excluding grammar extras.
-func stepNodeText(w *loweringWalker, n *gts.Node) string {
-	if w.Type(n) == "comment" {
-		return ""
-	}
-	if n.ChildCount() == 0 {
-		return w.Text(n)
-	}
-	var text strings.Builder
-	for i := 0; i < n.ChildCount(); i++ {
-		text.WriteString(stepNodeText(w, n.Child(i)))
-	}
-	return text.String()
 }
 
 func parsePhraseUse(w *loweringWalker, n *gts.Node) PhraseUse {
@@ -676,6 +690,22 @@ func parseLive(w *loweringWalker, n *gts.Node, ds []Diagnostic) (*Live, []Diagno
 				ms = parseDurationMS(w.Text(smooth))
 			}
 			live.Macros = append(live.Macros, LiveMacro{Name: w.Text(w.Field(c, "name")), Value: parseLiveNumber(w.Text(value)), SmoothMS: ms, Position: w.position(c), ValuePosition: w.position(value), SmoothPosition: w.position(smooth)})
+		case "live_state":
+			live.States = append(live.States, LiveState{Name: w.Text(w.Field(c, "name")), Scene: w.Text(w.Field(c, "scene")), Position: w.position(c)})
+		case "live_stinger", "live_transition":
+			quantize := w.Text(w.Field(c, "quantize"))
+			if quantize == "" {
+				quantize = "bar"
+			}
+			crossfade := float64(0)
+			if value := w.Field(c, "crossfade"); value != nil {
+				crossfade = parseDurationMS(w.Text(value))
+			}
+			if w.Type(c) == "live_stinger" {
+				live.Stingers = append(live.Stingers, LiveStinger{Name: w.Text(w.Field(c, "name")), Track: w.Text(w.Field(c, "track")), Pattern: w.Text(w.Field(c, "pattern")), Quantize: quantize, CrossfadeMS: crossfade, Position: w.position(c)})
+			} else {
+				live.Transitions = append(live.Transitions, LiveTransition{From: w.Text(w.Field(c, "from")), To: w.Text(w.Field(c, "to")), Quantize: quantize, CrossfadeMS: crossfade, Position: w.position(c)})
+			}
 		case "live_layers":
 			macro := w.Field(c, "macro")
 			layers := LiveLayers{Macro: w.Text(macro), AttackBars: 1, ReleaseBars: 3, Position: w.position(c), MacroPosition: w.position(macro)}
