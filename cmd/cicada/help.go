@@ -49,7 +49,7 @@ var shortHelpText = "Usage: cicada <command> [arguments]\n\n" +
 	"  new, fix, check, fmt, play, studio, lsp\n" +
 	"  render, stems, verify-wav, verify-stems, midi, verify-midi, compare-midi\n" +
 	"  gen, explain, view, highlight, symbols, convert, compare, validate, ast\n" +
-	"  events, graph, fields, params, golden, record-pack, fit-model, wam2\n\n" +
+	"  events, graph, fields, params, golden, record-pack, fit-model, transcribe, wam2\n\n" +
 	"Run \"cicada help <command>\" for usage and flags."
 
 func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
@@ -99,6 +99,9 @@ func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 }
 
 func findCommandHelp(name string) (commandHelpEntry, bool) {
+	if name == "transcribe" {
+		return commandHelpEntry{name: "transcribe", summary: "transcribe a sung, hummed or solo-instrument WAV into score rows", usage: "cicada transcribe <recording.wav> [flags]", flags: "  --tempo <BPM>  20–300 BPM; 0 infers tempo (default 0)\n  --key <key>    auto or tonic major/minor (default auto)\n  --grid <grid>  1/4, 1/8 or 1/16 (default 1/16)\n  -o <file>      write a new score file instead of stdout\n  --report       write measured notes and confidence JSON to stderr\n  --help         show this help", notes: "Analysis stays local and runs outside playback. Choose one monophonic PCM WAV. Score rows snap timing to the selected grid; sparse tempo, meter and key estimates require review. Existing output files are preserved."}, true
+	}
 	if name == "fit-model" {
 		return commandHelpEntry{name: "fit-model", summary: "fit a recorded hit to a playable modal instrument", usage: "cicada fit-model -o <pack-directory> [flags] <recording.wav>", flags: "  -o <directory>  required new pack directory\n  --name <id>     instrument name (default recorded_model)\n  --hit <n>       detected hit, one-based (default 1)\n  --help          show this help", notes: "Put flags before the input. Writes measured model.json, checksummed modal renders and a playable pinned score; user recording provenance is retained."}, true
 	}
