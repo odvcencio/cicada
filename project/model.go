@@ -260,6 +260,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		return nil, []notation.Diagnostic{{Code: "CICADA-SYNTAX", Severity: "error", Message: "nil score", Position: notation.Position{Line: 1, Column: 1}}}
 	}
 	diagnostics = notation.Validate(score)
+	score, _ = notation.ResolvePresets(score)
 	programs, compiledDiagnostics := Check(score)
 	diagnostics = append(diagnostics, compiledDiagnostics...)
 	for _, d := range diagnostics {

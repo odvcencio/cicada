@@ -2,6 +2,9 @@ package notation
 
 import "fmt"
 
+// DefaultAcidOctave is the home octave for acid notes without an octave override.
+const DefaultAcidOctave = 2
+
 // Position refers to the source file, with one-based line and Unicode scalar column.
 type Position struct {
 	File   string `json:",omitempty"`
@@ -38,6 +41,7 @@ type Score struct {
 	Clips          []Clip
 	Samplers       []Sampler
 	Instruments    []Instrument
+	Presets        []Preset
 	Kits           []Kit
 	Tracks         []Track
 	Phrases        []Phrase
@@ -51,6 +55,15 @@ type Score struct {
 	HasMaster      bool
 	Live           *Live
 	Exports        []Export
+}
+
+// Preset changes values on an existing target, never its DSP structure.
+type Preset struct {
+	Name           string
+	Target         string
+	Params         []Param
+	Position       Position
+	TargetPosition Position
 }
 
 type Track struct {

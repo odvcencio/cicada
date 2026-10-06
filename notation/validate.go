@@ -44,7 +44,8 @@ var scales = map[string]bool{
 // source model unchanged, including any invalid slide flags, for editor use.
 func Validate(s *Score) (ds []Diagnostic) {
 	defer func() { LocateDiagnostics(ds, s.Position) }()
-	ds = ValidateAudio(s)
+	s, ds = ResolvePresets(s)
+	ds = append(ds, ValidateAudio(s)...)
 	ds = append(ds, ValidateLive(s.Live, s.Tracks)...)
 	ds = append(ds, ValidateDirector(s.Live, s.Tracks, s.Patterns, s.Scenes, s.Kits)...)
 	add := func(code, message, severity string, p Position) {

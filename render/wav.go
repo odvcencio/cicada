@@ -638,6 +638,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 	return compileTracksWithPacks(score, semantic, sampleRate, nil, false)
 }
 func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sampleRate int, banks map[string]*instrumentpack.Prepared, baseline bool) ([]trackRuntime, error) {
+	score, _ = notation.ResolvePresets(score)
 	programs := make(map[string]*instrument.Program, len(score.Instruments))
 	for _, definition := range score.Instruments {
 		program, ds := instrument.Compile(definition)
