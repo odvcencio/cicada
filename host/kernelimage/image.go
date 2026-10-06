@@ -98,6 +98,9 @@ func (r *reader) f64() (float64, error) {
 // Encode preserves version 13 for existing voices and uses version 15 for guitar. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
+	if cfg.MasterProcessor != nil {
+		return nil, Error("prepared master processor must be loaded separately from the project image")
+	}
 	if cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 ||
 		cfg.SampleRate < 1 || uint64(cfg.SampleRate) > math.MaxUint32 ||
 		cfg.BPMMilli < 0 || uint64(cfg.BPMMilli) > math.MaxUint32 ||

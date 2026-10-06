@@ -13,6 +13,7 @@ import (
 // Asset identifies immutable WAV bytes. Dimensions describe source frames,
 // not interleaved samples. Params retain authored units and diagnostic positions.
 type Asset struct {
+	Root                               string // host-only library root; never part of the source path
 	Name, Path, SHA256, Format, Source string
 	Frames                             int64
 	RateHz, Channels                   int

@@ -30,6 +30,17 @@ func (s *server) projectSources(uri string) (*project.Sources, error) {
 	return project.ReadSources(path, overrides)
 }
 
+func usesSourceSet(files *project.Sources) bool {
+	return files != nil && (files.Manifest.ExplicitSources() || len(files.Libraries) > 0)
+}
+
+func sourceSetEdition(files *project.Sources) int {
+	if files.Manifest.Edition != 0 {
+		return files.Manifest.Edition
+	}
+	return notation.SourceEdition(files.Files[0])
+}
+
 func symbolFamily(kind string) string {
 	switch kind {
 	case "instrument", "kit", "sampler":
@@ -48,7 +59,12 @@ func (s *server) projectDefinition(uri string, at position) any {
 	if err != nil {
 		return nil
 	}
-	if files == nil || !files.Manifest.ExplicitSources() {
+	if files != nil {
+		if target, found := libraryDefinition(files, uri, source, at); found {
+			return target
+		}
+	}
+	if !usesSourceSet(files) {
 		return definition(uri, source, at)
 	}
 	selected, _, ok := symbolAt(source, at)
@@ -61,9 +77,17 @@ func (s *server) projectDefinition(uri string, at position) any {
 		if compiled == nil || hasErrors(ds) {
 			return nil
 		}
-		resolved, err := project.ResolveParameterPath(compiled, match.path)
+		resolved, err := project.ResolveParameterPath(compiled, libraryParameterPath(files, match.path))
 		if err != nil {
 			return nil
+		}
+		if origin, found := score.Origins[resolved.Owner]; found {
+			for _, file := range files.Files {
+				if file.Path == origin.Position.File {
+					start := scalarOffset(file.Source, origin.Position)
+					return map[string]any{"uri": fileURI(file.Path), "range": region{Start: utf16Position(file.Source, start), End: utf16Position(file.Source, start+len(strings.TrimPrefix(resolved.Owner, strings.ReplaceAll(origin.Library, "/", ".")+".")))}}
+				}
+			}
 		}
 		selected = language.Symbol{Name: resolved.Owner, Kind: resolved.OwnerKind}
 		ok = true
@@ -94,7 +118,20 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 		return nil
 	}
 	source := s.documents[uri]
-	if files == nil || !files.Manifest.ExplicitSources() {
+	if files != nil {
+		if files.Manifest.Library != "" {
+			return nil
+		}
+		for _, file := range files.Files {
+			if fileURI(file.Path) == uri && file.Library != "" {
+				return nil
+			}
+		}
+		if _, collision := files.Bindings[""][newName]; collision {
+			return nil
+		}
+	}
+	if !usesSourceSet(files) {
 		return rename(uri, source, at, newName)
 	}
 	if !identifier.MatchString(newName) {
@@ -126,7 +163,13 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 	scope := instrumentScope(source, scalarOffset(source, selected.Position))
 	changes := map[string]any{}
 	updated := append([]notation.SourceFile(nil), files.Files...)
+	if strings.Contains(selected.Name, ".") {
+		return nil
+	}
 	for i, file := range files.Files {
+		if file.Library != "" {
+			continue
+		}
 		fileURI := fileURI(file.Path)
 		if local && fileURI != uri {
 			continue
@@ -186,7 +229,9 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 		updated[i].Source = data
 		changes[fileURI] = edits
 	}
-	score, ds := notation.ParseFiles(updated, files.Manifest.Edition)
+	validation := *files
+	validation.Files = updated
+	score, ds := validation.Parse()
 	if score == nil || hasErrors(ds) {
 		return nil
 	}
@@ -200,7 +245,7 @@ func (s *server) projectHover(uri string, at position) any {
 	source := s.documents[uri]
 	match, ok := parameterPathAt(source, byteOffset(source, at))
 	files, err := s.projectSources(uri)
-	if err != nil || files == nil || !files.Manifest.ExplicitSources() {
+	if err != nil || !usesSourceSet(files) {
 		return hover(source, at)
 	}
 	score, ds := files.Parse()
@@ -214,7 +259,7 @@ func (s *server) projectHover(uri string, at position) any {
 	if compiled == nil || hasErrors(ds) {
 		return nil
 	}
-	resolved, err := project.ResolveParameterPath(compiled, match.path)
+	resolved, err := project.ResolveParameterPath(compiled, libraryParameterPath(files, match.path))
 	if err != nil {
 		return nil
 	}
@@ -223,12 +268,20 @@ func (s *server) projectHover(uri string, at position) any {
 
 func (s *server) projectCompletion(uri string, at position) any {
 	source := bytes.Clone(s.documents[uri])
+	if items, ok := importCompletion(uri, source, at); ok {
+		return items
+	}
 	files, err := s.projectSources(uri)
-	if err != nil || files == nil || !files.Manifest.ExplicitSources() {
+	if files != nil {
+		if items := libraryItems(files, uri, source, at); len(items) > 0 {
+			return items
+		}
+	}
+	if err != nil || !usesSourceSet(files) {
 		return parameterPathCompletion(source, at)
 	}
 	for _, file := range files.Files {
-		if fileURI(file.Path) == uri {
+		if file.Library != "" || fileURI(file.Path) == uri {
 			continue
 		}
 		source = append(source, '\n')
@@ -238,12 +291,29 @@ func (s *server) projectCompletion(uri string, at position) any {
 }
 
 func (s *server) projectFixAction(files *project.Sources) []any {
-	fixed, changed, err := migration.FixFiles(files.Files, files.Manifest.Edition)
-	if err != nil || !changed && files.Manifest.Edition == 2 {
+	editionNumber := sourceSetEdition(files)
+	_, diagnostics := files.Parse()
+	for _, d := range diagnostics {
+		if d.Severity == "error" && (strings.HasPrefix(d.Code, "CICADA-LIB-") || strings.HasPrefix(d.Code, "CICADA-ASSET-")) {
+			return []any{}
+		}
+	}
+	fixed, changed, err := migration.FixFiles(files.Files, editionNumber)
+	if err != nil || !changed && editionNumber == 2 {
 		return []any{}
 	}
 	var changes []any
-	if files.Manifest.Edition == 1 {
+	if files.ManifestPath == "" {
+		name := strings.TrimSuffix(filepath.Base(files.Files[0].Path), ".cicada")
+		if !s.canCreateFiles || !edition.ValidProjectName(name) {
+			return []any{}
+		}
+		uri := fileURI(filepath.Join(files.Root, "cicada.mod"))
+		changes = append(changes,
+			map[string]any{"kind": "create", "uri": uri},
+			map[string]any{"textDocument": map[string]any{"uri": uri, "version": nil}, "edits": []any{map[string]any{"range": region{}, "newText": "project " + name + "\ncicada 2\n"}}},
+		)
+	} else if editionNumber == 1 {
 		before, err := os.ReadFile(files.ManifestPath)
 		if err != nil {
 			return []any{}

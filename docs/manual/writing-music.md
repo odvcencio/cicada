@@ -80,7 +80,53 @@ Multi-file migration requires atomic file exchange, available on supported Linux
 
 The language server uses unsaved buffers alongside the other listed files. Go to definition and rename work across files. Save As copies all sources and their assets. Studio currently refuses projects with more than one source file with a message directing you to a text editor, check, play, or render. Its editing and undo history remain available for single-file projects.
 
-Imports, libraries, `require`, and `cicada.sum` are planned follow-up work.
+## Import a library
+
+A library packages instruments, effects, kits, phrases, patterns, samplers, and audio assets for reuse. The [library example](../../examples/libraries/main.cicada) imports `demo/tone` from the project's `lib/demo/tone/` folder. Its manifest uses `library` instead of `project`:
+
+```text
+library demo/tone
+cicada 2
+source "tone.cicada"
+license "MIT"
+author "Cicada contributors"
+engine 2
+capabilities 0
+```
+
+A library needs an explicit source list, license, and author. It has no entry score. `cicada` declares its source edition; `engine` declares its minimum engine edition and defaults to the source edition. `capabilities` is an unsigned engine capability bit mask, decimal or hexadecimal, and defaults to zero. This engine supports editions through 2 and no optional capability bits. Unsupported requirements produce `CICADA-LIB-CAPABILITY`. A library cannot declare tracks, scenes, songs, score headers, buses, clips, mastering settings, exports, or live controls; these produce `CICADA-LIB-DECL`. An optional source edition marker must match its library manifest. An importing score accepts libraries from the same or an older source edition. Edition-1 effect shorthand retains its processor kind as a qualified named effect; edition-2 library source still requires an explicit kind.
+
+In a score, import the path and use its final path component as the namespace:
+
+```text
+import "demo/tone"
+track lead tone.glass {}
+scene verse { lead = tone.melody }
+song { verse*2 }
+```
+
+Libraries can import other libraries. Imports in all files of a project or library share that scope. A library's unqualified references select its own declarations; dependency references use the imported namespace. Dependencies are not re-exported. Names beginning with `_` are private to their library; referring to `tone._hook` from outside it produces `CICADA-LIB-PRIVATE`. Import cycles produce `CICADA-LIB-CYCLE`.
+
+Paths use slash-separated source identifiers. `builtin` is reserved as an import namespace and as the first component of a library path; built-in drum recipes such as `builtin.ch` remain available. Resolution checks embedded `std/` libraries, the project's `lib/`, and the user library in that order. The embedded standard namespace is initially empty. The user library is Go's per-OS user config directory plus `cicada/lib`; `$CICADA_LIBRARY` overrides it. Direct imports from it are allowed. If the same path exists in more than one location, two imports share the same final component, or an import namespace conflicts with a local declaration, loading fails with `CICADA-LIB-SHADOW`.
+
+Library assets live under the library's `audio/` folder. Their source paths resolve from that library root, and their own declared audio hashes are verified as well. Source and asset paths cannot escape the library through traversal or symlinks. `cicada convert` refuses library-owned audio with `CICADA-LIB-ASSET` before writing output. Keep the score imports until asset vendoring is supported.
+
+Run these commands from `examples/libraries/`:
+
+```sh
+cicada lib update
+cicada check
+cicada explain main.cicada tone.glass
+cicada explain main.cicada lead.level
+cicada play main.cicada
+cicada render main.cicada -o library.wav --rate 48000 --bits 24
+```
+
+`cicada.sum` is generated and tool-owned. Commit it with the score. Each non-comment line contains `PATH KIND sha256:HASH`, where `KIND` is `std`, `project`, or `user`. Records sort by path and include transitive imports. The SHA-256 input starts with `cicada.library/1` and a zero byte, then the manifest, listed sources, and every regular file under `audio/`, sorted together by relative path. Each path and its exact bytes are preceded by their unsigned 64-bit big-endian lengths. Absolute roots and timestamps are excluded.
+
+Every load recomputes the hashes. Missing pins, changed content, and changed resolution kinds produce `CICADA-LIB-HASH` at the importing file, line, and column. `check` reports them; playback and rendering refuse them. After an intended edit, run `cicada lib update demo/tone` to update that pin, or omit the path to update every imported library and remove unused pins. The command prints the old and new location kinds and hashes. A targeted update leaves dependency pins unchanged; update those dependencies explicitly or update all imports. A loose score uses `cicada.sum` in its own directory. An update scan containing loose scores from different directories is refused with `CICADA-LIB-ROOT`; run from each score directory or add a shared `cicada.mod`.
+
+The language server completes import paths and public qualified names and goes to definitions in library source. Unsaved library changes also trigger hash diagnostics. `explain` identifies the library behind a declaration or instrument value. Project-wide formatting and notation fixes keep imported library files untouched. Notation fixes, local rename, and parameter hover retain import context for loose and independent scores too. Notation fixes stop on changed library pins. Library vendoring, Save As with imports, bundle provenance, and `require` versions remain follow-up work.
 
 ## Tracks and patterns
 
@@ -137,6 +183,12 @@ Keep modifiers next to the note they change:
 
 A note without `?` has a 100% chance. The legacy `%70` spelling is still
 accepted; `cicada fix` changes it to `?70`.
+
+Chance uses the pattern seed, track index, compiled pattern slot, pass number,
+and step index. The same score therefore makes the same decisions in playback
+and WAV export, independent of audio block size. All lanes of a drum pattern
+use its compiled slot; a lane number does not replace the slot in the chance
+hash. Changing a pattern's slot can change its seeded decisions.
 
 You can reuse a phrase and transpose a use:
 

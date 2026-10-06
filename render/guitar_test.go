@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -83,5 +84,22 @@ func TestGuitarOfflineBlockAllocationFree(t *testing.T) {
 			t.Fatalf("offline block at %d Hz: %g allocations/run", rate, allocs)
 		}
 		t.Logf("METRIC: offline guitar block allocations/run | %g | %d Hz, scenes and 128-frame PCM encoding", allocs, rate)
+	}
+}
+
+func TestGuitarExportsIgnoreOtherTracksNotePatterns(t *testing.T) {
+	source := `tempo 120
+key c major
+track strings guitar { experimental=on octave=0 }
+track bass acid { octave=2 }
+pattern pluck notes { c1 . }
+pattern low notes { 1,, . }
+scene verse { strings=pluck bass=low }
+song { verse }
+`
+	score, wav, report := renderSceneScore(t, source, Options{SampleRate: 48000, Bits: 32, Block: 128})
+	assertSceneEngineMatchesWAV(t, score, wav, 48000, 0, int(report.Frames))
+	if _, err := Stems(score, Options{SampleRate: 48000, Bits: 32, Block: 128}, filepath.Join(t.TempDir(), "stems")); err != nil {
+		t.Fatal(err)
 	}
 }
