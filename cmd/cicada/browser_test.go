@@ -396,6 +396,12 @@ func TestBrowserProcessorAllocations(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Node AudioWorklet allocation test: %v", err)
 	}
+	capture := exec.Command("node", "--expose-gc", "../../host/web/processor_alloc_test.js", filepath.Join(temp, "kernel.wasm"), filepath.Join(temp, "kernel.image"), "capture")
+	captureOutput, captureErr := capture.CombinedOutput()
+	t.Logf("Capture worklet allocation test output:\n%s", captureOutput)
+	if captureErr != nil {
+		t.Fatalf("Node capture worklet allocation test: %v", captureErr)
+	}
 	stop := exec.Command("node", "../../host/web/processor_stop_test.js", filepath.Join(temp, "kernel.wasm"), filepath.Join(temp, "kernel.image"))
 	stopOutput, stopErr := stop.CombinedOutput()
 	t.Logf("AudioWorklet stop-after-edit test output:\n%s", stopOutput)
@@ -563,4 +569,63 @@ func TestBrowserCPUReport(t *testing.T) {
 	if report.P95 > 0.67 || report.P99 > 3*0.67 {
 		t.Fatalf("Node V8 WASM p95 %.4f ms (budget 0.67 ms) or p99 %.4f ms (ceiling 2.01 ms) exceeded; max %.4f ms", report.P95, report.P99, report.Max)
 	}
+}
+
+func TestBrowserCaptureTargets(t *testing.T) {
+	server := startBrowserStudio(t, []byte(audioTakeScore), nil)
+	chrome := startBrowserChrome(t, server)
+	chrome.navigate("http://" + browserStudioAddress + "/")
+	chrome.waitFor("!document.getElementById('pcm-arm').disabled", 5*time.Second)
+	save := func(source, condition string) {
+		t.Helper()
+		text, _ := json.Marshal(source)
+		chrome.eval(`(()=>{window.__targetRevision=document.body.dataset.revision;document.getElementById('edit-source').click();const editor=document.getElementById('source-editor');editor.value=` + string(text) + `;editor.dispatchEvent(new Event('input',{bubbles:true}));document.getElementById('save-source').click();return true})()`)
+		chrome.waitFor("document.body.dataset.revision!==window.__targetRevision && !document.getElementById('save-source').disabled && ("+condition+")", 10*time.Second)
+	}
+	added := strings.Replace(audioTakeScore, "track vox audio {}", "track vox audio {}\ntrack guitar audio {}", 1)
+	save(added, "document.getElementById('pcm-track').options.length===2")
+	chrome.eval(`document.getElementById('pcm-track').value='guitar';true`)
+	renamed := strings.Replace(added, "track guitar audio {}", "track lead audio {}", 1)
+	renamed = strings.ReplaceAll(renamed, "main", "verse")
+	save(renamed, "Array.from(document.getElementById('pcm-track').options,o=>o.value).join(',')==='vox,lead' && document.getElementById('pcm-track').value==='vox' && document.getElementById('pcm-scene').value==='verse'")
+	removed := strings.ReplaceAll(renamed, "track vox audio {}", "")
+	removed = strings.ReplaceAll(removed, "track lead audio {}", "")
+	removed = strings.ReplaceAll(removed, "vox = off", "")
+	save(removed, "document.getElementById('pcm-track').options.length===0 && document.getElementById('pcm-arm').disabled")
+	t.Log("capture selectors follow added, renamed and removed targets through actual source saves")
+}
+
+func TestBrowserCaptureFault(t *testing.T) {
+	server := startBrowserStudio(t, []byte(audioTakeScore), nil)
+	chrome := startBrowserChrome(t, server)
+	chrome.navigate("http://" + browserStudioAddress + "/")
+	chrome.waitFor("!document.getElementById('pcm-arm').disabled", 5*time.Second)
+
+	chrome.setViewport(1440, 1000)
+	chrome.eval(`(()=>{
+  const select=document.getElementById('audio-mode');select.value='browser';select.dispatchEvent(new Event('change',{bubbles:true}));
+  document.querySelector('[data-panel-tab="record"]').click();
+  document.getElementById('pcm-channels').value='2';
+  navigator.mediaDevices.getUserMedia=async()=>window.cicadaBrowserAudio.context.createMediaStreamDestination().stream;
+  document.getElementById('pcm-arm').scrollIntoView();
+  return true;
+ })()`)
+	// Arming starts the capture backing image from a real user gesture.
+	chrome.click("#pcm-arm")
+	chrome.waitFor("window.cicadaPCM.status.state==='armed'", 20*time.Second)
+	chrome.eval(`(async()=>{
+  const audio=window.cicadaBrowserAudio;
+  window.__captureStopped=0;
+  audio.node.port.addEventListener('message',event=>{if(event.data.t==='capture-stopped')window.__captureStopped++;});
+  await window.cicadaPCM.record();
+  return true;
+ })()`)
+	chrome.waitFor("window.cicadaBrowserAudio.playing && window.cicadaPCM.status.state==='recording'", 5*time.Second)
+	chrome.eval(`window.__failedTake=window.cicadaPCM.take.id;window.cicadaPCM.worker.onerror({message:'injected fatal worker fault'});true`)
+	chrome.waitFor("!window.cicadaBrowserAudio.playing && window.__captureStopped>0 && window.cicadaPCM.status.state==='stopped' && window.cicadaPCM.worker===null && window.cicadaPCM.stream===null", 5*time.Second)
+	chrome.eval(`(async()=>{await window.cicadaPCM.arm(2);await window.cicadaPCM.record();return true})()`)
+	chrome.waitFor("window.cicadaBrowserAudio.playing && window.cicadaPCM.status.state==='recording' && window.cicadaPCM.take.id!==window.__failedTake", 5*time.Second)
+	chrome.eval(`(async()=>{await window.cicadaPCM.stop();return true})()`)
+	chrome.waitFor("!window.cicadaBrowserAudio.playing && window.cicadaPCM.status.state==='stopped'", 5*time.Second)
+	t.Log("fatal worker fault stopped real worklet capture and accompaniment, released input and allowed a new recording")
 }

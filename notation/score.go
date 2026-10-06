@@ -1,7 +1,10 @@
 package notation
 
+import "fmt"
+
 // Position refers to the source file, with one-based line and Unicode scalar column.
 type Position struct {
+	File   string `json:",omitempty"`
 	Line   int
 	Column int
 }
@@ -11,34 +14,43 @@ type Diagnostic struct {
 	Message  string
 	Severity string // error or warning
 	Position Position
+	Related  Position // first declaration for duplicate diagnostics
 }
 
 // Score is the typed source model. Runtime project compilation is a separate
 // stage, so pitch spelling and source positions remain available to tools.
 type Score struct {
-	Version       int
-	Title         string
-	TitlePosition Position
-	TempoMilli    int64
-	KeyRoot       string
-	Scale         string
-	Seed          uint64
-	SeedLiteral   string
-	SeedPosition  Position
-	Instruments   []Instrument
-	Kits          []Kit
-	Tracks        []Track
-	Phrases       []Phrase
-	Patterns      []Pattern
-	Scenes        []Scene
-	Song          []SongEntry
-	SongPosition  Position
-	Effects       []Effect
-	Buses         []Bus
-	Master        []Param
-	HasMaster     bool
-	Live          *Live
-	Exports       []Export
+	Origins        map[string]Origin `json:",omitempty"`
+	LibraryAliases map[string]string `json:",omitempty"`
+	Position       Position          // entry location for project-wide diagnostics
+	Version        int
+	Title          string
+	TitlePosition  Position
+	TempoMilli     int64
+	TempoPosition  Position
+	KeyRoot        string
+	KeyPosition    Position
+	Scale          string
+	Seed           uint64
+	SeedLiteral    string
+	SeedPosition   Position
+	Assets         []Asset
+	Clips          []Clip
+	Samplers       []Sampler
+	Instruments    []Instrument
+	Kits           []Kit
+	Tracks         []Track
+	Phrases        []Phrase
+	Patterns       []Pattern
+	Scenes         []Scene
+	Song           []SongEntry
+	SongPosition   Position
+	Effects        []Effect
+	Buses          []Bus
+	Master         []Param
+	HasMaster      bool
+	Live           *Live
+	Exports        []Export
 }
 
 type Track struct {
@@ -116,10 +128,19 @@ type Pattern struct {
 	Position Position
 }
 
+// ChordPitch retains its spelling and byte span within a step's exact text.
+type ChordPitch struct {
+	Text       string
+	Start, End int
+}
+
 type StepToken struct {
-	Text      string
-	Transpose int // phrase-use transform, in semitones
-	Position  Position
+	ChordPitches   []ChordPitch
+	ChordModifiers string
+	ChordComments  []string
+	Text           string
+	Transpose      int // phrase-use transform, in semitones
+	Position       Position
 }
 
 type Phrase struct {
@@ -234,4 +255,33 @@ type LiveLayer struct {
 	Value         float64
 	Position      Position
 	ValuePosition Position
+}
+
+// Error includes both locations when a declaration conflicts with an earlier one.
+func (d Diagnostic) Error() string {
+	location := fmt.Sprintf("%d:%d", d.Position.Line, d.Position.Column)
+	if d.Position.File != "" {
+		location = d.Position.File + ":" + location
+	}
+	message := fmt.Sprintf("%s: %s %s: %s", location, d.Severity, d.Code, d.Message)
+	if d.Related.Line != 0 {
+		message += fmt.Sprintf(" (first declared at %s:%d:%d)", d.Related.File, d.Related.Line, d.Related.Column)
+	}
+	return message
+}
+
+// LocateDiagnostics fills the entry location for project-wide errors. Precise
+// declaration locations already carried by the parser are left intact.
+func LocateDiagnostics(ds []Diagnostic, entry Position) {
+	for i := range ds {
+		if ds[i].Position.File == "" {
+			ds[i].Position.File = entry.File
+		}
+		if ds[i].Position.Line == 0 {
+			ds[i].Position.Line = 1
+		}
+		if ds[i].Position.Column == 0 {
+			ds[i].Position.Column = 1
+		}
+	}
 }

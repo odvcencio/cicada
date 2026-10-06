@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -22,20 +23,28 @@ type scoreInspection struct {
 // inspectScore is the validation gate shared by per-file commands and the
 // project checker. It includes semantic conversion and engine compilation.
 func inspectScore(path string) (scoreInspection, error) {
-	source, err := os.ReadFile(path)
+	sources, err := project.ReadSources(path, nil)
 	if err != nil {
 		return scoreInspection{}, err
 	}
-	score, diagnostics, err := parseScoreForPath(path, source)
+	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return scoreInspection{}, err
 	}
+	var source []byte
+	for _, file := range sources.Files {
+		if file.Path == absolute || file.Path == path {
+			source = file.Source
+			break
+		}
+	}
+	score, diagnostics := sources.Parse()
 	var semantic *project.Project
 	if !hasDiagnosticErrors(diagnostics) {
 		var projectDiagnostics []notation.Diagnostic
 		semantic, projectDiagnostics = project.FromScore(score)
 		diagnostics = appendUniqueDiagnostics(diagnostics, projectDiagnostics)
-		if semantic != nil {
+		if semantic != nil && !semantic.HasAudio() {
 			if _, err := project.CompileEngine(semantic, 48_000, 128); err != nil {
 				diagnostics = append(diagnostics, notation.Diagnostic{
 					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(),
@@ -78,6 +87,15 @@ func checkCommand(args []string, stdout, stderr io.Writer) error {
 	if len(paths) == 0 {
 		return fmt.Errorf("no .cicada scores found in %s", root)
 	}
+	if data, err := os.ReadFile(filepath.Join(root, "cicada.mod")); err == nil {
+		manifest, err := edition.ParseProjectManifest(data)
+		if err != nil {
+			return err
+		}
+		if manifest.ExplicitSources() {
+			paths = paths[:1]
+		}
+	}
 	return checkPaths(paths, stdout, stderr)
 }
 
@@ -107,7 +125,14 @@ func checkPaths(paths []string, stdout, stderr io.Writer) error {
 }
 
 func printCheckDiagnostic(w io.Writer, path string, source []byte, d notation.Diagnostic) {
-	fmt.Fprintf(w, "%s:%d:%d: %s %s: %s\n", path, d.Position.Line, d.Position.Column, d.Severity, d.Code, d.Message)
+	if d.Position.File != "" && d.Position.File != path {
+		path = d.Position.File
+		if data, err := os.ReadFile(path); err == nil {
+			source = data
+		}
+	}
+	d.Position.File = path
+	fmt.Fprintln(w, d.Error())
 	lines := strings.Split(string(source), "\n")
 	if d.Position.Line < 1 || d.Position.Line > len(lines) {
 		return

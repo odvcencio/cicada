@@ -32,6 +32,118 @@ func FixSource(source []byte) ([]byte, bool, error) {
 	if before.Version == 2 {
 		return source, false, nil
 	}
+	fixed, changed, err := rewriteSource(source, before, true)
+	if err != nil {
+		return nil, false, err
+	}
+	if !changed {
+		return fixed, false, nil
+	}
+	after, diagnostics := notation.Parse(fixed)
+	if hasDiagnosticErrors(diagnostics) {
+		return nil, false, fmt.Errorf("fix generated invalid score: %+v", diagnostics)
+	}
+	projectAfter, diagnostics := project.FromScore(after)
+	if projectAfter == nil || hasDiagnosticErrors(diagnostics) || !project.SemanticEqual(projectBefore, projectAfter) {
+		return nil, false, fmt.Errorf("fix changed musical meaning")
+	}
+	return fixed, true, nil
+}
+
+// FixFiles migrates a package as a unit while preserving each file's source
+// boundaries and comments. Before/after semantic validation covers references
+// to declarations in other files.
+func FixFiles(files []notation.SourceFile, edition int) ([]notation.SourceFile, bool, error) {
+	before, ds := notation.ParseFiles(files, edition)
+	if edition == 2 && before != nil && !hasDiagnosticErrors(ds) {
+		if p, extra := project.FromScore(before); p != nil && !hasDiagnosticErrors(extra) {
+			return files, false, nil
+		}
+	}
+	legacy := append([]notation.SourceFile(nil), files...)
+	if edition == 2 {
+		for i, file := range legacy {
+			if file.Library != "" {
+				continue
+			}
+			root, w, err := notation.ParseTree(file.Source)
+			if err != nil {
+				return nil, false, err
+			}
+			for j := 0; j < root.NamedChildCount(); j++ {
+				n := root.NamedChild(j)
+				if w.Type(n) == "integer" {
+					data := bytes.Clone(file.Source)
+					copy(data[n.StartByte():n.EndByte()], []byte("1"))
+					legacy[i].Source = data
+				}
+			}
+		}
+		before, ds = notation.ParseFiles(legacy, 1)
+	}
+	if before == nil || hasDiagnosticErrors(ds) {
+		return nil, false, fmt.Errorf("project must validate before fix: %+v", ds)
+	}
+	projectBefore, ds := project.FromScore(before)
+	if projectBefore == nil || hasDiagnosticErrors(ds) {
+		return nil, false, fmt.Errorf("project must compile before fix: %+v", ds)
+	}
+	musicBusFile := -1
+	for i, file := range legacy {
+		root, w, err := notation.ParseTree(file.Source)
+		if err != nil {
+			return nil, false, err
+		}
+		if hasAnyMusicBus(root, w) {
+			musicBusFile = i
+		}
+	}
+	if musicBusFile < 0 {
+		musicBusFile = 0
+	}
+	fixed := append([]notation.SourceFile(nil), legacy...)
+	changed := false
+	for i, file := range legacy {
+		if file.Library != "" {
+			continue
+		}
+		data, _, err := rewriteSource(file.Source, before, i == musicBusFile)
+		if err != nil {
+			return nil, false, err
+		}
+		fixed[i].Source = data
+		changed = changed || !bytes.Equal(files[i].Source, data)
+	}
+	after, ds := notation.ParseFiles(fixed, 2)
+	if after == nil || hasDiagnosticErrors(ds) {
+		return nil, false, fmt.Errorf("fix generated invalid project: %+v", ds)
+	}
+	projectAfter, ds := project.FromScore(after)
+	if projectAfter == nil || hasDiagnosticErrors(ds) || !project.SemanticEqual(projectBefore, projectAfter) {
+		return nil, false, fmt.Errorf("fix changed musical meaning")
+	}
+	return fixed, changed, nil
+}
+
+// Imported declarations have internal qualified IDs; rewritten source uses
+// the importing scope's alias. Missing direct bindings retain the original ID
+// so normal reference validation refuses an inaccessible return.
+func effectSourceName(score *notation.Score, effect notation.Effect) string {
+	origin, imported := score.Origins[effect.Name]
+	if !imported || origin.Library == "" {
+		return effect.Name
+	}
+	namespace := strings.ReplaceAll(origin.Library, "/", ".")
+	prefix := namespace + "."
+	for alias, boundNamespace := range score.LibraryAliases {
+		if boundNamespace == namespace && strings.HasPrefix(effect.Name, prefix) {
+			return alias + "." + strings.TrimPrefix(effect.Name, prefix)
+		}
+	}
+	return effect.Name
+}
+
+func rewriteSource(source []byte, before *notation.Score, addComp bool) ([]byte, bool, error) {
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {
 		return nil, false, err
@@ -41,13 +153,20 @@ func FixSource(source []byte) ([]byte, bool, error) {
 	hasStopPattern := false
 	hasLegacyComp := false
 	hasMusicInsert := false
+	for _, bus := range before.Buses {
+		if bus.Name == "music" {
+			for _, param := range bus.Params {
+				hasMusicInsert = hasMusicInsert || param.Name == "insert" && param.Value == "comp"
+			}
+		}
+	}
 	delayName, reverbName := "delay", "reverb"
 	for _, effect := range before.Effects {
 		if effect.Kind == "delay" {
-			delayName = effect.Name
+			delayName = effectSourceName(before, effect)
 		}
 		if effect.Kind == "reverb" {
-			reverbName = effect.Name
+			reverbName = effectSourceName(before, effect)
 		}
 		hasLegacyComp = hasLegacyComp || effect.Legacy && effect.Kind == "comp"
 	}
@@ -286,7 +405,7 @@ func FixSource(source []byte) ([]byte, bool, error) {
 			}
 		}
 	}
-	if hasLegacyComp && !hasMusicInsert {
+	if addComp && hasLegacyComp && !hasMusicInsert {
 		addition := "bus music {\n  insert = comp\n}"
 		insertAt := len(source)
 		if insertAt > 0 && source[insertAt-1] != '\n' {
@@ -375,14 +494,6 @@ func FixSource(source []byte) ([]byte, bool, error) {
 	fixed := bytes.Clone(source)
 	for _, edit := range edits {
 		fixed = append(append(bytes.Clone(fixed[:edit.start]), edit.text...), fixed[edit.end:]...)
-	}
-	after, diagnostics := notation.Parse(fixed)
-	if hasDiagnosticErrors(diagnostics) {
-		return nil, false, fmt.Errorf("fix generated invalid score: %+v", diagnostics)
-	}
-	projectAfter, diagnostics := project.FromScore(after)
-	if projectAfter == nil || hasDiagnosticErrors(diagnostics) || !project.SemanticEqual(projectBefore, projectAfter) {
-		return nil, false, fmt.Errorf("fix changed musical meaning")
 	}
 	return fixed, true, nil
 }

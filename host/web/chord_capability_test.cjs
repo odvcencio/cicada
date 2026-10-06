@@ -21,7 +21,7 @@ async function setup(asset, version, capability) {
     return capability;
   };
   const context = vm.createContext({
-    sampleRate: 48000, performance, Date, ArrayBuffer, Uint8Array, Uint32Array, Float32Array, DataView,
+    CICADA_CAPTURE: false, sampleRate: 48000, performance, Date, ArrayBuffer, Uint8Array, Uint32Array, Float32Array, DataView,
     WebAssembly: { instantiate: async () => ({ exports }) },
     AudioWorkletProcessor: class { constructor() { this.port = port = { postMessage: data => messages.push(data), onmessage: null }; } },
     registerProcessor: (_, candidate) => { type = candidate; }

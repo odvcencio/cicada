@@ -379,7 +379,7 @@ func formatDeclaration(source []byte) string {
 			if frame.kind == "pattern" && i+1 < len(tokens) && tokens[i+1].text == "=" && strings.TrimSpace(line) != "" && !strings.HasPrefix(strings.TrimSpace(line), "use ") {
 				flush()
 			}
-			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export") && frame.assignment == 3 && value != "}" && !(strings.HasPrefix(strings.TrimSpace(line), "send ") && value == "pre") {
+			if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export" || frame.kind == "asset" || frame.kind == "clip" || frame.kind == "sampler") && frame.assignment == 3 && value != "}" && !(strings.HasPrefix(strings.TrimSpace(line), "send ") && value == "pre") {
 				flush()
 				frame.assignment = 0
 			}
@@ -424,7 +424,7 @@ func formatDeclaration(source []byte) string {
 			line = strings.TrimRight(line, " ") + " = "
 			if len(frames) > 0 {
 				frame := &frames[len(frames)-1]
-				if frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export" {
+				if frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export" || frame.kind == "asset" || frame.kind == "clip" || frame.kind == "sampler" {
 					frame.assignment = 2
 				}
 			}
@@ -456,7 +456,7 @@ func formatDeclaration(source []byte) string {
 			word(value)
 			if len(frames) > 0 {
 				frame := &frames[len(frames)-1]
-				if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export") && frame.assignment == 2 {
+				if (frame.kind == "track" || frame.kind == "fx" || frame.kind == "scene" || frame.kind == "pattern" || frame.kind == "kit" || frame.kind == "bus" || frame.kind == "master" || frame.kind == "export" || frame.kind == "asset" || frame.kind == "clip" || frame.kind == "sampler") && frame.assignment == 2 {
 					frame.assignment = 3
 				}
 				if frame.kind == "song" {

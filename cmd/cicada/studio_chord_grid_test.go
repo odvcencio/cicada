@@ -51,6 +51,8 @@ func TestChordGridPitchEditsKeepOtherPitchesAndExactSource(t *testing.T) {
 		{"four first", "[d4 f4 a4 c5]", "[f4 a4 c5]", 62, []int{65, 69, 72}},
 		{"add third", "[d4 f4]", "[d4 f4 a4]", 69, []int{62, 65, 69}},
 		{"add fourth", "[d4 f4 a4]", "[d4 f4 a4 c5]", 72, []int{62, 65, 69, 72}},
+		{"preserve comment when removing pitch", "[d4 // chord comment\n f4 a4]", "[d4 // chord comment\n a4]", 65, []int{62, 69}},
+		{"comment between pitches on add", "[d4 // chord ] comment\n f4]", "[d4 // chord ] comment\n f4 a4]", 69, []int{62, 65, 69}},
 		{"preserve spelling and spacing", "[ d4\tf4  a4 ]", "[ d4\ta4 ]", 65, []int{62, 69}},
 		{"preserve surrounding spaces on add", "[ d4\tf4  ]", "[ d4\tf4 a4  ]", 69, []int{62, 65, 69}},
 		{"preserve flat spellings", "[db4 f4 ab4]", "[db4 ab4]", 65, []int{61, 68}},
@@ -276,17 +278,25 @@ func TestChordGridMIDIExtremesAddRemove(t *testing.T) {
 }
 
 func TestChordGridSingletonSpacedSharedModifiers(t *testing.T) {
-	source := []byte(strings.Replace(studioChordScore, "[d4 f4 a4]^?70", "[d4 f4] ^ ?70", 1))
-	chordGridProject(t, source)
-	updated, err := pitchedSource(source, "harmony", "", 0, 62)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(updated, []byte(strings.Replace(string(source), "[d4 f4] ^ ?70", "f4^?70", 1))) {
-		t.Fatalf("unexpected singleton source change: %s", updated)
-	}
-	step := chordGridProject(t, updated).Patterns[0].Data[0]
-	if step.Note != 65 || !step.Accent || step.Probability != 70 {
-		t.Fatalf("singleton lost shared modifiers: %+v", step)
+	for _, spacing := range []string{" ", "\t", "\n", " // modifier\n "} {
+		t.Run(spacing, func(t *testing.T) {
+			source := []byte(strings.Replace(studioChordScore, "[d4 f4 a4]^?70", "[d4 f4] ^"+spacing+"?70", 1))
+			chordGridProject(t, source)
+			updated, err := pitchedSource(source, "harmony", "", 0, 62)
+			if err != nil {
+				t.Fatal(err)
+			}
+			replacement := "f4^?70"
+			if strings.Contains(spacing, "//") {
+				replacement = "// modifier\nf4^?70"
+			}
+			if !bytes.Equal(updated, []byte(strings.Replace(string(source), "[d4 f4] ^"+spacing+"?70", replacement, 1))) {
+				t.Fatalf("unexpected singleton source change: %s", updated)
+			}
+			step := chordGridProject(t, updated).Patterns[0].Data[0]
+			if step.Note != 65 || !step.Accent || step.Probability != 70 {
+				t.Fatalf("singleton lost shared modifiers: %+v", step)
+			}
+		})
 	}
 }

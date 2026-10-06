@@ -10,20 +10,24 @@
    Edition-specific limits are in edition-1.md and edition-2.md. *)
 
 source_file ::= [ "cicada" , integer ] , { _declaration } ;
-_declaration ::= title_decl | tempo_decl | key_decl | seed_decl | instrument_decl | kit_decl |
-                 track_decl | phrase_decl | acid_pattern | note_pattern | drum_pattern | scene_decl |
-                 song_decl | fx_decl | bus_decl | master_decl | export_decl | live_decl ;
+_declaration ::= import_decl | title_decl | tempo_decl | key_decl | seed_decl | instrument_decl |
+                 kit_decl | track_decl | phrase_decl | acid_pattern | note_pattern | drum_pattern |
+                 scene_decl | song_decl | fx_decl | bus_decl | master_decl | export_decl |
+                 asset_decl | clip_decl | sampler_decl | live_decl ;
+asset_decl ::= "asset" , _name , string , "{" , { param_decl } , "}" ;
+clip_decl ::= "clip" , _name , _name , "{" , { param_decl } , "}" ;
+sampler_decl ::= "sampler" , _name , "{" , { param_decl } , "}" ;
 title_decl ::= "title" , string ;
 tempo_decl ::= "tempo" , number ;
 key_decl ::= "key" , key_root , identifier ;
 seed_decl ::= "seed" , integer ;
-track_decl ::= "track" , identifier , identifier , "{" , { mix_setting } , "}" ;
-instrument_decl ::= "instrument" , identifier , "{" , [ instrument_octave ] , { instrument_param } ,
+track_decl ::= "track" , _name , _name , "{" , { mix_setting } , "}" ;
+instrument_decl ::= "instrument" , _name , "{" , [ instrument_octave ] , { instrument_param } ,
                     voice_decl , "}" ;
 instrument_octave ::= "octave" , "=" , integer , [ ";" ] ;
-kit_decl ::= "kit" , identifier , "{" , { kit_binding } , "}" ;
+kit_decl ::= "kit" , _name , "{" , { kit_binding } , "}" ;
 kit_binding ::= identifier , "=" , kit_target , [ ";" ] ;
-kit_target ::= identifier | "builtin" , "." , identifier ;
+kit_target ::= _name | "builtin" , "." , identifier ;
 instrument_param ::= "param" , identifier , [ ":" , identifier ] , "=" , number , [ ";" ] ;
 voice_decl ::= "voice" , identifier , "{" , { let_stmt } , out_stmt , "}" ;
 let_stmt ::= "let" , identifier , "=" , expression , [ ";" ] ;
@@ -32,20 +36,19 @@ expression ::= expression , ("+" | "-") , expression | expression , ("*" | "/") 
                call_expr | number | identifier | "(" , expression , ")" ;
 call_expr ::= identifier , "(" , [ expression , { "," , expression } ] , ")" ;
 param_decl ::= identifier , "=" , value ;
-send_decl ::= "send" , identifier , "=" , number , [ "pre" ] ;
+send_decl ::= "send" , _name , "=" , number , [ "pre" ] ;
 mix_setting ::= send_decl | param_decl ;
-fx_decl ::= "fx" , identifier , [ identifier ] , "{" , { param_decl } , "}" ;
-bus_decl ::= "bus" , identifier , "{" , { mix_setting } , "}" ;
+fx_decl ::= "fx" , _name , [ identifier ] , "{" , { param_decl } , "}" ;
+bus_decl ::= "bus" , _name , "{" , { mix_setting } , "}" ;
 master_decl ::= "master" , "{" , { mix_setting } , "}" ;
-export_decl ::= "export" , identifier , "{" , { param_decl } , "}" ;
-phrase_decl ::= "phrase" , identifier , [ "acid" ] , "{" , { acid_step } , "}" ;
-acid_pattern ::= "pattern" , identifier , "acid" , { pattern_attr } , "{" , { pattern_attr } ,
+export_decl ::= "export" , _name , "{" , { param_decl } , "}" ;
+phrase_decl ::= "phrase" , _name , [ "acid" ] , "{" , { acid_step } , "}" ;
+acid_pattern ::= "pattern" , _name , "acid" , { pattern_attr } , "{" , { pattern_attr } ,
                  { acid_step | phrase_use } , "}" ;
-note_pattern ::= "pattern" , identifier , [ "notes" ] , { pattern_attr } , "{" , { pattern_attr } ,
+note_pattern ::= "pattern" , _name , [ "notes" ] , { pattern_attr } , "{" , { pattern_attr } ,
                  { acid_step | phrase_use } , "}" ;
-phrase_use ::= "use" , identifier , [ "*" , integer ] ,
-               [ "transpose" , "=" , number | "+" , number ] ;
-drum_pattern ::= "pattern" , identifier , "drums" , { pattern_attr } , "{" , { pattern_attr } ,
+phrase_use ::= "use" , _name , [ "*" , integer ] , [ "transpose" , "=" , number | "+" , number ] ;
+drum_pattern ::= "pattern" , _name , "drums" , { pattern_attr } , "{" , { pattern_attr } ,
                  { drum_lane } , "}" ;
 pattern_attr ::= identifier , "=" , number ;
 acid_step ::= "." | "-" | "|" | acid_note | chord_note ;
@@ -63,21 +66,24 @@ accent_hit ::= /X/ ;
 velocity_hit ::= /x[1-9]/ ;
 ratchet ::= "*" , integer ;
 probability ::= ("?" | "%") , integer ;
-scene_decl ::= "scene" , identifier , "{" , { scene_assignment } , "}" ;
+scene_decl ::= "scene" , _name , "{" , { scene_assignment } , "}" ;
 scene_assignment ::= scene_target , "=" , scene_value ;
 scene_target ::= parameter_path | identifier ;
-scene_value ::= number | identifier | string | fraction ;
+scene_value ::= number | _name | string | fraction ;
 parameter_path ::= /[a-z_][a-z0-9_-]*(\.[a-z_][a-z0-9_-]*)+/ ;
 song_decl ::= "song" , "{" , { song_entry } , "}" ;
 song_entry ::= identifier , [ "*" , integer ] ;
-value ::= number | insert_chain | identifier | string | fraction ;
-insert_chain ::= identifier , { "->" , identifier } ;
+value ::= number | insert_chain | _name | string | fraction ;
+insert_chain ::= _name , { "->" , _name } ;
 fraction ::= /[0-9]+\/[0-9]+[tT.]?/ ;
-number ::= /-?[0-9]+(\.[0-9]+)?(LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?/ ;
+number ::= /-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?/ ;
 integer ::= /[0-9]+/ ;
 key_root ::= /[a-g][#b]?/ ;
 string ::= /"([^"\\]|\\.)*"/ ;
 identifier ::= /[a-z_][a-z0-9_-]*/ ;
+_name ::= identifier | qualified_name ;
+qualified_name ::= identifier , "." , identifier , { "." , identifier } ;
+import_decl ::= "import" , string ;
 comment ::= /\/\/[^\n]*/ ;
 live_decl ::= "live" , "{" , { live_land | live_phrase | live_macro | live_layers } , "}" ;
 live_land ::= "land" , "=" , (identifier | bar_count) , [ ";" ] ;

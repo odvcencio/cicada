@@ -322,7 +322,7 @@ func canonicalProjectBytes(p *Project) ([]byte, error) {
 	// already imply, matching headerless source after a round trip.
 	normalized := *p
 	normalized.Format, normalized.Version = FormatID, 1
-	useV2 := p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
+	useV2 := p.HasAudio() || p.Live != nil || p.p2Syntax || projectHasSceneSettings(p) || len(p.Buses) > 0 || p.Master != nil || len(p.Exports) > 0
 	for _, effect := range p.Effects {
 		useV2 = useV2 || effect.Kind != ""
 	}
@@ -576,7 +576,7 @@ func DecodeJSON(data []byte) (*Project, error) {
 		return nil, jsonError(data, "CICADA-VERSION", "/format", 0, fmt.Errorf("scene settings require cicada.project/2"))
 	}
 	if err := ValidateProject(&p); err != nil {
-		return nil, jsonError(data, "CICADA-PARAM", "", 0, err)
+		return nil, jsonError(data, projectDiagnosticCode(err), "", 0, err)
 	}
 	if _, err := canonicalProjectBytes(&p); err != nil {
 		code := "CICADA-PARAM"
@@ -701,7 +701,7 @@ func checkRequiredFields(data []byte) error {
 		optionalByConstruct["mixer"] = nil
 		fieldsByConstruct["effect"] = []string{"id", "params"}
 		optionalByConstruct["effect"] = nil
-		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "live")
+		optionalByConstruct["project"] = removeNames(optionalByConstruct["project"], "buses", "master", "exports", "assets", "clips", "samplers", "live")
 	}
 	require := func(value any, construct, name, pointer string) (map[string]any, error) {
 		fields, ok := fieldsByConstruct[construct]
@@ -713,6 +713,16 @@ func checkRequiredFields(data []byte) error {
 	root, err := require(raw, "project", "project", "")
 	if err != nil {
 		return err
+	}
+	for _, construct := range []struct{ array, name string }{{"assets", "asset"}, {"clips", "clip"}, {"samplers", "sampler"}} {
+		if value, exists := root[construct.array]; exists {
+			if err := checkObjectArray(value, construct.array, "/"+construct.array, func(item any, pointer string) error {
+				_, err := require(item, construct.name, construct.name, pointer)
+				return err
+			}); err != nil {
+				return err
+			}
+		}
 	}
 	if _, err := require(root["key"], "key", "key", "/key"); err != nil {
 		return err

@@ -28,6 +28,13 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "lib" {
+		if err := libCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "studio" {
 		if err := studioCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -41,6 +48,13 @@ func main() {
 			os.Exit(2)
 		}
 		if err := lsp.Serve(os.Stdin, os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "save-as" {
+		if err := saveAsCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -226,7 +240,10 @@ func main() {
 	}
 	hasErrors := false
 	for _, d := range diagnostics {
-		fmt.Fprintf(os.Stderr, "%s:%d:%d: %s %s: %s\n", path, d.Position.Line, d.Position.Column, d.Severity, d.Code, d.Message)
+		if d.Position.File == "" {
+			d.Position.File = path
+		}
+		fmt.Fprintln(os.Stderr, d.Error())
 		if d.Severity == "error" {
 			hasErrors = true
 		}

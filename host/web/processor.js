@@ -3,7 +3,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     super();
     const port = this.port;
     // Keep render state in constructor-scoped bindings so process reuses it.
-    let module, active, previous, pending, bankCopy, playing, deferred, deferredCount, rate, bank, clock, preciseClock, underruns, timingHistogram, durationLimit, gapLimit, lastStart, callbacks, view, viewData, message, transfer, ready, swap, swapView, faultMessage, fadeTotal, fadeLeft, engineSample, anchorSample, anchorTick, bpm, nextBarTick, stallNext;
+    let capture, module, active, previous, pending, bankCopy, playing, deferred, deferredCount, rate, bank, clock, preciseClock, underruns, timingHistogram, durationLimit, gapLimit, lastStart, callbacks, view, viewData, message, transfer, ready, swap, swapView, faultMessage, fadeTotal, fadeLeft, engineSample, anchorSample, anchorTick, bpm, nextBarTick, stallNext;
     const create = async image => {
       const bytes = new Uint8Array(image);
       const instance = await WebAssembly.instantiate(module);
@@ -57,6 +57,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     // Make a staged instance the active one: at a stop, or when nothing is playing.
     const promote = (next) => {
       pending = null;
+      if (CICADA_CAPTURE && capture) capture.engineEpoch++;
       active = next;
       bpm = next.b;
       engineSample = anchorSample = 0;
@@ -65,6 +66,8 @@ class CicadaKernel extends AudioWorkletProcessor {
       flush();
     };
     const receive = (data) => {
+      if (CICADA_CAPTURE && data.t === 'capture-init') { if (capture) capture.port.close(); capture = new globalThis.CicadaCapture(data, rate, port); return; }
+      if (CICADA_CAPTURE && data.t === 'capture-control') { if (capture) capture.receive(data); return; }
       if (data.t === 'b') {
         view = new Uint8Array(data.bytes);
         viewData = new DataView(data.bytes);
@@ -130,7 +133,7 @@ class CicadaKernel extends AudioWorkletProcessor {
           if (starts) { previous = null; fadeLeft = fadeTotal; }
         }
         if (starts) { playing = true; port.postMessage({ t: 's', p: true }); }
-        if (stops) { playing = false; port.postMessage({ t: 's', p: false }); if (pending && pending !== true) promote(pending); }
+        if (stops) { if (CICADA_CAPTURE && capture && capture.recording) capture.stopping = true; playing = false; port.postMessage({ t: 's', p: false }); if (pending && pending !== true) promote(pending); }
       }
     };
     const sampleAtTick = (tick) => {
@@ -145,6 +148,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       next.d.set(swap, 0);
       next.x.gosx_audio_cmd_commit(2);
       previous = active;
+      if (CICADA_CAPTURE && capture) capture.engineEpoch++;
       active = next;
       bpm = next.b;
       engineSample = 0;
@@ -192,7 +196,7 @@ class CicadaKernel extends AudioWorkletProcessor {
         dl: durationLimit, gl: gapLimit, m: active?.x.memory.buffer.byteLength || 0,
         d: timingHistogram.slice() });
     };
-    const process = (_inputs, outputs) => {
+    const process = (inputs, outputs) => {
       const start = clock();
       const gap = lastStart ? start - lastStart : 0;
       lastStart = start;
@@ -201,13 +205,14 @@ class CicadaKernel extends AudioWorkletProcessor {
       const channels = outputs[0];
       const left = channels[0], right = channels[1];
       left.fill(0); right.fill(0);
+      const lead = CICADA_CAPTURE && capture ? capture.process(inputs, left.length, engineSample - anchorSample + Math.ceil(anchorTick * 60000 * rate / (bpm * 960)), bpm, playing, left, right) : 0;
       if (bankCopy) {
         const c = bankCopy, chunk = c[0][c[1]++];
         chunk[1].set(chunk[0]);
         if (c[1] === c[0].length) { bankCopy = null; c[2](); }
       }
       if (playing) {
-        let offset = 0;
+        let offset = lead;
         while (offset < left.length) {
           let boundary = sampleAtTick(nextBarTick);
           if (engineSample === boundary) {

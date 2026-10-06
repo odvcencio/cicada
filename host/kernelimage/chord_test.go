@@ -198,3 +198,38 @@ func TestImageCannotDropInvalidUnusedChordPayload(t *testing.T) {
 		t.Fatal("image silently dropped unused invalid chord payload")
 	}
 }
+
+func TestPatternCommandGrowClearsDormantScalarSteps(t *testing.T) {
+	cfg := chordConfig(t)
+	loaded := cfg.Patterns[0].Slots[0]
+	loaded.Chords = [64]seq.ChordStep{}
+	for i := uint8(0); i < loaded.Len; i++ {
+		loaded.Steps[i], _ = seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100})
+	}
+	loaded.Steps[3], _ = seq.PackStep(seq.Step{Note: 127, Gate: true, Ratchet: 1, Probability: 100})
+	cfg.Patterns[0].Slots[0] = loaded
+	e, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.Push(cmd.Command{Op: cmd.OpSetPatternLen, Track: 0, Index: 1}) {
+		t.Fatal("shrink rejected")
+	}
+	var l, r [1]float32
+	e.Render(l[:], r[:])
+	loaded.Len = 1
+	cfg.Patterns[0].Slots[0] = loaded
+	replacement := loaded
+	replacement.Len, replacement.Transpose = 4, 1
+	for i := uint8(0); i < replacement.Len; i++ {
+		replacement.Steps[i], _ = seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100})
+	}
+	commands, err := kernelimage.PatternCommands(replacement, &cfg, 0, 0, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.PushBatch(commands) {
+		t.Fatal("grow rejected")
+	}
+	audioFrames(t, e)
+}

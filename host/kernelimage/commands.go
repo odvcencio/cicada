@@ -45,7 +45,7 @@ func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8,
 				return nil, err
 			}
 			rest, _ := seq.PackStep(seq.Step{Ratchet: 1, Probability: 100})
-			for i := uint8(0); i < loaded.Len; i++ {
+			for i := uint8(0); i < max(loaded.Len, pattern.Len); i++ {
 				commands = append(commands, cmd.Command{Op: cmd.OpSetStep, Track: track, Index: uint16(i), Arg0: rest, Arg1: uint32(slot)})
 			}
 		}

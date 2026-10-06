@@ -132,3 +132,61 @@ func TestChordJSONUsesNumericArrayAndRejectsMalformedPayloads(t *testing.T) {
 		}
 	}
 }
+
+func TestUnusedChordSourceRoundTrip(t *testing.T) {
+	source := strings.Replace(chordSource, "keys=harmony", "keys=off", 1)
+	score, ds := notation.Parse([]byte(source))
+	if score == nil {
+		t.Fatalf("parse: %+v", ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil {
+		t.Fatalf("unused chord: %+v", ds)
+	}
+	if ds := ValidateProject(p); ds != nil {
+		t.Fatalf("validate: %+v", ds)
+	}
+	roundtrip, err := ToSource(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, ds := notation.Parse(roundtrip)
+	if again == nil {
+		t.Fatalf("reparse: %+v", ds)
+	}
+	restored, ds := FromScore(again)
+	if restored == nil {
+		t.Fatalf("recompile: %+v", ds)
+	}
+	want, _ := json.Marshal(p)
+	got, _ := json.Marshal(restored)
+	if !bytes.Equal(want, got) {
+		t.Fatalf("unused chord changed\n%s\n%s", want, got)
+	}
+}
+
+func TestChordGrammarExtrasCompile(t *testing.T) {
+	for _, chord := range []string{
+		"[d4 // middle pitch\n f4 a4]^?70",
+		"[d4 f4 a4]^\t?70",
+		"[d4 f4 a4]^\n?70",
+		"[d4 f4 a4]^ // chance\n ? 70",
+		"[d4 // octave shift\n ' f4 a4]^?70",
+	} {
+		t.Run(chord, func(t *testing.T) {
+			source := strings.Replace(chordSource, "[d4 f4 a4]^?70", chord, 1)
+			score, ds := notation.Parse([]byte(source))
+			if score == nil {
+				t.Fatalf("parse: %+v", ds)
+			}
+			p, ds := FromScore(score)
+			if p == nil {
+				t.Fatalf("compile: %+v", ds)
+			}
+			step := p.Patterns[0].Data[0]
+			if len(step.Notes) != 3 || !step.Accent || step.Probability != 70 {
+				t.Fatalf("lost chord semantics: %+v", step)
+			}
+		})
+	}
+}

@@ -13,7 +13,7 @@ async function check(asset, module, image) {
   const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   const messages = [];
   const context = vm.createContext({
-    sampleRate: 48000, performance, Date, ArrayBuffer, Uint8Array, Uint32Array, Float32Array, DataView, WebAssembly,
+    CICADA_CAPTURE: false, sampleRate: 48000, performance, Date, ArrayBuffer, Uint8Array, Uint32Array, Float32Array, DataView, WebAssembly,
     AudioWorkletProcessor: class {
       constructor() {
         this.port = port = { onmessage: null, postMessage(message) {

@@ -101,7 +101,7 @@ func TestLiveDiagnostics(t *testing.T) {
 			source := "cicada 2\ntrack bass acid {}\nlive {\n  " + tt.body + "\n}\npattern p { 1 }\nscene main { bass = p }\nsong { main }"
 			_, ds := Parse([]byte(source))
 			for _, d := range ds {
-				if d.Code == tt.code && d.Position == (Position{tt.line + 1, tt.col}) {
+				if d.Code == tt.code && d.Position == (Position{Line: tt.line + 1, Column: tt.col}) {
 					return
 				}
 			}
@@ -115,7 +115,7 @@ func TestLiveDiagnostics(t *testing.T) {
 		}
 		_, ds := Parse([]byte("cicada 2\ntrack bass acid {}\nlive {\n" + body.String() + "}\npattern p { 1 }\nscene main { bass = p }\nsong { main }"))
 		for _, d := range ds {
-			if d.Code == "CICADA-LIVE-LIMIT" && d.Position == (Position{20, 1}) {
+			if d.Code == "CICADA-LIVE-LIMIT" && d.Position == (Position{Line: 20, Column: 1}) {
 				return
 			}
 		}
@@ -124,7 +124,7 @@ func TestLiveDiagnostics(t *testing.T) {
 	t.Run("threshold limit", func(t *testing.T) {
 		_, ds := Parse([]byte("cicada 2\ntrack a acid {} track b acid {} track c acid {} track d acid {}\nlive { macro intensity = 0 layers intensity {\na >= 0.1\nb >= 0.2\nc >= 0.3\nd >= 0.4\n} }\npattern p { 1 } scene main { a = p } song { main }"))
 		for _, d := range ds {
-			if d.Code == "CICADA-LIVE-LIMIT" && d.Position == (Position{7, 6}) {
+			if d.Code == "CICADA-LIVE-LIMIT" && d.Position == (Position{Line: 7, Column: 6}) {
 				return
 			}
 		}
@@ -133,7 +133,7 @@ func TestLiveDiagnostics(t *testing.T) {
 	t.Run("duplicate block", func(t *testing.T) {
 		_, ds := Parse([]byte(strings.Replace(liveSource, "pattern p", "live {}\npattern p", 1)))
 		for _, d := range ds {
-			if d.Code == "CICADA-LIVE-BLOCK" && d.Position == (Position{17, 1}) {
+			if d.Code == "CICADA-LIVE-BLOCK" && d.Position == (Position{Line: 17, Column: 1}) {
 				return
 			}
 		}
@@ -142,7 +142,7 @@ func TestLiveDiagnostics(t *testing.T) {
 	t.Run("block before track", func(t *testing.T) {
 		_, ds := Parse([]byte(strings.Replace(liveSource, "track bass", "live {}\ntrack bass", 1)))
 		for _, d := range ds {
-			if d.Code == "CICADA-LIVE-BLOCK" && d.Position == (Position{3, 1}) {
+			if d.Code == "CICADA-LIVE-BLOCK" && d.Position == (Position{Line: 3, Column: 1}) {
 				return
 			}
 		}

@@ -1,12 +1,20 @@
-.PHONY: test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report
+.PHONY: build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics
 
 export GOWORK := off
 
 # Keep a TinyGo/Binaryen regression from consuming the full CI job budget.
 KERNEL_WASM_BUILD_TIMEOUT ?= 180s
 
+# Redirect measurements outside the checkout; see docs/manual/engine-metrics.md.
+ENGINE_METRICS_ARGS ?=
+
 test:
 	go test ./... -count=1
+	node --test cmd/cicada/studio-chord-grid.test.cjs
+	node host/web/chord_capability_test.cjs
+
+engine-metrics:
+	GOMAXPROCS=1 go run ./cmd/cicada-engine-metrics $(ENGINE_METRICS_ARGS)
 
 grammar:
 	go generate ./notation
@@ -57,7 +65,9 @@ build-loudness-wasm:
 	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-loudness.wasm ./cmd/cicada-loudness-wasm
 
 test-kernel-wasm: build-kernel-wasm build-loudness-wasm
+	CICADA_CHORD_WASM_PATH=$(CURDIR)/build/cicada-kernel.wasm go test -timeout=3m -tags chord_wasm ./cmd/cicada-kernel-wasm -count=1
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
+	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
 
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v
@@ -67,7 +77,7 @@ test-wasm: build-kernel-wasm
 
 test-browser: build-kernel-wasm
 	mkdir -p build
-	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|StudioFlow|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression)$$' 5m build/test-browser.log
 
 budget-size: build-kernel-wasm
 	bash -o pipefail -c "go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm host/web/processor.min.js | tee build/budget-size-report.txt"
@@ -93,3 +103,8 @@ build-phrase-wasm:
 
 test-phrase-wasm: build-phrase-wasm
 	go test -tags wasm_integration ./cmd/cicada-phrase-wasm -run '^TestPhraseWASMParity$$' -count=1
+
+# One source, two profiles: the core asset keeps its existing 5 KiB gate.
+build-worklets:
+	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=false --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor.min.js
+	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=true --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor-capture.min.js

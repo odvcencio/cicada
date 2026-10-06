@@ -5,6 +5,8 @@ import (
 	"io"
 	"math"
 	"strings"
+
+	"m31labs.dev/cicada/host/capture"
 )
 
 type studioAudioOptions struct {
@@ -36,28 +38,30 @@ type studioAudioInventory struct {
 }
 
 type studioAudioSnapshot struct {
-	Backend            string  `json:"backend"`
-	BackendName        string  `json:"backendName"`
-	Host               string  `json:"host,omitempty"`
-	InputName          string  `json:"inputName,omitempty"`
-	OutputName         string  `json:"outputName,omitempty"`
-	InputChannels      int     `json:"inputChannels"`
-	OutputChannels     int     `json:"outputChannels"`
-	SampleRate         int     `json:"sampleRate"`
-	PeriodFrames       int     `json:"periodFrames"`
-	InputLatencyMS     float64 `json:"inputLatencyMs"`
-	OutputLatencyMS    float64 `json:"outputLatencyMs"`
-	InputLatencyKnown  bool    `json:"inputLatencyKnown"`
-	OutputLatencyKnown bool    `json:"outputLatencyKnown"`
-	InputPeakL         float32 `json:"inputPeakL"`
-	InputPeakR         float32 `json:"inputPeakR"`
-	OutputPeakL        float32 `json:"outputPeakL"`
-	OutputPeakR        float32 `json:"outputPeakR"`
-	Dropouts           uint64  `json:"dropouts"`
-	Late               uint64  `json:"late"`
-	Callbacks          uint64  `json:"callbacks"`
-	CallbackMaxUS      float64 `json:"callbackMaxUs"`
-	Error              string  `json:"error,omitempty"`
+	Backend            string            `json:"backend"`
+	BackendName        string            `json:"backendName"`
+	Host               string            `json:"host,omitempty"`
+	InputName          string            `json:"inputName,omitempty"`
+	OutputName         string            `json:"outputName,omitempty"`
+	InputChannels      int               `json:"inputChannels"`
+	OutputChannels     int               `json:"outputChannels"`
+	SampleRate         int               `json:"sampleRate"`
+	PeriodFrames       int               `json:"periodFrames"`
+	InputLatencyMS     float64           `json:"inputLatencyMs"`
+	OutputLatencyMS    float64           `json:"outputLatencyMs"`
+	InputLatencyKnown  bool              `json:"inputLatencyKnown"`
+	OutputLatencyKnown bool              `json:"outputLatencyKnown"`
+	InputPeakL         float32           `json:"inputPeakL"`
+	InputPeakR         float32           `json:"inputPeakR"`
+	OutputPeakL        float32           `json:"outputPeakL"`
+	OutputPeakR        float32           `json:"outputPeakR"`
+	Dropouts           uint64            `json:"dropouts"`
+	Late               uint64            `json:"late"`
+	Callbacks          uint64            `json:"callbacks"`
+	CallbackMaxUS      float64           `json:"callbackMaxUs"`
+	Error              string            `json:"error,omitempty"`
+	Armed              bool              `json:"armed"`
+	Capture            *capture.Snapshot `json:"capture,omitempty"`
 }
 
 type studioAudioState struct {
@@ -221,6 +225,9 @@ func (t *studioTransport) configureAudio(options studioAudioOptions) error {
 	if t.playing && routeChanged {
 		return fmt.Errorf("stop playback before changing audio devices")
 	}
+	if t.audio != nil && t.audio.Armed() && routeChanged {
+		return fmt.Errorf("disarm capture before changing audio devices")
+	}
 	t.audioOptions = options
 	if t.audio != nil {
 		t.audio.SetMonitor(studioMonitorOptions(options))
@@ -270,6 +277,11 @@ type studioAudioDevice interface {
 	Close() error
 	SetMonitor(studioAudioMonitor)
 	Snapshot() studioAudioSnapshot
+	Armed() bool
+	ArmCapture(*capture.Recorder) error
+	BeginCapture(capture.CountIn, capture.Calibration) error
+	DisarmCapture() error
+	SetSource(io.Reader)
 }
 
 func normalizeStudioAudioOptions(options studioAudioOptions) studioAudioOptions {
