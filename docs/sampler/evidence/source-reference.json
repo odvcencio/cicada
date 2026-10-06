@@ -1,0 +1,77 @@
+{
+  "reference": "licensed original recording decoded to 48 kHz stereo float32; selected root/layer; first 128 frames excluded; significant spectral bins and 10 ms envelope frames",
+  "metrics": [
+    {
+      "instrument": "grand",
+      "source_sha256": "eb5faca3331cd32f15f6a2302dba69b073a2ca600fed606bf456e60260d06e5b",
+      "source_url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Chordophones/Zithers/Grand%20Piano%2C%20Kawai/Sustains/GPiano_sus_C4_v3_rr1_Player.wav",
+      "frames_compared": 191872,
+      "source_relative_residual_db": -108.67847141039988,
+      "max_spectrum_error_db_above_minus60": 0.00021138406543463195,
+      "max_10ms_envelope_error_db_above_minus40": 4.4133361561455884e-05,
+      "recorded_excerpt_tail_rms_dbfs": -57.10375890925143,
+      "source_dc_dbfs": -120.66958475063821,
+      "status": "pass"
+    },
+    {
+      "instrument": "nylon",
+      "source_sha256": "e8fcd63c262ebef3e84d1f24242918cc578f8b0db54049ad109815b01d1226f0",
+      "source_url": "https://raw.githubusercontent.com/freepats/spanish-classical-guitar/6f4eb1b092acc88f5448cea1a0001bd07b971af8/samples/C4.flac",
+      "frames_compared": 115929,
+      "source_relative_residual_db": -122.80048259301569,
+      "max_spectrum_error_db_above_minus60": 0.004034367272624603,
+      "max_10ms_envelope_error_db_above_minus40": 5.003946443318543e-05,
+      "recorded_excerpt_tail_rms_dbfs": -75.25211383903198,
+      "source_dc_dbfs": -87.13538389118405,
+      "status": "pass"
+    },
+    {
+      "instrument": "bass",
+      "source_sha256": "0f73a2f48a9b4130ee0e161af1f1f49f3abf116a03f11f4049849a32fad64b71",
+      "source_url": "https://raw.githubusercontent.com/sfzinstruments/karoryfer.black-and-blue-basses/6e7d674cdb41be7a54dbccb15472401ad01099b9/Samples/darkblack/reg/darkblack_g2_mf_rr1.wav",
+      "frames_compared": 191872,
+      "source_relative_residual_db": -122.54097341023294,
+      "max_spectrum_error_db_above_minus60": 0.004439314193118898,
+      "max_10ms_envelope_error_db_above_minus40": 8.642634864920891e-05,
+      "recorded_excerpt_tail_rms_dbfs": -28.958699199633706,
+      "source_dc_dbfs": -90.31867654741093,
+      "status": "pass"
+    },
+    {
+      "instrument": "kit",
+      "source_sha256": "6ec8445cb207df8f1178d8c3894f47969fd53fb2b81c404317e466de4598dc3e",
+      "source_url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Membranophones/Struck%20Membranophones/Snare%20Drum%2C%20Modern%201/Snare2_HitSN_v5_rr1_Mid.wav",
+      "frames_compared": 65302,
+      "source_relative_residual_db": -152.12676391468227,
+      "max_spectrum_error_db_above_minus60": 1.0203283785068585e-05,
+      "max_10ms_envelope_error_db_above_minus40": 3.116524494148938e-08,
+      "recorded_excerpt_tail_rms_dbfs": -70.25659114337569,
+      "source_dc_dbfs": -106.99253065162723,
+      "status": "pass"
+    },
+    {
+      "instrument": "violin",
+      "source_sha256": "4169605b51a72454f11bc2c34efc66c1d9993fd2b7d5f097a025ef9d3a2dbdfa",
+      "source_url": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/440300901dfe9275fd84e0b7763af1f8443ae62e/Strings/Solo%20Violin/Arco%20Vib/LLVln_ArcoVib_C4_f.wav",
+      "frames_compared": 134272,
+      "source_relative_residual_db": -123.5241482614863,
+      "max_spectrum_error_db_above_minus60": 0.00010251045528770233,
+      "max_10ms_envelope_error_db_above_minus40": 3.340201631705679e-06,
+      "recorded_excerpt_tail_rms_dbfs": -19.800891590974768,
+      "source_dc_dbfs": -110.68862706684568,
+      "status": "pass"
+    },
+    {
+      "instrument": "trumpet",
+      "source_sha256": "c931621fae92e22cc73ee43924c0d30ee629764bb37c30cc427b59411198461d",
+      "source_url": "https://raw.githubusercontent.com/sgossner/VSCO-2-CE/440300901dfe9275fd84e0b7763af1f8443ae62e/Brass/Trumpet/sus/Sum_SHTrumpet_sus_A%233_v3_rr1.wav",
+      "frames_compared": 134272,
+      "source_relative_residual_db": -125.30542109065088,
+      "max_spectrum_error_db_above_minus60": 0.00011691909205488297,
+      "max_10ms_envelope_error_db_above_minus40": 7.426520586189266e-07,
+      "recorded_excerpt_tail_rms_dbfs": -17.947359375807626,
+      "source_dc_dbfs": -97.90995745589386,
+      "status": "pass"
+    }
+  ]
+}

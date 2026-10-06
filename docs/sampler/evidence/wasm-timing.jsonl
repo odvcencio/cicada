@@ -1,0 +1,8 @@
+{"runtime":"V8 14.6.202.34-node.28","rate":48000,"block":128,"voices":1,"layers":1,"ratio":1,"p50_us":2.9339999999820066,"p99_us":14.560000000017226,"ns_sample_voice":22.921874999859426,"memory_growth_bytes":0}
+{"runtime":"V8 14.6.202.34-node.28","rate":48000,"block":128,"voices":1,"layers":2,"ratio":1,"p50_us":4.129000000034466,"p99_us":5.650000000002819,"ns_sample_voice":32.25781250026927,"memory_growth_bytes":0}
+{"runtime":"V8 14.6.202.34-node.28","rate":48000,"block":128,"voices":8,"layers":1,"ratio":1,"p50_us":21.948000000065804,"p99_us":48.02500000005239,"ns_sample_voice":21.43359375006426,"memory_growth_bytes":0}
+{"runtime":"V8 14.6.202.34-node.28","rate":48000,"block":128,"voices":8,"layers":2,"ratio":1,"p50_us":37.824000000000524,"p99_us":100.11999999983345,"ns_sample_voice":36.93750000000051,"memory_growth_bytes":0}
+{"runtime":"V8 14.6.202.34-node.28","rate":48000,"block":128,"voices":1,"layers":1,"ratio":1.5,"p50_us":15.640999999959604,"p99_us":51.39000000008309,"ns_sample_voice":122.1953124996844,"memory_growth_bytes":0}
+{"runtime":"V8 14.6.202.34-node.28","rate":48000,"block":128,"voices":1,"layers":2,"ratio":1.5,"p50_us":29.89800000023024,"p99_us":97.14000000030865,"ns_sample_voice":233.57812500179875,"memory_growth_bytes":0}
+{"runtime":"V8 14.6.202.34-node.28","rate":48000,"block":128,"voices":8,"layers":1,"ratio":1.5,"p50_us":125.54799999998068,"p99_us":254.8199999996541,"ns_sample_voice":122.60546874998113,"memory_growth_bytes":0}
+{"runtime":"V8 14.6.202.34-node.28","rate":48000,"block":128,"voices":8,"layers":2,"ratio":1.5,"p50_us":244.818000000123,"p99_us":487.8280000002633,"ns_sample_voice":239.0800781251201,"memory_growth_bytes":0}
