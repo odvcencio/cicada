@@ -194,7 +194,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		default:
 			if kit, ok := kits[track.Kind]; ok {
 				config.Kind = engine.VoiceDrums
-				bindings, err := CompileKitAtSampleRate(kit, programs, sampleRate)
+				bindings, err := CompileKitTrackAtSampleRate(kit, programs, track.Params, sampleRate)
 				if err != nil {
 					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 				}

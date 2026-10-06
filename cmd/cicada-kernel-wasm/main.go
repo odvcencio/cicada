@@ -40,7 +40,7 @@ func allocationCount() uint64 {
 
 //go:wasmexport gosx_audio_capabilities
 func capabilities() uint32 {
-	return kernelimage.CapabilityChords | uint32(kernelimage.DelayCapability|kernelimage.PianoCapability|kernelimage.PMCapability|kernelimage.NeuralAmpCapability)
+	return kernelimage.CapabilityChords | uint32(kernelimage.SupportedCapabilities)
 }
 
 // Allocation telemetry is queried by hosts outside the render callback.
@@ -261,4 +261,4 @@ func messageDrain() int32 {
 func main() {}
 
 //go:wasmexport gosx_audio_capabilities
-func capabilities() uint32 { return uint32(kernelimage.ModalCapability) }
+func capabilities() uint32 { return uint32(kernelimage.SupportedCapabilities) }

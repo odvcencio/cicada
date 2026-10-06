@@ -203,13 +203,28 @@ song { main }
 
 **Status:** Implemented.
 
-**Syntax (EBNF):** `kit_decl` contains `kit_binding` entries. A target is an instrument name or `builtin.<lane>`.
+**Syntax (EBNF):** `kit_decl` contains `kit_binding` entries. A target is an instrument name, `builtin.<lane>`, or `model.<piece>`.
 
-**Meaning:** A kit maps drum lanes to compiled mono instruments or built-in drum recipes. An unbound lane is silent.
+**Meaning:** A kit maps drum lanes to compiled mono instruments, built-in drum recipes, or modeled acoustic kit pieces. An unbound lane is silent. Modeled pieces synthesize each strike internally, without recordings or external assets.
 
 **Types and units:** Lane names are `bd`, `sd`, `ch`, `oh`, `cp`, `rs`, `lt`, `mt`, `ht`, `cb`, and `cy`. Each instrument binding receives that lane's trigger pitch and hit velocity.
 
 **Defaults:** There are no implicit authored bindings.
+
+Modeled piece names are `kick`, `snare`, `rimshot`, `cross_stick`, `tom_low`, `tom_mid`, `tom_high`, `hat_closed`, `hat_pedal`, `hat_half_open`, `hat_open`, `ride_bow`, `ride_bell`, `crash`, and `splash`. Any source lane may select any piece. Within a kit, a hi-hat strike chokes the other hi-hat pieces, even when mapped to different source lanes.
+
+For a modeled lane, its source lane prefix selects the following track controls. For example, `bd_tune = 0.9` tunes the piece assigned to `bd`. Built-in and instrument bindings retain their existing parameter rules.
+
+| Track control | Unit | Range | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `<lane>_tune` | unitless | 0.5–2 | 1 | Resonant frequency multiplier |
+| `<lane>_decay` | unitless | 0.25–2 | 1 | Natural decay multiplier |
+| `<lane>_position` | unitless | 0–1 | 0.35 | Strike position from center to edge |
+| `<lane>_humanize` | unitless | 0–0.1 | 0.015 | Bounded timbre, strength, and pitch variation |
+| `<lane>_level` | dB | −60–+6 | −6 | Piece level |
+| `<lane>_pan` | unitless | −1–1 | 0 | Piece pan |
+
+Modeled synthesis controls are prepared with the track. Scene settings may change piece level and pan; synthesis changes require a different configured track. Humanization does not move scheduled event times. Keep interacting hi-hat pieces in the same kit, because separate tracks have separate choke groups.
 
 **Errors:** Unknown lanes or instrument targets report `CICADA-REFERENCE`; duplicate lane bindings report `CICADA-DUPLICATE`.
 

@@ -14,10 +14,18 @@ import (
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
 	"m31labs.dev/cicada/kernel/voice/modal"
+	"m31labs.dev/cicada/kernel/voice/modeledkit"
 )
 
 // ModalCapability requires the four-strike modeled percussion voice.
 const ModalCapability uint16 = 1 << 6
+
+// ModeledKitCapability opts version 13 images into modeled kit lane bindings.
+const ModeledKitCapability uint16 = 1 << 8
+
+const Capabilities = ModalCapability | ModeledKitCapability
+
+const SupportedCapabilities = DelayCapability | PianoCapability | NeuralAmpCapability | PMCapability | Capabilities
 
 const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15 // experimental guitar; version 14 belongs to chord/schedule lanes
@@ -193,6 +201,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		if cfg.Track[track].Kind == engine.VoiceModal {
 			capabilities |= ModalCapability
 		}
+		if kit := cfg.Track[track].Kit; cfg.Track[track].Kind == engine.VoiceDrums && kit != nil {
+			for _, binding := range kit {
+				if binding.Kind == engine.KitLaneModeled {
+					capabilities |= ModeledKitCapability
+				}
+			}
+		}
 	}
 	w.u16(capabilities)
 	if cfg.DelayA == nil {
@@ -337,6 +352,17 @@ func Encode(cfg engine.Config) ([]byte, error) {
 						if err := writeGraph(&w, binding.Program); err != nil {
 							return nil, err
 						}
+					case engine.KitLaneModeled:
+						if err := validateModeledBinding(binding); err != nil {
+							return nil, err
+						}
+						w.byte(byte(binding.Model))
+						w.f64(binding.ModelParams.Tune)
+						w.f64(binding.ModelParams.Decay)
+						w.f64(binding.ModelParams.Position)
+						w.f64(binding.ModelParams.Humanize)
+						w.f64(binding.ModelLevelDB)
+						w.f64(binding.ModelPan)
 					default:
 						return nil, Error("invalid kit lane kind")
 					}
@@ -476,7 +502,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|PMCapability|NeuralAmpCapability|ModalCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|PMCapability|NeuralAmpCapability|ModalCapability|ModeledKitCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -742,6 +768,23 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						binding.Recipe = drum.Lane(recipe)
 					case engine.KitLaneGraph:
 						if binding.Program, err = readGraph(&r, version, reserved); err != nil {
+							return err
+						}
+					case engine.KitLaneModeled:
+						if reserved&ModeledKitCapability == 0 {
+							return Error("modeled kit image requires capability")
+						}
+						profile, err := r.byte()
+						if err != nil {
+							return err
+						}
+						binding.Model = modeledkit.Profile(profile)
+						for _, value := range []*float64{&binding.ModelParams.Tune, &binding.ModelParams.Decay, &binding.ModelParams.Position, &binding.ModelParams.Humanize, &binding.ModelLevelDB, &binding.ModelPan} {
+							if *value, err = r.f64(); err != nil {
+								return err
+							}
+						}
+						if err := validateModeledBinding(*binding); err != nil {
 							return err
 						}
 					default:
@@ -1084,4 +1127,19 @@ func readDrum(r *reader) (drum.Params, error) {
 	}
 	p.Metal = metal == 1
 	return p, nil
+}
+
+func validateModeledBinding(binding engine.KitLaneBinding) error {
+	if binding.Model >= modeledkit.ProfileCount {
+		return Error("invalid modeled kit profile")
+	}
+	if err := binding.ModelParams.Validate(); err != nil {
+		return err
+	}
+	if math.IsNaN(binding.ModelLevelDB) || math.IsInf(binding.ModelLevelDB, 0) ||
+		(binding.ModelLevelDB != -1000 && binding.ModelLevelDB < -60) || binding.ModelLevelDB > 6 ||
+		math.IsNaN(binding.ModelPan) || math.IsInf(binding.ModelPan, 0) || binding.ModelPan < -1 || binding.ModelPan > 1 {
+		return Error("invalid modeled kit mixer controls")
+	}
+	return nil
 }

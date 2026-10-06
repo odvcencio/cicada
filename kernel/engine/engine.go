@@ -14,6 +14,7 @@ import (
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
 	"m31labs.dev/cicada/kernel/voice/modal"
+	"m31labs.dev/cicada/kernel/voice/modeledkit"
 	"m31labs.dev/cicada/kernel/voice/piano"
 )
 
@@ -39,14 +40,19 @@ const (
 	KitLaneOff KitLaneKind = iota
 	KitLaneBuiltin
 	KitLaneGraph
+	KitLaneModeled
 )
 
 // KitLaneBinding selects one voice for a named drum source lane. Zero means
 // the lane is omitted and silent. Programs are compiled before Engine.New.
 type KitLaneBinding struct {
-	Kind    KitLaneKind
-	Recipe  drum.Lane
-	Program graph.Program
+	Kind         KitLaneKind
+	Recipe       drum.Lane
+	Program      graph.Program
+	Model        modeledkit.Profile `json:",omitempty"`
+	ModelParams  modeledkit.Params  `json:",omitzero"`
+	ModelLevelDB float64            `json:",omitempty"`
+	ModelPan     float64            `json:",omitempty"`
 }
 
 type TrackConfig struct {
@@ -472,6 +478,8 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 							err = v.drums.SetRecipe(lane, binding.Recipe)
 						case KitLaneGraph:
 							err = v.drums.SetGraph(lane, binding.Program)
+						case KitLaneModeled:
+							err = v.drums.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
 						default:
 							return 0, Error("unknown kit lane kind")
 						}

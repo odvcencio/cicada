@@ -497,7 +497,12 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		for _, setting := range source.Settings {
 			resolved, resolveErr := ResolveParameterPath(p, setting.Path)
 			if resolveErr != nil {
-				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-REFERENCE", Severity: "error", Message: resolveErr.Error(), Position: setting.Position})
+				code := "CICADA-REFERENCE"
+				var pathErr *PathError
+				if errors.As(resolveErr, &pathErr) {
+					code = pathErr.Code
+				}
+				return nil, append(diagnostics, notation.Diagnostic{Code: code, Severity: "error", Message: resolveErr.Error(), Position: setting.Position})
 			}
 			value, err := parseParameterValue(resolved.Descriptor, setting.Value)
 			if err != nil {
