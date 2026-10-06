@@ -16,11 +16,12 @@ const quantize = (name, phrase) => {
 
 /** Encode one fixed, little-endian 24-byte command. Tick uses bigint. */
 export function encodeCommand(c) {
-  uint(c.Op, 24, 'opcode');
+  uint(c.Op, 28, 'opcode');
   if (c.Op === 0) throw new RangeError('Invalid opcode');
   uint(c.Track, 255, 'track'); uint(c.Index ?? 0, 65535, 'index');
   uint(c.Arg0 ?? 0, 0xffffffff, 'arg0'); uint(c.Arg1 ?? 0, 0xffffffff, 'arg1');
-  if (c.Pad) throw new RangeError('Nonzero padding');
+  uint(c.Pad ?? 0, 0xffffffff, 'pad');
+  if (c.Pad && (c.Op < 25 || c.Op > 28)) throw new RangeError('Nonzero padding');
   const tick = BigInt(c.Tick ?? 0);
   if (typeof c.Tick === 'number' && !Number.isSafeInteger(c.Tick)) throw new RangeError('Unsafe tick');
   if (tick < 0n || tick > 0x7fffffffffffffffn) throw new RangeError('Invalid tick');
@@ -28,6 +29,7 @@ export function encodeCommand(c) {
   view.setUint8(0, c.Op); view.setUint8(1, c.Track);
   view.setUint16(2, c.Index ?? 0, true);
   view.setUint32(4, c.Arg0 ?? 0, true); view.setUint32(8, c.Arg1 ?? 0, true);
+  view.setUint32(12, c.Pad ?? 0, true);
   view.setBigInt64(16, tick, true);
   return bytes;
 }
@@ -110,4 +112,39 @@ export class GameDirector {
   }
   get state() { return this.#state; }
   get layerMask() { return this.#layers; }
+}
+
+/** Command capability returned by gosx_audio_capabilities and worklet ready. */
+export const CapabilitySpatial = 1 << 17;
+
+/** Track and listener control. Host-side encoding may allocate; Render does not. */
+export class SpatialAudio {
+  #send; #tracks;
+  constructor(send, tracks, capabilities) {
+    if (typeof send !== 'function') throw new TypeError('Spatial audio requires a command sender');
+    uint(tracks, 16, 'track count');
+    if (!tracks) throw new RangeError('Invalid track count');
+    uint(capabilities, 0xffffffff, 'capabilities');
+    if (!(capabilities & CapabilitySpatial)) throw new RangeError('Unsupported spatial commands');
+    this.#send = send; this.#tracks = tracks;
+  }
+  #vector(Op, Track, Index, x, y, z, tick) {
+    const limit = Op === 28 ? 2 * Math.PI : 10000;
+    const words = new Uint32Array(3), floats = new Float32Array(words.buffer);
+    for (const [i, value] of [x, y, z].entries()) {
+      if (!Number.isFinite(value) || Math.abs(value) > limit) throw new RangeError('Spatial coordinate is out of range');
+      floats[i] = value;
+    }
+    this.#send(encodeCommand({ Op, Track, Index, Arg0: words[0], Arg1: words[1], Pad: words[2], Tick: tick }));
+  }
+  trackPosition(track, x, y, z, tick = 0n) {
+    uint(track, this.#tracks - 1, 'track');
+    this.#vector(26, track, 1, x, y, z, tick);
+  }
+  trackStereo(track, tick = 0n) {
+    uint(track, this.#tracks - 1, 'track');
+    this.#send(encodeCommand({ Op: 26, Track: track, Tick: tick }));
+  }
+  listenerPosition(x, y, z, tick = 0n) { this.#vector(27, 255, 0, x, y, z, tick); }
+  listenerRotation(yaw, pitch, roll, tick = 0n) { this.#vector(28, 255, 0, yaw, pitch, roll, tick); }
 }
