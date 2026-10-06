@@ -82,12 +82,12 @@ func scoreVoices(p *project.Project) []viewVoice {
 	for _, builtin := range builtins {
 		voice := viewVoice{ID: builtin, Kind: "built-in", Mode: "native", Description: "Native Cicada voice"}
 		if builtin == "guitar" {
-			voice.Description = "Experimental physical model and amp; no listening acceptance"
+			voice.Description = "Experimental physical model and amp"
 		}
 		if _, ok := modal.ParseTrackKind(builtin); ok {
 			voice.Mode = "four-strike"
 			voice.Octave = "4"
-			voice.Description = "Candidate modal percussion; listening acceptance pending"
+			voice.Description = "Analytic modal percussion"
 		}
 		for _, track := range p.Tracks {
 			if track.Kind != builtin {

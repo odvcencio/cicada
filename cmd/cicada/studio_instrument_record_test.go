@@ -18,7 +18,7 @@ func instrumentUpload(t *testing.T, handler http.Handler, data []byte, origin st
 	t.Helper()
 	var body bytes.Buffer
 	form := multipart.NewWriter(&body)
-	for key, value := range map[string]string{"name": "pencil", "root": "60", "layers": "3", "autoPitch": "false"} {
+	for key, value := range map[string]string{"name": "recorded", "root": "60", "layers": "3", "autoPitch": "false"} {
 		if err := form.WriteField(key, value); err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func instrumentUpload(t *testing.T, handler http.Handler, data []byte, origin st
 
 func TestStudioRecordedInstrument(t *testing.T) {
 	handler, path := studioTestHandler(t)
-	wav, err := os.ReadFile("../../host/recording/testdata/pencil-taps.wav")
+	wav, err := os.ReadFile("../../host/recording/testdata/taps.wav")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,9 +109,9 @@ func TestStudioRecordedInstrument(t *testing.T) {
 }
 
 func TestOfflineRecordPack(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "pencil")
+	dir := filepath.Join(t.TempDir(), "recorded")
 	var output bytes.Buffer
-	if err := recordPackCommand([]string{"-o", dir, "--name", "pencil", "--auto-pitch=false", "../../host/recording/testdata/pencil-taps.wav"}, &output); err != nil {
+	if err := recordPackCommand([]string{"-o", dir, "--name", "recorded", "--auto-pitch=false", "../../host/recording/testdata/taps.wav"}, &output); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "15 hits") || !strings.Contains(output.String(), "sha256 =") {
@@ -120,7 +120,7 @@ func TestOfflineRecordPack(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(dir, "manifest.json")); err != nil {
 		t.Fatal(err)
 	}
-	if err := recordPackCommand([]string{"-o", dir, "--layers", "0", "../../host/recording/testdata/pencil-taps.wav"}, &output); err == nil {
+	if err := recordPackCommand([]string{"-o", dir, "--layers", "0", "../../host/recording/testdata/taps.wav"}, &output); err == nil {
 		t.Fatal("invalid layers accepted")
 	}
 }

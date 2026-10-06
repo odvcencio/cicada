@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { GameDirector, encodeCommand, decodeMessages, workletSender } from './index.js';
+import { GameDirector, encodeCommand, decodeMessages, workletSender, SpatialAudio, CapabilitySpatial } from './index.js';
 const surface = {
  version: 1, sample_rate: 48000, tracks: 3, land: 'bar', phrase_bars: 8,
  macros: [{ name: 'intensity', id: 0, smooth_frames: 19200 }],
@@ -36,4 +36,20 @@ test('manifest ownership and invalid mappings', () => {
  for (const change of [s => s.states.push(s.states[0]), s => s.stingers[0].track = 4, s => s.transitions[0].from = 'missing', s => s.phrase_bars = 0, s => s.sample_rate = 123]) {
   const bad = structuredClone(surface); change(bad); assert.throws(() => new GameDirector(bad, () => {}));
  }
+});
+
+test('spatial commands retain all three coordinates and reject unsupported kernels', () => {
+ const records = [], spatial = new SpatialAudio(c => records.push(c), 2, CapabilitySpatial);
+ const tick = (1n << 54n) + 7n;
+ spatial.trackPosition(1, .125, -.25, .5, tick);
+ let view = new DataView(records.at(-1).buffer);
+ assert.equal(view.getUint8(0), 26); assert.equal(view.getUint8(1), 1); assert.equal(view.getUint16(2, true), 1);
+ assert.equal(view.getFloat32(4, true), .125); assert.equal(view.getFloat32(8, true), -.25); assert.equal(view.getFloat32(12, true), .5);
+ assert.equal(view.getBigInt64(16, true), tick);
+ spatial.listenerRotation(.25, -.5, .75); view = new DataView(records.at(-1).buffer);
+ assert.equal(view.getUint8(0), 28); assert.equal(view.getUint8(1), 255); assert.equal(view.getFloat32(12, true), .75);
+ spatial.listenerPosition(1, 2, 3); spatial.trackStereo(0);
+ assert.equal(new DataView(records.at(-1).buffer).getUint32(12, true), 0);
+ assert.throws(() => new SpatialAudio(() => {}, 2, 0), /Unsupported spatial/);
+ for (const call of [() => spatial.trackPosition(2, 0, 0, 0), () => spatial.trackPosition(0, NaN, 0, 0), () => spatial.listenerPosition(0, 10001, 0), () => spatial.listenerRotation(0, 0, 7), () => spatial.trackStereo(0, -1n)]) assert.throws(call);
 });

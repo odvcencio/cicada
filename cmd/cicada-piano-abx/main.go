@@ -303,5 +303,5 @@ or reverb is added. Some trials include natural decays and pedal release.
 Organizers: distribute this directory without organizer/. Collect responses
 before revealing identities. Use independent response sheets for each listener.
 These files establish a comparison protocol; they do not establish that the
-instruments sound equivalent or meet a ten-listener acceptance threshold.
+instruments sound equivalent; that requires listening judgments.
 `

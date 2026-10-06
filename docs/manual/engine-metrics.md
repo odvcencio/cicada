@@ -1,4 +1,4 @@
-# Engine scaling measurements
+# Measure engine performance
 
 Run `make engine-metrics` to print `METRIC MACHINE`, `METRIC CPU`, and
 `METRIC OFFLINE` lines. Redirect the output to a file outside the checkout.
@@ -14,7 +14,6 @@ Tracks use a fixed -24 dB level; drive uses soft shape, 9 dB gain, 9 kHz tone,
 and 0.7 mix; sends use 0.3 delay and 0.35 reverb. Returns are absent in the
 rows without sends. The two scenes alternate patterns without changing tempo.
 
-Main does not integrate samplers into `Engine.Render` or `render.WAV`.
 `path=sampler_standalone` measures one looping sample voice per track with
 the existing drive, returns, gain/pan, and limiter. It excludes engine
 sequencing, transport, meters, and smoothers. Its scene variant retriggers
@@ -46,9 +45,7 @@ and GC. It uses the same scores, rates, and block sizes, with two bars by
 default. Its p99 is across complete calls; with three runs it is the slowest
 call, not a callback tail estimate. `ns_block` divides that whole-call time
 by the equivalent output block count; it is not a measured block percentile.
-`allocs_run`/`bytes_run` include setup and event sorting. Main's full offline
-renderer allocates; this harness does not impose a zero-allocation gate on
-that existing behavior. The offline DSP loop is checked separately in tests.
+`allocs_run`/`bytes_run` include setup and event sorting. The offline renderer allocates during setup; these measurements include that cost. The offline DSP loop is checked separately in tests.
 
 To select a subset or increase the observation count:
 
@@ -60,39 +57,3 @@ make engine-metrics ENGINE_METRICS_ARGS='-filter kind=graph,tracks=16 -offline=f
 `-filter` requires every comma-separated substring to occur in the scenario
 key. Use `tracks=1 ` with a trailing space to select one track without also
 matching 16. Use `-bars` for offline duration and `-warmup` for native warmup.
-
-## Compare two builds
-
-Build the same harness source against each engine revision in separate clean
-worktrees, with the same Go version and flags. If a revision predates this
-command, copy only `cmd/cicada-engine-metrics` into that disposable worktree.
-Build binaries before measuring, so compilation does not affect the runs.
-
-```sh
-GOWORK=off go build -o /tmp/engine-before ./cmd/cicada-engine-metrics
-# In the comparison worktree:
-GOWORK=off go build -o /tmp/engine-after ./cmd/cicada-engine-metrics
-/tmp/engine-before -blocks 4096 -runs 5 > /tmp/engine-before.metrics
-/tmp/engine-after -blocks 4096 -runs 5 > /tmp/engine-after.metrics
-```
-
-Run the binaries sequentially on the same idle machine, preferably under
-your local measurement lock and with identical CPU affinity. Alternate
-before/after order when repeating to expose thermal or background-load bias.
-Keep the machine line, source revisions, command, and affinity with the
-results. Match CPU rows by path, kind, tracks, rate, block, drive, sends, and
-scene variant; compare p50, p99, and normalized cost. Match offline rows by
-the same key and compare full-call time and allocations. Report percent
-change as `100 * (after / before - 1)`; compare slopes across track counts
-as well as individual rows. Do not treat sampler comparator timings as
-engine timings or full-call offline timings as callback latency.
-
-Run `GOWORK=off go test ./cmd/cicada-engine-metrics` for fixture, allocation,
-and native/offline PCM checks. After `make build-kernel-wasm`, run
-the following for native/WASM/offline parity at the existing 1e-6 tolerance:
-
-```sh
-GOWORK=off go test -tags wasm_integration ./cmd/cicada-engine-metrics -run '^TestSyntheticWASMParity$' -timeout 20m
-```
-
-These checks do not modify goldens or budgets.

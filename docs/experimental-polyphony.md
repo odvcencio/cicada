@@ -36,7 +36,7 @@ song { verse }
   mono graph reset behavior is unchanged
 - A chord stays one mixer track and one track stem. Legacy direct live `NoteOn`
   and `NoteOff` on poly tracks are rejected with fault20 and a handle-aware-command
-  explanation. This candidate does not add polyphonic keyboard/MIDI-input editing
+  explanation. Polyphonic keyboard/MIDI-input editing is not supported
 - Graph accent metadata is shared. As with legacy graph instruments, a graph
   author controls dynamics through the `velocity` input; there is no separate
   graph `accent` input. MIDI export maps accent to velocity127
@@ -57,9 +57,7 @@ development-v14 dialects are rejected; recompile project source. Older
 readers reject the new image version; the worklet checks capability before
 allocation/upload and rejects unsupported kernels explicitly.
 The host must call the reactor's `_initialize()` before querying capability;
-TinyGo exports trap if called before runtime initialization. Both worklet
-assets have actual-reactor tests requiring a freshly built version15-capable module.
-
+TinyGo exports trap if called before runtime initialization.
 The WASM export `gosx_audio_capabilities()` retains bit0 (`1`) for
 `OpSetChordStep` (appended opcode22). Bit16 (`65536`) independently negotiates the
 [unified v15 image layout](spec/kernel-image-v15.md); bit0 alone never authorizes
@@ -89,6 +87,5 @@ including later scenes and pending gates.
 Inherited mono probability behavior remains untouched. In particular, MIDI
 export deliberately uses iteration0 on repeated pattern steps. Thus realized
 MIDI chance events can differ from playback: the regression with seed7 and a
-one-step `[d4 f4]?50` yields 10 audio cohorts and 16 MIDI cohorts in one bar. This
-is a separately recorded interchange limitation, not chance-event parity.
-The existing mono offline slot0 hashing limitation is also not changed here.
+one-step `[d4 f4]?50` yields 10 audio cohorts and 16 MIDI cohorts in one bar. MIDI chance realization can therefore differ from audio playback.
+Mono offline rendering also retains its slot0 hashing limitation.

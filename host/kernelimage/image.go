@@ -28,7 +28,7 @@ const Capabilities = ModalCapability | ModeledKitCapability
 const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | GridCapability | ChainCapability | Capabilities
 
 const MaxImageBytes = 2 << 20
-const guitarImageVersion = 15  // experimental guitar; version 14 belongs to chord/schedule lanes
+const guitarImageVersion = 15  // experimental guitar in the unified image layout
 const UnifiedImageVersion = 15 // unified chords, schedules, guitar and resident audio
 const ChordImageVersion = UnifiedImageVersion
 const qualityImageVersion = 14 // internal graph decoder only; complete image14 is rejected
