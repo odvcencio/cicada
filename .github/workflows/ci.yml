@@ -320,7 +320,7 @@ jobs:
           tinygo version
           node --version
       - name: M2 parity, browser, and budgets
-        run: make test-wasm test-chord-wasm test-browser budget-size budget-browser
+        run: make test-wasm test-chord-wasm test-browser test-demo-browser budget-size budget-browser
       - name: Save M2 gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
@@ -336,11 +336,12 @@ jobs:
             build/budget-browser.log
             build/browser-cpu-report.json
             build/m2-browser-chrome.log
+            build/demo-evidence/
 
   m2-soak:
     name: M2 AudioWorklet nightly soak
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 55
     env:
       GOWORK: off
@@ -386,5 +387,7 @@ jobs:
           path: |
             build/browser-soak.log
             build/browser-soak-report.json
+            build/demo-soak-report.json
+            build/demo-evidence/
             build/browser-cpu-report.json
             build/m2-browser-chrome.log

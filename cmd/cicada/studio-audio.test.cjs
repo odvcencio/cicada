@@ -96,6 +96,18 @@ test('browser mode routes live notes and controls locally through the audio faca
   assert.equal(calls.length,5);assert.deepEqual(FakeSocket.instances[0].sent,[]);audio.close();
 });
 
+test('browser registry discovery precedes the live input adapter', async () => {
+  const requests=[];
+  const catalog={revision:'score',params:[]};
+  const root={document:{getElementById:()=>({value:'browser',addEventListener(){}})}};
+  const audio=createCicadaAudio({window:root,fetch:async url=>{requests.push(url);return {ok:true,json:async()=>catalog};}});
+  assert.deepEqual(await audio.params(),catalog);
+  assert.deepEqual(requests,['/api/params']);
+  assert.throws(()=>audio.noteOn('bass',48,100),/validated|qualified/);
+  assert.throws(()=>audio.setParam('bass.cutoff',1200),/validated|qualified/);
+  audio.close();
+});
+
 test('normal panic releases native owners; explicit silence discards native playback separately',async()=>{
  FakeSocket.instances.length=0;const requests=[];
  const root={WebSocket:FakeSocket,location:{protocol:'http:',host:'localhost'},document:{body:{dataset:{revision:'current'}},getElementById(){return null;}}};
