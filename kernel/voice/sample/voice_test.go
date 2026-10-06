@@ -6,6 +6,23 @@ import (
 	"testing"
 )
 
+func TestSampleRejectsOverflowingCrossfade(t *testing.T) {
+	r := testRegion(512, false, true)
+	for _, crossfade := range []int{257, 1 << 30, int(^uint(0) >> 1)} {
+		r.Crossfade = crossfade
+		if err := r.Validate(); err == nil {
+			t.Fatalf("accepted crossfade %d", crossfade)
+		}
+		if _, err := New(48000, r); err == nil {
+			t.Fatalf("constructed crossfade %d", crossfade)
+		}
+	}
+	r.Crossfade = 256
+	if err := r.Validate(); err != nil {
+		t.Fatal("rejected half-loop crossfade:", err)
+	}
+}
+
 func testRegion(length int, stereo, loop bool) Region {
 	r := Region{Left: make([]float32, length), SampleRate: 48000, RootKey: 60, End: length, Loop: loop, LoopEnd: length}
 	if stereo {
