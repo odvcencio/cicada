@@ -8,7 +8,27 @@
       "assets": 84,
       "compressed_bytes": 79386196,
       "pcm_bytes": 155649208,
-      "license": "CC0-1.0"
+      "license": "CC0-1.0",
+      "tiers": {
+        "lossless": {
+          "assets": 84,
+          "compressed_bytes": 42736235,
+          "id": "grand",
+          "license": "CC0-1.0",
+          "manifest": "tiers/lossless/grand/manifest.json",
+          "pcm_bytes": 155649208,
+          "sha256": "8577593c6b79fe6b2fa648ef9b9b55203b378ef7b819d66d1eb0ba95c3d893a9"
+        },
+        "hq16": {
+          "assets": 84,
+          "compressed_bytes": 23470297,
+          "id": "grand",
+          "license": "CC0-1.0",
+          "manifest": "tiers/hq16/grand/manifest.json",
+          "pcm_bytes": 155649208,
+          "sha256": "51d257584e8cdf0f1a1a0bc881bf39cd28f686d849b1e78baae05173caa2c96b"
+        }
+      }
     },
     {
       "id": "nylon",
@@ -17,7 +37,27 @@
       "assets": 31,
       "compressed_bytes": 13222317,
       "pcm_bytes": 19636248,
-      "license": "CC0-1.0"
+      "license": "CC0-1.0",
+      "tiers": {
+        "lossless": {
+          "assets": 31,
+          "compressed_bytes": 7239644,
+          "id": "nylon",
+          "license": "CC0-1.0",
+          "manifest": "tiers/lossless/nylon/manifest.json",
+          "pcm_bytes": 19636248,
+          "sha256": "57452c0116540b495325c030cd78d740943610a281fff7340305288d7e8fb881"
+        },
+        "hq16": {
+          "assets": 31,
+          "compressed_bytes": 2584651,
+          "id": "nylon",
+          "license": "CC0-1.0",
+          "manifest": "tiers/hq16/nylon/manifest.json",
+          "pcm_bytes": 19636248,
+          "sha256": "0e0233e1fb2a4d31c4ddd3a56c4a6401cf2091c2e512dea3040f0be03ec85915"
+        }
+      }
     },
     {
       "id": "bass",
@@ -26,7 +66,27 @@
       "assets": 180,
       "compressed_bytes": 98796132,
       "pcm_bytes": 146117712,
-      "license": "CC0-1.0"
+      "license": "CC0-1.0",
+      "tiers": {
+        "lossless": {
+          "assets": 180,
+          "compressed_bytes": 44798833,
+          "id": "bass",
+          "license": "CC0-1.0",
+          "manifest": "tiers/lossless/bass/manifest.json",
+          "pcm_bytes": 146117712,
+          "sha256": "8d7a1884d2e6cf7ef6aacfb7345f5be387e1c500c567a8b737620233896c5a7c"
+        },
+        "hq16": {
+          "assets": 180,
+          "compressed_bytes": 16651550,
+          "id": "bass",
+          "license": "CC0-1.0",
+          "manifest": "tiers/hq16/bass/manifest.json",
+          "pcm_bytes": 146117712,
+          "sha256": "dd058754a0f2399bb9776acc440bedb19e7ad0a9b300a48d1587af78c061204d"
+        }
+      }
     },
     {
       "id": "kit",
@@ -35,7 +95,27 @@
       "assets": 28,
       "compressed_bytes": 18877620,
       "pcm_bytes": 24542760,
-      "license": "CC0-1.0"
+      "license": "CC0-1.0",
+      "tiers": {
+        "lossless": {
+          "assets": 28,
+          "compressed_bytes": 18940171,
+          "id": "kit",
+          "license": "CC0-1.0",
+          "manifest": "tiers/lossless/kit/manifest.json",
+          "pcm_bytes": 24542760,
+          "sha256": "efb138a205b0bad95620c159c6762e04f1c2d40f9065f13519adf6ceab6f3e75"
+        },
+        "hq16": {
+          "assets": 28,
+          "compressed_bytes": 2995950,
+          "id": "kit",
+          "license": "CC0-1.0",
+          "manifest": "tiers/hq16/kit/manifest.json",
+          "pcm_bytes": 24542760,
+          "sha256": "136d2c5e794e2e72f329f9a60a795f543abd7e85b8882ee563ddc9115ec684fb"
+        }
+      }
     },
     {
       "id": "violin",
@@ -44,7 +124,27 @@
       "assets": 22,
       "compressed_bytes": 46638714,
       "pcm_bytes": 67584000,
-      "license": "CC0-1.0"
+      "license": "CC0-1.0",
+      "tiers": {
+        "lossless": {
+          "assets": 22,
+          "compressed_bytes": 31390303,
+          "id": "violin",
+          "license": "CC0-1.0",
+          "manifest": "tiers/lossless/violin/manifest.json",
+          "pcm_bytes": 67584000,
+          "sha256": "40138044e1a88e312c7c20cdf2efca3458b0c5519b50d75bf5d02c5ad25b7009"
+        },
+        "hq16": {
+          "assets": 22,
+          "compressed_bytes": 19380342,
+          "id": "violin",
+          "license": "CC0-1.0",
+          "manifest": "tiers/hq16/violin/manifest.json",
+          "pcm_bytes": 67584000,
+          "sha256": "e5259ef07aaf224b01c00343ab7dfdf69024089be03d7f7907f6c2aab73857fc"
+        }
+      }
     },
     {
       "id": "trumpet",
@@ -53,7 +153,28 @@
       "assets": 16,
       "compressed_bytes": 33758832,
       "pcm_bytes": 48302184,
-      "license": "CC0-1.0"
+      "license": "CC0-1.0",
+      "tiers": {
+        "lossless": {
+          "assets": 16,
+          "compressed_bytes": 20485906,
+          "id": "trumpet",
+          "license": "CC0-1.0",
+          "manifest": "tiers/lossless/trumpet/manifest.json",
+          "pcm_bytes": 48302184,
+          "sha256": "7e25047dc90e49df015d6bf103ec0bad4650ab06ef238edd637cea902392e825"
+        },
+        "hq16": {
+          "assets": 16,
+          "compressed_bytes": 10712685,
+          "id": "trumpet",
+          "license": "CC0-1.0",
+          "manifest": "tiers/hq16/trumpet/manifest.json",
+          "pcm_bytes": 48302184,
+          "sha256": "69f20a8949766b590e6c7e304e88659cceba8fa444a2ff97319281f212d610cc"
+        }
+      }
     }
-  ]
+  ],
+  "default_tier": "hq16"
 }

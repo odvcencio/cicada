@@ -35,3 +35,17 @@ Source licence evidence:
 - [VSCO-2 CE CC0 licence](https://github.com/sgossner/VSCO-2-CE/blob/440300901dfe9275fd84e0b7763af1f8443ae62e/LICENSE).
 
 The owner's ears remain the final acceptance gate. This is a starter set with measured playback and honest recording coverage, not a claim of parity with a detailed commercial piano, guitar or orchestral library. See [pack hosting](../../docs/sampler/packs.md) and [quality targets](../../docs/sampler/quality.md).
+
+## Download quality
+
+Keep the original gzip banks for existing pinned scores. Build each new tier into its own directory from those verified banks:
+
+```sh
+GOWORK=off go build -o build/cicada-audio-encode ./cmd/cicada-audio-encode
+python3 tools/sampler/build_cc0.py --tier lossless --from-packs demo/packs --out demo/packs/tiers/lossless --cache sample-source-cache --encoder "$PWD/build/cicada-audio-encode"
+python3 tools/sampler/build_cc0.py --tier hq16 --from-packs demo/packs --out demo/packs/tiers/hq16 --cache sample-source-cache --encoder "$PWD/build/cicada-audio-encode"
+```
+
+The exact tier preserves original decoded PCM, using FLAC for integer recordings and gzip where float32 PCM cannot round-trip through FLAC. PCM16 FLAC quantizes after power-of-two scaling to preserve quiet recordings; it pins that reconstruction and is the default for new browser and Studio downloads. Both tiers retain the same maps, dynamics, takes, loops, licenses and resident float32 PCM. Catalog `tiers` entries pin each alternate manifest. Host admission verifies encoded hashes, dimensions and canonical decoded-PCM hashes before playback; codecs add no kernel code. The builder checks source pins, stages output and refuses to replace differing or corrupt packs. Use `--verify-catalog` (CC0) or `--verify` (full kit) with the corresponding published `tiers/<tier>/catalog.json` to verify a rebuild. Copy the published root catalog beside the generated banks to expose both tiers.
+
+The six packs contain 165,591,092 encoded bytes in the exact tier or 75,795,475 bytes in PCM16 FLAC, versus 290,679,811 gzip bytes.

@@ -4,7 +4,9 @@ const fs = require('node:fs');
 const path = require('node:path');
 const v8 = require('node:v8');
 
-const [wasmPath, imagePath, captureProfile] = process.argv.slice(2);
+const [wasmPath, imagePath, captureProfile, framesText = '128'] = process.argv.slice(2);
+const frames = Number(framesText);
+if (!Number.isInteger(frames) || frames < 1 || frames > 4096) throw new Error('callback frames must be 1 through 4096');
 let capturePort, capturePending, capturePosts = 0;
 if (!global.gc) throw new Error('run Node with --expose-gc');
 if (!wasmPath || !imagePath) throw new Error('usage: node --expose-gc processor_alloc_test.js kernel.wasm kernel.image');
@@ -68,8 +70,8 @@ async function main() {
   const commands = new Uint8Array(48), view = new DataView(commands.buffer);
   view.setUint8(0, 3); view.setUint8(1, 255); view.setUint8(24, 1); view.setUint8(25, 255);
   port.onmessage({ data: { t: 'c', bytes: commands } });
-  const output = [[new Float32Array(128), new Float32Array(128)]];
-  const input = captureProfile ? [[new Float32Array(128)]] : [];
+  const output = [[new Float32Array(frames), new Float32Array(frames)]];
+  const input = captureProfile ? [[new Float32Array(frames)]] : [];
   if (captureProfile) {
     capturePort = {postMessage(packet, list) {
       if (packet.t === 'pcm') {
@@ -126,6 +128,7 @@ async function main() {
   const stagedConstructorAllocations = constructorAllocations;
   const result = {
     callbacks: 10000,
+    frames,
     captureProfile: !!captureProfile,
     capturePosts,
     postMessages: postCount,

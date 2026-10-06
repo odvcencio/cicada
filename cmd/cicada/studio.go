@@ -264,6 +264,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("POST /api/clip", s.editClip)
 	mux.HandleFunc("POST /api/automation", s.editAutomation)
 	mux.HandleFunc("POST /api/instrument", s.editInstrument)
+	mux.HandleFunc("POST /api/instrument-pack/download", s.downloadInstrumentPack)
 	mux.HandleFunc("POST /api/undo", s.undo)
 	mux.HandleFunc("POST /api/redo", s.redo)
 	mux.HandleFunc("POST /api/history/{id}/revert", s.revertHistory)
