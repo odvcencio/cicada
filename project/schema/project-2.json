@@ -137,7 +137,7 @@
   "$defs": {
     "id": {
       "type": "string",
-      "pattern": "^[a-z_][a-z0-9_-]{0,63}$"
+      "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$", "maxLength": 64
     },
     "key": {
       "type": "object",
@@ -369,7 +369,7 @@
           },
           "additionalProperties": {
             "type": "string",
-            "pattern": "^(?:[a-z_][a-z0-9_-]*|builtin\\.(?:bd|sd|ch|oh|cp|rs|lt|mt|ht|cb|cy))$"
+            "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$", "maxLength": 64
           }
         }
       }

@@ -124,6 +124,11 @@ func DecodeManifest(data []byte) (Manifest, error) {
 // Load uses a confined directory and an optional pin of the exact manifest.
 // Network retrieval is deliberately separate; downloaded packs work offline.
 func Load(dir, manifestPath, pin string) (*Prepared, error) {
+	return LoadAtRate(dir, manifestPath, pin, 48000)
+}
+
+// LoadAtRate admits a pack for the requested output rate before playback.
+func LoadAtRate(dir, manifestPath, pin string, rate int) (*Prepared, error) {
 	if !ValidPath(manifestPath) || pin != "" && !validHash(pin) {
 		return nil, fmt.Errorf("invalid pack path or pin")
 	}
@@ -181,7 +186,7 @@ func Load(dir, manifestPath, pin string) (*Prepared, error) {
 		p.Zones = append(p.Zones, sample.Zone{ChokeGroup: uint8(z.ChokeGroup), OneShot: z.OneShot, Region: r, KeyLow: uint8(z.KeyLow), KeyHigh: uint8(z.KeyHigh), VelocityLow: uint8(z.VelocityLow), VelocityHigh: uint8(z.VelocityHigh), Layer: uint8(z.Layer), Group: uint8(z.Group), Position: uint8(z.Position), Count: uint8(z.Count), Release: z.Release, Gain: z.Gain, TuneCents: z.TuneCents})
 	}
 	// Validate maps, PCM bounds and ratios before returning any prepared bank.
-	if _, err = p.New(48000); err != nil {
+	if _, err = p.New(rate); err != nil {
 		return nil, err
 	}
 	return p, nil

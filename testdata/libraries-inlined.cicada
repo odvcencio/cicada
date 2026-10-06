@@ -1,0 +1,33 @@
+cicada 2
+
+title "Library circuit"
+
+tempo 138
+
+key a minor
+
+seed 4242
+
+instrument glass {
+  voice mono {
+    out = sine(pitch) * env(gate, 90ms) * velocity
+  }
+}
+
+phrase _hook {
+  1 . 3 . 5 . 3 .
+}
+
+pattern melody {
+  use _hook *2
+}
+
+track lead glass {}
+
+scene verse {
+  lead = melody
+}
+
+song {
+  verse*2
+}

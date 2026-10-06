@@ -249,11 +249,16 @@ func projectHasSceneSettings(p *Project) bool {
 
 // FromScore lowers a validated source score to the versioned semantic model.
 // It does not silently omit a source declaration that has no v1 representation.
-func FromScore(score *notation.Score) (*Project, []notation.Diagnostic) {
+func FromScore(score *notation.Score) (result *Project, diagnostics []notation.Diagnostic) {
+	defer func() {
+		if score != nil {
+			notation.LocateDiagnostics(diagnostics, score.Position)
+		}
+	}()
 	if score == nil {
 		return nil, []notation.Diagnostic{{Code: "CICADA-SYNTAX", Severity: "error", Message: "nil score", Position: notation.Position{Line: 1, Column: 1}}}
 	}
-	diagnostics := notation.Validate(score)
+	diagnostics = notation.Validate(score)
 	_, compiledDiagnostics := Check(score)
 	diagnostics = append(diagnostics, compiledDiagnostics...)
 	for _, d := range diagnostics {

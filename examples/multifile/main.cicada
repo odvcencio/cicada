@@ -1,0 +1,16 @@
+title "Shared circuit"
+
+tempo 138
+
+key a minor
+
+seed 4242
+
+scene verse {
+  bass = pulse
+  lead = melody
+}
+
+song {
+  verse*2
+}

@@ -35,6 +35,12 @@ func projectCommand(args []string) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+		for _, asset := range p.Assets {
+			if asset.Directory("") != "" {
+				fmt.Fprintf(os.Stderr, "%s:1:1: error CICADA-LIB-ASSET: cannot convert library-owned audio %s; keep score imports until asset vendoring is supported\n", input, asset.Name)
+				os.Exit(1)
+			}
+		}
 		var data []byte
 		if filepath.Ext(input) == ".json" {
 			data, err = project.ToSource(p)
@@ -74,11 +80,11 @@ func projectCommand(args []string) {
 }
 
 func loadProject(path string) (*project.Project, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("%s:1:1: error CICADA-IO: %w", path, err)
-	}
 	if strings.HasSuffix(path, ".json") {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("%s:1:1: error CICADA-IO: %w", path, err)
+		}
 		p, err := project.DecodeJSON(data)
 		if err != nil {
 			var diagnostic *project.JSONError
@@ -96,7 +102,7 @@ func loadProject(path string) (*project.Project, error) {
 	if !strings.HasSuffix(path, ".cicada") {
 		return nil, fmt.Errorf("%s:1:1: error CICADA-IO: expected .cicada or .json", path)
 	}
-	score, diagnostics, err := parseScoreForPath(path, data)
+	score, diagnostics, err := project.LoadScore(path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +139,11 @@ func loadProject(path string) (*project.Project, error) {
 		if column < 1 {
 			column = 1
 		}
-		return nil, fmt.Errorf("%s:%d:%d: %s %s: %s", path, line, column, d.Severity, d.Code, d.Message)
+		if d.Position.File == "" {
+			d.Position.File = path
+		}
+		d.Position.Line, d.Position.Column = line, column
+		return nil, &project.SourceError{Diagnostic: d}
 	}
 	return nil, fmt.Errorf("%s:1:1: error CICADA-PARAM: project cannot compile", path)
 }

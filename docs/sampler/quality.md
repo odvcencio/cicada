@@ -22,3 +22,22 @@ The behaviour reference is Kontakt's documented mapping zones, velocity crossfad
 Room sound is retained where it exists in the licensed stereo recording. Dry and existing Cicada reverb versions are supplied for listening; no unverified impulse response is added. Acoustic instruments do not gain recorded legato transitions or sympathetic resonance merely from pitch continuity. Missing articulations, sparse key coverage and unqualified CPU scenarios must be reported.
 
 The A/B protocol uses the same note events, velocities, seed, gain and room settings. Before uses a single fixed layer and the existing 2 ms sample release; after uses mapped layers, round robins and authored releases. WAVs and scores live outside the source repository. Raw licensed recordings provide the source-envelope/spectral reference; they are not recordings of a commercial DAW. Do not manufacture extra velocity layers or round robins by processing a single recording.
+
+## Reproduce validation
+
+Run `GOWORK=off make test-sampler-wasm` for native/WASM parity, ABI admission
+and the optional module size gate. CI uploads this gate's report as an artifact.
+
+After building the pinned external packs, generate source and runtime evidence:
+
+```sh
+GOWORK=off go run ./tools/sampler/source_render.go -packs build/pro-packs -out build/source-reference > build/source-reference-selections.txt
+python3 tools/sampler/source_metrics.py --packs build/pro-packs --sources sample-source-cache --selections build/source-reference-selections.txt
+node tools/sampler/wasm_metrics.mjs
+node tools/sampler/browser_gate.mjs
+```
+
+Source comparisons need NumPy and FFmpeg. The browser gate needs Playwright and
+Chrome selected with `CHROME_BIN`; `PLAYWRIGHT_MODULE` can select its installed
+entrypoint. Keep reports under `build/` and publish them as CI artifacts or PR
+attachments. Commit reusable tools, acceptance criteria and pack metadata.
