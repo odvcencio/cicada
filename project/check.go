@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -22,6 +23,15 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		diagnostics = append(diagnostics, ds...)
 		if program != nil {
 			programs[definition.Name] = program
+		}
+	}
+	for _, source := range score.Kits {
+		kit := Kit{ID: source.Name, Lanes: map[string]string{}}
+		for _, binding := range source.Bindings {
+			kit.Lanes[binding.Lane] = binding.Target
+		}
+		if _, err := CompileKit(kit, programs); err != nil {
+			diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Position})
 		}
 	}
 	tracks := make(map[string]notation.Track, len(score.Tracks))
@@ -76,6 +86,11 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			overrides[param.Name] = param.Value
 		}
 		if _, err := instrument.Lower(program, overrides); err != nil {
+			code := "CICADA-UNIT"
+			var parameter *graph.ParameterError
+			if errors.As(err, &parameter) {
+				code = "CICADA-PARAM"
+			}
 			position := parameterErrorPosition(track, func(single notation.Track) error {
 				param := single.Params[0]
 				if param.Name == "octave" && !program.HasParameter("octave") {
@@ -88,7 +103,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 				return err
 			})
 			diagnostics = append(diagnostics, notation.Diagnostic{
-				Code: "CICADA-UNIT", Severity: "error", Message: err.Error(), Position: position,
+				Code: code, Severity: "error", Message: err.Error(), Position: position,
 			})
 		}
 	}
@@ -121,6 +136,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 				diagnostics = append(diagnostics, patternCompileDiagnostic(err, binding.Position))
 				continue
 			}
+			diagnostics = append(diagnostics, checkDelayNotes(programs[track.Kind], track, compiled, binding.Position)...)
 			if previous, exists := compiledByPattern[pattern.Name]; exists {
 				if !reflect.DeepEqual(previous, compiled) {
 					diagnostics = append(diagnostics, notation.Diagnostic{
@@ -145,6 +161,29 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	}
 	diagnostics = append(diagnostics, checkSourceVoiceBudget(score, tracks)...)
 	return programs, diagnostics
+}
+
+func checkDelayNotes(program *instrument.Program, track notation.Track, patterns []CompiledPattern, position notation.Position) []notation.Diagnostic {
+	if program == nil || program.DelaySamples == 0 {
+		return nil
+	}
+	overrides := map[string]string{}
+	for _, param := range track.Params {
+		if isMixerSourceParam(param.Name) || param.Name == "octave" && !program.HasParameter("octave") {
+			continue
+		}
+		overrides[param.Name] = param.Value
+	}
+	lowered, err := instrument.Lower(program, overrides)
+	if err != nil {
+		return nil
+	} // the track parameter check already reports it
+	for _, pattern := range patterns {
+		if err := ValidateGraphDelayPattern(lowered, 48_000, pattern.Pattern); err != nil {
+			return []notation.Diagnostic{{Code: "CICADA-PARAM", Severity: "error", Position: position, Message: err.Error()}}
+		}
+	}
+	return nil
 }
 
 // The typed project has the same ceiling. Check it here as well so source
