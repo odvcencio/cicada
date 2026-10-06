@@ -284,6 +284,8 @@ func callResult(name string, args []Type) (Type, bool, bool) {
 		return Audio, true, matches(Audio, MS)
 	case "comb":
 		return Audio, true, matches(Audio, MS, Unit, Unit)
+	case "neural_amp":
+		return Audio, true, matches(Audio, Unit)
 	case "mix":
 		return Audio, false, matches(Audio, Audio, Unit)
 	case "tanh":
