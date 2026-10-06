@@ -1,7 +1,11 @@
 cicada 2
+
 title "Graph pluck and slapback"
+
 tempo 120
+
 key a minor
+
 seed 42
 
 // Karplus-Strong: an exponential noise burst excites a damped feedback loop.
@@ -27,9 +31,29 @@ instrument slapback {
   }
 }
 
-track dry plucked { level = -6dB pan = -0.25 }
-track echo slapback { level = -9dB pan = 0.25 }
-pattern melody notes steps=16 { a2 . . . c3 . . . e3 . . . a3 . . . }
-pattern answer notes steps=16 { . . e3 . . . . . . . c3 . . . a2 . }
-scene main { dry = melody echo = answer }
-song { main*2 }
+track dry plucked {
+  level = -6dB
+  pan = -0.25
+}
+
+track echo slapback {
+  level = -9dB
+  pan = 0.25
+}
+
+pattern melody notes steps = 16 {
+  a2 . . . c3 . . . e3 . . . a3 . . .
+}
+
+pattern answer notes steps = 16 {
+  . . e3 . . . . . . . c3 . . . a2 .
+}
+
+scene main {
+  dry = melody
+  echo = answer
+}
+
+song {
+  main*2
+}
