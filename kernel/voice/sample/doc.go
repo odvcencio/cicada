@@ -11,8 +11,9 @@
 // until a release, gain change or retained retrigger tail applies. Natural
 // one-shot completion appends a held-output fade rather than changing source
 // frames. NoteOff and the held tail last at most 2 ms; retriggers keep at most
-// one tail per slot. Basic loops have no crossfade and can click if endpoints
-// differ. The symmetric SRC reads future PCM, with zero padding at region
+// one tail per slot. Crossfade=0 retains basic loops that can click if endpoints
+// differ. Crossfade>0 blends the final source frames with the loop head and
+// skips the overlapped head on wrap. The symmetric SRC reads future PCM, with zero padding at region
 // bounds and periodic wrapping at loop bounds; it requires the whole region.
 //
 // SRC uses Kaiser-windowed sinc (beta 12), 1024 phases plus an endpoint, and
