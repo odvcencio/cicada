@@ -208,3 +208,7 @@ Analog `filter` accepts `ladder` or `state_variable`.
 controls require `hz`, detuning requires `cents`, and `output` requires `dB`.
 Other controls are numbers; integer selectors reject fractional values.
 `sustain` also accepts `off`/`on`.
+
+Detune and drift controls use plain numeric values interpreted as cents, such as
+`op1_detune=12` or `detune=9 drift=2`. Time controls accept seconds or `ms`;
+frequency and output controls retain their documented `hz` and `db` units.
