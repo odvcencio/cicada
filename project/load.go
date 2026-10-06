@@ -170,6 +170,13 @@ func (s *Sources) Parse() (*notation.Score, []notation.Diagnostic) {
 	}
 	diagnostics = append(diagnostics, s.verifyLibraries()...)
 	diagnostics = append(diagnostics, VerifyAssets(score, s.Root)...)
+	if score != nil {
+		for i := range score.Assets {
+			if score.Assets[i].Root == "" {
+				score.Assets[i].Root = s.Root
+			}
+		}
+	}
 	return score, diagnostics
 }
 

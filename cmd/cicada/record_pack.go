@@ -18,7 +18,7 @@ func recordPackCommand(args []string, output io.Writer) error {
 	dir := flags.String("o", "", "new pack directory")
 	flags.IntVar(&options.Root, "root", 60, "fallback MIDI root")
 	flags.IntVar(&options.Layers, "layers", 3, "velocity layers")
-	flags.BoolVar(&options.AutoPitch, "auto-pitch", true, "estimate recorded note roots")
+	flags.BoolVar(&options.AutoPitch, "auto-pitch", false, "map detected note roots")
 	if err := flags.Parse(args); err != nil {
 		return err
 	}

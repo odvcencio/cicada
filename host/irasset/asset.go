@@ -228,26 +228,40 @@ func Decode(r io.ReadSeeker, e Entry, targetRate int) (Impulse, error) {
 	if err := e.Validate(); err != nil {
 		return Impulse{}, err
 	}
-	if targetRate < 8000 || targetRate > 192000 {
-		return Impulse{}, errors.New("invalid impulse target sample rate")
-	}
 	size, err := r.Seek(0, io.SeekEnd)
 	if err != nil || size != e.Bytes {
 		return Impulse{}, errors.New("impulse file differs from declared byte count")
 	}
+	h, err := audioasset.ReadWAVHeader(r)
+	if err != nil || h.BitDepth != e.BitDepth {
+		return Impulse{}, errors.New("impulse WAV dimensions differ from the manifest")
+	}
+	return DecodeWAV(r, e.SHA256, e.Frames, e.RateHz, e.Channels, targetRate)
+}
+
+// DecodeWAV prepares a locally declared, checksum-pinned impulse. Pack license
+// metadata is checked separately by Decode; local assets use score metadata.
+func DecodeWAV(r io.ReadSeeker, checksum string, frames int64, rate, channels, targetRate int) (Impulse, error) {
+	if targetRate < 8000 || targetRate > 192000 {
+		return Impulse{}, errors.New("invalid impulse target sample rate")
+	}
+	size, err := r.Seek(0, io.SeekEnd)
+	if err != nil || size < 44 || size > MaxBytes {
+		return Impulse{}, errors.New("impulse file exceeds byte bounds")
+	}
 	if _, err = r.Seek(0, io.SeekStart); err != nil {
 		return Impulse{}, err
 	}
-	checksum, err := audioasset.SHA256(r)
-	if err != nil || checksum != e.SHA256 {
+	hash, err := audioasset.SHA256(r)
+	if err != nil || hash != checksum {
 		return Impulse{}, errors.New("impulse file checksum mismatch")
 	}
 	h, err := audioasset.ReadWAVHeader(r)
 	if err != nil {
 		return Impulse{}, err
 	}
-	if h.Frames != e.Frames || h.RateHz != e.RateHz || h.Channels != e.Channels || h.BitDepth != e.BitDepth {
-		return Impulse{}, errors.New("impulse WAV dimensions differ from the manifest")
+	if h.Frames != frames || h.RateHz != rate || h.Channels != channels {
+		return Impulse{}, errors.New("impulse WAV dimensions differ from the declaration")
 	}
 	outputFrames := (h.Frames*int64(targetRate) + int64(h.RateHz) - 1) / int64(h.RateHz)
 	if outputFrames > convolution.MaxFrames || outputFrames > int64(targetRate)*12 {

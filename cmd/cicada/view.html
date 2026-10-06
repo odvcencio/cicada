@@ -260,6 +260,7 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .export-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; }
 .export-progress { color:var(--muted); font-size:.83rem; }
 .export-path { display:block; color:var(--mint); font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
+.master-chain { display:grid; gap:12px; padding-left:24px; }
 .export-report { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px 14px; margin:0; }
 .export-report div { min-width:0; padding-top:8px; border-top:1px solid #304037; }
 .export-report dt { color:var(--muted); font-size:.68rem; text-transform:uppercase; letter-spacing:.07em; }
@@ -594,7 +595,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
         </label>
         <div><span class="section-note">Deviation from target</span><output id="target-deviation">— LU</output></div>
         <button type="button" id="reset-integrated">Reset integrated</button>
-        <a class="master-mixer-link" href="#mixer-settings">Open mixer compressor settings</a>
+        <a class="master-mixer-link" href="#mixer-settings">Open saved master chain</a>
       </div>
       <div class="master-card">
         <h3>Short-term loudness · last 60 seconds</h3>
@@ -629,9 +630,21 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       </div>
     </section>{{end}}
     {{if .Studio}}<section id="mixer-settings" data-workspace-panel="master" aria-labelledby="mixer-settings-heading">
-      <h2 id="mixer-settings-heading">Mixer · master compressor</h2>
-      <p class="section-note">Saved compressor parameters from the current score. This view is read only.</p>
-      {{if .HasMasterCompressor}}<div class="mixer-settings-list">{{range .MasterCompressor}}<div class="voice-param"><b>{{.Name}}</b><span>{{.Value}}</span></div>{{end}}</div>{{else}}<p class="section-note">No bus compressor is configured in this score.</p>{{end}}
+      <h2 id="mixer-settings-heading">Master chain</h2>
+      <p class="section-note">Saved insert order and delivery targets. Edit the score to change these settings.</p>
+      <ol class="master-chain" aria-label="Master insert order">
+        {{range .MasterChain}}<li class="master-card"><h3>{{.ID}} · {{.Kind}}</h3>
+          {{if .Params}}<dl class="export-report">{{range .Params}}<div><dt>{{.Name}}</dt><dd>{{.Value}}</dd></div>{{end}}</dl>{{else}}<p class="section-note">Default settings</p>{{end}}
+        </li>{{end}}
+        <li class="master-card"><h3>Safety limiter</h3><p class="section-note">Built in · always last</p></li>
+      </ol>
+      {{if .ExportTargets}}<h3>Saved export targets</h3>{{range .ExportTargets}}<div class="master-card"><h3>{{.ID}}</h3><dl class="export-report">
+        {{if .Loudness}}<div><dt>Loudness</dt><dd>{{.Loudness}}</dd></div>{{end}}
+        {{if .TruePeak}}<div><dt>True peak</dt><dd>{{.TruePeak}}</dd></div>{{end}}
+        <div><dt>Peak normalization</dt><dd>{{.Normalize}}</dd></div>
+      </dl></div>{{end}}{{end}}
+      <h3>Music bus compressor</h3>
+      {{if .HasMasterCompressor}}<div class="mixer-settings-list">{{range .MasterCompressor}}<div class="voice-param"><b>{{.Name}}</b><span>{{.Value}}</span></div>{{end}}</div>{{else}}<p class="section-note">No music bus compressor is configured in this score.</p>{{end}}
     </section>{{end}}
     {{if not .Studio}}<section id="arrangement" aria-labelledby="arrangement-heading">
       <h2 id="arrangement-heading">Scenes and song</h2>
@@ -647,7 +660,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
           <label for="instrument-name">Instrument name<input id="instrument-name" type="text" value="pencil" pattern="[a-z][a-z0-9_]*" maxlength="48"></label>
           <label for="instrument-root">Fallback root MIDI note<input id="instrument-root" type="number" min="12" max="95" value="60"></label>
           <label for="instrument-layers">Velocity layers<select id="instrument-layers"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="8">8</option></select></label>
-          <label for="instrument-pitch" class="audio-io-check"><input id="instrument-pitch" type="checkbox" checked>Detect note pitches</label>
+          <label for="instrument-pitch" class="audio-io-check"><input id="instrument-pitch" type="checkbox">Map detected note pitches</label>
           <label for="instrument-files" class="instrument-files">Import WAV recordings<input id="instrument-files" type="file" accept=".wav,audio/wav" multiple></label>
         </div>
         <div class="audio-io-actions"><button id="instrument-mic" type="button" aria-pressed="false">Record microphone</button><button id="instrument-stop" type="button" disabled>Stop and build</button></div>
