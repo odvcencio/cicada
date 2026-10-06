@@ -196,3 +196,40 @@ func TestPianoRejectsInvalidLiveKeysAndPatternChanges(t *testing.T) {
 		t.Fatal("piano accepted an invalid live pattern key")
 	}
 }
+
+func TestPianoTransposedChordMatchesLiveKeyReleases(t *testing.T) {
+	cfg := pianoConfig()
+	pattern := seq.Pattern{Len: 4, GatePercent: 50, Transpose: 12}
+	pattern.Steps[0], _ = seq.PackStep(seq.Step{Note: 48, Gate: true, Velocity: 100, Ratchet: 1, Probability: 100})
+	pattern.Chords[0] = seq.ChordStep{Notes: [4]uint8{48, 52, 55}, Count: 3}
+	cfg.Patterns = []PatternBank{{}}
+	cfg.Patterns[0].Slots[0] = pattern
+	patternEngine, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	liveEngine, err := New(pianoConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	patternEngine.Push(cmd.Command{Op: cmd.OpSelectPattern, Track: 0, Index: 0})
+	patternEngine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	liveEngine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	for _, note := range []uint32{60, 64, 67} {
+		liveEngine.Push(cmd.Command{Op: cmd.OpNoteOn, Track: 0, Arg0: note | 100<<8})
+		liveEngine.Push(cmd.Command{Op: cmd.OpNoteOff, Track: 0, Index: uint16(note), Tick: seq.TicksPerStep / 2})
+	}
+	var aL, aR, bL, bR [128]float32
+	for block := range 140 {
+		patternEngine.Render(aL[:], aR[:])
+		liveEngine.Render(bL[:], bR[:])
+		if aL != bL || aR != bR || patternEngine.faulted || liveEngine.faulted {
+			t.Fatalf("transposed piano chord differs from individual live key releases in block %d", block)
+		}
+	}
+	pattern.Chords[0] = seq.ChordStep{Notes: [4]uint8{48, 100}, Count: 2}
+	cfg.Patterns[0].Slots[0] = pattern
+	if _, err := New(cfg); err == nil {
+		t.Fatal("piano accepted a chord's upper pitch outside MIDI 21 to 108")
+	}
+}

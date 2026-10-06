@@ -157,13 +157,14 @@ func parameterVoiceKind(p *Project, kind string) string {
 		return "acid"
 	case "drums":
 		return "drums"
-	case "piano":
-		return "piano"
 	}
 	for _, kit := range p.Kits {
 		if kit.ID == kind {
 			return "drums"
 		}
+	}
+	if isModeledPiano(p, kind) {
+		return "piano"
 	}
 	return "instrument"
 }

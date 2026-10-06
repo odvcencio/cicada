@@ -42,3 +42,18 @@ func TestPianoWAVPreservesStereoAndSustainScenes(t *testing.T) {
 	}
 	assertSceneEngineMatchesWAV(t, score, output.Bytes(), 48_000, 0, len(data)/8)
 }
+
+func TestPianoChordWAVMatchesKernel(t *testing.T) {
+	source := "cicada 2\ntempo 120\ntrack grand piano {}\npattern p notes { [c3 e3 g3] . [c4 e4 g4] . }\nscene dry { grand=p }\nscene pedal { grand=p grand.sustain=1 }\nsong { dry pedal }"
+	score, ds := notation.Parse([]byte(source))
+	if score == nil || len(ds) != 0 {
+		t.Fatalf("piano chord score: %+v", ds)
+	}
+	var output bytes.Buffer
+	dither := false
+	report, err := WAV(score, Options{SampleRate: 48_000, Bits: 32, Block: 128, Dither: &dither}, &output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertSceneEngineMatchesWAV(t, score, output.Bytes(), 48_000, 0, int(report.Frames))
+}

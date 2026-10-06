@@ -35,6 +35,11 @@ func TestAudioWASMPianoSampleParity(t *testing.T) {
 	compareWASMFixture(t, "modeled-piano.cicada", 3)
 }
 
+func TestAudioWASMPianoChordSampleParity(t *testing.T) {
+	source := []byte("cicada 2\ntempo 120\ntrack grand piano {}\npattern p notes { [c3 e3 g3] . [c4 e4 g4] . }\nscene dry { grand=p }\nscene pedal { grand=p grand.sustain=1 }\nsong { dry pedal }")
+	compareWASMSource(t, "modeled-piano.cicada", source, 2, true)
+}
+
 func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
 	compareWASMFixture(t, "authored-kit.cicada", 1)
 }
