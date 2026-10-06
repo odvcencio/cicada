@@ -67,6 +67,9 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 	effectKind := ""
 	for _, effect := range p.Effects {
 		if effect.ID == owner {
+			if MasterHasInsert(p, owner) {
+				return fail("CICADA-UNSUPPORTED", "master effect controls are fixed until the score is recompiled")
+			}
 			effectOK = true
 			effectKind = semanticEffectKind(effect)
 			break

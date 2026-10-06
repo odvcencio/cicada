@@ -1,0 +1,25 @@
+cicada 2
+title "Game director"
+tempo 120
+key a minor
+seed 4242
+track bed acid { cutoff = 500Hz }
+track battle acid { cutoff = 1400Hz }
+track cue acid { cutoff = 2400Hz }
+live {
+  land = bar
+  phrase = 8bars
+  macro intensity = 0.3 smooth 400ms
+  layers intensity { battle >= 0.5 attack 1bar release 3bars }
+  state explore = calm
+  state combat = fight
+  stinger pickup = cue.hit quantize beat crossfade 10ms
+  transition explore -> combat quantize bar crossfade 200ms
+  transition combat -> explore quantize phrase crossfade 400ms
+}
+pattern bed-loop { 1 . 5 . | 3 . 5 . }
+pattern battle-loop { 1^ 5 1' 5 | 3^ 5 7 5 }
+pattern hit { 1'^ . . . }
+scene calm { bed = bed-loop battle = off cue = off }
+scene fight { bed = off battle = battle-loop cue = off }
+song { calm*64 }

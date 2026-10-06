@@ -24,6 +24,10 @@ const DelayCapability uint16 = 1 << 1
 
 // PianoCapability requires the modeled piano voice and its sustain state.
 const PianoCapability uint16 = 1 << 2
+
+// NeuralAmpCapability requires the pinned causal neural amp operation (28).
+const NeuralAmpCapability uint16 = 1 << 4
+
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -171,10 +175,16 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		if graphNeedsDelay(spec.Graph) {
 			capabilities |= DelayCapability
 		}
+		if graphNeedsNeuralAmp(&spec.Graph) {
+			capabilities |= NeuralAmpCapability
+		}
 		if spec.Kit != nil {
 			for _, binding := range spec.Kit {
 				if graphNeedsDelay(binding.Program) {
 					capabilities |= DelayCapability
+				}
+				if graphNeedsNeuralAmp(&binding.Program) {
+					capabilities |= NeuralAmpCapability
 				}
 			}
 		}
@@ -446,7 +456,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|NeuralAmpCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -874,6 +884,15 @@ func graphNeedsDelay(program graph.Program) bool {
 	return false
 }
 
+func graphNeedsNeuralAmp(program *graph.Program) bool {
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		if program.Nodes[i].Op == graph.NeuralAmp {
+			return true
+		}
+	}
+	return false
+}
+
 func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, error) {
 	var program graph.Program
 	length, err := r.byte()
@@ -914,6 +933,9 @@ func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, e
 	}
 	if graphNeedsDelay(program) && capabilities&DelayCapability == 0 {
 		return program, Error("graph delay operations require capability bit 1")
+	}
+	if graphNeedsNeuralAmp(&program) && capabilities&NeuralAmpCapability == 0 {
+		return program, Error("neural amp operation requires capability bit 4")
 	}
 	return program, nil
 }

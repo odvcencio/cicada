@@ -258,6 +258,7 @@ func compareWASMSource(t *testing.T, fixture string, source []byte, bars int, ex
 
 func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars int, exactMessages bool, wasm []byte) map[int][32]byte {
 	t.Helper()
+	exactNeural := strings.HasPrefix(fixture, "neural-")
 	hashes := map[int][32]byte{}
 	for _, rate := range []int{44_100, 48_000} {
 		t.Run(sampleRateName(rate), func(t *testing.T) {
@@ -277,7 +278,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			ctx := context.Background()
 			var wasmAllocations uint64
 			var allocatorFound bool
-			if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
+			if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
 				ctx = experimental.WithFunctionListenerFactory(ctx, experimental.FunctionListenerFactoryFunc(func(def api.FunctionDefinition) experimental.FunctionListener {
 					if !strings.Contains(def.DebugName(), "runtime.alloc") {
 						return nil
@@ -316,6 +317,9 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			if fixture == "pluck.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.DelayCapability) == 0 {
 				t.Fatal("kernel does not advertise graph delay capability")
 			}
+			if fixture == "neural-amp.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.NeuralAmpCapability) == 0 {
+				t.Fatal("kernel does not advertise neural amp capability")
+			}
 			imagePtr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
 			if imagePtr == 0 || !module.Memory().Write(imagePtr, image) {
 				t.Fatal("project image buffer unavailable")
@@ -350,7 +354,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			allocationsBeforeRender := wasmAllocations
 			for block := 0; block*blockSize < frames; block++ {
 				call("gosx_audio_render", blockSize)
-				if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
+				if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
 					data, ok := module.Memory().Read(outputPtr, blockSize*2*4)
 					if !ok {
 						t.Fatal("WASM PCM block out of bounds")
@@ -367,6 +371,9 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 						nativeSample := nativeL[frame]
 						if channel == 1 {
 							nativeSample = nativeR[frame]
+						}
+						if exactNeural && math.Float32bits(wasmSample) != math.Float32bits(nativeSample) {
+							t.Fatalf("%s differs in float32 bits at frame %d channel %d: native=%08x WASM=%08x", fixture, block*blockSize+frame, channel, math.Float32bits(nativeSample), math.Float32bits(wasmSample))
 						}
 						if math.IsNaN(float64(wasmSample)) || math.IsInf(float64(wasmSample), 0) {
 							t.Fatalf("nonfinite WASM sample at %d channel %d", block*blockSize+frame, channel)
@@ -397,7 +404,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 					stableMemory = module.Memory().Size()
 				}
 			}
-			if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
+			if exactNeural || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
 				copyHash := [32]byte{}
 				copy(copyHash[:], pcm.Sum(nil))
 				hashes[rate] = copyHash

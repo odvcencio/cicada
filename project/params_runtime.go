@@ -41,6 +41,9 @@ func ParamAddresses(p *Project) []ParamAddress {
 		}
 	}
 	for _, effect := range p.Effects {
+		if MasterHasInsert(p, effect.ID) {
+			continue
+		}
 		kind := semanticEffectKind(effect)
 		for _, descriptor := range paramdefs.Registry {
 			if descriptor.Scope != "global" || !strings.HasPrefix(descriptor.ID, "fx."+kind+".") {
