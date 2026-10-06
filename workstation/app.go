@@ -23,9 +23,10 @@ import (
 )
 
 type studioApp struct {
-	backend *backend
-	draftMu sync.Mutex
-	drafts  map[string]draft
+	backend       *backend
+	collaboration *collaboration
+	draftMu       sync.Mutex
+	drafts        map[string]draft
 }
 
 func newApp(b *backend) (http.Handler, error) {
@@ -44,7 +45,7 @@ func newApp(b *backend) (http.Handler, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &studioApp{backend: b}
+	s := &studioApp{backend: b, collaboration: newCollaboration(b)}
 	app := server.New()
 	root := runtimeRoot()
 	app.SetPublicDir("")
@@ -77,6 +78,11 @@ func newApp(b *backend) (http.Handler, error) {
 	app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+			defer func() {
+				if r.MultipartForm != nil {
+					_ = r.MultipartForm.RemoveAll()
+				}
+			}()
 			next.ServeHTTP(w, r)
 		})
 	})
@@ -85,8 +91,17 @@ func newApp(b *backend) (http.Handler, error) {
 	if b == nil {
 		return app.Build(), nil
 	}
+	app.Mount("GET /collaboration/score", http.HandlerFunc(s.collaboration.serveHub))
+	app.Mount("POST /api/collaboration/invite", http.HandlerFunc(s.collaboration.invite))
+	app.Mount("POST /api/collaboration/join", http.HandlerFunc(s.collaboration.join))
+	app.Mount("POST /api/collaboration/save", http.HandlerFunc(s.collaboration.save))
 	for name, handler := range s.actions() {
 		app.Mount("POST /__actions/"+name, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, role := s.collaboration.member(r, false)
+			if role != "owner" && role != "editor" {
+				http.Error(w, "Viewers cannot change the workspace.", http.StatusForbidden)
+				return
+			}
 			s.serveAction(w, r, name, handler)
 		}))
 	}
@@ -101,6 +116,7 @@ func newApp(b *backend) (http.Handler, error) {
 		s.takeAudio(w, r)
 	}))
 	app.Mount("GET /media/exports/{id}", http.HandlerFunc(s.exportAudio))
+	app.Mount("GET /media/transcription", http.HandlerFunc(s.transcriptionAudio))
 	app.Mount("GET /api/export", http.HandlerFunc(s.exportStatus))
 	for _, path := range []string{"/api/state", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -130,6 +146,9 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 	// establish state before requesting the CSRF token used by every action.
 	if store := session.Current(ctx.Request); store != nil {
 		store.Set("workspace", true)
+	}
+	if s.collaboration != nil {
+		s.collaboration.member(ctx.Request, true)
 	}
 	ctx.SetLanguage("en")
 	ctx.AddHead(server.Stylesheet("/studio.css"))
@@ -203,7 +222,7 @@ func (s *studioApp) toolbar(view workspace, csrf, panel string, t transport) gos
 
 func (s *studioApp) navigation(panel string) gosx.Node {
 	var links []gosx.Node
-	for _, item := range []struct{ key, label string }{{"session", "Session"}, {"patterns", "Patterns"}, {"generator", "Generate"}, {"live", "Live"}, {"mixer", "Mixer"}, {"instruments", "Instruments"}, {"code", "Score"}, {"takes", "Takes"}, {"history", "History"}, {"audio", "Audio"}, {"export", "Export"}} {
+	for _, item := range []struct{ key, label string }{{"session", "Session"}, {"patterns", "Patterns"}, {"generator", "Generate"}, {"live", "Live"}, {"mixer", "Mixer"}, {"instruments", "Instruments"}, {"code", "Score"}, {"collaboration", "Collaborate"}, {"takes", "Takes"}, {"history", "History"}, {"audio", "Audio"}, {"export", "Export"}} {
 		attrs := gosx.Attrs(gosx.Attr("href", "/?panel="+item.key))
 		if panel == item.key {
 			attrs = append(attrs, gosx.Attr("aria-current", "page"))

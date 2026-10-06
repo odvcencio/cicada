@@ -53,6 +53,12 @@ const (
 	// OpNoteExpression targets the OpNoteOn identity in Index. Arg0 carries
 	// float32 pitch cents, Arg1 pressure, and Pad timbre (both normalized 0..1).
 	OpNoteExpression Op = 25
+	// Spatial positions carry X/Y/Z float32 bits in Arg0/Arg1/Pad.
+	// OpSetTrackPosition: Index=1 enables positioning; Index=0 restores stereo.
+	OpSetTrackPosition    Op = 26
+	OpSetListenerPosition Op = 27
+	// OpSetListenerRotation carries yaw/pitch/roll radians in Arg0/Arg1/Pad.
+	OpSetListenerRotation Op = 28
 )
 
 type Quantize uint32
@@ -65,7 +71,8 @@ const QuantizePhrase Quantize = 21
 // off=true uses negative infinity to carry the source value off; all other
 // parameters must be finite. OpNoteOn and OpNoteOff use Index as a melodic
 // note identity (drum commands retain their lane index). OpNoteExpression uses
-// all three payload words as float32 controls; other commands require Pad=0.
+// all three payload words as float32 controls, as do spatial commands;
+// other commands require Pad=0.
 type Command struct {
 	Op    Op
 	Track uint8
@@ -158,10 +165,10 @@ func (c Command) Validate(tracks uint8) error {
 	if tracks < 1 || tracks > 16 {
 		return Error("track count must be 1 to 16")
 	}
-	if c.Op < OpPlay || c.Op > OpNoteExpression {
+	if c.Op < OpPlay || c.Op > OpSetListenerRotation {
 		return Error("unknown command opcode")
 	}
-	if c.Op != OpNoteExpression && c.Pad != 0 || c.Tick < 0 {
+	if c.Op != OpNoteExpression && !spatialOp(c.Op) && c.Pad != 0 || c.Tick < 0 {
 		return Error("nonzero command padding or negative tick")
 	}
 	if globalOp(c.Op) {
@@ -172,6 +179,24 @@ func (c Command) Validate(tracks uint8) error {
 		return Error("command track is out of range")
 	}
 	switch c.Op {
+	case OpSetTrackPosition, OpSetListenerPosition, OpSetListenerRotation:
+		limit := float32(10000)
+		if c.Op == OpSetListenerRotation {
+			limit = 2 * math.Pi
+		}
+		for _, bits := range [3]uint32{c.Arg0, c.Arg1, c.Pad} {
+			value := math.Float32frombits(bits)
+			if math.IsNaN(float64(value)) || value < -limit || value > limit {
+				return Error("spatial coordinate is out of range")
+			}
+		}
+		if c.Op == OpSetTrackPosition {
+			if c.Index > 1 || c.Index == 0 && (c.Arg0 != 0 || c.Arg1 != 0 || c.Pad != 0) {
+				return Error("invalid spatial track mode")
+			}
+		} else if c.Index != 0 {
+			return Error("listener command has unexpected index")
+		}
 	case OpPlay, OpStop:
 		if c.Index != 0 || c.Arg0 != 0 || c.Arg1 != 0 {
 			return Error("transport command has unexpected payload")
@@ -312,9 +337,13 @@ func globalOp(op Op) bool {
 	case OpPlay, OpStop, OpSeek, OpSetTempo, OpLaunchScene, OpCue, OpSetLayerMask, OpMeterRate, OpDefineMacro, OpSetMacro,
 		OpSetLayers, OpSetLayerMasks, OpSetPhraseBars, OpSetState:
 		return true
+	case OpSetListenerPosition, OpSetListenerRotation:
+		return true
 	}
 	return false
 }
+
+func spatialOp(op Op) bool { return op >= OpSetTrackPosition && op <= OpSetListenerRotation }
 
 func validDirectorQuantize(value uint32) bool {
 	return value == 0 || value == 1 || value == 2 || value >= 5 && value <= 20 || value == uint32(QuantizePhrase)
