@@ -167,7 +167,7 @@ func TestAmpP99BlockBudget(t *testing.T) {
 	}
 	sort.Slice(timings, func(i, j int) bool { return timings[i] < timings[j] })
 	p99 := timings[(blocks*99)/100]
-	t.Logf("8 causal amps, 128 frames at 48 kHz: p50=%s p99=%s; budget=670us; weight bytes=144; LUT bytes=514; state bytes=32/amp", timings[blocks/2], p99)
+	t.Logf("8 causal amps, 128 frames at 48 kHz: p50=%s p99=%s; budget=670us; weight bytes=72; LUT bytes=514; state bytes=32/amp", timings[blocks/2], p99)
 	if p99 > 670*time.Microsecond {
 		t.Fatalf("p99 %s exceeds unchanged 670us block budget", p99)
 	}
