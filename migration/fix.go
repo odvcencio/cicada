@@ -63,6 +63,9 @@ func FixFiles(files []notation.SourceFile, edition int) ([]notation.SourceFile, 
 	legacy := append([]notation.SourceFile(nil), files...)
 	if edition == 2 {
 		for i, file := range legacy {
+			if file.Library != "" {
+				continue
+			}
 			root, w, err := notation.ParseTree(file.Source)
 			if err != nil {
 				return nil, false, err
@@ -101,6 +104,9 @@ func FixFiles(files []notation.SourceFile, edition int) ([]notation.SourceFile, 
 	fixed := append([]notation.SourceFile(nil), legacy...)
 	changed := false
 	for i, file := range legacy {
+		if file.Library != "" {
+			continue
+		}
 		data, _, err := rewriteSource(file.Source, before, i == musicBusFile)
 		if err != nil {
 			return nil, false, err
@@ -117,6 +123,24 @@ func FixFiles(files []notation.SourceFile, edition int) ([]notation.SourceFile, 
 		return nil, false, fmt.Errorf("fix changed musical meaning")
 	}
 	return fixed, changed, nil
+}
+
+// Imported declarations have internal qualified IDs; rewritten source uses
+// the importing scope's alias. Missing direct bindings retain the original ID
+// so normal reference validation refuses an inaccessible return.
+func effectSourceName(score *notation.Score, effect notation.Effect) string {
+	origin, imported := score.Origins[effect.Name]
+	if !imported || origin.Library == "" {
+		return effect.Name
+	}
+	namespace := strings.ReplaceAll(origin.Library, "/", ".")
+	prefix := namespace + "."
+	for alias, boundNamespace := range score.LibraryAliases {
+		if boundNamespace == namespace && strings.HasPrefix(effect.Name, prefix) {
+			return alias + "." + strings.TrimPrefix(effect.Name, prefix)
+		}
+	}
+	return effect.Name
 }
 
 func rewriteSource(source []byte, before *notation.Score, addComp bool) ([]byte, bool, error) {
@@ -139,10 +163,10 @@ func rewriteSource(source []byte, before *notation.Score, addComp bool) ([]byte,
 	delayName, reverbName := "delay", "reverb"
 	for _, effect := range before.Effects {
 		if effect.Kind == "delay" {
-			delayName = effect.Name
+			delayName = effectSourceName(before, effect)
 		}
 		if effect.Kind == "reverb" {
-			reverbName = effect.Name
+			reverbName = effectSourceName(before, effect)
 		}
 		hasLegacyComp = hasLegacyComp || effect.Legacy && effect.Kind == "comp"
 	}

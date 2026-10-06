@@ -2,11 +2,65 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
+
+	"m31labs.dev/cicada/instrument"
 )
+
+func TestGraphCommandJSON(t *testing.T) {
+	bin := filepath.Join(t.TempDir(), "cicada")
+	build := exec.Command("go", "build", "-o", bin, ".")
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, output)
+	}
+	for _, tc := range []struct {
+		file, name string
+		period     bool
+	}{
+		{"glassbass.cicada", "glassbass", false},
+		{"pluck.cicada", "plucked", true},
+		{"pluck.cicada", "slapback", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			command := exec.Command(bin, "graph", filepath.Join("..", "..", "examples", tc.file), tc.name)
+			var stderr bytes.Buffer
+			command.Stderr = &stderr
+			output, err := command.Output()
+			if err != nil {
+				t.Fatalf("graph: %v\n%s", err, &stderr)
+			}
+			var program instrument.Program
+			if err := json.Unmarshal(output, &program); err != nil {
+				t.Fatalf("invalid graph JSON: %v\n%s", err, output)
+			}
+			if program.Name != tc.name || program.Mode != "mono" || program.StatefulNodes == 0 || program.Output < 0 || program.Output >= len(program.Nodes) {
+				t.Fatalf("incomplete graph: %+v", program)
+			}
+			if program.Nodes[program.Output].Type != instrument.Audio {
+				t.Fatalf("wrong output node: %+v", program.Nodes[program.Output])
+			}
+			var hasPeriod bool
+			for _, node := range program.Nodes {
+				hasPeriod = hasPeriod || node.Op == "period"
+			}
+			if hasPeriod != tc.period || (program.DelaySamples > 0) != tc.period {
+				t.Fatalf("period=%t, delay samples=%d; want period and delay=%t", hasPeriod, program.DelaySamples, tc.period)
+			}
+			var fields map[string]json.RawMessage
+			if err := json.Unmarshal(output, &fields); err != nil {
+				t.Fatal(err)
+			}
+			if _, present := fields["PeriodExpressions"]; present {
+				t.Fatal("compiler expression metadata leaked into graph JSON")
+			}
+		})
+	}
+}
 
 func TestCheckGraphDelayDiagnostics(t *testing.T) {
 	for _, tc := range []struct{ expression, params, note, code string }{

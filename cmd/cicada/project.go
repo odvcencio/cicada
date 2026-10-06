@@ -35,6 +35,12 @@ func projectCommand(args []string) {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+		for _, asset := range p.Assets {
+			if asset.Directory("") != "" {
+				fmt.Fprintf(os.Stderr, "%s:1:1: error CICADA-LIB-ASSET: cannot convert library-owned audio %s; keep score imports until asset vendoring is supported\n", input, asset.Name)
+				os.Exit(1)
+			}
+		}
 		var data []byte
 		if filepath.Ext(input) == ".json" {
 			data, err = project.ToSource(p)

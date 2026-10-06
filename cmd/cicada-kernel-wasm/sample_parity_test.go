@@ -272,7 +272,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			ctx := context.Background()
 			var wasmAllocations uint64
 			var allocatorFound bool
-			if strings.HasPrefix(fixture, "multifile") {
+			if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
 				ctx = experimental.WithFunctionListenerFactory(ctx, experimental.FunctionListenerFactoryFunc(func(def api.FunctionDefinition) experimental.FunctionListener {
 					if !strings.Contains(def.DebugName(), "runtime.alloc") {
 						return nil
@@ -345,7 +345,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			allocationsBeforeRender := wasmAllocations
 			for block := 0; block*blockSize < frames; block++ {
 				call("gosx_audio_render", blockSize)
-				if strings.HasPrefix(fixture, "multifile") {
+				if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
 					data, ok := module.Memory().Read(outputPtr, blockSize*2*4)
 					if !ok {
 						t.Fatal("WASM PCM block out of bounds")
@@ -392,7 +392,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 					stableMemory = module.Memory().Size()
 				}
 			}
-			if strings.HasPrefix(fixture, "multifile") {
+			if strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") {
 				copyHash := [32]byte{}
 				copy(copyHash[:], pcm.Sum(nil))
 				hashes[rate] = copyHash
@@ -509,5 +509,40 @@ func TestAudioWASMMultiFileSampleParity(t *testing.T) {
 			t.Fatalf("WASM PCM bytes differ from concatenation at %d Hz", rate)
 		}
 		t.Logf("METRIC multifile rate=%d wasm_concat_pcm=byte-identical", rate)
+	}
+}
+
+func TestAudioWASMLibrariesSampleParity(t *testing.T) {
+	score, ds, err := project.LoadScore(filepath.Join("..", "..", "examples", "libraries", "main.cicada"), nil)
+	if err != nil || score == nil || len(ds) != 0 {
+		t.Fatalf("library example: %+v %v", ds, err)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil || len(ds) != 0 {
+		t.Fatalf("library compile: %+v", ds)
+	}
+	source, err := os.ReadFile(filepath.Join("..", "..", "testdata", "libraries-inlined.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	inline, ds := notation.Parse(source)
+	if inline == nil || len(ds) != 0 {
+		t.Fatalf("inline parse: %+v", ds)
+	}
+	q, ds := project.FromScore(inline)
+	if q == nil || len(ds) != 0 {
+		t.Fatalf("inline compile: %+v", ds)
+	}
+	wasm, err := os.ReadFile(wasmModulePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	importedPCM := compareWASMProject(t, "libraries", p, 2, true, wasm)
+	inlinePCM := compareWASMProject(t, "libraries-inline", q, 2, true, wasm)
+	for _, rate := range []int{44100, 48000} {
+		if importedPCM[rate] != inlinePCM[rate] {
+			t.Fatalf("imported and inlined WASM PCM differs at %d Hz", rate)
+		}
+		t.Logf("METRIC libraries rate=%d wasm_inline_pcm=byte-identical", rate)
 	}
 }
