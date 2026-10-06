@@ -80,6 +80,12 @@ async function start(harness) {
     assert.equal(legacy.client.bpmMilli, 120000, 'rejected stage changed tempo');
     assert.equal(legacy.client.revision, 'initial');
   }
+  assert.throws(() => legacy.client.sendCommands([{ op: 1 }, { op: 26 }]), /spatial/);
+  assert.equal(legacy.stats.posted.length, before);
+  const spatial = setup(15, { t: 'r', p: 197119, r: 'initial', c: true });
+  assert.ok((await start(spatial)).result);
+  spatial.client.sendCommands([{ op: 26, track: 0, index: 1, arg0: 0x3f800000, pad: 0x3f000000 }]);
+  assert.equal(new DataView(spatial.stats.posted.at(-1).bytes.buffer).getFloat32(12, true), .5);
   const unified = setup(15);
   assert.ok((await start(unified)).result);
   unified.client.sendCommands([{ op: 22 }]);

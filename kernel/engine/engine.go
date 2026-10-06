@@ -10,6 +10,7 @@ import (
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/spatial"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
@@ -191,6 +192,7 @@ type meterAccum struct {
 // Engine has fixed command and message rings. The host owns cross-thread
 // communication and calls Push only on the render thread.
 type Engine struct {
+	spatial                      spatialState
 	sampleRate, maxBlock, tracks int
 	paramAlpha                   [kernel.ParamCount]float32
 	macroCurrent                 [16]float32
@@ -341,6 +343,9 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
 		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
+	e.spatial.rotation = spatial.ListenerRotation(0, 0, 0)
+	e.spatial.music.Init(cfg.SampleRate)
+	e.spatial.sfx.Init(cfg.SampleRate)
 	for id := 0; id < len(kernel.Params); id++ {
 		e.paramAlpha[id] = smoothingAlpha(kernel.ParamID(id), cfg.SampleRate)
 	}
@@ -459,6 +464,8 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		if spec.Mute {
 			v.mix = mix.Track{}
 		}
+		e.spatial.tracks[i].gain = float32(math.Pow(10, gain/20))
+		e.spatial.tracks[i].target = e.spatial.tracks[i].gain
 		v.targetMix = v.mix
 		v.mixSmooth = e.paramAlpha[kernel.ParamMixGain]
 		v.sendSmooth = e.paramAlpha[kernel.ParamMixSendA]
@@ -822,6 +829,8 @@ func (e *Engine) Reset() {
 		e.patterns[i].chainRepeat = 0
 	}
 	e.limiter.Reset()
+	e.spatial.music.Reset()
+	e.spatial.sfx.Reset()
 	if e.masterProcessor != nil {
 		e.masterProcessor.Reset()
 	}
@@ -864,6 +873,7 @@ func (e *Engine) Render(outL, outR []float32) {
 	}
 	clear(outL)
 	clear(outR)
+	clear(e.spatial.taps)
 	if e.faulted {
 		return
 	}
@@ -920,9 +930,14 @@ func (e *Engine) Render(outL, outR []float32) {
 			return
 		}
 		var dry mix.Dry
+		var buses spatial.Frame
 		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
 		for track := 0; track < e.tracks; track++ {
 			v := &e.voices[track]
+			positioned := &e.spatial.tracks[track]
+			if positioned.enabled {
+				positioned.gain += float32((positioned.target - positioned.gain) * v.mixSmooth)
+			}
 			v.mix.Left += float32((v.targetMix.Left - v.mix.Left) * v.mixSmooth)
 			v.mix.Right += float32((v.targetMix.Right - v.mix.Right) * v.mixSmooth)
 			v.sendA += float32((v.targetSendA - v.sendA) * v.sendSmooth)
@@ -1011,7 +1026,18 @@ func (e *Engine) Render(outL, outR []float32) {
 					}
 				}
 				tap := mix.Track{Left: v.mix.Left * v.muteGain, Right: v.mix.Right * v.muteGain}
-				if v.busSFX {
+				if positioned.enabled {
+					mono := float32((left+right)*.5) * float32(positioned.gain*v.muteGain)
+					if v.sourceOff {
+						mono = 0
+					}
+					trackL, trackR = mono, mono
+					if v.busSFX {
+						buses.SFX.Add(mono, positioned.coefficients)
+					} else {
+						buses.Music.Add(mono, positioned.coefficients)
+					}
+				} else if v.busSFX {
 					dry.AddSFX(left, right, tap)
 				} else {
 					dry.Add(left, right, tap)
@@ -1052,6 +1078,18 @@ func (e *Engine) Render(outL, outR []float32) {
 			}
 			accumulateMeter(&e.returnBMeter, returnL, returnR)
 			dry.AddReturn(returnL, returnR)
+		}
+		if e.spatial.active {
+			buses.Music = e.spatial.rotation.Apply(buses.Music)
+			buses.SFX = e.spatial.rotation.Apply(buses.SFX)
+			spatialL, spatialR := e.spatial.music.Process(buses.Music)
+			dry.AddReturn(spatialL, spatialR)
+			spatialL, spatialR = e.spatial.sfx.Process(buses.SFX)
+			dry.SFXLeft += spatialL
+			dry.SFXRight += spatialR
+		}
+		if e.spatial.taps != nil {
+			e.spatial.taps[frame] = buses
 		}
 		left, right := dry.Music()
 		sfxL, sfxR := dry.SFX()
@@ -1274,6 +1312,8 @@ func commandPriority(op cmd.Op) int {
 
 func (e *Engine) apply(c cmd.Command) {
 	switch c.Op {
+	case cmd.OpSetTrackPosition, cmd.OpSetListenerPosition, cmd.OpSetListenerRotation:
+		e.applySpatial(c)
 	case cmd.OpSetState, cmd.OpTriggerStinger:
 		e.applyDirector(c)
 	case cmd.OpPlay:
@@ -1320,6 +1360,8 @@ func (e *Engine) apply(c cmd.Command) {
 			e.resetVoice(i)
 		}
 		e.limiter.Reset()
+		e.spatial.music.Reset()
+		e.spatial.sfx.Reset()
 		if e.delayA != nil {
 			e.delayA.Reset()
 		}
@@ -1546,6 +1588,14 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 		v := &e.voices[c.Track]
 		switch kernel.ParamID(c.Index) {
 		case kernel.ParamMixGain:
+			positioned := &e.spatial.tracks[c.Track]
+			positioned.target = float32(math.Pow(10, float64(value)/20))
+			if off {
+				positioned.target = 0
+			}
+			if immediate {
+				positioned.gain = positioned.target
+			}
 			v.gainDB = value
 			v.sourceOff = off
 			if off {

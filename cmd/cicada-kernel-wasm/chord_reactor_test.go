@@ -136,7 +136,7 @@ func checkChordWASMParity(t *testing.T, upload bool) {
 		return 0
 	}
 	call("_initialize")
-	if got, want := uint32(call("gosx_audio_capabilities")), kernelimage.CapabilityChords|kernelimage.CapabilityUnifiedImage|uint32(kernelimage.SupportedCapabilities); got != want {
+	if got, want := uint32(call("gosx_audio_capabilities")), kernelimage.CapabilityChords|kernelimage.CapabilityUnifiedImage|kernelimage.CapabilitySpatial|uint32(kernelimage.SupportedCapabilities); got != want {
 		t.Fatalf("capabilities = %#x, want %#x", got, want)
 	}
 	ptr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
@@ -298,7 +298,7 @@ func TestChordWASMImageVersionNegotiation(t *testing.T) {
 				return result[0]
 			}
 			call("_initialize")
-			if got, want := uint32(call("gosx_audio_capabilities")), kernelimage.CapabilityChords|kernelimage.CapabilityUnifiedImage|uint32(kernelimage.SupportedCapabilities); got != want {
+			if got, want := uint32(call("gosx_audio_capabilities")), kernelimage.CapabilityChords|kernelimage.CapabilityUnifiedImage|kernelimage.CapabilitySpatial|uint32(kernelimage.SupportedCapabilities); got != want {
 				t.Fatalf("capabilities = %#x, want %#x", got, want)
 			}
 			ptr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))

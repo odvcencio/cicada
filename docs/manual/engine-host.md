@@ -88,7 +88,8 @@ transport changes, and engine errors.
 `OpNoteExpression` uses the existing 24-byte record. `Index` identifies the
 note started by `OpNoteOn`; `Arg0`, `Arg1`, and the word at byte 12 carry
 float32 pitch offset in cents, pressure, and timbre respectively. Pitch is
-bounded to −9600…9600 cents; pressure and timbre are 0…1. Other commands still
+bounded to −9600…9600 cents; pressure and timbre are 0…1. Spatial commands also
+use `Pad` for their third coordinate; other commands still
 require the byte-12 word to be zero. A note starts with zero bend and pressure
 and centered timbre (0.5). Expression and note-off commands for an old identity
 cannot change its replacement. Identity zero preserves the legacy path, and
@@ -148,6 +149,56 @@ fields are in the [semantic reference](../spec/semantic-model.md).
 
 `make test-timing` checks musical boundary timing and block-size invariance.
 `make test-alloc` checks render allocations, including a sixteen-track chain.
+
+## Position tracks for headphones
+
+Track and listener commands work through the same native and browser kernel.
+Check `CapabilitySpatial` (bit 17) in `gosx_audio_capabilities` or the worklet's
+ready message before submitting opcodes 26–28.
+
+```go
+e.Push(cmd.TrackPosition(0, 1, 0, 0, 0)) // one metre ahead
+e.Push(cmd.ListenerPosition(0, 0, 0, 0))
+e.Push(cmd.ListenerRotation(.5, 0, 0, 0)) // turn left by 0.5 radians
+e.Render(left, right)
+```
+
+Positions use metres with X forward, Y left, and Z up. Coordinates must be
+finite and within ±10,000 metres. A positioned track folds stereo to mono,
+applies its track gain and mute/solo state, and encodes into a first-order
+B-format bus. Pan continues to affect stereo effect sends. Ordinary tracks
+and effect returns keep their stereo routing. Music and SFX have separate
+spatial buses and retain their bus gain, mute/solo, and compression behavior.
+
+The bus uses [AmbiX ACN/SN3D](https://iem-projects.github.io/ambix/apiref/format.html)
+channel order: W, Y, Z, X. Distance gain is `1/max(1, distance)`; coincident
+sources encode as omnidirectional. Listener translation re-encodes track
+positions. Listener rotation rotates the directional bus channels before
+headphone decoding and leaves W unchanged.
+
+| Command | Routing and payload |
+| --- | --- |
+| `OpSetTrackPosition` (26) | Track index; `Index=1`; X/Y/Z float32 bits in `Arg0`/`Arg1`/`Pad`. `Index=0` with zero payload restores stereo. |
+| `OpSetListenerPosition` (27) | `Track=255`, `Index=0`; X/Y/Z float32 bits. |
+| `OpSetListenerRotation` (28) | `Track=255`, `Index=0`; yaw/pitch/roll float32 radians, each within ±2π. |
+
+Positive yaw turns left, positive pitch looks up, and positive roll raises
+the left ear. The listener's local-to-world rotation order is yaw, pitch,
+then roll. Commands apply at their absolute transport tick (960 PPQ);
+`Tick=0` applies immediately. Position and rotation changes are immediate,
+so interpolate them in the host when smooth motion is needed.
+
+The decoder uses six virtual speakers with generic timing, head-shadow,
+and front/back/elevation filters. It does not use measured or individualized
+HRTFs. All coefficients, histories, and bus samples use bounded storage;
+spatial commands, decoding, and `Render` allocate no objects. `Reset` and
+seek clear decoder history and retain track positions and listener pose.
+
+Native hosts can call `RenderWithBFormat(left, right, buses)` to capture both
+listener-relative buses before decoding into caller-owned `[]spatial.Frame`
+storage. Its length must match the output slices. Stereo tracks and effect
+returns are absent from this capture. Per-track meters and taps for positioned
+tracks report the mono signal before distance attenuation and decoding.
 
 ## Regress audio changes
 
