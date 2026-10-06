@@ -26,6 +26,7 @@ export function validateManifest(m) {
     const bounds = {Root:[0,127],KeyLow:[0,127],KeyHigh:[0,127],VelocityLow:[1,127],VelocityHigh:[1,127],Layer:[1,127],Group:[0,255],Position:[0,31],Count:[1,32],Start:[0,8*1024*1024],End:[0,8*1024*1024],LoopStart:[0,8*1024*1024],LoopEnd:[0,8*1024*1024],Crossfade:[0,8*1024*1024]};
     for (const [key,[lo,hi]] of Object.entries(bounds)) requireThat(Number.isInteger(z[key]) && z[key]>=lo && z[key]<=hi, 'invalid zone '+key);
     requireThat(Number.isInteger(z.ChokeGroup??0)&&(z.ChokeGroup??0)>=0&&(z.ChokeGroup??0)<=255,'invalid choke group');
+    requireThat(z.ChokeSustain===undefined||typeof z.ChokeSustain==='boolean','invalid choke sustain');
     requireThat(z.KeyLow<=z.KeyHigh && z.VelocityLow<=z.VelocityHigh && z.Layer>=z.VelocityLow && z.Layer<=z.VelocityHigh && z.Position<z.Count && Number.isFinite(z.Gain) && Number.isFinite(z.TuneCents), 'invalid zone mapping');
   }
   return m;
@@ -95,7 +96,7 @@ export function prepareSampler(exports,rate,pack,seedOverride) {
   new Float64Array(exports.memory.buffer,exports.sampler_config_ptr(),18).set(setup);
   const assets=new Map();
   for(const a of m.assets) {const index=exports.sampler_pcm_alloc(a.frames,a.channels,a.rate);requireThat(index>=0,'PCM budget rejected');assets.set(a.id,index);const pcm=pack.pcm.get(a.id);for(let ch=0;ch<a.channels;ch++)new Float32Array(exports.memory.buffer,exports.sampler_pcm_ptr(index,ch),a.frames).set(pcm[ch]);}
-  for(let i=0;i<m.zones.length;i++) {const z=m.zones[i];const values=[assets.get(z.asset),z.Root,z.KeyLow,z.KeyHigh,z.VelocityLow,z.VelocityHigh,z.Layer,z.Group,z.Position,z.Count,+z.Release,z.Gain,z.TuneCents,z.Start,z.End,+z.Loop,z.LoopStart,z.LoopEnd,z.Crossfade,(z.ChokeGroup??0)+(z.OneShot?256:0)];new Float64Array(exports.memory.buffer,exports.sampler_zone_ptr(i),20).set(values);}
+  for(let i=0;i<m.zones.length;i++) {const z=m.zones[i];const values=[assets.get(z.asset),z.Root,z.KeyLow,z.KeyHigh,z.VelocityLow,z.VelocityHigh,z.Layer,z.Group,z.Position,z.Count,+z.Release,z.Gain,z.TuneCents,z.Start,z.End,+z.Loop,z.LoopStart,z.LoopEnd,z.Crossfade,(z.ChokeGroup??0)+(z.OneShot?256:0)+(z.ChokeSustain?512:0)];new Float64Array(exports.memory.buffer,exports.sampler_zone_ptr(i),20).set(values);}
   requireThat(exports.sampler_prepare()===0,'sampler map/configuration rejected');
   return exports;
 }

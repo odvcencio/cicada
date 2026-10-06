@@ -1,5 +1,7 @@
 # CC0 sample instrument catalog
 
+The [full acoustic drum kit](full-kit/README.md) has a separate pinned catalog with CC-BY-4.0 CrocellKit recordings and CC0 VCSL cross-stick. The six packs below remain CC0.
+
 Build the external packs, copy a demo beside them, and render it:
 
 ```sh

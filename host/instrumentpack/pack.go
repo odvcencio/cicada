@@ -45,6 +45,7 @@ type Asset struct {
 type Zone struct {
 	ChokeGroup                                int
 	OneShot                                   bool
+	ChokeSustain                              bool   `json:",omitempty"`
 	Asset                                     string `json:"asset"`
 	Root, KeyLow, KeyHigh                     int
 	VelocityLow, VelocityHigh, Layer          int
@@ -178,7 +179,7 @@ func Load(dir, manifestPath, pin string) (*Prepared, error) {
 		r.LoopStart = z.LoopStart
 		r.LoopEnd = z.LoopEnd
 		r.Crossfade = z.Crossfade
-		p.Zones = append(p.Zones, sample.Zone{ChokeGroup: uint8(z.ChokeGroup), OneShot: z.OneShot, Region: r, KeyLow: uint8(z.KeyLow), KeyHigh: uint8(z.KeyHigh), VelocityLow: uint8(z.VelocityLow), VelocityHigh: uint8(z.VelocityHigh), Layer: uint8(z.Layer), Group: uint8(z.Group), Position: uint8(z.Position), Count: uint8(z.Count), Release: z.Release, Gain: z.Gain, TuneCents: z.TuneCents})
+		p.Zones = append(p.Zones, sample.Zone{ChokeGroup: uint8(z.ChokeGroup), OneShot: z.OneShot, ChokeSustain: z.ChokeSustain, Region: r, KeyLow: uint8(z.KeyLow), KeyHigh: uint8(z.KeyHigh), VelocityLow: uint8(z.VelocityLow), VelocityHigh: uint8(z.VelocityHigh), Layer: uint8(z.Layer), Group: uint8(z.Group), Position: uint8(z.Position), Count: uint8(z.Count), Release: z.Release, Gain: z.Gain, TuneCents: z.TuneCents})
 	}
 	// Validate maps, PCM bounds and ratios before returning any prepared bank.
 	if _, err = p.New(48000); err != nil {
