@@ -38,6 +38,23 @@ func SaveAs(score, target string) error {
 	if score == target {
 		return nil
 	}
+	for dir := filepath.Dir(target); ; dir = filepath.Dir(dir) {
+		data, readErr := os.ReadFile(filepath.Join(dir, "cicada.mod"))
+		if readErr == nil {
+			manifest, parseErr := edition.ParseProjectManifest(data)
+			if parseErr != nil {
+				return parseErr
+			}
+			if manifest.Library != "" {
+				return errors.New("Save As destination is inside a library; choose a new score path")
+			}
+		} else if !errors.Is(readErr, os.ErrNotExist) {
+			return readErr
+		}
+		if filepath.Dir(dir) == dir {
+			break
+		}
+	}
 	srcDir, err := takejournal.ProjectRoot(score)
 	if err != nil {
 		return err

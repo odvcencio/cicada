@@ -11,6 +11,22 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
+type libraryContext struct{ entry, source string }
+
+func (s *server) librarySourceURI(sources *project.Sources, lib *project.Library, file notation.SourceFile) (string, error) {
+	if _, ok := s.libraryContexts[fileURI(file.Path)]; ok {
+		return fileURI(file.Path), nil
+	}
+	uri, err := librarySourceURI(lib, file)
+	if err == nil && lib != nil && lib.Kind == "std" {
+		if s.libraryContexts == nil {
+			s.libraryContexts = map[string]libraryContext{}
+		}
+		s.libraryContexts[uri] = libraryContext{entry: sources.Files[0].Path, source: file.Path}
+	}
+	return uri, err
+}
+
 // Embedded definitions are copied to a content-addressed editor cache so
 // ordinary file URI clients can open exactly the source used by the loader.
 func librarySourceURI(lib *project.Library, file notation.SourceFile) (string, error) {

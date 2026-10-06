@@ -297,3 +297,36 @@ func sourceUsesNamedMixer(score *notation.Score) bool {
 	}
 	return false
 }
+
+func routedEffects(score *notation.Score) []notation.Effect {
+	// Edition 1 routes returns by effect kind and preserves implicit instances.
+	if score.Version == 1 {
+		return append([]notation.Effect(nil), score.Effects...)
+	}
+	routed := map[string]bool{}
+	visit := func(params []notation.Param) {
+		for _, param := range params {
+			switch param.Name {
+			case "insert":
+				for _, name := range strings.Fields(param.Value) {
+					routed[name] = true
+				}
+			case "send":
+				routed[param.Target] = true
+			}
+		}
+	}
+	for _, track := range score.Tracks {
+		visit(track.Params)
+	}
+	for _, bus := range score.Buses {
+		visit(bus.Params)
+	}
+	effects := make([]notation.Effect, 0, len(score.Effects))
+	for _, effect := range score.Effects {
+		if score.Origins[effect.Name].Library == "" || routed[effect.Name] {
+			effects = append(effects, effect)
+		}
+	}
+	return effects
+}

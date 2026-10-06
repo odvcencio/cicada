@@ -19,6 +19,9 @@ func (s *server) projectSources(uri string) (*project.Sources, error) {
 	if !ok {
 		return nil, nil
 	}
+	if context, ok := s.libraryContexts[uri]; ok {
+		path = context.entry
+	}
 	overrides := map[string][]byte{}
 	for uri, data := range s.documents {
 		if path, ok := scorePathFromURI(uri); ok {
@@ -27,7 +30,23 @@ func (s *server) projectSources(uri string) (*project.Sources, error) {
 			}
 		}
 	}
-	return project.ReadSources(path, overrides)
+	for uri, context := range s.libraryContexts {
+		if data, ok := s.documents[uri]; ok {
+			overrides[context.source] = data
+		}
+	}
+	sources, err := project.ReadSources(path, overrides)
+	if err != nil {
+		return nil, err
+	}
+	for i := range sources.Files {
+		for cached, context := range s.libraryContexts {
+			if sources.Files[i].Path == context.source {
+				sources.Files[i].Path, _ = scorePathFromURI(cached)
+			}
+		}
+	}
+	return sources, nil
 }
 
 func usesSourceSet(files *project.Sources) bool {
@@ -60,7 +79,7 @@ func (s *server) projectDefinition(uri string, at position) any {
 		return nil
 	}
 	if files != nil {
-		if target, found := libraryDefinition(files, uri, source, at); found {
+		if target, found := s.libraryDefinition(files, uri, source, at); found {
 			return target
 		}
 	}
@@ -89,7 +108,7 @@ func (s *server) projectDefinition(uri string, at position) any {
 			for _, file := range files.Files {
 				if file.Path == origin.Position.File {
 					start := scalarOffset(file.Source, origin.Position)
-					uri, err := librarySourceURI(files.Libraries[file.Library], file)
+					uri, err := s.librarySourceURI(files, files.Libraries[file.Library], file)
 					if err != nil {
 						return nil
 					}
@@ -113,7 +132,7 @@ func (s *server) projectDefinition(uri string, at position) any {
 		}
 		for _, symbol := range symbols {
 			if symbol.Role == "definition" && symbol.Name == selected.Name && symbolFamily(symbol.Kind) == symbolFamily(selected.Kind) {
-				uri, err := librarySourceURI(files.Libraries[file.Library], file)
+				uri, err := s.librarySourceURI(files, files.Libraries[file.Library], file)
 				if err != nil {
 					return nil
 				}
