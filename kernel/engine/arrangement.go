@@ -158,6 +158,9 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 		switch binding.Mode {
 		case SceneKeep:
 		case SceneOff:
+			if e.fadeSceneTrack(track, true) {
+				continue
+			}
 			if p.active < 0 {
 				p.chainArmed = false
 				continue
@@ -176,6 +179,7 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 			p.eventCount, p.eventIndex = 0, 0
 			e.emit(cmd.Message{Kind: cmd.Switched, Track: uint8(track), A: 0xffff, Tick: e.transport.Tick()})
 		case SceneSlot:
+			e.fadeSceneTrack(track, false)
 			if p.active == int8(binding.Slot) {
 				p.chainArmed = false
 				continue

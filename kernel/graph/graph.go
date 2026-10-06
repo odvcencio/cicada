@@ -5,6 +5,7 @@ package graph
 import (
 	"math"
 
+	"m31labs.dev/cicada/kernel/amp"
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 )
 
@@ -42,9 +43,10 @@ const (
 	Clamp
 	// 23 is reserved for concurrent graph expansion. Command opcodes are a
 	// separate namespace (the chord command in image version 14 uses 22).
-	Delay  Op = 24
-	Comb   Op = 25
-	Period Op = 26 // unit / Hz, converted from seconds to milliseconds
+	Delay     Op = 24
+	Comb      Op = 25
+	Period    Op = 26 // unit / Hz, converted from seconds to milliseconds
+	NeuralAmp Op = 28 // pinned quantized causal amp: audio, unit drive
 )
 
 type Node struct {
@@ -74,6 +76,7 @@ type nodeState struct {
 	filter [4]float32
 	noise  uint32
 	delay  uint8
+	amp    uint8
 
 	// Each coefficient input is clamped above zero; zero marks an empty cache.
 	// The program and sample rate stay fixed for the lifetime of the voice.
@@ -97,6 +100,7 @@ type Voice struct {
 	velocity    float32
 	delays      []delayState
 	delayMemory []float32
+	amps        []amp.Model
 }
 
 func NewVoice(program Program, sampleRate int) (*Voice, error) {
@@ -119,6 +123,16 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 			v.states[i].delay = uint8(count)
 			count++
 		}
+	}
+	count = 0
+	for i := 0; i < int(program.Len); i++ {
+		if program.Nodes[i].Op == NeuralAmp {
+			v.states[i].amp = uint8(count)
+			count++
+		}
+	}
+	if count > 0 {
+		v.amps = make([]amp.Model, count)
 	}
 	return v, nil
 }
@@ -145,7 +159,7 @@ func Validate(program Program, sampleRate int) error {
 		case Pitch, Gate, Velocity, SampleRate, Constant, Noise:
 		case Saw, Square, Sine, Tanh, Exp2:
 			inputs = 1
-		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay:
+		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay, NeuralAmp:
 			inputs = 2
 		case Ladder, Diode, Mix, Clamp:
 			inputs = 3
@@ -205,11 +219,12 @@ func (v *Voice) NoteOff() { v.gate = 0 }
 // CopyStateFrom copies a voice constructed with the same program into this
 // voice's preallocated storage. Neither delay state nor ring memory is shared.
 func (v *Voice) CopyStateFrom(source *Voice) {
-	delays, memory := v.delays, v.delayMemory
+	delays, memory, amps := v.delays, v.delayMemory, v.amps
 	*v = *source
-	v.delays, v.delayMemory = delays, memory
+	v.delays, v.delayMemory, v.amps = delays, memory, amps
 	copy(v.delays, source.delays)
 	copy(v.delayMemory, source.delayMemory)
+	copy(v.amps, source.amps)
 }
 
 func (v *Voice) Reset() {
@@ -224,6 +239,7 @@ func (v *Voice) Reset() {
 	}
 	clear(v.delayMemory)
 	clear(v.delays)
+	clear(v.amps)
 }
 
 func (v *Voice) Next() float32 {
@@ -270,6 +286,8 @@ func (v *Voice) Next() float32 {
 			} else {
 				y = d.comb(ring, a, finiteClamp(b*v.sampleRate/1000, 4, MaxDelaySamples), finiteClamp(c, 0, .99999994), finiteClamp(v.values[uint8(n.Value)], 0, .99999994))
 			}
+		case NeuralAmp:
+			y = v.amps[s.amp].ProcessFloat(a, b)
 		case Saw, Square, Sine:
 			frequency := clamp(a, 0, v.sampleRate*0.49)
 			dt := frequency / v.sampleRate

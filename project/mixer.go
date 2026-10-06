@@ -46,8 +46,11 @@ func CompileMixerParams(track notation.Track) (Mixer, error) {
 					names = append(names, part)
 				}
 			}
-			if len(names) != 1 || strings.Contains(param.Value, "->") {
+			if track.Name != "master" && (len(names) != 1 || strings.Contains(param.Value, "->")) {
 				return mixer, fmt.Errorf("insert chain is not implemented")
+			}
+			if len(names) == 0 {
+				return mixer, fmt.Errorf("insert requires an effect name or none")
 			}
 			mixer.Insert, mixer.Inserts = names[0], names
 		case "send_a", "send_b":

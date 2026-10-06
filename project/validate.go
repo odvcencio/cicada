@@ -52,6 +52,9 @@ func ValidateProject(p *Project) error {
 		if ds := notation.ValidateLive(liveToScore(p.Live), tracks); len(ds) > 0 {
 			return fmt.Errorf("%s: %s", ds[0].Code, ds[0].Message)
 		}
+		if err := validateDirectorProject(p, tracks); err != nil {
+			return err
+		}
 		for _, macro := range p.Live.Macros {
 			if !validID(macro.Name) {
 				return fmt.Errorf("CICADA-LIVE-MACRO: invalid macro name %s", macro.Name)
@@ -81,7 +84,7 @@ func ValidateProject(p *Project) error {
 	var compSidechain string
 	for _, effect := range p.Effects {
 		kind := semanticEffectKind(effect)
-		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" {
+		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" && kind != "eq" && kind != "transient" && kind != "width" && kind != "limiter" && kind != "convolution" {
 			return fmt.Errorf("CICADA-UNSUPPORTED: effect kind %s is not implemented", kind)
 		}
 		if effect.ID == "music" || effect.ID == "sfx" || !validID(effect.ID) {
@@ -91,7 +94,14 @@ func ValidateProject(p *Project) error {
 			return fmt.Errorf("duplicate or incomplete effect %s", effect.ID)
 		}
 		effects[effect.ID] = effect
-		kindCounts[kind]++
+		if !MasterHasInsert(p, effect.ID) {
+			kindCounts[kind]++
+		}
+		if kind == "eq" || kind == "transient" || kind == "width" || kind == "limiter" || kind == "convolution" {
+			if !MasterHasInsert(p, effect.ID) {
+				return fmt.Errorf("CICADA-UNSUPPORTED: effect %s must be inserted on master", effect.ID)
+			}
+		}
 		if kind == "drive" {
 			if _, err := DriveParamsFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
@@ -108,7 +118,7 @@ func ValidateProject(p *Project) error {
 			if _, err := ReverbParamsFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
-		} else {
+		} else if kind == "comp" {
 			var err error
 			if _, compSidechain, err = CompSpecFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
@@ -364,8 +374,24 @@ func ValidateProject(p *Project) error {
 				}
 			}
 		}
-		if p.Master != nil && len(p.Master.Mixer.Inserts) > 0 {
-			return fmt.Errorf("CICADA-UNSUPPORTED: master inserts are not implemented")
+		if p.Master != nil {
+			if len(p.Master.Mixer.Inserts) > 16 {
+				return fmt.Errorf("CICADA-LIMIT: master supports at most 16 inserts")
+			}
+			seen := map[string]bool{}
+			for _, name := range p.Master.Mixer.Inserts {
+				effect, ok := effects[name]
+				if !ok {
+					return fmt.Errorf("CICADA-REFERENCE: unknown master effect %s", name)
+				}
+				if seen[name] {
+					return fmt.Errorf("CICADA-DUPLICATE: master repeats effect %s", name)
+				}
+				seen[name] = true
+				if err := validateMasterEffect(p, effect); err != nil {
+					return fmt.Errorf("master effect %s: %w", name, err)
+				}
+			}
 		}
 		if p.Master != nil {
 			if err := validateMixer(p.Master.Mixer); err != nil {
@@ -385,12 +411,16 @@ func ValidateProject(p *Project) error {
 			if semanticEffectKind(effect) != "comp" {
 				continue
 			}
-			placed := false
+			placed := MasterHasInsert(p, effect.ID)
 			for _, bus := range p.Buses {
-				placed = placed || bus.ID == "music" && len(bus.Mixer.Inserts) == 1 && bus.Mixer.Inserts[0] == effect.ID
+				onBus := bus.ID == "music" && len(bus.Mixer.Inserts) == 1 && bus.Mixer.Inserts[0] == effect.ID
+				if onBus && MasterHasInsert(p, effect.ID) {
+					return fmt.Errorf("CICADA-UNSUPPORTED: compressor %s cannot be shared by music and master", effect.ID)
+				}
+				placed = placed || onBus
 			}
 			if !placed {
-				return fmt.Errorf("CICADA-UNSUPPORTED: compressor %s must be inserted on bus music", effect.ID)
+				return fmt.Errorf("CICADA-UNSUPPORTED: compressor %s must be inserted on bus music or master", effect.ID)
 			}
 		}
 		if err := validateExports(p.Exports); err != nil {
@@ -750,7 +780,7 @@ func validateExpr(expr Expr, depth int) (int, error) {
 
 func validExprArity(op string, n int) bool {
 	switch op {
-	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay":
+	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay", "neural_amp":
 		return n == 2
 	case "saw", "square", "sine", "tanh", "exp2":
 		return n == 1
