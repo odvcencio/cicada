@@ -82,6 +82,16 @@ func remoteURL(s string) bool {
 	u, err := url.Parse(s)
 	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
 }
+
+// Owner recordings retain their source checksum without inventing remote
+// URLs or granting a public redistribution license.
+func validLicense(a Asset) bool {
+	if a.License == "owner recording" {
+		return a.SourceURL == "" && a.LicenseURL == "" && a.Attribution == ""
+	}
+	return remoteURL(a.SourceURL) && remoteURL(a.LicenseURL) &&
+		(a.License == "CC0-1.0" || a.License == "CC-BY-4.0" && a.Attribution != "")
+}
 func ValidPath(s string) bool {
 	return s != "" && !strings.ContainsAny(s, "\\\x00:") && !strings.HasPrefix(s, "/") && path.Clean(s) == s && s != "." && !strings.HasPrefix(s, "../")
 }
@@ -105,7 +115,7 @@ func DecodeManifest(data []byte) (Manifest, error) {
 	ids := map[string]bool{}
 	var total int64
 	for _, a := range m.Assets {
-		if a.ID == "" || ids[a.ID] || !ValidPath(a.Path) || !strings.HasSuffix(a.Path, ".wav.gz") || !validHash(a.SHA256) || !validHash(a.WAVSHA256) || !validHash(a.SourceSHA256) || a.Bytes < 1 || a.Bytes > MaxPCMBytes || a.WAVBytes < 44 || a.WAVBytes > MaxPCMBytes || a.Frames < 1 || a.Frames > 8<<20 || a.Rate < 8000 || a.Rate > 192000 || a.Channels < 1 || a.Channels > 2 || !remoteURL(a.SourceURL) || !remoteURL(a.LicenseURL) || a.License != "CC0-1.0" && a.License != "CC-BY-4.0" || a.License == "CC-BY-4.0" && a.Attribution == "" {
+		if a.ID == "" || ids[a.ID] || !ValidPath(a.Path) || !strings.HasSuffix(a.Path, ".wav.gz") || !validHash(a.SHA256) || !validHash(a.WAVSHA256) || !validHash(a.SourceSHA256) || a.Bytes < 1 || a.Bytes > MaxPCMBytes || a.WAVBytes < 44 || a.WAVBytes > MaxPCMBytes || a.Frames < 1 || a.Frames > 8<<20 || a.Rate < 8000 || a.Rate > 192000 || a.Channels < 1 || a.Channels > 2 || !validLicense(a) {
 			return m, fmt.Errorf("invalid asset or licence: %s", a.ID)
 		}
 		ids[a.ID] = true

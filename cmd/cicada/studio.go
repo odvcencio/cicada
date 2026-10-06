@@ -23,6 +23,8 @@ import (
 
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/host/modalfit"
+	"m31labs.dev/cicada/host/recording"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/lsp"
@@ -31,16 +33,18 @@ import (
 )
 
 type studio struct {
-	takes           *takejournal.Store
-	captureID       string
-	captureRecorder *capture.Recorder
-	path            string
-	mu              sync.Mutex
-	lastGoodSource  []byte
-	lastGoodProject *project.Project
-	transport       *studioTransport
-	history         *studioHistory
-	exports         *studioExportController
+	recordedModels      map[string]modalfit.Model
+	recordedInstruments map[string]*recording.Pack
+	takes               *takejournal.Store
+	captureID           string
+	captureRecorder     *capture.Recorder
+	path                string
+	mu                  sync.Mutex
+	lastGoodSource      []byte
+	lastGoodProject     *project.Project
+	transport           *studioTransport
+	history             *studioHistory
+	exports             *studioExportController
 }
 
 func studioCommand(args []string) error {
@@ -192,6 +196,11 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("POST /api/source", s.replaceSource)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
 	mux.HandleFunc("POST /api/record", s.recordTake)
+	mux.HandleFunc("POST /api/instrument-record", s.instrumentRecord)
+	mux.HandleFunc("POST /api/instrument-fit", s.instrumentFit)
+	mux.HandleFunc("POST /api/instrument-audition", s.instrumentAudition)
+	mux.HandleFunc("GET /assets/recorded/{pack}/{file}", s.instrumentPackAsset)
+	mux.HandleFunc("GET /studio-instrument-record.js", s.instrumentRecordScript)
 	mux.HandleFunc("POST /api/song", s.editSong)
 	mux.HandleFunc("POST /api/undo", s.undo)
 	mux.HandleFunc("POST /api/redo", s.redo)

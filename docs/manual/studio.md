@@ -134,6 +134,10 @@ Record panel.
 
 #### PCM capture and shared sampler audition
 
+For tap slicing, velocity layers and round robins, use **Record your own
+instrument** in the Record panel. See [recording instruments](recording-instruments.md)
+for microphone, WAV import and offline pack commands.
+
 Add an edition-2 audio track and a scene, stop transport, and open **Record**.
 Choose the target **Audio track** and **Scene** before arming. Synth tracks
 provide accompaniment during recording; recorded clips are auditioned separately.
