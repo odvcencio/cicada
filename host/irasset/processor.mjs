@@ -1,6 +1,6 @@
 // Supply a verified impulse from loader.mjs and a precompiled companion module.
 // Run preparation outside the AudioWorklet process callback.
-export async function prepareConvolution(module, impulse, partitionFrames=1024) {
+export async function prepareConvolution(module, impulse, partitionFrames=128) {
   const instance = await WebAssembly.instantiate(module);
   const x = instance.exports;
   x._initialize();

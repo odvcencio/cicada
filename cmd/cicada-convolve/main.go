@@ -36,7 +36,7 @@ func run() error {
 	manifest := flag.String("manifest", "assets/ir/manifest.json", "pinned IR manifest")
 	asset := flag.String("asset", "room", "IR asset ID")
 	wav := flag.String("ir", "", "already fetched exact IR WAV")
-	partition := flag.Int("partition", 1024, "power-of-two partition frames")
+	partition := flag.Int("partition", 128, "power-of-two partition frames")
 	wet := flag.Float64("mix", .2, "wet proportion 0..1")
 	bars := flag.Int("bars", 0, "bars; zero selects full song")
 	flag.Parse()
