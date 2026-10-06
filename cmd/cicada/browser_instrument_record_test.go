@@ -40,7 +40,6 @@ func TestBrowserInstrumentRecording(t *testing.T) {
 	chrome.eval(`(() => { const mode=document.getElementById('audio-mode');mode.value='browser';mode.dispatchEvent(new Event('change',{bubbles:true}));return true; })()`)
 	chrome.eval(`(() => {
       window.instrumentTestStart=performance.now();
-      document.getElementById('instrument-pitch').checked=false;
       navigator.mediaDevices.getUserMedia=async constraints=>{
         if(constraints.audio.echoCancellation!==false || constraints.audio.noiseSuppression!==false || constraints.audio.autoGainControl!==false) throw new Error('microphone processing must be off');
         const context=window.cicadaBrowserAudio.context;

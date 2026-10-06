@@ -61,7 +61,7 @@ func (s *studio) instrumentRecord(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, 400, map[string]string{"error": "invalid layer count"})
 		return
 	}
-	options.AutoPitch = r.FormValue("autoPitch") != "false"
+	options.AutoPitch = r.FormValue("autoPitch") == "true"
 	name := r.FormValue("name")
 	if !recording.ValidName(name) {
 		studioJSON(w, 400, map[string]string{"error": "use a lowercase instrument name with letters, digits or underscores"})

@@ -101,7 +101,7 @@
   byId('instrument-velocity').addEventListener('input',event=>{byId('instrument-velocity-value').value=event.target.value;});
   byId('instrument-save-score').addEventListener('click',()=>{
     const name=pack.manifest.id, root=Number(byId('instrument-root').value);
-    const pitch=['c','c#','d','d#','e','f','f#','g','g#','a','a#','b'][root%12]+(Math.floor(root/12)-1);
+    const pitch=['c','db','d','eb','e','f','gb','g','ab','a','bb','b'][root%12]+(Math.floor(root/12)-1);
     const score=`cicada 2\n${pack.declaration}\ntrack recorded ${name} { level = -6dB }\npattern taps { ${pitch} . ${pitch}^ . ${pitch} . ${pitch}^ . }\nscene main { recorded = taps }\nsong { main*4 }\n`;
     const url=URL.createObjectURL(new Blob([score],{type:'text/plain'})),link=document.createElement('a');link.href=url;link.download=name+'.cicada';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
   });

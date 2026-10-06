@@ -14,9 +14,11 @@ analysis and native pitch conversion run outside the audio callback.
 The default is three velocity layers. Fifteen similar-pitch taps produce five
 round robins per layer. Hits are sorted by their first 40 ms RMS before
 normalization. The pack restores each hit's relative peak gain, so normalizing
-the files does not erase the recorded dynamic differences. Pitch estimates
-with at least 80% periodicity confidence set individual note roots and tuning;
-unpitched hits use the fallback root. The key map covers up to two octaves on
+the files does not erase the recorded dynamic differences. Pitch is estimated for every hit. By default, taps share the fallback root so
+variations in resonance keep their round robins. Enable **Map detected note
+pitches** (CLI `--auto-pitch=true`) for pitched takes: estimates with at least
+80% periodicity confidence set individual note roots and tuning; unpitched hits
+use the fallback root. The key map covers up to two octaves on
 either side of each root, subject to source-rate and resampling bounds.
 
 **Detected hits and pinned score declaration** shows the source-frame slices,
@@ -31,7 +33,7 @@ the recording panel's audition uses the original sample voice.
 
 ```sh
 cicada record-pack -o assets/recorded/pencil --name pencil --root 60 --layers 3 taps.wav
-cicada record-pack -o assets/recorded/notes --name notes take-a.wav take-b.wav
+cicada record-pack -o assets/recorded/notes --name notes --auto-pitch=true take-a.wav take-b.wav
 cicada record-pack -o assets/recorded/taps --auto-pitch=false taps.wav
 ```
 

@@ -194,5 +194,5 @@ func (p *Pack) Starter(manifestPath string, root int) string {
 }
 
 func NoteName(midi int) string {
-	return fmt.Sprintf("%s%d", []string{"c", "c#", "d", "d#", "e", "f", "f#", "g", "g#", "a", "a#", "b"}[midi%12], midi/12-1)
+	return fmt.Sprintf("%s%d", []string{"c", "db", "d", "eb", "e", "f", "gb", "g", "ab", "a", "bb", "b"}[midi%12], midi/12-1)
 }

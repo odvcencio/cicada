@@ -88,7 +88,7 @@ func (e *Engine) processBarBoundary() {
 		} else {
 			e.macroLayerQuiet[id] = 0
 		}
-		if level != e.macroLayerLevel[id] {
+		if level != e.macroLayerLevel[id] || !e.macroLayerInitialized[id] {
 			e.macroLayerLevel[id] = level
 			changed[id] = true
 		}

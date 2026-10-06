@@ -55,7 +55,7 @@ func TestConductorMessageKindsRoundTrip(t *testing.T) {
 			t.Fatalf("message round trip %+v: got %+v, %v", message, decoded, err)
 		}
 	}
-	invalid := EncodeMessage(Message{Kind: MacroReached + 1})
+	invalid := EncodeMessage(Message{Kind: StingerEnded + 1})
 	if _, err := DecodeMessage(invalid[:]); err == nil {
 		t.Fatal("accepted unknown conductor message kind")
 	}

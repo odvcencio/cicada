@@ -3,6 +3,7 @@ package recording
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"path/filepath"
 	"testing"
 
@@ -10,6 +11,22 @@ import (
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/render"
 )
+
+func TestRecordedRootNamesParseAcrossPitchClasses(t *testing.T) {
+	for root := 12; root <= 95; root++ {
+		name := NoteName(root)
+		source := fmt.Sprintf("cicada 2\nasset a \"a.wav\" { sha256 = \"%s\" format = wav frames = 100 rate = 48000Hz channels = 1 }\nsampler s { asset = a root = %s mode = oneshot voices = 8 }\npattern p { %s }\n", Digest([]byte("a")), name, name)
+		score, ds := notation.Parse([]byte(source))
+		for _, d := range ds {
+			if d.Severity == "error" {
+				t.Fatal(root, d)
+			}
+		}
+		if score.Samplers[0].RootMIDI != root {
+			t.Fatal("changed root", root, score.Samplers[0].RootMIDI)
+		}
+	}
+}
 
 func TestRecordedPackPlaysInScore(t *testing.T) {
 	hits, err := Analyze([]Audio{fixture(t)}, Options{Root: 60, Layers: 3})

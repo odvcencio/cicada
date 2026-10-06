@@ -118,6 +118,8 @@ func kernelOp(n Node) (graph.Op, error) {
 		return graph.Delay, nil
 	case "comb":
 		return graph.Comb, nil
+	case "neural_amp":
+		return graph.NeuralAmp, nil
 	case "highpass":
 		return graph.Highpass, nil
 	case "mix":

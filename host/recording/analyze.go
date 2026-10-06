@@ -14,7 +14,7 @@ type Options struct {
 	AutoPitch bool `json:"autoPitch"`
 }
 
-func DefaultOptions() Options { return Options{Root: 60, Layers: 3, AutoPitch: true} }
+func DefaultOptions() Options { return Options{Root: 60, Layers: 3} }
 
 type Hit struct {
 	Input        int       `json:"input"`
