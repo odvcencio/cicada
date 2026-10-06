@@ -25,7 +25,7 @@ GOWORK=off go run ./cmd/cicada render examples/neural-amp.cicada \
 ## Model and provenance
 
 This NAM-style model is a causal convolutional network: eight audio-history taps,
-eight tanh channels and a learned linear readout. All 72 coefficients are trained;
+four tanh channels and a learned linear readout. All 36 coefficients are trained;
 there are no biases, so zero input with empty history produces exact silence.
 It is a small original amp, rather than a loader for Neural Amp Modeler `.nam` files
 or a capture of commercial hardware. Its fictional reference combines nonlinear
@@ -43,8 +43,8 @@ no downloaded dataset, recording, attribution obligation or personal metadata
 enters the weights.
 
 The 48 kHz training corpus has 65,536 frames. The independent held-out seed creates
-32,768 frames. The quantized model reaches 57.36 dB reference SNR (MSE 3.39e-7).
-The model uses 144 bytes of coefficients, a 514-byte tanh table and 32 bytes of
+32,768 frames. The quantized model reaches 74.71 dB reference SNR (MSE 6.24e-9).
+The model uses 72 bytes of coefficients, a 514-byte tanh table and 32 bytes of
 history per graph node. The kernel allocates history when constructing a voice.
 
 ## Train outside the kernel

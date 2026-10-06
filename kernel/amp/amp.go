@@ -1,11 +1,11 @@
 // Package amp implements a pinned causal neural amplifier with integer inference.
-// The original trained model uses an eight-tap convolution, eight tanh channels,
+// The original trained model uses an eight-tap convolution, four tanh channels,
 // and a learned linear readout. Weights and training data are CC0-1.0.
 package amp
 
 const (
 	Taps   = 8
-	Hidden = 8
+	Hidden = 4
 )
 
 // Model owns its complete causal history. Its zero value is ready to process.

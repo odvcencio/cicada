@@ -13,7 +13,7 @@ import numpy as np
 
 SEED = 20261006
 TAPS = 8
-HIDDEN = 8
+HIDDEN = 4
 
 
 def corpus(seed, frames=65536):
@@ -82,7 +82,7 @@ def train(steps):
     packed = qweights.astype('<i2').tobytes() + qoutput.astype('<i2').tobytes() + table.astype('<i2').tobytes()
     metadata = {"model": "cicada-causal-amp-v1", "seed": SEED, "steps": steps,
                 "training_frames": len(x), "held_out_frames": len(test_x), "sample_rate": 48000,
-                "architecture": "8-tap causal convolution, 8 tanh channels, linear readout; no biases",
+                "architecture": f"{TAPS}-tap causal convolution, {HIDDEN} tanh channels, linear readout; no biases",
                 "quantization": "input/history Q15; convolution Q12; tanh Q15; readout Q14",
                 "held_out_quantized_mse": loss, "held_out_quantized_snr_db": float(10 * np.log10(baseline / loss)),
                 "parameter_bytes": int(qweights.nbytes + qoutput.nbytes), "activation_table_bytes": int(table.nbytes),
