@@ -18,6 +18,7 @@ import (
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
+	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/kernel/voice/piano"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -128,6 +129,12 @@ func (voice polyVoice) NoteOff() { voice.Pool.ReleaseAll() }
 type customVoice struct{ *graph.Voice }
 
 func (voice customVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
+	voice.Voice.NoteOn(note, velocity, slide)
+}
+
+type modalVoice struct{ *modal.Voice }
+
+func (voice modalVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
 	voice.Voice.NoteOn(note, velocity, slide)
 }
 
@@ -829,6 +836,25 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 				return nil, err
 			}
 			track := trackRuntime{name: source.Name, mixer: trackMix, voice: &pianoVoice{Instrument: voice}, patterns: map[string]seq.Pattern{}}
+			for _, pattern := range score.Patterns {
+				if pattern.Kind != "notes" {
+					continue
+				}
+				compiled, err := project.CompilePattern(score, pattern, source)
+				if err != nil {
+					return nil, err
+				}
+				track.patterns[pattern.Name] = compiled[0].Pattern
+			}
+			tracks = append(tracks, track)
+			continue
+		}
+		if profile, ok := modal.ParseTrackKind(source.Kind); ok {
+			voice, err := modal.NewVoice(profile, sampleRate)
+			if err != nil {
+				return nil, err
+			}
+			track := trackRuntime{name: source.Name, mixer: trackMix, voice: modalVoice{voice}, patterns: map[string]seq.Pattern{}}
 			for _, pattern := range score.Patterns {
 				if pattern.Kind != "notes" {
 					continue
