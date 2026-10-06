@@ -812,7 +812,7 @@ func validExprArity(op string, n int) bool {
 		return n == 1
 	case "noise":
 		return n == 0
-	case "ladder", "diode", "mix", "clamp":
+	case "ladder", "diode", "mix", "clamp", "pm":
 		return n == 3
 	case "comb":
 		return n == 4

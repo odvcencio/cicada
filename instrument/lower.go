@@ -104,6 +104,8 @@ func kernelOp(n Node) (graph.Op, error) {
 		return graph.Square, nil
 	case "sine":
 		return graph.Sine, nil
+	case "pm":
+		return graph.PM, nil
 	case "noise":
 		return graph.Noise, nil
 	case "env":

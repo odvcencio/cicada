@@ -4,6 +4,16 @@ These owner-accepted designs extend Cicada's source language. Each section says 
 
 Runnable examples in this file use source edition 2. Examples marked `cicada-accepted` are designs for later support.
 
+## Authored graph phase modulation
+
+**Status:** Implemented. The bell and feedback-free PM bass are experimental pending owner listening acceptance; scores select them through authored instruments.
+
+**Syntax and meaning:** `pm(hz, audio, unit)` returns a sine carrier with an audio phase offset scaled by index in radians. An index envelope changes brightness independently of amplitude. Stored phase stays bounded; the graph remains acyclic and keeps its 128-node and 32-stateful-node limits. PM needs no delay storage. Wrong units and arity report `CICADA-UNIT` and `CICADA-PARAM`.
+
+**Aliasing and compatibility:** PM is not antialiased. The [edition-2 reference](edition-2.md#graph-phase-modulation) records measurements and the example's register/index limit. Opcode 27 requires image-version-13 capability bit 5 without changing node records; older images still load. Additive in editions 1 and 2, with shared language-server hover and `cicada explain graph.pm` descriptions.
+
+**Example:** [fm-bell.cicada](../../examples/fm-bell.cicada) authors a two-operator FM bell with a decaying index and a feedback-free PM bass.
+
 ## Authored graph delay and comb
 
 **Status:** Implemented. Authored pluck and slapback voices are experimental pending owner listening acceptance.

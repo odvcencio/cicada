@@ -47,6 +47,7 @@ const (
 	Comb      Op = 25
 	Period    Op = 26 // unit / Hz, converted from seconds to milliseconds
 	NeuralAmp Op = 28 // pinned quantized causal amp: audio, unit drive
+	PM        Op = 27 // sine carrier with an audio phase offset scaled in radians
 )
 
 type Node struct {
@@ -161,7 +162,7 @@ func Validate(program Program, sampleRate int) error {
 			inputs = 1
 		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay, NeuralAmp:
 			inputs = 2
-		case Ladder, Diode, Mix, Clamp:
+		case Ladder, Diode, Mix, Clamp, PM:
 			inputs = 3
 		case Comb:
 			inputs = 3
@@ -206,7 +207,7 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	for i := 0; i < int(v.program.Len); i++ {
 		s := &v.states[i]
 		switch v.program.Nodes[i].Op {
-		case Saw, Square, Sine:
+		case Saw, Square, Sine, PM:
 			s.phase = 0
 		case Envelope:
 			s.env = 1
@@ -288,8 +289,11 @@ func (v *Voice) Next() float32 {
 			}
 		case NeuralAmp:
 			y = v.amps[s.amp].ProcessFloat(a, b)
-		case Saw, Square, Sine:
+		case Saw, Square, Sine, PM:
 			frequency := clamp(a, 0, v.sampleRate*0.49)
+			if n.Op == PM {
+				frequency = finiteClamp(a, 0, v.sampleRate*0.49)
+			}
 			dt := frequency / v.sampleRate
 			phase := s.phase
 			if dt > 0 {
@@ -303,8 +307,18 @@ func (v *Voice) Next() float32 {
 						y = -1
 					}
 					y += polyBLEP(phase, dt) - polyBLEP(frac(phase+0.5), dt)
-				case Sine:
-					y = float32(math.Sin(2 * math.Pi * float64(phase)))
+				case Sine, PM:
+					// Only the carrier advances stored phase. Reduce the offset
+					// in float64 so finite audio/index products cannot overflow
+					// or grow the sine argument. Sidebands are not band-limited.
+					offset := 0.0
+					if n.Op == PM {
+						offset = float64(b) * float64(c) / (2 * math.Pi)
+						offset -= math.Floor(offset)
+					}
+					if !math.IsNaN(offset) {
+						y = float32(math.Sin(2 * math.Pi * (float64(phase) + offset)))
+					}
 				}
 				s.phase = frac(phase + dt)
 			}
