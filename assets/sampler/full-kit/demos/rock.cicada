@@ -1,0 +1,80 @@
+cicada 2
+
+title "Full kit: rock"
+
+tempo 104
+
+key c major
+
+seed 4242
+
+sampler shells {
+  pack = "packs/full-kit-shells/manifest.json"
+  sha256 = "16f76a8ec18103d262a30c8e4f362142e8d89a2040e3b019660878464a645453"
+  root = c4
+  voices = 4
+}
+
+sampler metals {
+  pack = "packs/full-kit-metals/manifest.json"
+  sha256 = "f56f081c7d52e9a6f6dcaf20aa6d6ce332f241eed4453ab72b0ba965ea95a081"
+  root = c4
+  voices = 10
+}
+
+track kick shells { level = -12dB }
+
+pattern kick_groove {
+  gate = 65%
+  c2 . . . . . c2 . c2 . c2 . . . . . | c2 . . . . . c2 . c2 . c2 . . . . . | c2 . . . . . c2 . c2 . c2 . . . . . | c2 . . . . . c2 . c2 . c2 . . . . .
+}
+
+track snare shells { level = -12dB }
+
+pattern snare_groove {
+  gate = 65%
+  . . . a#1 d2 . . . . . . a#1 d2 . . a#1 | . . . a#1 d2 . . . . . . a#1 d2 . . a#1 | . . . a#1 d2 . . . . . . a#1 d2 . . a#1 | . . . a#1 d2 . . . . . . a#1 d2 . . a#1
+}
+
+track toms shells { level = -12dB }
+
+pattern toms_groove {
+  gate = 65%
+  . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | . . . . . . . . . . c3 c3 a2 g2 f2 f2
+}
+
+track hats metals { level = -12dB }
+
+pattern hats_groove {
+  gate = 65%
+  f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . | f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . a#2 . | f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . | f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . f#2 . a#2 .
+}
+
+track cymbals metals { level = -12dB }
+
+pattern cymbals_groove {
+  gate = 65%
+  c#3 . . . . . . . . . . . . . . . | . . . . . . . . . . . . . . . . | a3 . . . . . d#1 . . . . . . . . . | . . . . . . . . . . . . . . . .
+}
+
+pattern quiet { . . . . . . . . . . . . . . . . }
+
+scene groove {
+  kick = kick_groove
+  snare = snare_groove
+  toms = toms_groove
+  hats = hats_groove
+  cymbals = cymbals_groove
+}
+
+scene decay {
+  kick = quiet
+  snare = quiet
+  toms = quiet
+  hats = quiet
+  cymbals = quiet
+}
+
+song {
+  groove*8
+}

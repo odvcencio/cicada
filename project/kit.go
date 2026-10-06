@@ -12,6 +12,12 @@ import (
 // CompileKit resolves an authored kit to bounded lane bindings. Missing lanes
 // remain off. Instrument defaults are lowered once, before audio playback.
 func CompileKit(kit Kit, programs map[string]*instrument.Program) (*[drum.LaneCount]engine.KitLaneBinding, error) {
+	return CompileKitAtSampleRate(kit, programs, 48_000)
+}
+
+// CompileKitAtSampleRate validates graph delays against each lane's fixed
+// trigger pitch at the playback or export rate before binding the graph.
+func CompileKitAtSampleRate(kit Kit, programs map[string]*instrument.Program, sampleRate int) (*[drum.LaneCount]engine.KitLaneBinding, error) {
 	bindings := new([drum.LaneCount]engine.KitLaneBinding)
 	if kit.Lanes == nil {
 		return nil, fmt.Errorf("kit %s lanes must be explicit", kit.ID)
@@ -37,6 +43,11 @@ func CompileKit(kit Kit, programs map[string]*instrument.Program) (*[drum.LaneCo
 		graph, err := instrument.Lower(program, nil)
 		if err != nil {
 			return nil, fmt.Errorf("kit %s lane %s: %w", kit.ID, source, err)
+		}
+		if graph.DelaySamples() > 0 {
+			if err := validateGraphDelayNote(graph, sampleRate, int(drum.MIDINotes[lane])); err != nil {
+				return nil, fmt.Errorf("CICADA-PARAM: kit %s lane %s: %w", kit.ID, source, err)
+			}
 		}
 		bindings[lane] = engine.KitLaneBinding{Kind: engine.KitLaneGraph, Program: graph}
 	}

@@ -1,6 +1,7 @@
 package sample
 
 import (
+	"fmt"
 	"math"
 	"reflect"
 	"testing"
@@ -336,6 +337,103 @@ func TestInstrumentOneShotAndHatChoke(t *testing.T) {
 	}
 	if p.voices[h.Slot].active {
 		t.Fatal("open hat survived choke")
+	}
+}
+
+func TestInstrumentCymbalOverlapAndDedicatedChoke(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 8
+	crash := mappedZone(.2, 64, 0, 0, 1, false)
+	crash.KeyLow, crash.KeyHigh, crash.ChokeGroup = 60, 60, 2
+	crash.OneShot, crash.ChokeSustain = true, true
+	splash := crash
+	splash.KeyLow, splash.KeyHigh, splash.Group, splash.ChokeGroup = 61, 61, 1, 3
+	choke := crash
+	choke.KeyLow, choke.KeyHigh, choke.Group = 62, 62, 2
+	choke.ChokeSustain, choke.Gain = false, 0
+	p := newMapped(t, []Zone{crash, splash, choke}, c)
+	first, _ := p.NoteOn(60, 127)
+	settled(p)
+	second, _ := p.NoteOn(60, 127)
+	other, _ := p.NoteOn(61, 127)
+	if x := settled(p); math.Abs(float64(x)-.6) > 1e-6 {
+		t.Fatalf("overlapping cymbals: %g", x)
+	}
+	p.NoteOff(first)
+	if p.voices[first.Slot].off || p.voices[second.Slot].off {
+		t.Fatal("one-shot cymbals lost their natural decay")
+	}
+	p.NoteOn(62, 127)
+	for i := 0; i < 96; i++ {
+		p.NextStereo()
+	}
+	if p.voices[first.Slot].active || p.voices[second.Slot].active || !p.voices[other.Slot].active {
+		t.Fatal("dedicated choke must damp every crash and preserve the splash")
+	}
+	if x := settled(p); math.Abs(float64(x)-.2) > 1e-6 {
+		t.Fatalf("choke leaked PCM: %g", x)
+	}
+}
+
+func TestInstrumentSilentChokePreservesUnrelatedSaturatedVoices(t *testing.T) {
+	for _, crashes := range []int{0, 15} {
+		t.Run(fmt.Sprintf("crashes=%d", crashes), func(t *testing.T) {
+			c := DefaultInstrumentConfig()
+			c.Voices = 16
+			ride := mappedZone(.2, 64, 0, 0, 1, false)
+			ride.KeyLow, ride.KeyHigh, ride.ChokeGroup = 51, 51, 7
+			ride.OneShot, ride.ChokeSustain = true, true
+			crash := ride
+			crash.KeyLow, crash.KeyHigh, crash.Group, crash.ChokeGroup = 49, 49, 1, 2
+			control := crash
+			control.KeyLow, control.KeyHigh, control.Group = 26, 26, 2
+			control.Gain, control.ChokeSustain = 0, false
+			p := newMapped(t, []Zone{ride, crash, control}, c)
+			var rides []Handle
+			for i := 0; i < 16-crashes; i++ {
+				h, err := p.NoteOn(51, 127)
+				if err != nil {
+					t.Fatal(err)
+				}
+				rides = append(rides, h)
+			}
+			for i := 0; i < crashes; i++ {
+				if _, err := p.NoteOn(49, 127); err != nil {
+					t.Fatal(err)
+				}
+			}
+			settled(p)
+			h, err := p.NoteOn(26, 127)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if h.ID != 0 {
+				t.Fatal("silent choke allocated a voice")
+			}
+			for i := 0; i < 96; i++ {
+				p.NextStereo()
+			}
+			for _, h := range rides {
+				if p.owned(h) == nil || p.voices[h.Slot].off {
+					t.Fatal("silent crash choke stole an unrelated ride")
+				}
+			}
+			if got := p.ActiveVoices(); got != len(rides) {
+				t.Fatalf("got %d voices, want %d rides", got, len(rides))
+			}
+			if x := settled(p); math.Abs(float64(x)-.2*float64(len(rides))) > 1e-6 {
+				t.Fatalf("ride output %g", x)
+			}
+		})
+	}
+}
+
+func TestInstrumentRejectsInconsistentChokeSustain(t *testing.T) {
+	a := mappedZone(.2, 64, 0, 0, 2, false)
+	b := mappedZone(.3, 64, 0, 1, 2, false)
+	b.ChokeSustain = true
+	if _, err := NewInstrument(48000, []Zone{a, b}, DefaultInstrumentConfig()); err == nil {
+		t.Fatal("a round-robin cycle cannot alternate choke behavior")
 	}
 }
 
