@@ -240,7 +240,13 @@ func hasResidentSampler(score *notation.Score) bool {
 }
 
 func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir string, outputGain float32) (Report, error) {
-	if score != nil && (score.Arrange != nil || len(score.Clips) > 0 || hasResidentSampler(score)) {
+	if opts.AssetRoot == "" {
+		opts.AssetRoot = opts.AssetDir
+	}
+	if opts.AssetDir == "" {
+		opts.AssetDir = opts.AssetRoot
+	}
+	if score != nil && score.Arrange != nil {
 		return renderScheduleWAV(score, opts, writer, stemsDir, outputGain)
 	}
 	var report Report
@@ -347,7 +353,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
 	var prepared []engine.StereoVoiceFactory
-	needsFileAudio := len(semantic.Assets) > 0 || len(semantic.Clips) > 0
+	needsFileAudio := len(semantic.Assets) > 0 && semantic.NeedsSampleEngine() || len(semantic.Clips) > 0
 	for _, sampler := range semantic.Samplers {
 		needsFileAudio = needsFileAudio || sampler.Pack == ""
 	}

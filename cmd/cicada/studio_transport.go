@@ -254,7 +254,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			p, loadErr := loadProject(t.path)
 			err = loadErr
 			if err == nil {
-				initial, err = compileLiveProjectAtRate(t.path, p, sampleRate)
+				initial, err = compileLiveProjectAtRate(t.path, captureBacking(p), sampleRate)
 			}
 		} else {
 			initial, err = compileLiveScoreAtRate(t.path, sampleRate)
