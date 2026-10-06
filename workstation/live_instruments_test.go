@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -70,5 +72,43 @@ song { main }
 	}
 	if !strings.Contains(page, "Pitched track") || !strings.Contains(page, "Pitched pattern") {
 		t.Fatal("live labels still imply only acid is playable")
+	}
+}
+
+func TestGoSXLiveIncludesEveryModeledKeyboard(t *testing.T) {
+	for _, name := range keyboard.Names {
+		t.Run(name, func(t *testing.T) {
+			score, ds := notation.Parse([]byte(fmt.Sprintf("cicada 2\ntrack keys %s { voices=4 }\ntrack drums drums {}\npattern n notes { c4 . }\nscene main { keys=n drums=off }\nsong { main }\n", name)))
+			if len(ds) != 0 {
+				t.Fatal(ds)
+			}
+			p, ds := project.FromScore(score)
+			if len(ds) != 0 {
+				t.Fatal(ds)
+			}
+			audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/api/workspace" {
+					if err := json.NewEncoder(w).Encode(workspace{Revision: "current", Valid: true, Project: p}); err != nil {
+						t.Error(err)
+					}
+				} else {
+					_, _ = io.WriteString(w, `{}`)
+				}
+			}))
+			defer audio.Close()
+			b, _ := newBackend(audio.URL)
+			handler, err := newApp(b)
+			if err != nil {
+				t.Fatal(err)
+			}
+			app := httptest.NewServer(handler)
+			defer app.Close()
+			page := getPage(t, app.Client(), app.URL+"/?panel=live")
+			match := regexp.MustCompile(`(?s)<select[^>]*data-live-acid[^>]*>(.*?)</select>`).FindStringSubmatch(page)
+			if len(match) != 2 || !strings.Contains(match[1], `value="keys"`) || strings.Contains(match[1], `value="drums"`) {
+				t.Fatal("modeled keys missing or drums offered as pitched target")
+			}
+		})
 	}
 }
