@@ -34,7 +34,7 @@ func (r Region) Validate() error {
 	if r.Loop && (r.LoopStart < r.Start || r.LoopEnd > r.End || r.LoopStart >= r.LoopEnd) {
 		return Error("sample loop bounds are invalid")
 	}
-	if r.Crossfade < 0 || r.Crossfade > 0 && (!r.Loop || r.Crossfade*2 > r.LoopEnd-r.LoopStart) {
+	if r.Crossfade < 0 || r.Crossfade > 0 && (!r.Loop || r.Crossfade > (r.LoopEnd-r.LoopStart)/2) {
 		return Error("sample loop crossfade is invalid")
 	}
 	return nil

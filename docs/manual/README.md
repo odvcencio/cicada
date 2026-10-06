@@ -59,6 +59,8 @@ together.
   current engine does and which larger features are still ahead.
 - [Hosting the engine](engine-host.md) — integrate Cicada's Go or TinyGo audio
   engine.
+- [Engine scaling measurements](engine-metrics.md) — run synthetic sessions
+  and compare CPU and offline render costs between builds.
 - [Troubleshooting](troubleshooting.md) — diagnose notation, editor, playback,
   and export problems.
 

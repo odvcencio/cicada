@@ -2,8 +2,92 @@ package sample
 
 import (
 	"math"
+	"reflect"
 	"testing"
 )
+
+func TestInstrumentChokeFadesRecordedRelease(t *testing.T) {
+	a := mappedZone(.5, 64, 0, 0, 1, false)
+	a.ChokeGroup, a.KeyLow, a.KeyHigh = 1, 60, 60
+	release := mappedZone(.25, 64, 0, 0, 1, true)
+	release.ChokeGroup, release.KeyLow, release.KeyHigh = 1, 60, 60
+	control := mappedZone(0, 64, 1, 0, 1, false)
+	control.ChokeGroup, control.KeyLow, control.KeyHigh = 1, 61, 61
+	p := newMapped(t, []Zone{a, release, control}, DefaultInstrumentConfig())
+	h, err := p.NoteOn(60, 127)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settled(p)
+	p.NoteOff(h)
+	settled(p)
+	if !p.voices[h.Slot].release[0].Active() {
+		t.Fatal("missing release fixture")
+	}
+	if _, err := p.NoteOn(61, 127); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 96; i++ {
+		p.NextStereo()
+	}
+	if l, r := p.NextStereo(); l != 0 || r != 0 {
+		t.Fatalf("choked release still audible: %g/%g", l, r)
+	}
+	if p.voices[h.Slot].release[0].Active() {
+		t.Fatal("choked release remained active")
+	}
+}
+
+func TestInstrumentRejectedLegatoPreservesAllLayers(t *testing.T) {
+	a, b := mappedZone(.2, 32, 0, 0, 1, false), mappedZone(.8, 96, 0, 0, 1, false)
+	a.KeyLow, a.KeyHigh, b.KeyLow, b.KeyHigh = 24, 60, 24, 60
+	b.Region.RootKey = 24
+	p := newMapped(t, []Zone{a, b}, DefaultInstrumentConfig())
+	h, err := p.NoteOn(48, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	settled(p)
+	before := p.voices[h.Slot]
+	if err := p.Legato(h, 60, 100); err == nil {
+		t.Fatal("accepted unsupported second-layer ratio")
+	}
+	if !reflect.DeepEqual(before, p.voices[h.Slot]) {
+		t.Fatal("failed legato changed voice state")
+	}
+}
+
+func TestInstrumentReleasePreservesNoteTuning(t *testing.T) {
+	for _, legato := range []bool{false, true} {
+		for _, pedal := range []bool{false, true} {
+			c := DefaultInstrumentConfig()
+			c.Humanize = Humanize{Seed: 42, Cents: 10}
+			p := newMapped(t, []Zone{mappedZone(.5, 64, 0, 0, 1, false), mappedZone(.25, 64, 0, 0, 1, true)}, c)
+			h, err := p.NoteOn(60, 127)
+			if err != nil {
+				t.Fatal(err)
+			}
+			settled(p)
+			if legato {
+				if err := p.Legato(h, 62, 4); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := p.voices[h.Slot].attack[0].Ratio()
+			if want == 1 {
+				t.Fatal("fixture has no pitch offset")
+			}
+			p.Sustain(pedal)
+			p.NoteOff(h)
+			if pedal {
+				p.Sustain(false)
+			}
+			if got := p.voices[h.Slot].release[0].Ratio(); got != want {
+				t.Fatalf("legato=%v pedal=%v: release ratio %g, attack %g", legato, pedal, got, want)
+			}
+		}
+	}
+}
 
 func mappedZone(value float32, layer, group, position, count uint8, release bool) Zone {
 	pcm := make([]float32, 8192)
