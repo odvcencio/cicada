@@ -276,6 +276,9 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 	for index := 0; index < int(snapshot.count); index++ {
 		snapshot.ids[index] = score.Tracks[index].ID
 		snapshot.kinds[index] = score.Tracks[index].Kind
+		if snapshot.kinds[index] == "piano" && score.Engine != nil && score.Engine.TrackVoiceKind(index) != engine.VoicePiano {
+			snapshot.kinds[index] = "instrument"
+		}
 		if score.Engine != nil {
 			snapshot.poly[index] = score.Engine.TrackPolyphonic(index)
 		}
@@ -297,7 +300,7 @@ func (p *Player) TrackIndex(id string) (uint8, bool) {
 	return 0, false
 }
 
-// Note queues a live note for the named acid or drum track. Requests are
+// Note queues a live note for a named built-in instrument track. Requests are
 // resolved and applied by Read, so the control path never touches engine state.
 func (p *Player) Note(track string, note, velocity int, on bool) error {
 	if track == "" {
@@ -325,8 +328,12 @@ func (p *Player) Note(track string, note, velocity int, on bool) error {
 			if _, ok := GMDrumLane(note); !ok {
 				return fmt.Errorf("MIDI drum note %d is not in the General MIDI map", note)
 			}
+		} else if kind == "piano" {
+			if note < 21 || note > 108 {
+				return fmt.Errorf("piano note must be in MIDI range 21–108")
+			}
 		} else if kind != "acid" {
-			return fmt.Errorf("track %q is not an acid or drum track", track)
+			return fmt.Errorf("track %q does not accept live notes", track)
 		}
 		input := noteInput{Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on}
 		for {
@@ -995,12 +1002,19 @@ func (p *Player) queueLiveNotes() {
 			continue
 		}
 		command := cmd.Command{Track: track}
-		if kind == "acid" {
+		if kind == "acid" || kind == "piano" {
+			if kind == "piano" && (input.Note < 21 || input.Note > 108) {
+				p.emit(Event{Track: input.Track, Name: "piano note must be in MIDI range 21–108", Kind: "note-error"})
+				continue
+			}
 			if input.On {
 				command.Op = cmd.OpNoteOn
 				command.Arg0 = uint32(input.Note) | uint32(input.Velocity)<<8
 			} else {
 				command.Op, command.Index = cmd.OpNoteOff, 0xffff
+				if kind == "piano" {
+					command.Index = uint16(input.Note)
+				}
 			}
 		} else if kind == "drums" {
 			lane, ok := GMDrumLane(int(input.Note))
@@ -1016,7 +1030,7 @@ func (p *Player) queueLiveNotes() {
 				command.Op = cmd.OpNoteOff
 			}
 		} else {
-			p.emit(Event{Track: input.Track, Name: fmt.Sprintf("track %q is not an acid or drum track", input.Track), Kind: "note-error"})
+			p.emit(Event{Track: input.Track, Name: fmt.Sprintf("track %q does not accept live notes", input.Track), Kind: "note-error"})
 			continue
 		}
 		if !p.current.Engine.Push(command) {
