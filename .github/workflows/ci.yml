@@ -51,7 +51,7 @@ jobs:
   parity-arm64:
     name: PCM24 parity (amd64, arm64, WASM)
     needs: parity-amd64
-    if: always()
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 25
     env:
