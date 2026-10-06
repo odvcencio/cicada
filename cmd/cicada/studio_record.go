@@ -8,6 +8,7 @@ import (
 
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -169,9 +170,17 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 		return nil, fmt.Errorf("pattern %q is not on track %q", patternID, trackID)
 	}
 	drumTrack := track.Kind == "drums"
+	modeledKeys := keyboard.ID(track.Kind) != 0
 	for _, kit := range semantic.Kits {
 		if kit.ID == track.Kind {
 			drumTrack = true
+			modeledKeys = false
+			break
+		}
+	}
+	for _, sampler := range semantic.Samplers {
+		if sampler.Name == track.Kind {
+			modeledKeys = false
 			break
 		}
 	}
@@ -179,10 +188,11 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 	if drums != drumTrack {
 		return nil, fmt.Errorf("pattern %q does not match track %q", patternID, trackID)
 	}
-	pitched, polyphonic := track.Kind == "acid", false
+	pitched, polyphonic := track.Kind == "acid" || modeledKeys, modeledKeys
 	for _, voice := range semantic.Instruments {
 		if voice.ID == track.Kind {
 			pitched, polyphonic = true, voice.Mode == "poly"
+			modeledKeys = false
 			break
 		}
 	}
@@ -201,6 +211,9 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 		}
 		if note.Note < 0 || note.Note > 127 {
 			return nil, fmt.Errorf("recorded note must be in MIDI range 0–127")
+		}
+		if modeledKeys && (note.Note < keyboard.MinNote || note.Note > keyboard.MaxNote || note.Note+int(pattern.Transpose) < keyboard.MinNote || note.Note+int(pattern.Transpose) > keyboard.MaxNote) {
+			return nil, fmt.Errorf("recorded keyboard note must stay in MIDI range 21–108 after pattern transposition")
 		}
 		if note.Velocity < 1 || note.Velocity > 127 {
 			return nil, fmt.Errorf("recorded velocity must be in MIDI range 1–127")
@@ -224,6 +237,9 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 		steps[key] = recordedStep{note: note.Note, velocity: note.Velocity, step: step}
 	}
 	if expressive {
+		if modeledKeys {
+			return nil, fmt.Errorf("CICADA-UNSUPPORTED: modeled keyboard track %q cannot record per-note expression", trackID)
+		}
 		if drums {
 			return nil, fmt.Errorf("drum takes cannot contain per-note expression")
 		}

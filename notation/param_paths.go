@@ -139,7 +139,7 @@ func notationParameterVoiceKind(score *Score, kind string) string {
 			return "drums"
 		}
 	}
-	if notationModeledPiano(score, kind) {
+	if notationModeledPiano(score, kind) || notationModeledKeys(score, kind) {
 		return "piano"
 	}
 	return "instrument"
