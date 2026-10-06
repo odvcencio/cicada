@@ -258,13 +258,13 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	if score == nil {
 		return nil, []notation.Diagnostic{{Code: "CICADA-SYNTAX", Severity: "error", Message: "nil score", Position: notation.Position{Line: 1, Column: 1}}}
 	}
-	// Imports expose definitions; only routed library effects consume mixer
-	// instances. Keep the source model intact for definitions and tooling.
+	diagnostics = notation.Validate(score)
+	score, _ = notation.ResolvePresets(score)
+	// Resolve preset templates before selecting runtime instances. Imports
+	// expose definitions; only routed library effects consume mixer instances.
 	copy := *score
 	copy.Effects = routedEffects(score)
 	score = &copy
-	diagnostics = notation.Validate(score)
-	score, _ = notation.ResolvePresets(score)
 	_, compiledDiagnostics := Check(score)
 	diagnostics = append(diagnostics, compiledDiagnostics...)
 	for _, d := range diagnostics {

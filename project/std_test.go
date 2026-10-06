@@ -183,3 +183,21 @@ func TestStdEffectsCompileIndependently(t *testing.T) {
 		})
 	}
 }
+
+func TestImportedEffectPresetKeepsTemplateUntilResolution(t *testing.T) {
+	root, _ := libraryFixture(t)
+	libraryWrite(t, root, "lib/demo/tone/tone.cicada", libraryVoice+"fx _template delay { feedback=0.2 }\npreset echo { instrument=_template feedback=0.3 }\n")
+	libraryWrite(t, root, "main.cicada", "import \"demo/tone\"\nfx echo tone.echo {}\ntrack lead acid { send echo=0.3 }\npattern melody { 1 . 5 . }\nscene main { lead=melody }\nsong { main }\n")
+	sources := pinLibraryFixture(t, root)
+	score, ds := sources.Parse()
+	if score == nil || hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil || hasErrors(ds) {
+		t.Fatal(ds)
+	}
+	if len(p.Effects) != 1 || p.Effects[0].ID != "echo" || p.Effects[0].Kind != "delay" || *p.Effects[0].Params["feedback"].Number != .3 {
+		t.Fatalf("lost preset template: %+v", p.Effects)
+	}
+}
