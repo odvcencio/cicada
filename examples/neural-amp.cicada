@@ -1,0 +1,34 @@
+cicada 2
+
+title "Causal neural amp"
+
+tempo 112
+
+key e minor
+
+seed 42
+
+// Original CC0 neural amp driven by a picked oscillator.
+instrument neural_pick {
+  param drive: unit = 2.5
+  voice mono {
+    let source = saw(pitch) * env(gate, 230ms) * velocity
+    out = neural_amp(source, drive) * 0.3
+  }
+}
+
+track guitar neural_pick {
+  level = -6dB
+}
+
+pattern riff notes steps = 16 {
+  e3 . g3 a3 b3 . a3 g3 e3 . d3 e3 g3 . b2 d3
+}
+
+scene main {
+  guitar = riff
+}
+
+song {
+  main*2
+}

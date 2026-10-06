@@ -9,6 +9,8 @@ type OperationInfo struct {
 
 func Operation(name string) (OperationInfo, bool) {
 	switch name {
+	case "neural_amp":
+		return OperationInfo{name, "neural_amp(audio, drive) -> audio", "Pinned CC0 causal neural amp with integer inference. Drive is clamped to 0..8; eight samples of history, 32 bytes per node. Designed for 48 kHz; other render rates preserve deterministic sample-domain behavior."}, true
 	case "delay":
 		return OperationInfo{name, "delay(audio, ms) -> audio", "Linear fractional delay; 1..4096 samples at the render rate. Reserves 16384 bytes per voice. Use 1 / pitch for a period in ms."}, true
 	case "comb":
