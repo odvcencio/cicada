@@ -35,7 +35,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	if err := ValidateProject(p); err != nil {
 		return cfg, err
 	}
-	if p.HasAudio() && len(prepared) != len(p.Tracks) && (len(assets) == 0 || len(assets) != len(p.Assets)) {
+	if p.NeedsSampleEngine() && len(prepared) != len(p.Tracks) && len(assets) != len(p.Assets) {
 		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio clips require prepared assets")
 	}
 	if len(prepared) == len(p.Tracks) && p.HasAudio() {
@@ -70,7 +70,9 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	}
 	for i, c := range p.Clips {
 		clipIndex[c.Name] = uint16(i)
-		cfg.Clips = append(cfg.Clips, engine.ClipConfig{Asset: assetIndex[c.Asset], StartFrame: c.StartFrame, EndFrame: c.EndFrame, FadeInFrames: c.FadeInFrames, FadeOutFrames: c.FadeOutFrames, GainDB: c.GainDB})
+		if len(assets) > 0 {
+			cfg.Clips = append(cfg.Clips, engine.ClipConfig{Asset: assetIndex[c.Asset], StartFrame: c.StartFrame, EndFrame: c.EndFrame, FadeInFrames: c.FadeInFrames, FadeOutFrames: c.FadeOutFrames, GainDB: c.GainDB})
+		}
 	}
 	patterns := make(map[string]Pattern, len(p.Patterns))
 	for _, pattern := range p.Patterns {
@@ -292,7 +294,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 			}
 		}
 		for slot, patternID := range track.Slots {
-			if patternID == nil {
+			if config.Kind == engine.VoiceAudio || patternID == nil {
 				continue
 			}
 			if config.PreparedClip {
