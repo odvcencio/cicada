@@ -233,7 +233,10 @@ func main() {
 	}
 	hasErrors := false
 	for _, d := range diagnostics {
-		fmt.Fprintf(os.Stderr, "%s:%d:%d: %s %s: %s\n", path, d.Position.Line, d.Position.Column, d.Severity, d.Code, d.Message)
+		if d.Position.File == "" {
+			d.Position.File = path
+		}
+		fmt.Fprintln(os.Stderr, d.Error())
 		if d.Severity == "error" {
 			hasErrors = true
 		}
