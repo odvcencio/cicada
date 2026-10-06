@@ -4,13 +4,16 @@
   if(!panel) return;
   const status=byId('instrument-status'), record=byId('instrument-mic'), stop=byId('instrument-stop');
   const capture=new window.CicadaBrowserCapture.BrowserCapture(window.cicadaBrowserAudio);
-  let working=false, pack=null, timer=null, generation=0, sources=new Set(), cycle=0;
+  let working=false, pack=null, sampledPack=null, modeledPack=null, timer=null, generation=0, sources=new Set(), cycle=0;
   const cache=new Map();
   function update() {
     const recording=['armed','recording','saving'].includes(capture.status.state);
     record.disabled=working||recording; stop.disabled=working||!recording;
     for(const id of ['instrument-name','instrument-root','instrument-layers','instrument-pitch','instrument-files']) byId(id).disabled=working||recording;
     byId('instrument-save-score').disabled=!pack||working;
+    byId('instrument-fit').disabled=!sampledPack||working||recording;
+    byId('instrument-fit-hit').disabled=!sampledPack||working||recording;
+    byId('instrument-mode').disabled=!modeledPack||working||recording;
     for(const key of panel.querySelectorAll('[data-instrument-note]')) key.disabled=!pack||working;
     record.setAttribute('aria-pressed',String(recording));
   }
@@ -32,15 +35,29 @@
     status.textContent='Finding hits, estimating pitch and building the pack…';
     const response=await fetch('/api/instrument-record',{method:'POST',body:form});
     const result=await response.json();if(!response.ok) throw new Error(result.error||'Cannot build instrument');
+    result.playRoot=Number(byId('instrument-root').value);sampledPack=result;modeledPack=null;byId('instrument-fit-hit').max=result.hits.length;
+    byId('instrument-fit-hit').value=1;selectPack(result);
+  }
+  function selectPack(result) {
     stopVoices();cache.clear();pack=result;cycle=0;
     window.cicadaRecordedInstrument=pack;
+    byId('instrument-mode').textContent=pack.model?'Play sampled':'Play modeled';
     const layers=new Set(pack.manifest.zones.map(z=>z.Layer)), counts=new Set(pack.manifest.zones.map(z=>z.Count));
-    status.textContent=`${pack.hits.length} hits · ${layers.size} velocity layers · ${[...counts].join('/')} round robins · owner recording · ready to play`;
-    byId('instrument-map').textContent=pack.hits.map((hit,index)=>`Take ${index+1}: ${(hit.start/hit.rate).toFixed(3)}–${(hit.end/hit.rate).toFixed(3)} s · ${hit.loudnessDB.toFixed(1)} dB · ${hit.pitchHz?hit.pitchHz.toFixed(1)+' Hz':'unpitched'} (${Math.round(hit.confidence*100)}% confidence) · root ${hit.root}`).join('\n');
+    status.textContent=pack.model?`${pack.model.modes.length} fitted modes · root ${pack.model.rootHz.toFixed(1)} Hz · modeled instrument ready to play`:`${pack.hits.length} hits · ${layers.size} velocity layers · ${[...counts].join('/')} round robins · owner recording · ready to play`;
+    byId('instrument-root').value=pack.model?pack.model.rootMIDI:pack.playRoot;
+    byId('instrument-map').textContent=pack.model?pack.model.modes.map((mode,index)=>`Mode ${index+1}: ${mode.frequencyHz.toFixed(1)} Hz · ratio ${mode.ratio.toFixed(3)} · decay T60 ${mode.t60.toFixed(3)} s (${Math.round(mode.decayConfidence*100)}% fit confidence)`).join('\n'):pack.hits.map((hit,index)=>`Take ${index+1}: ${(hit.start/hit.rate).toFixed(3)}–${(hit.end/hit.rate).toFixed(3)} s · ${hit.loudnessDB.toFixed(1)} dB · ${hit.pitchHz?hit.pitchHz.toFixed(1)+' Hz':'unpitched'} (${Math.round(hit.confidence*100)}% confidence) · root ${hit.root}`).join('\n');
     byId('instrument-declaration').textContent=pack.declaration;
     byId('instrument-score-path').textContent=`Score saved: ${pack.scorePath}`;
     byId('instrument-result').hidden=false;
+    update();
   }
+  byId('instrument-fit').addEventListener('click',()=>busy(async()=>{
+    status.textContent='Fitting resonances and decay times…';
+    const response=await fetch('/api/instrument-fit',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sha256:sampledPack.sha256,hit:Number(byId('instrument-fit-hit').value)})});
+    const result=await response.json();if(!response.ok) throw new Error(result.error||'Cannot fit model');
+    modeledPack=result;window.cicadaModeledInstrument=result;selectPack(result);
+  }));
+  byId('instrument-mode').addEventListener('click',()=>selectPack(pack.model?sampledPack:modeledPack));
   // Preserve raw frame gaps while converting committed browser PCM to WAV.
   function recordingWAV(take) {
     const rate=take.metadata.sampleRate, channels=take.metadata.channels, frames=take.rawFrames;
