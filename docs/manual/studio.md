@@ -151,7 +151,7 @@ including when transport is stopped. Input monitoring stays off.
 
 Choose **Record PCM** for a one-bar count-in, then **Stop and save**. Stopping
 transport also finalizes an active browser recording. The worker stores raw interleaved
-float32 PCM, including count-in, alongside lane D's capture block descriptors
+float32 PCM, including count-in, alongside the capture block descriptors
 and placement metadata. A bounded 32-buffer transfer pool admits mono/stereo
 callbacks of up to 2,048 frames. A full pool or missing input marks the take
 incomplete and records a known frame gap, including any trailing gap.

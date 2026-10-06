@@ -19,7 +19,7 @@ import (
 // MaxFrames bounds the resident PCM of one prepared asset (64 MiB stereo).
 const MaxFrames = 8 << 20
 
-// LoadSampler connects a lane A sampler declaration to lane B's bounded pool.
+// LoadSampler connects a sampler declaration to a bounded sample pool.
 func LoadSampler(dir string, p *project.Project, name string) (*sample.Pool, error) {
 	if p == nil {
 		return nil, fmt.Errorf("sample project is missing")

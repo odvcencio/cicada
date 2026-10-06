@@ -83,10 +83,10 @@ func remoteURL(s string) bool {
 	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
 }
 
-// Owner recordings retain their source checksum without inventing remote
+// User recordings retain their source checksum without inventing remote
 // URLs or granting a public redistribution license.
 func validLicense(a Asset) bool {
-	if a.License == "owner recording" {
+	if a.License == "user recording" || a.License == "owner recording" {
 		return a.SourceURL == "" && a.LicenseURL == "" && a.Attribution == ""
 	}
 	return remoteURL(a.SourceURL) && remoteURL(a.LicenseURL) &&

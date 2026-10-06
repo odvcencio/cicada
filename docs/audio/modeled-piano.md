@@ -60,8 +60,7 @@ describes how longitudinal motion contributes to low-register piano timbre.
 No source code, sample, or measured impulse response from that paper is included.
 
 See [the listening comparison](piano-abx.md) for matched-loudness blind trials
-against the CC0 sampled grand. Generating those trials does not establish the
-roadmap's ten-listener acoustic acceptance.
+against the CC0 sampled grand. Generating trials does not establish acoustic equivalence.
 
 Focused checks:
 

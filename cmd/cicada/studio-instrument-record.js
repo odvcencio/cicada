@@ -43,7 +43,7 @@
     window.cicadaRecordedInstrument=pack;
     byId('instrument-mode').textContent=pack.model?'Play sampled':'Play modeled';
     const layers=new Set(pack.manifest.zones.map(z=>z.Layer)), counts=new Set(pack.manifest.zones.map(z=>z.Count));
-    status.textContent=pack.model?`${pack.model.modes.length} fitted modes · root ${pack.model.rootHz.toFixed(1)} Hz · modeled instrument ready to play`:`${pack.hits.length} hits · ${layers.size} velocity layers · ${[...counts].join('/')} round robins · owner recording · ready to play`;
+    status.textContent=pack.model?`${pack.model.modes.length} fitted modes · root ${pack.model.rootHz.toFixed(1)} Hz · modeled instrument ready to play`:`${pack.hits.length} hits · ${layers.size} velocity layers · ${[...counts].join('/')} round robins · user recording · ready to play`;
     byId('instrument-root').value=pack.model?pack.model.rootMIDI:pack.playRoot;
     byId('instrument-map').textContent=pack.model?pack.model.modes.map((mode,index)=>`Mode ${index+1}: ${mode.frequencyHz.toFixed(1)} Hz · ratio ${mode.ratio.toFixed(3)} · decay T60 ${mode.t60.toFixed(3)} s (${Math.round(mode.decayConfidence*100)}% fit confidence)`).join('\n'):pack.hits.map((hit,index)=>`Take ${index+1}: ${(hit.start/hit.rate).toFixed(3)}–${(hit.end/hit.rate).toFixed(3)} s · ${hit.loudnessDB.toFixed(1)} dB · ${hit.pitchHz?hit.pitchHz.toFixed(1)+' Hz':'unpitched'} (${Math.round(hit.confidence*100)}% confidence) · root ${hit.root}`).join('\n');
     byId('instrument-declaration').textContent=pack.declaration;

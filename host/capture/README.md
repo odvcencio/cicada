@@ -20,7 +20,7 @@ returning; its slices expire on return. Save `Placement` into the published take
 source: `rawEngineFrame`, `mappedEngineFrame`, `correctionFrames`, `engineFrame`,
 `timingConfidence` and `calibrated`. This keeps placement edits visible without
 rewriting or discarding the original audio. Durable journaling, WAV writing and
-asset/source publication belong to lane E.
+asset/source publication are handled by the take journal.
 
 `Place` maps first-frame timestamps in a shared clock domain. It uses reported
 latency only for an estimated mapping when those timestamps are unavailable, or

@@ -7,7 +7,7 @@ not change the existing instrument ABI, graph opcodes, score syntax, modal pack,
 or frozen-v15 DAW integration. No samples or measured impulse responses are used.
 
 These are playable physical-model prototypes, not qualified realistic instruments.
-No human acoustic listening acceptance is claimed. Passing DSP tests, tuning
+Acoustic realism is unverified. Passing DSP tests, tuning
 measurements and headless browser execution does not establish convincing timbre.
 
 ## Models and controls

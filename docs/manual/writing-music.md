@@ -335,6 +335,5 @@ channels and frame count. Asset paths resolve from the directory containing the
 nearest `cicada.mod`, including scores in subdirectories. Exact `frames` literals
 support sample editing; seconds and milliseconds must land on exact source frames.
 
-These declarations compile to project data. Playback and recording support arrive
-in the other Phase 1 lanes; the current engine reports `CICADA-UNSUPPORTED` for
+These declarations compile to project data. The current declarations describe audio data; the current engine reports `CICADA-UNSUPPORTED` for
 projects containing audio data.

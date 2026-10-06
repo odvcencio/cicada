@@ -14,8 +14,8 @@ import (
 func (m Model) Voice(rate int) (*modal.FittedVoice, error) {
 	hash, err := hex.DecodeString(m.SourceSHA256)
 	hit, hitErr := hex.DecodeString(m.HitSHA256)
-	if err != nil || len(hash) != 32 || m.SourceSHA256 != strings.ToLower(m.SourceSHA256) || hitErr != nil || len(hit) != 32 || m.RootMIDI < 12 || m.RootMIDI > 95 || m.Format != Format || m.License != "owner recording" || len(m.Modes) < 1 || len(m.Modes) > modal.MaxModes {
-		return nil, fmt.Errorf("invalid owner modal model")
+	if err != nil || len(hash) != 32 || m.SourceSHA256 != strings.ToLower(m.SourceSHA256) || hitErr != nil || len(hit) != 32 || m.RootMIDI < 12 || m.RootMIDI > 95 || m.Format != Format || (m.License != "user recording" && m.License != "owner recording") || len(m.Modes) < 1 || len(m.Modes) > modal.MaxModes {
+		return nil, fmt.Errorf("invalid recorded modal model")
 	}
 	model := modal.Model{Count: len(m.Modes), NoiseMix: m.NoiseMix}
 	for i, mode := range m.Modes {
@@ -82,7 +82,7 @@ func (m Model) Build(name string) (*recording.Pack, error) {
 	}
 	data = append(data, '\n')
 	pack.Files["model.json"] = data
-	pack.Manifest.Description = "Owner recording; fitted modal engine; model.json sha256=" + recording.Digest(data)
+	pack.Manifest.Description = "User recording; fitted modal engine; model.json sha256=" + recording.Digest(data)
 	manifest, err := json.MarshalIndent(pack.Manifest, "", "  ")
 	if err != nil {
 		return nil, err
