@@ -200,6 +200,22 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 	for _, inst := range score.Instruments {
 		if inst.Mode == "poly" {
 			kitVoices[inst.Name] = graph.PolyVoices
+			for _, scene := range score.Scenes {
+				for _, binding := range scene.Bindings {
+					if tracks[binding.Track].Kind != inst.Name {
+						continue
+					}
+					for _, pattern := range score.Patterns {
+						if pattern.Name == binding.Pattern {
+							for _, step := range pattern.Steps {
+								if len(step.ChordPitches) > 1 {
+									kitVoices[inst.Name] = graph.MaxPolyphony
+								}
+							}
+						}
+					}
+				}
+			}
 		}
 	}
 	drumVoices := make(map[string]int, len(tracks))
@@ -236,6 +252,8 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 				voices += drumVoices[trackID]
 			} else if count, ok := kitVoices[kind]; ok {
 				voices += count
+			} else if sourceTrackIsPoly(score, kind) {
+				voices += 4
 			} else {
 				voices++
 			}
@@ -276,4 +294,13 @@ func patternCompileDiagnostic(err error, position notation.Position) notation.Di
 		code = "CICADA-SCALE-DEGREE"
 	}
 	return notation.Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: position}
+}
+
+func sourceTrackIsPoly(score *notation.Score, kind string) bool {
+	for _, inst := range score.Instruments {
+		if inst.Name == kind {
+			return inst.Mode == "poly"
+		}
+	}
+	return false
 }

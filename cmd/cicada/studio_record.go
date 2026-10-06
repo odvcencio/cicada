@@ -175,6 +175,9 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 			break
 		}
 	}
+	if polyphonic && project.GraphPolyphony(semantic, track.Kind) == 4 {
+		return nil, fmt.Errorf("track %q is not an acid track", trackID)
+	}
 	if !drums && !pitched {
 		return nil, fmt.Errorf("track %q is not a pitched instrument track", trackID)
 	}

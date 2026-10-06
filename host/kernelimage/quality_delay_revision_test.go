@@ -3,6 +3,7 @@ package kernelimage
 import (
 	"encoding/binary"
 	"reflect"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/engine"
@@ -10,6 +11,52 @@ import (
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
+
+func TestQualityChordAndLivePolyImagesCoexist(t *testing.T) {
+	source := `instrument chords { voice poly { out = pulse(pitch, 0.4) * adsr(gate, 2ms, 20ms, 0.7, 20ms) * velocity * 0.05 } }
+instrument live { voice poly { out = svf(sine(pitch), 1200Hz, 0.2) * env(gate, 20ms) * velocity * 0.05 } }
+track harmony chords {}
+track lead live {}
+pattern chord notes { [c4 e4] . [e4 g4] . }
+pattern scalar notes { c4 . e4 . }
+scene main { harmony=chord lead=scalar }
+song { main }
+`
+	score, ds := notation.Parse([]byte(source))
+	p, ds := project.FromScore(score)
+	if p == nil || len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	cfg, err := project.CompileEngine(p, 48000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Track[0].Kind != engine.VoiceGraph || cfg.Track[0].Polyphony != 4 || cfg.Track[1].Kind != engine.VoiceGraphPoly {
+		t.Fatalf("chord and Live voice modes changed: %+v %+v", cfg.Track[0], cfg.Track[1])
+	}
+	data, err := Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := Decode(data, 48000, 128)
+	if err != nil || !reflect.DeepEqual(cfg, decoded) {
+		t.Fatalf("combined image: %v", err)
+	}
+	e, err := engine.New(decoded)
+	if err != nil || !e.TrackPolyphonic(0) || e.TrackPolyphonic(1) {
+		t.Fatalf("chord Live restriction affected the eight-voice mode: %v", err)
+	}
+	// A chord may disappear during editing without disabling ordinary polyphony.
+	score, ds = notation.Parse([]byte(strings.ReplaceAll(source, "[c4 e4] . [e4 g4] .", "c4 . e4 .")))
+	p, ds = project.FromScore(score)
+	if p == nil || len(ds) != 0 {
+		t.Fatal(ds)
+	}
+	cfg, err = project.CompileEngine(p, 48000, 128)
+	if err != nil || cfg.Track[0].Kind != engine.VoiceGraphPoly {
+		t.Fatalf("scalar polyphony did not retain eight voices: %v", err)
+	}
+}
 
 func TestQualityPolyphonicDelayImageRoundTrip(t *testing.T) {
 	source := []byte(`instrument mixed {

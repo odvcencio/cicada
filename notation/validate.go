@@ -149,8 +149,10 @@ func Validate(s *Score) (ds []Diagnostic) {
 				if drumParams[lane] == nil {
 					add("CICADA-REFERENCE", "unknown built-in drum "+lane, "error", binding.Position)
 				}
-			} else if _, exists := instruments[binding.Target]; !exists {
+			} else if inst, exists := instruments[binding.Target]; !exists {
 				add("CICADA-REFERENCE", "unknown kit instrument "+binding.Target, "error", binding.Position)
+			} else if inst.Mode == "poly" {
+				add("CICADA-UNSUPPORTED", "poly instruments cannot be kit lanes", "error", binding.Position)
 			}
 		}
 	}

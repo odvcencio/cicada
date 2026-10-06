@@ -1,0 +1,33 @@
+cicada 2
+
+title "Sample kit dynamics and repetition"
+
+tempo 100
+
+key c major
+
+seed 4242
+
+sampler sound {
+  pack = "packs/kit/manifest.json"
+  sha256 = "cbe03317accfafe7eaa29c70381bf516177cf1c168bedea05fc78702c5970274"
+  root = c4
+  voices = 16
+}
+
+track lead sound {
+  level = -6dB
+}
+
+pattern demo {
+  gate = 65%
+  c2 d2 f#2 d2 c2 d2 f#2 d2 | c2 f#2 d2 f#2 c2 f#2 d2 f#2 | a#2 . f#2 . d2 d2 d2 d2
+}
+
+scene main {
+  lead = demo
+}
+
+song {
+  main*4
+}

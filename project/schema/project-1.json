@@ -127,6 +127,7 @@
       "required": ["note", "accent", "slide", "tie", "ratchet", "probability", "velocity"],
       "properties": {
         "note": {"type": "integer", "minimum": 0, "maximum": 127},
+        "notes": {"type": "array", "minItems": 2, "maxItems": 4, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 127}},
         "accent": {"type": "boolean"}, "slide": {"type": "boolean"}, "tie": {"type": "boolean"},
         "ratchet": {"type": "integer", "minimum": 1, "maximum": 8},
         "probability": {"type": "integer", "minimum": 0, "maximum": 100},

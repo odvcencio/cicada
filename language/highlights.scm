@@ -19,6 +19,7 @@
 ; the colors, take precedence in last-match editors.
 
 (acid_note (modifier "^")) @markup.strong
+(chord_note (modifier "^")) @markup.strong
 (acid_note (modifier "~")) @markup.italic
 (acid_note (modifier (ratchet))) @markup.underline
 (drum_hit (accent_hit)) @markup.strong
@@ -234,7 +235,7 @@
 
 "=" @operator
 [":" ";"] @punctuation.delimiter
-["{" "}" "(" ")"] @punctuation.bracket
+["{" "}" "(" ")" "[" "]"] @punctuation.bracket
 
 (comment) @comment
 

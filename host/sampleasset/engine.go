@@ -51,7 +51,9 @@ func Prepare(dir string, p *project.Project) ([]engine.StereoVoiceFactory, error
 	}
 	samplers := map[string]project.Sampler{}
 	for _, sampler := range p.Samplers {
-		samplers[sampler.Name] = sampler
+		if sampler.Pack == "" {
+			samplers[sampler.Name] = sampler
+		}
 	}
 	prepared := make([]engine.StereoVoiceFactory, len(p.Tracks))
 	for ti, track := range p.Tracks {
