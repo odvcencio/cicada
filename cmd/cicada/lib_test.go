@@ -209,3 +209,52 @@ func TestLibUpdateCombinesLegacyManifestNestedScores(t *testing.T) {
 		t.Errorf("shared manifest must use its root sum: %v", err)
 	}
 }
+
+func TestProjectRootNamedLibKeepsCLIWorkflows(t *testing.T) {
+	parent := t.TempDir()
+	t.Setenv("CICADA_LIBRARY", t.TempDir())
+	t.Chdir(parent)
+	if err := newProject("lib", os.WriteFile); err != nil {
+		t.Fatal(err)
+	}
+	root := filepath.Join(parent, "lib")
+	main := filepath.Join(root, "main.cicada")
+	source := []byte("import \"demo/tone\"\ntrack lead tone.glass{}\nscene verse{lead=tone.melody}\nsong{verse}\n")
+	for name, data := range map[string][]byte{
+		"main.cicada":               source,
+		"lib/demo/tone/cicada.mod":  []byte("library demo/tone\ncicada 2\nsource \"tone.cicada\"\nlicense \"MIT\"\nauthor \"Cicada contributors\"\n"),
+		"lib/demo/tone/tone.cicada": []byte("instrument glass { voice mono { out=sine(pitch) } }\npattern melody { 1 . 5 . }\n"),
+	} {
+		path := filepath.Join(root, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := loadProject(main); err == nil || !strings.Contains(err.Error(), "CICADA-LIB-HASH") {
+		t.Fatalf("unpinned named-lib fixture: %v", err)
+	}
+	t.Chdir(root)
+	var output, diagnostics bytes.Buffer
+	if err := libCommand([]string{"update"}, &output); err != nil {
+		t.Errorf("valid project named lib was skipped by pin update: %v", err)
+	}
+	if p, err := loadProject(main); err != nil || p == nil {
+		t.Errorf("named-lib project remains unpinned: %v", err)
+	}
+	if err := formatProjectCommand(true, &output, &diagnostics); err == nil {
+		t.Error("project formatter skipped an unformatted score under root named lib")
+	}
+	if err := formatProjectCommand(false, &output, &diagnostics); err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := os.ReadFile(main)
+	if err != nil || bytes.Equal(formatted, source) {
+		t.Errorf("project formatter did not format root named lib: %v", err)
+	}
+	if p, err := loadProject(main); err != nil || p == nil {
+		t.Errorf("formatted named-lib project does not load: %v", err)
+	}
+}
