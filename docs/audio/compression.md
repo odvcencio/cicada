@@ -37,9 +37,27 @@ Measured on 2026-10-06: 34 excerpts, 67.23 seconds at 48 kHz, covering five gran
 
 Scaled PCM16's median SNR was 78.90 dB; its lowest excerpt was 68.73 dB. Unscaled PCM16 had an 18.09 dB worst quiet-tail result and was rejected. FLAC's direct integer conversion changed four float32 kit sources; the exact tier retains their gzip encoding.
 
+The delivered encoder also converted and verified every asset in the two complete source libraries. These totals exclude descriptor/catalog bytes; the excerpt quality measurements above remain separate from these whole-library size measurements.
+
+| Library | Assets | Current gzip bytes | Exact tier bytes | Ratio | PCM16 tier bytes | Ratio |
+|---|---:|---:|---:|---:|---:|---:|
+| Six instrument packs | 361 | 290,679,811 | 165,591,092 | 1.76× | 75,795,475 | 3.84× |
+| Full kit | 322 | 252,612,372 | 142,689,506 | 1.77× | 79,681,355 | 3.17× |
+
+Exact export retained gzip for 28 instrument-pack assets and two full-kit assets. The standalone descriptors add 312,840 bytes to the combined exact tier and 311,206 bytes to PCM16. Both tiers retain the same 918,394,776 aggregate float32 PCM bytes when all assets are decoded; per-pack residency limits still apply.
+
+Production admission was measured separately on grand, snare and violin in each tier. Median elapsed preparation milliseconds per second of source audio, over five decodes per asset, include encoded and decoded checksums. File reads and first-use setup are excluded. The loaded-machine timings are a cost estimate rather than a render deadline.
+
+| Tier | Native Go ms/s | Go/WASM ms/s | Browser host ms/s | Kernel delta |
+|---|---:|---:|---:|---:|
+| Exact FLAC/gzip | 8.70 | 25.41 | 7.85 | 0 |
+| Scaled PCM16 FLAC | 7.38 | 21.75 | 11.45 | 0 |
+
 Chromium decoded every conventional codec. Pure-Go FLAC and Opus decoded all test streams, and their Go/WASM output matched native PCM exactly. Chromium and native-Go Opus differed by small float errors in captured comparisons; a native browser Opus tier needs an explicit precision policy if byte-identical PCM is required. FLAC was exact in those browser/native comparisons. The delivered tiers avoid a separate browser codec WASM download.
 
 TurboQuant did not win the measured uses. Across 4/6/8 bits, raw 32-frame blocks averaged 20.47/29.05/38.18 dB SNR. A DCT pre-transform gave no consistent benefit. Phase-discarding envelopes, cepstra and harmonic/noise models stayed small but had poor waveform reconstruction. The existing neural amp and reed have only 36/105 parameters: TQ saved at most 8/114 bytes before decoder overhead, with substantial output error. Keep their pinned int16 weights.
+
+The published keys branches use analytic/modal instrument models, with no sampled packs or dense learned weights. Keep those compact source parameters. Apply these tiers if that lane later publishes self-sampled packs; the acoustic parametric trial does not validate a future phase-aware keys codec.
 
 An external probe of the actual kernel found that one reachable TQ decoder increased raw WASM by 103,487 bytes and Brotli by 47,363 bytes, exceeding both unchanged limits. The delivered host codecs add zero kernel bytes. Timings in the study are preparation costs measured on a loaded machine, not real-time render acceptance. Objective metrics do not establish ABX listening acceptance.
 
