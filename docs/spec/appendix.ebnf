@@ -27,7 +27,7 @@ instrument_decl ::= "instrument" , _name , "{" , [ instrument_octave ] , { instr
 instrument_octave ::= "octave" , "=" , integer , [ ";" ] ;
 kit_decl ::= "kit" , _name , "{" , { kit_binding } , "}" ;
 kit_binding ::= identifier , "=" , kit_target , [ ";" ] ;
-kit_target ::= _name | "builtin" , "." , identifier ;
+kit_target ::= _name | "builtin" , "." , identifier | "model" , "." , identifier ;
 instrument_param ::= "param" , identifier , [ ":" , identifier ] , "=" , number , [ ";" ] ;
 voice_decl ::= "voice" , identifier , "{" , { let_stmt } , out_stmt , "}" ;
 let_stmt ::= "let" , identifier , "=" , expression , [ ";" ] ;

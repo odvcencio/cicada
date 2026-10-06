@@ -67,7 +67,7 @@ func Cicada() *grammargen.Grammar {
 		str("{"), optional(sym("instrument_octave")), repeat(sym("instrument_param")), sym("voice_decl"), str("}"),
 	))
 	g.Define("instrument_octave", seq(str("octave"), str("="), field("value", sym("integer")), optional(str(";"))))
-	// A kit binds drum lanes to instruments or built-in drum voices.
+	// A kit binds drum lanes to instruments, built-in voices, or modeled pieces.
 	g.Define("kit_decl", seq(
 		str("kit"), field("name", sym("_name")),
 		str("{"), repeat(sym("kit_binding")), str("}"),
@@ -78,6 +78,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("kit_target", choice(
 		field("instrument", sym("_name")),
 		seq(str("builtin"), str("."), field("voice", sym("identifier"))),
+		seq(str("model"), str("."), field("voice", sym("identifier"))),
 	))
 	g.Define("instrument_param", seq(
 		str("param"), field("name", sym("identifier")), optional(seq(str(":"), field("unit", sym("identifier")))),
@@ -227,6 +228,7 @@ func Cicada() *grammargen.Grammar {
 	g.Test("phase modulation", "cicada 2 instrument i { voice mono { let m = sine(pitch * 3.5); out = pm(pitch, m, 4 * env(gate, 260ms)); } }", "")
 	g.Test("inferred instrument units", "instrument i { param cutoff = 720Hz param decay = 0.3s param level = -6dB param amount = 50% voice mono { out = saw(cutoff) * amount } }", "")
 	g.Test("scene parameter paths", "scene drop { bass = bass-b bass.cutoff = 900Hz drums.bd_level = off }", "")
+	g.Test("modeled kit targets", "kit acoustic { bd = model.kick ch = model.hat_closed cp = model.cross_stick }", "")
 	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
 	g.Test("default notes", "phrase hook { 1 . } pattern p { use hook 5 . }", "")
 	g.Test("SI units", "track bass acid { cutoff = 2kHz level = -6dB } instrument i { param cutoff: hz = 720Hz; voice mono { out = saw(440Hz); } }", "")

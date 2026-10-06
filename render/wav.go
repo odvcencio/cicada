@@ -701,7 +701,7 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 				return nil, err
 			}
 			if isAuthoredKit {
-				bindings, err := project.CompileKitAtSampleRate(kitDefinition, programs, sampleRate)
+				bindings, err := project.CompileKitTrackAtSampleRate(kitDefinition, programs, semantic.Tracks[sourceIndex].Params, sampleRate)
 				if err != nil {
 					return nil, err
 				}
@@ -714,6 +714,8 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 						err = kit.SetRecipe(lane, binding.Recipe)
 					case engine.KitLaneGraph:
 						err = kit.SetGraph(lane, binding.Program)
+					case engine.KitLaneModeled:
+						err = kit.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
 					}
 					if err != nil {
 						return nil, fmt.Errorf("track %s lane %s: %w", source.Name, drum.Names[lane], err)

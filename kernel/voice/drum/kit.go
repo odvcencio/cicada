@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/voice/modeledkit"
 )
 
 type Lane uint8
@@ -176,6 +177,9 @@ type laneVoice struct {
 	customChoke                         int
 	customAccent                        float64
 	customOldAccent                     float64
+	modeled                             *modeledkit.Voice
+	modeledProfile                      modeledkit.Profile
+	modeledAccent                       float64
 }
 
 type Kit struct {
@@ -245,6 +249,13 @@ func (k *Kit) SetParamsTarget(lane Lane, params Params, alpha float64) error {
 		return err
 	}
 	v := &k.lanes[lane]
+	if v.modeled != nil {
+		controls := params
+		controls.LevelDB, controls.Pan = v.params.LevelDB, v.params.Pan
+		if controls != v.params {
+			return Error("modeled kit synthesis controls require prepared lane bindings")
+		}
+	}
 	v.targetParams, v.paramAlpha = params, alpha
 	angle := (params.Pan + 1) * math.Pi / 4
 	v.targetPanL, v.targetPanR = math.Cos(angle), math.Sin(angle)
@@ -267,6 +278,7 @@ func (k *Kit) SetRecipe(lane, recipe Lane) error {
 	v.recipe = recipe
 	v.enabled = true
 	v.custom, v.customOld = nil, nil
+	v.modeled = nil
 	v.customActive = false
 	v.customChoke = 0
 	v.current = state{noise: k.seed ^ uint32(lane+1)*0x9e3779b9}
@@ -292,6 +304,7 @@ func (k *Kit) SetGraph(lane Lane, program graph.Program) error {
 		return err
 	}
 	v := &k.lanes[lane]
+	v.modeled = nil
 	v.recipe = lane
 	v.custom, v.customOld = current, old
 	v.customActive = false
@@ -300,6 +313,33 @@ func (k *Kit) SetGraph(lane Lane, program graph.Program) error {
 	v.fadeRemaining = 0
 	v.enabled = true
 	p := DefaultParams(lane)
+	return k.SetParams(lane, p)
+}
+
+// SetModeled prepares one modal drum voice before rendering begins. Source
+// lanes may select any articulation; hat choking follows the selected models.
+func (k *Kit) SetModeled(lane Lane, profile modeledkit.Profile, params modeledkit.Params, levelDB, pan float64) error {
+	if lane >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	voice, err := modeledkit.NewVoice(profile, int(k.rate), k.seed^uint32(lane+1)*0x9e3779b9)
+	if err != nil {
+		return err
+	}
+	if err := voice.SetParams(params); err != nil {
+		return err
+	}
+	p := DefaultParams(lane)
+	p.LevelDB, p.Pan = levelDB, pan
+	if err := p.Validate(lane); err != nil {
+		return err
+	}
+	v := &k.lanes[lane]
+	v.recipe, v.enabled = lane, true
+	v.custom, v.customOld = nil, nil
+	v.customActive, v.customChoke, v.fadeRemaining = false, 0, 0
+	v.current, v.old = state{}, state{}
+	v.modeled, v.modeledProfile, v.modeledAccent = voice, profile, 1
 	return k.SetParams(lane, p)
 }
 
@@ -316,6 +356,9 @@ func (k *Kit) Disable(lane Lane) error {
 	v.customActive = false
 	v.customChoke = 0
 	v.fadeRemaining = 0
+	if v.modeled != nil {
+		v.modeled.Reset()
+	}
 	return nil
 }
 
@@ -335,6 +378,10 @@ func (k *Kit) Reset() {
 			v.custom.Reset()
 			v.customOld.Reset()
 		}
+		if v.modeled != nil {
+			v.modeled.Reset()
+			v.modeledAccent = 1
+		}
 	}
 }
 
@@ -345,10 +392,29 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 	if !k.lanes[lane].enabled {
 		return
 	}
-	if lane == CH {
+	if lane == CH && k.lanes[lane].modeled == nil {
 		k.NoteOff(OH)
 	}
 	v := &k.lanes[lane]
+	if v.modeled != nil {
+		if velocity == 0 {
+			return
+		}
+		if modeledkit.IsHat(v.modeledProfile) {
+			for i := range k.lanes {
+				other := &k.lanes[i]
+				if i != int(lane) && other.modeled != nil && modeledkit.IsHat(other.modeledProfile) {
+					other.modeled.Choke()
+				}
+			}
+		}
+		v.modeledAccent = 1
+		if accent {
+			velocity, v.modeledAccent = 127, math.Sqrt2
+		}
+		v.modeled.Hit(velocity)
+		return
+	}
 	if v.custom != nil {
 		if v.customActive {
 			v.customOld.CopyStateFrom(v.custom)
@@ -393,6 +459,10 @@ func (k *Kit) NoteOff(lane Lane) {
 	if lane >= LaneCount {
 		return
 	}
+	if v := &k.lanes[lane]; v.modeled != nil {
+		v.modeled.Choke()
+		return
+	}
 	if v := &k.lanes[lane]; v.custom != nil {
 		if v.customActive {
 			v.custom.NoteOff()
@@ -427,6 +497,12 @@ func (k *Kit) NextStereo() (left, right float32) {
 			v.panR += (v.targetPanR - v.panR) * alpha
 		}
 		if !v.enabled {
+			continue
+		}
+		if v.modeled != nil {
+			output := float64(v.modeled.Next()) * v.modeledAccent * v.level
+			l += output * v.panL
+			r += output * v.panR
 			continue
 		}
 		if v.custom != nil {

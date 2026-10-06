@@ -1,0 +1,26 @@
+cicada 1
+
+kit acoustic {
+  bd = model.kick
+  sd = model.snare
+  ch = model.hat_closed
+  oh = model.hat_open
+  cy = model.ride_bow
+}
+
+track kit acoustic {
+  bd_tune = 0.9
+  sd_position = 0.6
+  cy_humanize = 0.02
+}
+
+pattern groove drums steps=4 {
+  bd: x...
+  sd: ..x.
+  ch: .x.x
+  oh: x...
+  cy: x.x.
+}
+
+scene main { kit = groove }
+song { main }
