@@ -55,7 +55,7 @@ export async function createGui(plugin) {
       button.textContent = playing ? 'Stop score' : 'Play score';
       status.textContent = playing ? 'Playing' : 'Stopped';
       for (const [id, control] of controls) {
-        if (shadow.activeElement !== control.slider) control.slider.value = state.parameterValues[id].value;
+        control.slider.value = state.parameterValues[id].value;
         control.value.textContent = Number(control.slider.value).toFixed(3);
       }
     } catch (reason) { if (!disposed) fail(reason); }

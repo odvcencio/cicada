@@ -169,6 +169,15 @@ func TestBrowserWAM2(t *testing.T) {
   root.querySelector('input').value='.75';root.querySelector('input').dispatchEvent(new Event('input'));
   await new Promise(resolve=>setTimeout(resolve,300));
   if(root.querySelector('.value').textContent!=='0.750')throw Error('GUI macro control failed');
+  root.querySelector('input').focus();
+  await cicadaWam.audioNode.setParameterValues({intensity:{id:'intensity',value:.55,normalized:false}});
+  await new Promise(resolve=>setTimeout(resolve,300));
+  if(root.querySelector('.value').textContent!=='0.550')throw Error('Focused GUI did not follow host automation');
+  const state=await cicadaWam.audioNode.getState();
+  state.parameterValues.intensity.value=.75;
+  await cicadaWam.audioNode.setState(state);
+  await new Promise(resolve=>setTimeout(resolve,300));
+  if(root.querySelector('.value').textContent!=='0.750')throw Error('GUI did not follow state restoration');
 })()`)
 	chrome.mustCall("Runtime.evaluate", map[string]any{"expression": `document.querySelector('#mount').firstElementChild.shadowRoot.querySelector('button').click()`, "userGesture": true})
 	chrome.waitFor(`document.querySelector('#mount').firstElementChild.shadowRoot.querySelector('.status').textContent==='Playing'`, 10*time.Second)
