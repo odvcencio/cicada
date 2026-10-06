@@ -351,7 +351,7 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 	v := &k.lanes[lane]
 	if v.custom != nil {
 		if v.customActive {
-			*v.customOld = *v.custom
+			v.customOld.CopyStateFrom(v.custom)
 			v.customOldAccent = v.customAccent
 			v.fadeRemaining = max(1, int(k.rate/1000))
 		}

@@ -377,3 +377,21 @@ func TestExamplesRemainValidAfterFormat(t *testing.T) {
 		})
 	}
 }
+
+func TestGraphPluckExampleIsFormatted(t *testing.T) {
+	source, err := os.ReadFile("../examples/pluck.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document, err := ParseDocument(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	formatted, err := Format(document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(source, formatted) {
+		t.Fatal("pluck example needs formatting")
+	}
+}
