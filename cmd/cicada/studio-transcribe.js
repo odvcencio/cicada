@@ -45,11 +45,11 @@
     const byId=id=>document.getElementById(id),panel=byId('melody-transcribe');
     if(!panel) return;
     const status=byId('melody-status'),capture=new env.CicadaBrowserCapture.BrowserCapture(env.cicadaBrowserAudio);
-    let working=false,result=null,original=null,revision='',controller=null,timer=null,epoch=0,voices=new Set(),previousIndex=null,previousID='';
+    let working=false,applying=false,result=null,original=null,revision='',controller=null,timer=null,epoch=0,voices=new Set(),previousIndex=null,previousID='';
     const active=()=>['arming','armed','recording','saving','recovering'].includes(capture.status.state);
     function update() {
       byId('melody-mic').disabled=working||active();byId('melody-stop').disabled=working||capture.status.state!=='recording';
-      byId('melody-cancel').disabled=!working&&!active()&&!result&&!original;
+      byId('melody-cancel').disabled=applying||(!working&&!active()&&!result&&!original);
       for(const id of ['melody-file','melody-tempo','melody-key','melody-grid']) byId(id).disabled=working||active();
       for(const id of ['melody-apply','melody-download','melody-play']) byId(id).disabled=working||active()||!result;
       byId('melody-mic').setAttribute('aria-pressed',String(capture.status.state==='recording'));
@@ -105,6 +105,7 @@
       } finally {await discardRecording();}
     }));
     async function cancel() {
+      if(applying)return;
       epoch++;controller?.abort();controller=null;env.clearTimeout(timer);timer=null;
       stopVoices();result=null;byId('melody-result').hidden=true;clearOriginal();
       const ownTake=capture.take;
@@ -114,10 +115,13 @@
     byId('melody-cancel').addEventListener('click',cancel);
     byId('melody-apply').addEventListener('click',()=>busy(async()=>{
       if(env.cicadaStudio.dirty()||env.cicadaStudio.busy())throw new Error('Save or discard source edits before replacing the score.');
-      const response=await env.fetch('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,source:result.source})});
-      const saved=await response.json();if(!response.ok)throw new Error(saved.error||'Cannot replace the score.');
-      revision=saved.revision;env.dispatchEvent(new env.CustomEvent('cicada:sourcewritten',{detail:saved}));
-      status.textContent='Score replaced. Undo is available in History.';
+      applying=true;update();
+      try {
+        const response=await env.fetch('/api/source',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,source:result.source})});
+        const saved=await response.json();if(!response.ok)throw new Error(saved.error||'Cannot replace the score.');
+        revision=saved.revision;env.dispatchEvent(new env.CustomEvent('cicada:sourcewritten',{detail:saved}));
+        status.textContent='Score replaced. Undo is available in History.';
+      }finally{applying=false;}
     }));
     byId('melody-download').addEventListener('click',()=>{
       const url=env.URL.createObjectURL(new env.Blob([result.source],{type:'text/plain'})),link=document.createElement('a');

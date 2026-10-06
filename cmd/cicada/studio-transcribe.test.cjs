@@ -67,3 +67,14 @@ test('canceling a pending upload cannot publish a late preview',async()=>{
   resolve(ui.result);await upload;
   assert.equal(ui.byId('melody-result').hidden,true);assert.equal(ui.byId('melody-apply').disabled,true);
 });
+
+test('clearing a preview waits for an authorized score replacement to finish',async()=>{
+  const ui=fixture();await ui.byId('melody-file').change({target:{files:[{size:20}]}});
+  let resolve;ui.env.fetch=()=>new Promise(done=>{resolve=done;});
+  const applying=ui.byId('melody-apply').click();
+  assert.equal(ui.byId('melody-cancel').disabled,true);
+  await ui.byId('melody-cancel').click();assert.equal(ui.byId('melody-result').hidden,false);
+  resolve({ok:true,json:async()=>({revision:'saved',source:ui.result.source})});await applying;
+  assert.match(ui.byId('melody-status').textContent,/Score replaced/);assert.equal(ui.events.length,1);
+  await ui.byId('melody-cancel').click();assert.equal(ui.byId('melody-result').hidden,true);
+});

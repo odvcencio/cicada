@@ -7,6 +7,8 @@ toolchain go1.26.4
 tool m31labs.dev/gosx/cmd/gosx
 
 require (
+	github.com/gorilla/websocket v1.5.3
+	golang.org/x/net v0.52.0
 	m31labs.dev/cicada v0.0.0-00010101000000-000000000000
 	m31labs.dev/gosx v0.57.5
 	m31labs.dev/gosx/editor v0.19.11
@@ -22,7 +24,6 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/mewkiz/flac v1.0.14 // indirect
@@ -34,7 +35,6 @@ require (
 	github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	golang.org/x/image v0.38.0 // indirect
-	golang.org/x/net v0.52.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260120221211-b8f7ae30c516 // indirect

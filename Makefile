@@ -74,10 +74,18 @@ build-workstation-release:
 test-workstation:
 	cd workstation && go generate ./... && go test -race ./... -count=1
 
+.PHONY: test-collaboration
+test-collaboration:
+	cd workstation && GOWORK=off go test -race ./collab ./ -run 'Test(Concurrent|Undo|Transactional|SeededOffline|Collaboration)' -count=1 -v
+
 .PHONY: test-studio-continuity
 # Requires a running Studio with the marked disposable browser-test score.
 test-studio-continuity:
 	node --test workstation/browser/continuity.test.cjs
+
+.PHONY: test-studio-collaboration
+test-studio-collaboration:
+	node --test workstation/browser/collaboration.test.cjs
 
 test-kernel:
 	go test ./kernel/... -count=1
