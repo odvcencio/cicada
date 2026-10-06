@@ -26,7 +26,7 @@ func OpenStream(dir string, asset project.Asset) (*WAVSource, error) {
 	if !notation.ValidAssetPath(asset.Path) || asset.Format != "wav" {
 		return nil, fmt.Errorf("invalid streamed asset path or format")
 	}
-	root, err := os.OpenRoot(dir)
+	root, err := os.OpenRoot(asset.Directory(dir))
 	if err != nil {
 		return nil, err
 	}
