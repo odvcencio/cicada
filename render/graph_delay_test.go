@@ -251,6 +251,7 @@ func TestGraphDelayOfflineFirstBlockAllocs(t *testing.T) {
 		var buffer [128 * 6]byte
 		var report Report
 		var before, after runtime.MemStats
+		prepareFirstBlockAllocationMeasurement(t)
 		runtime.ReadMemStats(&before)
 		err = renderBlock(io.Discard, tracks, nil, nil, nil, 0, 0, 0, 1, busMixerState{}, limiter, nil, &encoder, events, 0, 128, buffer[:], &report)
 		runtime.ReadMemStats(&after)

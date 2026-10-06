@@ -2,6 +2,7 @@ package render
 
 import (
 	"io"
+	"runtime"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/fx"
@@ -10,6 +11,17 @@ import (
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
+
+func prepareFirstBlockAllocationMeasurement(t *testing.T) {
+	t.Helper()
+	// MemStats counts allocations from every goroutine. Use one processor,
+	// as AllocsPerRun does, so GC workers cannot overlap the first block.
+	previousProcs := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previousProcs) })
+	// Finish setup's GC work and allocate its semaphore wait state before
+	// measuring. Keep the voices cold: renderBlock has not run yet.
+	runtime.GC()
+}
 
 // The full WAV call constructs and sorts events. This gate covers its audio
 // processing and encoding loop after setup, without altering either path.
