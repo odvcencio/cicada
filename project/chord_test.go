@@ -3,10 +3,40 @@ package project
 import (
 	"bytes"
 	"encoding/json"
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestChordCommentsCompileFromParsedPitches(t *testing.T) {
+	for _, chord := range []string{
+		"[d4 // root\n f4 a4]^?70",
+		"[// pitches\n d4 f4 // third ] is not the closing bracket\n a4 // fifth\n]^ // shared accent\n?70",
+	} {
+		for _, phrase := range []bool{false, true} {
+			source := strings.Replace(chordSource, "[d4 f4 a4]^?70", chord, 1)
+			wantPitches := []int{62, 65, 69}
+			if phrase {
+				source = strings.Replace(source, "pattern harmony notes { "+chord, "phrase triad { "+chord+" }\npattern harmony notes { use triad +12", 1)
+				wantPitches = []int{74, 77, 81}
+			}
+			score, ds := notation.Parse([]byte(source))
+			if score == nil || len(ds) != 0 {
+				t.Fatalf("parse commented chord: %+v", ds)
+			}
+			p, ds := FromScore(score)
+			if p == nil || len(ds) != 0 {
+				t.Fatalf("compile commented chord: %+v", ds)
+			}
+			step := p.Patterns[0].Data[0]
+			if !reflect.DeepEqual(step.Notes, wantPitches) || !step.Accent || step.Probability != 70 {
+				t.Fatalf("comments changed chord semantics: %+v", step)
+			}
+		}
+	}
+}
 
 const chordSource = `tempo 120
 key d minor
@@ -63,6 +93,43 @@ func TestChordSourceJSONRoundTrip(t *testing.T) {
 	md, _ := json.Marshal(mp)
 	if bytes.Contains(md, []byte(`"notes":`)) {
 		t.Fatal("mono JSON acquired a notes field")
+	}
+}
+
+func TestEngineConfigJSONOmitsUnusedChordState(t *testing.T) {
+	for _, poly := range []bool{false, true} {
+		source := chordSource
+		if !poly {
+			source = strings.ReplaceAll(strings.ReplaceAll(source, "voice poly", "voice mono"), "[d4 f4 a4]^?70 - . [c4 e4 g4]", "d4 - . c4")
+		}
+		score, ds := notation.Parse([]byte(source))
+		if score == nil || len(ds) != 0 {
+			t.Fatalf("parse: %+v", ds)
+		}
+		p, ds := FromScore(score)
+		if p == nil || len(ds) != 0 {
+			t.Fatalf("compile: %+v", ds)
+		}
+		cfg, err := CompileEngine(p, 48000, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, field := range []string{`"Polyphony":`, `"Chords":`} {
+			if bytes.Contains(data, []byte(field)) != poly {
+				t.Fatalf("poly=%v: unexpected JSON presence of %s", poly, field)
+			}
+		}
+		var restored engine.Config
+		if err := json.Unmarshal(data, &restored); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(cfg, restored) {
+			t.Fatalf("poly=%v: engine config JSON roundtrip changed chord state", poly)
+		}
 	}
 }
 

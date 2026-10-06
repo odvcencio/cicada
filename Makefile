@@ -2,6 +2,8 @@
 
 export GOWORK := off
 
+.PHONY: test-chord-wasm
+
 # Keep a TinyGo/Binaryen regression from consuming the full CI job budget.
 KERNEL_WASM_BUILD_TIMEOUT ?= 180s
 
@@ -68,6 +70,10 @@ test-kernel-wasm: build-kernel-wasm build-loudness-wasm
 	CICADA_CHORD_WASM_PATH=$(CURDIR)/build/cicada-kernel.wasm go test -timeout=3m -tags chord_wasm ./cmd/cicada-kernel-wasm -count=1
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
+
+test-chord-wasm: build-kernel-wasm
+	node host/web/chord_capability_test.cjs
+	bash -o pipefail -c 'CICADA_CHORD_WASM_PATH="$(CURDIR)/build/cicada-kernel.wasm" go test -timeout=2m -tags chord_wasm ./cmd/cicada-kernel-wasm -run "^TestChordWASM" -count=1 -v | tee build/chord-wasm-report.txt'
 
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v

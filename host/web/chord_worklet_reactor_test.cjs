@@ -1,5 +1,5 @@
 'use strict';
-// Exercise both worklet assets with the actual reactor, not mocked exports.
+// Exercise the source and both shipped profiles with the actual reactor.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
