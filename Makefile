@@ -23,6 +23,19 @@ test:
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs
 
+.PHONY: test-audio-ideation test-editor-transcription test-record-worklet
+
+test-audio-ideation:
+	go test ./host/transcription -count=1 -v
+
+test-editor-transcription:
+	go test ./cmd/cicada -run 'Test.*Transcri' -count=1
+	node --test cmd/cicada/studio-transcribe.test.cjs
+	cd workstation && go test ./... -run 'Test.*Transcri' -count=1
+
+test-record-worklet:
+	node --test host/web/capture.test.cjs cmd/cicada/studio-capture.test.cjs cmd/cicada/studio-transcribe.test.cjs
+
 engine-metrics:
 	GOMAXPROCS=1 go run ./cmd/cicada-engine-metrics $(ENGINE_METRICS_ARGS)
 
@@ -101,7 +114,10 @@ probe-wasm:
 
 build-kernel-wasm:
 	mkdir -p build
-	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
+	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
+		tinygo build -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm && \
+		"$$(tinygo env TINYGOROOT)/bin/wasm-opt" -Oz build/cicada-kernel.wasm -o build/cicada-kernel.optimized.wasm && \
+		mv build/cicada-kernel.optimized.wasm build/cicada-kernel.wasm' || { \
 		status=$$?; \
 		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
 			echo "FAIL build-kernel-wasm: TinyGo kernel build exceeded $(KERNEL_WASM_BUILD_TIMEOUT) budget" >&2; \
@@ -140,7 +156,7 @@ test-worklet-negotiation: build-worklets
 
 test-browser: build-kernel-wasm
 	mkdir -p build
-	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations)$$' 5m build/test-browser.log
 
 budget-size: build-kernel-wasm
 	bash -o pipefail -c "go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm host/web/processor.min.js | tee build/budget-size-report.txt"

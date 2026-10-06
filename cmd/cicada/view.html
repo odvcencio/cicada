@@ -234,6 +234,11 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 #instrument-record input[type="text"],#instrument-record input[type="number"] { min-height:42px; width:100%; box-sizing:border-box; border:1px solid #526451; border-radius:7px; background:#121a15; color:var(--text); padding:8px 10px; }
 #instrument-record .instrument-files { grid-column:1/-1; }
 #instrument-record input[type="file"] { max-width:100%; }
+#melody-transcribe .audio-io-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+#melody-transcribe input { min-height:42px; max-width:100%; box-sizing:border-box; }
+#melody-transcribe input[type="text"],#melody-transcribe input[type="number"] { width:100%; border:1px solid #526451; border-radius:7px; background:#121a15; color:var(--text); padding:8px 10px; }
+#melody-transcribe pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:280px; overflow:auto; }
+#melody-transcribe audio { width:100%; }
 #instrument-record .audio-io-actions { gap:6px; }
 #instrument-record .instrument-keys { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
 #instrument-record .instrument-keys button { padding:8px 5px; }
@@ -662,6 +667,26 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     </section>{{end}}
     {{if .Studio}}<section id="record" data-workspace-panel="record" aria-labelledby="record-heading">
       <h2 id="record-heading">Record</h2>
+      <section id="melody-transcribe" class="audio-io-panel" aria-labelledby="melody-heading">
+        <h3 id="melody-heading">Recording to score</h3>
+        <p>Sing, hum or play one melody. Record up to 60 seconds or choose a WAV file up to 32 MiB. Audio is analyzed locally.</p>
+        <div class="audio-io-grid">
+          <label for="melody-tempo">Tempo (blank = automatic)<input id="melody-tempo" type="number" min="20" max="300" step="any" placeholder="Automatic"></label>
+          <label for="melody-key">Key (blank = automatic)<input id="melody-key" type="text" placeholder="C major"></label>
+          <label for="melody-grid">Note grid<select id="melody-grid"><option value="4">Quarter notes</option><option value="8">Eighth notes</option><option value="16" selected>Sixteenth notes</option></select></label>
+          <label for="melody-file">Single melody WAV<input id="melody-file" type="file" accept=".wav,audio/wav"></label>
+        </div>
+        <div class="audio-io-actions"><button id="melody-mic" type="button" aria-pressed="false">Record melody</button><button id="melody-stop" type="button" disabled>Stop and transcribe</button><button id="melody-cancel" type="button" disabled>Cancel / clear preview</button></div>
+        <p id="melody-status" role="status" aria-live="polite">Ready · microphone monitoring off · preview leaves the score unchanged</p>
+        <div id="melody-result" hidden>
+          <p id="melody-summary"></p><p id="melody-warnings"></p>
+          <label for="melody-original">Original recording</label><audio id="melody-original" controls preload="none"></audio>
+          <div class="audio-io-actions"><button id="melody-play" type="button" disabled>Listen to detected notes</button><button id="melody-silence" type="button">Stop preview audio</button><button id="melody-download" type="button" disabled>Download score</button></div>
+          <details><summary>Generated score and detected notes</summary><pre id="melody-score"></pre><pre id="melody-notes"></pre></details>
+          <p>Replace score replaces the entire current score. Undo restores it.</p>
+          <div class="audio-io-actions"><button id="melody-apply" type="button" disabled>Replace score</button></div>
+        </div>
+      </section>
       <section id="instrument-record" class="audio-io-panel" aria-labelledby="instrument-record-heading">
         <h3 id="instrument-record-heading">Record your own instrument</h3>
         <p>Record 15 hits of your sound, from soft to hard. Stop to build an instrument, or drop WAV files.</p>
@@ -1360,6 +1385,6 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   }, true);
   initGrids();
 })();
-</script><script src="/audio/cicada-capture-client.js"></script><script src="/studio-capture.js"></script><script src="/studio-instrument-record.js"></script><script src="/studio-audio-devices.js"></script><script src="/studio-master.js"></script><script src="/studio-midi.js"></script><script src="/studio-live.js"></script>{{end}}
+</script><script src="/audio/cicada-capture-client.js"></script><script src="/studio-capture.js"></script><script src="/studio-instrument-record.js"></script><script src="/studio-transcribe.js"></script><script src="/studio-audio-devices.js"></script><script src="/studio-master.js"></script><script src="/studio-midi.js"></script><script src="/studio-live.js"></script>{{end}}
 </body>
 </html>

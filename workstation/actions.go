@@ -163,7 +163,10 @@ func (s *studioApp) fileHistory(command string) action.Handler {
 func (s *studioApp) actions() map[string]action.Handler {
 	edit := func(f map[string]string) map[string]any { return map[string]any{"revision": f["revision"]} }
 	return map[string]action.Handler{
-		"sample-pack": s.downloadSamplePack,
+		"transcribe":            s.transcribeMelody,
+		"transcription-apply":   s.applyTranscription,
+		"transcription-discard": s.discardTranscription,
+		"sample-pack":           s.downloadSamplePack,
 		"instrument-capture": s.mutation("/api/instrument-capture", func(f map[string]string) (any, error) {
 			return map[string]any{"revision": f["revision"], "action": f["action"], "newName": f["newName"]}, nil
 		}),
