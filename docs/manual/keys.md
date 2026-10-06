@@ -208,3 +208,19 @@ Analog `filter` accepts `ladder` or `state_variable`.
 controls require `hz`, detuning requires `cents`, and `output` requires `dB`.
 Other controls are numbers; integer selectors reject fractional values.
 `sustain` also accepts `off`/`on`.
+
+## Owned samples
+
+`cmd/cicada-keys-pack` records these original engines at 192 kHz and their
+highest available quality, then applies a sinc decimator to produce 48 kHz
+PCM packs. It writes pinned manifests, five or more velocity layers, two or
+more round robins, EP/Clav release takes and crossfaded sustain loops for
+organ/pads/strings. No reference audio or factory data is used.
+
+Pack dimensions must fit the sampler’s existing 256 MiB decoded PCM limit.
+Default captures last 4 seconds for mono and 2 seconds for stereo; non-looped
+voices have finite held tails. `--duration`, range and root spacing can be
+chosen together within that limit. Sampling freezes nonlinear response at
+layer centers and global modulation into each take. Pitch shifting, the
+mandatory onset ramp and sustain loops also change PCM, so packs reproduce
+these patch designs rather than arbitrary modeled performance bit-for-bit.
