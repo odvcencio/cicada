@@ -3,10 +3,12 @@ package liveplay
 import (
 	"runtime"
 	"testing"
+
+	"m31labs.dev/cicada/kernel/engine"
 )
 
 func TestPendingLaunchesCanBeReadDuringAudioAndControlChanges(t *testing.T) {
-	score := slotScore(t, "riff", 1)
+	score := slotScore(t, "riff", 1, engine.Scene{})
 	score.SceneIDs = []string{"main"}
 	p, err := New(score, 48_000)
 	if err != nil {
