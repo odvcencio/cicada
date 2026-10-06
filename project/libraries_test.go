@@ -343,3 +343,29 @@ func TestLibrarySemanticAndFlatSourceRoundTrip(t *testing.T) {
 		t.Fatalf("flat project: %+v", ds)
 	}
 }
+
+func TestLibraryPathsContinuePastUnreadableSubtrees(t *testing.T) {
+	root, user := libraryFixture(t)
+	installLibrary(t, filepath.Join(root, "lib"), "a/tone", libraryVoice)
+	installLibrary(t, filepath.Join(root, "lib"), "z/tone", libraryVoice)
+	installLibrary(t, user, "u/tone", libraryVoice)
+	blocked := filepath.Join(root, "lib/a")
+	if err := os.Chmod(blocked, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chmod(blocked, 0755) })
+	if dir, err := os.Open(blocked); err == nil {
+		dir.Close()
+		t.Skip("filesystem does not enforce directory permissions")
+	}
+	names := LibraryPaths(root)
+	for _, want := range []string{"z/tone", "u/tone"} {
+		found := false
+		for _, name := range names {
+			found = found || name == want
+		}
+		if !found {
+			t.Fatalf("unreadable subtree hid %s: %v", want, names)
+		}
+	}
+}

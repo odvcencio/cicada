@@ -4,7 +4,7 @@ package fixture
 import "m31labs.dev/cicada/kernel/voice/sample"
 
 const Frames = 4096
-const Cases = 11
+const Cases = 13
 
 // Render includes intro, loop wraps, repeated pitches, smoothing, release and
 // a full-pool steal. Integer-generated PCM avoids platform-specific tone math.
@@ -83,10 +83,15 @@ func renderCrossfadedLoop(index, blockSize int, output []float32) error {
 	}
 	r := sample.Region{Left: left[:], SampleRate: 48000, RootKey: 60, Start: 7, End: 2047, Loop: true, LoopStart: 303, LoopEnd: 1927, Crossfade: 256}
 	rate, note := 48000, uint8(61)
-	if index == 9 {
+	switch index {
+	case 9:
 		r.Right = right[:]
-	} else {
+	case 10:
 		rate, note = 96000, 73
+	case 11:
+		r.Right, r.Crossfade, note = right[:], 800, 84
+	case 12:
+		rate, r.Crossfade = 44100, 640
 	}
 	p, err := sample.NewPool(rate, 3, r)
 	if err != nil {

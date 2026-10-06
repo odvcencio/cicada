@@ -1,0 +1,27 @@
+cicada 2
+
+title "Modeled marble"
+
+tempo 108
+
+key c major
+
+seed 4242
+
+track sound model_marble {
+  level = -6dB
+  octave = 4
+}
+
+pattern phrase {
+  gate = 45%
+  c4 . e4 . g4^ . c5 . | c4 c4 c4^ c4 c4 . . .
+}
+
+scene demo {
+  sound = phrase
+}
+
+song {
+  demo*2
+}

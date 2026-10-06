@@ -25,6 +25,7 @@ import (
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/modalfit"
 	"m31labs.dev/cicada/host/recording"
+	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/lsp"
@@ -45,6 +46,7 @@ type studio struct {
 	transport           *studioTransport
 	history             *studioHistory
 	exports             *studioExportController
+	liveControls        studioLiveControls
 }
 
 func studioCommand(args []string) error {
@@ -57,8 +59,13 @@ func studioCommand(args []string) error {
 	path, address := "main.cicada", "127.0.0.1:0"
 	seenPath := false
 	lspStdio := false
+	serviceOnly := false
 	audioNull := backendName == audiobackend.Null
 	for i := 0; i < len(args); i++ {
+		if args[i] == "--service" {
+			serviceOnly = true
+			continue
+		}
 		if args[i] == "--lsp-stdio" {
 			lspStdio = true
 			continue
@@ -84,6 +91,15 @@ func studioCommand(args []string) error {
 	if err != nil || host != "127.0.0.1" && host != "localhost" && host != "::1" {
 		return fmt.Errorf("studio listen address must be loopback host:port")
 	}
+	frontAddress := address
+	workstationPath := ""
+	if !serviceOnly {
+		workstationPath, err = findStudioWorkstation()
+		if err != nil {
+			return err
+		}
+		address = "127.0.0.1:0"
+	}
 	studio, err := newStudioWithInvalid(path, lspStdio)
 	if err != nil {
 		return err
@@ -97,6 +113,14 @@ func studioCommand(args []string) error {
 	studio.transport.audioBackend = string(backendName)
 	studio.transport.audioOptions = defaultStudioAudioOptionsFor(backendName)
 	handler := studio.routes()
+	var serviceToken string
+	if !serviceOnly {
+		handler = studio.domainRoutes()
+		handler, serviceToken, err = privateStudioService(handler)
+		if err != nil {
+			return err
+		}
+	}
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
 		return err
@@ -118,10 +142,24 @@ func studioCommand(args []string) error {
 	go studio.watchHistory(ctx)
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
+	var appFinished <-chan error
+	if !serviceOnly {
+		output := io.Writer(os.Stdout)
+		if lspStdio {
+			output = os.Stderr
+		}
+		cancelApp, done, launchErr := launchStudioWorkstation(workstationPath, "http://"+listener.Addr().String(), frontAddress, serviceToken, output)
+		if launchErr != nil {
+			_ = server.Close()
+			return launchErr
+		}
+		defer cancelApp()
+		appFinished = done
+	}
 	addressLine := fmt.Sprintf("Cicada Studio: http://%s/\n", listener.Addr().String())
-	if lspStdio {
+	if serviceOnly && lspStdio {
 		fmt.Fprint(os.Stderr, addressLine)
-	} else {
+	} else if serviceOnly {
 		fmt.Print(addressLine)
 	}
 	select {
@@ -134,6 +172,11 @@ func studioCommand(args []string) error {
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		return server.Shutdown(shutdown)
+	case err := <-appFinished:
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdown)
+		return err
 	}
 }
 
@@ -188,10 +231,22 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 }
 
 func (s *studio) routes() http.Handler {
+	return s.studioRoutes(true)
+}
+
+// Production GoSX uses only native domain commands. The original browser host
+// remains reachable only through the explicit --service qualification mode.
+func (s *studio) domainRoutes() http.Handler {
+	return s.studioRoutes(false)
+}
+
+func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /", s.page)
 	mux.HandleFunc("GET /api/state", s.state)
+	mux.HandleFunc("GET /api/workspace", s.workspace)
+	mux.HandleFunc("GET /api/meters", s.meters)
 	mux.HandleFunc("GET /api/takes", s.takeState)
+	mux.HandleFunc("GET /api/capture", s.captureState)
 	mux.HandleFunc("POST /api/takes", s.takeCommand)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
@@ -201,7 +256,14 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("POST /api/instrument-audition", s.instrumentAudition)
 	mux.HandleFunc("GET /assets/recorded/{pack}/{file}", s.instrumentPackAsset)
 	mux.HandleFunc("GET /studio-instrument-record.js", s.instrumentRecordScript)
+	mux.HandleFunc("POST /api/live", s.liveControl)
+	mux.HandleFunc("POST /api/loudness/reset", s.resetLiveLoudness)
 	mux.HandleFunc("POST /api/song", s.editSong)
+	mux.HandleFunc("POST /api/pattern", s.editPattern)
+	mux.HandleFunc("POST /api/project", s.editProject)
+	mux.HandleFunc("POST /api/clip", s.editClip)
+	mux.HandleFunc("POST /api/automation", s.editAutomation)
+	mux.HandleFunc("POST /api/instrument", s.editInstrument)
 	mux.HandleFunc("POST /api/undo", s.undo)
 	mux.HandleFunc("POST /api/redo", s.redo)
 	mux.HandleFunc("POST /api/history/{id}/revert", s.revertHistory)
@@ -209,32 +271,41 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("POST /api/mixer", s.editMixer)
 	mux.HandleFunc("POST /api/transport", s.transportCommand)
 	mux.HandleFunc("GET /api/transport", s.transportState)
-	mux.HandleFunc("POST /api/transport/browser-audio", s.browserAudioStatus)
-	mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
 	mux.HandleFunc("GET /api/params", s.params)
-	mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
 	mux.HandleFunc("GET /api/audio/config", s.audioConfig)
 	mux.HandleFunc("POST /api/audio/config", s.audioConfig)
-	mux.HandleFunc("GET /studio-workspace.js", s.workspaceScript)
-	mux.HandleFunc("GET /studio-audio.js", s.audioScript)
-	mux.HandleFunc("GET /studio-audio-devices.js", s.audioDeviceScript)
-	mux.HandleFunc("GET /studio-midi.js", s.midiScript)
-	mux.HandleFunc("GET /studio-live.js", s.liveScript)
-	mux.HandleFunc("GET /studio-master.js", s.masterScript)
-	mux.HandleFunc("GET /studio-mix.js", s.mixScript)
 	mux.HandleFunc("GET /api/export", s.exportStatus)
+	mux.HandleFunc("GET /api/export/file/{id}", s.exportFile)
 	mux.HandleFunc("POST /api/export", s.startExport)
 	mux.HandleFunc("GET /api/history", s.historyState)
-	mux.HandleFunc("GET /api/kernel-image", s.kernelImage)
-	mux.HandleFunc("GET /api/kernel.wasm", s.kernelWASM)
-	mux.HandleFunc("GET /audio/cicada-processor.js", s.processorAsset)
-	mux.HandleFunc("GET /audio/cicada-client.js", s.clientAsset)
-	mux.HandleFunc("GET /audio/cicada-capture.js", s.captureAdapterAsset)
-	mux.HandleFunc("GET /audio/cicada-capture-processor.js", s.captureProcessorAsset)
-	mux.HandleFunc("GET /audio/cicada-capture-worker.js", s.captureWorkerAsset)
-	mux.HandleFunc("GET /audio/cicada-capture-client.js", s.captureClientAsset)
-	mux.HandleFunc("GET /studio-capture.js", s.captureUIScript)
-	mux.HandleFunc("GET /studio-history.js", s.historyScript)
+	mux.HandleFunc("GET /api/library", s.libraryState)
+	mux.HandleFunc("POST /api/library/preview", s.libraryPreview)
+	mux.HandleFunc("POST /api/library/insert", s.libraryInsert)
+	mux.HandleFunc("POST /api/library/save", s.librarySavePreset)
+	mux.HandleFunc("GET /studio-library.js", s.libraryScript)
+	if qualification {
+		mux.HandleFunc("GET /", s.page)
+		mux.HandleFunc("POST /api/transport/browser-audio", s.browserAudioStatus)
+		mux.HandleFunc("GET /api/transport/ws", s.transportSocket)
+		mux.HandleFunc("GET /api/audio/ws", s.audioSocket)
+		mux.HandleFunc("GET /studio-workspace.js", s.workspaceScript)
+		mux.HandleFunc("GET /studio-audio.js", s.audioScript)
+		mux.HandleFunc("GET /studio-audio-devices.js", s.audioDeviceScript)
+		mux.HandleFunc("GET /studio-midi.js", s.midiScript)
+		mux.HandleFunc("GET /studio-live.js", s.liveScript)
+		mux.HandleFunc("GET /studio-master.js", s.masterScript)
+		mux.HandleFunc("GET /studio-mix.js", s.mixScript)
+		mux.HandleFunc("GET /api/kernel-image", s.kernelImage)
+		mux.HandleFunc("GET /api/kernel.wasm", s.kernelWASM)
+		mux.HandleFunc("GET /audio/cicada-processor.js", s.processorAsset)
+		mux.HandleFunc("GET /audio/cicada-client.js", s.clientAsset)
+		mux.HandleFunc("GET /audio/cicada-capture.js", s.captureAdapterAsset)
+		mux.HandleFunc("GET /audio/cicada-capture-processor.js", s.captureProcessorAsset)
+		mux.HandleFunc("GET /audio/cicada-capture-worker.js", s.captureWorkerAsset)
+		mux.HandleFunc("GET /audio/cicada-capture-client.js", s.captureClientAsset)
+		mux.HandleFunc("GET /studio-capture.js", s.captureUIScript)
+		mux.HandleFunc("GET /studio-history.js", s.historyScript)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !studioLoopbackHost(r.Host) {
 			http.Error(w, "Studio requires a loopback host", http.StatusForbidden)
@@ -325,30 +396,41 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
-	Capture        *studioBrowserTake    `json:"capture,omitempty"`
-	Sample         *studioSampleRequest  `json:"sample,omitempty"`
-	TakeID         string                `json:"takeId,omitempty"`
-	Scene          string                `json:"scene,omitempty"`
-	Revision       string                `json:"revision"`
-	Label          string                `json:"label,omitempty"`
-	Action         string                `json:"action,omitempty"`
-	Index          int                   `json:"index,omitempty"`
-	Target         int                   `json:"target,omitempty"`
-	Bars           int                   `json:"bars,omitempty"`
-	Source         string                `json:"source"`
-	Pattern        string                `json:"pattern"`
-	Track          string                `json:"track,omitempty"`
-	Count          int                   `json:"count,omitempty"`
-	Take           []studioTakeNote      `json:"take,omitempty"`
-	Recordings     []studioTakeRecording `json:"recordings,omitempty"`
-	PatternCount   int                   `json:"patternCount,omitempty"`
-	Lane           string                `json:"lane"`
-	Step           int                   `json:"step"`
-	Pitch          *int                  `json:"pitch,omitempty"`
-	Modifier       string                `json:"modifier,omitempty"`
-	Path           string                `json:"path,omitempty"`
-	Value          json.RawMessage       `json:"value,omitempty"`
-	ConfirmUpgrade bool                  `json:"confirmUpgrade,omitempty"`
+	Capture        *studioBrowserTake     `json:"capture,omitempty"`
+	Sample         *studioSampleRequest   `json:"sample,omitempty"`
+	TakeID         string                 `json:"takeId,omitempty"`
+	Scene          string                 `json:"scene,omitempty"`
+	Revision       string                 `json:"revision"`
+	Label          string                 `json:"label,omitempty"`
+	Action         string                 `json:"action,omitempty"`
+	Index          int                    `json:"index,omitempty"`
+	Target         int                    `json:"target,omitempty"`
+	Bars           int                    `json:"bars,omitempty"`
+	Source         string                 `json:"source"`
+	Pattern        string                 `json:"pattern"`
+	Track          string                 `json:"track,omitempty"`
+	Count          int                    `json:"count,omitempty"`
+	Take           []studioTakeNote       `json:"take,omitempty"`
+	Recordings     []studioTakeRecording  `json:"recordings,omitempty"`
+	PatternCount   int                    `json:"patternCount,omitempty"`
+	Lane           string                 `json:"lane"`
+	Step           int                    `json:"step"`
+	Pitch          *int                   `json:"pitch,omitempty"`
+	Modifier       string                 `json:"modifier,omitempty"`
+	Path           string                 `json:"path,omitempty"`
+	Item           string                 `json:"item,omitempty"`
+	Name           string                 `json:"name,omitempty"`
+	Mode           string                 `json:"mode,omitempty"`
+	Rate           int                    `json:"rate,omitempty"`
+	Value          json.RawMessage        `json:"value,omitempty"`
+	ConfirmUpgrade bool                   `json:"confirmUpgrade,omitempty"`
+	ClipSettings   *studioClipSettings    `json:"clipSettings,omitempty"`
+	Metadata       *studioProjectSettings `json:"metadata,omitempty"`
+	Range          *studioPatternRange    `json:"range,omitempty"`
+	Length         int                    `json:"length,omitempty"`
+	Settings       *studioPatternSettings `json:"settings,omitempty"`
+	NoteEdit       *studioStepEdit        `json:"noteEdit,omitempty"`
+	NewName        string                 `json:"newName,omitempty"`
 }
 
 func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
@@ -356,12 +438,12 @@ func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if edit.Action != "move" && edit.Action != "bars" {
-		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "song action must be move or bars"})
+	if edit.Action != "move" && edit.Action != "bars" && edit.Action != "append" && edit.Action != "duplicate" && edit.Action != "delete" && edit.Action != "scene" {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "unknown arrangement action"})
 		return
 	}
 	s.apply(w, edit, func(source []byte) ([]byte, error) {
-		return editedSongSource(source, edit.Action, edit.Index, edit.Target, edit.Bars)
+		return editedSongBlockSource(source, edit.Action, edit.Index, edit.Target, edit.Bars, edit.Scene)
 	})
 }
 
@@ -489,7 +571,11 @@ func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change 
 		return
 	}
 	updated := mutation.Source
-	p, err := compileStudioSource(s.path, updated)
+	overrides := map[string][]byte{}
+	for _, file := range mutation.Files {
+		overrides[file.Path] = file.After
+	}
+	p, err := compileStudioSourceWithOverrides(s.path, updated, overrides)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -536,7 +622,7 @@ func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change 
 	for _, file := range mutation.Files {
 		if err := studioWriteAuxiliaryFile(file); err != nil {
 			_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
-			message := "mixer source saved but edition upgrade failed: " + err.Error()
+			message := "source auxiliary write failed: " + err.Error()
 			if rollbackErr != nil {
 				message += "; source rollback failed: " + rollbackErr.Error()
 			}
@@ -559,13 +645,25 @@ func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change 
 }
 
 func compileStudioSource(path string, source []byte) (*project.Project, error) {
+	return compileStudioSourceWithOverrides(path, source, nil)
+}
+
+func compileStudioSourceWithOverrides(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
 	if err := refuseMultiFileStudio(path); err != nil {
 		return nil, err
 	}
 	if !utf8.Valid(source) {
 		return nil, fmt.Errorf("score is not UTF-8")
 	}
-	score, diagnostics, err := parseScoreForPath(path, source)
+	if overrides == nil {
+		overrides = map[string][]byte{}
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	overrides[absolute] = source
+	score, diagnostics, err := project.LoadScore(path, overrides)
 	if err != nil {
 		return nil, err
 	}
@@ -588,6 +686,10 @@ func compileStudioSource(path string, source []byte) (*project.Project, error) {
 	}
 	if !p.NeedsSampleEngine() {
 		if _, err := project.CompileEngine(p, 48000, 128); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := sampleasset.CompileEngine(filepath.Dir(path), p, 48000, 128); err != nil {
 			return nil, err
 		}
 	}

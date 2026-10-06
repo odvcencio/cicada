@@ -406,6 +406,7 @@
   acidSelect?.addEventListener('change', () => { settings.acidTrack = acidSelect.value; saveSettings(); });
   drumSelect?.addEventListener('change', () => { settings.drumTrack = drumSelect.value; saveSettings(); });
   $('#live-stop-all')?.addEventListener('click', async () => {
+    router.panic(); window.cicadaAudio?.panic?.(); gamepad.panic();
     await transportAction({action: 'stop'});
     if (recording) finishRecording();
   });
@@ -423,22 +424,108 @@
     clearTimeout(activityTimer);
     activityTimer = setTimeout(() => midiActivity.classList.remove('active'), 150);
   }
-  function sendNoteOn(track, note, velocity, identity) {
-    if (!track || !window.cicadaAudio) return;
-    try { window.cicadaAudio.noteOn(track, note, velocity, identity); }
+  let parameterCatalog = null, catalogRequest = 0;
+  async function refreshParameterCatalog() {
+    const request = ++catalogRequest;
+    parameterCatalog = null;
+    try {
+      const catalog = await window.cicadaAudio.params();
+      if (request === catalogRequest && catalog.revision === revision()) { parameterCatalog = catalog; window.dispatchEvent(new CustomEvent('cicada:performanceparams')); }
+    } catch (error) { setStatus(error.message, 'error'); }
+  }
+  const dispatchCC = midi.createParameterDispatcher({getAudio: () => window.cicadaAudio, getCatalog: () => parameterCatalog, onError: error => setStatus(error.message, 'error')});
+  function sendNoteOn(track, note, velocity, id) {
+    if (!window.cicadaAudio) return false;
+    try { return window.cicadaAudio.noteOn(track, note, velocity, id); }
+    catch (error) { setStatus(error.message, 'error'); return false; }
+  }
+  function sendNoteOff(track, note, id) {
+    try { window.cicadaAudio?.noteOff(track, note, id); }
     catch (error) { setStatus(error.message, 'error'); }
   }
-  function sendNoteOff(track, note, identity) {
-    if (!track || !window.cicadaAudio) return;
-    try { window.cicadaAudio.noteOff(track, note, identity); }
-    catch (error) { setStatus(error.message, 'error'); }
+  const router = midi.createInputRouter({noteOn: sendNoteOn, noteOff: sendNoteOff,
+    onPress: n => captureNoteOn(n.track, n.note, n.velocity, n.time || performance.now(), n.id),
+    onRelease: n => captureNoteOff(n.track, n.note, performance.now(), n.id)});
+  const midiPerformance = midi.createMIDIPerformance({router, mappings, dispatchCC,
+    learn: storeLearnedInput, action: invokeMappedAction,
+    getTrack: channel => trackByID.get(channel === 9 ? drumSelect?.value : acidSelect?.value),
+    unsupported: () => setStatus('Pitch bend and aftertouch are unavailable for the current Studio voices; use learned live CC controls')});
+  let gamepadControls = {};
+  const gamepad = midi.createGamepadPerformance({router, dispatchCC, getTrack: () => acidSelect?.value,
+    getAddresses: () => gamepadControls, action: kind => {
+      if (kind === 'pattern') { const track=acidSelect?.value, pattern=activePatternFor(track); if (track && pattern) launchSlot(track,pattern); }
+      else if (sceneNames[selectedSceneIndex]) launchScene(sceneNames[selectedSceneIndex]);
+    }});
+  let gamepadEnabled = false, gamepadFrame = 0;
+  function pollGamepads() {
+    if (!gamepadEnabled) return;
+    if (!document.hidden) gamepad.poll(navigator.getGamepads?.() || []);
+    gamepadFrame = requestAnimationFrame(pollGamepads);
+  }
+  function panicInputs() {
+    router.panic(); gamepad.panic();
+    for (const input of boundMIDIInputs.values()) { releaseMIDIInput(input); if (input.state !== 'disconnected') input.onmidimessage = event => handleMIDIMessage(input,event); }
+  }
+  for (const event of ['blur', 'pagehide', 'cicada:inputpanic']) window.addEventListener(event, panicInputs);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) panicInputs(); });
+  window.cicadaPerformance = {router, midi: midiPerformance, gamepad, panic: panicInputs, releaseAll: panicInputs,
+    async silence() { panicInputs(); await window.cicadaAudio.silence(); },
+    setBrowserController(controller) {
+      panicInputs(); window.cicadaAudio?.panic?.(); window.cicadaBrowserPerformance=controller; refreshParameterCatalog();
+    },
+    setGamepadControls(controls) { gamepadControls = {...controls}; }};
+  if (liveSurface) {
+    const silence = document.createElement('button'); silence.type='button'; silence.textContent='Silence and reset';
+    silence.setAttribute('aria-label','Silence all voices and effects and stop playback');
+    silence.addEventListener('click', async () => {
+      try { await window.cicadaPerformance.silence(); setStatus('Playback stopped and sound reset'); }
+      catch (error) { setStatus(error.message,'error'); }
+    });
+    liveSurface.append(silence);
+  }
+  const keyboard = 'awsedftgyhujk';
+  document.addEventListener('keydown', event => {
+    if (event.repeat || event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey || liveToggle?.getAttribute('aria-pressed') !== 'true' || /^(INPUT|TEXTAREA|SELECT)$/.test(event.target?.tagName || '')) return;
+    const index = keyboard.indexOf(event.key.toLowerCase());
+    if (index < 0 || !acidSelect?.value) return;
+    event.preventDefault();
+    router.press({source:'keyboard', device:'studio', channel:0, input:event.code, track:acidSelect.value, note:48+index, velocity:100});
+  });
+  document.addEventListener('keyup', event => router.release({source:'keyboard', device:'studio', channel:0, input:event.code}));
+  if (liveSurface && typeof navigator.getGamepads === 'function') {
+    const button = document.createElement('button');
+    button.type = 'button'; button.textContent = 'Enable gamepad';
+    button.setAttribute('aria-pressed', 'false');
+    button.addEventListener('click', () => {
+      gamepadEnabled = !gamepadEnabled; gamepad.panic();
+      button.setAttribute('aria-pressed', String(gamepadEnabled));
+      button.textContent = gamepadEnabled ? 'Disable gamepad' : 'Enable gamepad';
+      if (gamepadEnabled) pollGamepads(); else cancelAnimationFrame(gamepadFrame);
+    });
+    const help = document.createElement('p');
+    help.className = 'section-note';
+    help.textContent = 'Standard OS-paired gamepads: face buttons play C3, E♭3, G3, C4; left shoulder launches the selected track pattern, right shoulder launches the selected scene. Keyboard A W S E D F T G Y H U J K plays C3–C4. Enable audio first.';
+    // Expression bindings are selected from the score's validated registry.
+    for (const [name, label] of [['expression', 'Gamepad right trigger'], ['timbre', 'Gamepad right stick X']]) {
+      const select = document.createElement('select'); select.setAttribute('aria-label', label + ' live parameter');
+      const refresh = () => {
+        select.replaceChildren(); const off = document.createElement('option'); off.value = ''; off.textContent = label + ': unassigned'; select.append(off);
+        for (const binding of parameterCatalog?.addresses || []) {
+          if (!parameterCatalog.registry.find(d => d.id === binding.param)?.live) continue;
+          const option = document.createElement('option'); option.value = binding.address; option.textContent = binding.address; select.append(option);
+        }
+        select.value = gamepadControls[name] || '';
+      };
+      select.addEventListener('change', () => { gamepadControls[name] = select.value; });
+      window.addEventListener('cicada:performanceparams', refresh); refresh(); liveSurface.append(select);
+    }
+    liveSurface.append(button, help);
   }
   function sendNoteExpression(track, expression) {
     if (!track || !window.cicadaAudio) return;
     try { window.cicadaAudio.noteExpression(track, expression); }
     catch (error) { setStatus(error.message, 'error'); }
   }
-
 
   function deviceMappings(device, channel, type, value) {
     return mappings.findInput(device, channel, type, value);
@@ -472,24 +559,27 @@
   const activeNotes = new Map();
   function captureKey(track, noteId) { return `${track}:${noteId}`; }
   function captureNoteOn(track, note, velocity, eventTime, identity) {
+    const owner = typeof identity === 'string' ? identity : '';
+    identity = typeof identity === 'object' && identity ? identity : {noteId:0, channel:0};
     if (!recording || !armedTracks.has(track) || !transportState.playing) return;
     const pattern = activePatternFor(track);
     if (!pattern) { setStatus(`No active pattern is assigned to ${track}`, 'error'); return; }
     const tick = Math.max(0, transportTickAt(eventTime));
     const record = {track, pattern, note, velocity, tick, endTick: tick, noteId: identity.noteId, channel: identity.channel, expressions: []};
     capturedNotes.push(record);
-    const key = captureKey(track, identity.noteId);
+    const key = owner || captureKey(track, identity.noteId);
     const stack = activeNotes.get(key) || [];
     stack.push(record);
     activeNotes.set(key, stack);
     if (identity.mpe) captureNoteExpression(track, identity, eventTime);
   }
-  function captureNoteOff(track, noteId, eventTime) {
-    const stack = activeNotes.get(captureKey(track, noteId));
+  function captureNoteOff(track, noteId, eventTime, owner) {
+    const key = owner || captureKey(track, noteId);
+    const stack = activeNotes.get(key);
     if (!stack?.length) return;
     const record = stack.pop();
     record.endTick = Math.max(record.tick, record.expressions.at(-1)?.tick || 0, transportTickAt(eventTime));
-    if (!stack.length) activeNotes.delete(captureKey(track, noteId));
+    if (!stack.length) activeNotes.delete(key);
   }
   function captureNoteExpression(track, expression, eventTime) {
     const stack = activeNotes.get(captureKey(track, expression.noteId));
@@ -798,7 +888,9 @@
     return true;
   }
 
+  const boundMIDIInputs = new Map();
   function handleMIDIMessage(input, event) {
+    if (input.state === 'disconnected') return;
     const data = event.data;
     if (!data || data.length < 2) return;
     flashMIDIActivity();
@@ -812,6 +904,8 @@
     const normalized = mpeInput.process(source, data);
     if (command === 0xb0) {
       if (storeLearnedInput(device, channel, 'cc', first)) return;
+      const mapping = deviceMappings(device, channel, 'cc', first);
+      if (mapping?.address) dispatchCC(mapping.address, second);
     }
     const noteOn = command === 0x90 && second > 0;
     const noteOff = command === 0x80 || command === 0x90 && second === 0;
@@ -830,7 +924,7 @@
         if (drums && !midi.mapGeneralMIDIDrum(message.note)) continue;
         if (!drums && !trackByID.get(track)?.pitched) continue;
         // Retain the original track even if the selector changes while held.
-        midiNoteTracks.set(message.noteId, {track, drums});
+        midiNoteTracks.set(message.noteId, {track, drums, note:message.note, identity:message});
         captureNoteOn(track, message.note, message.velocity, time, message);
         sendNoteOn(track, message.note, message.velocity, message);
         if (!drums) sendNoteExpression(track, message);
@@ -861,11 +955,19 @@
   }
   function bindMIDIInputs(event) {
     if (!currentMidiAccess) return;
+    const connected = new Set();
     if (event?.port?.type === 'input' && event.port.state === 'disconnected') releaseMIDIInput(event.port);
     for (const input of currentMidiAccess.inputs.values()) {
-      if (input.state === 'disconnected') {
-        releaseMIDIInput(input);
-      } else input.onmidimessage = event => handleMIDIMessage(input, event);
+      const key = input.id || input.name;
+      if (input.state === 'disconnected') { releaseMIDIInput(input); continue; }
+      connected.add(key);
+      const prior = boundMIDIInputs.get(key);
+      if (prior && prior !== input) releaseMIDIInput(prior);
+      boundMIDIInputs.set(key, input);
+      input.onmidimessage = event => handleMIDIMessage(input, event);
+    }
+    for (const [key, input] of boundMIDIInputs) if (!connected.has(key)) {
+      releaseMIDIInput(input); midiPerformance.disconnect(input); boundMIDIInputs.delete(key);
     }
     updateMIDIStatus();
   }
@@ -901,12 +1003,14 @@
     const scheme = location.protocol === 'https:' ? 'wss:' : 'ws:';
     const socket = new WebSocket(`${scheme}//${location.host}/api/transport/ws`);
     socket.onmessage = event => { try { acceptTransportState(JSON.parse(event.data)); } catch {} };
-    socket.onclose = () => setTimeout(connectTransport, 1000);
+    socket.onclose = () => { panicInputs(); window.cicadaAudio?.panic?.(); setTimeout(connectTransport, 1000); };
   }
   if (transportState) connectTransport();
   if ($('#transport-pending')) $('#transport-pending').setAttribute('aria-live', 'off');
   renderLaunchStates();
   function refreshLiveProjection() {
+    panicInputs(); window.cicadaAudio?.panic?.();
+    refreshParameterCatalog();
     readProjection();
     fillTrackSelect(acidSelect, track => track.pitched, settings.acidTrack);
     fillTrackSelect(drumSelect, track => track.drum, settings.drumTrack);
@@ -919,4 +1023,6 @@
   }
   window.addEventListener('cicada:projectionrefreshed', refreshLiveProjection);
   window.addEventListener('cicada:mixrendered', refreshLiveProjection);
+  $('#audio-mode')?.addEventListener('change', refreshParameterCatalog);
+  refreshParameterCatalog();
 })();

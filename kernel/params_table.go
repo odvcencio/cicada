@@ -143,7 +143,15 @@ const (
 	ParamMixMasterSendReverb ParamID = 129
 	ParamMixMasterOut        ParamID = 130
 	ParamPianoSustain        ParamID = 131
-	ParamCount                       = 132
+	ParamGuitarBend          ParamID = 132
+	ParamGuitarVibrato       ParamID = 133
+	ParamGuitarBrightness    ParamID = 134
+	ParamGuitarDamping       ParamID = 135
+	ParamGuitarPickup        ParamID = 136
+	ParamGuitarDrive         ParamID = 137
+	ParamGuitarExperimental  ParamID = 138
+	ParamGuitarOctave        ParamID = 139
+	ParamCount                       = 140
 )
 
 var Params = [...]ParamSpec{
@@ -279,6 +287,14 @@ var Params = [...]ParamSpec{
 	{129, "mix.master.send.reverb", "send.reverb", "master", "send", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{130, "mix.master.out", "out", "master", "out", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{131, "piano.sustain", "sustain", "track", "sustain", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, true, true, false},
+	{132, "guitar.bend", "bend", "track", "bend", "semitone", "linear", "source", -12, 12, 0, 0.01, 8, true, true, false},
+	{133, "guitar.vibrato", "vibrato", "track", "vibrato", "cent", "linear", "source", 0, 100, 0, 1, 8, true, true, false},
+	{134, "guitar.brightness", "brightness", "track", "brightness", "ratio", "linear", "source", 0, 1, 0.7, 0.01, 8, true, true, false},
+	{135, "guitar.damping", "damping", "track", "damping", "ratio", "linear", "source", 0, 1, 0, 0.01, 8, true, true, false},
+	{136, "guitar.pickup", "pickup", "track", "pickup", "ratio", "linear", "source", 0.05, 0.45, 0.22, 0.01, 8, true, true, false},
+	{137, "guitar.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 8, true, true, false},
+	{138, "guitar.experimental", "experimental", "track", "experimental", "", "toggle", "source", 0, 1, 0, 1, 0, false, false, false},
+	{139, "guitar.octave", "octave", "track", "octave", "", "linear", "source", 0, 6, 2, 1, 0, false, false, false},
 }
 
 func Param(id ParamID) (ParamSpec, bool) {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
@@ -156,7 +157,7 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 	if sampleRate <= 0 {
 		return liveplay.Score{}, fmt.Errorf("audio sample rate must be positive")
 	}
-	cfg, err := project.CompileEngine(p, sampleRate, liveBlockFrames)
+	cfg, err := schedule.Compile(p, filepath.Dir(path), sampleRate, liveBlockFrames)
 	if err != nil {
 		return liveplay.Score{}, err
 	}
@@ -177,6 +178,15 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 		for _, kit := range p.Kits {
 			if track.Kind == kit.ID {
 				tracks[i].Kind = "drums"
+				break
+			}
+		}
+		for _, voice := range p.Instruments {
+			if track.Kind == voice.ID {
+				tracks[i].Kind = "graph"
+				if voice.Mode == "poly" {
+					tracks[i].Kind = "poly"
+				}
 				break
 			}
 		}

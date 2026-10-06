@@ -1,0 +1,101 @@
+// Play eight-note chords from Studio Live; the notes grid sequences one pitch per step.
+// Synth graphs are authored Go DSP; Studio uses GoSX and the native audio host uses Tymbal.
+cicada 2
+
+title "Expressive instruments"
+
+tempo 120
+
+key c minor
+
+seed 120
+
+instrument warm-pad {
+  param brightness = 1100Hz
+  param resonance = 0.16
+  param detune = 0.005
+  param attack = 320ms
+  param decay = 900ms
+  param sustain = 0.72
+  param release = 1400ms
+  voice poly {
+    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5
+    let amp = adsr(gate, attack, decay, sustain, release)
+    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)
+    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065
+  }
+}
+
+instrument poly-brass {
+  param brightness = 850Hz
+  param resonance = 0.2
+  param width = 0.43
+  param attack = 12ms
+  param decay = 550ms
+  param sustain = 0.65
+  param release = 180ms
+  voice poly {
+    let tone = (saw(pitch) + pulse(pitch * 1.003, width)) * 0.5
+    let amp = adsr(gate, attack, decay, sustain, release)
+    let bite = adsr(gate, 9ms, 320ms, 0.18, 160ms)
+    out = svf(tone, brightness * exp2(bite * (1.7 + velocity)), resonance) * amp * (0.45 + velocity * 0.55) * 0.065
+  }
+}
+
+instrument round-bass {
+  param brightness = 260Hz
+  param resonance = 0.12
+  param attack = 4ms
+  param decay = 240ms
+  param sustain = 0.78
+  param release = 85ms
+  voice mono {
+    let tone = sine(pitch) * 0.5 + saw(pitch) * 0.25 + sine(pitch / 2) * 0.25
+    let amp = adsr(gate, attack, decay, sustain, release)
+    let punch = adsr(gate, 2ms, 190ms, 0.1, 80ms)
+    out = svf(tone, brightness * exp2(punch * 1.8), resonance) * amp * (0.55 + velocity * 0.45) * 0.25
+  }
+}
+
+track pad warm-pad {
+  brightness = 900Hz
+}
+
+track brass poly-brass {
+  brightness = 1100Hz
+}
+
+track bass round-bass {}
+
+pattern pad-line notes gate = 90 {
+  c4 - - . g4 - - .
+}
+
+pattern brass-line notes gate = 65 {
+  . . eb4 g4 . bb4 . g4
+}
+
+pattern bass-line notes gate = 75 {
+  c2 . c3 . g2 . bb2 .
+}
+
+scene opening {
+  pad = pad-line
+  bass = bass-line
+  brass = off
+}
+
+scene full {
+  brass = brass-line
+}
+
+scene close {
+  brass = off
+  bass = off
+}
+
+song {
+  opening*2
+  full*2
+  close
+}

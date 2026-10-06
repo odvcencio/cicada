@@ -34,6 +34,48 @@ func TestStudioExportRejectsBadInputAndCrossOrigin(t *testing.T) {
 	}
 }
 
+func TestStudioExportRejectsStaleScoreSnapshot(t *testing.T) {
+	handler, _ := studioTestHandler(t)
+	request := studioExportRequest{Revision: "stale", TargetLUFS: -16, TruePeakMax: -1, Tolerance: 1, Rate: 48000, Bits: 24}
+	response := studioExportCall(t, handler, request, "http://127.0.0.1:1234")
+	if response.Code != 409 || !strings.Contains(response.Body.String(), "score changed") {
+		t.Fatalf("stale render accepted: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func TestStudioExportDownloadIsBoundToCompletedJob(t *testing.T) {
+	_, path := studioTestHandler(t)
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.transport.close()
+	output := filepath.Join(filepath.Dir(path), "finished.wav")
+	wav := []byte("RIFFfixtureWAVEcompleted-audio")
+	if err := os.WriteFile(output, wav, 0600); err != nil {
+		t.Fatal(err)
+	}
+	s.exports.status = studioExportStatus{ID: "completed-job", State: "succeeded", Path: output}
+	handler := s.domainRoutes()
+	good := studioCall(t, handler, "/api/export/file/completed-job", nil)
+	if good.Code != 200 || !bytes.Equal(good.Body.Bytes(), wav) || good.Header().Get("Content-Type") != "audio/wav" || !strings.Contains(good.Header().Get("Content-Disposition"), "attachment") || good.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("download: %d %s", good.Code, good.Body.String())
+	}
+	unknown := studioCall(t, handler, "/api/export/file/unknown?path="+output, nil)
+	if unknown.Code != 409 {
+		t.Fatal("a supplied path or unknown job selected a file")
+	}
+	s.exports.mu.Lock()
+	s.exports.active = true
+	s.exports.status = studioExportStatus{ID: "new-job", State: "rendering", Path: output}
+	s.exports.mu.Unlock()
+	for _, id := range []string{"completed-job", "new-job"} {
+		if response := studioCall(t, handler, "/api/export/file/"+id, nil); response.Code != 409 {
+			t.Fatal("old or incomplete render was served")
+		}
+	}
+}
+
 func TestStudioExportReturns409ForSecondConcurrentJob(t *testing.T) {
 	_, path := studioTestHandler(t)
 	studio, err := newStudio(path)
