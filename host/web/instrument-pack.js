@@ -17,7 +17,8 @@ export function validateManifest(m) {
     requireThat(typeof a.id === 'string' && a.id && !ids.has(a.id) && safePath(a.path) && a.path.endsWith('.wav.gz'), 'invalid/duplicate sample path');
     requireThat([a.sha256, a.wav_sha256, a.source_sha256].every(x => hashPattern.test(x)), 'invalid sample hash');
     requireThat([a.bytes,a.wav_bytes,a.frames,a.rate,a.channels].every(Number.isSafeInteger) && a.bytes > 0 && a.bytes <= MAX_PCM_BYTES && a.wav_bytes >= 44 && a.wav_bytes <= MAX_PCM_BYTES && a.frames > 0 && a.frames <= 8*1024*1024 && a.rate >= 8000 && a.rate <= 192000 && a.channels >= 1 && a.channels <= 2, 'invalid sample bounds');
-    requireThat(https(a.source_url) && https(a.license_url) && (a.license === 'CC0-1.0' || a.license === 'CC-BY-4.0' && a.attribution), 'sample needs redistributable licence/provenance');
+    const ownerRecording=a.license==='owner recording' && a.source_url==='' && a.license_url==='' && !a.attribution;
+    requireThat(ownerRecording || https(a.source_url) && https(a.license_url) && (a.license === 'CC0-1.0' || a.license === 'CC-BY-4.0' && a.attribution), 'sample needs a valid licence/provenance');
     ids.add(a.id); pcmBytes += a.frames*a.channels*4;
   }
   requireThat(pcmBytes <= MAX_PCM_BYTES, 'pack exceeds resident PCM budget');

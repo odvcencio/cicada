@@ -41,7 +41,7 @@
       }
       this.notify();
     }
-    async arm(channels = 1) {
+    async arm(channels = 1, options = {}) {
       if(this.busy || this.status.state==='armed' || this.status.state==='recording') throw new Error('Capture is already armed');
       if (![1,2].includes(channels)) throw new Error('Choose mono or stereo input');
       this.busy=true; this.status.error=''; this.status.incomplete=false;
@@ -53,7 +53,11 @@
         const track=this.stream.getAudioTracks()[0];
         if (!track) throw new Error('Microphone returned no audio track');
         this.status.settings=inspectSettings(track);
-        if (this.status.settings.channelCount && this.status.settings.channelCount !== channels) throw new Error('Input channel count differs from the requested layout');
+        // A device may deliver another layout than requested, such as a
+        // two-microphone webcam for a mono take. The explicit-mode node below
+        // mixes it to the requested layout; the take records the source count.
+        const delivered=this.status.settings.channelCount;
+        this.status.settings.mixedFrom=delivered && delivered !== channels ? delivered : 0;
         const latency=this.status.settings.latency;
         // Track latency alone is not a duplex first-frame measurement. Keep
         // timing confidence unavailable until a qualified mapping is provided.
@@ -72,9 +76,14 @@
         this.worker.postMessage({t:'open',id,metadata,port:channel.port1},[channel.port1]);
         const result=await opened;
         this.take.mode=this.status.storage=result.mode;
+        // Match the admitted layout explicitly; the output remains stereo.
+        // A max-mode stereo node otherwise upmixes a mono microphone to two
+        // input channels and the capture adapter correctly rejects its blocks.
+        this.audio.node.channelCount=channels;
+        this.audio.node.channelCountMode='explicit';
         // Persist a small recovery index only after the store is usable.
         try { this.env.localStorage?.setItem('cicada-last-take',JSON.stringify(this.take)); } catch (_) {}
-        this.audio.node.port.postMessage({t:'capture-init',port:channel.port2,channels,epoch:Date.now(),inputLatencyNano:Number.isFinite(latency)?Math.round(latency*1e9):0,inputLatencyValid:false,outputLatencyNano:Math.round(this.audio.contextLatencyMs()*1e6),outputLatencyValid:false},[channel.port2]);
+        this.audio.node.port.postMessage({t:'capture-init',port:channel.port2,channels,packets:options.instrument?128:32,epoch:Date.now(),inputLatencyNano:Number.isFinite(latency)?Math.round(latency*1e9):0,inputLatencyValid:false,outputLatencyNano:Math.round(this.audio.contextLatencyMs()*1e6),outputLatencyValid:false},[channel.port2]);
         this.source=this.audio.context.createMediaStreamSource(this.stream);
         this.source.connect(this.audio.node);
         track.onended=()=>{this.status.error='Microphone disconnected';this.status.incomplete=true;this.stop().catch(()=>{});};
@@ -83,6 +92,13 @@
         if (this.status.storage==='checking') this.status.storage='unavailable';
         this.releaseInput(); this.worker?.terminate(); this.status.state='idle'; this.status.error=error.message; this.notify(); throw error;
       } finally { this.busy=false; }
+    }
+    // Instrument recording needs no score, count-in or accompaniment.
+    async recordInstrument() {
+      if (this.status.state !== 'armed') throw new Error('Arm the microphone first');
+      if (this.audio.playing) throw new Error('Stop the transport before recording');
+      this.audio.node.port.postMessage({t:'capture-control',op:'begin',countInFrames:0,packetFrames:2048});
+      this.status.state='recording'; this.status.countInFrames=0; this.notify();
     }
     async record() {
       if (this.status.state !== 'armed') throw new Error('Arm the microphone first');
