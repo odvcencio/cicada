@@ -1,0 +1,9 @@
+instrument glass {
+  voice mono {
+    out = sine(pitch) * env(gate, 90ms) * velocity
+  }
+}
+
+track bass acid {}
+
+track lead glass {}

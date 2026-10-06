@@ -47,6 +47,13 @@ def sha(b):
     return hashlib.sha256(b).hexdigest()
 
 
+def canonical_gzip(data):
+    """Keep pinned gzip bytes independent of Python's platform OS header."""
+    compressed = bytearray(gzip.compress(data, compresslevel=9, mtime=0))
+    compressed[9] = 255
+    return bytes(compressed)
+
+
 def midi(n):
     m = re.fullmatch(r"([A-Ga-g])([#b]?)(-?\d+)", n)
     if not m:
@@ -316,7 +323,7 @@ def build(args):
             + pcm
             + pad
         )
-        data = gzip.compress(wavdata, compresslevel=9, mtime=0)
+        data = canonical_gzip(wavdata)
         target = folder / (ident + ".wav.gz")
         target.write_bytes(data)
         wavpath.unlink()

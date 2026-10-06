@@ -10,9 +10,63 @@ import (
 	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/kernel/voice/sample"
 	"m31labs.dev/cicada/notation"
+	"math"
 	"os"
+	"strings"
 	"testing"
 )
+
+func TestPackCrossZoneSlideReleasesPreviousOwner(t *testing.T) {
+	pcm := make([]float32, 1024)
+	for i := range pcm {
+		pcm[i] = .25
+	}
+	c := sample.DefaultInstrumentConfig()
+	c.Voices, c.Amp.Release = 2, 2
+	p := &instrumentpack.Prepared{Manifest: instrumentpack.Manifest{Config: c}}
+	for i, note := range []uint8{60, 62} {
+		p.Zones = append(p.Zones, sample.Zone{Region: sample.Region{Left: pcm, SampleRate: 48000, RootKey: note, End: len(pcm), Loop: true, LoopEnd: len(pcm)}, KeyLow: note, KeyHigh: note, VelocityLow: 1, VelocityHigh: 127, Layer: 64, Group: uint8(i), Count: 1, Gain: 1})
+	}
+	for _, baseline := range []bool{false, true} {
+		t.Run(fmt.Sprintf("baseline=%v", baseline), func(t *testing.T) {
+			var v *packVoice
+			var err error
+			if baseline {
+				v, err = legacyBaseline(p, 48000)
+			} else {
+				v = &packVoice{}
+				v.instrument, err = p.New(48000)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			v.NoteOn(60, 127, false, false)
+			for i := 0; i < 128; i++ {
+				v.NextStereo()
+			}
+			if l, _ := v.NextStereo(); math.Abs(float64(l)-.25) > 1e-6 {
+				t.Fatal("missing first note", l)
+			}
+			v.NoteOn(62, 127, false, true)
+			for i := 0; i < 128; i++ {
+				v.NextStereo()
+			}
+			if v.fault != nil {
+				t.Fatal(v.fault)
+			}
+			if l, _ := v.NextStereo(); math.Abs(float64(l)-.25) > 1e-6 {
+				t.Fatal("previous owner survived cross-zone slide", l)
+			}
+			v.NoteOff()
+			for i := 0; i < 128; i++ {
+				v.NextStereo()
+			}
+			if l, r := v.NextStereo(); l != 0 || r != 0 {
+				t.Fatalf("slide sounded through rest/tail: %g/%g", l, r)
+			}
+		})
+	}
+}
 
 func TestPinnedPackStereoRenderBlockAndSourceRoundtrip(t *testing.T) {
 	dir := t.TempDir()
@@ -73,6 +127,28 @@ song {main}
 	if _, err := WAV(score, Options{SampleRate: 48000, Bits: 32, TailSec: .3, Block: 128, AssetDir: dir, SamplerBaseline: true}, &first); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("Requested96kHz", func(t *testing.T) {
+		m.Config.Cutoff = 30000
+		data, err := json.Marshal(m)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(dir+"/manifest.json", data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		rateScore, diagnostics := notation.Parse([]byte(strings.Replace(source, hash(manifest), hash(data), 1)))
+		for _, d := range diagnostics {
+			if d.Severity == "error" {
+				t.Fatal(diagnostics)
+			}
+		}
+		if _, err := WAV(rateScore, Options{SampleRate: 96000, Bits: 32, TailSec: .01, AssetDir: dir}, &bytes.Buffer{}); err != nil {
+			t.Fatal("valid 96 kHz render rejected:", err)
+		}
+		if _, err := WAV(rateScore, Options{SampleRate: 48000, Bits: 32, AssetDir: dir}, &bytes.Buffer{}); err == nil {
+			t.Fatal("accepted invalid 48 kHz render")
+		}
+	})
 	score.Samplers[0].SHA256 = "0000000000000000000000000000000000000000000000000000000000000000"
 	if _, err := WAV(score, Options{SampleRate: 48000, Bits: 32, AssetDir: dir}, &bytes.Buffer{}); err == nil {
 		t.Fatal("corrupt pin rendered")

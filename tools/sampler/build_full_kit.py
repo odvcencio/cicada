@@ -7,7 +7,6 @@ banks preserve stereo decay and each stays below the host's 256 MiB PCM cap.
 
 import argparse
 import concurrent.futures
-import gzip
 import hashlib
 import json
 import pathlib
@@ -22,7 +21,7 @@ import xml.etree.ElementTree as ET
 
 import numpy as np
 
-from build_cc0 import config, zone
+from build_cc0 import canonical_gzip, config, zone
 
 ARCHIVE_URL = "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar"
 ARCHIVE_SHA = "a6ec5a58987c90ba482f568005e01ed826a534fd9b3c041dc5efa07018c4d81d"
@@ -373,7 +372,7 @@ def build(args):
             ).astype(np.int32)
             raw = encode_pcm24(pcm.reshape(-1))
         wav = wav_bytes(raw, 2, floating)
-        zipped = gzip.compress(wav, compresslevel=9, mtime=0)
+        zipped = canonical_gzip(wav)
         folder = out / ("full-kit-" + bank) / "samples"
         folder.mkdir(parents=True, exist_ok=True)
         (folder / (ident + ".wav.gz")).write_bytes(zipped)

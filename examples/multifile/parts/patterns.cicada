@@ -1,0 +1,11 @@
+phrase motif {
+  1^ . 3 5
+}
+
+pattern pulse {
+  1^ . 1~ 5
+}
+
+pattern melody {
+  use motif*2
+}
