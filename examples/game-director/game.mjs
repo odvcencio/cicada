@@ -18,7 +18,7 @@ export async function startGameMusic(context, wasmBytes, image, surface, process
       if (data.t === 'm') {
         for (const message of decodeMessages(new Uint8Array(data.bytes, 0, data.n))) {
           game.handle(message);
-          if ([7, 8].includes(message.Kind)) console.error('Music control event', message);
+          if ([6, 7, 8].includes(message.Kind)) console.error('Music control event', message);
         }
         // Return the worklet's reusable message buffer after reading it.
         node.port.postMessage({ t: 'b', bytes: data.bytes }, [data.bytes]);
