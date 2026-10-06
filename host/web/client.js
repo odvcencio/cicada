@@ -35,7 +35,7 @@
       }
       const Context = window.AudioContext || window.webkitAudioContext;
       if (!Context) throw new Error('AudioWorklet is not available in this browser');
-      this.context = new Context({ sampleRate: 48000, latencyHint: 'interactive' });
+      this.context = new Context({ sampleRate: 48000, latencyHint: 'interactive', renderSizeHint: 'hardware' });
       try {
         const [module, imageResponse] = await Promise.all([
           this.modulePromise || (this.modulePromise = fetch('/api/kernel.wasm', { cache: 'no-store' }).then(r => {
@@ -149,21 +149,25 @@
           this.callbackGapExceedances = data.d[data.d.length - 1];
         }
         const waiter = this.metricWaiters.shift();
-        if (waiter) waiter({...data, q: 128000 / this.context.sampleRate, l: this.contextLatencyMs(), cp: this.clock ? .1 : 1, underruns: data.u, clock: this.clock, memoryBytes: data.m,
+        if (waiter) waiter({...data, q: data.q || this.quantumMs(), l: this.contextLatencyMs(), cp: this.clock ? .1 : 1, underruns: data.u, clock: this.clock, memoryBytes: data.m,
           callbackP99Ms: this.callbackP99Ms(),
           callbackSamples: this.callbackSamples,
           callbackDurationExceedances: this.callbackDurationExceedances,
           callbackGapExceedances: this.callbackGapExceedances,
           maxCallbackDurationMs: this.maxCallbackDurationMs,
           outputTimeline: {...this.outputTimeline, latencyMs: this.contextLatencyMs(),
-            quantumMs: 128000 / this.context.sampleRate,
-            limitMs: this.contextLatencyMs() + 128000 / this.context.sampleRate}});
+            quantumMs: data.q || this.quantumMs(),
+            limitMs: this.contextLatencyMs() + (data.q || this.quantumMs())}});
       }
     }
 
     contextLatencyMs() {
       if (!this.context) return 0;
       return ((this.context.baseLatency || 0) + (this.context.outputLatency || 0)) * 1000;
+    }
+
+    quantumMs() {
+      return (this.context.renderQuantumSize || 128) * 1000 / this.context.sampleRate;
     }
 
     callbackP99Ms() {
@@ -191,7 +195,7 @@
       timeline.samples++;
       if (lag > timeline.maxLagMs) timeline.maxLagMs = lag;
       if (excess > timeline.maxExcessMs) timeline.maxExcessMs = excess;
-      if (excess > 128000 / context.sampleRate) {
+      if (excess > this.quantumMs()) {
         timeline.misses++;
         timeline.lastMiss = { now, sampleAgeMs, contextTime: context.currentTime,
           timestampContextTime: timestamp.contextTime, timestampPerformanceTime: timestamp.performanceTime,

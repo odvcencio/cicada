@@ -12,6 +12,7 @@ test:
 	go test ./... -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs
 	node host/web/chord_capability_test.cjs
+	node --test host/web/render-quantum.test.cjs
 
 engine-metrics:
 	GOMAXPROCS=1 go run ./cmd/cicada-engine-metrics $(ENGINE_METRICS_ARGS)
@@ -86,7 +87,7 @@ test-wasm: build-kernel-wasm
 
 test-browser: build-kernel-wasm
 	mkdir -p build
-	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression)$$' 5m build/test-browser.log
 
 budget-size: build-kernel-wasm
 	bash -o pipefail -c "go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm host/web/processor.min.js | tee build/budget-size-report.txt"
