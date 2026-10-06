@@ -78,12 +78,11 @@ storage, so the engine owns its patterns without whole-bank scalarization.
 
 ## Inherited interchange limitations
 
-Poly offline probability hashing uses the semantic assigned slot, including
-later scenes and pending gates.
+Offline probability hashing uses the semantic assigned slot for every track,
+including later scenes and pending gates.
 
 Inherited mono probability behavior remains untouched. In particular, MIDI
 export deliberately uses iteration0 on repeated pattern steps. Thus realized
 MIDI chance events can differ from playback: the regression with seed7 and a
 one-step `[d4 f4]?50` yields 10 audio cohorts and 16 MIDI cohorts in one bar. This
 is a separately recorded interchange limitation, not chance-event parity.
-The existing mono offline slot0 hashing limitation is also not changed here.

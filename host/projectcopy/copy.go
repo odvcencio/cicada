@@ -58,6 +58,9 @@ func SaveAs(score, target string) error {
 	if err != nil {
 		return err
 	}
+	if len(sources.Libraries) > 0 {
+		return errors.New("CICADA-UNSUPPORTED: Save As with imports requires library vendoring")
+	}
 	additional := map[string][]byte{}
 	if sources.Manifest.ExplicitSources() {
 		for _, file := range sources.Files {
