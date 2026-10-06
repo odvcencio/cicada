@@ -12,7 +12,11 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/modal"
 )
+
+// ModalCapability uses bit 3; bits 0–2 belong to other instrument extensions.
+const ModalCapability uint16 = 1 << 3
 
 const MaxImageBytes = 2 << 20
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
@@ -120,7 +124,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w.u16(uint16(cfg.MaxBlock))
 	w.u16(uint16(len(cfg.Scenes)))
 	w.u16(uint16(len(cfg.Song)))
-	w.u16(0)
+	var capabilities uint16
+	for track := 0; track < cfg.Tracks; track++ {
+		if cfg.Track[track].Kind == engine.VoiceModal {
+			capabilities |= ModalCapability
+		}
+	}
+	w.u16(capabilities)
 	if cfg.DelayA == nil {
 		w.byte(0)
 	} else {
@@ -255,6 +265,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 					}
 				}
 			}
+		case engine.VoiceModal:
+			if spec.Modal >= modal.ProfileCount {
+				return nil, Error("invalid modal profile")
+			}
+			w.byte(byte(spec.Modal))
 		case engine.VoiceGraph:
 			if err := writeGraph(&w, spec.Graph); err != nil {
 				return nil, err
@@ -372,7 +387,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved != 0 || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^ModalCapability != 0 || reserved != 0 && version != imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -623,6 +638,15 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					}
 				}
 			}
+		case engine.VoiceModal:
+			if reserved&ModalCapability == 0 {
+				return Error("modal image requires capability")
+			}
+			profile, readErr := r.byte()
+			if readErr != nil || profile >= byte(modal.ProfileCount) {
+				return Error("invalid modal profile image")
+			}
+			spec.Modal = modal.Profile(profile)
 		case engine.VoiceGraph:
 			if spec.Graph, err = readGraph(&r, version); err != nil {
 				return err

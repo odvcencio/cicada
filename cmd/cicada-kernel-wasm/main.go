@@ -233,3 +233,6 @@ func messageDrain() int32 {
 }
 
 func main() {}
+
+//go:wasmexport gosx_audio_capabilities
+func capabilities() uint32 { return uint32(kernelimage.ModalCapability) }

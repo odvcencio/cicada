@@ -12,6 +12,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/modal"
 )
 
 type Error string
@@ -25,6 +26,7 @@ const (
 	VoiceAcid
 	VoiceDrums
 	VoiceGraph
+	VoiceModal VoiceKind = 5
 )
 
 type KitLaneKind uint8
@@ -49,6 +51,7 @@ type TrackConfig struct {
 	Drums       [drum.LaneCount]drum.Params
 	Kit         *[drum.LaneCount]KitLaneBinding
 	Graph       graph.Program
+	Modal       modal.Profile `json:",omitempty"`
 	GainDB      float64
 	GainSet     bool
 	Pan         float64
@@ -108,6 +111,7 @@ type voiceSlot struct {
 	acid                           *acid.Voice
 	drums                          *drum.Kit
 	graph                          *graph.Voice
+	modal                          *modal.Voice
 	mix                            mix.Track
 	targetMix                      mix.Track
 	mixSmooth                      float32
@@ -441,6 +445,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 					v.drumTargets[lane] = v.drums.Params(lane)
 				}
 			}
+		case VoiceModal:
+			voices += modal.MaxVoices
+			v.modal, err = modal.NewVoice(spec.Modal, cfg.SampleRate)
 		case VoiceGraph:
 			voices++
 			v.graph, err = graph.NewVoice(spec.Graph, cfg.SampleRate)
@@ -739,6 +746,9 @@ func (e *Engine) Render(outL, outR []float32) {
 					clear(outR[frame:])
 					return
 				}
+			case VoiceModal:
+				sample := v.modal.Next()
+				left, right = sample, sample
 			case VoiceGraph:
 				sample := v.graph.Next()
 				left, right = sample, sample
@@ -1120,6 +1130,8 @@ func (e *Engine) apply(c cmd.Command) {
 		switch v.kind {
 		case VoiceAcid:
 			v.acid.NoteOn(note, accent, slide, velocity)
+		case VoiceModal:
+			v.modal.NoteOn(note, velocity, slide)
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
 		case VoiceDrums:
@@ -1532,6 +1544,8 @@ func (e *Engine) noteOff(track int, lane uint16) {
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.NoteOff()
+	case VoiceModal:
+		v.modal.NoteOff()
 	case VoiceGraph:
 		v.graph.NoteOff()
 	case VoiceDrums:
@@ -1556,6 +1570,8 @@ func (e *Engine) resetVoice(track int) {
 	switch v.kind {
 	case VoiceAcid:
 		v.acid.Reset()
+	case VoiceModal:
+		v.modal.Reset()
 	case VoiceGraph:
 		v.graph.Reset()
 	case VoiceDrums:
