@@ -151,9 +151,9 @@ legacy `land = 2bars` and `4bars` with values 6 and 8. The existing `Bar`,
 Old kernels reject the new opcodes; deploy the matching kernel with the SDK.
 No project-image version change is required; setup travels as commands.
 
-## M5 parity gate
+## Check host interoperability
 
-Run `GOWORK=off make test-director`. The gate runs the shipped Go and JS APIs
+Run `GOWORK=off make test-director`. The check runs the shipped Go and JS APIs
 against native and WASM engines as four independent clients for 64 bars.
 Each client consumes its own messages and logs bar, landed state, and layer
 mask. The test compares every row and control event, exercises rising and falling

@@ -19,12 +19,12 @@ func TestBrowserPianoCPUReport(t *testing.T) {
 	if os.Getenv("CICADA_BROWSER") != "windows" {
 		t.Skip("set CICADA_BROWSER=windows to measure Windows Chrome AudioWorklet CPU")
 	}
-	// Other roadmap lanes use the standard profile. Keep this workload's
-	// Chrome processes separate so either lane's cleanup cannot stop the other.
+	// Use a separate Chrome profile so cleanup cannot stop another test's
+	// browser processes.
 	priorProfile, priorWSL := windowsBrowserProfile, windowsBrowserProfileWSL
-	lane := fmt.Sprintf("cicada-piano-cpu-%d", os.Getpid())
-	windowsBrowserProfile = priorProfile[:strings.LastIndex(priorProfile, `\`)+1] + lane
-	windowsBrowserProfileWSL = filepath.Join(filepath.Dir(priorWSL), lane)
+	profileName := fmt.Sprintf("cicada-piano-cpu-%d", os.Getpid())
+	windowsBrowserProfile = priorProfile[:strings.LastIndex(priorProfile, `\`)+1] + profileName
+	windowsBrowserProfileWSL = filepath.Join(filepath.Dir(priorWSL), profileName)
 	t.Cleanup(func() { windowsBrowserProfile, windowsBrowserProfileWSL = priorProfile, priorWSL })
 	source := []byte(`cicada 2
 title "Modeled piano CPU fixture"

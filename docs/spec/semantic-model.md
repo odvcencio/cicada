@@ -4,8 +4,6 @@ This page defines the current typed JSON interchange form. It is distinct from b
 
 ## Semantic JSON
 
-**Status:** Implemented.
-
 **Syntax:** JSON objects follow the public [project schema /1](../../project/schema/project-1.json) or [project schema /2](../../project/schema/project-2.json). The generated [field catalog /1](../../project/schema/cicada.fields-1.json) and [field catalog /2](../../project/schema/cicada.fields-2.json) index their constructs and fields. Run <code>go run ./cmd/cicada fields</code> to print the catalog or <code>go run ./cmd/cicada explain pattern.steps --json</code> to inspect one field.
 
 **Meaning:** <code>cicada.project/1</code> stores the typed project consumed by validation, rendering, interchange, and agent tools when it has no /2-only content. <code>cicada.project/2</code> adds scene settings, named effects and mixer records, built-in bus records, master settings, and export profiles. The field catalogs record each construct, field order, required flag, type, unit, range, default, meaning, profile, and format that introduced it.
@@ -21,8 +19,6 @@ This page defines the current typed JSON interchange form. It is distinct from b
 **Edition history:** Semantic formats /1 and /2 and their field catalogs are implemented. Source editions 1 and 2 are implemented; the source edition and semantic format version are independent. Automation remains accepted and is not present in either format.
 
 ## Semantic JSON version 2 scene settings
-
-**Status:** Implemented.
 
 **Syntax:** In <code>cicada.project/2</code>, a scene may contain an ordered <code>settings</code> array. Each entry contains a resolved <code>path</code> and a typed <code>value</code>. The [project /2 schema](../../project/schema/project-2.json) defines the complete object.
 
@@ -55,8 +51,6 @@ This page defines the current typed JSON interchange form. It is distinct from b
 **Edition history:** Version /2 adds ordered scene parameter settings. Projects without those settings remain representable as /1.
 
 ## Semantic JSON version 2 named mixer records
-
-**Status:** Implemented for the mixer routes supported by the current engine.
 
 **Syntax:** Project /2 adds <code>effects[]</code> records with <code>id</code>, <code>kind</code>, and <code>params</code>; <code>buses[]</code> records with <code>id</code> and <code>mixer</code>; an optional <code>master</code> record containing <code>mixer</code>; and <code>exports[]</code> render profiles. The /2 mixer replaces <code>gain_db</code>, <code>send_a</code>, <code>send_b</code>, <code>send_pre</code>, <code>insert</code>, and <code>bus</code> with <code>level</code>, <code>pan</code>, <code>mute</code>, <code>solo</code>, <code>inserts[]</code>, <code>sends[]</code>, and <code>out</code>. Each send record contains <code>to</code>, <code>level</code>, and <code>tap</code>.
 
@@ -137,8 +131,6 @@ The JSON step record contains <code>note</code>, <code>accent</code>, <code>slid
 
 ## Canonicalization and source round trips
 
-**Status:** Implemented.
-
 **Syntax:** <code>cicada convert source.cicada -o project.json</code> writes canonical semantic JSON. <code>cicada convert project.json -o source.cicada</code> writes normalized source. <code>cicada compare --semantic a b</code> compares compiled project meaning.
 
 **Meaning:** Semantic comparison ignores comments, layout, and equivalent source spellings. JSON-to-source conversion writes normalized source in the project's source edition and checks that recompiling it produces the same canonical project. Edition-2 source output includes a `cicada 2` header. Canonical JSON writes /1 when no /2-only content is needed, and /2 when mixer records, buses, master settings, exports, or scene settings require it.
@@ -162,11 +154,9 @@ scene main { melody = phrase }
 song { main*4 }
 ```
 
-**Edition history:** Available for <code>cicada.project/1</code>. A future JSON format change must use an explicit migration.
+**Edition history:** Available for <code>cicada.project/1</code>. A JSON format change requires an explicit migration.
 
 ## <code>cicada fix</code> and migrations
-
-**Status:** Implemented.
 
 **Syntax:** <code>cicada fix score.cicada</code> rewrites recognized legacy source spellings, even if the manifest already selects edition 2. <code>cicada fix score.cicada --check</code> reports whether a source rewrite or manifest update is needed without writing. From the project folder, <code>cicada fix --all</code> migrates all edition-1 scores together. The Go API <code>project.Migrate1To2(p)</code> migrates a semantic project.
 
@@ -184,8 +174,6 @@ song { main*4 }
 
 ## Diagnostics
 
-**Status:** Implemented.
-
 **Syntax:** CLI diagnostics use <code>path:line:column: severity CODE: message</code>; JSON diagnostics add a JSON Pointer after the path when available. LSP diagnostics use the same source diagnostic and map columns to the protocol's UTF-16 position encoding.
 
 **Meaning:** Syntax diagnostics come from parsing; semantic diagnostics come from name, type, unit, range, and engine checks. A well-formed score can still fail semantic validation or engine compilation.
@@ -202,15 +190,13 @@ song { main*4 }
 
 ## Conformance
 
-**Status:** Implemented.
-
 **Syntax:** The authoritative source grammar is the grammargen Go DSL in <code>language/grammar/grammar.go</code>. <code>go generate ./notation</code> builds the parser blob; <code>make grammar-check</code> checks it against the DSL.
 
 **Meaning:** An edition-1 or edition-2 implementation accepts the grammar and edition-specific semantic limits in this specification and rejects unsupported constructs. <code>cicada validate</code> checks a score; <code>cicada check</code> checks a score or project; <code>cicada fmt --check</code> checks normalized formatting.
 
 **Types and units:** The semantic gate includes instrument graph typing and engine compilation, not only parsing. CI runs <code>go test ./...</code> through <code>make test</code>, plus the repository grammar and engine checks.
 
-**Defaults:** Every <code>cicada</code> block in <code>docs/spec</code> and <code>docs/manual</code> is validated in Go tests. <code>cicada-invalid</code> blocks must fail with their named diagnostic. <code>cicada-accepted</code> blocks are counted and skipped until implementation lands.
+**Defaults:** Every <code>cicada</code> block in <code>docs/spec</code> and <code>docs/manual</code> is validated in Go tests. <code>cicada-invalid</code> blocks must fail with their named diagnostic.
 
 **Errors:** Grammar drift, a nonconforming example, an unexpected diagnostic, or an EBNF production-name mismatch fails the relevant test.
 

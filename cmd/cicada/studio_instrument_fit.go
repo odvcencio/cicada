@@ -59,5 +59,5 @@ func (s *studio) instrumentFit(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordedModels[pack.Pin] = model
 	s.mu.Unlock()
-	studioJSON(w, 200, map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": pack.Hits, "model": model, "modelSHA256": recording.Digest(pack.Files["model.json"]), "declaration": pack.Source(filepath.Join(relative, "manifest.json"), model.RootMIDI), "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "owner recording"})
+	studioJSON(w, 200, map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": pack.Hits, "model": model, "modelSHA256": recording.Digest(pack.Files["model.json"]), "declaration": pack.Source(filepath.Join(relative, "manifest.json"), model.RootMIDI), "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "user recording"})
 }

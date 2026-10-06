@@ -45,7 +45,7 @@ func Build(name string, hits []Hit, layers int) (*Pack, error) {
 	if !ValidName(name) || len(hits) == 0 || len(hits) > 256 || layers < 1 || layers > 8 {
 		return nil, fmt.Errorf("use a lowercase instrument name, 1–256 hits and 1–8 layers")
 	}
-	p := &Pack{Hits: hits, Files: map[string][]byte{}, Manifest: Manifest{Format: "cicada.instrument-pack/1", ID: name, Description: "Owner recording; automatic hit slicing, velocity layers and round robins"}}
+	p := &Pack{Hits: hits, Files: map[string][]byte{}, Manifest: Manifest{Format: "cicada.instrument-pack/1", ID: name, Description: "User recording; automatic hit slicing, velocity layers and round robins"}}
 	p.Manifest.Config.Voices = 16
 	p.Manifest.Config.Gain = 1
 	p.Manifest.Config.Amp = sample.Envelope{Attack: 2, Sustain: 1, Release: 80}
@@ -69,7 +69,7 @@ func Build(name string, hits []Hit, layers int) (*Pack, error) {
 		path := id + ".wav.gz"
 		data := compressed.Bytes()
 		p.Files[path] = data
-		p.Manifest.Assets = append(p.Manifest.Assets, Asset{ID: id, Path: path, SHA256: Digest(data), Bytes: int64(len(data)), WAVSHA256: Digest(wav), WAVBytes: int64(len(wav)), Frames: len(h.PCM), Rate: h.Rate, Channels: 1, SourceSHA256: h.SourceSHA256, License: "owner recording"})
+		p.Manifest.Assets = append(p.Manifest.Assets, Asset{ID: id, Path: path, SHA256: Digest(data), Bytes: int64(len(data)), WAVSHA256: Digest(wav), WAVBytes: int64(len(wav)), Frames: len(h.PCM), Rate: h.Rate, Channels: 1, SourceSHA256: h.SourceSHA256, License: "user recording"})
 		groups[h.Root] = append(groups[h.Root], i)
 	}
 	roots := make([]int, 0, len(groups))
@@ -125,7 +125,7 @@ func Build(name string, hits []Hit, layers int) (*Pack, error) {
 		return nil, err
 	}
 	p.Files["analysis.json"] = append(analysis, '\n')
-	p.Files["LICENSE.txt"] = []byte("owner recording\nAudio comes from an owner-supplied recording. This label records provenance; it grants no public redistribution rights.\n")
+	p.Files["LICENSE.txt"] = []byte("user recording\nAudio comes from a user-supplied recording. This label records provenance; it grants no public redistribution rights.\n")
 	root := hits[0].Root
 	p.Files["instrument.cicada"] = []byte(p.Starter("manifest.json", root))
 	return p, nil

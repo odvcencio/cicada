@@ -21,7 +21,7 @@ func fitModelCommand(args []string, output io.Writer) error {
 		return err
 	}
 	if *dir == "" || flags.NArg() != 1 {
-		return fmt.Errorf("usage: cicada fit-model -o <pack-directory> [--name pencil_model] [--hit 1] <recording.wav>")
+		return fmt.Errorf("usage: cicada fit-model -o <pack-directory> [--name recorded_model] [--hit 1] <recording.wav>")
 	}
 	f, err := os.Open(flags.Arg(0))
 	if err != nil {
@@ -55,6 +55,6 @@ func fitModelCommand(args []string, output io.Writer) error {
 	if err = pack.Write(*dir); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(output, "%d fitted modes · root %.1f Hz · model sha256 %s · owner recording\n%s", len(model.Modes), model.RootHz, recording.Digest(pack.Files["model.json"]), pack.Source(filepath.Join(*dir, "manifest.json"), model.RootMIDI))
+	_, err = fmt.Fprintf(output, "%d fitted modes · root %.1f Hz · model sha256 %s · user recording\n%s", len(model.Modes), model.RootHz, recording.Digest(pack.Files["model.json"]), pack.Source(filepath.Join(*dir, "manifest.json"), model.RootMIDI))
 	return err
 }

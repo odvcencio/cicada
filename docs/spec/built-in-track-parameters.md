@@ -7,8 +7,6 @@ For typed JSON record fields, see the [semantic field catalog](semantic-model.md
 
 ## Built-in voice parameters
 
-**Status:** Implemented.
-
 **Syntax (EBNF):** A <code>param_decl</code> is inside <code>track_decl</code>. Acid fields use their field name, such as <code>cutoff</code>; drum fields use a lane prefix, such as <code>bd_tune</code>.
 
 **Meaning:** The selected voice validates the names, types, and ranges before compilation. Mixer fields are documented in [Track mixer settings](edition-1.md#track-mixer-settings) and are not part of the voice parameter list.
