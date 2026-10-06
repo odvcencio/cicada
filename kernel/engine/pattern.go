@@ -206,6 +206,12 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 		p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
 	}
 	p.active = int8(slot)
+	if v := &e.voices[track]; v.prepared != nil {
+		if v.prepared.SelectSlot(uint8(slot), 0, e.transport.Playing()) != nil {
+			e.fault(19)
+			return
+		}
+	}
 	if !e.nextPatternGeneration(track) {
 		return
 	}
@@ -586,6 +592,14 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 					}
 				} else {
 					e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
+					e.voices[track].graphNote, e.voices[track].graphHeld = event.Note, true
+				}
+			case VoiceGraphPoly:
+				e.voices[track].legacyPoly.NoteOn(event.Note, event.Velocity, event.Slide)
+			case VoicePrepared:
+				if e.voices[track].prepared.NoteOn(event.Note, event.Velocity) != nil {
+					e.fault(19)
+					return
 				}
 			case VoicePiano:
 				if event.Slide && p.playingNote != 0 {

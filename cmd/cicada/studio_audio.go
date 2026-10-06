@@ -222,20 +222,27 @@ func (s *studio) queueAudioError(ctx context.Context, outgoing chan<- any, messa
 	}
 }
 
+func validateAudioNote(message audioClientMessage) error {
+	if message.Note == nil || message.Velocity == nil || message.On == nil {
+		return fmt.Errorf("note message needs note, velocity, and on fields")
+	}
+	if *message.Note < 0 || *message.Note > 127 {
+		return fmt.Errorf("note must be in MIDI range 0–127")
+	}
+	if *message.Velocity < 0 || *message.Velocity > 127 {
+		return fmt.Errorf("velocity must be in MIDI range 0–127")
+	}
+	return nil
+}
+
 func (s *studio) applyAudioMessage(message audioClientMessage) error {
 	if message.Type == "loudness-reset" {
 		s.transport.resetLoudness()
 		return nil
 	}
 	if message.Type == "note" {
-		if message.Note == nil || message.Velocity == nil || message.On == nil {
-			return fmt.Errorf("note message needs note, velocity, and on fields")
-		}
-		if *message.Note < 0 || *message.Note > 127 {
-			return fmt.Errorf("note must be in MIDI range 0–127")
-		}
-		if *message.Velocity < 0 || *message.Velocity > 127 {
-			return fmt.Errorf("velocity must be in MIDI range 0–127")
+		if err := validateAudioNote(message); err != nil {
+			return err
 		}
 		s.transport.mu.Lock()
 		stream := s.transport.stream
@@ -337,6 +344,11 @@ func (s *studio) applyAudioMessage(message audioClientMessage) error {
 		return stream.SetSolo(track, *message.On)
 	}
 	return stream.SetParam(track, id, value)
+}
+
+func (s *studio) resetLiveLoudness(w http.ResponseWriter, r *http.Request) {
+	s.transport.resetLoudness()
+	studioJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func mustJSON(value any) []byte {

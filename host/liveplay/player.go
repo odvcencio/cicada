@@ -317,7 +317,7 @@ func (p *Player) TrackIndex(id string) (uint8, bool) {
 	return 0, false
 }
 
-// Note queues a live note for a named built-in instrument track. Requests are
+// Note queues a live note for an acid, authored instrument, or drum track. Requests are
 // resolved and applied by Read, so the control path never touches engine state.
 func (p *Player) Note(track string, note, velocity int, on bool) error {
 	return p.NoteID(track, note, velocity, on, fmt.Sprintf("legacy:%s:%d", track, note))
@@ -360,7 +360,7 @@ func (p *Player) NoteID(track string, note, velocity int, on bool, id string) er
 			if note < 21 || note > 108 {
 				return fmt.Errorf("piano note must be in MIDI range 21–108")
 			}
-		} else if kind != "acid" {
+		} else if kind != "acid" && kind != "graph" && kind != "poly" {
 			return fmt.Errorf("track %q does not accept live notes", track)
 		}
 		input := noteInput{ID: id, Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on}
@@ -1148,7 +1148,7 @@ func (p *Player) queueLiveNotes() {
 			}
 		}
 		command := cmd.Command{Track: track}
-		if kind == "acid" || kind == "piano" {
+		if kind == "acid" || kind == "piano" || kind == "graph" || kind == "poly" {
 			if kind == "piano" && (input.Note < 21 || input.Note > 108) {
 				p.emit(Event{Track: input.Track, Name: "piano note must be in MIDI range 21–108", Kind: "note-error"})
 				continue
@@ -1158,8 +1158,11 @@ func (p *Player) queueLiveNotes() {
 				command.Arg0 = uint32(input.Note) | uint32(input.Velocity)<<8
 			} else {
 				command.Op, command.Index = cmd.OpNoteOff, 0xffff
-				if kind == "piano" {
+				if kind == "piano" || kind == "graph" || kind == "poly" {
 					command.Index = uint16(input.Note)
+					if kind == "graph" {
+						command.Index |= engine.MonoNoteOffPitchFlag
+					}
 				}
 			}
 		} else if kind == "drums" {

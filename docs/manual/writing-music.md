@@ -131,7 +131,7 @@ The language server completes import paths and public qualified names and goes t
 ## Tracks and patterns
 
 A track chooses a sound source: the built-in `acid` or `drums` voice, a
-declared mono instrument, or an authored drum kit. A pattern describes steps
+declared mono or poly instrument, or an authored drum kit. A pattern describes steps
 for that source. The scene connects a pattern to a track by name.
 
 The current grid uses sixteenth-note steps. A 16-step pattern fills one bar;
@@ -238,7 +238,7 @@ its built-in recipe. See the [kit and lane reference](../spec/edition-1.md#autho
 ## Define an instrument
 
 Use an instrument when you want a sound made from Cicada's typed synthesis
-primitives. A `voice mono` block has ordered `let` bindings and one audio
+primitives. A `voice mono` or `voice poly` block has ordered `let` bindings and one audio
 output. Parameters and inputs carry types and units, so a frequency cannot
 silently be used where a time value is expected.
 
@@ -261,8 +261,15 @@ scene main { lead = lead-a }
 song { main*4 }
 ```
 
-The current profile supports mono graphs with at most 128 nodes and 32
-stateful nodes. Polyphony, plugins, and sample assets are not in edition 1.
+Graphs have at most 128 nodes and 32 stateful nodes. `voice poly` provides eight
+independent notes and release tails. In Studio, **Instruments** offers Warm pad,
+Wide strings, Poly brass, Silk pluck, Round bass, and Soft bell. Adding a patch
+saves its editable graph and a new track together. Use `adsr` for sustained
+amplitude and filter envelopes, `pulse` for variable-width oscillation, and
+`svf` for resonant lowpass filtering. The mixer provides stereo positioning,
+delay, and reverb. Play chords from **Live** using the keyboard or MIDI; the
+current notes grid and saved note takes hold one pitch per step.
+
 Use `comb(noise() * env(gate, 1ms), 1 / pitch, 0.995, 0.5)` for a plucked
 string: a short noise burst excites a damped feedback loop. `1 / pitch` is
 typed as milliseconds. `delay(sound, 60ms)` adds a slapback tap. Each primitive

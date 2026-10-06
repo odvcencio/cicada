@@ -178,6 +178,25 @@ func (v *Voice) SeekFrames(frames int64) {
 		v.Reset()
 	}
 }
+
+// NoteOnAt starts a non-looping region at an output-frame offset. It seeks in
+// constant time; the caller does not render or allocate skipped audio.
+func (v *Voice) NoteOnAt(note, velocity uint8, outputFrame int64) error {
+	if outputFrame < 0 || v.region.Loop {
+		return Error("sample seek needs a nonnegative offset and a non-looping region")
+	}
+	if err := v.NoteOn(note, velocity); err != nil {
+		return err
+	}
+	phase := float64(v.region.Start) + float64(outputFrame)*v.ratio
+	if phase >= float64(v.region.End) {
+		v.Reset()
+		return nil
+	}
+	v.phase = phase
+	return nil
+}
+
 func (v *Voice) Releasing() bool { return v.releasing || (!v.active && v.tailRemaining > 0) }
 func (v *Voice) Ratio() float64  { return v.ratio }
 

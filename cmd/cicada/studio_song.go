@@ -14,6 +14,10 @@ import (
 // exact CST entry text; comments between entries are refused rather than
 // silently reassigned to a different scene.
 func editedSongSource(source []byte, action string, index, target, bars int) ([]byte, error) {
+	return editedSongBlockSource(source, action, index, target, bars, "")
+}
+
+func editedSongBlockSource(source []byte, action string, index, target, bars int, scene string) ([]byte, error) {
 	score, diagnostics := notation.Parse(source)
 	if score == nil || hasDiagnosticErrors(diagnostics) {
 		return nil, fmt.Errorf("score must validate before editing the song")
@@ -34,10 +38,62 @@ func editedSongSource(source []byte, action string, index, target, bars int) ([]
 		return nil, fmt.Errorf("score has no song")
 	}
 	entries := songEntries(song, walker)
-	if len(entries) != len(score.Song) || index < 0 || index >= len(entries) {
+	if len(entries) != len(score.Song) || action != "append" && (index < 0 || index >= len(entries)) {
 		return nil, fmt.Errorf("song entry is out of range")
 	}
 	switch action {
+	case "scene", "append":
+		found := false
+		for _, candidate := range score.Scenes {
+			found = found || candidate.Name == scene
+		}
+		if !found {
+			return nil, fmt.Errorf("choose an existing scene")
+		}
+		if action == "scene" {
+			value := walker.Field(entries[index], "scene")
+			return replaceSongSpan(source, int(value.StartByte()), int(value.EndByte()), []byte(scene))
+		}
+		if bars < 1 || bars > 999 {
+			return nil, fmt.Errorf("song entry must last 1–999 bars")
+		}
+		if len(entries) == 0 {
+			at := int(song.EndByte()) - 1
+			return replaceSongSpan(source, at, at, []byte(" "+scene+"*"+strconv.Itoa(bars)+" "))
+		}
+		if err := songGapsAreWhitespace(source, song, entries); err != nil {
+			return nil, err
+		}
+		gap := source[entries[len(entries)-1].EndByte() : song.EndByte()-1]
+		separator := " "
+		if bytes.Contains(gap, []byte("\n")) {
+			separator = "\n  "
+			if bytes.Contains(source, []byte("\r\n")) {
+				separator = "\r\n  "
+			}
+		}
+		at := int(entries[len(entries)-1].EndByte())
+		return replaceSongSpan(source, at, at, []byte(separator+scene+"*"+strconv.Itoa(bars)))
+	case "duplicate", "delete":
+		if err := songGapsAreWhitespace(source, song, entries); err != nil {
+			return nil, err
+		}
+		entry := entries[index]
+		if action == "delete" {
+			if len(entries) < 2 {
+				return nil, fmt.Errorf("keep at least one arrangement block")
+			}
+			return replaceSongSpan(source, int(entry.StartByte()), int(entry.EndByte()), nil)
+		}
+		separator := " "
+		if bytes.Contains(source[song.StartByte():song.EndByte()], []byte("\n")) {
+			separator = "\n  "
+			if bytes.Contains(source, []byte("\r\n")) {
+				separator = "\r\n  "
+			}
+		}
+		at := int(entry.EndByte())
+		return replaceSongSpan(source, at, at, append([]byte(separator), source[entry.StartByte():entry.EndByte()]...))
 	case "bars":
 		if bars < 1 || bars > 999 {
 			return nil, fmt.Errorf("song entry must last 1–999 bars")
@@ -84,7 +140,7 @@ func editedSongSource(source []byte, action string, index, target, bars int) ([]
 		updated = append(updated, source[end:]...)
 		return updated, nil
 	default:
-		return nil, fmt.Errorf("song action must be move or bars")
+		return nil, fmt.Errorf("unknown arrangement action")
 	}
 }
 

@@ -226,8 +226,8 @@ func TestGraphDelayOfflineRenderAllocs(t *testing.T) {
 }
 
 func TestGraphDelayOfflineFirstBlockAllocs(t *testing.T) {
-	// Isolate the process-wide counter without warming the first render block.
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(1))
+	runtime.GC()
 	score := delayScore(t)
 	p, ds := project.FromScore(score)
 	if p == nil {

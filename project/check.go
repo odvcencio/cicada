@@ -257,6 +257,27 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 	for _, kit := range score.Kits {
 		kitVoices[kit.Name] = len(kit.Bindings)
 	}
+	for _, inst := range score.Instruments {
+		if inst.Mode == "poly" {
+			kitVoices[inst.Name] = graph.PolyVoices
+			for _, scene := range score.Scenes {
+				for _, binding := range scene.Bindings {
+					if tracks[binding.Track].Kind != inst.Name {
+						continue
+					}
+					for _, pattern := range score.Patterns {
+						if pattern.Name == binding.Pattern {
+							for _, step := range pattern.Steps {
+								if len(step.ChordPitches) > 1 {
+									kitVoices[inst.Name] = graph.MaxPolyphony
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 	drumVoices := make(map[string]int, len(tracks))
 	for id, track := range tracks {
 		if track.Kind == "drums" {

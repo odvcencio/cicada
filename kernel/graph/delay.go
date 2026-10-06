@@ -4,9 +4,14 @@ import "math"
 
 // DelaySamples is the ring storage reserved per voice, in float32 samples.
 func (p Program) DelaySamples() int {
+	return delaySamples(&p)
+}
+
+func delaySamples(p *Program) int {
 	count := 0
 	for i := 0; i < int(p.Len); i++ {
-		if p.Nodes[i].Op == Delay || p.Nodes[i].Op == Comb {
+		n := p.Nodes[i]
+		if n.Op == Delay || n.Op == Comb {
 			count += MaxDelaySamples
 		}
 	}
@@ -29,7 +34,10 @@ func validateDelayControls(p Program, rate int) error {
 // ValidateDelayPitch checks pitch-derived controls for a score note. Zero
 // leaves pitch unknown, so instrument defaults can be checked independently.
 func ValidateDelayPitch(p Program, rate int, pitch float32) error {
-	values, known := p.StaticValues(float32(rate), pitch)
+	if usesQuality(&p) {
+		rate *= 2
+	}
+	values, known := staticValues(&p, float32(rate), pitch)
 	for i := 0; i < int(p.Len); i++ {
 		n := p.Nodes[i]
 		if n.Op != Delay && n.Op != Comb {
@@ -59,6 +67,10 @@ func ValidateDelayPitch(p Program, rate int, pitch float32) error {
 // StaticValues evaluates control arithmetic only. A positive pitch makes
 // pitch-derived times known, for score-note validation outside rendering.
 func (p Program) StaticValues(rate, pitch float32) ([MaxNodes]float32, [MaxNodes]bool) {
+	return staticValues(&p, rate, pitch)
+}
+
+func staticValues(p *Program, rate, pitch float32) ([MaxNodes]float32, [MaxNodes]bool) {
 	var values [MaxNodes]float32
 	var known [MaxNodes]bool
 	for i := 0; i < int(p.Len); i++ {

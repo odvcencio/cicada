@@ -62,7 +62,7 @@ type studioMeterSnapshot struct {
 type transportSnapshot struct {
 	Type                string            `json:"type"`
 	Sequence            uint64            `json:"sequence"`
-	ActiveBackend       string            `json:"activeBackend,omitempty"`
+	ActiveBackend       string            `json:"activeBackend"`
 	BrowserPlaying      bool              `json:"browserPlaying,omitempty"`
 	Playing             bool              `json:"playing"`
 	Bar                 int64             `json:"bar"`
@@ -77,7 +77,7 @@ type transportSnapshot struct {
 	ActiveSlots         map[string]string `json:"activeSlots,omitempty"`
 	Scene               string            `json:"scene,omitempty"`
 	Landed              int64             `json:"landedBar,omitempty"`
-	Error               string            `json:"error,omitempty"`
+	Error               string            `json:"error"`
 }
 
 func newStudioTransport(path string) *studioTransport {
@@ -254,7 +254,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			p, loadErr := loadProject(t.path)
 			err = loadErr
 			if err == nil {
-				initial, err = compileLiveProjectAtRate(t.path, captureBacking(p), sampleRate)
+				initial, err = compileLiveProjectAtRate(t.path, p, sampleRate)
 			}
 		} else {
 			initial, err = compileLiveScoreAtRate(t.path, sampleRate)
@@ -619,7 +619,6 @@ func (t *studioTransport) poll() {
 	}
 	stream := t.stream
 	sampleRate := t.sampleRate
-	capturing := t.audio != nil && t.audio.Armed()
 	t.mu.Unlock()
 	if stream == nil {
 		return
@@ -630,9 +629,6 @@ func (t *studioTransport) poll() {
 	project, err := compileStudioSource(t.path, source)
 	var next liveplay.Score
 	if err == nil {
-		if capturing {
-			project = captureBacking(project)
-		}
 		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
 	}
 	if err == nil {

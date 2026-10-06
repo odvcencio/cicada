@@ -180,6 +180,15 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 				break
 			}
 		}
+		for _, voice := range p.Instruments {
+			if track.Kind == voice.ID {
+				tracks[i].Kind = "graph"
+				if voice.Mode == "poly" {
+					tracks[i].Kind = "poly"
+				}
+				break
+			}
+		}
 		for slot, pattern := range track.Slots {
 			if pattern != nil {
 				tracks[i].Slots[slot] = *pattern
