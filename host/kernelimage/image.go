@@ -15,6 +15,7 @@ import (
 )
 
 const MaxImageBytes = 2 << 20
+const ChordImageVersion = 14 // opt-in bounded graph polyphony and chord payloads
 
 // DelayCapability uses bit 1; bit 0 is reserved by the chord lane. The existing
 // reserved header word carries required capabilities without changing version
@@ -112,9 +113,36 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
 		return nil, Error("project image configuration is out of range")
 	}
+	version := uint16(imageVersion)
+	for track := 0; track < cfg.Tracks; track++ {
+		spec := cfg.Track[track]
+		if spec.Polyphony != 0 && (spec.Polyphony != 4 || spec.Kind != engine.VoiceGraph) {
+			return nil, Error("invalid polyphony image mode")
+		}
+		if spec.Polyphony == 4 {
+			version = ChordImageVersion
+		}
+		if len(cfg.Patterns) > 0 {
+			for _, pattern := range cfg.Patterns[track].Slots {
+				if pattern.Len == 0 && pattern.Chords != [64]seq.ChordStep{} {
+					return nil, Error("unused slot contains chord payload")
+				}
+				for i, chord := range pattern.Chords {
+					if chord.Count > 0 && (spec.Polyphony != 4 || i >= int(pattern.Len)) {
+						return nil, Error("chord payload requires an active polyphonic graph step")
+					}
+				}
+				if pattern.Len > 0 {
+					if err := pattern.Validate(); err != nil {
+						return nil, err
+					}
+				}
+			}
+		}
+	}
 	w := writer{data: make([]byte, 0, 32+cfg.Tracks*4096)}
 	w.data = append(w.data, 'C', 'I', 'C', '1')
-	w.u16(imageVersion)
+	w.u16(version)
 	w.byte(byte(cfg.Tracks))
 	w.byte(byte(cfg.MaxVoices))
 	if cfg.LoopSong {
@@ -219,6 +247,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		w.byte(byte(spec.Kind))
+		if version >= ChordImageVersion {
+			w.byte(spec.Polyphony)
+		}
 		w.byte(boolByte(spec.Mute))
 		w.byte(boolByte(spec.GainSet))
 		w.byte(boolByte(spec.BusSFX))
@@ -310,6 +341,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			} else {
 				for step := uint8(0); step < pattern.Len; step++ {
 					w.u32(pattern.Steps[step])
+					if version >= ChordImageVersion {
+						chord := pattern.Chords[step]
+						w.byte(chord.Count)
+						for _, note := range chord.Notes {
+							w.byte(note)
+						}
+					}
 				}
 			}
 		}
@@ -394,7 +432,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^DelayCapability != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^DelayCapability != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -532,6 +570,13 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		kind, err := r.byte()
 		if err != nil {
 			return err
+		}
+		if version >= ChordImageVersion {
+			mode, err := r.byte()
+			if err != nil || mode != 0 && (mode != 4 || engine.VoiceKind(kind) != engine.VoiceGraph) {
+				return Error("invalid polyphony image mode")
+			}
+			spec.Polyphony = mode
 		}
 		mute, err := r.byte()
 		if err != nil {
@@ -689,6 +734,18 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					if pattern.Steps[step], err = r.u32(); err != nil {
 						return err
 					}
+					if version >= ChordImageVersion {
+						chord := &pattern.Chords[step]
+						if chord.Count, err = r.byte(); err != nil {
+							return err
+						}
+						for i := range chord.Notes {
+							if chord.Notes[i], err = r.byte(); err != nil {
+								return err
+							}
+						}
+					}
+
 				}
 			}
 			cfg.Patterns[track].Slots[slot] = pattern

@@ -442,6 +442,53 @@ func parseParam(w *loweringWalker, n *gts.Node) Param {
 	return Param{Name: name, Value: text, Position: w.position(n), ValuePosition: w.position(value)}
 }
 
+// compactStepText reads grammar leaves, excluding whitespace and comments.
+func compactStepText(w *loweringWalker, n *gts.Node) string {
+	if w.Type(n) == "comment" {
+		return ""
+	}
+	if n.ChildCount() == 0 {
+		return w.Text(n)
+	}
+	var text strings.Builder
+	for i := 0; i < n.ChildCount(); i++ {
+		text.WriteString(compactStepText(w, n.Child(i)))
+	}
+	return text.String()
+}
+
+func chordComments(w *loweringWalker, n *gts.Node) []string {
+	if w.Type(n) == "comment" {
+		return []string{w.Text(n)}
+	}
+	var comments []string
+	for i := 0; i < n.NamedChildCount(); i++ {
+		comments = append(comments, chordComments(w, n.NamedChild(i))...)
+	}
+	return comments
+}
+
+func parseStepToken(w *loweringWalker, n *gts.Node) StepToken {
+	step := StepToken{Text: w.Text(n), Position: w.position(n)}
+	for i := 0; i < n.NamedChildCount(); i++ {
+		chord := n.NamedChild(i)
+		if w.Type(chord) != "chord_note" {
+			continue
+		}
+		step.ChordComments = chordComments(w, chord)
+		for j := 0; j < chord.NamedChildCount(); j++ {
+			child := chord.NamedChild(j)
+			switch w.Type(child) {
+			case "chord_pitch":
+				step.ChordPitches = append(step.ChordPitches, ChordPitch{Text: compactStepText(w, child), Start: int(child.StartByte() - n.StartByte()), End: int(child.EndByte() - n.StartByte())})
+			case "modifier":
+				step.ChordModifiers += compactStepText(w, child)
+			}
+		}
+	}
+	return step
+}
+
 func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 	p := Pattern{Name: w.declaration(w.Field(n, "name")), Position: w.position(n)}
 	if w.Type(n) == "acid_pattern" {
@@ -458,7 +505,7 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 			p.Attrs = append(p.Attrs, parseParam(w, c))
 		case "acid_step":
 			if w.Text(c) != "|" {
-				step := StepToken{Text: w.Text(c), Position: w.position(c)}
+				step := parseStepToken(w, c)
 				p.Parts = append(p.Parts, PatternPart{Step: &step})
 			}
 		case "phrase_use":
@@ -483,7 +530,7 @@ func parsePhrase(w *loweringWalker, n *gts.Node) Phrase {
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		if w.Type(c) == "acid_step" && w.Text(c) != "|" {
-			p.Steps = append(p.Steps, StepToken{Text: w.Text(c), Position: w.position(c)})
+			p.Steps = append(p.Steps, parseStepToken(w, c))
 		}
 	}
 	return p

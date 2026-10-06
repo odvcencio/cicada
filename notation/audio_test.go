@@ -130,3 +130,26 @@ func TestAudioMissingFieldsHavePositions(t *testing.T) {
 		}
 	}
 }
+
+func TestPinnedInstrumentPackDeclaration(t *testing.T) {
+	source := `sampler grand {pack="packs/grand/manifest.json" sha256="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" root=c4 voices=16}
+track piano grand {}
+pattern melody {c4 . e4 .}
+scene main {piano=melody}
+song {main}
+`
+	score, ds := ParseEdition([]byte(source), 2)
+	if parseHasErrors(ds) {
+		t.Fatalf("%+v", ds)
+	}
+	s := score.Samplers[0]
+	if s.Pack != "packs/grand/manifest.json" || s.Mode != "oneshot" || s.Asset != "" {
+		t.Fatal(s)
+	}
+	for _, bad := range []string{strings.Replace(source, "packs/grand/manifest.json", "../escape.json", 1), strings.Replace(source, " sha256=\"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\"", "", 1), strings.Replace(source, "root=c4", "asset=unknown root=c4", 1)} {
+		_, ds := ParseEdition([]byte(bad), 2)
+		if !parseHasErrors(ds) {
+			t.Fatal("invalid pack declaration admitted")
+		}
+	}
+}

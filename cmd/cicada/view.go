@@ -26,12 +26,12 @@ var drumLaneOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht
 var pitchNames = []string{"C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"}
 
 type viewCell struct {
-	Index                      int
-	Note                       string
-	Active, Accent, Slide, Tie bool
-	Ratchet, Probability       string
-	Velocity, FillPercent      int
-	Label                      string
+	Index                             int
+	Note                              string
+	Active, Accent, Slide, Tie, Chord bool
+	Ratchet, Probability              string
+	Velocity, FillPercent             int
+	Label                             string
 }
 
 type viewLane struct {
@@ -41,10 +41,10 @@ type viewLane struct {
 }
 
 type viewPitchCell struct {
-	Index      int
-	Number     int
-	On, Accent bool
-	Label      string
+	Index             int
+	Number            int
+	On, Accent, Chord bool
+	Label             string
 }
 
 type viewPitchRow struct {
@@ -62,7 +62,7 @@ type viewPattern struct {
 	ID, Kind               string
 	Steps                  int
 	Swing, Gate, Transpose string
-	Drums                  bool
+	Drums, HasChords       bool
 	Cells                  []viewCell
 	Lanes                  []viewLane
 	PitchRows              []viewPitchRow
@@ -279,7 +279,9 @@ func writeScorePage(w io.Writer, p *project.Project, source, sourceName string, 
 				if index < len(pattern.Data) {
 					step = pattern.Data[index]
 				}
-				card.Cells = append(card.Cells, makeViewCell(index, step, false))
+				cell := makeViewCell(index, step, false)
+				card.HasChords = card.HasChords || cell.Chord
+				card.Cells = append(card.Cells, cell)
 			}
 			card.PitchRows = pitchRows(pattern.Data, card.Steps)
 		}
@@ -327,8 +329,10 @@ func pitchRows(steps []*project.Step, count int) []viewPitchRow {
 	lowest, highest := 127, 0
 	for _, step := range steps {
 		if step != nil && !step.Tie {
-			lowest = min(lowest, int(step.Note))
-			highest = max(highest, int(step.Note))
+			for _, note := range viewStepPitches(step) {
+				lowest = min(lowest, note)
+				highest = max(highest, note)
+			}
 		}
 	}
 	if lowest > highest {
@@ -341,16 +345,29 @@ func pitchRows(steps []*project.Step, count int) []viewPitchRow {
 		for index := 0; index < count; index++ {
 			row.Cells[index].Index = index
 			row.Cells[index].Number = index + 1
-			if index >= len(steps) || steps[index] == nil || steps[index].Tie || int(steps[index].Note) != note {
+			if index >= len(steps) || steps[index] == nil || steps[index].Tie {
 				continue
 			}
-			row.Cells[index].On = true
-			row.Cells[index].Accent = steps[index].Accent
-			row.Cells[index].Label = fmt.Sprintf("Step %d, %s", index+1, row.Name)
+			row.Cells[index].Chord = len(steps[index].Notes) > 0
+			for _, pitch := range viewStepPitches(steps[index]) {
+				if pitch == note {
+					row.Cells[index].On = true
+					row.Cells[index].Accent = steps[index].Accent
+					row.Cells[index].Label = fmt.Sprintf("Step %d, %s", index+1, row.Name)
+					break
+				}
+			}
 		}
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+func viewStepPitches(step *project.Step) []int {
+	if len(step.Notes) > 0 {
+		return step.Notes
+	}
+	return []int{int(step.Note)}
 }
 
 func makeViewCell(index int, step *project.Step, drum bool) viewCell {
@@ -371,6 +388,14 @@ func makeViewCell(index int, step *project.Step, drum bool) viewCell {
 	} else if step.Tie {
 		cell.Note = "TIE"
 		cell.Label = fmt.Sprintf("Step %d, tie", index+1)
+	} else if len(step.Notes) > 0 {
+		cell.Chord = true
+		names := make([]string, len(step.Notes))
+		for i, note := range step.Notes {
+			names[i] = midiNote(uint8(note))
+		}
+		cell.Note = strings.Join(names, " ")
+		cell.Label = fmt.Sprintf("Step %d, chord %s, velocity %d, probability %d percent", index+1, strings.Join(names, ", "), step.Velocity, step.Probability)
 	} else {
 		cell.Note = midiNote(step.Note)
 		cell.Label = fmt.Sprintf("Step %d, note %s, velocity %d, probability %d percent", index+1, cell.Note, step.Velocity, step.Probability)
