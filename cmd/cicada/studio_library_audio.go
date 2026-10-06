@@ -95,11 +95,11 @@ func (t *studioTransport) clearPreviewLocked() {
 	}
 	if t.audio != nil {
 		t.audio.Pause()
-		if t.stream != nil {
-			t.audio.SetSource(t.stream)
-		} else {
+		if t.audio.StopClosesDevice() || t.stream == nil {
 			_ = t.audio.Close()
 			t.audio = nil
+		} else {
+			t.audio.SetSource(t.stream)
 		}
 	}
 	t.preview.Close()

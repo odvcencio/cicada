@@ -211,6 +211,17 @@ func (s *Sources) resolveLibrary(name string, overrides map[string][]byte) (*Lib
 			return nil, err
 		}
 		candidates = append(candidates, location{kind: base.kind, root: filepath.Join(base.dir, filepath.FromSlash(name)), files: child.FS(), close: child.Close})
+		if base.kind == "project" && !strings.HasPrefix(name, "std/") {
+			pins, err := s.readSum()
+			if err != nil {
+				child.Close()
+				return nil, err
+			}
+			if pins[name].Kind == "project" {
+				defer child.Close()
+				return readLibrary(name, "project", filepath.Join(base.dir, filepath.FromSlash(name)), child.FS(), overrides)
+			}
+		}
 	}
 	defer func() {
 		for _, c := range candidates {

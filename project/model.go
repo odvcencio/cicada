@@ -260,6 +260,11 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	diagnostics = notation.Validate(score)
 	score, _ = notation.ResolvePresets(score)
+	// Resolve preset templates before selecting runtime instances. Imports
+	// expose definitions; only routed library effects consume mixer instances.
+	copy := *score
+	copy.Effects = routedEffects(score)
+	score = &copy
 	_, compiledDiagnostics := Check(score)
 	diagnostics = append(diagnostics, compiledDiagnostics...)
 	for _, d := range diagnostics {

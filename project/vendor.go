@@ -15,7 +15,7 @@ import (
 // VendorLibraries installs every imported non-standard library in target/lib.
 // Existing libraries must have identical hashes. Source pins are verified;
 // only resolution kinds change. Copies are staged and verified before rename,
-// and newly installed directories are removed if publication fails. Target pins
+// and newly installed directories are retained for recovery if publication fails. Target pins
 // are written last, preserving unrelated pins in an existing target project.
 func (s *Sources) VendorLibraries(target string) ([]string, error) {
 	return s.vendorLibraries(target, nil)
@@ -24,9 +24,6 @@ func (s *Sources) VendorLibraries(target string) ([]string, error) {
 func (s *Sources) vendorLibraries(target string, rename func(string, string) error) (changes []string, err error) {
 	if len(s.Libraries) == 0 {
 		return nil, nil
-	}
-	if ds := s.verifyLibraries(); len(ds) != 0 {
-		return nil, &SourceError{Diagnostic: ds[0]}
 	}
 	dst, err := os.OpenRoot(target)
 	if err != nil {
@@ -42,12 +39,14 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 		return nil, err
 	}
 	sameProject := os.SameFile(sourceInfo, targetInfo)
-	lock, err := dst.OpenFile(".cicada-vendor.lock", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	unlock, err := lockLibrarySum(dst)
 	if err != nil {
-		return nil, fmt.Errorf("cannot lock library vendoring: %w", err)
+		return nil, err
 	}
-	lock.Close()
-	defer dst.Remove(".cicada-vendor.lock")
+	defer unlock()
+	if ds := s.verifyLibraries(); len(ds) != 0 {
+		return nil, &SourceError{Diagnostic: ds[0]}
+	}
 	if rename == nil {
 		rename = dst.Rename
 	}
@@ -77,8 +76,19 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 	staged := map[string]string{}
 	defer func() {
 		if err != nil {
+			// Moving whole directories preserves additions and writes through open
+			// file handles. Never inspect then delete a concurrently editable copy.
+			recovery := ".cicada-recovery-" + hex.EncodeToString(id[:])
 			for i := len(installed) - 1; i >= 0; i-- {
-				err = errors.Join(err, dst.RemoveAll(filepath.Join("lib", filepath.FromSlash(installed[i]))))
+				from := filepath.Join("lib", filepath.FromSlash(installed[i]))
+				to := filepath.Join(recovery, filepath.FromSlash(installed[i]))
+				if e := dst.MkdirAll(filepath.Dir(to), 0700); e != nil {
+					err = errors.Join(err, fmt.Errorf("library retained at %s: %w", from, e))
+				} else if e := dst.Rename(from, to); e != nil {
+					err = errors.Join(err, fmt.Errorf("library retained at %s: %w", from, e))
+				} else {
+					err = errors.Join(err, fmt.Errorf("library recovery copy retained at %s", to))
+				}
 			}
 			changes = nil
 		}

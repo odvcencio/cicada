@@ -226,6 +226,9 @@ func studioLibraryPreviewProject(scorePath string, item studioLibraryItem) (*pro
 			pattern = "pattern phrase drums { bd: X...x...X...x... sd: ....x.......x... ch: x.x.x.x.x.x.x.x. }\n"
 		}
 	}
+	if kind == "lane" {
+		pattern = fmt.Sprintf("pattern phrase drums { %s: X...x...X...x... }\n", libraryEffectKind(sources, item))
+	}
 	if kind == "effect" {
 		binding = ""
 		if item.Kind == "preset" {
@@ -348,6 +351,17 @@ func (s *studio) libraryInsert(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	sources, err := project.ReadSources(s.path, nil)
+	if err != nil {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		return
+	}
+	unlock, err := project.LockLibraryPins(sources.Root)
+	if err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
+	defer unlock()
 	s.applyWithResult(w, edit, func(current []byte) (studioMutation, error) {
 		if _, err := compileStudioSource(s.path, current); err != nil {
 			return studioMutation{}, err
@@ -508,11 +522,19 @@ func studioSavedPresetSource(scorePath string, source []byte, track, name string
 		}
 		target := targetKind
 		if origin := score.Origins[targetKind]; origin.Library != "" {
-			// A preset can target a transitive dependency. Give the new local
-			// declaration a direct import without changing any pinned bytes.
-			source = studioLibraryImport(source, origin.Library)
 			namespace := strings.ReplaceAll(origin.Library, "/", ".")
-			target = path.Base(origin.Library) + strings.TrimPrefix(targetKind, namespace)
+			if strings.HasPrefix(strings.TrimPrefix(targetKind, namespace+"."), "_") {
+				var err error
+				source, target, err = studioSnapshotPrivateInstrument(scorePath, source, score, targetKind, name)
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				// A preset can target a transitive dependency. Give the new local
+				// declaration a direct import without changing any pinned bytes.
+				source = studioLibraryImport(source, origin.Library)
+				target = path.Base(origin.Library) + strings.TrimPrefix(targetKind, namespace)
+			}
 		}
 		var out strings.Builder
 		fmt.Fprintf(&out, "\npreset %s {\n  instrument = %s\n", name, target)
@@ -552,4 +574,44 @@ func studioSavedPresetSource(scorePath string, source []byte, track, name string
 		return append(bytes.Clone(source), []byte(out.String())...), nil
 	}
 	return nil, fmt.Errorf("selected track does not exist")
+}
+
+// An exported preset may encapsulate a private authored instrument. Copy its
+// complete declaration (parameters, bindings and output) under a local name.
+func studioSnapshotPrivateInstrument(scorePath string, source []byte, score *notation.Score, target, presetName string) ([]byte, string, error) {
+	origin := score.Origins[target]
+	sources, err := project.ReadSources(scorePath, map[string][]byte{scorePath: source})
+	if err != nil {
+		return nil, "", err
+	}
+	names := notation.DeclarationNames([]notation.SourceFile{{Source: source}})
+	name := presetName + "-voice"
+	for suffix := 2; names[name] || name == presetName; suffix++ {
+		name = fmt.Sprintf("%s-voice-%d", presetName, suffix)
+	}
+	for _, file := range sources.Files {
+		if file.Library != origin.Library {
+			continue
+		}
+		root, walker, err := notation.ParseTree(file.Source)
+		if err != nil {
+			return nil, "", err
+		}
+		for i := 0; i < root.NamedChildCount(); i++ {
+			node := root.NamedChild(i)
+			if walker.Type(node) != "instrument_decl" {
+				continue
+			}
+			identifier := walker.Field(node, "name")
+			if strings.ReplaceAll(origin.Library, "/", ".")+"."+walker.Text(identifier) != target {
+				continue
+			}
+			declaration := bytes.Clone(file.Source[node.StartByte():node.EndByte()])
+			declaration = replaceSourceSpan(declaration, int(identifier.StartByte()-node.StartByte()), int(identifier.EndByte()-node.StartByte()), name)
+			updated := append(bytes.Clone(source), '\n')
+			updated = append(updated, declaration...)
+			return append(updated, '\n'), name, nil
+		}
+	}
+	return nil, "", fmt.Errorf("private preset target cannot be snapshotted")
 }

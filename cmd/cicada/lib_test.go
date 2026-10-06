@@ -251,6 +251,49 @@ func looseImportFixture(t *testing.T) (string, string) {
 	return main, library
 }
 
+func TestLibVendorUsesNestedLooseScoreRoot(t *testing.T) {
+	main, _ := looseImportFixture(t)
+	root := filepath.Dir(main)
+	user := t.TempDir()
+	if err := os.Rename(filepath.Join(root, "lib", "demo"), filepath.Join(user, "demo")); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("CICADA_LIBRARY", user)
+	t.Chdir(filepath.Dir(root))
+	var output bytes.Buffer
+	if err := libCommand([]string{"update"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := libCommand([]string{"vendor"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(user); err != nil {
+		t.Fatal(err)
+	}
+	if p, err := loadProject(main); p == nil || err != nil {
+		t.Fatalf("vendored nested score failed: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(filepath.Dir(root), "cicada.sum")); !os.IsNotExist(err) {
+		t.Fatalf("pins written outside score root: %v", err)
+	}
+}
+
+func TestLibUpdateHonorsVendorLock(t *testing.T) {
+	main, _ := looseImportFixture(t)
+	root := filepath.Dir(main)
+	t.Chdir(root)
+	if err := os.WriteFile(filepath.Join(root, ".cicada-vendor.lock"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := libCommand([]string{"update"}, &output); err == nil || !strings.Contains(err.Error(), "cannot lock library pins") {
+		t.Fatalf("update bypassed vendor lock: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "cicada.sum")); !os.IsNotExist(err) {
+		t.Fatal("locked update published pins")
+	}
+}
+
 func TestLooseLibUpdateWritesScoreRoot(t *testing.T) {
 	for _, name := range []string{"", "demo/tone"} {
 		t.Run("library="+name, func(t *testing.T) {
