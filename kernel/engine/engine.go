@@ -12,6 +12,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/piano"
 )
 
 type Error string
@@ -25,6 +26,7 @@ const (
 	VoiceAcid
 	VoiceDrums
 	VoiceGraph
+	VoicePiano
 )
 
 type KitLaneKind uint8
@@ -44,23 +46,24 @@ type KitLaneBinding struct {
 }
 
 type TrackConfig struct {
-	Kind        VoiceKind
-	Acid        acid.Params
-	Drums       [drum.LaneCount]drum.Params
-	Kit         *[drum.LaneCount]KitLaneBinding
-	Graph       graph.Program
-	GainDB      float64
-	GainSet     bool
-	Pan         float64
-	Mute        bool
-	Solo        bool
-	InsertDrive *fx.DriveParams
-	SendA       float64
-	SendB       float64
-	SendPre     bool
-	SendAPre    bool
-	SendBPre    bool
-	BusSFX      bool
+	Kind         VoiceKind
+	Acid         acid.Params
+	Drums        [drum.LaneCount]drum.Params
+	Kit          *[drum.LaneCount]KitLaneBinding
+	Graph        graph.Program
+	PianoSustain float32
+	GainDB       float64
+	GainSet      bool
+	Pan          float64
+	Mute         bool
+	Solo         bool
+	InsertDrive  *fx.DriveParams
+	SendA        float64
+	SendB        float64
+	SendPre      bool
+	SendAPre     bool
+	SendBPre     bool
+	BusSFX       bool
 }
 
 // SFXSidechain selects the post-fader SFX bus as the music compressor detector.
@@ -111,6 +114,8 @@ type voiceSlot struct {
 	acid                           *acid.Voice
 	drums                          *drum.Kit
 	graph                          *graph.Voice
+	piano                          *piano.Instrument
+	pianoSustain                   float32
 	mix                            mix.Track
 	targetMix                      mix.Track
 	mixSmooth                      float32
@@ -456,6 +461,13 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceGraph:
 			voices++
 			v.graph, err = graph.NewVoice(spec.Graph, cfg.SampleRate)
+		case VoicePiano:
+			voices += piano.MaxVoices
+			v.piano, err = piano.New(cfg.SampleRate)
+			if err == nil {
+				err = v.piano.SetSustain(spec.PianoSustain)
+				v.pianoSustain = spec.PianoSustain
+			}
 		default:
 			return 0, Error("unknown voice kind")
 		}
@@ -489,6 +501,9 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			}
 			if pattern.Validate() != nil {
 				return Error("invalid preloaded pattern")
+			}
+			if e.voices[track].kind == VoicePiano && !validPianoPattern(pattern) {
+				return Error("piano notes must be MIDI 21 to 108")
 			}
 			e.patterns[track].slots[slot] = pattern
 			if !isDrum {
@@ -757,6 +772,8 @@ func (e *Engine) Render(outL, outR []float32) {
 			case VoiceGraph:
 				sample := v.graph.Next()
 				left, right = sample, sample
+			case VoicePiano:
+				left, right = v.piano.NextStereo()
 			}
 			if v.insert != nil {
 				left, right = v.insert.Process(left, right)
@@ -1139,6 +1156,9 @@ func (e *Engine) apply(c cmd.Command) {
 		note, velocity := uint8(c.Arg0), uint8(c.Arg0>>8)
 		accent, slide := c.Arg0&(1<<16) != 0, c.Arg0&(1<<17) != 0
 		v := &e.voices[track]
+		if v.kind == VoicePiano && e.patterns[track].playingNote != 0 {
+			v.piano.NoteOff(e.patterns[track].playingPitch)
+		}
 		e.patterns[track].playingNote = 0
 		e.patterns[track].heldValid = false
 		switch v.kind {
@@ -1146,6 +1166,11 @@ func (e *Engine) apply(c cmd.Command) {
 			v.acid.NoteOn(note, accent, slide, velocity)
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
+		case VoicePiano:
+			if v.piano.NoteOn(note, velocity) != nil {
+				e.fault(8)
+				return
+			}
 		case VoiceDrums:
 			if c.Index >= uint16(drum.LaneCount) {
 				e.fault(8)
@@ -1158,13 +1183,19 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		e.emit(cmd.Message{Kind: cmd.NoteOn, Track: c.Track, A: uint16(note), Tick: e.transport.Tick()})
 	case cmd.OpNoteOff:
+		if e.voices[c.Track].kind == VoicePiano && c.Index != 0xffff && (c.Index < 21 || c.Index > 108) {
+			e.fault(8)
+			return
+		}
 		if e.voices[c.Track].kind == VoiceDrums && c.Index >= uint16(drum.LaneCount) {
 			e.fault(8)
 			return
 		}
 		e.noteOff(int(c.Track), c.Index)
-		e.patterns[c.Track].playingNote = 0
-		e.patterns[c.Track].heldValid = false
+		if e.voices[c.Track].kind != VoicePiano || c.Index == 0xffff || c.Index == uint16(e.patterns[c.Track].playingPitch) {
+			e.patterns[c.Track].playingNote = 0
+			e.patterns[c.Track].heldValid = false
+		}
 		e.emit(cmd.Message{Kind: cmd.NoteOff, Track: c.Track, Tick: e.transport.Tick()})
 	case cmd.OpSetStep, cmd.OpSetPatternLen, cmd.OpSetPatternMeta, cmd.OpSelectPattern:
 		if c.Op == cmd.OpSelectPattern && c.Arg0 == 0 {
@@ -1261,6 +1292,12 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				}
 				e.updateMuteTargets()
 			}
+		case kernel.ParamPianoSustain:
+			if v.kind != VoicePiano || v.piano.SetSustain(value) != nil {
+				e.fault(18)
+				return
+			}
+			v.pianoSustain = value
 		case kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:
 			if v.kind != VoiceAcid || v.acid == nil {
 				e.fault(18)
@@ -1558,6 +1595,12 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		v.acid.NoteOff()
 	case VoiceGraph:
 		v.graph.NoteOff()
+	case VoicePiano:
+		if lane == 0xffff {
+			v.piano.AllNotesOff()
+		} else {
+			v.piano.NoteOff(uint8(lane))
+		}
 	case VoiceDrums:
 		if lane < uint16(drum.LaneCount) {
 			v.drums.NoteOff(drum.Lane(lane))
@@ -1582,6 +1625,9 @@ func (e *Engine) resetVoice(track int) {
 		v.acid.Reset()
 	case VoiceGraph:
 		v.graph.Reset()
+	case VoicePiano:
+		v.piano.Reset()
+		_ = v.piano.SetSustain(v.pianoSustain)
 	case VoiceDrums:
 		v.drums.Reset()
 	}

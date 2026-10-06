@@ -139,6 +139,9 @@ func delayDivisionMilliseconds(division string, tempoMilli int) float64 {
 }
 
 func descriptorApplies(id, trackKind string) bool {
+	if strings.HasPrefix(id, "piano.") {
+		return trackKind == "piano"
+	}
 	if strings.HasPrefix(id, "acid.") {
 		return trackKind == "acid"
 	}

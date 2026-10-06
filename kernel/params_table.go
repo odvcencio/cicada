@@ -142,7 +142,8 @@ const (
 	ParamMixMasterSendDelay  ParamID = 128
 	ParamMixMasterSendReverb ParamID = 129
 	ParamMixMasterOut        ParamID = 130
-	ParamCount                       = 131
+	ParamPianoSustain        ParamID = 131
+	ParamCount                       = 132
 )
 
 var Params = [...]ParamSpec{
@@ -277,6 +278,7 @@ var Params = [...]ParamSpec{
 	{128, "mix.master.send.delay", "send.delay", "master", "send", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{129, "mix.master.send.reverb", "send.reverb", "master", "send", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, false, false, false},
 	{130, "mix.master.out", "out", "master", "out", "", "enum", "source", 0, 1, 0, 0.01, 0, false, false, false},
+	{131, "piano.sustain", "sustain", "track", "sustain", "ratio", "linear", "source", 0, 1, 0, 0.01, 0, true, true, false},
 }
 
 func Param(id ParamID) (ParamSpec, bool) {

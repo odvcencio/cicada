@@ -157,6 +157,8 @@ func parameterVoiceKind(p *Project, kind string) string {
 		return "acid"
 	case "drums":
 		return "drums"
+	case "piano":
+		return "piano"
 	}
 	for _, kit := range p.Kits {
 		if kit.ID == kind {

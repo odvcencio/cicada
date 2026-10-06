@@ -295,7 +295,7 @@ func resolveAudio(s *Score) ([]Asset, []Clip, []Sampler, []Diagnostic) {
 				add("CICADA-DUPLICATE", "unique instrument name", sampler.Name, sampler.Position)
 			}
 		}
-		if sampler.Name == "acid" || sampler.Name == "drums" || sampler.Name == "audio" {
+		if sampler.Name == "acid" || sampler.Name == "drums" || sampler.Name == "piano" || sampler.Name == "audio" {
 			add("CICADA-DUPLICATE", "unreserved sampler name", sampler.Name, sampler.Position)
 		}
 		samplers = append(samplers, sampler)

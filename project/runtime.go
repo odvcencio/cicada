@@ -144,6 +144,13 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			}
 		}
 		switch track.Kind {
+		case "piano":
+			config.Kind = engine.VoicePiano
+			sustain, err := PianoSustainFromValues(track.Params)
+			if err != nil {
+				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+			}
+			config.PianoSustain = sustain
 		case "acid":
 			config.Kind = engine.VoiceAcid
 			params, err := acidParamsFromValues(track.Params)
