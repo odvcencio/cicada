@@ -212,3 +212,30 @@ Other controls are numbers; integer selectors reject fractional values.
 Detune and drift controls use plain numeric values interpreted as cents, such as
 `op1_detune=12` or `detune=9 drift=2`. Time controls accept seconds or `ms`;
 frequency and output controls retain their documented `hz` and `db` units.
+
+Standard-library keyboard presets are available through `import "std/keys"`.
+Use qualified names such as `track part keys.fm_ep { voices = 4 }`. All 21
+exports preserve the matching native patch defaults and accept the controls
+listed above; preset defaults are applied before track overrides. Examples for
+every export are in `examples/keys/std/`, with the exact embedded-library pin.
+
+Presets resolve to the same patch names as direct tracks. A local instrument,
+kit, or sampler declaration with that name takes precedence. The library
+manifest requires keyboard capability bit 9 (512); native hosts prepare the
+modeled voices and Studio loads the optional keyboard module for their images.
+
+## Owned samples
+
+`cmd/cicada-keys-pack` records these original engines at 192 kHz and their
+highest available quality, then applies a sinc decimator to produce 48 kHz
+PCM packs. It writes pinned manifests, five or more velocity layers, two or
+more round robins, EP/Clav release takes and crossfaded sustain loops for
+organ/pads/strings. No reference audio or factory data is used.
+
+Pack dimensions must fit the sampler’s existing 256 MiB decoded PCM limit.
+Default captures last 4 seconds for mono and 2 seconds for stereo; non-looped
+voices have finite held tails. `--duration`, range and root spacing can be
+chosen together within that limit. Sampling freezes nonlinear response at
+layer centers and global modulation into each take. Pitch shifting, the
+mandatory onset ramp and sustain loops also change PCM, so packs reproduce
+these patch designs rather than arbitrary modeled performance bit-for-bit.
