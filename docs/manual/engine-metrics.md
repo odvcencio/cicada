@@ -24,11 +24,18 @@ offline lines say `status=unsupported`.
 Defaults are 1,024 timed blocks after 128 warmup blocks, repeated across
 three newly constructed sessions. CPU p50/p99 use nearest-rank percentiles
 over all individual block durations across runs. Clock reads, command
-submission, and message draining are included. Buffer construction, GC,
-sorting durations, and printing are outside the native timed loop. GC is
-disabled only during that loop and restored afterward. The harness reports
-the total allocations/bytes observed there and exits unsuccessfully on any
-allocation, fault, or silent final block. Scene runs must contain more than
+submission, and message draining are included. Buffer construction, explicit GC,
+sorting durations, and printing are outside the native timed loop. The
+GC-percent target is -1 during that loop and restored afterward. The inherited
+Go soft memory limit stays active and can still trigger collection. The machine
+line reports `native_gc_percent=-1`, the actual inherited `offline_gc_percent`,
+and `gomemlimit_bytes`; -1 disables the GC-percent trigger, and the maximum
+int64 memory-limit value denotes no configured soft limit. Offline calls keep
+both inherited controls. Compare builds with the same GC and memory-limit
+settings. CPU `gc_cycles` and offline `gc_cycles_run` report collections
+observed across their measurement windows. The harness reports allocations and
+bytes there and exits unsuccessfully on any native allocation, fault, or
+silent final block. Scene runs must contain more than
 one bar of timed frames; `scene_changes` includes warmup and timed playback.
 `ns_sample_track` and `ns_sample_voice` divide the median block duration by
 frames times configured tracks/voices, rather than by active envelope count.

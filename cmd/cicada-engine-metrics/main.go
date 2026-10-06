@@ -10,6 +10,7 @@ import (
 	"os"
 	"runtime"
 	"runtime/debug"
+	"runtime/metrics"
 	"slices"
 	"strings"
 	"time"
@@ -48,7 +49,7 @@ func main() {
 			}
 		}
 	}
-	fmt.Printf("METRIC MACHINE cpu=%q os=%s arch=%s go=%s gomaxprocs=1 stereo=true seed=%d clock_overhead=included native_gc=disabled offline_gc=enabled\n", cpu, runtime.GOOS, runtime.GOARCH, runtime.Version(), seed)
+	writeMachineMetric(os.Stdout, cpu)
 	matched := 0
 	for _, s := range scenarios() {
 		if !o.matches(s) {
@@ -85,9 +86,24 @@ func (o options) matches(s scenario) bool {
 	return true
 }
 
+func writeMachineMetric(output io.Writer, cpu string) {
+	policy := [2]metrics.Sample{{Name: "/gc/gogc:percent"}, {Name: "/gc/gomemlimit:bytes"}}
+	metrics.Read(policy[:])
+	// The runtime reports a disabled GC-percent target as math.MaxUint64.
+	gcPercent := int64(policy[0].Value.Uint64())
+	memoryLimit := policy[1].Value.Uint64()
+	fmt.Fprintf(output, "METRIC MACHINE cpu=%q os=%s arch=%s go=%s gomaxprocs=1 stereo=true seed=%d clock_overhead=included native_gc_percent=-1 offline_gc_percent=%d gomemlimit_bytes=%d\n", cpu, runtime.GOOS, runtime.GOARCH, runtime.Version(), seed, gcPercent, memoryLimit)
+}
+
 // nearestRank returns the observed nearest-rank percentile, without interpolation.
 func nearestRank(sorted []int64, percent int) int64 {
-	return sorted[(len(sorted)*percent+99)/100-1]
+	return sorted[nearestRankIndex(len(sorted), percent)]
+}
+
+// Positive counts and percentiles from 1 to 100 keep both products within int.
+func nearestRankIndex(count, percent int) int {
+	whole, remainder := count/100, count%100
+	return whole*percent + (remainder*percent+99)/100 - 1
 }
 
 func measure(s scenario, o options, output io.Writer) error {
@@ -110,7 +126,7 @@ func measure(s scenario, o options, output io.Writer) error {
 	}
 	elapsed := make([]int64, o.blocks*o.runs)
 	var left, right [256]float32
-	var mallocs, bytes, changes uint64
+	var mallocs, bytes, changes, gcCycles uint64
 	var nonzero bool
 	for run := 0; run < o.runs; run++ {
 		r, err := factory()
@@ -133,6 +149,7 @@ func measure(s scenario, o options, output io.Writer) error {
 		debug.SetGCPercent(previousGC)
 		mallocs += after.Mallocs - before.Mallocs
 		bytes += after.TotalAlloc - before.TotalAlloc
+		gcCycles += uint64(after.NumGC - before.NumGC)
 		for i := 0; i < s.block; i++ {
 			nonzero = nonzero || left[i] != 0 || right[i] != 0
 		}
@@ -155,7 +172,7 @@ func measure(s scenario, o options, output io.Writer) error {
 	slices.Sort(elapsed)
 	p50, p99 := nearestRank(elapsed, 50), nearestRank(elapsed, 99)
 	denom := float64(s.block * s.tracks)
-	fmt.Fprintf(output, "METRIC CPU path=%s %s voices=%d ratio=%.1f blocks=%d runs=%d warmup_blocks=%d observations=%d p50_ns=%d p99_ns=%d ns_sample_track=%.3f ns_sample_voice=%.3f p99_ns_sample_track=%.3f allocs=%d bytes=%d allocs_block=%.6f scene_changes=%d\n", path, s.key(), s.tracks, samplerRatio(s), o.blocks, o.runs, o.warmup, len(elapsed), p50, p99, float64(p50)/denom, float64(p50)/denom, float64(p99)/denom, mallocs, bytes, float64(mallocs)/float64(len(elapsed)), changes)
+	fmt.Fprintf(output, "METRIC CPU path=%s %s voices=%d ratio=%.1f blocks=%d runs=%d warmup_blocks=%d observations=%d p50_ns=%d p99_ns=%d ns_sample_track=%.3f ns_sample_voice=%.3f p99_ns_sample_track=%.3f allocs=%d bytes=%d allocs_block=%.6f gc_cycles=%d scene_changes=%d\n", path, s.key(), s.tracks, samplerRatio(s), o.blocks, o.runs, o.warmup, len(elapsed), p50, p99, float64(p50)/denom, float64(p50)/denom, float64(p99)/denom, mallocs, bytes, float64(mallocs)/float64(len(elapsed)), gcCycles, changes)
 	if mallocs != 0 || bytes != 0 {
 		return fmt.Errorf("timed callback allocated %d objects (%d bytes)", mallocs, bytes)
 	}
@@ -170,7 +187,7 @@ func measure(s scenario, o options, output io.Writer) error {
 	// encoding, GC and latency compensation; the writer itself is io.Discard.
 	offlineTimes := make([]int64, o.runs)
 	var report render.Report
-	mallocs, bytes = 0, 0
+	mallocs, bytes, gcCycles = 0, 0, 0
 	for i := range offlineTimes {
 		runtime.GC()
 		var before, after runtime.MemStats
@@ -185,11 +202,12 @@ func measure(s scenario, o options, output io.Writer) error {
 		}
 		mallocs += after.Mallocs - before.Mallocs
 		bytes += after.TotalAlloc - before.TotalAlloc
+		gcCycles += uint64(after.NumGC - before.NumGC)
 	}
 	slices.Sort(offlineTimes)
 	p50, p99 = nearestRank(offlineTimes, 50), nearestRank(offlineTimes, 99)
 	blocks := (report.Frames + int64(s.block) - 1) / int64(s.block)
-	fmt.Fprintf(output, "METRIC OFFLINE %s scope=full_call bars=%d frames=%d equivalent_blocks=%d runs=%d p50_ns=%d p99_ns=%d ns_block=%.3f ns_sample_track=%.3f allocs_run=%.3f bytes_run=%.3f\n", s.key(), o.bars, report.Frames, blocks, o.runs, p50, p99, float64(p50)/float64(blocks), float64(p50)/float64(report.Frames*int64(s.tracks)), float64(mallocs)/float64(o.runs), float64(bytes)/float64(o.runs))
+	fmt.Fprintf(output, "METRIC OFFLINE %s scope=full_call bars=%d frames=%d equivalent_blocks=%d runs=%d p50_ns=%d p99_ns=%d ns_block=%.3f ns_sample_track=%.3f allocs_run=%.3f bytes_run=%.3f gc_cycles_run=%.3f\n", s.key(), o.bars, report.Frames, blocks, o.runs, p50, p99, float64(p50)/float64(blocks), float64(p50)/float64(report.Frames*int64(s.tracks)), float64(mallocs)/float64(o.runs), float64(bytes)/float64(o.runs), float64(gcCycles)/float64(o.runs))
 	return nil
 }
 
