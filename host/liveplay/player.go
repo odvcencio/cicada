@@ -77,16 +77,20 @@ type SongEntry struct {
 }
 
 type TrackSlots struct {
-	ID    string
-	Kind  string
-	Slots [16]string
+	ID      string
+	Kind    string
+	Pitched bool // custom graph instrument; Kind retains its source name
+	Slots   [16]string
 }
 
 type noteInput struct {
-	Track    string
-	Note     uint8
-	Velocity uint8
-	On       bool
+	Track                        string
+	Note                         uint8
+	Velocity                     uint8
+	On                           bool
+	NoteID                       uint16
+	Expression                   bool
+	PitchCents, Pressure, Timbre float32
 }
 
 type noteBatch struct {
@@ -279,6 +283,9 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 		if snapshot.kinds[index] == "piano" && score.Engine != nil && score.Engine.TrackVoiceKind(index) != engine.VoicePiano {
 			snapshot.kinds[index] = "instrument"
 		}
+		if score.Tracks[index].Pitched {
+			snapshot.kinds[index] = "graph"
+		}
 		if score.Engine != nil {
 			snapshot.poly[index] = score.Engine.TrackPolyphonic(index)
 		}
@@ -303,6 +310,15 @@ func (p *Player) TrackIndex(id string) (uint8, bool) {
 // Note queues a live note for a named built-in instrument track. Requests are
 // resolved and applied by Read, so the control path never touches engine state.
 func (p *Player) Note(track string, note, velocity int, on bool) error {
+	return p.NoteWithID(track, note, velocity, on, 0)
+}
+
+// NoteWithID retains the identity assigned by an MPE or MIDI 2.0 input adapter.
+// Zero selects the legacy monophonic note path; 65535 is reserved for all-off.
+func (p *Player) NoteWithID(track string, note, velocity int, on bool, noteID uint16) error {
+	if noteID == 0xffff {
+		return fmt.Errorf("note identity 65535 is reserved")
+	}
 	if track == "" {
 		return fmt.Errorf("track is required")
 	}
@@ -332,27 +348,53 @@ func (p *Player) Note(track string, note, velocity int, on bool) error {
 			if note < 21 || note > 108 {
 				return fmt.Errorf("piano note must be in MIDI range 21–108")
 			}
-		} else if kind != "acid" {
+		} else if kind != "acid" && kind != "graph" {
 			return fmt.Errorf("track %q does not accept live notes", track)
 		}
-		input := noteInput{Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on}
-		for {
-			old := p.notes.Load()
-			next := &noteBatch{}
-			if old != nil {
-				*next = *old
-			}
-			if next.count == uint16(len(next.inputs)) {
-				return fmt.Errorf("live note queue is full")
-			}
-			next.inputs[next.count] = input
-			next.count++
-			if p.notes.CompareAndSwap(old, next) {
-				return nil
-			}
-		}
+		return p.enqueueNote(noteInput{Track: track, Note: uint8(note), Velocity: uint8(velocity), On: on, NoteID: noteID})
 	}
 	return fmt.Errorf("track %q is not in the playing score", track)
+}
+
+// NoteExpression queues a complete expression snapshot for one note. Values
+// remain float32 throughout the host and command path, without MIDI 1.0's
+// seven-bit controller reduction. The audio reader owns voice mutation.
+func (p *Player) NoteExpression(track string, noteID uint16, pitchCents, pressure, timbre float32) error {
+	if noteID == 0 || noteID == 0xffff {
+		return fmt.Errorf("expression needs a note identity from 1 to 65534")
+	}
+	if math.IsNaN(float64(pitchCents)) || math.IsInf(float64(pitchCents), 0) || pitchCents < -9600 || pitchCents > 9600 ||
+		math.IsNaN(float64(pressure)) || math.IsInf(float64(pressure), 0) || pressure < 0 || pressure > 1 ||
+		math.IsNaN(float64(timbre)) || math.IsInf(float64(timbre), 0) || timbre < 0 || timbre > 1 {
+		return fmt.Errorf("expression needs finite pitch cents in -9600 to 9600 and pressure/timbre in 0 to 1")
+	}
+	snapshot := p.trackNames.Load()
+	index, kind, found := findTrack(snapshot, track)
+	if !found || kind != "acid" && kind != "graph" {
+		return fmt.Errorf("track %q is not a pitched track in the playing score", track)
+	}
+	if snapshot.poly[index] {
+		return fmt.Errorf("%s", cmd.PolyLiveUnsupported)
+	}
+	return p.enqueueNote(noteInput{Track: track, NoteID: noteID, Expression: true, PitchCents: pitchCents, Pressure: pressure, Timbre: timbre})
+}
+
+func (p *Player) enqueueNote(input noteInput) error {
+	for {
+		old := p.notes.Load()
+		next := &noteBatch{}
+		if old != nil {
+			*next = *old
+		}
+		if next.count == uint16(len(next.inputs)) {
+			return fmt.Errorf("live note queue is full")
+		}
+		next.inputs[next.count] = input
+		next.count++
+		if p.notes.CompareAndSwap(old, next) {
+			return nil
+		}
+	}
 }
 
 // GMDrumLane returns Cicada's lane index for the supported General MIDI
@@ -1001,8 +1043,16 @@ func (p *Player) queueLiveNotes() {
 			p.emit(Event{Track: input.Track, Name: cmd.PolyLiveUnsupported, Kind: "note-error"})
 			continue
 		}
-		command := cmd.Command{Track: track}
-		if kind == "acid" || kind == "piano" {
+		command := cmd.Command{Track: track, Index: input.NoteID}
+		if input.Expression {
+			if kind != "acid" && kind != "graph" {
+				continue
+			}
+			command.Op = cmd.OpNoteExpression
+			command.Arg0 = math.Float32bits(input.PitchCents)
+			command.Arg1 = math.Float32bits(input.Pressure)
+			command.Pad = math.Float32bits(input.Timbre)
+		} else if kind == "acid" || kind == "graph" || kind == "piano" {
 			if kind == "piano" && (input.Note < 21 || input.Note > 108) {
 				p.emit(Event{Track: input.Track, Name: "piano note must be in MIDI range 21–108", Kind: "note-error"})
 				continue
@@ -1011,9 +1061,11 @@ func (p *Player) queueLiveNotes() {
 				command.Op = cmd.OpNoteOn
 				command.Arg0 = uint32(input.Note) | uint32(input.Velocity)<<8
 			} else {
-				command.Op, command.Index = cmd.OpNoteOff, 0xffff
+				command.Op = cmd.OpNoteOff
 				if kind == "piano" {
 					command.Index = uint16(input.Note)
+				} else if input.NoteID == 0 {
+					command.Index = 0xffff
 				}
 			}
 		} else if kind == "drums" {
@@ -1035,6 +1087,9 @@ func (p *Player) queueLiveNotes() {
 		}
 		if !p.current.Engine.Push(command) {
 			p.emit(Event{Track: input.Track, Name: "live note command queue is full", Kind: "note-error"})
+			continue
+		}
+		if input.Expression {
 			continue
 		}
 		eventKind := "note-on"

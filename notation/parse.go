@@ -511,6 +511,15 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 		case "phrase_use":
 			use := parsePhraseUse(w, c)
 			p.Parts = append(p.Parts, PatternPart{Use: &use})
+		case "expression_row":
+			row := ExpressionRow{Name: strings.TrimSuffix(w.Text(w.Field(c, "name")), ":"), Position: w.position(c)}
+			for j := 0; j < c.NamedChildCount(); j++ {
+				value := c.NamedChild(j)
+				if w.Type(value) == "expression_cell" {
+					row.Values = append(row.Values, StepToken{Text: w.Text(value), Position: w.position(value)})
+				}
+			}
+			p.Expression = append(p.Expression, row)
 		case "drum_lane":
 			lane := Lane{Name: strings.TrimSuffix(w.Text(w.Field(c, "name")), ":"), Position: w.position(c)}
 			for j := 0; j < c.NamedChildCount(); j++ {

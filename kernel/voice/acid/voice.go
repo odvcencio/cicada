@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/dsp/halfband"
+	"m31labs.dev/cicada/kernel/expression"
 )
 
 type FilterModel uint8
@@ -73,6 +74,7 @@ type Voice struct {
 	pitchLog, targetLog                         float64
 	lastPitchLog, pitchDelta, detuneRatio       float64
 	pitchCached                                 bool
+	expression                                  expression.State
 	gate, attacking, accented                   bool
 	meg, vca, cap, sweepStrength                float64
 	accentGain, accentTarget                    float64
@@ -200,6 +202,7 @@ func (v *Voice) buildDriveTable() {
 }
 
 func (v *Voice) NoteOn(note uint8, accent, slide bool, velocity uint8) {
+	v.expression.Reset()
 	if note > 127 {
 		note = 127
 	}
@@ -225,11 +228,19 @@ func (v *Voice) NoteOn(note uint8, accent, slide bool, velocity uint8) {
 	_ = velocity // acid ignores MIDI velocity; accent controls loudness.
 }
 
+// SetExpression applies per-step pitch expression without changing the gate.
+func (v *Voice) SetExpression(p expression.Params) { v.expression.SetParams(p, float32(v.sampleRate)) }
+
+func (v *Voice) NoteExpression(pitchCents, pressure, timbre float32) {
+	v.expression.SetControls(pitchCents, pressure, timbre)
+}
+
 func (v *Voice) NoteOff() { v.gate = false }
 
 func (v *Voice) Active() bool { return v.gate || v.vca > 1e-5 }
 
 func (v *Voice) Reset() {
+	v.expression.Reset()
 	v.phaseA, v.phaseB, v.phaseSub = 0, 0, 0
 	v.pitchLog, v.targetLog = 0, 0
 	v.lastPitchLog, v.pitchDelta, v.pitchCached = 0, 0, false
@@ -296,16 +307,20 @@ func (v *Voice) Next() float32 {
 	if v.vca < envelopeFloor {
 		v.vca = 0
 	}
-	if !v.pitchCached || v.pitchLog != v.lastPitchLog {
-		v.pitchDelta = min(fastmath.Exp2(v.pitchLog)/v.sampleRate, .49)
-		v.oscA = v.oscillator.selectTables(v.pitchLog)
+	pitchLog := v.pitchLog
+	if cents := v.expression.NextCents(); cents != 0 {
+		pitchLog += cents / 1200
+	}
+	if !v.pitchCached || pitchLog != v.lastPitchLog {
+		v.pitchDelta = min(fastmath.Exp2(pitchLog)/v.sampleRate, .49)
+		v.oscA = v.oscillator.selectTables(pitchLog)
 		if v.params.Detune > 0 {
-			v.oscB = v.oscillator.selectTables(v.pitchLog + v.params.Detune/1200)
+			v.oscB = v.oscillator.selectTables(pitchLog + v.params.Detune/1200)
 		}
 		if v.params.Sub > 0 {
-			v.oscSub = v.oscillator.selectTables(v.pitchLog - 1)
+			v.oscSub = v.oscillator.selectTables(pitchLog - 1)
 		}
-		v.lastPitchLog = v.pitchLog
+		v.lastPitchLog = pitchLog
 		v.pitchCached = true
 	}
 	delta := v.pitchDelta

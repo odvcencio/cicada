@@ -469,6 +469,9 @@ func ValidateProject(p *Project) error {
 		if pattern.Data == nil || pattern.Lanes == nil {
 			return fmt.Errorf("pattern %s needs explicit data and lanes", pattern.ID)
 		}
+		if err := validatePatternExpression(pattern); err != nil {
+			return fmt.Errorf("pattern %s: %w", pattern.ID, err)
+		}
 		if pattern.Kind == "drums" {
 			if pattern.Transpose != 0 {
 				return fmt.Errorf("drum pattern %s cannot transpose lanes", pattern.ID)
@@ -522,6 +525,12 @@ func ValidateProject(p *Project) error {
 			if !ok || seen[*slot] || !compatible(track.Kind, pattern.Kind, kits) {
 				return fmt.Errorf("track %s has invalid or duplicate slot %s", track.ID, *slot)
 			}
+			if samplers[track.Kind].Name != "" && len(pattern.Expression) > 0 {
+				return fmt.Errorf("CICADA-UNSUPPORTED: sampler track %s cannot play note expression in pattern %s", track.ID, pattern.ID)
+			}
+			if isModeledPiano(p, track.Kind) && len(pattern.Expression) > 0 {
+				return fmt.Errorf("CICADA-UNSUPPORTED: modeled piano track %s cannot play note expression in pattern %s", track.ID, pattern.ID)
+			}
 			for _, step := range pattern.Data {
 				if step != nil && len(step.Notes) > 0 {
 					inst := instruments[track.Kind]
@@ -548,19 +557,8 @@ func ValidateProject(p *Project) error {
 				}
 			}
 			if program := trackGraphs[track.ID]; program.DelaySamples() > 0 {
-				for _, step := range pattern.Data {
-					if step == nil || step.Tie {
-						continue
-					}
-					notes := step.Notes
-					if len(notes) == 0 {
-						notes = []int{int(step.Note)}
-					}
-					for _, note := range notes {
-						if err := validateGraphDelayNote(program, 48_000, note+int(pattern.Transpose)); err != nil {
-							return fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
-						}
-					}
+				if err := validateProjectGraphDelayPattern(program, 48_000, pattern); err != nil {
+					return fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
 				}
 			}
 		}
