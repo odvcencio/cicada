@@ -257,7 +257,7 @@ automate bass.cutoff {
 
 ## Continuous pitch settings and rows (P7)
 
-**Status:** Accepted; the `glide`, `vibrato`, `bend:`, and `vibrato:` source settings and rows are not available in the current build. Custom graph voices already glide for 60 ms on `~` notes, as implemented in #65.
+**Status:** Per-step `bend:`, `vibrato:`, `pressure:`, and `timbre:` rows are implemented. Instrument and track `glide`, `vibrato`, `vibrato_rate`, and `vibrato_delay` settings remain accepted for later support. Custom graph voices glide for 60 ms on `~` notes.
 
 **Syntax (EBNF):**
 
@@ -268,43 +268,43 @@ pitch_setting ::= "glide" , "=" , duration
                 | "vibrato_delay" , "=" , duration ;
 bend_row ::= "bend" , ":" , { signed_cents | "." } ;
 vibrato_row ::= "vibrato" , ":" , { number , "ct" | "." } ;
-signed_cents ::= ( "+" | "-" ) , number , "ct" ;
+pressure_row ::= "pressure" , ":" , { number | "." } ;
+timbre_row ::= "timbre" , ":" , { number | "." } ;
+signed_cents ::= [ "+" | "-" ] , number , "ct" ;
 ```
 
-**Meaning:** Instrument settings define continuous pitch behavior and tracks may override them. `bend:` gives a signed pitch offset per step. `vibrato:` gives vibrato depth per step. A dot holds the preceding row value; `0ct` resets it. A tie keeps its pitch state. A `~` note connects to the following note.
+**Meaning:** Rows follow the melodic cells and have one value per step. `bend:` gives a signed pitch offset; `vibrato:` gives vibrato depth; `pressure:` and `timbre:` provide normalized graph inputs. A dot holds the preceding row value; `0ct` resets pitch or depth. A tie keeps its note and applies that step's expression, so held dots preserve pitch while explicit values can move it. A `~` note connects to the following note. The accepted instrument settings will define continuous pitch behavior with track overrides when implemented.
 
-**Types and units:** Glide and vibrato delay use ms or seconds. Vibrato depth and bend use cents (`ct`); vibrato rate uses Hz. Bend values are signed cents per step, such as `+50ct` or `-1200ct`.
+**Types and units:** Bend is -9600 to 9600 cents (`ct`); vibrato depth is 0 to 9600 cents. Pressure and timbre are numbers from 0 to 1. Bend accepts `+50ct`, `-1200ct`, and `0ct`. The accepted glide and vibrato delay settings use ms or seconds; vibrato rate uses Hz.
 
-**Defaults:** Custom graph voices use a 60 ms glide on notes written with `~`; notes without `~` keep their existing onset behavior. The standard theremin library keeps its 70 ms glide. No vibrato is added unless a depth is set; the accepted design does not assign default vibrato rate or delay values.
+**Defaults:** Pitch, pressure, and vibrato depth start at zero; timbre starts at 0.5. A leading dot holds these defaults. Vibrato rows use 5 Hz with no delay; zero depth disables vibrato. No expression is added to a pattern without rows. Custom graph voices use a 60 ms glide on `~` notes, and the standard theremin library keeps its 70 ms glide.
 
-**Errors:** Negative durations, invalid pitch ranges, wrong units, or a row whose length differs from its pattern must be rejected. A dot before any row value has no value to hold and must be rejected. Diagnostics and the new row semantics have not landed.
+**Errors:** Duplicate rows, values outside the stated ranges, wrong units, and row lengths that differ from the melodic pattern report errors. Pitch-derived delay and comb times must stay within their ring bounds across bend and vibrato extrema, including tied steps. Drum patterns do not accept expression rows. Assigned sampler tracks reject expression rows because sampled voices do not yet implement note expression.
 
-**Example:** The settings belong to the instrument or its track override; the rows align with pattern steps:
+**Example:** Rows change a held note without retriggering its envelope:
 
-```cicada-accepted
+```cicada
 cicada 2
 instrument glassbass {
-  param glide = 60ms
-  param vibrato = 12ct
-  param vibrato_rate = 5.5Hz
-  param vibrato_delay = 200ms
   voice mono {
     let osc = saw(pitch)
-    out = osc
+    out = osc * env(gate, 300ms) * velocity
   }
 }
 
-track lead glassbass { glide = 60ms }
+track lead glassbass {}
 pattern glide-line {
-  1~ 3 . 5
+  1 - - 5
   bend: +50ct . -1200ct 0ct
   vibrato: 4ct . 12ct 0ct
+  pressure: 0 . 0.7 0
+  timbre: . 0.8 . 0.5
 }
 scene main { lead = glide-line }
 song { main }
 ```
 
-**Edition history:** Accepted P7 settings and rows add typed control to edition 1. The 60 ms custom-voice default is implemented in the engine; source overrides and per-step rows remain unavailable.
+**Edition history:** Expression rows are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and vibrato depth. Source overrides for the accepted continuous pitch settings remain unavailable.
 
 ## Flexible grid and pattern chains
 

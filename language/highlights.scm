@@ -71,9 +71,9 @@
 ; Built-in voice inputs. Parameter and let references are refined by
 ; locals.scm, which gives each reference the capture of its definition.
 ((expression (identifier) @variable.builtin)
-  (#any-of? @variable.builtin "pitch" "gate" "velocity" "sample_rate"))
+  (#any-of? @variable.builtin "pitch" "gate" "velocity" "sample_rate" "pitch_bend" "pressure" "timbre"))
 ((expression (identifier) @variable)
-  (#not-any-of? @variable "pitch" "gate" "velocity" "sample_rate"))
+  (#not-any-of? @variable "pitch" "gate" "velocity" "sample_rate" "pitch_bend" "pressure" "timbre"))
 
 ; Graph primitives.
 ((call_expr function: (identifier) @function.builtin)
@@ -153,6 +153,12 @@
 (note_pattern name: (identifier) @function)
 (drum_pattern name: (identifier) @function)
 (pattern_attr name: (identifier) @attribute)
+
+(expression_row_label) @attribute.builtin
+(expression_row name: (identifier) @attribute)
+(expression_cell "." @punctuation.special)
+((expression_number) @number.cents (#match? @number.cents "ct$"))
+((expression_number) @number.float (#not-match? @number.float "ct$"))
 
 (phrase_use name: (identifier) @function.macro)
 (phrase_use "*" @operator.repeat)

@@ -44,6 +44,10 @@ test-golden:
 test-midi-virtual: build
 	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-midi-virtual.cjs
 
+.PHONY: test-mpe-virtual
+test-mpe-virtual: build
+	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-mpe-virtual.cjs
+
 # This builds only the sequencer probe, not the eventual audio kernel.
 probe-wasm:
 	mkdir -p build
