@@ -212,7 +212,7 @@ func (i *Instrument) NoteOn(note, velocity uint8) error {
 	vel := float32(velocity) / 127
 	i.voices[slot] = voice{note: note, held: true, stage: 1, age: i.clock,
 		delta: i.deltas[note-21], deltaB: float32(i.deltas[note-21] * i.detuneRatios[slot]),
-		phaseB: .317, driftPhase: float32(slot) * .117, velocity: float32(1 - i.velocity + i.velocity*vel),
+		phaseB: .317, driftPhase: float32(slot) * .117, velocity: float32(float32(1-i.velocity) + float32(i.velocity*vel)),
 		cutoffIndex: i.cutoffIndexes[note-21], tail: tail}
 	return nil
 }
@@ -341,7 +341,7 @@ func (i *Instrument) filter(v *voice, x float32, c coefficients) float32 {
 		v3 := float32(x - v.ic2)
 		v1 := float32(float32(c.a1*v.ic1) + float32(c.a2*v3))
 		v2 := float32(float32(v.ic2+float32(c.a2*v.ic1)) + float32(c.a3*v3))
-		v.ic1, v.ic2 = float32(2*v1-v.ic1), float32(2*v2-v.ic2)
+		v.ic1, v.ic2 = float32(float32(2*v1)-v.ic1), float32(float32(2*v2)-v.ic2)
 		return v2
 	}
 	g := c.ladder
@@ -383,7 +383,7 @@ func (i *Instrument) oscillator(v *voice, delta, width float32) float32 {
 			v.phaseB = wrap(float32(v.phaseB + deltaB))
 		}
 	} else {
-		x = float32(.65*x + float32(.35*saw(v.phaseB, deltaB)))
+		x = float32(float32(.65*x) + float32(.35*saw(v.phaseB, deltaB)))
 		v.phaseB = wrap(float32(v.phaseB + deltaB))
 	}
 	y := float32(i.waveSaw * x)
@@ -469,14 +469,14 @@ func (i *Instrument) NextStereo() (float32, float32) {
 			taps[c] = float32(i.delay[n&8191] + float32(f*float32(i.delay[(n+1)&8191]-i.delay[n&8191])))
 		}
 		i.write = (i.write + 1) & 8191
-		wetL, wetR := float32(.67*taps[0]+.33*taps[1]), float32(.67*taps[2]+.33*taps[1])
+		wetL, wetR := float32(float32(.67*taps[0])+float32(.33*taps[1])), float32(float32(.67*taps[2])+float32(.33*taps[1]))
 		// A shared low-pass state plus the BBD input filter limits the clock-like
 		// brightness of interpolation without suppressing the stereo movement.
 		avg := float32(.5 * float32(wetL+wetR))
 		i.chorusLP[1] = float32(i.chorusLP[1] + float32(i.chorusOutput*float32(avg-i.chorusLP[1])))
 		correction := float32(i.chorusLP[1] - avg)
-		left = float32(float32(left*float32(1-.45*i.chorus)) + float32(i.chorus*float32(wetL+correction)))
-		right = float32(float32(right*float32(1-.45*i.chorus)) + float32(i.chorus*float32(wetR+correction)))
+		left = float32(float32(left*float32(1-float32(.45*i.chorus))) + float32(i.chorus*float32(wetL+correction)))
+		right = float32(float32(right*float32(1-float32(.45*i.chorus))) + float32(i.chorus*float32(wetR+correction)))
 	}
 	return float32(left * i.gain), float32(right * i.gain)
 }
