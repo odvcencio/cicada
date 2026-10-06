@@ -38,6 +38,23 @@ func SaveAs(score, target string) error {
 	if score == target {
 		return nil
 	}
+	for dir := filepath.Dir(target); ; dir = filepath.Dir(dir) {
+		data, readErr := os.ReadFile(filepath.Join(dir, "cicada.mod"))
+		if readErr == nil {
+			manifest, parseErr := edition.ParseProjectManifest(data)
+			if parseErr != nil {
+				return parseErr
+			}
+			if manifest.Library != "" {
+				return errors.New("Save As destination is inside a library; choose a new score path")
+			}
+		} else if !errors.Is(readErr, os.ErrNotExist) {
+			return readErr
+		}
+		if filepath.Dir(dir) == dir {
+			break
+		}
+	}
 	srcDir, err := takejournal.ProjectRoot(score)
 	if err != nil {
 		return err
@@ -59,12 +76,18 @@ func SaveAs(score, target string) error {
 		return err
 	}
 	if len(sources.Libraries) > 0 {
-		return errors.New("CICADA-UNSUPPORTED: Save As with imports requires library vendoring")
+		// Reject changed or unpinned imports before copying project dependencies.
+		_, ds := sources.Parse()
+		for _, d := range ds {
+			if d.Severity == "error" {
+				return &project.SourceError{Diagnostic: d}
+			}
+		}
 	}
 	additional := map[string][]byte{}
 	if sources.Manifest.ExplicitSources() {
 		for _, file := range sources.Files {
-			if file.Path == score {
+			if file.Path == score || file.Library != "" {
 				continue
 			}
 			name, err := filepath.Rel(srcDir, file.Path)
@@ -125,6 +148,26 @@ func SaveAs(score, target string) error {
 			return err
 		}
 	}
+	collectRetained := func(data []byte) error {
+		if err := collect(data); err != nil {
+			return err
+		}
+		if len(notation.ReadImports(notation.SourceFile{Path: score, Source: data})) == 0 {
+			return nil
+		}
+		retained, err := project.ReadSources(score, map[string][]byte{score: data})
+		if err != nil {
+			return err
+		}
+		for name, lib := range retained.Libraries {
+			if old := sources.Libraries[name]; old != nil && old.LibraryPin != lib.LibraryPin {
+				return fmt.Errorf("retained library identity differs: %s", name)
+			}
+			sources.Libraries[name] = lib
+		}
+		sources.Imports = append(sources.Imports, retained.Imports...)
+		return nil
+	}
 	ss, err := takejournal.Snapshots(src, score)
 	if err != nil {
 		return err
@@ -140,7 +183,7 @@ func SaveAs(score, target string) error {
 			}
 		}
 		if len(s.Take.Candidate) > 0 {
-			if err = collect(s.Take.Candidate); err != nil {
+			if err = collectRetained(s.Take.Candidate); err != nil {
 				return err
 			}
 		}
@@ -168,14 +211,21 @@ func SaveAs(score, target string) error {
 		}
 		histories[filepath.Join(filepath.Dir(dstName), newPrefix+strings.TrimPrefix(name, oldPrefix))] = data
 		if !strings.HasSuffix(name, ".revision") {
-			if err = collect(data); err != nil {
+			if err = collectRetained(data); err != nil {
 				return err
 			}
 		}
 	}
 	// A destination may be absent now but scheduled for dependency installation.
 	// Check the full copy set before writing any of it, including retained passes.
-	dependencies := map[string]bool{"cicada.mod": true}
+	dependencies := map[string]bool{"cicada.mod": true, "cicada.sum": true}
+	for name, lib := range sources.Libraries {
+		directory := filepath.Join("lib", filepath.FromSlash(name))
+		if lib.Kind != "std" && (filepath.Clean(dstName) == directory || strings.HasPrefix(filepath.Clean(dstName), directory+string(filepath.Separator))) {
+			return fmt.Errorf("Save As destination is inside a vendored library; choose a new score path")
+		}
+		dependencies[filepath.Join(directory, "cicada.mod")] = true
+	}
 	for path := range additional {
 		dependencies[filepath.Clean(path)] = true
 	}
@@ -325,6 +375,9 @@ func SaveAs(score, target string) error {
 	}
 	if !bytes.Equal(source, latest) {
 		return errors.New("score changed during Save As; retry")
+	}
+	if _, err := sources.VendorLibraries(dstDir); err != nil {
+		return err
 	}
 	return install(dst, dstName, bytes.NewReader(source), -1, true)
 }

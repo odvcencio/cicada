@@ -46,6 +46,9 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		fmt.Fprintf(output, "%s: library %s (source %s:%d:%d)\n", path, origin.Library, filepath.Base(origin.Position.File), origin.Position.Line, origin.Position.Column)
 		return nil
 	}
+	if handled, err := explainAuthoredParameter(score, compiled, lookup, loc, output); handled {
+		return err
+	}
 	resolved, err := project.ResolveParameterPath(compiled, lookup)
 	if err != nil {
 		return err
@@ -59,6 +62,10 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		return err
 	}
 	fmt.Fprintf(output, "%s at bar %d, beat %d, step %d\n", path, loc.bar, loc.beat, loc.step)
+	if strings.HasPrefix(resolved.Descriptor.ID, "guitar.") {
+		d := resolved.Descriptor
+		fmt.Fprintf(output, "type: %s; unit: %s; range: %g..%g; smoothing: %g ms\n", d.Type, d.Unit, d.Min, d.Max, d.SmoothingMS)
+	}
 	if origin, ok := score.Origins[resolved.Owner]; ok {
 		fmt.Fprintf(output, "library: %s\n", origin.Library)
 	}
@@ -70,8 +77,9 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		}
 	}
 	fmt.Fprintf(output, "registry default: %s\n", explainDefault(resolved.Descriptor))
+	explainPresetLayers(score, resolved.Owner, resolved.Descriptor.Source, output)
 	if sourceHasBlockSetting(score, resolved) {
-		fmt.Fprintf(output, "%s block (%s): %s\n", resolved.OwnerKind, resolved.Owner, explainValue(value.Value, resolved.Descriptor))
+		fmt.Fprintf(output, "%s block (%s): %s\n", resolved.OwnerKind, resolved.Owner, explainBlockValue(score, resolved, value.Value))
 	}
 	computedText := explainValue(value.Value, resolved.Descriptor)
 	if active.set {
@@ -150,7 +158,7 @@ func sourceHasBlockSetting(score *notation.Score, resolved project.ResolvedParam
 				continue
 			}
 			for _, setting := range track.Params {
-				if setting.Name == resolved.Descriptor.Source {
+				if setting.Name == presetSourceParamName(score, resolved.Owner, resolved.Descriptor.Source) {
 					return true
 				}
 			}
@@ -161,7 +169,7 @@ func sourceHasBlockSetting(score *notation.Score, resolved project.ResolvedParam
 				continue
 			}
 			for _, setting := range effect.Params {
-				if setting.Name == resolved.Descriptor.Source {
+				if setting.Name == presetSourceParamName(score, resolved.Owner, resolved.Descriptor.Source) {
 					return true
 				}
 			}
@@ -212,7 +220,7 @@ func explainValue(value any, descriptor paramdefs.Descriptor) string {
 	}
 	formatted := strconv.FormatFloat(number, 'f', -1, 64)
 	unit := descriptor.Unit
-	if unit == "unit" || unit == "ratio" || unit == "semitone" {
+	if unit == "unit" || unit == "ratio" || unit == "semitone" || unit == "cent" {
 		unit = ""
 	}
 	if unit == "" {

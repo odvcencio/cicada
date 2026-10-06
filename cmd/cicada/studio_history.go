@@ -284,6 +284,24 @@ func studioEditLabel(edit studioEdit) string {
 	if edit.Label != "" {
 		return edit.Label
 	}
+	if edit.Action == "project" {
+		return "Project title, tempo, and key changed"
+	}
+	if edit.Action == "audio-track" {
+		return "Audio track added · " + edit.NewName
+	}
+	if edit.Action == "clip-settings" {
+		return "Audio region edited · " + edit.Pattern
+	}
+	if edit.Action == "clip-bind" {
+		return fmt.Sprintf("Audio clip · %s assigned to %s / %s", edit.Pattern, edit.Scene, edit.Track)
+	}
+	if edit.Action == "automation-set" {
+		return fmt.Sprintf("Automation · %s / %s set", edit.Scene, edit.Path)
+	}
+	if edit.Action == "automation-remove" {
+		return fmt.Sprintf("Automation · %s / %s removed", edit.Scene, edit.Path)
+	}
 	if edit.Action == "undo" || edit.Action == "redo" {
 		return edit.Label
 	}
@@ -301,6 +319,30 @@ func studioEditLabel(edit studioEdit) string {
 	}
 	if edit.Action == "bars" {
 		return fmt.Sprintf("Song block %d set to %d bars", edit.Index+1, edit.Bars)
+	}
+	if edit.Action == "append" {
+		return fmt.Sprintf("Arrangement · %s added for %d bars", edit.Scene, edit.Bars)
+	}
+	if edit.Action == "delete" || edit.Action == "scene" || edit.Action == "duplicate" && edit.Pattern == "" {
+		return fmt.Sprintf("Arrangement · block %d · %s", edit.Index+1, edit.Action)
+	}
+	if edit.Action == "duplicate" {
+		return fmt.Sprintf("Pattern · %s duplicated as %s", edit.Pattern, edit.NewName)
+	}
+	if edit.Action == "settings" {
+		return fmt.Sprintf("Pattern · %s timing and transpose changed", edit.Pattern)
+	}
+	if edit.Action == "bind" {
+		return fmt.Sprintf("Scene · %s / %s assigned %s", edit.Scene, edit.Track, edit.Pattern)
+	}
+	if edit.Action == "step" {
+		return fmt.Sprintf("Pattern · %s / %s step %d edited", edit.Pattern, edit.Lane, edit.Step+1)
+	}
+	if edit.Action == "range" && edit.Range != nil {
+		return fmt.Sprintf("Pattern · %s / %s steps %d–%d · %s", edit.Pattern, edit.Lane, edit.Range.First+1, edit.Range.Last+1, edit.Range.Operation)
+	}
+	if edit.Action == "resize" {
+		return fmt.Sprintf("Pattern · %s resized to %d steps", edit.Pattern, edit.Length)
 	}
 	if edit.Pattern != "" {
 		what := "toggled"

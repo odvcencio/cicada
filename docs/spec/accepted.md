@@ -4,6 +4,16 @@ These owner-accepted designs extend Cicada's source language. Each section says 
 
 Runnable examples in this file use source edition 2. Examples marked `cicada-accepted` are designs for later support.
 
+## Authored graph phase modulation
+
+**Status:** Implemented. The bell and feedback-free PM bass are experimental pending owner listening acceptance; scores select them through authored instruments.
+
+**Syntax and meaning:** `pm(hz, audio, unit)` returns a sine carrier with an audio phase offset scaled by index in radians. An index envelope changes brightness independently of amplitude. Stored phase stays bounded; the graph remains acyclic and keeps its 128-node and 32-stateful-node limits. PM needs no delay storage. Wrong units and arity report `CICADA-UNIT` and `CICADA-PARAM`.
+
+**Aliasing and compatibility:** PM is not antialiased. The [edition-2 reference](edition-2.md#graph-phase-modulation) records measurements and the example's register/index limit. Opcode 32 requires image-version-15 capability bit 5 without changing node records; older images still load. Additive in editions 1 and 2, with shared language-server hover and `cicada explain graph.pm` descriptions.
+
+**Example:** [fm-bell.cicada](../../examples/fm-bell.cicada) authors a two-operator FM bell with a decaying index and a feedback-free PM bass.
+
 ## Authored graph delay and comb
 
 **Status:** Implemented. Authored pluck and slapback voices are experimental pending owner listening acceptance.
@@ -46,6 +56,21 @@ song { verse*4 chorus*4 }
 ```
 
 **Edition history:** Registry-backed paths and scene parameter settings are implemented. Studio, the language server, and `cicada explain` use the same parameter registry.
+
+## Experimental guitar voice
+
+**Status:** Implemented as an explicitly experimental built-in voice in
+edition 2. It remains a research prototype without human listening acceptance.
+
+Use `track lead guitar { experimental = on }` with an ordinary note pattern.
+Sequenced notes and gates drive a single physical string and its built-in amp;
+slides change pitch without replucking. The shared registry exposes `bend`,
+`vibrato`, `brightness`, `damping`, `pickup` and `drive` with 8 ms smoothing.
+Native playback, the TinyGo AudioWorklet and offline rendering support it
+within the existing core voice and size limits. Guitar images use version 15;
+legacy encoding and versions 8..13 remain supported. See the
+[edition-2 reference](edition-2.md#experimental-guitar-voice) for opt-in,
+units, ranges, model limits and coordination with the version-14 lanes.
 
 ## Named mixer forms
 
@@ -344,7 +369,7 @@ track bass acid { chain = intro triplet chorus }
 
 ## Multi-file projects and manifest metadata
 
-**Status:** Multi-file loading, manifest metadata, library imports, qualified names, private declarations, `cicada.sum`, and `cicada lib update` are implemented. `require` versions, library vendoring, and bundle provenance remain accepted-only.
+**Status:** Multi-file loading, manifest metadata, library imports, qualified names, private declarations, `cicada.sum`, `cicada lib update`, and value-only presets are implemented. Studio preset saving remains follow-up work. `require` versions, library vendoring, and bundle provenance remain accepted-only.
 
 **Syntax (EBNF):**
 
@@ -411,3 +436,45 @@ song { main*8 }
 ```
 
 **Edition history:** Multi-file projects and manifest metadata work in editions 1 and 2 without changing source grammar, semantic JSON, or the kernel image format. Imports and hash pinning work in editions 1 and 2 without changing the kernel image format. `require` versions remain accepted follow-up work.
+
+
+## Presets
+
+**Status:** Implemented in scores and libraries. Studio “save as preset” and writing presets into a user library remain follow-up work.
+
+**Syntax:**
+
+```cicada
+cicada 2
+
+instrument glassbass {
+  octave = 2
+  param cutoff = 540Hz
+  param bite = 0.58
+  voice mono {
+    out = lowpass(saw(pitch), cutoff) * bite * env(gate, 330ms)
+  }
+}
+
+preset glassbass.bright {
+  instrument = glassbass
+  cutoff = 900Hz
+  bite = 0.7
+}
+track lead glassbass.bright { bite = 0.65 }
+pattern melody { 1 . 3 . }
+scene verse { lead = melody }
+song { verse }
+```
+
+**Meaning:** A preset names an existing target and replaces parameter values without changing its DSP expressions, routing, or asset binding. A track binds a voice preset in its instrument position. Registry default, instrument default, preset, track setting, and scene setting apply in that order. `cicada explain` reports explicit layers and the computed value. Authored parameters have instrument defaults and no separate registry default.
+
+**Targets:** Authored and library-qualified instruments; `acid`; `drums` with lane-prefixed values; a built-in drum lane such as `builtin.bd`; an authored kit's mixer values; `audio` mixer values; declared samplers' root, mode, voice count, and mixer values; and declared or built-in effects. Bind an effect preset with `fx NAME PRESET { ... }`. An unreferenced effect used as its target supplies defaults without creating an extra runtime instance; routed or scene-addressed targets remain active. Built-in effect targets are `builtin.drive`, `builtin.delay`, `builtin.reverb`, and `builtin.comp`. An authored kit lane can bind an authored instrument preset. The experimental guitar is not a score voice in this edition.
+
+**Types and units:** Built-in values use the shared parameter registry's type, unit, and bounds. Authored numeric parameters add host descriptors with their declared or inferred unit and the finite float32 range; the language has no authored parameter bounds syntax. Sampler settings use host descriptors. These descriptors do not extend the kernel parameter ABI. A preset cannot bind another preset or replace an asset, insert chain, or bus. Scene settings retain the engine's existing registry path support; arbitrary authored DSP parameters and sampler configuration are not scene parameters.
+
+**Diagnostics:** `CICADA-PRESET-PARAM` reports unknown or structural parameters; `CICADA-PRESET-TYPE`, `CICADA-PRESET-UNIT`, and `CICADA-PRESET-RANGE` report invalid values; `CICADA-PRESET-TARGET` reports missing or incompatible targets. Each diagnostic carries file, line, and column. Duplicate declarations carry both locations. Library presets follow the same privacy, qualification, and hash checks as other library declarations.
+
+**Example:** [Preset circuit](../../examples/presets/main.cicada) binds authored, acid, and imported presets and overrides a value on the track and in a scene. The imported library is vendored from the [library example](../../examples/libraries/main.cicada), with an added mixer preset.
+
+**Limits:** An authored kit lane cannot apply numeric settings to a built-in recipe through the kit binding; use a `drums` track's lane values or a `builtin.bd` preset instead. Existing limits on effect instances still apply. Studio continues to refuse multi-file editing and has no preset save action in this version. Semantic JSON and generated source contain resolved values; formatting the original source retains preset declarations.

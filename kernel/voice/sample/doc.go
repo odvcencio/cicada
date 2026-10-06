@@ -1,7 +1,7 @@
 // Playback and SRC contract
 //
 // Region PCM is planar, caller-owned and immutable. All methods run on one
-// audio owner. Constructors and package init run before the callback. Output
+// audio owner. Constructors run before the callback. Output
 // rates are 44100, 48000 and 96000 Hz; source rates are 8000..192000 Hz. Forward
 // playback increments are admitted in [0.125,8], including the source/output
 // rate ratio. Quality qualification covers the ratios in quality_test.go;
@@ -23,9 +23,13 @@
 // for pitch rounding at bank boundaries. In source cycles/frame, passband
 // ends at .38/bankRatio, cutoff is .45/bankRatio and stopband starts at
 // .5/bankRatio. The conservative bank choice narrows bandwidth between banks.
-// The eight shared float32 tables occupy 8,610,000 bytes, generated once at
-// package init rather than embedded in the download. No coefficient generation
-// or math library calls occur in Render or NextStereo.
+// The eight shared float32 tables occupy 8,610,000 bytes, generated once by the
+// first valid New or NewPool constructor rather than embedded in the download.
+// Imports, invalid constructors and engines without sample or clip voices do
+// not prepare tables. Constructors may run concurrently; all eight banks are
+// ready before a successful constructor returns. Later constructors reuse the
+// immutable tables. No preparation, locks or coefficient generation occur in
+// bank selection, NoteOn, Render or NextStereo. Pitch math remains in NoteOn.
 //
 // One float64 phase advances once per output frame; it is never reconstructed
 // at block boundaries. Gain smoothing also advances per frame. Coefficients

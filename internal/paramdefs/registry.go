@@ -15,6 +15,7 @@ import (
 var registryData []byte
 
 type Descriptor struct {
+	Type        string   `json:"type,omitempty"`
 	ID          string   `json:"id"`
 	Path        string   `json:"path"`
 	Scope       string   `json:"scope"`
