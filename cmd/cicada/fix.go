@@ -459,6 +459,9 @@ func fixMultiFile(root string, manifest ed.Manifest, path string, all, check boo
 	if err != nil {
 		return err
 	}
+	if err := validateFixDependencies(sources); err != nil {
+		return err
+	}
 	fixed, changed, err := migration.FixFiles(sources.Files, manifest.Edition)
 	if err != nil {
 		return err

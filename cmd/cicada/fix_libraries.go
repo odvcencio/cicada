@@ -28,13 +28,8 @@ func fixLoadedScoreForProject(path string, source []byte, edition int) ([]byte, 
 	if err != nil {
 		return nil, false, err
 	}
-	_, diagnostics := sources.Parse()
-	for _, d := range diagnostics {
-		// Legacy syntax can need fixing under an edition-2 manifest. Loading
-		// failures must still stop the operation before any rewrite or write.
-		if d.Severity == "error" && (strings.HasPrefix(d.Code, "CICADA-LIB-") || strings.HasPrefix(d.Code, "CICADA-ASSET-")) {
-			return nil, false, fmt.Errorf("%s", d.Error())
-		}
+	if err := validateFixDependencies(sources); err != nil {
+		return nil, false, err
 	}
 	fixed, changed, err := migration.FixFiles(sources.Files, edition)
 	if err != nil {
@@ -64,4 +59,16 @@ func fixLoadedScoreForProject(path string, source []byte, edition int) ([]byte, 
 		}
 	}
 	return nil, false, fmt.Errorf("migrated score is missing from source set: %s", path)
+}
+
+// Validate the loaded snapshot before migration on both combined and independent
+// projects. Legacy syntax may still need fixing; dependency failures cannot.
+func validateFixDependencies(sources *project.Sources) error {
+	_, diagnostics := sources.Parse()
+	for _, d := range diagnostics {
+		if d.Severity == "error" && (strings.HasPrefix(d.Code, "CICADA-LIB-") || strings.HasPrefix(d.Code, "CICADA-ASSET-")) {
+			return fmt.Errorf("%s", d.Error())
+		}
+	}
+	return nil
 }

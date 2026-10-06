@@ -312,3 +312,89 @@ func TestIndependentSamplerFixIsIdempotent(t *testing.T) {
 		t.Fatalf("rejected sampler changed source: %v", err)
 	}
 }
+
+func TestCombinedImportFixRejectsChangedPinsWithoutWriting(t *testing.T) {
+	for _, check := range []bool{true, false} {
+		t.Run(fmt.Sprint(check), func(t *testing.T) {
+			main, library := revisionImportFixture(t, 1, false)
+			root := filepath.Dir(main)
+			if err := os.WriteFile(filepath.Join(root, "cicada.mod"), []byte("project score\ncicada 1\nentry \"main.cicada\"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			lib, err := os.ReadFile(library)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(library, append(lib, []byte("// changed after pinning\n")...), 0600); err != nil {
+				t.Fatal(err)
+			}
+			preserved := map[string][]byte{}
+			for _, path := range []string{main, library, filepath.Join(root, "cicada.mod"), filepath.Join(root, "cicada.sum")} {
+				preserved[path], err = os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			args := []string{main, "--all"}
+			if check {
+				args = append(args, "--check")
+			}
+			if err := fixCommand(args); err == nil || !strings.Contains(err.Error(), "CICADA-LIB-HASH") {
+				t.Errorf("combined migration used an unverified import: %v", err)
+			}
+			for path, want := range preserved {
+				got, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(got, want) {
+					t.Errorf("unverified migration changed %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
+
+func TestCombinedImportFixRejectsChangedAssetAfterRepinning(t *testing.T) {
+	for _, check := range []bool{true, false} {
+		t.Run(fmt.Sprint(check), func(t *testing.T) {
+			main, library := revisionImportFixture(t, 2, true)
+			root := filepath.Dir(main)
+			if err := os.WriteFile(filepath.Join(root, "cicada.mod"), []byte("project score\ncicada 2\nentry \"main.cicada\"\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			asset := filepath.Join(root, "lib/demo/tone/audio/tone.wav")
+			if err := os.WriteFile(asset, testwav.Bytes(48000, 1, 16, 4800, 2), 0600); err != nil {
+				t.Fatal(err)
+			}
+			sources, err := project.ReadSources(main, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum, _, err := sources.UpdateLibraries("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "cicada.sum"), sum, 0600); err != nil {
+				t.Fatal(err)
+			}
+			preserved := map[string][]byte{}
+			for _, path := range []string{main, library, asset, filepath.Join(root, "cicada.mod"), filepath.Join(root, "cicada.sum")} {
+				preserved[path], err = os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			args := []string{main, "--all"}
+			if check {
+				args = append(args, "--check")
+			}
+			if err := fixCommand(args); err == nil || !strings.Contains(err.Error(), "CICADA-ASSET-") {
+				t.Errorf("combined sampler fix skipped asset verification: %v", err)
+			}
+			for path, want := range preserved {
+				got, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(got, want) {
+					t.Errorf("rejected combined sampler changed %s: %v", path, err)
+				}
+			}
+		})
+	}
+}
