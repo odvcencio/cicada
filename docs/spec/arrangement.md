@@ -43,5 +43,4 @@ explicit graph chord fields. The two incompatible development-v14 dialects are
 rejected; recompile their project source. See [the exact v15 contract](kernel-image-v15.md). Legacy
 projects still encode as version 13, and versions 8–13 remain readable. Hosts
 verify and decode assets before rendering; the current resident loader and
-2 MiB image limit remain in force. Streamed page ownership and admission
-profiles belong to the other Phase 2 lanes.
+2 MiB image limit remain in force. Streamed readers use a separate host preparation path.

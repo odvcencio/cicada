@@ -57,17 +57,9 @@ after 60 seconds. Incomplete capture and non-finite PCM are rejected. Capture
 timing is uncalibrated; hit detection uses source-frame coordinates rather than
 claiming calibrated score placement.
 
-The fixture is synthetic inharmonic percussion, not acoustic listening
-acceptance. Pitch tests use known decaying tones at 16, 44.1, 48 and 96 kHz.
-Real sounds, rooms and microphones can need a different fallback root or
-layer count. The current panel selects one layer at a time; the sampler-pack
-host may blend neighbouring velocity centres when playing the pinned score.
+Your sound, room, and microphone can require a different fallback root or layer count. The panel selects one layer at a time; the sampler-pack host can blend neighbouring velocity centres when playing a pinned score.
 
-The real browser capture fixture reached playback in 4.1 seconds, including
-the 3.5-second recording, with three layers and five round robins. The native
-recorded-instrument render check measured zero allocations. Captured views:
-[desktop, 1440×1000](screenshots/recorded-instrument-1440.png) and
-[mobile, 390×900](screenshots/recorded-instrument-390.png).
+See the [recorded desktop](screenshots/recorded-instrument-1440.png) and [mobile](screenshots/recorded-instrument-390.png) views for the controls.
 
 ## Fit a playable model
 
@@ -107,10 +99,4 @@ decay. Closely spaced modes, rapidly changing pitch, noisy rooms and nonlinear
 impacts can reduce fit quality. The displayed decay confidence describes that
 regression, not perceptual similarity. Try another take when a fit sounds poor.
 
-The synthetic microphone fixture plays both versions in about four seconds,
-including its 3.5-second recording. Known three-mode fixtures at 16, 44.1, 48 and
-96 kHz meet ten-cent frequency and 15% decay-error bounds. The fitted voice maps
-all 128 MIDI notes and matches 65,536 native/WASM samples exactly, without render
-memory growth. This is fixture evidence; a physical sound source recording still needs
-listening evaluation. Captured [modeled desktop](screenshots/modeled-instrument-1440.png)
-and [modeled mobile](screenshots/modeled-instrument-390.png) views show the controls.
+See the [modeled desktop](screenshots/modeled-instrument-1440.png) and [mobile](screenshots/modeled-instrument-390.png) views for the controls.

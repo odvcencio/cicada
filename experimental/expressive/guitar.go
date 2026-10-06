@@ -133,7 +133,7 @@ type Amp struct {
 	low, dcIn, dcOut, alpha float64
 }
 
-// NewAmp uses the same supported-rate policy as the research voices: rates
+// NewAmp uses the same supported-rate policy as the experimental voices: rates
 // outside 8000..192000 select 48000. Valid rates retain their exact coefficients.
 func NewAmp(sr int) Amp {
 	if sr < 8000 || sr > 192000 {

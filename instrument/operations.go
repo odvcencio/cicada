@@ -12,7 +12,7 @@ func Operation(name string) (OperationInfo, bool) {
 	case "neural_amp":
 		return OperationInfo{name, "neural_amp(audio, drive) -> audio", "Pinned CC0 causal neural amp with integer inference. Drive is clamped to 0..8; eight samples of history, 32 bytes per node. Designed for 48 kHz; other render rates preserve deterministic sample-domain behavior."}, true
 	case "pm":
-		return OperationInfo{name, "pm(hz, audio, unit) -> audio", "Sine carrier with phase offset modulator * index in radians; index may be enveloped or negative. Carrier phase stays in [0,1), frequency clamps to 0..0.49 * sample_rate, and zero frequency emits silence. No feedback or antialiasing: high pitch, ratio, or index folds sidebands above Nyquist. Experimental pending listening acceptance."}, true
+		return OperationInfo{name, "pm(hz, audio, unit) -> audio", "Sine carrier with phase offset modulator * index in radians; index may be enveloped or negative. Carrier phase stays in [0,1), frequency clamps to 0..0.49 * sample_rate, and zero frequency emits silence. No feedback or antialiasing: high pitch, ratio, or index folds sidebands above Nyquist."}, true
 	case "ddsp":
 		return OperationInfo{name, "ddsp(hz, unit) -> audio", "Pinned CC0 quantized neural reed: eight harmonics plus filtered noise, controlled by fundamental frequency and linear loudness. Trained on synthetic 80..1600 Hz tones. Controls update every 64 frames; integer inference is allocation-free."}, true
 	case "delay":

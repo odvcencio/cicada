@@ -195,7 +195,7 @@ func main() {
 		return
 	}
 	if len(os.Args) > 1 && os.Args[1] == "import-midi" {
-		fmt.Fprintln(os.Stderr, "MIDI import is scheduled for M6; Cicada currently supports midi export and verify-midi")
+		fmt.Fprintln(os.Stderr, "MIDI import is not supported; use midi export or verify-midi")
 		os.Exit(1)
 	}
 	if len(os.Args) > 1 && os.Args[1] == "golden" {

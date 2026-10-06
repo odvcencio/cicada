@@ -34,4 +34,4 @@ Source licence evidence:
 - [Karoryfer bass CC0 statement](https://shop.karoryfer.com/pages/free-black-and-blue-basses) and [all free libraries' CC0 policy](https://shop.karoryfer.com/pages/free-samples).
 - [VSCO-2 CE CC0 licence](https://github.com/sgossner/VSCO-2-CE/blob/440300901dfe9275fd84e0b7763af1f8443ae62e/LICENSE).
 
-Listening comparisons assess the supplied recordings. This is a starter set with measured playback and honest recording coverage, not a claim of parity with a detailed commercial piano, guitar or orchestral library. See [pack hosting](../../docs/sampler/packs.md) and [quality targets](../../docs/sampler/quality.md).
+This starter set has fewer recordings and articulations than a detailed commercial piano, guitar, or orchestral library. See [pack hosting](../../docs/sampler/packs.md).

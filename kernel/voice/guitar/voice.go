@@ -1,5 +1,5 @@
 // Package guitar adapts the experimental physical model and amp to score playback.
-// It is a research prototype without listening acceptance.
+// Its physical string and amp model is experimental.
 package guitar
 
 import (

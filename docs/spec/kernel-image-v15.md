@@ -1,8 +1,6 @@
 # Unified kernel image version 15
 
-Status: integration candidate, not a release or an allocation for other branches.
-The registry was checked against main 01569e19, chord PR100 b986efe and
-schedule PR103 8759eb45. All three live refs matched on 2026-10-02; no tag exists.
+Version 15 extends the `CIC1` format with placements, prepared planar audio, and graph chord fields. Hosts negotiate capabilities and validate the image before loading it.
 
 ## Compatibility and negotiation
 
@@ -12,7 +10,7 @@ endian. The only accepted versions are 8, 9, 10, 11, 12, 13 and 15. Existing
 of the new fields are still written as **byte-identical version 13**.
 
 Version 14 is deliberately rejected before destination or engine mutation.
-Two development branches independently assigned it incompatible layouts. A
+Its incompatible layouts cannot be identified safely. A
 consumer must recompile project source; it must never infer the dialect from
 payload shape, try both readers, or patch the version bytes.
 
@@ -70,4 +68,4 @@ placement re-entry and reset must retire the appropriate owners independently.
 The unified footer retains the existing engine MasterGainDB as well as the new
 DC-bias values, so direct and image playback cannot lose master gain. Legacy
 v13 writing is unchanged, including its historical absence of a master-gain
-field; a master-gain value alone does not select a new format in this tranche.
+field; a master-gain value alone does not select version 15.

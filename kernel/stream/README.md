@@ -17,15 +17,13 @@ reader, err := cache.NewReader(1)
 ```
 
 For the default unity-rate 48 kHz clip, three ahead pages cover approximately
-250 ms. Configure the horizon in source frames, including pitch ratio for future
-SRC callers. Each reader requests its current page, ahead pages in its playback
+250 ms. Configure the horizon in source frames, including the playback pitch ratio. Each reader requests its current page, ahead pages in its playback
 direction, and one page behind. Admission reserves that window plus one old
 pinned page per reader. The configuration rejects undersized arenas.
 
 An audio owner calls `SeekFrame`, `Render` and `Stop`. Rendering copies unity-rate
 PCM in either direction; it never opens storage, acquires a mutex, waits, spins
-on ownership, or allocates. `ReadFrame` exposes guarded samples by value for
-future SRC integration. It does not change the seek/prefetch intent. The host
+on ownership, or allocates. `ReadFrame` exposes guarded samples by value to sample-rate converters. It does not change the seek/prefetch intent. The host
 must route transport changes to the audio owner rather than call `SeekFrame` from
 another goroutine.
 
@@ -66,9 +64,3 @@ reused. Retry/error records never exceed the admitted arena's page count.
 This package provides a streamed reader. Hosts handle arrangement scheduling
 and browser worker page transfer. Changing the core worklet or legacy engine is not
 required to use the native page source.
-
-Checks: `go test -race ./kernel/stream ./host/sampleasset` covers one-hour
-playback, page pinning, reverse guards, seek storms, slow storage and cancellation.
-`make test-kernel-wasm` includes exact native/TinyGo streaming PCM parity at
-64-, 128- and 256-frame block sizes. Allocation tests cover seek, ready playback,
-misses, recovery and rendering while storage remains stalled.

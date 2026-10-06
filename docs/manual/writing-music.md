@@ -126,7 +126,7 @@ cicada render main.cicada -o library.wav --rate 48000 --bits 24
 
 Every load recomputes the hashes. Missing pins, changed content, and changed resolution kinds produce `CICADA-LIB-HASH` at the importing file, line, and column. `check` reports them; playback and rendering refuse them. After an intended edit, run `cicada lib update demo/tone` to update that pin, or omit the path to update every imported library and remove unused pins. The command prints the old and new location kinds and hashes. A targeted update leaves dependency pins unchanged; update those dependencies explicitly or update all imports. A loose score uses `cicada.sum` in its own directory. An update scan containing loose scores from different directories is refused with `CICADA-LIB-ROOT`; run from each score directory or add a shared `cicada.mod`.
 
-The language server completes import paths and public qualified names and goes to definitions in library source. Unsaved library changes also trigger hash diagnostics. `explain` identifies the library behind a declaration or instrument value. Project-wide formatting and notation fixes keep imported library files untouched. Notation fixes, local rename, and parameter hover retain import context for loose and independent scores too. Notation fixes stop on changed library pins. Use `cicada lib vendor` to keep imported user libraries in the project; Save As does this automatically. See [Managing libraries](libraries.md). Bundle provenance and `require` versions remain follow-up work.
+The language server completes import paths and public qualified names and goes to definitions in library source. Unsaved library changes also trigger hash diagnostics. `explain` identifies the library behind a declaration or instrument value. Project-wide formatting and notation fixes keep imported library files untouched. Notation fixes, local rename, and parameter hover retain import context for loose and independent scores too. Notation fixes stop on changed library pins. Use `cicada lib vendor` to keep imported user libraries in the project; Save As does this automatically. See [Managing libraries](libraries.md). Version requirements are not supported.
 
 ## Tracks and patterns
 
@@ -155,8 +155,7 @@ without its own `seed` inherits the project seed. The project defaults are
 ## Try the experimental guitar
 
 Edition 2 can play the physical string and amp prototype with
-`track lead guitar { experimental = on }`. It is a research voice without
-listening acceptance. Use it for auditions; DSP checks do not establish timbre.
+`track lead guitar { experimental = on }`. It uses an experimental physical model; acoustic realism is unverified.
 
 The [guitar riff](../../examples/expressive-guitar.cicada) demonstrates bends,
 slides, palm mutes and clean versus driven amp settings. Render it with
@@ -276,7 +275,7 @@ typed as milliseconds. `delay(sound, 60ms)` adds a slapback tap. Each primitive
 reserves 16 KiB of ring storage, and each voice can contain at most two.
 The [pluck example](../../examples/pluck.cicada) combines both operations;
 [graph delay limits](../spec/edition-2.md#graph-delays-and-plucked-strings)
-describe interpolation, time bounds, and experimental listening status.
+describe interpolation, time bounds, and current synthesis limits.
 
 `ddsp(pitch, loudness)` renders a quantized neural reed from eight harmonics and
 filtered noise. Use `env(gate, 620ms) * velocity` for linear loudness. The
@@ -367,8 +366,7 @@ channels and frame count. Asset paths resolve from the directory containing the
 nearest `cicada.mod`, including scores in subdirectories. Exact `frames` literals
 support sample editing; seconds and milliseconds must land on exact source frames.
 
-These declarations compile to project data. The current declarations describe audio data; the current engine reports `CICADA-UNSUPPORTED` for
-projects containing audio data.
+The host prepares these assets before playback. Native playback and offline rendering support audio tracks and declared samplers; project images carry prepared PCM within the 2 MiB image limit. Streamed PCM uses a separate host reader.
 
 
 ## Standard libraries
@@ -427,7 +425,7 @@ wave; `acid-bite` uses a brighter cutoff, more resonance, and shorter decay.
 `kit-roomy` extends the drum decays; `kit-lofi` lowers the kick tuning and darkens
 the snare and hats. These kit presets target built-in `drums`; authored kits keep
 their source graphs. See the [std README](../../project/std/README.md) for source
-origins and planned additions.
+origins and import paths.
 
 Run `cicada lib update` before the first check or render, and commit `cicada.sum`
 with the score. Std imports are pinned with `kind std` and a hash of the exact
@@ -487,4 +485,4 @@ Presets cannot add DSP expressions, change routing, replace an asset, or inherit
 
 The language server completes preset targets and their parameters, including imported instrument parameters. `cicada fmt` preserves preset declarations; conversion to semantic JSON or generated source writes their resolved values. Try [Preset circuit](../../examples/presets/main.cicada) for an authored instrument preset, an acid preset, and a preset imported from the vendored examples library.
 
-Studio has no “save as preset” action in this version. Write the declaration in the score editor. Studio still refuses multi-file projects; saving into a library belongs to the later library tools and Studio work.
+Studio has no “save as preset” action in this version. Write the declaration in the score editor. Studio refuses multi-file projects; use the [library commands](libraries.md) to manage declarations in libraries.
