@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -55,6 +56,15 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 					}
 				}
 				diagnostics = append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: position})
+			}
+		}
+		if _, ok := modal.ParseTrackKind(track.Kind); ok {
+			for _, param := range track.Params {
+				if param.Name == "octave" {
+					if _, err := parseOctaveLiteral(param.Value); err != nil {
+						diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
+					}
+				}
 			}
 		}
 		if track.Kind == "acid" {
@@ -240,7 +250,9 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 		voices := 0
 		for trackID := range active {
 			kind := tracks[trackID].Kind
-			if kind == "drums" {
+			if _, ok := modal.ParseTrackKind(kind); ok {
+				voices += modal.MaxVoices
+			} else if kind == "drums" {
 				voices += drumVoices[trackID]
 			} else if count, ok := kitVoices[kind]; ok {
 				voices += count

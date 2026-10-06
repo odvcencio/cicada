@@ -2,6 +2,7 @@ package notation
 
 import (
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/voice/modal"
 	"math"
 	"strconv"
 	"strings"
@@ -97,7 +98,8 @@ func Validate(s *Score) (ds []Diagnostic) {
 	instruments := make(map[string]Instrument, len(s.Instruments))
 	for _, inst := range s.Instruments {
 		checkID(inst.Name, inst.Position)
-		if inst.Name == "acid" || inst.Name == "drums" || inst.Name == "guitar" || s.Version == 2 && inst.Name == "audio" {
+		_, isModal := modal.ParseTrackKind(inst.Name)
+		if isModal || inst.Name == "acid" || inst.Name == "drums" || inst.Name == "guitar" || s.Version == 2 && inst.Name == "audio" {
 			add("CICADA-DUPLICATE", "instrument name is reserved: "+inst.Name, "error", inst.Position)
 		}
 		if _, exists := instruments[inst.Name]; exists {
@@ -133,7 +135,8 @@ func Validate(s *Score) (ds []Diagnostic) {
 	for _, kit := range s.Kits {
 		checkID(kit.Name, kit.Position)
 		_, instrumentNameTaken := instruments[kit.Name]
-		if kit.Name == "acid" || kit.Name == "drums" || kit.Name == "guitar" || s.Version == 2 && kit.Name == "audio" || instrumentNameTaken {
+		_, isModal := modal.ParseTrackKind(kit.Name)
+		if isModal || kit.Name == "acid" || kit.Name == "drums" || kit.Name == "guitar" || s.Version == 2 && kit.Name == "audio" || instrumentNameTaken {
 			add("CICADA-DUPLICATE", "kit name is reserved or already declared: "+kit.Name, "error", kit.Position)
 		}
 		if _, exists := kits[kit.Name]; exists {
@@ -174,7 +177,8 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 		trackByName[t.Name] = t
 		namespace[t.Name] = "track"
-		if t.Kind != "acid" && t.Kind != "drums" && t.Kind != "piano" && t.Kind != "guitar" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
+		_, isModal := modal.ParseTrackKind(t.Kind)
+		if t.Kind != "acid" && !isModal && t.Kind != "drums" && t.Kind != "piano" && t.Kind != "guitar" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
 			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
 				if _, kitOK := kits[t.Kind]; !kitOK {
 					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
@@ -619,6 +623,9 @@ func validTrackParam(kind, name string, instruments map[string]Instrument) bool 
 				return true
 			}
 		}
+	}
+	if _, ok := modal.ParseTrackKind(kind); ok {
+		return name == "octave"
 	}
 	if kind == "acid" {
 		return acidParams[name]

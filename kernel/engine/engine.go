@@ -13,6 +13,7 @@ import (
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
+	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/kernel/voice/piano"
 )
 
@@ -28,7 +29,8 @@ const (
 	VoiceDrums
 	VoiceGraph
 	VoicePiano
-	VoiceGuitar // explicitly experimental physical model and amp
+	VoiceGuitar           // explicitly experimental physical model and amp
+	VoiceModal  VoiceKind = 6
 )
 
 type KitLaneKind uint8
@@ -54,6 +56,7 @@ type TrackConfig struct {
 	Acid         acid.Params
 	Drums        [drum.LaneCount]drum.Params
 	Kit          *[drum.LaneCount]KitLaneBinding
+	Modal        modal.Profile `json:",omitempty"`
 	Graph        graph.Program
 	Polyphony    uint8   `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
 	PianoSustain float32 `json:",omitempty"`
@@ -123,6 +126,7 @@ type voiceSlot struct {
 	piano                          *piano.Instrument
 	pianoSustain                   float32
 	poly                           *graph.Pool
+	modal                          *modal.Voice
 	mix                            mix.Track
 	targetMix                      mix.Track
 	mixSmooth                      float32
@@ -490,6 +494,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 					v.drumTargets[lane] = v.drums.Params(lane)
 				}
 			}
+		case VoiceModal:
+			voices += modal.MaxVoices
+			v.modal, err = modal.NewVoice(spec.Modal, cfg.SampleRate)
 		case VoiceGraph:
 			if spec.Polyphony == 4 {
 				voices += 4
@@ -822,6 +829,9 @@ func (e *Engine) Render(outL, outR []float32) {
 				}
 			case VoiceGuitar:
 				sample := v.guitar.Next()
+				left, right = sample, sample
+			case VoiceModal:
+				sample := v.modal.Next()
 				left, right = sample, sample
 			case VoiceGraph:
 				var sample float32
@@ -1235,6 +1245,8 @@ func (e *Engine) apply(c cmd.Command) {
 			v.acid.NoteOn(note, accent, slide, velocity)
 		case VoiceGuitar:
 			v.guitar.NoteOn(note, velocity, accent, slide)
+		case VoiceModal:
+			v.modal.NoteOn(note, velocity, slide)
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
 		case VoicePiano:
@@ -1684,6 +1696,8 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		v.acid.NoteOff()
 	case VoiceGuitar:
 		v.guitar.NoteOff()
+	case VoiceModal:
+		v.modal.NoteOff()
 	case VoiceGraph:
 		if v.poly != nil {
 			v.poly.ReleaseAll()
@@ -1720,6 +1734,8 @@ func (e *Engine) resetVoice(track int) {
 		v.acid.Reset()
 	case VoiceGuitar:
 		v.guitar.Reset()
+	case VoiceModal:
+		v.modal.Reset()
 	case VoiceGraph:
 		if v.poly != nil {
 			v.poly.Reset()

@@ -9,6 +9,7 @@ import (
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/modal"
 )
 
 // CompileEngine lowers a validated semantic project into immutable engine
@@ -199,6 +200,10 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				}
 				config.Kit = bindings
 				cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
+				break
+			}
+			if profile, ok := modal.ParseTrackKind(track.Kind); ok {
+				config.Kind, config.Modal = engine.VoiceModal, profile
 				break
 			}
 			config.Kind = engine.VoiceGraph
