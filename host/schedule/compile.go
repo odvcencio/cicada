@@ -12,7 +12,7 @@ func Compile(p *project.Project, root string, rate, block int) (engine.Config, e
 	if err := project.ValidateProject(p); err != nil {
 		return engine.Config{}, err
 	}
-	if len(p.Clips) == 0 && len(p.Samplers) == 0 {
+	if !p.NeedsSampleEngine() {
 		return project.CompileEngine(p, rate, block)
 	}
 	assets := make([]engine.AudioAsset, len(p.Assets))
