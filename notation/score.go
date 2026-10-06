@@ -47,6 +47,7 @@ type Score struct {
 	Phrases        []Phrase
 	Patterns       []Pattern
 	Scenes         []Scene
+	Arrange        *Arrangement
 	Song           []SongEntry
 	SongPosition   Position
 	Effects        []Effect

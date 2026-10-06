@@ -74,3 +74,7 @@
 ((fx_decl kind: (identifier) @name) @reference.preset
   (#not-any-of? @name "delay" "reverb" "drive" "comp"))
 (fx_decl kind: (qualified_name) @name) @reference.preset
+(place_decl name: (identifier) @name) @definition.placement
+(marker_decl name: (identifier) @name) @definition.marker
+(place_decl track: (identifier) @name) @reference.track
+(place_decl content: (identifier) @name) @reference.pattern

@@ -151,6 +151,7 @@ jobs:
           if-no-files-found: warn
           path: |
             build/test-wasm.log
+            build/test-chord-wasm.log
             build/test-browser.log
             build/budget-size-report.txt
             build/budget-browser.log

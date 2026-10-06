@@ -16,12 +16,17 @@ import (
 // configuration. Compilation happens outside the audio callback; New copies
 // every pattern and arrangement table before playback.
 func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) {
+	return CompileEngineWithAssets(p, sampleRate, maxBlock, nil)
+}
+
+// CompileEngineWithAssets accepts immutable decoded PCM prepared by the host.
+func CompileEngineWithAssets(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset) (engine.Config, error) {
 	var cfg engine.Config
 	if err := ValidateProject(p); err != nil {
 		return cfg, err
 	}
-	if p.NeedsSampleEngine() {
-		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio assets, clips, and samplers need a sample-capable engine")
+	if (len(p.Clips) > 0 || len(p.Samplers) > 0) && len(assets) != len(p.Assets) {
+		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio clips require prepared assets")
 	}
 	if len(p.Scenes) > 1<<16 || len(p.Song) > 1<<16 {
 		return cfg, fmt.Errorf("arrangement exceeds the kernel index range")
@@ -32,6 +37,16 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		Patterns: make([]engine.PatternBank, len(p.Tracks)),
 		Scenes:   make([]engine.Scene, len(p.Scenes)),
 		Song:     make([]engine.SongEntry, len(p.Song)),
+	}
+	cfg.Assets = assets
+	clipIndex := map[string]uint16{}
+	assetIndex := map[string]uint16{}
+	for i, a := range p.Assets {
+		assetIndex[a.Name] = uint16(i)
+	}
+	for i, c := range p.Clips {
+		clipIndex[c.Name] = uint16(i)
+		cfg.Clips = append(cfg.Clips, engine.ClipConfig{Asset: assetIndex[c.Asset], StartFrame: c.StartFrame, EndFrame: c.EndFrame, FadeInFrames: c.FadeInFrames, FadeOutFrames: c.FadeOutFrames, GainDB: c.GainDB})
 	}
 	patterns := make(map[string]Pattern, len(p.Patterns))
 	for _, pattern := range p.Patterns {
@@ -153,7 +168,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			}
 		}
 		kind := track.Kind
-		if kind == "piano" && !isModeledPiano(p, kind) {
+		if kind == "piano" && !isModeledPiano(p, kind) || kind == "audio" && p.Edition != 2 {
 			kind = "declared"
 		}
 		switch kind {
@@ -171,6 +186,8 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 			}
 			config.Guitar = params
+		case "audio":
+			config.Kind = engine.VoiceAudio
 		case "acid":
 			config.Kind = engine.VoiceAcid
 			params, err := acidParamsFromValues(track.Params)
@@ -200,6 +217,16 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				}
 				config.Kit = bindings
 				cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
+				break
+			}
+			for _, sampler := range p.Samplers {
+				if sampler.Name == track.Kind {
+					config.Kind = engine.VoiceSample
+					config.Sample = &engine.SamplerConfig{Asset: assetIndex[sampler.Asset], RootKey: uint8(sampler.RootMIDI), Voices: uint8(sampler.Voices), Loop: sampler.Mode == "loop"}
+					break
+				}
+			}
+			if config.Kind == engine.VoiceSample {
 				break
 			}
 			if profile, ok := modal.ParseTrackKind(track.Kind); ok {
@@ -291,6 +318,11 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			case "off":
 				binding.Mode = engine.SceneOff
 			default:
+				if cfg.Track[ti].Kind == engine.VoiceAudio {
+					binding.Mode = engine.SceneClip
+					binding.Clip = clipIndex[patternID]
+					continue
+				}
 				binding.Mode = engine.SceneSlot
 				for slot, stored := range p.Tracks[ti].Slots {
 					if stored != nil && *stored == patternID {
@@ -308,6 +340,14 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	}
 	for i, entry := range p.Song {
 		cfg.Song[i] = engine.SongEntry{Scene: sceneIndex[entry.Scene], Bars: entry.Bars}
+	}
+	if p.Arrange != nil {
+		cfg.Song = nil
+		var scheduleErr error
+		cfg.Schedule, scheduleErr = CompileSchedule(p)
+		if scheduleErr != nil {
+			return cfg, scheduleErr
+		}
 	}
 	return cfg, nil
 }

@@ -38,7 +38,7 @@ func Cicada() *grammargen.Grammar {
 		sym("instrument_decl"), sym("preset_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
 		sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
-		sym("master_decl"), sym("export_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
+		sym("master_decl"), sym("export_decl"), sym("arrange_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
 	))
 
 	// Edition-2 audio declarations share typed key/value bodies.
@@ -183,7 +183,7 @@ func Cicada() *grammargen.Grammar {
 	// Literals. A number carries its unit; a fraction is a note division such
 	// as 1/8, 1/8T (triplet), or 1/8. (dotted), lexed as one token so the
 	// longest match beats a plain number.
-	g.Define("value", choice(sym("number"), sym("insert_chain"), sym("_name"), sym("string"), sym("fraction")))
+	g.Define("value", choice(sym("musical_position"), sym("bar_count"), sym("tick_count"), sym("number"), sym("insert_chain"), sym("_name"), sym("string"), sym("fraction")))
 	g.Define("insert_chain", seq(field("first", sym("_name")), repeat(seq(str("->"), field("next", sym("_name"))))))
 	g.Define("fraction", token(pat(`[0-9]+\/[0-9]+[tT.]?`)))
 	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?`)))
@@ -243,5 +243,11 @@ func Cicada() *grammargen.Grammar {
 	g.Test("live controls", "live { land = bar phrase = 8bars macro intensity = 0.3 smooth 400ms layers intensity { drums >= 0.25 attack 1bar release 3bars } }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
+	g.Define("arrange_decl", seq(str("arrange"), str("{"), repeat(choice(sym("place_decl"), sym("marker_decl"))), str("}")))
+	g.Define("place_decl", seq(str("place"), field("name", sym("_name")), field("track", sym("_name")), field("content", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("marker_decl", seq(str("marker"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("musical_position", token(pat(`@[0-9]+\.[0-9]+\.[0-9]+`)))
+	g.Define("tick_count", token(pat(`[0-9]+ticks`)))
+	g.Test("arrangement", "cicada 2 arrange { place vox-1 vox vocal-a { at = @1.1.1 length = 2bars } marker chorus { at = @5.1.1 } }", "")
 	return g
 }

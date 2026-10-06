@@ -233,7 +233,11 @@ func ToSource(p *Project) ([]byte, error) {
 		}
 	}
 	song.WriteString("\n}")
-	sections = append(sections, song.String())
+	if p.Arrange == nil {
+		sections = append(sections, song.String())
+	} else {
+		sections = append(sections, arrangementSource(p.Arrange))
+	}
 	source := strings.Join(sections, "\n\n") + "\n"
 	if p.Edition == 2 {
 		source = "cicada 2\n" + source

@@ -137,7 +137,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			n := root.NamedChild(i)
 			kind := w.Type(n)
 			switch kind {
-			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl":
+			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl", "arrange_decl":
 				if first, exists := seenDeclarations[kind]; exists {
 					diagnostics = append(diagnostics, Diagnostic{
 						Code: "CICADA-DUPLICATE", Severity: "error",
@@ -240,6 +240,8 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.Patterns = append(s.Patterns, parsePattern(w, n))
 			case "scene_decl":
 				s.Scenes = append(s.Scenes, parseScene(w, n))
+			case "arrange_decl":
+				s.Arrange = parseArrangement(w, n)
 			case "song_decl":
 				s.SongPosition = w.position(n)
 				for j := 0; j < n.NamedChildCount(); j++ {

@@ -16,6 +16,7 @@ import (
 	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/kernel/voice/modeledkit"
 	"m31labs.dev/cicada/kernel/voice/piano"
+	"m31labs.dev/cicada/kernel/voice/sample"
 )
 
 type Error string
@@ -32,6 +33,8 @@ const (
 	VoicePiano
 	VoiceGuitar           // explicitly experimental physical model and amp
 	VoiceModal  VoiceKind = 6
+	VoiceAudio  VoiceKind = 8
+	VoiceSample VoiceKind = 9
 )
 
 type KitLaneKind uint8
@@ -57,8 +60,9 @@ type KitLaneBinding struct {
 
 type TrackConfig struct {
 	Kind         VoiceKind
-	Experimental bool          `json:",omitempty"`
-	Guitar       guitar.Params `json:",omitzero"`
+	Sample       *SamplerConfig `json:",omitempty"`
+	Experimental bool           `json:",omitempty"`
+	Guitar       guitar.Params  `json:",omitzero"`
 	Acid         acid.Params
 	Drums        [drum.LaneCount]drum.Params
 	Kit          *[drum.LaneCount]KitLaneBinding
@@ -101,10 +105,16 @@ type Config struct {
 	Patterns   []PatternBank
 	Scenes     []Scene
 	Song       []SongEntry
+	Schedule   []ScheduleEvent `json:",omitempty"`
+	Assets     []AudioAsset    `json:",omitempty"`
+	Clips      []ClipConfig    `json:",omitempty"`
 	LoopSong   bool
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
 	CompMusic  *fx.CompParams
+	// MasterBias is an optional DC correction before gain and limiting.
+	MasterBiasL float32 `json:",omitempty"`
+	MasterBiasR float32 `json:",omitempty"`
 	// MasterGainDB is a static gain applied immediately before the master
 	// limiter. Zero leaves the existing master path bit-identical.
 	MasterGainDB float64
@@ -133,6 +143,8 @@ type voiceSlot struct {
 	pianoSustain                   float32
 	poly                           *graph.Pool
 	modal                          *modal.Voice
+	sampler                        *sample.Pool
+	samplerNote                    sample.Handle
 	mix                            mix.Track
 	targetMix                      mix.Track
 	mixSmooth                      float32
@@ -191,6 +203,8 @@ type Engine struct {
 	compSidechainTrack           int
 	masterGain                   float32
 	masterProcessor              StereoProcessor
+	masterBiasL, masterBiasR     float32
+	taps                         []TapFrame
 	musicBusMute, musicBusSolo   bool
 	sfxBusMute, sfxBusSolo       bool
 	masterMute, masterSolo       bool
@@ -222,7 +236,16 @@ type Engine struct {
 	scenes                       []Scene
 	currentScene                 int
 	sceneSequence                uint64
-	song                         []SongEntry
+	schedule                     []ScheduleEvent
+	scheduleIntervals            []scheduleInterval
+	scheduleDuration, cycleStart int64
+	placementSchedule            bool
+	placementID                  [16]uint32
+	clipLimit                    int
+	clipTemplates                []sample.Voice
+	clipSpecs                    []ClipConfig
+	clipMaxFrames                int64
+	clipVoices                   [32]clipPlayback
 	loopSong, songMode           bool
 	songIndex                    int
 	songEndTick                  int64
@@ -274,6 +297,9 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if math.IsNaN(cfg.MasterGainDB) || math.IsInf(cfg.MasterGainDB, 0) || cfg.MasterGainDB < -120 || cfg.MasterGainDB > 24 {
 		return nil, Error("master gain is out of range")
 	}
+	if math.IsNaN(float64(cfg.MasterBiasL)) || math.IsInf(float64(cfg.MasterBiasL), 0) || math.IsNaN(float64(cfg.MasterBiasR)) || math.IsInf(float64(cfg.MasterBiasR), 0) {
+		return nil, Error("invalid master bias")
+	}
 	bpmMilli := cfg.BPMMilli
 	if bpmMilli == 0 {
 		bpmMilli = 120_000
@@ -290,7 +316,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if cfg.MasterGainDB != 0 {
 		masterGain = float32(math.Pow(10, cfg.MasterGainDB/20))
 	}
-	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain,
+	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
 		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
 	for id := 0; id < len(kernel.Params); id++ {
@@ -307,6 +333,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 		return nil, err
 	}
 	e.updateMuteTargets()
+	e.clipLimit = cfg.MaxVoices - voices
 	if voices > cfg.MaxVoices {
 		return nil, Error("engine exceeds maximum voices")
 	}
@@ -383,7 +410,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		for slot := range e.patterns[i].slots {
 			e.patterns[i].slots[slot] = seq.Pattern{Len: 16, GatePercent: 55, Seed: cfg.Seed}
 		}
-		spec := cfg.Track[i]
+		spec := &cfg.Track[i]
 		gain := spec.GainDB
 		if !spec.GainSet {
 			gain = -6
@@ -505,6 +532,15 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		case VoiceModal:
 			voices += modal.MaxVoices
 			v.modal, err = modal.NewVoice(spec.Modal, cfg.SampleRate)
+		case VoiceSample:
+			if spec.Sample == nil || int(spec.Sample.Asset) >= len(cfg.Assets) || spec.Sample.Voices < 1 || spec.Sample.Voices > 32 {
+				return 0, Error("invalid sampler configuration")
+			}
+			a := cfg.Assets[spec.Sample.Asset]
+			region := sample.Region{Left: a.Left, Right: a.Right, SampleRate: a.SampleRate, RootKey: spec.Sample.RootKey, End: len(a.Left), Loop: spec.Sample.Loop, LoopEnd: len(a.Left)}
+			v.sampler, err = sample.NewPool(cfg.SampleRate, int(spec.Sample.Voices), region)
+			voices += int(spec.Sample.Voices)
+		case VoiceAudio:
 		case VoiceGraph:
 			if spec.Polyphony == 4 {
 				voices += 4
@@ -574,7 +610,7 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 				continue
 			}
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-				lanePattern := bank.Drums[slot][lane]
+				lanePattern := &bank.Drums[slot][lane]
 				if lanePattern.Len != pattern.Len || lanePattern.SwingPermille != pattern.SwingPermille || lanePattern.GatePercent != pattern.GatePercent || lanePattern.Seed != pattern.Seed || lanePattern.Transpose != 0 || lanePattern.Validate() != nil {
 					return Error("invalid preloaded drum lane")
 				}
@@ -584,7 +620,7 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 						return Error("drum lane step has wrong routing")
 					}
 				}
-				e.patterns[track].drumSlots[slot][lane] = lanePattern
+				e.patterns[track].drumSlots[slot][lane] = *lanePattern
 			}
 		}
 	}
@@ -598,7 +634,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	}
 	for _, scene := range cfg.Scenes {
 		for track, binding := range scene.Track {
-			if binding.Mode > SceneSlot || track >= cfg.Tracks && binding.Mode != SceneKeep || binding.Mode == SceneSlot && binding.Slot >= 16 {
+			if binding.Mode > SceneClip || track >= cfg.Tracks && binding.Mode != SceneKeep || binding.Mode == SceneSlot && binding.Slot >= 16 || binding.Mode == SceneClip && (int(binding.Clip) >= len(cfg.Clips) || cfg.Track[track].Kind != VoiceAudio) {
 				return Error("scene binding is out of range")
 			}
 		}
@@ -647,7 +683,19 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 		e.scenes[i] = cfg.Scenes[i]
 		e.scenes[i].Settings = append([]SceneSetting(nil), cfg.Scenes[i].Settings...)
 	}
-	e.song = append([]SongEntry(nil), cfg.Song...)
+	if len(cfg.Song) != 0 && len(cfg.Schedule) != 0 {
+		return Error("song and schedule are mutually exclusive")
+	}
+	e.schedule = append([]ScheduleEvent(nil), cfg.Schedule...)
+	if len(cfg.Song) != 0 {
+		e.schedule = LowerSong(cfg.Song)
+	}
+	if err := e.prepareClips(cfg); err != nil {
+		return err
+	}
+	if err := e.validateSchedule(); err != nil {
+		return err
+	}
 	e.loopSong = cfg.LoopSong
 	return nil
 }
@@ -732,6 +780,7 @@ func (e *Engine) Reset() {
 	e.renderFrame, e.renderFrames = 0, 0
 	e.layerMask, e.layerAuthored = (1<<e.tracks)-1, (1<<e.tracks)-1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
+	e.resetClips()
 	e.manualSceneTick = -1
 	e.currentScene = -1
 	for i := range e.manualPatternTick {
@@ -841,6 +890,10 @@ func (e *Engine) Render(outL, outR []float32) {
 			case VoiceModal:
 				sample := v.modal.Next()
 				left, right = sample, sample
+			case VoiceSample:
+				left, right = v.sampler.NextStereo()
+			case VoiceAudio:
+				left, right = e.nextClipStereo(track)
 			case VoiceGraph:
 				var sample float32
 				if v.poly != nil {
@@ -896,6 +949,9 @@ func (e *Engine) Render(outL, outR []float32) {
 					sideL, sideR = trackL, trackR
 				}
 			}
+			if e.taps != nil {
+				e.taps[frame].Tracks[track] = Stereo{trackL, trackR}
+			}
 			accumulateMeter(&e.trackMeter[track], trackL, trackR)
 		}
 		if e.delayA != nil {
@@ -905,6 +961,9 @@ func (e *Engine) Render(outL, outR []float32) {
 				clear(outL[frame:])
 				clear(outR[frame:])
 				return
+			}
+			if e.taps != nil {
+				e.taps[frame].ReturnA = Stereo{returnL, returnR}
 			}
 			accumulateMeter(&e.returnAMeter, returnL, returnR)
 			dry.AddReturn(returnL, returnR)
@@ -917,11 +976,18 @@ func (e *Engine) Render(outL, outR []float32) {
 				clear(outR[frame:])
 				return
 			}
+			if e.taps != nil {
+				e.taps[frame].ReturnB = Stereo{returnL, returnR}
+			}
 			accumulateMeter(&e.returnBMeter, returnL, returnR)
 			dry.AddReturn(returnL, returnR)
 		}
 		left, right := dry.Music()
 		sfxL, sfxR := dry.SFX()
+		if e.taps != nil {
+			e.taps[frame].Music = Stereo{left, right}
+			e.taps[frame].SFX = Stereo{sfxL, sfxR}
+		}
 		accumulateMeter(&e.sfxMeter, sfxL, sfxR)
 		if e.sfxBusMute || e.musicBusSolo && !e.sfxBusSolo {
 			sfxL, sfxR = 0, 0
@@ -950,9 +1016,14 @@ func (e *Engine) Render(outL, outR []float32) {
 		if e.masterMute {
 			left, right = 0, 0
 		}
+		left += e.masterBiasL
+		right += e.masterBiasR
 		if e.masterGain != 1 {
 			left *= e.masterGain
 			right *= e.masterGain
+		}
+		if e.taps != nil {
+			e.taps[frame].PreMaster = Stereo{left, right}
 		}
 		if e.masterProcessor != nil {
 			left, right = e.masterProcessor.Process(left, right)
@@ -970,6 +1041,9 @@ func (e *Engine) Render(outL, outR []float32) {
 			clear(outL[frame:])
 			clear(outR[frame:])
 			return
+		}
+		if e.taps != nil {
+			e.taps[frame].LimiterReductionDB = e.limiter.GainReductionDB()
 		}
 		e.limiterGR = max(e.limiterGR, float32(e.limiter.GainReductionDB()))
 		accumulateMeter(&e.masterMeter, outL[frame], outR[frame])
@@ -1131,7 +1205,7 @@ func (e *Engine) apply(c cmd.Command) {
 		e.applyDirector(c)
 	case cmd.OpPlay:
 		e.transport.Play()
-		if len(e.song) > 0 && !e.songMode {
+		if len(e.schedule) > 0 && !e.songMode {
 			e.startSong()
 		}
 		if e.renderFrames > 0 {
@@ -1149,6 +1223,7 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 	case cmd.OpSeek:
 		e.resetDirector()
+		e.resetClips()
 		if e.transport.SeekTick(int64(c.Arg0)*seq.TicksPerBar+int64(c.Arg1)) != nil {
 			e.fault(6)
 			return
@@ -1255,6 +1330,13 @@ func (e *Engine) apply(c cmd.Command) {
 			v.guitar.NoteOn(note, velocity, accent, slide)
 		case VoiceModal:
 			v.modal.NoteOn(note, velocity, slide)
+		case VoiceSample:
+			var err error
+			v.samplerNote, err = v.sampler.NoteOn(note, velocity)
+			if err != nil {
+				e.fault(9)
+				return
+			}
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
 		case VoicePiano:
@@ -1706,6 +1788,8 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		v.guitar.NoteOff()
 	case VoiceModal:
 		v.modal.NoteOff()
+	case VoiceSample:
+		v.sampler.NoteOffAll()
 	case VoiceGraph:
 		if v.poly != nil {
 			v.poly.ReleaseAll()
@@ -1744,6 +1828,8 @@ func (e *Engine) resetVoice(track int) {
 		v.guitar.Reset()
 	case VoiceModal:
 		v.modal.Reset()
+	case VoiceSample:
+		v.sampler.Reset()
 	case VoiceGraph:
 		if v.poly != nil {
 			v.poly.Reset()
