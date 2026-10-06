@@ -10,6 +10,28 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+func unsupportedSourceExpression(score *notation.Score, kind string) string {
+	for _, sampler := range score.Samplers {
+		if sampler.Name == kind {
+			return "sampler"
+		}
+	}
+	if kind != "piano" {
+		return ""
+	}
+	for _, instrument := range score.Instruments {
+		if instrument.Name == kind {
+			return ""
+		}
+	}
+	for _, kit := range score.Kits {
+		if kit.Name == kind {
+			return ""
+		}
+	}
+	return "modeled piano"
+}
+
 func compileExpression(source notation.Pattern, pattern *seq.Pattern) error {
 	if len(source.Expression) == 0 {
 		return nil

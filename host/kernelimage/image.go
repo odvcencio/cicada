@@ -22,12 +22,16 @@ const ChordImageVersion = 14 // opt-in bounded graph polyphony and chord payload
 // 13's layout. Older readers reject its nonzero value before loading new ops.
 const DelayCapability uint16 = 1 << 1
 
+// PianoCapability requires the modeled piano voice and its sustain state.
+const PianoCapability uint16 = 1 << 2
+
 // ExpressionCapability enables the per-step expression extension and graph
 // expression inputs. Older readers reject the required bit before decoding.
-const ExpressionCapability uint16 = 1 << 2
+const ExpressionCapability uint16 = 1 << 3
 
 // NeuralAmpCapability requires the pinned causal neural amp operation (28).
 const NeuralAmpCapability uint16 = 1 << 4
+
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -135,8 +139,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 					return nil, Error("unused slot contains chord payload")
 				}
 				for i, chord := range pattern.Chords {
-					if chord.Count > 0 && (spec.Polyphony != 4 || i >= int(pattern.Len)) {
-						return nil, Error("chord payload requires an active polyphonic graph step")
+					if chord.Count > 0 && (spec.Polyphony != 4 && spec.Kind != engine.VoicePiano || i >= int(pattern.Len)) {
+						return nil, Error("chord payload requires an active polyphonic step")
+					}
+					if chord.Count > 0 {
+						version = ChordImageVersion
 					}
 				}
 				if pattern.Len > 0 {
@@ -166,6 +173,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	var capabilities uint16
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
+		if spec.Kind == engine.VoicePiano {
+			capabilities |= PianoCapability
+		}
 		if graphNeedsExpression(&spec.Graph) {
 			capabilities |= ExpressionCapability
 		}
@@ -340,6 +350,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			if err := writeGraph(&w, spec.Graph); err != nil {
 				return nil, err
 			}
+		case engine.VoicePiano:
+			if math.IsNaN(float64(spec.PianoSustain)) || math.IsInf(float64(spec.PianoSustain), 0) || spec.PianoSustain < 0 || spec.PianoSustain > 1 {
+				return nil, Error("invalid piano sustain")
+			}
+			w.f32(spec.PianoSustain)
 		default:
 			return nil, Error("invalid track voice kind")
 		}
@@ -349,6 +364,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				bank = cfg.Patterns[track]
 			}
 			pattern := bank.Slots[slot]
+			if spec.Kind == engine.VoicePiano && pattern.Expression != nil {
+				return nil, Error("piano voices do not support per-note expression")
+			}
 			w.byte(pattern.Len)
 			w.u16(pattern.SwingPermille)
 			w.byte(byte(pattern.Transpose))
@@ -474,7 +492,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|ExpressionCapability|NeuralAmpCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|ExpressionCapability|NeuralAmpCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -736,6 +754,16 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			if err = readGraphInto(&r, version, reserved, &spec.Graph); err != nil {
 				return err
 			}
+		case engine.VoicePiano:
+			if reserved&PianoCapability == 0 {
+				return Error("modeled piano requires capability bit 2")
+			}
+			if spec.PianoSustain, err = r.f32(); err != nil {
+				return err
+			}
+			if math.IsNaN(float64(spec.PianoSustain)) || math.IsInf(float64(spec.PianoSustain), 0) || spec.PianoSustain < 0 || spec.PianoSustain > 1 {
+				return Error("invalid piano sustain")
+			}
 		default:
 			return Error("invalid track image kind")
 		}
@@ -955,7 +983,7 @@ func readGraphInto(r *reader, version uint16, capabilities uint16, program *grap
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
 	}
 	if graphNeedsExpression(program) && capabilities&ExpressionCapability == 0 {
-		return Error("graph expression inputs require capability bit 2")
+		return Error("graph expression inputs require capability bit 3")
 	}
 	if graphNeedsDelay(program) && capabilities&DelayCapability == 0 {
 		return Error("graph delay operations require capability bit 1")

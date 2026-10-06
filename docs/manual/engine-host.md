@@ -94,7 +94,7 @@ pitch independently of MIDI 1.0 byte messages; see the
 [MIDI Association overview](https://midi.org/what-musicians-artists-need-to-know-about-midi-2-0).
 
 Images containing expression rows or graph inputs require
-`kernelimage.ExpressionCapability` from `gosx_audio_capabilities`. Existing
+`kernelimage.ExpressionCapability` (bit 3) from `gosx_audio_capabilities`. Existing
 images keep their layout; the capability appends expression records to each
 pattern record and is rejected by older readers.
 

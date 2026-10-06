@@ -177,6 +177,12 @@ func (p *sceneParameters) set(setting engine.SceneSetting) error {
 	case kernel.ParamMixSolo:
 		state.solo = value == 1
 		p.updateMuteTargets()
+	case kernel.ParamPianoSustain:
+		voice, ok := track.voice.(*pianoVoice)
+		if !ok {
+			return fmt.Errorf("piano voice is missing")
+		}
+		return voice.SetSustain(value)
 	case kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:
 		voice, ok := track.voice.(acidVoice)
 		if !ok {
