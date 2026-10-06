@@ -298,7 +298,7 @@ func TestScenePatternEndUsesRestartOffsetsAndRejectsNoSharedEnd(t *testing.T) {
 	e.patterns[0].slots[0].Len = 2
 	e.patterns[1].active = 0
 	e.patterns[1].slots[0].Len = 3
-	e.patterns[1].startStep = 1
+	e.patterns[1].startTick = seq.TicksPerStep
 	if err := e.transport.SeekTick(500); err != nil {
 		t.Fatal(err)
 	}

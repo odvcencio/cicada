@@ -10,6 +10,7 @@ import (
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/guitar"
 	"m31labs.dev/cicada/project"
 )
 
@@ -183,6 +184,12 @@ func (p *sceneParameters) set(setting engine.SceneSetting) error {
 			return fmt.Errorf("piano voice is missing")
 		}
 		return voice.SetSustain(value)
+	case kernel.ParamGuitarBend, kernel.ParamGuitarVibrato, kernel.ParamGuitarBrightness, kernel.ParamGuitarDamping, kernel.ParamGuitarPickup, kernel.ParamGuitarDrive:
+		voice, ok := track.voice.(*guitar.Voice)
+		if !ok {
+			return fmt.Errorf("guitar voice is missing")
+		}
+		return voice.SetParam(setting.ID, float64(value))
 	case kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:
 		voice, ok := track.voice.(acidVoice)
 		if !ok {

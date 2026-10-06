@@ -16,3 +16,5 @@
   (scene_decl)
   (song_decl)
 ] @fold
+
+(preset_decl) @fold

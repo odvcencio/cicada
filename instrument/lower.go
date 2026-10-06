@@ -50,7 +50,14 @@ func Lower(program *Program, overrides map[string]string) (graph.Program, error)
 			kn.C = uint8(node.Inputs[2])
 		}
 		if len(node.Inputs) > 3 {
-			kn.Value = float32(node.Inputs[3])
+			if node.Op == "comb" {
+				kn.Value = float32(node.Inputs[3])
+			} else {
+				kn.D = uint8(node.Inputs[3])
+			}
+		}
+		if len(node.Inputs) > 4 {
+			kn.E = uint8(node.Inputs[4])
 		}
 		if node.Op == "literal" || node.Op == "param" {
 			literal := node.Literal
@@ -110,10 +117,20 @@ func kernelOp(n Node) (graph.Op, error) {
 		return graph.Square, nil
 	case "sine":
 		return graph.Sine, nil
+	case "pm":
+		return graph.PM, nil
 	case "noise":
 		return graph.Noise, nil
+	case "ddsp":
+		return graph.DDSP, nil
 	case "env":
 		return graph.Envelope, nil
+	case "adsr":
+		return graph.ADSR, nil
+	case "pulse":
+		return graph.Pulse, nil
+	case "svf":
+		return graph.SVF, nil
 	case "ladder":
 		return graph.Ladder, nil
 	case "diode":

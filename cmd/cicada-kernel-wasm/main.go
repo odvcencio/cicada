@@ -27,9 +27,20 @@ var oscillatorBankStorage [acid.MaxOscillatorBankImageBytes]byte
 var audioSampleRate int
 var legacyConfigured bool
 
+var allocationStats runtime.MemStats
+
+// Allocation counters let the host verify the kernel callback directly, even
+// when an allocation would fit inside already reserved linear memory.
+//
+//go:wasmexport gosx_audio_allocation_count
+func allocationCount() uint64 {
+	runtime.ReadMemStats(&allocationStats)
+	return allocationStats.Mallocs
+}
+
 //go:wasmexport gosx_audio_capabilities
 func capabilities() uint32 {
-	return kernelimage.CapabilityChords | uint32(kernelimage.DelayCapability|kernelimage.PianoCapability|kernelimage.ExpressionCapability|kernelimage.NeuralAmpCapability)
+	return kernelimage.CapabilityChords | kernelimage.CapabilityUnifiedImage | uint32(kernelimage.SupportedCapabilities)
 }
 
 // Allocation telemetry is queried by hosts outside the render callback.

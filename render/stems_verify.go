@@ -82,10 +82,15 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 				return report, fmt.Errorf("stem manifest differs from score")
 			}
 		}
-		songBars = 0
-		for _, entry := range p.Song {
-			songBars += int(entry.Bars)
+		events, err := project.CompileSchedule(p)
+		if err != nil {
+			return report, err
 		}
+		var end int64
+		for _, v := range events {
+			end = max(end, v.Tick, v.EndTick)
+		}
+		songBars = int((end + seq.TicksPerBar - 1) / seq.TicksPerBar)
 	}
 	names := make([]string, 0, len(manifest.Tracks)+5)
 	for index, track := range manifest.Tracks {

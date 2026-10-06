@@ -1,0 +1,30 @@
+title "Neural reed study"
+
+tempo 112
+
+key d minor
+
+seed 4242
+
+instrument neural_reed {
+  octave = 4
+  voice mono {
+    let loudness = env(gate, 620ms) * velocity
+    out = ddsp(pitch, loudness)
+  }
+}
+
+track reed neural_reed {}
+
+pattern melody {
+  gate = 70%
+  1^ . 3 . 5 . 4 . | 3 . 2 . 1 . 5, .
+}
+
+scene main {
+  reed = melody
+}
+
+song {
+  main*2
+}

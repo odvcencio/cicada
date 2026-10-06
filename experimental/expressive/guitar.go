@@ -59,6 +59,19 @@ func (g *Guitar) NoteOn(hz, velocity float64) {
 	}
 }
 func (g *Guitar) NoteOff() { g.released = true }
+
+// Reset clears a voice without reallocating its delay storage. Controls persist.
+func (g *Guitar) Reset() {
+	clear(g.loop.data)
+	g.loop.pos = 0
+	g.loss1, g.loss2, g.dcIn, g.dcOut = 0, 0, 0, 0
+	g.phase, g.velocity = 0, 0
+	g.hz = g.target
+	g.control = g.e
+	g.released = true
+	g.rng = 1
+	g.amp.Reset()
+}
 func (g *Guitar) SetExpression(e Expression) {
 	if finite(e.PitchHz) && e.PitchHz > 0 {
 		g.target = clamp(e.PitchHz, 40, 2000)
@@ -69,6 +82,14 @@ func (g *Guitar) SetExpression(e Expression) {
 	e.Damping = clamp(e.Damping, 0, 1)
 	e.Drive = clamp(e.Drive, 0, 1)
 	g.e = e
+}
+
+// SetExpressionImmediate restores settled controls without clearing a note's
+// string or amplifier state. Ordinary expression updates remain smoothed.
+func (g *Guitar) SetExpressionImmediate(e Expression) {
+	g.SetExpression(e)
+	g.control = g.e
+	g.hz = g.target
 }
 func (g *Guitar) Next() float64 {
 	alpha := 1 - math.Exp(-1/(.008*g.sr))

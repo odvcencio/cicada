@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -347,5 +348,45 @@ func TestSaveAsCopiesMultiFileProjectAndUpdatesEntry(t *testing.T) {
 	score, ds := set.Parse()
 	if p, _ := project.FromScore(score); p == nil || len(ds) != 0 {
 		t.Fatalf("copied project: %+v", ds)
+	}
+}
+
+func TestSaveAsRejectsExistingLibraryAncestry(t *testing.T) {
+	for _, nested := range []bool{false, true} {
+		t.Run(strconv.FormatBool(nested), func(t *testing.T) {
+			root, library := t.TempDir(), t.TempDir()
+			main := filepath.Join(root, "main.cicada")
+			if err := os.WriteFile(main, []byte(copyScore), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "cicada.mod"), []byte("project score\ncicada 2\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			manifest := []byte("library demo/tone\ncicada 2\nsource \"tone.cicada\"\nlicense \"MIT\"\nauthor \"Cicada contributors\"\n")
+			if err := os.WriteFile(filepath.Join(library, "cicada.mod"), manifest, 0600); err != nil {
+				t.Fatal(err)
+			}
+			dir := library
+			if nested {
+				dir = filepath.Join(library, "nested")
+				if err := os.Mkdir(dir, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "cicada.mod"), []byte("project nested\ncicada 2\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			target := filepath.Join(dir, "copy.cicada")
+			if err := SaveAs(main, target); err == nil || !strings.Contains(err.Error(), "inside a library") {
+				t.Fatalf("library destination accepted: %v", err)
+			}
+			if _, err := os.Stat(target); !os.IsNotExist(err) {
+				t.Fatal("rejected copy was written")
+			}
+			after, err := os.ReadFile(filepath.Join(library, "cicada.mod"))
+			if err != nil || !bytes.Equal(after, manifest) {
+				t.Fatal("library manifest changed")
+			}
+		})
 	}
 }

@@ -1,0 +1,17 @@
+instrument glass {
+  voice mono {
+    out = sine(pitch) * env(gate, 90ms) * velocity
+  }
+}
+
+phrase _hook {
+  1 . 3 . 5 . 3 .
+}
+
+pattern melody {
+  use _hook *2
+}
+
+preset soft {
+  instrument = glass level = -9dB
+}

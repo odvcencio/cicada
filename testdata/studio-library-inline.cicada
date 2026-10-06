@@ -1,0 +1,29 @@
+cicada 2
+title "Studio library"
+tempo 120
+key c minor
+seed 4242
+
+instrument glassbass {
+  octave = 2
+  param cutoff = 540Hz
+  param bite = 0.58
+  voice mono {
+    let osc = saw(pitch)
+    let sub = square(pitch / 2)
+    let body = mix(osc, sub, 0.32)
+    let shape = env(gate, 330ms)
+    out = ladder(body, cutoff * exp2(shape * 3.2), bite) * shape
+  }
+}
+instrument kick { octave = 2 voice mono { out = sine(pitch) * env(gate, 120ms) } }
+kit steel { bd = kick ch = builtin.ch }
+fx grit drive { shape = soft gain = 9dB tone = 9kHz mix = 0.7 }
+
+track lead glassbass { cutoff = 900Hz bite = 0.7 level = -18dB insert = grit }
+track beat steel { level = -18dB }
+track bass acid { cutoff = 360Hz reso = 0.3 envmod = 0.25 decay = 520ms wave = 1 accent = 0.5 drive = 0.1 filter = ladder level = -18dB }
+pattern melody { c3 . . . g3 . . . c3 . . . g3 . . . }
+pattern beat drums { bd: X...x...X...x... ch: x.x.x.x.x.x.x.x. }
+scene main { lead = melody beat = beat bass = melody }
+song { main * 2 }

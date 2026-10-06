@@ -166,6 +166,10 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 	if hasDiagnosticErrors(diagnostics) {
 		return studioMixerView{}, fmt.Errorf("score must validate before the Mix view can load")
 	}
+	score, diagnostics = notation.ResolvePresets(score)
+	if hasDiagnosticErrors(diagnostics) {
+		return studioMixerView{}, fmt.Errorf("invalid presets: %v", diagnostics)
+	}
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {
 		return studioMixerView{}, err
@@ -594,11 +598,14 @@ func spacedMixerValue(value string) string {
 
 func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 	current, err := os.ReadFile(file.Path)
+	if os.IsNotExist(err) && file.Before == nil {
+		current, err = nil, nil
+	}
 	if err != nil {
 		return err
 	}
 	if !bytes.Equal(current, file.Before) {
-		return fmt.Errorf("%s changed during edition upgrade", filepath.Base(file.Path))
+		return fmt.Errorf("%s changed during source edit", filepath.Base(file.Path))
 	}
 	stage, err := os.CreateTemp(filepath.Dir(file.Path), ".cicada-studio-manifest-*")
 	if err != nil {
@@ -622,8 +629,11 @@ func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 		return err
 	}
 	latest, err := os.ReadFile(file.Path)
+	if os.IsNotExist(err) && file.Before == nil {
+		latest, err = nil, nil
+	}
 	if err != nil || !bytes.Equal(latest, file.Before) {
-		return fmt.Errorf("%s changed during edition upgrade", filepath.Base(file.Path))
+		return fmt.Errorf("%s changed during source edit", filepath.Base(file.Path))
 	}
 	return os.Rename(stagePath, file.Path)
 }
