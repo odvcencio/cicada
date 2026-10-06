@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"sort"
+	"slices"
 
 	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/instrument"
@@ -60,6 +60,7 @@ type Report struct {
 type trackRuntime struct {
 	name           string
 	voice          monoVoice
+	poly           *graph.Pool
 	mixer          mix.Track
 	insert         *fx.Drive
 	align          *mix.Delay
@@ -112,6 +113,13 @@ type monoVoice interface {
 	NoteOff()
 	Next() float32
 }
+
+type polyVoice struct{ *graph.Pool }
+
+func (voice polyVoice) NoteOn(note, velocity uint8, accent, slide bool) {
+	panic("polyphonic rendering requires a cohort event")
+}
+func (voice polyVoice) NoteOff() { voice.Pool.ReleaseAll() }
 
 type customVoice struct{ *graph.Voice }
 
@@ -391,7 +399,14 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	}
 	var eventBuf [128]seq.Event
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
-	var events []scheduled
+	eventCapacity := 0
+	for i := range tracks {
+		eventCapacity += 2*len(eventBuf) + 1 // active, pending releases, and transition
+		if tracks[i].drums != nil {
+			eventCapacity += (int(drum.LaneCount) - 1) * len(eventBuf)
+		}
+	}
+	events := make([]scheduled, 0, eventCapacity)
 	var position int64
 	bar := 0
 	for _, entry := range score.Song {
@@ -474,17 +489,23 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 						}
 					}
 				}
-				sort.Slice(events, func(i, j int) bool {
-					if events[i].event.Sample != events[j].event.Sample {
-						return events[i].event.Sample < events[j].event.Sample
+				slices.SortFunc(events, func(a, b scheduled) int {
+					if a.event.Sample != b.event.Sample {
+						if a.event.Sample < b.event.Sample {
+							return -1
+						}
+						return 1
 					}
-					if events[i].event.Kind != events[j].event.Kind {
-						return events[i].event.Kind == seq.NoteOff
+					if a.event.Kind != b.event.Kind {
+						if a.event.Kind == seq.NoteOff {
+							return -1
+						}
+						return 1
 					}
-					if events[i].track != events[j].track {
-						return events[i].track < events[j].track
+					if a.track != b.track {
+						return a.track - b.track
 					}
-					if events[i].lane != events[j].lane {
+					if a.lane != b.lane {
 						priority := func(lane drum.Lane) int {
 							if lane == drum.OH {
 								return int(drum.CH)
@@ -494,9 +515,15 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 							}
 							return int(lane)
 						}
-						return priority(events[i].lane) < priority(events[j].lane)
+						return priority(a.lane) - priority(b.lane)
 					}
-					return events[i].event.NoteID < events[j].event.NoteID
+					if a.event.NoteID < b.event.NoteID {
+						return -1
+					}
+					if a.event.NoteID > b.event.NoteID {
+						return 1
+					}
+					return 0
 				})
 				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
 					return report, err
@@ -572,7 +599,7 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 		authoredKits[kit.ID] = kit
 	}
 	tracks := make([]trackRuntime, 0, len(score.Tracks))
-	for _, source := range score.Tracks {
+	for sourceIndex, source := range score.Tracks {
 		mixerParams, err := project.CompileMixerParams(source)
 		if err != nil {
 			return nil, fmt.Errorf("track %s: %w", source.Name, err)
@@ -610,7 +637,7 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 				return nil, err
 			}
 			if isAuthoredKit {
-				bindings, err := project.CompileKit(kitDefinition, programs)
+				bindings, err := project.CompileKitAtSampleRate(kitDefinition, programs, sampleRate)
 				if err != nil {
 					return nil, err
 				}
@@ -650,6 +677,9 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 				if pattern.Kind != "drums" {
 					continue
 				}
+				if !patternBoundToTrack(score, pattern.Name, source.Name) {
+					continue
+				}
 				compiled, err := project.CompilePattern(score, pattern, source)
 				if err != nil {
 					return nil, err
@@ -686,6 +716,9 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 				if pattern.Kind != "acid" && pattern.Kind != "notes" {
 					continue
 				}
+				if !patternBoundToTrack(score, pattern.Name, source.Name) {
+					continue
+				}
 				compiled, err := project.CompilePattern(score, pattern, source)
 				if err != nil {
 					return nil, err
@@ -698,9 +731,6 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 		program := programs[source.Kind]
 		if program == nil {
 			return nil, fmt.Errorf("audio renderer does not yet implement %s track %s", source.Kind, source.Name)
-		}
-		if program.Mode != "mono" {
-			return nil, fmt.Errorf("audio renderer does not yet implement poly voices")
 		}
 		overrides := make(map[string]string, len(source.Params))
 		for _, param := range source.Params {
@@ -716,18 +746,41 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 		if err != nil {
 			return nil, fmt.Errorf("track %s: %w", source.Name, err)
 		}
-		voice, err := graph.NewVoice(kernelProgram, sampleRate)
-		if err != nil {
-			return nil, err
+		track := trackRuntime{name: source.Name, mixer: trackMix, patterns: map[string]seq.Pattern{}}
+		if program.Mode == "poly" {
+			pool, err := graph.NewPool(kernelProgram, sampleRate)
+			if err != nil {
+				return nil, err
+			}
+			track.poly, track.voice = pool, polyVoice{pool}
+		} else {
+			voice, err := graph.NewVoice(kernelProgram, sampleRate)
+			if err != nil {
+				return nil, err
+			}
+			track.voice = customVoice{voice}
 		}
-		track := trackRuntime{name: source.Name, mixer: trackMix, voice: customVoice{voice}, patterns: map[string]seq.Pattern{}}
+		assignedPatterns := make(map[string]bool)
+		for _, slot := range semantic.Tracks[sourceIndex].Slots {
+			if slot != nil {
+				assignedPatterns[*slot] = true
+			}
+		}
 		for _, pattern := range score.Patterns {
 			if pattern.Kind != "notes" {
+				continue
+			}
+			if !patternBoundToTrack(score, pattern.Name, source.Name) {
 				continue
 			}
 			compiled, err := project.CompilePattern(score, pattern, source)
 			if err != nil {
 				return nil, err
+			}
+			if assignedPatterns[pattern.Name] {
+				if err := project.ValidateGraphDelayPattern(kernelProgram, sampleRate, compiled[0].Pattern); err != nil {
+					return nil, fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", source.Name, pattern.Name, err)
+				}
 			}
 			track.patterns[pattern.Name] = compiled[0].Pattern
 		}
@@ -905,7 +958,7 @@ func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSl
 	targetStep := boundaryTick / seq.TicksPerStep
 	targetIndex := uint8(targetStep % int64(target.Len))
 	next, err := seq.UnpackStep(target.Steps[targetIndex])
-	carry := err == nil && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, track, targetSlot, targetStep/int64(target.Len), targetIndex)
+	carry := err == nil && target.Chords[targetIndex].Count == 0 && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, track, targetSlot, targetStep/int64(target.Len), targetIndex)
 	return sceneTransition{
 		valid: true, carry: carry, sourceNoteID: sourceNoteID,
 		boundarySample: clock.SampleAtTick(boundaryTick), targetSample: clock.SampleAtTick(boundaryTick),
@@ -995,14 +1048,36 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				eventIndex++
 				continue
 			}
+			if track.poly != nil {
+				key := graph.Cohort{NoteID: event.event.NoteID, Generation: event.generation}
+				if event.event.Kind == seq.NoteOff {
+					track.poly.Release(key)
+				} else {
+					if !event.event.Slide {
+						track.poly.ReleaseAll()
+					}
+					notes, count := event.event.Notes, event.event.NoteCount
+					if count == 0 {
+						notes[0] = event.event.Note
+						count = 1
+					}
+					if _, err := track.poly.NoteOn(notes, count, event.event.Velocity, event.event.Slide, key); err != nil {
+						return err
+					}
+				}
+			}
 			if event.event.Kind == seq.NoteOff {
 				if track.activeGen == event.generation && track.activeNoteID == event.event.NoteID {
-					track.voice.NoteOff()
+					if track.poly == nil {
+						track.voice.NoteOff()
+					}
 					track.activeGen = 0
 					track.hasPendingGate = false
 				}
 			} else {
-				track.voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Accent, event.event.Slide)
+				if track.poly == nil {
+					track.voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Accent, event.event.Slide)
+				}
 				track.activeGen = event.generation
 				track.activeNoteID = event.event.NoteID
 				track.hasPendingGate = false
@@ -1242,4 +1317,15 @@ func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32) error {
 		return io.ErrShortWrite
 	}
 	return nil
+}
+
+func patternBoundToTrack(score *notation.Score, pattern, track string) bool {
+	for _, scene := range score.Scenes {
+		for _, binding := range scene.Bindings {
+			if binding.Track == track && binding.Pattern == pattern {
+				return true
+			}
+		}
+	}
+	return false
 }

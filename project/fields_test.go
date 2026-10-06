@@ -55,6 +55,12 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 			}
 			continue
 		}
+		if field.Construct == "step" && field.Name == "notes" {
+			if field.Required || field.Default != nil {
+				t.Errorf("chord payload must remain optional: %+v", field)
+			}
+			continue
+		}
 		if field.Construct == "scene" && field.Name == "settings" {
 			if field.Required || field.Introduced != "cicada.project/2" {
 				t.Errorf("scene settings field metadata is wrong: %+v", field)

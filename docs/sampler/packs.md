@@ -26,6 +26,8 @@ song { main*4 }
 
 Zones name an asset and declare `Root`, `KeyLow/High`, `VelocityLow/High`, velocity centre `Layer`, key `Group`, zero-based round-robin `Position` and `Count`, `Release`, linear `Gain`, `TuneCents`, source-frame region/loop bounds and `Crossfade`. `ChokeGroup` zero disables choking; matching nonzero groups release old notes in 2 ms. `OneShot` ignores key-up. Group maps may not overlap ambiguously; each declared cycle must be complete. Velocity crossfades use the neighbouring centres and linear amplitude weights. This preserves coherent recordings; unrelated samples can produce phase cancellation and still require listening review.
 
+`ChokeSustain: true` keeps a zone in its choke group while allowing successive strikes to overlap. A dedicated choke zone with the same group and `ChokeSustain: false` damps all those strikes. Omitted/false retains exclusive hat behavior. The optional sampler WASM packs this flag into descriptor word 19 bit 9; use the matching module and browser loader for packs that set it. Older modules reject the new flag during preparation.
+
 ## Browser and game hosts
 
 Serve `web.InstrumentPack()` as `instrument-pack.js` and `web.SamplerProcessor()` as its sibling `sampler-processor.js`, plus the optional WASM kernel and external pack directory. These modules are opt-in; the existing Studio client/worklet and their size gates are unchanged.

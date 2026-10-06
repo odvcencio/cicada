@@ -11,6 +11,7 @@ import (
 
 type heldNote struct {
 	index int
+	count int
 	step  int64
 	slide bool
 	valid bool
@@ -202,8 +203,10 @@ func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, tra
 	}
 	if step.Tie {
 		if held.valid && held.step == absoluteStep-1 {
-			note := &track.Notes[held.index]
-			note.Dur = max(note.Dur, end-note.Tick)
+			for i := 0; i < max(1, held.count); i++ {
+				note := &track.Notes[held.index+i]
+				note.Dur = max(note.Dur, end-note.Tick)
+			}
 			held.step, held.slide = absoluteStep, false
 		}
 		return
@@ -226,19 +229,28 @@ func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, tra
 		} else if step.Accent {
 			velocity = 127
 		}
-		track.Notes = append(track.Notes, Note{
-			Tick: onset, Dur: gate, Note: pitch, Vel: velocity,
-			Chan: channel, Track: trackIndex + 1,
-		})
-		held.index, held.step, held.slide, held.valid = len(track.Notes)-1, absoluteStep, step.Slide && !isDrum && ratchet+1 == step.Ratchet, true
+		held.index, held.count = len(track.Notes), 1
+		chord := pattern.Chords[index]
+		if !isDrum && chord.Count > 0 {
+			held.count = int(chord.Count)
+		}
+		for n := 0; n < held.count; n++ {
+			if chord.Count > 0 {
+				pitch = uint8(int(chord.Notes[n]) + int(pattern.Transpose))
+			}
+			track.Notes = append(track.Notes, Note{Tick: onset, Dur: gate, Note: pitch, Vel: velocity, Chan: channel, Track: trackIndex + 1})
+		}
+		held.step, held.slide, held.valid = absoluteStep, step.Slide && !isDrum && ratchet+1 == step.Ratchet, true
 	}
 }
 
 func closeAt(track *TrackChunk, held *heldNote, tick int64) {
 	if held.valid {
-		note := &track.Notes[held.index]
-		if note.Tick+note.Dur > tick {
-			note.Dur = max(int64(1), tick-note.Tick)
+		for i := 0; i < max(1, held.count); i++ {
+			note := &track.Notes[held.index+i]
+			if note.Tick+note.Dur > tick {
+				note.Dur = max(int64(1), tick-note.Tick)
+			}
 		}
 	}
 	held.valid = false

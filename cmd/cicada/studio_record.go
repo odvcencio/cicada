@@ -127,6 +127,8 @@ func recordedTakeSource(source []byte, trackID, patternID string, take []studioT
 	if drums != drumTrack {
 		return nil, fmt.Errorf("pattern %q does not match track %q", patternID, trackID)
 	}
+	// The scalar take editor excludes custom/poly tracks before pitchedSource,
+	// whose grid semantics add/remove individual pitches on existing chords.
 	if !drums && track.Kind != "acid" {
 		return nil, fmt.Errorf("track %q is not an acid track", trackID)
 	}

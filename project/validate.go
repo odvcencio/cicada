@@ -7,6 +7,8 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -120,6 +122,7 @@ func ValidateProject(p *Project) error {
 		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
 	}
 	instruments := map[string]*instrument.Program{}
+	trackGraphs := map[string]graph.Program{}
 	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
 		if p.Edition == 2 && inst.ID == "audio" {
@@ -131,7 +134,7 @@ func ValidateProject(p *Project) error {
 		if err := uniqueID(inst.ID, seenInstruments); err != nil {
 			return fmt.Errorf("instrument: %w", err)
 		}
-		if inst.Mode != "mono" || inst.Params == nil || inst.Lets == nil {
+		if inst.Mode != "mono" && inst.Mode != "poly" || inst.Params == nil || inst.Lets == nil {
 			return fmt.Errorf("instrument %s uses an unsupported voice mode or incomplete fields", inst.ID)
 		}
 		params := map[string]bool{}
@@ -234,9 +237,11 @@ func ValidateProject(p *Project) error {
 				}
 				overrides[name] = literal
 			}
-			if _, err := instrument.Lower(program, overrides); err != nil {
+			lowered, err := instrument.Lower(program, overrides)
+			if err != nil {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
+			trackGraphs[track.ID] = lowered
 		}
 		if p.Format == FormatID && track.Mixer.Solo {
 			return fmt.Errorf("project/1 does not support solo")
@@ -405,6 +410,8 @@ func ValidateProject(p *Project) error {
 			allocatedVoices += drumVoiceCount(projectDrumLanes(p, track))
 		} else if kit, ok := kits[track.Kind]; ok {
 			allocatedVoices += len(kit.Lanes)
+		} else if inst := instruments[track.Kind]; inst != nil && inst.Mode == "poly" {
+			allocatedVoices += 4
 		} else {
 			allocatedVoices++
 		}
@@ -436,6 +443,11 @@ func ValidateProject(p *Project) error {
 				if !ok || len(steps) != int(pattern.Steps) {
 					return fmt.Errorf("drum pattern %s lane %s has wrong length", pattern.ID, lane)
 				}
+				for _, step := range steps {
+					if step != nil && len(step.Notes) > 0 {
+						return fmt.Errorf("drum pattern %s cannot contain chords", pattern.ID)
+					}
+				}
 				if err := validateSteps(steps); err != nil {
 					return fmt.Errorf("drum pattern %s lane %s: %w", pattern.ID, lane, err)
 				}
@@ -443,6 +455,17 @@ func ValidateProject(p *Project) error {
 		} else if pattern.Kind == "acid" || pattern.Kind == "notes" {
 			if len(pattern.Data) != int(pattern.Steps) || len(pattern.Lanes) != 0 {
 				return fmt.Errorf("note pattern %s has wrong data length", pattern.ID)
+			}
+			for i, step := range pattern.Data {
+				if step != nil && len(step.Notes) > 0 {
+					if pattern.Kind != "notes" {
+						return fmt.Errorf("chords require a notes pattern")
+					}
+					previous := pattern.Data[(i+len(pattern.Data)-1)%len(pattern.Data)]
+					if previous != nil && previous.Slide {
+						return fmt.Errorf("a slide cannot target a chord")
+					}
+				}
 			}
 			if err := validateSteps(pattern.Data); err != nil {
 				return fmt.Errorf("note pattern %s: %w", pattern.ID, err)
@@ -461,7 +484,31 @@ func ValidateProject(p *Project) error {
 			if !ok || seen[*slot] || !compatible(track.Kind, pattern.Kind, kits) {
 				return fmt.Errorf("track %s has invalid or duplicate slot %s", track.ID, *slot)
 			}
+			for _, step := range pattern.Data {
+				if step != nil && len(step.Notes) > 0 {
+					inst := instruments[track.Kind]
+					if inst == nil || inst.Mode != "poly" || pattern.Kind != "notes" {
+						return fmt.Errorf("chords require a voice poly instrument and a notes pattern")
+					}
+				}
+			}
 			seen[*slot] = true
+			if program := trackGraphs[track.ID]; program.DelaySamples() > 0 {
+				for _, step := range pattern.Data {
+					if step == nil || step.Tie {
+						continue
+					}
+					notes := step.Notes
+					if len(notes) == 0 {
+						notes = []int{int(step.Note)}
+					}
+					for _, note := range notes {
+						if err := validateGraphDelayNote(program, 48_000, note+int(pattern.Transpose)); err != nil {
+							return fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
+						}
+					}
+				}
+			}
 		}
 	}
 	scenes := map[string]Scene{}
@@ -543,6 +590,8 @@ func ValidateProject(p *Project) error {
 				voices += drumVoiceCount(projectDrumLanes(p, tracks[trackID]))
 			} else if kit, ok := kits[kind]; ok {
 				voices += len(kit.Lanes)
+			} else if inst := instruments[kind]; inst != nil && inst.Mode == "poly" {
+				voices += 4
 			} else {
 				voices++
 			}
@@ -701,7 +750,7 @@ func validateExpr(expr Expr, depth int) (int, error) {
 
 func validExprArity(op string, n int) bool {
 	switch op {
-	case "+", "-", "*", "/", "env", "lowpass", "highpass":
+	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay":
 		return n == 2
 	case "saw", "square", "sine", "tanh", "exp2":
 		return n == 1
@@ -709,6 +758,8 @@ func validExprArity(op string, n int) bool {
 		return n == 0
 	case "ladder", "diode", "mix", "clamp":
 		return n == 3
+	case "comb":
+		return n == 4
 	}
 	return false
 }
@@ -720,6 +771,21 @@ func validateSteps(steps []*Step) error {
 		}
 		if step.Note > 127 || step.Ratchet < 1 || step.Ratchet > 8 || step.Probability > 100 || step.Velocity > 127 {
 			return fmt.Errorf("step %d has invalid note or modifiers", index)
+		}
+		if step.Notes != nil {
+			if len(step.Notes) < 2 || len(step.Notes) > 4 {
+				return fmt.Errorf("step %d chord needs 2 to 4 pitches", index)
+			}
+			chord := seq.ChordStep{Count: uint8(len(step.Notes))}
+			for i, note := range step.Notes {
+				if note < 0 || note > 127 {
+					return fmt.Errorf("step %d chord pitch is out of range", index)
+				}
+				chord.Notes[i] = uint8(note)
+			}
+			if err := chord.Validate(seq.Step{Note: step.Note, Gate: true, Tie: step.Tie, Slide: step.Slide, Ratchet: step.Ratchet}); err != nil {
+				return fmt.Errorf("step %d: %w", index, err)
+			}
 		}
 		if step.Tie && (step.Note != 0 || step.Ratchet != 1 || step.Probability != 100) {
 			return fmt.Errorf("step %d has invalid tie encoding", index)
