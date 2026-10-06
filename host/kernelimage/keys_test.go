@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/host/kernelimage"
@@ -27,8 +28,16 @@ func TestKeysImageSparseRoundtripAndCapability(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if binary.LittleEndian.Uint16(data[4:6]) != 15 {
+		t.Fatal("modeled keyboard image did not use unambiguous version 15")
+	}
 	if binary.LittleEndian.Uint16(data[30:32]) != kernelimage.KeysCapability {
 		t.Fatal("missing keyboard capability")
+	}
+	ambiguous := append([]byte(nil), data...)
+	binary.LittleEndian.PutUint16(ambiguous[4:6], 14)
+	if _, err := kernelimage.Decode(ambiguous, 48000, 128); err == nil {
+		t.Fatal("accepted ambiguous keyboard image version 14")
 	}
 	decoded, err := kernelimage.Decode(data, 48000, 128)
 	if err != nil || !reflect.DeepEqual(cfg.Track, decoded.Track) {
@@ -124,7 +133,7 @@ func TestKeysChordImageAndCommandUpload(t *testing.T) {
 }
 
 func TestKeysAndExpressionCapabilitiesRemainIndependent(t *testing.T) {
-	if kernelimage.ExpressionCapability != 1<<3 || kernelimage.NeuralAmpCapability != 1<<4 || kernelimage.KeysCapability != 1<<5 {
+	if kernelimage.ExpressionCapability != 1<<3 || kernelimage.NeuralAmpCapability != 1<<4 || kernelimage.KeysCapability != 1<<9 {
 		t.Fatal("published additive capability bits changed")
 	}
 	cfg := keysImageConfig()
@@ -162,9 +171,13 @@ func TestKeysAndExpressionCapabilitiesRemainIndependent(t *testing.T) {
 		t.Fatal("unique keys pattern header not found")
 	}
 	bad := append([]byte(nil), data...)
-	bad[offset+len(signature)] = 1
-	if _, err := kernelimage.Decode(bad, 48000, 128); err == nil {
-		t.Fatal("mixed image silently accepted keyboard expression")
+	expressionOffset := offset + len(signature) + 5 // version 15 chord record
+	if data[expressionOffset] != 0 {
+		t.Fatal("expected blank keyboard expression record")
+	}
+	bad[expressionOffset] = 1
+	if _, err := kernelimage.Decode(bad, 48000, 128); err == nil || !strings.Contains(err.Error(), "per-note expression") {
+		t.Fatalf("mixed image did not reject keyboard expression: %v", err)
 	}
 	keyPattern.Expression = new([64]seq.Expression)
 	if data, err := kernelimage.Encode(cfg); err == nil || data != nil {

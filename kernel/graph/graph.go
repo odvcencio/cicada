@@ -8,6 +8,7 @@ import (
 	"m31labs.dev/cicada/kernel/amp"
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/expression"
+	"m31labs.dev/cicada/kernel/voice/ddsp"
 )
 
 const MaxNodes = 128
@@ -49,6 +50,11 @@ const (
 	Period    Op = 26 // unit / Hz, converted from seconds to milliseconds
 	PitchBend Op = 27 // pitch cents; zero is neutral
 	NeuralAmp Op = 28 // pinned quantized causal amp: audio, unit drive
+	PM        Op = 32 // sine carrier with an audio phase offset scaled in radians
+	ADSR      Op = 23
+	Pulse     Op = 33
+	SVF       Op = 34
+	DDSP      Op = 31 // harmonic-plus-noise reed: fundamental Hz, linear loudness
 	Pressure  Op = 29 // normalized 0..1; zero is neutral
 	Timbre    Op = 30 // normalized 0..1; 0.5 is neutral
 )
@@ -58,6 +64,8 @@ type Node struct {
 	A     uint8
 	B     uint8
 	C     uint8
+	D     uint8 `json:",omitempty"`
+	E     uint8 `json:",omitempty"`
 	Value float32
 	// Comb stores its fourth input index in Value, preserving the 8-byte image
 	// node record. Other operations retain their existing Value semantics.
@@ -81,6 +89,7 @@ type nodeState struct {
 	noise  uint32
 	delay  uint8
 	amp    uint8
+	neural uint8
 
 	// Each coefficient input is clamped above zero; zero marks an empty cache.
 	// The program and sample rate stay fixed for the lifetime of the voice.
@@ -102,32 +111,64 @@ type Voice struct {
 	gliding     bool
 	gate        float32
 	velocity    float32
+	quality     *qualityState
 	expression  expression.State
 	delays      []delayState
 	delayMemory []float32
 	amps        []amp.Model
+	ddspVoices  []ddsp.Synth
 }
 
+//go:noinline
 func NewVoice(program Program, sampleRate int) (*Voice, error) {
-	if err := validateProgram(&program, sampleRate); err != nil {
+	return NewVoiceFromProgram(&program, sampleRate)
+}
+
+// NewVoiceFromProgram prepares voice storage without copying the input program at each call.
+// The voice owns its program after construction.
+//
+//go:noinline
+func NewVoiceFromProgram(program *Program, sampleRate int) (*Voice, error) {
+	if err := ValidateProgram(program, sampleRate); err != nil {
 		return nil, err
 	}
-	v := &Voice{program: program, sampleRate: float32(sampleRate)}
+	v := new(Voice)
+	v.program = *program
+	v.sampleRate = float32(sampleRate)
+	if usesQuality(program) {
+		v.quality = newQualityState(program, sampleRate)
+		v.sampleRate *= 2
+	}
 	if program.GlideMS > 0 {
-		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(sampleRate)))
+		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(v.sampleRate)))
 	}
 	v.expression.Reset()
-	count := delaySamples(&program) / MaxDelaySamples
+	count := delaySamples(program) / MaxDelaySamples
 	if count > 0 {
 		v.delayMemory = make([]float32, count*MaxDelaySamples)
 		v.delays = make([]delayState, count)
 	}
 	count = 0
 	for i := 0; i < int(program.Len); i++ {
+		if program.Nodes[i].Op == DDSP {
+			count++
+		}
+	}
+	if count > 0 {
+		v.ddspVoices = make([]ddsp.Synth, count)
+	}
+	count = 0
+	neural := 0
+	for i := 0; i < int(program.Len); i++ {
 		v.states[i].noise = uint32(i+1)*0x9e3779b9 ^ 0xa5a5a5a5
 		if program.Nodes[i].Op == Delay || program.Nodes[i].Op == Comb {
 			v.states[i].delay = uint8(count)
 			count++
+		}
+		if program.Nodes[i].Op == DDSP {
+			v.states[i].neural = uint8(neural)
+			v.ddspVoices[neural], _ = ddsp.New(sampleRate)
+			neural++
 		}
 	}
 	count = 0
@@ -146,10 +187,11 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 // Validate checks untrusted images and statically known delay controls without
 // allocating voice storage. Dynamic controls are bounded again in Next.
 func Validate(program Program, sampleRate int) error {
-	return validateProgram(&program, sampleRate)
+	return ValidateProgram(&program, sampleRate)
 }
 
-func validateProgram(program *Program, sampleRate int) error {
+// ValidateProgram checks a program without passing its fixed node array by value.
+func ValidateProgram(program *Program, sampleRate int) error {
 	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
 		return Error("invalid graph program")
 	}
@@ -169,10 +211,12 @@ func validateProgram(program *Program, sampleRate int) error {
 		case Pitch, Gate, Velocity, SampleRate, Constant, Noise, PitchBend, Pressure, Timbre:
 		case Saw, Square, Sine, Tanh, Exp2:
 			inputs = 1
-		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay, NeuralAmp:
+		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay, NeuralAmp, Pulse, DDSP:
 			inputs = 2
-		case Ladder, Diode, Mix, Clamp:
+		case Ladder, Diode, Mix, Clamp, PM, SVF:
 			inputs = 3
+		case ADSR:
+			inputs = 5
 		case Comb:
 			inputs = 3
 			if n.Value < 0 || n.Value >= float32(i) || n.Value != float32(uint8(n.Value)) {
@@ -181,7 +225,7 @@ func validateProgram(program *Program, sampleRate int) error {
 		default:
 			return Error("unknown graph operation")
 		}
-		if (inputs > 0 && int(n.A) >= i) || (inputs > 1 && int(n.B) >= i) || (inputs > 2 && int(n.C) >= i) {
+		if (inputs > 0 && int(n.A) >= i) || (inputs > 1 && int(n.B) >= i) || (inputs > 2 && int(n.C) >= i) || (inputs > 3 && int(n.D) >= i) || (inputs > 4 && int(n.E) >= i) {
 			return Error("graph input must precede its node")
 		}
 		if n.Op == Constant && (math.IsNaN(float64(n.Value)) || math.IsInf(float64(n.Value), 0)) {
@@ -191,7 +235,7 @@ func validateProgram(program *Program, sampleRate int) error {
 	if delaySamples(program) > MaxVoiceDelaySamples {
 		return Error("voice graph exceeds 8192 delay samples (two delay nodes)")
 	}
-	return validateDelayControls(program, sampleRate)
+	return validateDelayPitch(program, sampleRate, 0)
 }
 
 func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
@@ -214,13 +258,18 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 	v.pitch = float32(440 * math.Exp2((float64(note)-69)/12))
 	v.pitchLog, v.targetLog = targetLog, targetLog
 	v.gliding = false
+	if v.quality != nil {
+		v.quality.retrigger()
+	}
 	for i := 0; i < int(v.program.Len); i++ {
 		s := &v.states[i]
 		switch v.program.Nodes[i].Op {
-		case Saw, Square, Sine:
+		case Saw, Square, Sine, PM:
 			s.phase = 0
 		case Envelope:
 			s.env = 1
+		case DDSP:
+			v.ddspVoices[s.neural].Reset()
 		}
 	}
 }
@@ -238,18 +287,23 @@ func (v *Voice) NoteOff() { v.gate = 0 }
 // CopyStateFrom copies a voice constructed with the same program into this
 // voice's preallocated storage. Neither delay state nor ring memory is shared.
 func (v *Voice) CopyStateFrom(source *Voice) {
-	delays, memory, amps := v.delays, v.delayMemory, v.amps
+	delays, memory, amps, neural := v.delays, v.delayMemory, v.amps, v.ddspVoices
 	*v = *source
 	v.delays, v.delayMemory, v.amps = delays, memory, amps
 	copy(v.delays, source.delays)
 	copy(v.delayMemory, source.delayMemory)
 	copy(v.amps, source.amps)
+	v.ddspVoices = neural
+	copy(v.ddspVoices, source.ddspVoices)
 }
 
 func (v *Voice) Reset() {
 	v.expression.Reset()
 	v.pitch, v.gate, v.velocity = 0, 0, 0
 	v.pitchLog, v.targetLog, v.gliding = 0, 0, false
+	if v.quality != nil {
+		v.quality.reset()
+	}
 	for i := uint8(0); i < v.program.Len; i++ {
 		index := i & (MaxNodes - 1)
 		v.values[index] = 0
@@ -260,9 +314,28 @@ func (v *Voice) Reset() {
 	clear(v.delayMemory)
 	clear(v.delays)
 	clear(v.amps)
+	for i := range v.ddspVoices {
+		v.ddspVoices[i].Reset()
+	}
 }
 
 func (v *Voice) Next() float32 {
+	if v.quality == nil {
+		return v.nextSample()
+	}
+	first, second := v.nextSample(), v.nextSample()
+	out := float32(v.quality.down.Downsample(float64(first), float64(second)))
+	if v.quality.fade > 0 {
+		blend := float32(v.quality.fade) / float32(v.quality.fadeFrames)
+		out = out*(1-blend) + v.quality.previous*blend
+		v.quality.fade--
+	}
+	v.quality.last = out
+	return out
+}
+
+//go:noinline
+func (v *Voice) nextSample() float32 {
 	if v.gliding {
 		v.pitchLog += float64((v.targetLog - v.pitchLog) * v.pitchAlpha)
 		v.pitch = float32(fastmath.Exp2(v.pitchLog))
@@ -295,6 +368,8 @@ func (v *Voice) Next() float32 {
 			y = v.sampleRate
 		case Constant:
 			y = n.Value
+		case DDSP:
+			y = v.ddspVoices[s.neural].NextFloat(a, b)
 		case Add:
 			y = a + b
 		case Subtract:
@@ -318,8 +393,15 @@ func (v *Voice) Next() float32 {
 			}
 		case NeuralAmp:
 			y = v.amps[s.amp].ProcessFloat(a, b)
-		case Saw, Square, Sine:
+		case Saw, Square, Sine, PM:
+			if n.Op != PM && v.quality != nil {
+				y = v.quality.oscillate(int(index), n.Op, a, 0.5, v.sampleRate)
+				break
+			}
 			frequency := clamp(a, 0, v.sampleRate*0.49)
+			if n.Op == PM {
+				frequency = finiteClamp(a, 0, v.sampleRate*0.49)
+			}
 			dt := frequency / v.sampleRate
 			phase := s.phase
 			if dt > 0 {
@@ -333,8 +415,18 @@ func (v *Voice) Next() float32 {
 						y = -1
 					}
 					y += polyBLEP(phase, dt) - polyBLEP(frac(phase+0.5), dt)
-				case Sine:
-					y = float32(math.Sin(2 * math.Pi * float64(phase)))
+				case Sine, PM:
+					// Only the carrier advances stored phase. Reduce the offset
+					// in float64 so finite audio/index products cannot overflow
+					// or grow the sine argument. Sidebands are not band-limited.
+					offset := 0.0
+					if n.Op == PM {
+						offset = float64(b) * float64(c) / (2 * math.Pi)
+						offset -= math.Floor(offset)
+					}
+					if !math.IsNaN(offset) {
+						y = float32(math.Sin(2 * math.Pi * (float64(phase) + offset)))
+					}
 				}
 				s.phase = frac(phase + dt)
 			}
@@ -357,6 +449,12 @@ func (v *Voice) Next() float32 {
 				s.coefficientInput = ms
 			}
 			s.env *= s.coefficient
+		case Pulse:
+			y = v.quality.oscillate(int(index), Pulse, a, b, v.sampleRate)
+		case ADSR:
+			y = v.quality.nodes[i].envelope.next(a > 0, b, c, v.values[n.D], v.values[n.E], v.sampleRate)
+		case SVF:
+			y = v.quality.nodes[i].filter.next(a, b, c, v.sampleRate, v.quality.baseRate)
 		case Ladder, Diode:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
 			if frequency != s.coefficientInput {

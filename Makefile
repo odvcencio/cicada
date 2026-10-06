@@ -1,9 +1,16 @@
-.PHONY: test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-keys-wasm test-keys-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics
+.PHONY: test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-chord-wasm test-worklet-negotiation
+.PHONY: build-keys-wasm test-keys-wasm
 
 export GOWORK := off
 
+.PHONY: test-chord-wasm
+.PHONY: build-core build-workstation build-workstation-release test-workstation
+
 # Keep a TinyGo/Binaryen regression from consuming the full CI job budget.
 KERNEL_WASM_BUILD_TIMEOUT ?= 180s
+# Size optimization keeps the richer bounded voice engine within its existing
+# download budget. Audio parity and browser callback budgets gate this build.
+KERNEL_WASM_OPT ?= z
 
 # Redirect measurements outside the checkout; see docs/manual/engine-metrics.md.
 ENGINE_METRICS_ARGS ?=
@@ -25,9 +32,36 @@ grammar-check:
 	cmp build/cicada.bin notation/cicada.bin
 	go test ./language/... -count=1
 
-build:
+build: build-core build-workstation
+
+build-core:
 	mkdir -p build
 	GOFLAGS=-buildvcs=false go build -o build/cicada ./cmd/cicada
+
+# The GoSX app has its own Go 1.26 module; the realtime TinyGo core stays 1.25.
+build-workstation:
+	cd workstation && go run -mod=mod m31labs.dev/gosx/cmd/gosx build .
+	mkdir -p build/workstation
+	cp workstation/dist/server/app build/cicada-workstation.new
+	mv -f build/cicada-workstation.new build/cicada-workstation
+	cp workstation/dist/build.json build/workstation/build.json
+	cp -R workstation/dist/assets workstation/dist/public build/workstation/
+
+build-workstation-release:
+	cd workstation && go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .
+	mkdir -p build/workstation
+	cp workstation/dist/server/app build/cicada-workstation.new
+	mv -f build/cicada-workstation.new build/cicada-workstation
+	cp workstation/dist/build.json build/workstation/build.json
+	cp -R workstation/dist/assets workstation/dist/public build/workstation/
+
+test-workstation:
+	cd workstation && go generate ./... && go test -race ./... -count=1
+
+.PHONY: test-studio-continuity
+# Requires a running Studio with the marked disposable browser-test score.
+test-studio-continuity:
+	node --test workstation/browser/continuity.test.cjs
 
 test-kernel:
 	go test ./kernel/... -count=1
@@ -42,7 +76,7 @@ test-timing:
 test-golden:
 	go run ./cmd/cicada golden
 
-test-midi-virtual: build
+test-midi-virtual: build-core
 	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-midi-virtual.cjs
 
 .PHONY: test-mpe-virtual
@@ -56,7 +90,7 @@ probe-wasm:
 
 build-kernel-wasm:
 	mkdir -p build
-	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
+	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
 		status=$$?; \
 		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
 			echo "FAIL build-kernel-wasm: TinyGo kernel build exceeded $(KERNEL_WASM_BUILD_TIMEOUT) budget" >&2; \
@@ -72,7 +106,7 @@ build-loudness-wasm:
 # Optional keyboard module; same ABI and AudioWorklet, loaded only for keys.
 build-keys-wasm:
 	mkdir -p build
-	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags keys -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
+	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags keys -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
 	wc -c build/cicada-keys.wasm
 	test $$(wc -c < build/cicada-keys.wasm) -le 524288
 
@@ -85,6 +119,10 @@ test-kernel-wasm: build-kernel-wasm build-loudness-wasm
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
 
+test-chord-wasm: build-kernel-wasm test-worklet-negotiation
+	node host/web/chord_capability_test.cjs
+	bash -o pipefail -c 'CICADA_CHORD_WASM_PATH="$(CURDIR)/build/cicada-kernel.wasm" go test -timeout=2m -tags chord_wasm ./cmd/cicada-kernel-wasm -run "^TestChordWASM" -count=1 -v | tee build/chord-wasm-report.txt build/test-chord-wasm.log'
+
 test-parity: build-kernel-wasm
 	mkdir -p build/parity
 	bash -o pipefail -c 'CICADA_PARITY_DIR="$$PWD/build/parity" go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run "^TestExamplesPCM24Parity$$" -count=1 -v | tee build/parity/report.txt'
@@ -92,12 +130,17 @@ test-parity: build-kernel-wasm
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v
 
-test-wasm: build-kernel-wasm
+test-wasm: build-kernel-wasm test-chord-wasm
 	bash -o pipefail -c "GOWORK=off nice -n 10 go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1 -v | tee build/test-wasm.log"
+
+# Required unified image and opcode negotiation gates use the freshly built reactor.
+test-worklet-negotiation: build-worklets
+	node host/web/chord_capability_test.cjs
+	node host/web/client_capability_test.cjs
 
 test-browser: build-kernel-wasm
 	mkdir -p build
-	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations)$$' 5m build/test-browser.log
 
 budget-size: build-kernel-wasm
 	bash -o pipefail -c "go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm host/web/processor.min.js | tee build/budget-size-report.txt"
@@ -130,7 +173,7 @@ build-worklets:
 	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=true --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor-capture.min.js
 
 # Optional sample kernel: one prepared immutable instrument per instance.
-# Audio packs stay external; the core kernel and its 300 KiB gate are unchanged.
+# Audio packs stay external; the core kernel keeps its shared size gate.
 .PHONY: build-sampler-wasm test-sampler-wasm
 build-sampler-wasm:
 	mkdir -p build

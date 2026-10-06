@@ -84,6 +84,12 @@ func keysConfig() Config {
 	return cfg
 }
 
+func TestKeysVoiceKindPreservesPublishedKinds(t *testing.T) {
+	if VoicePiano != 4 || VoiceGuitar != 5 || VoiceModal != 6 || VoiceAudio != 8 || VoiceSample != 9 || VoicePrepared != 10 || VoiceGraphPoly != 11 || VoiceKeys != 12 {
+		t.Fatal("modeled keyboards changed a published voice identifier")
+	}
+}
+
 func TestKeysFactoryAndBudgetValidation(t *testing.T) {
 	installFakeKeys(t)
 	cfg := keysConfig()

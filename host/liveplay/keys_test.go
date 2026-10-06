@@ -1,6 +1,7 @@
 package liveplay
 
 import (
+	"fmt"
 	"math"
 	"strings"
 	"testing"
@@ -147,7 +148,7 @@ func TestKeysLiveClassificationPreservesAuthoredOverrides(t *testing.T) {
 	}
 	// An expression queued for a previous graph score must report its rejection
 	// if a score replacement makes that track a modeled keyboard before drain.
-	p.notes.Store(&noteBatch{count: 1, inputs: [128]noteInput{{Track: "part", NoteID: 7, Expression: true, Timbre: .5}}})
+	p.notes.Store(&noteBatch{count: 1, inputs: [256]noteInput{{Track: "part", NoteID: 7, Expression: true, Timbre: .5}}})
 	p.queueLiveNotes()
 	select {
 	case event := <-p.Events():
@@ -163,5 +164,84 @@ func TestKeysLiveClassificationPreservesAuthoredOverrides(t *testing.T) {
 		if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) {
 			t.Fatal("expression rejection produced nonfinite output")
 		}
+	}
+}
+
+func TestKeysLiveOwnersSharePitchWithoutReleasingOtherKeys(t *testing.T) {
+	score, voice := liveKeyboardScore(t)
+	p, err := New(score, 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	for _, press := range []struct {
+		id              string
+		pitch, velocity int
+	}{{"first", 60, 32}, {"second", 60, 100}, {"other", 64, 127}} {
+		if err := p.NoteID("part", press.pitch, press.velocity, true, press.id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drainNotes(t, p)
+	if voice.notes[60] != 100 || voice.notes[64] != 127 {
+		t.Fatal("owned keyboard presses lost velocity or a separate pitch")
+	}
+	if err := p.NoteID("part", 60, 0, false, "first"); err != nil {
+		t.Fatal(err)
+	}
+	if got := drainNotes(t, p); len(got) != 0 || voice.release[60] || voice.release[64] {
+		t.Fatalf("earlier owner released a held pitch: %+v", got)
+	}
+	if err := p.NoteID("part", 60, 0, false, "second"); err != nil {
+		t.Fatal(err)
+	}
+	if got := drainNotes(t, p); len(got) != 1 || got[0].Kind != "note-off" || voice.notes[60] != 0 || voice.notes[64] != 127 {
+		t.Fatalf("final owner's release changed an unrelated keyboard pitch: %+v", got)
+	}
+}
+
+func TestKeysLiveReleaseOverloadClearsHeldAndQueuedNotes(t *testing.T) {
+	score, voice := liveKeyboardScore(t)
+	p, err := New(score, 48000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	for i := 0; i < 128; i++ {
+		if err := p.NoteID("part", 21+i%88, 100, true, fmt.Sprint("old:", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	drainNotes(t, p)
+	for i := 0; i < 128; i++ {
+		pitch := 21 + i%88
+		if err := p.NoteID("part", pitch, 0, false, fmt.Sprint("old:", i)); err != nil {
+			t.Fatal(err)
+		}
+		if err := p.NoteID("part", pitch, 127, true, fmt.Sprint("new:", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for i := 0; i < 128; i++ {
+		if err := p.NoteID("part", 21+i%88, 0, false, fmt.Sprint("new:", i)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := p.NoteID("part", 60, 127, true, "barrier"); err == nil {
+		t.Fatal("keys press bypassed the release-overload barrier")
+	}
+	drainNotes(t, p)
+	for note, velocity := range voice.notes {
+		if velocity != 0 {
+			t.Fatalf("keyboard pitch %d remained held after release overload", note)
+		}
+	}
+	for _, order := range p.heldOrder {
+		if order != 0 {
+			t.Fatal("keyboard ownership survived release overload")
+		}
+	}
+	if p.fault != nil || p.notes.Load() != nil || p.noteEpoch.Load()&1 != 0 {
+		t.Fatal("keys overload left a fault, queued input, or pending barrier")
 	}
 }

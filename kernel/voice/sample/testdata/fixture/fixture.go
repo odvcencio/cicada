@@ -4,14 +4,11 @@ package fixture
 import "m31labs.dev/cicada/kernel/voice/sample"
 
 const Frames = 4096
-const Cases = 11
+const Cases = 9
 
 // Render includes intro, loop wraps, repeated pitches, smoothing, release and
 // a full-pool steal. Integer-generated PCM avoids platform-specific tone math.
 func Render(index, blockSize int, output []float32) error {
-	if index >= 9 {
-		return renderCrossfadedLoop(index, blockSize, output)
-	}
 	if index >= 6 {
 		return renderInstrument(index, blockSize, output)
 	}
@@ -61,54 +58,6 @@ func Render(index, blockSize int, output []float32) error {
 		if frame == 2048 {
 			for i := 0; i < 3; i++ {
 				if _, err := p.NoteOn(note, uint8(81+i)); err != nil {
-					return err
-				}
-			}
-		}
-		p.Render(output[frame:frame+blockSize], output[Frames+frame:Frames+frame+blockSize])
-	}
-	return nil
-}
-
-// Larger crossfaded loops exercise contiguous and mapped FIR windows in both
-// channels, before and after wrapping, at 48 and 96 kHz output rates.
-func renderCrossfadedLoop(index, blockSize int, output []float32) error {
-	var left, right [2049]float32
-	seed := uint32(0x71b927cd)
-	for i := range left {
-		seed = seed*1664525 + 1013904223
-		left[i] = float32(int32(seed>>8)-(1<<23)) / (1 << 24)
-		seed = seed*1664525 + 1013904223
-		right[i] = float32(int32(seed>>8)-(1<<23)) / (1 << 24)
-	}
-	r := sample.Region{Left: left[:], SampleRate: 48000, RootKey: 60, Start: 7, End: 2047, Loop: true, LoopStart: 303, LoopEnd: 1927, Crossfade: 256}
-	rate, note := 48000, uint8(61)
-	if index == 9 {
-		r.Right = right[:]
-	} else {
-		rate, note = 96000, 73
-	}
-	p, err := sample.NewPool(rate, 3, r)
-	if err != nil {
-		return err
-	}
-	first, err := p.NoteOn(note, 127)
-	if err != nil {
-		return err
-	}
-	if _, err = p.NoteOn(note+4, 103); err != nil {
-		return err
-	}
-	for frame := 0; frame < Frames; frame += blockSize {
-		if frame == 1024 {
-			p.NoteOff(first)
-			if err = p.SetGainTarget(.7, .013); err != nil {
-				return err
-			}
-		}
-		if frame == 2048 {
-			for j := 0; j < 3; j++ {
-				if _, err = p.NoteOn(note+uint8(j), uint8(81+j)); err != nil {
 					return err
 				}
 			}

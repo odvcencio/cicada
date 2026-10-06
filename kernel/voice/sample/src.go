@@ -1,6 +1,9 @@
 package sample
 
-import "math"
+import (
+	"math"
+	"sync"
+)
 
 const phases = 1024
 
@@ -23,7 +26,16 @@ var banks = [...]sincBank{
 	{ratio: 8, taps: 768},
 }
 
-func init() {
+var banksOnce sync.Once
+
+// prepareBanks runs only in validated constructors, before a voice can enter
+// the audio callback. Every admitted note can select any of the eight banks.
+// Package import and nonsample engines leave their coefficient storage empty.
+func prepareBanks() {
+	banksOnce.Do(generateBanks)
+}
+
+func generateBanks() {
 	const beta = 12.0
 	normalizer := besselI0(beta)
 	for b := range banks {
@@ -83,21 +95,12 @@ func (v *Voice) interpolate() (float64, float64) {
 	row := bank.coeff[index*bank.taps : (index+1)*bank.taps]
 	next := bank.coeff[(index+1)*bank.taps : (index+2)*bank.taps]
 	first := base - bank.taps/2 + 1
-	end := first + bank.taps
-	plainStart, plainEnd := v.region.Start, v.region.End
-	if v.region.Loop {
-		// Before the first wrap, the original attack remains contiguous. After
-		// wrapping, the overlapped head is skipped. The crossfade tail always
-		// needs frame mapping, even before the first wrap.
-		plainEnd = min(plainEnd, v.region.LoopEnd-v.region.Crossfade)
-		if v.looped {
-			plainStart = max(plainStart, v.region.LoopStart+v.region.Crossfade)
-		}
-	}
 	var left, right float64
 	// Explicit float64 conversions round products before addition, preventing
 	// native FMA contraction. Taps always accumulate in ascending source order.
-	if first >= plainStart && end <= plainEnd {
+	if v.region.Crossfade == 0 && first >= v.region.Start && first+bank.taps <= v.region.End &&
+		(!v.region.Loop || (first >= v.region.LoopStart && first+bank.taps <= v.region.LoopEnd) ||
+			(!v.looped && first+bank.taps <= v.region.LoopEnd)) {
 		l := v.region.Left[first : first+bank.taps]
 		// Exact table phases need no row interpolation. This preserves the
 		// same tap order and rounding while reducing integer-ratio CPU cost.

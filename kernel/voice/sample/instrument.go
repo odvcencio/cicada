@@ -168,6 +168,7 @@ func NewInstrument(rate int, zones []Zone, config InstrumentConfig) (*Instrument
 			}
 		}
 	}
+	prepareBanks()
 	return p, nil
 }
 

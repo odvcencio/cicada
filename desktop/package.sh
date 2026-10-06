@@ -66,8 +66,17 @@ cp "$work/sdk/runtimes/win-x64/native/WebView2Loader.dll" "$stage/"
 cp "$work/sdk/LICENSE.txt" "$stage/licenses/WebView2-SDK-LICENSE.txt"
 cp "$repo/LICENSE" "$stage/licenses/Cicada-LICENSE.txt"
 
-export GOWORK=off GOOS=windows GOARCH=amd64 CGO_ENABLED=0
+export GOWORK=off
+# Build the framework runtime on the host before cross-compiling executables.
+# Mutable scores, take journals, and settings never enter the GoSX bundle.
+(cd "$repo/workstation" && go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .)
+mkdir -p "$stage/workstation"
+cp "$repo/workstation/dist/build.json" "$stage/workstation/"
+cp -R "$repo/workstation/dist/assets" "$repo/workstation/dist/public" "$stage/workstation/"
+
+export GOOS=windows GOARCH=amd64 CGO_ENABLED=0
 (cd "$repo" && go build -trimpath -ldflags="-s -w" -o "$stage/cicada.exe" ./cmd/cicada)
+(cd "$repo/workstation" && go build -trimpath -ldflags="-s -w" -o "$stage/cicada-workstation.exe" .)
 (cd "$repo/desktop" && go build -trimpath -ldflags="-H=windowsgui -s -w -X main.buildVersion=$version" -o "$stage/cicada-studio.exe" .)
 unset GOOS GOARCH
 

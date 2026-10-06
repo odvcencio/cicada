@@ -1,0 +1,59 @@
+import "demo/tone"
+
+title "Preset circuit"
+
+tempo 138
+
+key a minor
+
+seed 4242
+
+instrument glassbass {
+  octave = 2
+  param cutoff = 540Hz
+  param bite = 0.58
+  voice mono {
+    let shape = env(gate, 330ms)
+    out = lowpass(saw(pitch), cutoff) * shape * bite
+  }
+}
+
+preset glassbass.bright {
+  instrument = glassbass cutoff = 900Hz bite = 0.7
+}
+
+preset acid-bright {
+  instrument = acid cutoff = 900Hz decay = 180ms wave = 0.6
+}
+
+track lead glassbass.bright {
+  bite = 0.65
+}
+
+track bass acid-bright {
+  cutoff = 1100Hz
+}
+
+track bell tone.soft {}
+
+pattern melody {
+  1 . 3 . 5 . 3 . | 1 . 3 . 5 . 7, .
+}
+
+scene verse {
+  lead = melody
+  bass = melody
+  bell = tone.melody
+}
+
+scene lift {
+  lead = keep
+  bass = keep
+  bell = keep
+  bass.cutoff = 1400Hz
+}
+
+song {
+  verse
+  lift
+}

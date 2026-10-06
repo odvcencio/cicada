@@ -46,7 +46,7 @@ named `tine_ep` overrides that built-in patch in its score.
 ## Native and browser playback
 
 Native Cicada contains the family. Studio loads `cicada-keys.wasm` only when an
-image advertises capability bit 5. Build it with `make build-keys-wasm` and
+image advertises capability bit 9. Build it with `make build-keys-wasm` and
 place it beside the CLI, or set `CICADA_KEYS_WASM`. The core kernel and worklet
 keep their existing budgets; the heavier keyboard DSP is separately loaded.
 Switching between core and keyboard modules retains the AudioContext and

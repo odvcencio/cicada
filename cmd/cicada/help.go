@@ -61,12 +61,12 @@ func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 			fmt.Fprintln(stdout, shortHelpText)
 			return true, 0
 		}
-		if len(args) != 2 {
+		if len(args) != 2 && !(len(args) == 3 && args[1] == "lib") {
 			fmt.Fprintln(stderr, "usage: cicada help <command>")
 			fmt.Fprintln(stderr, "run cicada help")
 			return true, 2
 		}
-		if entry, ok := findCommandHelp(args[1]); ok {
+		if entry, ok := findCommandHelp(strings.Join(args[1:], " ")); ok {
 			fmt.Fprintln(stdout, renderCommandHelp(entry))
 			return true, 0
 		}
@@ -74,7 +74,13 @@ func handleCLIHelp(args []string, stdout, stderr io.Writer) (bool, int) {
 		fmt.Fprintln(stderr, "run cicada help")
 		return true, 2
 	}
-	if entry, ok := findCommandHelp(args[0]); ok {
+	helpName := args[0]
+	if helpName == "lib" && len(args) > 1 {
+		if _, ok := findCommandHelp("lib " + args[1]); ok {
+			helpName += " " + args[1]
+		}
+	}
+	if entry, ok := findCommandHelp(helpName); ok {
 		for _, arg := range args[1:] {
 			if arg == "--help" || arg == "-h" {
 				fmt.Fprintln(stdout, renderCommandHelp(entry))
@@ -98,11 +104,21 @@ func findCommandHelp(name string) (commandHelpEntry, bool) {
 	if name == "record-pack" {
 		return commandHelpEntry{name: "record-pack", summary: "slice owner WAV recordings into a pinned sampler pack", usage: "cicada record-pack -o <pack-directory> [flags] <recording.wav>...", flags: "  -o <directory>       required new pack directory\n  --name <id>          lowercase instrument name (default recorded)\n  --root <MIDI>        fallback root, 12–95 (default 60)\n  --layers <n>         velocity layers, 1–8 (default 3)\n  --auto-pitch=<bool>  map detected roots (default false)\n  --help               show this help", notes: "Put flags before input files. Prints a checksummed sampler declaration; audio retains the owner recording licence."}, true
 	}
-	if name == "lib" {
-		return commandHelpEntry{name: "lib", summary: "pin imported library content", usage: "cicada lib update [PATH]", flags: "  --help   show this help", notes: "Update one imported library, or all imported libraries when PATH is omitted. Prints the old and new resolution kinds and SHA-256 hashes."}, true
+	libEntries := []commandHelpEntry{
+		{name: "lib", summary: "manage pinned source and audio libraries", usage: "cicada lib list\ncicada lib show PATH\ncicada lib new PATH [--dir DIR]\ncicada lib update [PATH]\ncicada lib vendor", notes: "Use cicada help lib <command> for details. CICADA_LIBRARY overrides the user config directory's cicada/lib folder."},
+		{name: "lib list", summary: "list available std, project, and user libraries", usage: "cicada lib list", notes: "Prints each path and resolution kind, including duplicates. Does not change pins."},
+		{name: "lib show", summary: "inspect a resolved library", usage: "cicada lib show PATH", notes: "Prints the manifest, declaration names, audio paths, SHA-256 hash, and resolution directory. Does not change pins."},
+		{name: "lib new", summary: "scaffold an edition-2 library", usage: "cicada lib new PATH [--dir DIR]", flags: "  --dir DIR   create PATH in an explicit directory\n  --help      show this help", notes: "A library path such as demo/tone is created in the user library. An absolute or dot-prefixed directory uses its final directory name as the library path. --dir preserves the full library path. Existing destinations are refused; std is reserved."},
+		{name: "lib update", summary: "pin imported library content", usage: "cicada lib update [PATH]", notes: "Update one imported library, or all imports when PATH is omitted. Prints old and new resolution kinds and SHA-256 hashes. Use only after an intended change."},
+		{name: "lib vendor", summary: "copy imported user libraries into project lib/", usage: "cicada lib vendor", notes: "Verifies current pins, stages and verifies all copies, then publishes libraries and updated pins. Includes transitive imports. Refuses different existing libraries and rolls back new copies on failure. Standard libraries stay embedded."},
+	}
+	for _, entry := range libEntries {
+		if entry.name == name {
+			return entry, true
+		}
 	}
 	if name == "save-as" {
-		return commandHelpEntry{name: "save-as", summary: "copy a score and its audio dependencies", usage: "cicada save-as <score.cicada> <target.cicada>", flags: "  (no command flags)"}, true
+		return commandHelpEntry{name: "save-as", summary: "copy a score, audio, and pinned libraries", usage: "cicada save-as <score.cicada> <target.cicada>", flags: "  (no command flags)", notes: "Imported user and project libraries are automatically vendored and re-pinned before the target score is published."}, true
 	}
 	for _, entry := range commandHelpEntries {
 		if entry.name == name {

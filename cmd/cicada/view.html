@@ -274,6 +274,15 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 @media (pointer:coarse) { .grid-line, .drum .grid-line { grid-template-columns:65px repeat(var(--steps),minmax(44px,1fr)); } .step-edit, .pitch-row .step-edit { min-height:44px; } }
 @media (prefers-reduced-motion:reduce) { .step-edit { transition:none; } .step-edit:hover { transform:none; } }
 @media (max-width:980px) { .workspace { grid-template-columns:1fr; } .source-pane { position:relative; height:42vh; border-right:0; border-bottom:1px solid var(--border); } .projection { padding:22px 16px 50px; } .hero .meta { margin-left:0; } }
+.library-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin:16px 0; }
+.library-toolbar label { display:grid; gap:6px; }
+.library-toolbar input,.library-toolbar select,.library-toolbar button,.library-row button { min-height:44px; border:1px solid var(--border); border-radius:7px; background:var(--panel); color:var(--text); padding:8px 12px; }
+.library-list { display:grid; gap:8px; }
+.library-row { display:flex; align-items:center; flex-wrap:wrap; gap:10px; border:1px solid var(--border); border-radius:8px; padding:12px; }
+.library-row > div { flex:1 1 180px; }
+.library-row strong,.library-row small { display:block; overflow-wrap:anywhere; }
+.library-row small { color:var(--muted); margin-top:5px; }
+.library-row button:focus-visible,.library-toolbar :focus-visible { outline:2px solid var(--amber); outline-offset:3px; }
 </style>
 <style>
 .live-toggle,.midi-enable { min-height:38px; border:1px solid #55745f; border-radius:8px; background:#1c3026; color:var(--mint); padding:6px 12px; font:700 .78rem system-ui,sans-serif; cursor:pointer; }
@@ -496,7 +505,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   <div class="meta"><span><b>Tempo</b>{{.Tempo}} BPM</span><span><b>Key</b>{{.Key}}</span><span><b>Tracks</b>{{len .Tracks}}</span><span><b>Patterns</b>{{len .Patterns}}</span></div>
 </header>
 <nav class="nav" aria-label="{{if .Studio}}Studio transport{{else}}Score sections{{end}}">{{if .Studio}}<div class="transport"><label class="sr-only" for="audio-mode">Audio mode</label><select id="audio-mode"><option value="native" selected>Native</option><option value="browser">Browser</option></select><button id="start-audio" type="button" hidden>Start audio</button><button id="transport-button" type="button" aria-label="Play or pause">Play</button><button id="transport-stop" type="button" aria-label="Stop and return to bar 1">■ Stop</button><button id="transport-home" type="button" aria-label="Return to start">⏮</button><span class="transport-position" id="transport-position" data-short="1.1.1">Bar 1 · Beat 1 · Step 1</span><span class="tempo-readout">{{.Tempo}} BPM</span><button id="live-toggle" class="live-toggle" type="button" aria-pressed="false">Live</button><span class="transport-pending" id="transport-pending" aria-live="polite"></span><span class="bar-chip audio-engine-status" id="audio-engine-status" role="status" aria-live="polite"></span><div class="master-meter" role="meter" aria-label="Master output level" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-120"><span>Peak</span><div class="meter-track"><i id="master-meter-fill"></i><b id="master-meter-hold"></b></div><output id="master-meter-value">−120 dBFS</output></div><span id="midi-controls" class="midi-controls" hidden><span class="midi-status"><i id="midi-activity" class="midi-activity" aria-hidden="true"></i><span id="midi-status">MIDI off</span></span><button id="midi-enable" class="midi-enable" type="button">Enable MIDI</button></span><span id="bar-arm" class="bar-chip" title="Armed tracks">REC ○</span><span id="bar-engine" class="bar-chip" title="Audio engine and device">audio: checking</span><span id="bar-lufs" class="bar-chip" title="Integrated loudness">— LUFS</span><span id="bar-save" class="bar-chip" data-keep data-state="saved">✓ saved</span><a id="bar-error" class="bar-chip bar-error" data-keep href="#notation" hidden></a></div>{{else}}<a href="#tracks">Tracks</a><a href="#arrangement">Arrangement</a><a href="#patterns">Patterns</a><a href="#voice">Voice</a><a href="#notation">Notation</a>{{end}}</nav>
-<main class="workspace">{{if .Studio}}<nav class="workspace-tabs" role="tablist" aria-label="Studio panels"><button type="button" role="tab" data-panel-tab="code" aria-selected="false" tabindex="-1">Code</button><button type="button" role="tab" data-panel-tab="session" aria-selected="true" tabindex="0">Session</button><button type="button" role="tab" data-panel-tab="song" aria-selected="false" tabindex="-1">Song</button><button type="button" role="tab" data-panel-tab="mix" aria-selected="false" tabindex="-1">Mix</button><button type="button" role="tab" data-panel-tab="master" aria-selected="false" tabindex="-1">Master</button><button type="button" role="tab" data-panel-tab="record" aria-selected="false" tabindex="-1">Record</button><button type="button" role="tab" data-panel-tab="voice" aria-selected="false" tabindex="-1">Voice</button><button type="button" role="tab" data-panel-tab="history" aria-selected="false" tabindex="-1">History</button></nav>{{end}}
+<main class="workspace">{{if .Studio}}<nav class="workspace-tabs" role="tablist" aria-label="Studio panels"><button type="button" role="tab" data-panel-tab="code" aria-selected="false" tabindex="-1">Code</button><button type="button" role="tab" data-panel-tab="session" aria-selected="true" tabindex="0">Session</button><button type="button" role="tab" data-panel-tab="song" aria-selected="false" tabindex="-1">Song</button><button type="button" role="tab" data-panel-tab="mix" aria-selected="false" tabindex="-1">Mix</button><button type="button" role="tab" data-panel-tab="master" aria-selected="false" tabindex="-1">Master</button><button type="button" role="tab" data-panel-tab="record" aria-selected="false" tabindex="-1">Record</button><button type="button" role="tab" data-panel-tab="voice" aria-selected="false" tabindex="-1">Voice</button><button type="button" role="tab" data-panel-tab="library" aria-selected="false" tabindex="-1">Library</button><button type="button" role="tab" data-panel-tab="history" aria-selected="false" tabindex="-1">History</button></nav>{{end}}
   <aside id="notation" class="source-pane" aria-labelledby="notation-heading">
     <div class="pane-header"><span><b id="notation-heading">{{.SourceName}}</b> <small>source of truth</small></span><span class="pane-state">{{if .Studio}}live file{{else}}validated snapshot{{end}}</span></div>
     {{if .Studio}}<div class="pane-actions"><button type="button" id="edit-source">Edit source</button><button type="button" id="save-source" class="primary" hidden>Save score</button><button type="button" id="discard-source" hidden>Discard</button><span class="audio-status-bar" id="audio-status-bar" role="status" aria-live="polite">Audio: checking…</span><span class="studio-status" id="studio-status" role="status" aria-live="polite">Ready</span></div>{{end}}
@@ -697,6 +706,25 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
         <div id="audio-io-meters" class="audio-io-runtime" aria-live="off"><span>Input peak: L −120 dBFS · R −120 dBFS</span><span>Output peak: L −120 dBFS · R −120 dBFS</span></div>
       </section>
     </section>{{end}}
+    {{if .Studio}}<section id="library" data-workspace-panel="library" aria-labelledby="library-heading" data-studio-library>
+      <h2 id="library-heading">Library</h2>
+      <p>Browse standard, project and user sounds. Preview one bar, insert on a track, or save track values as a preset.</p>
+      <div class="library-toolbar">
+        <label>Kind <select id="library-kind"><option value="">All kinds</option><option value="instrument">Instruments</option><option value="kit">Kits</option><option value="fx">FX chains</option><option value="preset">Presets</option></select></label>
+        <label>Search <input id="library-query" type="search" placeholder="Name or library"></label>
+        <button id="library-stop" type="button">Stop preview</button>
+      </div>
+      <div class="library-toolbar">
+        <label>Track <select id="library-track"><option value="">New track</option></select></label>
+        <label>New track name <input id="library-new-track" placeholder="lead" maxlength="64"></label>
+      </div>
+      <div id="library-list" class="library-list"></div>
+      <div class="library-toolbar">
+        <label>Preset name <input id="library-preset-name" placeholder="bright" maxlength="64"></label>
+        <button id="library-save" type="button">Save as preset</button>
+      </div>
+      <p id="library-status" role="status" aria-live="polite"></p>
+    </section>{{end}}
     {{if .Studio}}<section id="history" data-workspace-panel="history" aria-labelledby="history-heading" data-studio-history>
       <h2 id="history-heading">History</h2>
       <p class="section-note">Source edits in this Studio session. Expand an edit to inspect its diff or revert it.</p>
@@ -727,8 +755,8 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   </div>
 </main>
 {{if .Studio}}<dialog id="shortcut-sheet" class="shortcut-sheet" aria-labelledby="shortcut-heading"><h2 id="shortcut-heading">Keyboard shortcuts</h2><table><tbody>
-<tr><td><kbd>1</kbd>–<kbd>8</kbd></td><td>Code, Session, Song, Mix, Master, Record, Voice, History</td></tr>
-<tr><td><kbd>Alt+Shift+1</kbd>–<kbd>8</kbd></td><td>Same, from inside the code editor</td></tr>
+<tr><td><kbd>1</kbd>–<kbd>9</kbd></td><td>Code, Session, Song, Mix, Master, Record, Voice, History, Library</td></tr>
+<tr><td><kbd>Alt+Shift+1</kbd>–<kbd>9</kbd></td><td>Same, from inside the code editor</td></tr>
 <tr><td><kbd>Space</kbd></td><td>Play or pause</td></tr>
 <tr><td><kbd>Home</kbd></td><td>Return to bar 1</td></tr>
 <tr><td><kbd>L</kbd></td><td>Toggle Live</td></tr>
@@ -741,7 +769,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
 <tr><td><kbd>?</kbd></td><td>This sheet (Esc closes it)</td></tr>
 </tbody></table><form method="dialog"><button>Close</button></form></dialog>{{end}}
 <footer>{{if .Studio}}Cicada Studio · source-linked projection of the validated project{{else}}Cicada score view · deterministic export from the validated project model{{end}}</footer>
-{{if .Studio}}<script src="/studio-workspace.js"></script><script src="/studio-history.js"></script><script defer src="/studio-mix.js"></script><script src="/studio-audio.js"></script><script src="/audio/cicada-client.js"></script><script>
+{{if .Studio}}<script src="/studio-workspace.js"></script><script src="/studio-history.js"></script><script defer src="/studio-mix.js"></script><script defer src="/studio-library.js"></script><script src="/studio-audio.js"></script><script src="/audio/cicada-client.js"></script><script>
 (() => {
   const {installWorkspaceKeyboard, installPanelTabs, replaceProjection} = typeof CicadaWorkspace !== 'undefined' ? CicadaWorkspace : {installWorkspaceKeyboard(){}, installPanelTabs(){return {choose(){}, active:'session'}}, replaceProjection(){}};
   const status = document.getElementById('studio-status');
@@ -1183,8 +1211,8 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     try {
       if (isBrowser() && window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(result.revision);
       await refreshProjection({revision: result.revision, source: result.source});
-      setStatus('History edit applied', 'success');
-    } catch { setStatus('History changed; the projection could not refresh', 'error'); }
+      setStatus('Source edit applied', 'success');
+    } catch { setStatus('Source changed; the projection could not refresh', 'error'); }
   });
   setInterval(async () => {
     if (busy) return;

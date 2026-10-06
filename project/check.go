@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -17,7 +18,7 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	if score == nil {
 		return programs, nil
 	}
-	var diagnostics []notation.Diagnostic
+	score, diagnostics := notation.ResolvePresets(score)
 	for _, definition := range score.Instruments {
 		program, ds := instrument.Compile(definition)
 		diagnostics = append(diagnostics, ds...)
@@ -35,6 +36,14 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 	}
 	tracks := make(map[string]notation.Track, len(score.Tracks))
+	kits := make(map[string]Kit, len(score.Kits))
+	for _, definition := range score.Kits {
+		kit := Kit{ID: definition.Name, Lanes: map[string]string{}}
+		for _, binding := range definition.Bindings {
+			kit.Lanes[binding.Lane] = binding.Target
+		}
+		kits[kit.ID] = kit
+	}
 	for _, track := range score.Tracks {
 		tracks[track.Name] = track
 		if _, err := CompileMixerParams(track); err != nil {
@@ -43,6 +52,28 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 				return err
 			})
 			diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: position})
+		}
+		if track.Kind == "guitar" {
+			if _, err := CompileGuitarParams(track); err != nil {
+				position := track.Position
+				for _, param := range track.Params {
+					single := notation.Track{Params: []notation.Param{{Name: "experimental", Value: "on"}, param}}
+					if _, singleErr := CompileGuitarParams(single); singleErr != nil {
+						position = param.ValuePosition
+						break
+					}
+				}
+				diagnostics = append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: position})
+			}
+		}
+		if _, ok := modal.ParseTrackKind(track.Kind); ok {
+			for _, param := range track.Params {
+				if param.Name == "octave" {
+					if _, err := parseOctaveLiteral(param.Value); err != nil {
+						diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: param.ValuePosition})
+					}
+				}
+			}
 		}
 		if track.Kind == "acid" {
 			if _, err := CompileAcidParams(track); err != nil {
@@ -62,6 +93,29 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 					return err
 				})
 				diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: position})
+			}
+		}
+		if kit, ok := kits[track.Kind]; ok {
+			check := func(source notation.Track) error {
+				values := make(map[string]Value, len(source.Params))
+				for _, param := range source.Params {
+					if isMixerSourceParam(param.Name) {
+						continue
+					}
+					value, err := projectValue(param.Value)
+					if err != nil {
+						return err
+					}
+					values[param.Name] = value
+				}
+				_, err := CompileKitTrack(kit, programs, values)
+				return err
+			}
+			if err := check(track); err != nil {
+				diagnostics = append(diagnostics, notation.Diagnostic{
+					Code: "CICADA-PARAM", Severity: "error", Message: err.Error(),
+					Position: parameterErrorPosition(track, check),
+				})
 			}
 		}
 		program := programs[track.Kind]
@@ -115,7 +169,13 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 	reached := make(map[string]bool, len(score.Patterns))
 	compiledByPattern := make(map[string][]CompiledPattern)
 	firstTrack := make(map[string]string)
-	for _, scene := range score.Scenes {
+	scenes := append([]notation.Scene(nil), score.Scenes...)
+	if score.Arrange != nil {
+		for _, p := range score.Arrange.Placements {
+			scenes = append(scenes, notation.Scene{Bindings: []notation.Binding{{Track: p.Track, Pattern: p.Content, Position: p.Position}}})
+		}
+	}
+	for _, scene := range scenes {
 		for _, binding := range scene.Bindings {
 			if binding.Pattern == "off" || binding.Pattern == "keep" || binding.Pattern == "stop" && !scoreHasPattern(score, "stop") {
 				continue
@@ -197,6 +257,27 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 	for _, kit := range score.Kits {
 		kitVoices[kit.Name] = len(kit.Bindings)
 	}
+	for _, inst := range score.Instruments {
+		if inst.Mode == "poly" {
+			kitVoices[inst.Name] = graph.PolyVoices
+			for _, scene := range score.Scenes {
+				for _, binding := range scene.Bindings {
+					if tracks[binding.Track].Kind != inst.Name {
+						continue
+					}
+					for _, pattern := range score.Patterns {
+						if pattern.Name == binding.Pattern {
+							for _, step := range pattern.Steps {
+								if len(step.ChordPitches) > 1 {
+									kitVoices[inst.Name] = graph.MaxPolyphony
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
 	drumVoices := make(map[string]int, len(tracks))
 	for id, track := range tracks {
 		if track.Kind == "drums" {
@@ -227,7 +308,9 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 		voices := 0
 		for trackID := range active {
 			kind := tracks[trackID].Kind
-			if kind == "drums" {
+			if _, ok := modal.ParseTrackKind(kind); ok {
+				voices += modal.MaxVoices
+			} else if kind == "drums" {
 				voices += drumVoices[trackID]
 			} else if count, ok := kitVoices[kind]; ok {
 				voices += count

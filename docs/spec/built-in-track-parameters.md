@@ -1,6 +1,9 @@
 # Built-in track parameter catalog
 
-This page lists source parameters for the built-in acid and drum voices. For typed JSON record fields, see the [semantic field catalog](semantic-model.md).
+This page lists source parameters for the built-in acid and drum voices.
+Edition 2 also has an [experimental guitar](edition-2.md#experimental-guitar-voice)
+behind `experimental = on`; its reference lists the six continuous controls.
+For typed JSON record fields, see the [semantic field catalog](semantic-model.md).
 
 ## Built-in voice parameters
 

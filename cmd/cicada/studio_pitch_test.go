@@ -2,10 +2,49 @@ package main
 
 import (
 	"bytes"
+	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestStudioPitchEditPreservesOtherChordPitches(t *testing.T) {
+	for _, steps := range []string{"[d4 f4 a4]^?70", "use harmony"} {
+		for _, pitch := range []int{62, 64} {
+			t.Run(steps+"/"+sourcePitch(pitch), func(t *testing.T) {
+				source := []byte("instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\n" +
+					"track keys piano {}\nphrase harmony { [d4 f4 a4]^?70 }\n" +
+					"pattern chords notes { " + steps + " }\nscene main { keys=chords }\nsong { main }\n")
+				path := filepath.Join(t.TempDir(), "score.cicada")
+				if err := os.WriteFile(path, source, 0600); err != nil {
+					t.Fatal(err)
+				}
+				handler, err := studioHandler(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				response := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(source), Pattern: "chords", Step: 0, Pitch: &pitch})
+				if response.Code != http.StatusOK {
+					t.Fatalf("chord edit failed: %d %s", response.Code, response.Body.String())
+				}
+				chord := "[d4 f4 a4 e4]^?70"
+				if pitch == 62 {
+					chord = "[f4 a4]^?70"
+				}
+				target := "pattern chords notes { [d4 f4 a4]^?70 }"
+				if steps == "use harmony" {
+					target = "phrase harmony { [d4 f4 a4]^?70 }"
+				}
+				want := strings.Replace(string(source), target, strings.Replace(target, "[d4 f4 a4]^?70", chord, 1), 1)
+				got, err := os.ReadFile(path)
+				if err != nil || !bytes.Equal(got, []byte(want)) {
+					t.Fatalf("chord edit lost other pitches, modifiers, or surrounding source: %s, %v", got, err)
+				}
+			})
+		}
+	}
+}
 
 func TestStudioPitchGridWritesChosenNoteToSource(t *testing.T) {
 	handler, path := studioTestHandler(t)

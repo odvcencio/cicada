@@ -1,0 +1,31 @@
+cicada 2
+
+title "Preset circuit"
+tempo 138
+key a minor
+seed 4242
+
+instrument glassbass {
+  octave = 2
+  param cutoff = 540Hz
+  param bite = 0.58
+  voice mono {
+    let shape = env(gate, 330ms)
+    out = lowpass(saw(pitch), cutoff) * shape * bite
+  }
+}
+
+instrument demo.tone.glass {
+  voice mono {
+    out = sine(pitch) * env(gate, 90ms) * velocity
+  }
+}
+
+track lead glassbass { cutoff=900Hz bite=0.65 }
+track bass acid { cutoff=1100Hz decay=180ms wave=0.6 }
+track bell demo.tone.glass { level=-9dB }
+pattern melody { 1 . 3 . 5 . 3 . | 1 . 3 . 5 . 7, . }
+pattern demo.tone.melody { 1 . 3 . 5 . 3 . | 1 . 3 . 5 . 3 . }
+scene verse { lead=melody bass=melody bell=demo.tone.melody }
+scene lift { lead=keep bass=keep bell=keep bass.cutoff=1400Hz }
+song { verse lift }

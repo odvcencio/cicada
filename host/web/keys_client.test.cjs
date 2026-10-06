@@ -8,14 +8,15 @@ const {BrowserCapture} = require('./capture-client.js');
 function scoreImage(keys) {
   const image = new ArrayBuffer(32), view = new DataView(image);
   new Uint8Array(image).set([67, 73, 67, 49]);
-  view.setUint16(4, 13, true);
+  view.setUint16(4, 15, true);
   view.setUint32(12, 120000, true);
-  view.setUint16(30, keys ? 32 : 0, true);
+  view.setUint16(30, keys ? 512 : 0, true);
   return image;
 }
 
 function setup(initialKeys = false) {
   const requests = [], nodes = [], contexts = [], commands = [], captureActions = [];
+  let kernelCapabilities = 65537;
   let keys = initialKeys, revision = 'one', failFetch = false, failInit = false, compilations = 0, capture;
   class Context {
     constructor() {
@@ -51,7 +52,7 @@ function setup(initialKeys = false) {
       };
       queueMicrotask(() => this.port.onmessage?.({data: failInit && options.processorOptions.m.kind === 'keys'
         ? {t: 'e', e: 'optional kernel initialization failed'}
-        : {t: 'r', r: options.processorOptions.r, c: true}}));
+        : {t: 'r', r: options.processorOptions.r, c: true, p: kernelCapabilities}}));
     }
     connect() { this.connected = true; }
     disconnect() { this.connected = false; }
@@ -73,6 +74,7 @@ function setup(initialKeys = false) {
   const audio = context.window.cicadaBrowserAudio;
   return {audio, requests, nodes, contexts, commands, captureActions,
     score(nextKeys, nextRevision) { keys = nextKeys; revision = nextRevision; },
+    capabilities(value) { kernelCapabilities = value; },
     failFetch(value) { failFetch = value; }, failInit(value) { failInit = value; },
     compilations: () => compilations,
     attachCapture() {
@@ -166,4 +168,21 @@ test('concurrent capture stops share the same finish handshake', async () => {
   assert.equal(first, second); await Promise.all([first, second]);
   assert.equal(h.captureActions.filter(action => action === 'stop').length, 1);
   assert.equal(capture.stopPromise, null);
+});
+
+
+test('legacy cached kernel is rejected before playing an image15 score', async () => {
+  const h = setup(true);
+  h.capabilities(1);
+  await assert.rejects(h.audio.startAudio(), /CapabilityUnifiedImage/);
+  assert.equal(h.audio.context, null);
+  assert.equal(h.contexts[0].closed, true);
+  assert.equal(h.nodes[0].connected, false);
+});
+
+test('PM capability bit5 alone keeps the core module', () => {
+  const h = setup();
+  const image = scoreImage(false);
+  new DataView(image).setUint16(30, 32, true);
+  assert.equal(h.audio.imageModuleKind(image), 'core');
 });

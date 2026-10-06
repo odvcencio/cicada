@@ -119,3 +119,17 @@ test('poly pressure stays with its note and malformed packets create no events',
   assert.deepEqual(input.process('keys', [0x91, 128, 80]), []);
   assert.deepEqual(input.process('keys', [0xf8, 1]), []);
 });
+
+
+test('MPE sustain and channel panic preserve note identities across retriggers', () => {
+ const input = createMPEInput();
+ const on = input.process('keys',[0x91,60,100])[0];
+ input.process('keys',[0xb1,64,127]);
+ assert.deepEqual(input.process('keys',[0x81,60,0]),[]);
+ const newer = input.process('keys',[0x91,60,110])[0];
+ assert.deepEqual(input.process('keys',[0x81,60,0]),[]);
+ assert.deepEqual(input.process('keys',[0xb1,64,0]).map(n=>n.noteId),[on.noteId,newer.noteId]);
+ const held = input.process('keys',[0x91,64,100])[0];
+ assert.equal(input.process('keys',[0xb1,123,0])[0].noteId,held.noteId);
+ assert.deepEqual(input.disconnect('keys'),[]);
+});
