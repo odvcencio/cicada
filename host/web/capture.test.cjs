@@ -107,6 +107,26 @@ function adapterHarness() {
   const adapter=new context.CicadaCapture({port,channels:1,epoch:2},48000,control);
   return {adapter,writes,controls,context,port};
 }
+test('instrument packets batch source frames and flush a partial final packet',()=>{
+  const {adapter,writes}=adapterHarness(),inputs=[[new Float32Array(128).fill(.25)]];
+  adapter.receive({op:'begin',countInFrames:0,packetFrames:2048});
+  for(let i=0;i<17;i++) adapter.process(inputs,128,i*128,120000,false);
+  assert.equal(writes.length,1);assert.equal(writes[0].timing.Frames,2048);
+  assert.equal(writes[0].timing.Period,128);assert.equal(writes[0].timing.EngineFrame,0);
+  assert.equal(new Float32Array(writes[0].bytes)[2047],.25);
+  adapter.receive({op:'stop'});adapter.process(inputs,128,2176,120000,false);
+  assert.equal(writes.length,3);assert.equal(writes[1].timing.Frames,128);
+  assert.equal(writes[1].timing.DeviceFrame,2048);assert.equal(writes[2].t,'end');
+  assert.equal(writes[2].gapFrames,0);
+});
+test('batched capture flushes before invalid input and preserves its gap',()=>{
+  const {adapter,writes}=adapterHarness(),inputs=[[new Float32Array(128)]];
+  adapter.receive({op:'begin',countInFrames:0,packetFrames:2048});
+  adapter.process(inputs,128,0,120000,false);adapter.process([],128,128,120000,false);
+  adapter.process(inputs,128,256,120000,false);adapter.receive({op:'stop'});adapter.process(inputs,128,384,120000,false);
+  assert.equal(writes[0].timing.Frames,128);assert.equal(writes[1].timing.GapFrames,128);
+  assert.equal(writes[1].timing.DeviceFrame,256);assert.equal(writes[1].timing.Flags,2);
+});
 test('worklet contract uses D descriptor, variable periods, count-in, raw input and pooled gaps',()=>{
   const {adapter,writes,controls}=adapterHarness(),inputs=[[new Float32Array([.1,.2,.3,.4])]];
   adapter.receive({op:'begin',countInFrames:6});
@@ -282,4 +302,15 @@ test('fatal capture fault stops even a play command whose state acknowledgement 
  assert.equal(new DataView(commands.at(-1).bytes.buffer).getUint8(0),2,'a stop command must follow the queued play command');
  assert.ok(h.messages.some(message=>message.t==='capture-control'&&message.op==='stop'));
  audio.receive({t:'s',p:false});await h.client.arm();assert.equal(h.client.status.state,'armed');
+});
+
+test('instrument capture records without a score or accompaniment',async()=>{
+ const h=clientHarness();
+ h.audio.stageCurrentScore=async()=>{throw new Error('instrument recording must not stage the score');};
+ h.audio.play=()=>{throw new Error('instrument recording must not play accompaniment');};
+ await h.client.arm();await h.client.recordInstrument();
+ assert.equal(h.client.status.state,'recording');assert.equal(h.audio.playing,false);
+ assert.deepEqual(h.messages.at(-1),{t:'capture-control',op:'begin',countInFrames:0,packetFrames:2048});
+ const stopped=h.client.stop();h.client.receive({t:'finished',incomplete:false});await stopped;
+ assert.equal(h.client.status.state,'stopped');assert.equal(h.track.stopped,true);
 });
