@@ -93,15 +93,45 @@ func TestDocumentationHygiene(t *testing.T) {
 	} else if !os.IsNotExist(err) {
 		t.Fatal(err)
 	}
-	command := exec.Command("git", "ls-files", "-z")
+	command := exec.Command("git", "rev-parse", "--git-path", "index")
+	command.Dir = root
+	index, err := command.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	indexPath := strings.TrimSpace(string(index))
+	if !filepath.IsAbs(indexPath) {
+		indexPath = filepath.Join(root, indexPath)
+	}
+	// Register the index and directory listings as Go test cache inputs so new
+	// tracked files invalidate a prior passing result, including in worktrees.
+	// A worktree index can be outside the module; changing directory also
+	// registers its directory metadata, which Git updates when replacing it.
+	t.Chdir(filepath.Dir(indexPath))
+	if _, err := os.ReadFile(indexPath); err != nil {
+		t.Fatal(err)
+	}
+	command = exec.Command("git", "ls-files", "-z")
 	command.Dir = root
 	files, err := command.Output()
 	if err != nil {
 		t.Fatal(err)
 	}
+	directories := make(map[string]bool)
 	for _, path := range strings.Split(string(files), "\x00") {
 		if path == "" {
 			continue
+		}
+		for dir := filepath.Dir(path); ; dir = filepath.Dir(dir) {
+			if !directories[dir] {
+				if _, err := os.ReadDir(filepath.Join(root, dir)); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+				directories[dir] = true
+			}
+			if dir == "." {
+				break
+			}
 		}
 		data, err := os.ReadFile(filepath.Join(root, path))
 		if os.IsNotExist(err) {
