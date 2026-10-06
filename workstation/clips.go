@@ -26,9 +26,18 @@ func (s *studioApp) audioClips(ctx *server.Context, v workspace, csrf string) go
 	}
 	var rows []gosx.Node
 	if p.Edition == 2 {
-		name:="audio"
-		for n:=2;;n++ { used:=false;for _,track:=range p.Tracks { used=used||track.ID==name };if !used {break};name="audio-"+strconv.Itoa(n) }
-		rows = append(rows, s.form(v, csrf, "takes", "clip", hidden("action", "audio-track"), field("New audio track", textInput("newName",name)), submit("", "", "Add audio track")))
+		name := "audio"
+		for n := 2; ; n++ {
+			used := false
+			for _, track := range p.Tracks {
+				used = used || track.ID == name
+			}
+			if !used {
+				break
+			}
+			name = "audio-" + strconv.Itoa(n)
+		}
+		rows = append(rows, s.form(v, csrf, "takes", "clip", hidden("action", "audio-track"), field("New audio track", textInput("newName", name)), submit("", "", "Add audio track")))
 	} else {
 		rows = append(rows, gosx.El("p", gosx.Text("Audio tracks use score edition 2. "), gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=mixer")), gosx.Text("Upgrade through Mixer")), gosx.Text(" before adding an audio track.")))
 	}
@@ -47,7 +56,7 @@ func (s *studioApp) audioClips(ctx *server.Context, v workspace, csrf string) go
 			return ui.Form(ui.FormProps{Action: "/__actions/clip", CSRF: csrf, Revision: v.Revision, ReturnTo: "/?panel=takes&clip=" + url.QueryEscape(clip.Name), Class: "action-form"}, append([]gosx.Node{hidden("pattern", clip.Name)}, children...)...)
 		}
 		frameInput := func(name string, value, max int64) gosx.Node {
-			return wholeInput(name,int(value),0,int(max))
+			return wholeInput(name, int(value), 0, int(max))
 		}
 		settings := form(hidden("action", "clip-settings"), field("Start (source frame)", frameInput("start", clip.StartFrame, frames-1)), field("End (exclusive source frame)", frameInput("end", clip.EndFrame, frames)), field("Clip gain (dB)", numberInput("gainDB", strconv.FormatFloat(clip.GainDB, 'f', -1, 64), "-60", "24")), field("Fade in (source frames)", frameInput("fadeIn", clip.FadeInFrames, frames)), field("Fade out (source frames)", frameInput("fadeOut", clip.FadeOutFrames, frames)), submit("", "", "Save audio region"))
 		var assign gosx.Node = gosx.Fragment()

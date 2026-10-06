@@ -75,7 +75,8 @@ scene_value ::= number | _name | string | fraction ;
 parameter_path ::= /[a-z_][a-z0-9_-]*(\.[a-z_][a-z0-9_-]*)+/ ;
 song_decl ::= "song" , "{" , { song_entry } , "}" ;
 song_entry ::= identifier , [ "*" , integer ] ;
-value ::= musical_position | bar_count | tick_count | number | insert_chain | _name | string | fraction ;
+value ::= musical_position | bar_count | tick_count | number | insert_chain | _name | string |
+          fraction ;
 insert_chain ::= _name , { "->" , _name } ;
 fraction ::= /[0-9]+\/[0-9]+[tT.]?/ ;
 number ::= /-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?/ ;
@@ -107,7 +108,7 @@ live_stinger ::= "stinger" , identifier , "=" , identifier , "." , identifier ,
 live_transition ::= "transition" , identifier , "->" , identifier , [ "quantize" , identifier ] ,
                     [ "crossfade" , number ] , [ ";" ] ;
 arrange_decl ::= "arrange" , "{" , { place_decl | marker_decl } , "}" ;
-place_decl ::= "place" , identifier , identifier , identifier , "{" , { param_decl } , "}" ;
-marker_decl ::= "marker" , identifier , "{" , { param_decl } , "}" ;
+place_decl ::= "place" , _name , _name , _name , "{" , { param_decl } , "}" ;
+marker_decl ::= "marker" , _name , "{" , { param_decl } , "}" ;
 musical_position ::= /@[0-9]+\.[0-9]+\.[0-9]+/ ;
 tick_count ::= /[0-9]+ticks/ ;
