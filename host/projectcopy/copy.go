@@ -10,8 +10,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -51,6 +53,29 @@ func SaveAs(score, target string) error {
 	dstName, err := filepath.Rel(dstDir, target)
 	if err != nil {
 		return err
+	}
+	sources, err := project.ReadSources(score, nil)
+	if err != nil {
+		return err
+	}
+	if len(sources.Libraries) > 0 {
+		return errors.New("CICADA-UNSUPPORTED: Save As with imports requires library vendoring")
+	}
+	additional := map[string][]byte{}
+	if sources.Manifest.ExplicitSources() {
+		for _, file := range sources.Files {
+			if file.Path == score {
+				continue
+			}
+			name, err := filepath.Rel(srcDir, file.Path)
+			if err != nil {
+				return err
+			}
+			additional[name] = file.Source
+		}
+		if !edition.ValidSourcePath(filepath.ToSlash(dstName)) {
+			return errors.New("invalid multi-file Save As destination")
+		}
 	}
 	src, err := os.OpenRoot(srcDir)
 	if err != nil {
@@ -94,6 +119,11 @@ func SaveAs(score, target string) error {
 	}
 	if err = collect(source); err != nil {
 		return err
+	}
+	for _, data := range additional {
+		if err = collect(data); err != nil {
+			return err
+		}
 	}
 	ss, err := takejournal.Snapshots(src, score)
 	if err != nil {
@@ -146,6 +176,9 @@ func SaveAs(score, target string) error {
 	// A destination may be absent now but scheduled for dependency installation.
 	// Check the full copy set before writing any of it, including retained passes.
 	dependencies := map[string]bool{"cicada.mod": true}
+	for path := range additional {
+		dependencies[filepath.Clean(path)] = true
+	}
 	for path := range assets {
 		dependencies[filepath.Clean(path)] = true
 	}
@@ -237,14 +270,47 @@ func SaveAs(score, target string) error {
 			return err
 		}
 	}
+	for name, data := range additional {
+		latest, err := src.ReadFile(name)
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(latest, data) {
+			return errors.New("project source changed during Save As; retry")
+		}
+		if err := install(dst, name, bytes.NewReader(data), -1, false); err != nil {
+			return err
+		}
+	}
 	manifest, err := src.ReadFile("cicada.mod")
 	if err == nil {
+		if sources.Manifest.ExplicitSources() {
+			lines := strings.SplitAfter(string(manifest), "\n")
+			for i, line := range lines {
+				trimmed := strings.TrimSpace(line)
+				parts := strings.Fields(trimmed)
+				if len(parts) < 2 {
+					continue
+				}
+				key := parts[0]
+				value := strings.TrimSpace(trimmed[len(key):])
+				if key != "entry" && key != "source" {
+					continue
+				}
+				value = strings.TrimSpace(value)
+				name, err := strconv.Unquote(value)
+				if err == nil && name == filepath.ToSlash(srcName) {
+					lines[i] = strings.Replace(line, value, strconv.Quote(filepath.ToSlash(dstName)), 1)
+				}
+			}
+			manifest = []byte(strings.Join(lines, ""))
+		}
 		existing, e := dst.ReadFile("cicada.mod")
 		if errors.Is(e, os.ErrNotExist) {
 			err = install(dst, "cicada.mod", bytes.NewReader(manifest), -1, false)
 		} else if e != nil {
 			err = e
-		} else if len(assets) > 0 && !bytes.Equal(existing, manifest) {
+		} else if (len(assets) > 0 || sources.Manifest.ExplicitSources()) && !bytes.Equal(existing, manifest) {
 			err = errors.New("target manifest differs; choose a new project folder")
 		}
 		if err != nil {

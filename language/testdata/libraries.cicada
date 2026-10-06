@@ -1,0 +1,6 @@
+cicada 2
+import "demo/tone"
+track lead tone.glass { insert = tone.drive send tone.echo = -9dB }
+kit drums { bd = tone.kick ch = builtin.ch }
+pattern line { use tone.hook }
+scene verse { lead = tone.melody }

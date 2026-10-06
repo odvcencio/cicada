@@ -20,6 +20,7 @@ func (v *packVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
 	if len(v.baseline) > 0 {
 		for i, b := range v.baseline {
 			if note >= b.lo && note <= b.hi {
+				v.baseline[v.activePool].pool.NoteOff(v.handle)
 				v.activePool = i
 				v.handle, v.fault = b.pool.NoteOn(note, velocity)
 				return
@@ -34,6 +35,7 @@ func (v *packVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
 	if slide && v.instrument != nil && v.instrument.Legato(v.handle, note, 0) == nil {
 		return
 	}
+	v.instrument.NoteOff(v.handle)
 	v.handle, v.fault = v.instrument.NoteOn(note, velocity)
 }
 func (v *packVoice) NoteOff() {
@@ -68,7 +70,7 @@ func preparePackVoices(score *notation.Score, opts Options) (map[string]*instrum
 		if dir == "" {
 			dir = "."
 		}
-		p, err := instrumentpack.Load(dir, s.Pack, s.SHA256)
+		p, err := instrumentpack.LoadAtRate(dir, s.Pack, s.SHA256, opts.SampleRate)
 		if err != nil {
 			return nil, fmt.Errorf("sampler %s: %w", s.Name, err)
 		}

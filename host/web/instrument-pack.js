@@ -40,11 +40,13 @@ async function limitedBytes(response, limit) {
 export async function checkedFetch(url, hash, bytes, options={}) {
   requireThat(hashPattern.test(hash), 'explicit SHA-256 pin required');
   const cache = options.cache ?? (globalThis.caches ? await caches.open('cicada-instrument-pack-v1') : null);
-  let response=cache ? await cache.match(url) : null;
+  const cacheKey = new URL(url);
+  cacheKey.searchParams.set('__cicada_sha256', hash);
+  let response=cache ? await cache.match(cacheKey.href) : null;
   if(!response) response=await (options.fetch ?? fetch)(url,{signal:options.signal,credentials:'omit'});
   const data=await limitedBytes(response,bytes);
   requireThat(await sha256(data)===hash,'asset hash mismatch');
-  if(cache) await cache.put(url,new Response(data));
+  if(cache) await cache.put(cacheKey.href,new Response(data));
   return data;
 }
 export function decodeWAV(bytes,a) {
