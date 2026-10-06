@@ -276,6 +276,8 @@ func callResult(name string, args []Type) (Type, bool, bool) {
 		return Audio, true, matches(Hz, Audio, Unit)
 	case "noise":
 		return Audio, true, matches()
+	case "ddsp":
+		return Audio, true, matches(Hz, Unit)
 	case "env":
 		return Unit, true, matches(Gate, MS)
 	case "adsr":

@@ -393,6 +393,9 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 						if math.IsNaN(float64(wasmSample)) || math.IsInf(float64(wasmSample), 0) {
 							t.Fatalf("nonfinite WASM sample at %d channel %d", block*blockSize+frame, channel)
 						}
+						if exactNeural && math.Float32bits(wasmSample) != math.Float32bits(nativeSample) {
+							t.Fatalf("neural PCM bits differ at frame %d channel %d: native=%08x WASM=%08x", block*blockSize+frame, channel, math.Float32bits(nativeSample), math.Float32bits(wasmSample))
+						}
 						nonzero = nonzero || wasmSample != 0
 						difference := math.Abs(float64(wasmSample) - float64(nativeSample))
 						if difference > peakDifference {

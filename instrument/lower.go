@@ -115,6 +115,8 @@ func kernelOp(n Node) (graph.Op, error) {
 		return graph.PM, nil
 	case "noise":
 		return graph.Noise, nil
+	case "ddsp":
+		return graph.DDSP, nil
 	case "env":
 		return graph.Envelope, nil
 	case "adsr":

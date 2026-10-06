@@ -278,6 +278,12 @@ The [pluck example](../../examples/pluck.cicada) combines both operations;
 [graph delay limits](../spec/edition-2.md#graph-delays-and-plucked-strings)
 describe interpolation, time bounds, and experimental listening status.
 
+`ddsp(pitch, loudness)` renders a quantized neural reed from eight harmonics and
+filtered noise. Use `env(gate, 620ms) * velocity` for linear loudness. The
+[neural reed example](../../examples/neural-reed.cicada) runs in the native and
+WASM kernels; its [model documentation](../../kernel/voice/ddsp/README.md)
+describes the original CC0 training data, pinned weights, and validation.
+
 The [instrument reference](../spec/edition-1.md#instruments-and-voices) lists
 every primitive signature.
 

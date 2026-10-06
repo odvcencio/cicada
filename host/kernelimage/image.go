@@ -25,7 +25,7 @@ const ModeledKitCapability uint16 = 1 << 8
 
 const Capabilities = ModalCapability | ModeledKitCapability
 
-const SupportedCapabilities = DelayCapability | PianoCapability | NeuralAmpCapability | PMCapability | Capabilities
+const SupportedCapabilities = DelayCapability | PianoCapability | NeuralAmpCapability | PMCapability | DDSPCapability | Capabilities
 
 const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15  // experimental guitar; version 14 belongs to chord/schedule lanes
@@ -45,6 +45,9 @@ const NeuralAmpCapability uint16 = 1 << 4
 
 // PMCapability uses the next capability bit without changing node records.
 const PMCapability uint16 = 1 << 5
+
+// DDSPCapability requires the pinned integer harmonic-plus-noise model.
+const DDSPCapability uint16 = 1 << 7
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -230,6 +233,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			for _, binding := range kit {
 				if binding.Kind == engine.KitLaneModeled {
 					capabilities |= ModeledKitCapability
+				}
+				if graphNeedsDDSP(&binding.Program) {
+					capabilities |= DDSPCapability
 				}
 			}
 		}
@@ -546,7 +552,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|PMCapability|NeuralAmpCapability|ModalCapability|ModeledKitCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|PMCapability|NeuralAmpCapability|ModalCapability|ModeledKitCapability|DDSPCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -1077,6 +1083,8 @@ func graphCapabilities(program *graph.Program) uint16 {
 			required |= DelayCapability
 		case graph.PM:
 			required |= PMCapability
+		case graph.DDSP:
+			required |= DDSPCapability
 		case graph.NeuralAmp:
 			required |= NeuralAmpCapability
 		}
@@ -1087,6 +1095,15 @@ func graphCapabilities(program *graph.Program) uint16 {
 func graphNeedsNeuralAmp(program *graph.Program) bool {
 	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
 		if program.Nodes[i].Op == graph.NeuralAmp {
+			return true
+		}
+	}
+	return false
+}
+
+func graphNeedsDDSP(program *graph.Program) bool {
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		if program.Nodes[i].Op == graph.DDSP {
 			return true
 		}
 	}
@@ -1160,6 +1177,9 @@ func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, e
 	}
 	if required&PMCapability != 0 && capabilities&PMCapability == 0 {
 		return program, Error("graph phase modulation requires capability bit 5")
+	}
+	if graphNeedsDDSP(&program) && capabilities&DDSPCapability == 0 {
+		return program, Error("DDSP operations require capability bit 7")
 	}
 	return program, nil
 }
