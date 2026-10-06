@@ -76,6 +76,7 @@ type loweringWalker struct {
 	*walk.Walker
 	file         string
 	library      string
+	edition      int
 	bindings     map[string]string
 	origins      map[string]Origin
 	diagnostics  *[]Diagnostic
@@ -115,7 +116,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 			diagnostics = append(diagnostics, d)
 			continue
 		}
-		w := &loweringWalker{Walker: walker, file: file.Path, library: file.Library, bindings: file.Bindings, origins: s.Origins, diagnostics: &diagnostics, declarations: file.Declarations}
+		w := &loweringWalker{Walker: walker, file: file.Path, library: file.Library, edition: file.Edition, bindings: file.Bindings, origins: s.Origins, diagnostics: &diagnostics, declarations: file.Declarations}
 		if w.declarations == nil {
 			w.declarations = DeclarationNames(files)
 		}
@@ -304,7 +305,9 @@ func parseEffect(w *loweringWalker, n *gts.Node) Effect {
 	}
 	if e.Kind == "" { // edition-1 shorthand: fx delay { ... }
 		e.Kind = w.Text(w.Field(n, "name"))
-		e.Legacy = true
+		// An edition-1 library exports a named effect after scoping. Keep its
+		// original kind without applying the importing score's syntax edition.
+		e.Legacy = w.library == "" || w.edition != 1
 	}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
