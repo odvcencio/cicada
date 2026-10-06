@@ -50,7 +50,11 @@ func Lower(program *Program, overrides map[string]string) (graph.Program, error)
 			kn.C = uint8(node.Inputs[2])
 		}
 		if len(node.Inputs) > 3 {
-			kn.D = uint8(node.Inputs[3])
+			if node.Op == "comb" {
+				kn.Value = float32(node.Inputs[3])
+			} else {
+				kn.D = uint8(node.Inputs[3])
+			}
 		}
 		if len(node.Inputs) > 4 {
 			kn.E = uint8(node.Inputs[4])
@@ -73,7 +77,7 @@ func Lower(program *Program, overrides map[string]string) (graph.Program, error)
 		}
 		out.Nodes[i] = kn
 	}
-	return out, nil
+	return out, graph.Validate(out, 48_000)
 }
 
 func kernelOp(n Node) (graph.Op, error) {
@@ -99,6 +103,8 @@ func kernelOp(n Node) (graph.Op, error) {
 		return graph.Multiply, nil
 	case "/":
 		return graph.Divide, nil
+	case "period":
+		return graph.Period, nil
 	case "saw":
 		return graph.Saw, nil
 	case "square":
@@ -121,6 +127,10 @@ func kernelOp(n Node) (graph.Op, error) {
 		return graph.Diode, nil
 	case "lowpass":
 		return graph.Lowpass, nil
+	case "delay":
+		return graph.Delay, nil
+	case "comb":
+		return graph.Comb, nil
 	case "highpass":
 		return graph.Highpass, nil
 	case "mix":

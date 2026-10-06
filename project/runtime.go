@@ -199,7 +199,7 @@ func CompileEnginePrepared(p *Project, sampleRate, maxBlock int, prepared []engi
 			default:
 				if kit, ok := kits[track.Kind]; ok {
 					config.Kind = engine.VoiceDrums
-					bindings, err := CompileKit(kit, programs)
+					bindings, err := CompileKitAtSampleRate(kit, programs, sampleRate)
 					if err != nil {
 						return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 					}
@@ -270,6 +270,11 @@ func CompileEnginePrepared(p *Project, sampleRate, maxBlock int, prepared []engi
 			}
 			if err := base.Validate(); err != nil {
 				return cfg, fmt.Errorf("pattern %s: %w", pattern.ID, err)
+			}
+			if config.Kind == engine.VoiceGraph || config.Kind == engine.VoiceGraphPoly {
+				if err := ValidateGraphDelayPattern(config.Graph, sampleRate, base); err != nil {
+					return cfg, fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
+				}
 			}
 			cfg.Patterns[ti].Slots[slot] = base
 		}

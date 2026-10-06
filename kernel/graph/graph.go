@@ -10,6 +10,11 @@ import (
 
 const MaxNodes = 128
 
+// Each delay primitive reserves a full ring before rendering. The core
+// profile admits two rings per voice, including unused graph bindings.
+const MaxDelaySamples = 4096
+const MaxVoiceDelaySamples = 8192
+
 type Op uint8
 
 const (
@@ -36,8 +41,11 @@ const (
 	Exp2
 	Clamp
 	ADSR
-	Pulse
-	SVF
+	Delay  Op = 24
+	Comb   Op = 25
+	Period Op = 26 // unit / Hz, converted from seconds to milliseconds
+	Pulse  Op = 27
+	SVF    Op = 28
 )
 
 type Node struct {
@@ -48,6 +56,8 @@ type Node struct {
 	D     uint8 `json:",omitempty"`
 	E     uint8 `json:",omitempty"`
 	Value float32
+	// Comb stores its fourth input index in Value, preserving the 8-byte image
+	// node record. Other operations retain their existing Value semantics.
 }
 
 type Program struct {
@@ -66,6 +76,7 @@ type nodeState struct {
 	env    float32
 	filter [4]float32
 	noise  uint32
+	delay  uint8
 
 	// Each coefficient input is clamped above zero; zero marks an empty cache.
 	// The program and sample rate stay fixed for the lifetime of the voice.
@@ -76,68 +87,100 @@ type nodeState struct {
 // Voice owns all state and storage for one instance of a program. Next does
 // not allocate, lock, or use goroutines.
 type Voice struct {
-	program    Program
-	values     [MaxNodes]float32
-	states     [MaxNodes]nodeState
-	sampleRate float32
-	pitch      float32
-	pitchLog   float64
-	targetLog  float64
-	pitchAlpha float64
-	gliding    bool
-	gate       float32
-	velocity   float32
-	quality    *qualityState
+	program     Program
+	values      [MaxNodes]float32
+	states      [MaxNodes]nodeState
+	sampleRate  float32
+	pitch       float32
+	pitchLog    float64
+	targetLog   float64
+	pitchAlpha  float64
+	gliding     bool
+	gate        float32
+	velocity    float32
+	quality     *qualityState
+	delays      []delayState
+	delayMemory []float32
 }
 
 //go:noinline
 func NewVoice(program Program, sampleRate int) (*Voice, error) {
-	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
-		return nil, Error("invalid graph program")
-	}
-	if math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
-		return nil, Error("invalid graph glide time")
-	}
-	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
-		return nil, Error("unsupported sample rate")
-	}
-	for i := 0; i < int(program.Len); i++ {
-		n := program.Nodes[i]
-		var inputs int
-		switch n.Op {
-		case Pitch, Gate, Velocity, SampleRate, Constant, Noise:
-		case Saw, Square, Sine, Tanh, Exp2:
-			inputs = 1
-		case Add, Subtract, Multiply, Divide, Envelope, Lowpass, Highpass, Pulse:
-			inputs = 2
-		case Ladder, Diode, Mix, Clamp, SVF:
-			inputs = 3
-		case ADSR:
-			inputs = 5
-		default:
-			return nil, Error("unknown graph operation")
-		}
-		if (inputs > 0 && int(n.A) >= i) || (inputs > 1 && int(n.B) >= i) || (inputs > 2 && int(n.C) >= i) || (inputs > 3 && int(n.D) >= i) || (inputs > 4 && int(n.E) >= i) {
-			return nil, Error("graph input must precede its node")
-		}
-		if n.Op == Constant && (math.IsNaN(float64(n.Value)) || math.IsInf(float64(n.Value), 0)) {
-			return nil, Error("non-finite graph constant")
-		}
+	if err := Validate(program, sampleRate); err != nil {
+		return nil, err
 	}
 	v := new(Voice)
 	v.program = program
 	v.sampleRate = float32(sampleRate)
-	if usesQuality(program) {
+	if usesQuality(&program) {
 		v.quality = newQualityState(program, sampleRate)
 		v.sampleRate *= 2
 	}
 	if program.GlideMS > 0 {
 		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(v.sampleRate)))
 	}
+	count := delaySamples(&program) / MaxDelaySamples
+	if count > 0 {
+		v.delayMemory = make([]float32, count*MaxDelaySamples)
+		v.delays = make([]delayState, count)
+	}
+	count = 0
 	for i := 0; i < int(program.Len); i++ {
 		v.states[i].noise = uint32(i+1)*0x9e3779b9 ^ 0xa5a5a5a5
+		if program.Nodes[i].Op == Delay || program.Nodes[i].Op == Comb {
+			v.states[i].delay = uint8(count)
+			count++
+		}
 	}
 	return v, nil
+}
+
+// Validate checks untrusted images and statically known delay controls without
+// allocating voice storage. Dynamic controls are bounded again in Next.
+func Validate(program Program, sampleRate int) error {
+	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
+		return Error("invalid graph program")
+	}
+	if math.IsNaN(program.GlideMS) || math.IsInf(program.GlideMS, 0) || program.GlideMS < 0 {
+		return Error("invalid graph glide time")
+	}
+	if sampleRate != 44_100 && sampleRate != 48_000 && sampleRate != 96_000 {
+		return Error("unsupported sample rate")
+	}
+	for i := 0; i < int(program.Len); i++ {
+		n := program.Nodes[i]
+		if int(n.A) >= MaxNodes || int(n.B) >= MaxNodes || int(n.C) >= MaxNodes {
+			return Error("invalid graph input index")
+		}
+		var inputs int
+		switch n.Op {
+		case Pitch, Gate, Velocity, SampleRate, Constant, Noise:
+		case Saw, Square, Sine, Tanh, Exp2:
+			inputs = 1
+		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay, Pulse:
+			inputs = 2
+		case Ladder, Diode, Mix, Clamp, SVF:
+			inputs = 3
+		case ADSR:
+			inputs = 5
+		case Comb:
+			inputs = 3
+			if n.Value < 0 || n.Value >= float32(i) || n.Value != float32(uint8(n.Value)) {
+				return Error("invalid comb damping input")
+			}
+		default:
+			return Error("unknown graph operation")
+		}
+		if (inputs > 0 && int(n.A) >= i) || (inputs > 1 && int(n.B) >= i) || (inputs > 2 && int(n.C) >= i) || (inputs > 3 && int(n.D) >= i) || (inputs > 4 && int(n.E) >= i) {
+			return Error("graph input must precede its node")
+		}
+		if n.Op == Constant && (math.IsNaN(float64(n.Value)) || math.IsInf(float64(n.Value), 0)) {
+			return Error("non-finite graph constant")
+		}
+	}
+	if delaySamples(&program) > MaxVoiceDelaySamples {
+		return Error("voice graph exceeds 8192 delay samples (two delay nodes)")
+	}
+	return validateDelayControls(program, sampleRate)
 }
 
 func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
@@ -175,6 +218,16 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 
 func (v *Voice) NoteOff() { v.gate = 0 }
 
+// CopyStateFrom copies a voice constructed with the same program into this
+// voice's preallocated storage. Neither delay state nor ring memory is shared.
+func (v *Voice) CopyStateFrom(source *Voice) {
+	delays, memory := v.delays, v.delayMemory
+	*v = *source
+	v.delays, v.delayMemory = delays, memory
+	copy(v.delays, source.delays)
+	copy(v.delayMemory, source.delayMemory)
+}
+
 func (v *Voice) Reset() {
 	v.pitch, v.gate, v.velocity = 0, 0, 0
 	v.pitchLog, v.targetLog, v.gliding = 0, 0, false
@@ -188,6 +241,8 @@ func (v *Voice) Reset() {
 		v.states[index].env = 0
 		v.states[index].filter = [4]float32{}
 	}
+	clear(v.delayMemory)
+	clear(v.delays)
 }
 
 func (v *Voice) Next() float32 {
@@ -235,9 +290,20 @@ func (v *Voice) nextSample() float32 {
 			y = a - b
 		case Multiply:
 			y = a * b
-		case Divide:
+		case Divide, Period:
 			if b != 0 {
 				y = a / b
+				if n.Op == Period {
+					y *= 1000
+				}
+			}
+		case Delay, Comb:
+			d := &v.delays[s.delay]
+			ring := v.delayMemory[int(s.delay)*MaxDelaySamples : (int(s.delay)+1)*MaxDelaySamples]
+			if n.Op == Delay {
+				y = d.linear(ring, a, finiteClamp(b*v.sampleRate/1000, 1, MaxDelaySamples))
+			} else {
+				y = d.comb(ring, a, finiteClamp(b*v.sampleRate/1000, 4, MaxDelaySamples), finiteClamp(c, 0, .99999994), finiteClamp(v.values[uint8(n.Value)], 0, .99999994))
 			}
 		case Saw, Square, Sine:
 			if v.quality != nil {

@@ -22,8 +22,9 @@ type qualityNode struct {
 	filter     svfState
 }
 
-func usesQuality(p Program) bool {
-	for _, n := range p.Nodes[:p.Len] {
+func usesQuality(p *Program) bool {
+	for i := uint8(0); i < p.Len; i++ {
+		n := p.Nodes[i]
 		if n.Op == ADSR || n.Op == Pulse || n.Op == SVF {
 			return true
 		}
