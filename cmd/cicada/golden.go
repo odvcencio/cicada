@@ -22,11 +22,7 @@ func goldenCommand(args []string) error {
 	if err := flags.Parse(args); err != nil || len(flags.Args()) != 0 {
 		return fmt.Errorf("usage: cicada golden [--update] [--score file.cicada] [--out file.fp] [--rate 48000] [--bars 8]")
 	}
-	source, err := os.ReadFile(*scorePath)
-	if err != nil {
-		return err
-	}
-	score, diagnostics, err := parseScoreForPath(*scorePath, source)
+	score, diagnostics, err := project.LoadScore(*scorePath, nil)
 	if err != nil {
 		return err
 	}

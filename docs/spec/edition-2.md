@@ -17,6 +17,12 @@ cicada 2
 
 **Errors:** Unsupported editions and a source-header/manifest mismatch report `CICADA-VERSION`.
 
+## Multi-file manifests
+
+A manifest may add `entry "main.cicada"`, repeated `source "parts/voice.cicada"` directives, `license "MIT"`, and `author "Cicada contributors"`. These project directives also work in edition 1. They do not change the source grammar. Paths are explicit project-relative `.cicada` files; traversal, absolute paths, glob patterns, and escaping symlinks are rejected.
+
+All listed files compile together. The entry loads first, followed by the remaining files in sorted path order. Source headers are optional and must match the manifest. A manifest without `entry` or `source` keeps its existing single-file behavior. See [multi-file projects](accepted.md#multi-file-projects-and-manifest-metadata) for load errors and the implemented tool support. Imports, `require`, and `cicada.sum` remain accepted-only.
+
 ## Named mixer forms
 
 **Status:** Implemented for the routes listed in [edition 1](edition-1.md#named-effects), [buses and master](edition-1.md#buses-and-master), and [track mixer settings](edition-1.md#track-mixer-settings).
