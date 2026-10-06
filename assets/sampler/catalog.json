@@ -1,0 +1,59 @@
+{
+  "format": "cicada.instrument-catalog/1",
+  "packs": [
+    {
+      "id": "grand",
+      "manifest": "grand/manifest.json",
+      "sha256": "1389e182f19bb0235ae3cf535434afee8ff2961f160c56042210ab18361402b6",
+      "assets": 84,
+      "compressed_bytes": 79386196,
+      "pcm_bytes": 155649208,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "nylon",
+      "manifest": "nylon/manifest.json",
+      "sha256": "f60df9a609fe87f479922b77cebd4cdc084ec6c8ae4134231203f7850abca9b6",
+      "assets": 31,
+      "compressed_bytes": 13222317,
+      "pcm_bytes": 19636248,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "bass",
+      "manifest": "bass/manifest.json",
+      "sha256": "8d8ddae6d577ed6aba313752f817801acfffdf305d4201ca7c7ce4ef6fab8883",
+      "assets": 180,
+      "compressed_bytes": 98796132,
+      "pcm_bytes": 146117712,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "kit",
+      "manifest": "kit/manifest.json",
+      "sha256": "cbe03317accfafe7eaa29c70381bf516177cf1c168bedea05fc78702c5970274",
+      "assets": 28,
+      "compressed_bytes": 18877620,
+      "pcm_bytes": 24542760,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "violin",
+      "manifest": "violin/manifest.json",
+      "sha256": "1ed859eddf261fa241d5452cf778666b67b529e22a7e2d27f0db159228a8ef60",
+      "assets": 22,
+      "compressed_bytes": 46638714,
+      "pcm_bytes": 67584000,
+      "license": "CC0-1.0"
+    },
+    {
+      "id": "trumpet",
+      "manifest": "trumpet/manifest.json",
+      "sha256": "e1894b3df5c264d85efa6518f16090d07a81fd45f3aa27b32d7da27485a6b0d7",
+      "assets": 16,
+      "compressed_bytes": 33758832,
+      "pcm_bytes": 48302184,
+      "license": "CC0-1.0"
+    }
+  ]
+}

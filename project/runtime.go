@@ -214,6 +214,9 @@ func CompileEnginePrepared(p *Project, sampleRate, maxBlock int, prepared []engi
 				}
 				if program.Mode == "poly" {
 					config.Kind = engine.VoiceGraphPoly
+					if GraphPolyphony(p, track.Kind) == 4 {
+						config.Kind, config.Polyphony = engine.VoiceGraph, 4
+					}
 				}
 				overrides := map[string]string{}
 				for name, value := range track.Params {
@@ -262,6 +265,12 @@ func CompileEnginePrepared(p *Project, sampleRate, maxBlock int, prepared []engi
 				}
 			} else {
 				for step, source := range pattern.Data {
+					if source != nil && len(source.Notes) > 0 {
+						base.Chords[step].Count = uint8(len(source.Notes))
+						for i, note := range source.Notes {
+							base.Chords[step].Notes[i] = uint8(note)
+						}
+					}
 					base.Steps[step], err = packProjectStep(source, false, 0)
 					if err != nil {
 						return cfg, fmt.Errorf("pattern %s: %w", pattern.ID, err)

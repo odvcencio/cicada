@@ -228,6 +228,7 @@ func main() {
 		os.Exit(1)
 	}
 	score, semantic, diagnostics := inspection.score, inspection.semantic, inspection.diagnostics
+	renderOptions.AssetDir = filepath.Dir(path)
 	if command == "render" && renderTarget != nil && renderTarget.ExportName != "" {
 		if err := applyExportTarget(semantic, &renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -791,6 +792,7 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 	tail := flags.String("tail", "3s", "tail duration")
 	dither := flags.Bool("dither", true, "deterministic TPDF dither for integer PCM")
 	normalize := flags.Bool("normalize", false, "peak normalize output to -1 dBFS")
+	samplerBaseline := flags.Bool("sampler-baseline", false, "listening comparison: one fixed sample layer/take, 2 ms release")
 	block := flags.Int("block", 4096, "offline render block size")
 	loudness := flags.Float64("loudness", math.NaN(), "target integrated loudness in LUFS")
 	truePeak := flags.Float64("true-peak-max", -1, "maximum true peak in dBTP for loudness rendering")
@@ -842,7 +844,7 @@ func renderArgs(args []string, wantBits int) (string, render.Options, *renderTar
 			}
 		})
 	}
-	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block}, target
+	return *output, render.Options{SampleRate: *rate, Bits: *bits, Bars: *bars, From: fromBar, TailSec: duration.Seconds(), Dither: dither, Normalize: *normalize, Block: *block, SamplerBaseline: *samplerBaseline}, target
 }
 
 func verifyWAVCommand(args []string) {

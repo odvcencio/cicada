@@ -8,7 +8,10 @@ class CicadaKernel extends AudioWorkletProcessor {
       const bytes = new Uint8Array(image);
       const instance = await WebAssembly.instantiate(module);
       const x = instance.exports;
-      x._initialize();
+      // TinyGo reactor exports require runtime initialization, including the
+      // capability query. Reject unsupported payloads before any image upload.
+      const capability = (x._initialize(), x.gosx_audio_capabilities?.() & 1);
+      if ((bytes[4] | bytes[5] << 8) >= 16 && !capability) throw new Error('Unsupported chord image16');
       if (bank) {
         const bankPtr = x.gosx_audio_bank_alloc(bank.byteLength);
         if (!bankPtr) throw new Error('bank');
@@ -35,12 +38,17 @@ class CicadaKernel extends AudioWorkletProcessor {
       const commandBuffer = x.gosx_audio_cmd_cap() * 24;
       if (!deferred) deferred = new Uint8Array(commandBuffer);
       return {
-        x, b: new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(12, true),
+        x, p: capability, b: new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength).getUint32(12, true),
         d: new Uint8Array(x.memory.buffer, x.gosx_audio_cmd_ptr(), commandBuffer),
         m: new Uint8Array(x.memory.buffer, x.gosx_audio_msg_ptr(), 256 * 16),
         l: new Float32Array(x.memory.buffer, x.gosx_audio_out_ptr(), max),
         r: new Float32Array(x.memory.buffer, x.gosx_audio_out_ptr() + max * 4, max)
       };
+    };
+    // Shared fixed little-endian tick writer: no temporary view or allocation.
+    const putTick = (bytes, at, tick) => {
+      const low = tick >>> 0, high = Math.floor(tick / 4294967296) >>> 0;
+      for (let j = 0; j < 4; j++) { bytes[at + j] = low >>> (j * 8); bytes[at + j + 4] = high >>> (j * 8); }
     };
     const flush = () => {
       for (let i = 0; i < deferredCount; i++) commit(active, deferred, i * 24, 24);
@@ -90,6 +98,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     const commit = (target, bytes, start = 0, length = bytes.byteLength) => {
       if (!target || length % 24 || length > target.d.length) return fail('cmd');
       const count = length / 24;
+      for (let i = 0; i < count; i++) if (bytes[start + i * 24] === 22 && !target.p) return fail('Unsupported chord opcode22');
       let seekTick = null, starts = false, stops = false, committed = 0;
       for (let i = 0; i < count; i++) {
         const at = start + i * 24, op = bytes[at];
@@ -109,9 +118,7 @@ class CicadaKernel extends AudioWorkletProcessor {
           }
           const tick = nextBarTick;
           for (let j = 0; j < 24; j++) target.d[committed * 24 + j] = bytes[at + j];
-          const low = tick >>> 0, high = Math.floor(tick / 4294967296) >>> 0, to = committed * 24 + 16;
-          target.d[to] = low; target.d[to + 1] = low >>> 8; target.d[to + 2] = low >>> 16; target.d[to + 3] = low >>> 24;
-          target.d[to + 4] = high; target.d[to + 5] = high >>> 8; target.d[to + 6] = high >>> 16; target.d[to + 7] = high >>> 24;
+          putTick(target.d, committed * 24 + 16, tick);
         } else {
           for (let j = 0; j < 24; j++) target.d[committed * 24 + j] = bytes[at + j];
         }
@@ -149,12 +156,11 @@ class CicadaKernel extends AudioWorkletProcessor {
       anchorTick = tick;
       nextBarTick = tick + 3840;
       fadeLeft = fadeTotal;
-      const targetTick = tick + 3840, low = targetTick >>> 0, high = Math.floor(targetTick / 4294967296) >>> 0;
+      const targetTick = tick + 3840;
       for (let i = 0; i < deferredCount; i++) {
-        const from = i * 24, to = from + 16;
+        const from = i * 24;
         for (let j = 0; j < 24; j++) active.d[from + j] = deferred[from + j];
-        active.d[to] = low; active.d[to + 1] = low >>> 8; active.d[to + 2] = low >>> 16; active.d[to + 3] = low >>> 24;
-        active.d[to + 4] = high; active.d[to + 5] = high >>> 8; active.d[to + 6] = high >>> 16; active.d[to + 7] = high >>> 24;
+        putTick(active.d, from + 16, targetTick);
       }
       if (deferredCount) active.x.gosx_audio_cmd_commit(deferredCount);
       deferredCount = 0;
