@@ -25,16 +25,22 @@ func (e Error) Error() string { return string(e) }
 
 type VoiceKind uint8
 
+// MonoNoteOffPitchFlag opts a mono graph command into pitch-specific release.
+// Unflagged note-off commands retain the historical all-notes-off behavior.
+const MonoNoteOffPitchFlag uint16 = 0x100
+
 const (
 	VoiceOff VoiceKind = iota
 	VoiceAcid
 	VoiceDrums
 	VoiceGraph
 	VoicePiano
-	VoiceGuitar           // explicitly experimental physical model and amp
-	VoiceModal  VoiceKind = 6
-	VoiceAudio  VoiceKind = 8
-	VoiceSample VoiceKind = 9
+	VoiceGuitar              // explicitly experimental physical model and amp
+	VoiceModal     VoiceKind = 6
+	VoiceAudio     VoiceKind = 8
+	VoiceSample    VoiceKind = 9
+	VoicePrepared  VoiceKind = 10
+	VoiceGraphPoly VoiceKind = 11
 )
 
 type KitLaneKind uint8
@@ -68,8 +74,10 @@ type TrackConfig struct {
 	Kit          *[drum.LaneCount]KitLaneBinding
 	Modal        modal.Profile `json:",omitempty"`
 	Graph        graph.Program
-	Polyphony    uint8   `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
-	PianoSustain float32 `json:",omitempty"`
+	Polyphony    uint8              `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
+	PianoSustain float32            `json:",omitempty"`
+	Prepared     StereoVoiceFactory `json:"-"`
+	PreparedClip bool               `json:"-"`
 	GainDB       float64
 	GainSet      bool
 	Pan          float64
@@ -141,6 +149,11 @@ type voiceSlot struct {
 	graph                          *graph.Voice
 	piano                          *piano.Instrument
 	pianoSustain                   float32
+	legacyPoly                     *graph.Poly
+	graphNote                      uint8
+	graphHeld                      bool
+	prepared                       StereoVoice
+	preparedClip                   bool
 	poly                           *graph.Pool
 	modal                          *modal.Voice
 	sampler                        *sample.Pool
@@ -556,6 +569,19 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 				err = v.piano.SetSustain(spec.PianoSustain)
 				v.pianoSustain = spec.PianoSustain
 			}
+		case VoiceGraphPoly:
+			voices += graph.PolyVoices
+			v.legacyPoly, err = graph.NewPoly(spec.Graph, cfg.SampleRate)
+		case VoicePrepared:
+			if spec.Prepared == nil || spec.Prepared.VoiceCount() < 1 || spec.Prepared.VoiceCount() > 32 {
+				return 0, Error("prepared audio voice budget is invalid")
+			}
+			voices += spec.Prepared.VoiceCount()
+			v.preparedClip = spec.PreparedClip
+			v.prepared, err = spec.Prepared.NewStereoVoice(cfg.SampleRate)
+			if err == nil && v.prepared == nil {
+				return 0, Error("prepared audio factory returned no voice")
+			}
 		default:
 			return 0, Error("unknown voice kind")
 		}
@@ -904,6 +930,10 @@ func (e *Engine) Render(outL, outR []float32) {
 				left, right = sample, sample
 			case VoicePiano:
 				left, right = v.piano.NextStereo()
+			case VoiceGraphPoly:
+				left, right = v.legacyPoly.NextStereo()
+			case VoicePrepared:
+				left, right = v.prepared.NextStereo()
 			}
 			if v.insert != nil {
 				left, right = v.insert.Process(left, right)
@@ -1208,6 +1238,16 @@ func (e *Engine) apply(c cmd.Command) {
 		if len(e.schedule) > 0 && !e.songMode {
 			e.startSong()
 		}
+		for i := 0; i < e.tracks; i++ {
+			v := &e.voices[i]
+			if v.preparedClip && e.patterns[i].active < 0 {
+				continue
+			}
+			if v.prepared != nil && v.prepared.Play() != nil {
+				e.fault(19)
+				return
+			}
+		}
 		if e.renderFrames > 0 {
 			e.scheduleAll()
 		}
@@ -1339,9 +1379,17 @@ func (e *Engine) apply(c cmd.Command) {
 			}
 		case VoiceGraph:
 			v.graph.NoteOn(note, velocity, slide)
+			v.graphNote, v.graphHeld = note, true
 		case VoicePiano:
 			if v.piano.NoteOn(note, velocity) != nil {
 				e.fault(8)
+				return
+			}
+		case VoiceGraphPoly:
+			v.legacyPoly.NoteOn(note, velocity, slide)
+		case VoicePrepared:
+			if v.prepared.NoteOn(note, velocity) != nil {
+				e.fault(19)
 				return
 			}
 		case VoiceDrums:
@@ -1794,7 +1842,11 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		if v.poly != nil {
 			v.poly.ReleaseAll()
 		} else {
-			v.graph.NoteOff()
+			pitchSpecific := lane >= MonoNoteOffPitchFlag && lane < MonoNoteOffPitchFlag+128
+			if !pitchSpecific || v.graphHeld && v.graphNote == uint8(lane&127) {
+				v.graph.NoteOff()
+				v.graphHeld = false
+			}
 		}
 	case VoicePiano:
 		if lane == 0xffff {
@@ -1802,6 +1854,14 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		} else {
 			v.piano.NoteOff(uint8(lane))
 		}
+	case VoiceGraphPoly:
+		if lane < 128 {
+			v.legacyPoly.NoteOffNote(uint8(lane))
+		} else {
+			v.legacyPoly.NoteOff()
+		}
+	case VoicePrepared:
+		v.prepared.NoteOff()
 	case VoiceDrums:
 		if lane < uint16(drum.LaneCount) {
 			v.drums.NoteOff(drum.Lane(lane))
@@ -1836,6 +1896,11 @@ func (e *Engine) resetVoice(track int) {
 		} else {
 			v.graph.Reset()
 		}
+		v.graphHeld = false
+	case VoiceGraphPoly:
+		v.legacyPoly.Reset()
+	case VoicePrepared:
+		v.prepared.Reset()
 	case VoicePiano:
 		v.piano.Reset()
 		_ = v.piano.SetSustain(v.pianoSustain)

@@ -3,9 +3,13 @@
 export GOWORK := off
 
 .PHONY: test-chord-wasm
+.PHONY: build-core build-workstation build-workstation-release test-workstation
 
 # Keep a TinyGo/Binaryen regression from consuming the full CI job budget.
 KERNEL_WASM_BUILD_TIMEOUT ?= 180s
+# Size optimization keeps the richer bounded voice engine within its existing
+# download budget. Audio parity and browser callback budgets gate this build.
+KERNEL_WASM_OPT ?= z
 
 # Redirect measurements outside the checkout; see docs/manual/engine-metrics.md.
 ENGINE_METRICS_ARGS ?=
@@ -27,9 +31,36 @@ grammar-check:
 	cmp build/cicada.bin notation/cicada.bin
 	go test ./language/... -count=1
 
-build:
+build: build-core build-workstation
+
+build-core:
 	mkdir -p build
 	GOFLAGS=-buildvcs=false go build -o build/cicada ./cmd/cicada
+
+# The GoSX app has its own Go 1.26 module; the realtime TinyGo core stays 1.25.
+build-workstation:
+	cd workstation && go run -mod=mod m31labs.dev/gosx/cmd/gosx build .
+	mkdir -p build/workstation
+	cp workstation/dist/server/app build/cicada-workstation.new
+	mv -f build/cicada-workstation.new build/cicada-workstation
+	cp workstation/dist/build.json build/workstation/build.json
+	cp -R workstation/dist/assets workstation/dist/public build/workstation/
+
+build-workstation-release:
+	cd workstation && go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .
+	mkdir -p build/workstation
+	cp workstation/dist/server/app build/cicada-workstation.new
+	mv -f build/cicada-workstation.new build/cicada-workstation
+	cp workstation/dist/build.json build/workstation/build.json
+	cp -R workstation/dist/assets workstation/dist/public build/workstation/
+
+test-workstation:
+	cd workstation && go generate ./... && go test -race ./... -count=1
+
+.PHONY: test-studio-continuity
+# Requires a running Studio with the marked disposable browser-test score.
+test-studio-continuity:
+	node --test workstation/browser/continuity.test.cjs
 
 test-kernel:
 	go test ./kernel/... -count=1
@@ -43,7 +74,7 @@ test-timing:
 test-golden:
 	go run ./cmd/cicada golden
 
-test-midi-virtual: build
+test-midi-virtual: build-core
 	GOWORK=off PULSE_SERVER=unix:/nonexistent node ./cmd/cicada/test-midi-virtual.cjs
 
 # This builds only the sequencer probe, not the eventual audio kernel.
@@ -71,9 +102,9 @@ test-kernel-wasm: build-kernel-wasm build-loudness-wasm
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
 
-test-chord-wasm: build-kernel-wasm
+test-chord-wasm: build-kernel-wasm test-worklet-negotiation
 	node host/web/chord_capability_test.cjs
-	bash -o pipefail -c 'CICADA_CHORD_WASM_PATH="$(CURDIR)/build/cicada-kernel.wasm" go test -timeout=2m -tags chord_wasm ./cmd/cicada-kernel-wasm -run "^TestChordWASM" -count=1 -v | tee build/chord-wasm-report.txt'
+	bash -o pipefail -c 'CICADA_CHORD_WASM_PATH="$(CURDIR)/build/cicada-kernel.wasm" go test -timeout=2m -tags chord_wasm ./cmd/cicada-kernel-wasm -run "^TestChordWASM" -count=1 -v | tee build/chord-wasm-report.txt build/test-chord-wasm.log'
 
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v
@@ -85,9 +116,6 @@ test-wasm: build-kernel-wasm test-chord-wasm
 test-worklet-negotiation: build-worklets
 	node host/web/chord_capability_test.cjs
 	node host/web/client_capability_test.cjs
-
-test-chord-wasm: build-kernel-wasm test-worklet-negotiation
-	bash -o pipefail -c "CICADA_CHORD_WASM_PATH=$(CURDIR)/build/cicada-kernel.wasm GOWORK=off nice -n 10 go test -timeout=20m -tags chord_wasm ./cmd/cicada-kernel-wasm -run '^TestChordWASM' -count=1 -v | tee build/test-chord-wasm.log"
 
 test-browser: build-kernel-wasm
 	mkdir -p build

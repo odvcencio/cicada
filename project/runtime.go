@@ -3,6 +3,7 @@ package project
 import (
 	"fmt"
 	"math"
+	"slices"
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/engine"
@@ -16,17 +17,40 @@ import (
 // configuration. Compilation happens outside the audio callback; New copies
 // every pattern and arrangement table before playback.
 func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) {
-	return CompileEngineWithAssets(p, sampleRate, maxBlock, nil)
+	return compileEngine(p, sampleRate, maxBlock, nil, nil)
 }
 
 // CompileEngineWithAssets accepts immutable decoded PCM prepared by the host.
 func CompileEngineWithAssets(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset) (engine.Config, error) {
+	return compileEngine(p, sampleRate, maxBlock, assets, nil)
+}
+
+// CompileEnginePrepared accepts host-verified immutable native audio factories.
+func CompileEnginePrepared(p *Project, sampleRate, maxBlock int, prepared []engine.StereoVoiceFactory) (engine.Config, error) {
+	return compileEngine(p, sampleRate, maxBlock, nil, prepared)
+}
+
+func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAsset, prepared []engine.StereoVoiceFactory) (engine.Config, error) {
 	var cfg engine.Config
 	if err := ValidateProject(p); err != nil {
 		return cfg, err
 	}
-	if (len(p.Clips) > 0 || len(p.Samplers) > 0) && len(assets) != len(p.Assets) {
+	if p.HasAudio() && len(prepared) != len(p.Tracks) && (len(assets) == 0 || len(assets) != len(p.Assets)) {
 		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio clips require prepared assets")
+	}
+	if len(prepared) == len(p.Tracks) && p.HasAudio() {
+		copy := *p
+		copy.Tracks = slices.Clone(p.Tracks)
+		for i, track := range copy.Tracks {
+			if p.Edition == 2 && track.Kind == "audio" {
+				var err error
+				copy.Tracks[i].Slots, err = ClipSlots(p, track)
+				if err != nil {
+					return cfg, err
+				}
+			}
+		}
+		p = &copy
 	}
 	if len(p.Scenes) > 1<<16 || len(p.Song) > 1<<16 {
 		return cfg, fmt.Errorf("arrangement exceeds the kernel index range")
@@ -167,99 +191,112 @@ func CompileEngineWithAssets(p *Project, sampleRate, maxBlock int, assets []engi
 				config.InsertDrive = &params
 			}
 		}
-		kind := track.Kind
-		if kind == "piano" && !isModeledPiano(p, kind) || kind == "audio" && p.Edition != 2 {
-			kind = "declared"
-		}
-		switch kind {
-		case "piano":
-			config.Kind = engine.VoicePiano
-			sustain, err := PianoSustainFromValues(track.Params)
-			if err != nil {
-				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+		if len(prepared) == len(p.Tracks) && prepared[ti] != nil {
+			config.Kind, config.Prepared = engine.VoicePrepared, prepared[ti]
+			config.PreparedClip = p.Edition == 2 && track.Kind == "audio"
+		} else {
+			kind := track.Kind
+			if kind == "piano" && !isModeledPiano(p, kind) || kind == "audio" && p.Edition != 2 {
+				kind = "declared"
 			}
-			config.PianoSustain = sustain
-		case "guitar":
-			config.Kind, config.Experimental = engine.VoiceGuitar, true
-			params, err := guitarParamsFromValues(track.Params)
-			if err != nil {
-				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
-			}
-			config.Guitar = params
-		case "audio":
-			config.Kind = engine.VoiceAudio
-		case "acid":
-			config.Kind = engine.VoiceAcid
-			params, err := acidParamsFromValues(track.Params)
-			if err != nil {
-				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
-			}
-			config.Acid = params
-		case "drums":
-			config.Kind = engine.VoiceDrums
-			params, err := drumParamsFromValues(track.Params)
-			if err != nil {
-				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
-			}
-			config.Drums = params
-			for lane, enabled := range projectDrumLanes(p, track) {
-				if !enabled {
-					config.Drums[lane] = drum.Params{}
-				}
-			}
-			cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
-		default:
-			if kit, ok := kits[track.Kind]; ok {
-				config.Kind = engine.VoiceDrums
-				bindings, err := CompileKitTrackAtSampleRate(kit, programs, track.Params, sampleRate)
+			switch kind {
+			case "piano":
+				config.Kind = engine.VoicePiano
+				sustain, err := PianoSustainFromValues(track.Params)
 				if err != nil {
 					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 				}
-				config.Kit = bindings
+				config.PianoSustain = sustain
+			case "guitar":
+				config.Kind, config.Experimental = engine.VoiceGuitar, true
+				params, err := guitarParamsFromValues(track.Params)
+				if err != nil {
+					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+				}
+				config.Guitar = params
+			case "audio":
+				config.Kind = engine.VoiceAudio
+			case "acid":
+				config.Kind = engine.VoiceAcid
+				params, err := acidParamsFromValues(track.Params)
+				if err != nil {
+					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+				}
+				config.Acid = params
+			case "drums":
+				config.Kind = engine.VoiceDrums
+				params, err := drumParamsFromValues(track.Params)
+				if err != nil {
+					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+				}
+				config.Drums = params
+				for lane, enabled := range projectDrumLanes(p, track) {
+					if !enabled {
+						config.Drums[lane] = drum.Params{}
+					}
+				}
 				cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
-				break
-			}
-			for _, sampler := range p.Samplers {
-				if sampler.Name == track.Kind {
-					config.Kind = engine.VoiceSample
-					config.Sample = &engine.SamplerConfig{Asset: assetIndex[sampler.Asset], RootKey: uint8(sampler.RootMIDI), Voices: uint8(sampler.Voices), Loop: sampler.Mode == "loop"}
+			default:
+				if kit, ok := kits[track.Kind]; ok {
+					config.Kind = engine.VoiceDrums
+					bindings, err := CompileKitTrackAtSampleRate(kit, programs, track.Params, sampleRate)
+					if err != nil {
+						return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+					}
+					config.Kit = bindings
+					cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
 					break
 				}
-			}
-			if config.Kind == engine.VoiceSample {
-				break
-			}
-			if profile, ok := modal.ParseTrackKind(track.Kind); ok {
-				config.Kind, config.Modal = engine.VoiceModal, profile
-				break
-			}
-			config.Kind = engine.VoiceGraph
-			program := programs[track.Kind]
-			if program == nil {
-				return cfg, fmt.Errorf("track %s has no compiled instrument", track.ID)
-			}
-			overrides := map[string]string{}
-			for name, value := range track.Params {
-				if name == "octave" && !program.HasParameter("octave") {
-					continue
+				for _, sampler := range p.Samplers {
+					if sampler.Name == track.Kind {
+						config.Kind = engine.VoiceSample
+						config.Sample = &engine.SamplerConfig{Asset: assetIndex[sampler.Asset], RootKey: uint8(sampler.RootMIDI), Voices: uint8(sampler.Voices), Loop: sampler.Mode == "loop"}
+						break
+					}
 				}
-				literal, err := valueSource(value)
+				if config.Kind == engine.VoiceSample {
+					break
+				}
+				if profile, ok := modal.ParseTrackKind(track.Kind); ok {
+					config.Kind, config.Modal = engine.VoiceModal, profile
+					break
+				}
+				config.Kind = engine.VoiceGraph
+				program := programs[track.Kind]
+				if program == nil {
+					return cfg, fmt.Errorf("track %s has no compiled instrument", track.ID)
+				}
+				overrides := map[string]string{}
+				for name, value := range track.Params {
+					if name == "octave" && !program.HasParameter("octave") {
+						continue
+					}
+					literal, err := valueSource(value)
+					if err != nil {
+						return cfg, fmt.Errorf("track %s parameter %s: %w", track.ID, name, err)
+					}
+					overrides[name] = literal
+				}
+				graph, err := instrument.Lower(program, overrides)
 				if err != nil {
-					return cfg, fmt.Errorf("track %s parameter %s: %w", track.ID, name, err)
+					return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 				}
-				overrides[name] = literal
-			}
-			graph, err := instrument.Lower(program, overrides)
-			if err != nil {
-				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
-			}
-			config.Graph = graph
-			if program.Mode == "poly" {
-				config.Polyphony = 4
+				config.Graph = graph
+				if program.Mode == "poly" {
+					if GraphPolyphony(p, track.Kind) == 4 {
+						config.Polyphony = 4
+					} else {
+						config.Kind = engine.VoiceGraphPoly
+					}
+				}
 			}
 		}
 		for slot, patternID := range track.Slots {
 			if patternID == nil {
+				continue
+			}
+			if config.PreparedClip {
+				cfg.Patterns[ti].Slots[slot] = seq.Pattern{Len: 16, GatePercent: 50, Seed: p.Seed}
 				continue
 			}
 			pattern := patterns[*patternID]
@@ -298,7 +335,7 @@ func CompileEngineWithAssets(p *Project, sampleRate, maxBlock int, assets []engi
 			if err := base.Validate(); err != nil {
 				return cfg, fmt.Errorf("pattern %s: %w", pattern.ID, err)
 			}
-			if config.Kind == engine.VoiceGraph {
+			if config.Kind == engine.VoiceGraph || config.Kind == engine.VoiceGraphPoly {
 				if err := ValidateGraphDelayPattern(config.Graph, sampleRate, base); err != nil {
 					return cfg, fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", track.ID, pattern.ID, err)
 				}

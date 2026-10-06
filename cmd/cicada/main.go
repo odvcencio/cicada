@@ -278,12 +278,14 @@ func main() {
 		writeJSON(program)
 	case "render":
 		renderOptions.AssetRoot = filepath.Dir(path)
+		renderOptions.AssetDir = filepath.Dir(path)
 		if err := renderFile(score, renderPath, renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	case "stems":
 		renderOptions.AssetRoot = filepath.Dir(path)
+		renderOptions.AssetDir = filepath.Dir(path)
 		report, err := render.Stems(score, renderOptions, renderPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)

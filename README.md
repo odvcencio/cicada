@@ -5,29 +5,38 @@ scenes, and a song. New projects use source edition 2.
 
 ## Quick start
 
-Build the command-line tool with Go 1.25 or newer, then create and check a
-project:
+Build Cicada and its GoSX workstation, then create and check a project.
+The realtime core uses Go 1.25; the workstation module pins Go 1.26.4 and
+GoSX 0.57.5. Go downloads its pinned toolchain when needed.
 
 ```sh
-go build -o cicada ./cmd/cicada
-./cicada new night-circuit
+make build
+./build/cicada new night-circuit
 cd night-circuit
-../cicada fmt --check
-../cicada check
+../build/cicada fmt --check
+../build/cicada check
 ```
 
 The starter score has bass, drums, and two scenes. Open it in Studio:
 
 ```sh
-../cicada studio main.cicada --audio null
+../build/cicada studio main.cicada --audio null
 ```
 
 The null backend lets you use Studio transport and meters without opening an
 audio device. For WAV output, render the score:
 
 ```sh
-../cicada render main.cicada -o mix.wav --bars 8
+../build/cicada render main.cicada -o mix.wav --bars 8
 ```
+
+Studio uses GoSX components, server actions, managed navigation, and the GoSX
+score editor. Live meters, keyboard/MIDI input, note takes, and capture status
+run as GoSX Go/WASM engines. HTML forms also work with JavaScript disabled.
+`make build-workstation-release` builds the
+production framework runtime with TinyGo. See [workstation architecture](workstation/README.md).
+
+For command-line rendering alone, `make build-core` needs no workstation build.
 
 ## Audio
 

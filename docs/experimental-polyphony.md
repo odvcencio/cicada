@@ -16,7 +16,8 @@ song { verse }
 ## Musical contract and limits
 
 - `voice poly` is explicit and applies only to typed graph instruments. A track
-  allocates exactly four voice slots against the existing 32-voice project limit
+  assigned chord patterns allocates four slots against the 32-voice project limit.
+  Scalar polyphonic patterns retain the eight-voice Live instrument mode
 - Chords contain 2–4 distinct resolved MIDI pitches. Octave marks and phrase
   transpose work. Suffix accent/chance applies to the complete cohort; `-`
   holds all its pitches with one gate and release
@@ -60,7 +61,7 @@ TinyGo exports trap if called before runtime initialization. Both worklet
 assets have actual-reactor tests requiring a freshly built version15-capable module.
 
 The WASM export `gosx_audio_capabilities()` retains bit0 (`1`) for
-`OpSetChordStep` (appended opcode22). Bit1 (`2`) independently negotiates the
+`OpSetChordStep` (appended opcode22). Bit16 (`65536`) independently negotiates the
 [unified v15 image layout](spec/kernel-image-v15.md); bit0 alone never authorizes
 a v15 image. Opcode22 uses four 7-bit pitches in `Arg0`;
 `Arg1` low4bits selects slot0–15 and bits4–6 contain count2–4. `Index` is step0–63.

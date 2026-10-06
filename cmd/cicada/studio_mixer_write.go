@@ -598,6 +598,12 @@ func closeBraceLineStart(source []byte, start, end int) int {
 
 func attachedCommentStart(source []byte, at, lowerBound int) int {
 	lineStart := bytes.LastIndexByte(source[:at], '\n') + 1
+	// An inline setting shares its line with a declaration or another
+	// setting. Its line start is outside the insertion span; keep the new
+	// setting inside the owner's braces instead of moving before the owner.
+	if len(bytes.TrimSpace(source[lineStart:at])) > 0 {
+		return at
+	}
 	for lineStart > lowerBound {
 		previousEnd := lineStart - 1
 		previousStart := bytes.LastIndexByte(source[:previousEnd], '\n') + 1
@@ -1005,6 +1011,9 @@ func jsonBool(raw json.RawMessage) (bool, error) {
 
 func finiteMixer(value float64) bool { return !math.IsNaN(value) && !math.IsInf(value, 0) }
 func roundMixer(value, step float64) float64 {
+	if step <= 0 {
+		return value
+	}
 	rounded := math.Round(value/step) * step
 	return math.Round(rounded*1e8) / 1e8
 }

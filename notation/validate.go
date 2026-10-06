@@ -113,7 +113,6 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 		if inst.Mode != "mono" && inst.Mode != "poly" {
 			add("CICADA-PARAM", "voice mode must be mono or poly", "error", inst.Position)
-
 		}
 		if inst.Output == nil {
 			add("CICADA-PARAM", "voice needs an out expression", "error", inst.Position)

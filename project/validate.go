@@ -152,7 +152,7 @@ func ValidateProject(p *Project) error {
 		if err := uniqueID(inst.ID, seenInstruments); err != nil {
 			return fmt.Errorf("instrument: %w", err)
 		}
-		if inst.Mode != "mono" && inst.Mode != "poly" || inst.Params == nil || inst.Lets == nil {
+		if (inst.Mode != "mono" && inst.Mode != "poly") || inst.Params == nil || inst.Lets == nil {
 			return fmt.Errorf("instrument %s uses an unsupported voice mode or incomplete fields", inst.ID)
 		}
 		params := map[string]bool{}
@@ -479,7 +479,7 @@ func ValidateProject(p *Project) error {
 		} else if kit, ok := kits[track.Kind]; ok {
 			allocatedVoices += len(kit.Lanes)
 		} else if inst := instruments[track.Kind]; inst != nil && inst.Mode == "poly" {
-			allocatedVoices += 4
+			allocatedVoices += GraphPolyphony(p, track.Kind)
 		} else {
 			allocatedVoices++
 		}
@@ -544,6 +544,21 @@ func ValidateProject(p *Project) error {
 	}
 	for _, track := range p.Tracks {
 		seen := map[string]bool{}
+		if p.Edition == 2 && track.Kind == "audio" {
+			if _, err := ClipSlots(p, track); err != nil {
+				return err
+			}
+			for _, slot := range track.Slots {
+				if slot == nil {
+					continue
+				}
+				if _, ok := clips[*slot]; !ok || seen[*slot] {
+					return fmt.Errorf("audio track %s has invalid or duplicate clip slot %s", track.ID, *slot)
+				}
+				seen[*slot] = true
+			}
+			continue
+		}
 		for _, slot := range track.Slots {
 			if slot == nil {
 				continue
@@ -679,7 +694,7 @@ func ValidateProject(p *Project) error {
 			} else if kit, ok := kits[kind]; ok {
 				voices += len(kit.Lanes)
 			} else if inst := instruments[kind]; inst != nil && inst.Mode == "poly" {
-				voices += 4
+				voices += GraphPolyphony(p, kind)
 			} else {
 				voices++
 			}
@@ -838,14 +853,16 @@ func validateExpr(expr Expr, depth int) (int, error) {
 
 func validExprArity(op string, n int) bool {
 	switch op {
-	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay", "neural_amp":
+	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay", "neural_amp", "pulse":
 		return n == 2
 	case "saw", "square", "sine", "tanh", "exp2":
 		return n == 1
 	case "noise":
 		return n == 0
-	case "ladder", "diode", "mix", "clamp", "pm":
+	case "ladder", "diode", "mix", "clamp", "pm", "svf":
 		return n == 3
+	case "adsr":
+		return n == 5
 	case "comb":
 		return n == 4
 	}

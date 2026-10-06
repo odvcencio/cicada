@@ -121,6 +121,43 @@ func TestStudioMixerWriterInsertsInFormatterOrderAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestStudioMixerWriterAddsSettingsInsideInlineTrack(t *testing.T) {
+	source := []byte("cicada 2\ntempo 120\nkey c minor\n// Keep this track comment.\ntrack keys acid { cutoff=700Hz }\npattern pulse notes { 1 . . . }\nscene main { keys=pulse }\nsong { main }\n")
+	for _, test := range []struct {
+		field string
+		value string
+	}{
+		{"level", "-7.25"},
+		{"pan", "0.125"},
+		{"mute", "true"},
+	} {
+		t.Run(test.field, func(t *testing.T) {
+			updated, _, _, _, err := studioMixerSource(source, "keys."+test.field, json.RawMessage(test.value))
+			if err != nil {
+				t.Fatal(err)
+			}
+			score, diagnostics := notation.Parse(updated)
+			if score == nil || hasDiagnosticErrors(diagnostics) {
+				t.Fatalf("inline mixer edit produced invalid source: %v\n%s", diagnostics, updated)
+			}
+			if len(score.Tracks) != 1 || !strings.Contains(string(updated), "// Keep this track comment.\ntrack keys acid {") || !strings.Contains(string(updated), "cutoff=700Hz") {
+				t.Fatalf("inline mixer edit damaged its owner: %s", updated)
+			}
+			found := false
+			for _, parameter := range score.Tracks[0].Params {
+				found = found || parameter.Name == test.field
+			}
+			if !found {
+				t.Fatalf("new %s is outside the track: %s", test.field, updated)
+			}
+			second, _, _, _, err := studioMixerSource(updated, "keys."+test.field, json.RawMessage(test.value))
+			if err != nil || !bytes.Equal(updated, second) {
+				t.Fatalf("repeating inline mixer edit changed source: %v\n%s", err, second)
+			}
+		})
+	}
+}
+
 func TestStudioMixerWriterTrackLevelOffUsesMuteInEditionTwo(t *testing.T) {
 	updated, _, _, _, err := studioMixerSource([]byte(studioMixerScore), "bass.level", json.RawMessage(`"off"`))
 	if err != nil {

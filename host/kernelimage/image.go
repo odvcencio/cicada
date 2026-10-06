@@ -31,10 +31,10 @@ const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15  // experimental guitar; version 14 belongs to chord/schedule lanes
 const UnifiedImageVersion = 15 // unified chords, schedules, guitar and resident audio
 const ChordImageVersion = UnifiedImageVersion
+const qualityImageVersion = 14 // internal graph decoder only; complete image14 is rejected
+const masterSoloImageVersion = 13
 
-// DelayCapability uses bit 1; bit 0 is reserved by the chord lane. The existing
-// reserved header word carries required capabilities without changing version
-// 13's layout. Older readers reject its nonzero value before loading new ops.
+// Delay images retain the capability bit used by version 13.
 const DelayCapability uint16 = 1 << 1
 
 // PianoCapability requires the modeled piano voice and its sustain state.
@@ -138,7 +138,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks {
 		return nil, Error("project image configuration is out of range")
 	}
-	version := uint16(imageVersion)
+	version := uint16(masterSoloImageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		if spec.Kind == engine.VoiceGuitar {
@@ -146,6 +146,16 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		if spec.Polyphony != 0 && (spec.Polyphony != 4 || spec.Kind != engine.VoiceGraph) {
 			return nil, Error("invalid polyphony image mode")
+		}
+		if version < UnifiedImageVersion && (spec.Kind == engine.VoiceGraphPoly || graphNeedsQuality(spec.Graph)) {
+			version = UnifiedImageVersion
+		}
+		if spec.Kit != nil {
+			for _, binding := range spec.Kit {
+				if version < UnifiedImageVersion && graphNeedsQuality(binding.Program) {
+					version = UnifiedImageVersion
+				}
+			}
 		}
 		if spec.Polyphony == 4 {
 			version = max(version, uint16(ChordImageVersion))
@@ -396,7 +406,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			w.byte(spec.Sample.RootKey)
 			w.byte(spec.Sample.Voices)
 			w.byte(boolByte(spec.Sample.Loop))
-		case engine.VoiceGraph:
+		case engine.VoiceGraph, engine.VoiceGraphPoly:
 			if err := writeGraph(&w, spec.Graph); err != nil {
 				return nil, err
 			}
@@ -658,7 +668,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	if version >= busMixerImageVersion {
 		busFlags, err := r.u16()
 		allowed := uint16(0x1f)
-		if version >= imageVersion {
+		if version >= masterSoloImageVersion {
 			allowed = 0x3f
 		}
 		if err != nil || busFlags&^allowed != 0 {
@@ -861,7 +871,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return Error("invalid sampler image loop")
 			}
 			spec.Sample.Loop = loop == 1
-		case engine.VoiceGraph:
+		case engine.VoiceGraph, engine.VoiceGraphPoly:
 			if spec.Graph, err = readGraph(&r, version, reserved); err != nil {
 				return err
 			}
@@ -1039,12 +1049,26 @@ func writeGraph(w *writer, program graph.Program) error {
 		w.byte(node.B)
 		w.byte(node.C)
 		w.f32(node.Value)
+		if node.Op == graph.ADSR {
+			w.byte(node.D)
+			w.byte(node.E)
+		}
 	}
 	return nil
 }
 
 // Inspect by pointer: a Program contains the full 128-node array. Copying it
 // for each capability check expands the WASM reader without adding behavior.
+func graphNeedsQuality(program graph.Program) bool {
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		switch program.Nodes[i].Op {
+		case graph.ADSR, graph.Pulse, graph.SVF:
+			return true
+		}
+	}
+	return false
+}
+
 func graphCapabilities(program *graph.Program) uint16 {
 	var required uint16
 	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
@@ -1105,7 +1129,27 @@ func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, e
 		if err != nil {
 			return program, err
 		}
+		// Decode early graph payloads for migration tools; DecodeInto still refuses
+		// both ambiguous complete version-14 image layouts before reading tracks.
+		if version == qualityImageVersion && capabilities == 0 {
+			if op == 24 {
+				op = byte(graph.Pulse)
+			} else if op == 25 {
+				op = byte(graph.SVF)
+			}
+		}
 		program.Nodes[i] = graph.Node{Op: graph.Op(op), A: a, B: b, C: c, Value: value}
+		if graph.Op(op) == graph.ADSR {
+			if version < qualityImageVersion {
+				return program, Error("ADSR needs project image version 15")
+			}
+			if program.Nodes[i].D, err = r.byte(); err != nil {
+				return program, err
+			}
+			if program.Nodes[i].E, err = r.byte(); err != nil {
+				return program, err
+			}
+		}
 	}
 	required := graphCapabilities(&program)
 	if required&DelayCapability != 0 && capabilities&DelayCapability == 0 {

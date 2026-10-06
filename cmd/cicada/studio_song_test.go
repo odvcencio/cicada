@@ -71,6 +71,46 @@ func TestSongEditsPreserveCRLFAndMultiplierSpacing(t *testing.T) {
 	}
 }
 
+func TestArrangementAppendDuplicateReplaceAndDelete(t *testing.T) {
+	for _, newline := range []string{"\n", "\r\n"} {
+		before := []byte(strings.ReplaceAll(studioSongScore, "\n", newline))
+		updated, err := editedSongBlockSource(before, "append", 0, 0, 12, "chorus")
+		if err != nil {
+			t.Fatal(err)
+		}
+		updated, err = editedSongBlockSource(updated, "duplicate", 1, 0, 0, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		updated, err = editedSongBlockSource(updated, "scene", 2, 0, 0, "dusk")
+		if err != nil {
+			t.Fatal(err)
+		}
+		updated, err = editedSongBlockSource(updated, "delete", 0, 0, 0, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		p := patternProject(t, updated)
+		if len(p.Song) != 4 || p.Song[0].Scene != "chorus" || p.Song[1].Scene != "dusk" || p.Song[3].Bars != 12 {
+			t.Fatalf("arrangement: %+v", p.Song)
+		}
+		prefix := bytes.Index(before, []byte("song {"))
+		if !bytes.Equal(before[:prefix], updated[:prefix]) {
+			t.Fatal("arrangement changed another declaration")
+		}
+		if newline == "\r\n" && bytes.Contains(bytes.ReplaceAll(updated, []byte(newline), nil), []byte("\n")) {
+			t.Fatal("arrangement changed line endings")
+		}
+	}
+	if _, err := editedSongBlockSource([]byte(studioSongScore), "append", 0, 0, 4, "missing"); err == nil {
+		t.Fatal("unknown scene accepted")
+	}
+	one := []byte(strings.Replace(studioSongScore, "  dusk*2\n  chorus\n  dusk*3", "  dusk", 1))
+	if _, err := editedSongBlockSource(one, "delete", 0, 0, 0, ""); err == nil {
+		t.Fatal("deleted final arrangement block")
+	}
+}
+
 func TestStudioSongLaneOffersPlayFromEachBlock(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "song.cicada")
 	if err := os.WriteFile(path, []byte(studioSongScore), 0600); err != nil {

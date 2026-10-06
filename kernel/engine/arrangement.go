@@ -184,6 +184,10 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 		case SceneSlot:
 			e.fadeSceneTrack(track, false)
 			if p.active == int8(binding.Slot) {
+				if v := &e.voices[track]; v.preparedClip && v.prepared.SelectSlot(binding.Slot, 0, e.transport.Playing()) != nil {
+					e.fault(19)
+					return
+				}
 				p.chainArmed = false
 				continue
 			}
@@ -273,6 +277,7 @@ func (e *Engine) startSong() {
 			if len(e.clipTemplates) > 0 {
 				e.restoreSongClips(i, cycleStart, tick)
 			}
+			e.restorePreparedClips(i, cycleStart)
 			if tick > entryStart {
 				e.settleSceneEffects()
 			}
