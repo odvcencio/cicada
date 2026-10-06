@@ -109,3 +109,46 @@ func TestIndependentScoreImportsOfferNotationFix(t *testing.T) {
 		})
 	}
 }
+
+func TestIndependentNotationFixPreservesImportedReturnAlias(t *testing.T) {
+	s, main, library := libraryServer(t)
+	root := filepath.Dir(mustScorePath(t, main))
+	data := []byte("import \"demo/tone\"\ntrack lead tone.glass { send_a=0.4 }\nscene verse { lead=tone.melody }\nsong { verse }\n")
+	for path, content := range map[string][]byte{
+		filepath.Join(root, "cicada.mod"):               []byte("project score\ncicada 1\n"),
+		filepath.Join(root, "lib/demo/tone/cicada.mod"): []byte("library demo/tone\ncicada 1\nsource \"tone.cicada\"\nlicense \"MIT\"\nauthor \"Cicada contributors\"\n"),
+		mustScorePath(t, main):                          data,
+	} {
+		if err := os.WriteFile(path, content, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lib, err := os.ReadFile(mustScorePath(t, library))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(mustScorePath(t, library), append(lib, []byte("fx echo delay {}\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sources, err := project.ReadSources(mustScorePath(t, main), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, _, err := sources.UpdateLibraries("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cicada.sum"), sum, 0600); err != nil {
+		t.Fatal(err)
+	}
+	s.documents[main] = data
+	s.canEditDocuments = true
+	params, _ := json.Marshal(map[string]any{"textDocument": map[string]any{"uri": main}, "context": map[string]any{"only": []string{"quickfix"}}})
+	if err := s.handle(request{ID: json.RawMessage("1"), Method: "textDocument/codeAction", Params: params}); err != nil {
+		t.Fatal(err)
+	}
+	response := s.out.(*bytes.Buffer).Bytes()
+	if !bytes.Contains(response, []byte("send tone.echo")) || bytes.Contains(response, []byte("send demo.tone.echo")) || bytes.Contains(response, []byte(library)) {
+		t.Fatalf("imported-return fix missing, illegal or edits library: %s", response)
+	}
+}

@@ -51,8 +51,12 @@ func fixLoadedScoreForProject(path string, source []byte, edition int) ([]byte, 
 	if compiled == nil || hasDiagnosticErrors(diagnostics) {
 		return nil, false, fmt.Errorf("migrated score does not compile: %+v", diagnostics)
 	}
-	if _, err := project.CompileEngine(compiled, 48000, 128); err != nil {
-		return nil, false, err
+	// A validated, unchanged audio score needs no synth-only engine. Its
+	// library pins, assets and typed model have still been checked above.
+	if changed || !compiled.HasAudio() {
+		if _, err := project.CompileEngine(compiled, 48000, 128); err != nil {
+			return nil, false, err
+		}
 	}
 	for _, file := range fixed {
 		if file.Library == "" && filepath.Clean(file.Path) == filepath.Clean(absolute) {
