@@ -152,15 +152,10 @@ func TestLiveBlockIsOptional(t *testing.T) {
 			if entry.IsDir() || filepath.Ext(path) != ".cicada" || filepath.Base(path) == "live-intensity.cicada" {
 				return nil
 			}
-			source, err := os.ReadFile(path)
+			score, ds, err := LoadScore(path, nil)
 			if err != nil {
 				return err
 			}
-			edition := 2
-			if root != "../examples" {
-				edition = 1
-			}
-			score, ds := notation.ParseEdition(source, edition)
 			if hasProjectErrors(ds) {
 				t.Fatalf("%s: %+v", path, ds)
 			}

@@ -54,6 +54,14 @@ func TestSamplerWASMABIParity(t *testing.T) {
 	}
 	write(uint32(call("sampler_config_ptr")), []float64{3, 3, 8, .7, 20, 4, 8, .5, 12, 400, 5000, .2, 0, 0, 0, 0, 4242, 0})
 	write(uint32(call("sampler_zone_ptr", 0)), []float64{float64(id), 60, 48, 72, 1, 127, 64, 0, 0, 1, 0, 1, 0, 0, 513, 1, 31, 501, 101, 0})
+	t.Run("RejectOverflowingCrossfade", func(t *testing.T) {
+		ptr := uint32(call("sampler_zone_ptr", 0)) + 18*8
+		m.Memory().WriteFloat64Le(ptr, 1<<30)
+		if int32(call("sampler_prepare")) == 0 {
+			t.Fatal("WASM ABI admitted an overflowing crossfade")
+		}
+		m.Memory().WriteFloat64Le(ptr, 101)
+	})
 	if int32(call("sampler_prepare")) != 0 {
 		t.Fatal("prepare")
 	}
