@@ -20,6 +20,9 @@ const MaxImageBytes = 2 << 20
 // reserved header word carries required capabilities without changing version
 // 13's layout. Older readers reject its nonzero value before loading new ops.
 const DelayCapability uint16 = 1 << 1
+
+// DDSPCapability requires the pinned integer harmonic-plus-noise model.
+const DDSPCapability uint16 = 1 << 3
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -134,10 +137,16 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		if graphNeedsDelay(spec.Graph) {
 			capabilities |= DelayCapability
 		}
+		if graphNeedsDDSP(spec.Graph) {
+			capabilities |= DDSPCapability
+		}
 		if spec.Kit != nil {
 			for _, binding := range spec.Kit {
 				if graphNeedsDelay(binding.Program) {
 					capabilities |= DelayCapability
+				}
+				if graphNeedsDDSP(binding.Program) {
+					capabilities |= DDSPCapability
 				}
 			}
 		}
@@ -394,7 +403,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^DelayCapability != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|DDSPCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -793,6 +802,15 @@ func graphNeedsDelay(program graph.Program) bool {
 	return false
 }
 
+func graphNeedsDDSP(program graph.Program) bool {
+	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
+		if program.Nodes[i].Op == graph.DDSP {
+			return true
+		}
+	}
+	return false
+}
+
 func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, error) {
 	var program graph.Program
 	length, err := r.byte()
@@ -833,6 +851,9 @@ func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, e
 	}
 	if graphNeedsDelay(program) && capabilities&DelayCapability == 0 {
 		return program, Error("graph delay operations require capability bit 1")
+	}
+	if graphNeedsDDSP(program) && capabilities&DDSPCapability == 0 {
+		return program, Error("DDSP operations require capability bit 3")
 	}
 	return program, nil
 }

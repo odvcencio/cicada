@@ -78,11 +78,11 @@
 ((call_expr function: (identifier) @function.builtin)
   (#any-of? @function.builtin
     "saw" "square" "sine" "noise" "env" "ladder" "diode"
-    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp"))
+    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp" "ddsp"))
 ((call_expr function: (identifier) @function.call)
   (#not-any-of? @function.call
     "saw" "square" "sine" "noise" "env" "ladder" "diode"
-    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp"))
+    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp" "ddsp"))
 
 (expression ["+" "-" "*" "/"] @operator)
 ("->" @operator)

@@ -484,6 +484,8 @@ func callArgumentTypes(op string) ([]instrument.Type, bool) {
 		return []instrument.Type{instrument.Hz}, true
 	case "noise":
 		return []instrument.Type{}, true
+	case "ddsp":
+		return []instrument.Type{instrument.Hz, instrument.Unit}, true
 	case "env":
 		return []instrument.Type{instrument.Gate, instrument.MS}, true
 	case "ladder", "diode":
@@ -512,7 +514,7 @@ func callOutputType(op string) instrument.Type {
 	switch op {
 	case "period":
 		return instrument.MS
-	case "saw", "square", "sine", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh", "delay", "comb":
+	case "saw", "square", "sine", "noise", "ladder", "diode", "lowpass", "highpass", "mix", "tanh", "delay", "comb", "ddsp":
 		return instrument.Audio
 	case "env", "exp2", "clamp":
 		return instrument.Unit

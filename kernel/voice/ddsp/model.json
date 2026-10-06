@@ -1,0 +1,16 @@
+{
+  "model": "synthetic-reed-v1",
+  "license": "CC0-1.0",
+  "seed": 20261006,
+  "numpy": "2.3.5",
+  "steps": 3500,
+  "train_examples": 512,
+  "heldout_examples": 143,
+  "weight_fraction_bits": 13,
+  "weight_bytes": 210,
+  "sha256": "c864e2b926c0603f3e913f06471c6da2e10055ff14c6171b04c13726131a63cd",
+  "training_mse": 4.2502846290695895e-06,
+  "heldout_quantized_mse": 5.577474255308136e-06,
+  "heldout_quantized_max_error": 0.015430608632524878,
+  "corpus": "Locally generated harmonic reed and filtered noise; no recordings or downloaded weights"
+}
