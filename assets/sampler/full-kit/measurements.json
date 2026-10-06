@@ -1,0 +1,3650 @@
+{
+  "browser": {
+    "browser": "153.0.8010.12",
+    "results": [
+      {
+        "assets": 164,
+        "bank": "full-kit-shells",
+        "lazy_requests": 165,
+        "manifest_sha256": "16f76a8ec18103d262a30c8e4f362142e8d89a2040e3b019660878464a645453",
+        "offline_cache": true,
+        "prepared_suspended": true,
+        "reset_peak": 0,
+        "worklet_peak": 0.02499881014227867
+      },
+      {
+        "assets": 158,
+        "bank": "full-kit-metals",
+        "lazy_requests": 159,
+        "manifest_sha256": "f56f081c7d52e9a6f6dcaf20aa6d6ce332f241eed4453ab72b0ba965ea95a081",
+        "offline_cache": true,
+        "prepared_suspended": true,
+        "reset_peak": 0,
+        "worklet_peak": 0.004462829791009426
+      }
+    ]
+  },
+  "date": "2026-10-06",
+  "kernel": {
+    "core_delta_bytes": 0,
+    "core_raw_budget_bytes": 307200,
+    "core_raw_bytes": 266005,
+    "sampler_delta_bytes": 68,
+    "sampler_raw_budget_bytes": 65536,
+    "sampler_raw_bytes": 31621
+  },
+  "source": {
+    "assets": [
+      {
+        "asset": "cross-stick-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.7817291666666667,
+        "source_dc_dbfs": -104.91323897920549,
+        "source_peak_dbfs": -27.8336936056826,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "547988ba9c75ac4cb54222c240f0ee56f6224b0578fa87a044e182b9cfd8c135",
+        "source_tail_100ms_rms_dbfs": -77.2934550674901
+      },
+      {
+        "asset": "cross-stick-2",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0258125,
+        "source_dc_dbfs": -114.6612404304375,
+        "source_peak_dbfs": -23.42151881708551,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "a32af6ae5f725f68386012c61737ebd151de993317eb23a1e92ecce7942e6680",
+        "source_tail_100ms_rms_dbfs": -75.51830376161136
+      },
+      {
+        "asset": "ftom1-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 3.7270208333333334,
+        "source_dc_dbfs": -120.71829125520722,
+        "source_peak_dbfs": -49.00843914872542,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "684e5631f9121ace58e483134dfc9d2e0877485962354686e3f4d7ffdb0334b9",
+        "source_tail_100ms_rms_dbfs": -88.95183567325752
+      },
+      {
+        "asset": "ftom1-11",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.95475,
+        "source_dc_dbfs": -114.33331823502598,
+        "source_peak_dbfs": -21.29056353871112,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "3e80238f209d526f27145b8c818dbdf504106efe2e2ec964085b8869ef2d07f2",
+        "source_tail_100ms_rms_dbfs": -102.24831148661444
+      },
+      {
+        "asset": "ftom1-13",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.578,
+        "source_dc_dbfs": -123.52316223979982,
+        "source_peak_dbfs": -19.902143144712788,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0fb345346b900038884f5267f443735afbb6d25787924a1f0ff974b9e3188f11",
+        "source_tail_100ms_rms_dbfs": -101.1220869494587
+      },
+      {
+        "asset": "ftom1-14",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.1524375,
+        "source_dc_dbfs": -118.61302262539371,
+        "source_peak_dbfs": -15.892077301025695,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "8f121d1ba41e2154691b721b33ca2c0fea20b6c910644befa4c58fae8372b912",
+        "source_tail_100ms_rms_dbfs": -103.49537859657636
+      },
+      {
+        "asset": "ftom1-16",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.430875,
+        "source_dc_dbfs": -111.92829058226141,
+        "source_peak_dbfs": -17.804655394637706,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "60cf603085a195a511a33b6c52a3a2eb7a177d5d4e80e5d6d3fe0ae40269c1bb",
+        "source_tail_100ms_rms_dbfs": -105.89635196737534
+      },
+      {
+        "asset": "ftom1-17",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.2808125,
+        "source_dc_dbfs": -120.4540775504286,
+        "source_peak_dbfs": -13.757892924556671,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "e075a080ba1bad95a1a19f8a5c54077f62776856cba599f8edf7c3caa860d8aa",
+        "source_tail_100ms_rms_dbfs": -104.72138895999898
+      },
+      {
+        "asset": "ftom1-19",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.9755,
+        "source_dc_dbfs": -126.75901155862545,
+        "source_peak_dbfs": -15.861211808227313,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d5bb42339434b8a5353e5da7e474e11e6f67b82b0a144c8284028fee5cd4d960",
+        "source_tail_100ms_rms_dbfs": -104.15053362444651
+      },
+      {
+        "asset": "ftom1-21",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.3564791666666665,
+        "source_dc_dbfs": -108.46878243036377,
+        "source_peak_dbfs": -12.031674872907413,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fd97589c687bab361335eedaf404020d3fa1b6dfc4bb2830934599715cced885",
+        "source_tail_100ms_rms_dbfs": -103.51819188821223
+      },
+      {
+        "asset": "ftom1-22",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.1569375,
+        "source_dc_dbfs": -112.1543763300181,
+        "source_peak_dbfs": -11.735078090900613,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "303f96fb8b2529ecd1ce6b1277de87570c65af91aa231daeeb2a0ad2a6fc2d6f",
+        "source_tail_100ms_rms_dbfs": -104.17594155951397
+      },
+      {
+        "asset": "ftom1-24",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.4775625,
+        "source_dc_dbfs": -109.71835416237441,
+        "source_peak_dbfs": -10.028398163962724,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "dad8570f372767182b16b2d47c7145f67c71a8c2e1dc747ab390afeca75d3bbc",
+        "source_tail_100ms_rms_dbfs": -104.70255815148855
+      },
+      {
+        "asset": "ftom1-26",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.374375,
+        "source_dc_dbfs": -114.37788551470831,
+        "source_peak_dbfs": -10.110454610264101,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "ac9c56a1166470e6f23c7c4697926792a8b0db1c5d30f68353c21fa62346149a",
+        "source_tail_100ms_rms_dbfs": -103.4480963219899
+      },
+      {
+        "asset": "ftom1-27",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.526479166666666,
+        "source_dc_dbfs": -114.919075856441,
+        "source_peak_dbfs": -9.428219619693618,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d63380141264c0da32b18adca086f5f3150e74a99afb8856390369293360de2d",
+        "source_tail_100ms_rms_dbfs": -105.53222848320547
+      },
+      {
+        "asset": "ftom1-29",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.582479166666666,
+        "source_dc_dbfs": -117.80673113738462,
+        "source_peak_dbfs": -7.6850290971597826,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "496eadec6b10f2908db39a639c59b8cec5c64cbe802a4af069033d0ef79f3f29",
+        "source_tail_100ms_rms_dbfs": -103.60856373960144
+      },
+      {
+        "asset": "ftom1-3",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.438958333333333,
+        "source_dc_dbfs": -107.87719486643516,
+        "source_peak_dbfs": -39.44607610782549,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6c8ebc5ac6189f56c52ec32a54552db0eaedae0667ede71b830eee627ee9fd24",
+        "source_tail_100ms_rms_dbfs": -103.29771845637141
+      },
+      {
+        "asset": "ftom1-4",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.256125,
+        "source_dc_dbfs": -109.63176343435207,
+        "source_peak_dbfs": -34.657083054790014,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "55430b16f7fdbbbbb776c796350fcea66576f34c354b62d9d7a5dc81155bd389",
+        "source_tail_100ms_rms_dbfs": -100.83381398045532
+      },
+      {
+        "asset": "ftom1-6",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.796020833333333,
+        "source_dc_dbfs": -147.83934492668538,
+        "source_peak_dbfs": -29.80396975898698,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "36bcaa33c8af7628f9e93e15535c49cf90274ea6a6cde687cfb1b1e7e40f6f53",
+        "source_tail_100ms_rms_dbfs": -99.16120979423982
+      },
+      {
+        "asset": "ftom1-8",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.360416666666667,
+        "source_dc_dbfs": -117.4869784011413,
+        "source_peak_dbfs": -28.19695902632541,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1e4ff96076d15fe34629d4f776bb23a3eecdca74a509dc449dc5c81193a874de",
+        "source_tail_100ms_rms_dbfs": -100.18297728623506
+      },
+      {
+        "asset": "ftom1-9",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.840270833333333,
+        "source_dc_dbfs": -111.25450969324375,
+        "source_peak_dbfs": -27.24905045224787,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d8d8adb90933a94c21de3ea3f57e77b52e6692fc21fa1b37202d543ec93cf6b2",
+        "source_tail_100ms_rms_dbfs": -101.54963994434895
+      },
+      {
+        "asset": "ftom2-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.816354166666667,
+        "source_dc_dbfs": -115.99053107024878,
+        "source_peak_dbfs": -42.16317277108036,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "dad52caadde3b5e48663ed852ef3572c1bb8da6aede33d5de303b281295b5686",
+        "source_tail_100ms_rms_dbfs": -102.77342713228845
+      },
+      {
+        "asset": "ftom2-11",
+        "bank": "full-kit-shells",
+        "duration_seconds": 9.463375,
+        "source_dc_dbfs": -116.97567544467553,
+        "source_peak_dbfs": -24.25257560700207,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "94a6df0ec49e3098e542c0f1b7facf91e4a5b0f9acf75820400c07d9b83bb378",
+        "source_tail_100ms_rms_dbfs": -109.26443802907832
+      },
+      {
+        "asset": "ftom2-13",
+        "bank": "full-kit-shells",
+        "duration_seconds": 9.553541666666666,
+        "source_dc_dbfs": -122.96829823596566,
+        "source_peak_dbfs": -21.503685281826137,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fbb9d8f9ff44796fddfa5351b2359957cdc9935b870ef98b7be3e5bc3a693cbe",
+        "source_tail_100ms_rms_dbfs": -107.33220537848456
+      },
+      {
+        "asset": "ftom2-15",
+        "bank": "full-kit-shells",
+        "duration_seconds": 10.009270833333334,
+        "source_dc_dbfs": -121.95805130681437,
+        "source_peak_dbfs": -16.793116916300054,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "3c328332d8474f17128fc4e980e7a508416e3f65c04117fe2e146940c3a61e49",
+        "source_tail_100ms_rms_dbfs": -109.15238585307746
+      },
+      {
+        "asset": "ftom2-17",
+        "bank": "full-kit-shells",
+        "duration_seconds": 9.6279375,
+        "source_dc_dbfs": -121.6972136163827,
+        "source_peak_dbfs": -18.149265201296046,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6438959d0b49565b7c7baad254fbc9e4e9e5428c732f36a7f5b1bd9cdaa87220",
+        "source_tail_100ms_rms_dbfs": -109.12827854836544
+      },
+      {
+        "asset": "ftom2-18",
+        "bank": "full-kit-shells",
+        "duration_seconds": 9.908708333333333,
+        "source_dc_dbfs": -127.05531587415528,
+        "source_peak_dbfs": -17.49658308356798,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "99325d6870f6d50e452480cac5ce4090c301ccf7ecb35e0d030fed0efefdc9f2",
+        "source_tail_100ms_rms_dbfs": -108.58702931702777
+      },
+      {
+        "asset": "ftom2-20",
+        "bank": "full-kit-shells",
+        "duration_seconds": 10.191583333333334,
+        "source_dc_dbfs": -116.4097828637486,
+        "source_peak_dbfs": -15.840314996943285,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b0f8f33c728f688a13aa97a575007d719248ff1cee6fa969cdcc1e1f1278e5cd",
+        "source_tail_100ms_rms_dbfs": -106.26012869249476
+      },
+      {
+        "asset": "ftom2-22",
+        "bank": "full-kit-shells",
+        "duration_seconds": 10.25425,
+        "source_dc_dbfs": -133.07855425034592,
+        "source_peak_dbfs": -14.314226063274816,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b6aae010b04ecc77b1089c6b4661732b4004de2d54c758ce731b720e6554be49",
+        "source_tail_100ms_rms_dbfs": -111.00785167271874
+      },
+      {
+        "asset": "ftom2-24",
+        "bank": "full-kit-shells",
+        "duration_seconds": 10.305708333333333,
+        "source_dc_dbfs": -137.8494116313035,
+        "source_peak_dbfs": -13.87911707245941,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b11fe44131d28403f36d86abfd34e7d87a2e1e1a9b9c8f22ddc766f73a4a5e81",
+        "source_tail_100ms_rms_dbfs": -109.15617811972959
+      },
+      {
+        "asset": "ftom2-26",
+        "bank": "full-kit-shells",
+        "duration_seconds": 10.297666666666666,
+        "source_dc_dbfs": -153.1216081837811,
+        "source_peak_dbfs": -11.621136699970407,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1422f5649824ab07ba98e18a975264287b54a55f99f8aa35c9ad72084489d2db",
+        "source_tail_100ms_rms_dbfs": -107.59432611930423
+      },
+      {
+        "asset": "ftom2-28",
+        "bank": "full-kit-shells",
+        "duration_seconds": 10.188875,
+        "source_dc_dbfs": -130.5922561037003,
+        "source_peak_dbfs": -12.22189071123304,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9fedfee50eaf315c31b6db06ba56f98fb6c40f94767f16bdf9ad5b891b9a006d",
+        "source_tail_100ms_rms_dbfs": -109.70995594084411
+      },
+      {
+        "asset": "ftom2-3",
+        "bank": "full-kit-shells",
+        "duration_seconds": 6.602666666666667,
+        "source_dc_dbfs": -136.44011402115612,
+        "source_peak_dbfs": -38.57312230541697,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5b101b77a056691e8cc03a2411be4c7fc1c49ef0f944e5bf40f81897b079335f",
+        "source_tail_100ms_rms_dbfs": -106.32902211845189
+      },
+      {
+        "asset": "ftom2-30",
+        "bank": "full-kit-shells",
+        "duration_seconds": 10.713916666666666,
+        "source_dc_dbfs": -114.9063524142855,
+        "source_peak_dbfs": -8.845240703318948,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "250cef4fb224eac57a96d35eadcff1c5de0e1ca023acb13d786af935af355782",
+        "source_tail_100ms_rms_dbfs": -108.99655543312358
+      },
+      {
+        "asset": "ftom2-32",
+        "bank": "full-kit-shells",
+        "duration_seconds": 10.479645833333333,
+        "source_dc_dbfs": -115.0622533626287,
+        "source_peak_dbfs": -8.044900819006584,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "73371d8d38fe099d8a0ae747ab3aa3dd9f9872ee17a207fe3abdac8628154a3d",
+        "source_tail_100ms_rms_dbfs": -107.76890356225087
+      },
+      {
+        "asset": "ftom2-34",
+        "bank": "full-kit-shells",
+        "duration_seconds": 10.907958333333333,
+        "source_dc_dbfs": -128.94717204604993,
+        "source_peak_dbfs": -7.537248956290478,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "324162b9e5011b39221a62fc2ea6886078ce6b949abc399242ae9b872f12b5f4",
+        "source_tail_100ms_rms_dbfs": -109.77271268622081
+      },
+      {
+        "asset": "ftom2-5",
+        "bank": "full-kit-shells",
+        "duration_seconds": 7.960333333333334,
+        "source_dc_dbfs": -118.53187478098143,
+        "source_peak_dbfs": -33.31039446505581,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fa089cf2e34cfb072367780060017872044678bee2c5f04fd48cdd52257f8324",
+        "source_tail_100ms_rms_dbfs": -106.81383760139424
+      },
+      {
+        "asset": "ftom2-7",
+        "bank": "full-kit-shells",
+        "duration_seconds": 8.384645833333334,
+        "source_dc_dbfs": -124.50466182630747,
+        "source_peak_dbfs": -29.998365495556207,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "52d379c202bc7ec6f7663cb244ce0a5a4e28dfcfd4146dd195105a1e6669c71a",
+        "source_tail_100ms_rms_dbfs": -108.65086419803716
+      },
+      {
+        "asset": "ftom2-9",
+        "bank": "full-kit-shells",
+        "duration_seconds": 9.198729166666666,
+        "source_dc_dbfs": -123.19271043760236,
+        "source_peak_dbfs": -25.430341527206892,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c0aa33ca6e29eb34f3889644bbf8896ad1de65f16dd67a578aa1ba25cd7047cb",
+        "source_tail_100ms_rms_dbfs": -109.73054384558152
+      },
+      {
+        "asset": "kdruml-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.3373333333333333,
+        "source_dc_dbfs": -81.0068181158326,
+        "source_peak_dbfs": -27.221541692330366,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "81c787232b76a687cefa4d32f3f26edd3b2964ab1f2f610bf5c3b7f3b9d15cf9",
+        "source_tail_100ms_rms_dbfs": -96.17735830551752
+      },
+      {
+        "asset": "kdruml-10",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.5474791666666666,
+        "source_dc_dbfs": -68.41438416086892,
+        "source_peak_dbfs": -10.299849406220105,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d3785a0c779c056ba9aadbbfcdf1799e82eb157cbe58c711f7368650c741f755",
+        "source_tail_100ms_rms_dbfs": -68.34382225213392
+      },
+      {
+        "asset": "kdruml-13",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.924375,
+        "source_dc_dbfs": -69.49381028230667,
+        "source_peak_dbfs": -8.267335708716423,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "21ff68762c105d712bc441b69cc488313550d1d82b26d0bc04ab5c257797483d",
+        "source_tail_100ms_rms_dbfs": -72.44647017957492
+      },
+      {
+        "asset": "kdruml-16",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.8278541666666667,
+        "source_dc_dbfs": -67.80267831257633,
+        "source_peak_dbfs": -7.332662126931915,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "70ba181ba016b6dcfee417fe306d2fc59f8d013910f9626b72aea29190d7cd03",
+        "source_tail_100ms_rms_dbfs": -73.18485646593982
+      },
+      {
+        "asset": "kdruml-19",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0330208333333333,
+        "source_dc_dbfs": -69.07155502761653,
+        "source_peak_dbfs": -6.568535218285094,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d549eb659622958fa86d731e12fd99c07fbc8944c3ee39ef3c156fb5f7c77bba",
+        "source_tail_100ms_rms_dbfs": -73.94304559627611
+      },
+      {
+        "asset": "kdruml-22",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.2887083333333333,
+        "source_dc_dbfs": -70.73003173673985,
+        "source_peak_dbfs": -5.718707437909634,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "bbc70418accab4a1ae6e0537d6f7719e5436d02d0628fd4e96d90262df016f61",
+        "source_tail_100ms_rms_dbfs": -77.0548798971871
+      },
+      {
+        "asset": "kdruml-25",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.841,
+        "source_dc_dbfs": -65.62937177681019,
+        "source_peak_dbfs": -5.372701311710243,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9d10f38fb4fe2171e7cfd255971e06736d2bbf3f40d064a14b58826da21d63b3",
+        "source_tail_100ms_rms_dbfs": -69.66194911069269
+      },
+      {
+        "asset": "kdruml-27",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1900625,
+        "source_dc_dbfs": -68.05158029175446,
+        "source_peak_dbfs": -4.042340343027711,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0fa7178983883639331eaa1f7d6fa5db417233884fdfd29148fa46222c409cf5",
+        "source_tail_100ms_rms_dbfs": -71.11150151930946
+      },
+      {
+        "asset": "kdruml-30",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.555,
+        "source_dc_dbfs": -71.26183203220536,
+        "source_peak_dbfs": -3.505956056233469,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "cfba177786158e079605a64cb42fb5a1f0d46aa8c27ebb2d40022bdf3f09b28a",
+        "source_tail_100ms_rms_dbfs": -78.40119783991084
+      },
+      {
+        "asset": "kdruml-33",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.3413958333333333,
+        "source_dc_dbfs": -67.51556801061382,
+        "source_peak_dbfs": -2.6812884284323535,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "780a4f81771a50d2e4f12f530951c075ee39ee221ee5839dc744fc6d8c7e6b4e",
+        "source_tail_100ms_rms_dbfs": -75.4882921680809
+      },
+      {
+        "asset": "kdruml-36",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.6908333333333334,
+        "source_dc_dbfs": -70.76622554447535,
+        "source_peak_dbfs": -2.5717461066421823,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "bd523a6c57adc56bf4047cc581fc47df963b57ab225df2bdcf588c9757769aad",
+        "source_tail_100ms_rms_dbfs": -79.38416818019616
+      },
+      {
+        "asset": "kdruml-39",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.5197083333333334,
+        "source_dc_dbfs": -69.61624135192102,
+        "source_peak_dbfs": -2.4039510167949314,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2e008bf77f7c6ed802c7cf58a64c346d25b8454d7e22adcfc5018da3b966bcf0",
+        "source_tail_100ms_rms_dbfs": -78.27877138843581
+      },
+      {
+        "asset": "kdruml-4",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.7017083333333334,
+        "source_dc_dbfs": -72.59683829596547,
+        "source_peak_dbfs": -17.29548104680664,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "591a3c2e5ef2ceca7136326df178b00ae7a4eb197a9efc7bb442d52a18ba9722",
+        "source_tail_100ms_rms_dbfs": -77.52350637117681
+      },
+      {
+        "asset": "kdruml-42",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.7670625,
+        "source_dc_dbfs": -63.11165098110386,
+        "source_peak_dbfs": -2.083016682387396,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b540eed2977505f5439c0fe37f6f271d3e074c32ea1988b7fcd77489c5abdfce",
+        "source_tail_100ms_rms_dbfs": -65.16758939333941
+      },
+      {
+        "asset": "kdruml-45",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.2436041666666666,
+        "source_dc_dbfs": -66.90429053444508,
+        "source_peak_dbfs": -1.8695629432939294,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6f49d02972a5add8b208ed17b26d6ab8d9c14faebdb11dd155525b35e5905d2e",
+        "source_tail_100ms_rms_dbfs": -73.31059422944259
+      },
+      {
+        "asset": "kdruml-48",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.7865833333333333,
+        "source_dc_dbfs": -61.50739177464615,
+        "source_peak_dbfs": -1.8236682902372834,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0f4210f186b4fc4521a7e4a0ec381f694fc2fabcd9d28fa126912caf0b46a892",
+        "source_tail_100ms_rms_dbfs": -62.85708203426327
+      },
+      {
+        "asset": "kdruml-51",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.4658125,
+        "source_dc_dbfs": -67.70380249192658,
+        "source_peak_dbfs": -1.4179177729107317,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "a61ee6c508e5c6eed90d8a8d2bf625b559b61ab40a38acaadff16a438b839f1a",
+        "source_tail_100ms_rms_dbfs": -74.1339760495606
+      },
+      {
+        "asset": "kdruml-7",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.5071041666666667,
+        "source_dc_dbfs": -69.08986783145542,
+        "source_peak_dbfs": -14.044527338689758,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "344ec3ed02ffd07e4b117c6e6430cb2b5c972926e7b18e3153df914a267518ff",
+        "source_tail_100ms_rms_dbfs": -69.20292470406
+      },
+      {
+        "asset": "kdrumr-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.3157083333333333,
+        "source_dc_dbfs": -80.33235171915132,
+        "source_peak_dbfs": -33.39560641824099,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "61f214b4b714c6464d6779381bc7f769bc2fd3dcd6d95812b0f3a3716d8a167f",
+        "source_tail_100ms_rms_dbfs": -98.08793960339237
+      },
+      {
+        "asset": "kdrumr-12",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.9445416666666666,
+        "source_dc_dbfs": -69.98089183383804,
+        "source_peak_dbfs": -9.421667538414857,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "da02758fe220d503ff7bcb641184e703acf544295fecf910badd0b48a9471460",
+        "source_tail_100ms_rms_dbfs": -74.65781050000668
+      },
+      {
+        "asset": "kdrumr-15",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.8830833333333333,
+        "source_dc_dbfs": -68.49180732279605,
+        "source_peak_dbfs": -8.499109228070228,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4f3ceb7698ed4f3fe6efcb6173f3f7ca5c6d16a4ed1cf82060cce323cf2ecfc4",
+        "source_tail_100ms_rms_dbfs": -74.09939191659097
+      },
+      {
+        "asset": "kdrumr-18",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.9851458333333334,
+        "source_dc_dbfs": -68.68312622765565,
+        "source_peak_dbfs": -8.014579884948303,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "cc9ceac0765288ce5bd0af4e80b20a50c53d8074511427b01e937514c86f59c9",
+        "source_tail_100ms_rms_dbfs": -71.72569487198771
+      },
+      {
+        "asset": "kdrumr-21",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.2944375,
+        "source_dc_dbfs": -70.68149940798773,
+        "source_peak_dbfs": -7.240884001862677,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6e40e3a385de5df49fde7999b47935732151b2a4a3e70fc7cb1b4259453bd9cf",
+        "source_tail_100ms_rms_dbfs": -79.69788041846549
+      },
+      {
+        "asset": "kdrumr-24",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.8419375,
+        "source_dc_dbfs": -66.61061647770829,
+        "source_peak_dbfs": -6.075175029634773,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "ea5c8258ea3b49912e0013626b936b23c94467e97e5dec060d62726f1fbea898",
+        "source_tail_100ms_rms_dbfs": -70.08894239047609
+      },
+      {
+        "asset": "kdrumr-26",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0634375,
+        "source_dc_dbfs": -67.76829153053981,
+        "source_peak_dbfs": -5.824401104685663,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6f8ad6bfcd2973a805fe153d50a75159eaf27603a9f991de39058a8e4f1c073c",
+        "source_tail_100ms_rms_dbfs": -74.9255511780971
+      },
+      {
+        "asset": "kdrumr-29",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.9186041666666667,
+        "source_dc_dbfs": -66.18741389416772,
+        "source_peak_dbfs": -5.471542492650813,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "81273d65cfa189b282043a33c52a2f7aecebbda731d78ff2dd82d29ed1c61d18",
+        "source_tail_100ms_rms_dbfs": -69.24649437912359
+      },
+      {
+        "asset": "kdrumr-32",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.2123125,
+        "source_dc_dbfs": -66.80534810089141,
+        "source_peak_dbfs": -3.822312481208037,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c535e479f38c07442299bd4b6d012a77603531181742ced79f9be577634ab231",
+        "source_tail_100ms_rms_dbfs": -72.66002735322044
+      },
+      {
+        "asset": "kdrumr-35",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1131875,
+        "source_dc_dbfs": -66.89402603819954,
+        "source_peak_dbfs": -3.6299448686737765,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "624703715aae73bd79aaa69ea38548305f269ed6055d9d0a12739150a867778d",
+        "source_tail_100ms_rms_dbfs": -69.8366384586052
+      },
+      {
+        "asset": "kdrumr-38",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0838125,
+        "source_dc_dbfs": -65.18737496992826,
+        "source_peak_dbfs": -3.328333210888612,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "150e636aa8781553ca87e7f2d8dd22862702cac99cc199ca3c0eb2ff264aaf56",
+        "source_tail_100ms_rms_dbfs": -71.21161842415195
+      },
+      {
+        "asset": "kdrumr-4",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0217083333333334,
+        "source_dc_dbfs": -76.68147598984105,
+        "source_peak_dbfs": -17.51676349066671,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "336bf18e4dfa1e0c1f9c7cc9f708872eca125c35b1bfe05ed6ed8de9dc2dbc66",
+        "source_tail_100ms_rms_dbfs": -86.36923170119518
+      },
+      {
+        "asset": "kdrumr-41",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.687875,
+        "source_dc_dbfs": -61.48904641017118,
+        "source_peak_dbfs": -2.5525322917360187,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9c1c13464532bdb929ce783ad3eafb17cc0c5661d3d69b605e4fe237d5ed39ec",
+        "source_tail_100ms_rms_dbfs": -62.876139261739674
+      },
+      {
+        "asset": "kdrumr-43",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.629,
+        "source_dc_dbfs": -68.05157380106523,
+        "source_peak_dbfs": -2.429888215739338,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5b45a5f088ad60322c9d3cc3a805251d06f17798256b48a3b7fd1c5c36eb1718",
+        "source_tail_100ms_rms_dbfs": -77.74915675905582
+      },
+      {
+        "asset": "kdrumr-46",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.2267916666666667,
+        "source_dc_dbfs": -65.82821191957783,
+        "source_peak_dbfs": -1.9083873587792337,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "402d5800c244321cfb76e6948c578e1a7eac92a992b9bf228e21a700241aa62e",
+        "source_tail_100ms_rms_dbfs": -73.83380567792378
+      },
+      {
+        "asset": "kdrumr-49",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.8835625,
+        "source_dc_dbfs": -63.02794884124172,
+        "source_peak_dbfs": -1.7711319501133844,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "09473c700c9fc89154c247eb2bfd489a750607a4cb7898d7ab4302eb95ad676c",
+        "source_tail_100ms_rms_dbfs": -66.22260776349657
+      },
+      {
+        "asset": "kdrumr-7",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1538333333333333,
+        "source_dc_dbfs": -72.87931575523382,
+        "source_peak_dbfs": -11.55019399670962,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5d4af03679a0c3898f8a019bdeab9ddc07c63a76de45061e1b5625e082993887",
+        "source_tail_100ms_rms_dbfs": -80.70059107635774
+      },
+      {
+        "asset": "kdrumr-9",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.2011041666666666,
+        "source_dc_dbfs": -73.33437582953468,
+        "source_peak_dbfs": -10.445652766358153,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "8e07f53edc8da8f8d773c12698848082d07a24f896153f9aec5a9cc6d08f98d7",
+        "source_tail_100ms_rms_dbfs": -81.65588914119873
+      },
+      {
+        "asset": "snare-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.39047916666666665,
+        "source_dc_dbfs": -120.42228649767651,
+        "source_peak_dbfs": -47.15400973834093,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "cf5fcb7e2ef560c9ca39fa3cd2a98a34495a88703d8520a7a60ac88b915cc282",
+        "source_tail_100ms_rms_dbfs": -77.68490507092713
+      },
+      {
+        "asset": "snare-14",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.6211875,
+        "source_dc_dbfs": -108.93336373444198,
+        "source_peak_dbfs": -26.661976418631006,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "e537e96fc76518cdff8e34ca21ada2de3f114d94ad9e33f7f31c7d3005dbaab7",
+        "source_tail_100ms_rms_dbfs": -77.44186127034853
+      },
+      {
+        "asset": "snare-18",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.5835833333333333,
+        "source_dc_dbfs": -99.24470177417858,
+        "source_peak_dbfs": -25.720881859151753,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "756910fc346bde366d54377dd855f28615a65726b7313de74a1b83a7cd70d32f",
+        "source_tail_100ms_rms_dbfs": -66.96859378709061
+      },
+      {
+        "asset": "snare-22",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.8107708333333333,
+        "source_dc_dbfs": -109.12746246315768,
+        "source_peak_dbfs": -25.404684993166406,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c517452ab5bad5a441af177359ae31dc1db3c3401c57232bc04e7469dc2742ad",
+        "source_tail_100ms_rms_dbfs": -73.25238690034115
+      },
+      {
+        "asset": "snare-26",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.7879791666666667,
+        "source_dc_dbfs": -108.85694304253947,
+        "source_peak_dbfs": -22.5000946716905,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "e88cff6d9d22b4b11b08eac239e792adb2a19e58add08dca1a71f743c33b3020",
+        "source_tail_100ms_rms_dbfs": -73.25867942576767
+      },
+      {
+        "asset": "snare-31",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.9506875,
+        "source_dc_dbfs": -108.58247467236819,
+        "source_peak_dbfs": -20.837811010061195,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f265cc5a32a4f5589095e89e3e0462d4d528d717fd40194b04788705e3b779e5",
+        "source_tail_100ms_rms_dbfs": -74.8412764405338
+      },
+      {
+        "asset": "snare-35",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.5200416666666666,
+        "source_dc_dbfs": -103.35631615359544,
+        "source_peak_dbfs": -21.03379770109408,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "52c2bf00309c9e23467b471a0bf6ffd9a213df397750f390224b50f8ab128b42",
+        "source_tail_100ms_rms_dbfs": -65.22910081041785
+      },
+      {
+        "asset": "snare-39",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0268541666666666,
+        "source_dc_dbfs": -100.5905535689167,
+        "source_peak_dbfs": -18.916300079942697,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "56d8555fd582abea5f52ab5d9e83c1248eaf126a59b06abf9b373c6eae00e284",
+        "source_tail_100ms_rms_dbfs": -76.05589110892264
+      },
+      {
+        "asset": "snare-43",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0855833333333333,
+        "source_dc_dbfs": -111.0140522148063,
+        "source_peak_dbfs": -18.186655554062092,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "03487a38245ba3044b0fedf38fc416080753e36edfad9e865320d9d93257a568",
+        "source_tail_100ms_rms_dbfs": -77.18383608591753
+      },
+      {
+        "asset": "snare-47",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.189875,
+        "source_dc_dbfs": -118.25582727248799,
+        "source_peak_dbfs": -18.19390234291043,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9a127e00105ba8f20d4be7cef728a5b1683d0bf3391b4b958ca0288d63641e3d",
+        "source_tail_100ms_rms_dbfs": -78.54968891792
+      },
+      {
+        "asset": "snare-5",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.3959375,
+        "source_dc_dbfs": -112.59313124064454,
+        "source_peak_dbfs": -39.08911517242258,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "cfefa04d985254130f6147f6179129c4b14a8a2e147cb4333758f16354c383e9",
+        "source_tail_100ms_rms_dbfs": -77.71292794155372
+      },
+      {
+        "asset": "snare-52",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.185625,
+        "source_dc_dbfs": -104.0186267481834,
+        "source_peak_dbfs": -17.82493653046668,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "cc1ce588d304643884fb1be83b88b46695c8f2baa999ff30feaf1bddca93c023",
+        "source_tail_100ms_rms_dbfs": -78.27231264043115
+      },
+      {
+        "asset": "snare-56",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.9848125,
+        "source_dc_dbfs": -131.20215580372437,
+        "source_peak_dbfs": -17.67959219961375,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "953882d9c24e6d234f886e585d09c55536ca5f3213a2042b707e25104b9a457c",
+        "source_tail_100ms_rms_dbfs": -76.74234708260134
+      },
+      {
+        "asset": "snare-60",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1000416666666666,
+        "source_dc_dbfs": -99.79498096111298,
+        "source_peak_dbfs": -16.746857700658147,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d9db924910730fe9a12c44a95627215793103eac5b029e14482dfb2a23c37d75",
+        "source_tail_100ms_rms_dbfs": -79.419052126874
+      },
+      {
+        "asset": "snare-64",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1671458333333333,
+        "source_dc_dbfs": -103.99821333412183,
+        "source_peak_dbfs": -15.38091280427694,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c1c2e8a5b694223590d8b114492f53112a75fb9a9fedec3d972142fef372570c",
+        "source_tail_100ms_rms_dbfs": -75.7777161671743
+      },
+      {
+        "asset": "snare-68",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0911041666666668,
+        "source_dc_dbfs": -103.20837120034801,
+        "source_peak_dbfs": -15.003353873504805,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "87a24c623ab2c18e4dde3715803446606b781ccd371bdbb498b7c2f8a1904498",
+        "source_tail_100ms_rms_dbfs": -77.9672953643026
+      },
+      {
+        "asset": "snare-73",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1230833333333334,
+        "source_dc_dbfs": -99.5719388206889,
+        "source_peak_dbfs": -14.54559812080914,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "590bbec549f0b94d4329c4a0975a554a4bd91a35c415fd00e9e0aabe71c54316",
+        "source_tail_100ms_rms_dbfs": -76.3424785023897
+      },
+      {
+        "asset": "snare-77",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0914791666666666,
+        "source_dc_dbfs": -105.95453403370527,
+        "source_peak_dbfs": -13.287210971410147,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "44d823e00e0eb6844d1e78d43b5c7d268d78e4be8d1697a996429d7bb0fe763c",
+        "source_tail_100ms_rms_dbfs": -78.48951183673574
+      },
+      {
+        "asset": "snare-81",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.022625,
+        "source_dc_dbfs": -95.8017272702875,
+        "source_peak_dbfs": -13.787624183663008,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d384f134d147cf5500c6a000cd603c6194dd201ec9a6da7e25ee12166b0ec353",
+        "source_tail_100ms_rms_dbfs": -71.25272928136546
+      },
+      {
+        "asset": "snare-85",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.4434375,
+        "source_dc_dbfs": -102.3397143810781,
+        "source_peak_dbfs": -13.90696134926695,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "917846710a361972d0e3c9873acd7388d709e0ecda5b9e8e98e9264825035666",
+        "source_tail_100ms_rms_dbfs": -82.01637588000965
+      },
+      {
+        "asset": "snare-9",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.4408958333333333,
+        "source_dc_dbfs": -96.22093573935183,
+        "source_peak_dbfs": -31.975191482651706,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "60964c91c9d92c439d2ec24aaa5fbb4eba314a55a120e209ab77d21501966113",
+        "source_tail_100ms_rms_dbfs": -76.08472335895519
+      },
+      {
+        "asset": "snare-90",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.2187083333333333,
+        "source_dc_dbfs": -121.7188517067234,
+        "source_peak_dbfs": -12.230322836058535,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c9a36b7aac211836a0f24e938ad94287c6a407e4f7e392ba616c7bbc0bad1e37",
+        "source_tail_100ms_rms_dbfs": -79.8833103096288
+      },
+      {
+        "asset": "snare-94",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.4765625,
+        "source_dc_dbfs": -96.80312376949863,
+        "source_peak_dbfs": -12.114707227018656,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "ec15bec4d47ad0efa98ee111126dc863f3ba40dff01e565a3e325f83bc65df9c",
+        "source_tail_100ms_rms_dbfs": -81.49383530478238
+      },
+      {
+        "asset": "snare-98",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.4097916666666668,
+        "source_dc_dbfs": -100.9086805040613,
+        "source_peak_dbfs": -11.199761253587596,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "921a203a117d0ab177d6a491e18205b957b68a474020dcca61972d467d7dcfb4",
+        "source_tail_100ms_rms_dbfs": -78.7300780966938
+      },
+      {
+        "asset": "snarerim-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.4615208333333333,
+        "source_dc_dbfs": -127.10966815225166,
+        "source_peak_dbfs": -49.80832458360237,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9da27d3c15fe4d18fe7d76513d97a3f2d6b3882b991627a2aff25bbbcadfdb07",
+        "source_tail_100ms_rms_dbfs": -88.44430856151075
+      },
+      {
+        "asset": "snarerim-10",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.480375,
+        "source_dc_dbfs": -106.7967846183452,
+        "source_peak_dbfs": -31.678252238440678,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5c0bbfb6c0434c7331249dbfe7dc6099b9a5a608f17c9a7207d0364534c2e1a8",
+        "source_tail_100ms_rms_dbfs": -83.68980693429371
+      },
+      {
+        "asset": "snarerim-11",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.9117083333333333,
+        "source_dc_dbfs": -117.8221106838864,
+        "source_peak_dbfs": -31.65884960309672,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d0df13d56880eb6a7ee9cdfbf0959adfc87eb3fecf78450f645038a9f12733b8",
+        "source_tail_100ms_rms_dbfs": -94.04315417795615
+      },
+      {
+        "asset": "snarerim-12",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.46210416666666665,
+        "source_dc_dbfs": -105.52999275311167,
+        "source_peak_dbfs": -29.72037191001678,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "862f50653c333f7f6ddf4a2eaa88ef09ba09bca8726868dabe0a6ec0e4f4b05a",
+        "source_tail_100ms_rms_dbfs": -82.0510758721533
+      },
+      {
+        "asset": "snarerim-13",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.4409375,
+        "source_dc_dbfs": -117.43614086607899,
+        "source_peak_dbfs": -29.904363452044514,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "e2176e9145412ebd8cd1888fdf266c5228bbdbe4300cb15256720832ddb77d90",
+        "source_tail_100ms_rms_dbfs": -82.02820927875072
+      },
+      {
+        "asset": "snarerim-14",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.4400833333333333,
+        "source_dc_dbfs": -96.49677166838232,
+        "source_peak_dbfs": -29.995746907382706,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5c12f240fe6f00071c3e606e5f4cbcdb6042f7a95c78b5c8d69c8661ad3c7f13",
+        "source_tail_100ms_rms_dbfs": -79.56442067063149
+      },
+      {
+        "asset": "snarerim-15",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.35714583333333333,
+        "source_dc_dbfs": -103.85708270639297,
+        "source_peak_dbfs": -27.36136655451506,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d6d8b482614536bf935b7f4624a2658e8ce10b31c42041b1dd7a6a921cebb741",
+        "source_tail_100ms_rms_dbfs": -70.20326412977374
+      },
+      {
+        "asset": "snarerim-16",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.3771875,
+        "source_dc_dbfs": -101.26898356444241,
+        "source_peak_dbfs": -26.528804085384138,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fa17e876f1f96453b53da031576dea7e549fa3bdcfd9d9fbf02f37344c4ee933",
+        "source_tail_100ms_rms_dbfs": -74.75412224427556
+      },
+      {
+        "asset": "snarerim-17",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1087083333333334,
+        "source_dc_dbfs": -146.6011911241231,
+        "source_peak_dbfs": -25.391056830097153,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "64a0c341e8acdb68693659238d7434623672f284ffb0d482f9331b64084f3616",
+        "source_tail_100ms_rms_dbfs": -96.59601340854317
+      },
+      {
+        "asset": "snarerim-18",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.5277291666666667,
+        "source_dc_dbfs": -118.75485917539577,
+        "source_peak_dbfs": -27.127599635865195,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7b28facf01565a66fcf078c90b17cca5b6e4cac20baace94b92dfa2e0b51225c",
+        "source_tail_100ms_rms_dbfs": -85.08297337459467
+      },
+      {
+        "asset": "snarerim-2",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.3446666666666667,
+        "source_dc_dbfs": -117.49909011013956,
+        "source_peak_dbfs": -48.99297110200472,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5880e3efdf0061f4ac9d16422cf9375d7e1e334faeaf464e90cc733e78ea3300",
+        "source_tail_100ms_rms_dbfs": -83.65468949814037
+      },
+      {
+        "asset": "snarerim-3",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.602625,
+        "source_dc_dbfs": -111.84931555027326,
+        "source_peak_dbfs": -43.85460136733913,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5732f6b3987da385b335f60ae36b3f9c4d232d38c24e2910adf882c2c70e3a75",
+        "source_tail_100ms_rms_dbfs": -90.7854861327499
+      },
+      {
+        "asset": "snarerim-4",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.39129166666666665,
+        "source_dc_dbfs": -108.80053193424226,
+        "source_peak_dbfs": -38.98006470931336,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "ab51ece656d14a4a42caf1bbe823ce7588d9854fb6268c288571bc60eafefe4d",
+        "source_tail_100ms_rms_dbfs": -82.85437246469387
+      },
+      {
+        "asset": "snarerim-5",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.3765,
+        "source_dc_dbfs": -121.82542935877963,
+        "source_peak_dbfs": -38.08706802950181,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c0cb0427d321ef0f59b10f068f0b90042d389bb661d52613463c5bf13908f757",
+        "source_tail_100ms_rms_dbfs": -78.50464199282872
+      },
+      {
+        "asset": "snarerim-6",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.3595,
+        "source_dc_dbfs": -106.71454271572607,
+        "source_peak_dbfs": -37.63260985793426,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f423f6f5b70310a0e09b5f7fbef5c824d187e9986685aab4e78a83adb9bd6d08",
+        "source_tail_100ms_rms_dbfs": -79.86663408817097
+      },
+      {
+        "asset": "snarerim-7",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.8282083333333333,
+        "source_dc_dbfs": -114.45634116679372,
+        "source_peak_dbfs": -33.737260755331356,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9b475bd91e1a727ae98972c13c174016d87e8df8c97be3bcf930ec5144737b66",
+        "source_tail_100ms_rms_dbfs": -94.53059142892023
+      },
+      {
+        "asset": "snarerim-8",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.434125,
+        "source_dc_dbfs": -115.80439303142978,
+        "source_peak_dbfs": -33.027263536579554,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d4a3db9912166cfd3c9da8016a6eafbc785a0dbd510b75113c17039844b9cc51",
+        "source_tail_100ms_rms_dbfs": -79.78051618850861
+      },
+      {
+        "asset": "snarerim-9",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.5206875,
+        "source_dc_dbfs": -100.40479429046033,
+        "source_peak_dbfs": -32.46210569495746,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7b3acbcd8f70a4fb21f457c7ae306acd97baf676f3cda492f5532193daf60e9e",
+        "source_tail_100ms_rms_dbfs": -84.23966309166096
+      },
+      {
+        "asset": "snarerimshot-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.14916666666666667,
+        "source_dc_dbfs": -98.3972191425199,
+        "source_peak_dbfs": -42.79386943814535,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2e6dd4bf548845013768bf28552aa04521b85742f63aab1c7407f17a30f7a508",
+        "source_tail_100ms_rms_dbfs": -66.17393219252136
+      },
+      {
+        "asset": "snarerimshot-10",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1307916666666666,
+        "source_dc_dbfs": -114.06291438961804,
+        "source_peak_dbfs": -8.047395299906242,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5e846cda0ef8808268fbc799c9a453a6b84617474efadf41838b350204f208c7",
+        "source_tail_100ms_rms_dbfs": -77.86636425620118
+      },
+      {
+        "asset": "snarerimshot-11",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.2370416666666666,
+        "source_dc_dbfs": -118.34345685442659,
+        "source_peak_dbfs": -7.987586943082351,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fd16a18fa40525d1a45af5b93c0ff75173071892fb6aab950b9c75438a8a0825",
+        "source_tail_100ms_rms_dbfs": -80.96398234593038
+      },
+      {
+        "asset": "snarerimshot-12",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.3468541666666667,
+        "source_dc_dbfs": -109.59398327381543,
+        "source_peak_dbfs": -9.17963540480912,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "e4b7e0a75b89b5d2e01122a9da23fc4fb3bb0a6ce2038766a48894b406aa1c15",
+        "source_tail_100ms_rms_dbfs": -81.19694719060806
+      },
+      {
+        "asset": "snarerimshot-13",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1406041666666666,
+        "source_dc_dbfs": -100.78628085025966,
+        "source_peak_dbfs": -12.190451445716084,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fe7d25f029686a41d895618a2399682b120ae87fb67d0aac856f606dc71b94e0",
+        "source_tail_100ms_rms_dbfs": -75.11098920288853
+      },
+      {
+        "asset": "snarerimshot-2",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.6940416666666667,
+        "source_dc_dbfs": -110.75330966253131,
+        "source_peak_dbfs": -26.407012524752027,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "24dded4a7cb6839c9cf3ff819af4298a2af9126eae6df90bddaec4f357c613d5",
+        "source_tail_100ms_rms_dbfs": -77.41678541203433
+      },
+      {
+        "asset": "snarerimshot-3",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.0255,
+        "source_dc_dbfs": -97.99846273097987,
+        "source_peak_dbfs": -16.51964426570896,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "e74a06fb707a842a315ae0bcdff60e08e2c9ad4767624b88ffb1de8610848dd5",
+        "source_tail_100ms_rms_dbfs": -81.89240663935779
+      },
+      {
+        "asset": "snarerimshot-4",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.1309375,
+        "source_dc_dbfs": -124.59145336803915,
+        "source_peak_dbfs": -13.789629814237836,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "8a1ad0d97350a3ff8dc99f6a30e018816c1f0afa07cc6db6da168bc63f8a6085",
+        "source_tail_100ms_rms_dbfs": -82.04078404251015
+      },
+      {
+        "asset": "snarerimshot-5",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.9423333333333334,
+        "source_dc_dbfs": -115.72069999649395,
+        "source_peak_dbfs": -12.48201786071569,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0107141e7bd7f8a448fcae6cbfd5e6c908eeae7de5b04d0fbc29d564a51fa722",
+        "source_tail_100ms_rms_dbfs": -78.29304023172485
+      },
+      {
+        "asset": "snarerimshot-6",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.9309375,
+        "source_dc_dbfs": -109.81683331486985,
+        "source_peak_dbfs": -13.928104010099915,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "856b2665eb73b5f6e7cafe099a2b56a3b1f6854ac1702bb7309b7f4fb55cebb1",
+        "source_tail_100ms_rms_dbfs": -77.32982416964188
+      },
+      {
+        "asset": "snarerimshot-8",
+        "bank": "full-kit-shells",
+        "duration_seconds": 1.3195208333333333,
+        "source_dc_dbfs": -111.5331367122485,
+        "source_peak_dbfs": -9.794812540560777,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5dae1a7d5e9f7429522ae7d8b67bc625057a3c072fa47e4f2d43a04292d1f666",
+        "source_tail_100ms_rms_dbfs": -85.19688852131316
+      },
+      {
+        "asset": "snarerimshot-9",
+        "bank": "full-kit-shells",
+        "duration_seconds": 0.9356875,
+        "source_dc_dbfs": -101.40411359124303,
+        "source_peak_dbfs": -9.160711018434231,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f04daecdd29f82f81dfa5a8a39b14bc8a7fcfef48d8adef4b273669fef627923",
+        "source_tail_100ms_rms_dbfs": -73.82098997264072
+      },
+      {
+        "asset": "tom1-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 2.9264791666666667,
+        "source_dc_dbfs": -108.20028308865817,
+        "source_peak_dbfs": -46.96957910375906,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "297de004786ece65c199f39ea419f41ae0c9ee1e9a2e7f572ee5b07c3ae73219",
+        "source_tail_100ms_rms_dbfs": -102.58160614828827
+      },
+      {
+        "asset": "tom1-11",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.269833333333334,
+        "source_dc_dbfs": -112.59226545200633,
+        "source_peak_dbfs": -20.262771906455853,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1955085179d7570589fc542999db8090ccd5f6aa9c13b9ce2b33a270b1610998",
+        "source_tail_100ms_rms_dbfs": -103.72477402223629
+      },
+      {
+        "asset": "tom1-14",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.265020833333334,
+        "source_dc_dbfs": -129.00358763115736,
+        "source_peak_dbfs": -19.273406004888006,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c6c4feac519319485e4f213a63f72680f27400717c50bd34d8c9c5106a57a3a4",
+        "source_tail_100ms_rms_dbfs": -103.60750876271787
+      },
+      {
+        "asset": "tom1-17",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.3359375,
+        "source_dc_dbfs": -146.60440442317866,
+        "source_peak_dbfs": -16.94428063750953,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "417cf7ca6349fdb97f31ffd69ee2614b65d2079f807d4605a76da28d4c44b5d1",
+        "source_tail_100ms_rms_dbfs": -104.89165989903647
+      },
+      {
+        "asset": "tom1-19",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.4321875,
+        "source_dc_dbfs": -112.65253101935882,
+        "source_peak_dbfs": -16.308188517150597,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9d2567488d7a9f98b1925bd9369f423b2b438729b98558dd8348f16996fc84e8",
+        "source_tail_100ms_rms_dbfs": -107.54876159979376
+      },
+      {
+        "asset": "tom1-22",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.552333333333333,
+        "source_dc_dbfs": -125.018669005365,
+        "source_peak_dbfs": -14.472960595412372,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "cb99209ac06244f8e1cbe94fd15b3188c661b27e323b42e8857642854cb9c4c2",
+        "source_tail_100ms_rms_dbfs": -101.20914785292587
+      },
+      {
+        "asset": "tom1-24",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.589729166666666,
+        "source_dc_dbfs": -117.3685674920321,
+        "source_peak_dbfs": -14.160999157428451,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f3294eceff65689c9bdb63fc5653f8b676ab58b6d0ea47400fc8b5ebc339f504",
+        "source_tail_100ms_rms_dbfs": -103.7652423822729
+      },
+      {
+        "asset": "tom1-27",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.368479166666667,
+        "source_dc_dbfs": -113.91386018865762,
+        "source_peak_dbfs": -14.316976016817701,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "debba5a6872b23f85de298e745b9dd9200d7a76be7bdf8a9fe48cfc8aef42f11",
+        "source_tail_100ms_rms_dbfs": -101.78805386829147
+      },
+      {
+        "asset": "tom1-29",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.0929166666666665,
+        "source_dc_dbfs": -119.21703251688753,
+        "source_peak_dbfs": -13.520056454831522,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f13e796fee60f07009fb25242cbf46b960164c323c9026bdebb213e701158b99",
+        "source_tail_100ms_rms_dbfs": -98.18295794558858
+      },
+      {
+        "asset": "tom1-32",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.348604166666667,
+        "source_dc_dbfs": -111.47811845416412,
+        "source_peak_dbfs": -12.544610005728881,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4cffb7b0edb9d74741ee204fe96cef5a765d95fee922d0df488fb5c131d2c21a",
+        "source_tail_100ms_rms_dbfs": -99.98572696576136
+      },
+      {
+        "asset": "tom1-35",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.427583333333334,
+        "source_dc_dbfs": -138.05229716109932,
+        "source_peak_dbfs": -12.007196395571766,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "e0726ecb1c1efb9f2c335f0d4fdb3e5344ec22b78ad98c6303527774dd0e323d",
+        "source_tail_100ms_rms_dbfs": -103.60631879080445
+      },
+      {
+        "asset": "tom1-37",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.337770833333333,
+        "source_dc_dbfs": -112.26162169074885,
+        "source_peak_dbfs": -10.985855935550063,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c471d9ad51e68a1f7124a9b7c8939e390f5fc59742bd0998ec1f7506dcfe7d60",
+        "source_tail_100ms_rms_dbfs": -101.08808473334341
+      },
+      {
+        "asset": "tom1-4",
+        "bank": "full-kit-shells",
+        "duration_seconds": 3.9312916666666666,
+        "source_dc_dbfs": -113.38861178857186,
+        "source_peak_dbfs": -33.28407066652471,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6d26c72eeb45332c83e8a852a5687f42fbfd58298a18c4fd24d589a415cb5053",
+        "source_tail_100ms_rms_dbfs": -105.03605960487354
+      },
+      {
+        "asset": "tom1-40",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.3755625,
+        "source_dc_dbfs": -130.55988569331137,
+        "source_peak_dbfs": -11.01039211425066,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d803e0e5c4714c5fed15c0304b256193d0892aa0f1f7c1cb98f1757a834c1de4",
+        "source_tail_100ms_rms_dbfs": -101.21367693149041
+      },
+      {
+        "asset": "tom1-42",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.3204375,
+        "source_dc_dbfs": -111.54155497096711,
+        "source_peak_dbfs": -10.029771430785404,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7c50f7309dfeb36891fa74dd8da9211e3ddbac8ec20db9dfd5853561b38915ad",
+        "source_tail_100ms_rms_dbfs": -102.85617188167252
+      },
+      {
+        "asset": "tom1-45",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.263208333333333,
+        "source_dc_dbfs": -119.54234053384901,
+        "source_peak_dbfs": -8.628289761747634,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5fa56e9801ff872dab1903be4b7bb043c90115deebfdf7622392cbcfb6f1adf4",
+        "source_tail_100ms_rms_dbfs": -103.91284906458489
+      },
+      {
+        "asset": "tom1-6",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.009854166666667,
+        "source_dc_dbfs": -112.94978112693364,
+        "source_peak_dbfs": -26.870609174833273,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b35b343f87f645e9b440f5bbbcf8b6eff6a0988f072af336a280664942a0fcca",
+        "source_tail_100ms_rms_dbfs": -103.4407523370646
+      },
+      {
+        "asset": "tom1-9",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.252291666666666,
+        "source_dc_dbfs": -115.42653133532272,
+        "source_peak_dbfs": -21.81939279547464,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2d4146ea4e8ac57ce7d64c337420be2e71c750f5a5e1bed101cc2de76d6018f7",
+        "source_tail_100ms_rms_dbfs": -108.0985183796446
+      },
+      {
+        "asset": "tom2-1",
+        "bank": "full-kit-shells",
+        "duration_seconds": 3.883395833333333,
+        "source_dc_dbfs": -116.24845850523587,
+        "source_peak_dbfs": -39.6569961449986,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0678f43bf8aeaf97e1c597239a0fb740ed2196cc37f00be0ce99536103b95de0",
+        "source_tail_100ms_rms_dbfs": -99.44296503321101
+      },
+      {
+        "asset": "tom2-10",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.2724166666666665,
+        "source_dc_dbfs": -139.9822016048102,
+        "source_peak_dbfs": -20.041275242095743,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9603a60b684caadd47ea5d6b3cb405662cef9e3ccc993424a17670f8f32c79cd",
+        "source_tail_100ms_rms_dbfs": -100.3543704836616
+      },
+      {
+        "asset": "tom2-12",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.7553125,
+        "source_dc_dbfs": -122.17971306857206,
+        "source_peak_dbfs": -17.810020980426653,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "15aaf6ab38064d3872d36c112991e7718140c05dc4bca88ed244b42c1318e992",
+        "source_tail_100ms_rms_dbfs": -103.41580393126053
+      },
+      {
+        "asset": "tom2-14",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.792375,
+        "source_dc_dbfs": -115.75467551896375,
+        "source_peak_dbfs": -17.301224034760352,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "54df9ff22a7e22b121d9241b99a736b6da8682ab3ad06b173be2b626b0201088",
+        "source_tail_100ms_rms_dbfs": -104.57303096276559
+      },
+      {
+        "asset": "tom2-17",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.8029166666666665,
+        "source_dc_dbfs": -131.14511756051635,
+        "source_peak_dbfs": -14.015116325976795,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "289477b9637721c34de99be5bf1263a11ccb29d499e72aa1243fccd22563aa24",
+        "source_tail_100ms_rms_dbfs": -102.37179344895553
+      },
+      {
+        "asset": "tom2-19",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.798125,
+        "source_dc_dbfs": -149.53395958629042,
+        "source_peak_dbfs": -11.617700222650974,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "40504ef9a94184cd200f91a6d3d47de2173df9d95c522dcf88258360d99aeaa6",
+        "source_tail_100ms_rms_dbfs": -100.43480783839644
+      },
+      {
+        "asset": "tom2-21",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.113375,
+        "source_dc_dbfs": -125.03597101991627,
+        "source_peak_dbfs": -10.84431228596183,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1da61ac350fac6cb82d32c7ee8f3e8a836131c6eb1f54017dc79eda91d1202dd",
+        "source_tail_100ms_rms_dbfs": -96.9408691425511
+      },
+      {
+        "asset": "tom2-23",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.624416666666667,
+        "source_dc_dbfs": -113.18459483063556,
+        "source_peak_dbfs": -9.944203910653096,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2f9b796cb18824a8242842f286382a24c895c8ec1394b61800b9e7baab455a20",
+        "source_tail_100ms_rms_dbfs": -98.55716299352648
+      },
+      {
+        "asset": "tom2-26",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.824229166666667,
+        "source_dc_dbfs": -119.18213492696081,
+        "source_peak_dbfs": -9.864114975790242,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "e43e19389b06b73ea955046c9d307ba58481fd96716b10c420cbe575b8b62f7a",
+        "source_tail_100ms_rms_dbfs": -100.0897392412684
+      },
+      {
+        "asset": "tom2-28",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.733875,
+        "source_dc_dbfs": -169.1086167402667,
+        "source_peak_dbfs": -9.808929948973251,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "85335bb96dd912fa8abb7d54456d1397f65731874062798eb7431f8b467ea3f1",
+        "source_tail_100ms_rms_dbfs": -100.6006740754637
+      },
+      {
+        "asset": "tom2-3",
+        "bank": "full-kit-shells",
+        "duration_seconds": 2.2603125,
+        "source_dc_dbfs": -103.32651427769187,
+        "source_peak_dbfs": -37.55818785426593,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d4e9247557f1897b6789f7c41f507dcc0cb328340dc6b21a29277d4850f78992",
+        "source_tail_100ms_rms_dbfs": -87.95980615006334
+      },
+      {
+        "asset": "tom2-30",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.763083333333333,
+        "source_dc_dbfs": -137.84139743514052,
+        "source_peak_dbfs": -8.789735112149897,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "48272794c2e340d12262897c74f2f77c55b432f5257a7e22d2b0a2159df6be99",
+        "source_tail_100ms_rms_dbfs": -100.17788791346243
+      },
+      {
+        "asset": "tom2-32",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.949270833333333,
+        "source_dc_dbfs": -120.50271613641782,
+        "source_peak_dbfs": -8.498492189289239,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "04f04dbec5809a2280b2cf6b27665ef98ff995b41fd3da4a38022ed44e198e80",
+        "source_tail_100ms_rms_dbfs": -99.78861890639025
+      },
+      {
+        "asset": "tom2-35",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.912875,
+        "source_dc_dbfs": -119.87191754355476,
+        "source_peak_dbfs": -8.380067427056982,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "ae3d673be3f4b6e31384234ef48029c7455b962ead96070333ceb964020f53b9",
+        "source_tail_100ms_rms_dbfs": -100.35653207620213
+      },
+      {
+        "asset": "tom2-37",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.975604166666667,
+        "source_dc_dbfs": -116.72787451330287,
+        "source_peak_dbfs": -6.6207912958703545,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "dacf0a281c1178c736e3e3e5bcd7a9b5486eb29136edd475217acf5992505250",
+        "source_tail_100ms_rms_dbfs": -102.34411396850484
+      },
+      {
+        "asset": "tom2-39",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.905875,
+        "source_dc_dbfs": -108.31124215121565,
+        "source_peak_dbfs": -6.796386802891458,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2bc066ac44821830d89107440cd91c013d4a2b7eec7d5dce5ff77d3719db81eb",
+        "source_tail_100ms_rms_dbfs": -100.74901153519073
+      },
+      {
+        "asset": "tom2-5",
+        "bank": "full-kit-shells",
+        "duration_seconds": 4.8644791666666665,
+        "source_dc_dbfs": -113.92516714325025,
+        "source_peak_dbfs": -27.65155298164501,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "145b7b93369fbd71dec3f3db8a08823d63b5cf67910240324a058cc1903977f5",
+        "source_tail_100ms_rms_dbfs": -99.9266290455151
+      },
+      {
+        "asset": "tom2-8",
+        "bank": "full-kit-shells",
+        "duration_seconds": 5.1696875,
+        "source_dc_dbfs": -119.8972854694788,
+        "source_peak_dbfs": -25.812269932374296,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7143e43e191fe4910245bd817e016a6b382789e1138902a10e0b53a079a530c4",
+        "source_tail_100ms_rms_dbfs": -102.51694683791605
+      },
+      {
+        "asset": "chinar-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 4.441395833333333,
+        "source_dc_dbfs": -118.70766251503477,
+        "source_peak_dbfs": -40.73530195239534,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6e9e981a83632ad5f3c3aa7dd3bd157f44edc3a2c1ea7d4a522e3cf3b713b3d0",
+        "source_tail_100ms_rms_dbfs": -96.65984652494993
+      },
+      {
+        "asset": "chinar-10",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.096625,
+        "source_dc_dbfs": -112.70610249102786,
+        "source_peak_dbfs": -24.499802222978772,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "82ec1929ce5bc5e44048dde2e45ea140e9af18bdd0849daf27ef23c090928a8e",
+        "source_tail_100ms_rms_dbfs": -101.08352916182385
+      },
+      {
+        "asset": "chinar-12",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.332958333333333,
+        "source_dc_dbfs": -117.3890158590541,
+        "source_peak_dbfs": -19.572564518723617,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "70910d484a19468249c9a3146ced7b4b67ed5b216f47ca6129b985fcb971a43c",
+        "source_tail_100ms_rms_dbfs": -105.29713793575029
+      },
+      {
+        "asset": "chinar-14",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.739916666666667,
+        "source_dc_dbfs": -124.2901394922923,
+        "source_peak_dbfs": -21.66850107516874,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "146b993571f977eccd73f149a5fba87b4620f1a3a779b30e56587f27be6ce37e",
+        "source_tail_100ms_rms_dbfs": -103.16872479298087
+      },
+      {
+        "asset": "chinar-16",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.278625,
+        "source_dc_dbfs": -123.0771865324944,
+        "source_peak_dbfs": -20.59194271282984,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "dd8a45e0b8e8c88b5ef285e425c4176e1f4789762e1c922e02308074beb2196b",
+        "source_tail_100ms_rms_dbfs": -102.92000842668061
+      },
+      {
+        "asset": "chinar-18",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.715354166666667,
+        "source_dc_dbfs": -120.80200146546346,
+        "source_peak_dbfs": -19.6692176384157,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "12a8ddff6e40310bdfa654bc29d7e18c50c5a76bb16f8c08bec893e401ef41eb",
+        "source_tail_100ms_rms_dbfs": -102.78027633022779
+      },
+      {
+        "asset": "chinar-21",
+        "bank": "full-kit-metals",
+        "duration_seconds": 4.901770833333333,
+        "source_dc_dbfs": -127.19295831800274,
+        "source_peak_dbfs": -16.98994400663355,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "87da6561543efdef38e50d8fbcc7b32330ac02c21f96ff796614309cb94da41b",
+        "source_tail_100ms_rms_dbfs": -96.09364607478506
+      },
+      {
+        "asset": "chinar-23",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.2661875,
+        "source_dc_dbfs": -112.95216112096892,
+        "source_peak_dbfs": -15.537642111331165,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c158a5c026dc3463a0df84aa8693509bbcdc5053c320bf5186b59aeda9e89a39",
+        "source_tail_100ms_rms_dbfs": -100.95963781910838
+      },
+      {
+        "asset": "chinar-25",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.744395833333333,
+        "source_dc_dbfs": -145.81578406822703,
+        "source_peak_dbfs": -17.05126087527127,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9acb2a5456b027847f9a33d2162821d45133f3fb0ef36cb04ddf713bf501047e",
+        "source_tail_100ms_rms_dbfs": -106.97280510614138
+      },
+      {
+        "asset": "chinar-3",
+        "bank": "full-kit-metals",
+        "duration_seconds": 5.3636875,
+        "source_dc_dbfs": -123.61493265721391,
+        "source_peak_dbfs": -32.52401542508065,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "38038d9d2fbe41d6b95321ac0b0ffc30d3532586529f47f03415c987ff6bb929",
+        "source_tail_100ms_rms_dbfs": -101.81536053319086
+      },
+      {
+        "asset": "chinar-5",
+        "bank": "full-kit-metals",
+        "duration_seconds": 4.907375,
+        "source_dc_dbfs": -107.79754259893835,
+        "source_peak_dbfs": -34.117067988731726,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "efd2500cf57d997f985427085d4ea5a9fc5c55d4cf7ade6f924ff6cd6a1dea1e",
+        "source_tail_100ms_rms_dbfs": -98.15635435077822
+      },
+      {
+        "asset": "chinar-8",
+        "bank": "full-kit-metals",
+        "duration_seconds": 5.9708958333333335,
+        "source_dc_dbfs": -118.39195459881567,
+        "source_peak_dbfs": -26.687922863215505,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "3fdd4f28f1d2fb53e9759db7377b6f822b305876f8a5bebd577d63e50ad1d703",
+        "source_tail_100ms_rms_dbfs": -99.83239107990218
+      },
+      {
+        "asset": "crashl-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 5.030645833333334,
+        "source_dc_dbfs": -128.44666396799062,
+        "source_peak_dbfs": -54.296375240492836,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "11bf20c89ce0444f96372056243123f03cb3f38af657f080e662850ca884f082",
+        "source_tail_100ms_rms_dbfs": -109.47990593234317
+      },
+      {
+        "asset": "crashl-10",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.349854166666667,
+        "source_dc_dbfs": -130.3222189229137,
+        "source_peak_dbfs": -24.449538423427125,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "43c826dba64cf2e6d98492a1bead229f6e0609c77312cb66827fc2d9a68c390d",
+        "source_tail_100ms_rms_dbfs": -110.2244171318595
+      },
+      {
+        "asset": "crashl-12",
+        "bank": "full-kit-metals",
+        "duration_seconds": 8.365041666666666,
+        "source_dc_dbfs": -115.46370008619762,
+        "source_peak_dbfs": -21.257925466632418,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "29a67c82a6a3eb74d80da848d934b366782a4cd292cf8c14c4c4ab7b2d35e72f",
+        "source_tail_100ms_rms_dbfs": -113.01263775618567
+      },
+      {
+        "asset": "crashl-14",
+        "bank": "full-kit-metals",
+        "duration_seconds": 8.281625,
+        "source_dc_dbfs": -123.79615307219305,
+        "source_peak_dbfs": -23.460961497242188,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b259df96927f9f05a3321c1204489e46ed9179b7f67fe5a778dadabf1c6639e1",
+        "source_tail_100ms_rms_dbfs": -111.5961356192711
+      },
+      {
+        "asset": "crashl-16",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.77425,
+        "source_dc_dbfs": -133.21616467641604,
+        "source_peak_dbfs": -24.117592936399458,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "13628e1916411d7216f744156b992317b48fa5b66c06e1ce3a48d972723815aa",
+        "source_tail_100ms_rms_dbfs": -111.5478667926125
+      },
+      {
+        "asset": "crashl-18",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.946479166666666,
+        "source_dc_dbfs": -129.58631614762038,
+        "source_peak_dbfs": -19.864119215943273,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d124b3bf8fec192d8cc771b5666b115bb2491b7e365b939f2871cb57af4fd21b",
+        "source_tail_100ms_rms_dbfs": -108.35147398735954
+      },
+      {
+        "asset": "crashl-21",
+        "bank": "full-kit-metals",
+        "duration_seconds": 9.208625,
+        "source_dc_dbfs": -129.33678821470147,
+        "source_peak_dbfs": -17.236481160615867,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6f2586869c7b9ea89234725040b13670bccba1c1b697fe3484e2ef18ac5b38cd",
+        "source_tail_100ms_rms_dbfs": -113.42082396355265
+      },
+      {
+        "asset": "crashl-23",
+        "bank": "full-kit-metals",
+        "duration_seconds": 8.616354166666667,
+        "source_dc_dbfs": -125.93421820616012,
+        "source_peak_dbfs": -13.493359758276068,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7cfeba77d602e7bbe7185a89cc060c23413600d35c6d5bd5eb96ae6317108e9c",
+        "source_tail_100ms_rms_dbfs": -112.77166914621898
+      },
+      {
+        "asset": "crashl-25",
+        "bank": "full-kit-metals",
+        "duration_seconds": 8.551916666666667,
+        "source_dc_dbfs": -143.12805221424833,
+        "source_peak_dbfs": -12.475244778380418,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0b8d021629f7b65a43e9f6d293389f1a88eef55e20b1dd1d0174f7d3312713b1",
+        "source_tail_100ms_rms_dbfs": -110.2091213637958
+      },
+      {
+        "asset": "crashl-3",
+        "bank": "full-kit-metals",
+        "duration_seconds": 9.623125,
+        "source_dc_dbfs": -124.19623865032845,
+        "source_peak_dbfs": -36.241827507823466,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "afe6da5fb85bd6e9ffb653e2055480a1e65e7dd146767d2594c9df0836079121",
+        "source_tail_100ms_rms_dbfs": -102.268538345552
+      },
+      {
+        "asset": "crashl-5",
+        "bank": "full-kit-metals",
+        "duration_seconds": 9.895020833333334,
+        "source_dc_dbfs": -128.4172597914232,
+        "source_peak_dbfs": -29.921219946697796,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c1017c424db802fe0937754d0e8c740f7dac4a7d5492f98defdefc5806ca595a",
+        "source_tail_100ms_rms_dbfs": -114.6459043995953
+      },
+      {
+        "asset": "crashl-8",
+        "bank": "full-kit-metals",
+        "duration_seconds": 8.314104166666667,
+        "source_dc_dbfs": -116.25508277369748,
+        "source_peak_dbfs": -28.976046210117524,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9b87de39e993055d3ec074f961de085762eb3fe730cde4968f2b20d557a2fb27",
+        "source_tail_100ms_rms_dbfs": -111.23607998124382
+      },
+      {
+        "asset": "crashlstopped-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.4744583333333334,
+        "source_dc_dbfs": -117.13261309113673,
+        "source_peak_dbfs": -36.06850699099739,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "3a7f52090dacf0d9be3c5e3c053d7ed7d09d3b7377c1e724294f4069508beacc",
+        "source_tail_100ms_rms_dbfs": -96.32501312933668
+      },
+      {
+        "asset": "crashlstopped-10",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.7656875,
+        "source_dc_dbfs": -127.88621013174557,
+        "source_peak_dbfs": -18.893216082777965,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7d8c6a051389c097903ab98cd7f9b834d171e6dda14b983b250eaa95896ff44d",
+        "source_tail_100ms_rms_dbfs": -93.48537584554339
+      },
+      {
+        "asset": "crashlstopped-12",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.5921875,
+        "source_dc_dbfs": -113.60645093354258,
+        "source_peak_dbfs": -16.392527285739305,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "06e078a9bbccd02477af8a544cc53cda6ef8667adeb7c73b89183e7b8c7a0408",
+        "source_tail_100ms_rms_dbfs": -89.4570912059032
+      },
+      {
+        "asset": "crashlstopped-3",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.64475,
+        "source_dc_dbfs": -107.04392414353092,
+        "source_peak_dbfs": -25.81427174370088,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fd2415bad5d5fa137dc76c96b64331018fad6e20214b6c955367ce9da1b7aa4a",
+        "source_tail_100ms_rms_dbfs": -92.53523429588537
+      },
+      {
+        "asset": "crashlstopped-4",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.7058958333333334,
+        "source_dc_dbfs": -111.40892522186446,
+        "source_peak_dbfs": -25.54997923681347,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fdb149c07e132976ff40fd9ebb5ca49a6479b7ff5b5b976f347e71cdf2156c4e",
+        "source_tail_100ms_rms_dbfs": -95.14571937159317
+      },
+      {
+        "asset": "crashlstopped-6",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.9803541666666666,
+        "source_dc_dbfs": -115.43702468521508,
+        "source_peak_dbfs": -19.028602331257037,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4b00dd91e38b1d494e3f5bb3806eeb715f86f5faffa89610b593c80350078a06",
+        "source_tail_100ms_rms_dbfs": -96.29082513668192
+      },
+      {
+        "asset": "crashlstopped-7",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.7171666666666667,
+        "source_dc_dbfs": -119.42806757803383,
+        "source_peak_dbfs": -19.210815328132266,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d1cda865f20ef2462dbf8e95c3290c2b2cff918966014131f1009142476d0e07",
+        "source_tail_100ms_rms_dbfs": -89.76119527991132
+      },
+      {
+        "asset": "crashlstopped-9",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.486104166666667,
+        "source_dc_dbfs": -120.46436225751533,
+        "source_peak_dbfs": -18.54060555967176,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4996d88bc83e49899804744b8b3ccd866baf58e42e517be9f84f0eb03c48659e",
+        "source_tail_100ms_rms_dbfs": -98.54617050931806
+      },
+      {
+        "asset": "crashr-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.939958333333333,
+        "source_dc_dbfs": -116.81516843783515,
+        "source_peak_dbfs": -40.73248513242823,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "a326e0d8d95548fd8c95d26a31c5ab8d500323268305357019aa2446ff3d93a2",
+        "source_tail_100ms_rms_dbfs": -102.13637241007288
+      },
+      {
+        "asset": "crashr-10",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.5954375,
+        "source_dc_dbfs": -116.90480757444288,
+        "source_peak_dbfs": -20.757688685429365,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7c6ef48707144e260d72a448573165f4340306f8101a797690256828b8202b75",
+        "source_tail_100ms_rms_dbfs": -94.72074879048323
+      },
+      {
+        "asset": "crashr-12",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.6293125,
+        "source_dc_dbfs": -114.76375408893347,
+        "source_peak_dbfs": -21.72273626051263,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4cccc3cb090760974373063dc4a580739c7140683b84976977a4f76b6a451ae2",
+        "source_tail_100ms_rms_dbfs": -96.05141587190448
+      },
+      {
+        "asset": "crashr-14",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.752729166666667,
+        "source_dc_dbfs": -126.58787643346189,
+        "source_peak_dbfs": -17.51679460950319,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0647936c48cf2360bb1ff76774625b9333edf526f3f99ea26333d2788f61d960",
+        "source_tail_100ms_rms_dbfs": -95.25077993388018
+      },
+      {
+        "asset": "crashr-16",
+        "bank": "full-kit-metals",
+        "duration_seconds": 8.254291666666667,
+        "source_dc_dbfs": -118.92551260035079,
+        "source_peak_dbfs": -16.151031348933333,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6af5e7bfc11a3e824928161d28ce572a48c76d64c621c84c6b00b229a95c7445",
+        "source_tail_100ms_rms_dbfs": -97.40435921299321
+      },
+      {
+        "asset": "crashr-17",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.937333333333333,
+        "source_dc_dbfs": -116.19187830551783,
+        "source_peak_dbfs": -16.97761542085702,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1ecbf98b88e26811d884fe01b157724df90a2a088e2d8c10a81f7d55ec6f3bbf",
+        "source_tail_100ms_rms_dbfs": -93.6133764741747
+      },
+      {
+        "asset": "crashr-19",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.9370416666666666,
+        "source_dc_dbfs": -114.79855533517012,
+        "source_peak_dbfs": -14.207672621916005,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "a27fd2664c2ea14ae9b87c72ccab01d939f3cd0f8bd6819ecf33ddd4b8b6398e",
+        "source_tail_100ms_rms_dbfs": -98.61769476062088
+      },
+      {
+        "asset": "crashr-21",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.800833333333333,
+        "source_dc_dbfs": -113.83268777000401,
+        "source_peak_dbfs": -13.005049364050443,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "776adce0aa31c34e111610daf1154dd0ff91a46b0b596346259d962cf9352a31",
+        "source_tail_100ms_rms_dbfs": -96.03172814889373
+      },
+      {
+        "asset": "crashr-3",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.9133125,
+        "source_dc_dbfs": -127.68965846897558,
+        "source_peak_dbfs": -34.80771767882448,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "ca65cc2e76979cd9eecba2da311913336f01c3b4bf2b8ce054f6c7053761e150",
+        "source_tail_100ms_rms_dbfs": -99.45925321925475
+      },
+      {
+        "asset": "crashr-5",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.3776875,
+        "source_dc_dbfs": -122.5657715909302,
+        "source_peak_dbfs": -29.91904621538078,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "23627ae92c794173ce8905f35b954d5f69da3e28ca1c1f6fb321e95a0da28934",
+        "source_tail_100ms_rms_dbfs": -93.90649093268892
+      },
+      {
+        "asset": "crashr-6",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.900833333333333,
+        "source_dc_dbfs": -134.83544791511997,
+        "source_peak_dbfs": -26.508758922885733,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f8127d39ca9a6db53ea7fa0319bb6b50f0d6a6c61302fc39924be58f0ae3e490",
+        "source_tail_100ms_rms_dbfs": -95.15781844135265
+      },
+      {
+        "asset": "crashr-8",
+        "bank": "full-kit-metals",
+        "duration_seconds": 8.111520833333334,
+        "source_dc_dbfs": -142.70435570644648,
+        "source_peak_dbfs": -25.757189189526535,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2e8a75964499d0178d92df31ef310be35bdc24ad2706f1f07421d8c03bbda6df",
+        "source_tail_100ms_rms_dbfs": -96.87846114917636
+      },
+      {
+        "asset": "crashrstopped-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.3218541666666668,
+        "source_dc_dbfs": -117.69904130742388,
+        "source_peak_dbfs": -33.83350470522767,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c4368c4e62fe0f9034827d0b8a84689307f6391b80adc8b9c7527951c960abd5",
+        "source_tail_100ms_rms_dbfs": -93.7127391200232
+      },
+      {
+        "asset": "crashrstopped-2",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.4357083333333334,
+        "source_dc_dbfs": -101.46263981281871,
+        "source_peak_dbfs": -25.986155057248645,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "262c9440cdc05a8c24d108db2609c334c23eeb620fcbbae0219707b74524bed6",
+        "source_tail_100ms_rms_dbfs": -92.1649129034046
+      },
+      {
+        "asset": "crashrstopped-3",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.4665208333333333,
+        "source_dc_dbfs": -108.77008734487583,
+        "source_peak_dbfs": -25.28399301306675,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d1149a354d6a89cc661933bdce492c4b995f9be9ef469a233939b7a98215f120",
+        "source_tail_100ms_rms_dbfs": -89.94207762704605
+      },
+      {
+        "asset": "crashrstopped-4",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.4669166666666666,
+        "source_dc_dbfs": -122.3628866869427,
+        "source_peak_dbfs": -19.926493415347966,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b207e1e697b9e71adeb71b6249cd21ad87a2d88972553f6bcc3402eba1155d5c",
+        "source_tail_100ms_rms_dbfs": -86.79649941995925
+      },
+      {
+        "asset": "crashrstopped-6",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.3897708333333334,
+        "source_dc_dbfs": -106.61175043732997,
+        "source_peak_dbfs": -18.356063217974523,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6866669767db2359c42b602da32728592dbd96ca8b26869e001da59c7ed1e5ab",
+        "source_tail_100ms_rms_dbfs": -90.36067895901894
+      },
+      {
+        "asset": "crashrstopped-7",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.5969791666666666,
+        "source_dc_dbfs": -111.89984048506197,
+        "source_peak_dbfs": -16.62968378353255,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "55f81d79dd34f416a8bfa6ff1f91ddf170c5a0b31007fd65a5b46a69bd8f6860",
+        "source_tail_100ms_rms_dbfs": -89.71643702438833
+      },
+      {
+        "asset": "crashrstopped-8",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.31925,
+        "source_dc_dbfs": -95.90112137723494,
+        "source_peak_dbfs": -16.376718210022457,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "faa2549868d50bfbe42d3341e3d00ac01fa1fab5c09250da35d2ea1cff0d8aa6",
+        "source_tail_100ms_rms_dbfs": -87.03690695374996
+      },
+      {
+        "asset": "crashrstopped-9",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.4335625,
+        "source_dc_dbfs": -98.896383355485,
+        "source_peak_dbfs": -14.908536354268556,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "54a0cf381d2243074e4b36f4decfcf7a23d6b1e16e8d13b267fd4f8c5797642e",
+        "source_tail_100ms_rms_dbfs": -84.61213230511292
+      },
+      {
+        "asset": "hihatclosed-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.26389583333333333,
+        "source_dc_dbfs": -97.59531221398365,
+        "source_peak_dbfs": -57.56968628473022,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "80f90e4fd9249f7ff40201e41e93b6b8eddcd2eefc1ef0535589d9414e062d93",
+        "source_tail_100ms_rms_dbfs": -83.94366876373225
+      },
+      {
+        "asset": "hihatclosed-10",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.389125,
+        "source_dc_dbfs": -97.89052617166956,
+        "source_peak_dbfs": -32.63297627139985,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "bddef551559343748c924fb20fe61ff3246dd40f742512bd661a79984a5b29ad",
+        "source_tail_100ms_rms_dbfs": -84.03217280855061
+      },
+      {
+        "asset": "hihatclosed-13",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.42214583333333333,
+        "source_dc_dbfs": -98.824246262963,
+        "source_peak_dbfs": -29.77632278242421,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "a1b9511a4b112572df7c0c034026436613c694ffaa6f1f8776f338a0325bb4b0",
+        "source_tail_100ms_rms_dbfs": -84.56088595702404
+      },
+      {
+        "asset": "hihatclosed-15",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.380625,
+        "source_dc_dbfs": -147.3506538092462,
+        "source_peak_dbfs": -27.64992902357087,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d1024d4aa9db299f838f8c9a66c860a953717119abb738760e2a0cc539a3c17a",
+        "source_tail_100ms_rms_dbfs": -82.31743414355925
+      },
+      {
+        "asset": "hihatclosed-17",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.6342291666666666,
+        "source_dc_dbfs": -107.21868263750841,
+        "source_peak_dbfs": -27.555167864575356,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "8d7cbf8dfb96693de70d3e37daff6feb1db522d9e394d9a186684990b16a71a8",
+        "source_tail_100ms_rms_dbfs": -88.14667267841193
+      },
+      {
+        "asset": "hihatclosed-20",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.4745625,
+        "source_dc_dbfs": -100.78821413783714,
+        "source_peak_dbfs": -26.51176055842472,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "410e9115d6dc7c91548e6b16ee0cf065c504a0895c92ef56cee72803ec38880f",
+        "source_tail_100ms_rms_dbfs": -85.64718934643489
+      },
+      {
+        "asset": "hihatclosed-22",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.484625,
+        "source_dc_dbfs": -98.87164685548936,
+        "source_peak_dbfs": -26.049898344458683,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d69410c046edfba326285466b6081c9b0719df4531b6c7c114e14f046cd6934b",
+        "source_tail_100ms_rms_dbfs": -83.76978499890923
+      },
+      {
+        "asset": "hihatclosed-25",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.4909375,
+        "source_dc_dbfs": -101.34525614348858,
+        "source_peak_dbfs": -24.855236594382525,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b1694ae3023641146922669d295927dbb567e4178f484a51c8914c2214d7992f",
+        "source_tail_100ms_rms_dbfs": -84.81491450171086
+      },
+      {
+        "asset": "hihatclosed-27",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.49220833333333336,
+        "source_dc_dbfs": -108.10427123367441,
+        "source_peak_dbfs": -26.032710560142213,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "3299ada9e69d1e8fe0358ef39493592dd1ba778060b69b1ad018292b9af484aa",
+        "source_tail_100ms_rms_dbfs": -84.60459942243139
+      },
+      {
+        "asset": "hihatclosed-29",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.5533958333333333,
+        "source_dc_dbfs": -129.37644761758574,
+        "source_peak_dbfs": -24.50310554337718,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "11db096fa964f7291960959756747fe0eb755ee677165a8682fe35bb94a00810",
+        "source_tail_100ms_rms_dbfs": -84.79333656591015
+      },
+      {
+        "asset": "hihatclosed-3",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.321375,
+        "source_dc_dbfs": -113.98893120331351,
+        "source_peak_dbfs": -47.09944049483695,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2bdbb4b40fe110d112852908273cf12f19a3ca7b21d018d63366dd5f448493f4",
+        "source_tail_100ms_rms_dbfs": -83.28406327625643
+      },
+      {
+        "asset": "hihatclosed-32",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.5552083333333333,
+        "source_dc_dbfs": -105.374465897254,
+        "source_peak_dbfs": -24.29822686377712,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4ec0a02689db7aac7f366d4ba80176ff5974aca8dfc7095a7ffc146efbf9d366",
+        "source_tail_100ms_rms_dbfs": -83.40210255183061
+      },
+      {
+        "asset": "hihatclosed-34",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.5968541666666667,
+        "source_dc_dbfs": -114.02025471528168,
+        "source_peak_dbfs": -22.60721174372457,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "63c2eb672b75ede70b6c300263d7c1e06930f8abefeb4e2fc50c31369711936a",
+        "source_tail_100ms_rms_dbfs": -87.74037781093183
+      },
+      {
+        "asset": "hihatclosed-36",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.4179583333333333,
+        "source_dc_dbfs": -106.95797863746463,
+        "source_peak_dbfs": -22.21566450267352,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "cc62005c60406b943d8c986e2ee8b1a961e3a9d0353f36f5c5954bbdc4f994d6",
+        "source_tail_100ms_rms_dbfs": -79.06275164300158
+      },
+      {
+        "asset": "hihatclosed-39",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.6011041666666667,
+        "source_dc_dbfs": -116.94590581783386,
+        "source_peak_dbfs": -21.569405496470885,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "34a883192800822fad6f0d4f83a882b180c96019262fd48f971434ef2600d5ec",
+        "source_tail_100ms_rms_dbfs": -85.84216589495783
+      },
+      {
+        "asset": "hihatclosed-41",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.5466458333333334,
+        "source_dc_dbfs": -101.07339363161796,
+        "source_peak_dbfs": -22.572709584843544,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0c5158207173a52693745cdf3ba238ece6ed786bbf311b6d068bfa697d79ca14",
+        "source_tail_100ms_rms_dbfs": -80.43796094369822
+      },
+      {
+        "asset": "hihatclosed-6",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.34939583333333335,
+        "source_dc_dbfs": -127.11567252139062,
+        "source_peak_dbfs": -34.27824487617508,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c28afa6df7ab3b190c662d898a138f1d5546c23e816a6442ae363786462e9d96",
+        "source_tail_100ms_rms_dbfs": -82.69602256601642
+      },
+      {
+        "asset": "hihatclosed-8",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.3646041666666667,
+        "source_dc_dbfs": -104.95916729733464,
+        "source_peak_dbfs": -34.41874763006875,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4cf8558fed1d84b787c502ebae0669fa30d3cc1ea32cd5db17a316c56ce0cdad",
+        "source_tail_100ms_rms_dbfs": -83.6999913914439
+      },
+      {
+        "asset": "hihatclosednopedal-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.5764791666666667,
+        "source_dc_dbfs": -96.90579311570866,
+        "source_peak_dbfs": -51.24301858004577,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "43b22a06cf9fbb3013864e7e92ca47ac8fff3a339b3cb42bf35a65886e2c0f87",
+        "source_tail_100ms_rms_dbfs": -82.46972729150855
+      },
+      {
+        "asset": "hihatclosednopedal-12",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.9683333333333334,
+        "source_dc_dbfs": -105.65520865587311,
+        "source_peak_dbfs": -27.823678850646054,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c1d3785a41f0cf7b78031362d73074eb99332b97be2f36cc1f3a863bbda69d66",
+        "source_tail_100ms_rms_dbfs": -88.66563105812946
+      },
+      {
+        "asset": "hihatclosednopedal-16",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.9037916666666667,
+        "source_dc_dbfs": -117.31544456572053,
+        "source_peak_dbfs": -27.111782641211107,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d87736f2969c431e22e231ffd9db1e0669c6e0e722428555a5a473359bf341d2",
+        "source_tail_100ms_rms_dbfs": -92.15259359544326
+      },
+      {
+        "asset": "hihatclosednopedal-20",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.3028958333333334,
+        "source_dc_dbfs": -103.81251508023053,
+        "source_peak_dbfs": -24.98298638385593,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c8e770bd8036105d361a45e3dc9b6f2a1fb42253509be2b582b767cb4a42c149",
+        "source_tail_100ms_rms_dbfs": -97.26735243964511
+      },
+      {
+        "asset": "hihatclosednopedal-23",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.341875,
+        "source_dc_dbfs": -101.96076861319548,
+        "source_peak_dbfs": -23.565072149718162,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4242b1c9aafdf2f849165cb9de85de0285178e1f83818c811330d3954c93663c",
+        "source_tail_100ms_rms_dbfs": -93.00242891174379
+      },
+      {
+        "asset": "hihatclosednopedal-27",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.12175,
+        "source_dc_dbfs": -102.94335665341718,
+        "source_peak_dbfs": -21.302236030931866,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2d771024f152a93852ad0a618d6a54e15e3f5c1d0958715e5c8ba4612235cb8d",
+        "source_tail_100ms_rms_dbfs": -90.78826974335223
+      },
+      {
+        "asset": "hihatclosednopedal-31",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.0425833333333334,
+        "source_dc_dbfs": -115.06264573835517,
+        "source_peak_dbfs": -22.096445591888966,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f62244e1e6cfd68568e4b57da20594bb32abb29cc8243ed975bfcc1fcecc0ed4",
+        "source_tail_100ms_rms_dbfs": -90.74394061326332
+      },
+      {
+        "asset": "hihatclosednopedal-35",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.1559791666666666,
+        "source_dc_dbfs": -104.87544585142345,
+        "source_peak_dbfs": -19.34967037457397,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "206df8f2294b41e2f7ec09429470a17546ccab4273926ac1305a5a61a7f27cf3",
+        "source_tail_100ms_rms_dbfs": -92.19954323243155
+      },
+      {
+        "asset": "hihatclosednopedal-38",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.7603333333333333,
+        "source_dc_dbfs": -110.29781113180944,
+        "source_peak_dbfs": -18.747636201906005,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2a80eec491b207b559c8d42bd9a24b4057651401bc6e4a7d0479f9778dbfd081",
+        "source_tail_100ms_rms_dbfs": -100.24675316264154
+      },
+      {
+        "asset": "hihatclosednopedal-42",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.2732916666666667,
+        "source_dc_dbfs": -102.54172859141427,
+        "source_peak_dbfs": -18.111251982966646,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "ed7b062c66a0e83f56e53a98618196e131e64f90a88a9201f0a47fd45772dc39",
+        "source_tail_100ms_rms_dbfs": -90.91147848001575
+      },
+      {
+        "asset": "hihatclosednopedal-5",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.7442916666666667,
+        "source_dc_dbfs": -114.90179921150336,
+        "source_peak_dbfs": -35.29642053225213,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "df5f5d962cd8e96cd6e642739a46c2efc9023b1e83bb7c206cbfe662efc8c988",
+        "source_tail_100ms_rms_dbfs": -88.19435177899177
+      },
+      {
+        "asset": "hihatclosednopedal-8",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.0208333333333333,
+        "source_dc_dbfs": -113.72299505082074,
+        "source_peak_dbfs": -31.3661853538746,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0aea5da83a7134fd8e0e36bfc711815f8e38b9639742ed3b424d631acc809216",
+        "source_tail_100ms_rms_dbfs": -93.8372004939578
+      },
+      {
+        "asset": "hihatopen-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.9406041666666667,
+        "source_dc_dbfs": -111.34897492803219,
+        "source_peak_dbfs": -54.380547770466976,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b0b39326fe9db0da1bc556c861e7d50bf5a8414f3f02c7b7fea2aeb0394e5b28",
+        "source_tail_100ms_rms_dbfs": -91.70106976112027
+      },
+      {
+        "asset": "hihatopen-12",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.4586875,
+        "source_dc_dbfs": -109.73336371327734,
+        "source_peak_dbfs": -26.007323315435915,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "8a6efbbdea8b2bcb8651df67cbcb99aa0284c660f513cd1b08c93ebe929f7e7d",
+        "source_tail_100ms_rms_dbfs": -100.08294469093185
+      },
+      {
+        "asset": "hihatopen-15",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.516208333333333,
+        "source_dc_dbfs": -113.78873651084099,
+        "source_peak_dbfs": -27.79033029260294,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5754dadcb79e25071e71ad463977e0f57772a5cae33fffc75facfc525467311c",
+        "source_tail_100ms_rms_dbfs": -106.3376125664435
+      },
+      {
+        "asset": "hihatopen-17",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.099,
+        "source_dc_dbfs": -120.99153100573182,
+        "source_peak_dbfs": -25.717561434921137,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "165caf24658d42e93bb5d7ef34c48608ad77a2c18ee1a88d67d8557e5f35f787",
+        "source_tail_100ms_rms_dbfs": -98.97952394539519
+      },
+      {
+        "asset": "hihatopen-20",
+        "bank": "full-kit-metals",
+        "duration_seconds": 3.2719375,
+        "source_dc_dbfs": -117.62600695548242,
+        "source_peak_dbfs": -23.467503366715615,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "a3ab5f82192b0e9f60958a8777a44e634f827e14a15ee08c0e648983108cc24f",
+        "source_tail_100ms_rms_dbfs": -107.55325462154704
+      },
+      {
+        "asset": "hihatopen-23",
+        "bank": "full-kit-metals",
+        "duration_seconds": 3.02225,
+        "source_dc_dbfs": -104.26186018934537,
+        "source_peak_dbfs": -23.811185391188907,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "97c5d016b2c19e6778558d6b78bf90deda71c5b9a55a34a58034a9c31fcfb9c4",
+        "source_tail_100ms_rms_dbfs": -104.10340914990115
+      },
+      {
+        "asset": "hihatopen-25",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.2162916666666668,
+        "source_dc_dbfs": -122.25520813179153,
+        "source_peak_dbfs": -23.247211363935403,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5ce372aef2160d30226f2045843d59362c82a414ea15bb9a45a108e807286acf",
+        "source_tail_100ms_rms_dbfs": -102.96048075475147
+      },
+      {
+        "asset": "hihatopen-28",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.9969791666666667,
+        "source_dc_dbfs": -124.04776967822286,
+        "source_peak_dbfs": -23.53289900641917,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "a6103c692255de11e4c10b10c580e1e7c017a625dd5585143a37a54d7cf1f1ee",
+        "source_tail_100ms_rms_dbfs": -101.80758650254936
+      },
+      {
+        "asset": "hihatopen-31",
+        "bank": "full-kit-metals",
+        "duration_seconds": 3.479791666666667,
+        "source_dc_dbfs": -112.78848236586697,
+        "source_peak_dbfs": -19.780264457365895,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f8acdeac243fa2dd91b2fcf75b0c4f4d9f368e3cf73b6bed67bc01e25d210376",
+        "source_tail_100ms_rms_dbfs": -103.16428664294801
+      },
+      {
+        "asset": "hihatopen-33",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.981,
+        "source_dc_dbfs": -116.96745966089331,
+        "source_peak_dbfs": -22.57084398694655,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "af133eb63ee7b0e1d934cd21d3b99d9185e09bda4a106d1e1feb1fbdb3768346",
+        "source_tail_100ms_rms_dbfs": -107.6438724013272
+      },
+      {
+        "asset": "hihatopen-36",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.4497291666666667,
+        "source_dc_dbfs": -107.17434685250466,
+        "source_peak_dbfs": -22.242713426630097,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fa89c60fa43f6cca6f3ab3ec60ae0aec8ef791ebe2b289dc0006163958325b65",
+        "source_tail_100ms_rms_dbfs": -101.44140383205915
+      },
+      {
+        "asset": "hihatopen-39",
+        "bank": "full-kit-metals",
+        "duration_seconds": 3.3857708333333334,
+        "source_dc_dbfs": -119.42503640574401,
+        "source_peak_dbfs": -22.137244030224004,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "3040d0639789bbff6c25539e64c7ff76273036716cc13c18047cee3d9f58f3ce",
+        "source_tail_100ms_rms_dbfs": -107.56071826355657
+      },
+      {
+        "asset": "hihatopen-4",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.0713541666666666,
+        "source_dc_dbfs": -110.95670382396158,
+        "source_peak_dbfs": -37.28465026292205,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "259319aa09b53f42e06f4909472838e6173662262d0686f2afc6be2d13f16ace",
+        "source_tail_100ms_rms_dbfs": -99.29110964515363
+      },
+      {
+        "asset": "hihatopen-42",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.953333333333333,
+        "source_dc_dbfs": -114.46563528713718,
+        "source_peak_dbfs": -21.99241434312103,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2e9007d97e268bbaa03bc5fd1067ae39fa495d814b72d2dc4167e20f1fce6e27",
+        "source_tail_100ms_rms_dbfs": -103.74439509566426
+      },
+      {
+        "asset": "hihatopen-44",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.9872083333333332,
+        "source_dc_dbfs": -109.19490910267103,
+        "source_peak_dbfs": -22.28601140447735,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "aa47951a7e8ced26d4b9bf452e05f475f6c6c4f35e505850c53b59170f2f71ed",
+        "source_tail_100ms_rms_dbfs": -107.84026696405583
+      },
+      {
+        "asset": "hihatopen-47",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.972354166666667,
+        "source_dc_dbfs": -118.21400651437091,
+        "source_peak_dbfs": -20.513200729953233,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "a8c879be7e9204c56e4f950e7c093d86d0d5ee53666a23ad14370eac29c9d85c",
+        "source_tail_100ms_rms_dbfs": -103.49888816916292
+      },
+      {
+        "asset": "hihatopen-6",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.7684166666666665,
+        "source_dc_dbfs": -120.92908803867977,
+        "source_peak_dbfs": -32.05219071148659,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "960d44fec680a95f779a79764000eb9c01f7d14969545327680330b664bd13ec",
+        "source_tail_100ms_rms_dbfs": -99.02316873526419
+      },
+      {
+        "asset": "hihatopen-9",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.5338958333333332,
+        "source_dc_dbfs": -114.53851629558972,
+        "source_peak_dbfs": -27.142267236397068,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "bbd81a271126c3fe33b4f47059e9210d4d2b9a70bc1b748c8e65fd3921030b8f",
+        "source_tail_100ms_rms_dbfs": -104.29477918447076
+      },
+      {
+        "asset": "hihatpedal-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.6594791666666666,
+        "source_dc_dbfs": -98.07565325290642,
+        "source_peak_dbfs": -52.020730561166594,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "74b7965ec9f3525540ac62f70eaace28e91ef28130edc8fa1bc7e447c37cddc6",
+        "source_tail_100ms_rms_dbfs": -88.4066100329679
+      },
+      {
+        "asset": "hihatpedal-10",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.424125,
+        "source_dc_dbfs": -94.57356198506609,
+        "source_peak_dbfs": -33.30268050931394,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1e4b1055dc49cf42b96217c0aef4869bf4eab5df8967a7377cc6143e7469c75f",
+        "source_tail_100ms_rms_dbfs": -80.98933129326525
+      },
+      {
+        "asset": "hihatpedal-2",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.3523125,
+        "source_dc_dbfs": -105.5511083431129,
+        "source_peak_dbfs": -52.03975861541659,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c053a01c71592baee206c5ede4ced87b5cc1b5c87f5c308c73d7ba9f1e864a2b",
+        "source_tail_100ms_rms_dbfs": -86.77969225241986
+      },
+      {
+        "asset": "hihatpedal-4",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.6649375,
+        "source_dc_dbfs": -113.81798592343854,
+        "source_peak_dbfs": -50.094190380530634,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9e3a5bb426d5b29cc76f39fefdb6b9559d542501730e211f71084a45e12530ac",
+        "source_tail_100ms_rms_dbfs": -90.09396657125822
+      },
+      {
+        "asset": "hihatpedal-5",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.41133333333333333,
+        "source_dc_dbfs": -109.72226510487388,
+        "source_peak_dbfs": -43.19431276777082,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "444f2a2100055f59a236fb83392b4042e48f97cdeefd92dff7fc129d2a1bc8ae",
+        "source_tail_100ms_rms_dbfs": -85.75575515614987
+      },
+      {
+        "asset": "hihatpedal-6",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.3942083333333333,
+        "source_dc_dbfs": -92.22338683220295,
+        "source_peak_dbfs": -29.067734930337174,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6d2bea3ff5e581ff0b7ef8ec21457030f0a98058af31fe3d21a9384b2dcf07e2",
+        "source_tail_100ms_rms_dbfs": -79.816520201804
+      },
+      {
+        "asset": "hihatpedal-7",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.46872916666666664,
+        "source_dc_dbfs": -102.3924324912001,
+        "source_peak_dbfs": -29.852765938008123,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "73e5677898edcf1051d36f2531a75bd719816688f4e0e0ef6fe7c738e499001c",
+        "source_tail_100ms_rms_dbfs": -83.63071423863568
+      },
+      {
+        "asset": "hihatpedal-9",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.5359375,
+        "source_dc_dbfs": -107.43748866570932,
+        "source_peak_dbfs": -28.156903740895377,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "93cd52ebc14eb1244438183bbcaef043b3f052f81f44f4cf181816e8fd31a9f3",
+        "source_tail_100ms_rms_dbfs": -86.51560550192615
+      },
+      {
+        "asset": "hihatsemiopen-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.650125,
+        "source_dc_dbfs": -115.34465990755794,
+        "source_peak_dbfs": -45.84025622790361,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "b931dc011d302c5628146acd174e4e0b67b2f753154a09107c3f63455e2ff1b3",
+        "source_tail_100ms_rms_dbfs": -93.23521152771256
+      },
+      {
+        "asset": "hihatsemiopen-11",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.9865,
+        "source_dc_dbfs": -110.94616037582824,
+        "source_peak_dbfs": -27.96945412122552,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7e9a4fc37f4b1e4e4ea44275d4a80cb2424a3d4192e2261d904bdbe2081d8b79",
+        "source_tail_100ms_rms_dbfs": -96.9997322318578
+      },
+      {
+        "asset": "hihatsemiopen-13",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.0517916666666667,
+        "source_dc_dbfs": -104.77397786226919,
+        "source_peak_dbfs": -26.25759352092554,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7a90a62a4334abcd8f9c191adc7d949af3db0d41d8a8287b016c5d149995f3b0",
+        "source_tail_100ms_rms_dbfs": -97.18953146931788
+      },
+      {
+        "asset": "hihatsemiopen-15",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.1684583333333334,
+        "source_dc_dbfs": -107.98742530096288,
+        "source_peak_dbfs": -25.24623453016648,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1ee5b4a732911330fc88792dd54add8c5535375a73f60f4462a26a77b13a8131",
+        "source_tail_100ms_rms_dbfs": -91.92141172886117
+      },
+      {
+        "asset": "hihatsemiopen-17",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.1204583333333333,
+        "source_dc_dbfs": -106.80441242521945,
+        "source_peak_dbfs": -23.453222535311635,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1ed25d99f3eada4c6b56acc297e3d07df56cad9ba871dce4b93cd980f744db4d",
+        "source_tail_100ms_rms_dbfs": -96.44192156234092
+      },
+      {
+        "asset": "hihatsemiopen-20",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.1207083333333334,
+        "source_dc_dbfs": -107.77101931458964,
+        "source_peak_dbfs": -23.717847422586907,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1b265d0bd0b02d17a8a8f1275f250ff8d945abf34d4bfc5d63cb369b34bb0149",
+        "source_tail_100ms_rms_dbfs": -95.01662295665682
+      },
+      {
+        "asset": "hihatsemiopen-22",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.9869166666666667,
+        "source_dc_dbfs": -109.61640460514288,
+        "source_peak_dbfs": -22.29973651459412,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "697f895d1b26ddda10de93db4686291a1d26d8b9b4a52ae210e1ae64e95e638a",
+        "source_tail_100ms_rms_dbfs": -95.2274800479639
+      },
+      {
+        "asset": "hihatsemiopen-24",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.2963958333333334,
+        "source_dc_dbfs": -109.51171695895854,
+        "source_peak_dbfs": -20.55887375782546,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "63a9131b2e1db07d0601d2b3b1220005f29ad1a329032e03b1bb391d192545e7",
+        "source_tail_100ms_rms_dbfs": -98.29376112322939
+      },
+      {
+        "asset": "hihatsemiopen-26",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.0999375,
+        "source_dc_dbfs": -116.5799852006654,
+        "source_peak_dbfs": -21.66071270944251,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "60a4a2719a30be68b80c8acf143f8495c92a219cc60219167154730060cce4ce",
+        "source_tail_100ms_rms_dbfs": -96.5430641808608
+      },
+      {
+        "asset": "hihatsemiopen-28",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.3989166666666666,
+        "source_dc_dbfs": -97.93733061965126,
+        "source_peak_dbfs": -19.955402373908495,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "2f20c956edc48376b34ad77a28903a1da515fafac995bc9b4bc760a452143211",
+        "source_tail_100ms_rms_dbfs": -96.87154352515435
+      },
+      {
+        "asset": "hihatsemiopen-3",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.8477708333333334,
+        "source_dc_dbfs": -119.10506632567828,
+        "source_peak_dbfs": -44.000744790103965,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "240eb3930e0f1097a8f88d68978bf07e9e9b49781996d116cb47d3ece35625e7",
+        "source_tail_100ms_rms_dbfs": -93.82469116700825
+      },
+      {
+        "asset": "hihatsemiopen-30",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.7105833333333333,
+        "source_dc_dbfs": -125.3340166594492,
+        "source_peak_dbfs": -19.30153618703188,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "3672b773bd3be5066915aafb91d1bf7326e3d8fdb325d094f09598583e67c5f2",
+        "source_tail_100ms_rms_dbfs": -100.56915000748083
+      },
+      {
+        "asset": "hihatsemiopen-32",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.451125,
+        "source_dc_dbfs": -103.84912150060865,
+        "source_peak_dbfs": -20.711837586491786,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "d5bccb7943e58d1787c92eb3ee17cbc4fef74e76cd24d4f33953e63bc1a39ad7",
+        "source_tail_100ms_rms_dbfs": -98.83802813561803
+      },
+      {
+        "asset": "hihatsemiopen-34",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.2673958333333333,
+        "source_dc_dbfs": -105.43204531270331,
+        "source_peak_dbfs": -19.320311657052773,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "81ef54db356d175776041cf2561e9cb235c75c50b401930d6247d468bdd17a20",
+        "source_tail_100ms_rms_dbfs": -95.32615843894213
+      },
+      {
+        "asset": "hihatsemiopen-36",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.4497708333333332,
+        "source_dc_dbfs": -102.7242845207602,
+        "source_peak_dbfs": -20.238313166486904,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "c82073bcd5d5f2e3a06df2d4e98371b2b1c0fc3ed5a48f22a659039abdce309e",
+        "source_tail_100ms_rms_dbfs": -97.76854684861067
+      },
+      {
+        "asset": "hihatsemiopen-5",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.8702708333333333,
+        "source_dc_dbfs": -118.38675911148165,
+        "source_peak_dbfs": -30.74321230850606,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "370f8faa70d1073e3c0740f8e593d59ad7ad9d4e8ba096db96ed84a8d6447257",
+        "source_tail_100ms_rms_dbfs": -93.60464330795288
+      },
+      {
+        "asset": "hihatsemiopen-7",
+        "bank": "full-kit-metals",
+        "duration_seconds": 0.9706458333333333,
+        "source_dc_dbfs": -114.91575082967941,
+        "source_peak_dbfs": -29.74879533635915,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "cdef9bed1b50e5d034be216c118069164b9a504a5e75dd805d910b6544160c6a",
+        "source_tail_100ms_rms_dbfs": -97.75493579895551
+      },
+      {
+        "asset": "hihatsemiopen-9",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.0437916666666667,
+        "source_dc_dbfs": -106.90219541558746,
+        "source_peak_dbfs": -28.543175375556356,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6885ad1ddb2b4e725198e7150698f48b83a07a95af62241a7d331d96279e299f",
+        "source_tail_100ms_rms_dbfs": -97.57604566544272
+      },
+      {
+        "asset": "rider-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 15.475354166666667,
+        "source_dc_dbfs": -122.91351742983088,
+        "source_peak_dbfs": -57.07377992938444,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "34353385ab67e8c6b453467ae3ce3724dbb04ba516522d0008ad68f4cf1a7487",
+        "source_tail_100ms_rms_dbfs": -113.78053703111019
+      },
+      {
+        "asset": "rider-11",
+        "bank": "full-kit-metals",
+        "duration_seconds": 22.140083333333333,
+        "source_dc_dbfs": -130.77044155557175,
+        "source_peak_dbfs": -40.86667401704663,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "78b2d865eb66879c93c532a0da8d16c8503e7b7aebafb4563f3db465d72bc6a5",
+        "source_tail_100ms_rms_dbfs": -115.7391842014294
+      },
+      {
+        "asset": "rider-16",
+        "bank": "full-kit-metals",
+        "duration_seconds": 23.175145833333332,
+        "source_dc_dbfs": -129.0856877282616,
+        "source_peak_dbfs": -36.35338162262597,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "664ce1fd5add95ebf80d93e4c4d6ae4111f39dd292eb6191cf28662ad7174893",
+        "source_tail_100ms_rms_dbfs": -122.04864788670906
+      },
+      {
+        "asset": "rider-22",
+        "bank": "full-kit-metals",
+        "duration_seconds": 22.80875,
+        "source_dc_dbfs": -137.0428340808996,
+        "source_peak_dbfs": -29.73776426123516,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f55cda6f41dbdc5e1f2de95adf2493ec676e0e0af18d8b967c116be14649de1f",
+        "source_tail_100ms_rms_dbfs": -120.94719256103684
+      },
+      {
+        "asset": "rider-27",
+        "bank": "full-kit-metals",
+        "duration_seconds": 24.977083333333333,
+        "source_dc_dbfs": -126.22996106743621,
+        "source_peak_dbfs": -30.341666068147788,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "83f1b7f49a369c0dd01da3475f05980eb66708ff3a0b356e0792c5e52cf29f9f",
+        "source_tail_100ms_rms_dbfs": -120.10635152536668
+      },
+      {
+        "asset": "rider-32",
+        "bank": "full-kit-metals",
+        "duration_seconds": 29.112916666666667,
+        "source_dc_dbfs": -126.1441414691913,
+        "source_peak_dbfs": -26.53866818685539,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1bf6b476fa63cbb3c6843503ffd135c92d2da19c1fef1b33e0715614054dbea8",
+        "source_tail_100ms_rms_dbfs": -123.22790323036246
+      },
+      {
+        "asset": "rider-37",
+        "bank": "full-kit-metals",
+        "duration_seconds": 22.974604166666666,
+        "source_dc_dbfs": -135.54026178360047,
+        "source_peak_dbfs": -26.88016063814638,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "5030fcae2084d90fe8aac9cbe94d0721c5233c46275f5410cef7f45e40b669ac",
+        "source_tail_100ms_rms_dbfs": -115.73039349207683
+      },
+      {
+        "asset": "rider-6",
+        "bank": "full-kit-metals",
+        "duration_seconds": 19.853583333333333,
+        "source_dc_dbfs": -154.24369689293536,
+        "source_peak_dbfs": -51.84565702103573,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4c96399989a851d649e57023eb3930fe9b36b13a89de9d30669d39732f39cbd3",
+        "source_tail_100ms_rms_dbfs": -121.9280120884835
+      },
+      {
+        "asset": "riderbell-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.761375,
+        "source_dc_dbfs": -118.13634788140276,
+        "source_peak_dbfs": -52.484959589389504,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "661c55f92f8b7e1dc7b133298f4a37568481bd35df34787e3ddee65e4af49907",
+        "source_tail_100ms_rms_dbfs": -106.15056314269285
+      },
+      {
+        "asset": "riderbell-11",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.8061875,
+        "source_dc_dbfs": -125.75513988740751,
+        "source_peak_dbfs": -27.218355832670905,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "bfc417e64ecd4e9c3626e898672d9100f8976f4ba62c76f463564d23d09ed91e",
+        "source_tail_100ms_rms_dbfs": -112.97512872736733
+      },
+      {
+        "asset": "riderbell-13",
+        "bank": "full-kit-metals",
+        "duration_seconds": 6.0120625,
+        "source_dc_dbfs": -125.85901735265479,
+        "source_peak_dbfs": -25.20933734884476,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "fc54d10e41c36bbe6e41b5bfa1ad5e936decc0fb426f2fe5a19f2b63ed28e66d",
+        "source_tail_100ms_rms_dbfs": -110.79020158732652
+      },
+      {
+        "asset": "riderbell-16",
+        "bank": "full-kit-metals",
+        "duration_seconds": 9.631395833333332,
+        "source_dc_dbfs": -131.337304041397,
+        "source_peak_dbfs": -21.957774489107315,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "f5745068a5d7700f7beb809f5197918ae12ff3c8054d652806c5cac4c1b1dc64",
+        "source_tail_100ms_rms_dbfs": -114.52699795719504
+      },
+      {
+        "asset": "riderbell-18",
+        "bank": "full-kit-metals",
+        "duration_seconds": 15.065833333333334,
+        "source_dc_dbfs": -122.5600170418224,
+        "source_peak_dbfs": -18.40390665054915,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "0726299f8a11bf7b6e5167d2298a34486008aac7837cfc3efd5279ab8e852dd3",
+        "source_tail_100ms_rms_dbfs": -117.93594522591917
+      },
+      {
+        "asset": "riderbell-3",
+        "bank": "full-kit-metals",
+        "duration_seconds": 5.2493125,
+        "source_dc_dbfs": -120.19617327827937,
+        "source_peak_dbfs": -41.22270341869506,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "35291bd61f4e44f46b385ca2f5ddd4facdc88af44a03e6391a03ebf87f151832",
+        "source_tail_100ms_rms_dbfs": -108.57244846692033
+      },
+      {
+        "asset": "riderbell-6",
+        "bank": "full-kit-metals",
+        "duration_seconds": 4.203,
+        "source_dc_dbfs": -114.13438770068123,
+        "source_peak_dbfs": -38.19044633329109,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "1376037aabf03fcd9692507769ef7c3afd01e598060802ebfcf8d28c79d24953",
+        "source_tail_100ms_rms_dbfs": -106.14506937638413
+      },
+      {
+        "asset": "riderbell-8",
+        "bank": "full-kit-metals",
+        "duration_seconds": 7.964770833333334,
+        "source_dc_dbfs": -132.62233411155103,
+        "source_peak_dbfs": -31.219135966919225,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "765cb50a68c61059cb9070ed3e86cde76129a207612403014915c342cc66da6d",
+        "source_tail_100ms_rms_dbfs": -110.49274811195048
+      },
+      {
+        "asset": "splashl-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.8909375,
+        "source_dc_dbfs": -130.36201376767454,
+        "source_peak_dbfs": -51.28619624793865,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "daebbaa0da9664a144211a42406c08d489facbd948075bd86d5429f990168557",
+        "source_tail_100ms_rms_dbfs": -94.34251629252623
+      },
+      {
+        "asset": "splashl-10",
+        "bank": "full-kit-metals",
+        "duration_seconds": 3.0718958333333335,
+        "source_dc_dbfs": -113.41609042067486,
+        "source_peak_dbfs": -24.438950834141885,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "295f120b3eea101699cf5ac2e8a4dda8893cd04c36820c70a4d1641ce6bf5cfb",
+        "source_tail_100ms_rms_dbfs": -90.89921650063941
+      },
+      {
+        "asset": "splashl-11",
+        "bank": "full-kit-metals",
+        "duration_seconds": 3.0089375,
+        "source_dc_dbfs": -139.98512423966588,
+        "source_peak_dbfs": -23.69966102605077,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "e7d5a582b5caf16736f97263239b4328809f167dd380d43a4decb2632ab7f43c",
+        "source_tail_100ms_rms_dbfs": -95.73659871432504
+      },
+      {
+        "asset": "splashl-2",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.8088541666666667,
+        "source_dc_dbfs": -110.94484849604044,
+        "source_peak_dbfs": -49.88133595377762,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "db1c292639c67eb61d633dc39adc7faf3b44411bb91f9b6a867c9b5a0a6fcf18",
+        "source_tail_100ms_rms_dbfs": -94.74731851278493
+      },
+      {
+        "asset": "splashl-4",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.4604375,
+        "source_dc_dbfs": -135.50031944022558,
+        "source_peak_dbfs": -39.8165129820683,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "dc54751f45746a64c4e07a571a8c090848f3b6487ece7f7dc76aa325a36ebd17",
+        "source_tail_100ms_rms_dbfs": -93.48929532394655
+      },
+      {
+        "asset": "splashl-5",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.9386875,
+        "source_dc_dbfs": -119.40033336655345,
+        "source_peak_dbfs": -37.79302659319765,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "3a433489548e3cac465ff077fee16253325c676ff866361f30ccdf1802ba8d3a",
+        "source_tail_100ms_rms_dbfs": -93.88854808789307
+      },
+      {
+        "asset": "splashl-7",
+        "bank": "full-kit-metals",
+        "duration_seconds": 3.1001041666666667,
+        "source_dc_dbfs": -123.66998347612815,
+        "source_peak_dbfs": -29.203642533373795,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "6ad487fd674dedee8732f5c51404450ec423119a6aeb4567280cdf5c9df38d8e",
+        "source_tail_100ms_rms_dbfs": -90.51132722832527
+      },
+      {
+        "asset": "splashl-8",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.9726458333333334,
+        "source_dc_dbfs": -113.10857824261134,
+        "source_peak_dbfs": -24.65645024742657,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "9250afa093674209e59424251f1831afa1fe3a1474deb4cd49e16dc9a1f0704f",
+        "source_tail_100ms_rms_dbfs": -95.76982233484402
+      },
+      {
+        "asset": "splashr-1",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.6754791666666666,
+        "source_dc_dbfs": -106.84345407027136,
+        "source_peak_dbfs": -52.10376632225561,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "ab29ba02bdf6c1129e1e898f8d0646d4468b865a84ad4b3d9cfb2504becd990f",
+        "source_tail_100ms_rms_dbfs": -95.95746884622828
+      },
+      {
+        "asset": "splashr-2",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.8432291666666667,
+        "source_dc_dbfs": -119.80146671449388,
+        "source_peak_dbfs": -41.86715813639211,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "09708ec79ad25aceeecfca777ab721bd0b34a25ca3c75e9a497a4a02b9f6cb13",
+        "source_tail_100ms_rms_dbfs": -94.45297381058279
+      },
+      {
+        "asset": "splashr-3",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.0869791666666666,
+        "source_dc_dbfs": -102.53955612501909,
+        "source_peak_dbfs": -30.91664046105173,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "ee77e58a2fb544f7be2e33702aeffb5e7a43e9b11ce75017b45801df1ca73901",
+        "source_tail_100ms_rms_dbfs": -96.35141736760646
+      },
+      {
+        "asset": "splashr-4",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.1531875,
+        "source_dc_dbfs": -119.09357617413944,
+        "source_peak_dbfs": -30.00455504754691,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "a1aa890dc4b893624cdfc3de6aecaabeefcc1a8679d08900feac5b2d0362bb2a",
+        "source_tail_100ms_rms_dbfs": -95.5365795963067
+      },
+      {
+        "asset": "splashr-5",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.0241666666666664,
+        "source_dc_dbfs": -133.7649028383971,
+        "source_peak_dbfs": -26.35002000713846,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "7c6085237f3e918f082db6e45b30bcebdb4d4585c5f083ed2074235c444e8f29",
+        "source_tail_100ms_rms_dbfs": -95.82793916420886
+      },
+      {
+        "asset": "splashr-6",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.0288333333333335,
+        "source_dc_dbfs": -114.5046917377637,
+        "source_peak_dbfs": -25.293129804145472,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "06d813ac5ba1b23aa28bbd9550dcded0270eaf81092b4e45409f5b25f4cde14b",
+        "source_tail_100ms_rms_dbfs": -94.69152480367164
+      },
+      {
+        "asset": "splashr-7",
+        "bank": "full-kit-metals",
+        "duration_seconds": 1.9126666666666667,
+        "source_dc_dbfs": -107.68350121352915,
+        "source_peak_dbfs": -22.62291068139307,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "4b82a8f702b02a7d9486bb5015ef3d3c08d7f87b011ad7118cf13d47800e9a7c",
+        "source_tail_100ms_rms_dbfs": -93.86701024617166
+      },
+      {
+        "asset": "splashr-8",
+        "bank": "full-kit-metals",
+        "duration_seconds": 2.0594166666666665,
+        "source_dc_dbfs": -114.04156564423664,
+        "source_peak_dbfs": -20.78821347534841,
+        "source_relative_residual_db": -600.0,
+        "source_sha256": "eb8792c3586065dbb104abce8d463a2cb56d11459a4053a6c0e39e00c28df949",
+        "source_tail_100ms_rms_dbfs": -91.45891686319915
+      }
+    ],
+    "reference": "Licensed source WAV; native pitch; first 128 frames and final 5 ms fade excluded. No decay trimming. Tail RMS includes musical decay, not an isolated recording of room noise.",
+    "references": [
+      {
+        "asset": "cross-stick-1",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "547988ba9c75ac4cb54222c240f0ee56f6224b0578fa87a044e182b9cfd8c135",
+        "source_url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Membranophones/Struck%20Membranophones/Snare%20Drum%2C%20Modern%203/Snare4_Xstick_v2_rr1_Mid.wav"
+      },
+      {
+        "asset": "ftom1-11",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "3e80238f209d526f27145b8c818dbdf504106efe2e2ec964085b8869ef2d07f2",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/FTom1/samples/11-FTom1.wav"
+      },
+      {
+        "asset": "ftom2-13",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "fbb9d8f9ff44796fddfa5351b2359957cdc9935b870ef98b7be3e5bc3a693cbe",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/FTom2/samples/13-FTom2.wav"
+      },
+      {
+        "asset": "kdruml-19",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "d549eb659622958fa86d731e12fd99c07fbc8944c3ee39ef3c156fb5f7c77bba",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/KDrumL/samples/19-KDrumL.wav"
+      },
+      {
+        "asset": "kdrumr-18",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "cc9ceac0765288ce5bd0af4e80b20a50c53d8074511427b01e937514c86f59c9",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/KDrumR/samples/18-KDrumR.wav"
+      },
+      {
+        "asset": "snare-39",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "56d8555fd582abea5f52ab5d9e83c1248eaf126a59b06abf9b373c6eae00e284",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/Snare/samples/39-Snare.wav"
+      },
+      {
+        "asset": "snarerim-7",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "9b475bd91e1a727ae98972c13c174016d87e8df8c97be3bcf930ec5144737b66",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/SnareRim/samples/7-SnareRim.wav"
+      },
+      {
+        "asset": "snarerimshot-4",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "8a1ad0d97350a3ff8dc99f6a30e018816c1f0afa07cc6db6da168bc63f8a6085",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/SnareRimShot/samples/4-SnareRimShot.wav"
+      },
+      {
+        "asset": "tom1-17",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "417cf7ca6349fdb97f31ffd69ee2614b65d2079f807d4605a76da28d4c44b5d1",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/Tom1/samples/17-Tom1.wav"
+      },
+      {
+        "asset": "tom2-14",
+        "bank": "full-kit-shells",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "54df9ff22a7e22b121d9241b99a736b6da8682ab3ad06b173be2b626b0201088",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/Tom2/samples/14-Tom2.wav"
+      },
+      {
+        "asset": "chinar-8",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "3fdd4f28f1d2fb53e9759db7377b6f822b305876f8a5bebd577d63e50ad1d703",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/ChinaR/samples/8-ChinaR.wav"
+      },
+      {
+        "asset": "crashl-8",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "9b87de39e993055d3ec074f961de085762eb3fe730cde4968f2b20d557a2fb27",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/CrashL/samples/8-CrashL.wav"
+      },
+      {
+        "asset": "crashlstopped-4",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "fdb149c07e132976ff40fd9ebb5ca49a6479b7ff5b5b976f347e71cdf2156c4e",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/CrashLStopped/samples/4-CrashLStopped.wav"
+      },
+      {
+        "asset": "crashr-6",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "f8127d39ca9a6db53ea7fa0319bb6b50f0d6a6c61302fc39924be58f0ae3e490",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/CrashR/samples/6-CrashR.wav"
+      },
+      {
+        "asset": "crashrstopped-3",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "d1149a354d6a89cc661933bdce492c4b995f9be9ef469a233939b7a98215f120",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/CrashRStopped/samples/3-CrashRStopped.wav"
+      },
+      {
+        "asset": "hihatclosed-15",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "d1024d4aa9db299f838f8c9a66c860a953717119abb738760e2a0cc539a3c17a",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/HihatClosed/samples/15-HihatClosed.wav"
+      },
+      {
+        "asset": "hihatclosednopedal-12",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "c1d3785a41f0cf7b78031362d73074eb99332b97be2f36cc1f3a863bbda69d66",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/HihatClosedNoPedal/samples/12-HihatClosedNoPedal.wav"
+      },
+      {
+        "asset": "hihatopen-17",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "165caf24658d42e93bb5d7ef34c48608ad77a2c18ee1a88d67d8557e5f35f787",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/HihatOpen/samples/17-HihatOpen.wav"
+      },
+      {
+        "asset": "hihatpedal-4",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "9e3a5bb426d5b29cc76f39fefdb6b9559d542501730e211f71084a45e12530ac",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/HihatPedal/samples/4-HihatPedal.wav"
+      },
+      {
+        "asset": "hihatsemiopen-13",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "7a90a62a4334abcd8f9c191adc7d949af3db0d41d8a8287b016c5d149995f3b0",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/HihatSemiOpen/samples/13-HihatSemiOpen.wav"
+      },
+      {
+        "asset": "rider-11",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "78b2d865eb66879c93c532a0da8d16c8503e7b7aebafb4563f3db465d72bc6a5",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/RideR/samples/11-RideR.wav"
+      },
+      {
+        "asset": "riderbell-6",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "1376037aabf03fcd9692507769ef7c3afd01e598060802ebfcf8d28c79d24953",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/RideRBell/samples/6-RideRBell.wav"
+      },
+      {
+        "asset": "splashl-4",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "dc54751f45746a64c4e07a571a8c090848f3b6487ece7f7dc76aa325a36ebd17",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/SplashL/samples/4-SplashL.wav"
+      },
+      {
+        "asset": "splashr-3",
+        "bank": "full-kit-metals",
+        "max_20ms_envelope_error_db_above_minus40": 0.0,
+        "max_spectral_error_db_above_minus60": 0.0,
+        "residual_db": -600.0,
+        "source_sha256": "ee77e58a2fb544f7be2e33702aeffb5e7a43e9b11ce75017b45801df1ca73901",
+        "source_url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar#CrocellKit_Stereo_MIX/SplashR/samples/3-SplashR.wav"
+      }
+    ],
+    "summary": {
+      "assets": 322,
+      "max_source_duration_seconds": 29.112916666666667,
+      "reference_takes": 24,
+      "worst_envelope_error_db": 0.0,
+      "worst_residual_db": -600.0,
+      "worst_spectral_error_db": 0.0
+    }
+  },
+  "source_zero_residual_encoding": "-600 dB is the numeric log floor for exact zero residual, not an observed noise floor",
+  "wasm": {
+    "results": [
+      {
+        "bank": "full-kit-shells",
+        "block": 128,
+        "layers": 1,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 31.734374999814463,
+        "p50_us": 4.061999999976251,
+        "p99_us": 8.338999999978114,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 46,
+        "voices": 1
+      },
+      {
+        "bank": "full-kit-shells",
+        "block": 128,
+        "layers": 2,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 40.92968750057935,
+        "p50_us": 5.239000000074157,
+        "p99_us": 25.337999999464955,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 39,
+        "voices": 1
+      },
+      {
+        "bank": "full-kit-shells",
+        "block": 128,
+        "layers": 1,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 33.51367187498511,
+        "p50_us": 34.31799999998475,
+        "p99_us": 96.85999999965134,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 46,
+        "voices": 8
+      },
+      {
+        "bank": "full-kit-shells",
+        "block": 128,
+        "layers": 2,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 42.07421874991013,
+        "p50_us": 43.083999999907974,
+        "p99_us": 115.034000000378,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 39,
+        "voices": 8
+      },
+      {
+        "bank": "full-kit-shells",
+        "block": 128,
+        "layers": 1,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 30.485839843663598,
+        "p50_us": 62.43499999982305,
+        "p99_us": 374.6099999998478,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 46,
+        "voices": 16
+      },
+      {
+        "bank": "full-kit-shells",
+        "block": 128,
+        "layers": 2,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 40.717285155977834,
+        "p50_us": 83.3889999994426,
+        "p99_us": 166.9930000007298,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 39,
+        "voices": 16
+      },
+      {
+        "bank": "full-kit-metals",
+        "block": 128,
+        "layers": 1,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 31.554687510038093,
+        "p50_us": 4.039000001284876,
+        "p99_us": 7.315000000744476,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 85,
+        "voices": 1
+      },
+      {
+        "bank": "full-kit-metals",
+        "block": 128,
+        "layers": 2,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 43.49999998964904,
+        "p50_us": 5.567999998675077,
+        "p99_us": 19.213999999919906,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 68,
+        "voices": 1
+      },
+      {
+        "bank": "full-kit-metals",
+        "block": 128,
+        "layers": 1,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 32.62207031262676,
+        "p50_us": 33.4050000001298,
+        "p99_us": 91.04699999988952,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 85,
+        "voices": 8
+      },
+      {
+        "bank": "full-kit-metals",
+        "block": 128,
+        "layers": 2,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 42.53808593723818,
+        "p50_us": 43.558999999731896,
+        "p99_us": 100.65399999984947,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 68,
+        "voices": 8
+      },
+      {
+        "bank": "full-kit-metals",
+        "block": 128,
+        "layers": 1,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 31.716308594553766,
+        "p50_us": 64.95500000164611,
+        "p99_us": 152.61800000007497,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 85,
+        "voices": 16
+      },
+      {
+        "bank": "full-kit-metals",
+        "block": 128,
+        "layers": 2,
+        "memory_growth_bytes": 0,
+        "ns_sample_voice": 43.07031250050386,
+        "p50_us": 88.2080000010319,
+        "p99_us": 172.92300000190153,
+        "rate": 48000,
+        "ratio": 1,
+        "velocity": 68,
+        "voices": 16
+      }
+    ],
+    "runtime": "Node 26.8.1 / V8 14.6.202.34-node.28",
+    "scenario": "verified real banks, native pitch, repeated notes and bounded steal tails; note setup excluded; render-time memory fixed"
+  }
+}

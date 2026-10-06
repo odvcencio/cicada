@@ -12,8 +12,11 @@ type Envelope struct {
 // in a round-robin group share Group, Layer, key/velocity ranges and Count;
 // Position is zero based. Release zones play on dampening, after pedal-up.
 type Zone struct {
-	ChokeGroup                                 uint8
-	OneShot                                    bool
+	ChokeGroup uint8
+	OneShot    bool
+	// ChokeSustain lets a cymbal join a choke group without damping older hits.
+	// A dedicated zone in the same group with ChokeSustain false damps them.
+	ChokeSustain                               bool
 	Region                                     Region
 	KeyLow, KeyHigh, VelocityLow, VelocityHigh uint8
 	Layer                                      uint8
@@ -138,7 +141,7 @@ func NewInstrument(rate int, zones []Zone, config InstrumentConfig) (*Instrument
 			if z.Release != o.Release || z.Group != o.Group || z.Layer != o.Layer {
 				continue
 			}
-			if o.KeyLow != z.KeyLow || o.KeyHigh != z.KeyHigh || o.VelocityLow != z.VelocityLow || o.VelocityHigh != z.VelocityHigh || o.Count != z.Count || o.ChokeGroup != z.ChokeGroup || o.OneShot != z.OneShot || seen&(1<<o.Position) != 0 {
+			if o.KeyLow != z.KeyLow || o.KeyHigh != z.KeyHigh || o.VelocityLow != z.VelocityLow || o.VelocityHigh != z.VelocityHigh || o.Count != z.Count || o.ChokeGroup != z.ChokeGroup || o.OneShot != z.OneShot || o.ChokeSustain != z.ChokeSustain || seen&(1<<o.Position) != 0 {
 				return nil, Error("inconsistent or duplicate round robin zone")
 			}
 			seen |= 1 << o.Position
@@ -263,7 +266,7 @@ func (p *Instrument) NoteOn(note, velocity uint8) (Handle, error) {
 	}
 
 	choke := p.zones[zs[0]].ChokeGroup
-	if choke != 0 {
+	if choke != 0 && !p.zones[zs[0]].ChokeSustain {
 		for i := range p.voices {
 			old := &p.voices[i]
 			if old.active && p.zones[old.zones[0]].ChokeGroup == choke {

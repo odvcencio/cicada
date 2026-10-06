@@ -114,7 +114,7 @@ func prepare() int32 {
 				return -1
 			}
 		}
-		if int(d[0]) >= assetCount || d[1] > 127 || d[2] > 127 || d[3] > 127 || d[4] > 127 || d[5] > 127 || d[6] > 127 || d[7] > 255 || d[8] > 31 || d[9] > 32 || d[10] > 1 || d[15] > 1 || d[19] > 511 {
+		if int(d[0]) >= assetCount || d[1] > 127 || d[2] > 127 || d[3] > 127 || d[4] > 127 || d[5] > 127 || d[6] > 127 || d[7] > 255 || d[8] > 31 || d[9] > 32 || d[10] > 1 || d[15] > 1 || d[19] > 1023 {
 			return -1
 		}
 		r := assets[int(d[0])]
@@ -128,7 +128,7 @@ func prepare() int32 {
 		r.LoopStart = int(d[16])
 		r.LoopEnd = int(d[17])
 		r.Crossfade = int(d[18])
-		zones[i] = sample.Zone{ChokeGroup: uint8(int(d[19]) & 255), OneShot: int(d[19])&256 != 0, Region: r, KeyLow: uint8(d[2]), KeyHigh: uint8(d[3]), VelocityLow: uint8(d[4]), VelocityHigh: uint8(d[5]), Layer: uint8(d[6]), Group: uint8(d[7]), Position: uint8(d[8]), Count: uint8(d[9]), Release: d[10] == 1, Gain: d[11], TuneCents: d[12]}
+		zones[i] = sample.Zone{ChokeGroup: uint8(int(d[19]) & 255), OneShot: int(d[19])&256 != 0, ChokeSustain: int(d[19])&512 != 0, Region: r, KeyLow: uint8(d[2]), KeyHigh: uint8(d[3]), VelocityLow: uint8(d[4]), VelocityHigh: uint8(d[5]), Layer: uint8(d[6]), Group: uint8(d[7]), Position: uint8(d[8]), Count: uint8(d[9]), Release: d[10] == 1, Gain: d[11], TuneCents: d[12]}
 	}
 	c := sample.InstrumentConfig{Voices: int(setup[0]), Amp: sample.Envelope{Attack: setup[1], Decay: setup[2], Sustain: setup[3], Release: setup[4]}, Filter: sample.Envelope{Attack: setup[5], Decay: setup[6], Sustain: setup[7], Release: setup[8]}, Cutoff: setup[9], FilterDepth: setup[10], Gain: setup[11], TuneCents: setup[12], Humanize: sample.Humanize{DelayMS: setup[13], Velocity: setup[14], Cents: setup[15], Seed: uint64(setup[16]) | uint64(setup[17])<<32}}
 	p, err := sample.NewInstrument(rate, zones, c)

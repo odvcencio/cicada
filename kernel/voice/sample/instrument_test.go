@@ -255,6 +255,50 @@ func TestInstrumentOneShotAndHatChoke(t *testing.T) {
 	}
 }
 
+func TestInstrumentCymbalOverlapAndDedicatedChoke(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Voices = 8
+	crash := mappedZone(.2, 64, 0, 0, 1, false)
+	crash.KeyLow, crash.KeyHigh, crash.ChokeGroup = 60, 60, 2
+	crash.OneShot, crash.ChokeSustain = true, true
+	splash := crash
+	splash.KeyLow, splash.KeyHigh, splash.Group, splash.ChokeGroup = 61, 61, 1, 3
+	choke := crash
+	choke.KeyLow, choke.KeyHigh, choke.Group = 62, 62, 2
+	choke.ChokeSustain, choke.Gain = false, 0
+	p := newMapped(t, []Zone{crash, splash, choke}, c)
+	first, _ := p.NoteOn(60, 127)
+	settled(p)
+	second, _ := p.NoteOn(60, 127)
+	other, _ := p.NoteOn(61, 127)
+	if x := settled(p); math.Abs(float64(x)-.6) > 1e-6 {
+		t.Fatalf("overlapping cymbals: %g", x)
+	}
+	p.NoteOff(first)
+	if p.voices[first.Slot].off || p.voices[second.Slot].off {
+		t.Fatal("one-shot cymbals lost their natural decay")
+	}
+	p.NoteOn(62, 127)
+	for i := 0; i < 96; i++ {
+		p.NextStereo()
+	}
+	if p.voices[first.Slot].active || p.voices[second.Slot].active || !p.voices[other.Slot].active {
+		t.Fatal("dedicated choke must damp every crash and preserve the splash")
+	}
+	if x := settled(p); math.Abs(float64(x)-.2) > 1e-6 {
+		t.Fatalf("choke leaked PCM: %g", x)
+	}
+}
+
+func TestInstrumentRejectsInconsistentChokeSustain(t *testing.T) {
+	a := mappedZone(.2, 64, 0, 0, 2, false)
+	b := mappedZone(.3, 64, 0, 1, 2, false)
+	b.ChokeSustain = true
+	if _, err := NewInstrument(48000, []Zone{a, b}, DefaultInstrumentConfig()); err == nil {
+		t.Fatal("a round-robin cycle cannot alternate choke behavior")
+	}
+}
+
 func TestInstrumentEventSeedDoesNotDependOnOtherTriggers(t *testing.T) {
 	c := DefaultInstrumentConfig()
 	c.Humanize = Humanize{Seed: 42, Velocity: 10, Cents: 10, DelayMS: 5}
