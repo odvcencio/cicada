@@ -5,7 +5,7 @@ This specification defines Cicada source editions 1 and 2, their typed project m
 ## Status labels
 
 - **Implemented** means the construct is available in the current build and accepted by the validator.
-- **Accepted** means the owner approved the design, but it is not available in the current build. Examples use cicada-accepted fences and are skipped by the documentation validator until the construct lands.
+- **Accepted** means the design has been reviewed, but it is not available in the current build. Examples use cicada-accepted fences and are skipped by the documentation validator until the construct lands.
 - **Proposed** means the design has not been approved.
 
 Both source editions are implemented. New projects use edition 2, which keeps edition-1 meanings and requires named mixer spellings. See [edition 1](edition-1.md), [edition 2](edition-2.md), the [semantic JSON mapping](semantic-model.md), [accepted syntax](accepted.md), and the [EBNF appendix](appendix.ebnf).

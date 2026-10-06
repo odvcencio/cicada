@@ -1,6 +1,6 @@
 # Sample instrument acceptance targets
 
-The sampler is ready for listening review when the following measurable gates pass. The owner's listening comparison remains the acceptance gate for the shipped sounds.
+The following measurements check sampler behavior and runtime limits. Listening comparisons assess the supplied sounds.
 
 The behaviour reference is Kontakt's documented mapping zones, velocity crossfades, cycle round robin, release triggers, sustain loops and voice stealing: <https://docs.native-instruments.com/ni-tech-manuals/kontakt-manual/en/classic-view>. These are behaviour references, not a claim of sound equivalence. No proprietary DAW recordings or samples are distributed.
 

@@ -1,6 +1,6 @@
 # Full kit acceptance targets
 
-Define the following gates before selecting or processing recordings. The kit is ready for owner listening review when the reproducible measurements pass; listening acceptance remains pending until the owner approves the A/B pack.
+Define the following gates before selecting or processing recordings. The reproducible measurements check playback behavior; A/B comparisons assess the supplied sounds.
 
 Behavior references are [Studio Drummer's velocity and microphone controls](https://docs.native-instruments.com/ni-tech-manuals/studio-drummer-manual/en/the-performance-view), [Battery's hi-hat choke groups](https://support.native-instruments.com/support/solutions/articles/69000879959-how-to-set-up-battery-4-cells-for-hi-hat-choking), and [Kontakt's round-robin mapping](https://docs.native-instruments.com/ni-tech-manuals/kontakt-manual/en/classic-view). These describe behaviors to reproduce, not commercial recordings or a claim of equal sound quality.
 

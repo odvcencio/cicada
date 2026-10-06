@@ -134,7 +134,7 @@ or cabinet emulation; it has no sympathetic strings, fret buzz or feedback.
 
 ## Graph delays and plucked strings
 
-**Status:** Implemented in source editions 1 and 2; the example voices remain experimental pending listening acceptance.
+**Status:** Implemented in source editions 1 and 2; the example voices remain experimental; their acoustic realism is unverified.
 
 **Syntax:** `delay(audio, ms)` and `comb(audio, ms, unit, unit)` are ordinary typed function calls in an instrument's mono voice. Unit divided by Hz produces ms: `1 / pitch` is one period, and `2 / pitch` is two periods. Bare `1 / 440` remains a unit value and cannot supply a delay time. Semantic JSON preserves Hz-derived division as the two-argument `period` expression operator; source conversion writes it back as `/`, retaining the numerator's unit type and denominator's Hz type even for numeric literals.
 

@@ -8,7 +8,7 @@ Graph opcodes, the modal pack and frozen-v15 DAW integration are unchanged.
 No samples or measured impulse responses are used.
 
 These are playable physical-model prototypes, not qualified realistic instruments.
-No human acoustic listening acceptance is claimed. Passing DSP tests, tuning
+Acoustic realism is unverified. Passing DSP tests, tuning
 measurements and headless browser execution does not establish convincing timbre.
 
 The guitar is also available from edition-2 scores as the explicitly experimental

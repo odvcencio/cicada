@@ -90,7 +90,7 @@ func TestRenderDriftAB(t *testing.T) {
 		t.Skip("set CICADA_RENDER_DRIFT_DIR after capturing before-change renders")
 	}
 	var readme, metrics bytes.Buffer
-	fmt.Fprintln(&readme, "DO NOT MERGE: awaiting owner listening test")
+	fmt.Fprintln(&readme, "Compare the rendered pairs to assess the audible changes.")
 	fmt.Fprintln(&readme, "A (*.offline.wav): cicada render from main including #92, before the chance-slot fix. B (*.unified.wav): Engine.Render after this fix, with limiter/insert latency removed.")
 	fmt.Fprintln(&readme, "Additional *.corrected-offline.wav files show the fixed offline renderer. They should match B exactly. No engine production code changed; no goldens or thresholds changed.")
 	fmt.Fprintln(&readme, "All listening files: stereo, 48 kHz, PCM16; first 16 bars or whole song if shorter; 3 s tail; normalization and dither off. No audio has been played.")
@@ -140,7 +140,7 @@ func TestRenderDriftAB(t *testing.T) {
 		fmt.Fprintf(&readme, "\n%s.offline.wav / %s.unified.wav: %d bars + 3 s, %.6f s (%d frames), peak difference %.9f, RMS difference %.9f\n", name, name, bars, float64(len(a.left))/48000, len(a.left), peak, rms)
 		fmt.Fprintf(&metrics, "METRIC %s before_mean_db=%.9f before_max_db=%.1f after_mean_db=%.9f after_max_db=%.1f ab_pcm16_peak=%.9f ab_pcm16_rms=%.9f\n", name, before.MeanDB, before.MaxDB, after.MeanDB, after.MaxDB, peak, rms)
 	}
-	fmt.Fprintln(&readme, "\nBefore compares baseline offline against baseline engine. After compares corrected offline against the unchanged engine. The owner should listen to A/B to judge the changed seeded closed-hat decisions in cicada-chorus; other pairs are identical.")
+	fmt.Fprintln(&readme, "\nBefore compares baseline offline against baseline engine. After compares corrected offline against the unchanged engine. Listen to A/B to assess the changed seeded closed-hat decisions in cicada-chorus; other pairs are identical.")
 	readme.Write(metrics.Bytes())
 	for name, data := range map[string][]byte{"README.txt": readme.Bytes(), "metrics.txt": metrics.Bytes()} {
 		if err := os.WriteFile(filepath.Join(dir, name), data, 0644); err != nil {

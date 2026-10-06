@@ -1,6 +1,6 @@
 # Accepted source syntax and implementation status
 
-These owner-accepted designs extend Cicada's source language. Each section says what is available in the current build. A `cicada-accepted` example records syntax that the validator does not yet accept; the documentation test skips those examples until the feature lands.
+These sections describe Cicada language extensions. Each section says what is available in the current build. A `cicada-accepted` example records syntax that the validator does not yet accept; the documentation test skips those examples until the feature lands.
 
 Runnable examples in this file use source edition 2. Examples marked `cicada-accepted` are designs for later support.
 
@@ -16,7 +16,7 @@ Runnable examples in this file use source edition 2. Examples marked `cicada-acc
 
 ## Authored graph delay and comb
 
-**Status:** Implemented. Authored pluck and slapback voices are experimental pending owner listening acceptance.
+**Status:** Implemented. Authored pluck and slapback voices are experimental with acoustic realism dependent on the recording and synthesis settings.
 
 **Syntax and meaning:** `delay(audio, ms)` provides a linearly interpolated tap. `comb(audio, ms, unit, unit)` provides allpass interpolation, feedback, and one-pole damping, with the complete loop period tuned at its fundamental. `1 / pitch` has type ms. See [graph delays and plucked strings](edition-2.md#graph-delays-and-plucked-strings) for units, limits, diagnostics, interpolation, and image compatibility.
 
@@ -107,7 +107,7 @@ song { main }
 
 ## Audio assets, clips and samplers
 
-**Status:** Implemented as edition-2 score and project data. `cicada check` verifies assets. Playback, capture, retained-take recovery and Studio controls belong to the other Phase 1 lanes.
+**Status:** Implemented as edition-2 score and project data. `cicada check` verifies assets. Playback, capture, retained-take recovery and Studio controls use separate host adapters.
 
 **Syntax (EBNF):**
 
@@ -117,7 +117,7 @@ clip_decl ::= "clip" , identifier , identifier , "{" , { param_decl } , "}" ;
 sampler_decl ::= "sampler" , identifier , "{" , { param_decl } , "}" ;
 ```
 
-**Meaning:** An asset identifies immutable file bytes by a project-relative path and SHA-256. A clip defines a half-open source region `[start, end)` with gain and fades. A scene binds a clip to an `audio` track. That binding denotes one start on scene entry; playback scheduling is implemented by the engine lane. A sampler names one whole-asset region and accepts note patterns. `loop` means the whole region; loop bounds and crossfades are later work.
+**Meaning:** An asset identifies immutable file bytes by a project-relative path and SHA-256. A clip defines a half-open source region `[start, end)` with gain and fades. A scene binds a clip to an `audio` track. That binding denotes one start on scene entry; the engine schedules playback. A sampler names one whole-asset region and accepts note patterns. `loop` means the whole region; loop bounds and crossfades are later work.
 
 **Types and units:** Required asset fields are `sha256` (64 lowercase hex digits in a quoted string), `format = wav`, positive integer `frames`, integer `rate` from 8000 to 384000Hz, and `channels` from 1 to 2. Optional `source` is `recorded`, `imported`, or `generated`. WAV validation supports PCM 16/24/32-bit and IEEE float32, including ancillary RIFF chunks. It verifies rate, channels and frame count against the declaration without decoding samples. Paths and symlinks must stay inside the project directory.
 

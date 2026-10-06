@@ -57,5 +57,5 @@ each listener's A-or-B choice before revealing the key. X is a byte-identical co
 of one reference, so byte comparison or checksum inspection invalidates a trial.
 
 This command prepares listening evidence. It does not collect listener judgments
-or establish acoustic equivalence. The roadmap's ten-listener acceptance requires
-an actual listening session and analysis of the collected responses.
+or establish acoustic equivalence. Assessing equivalence requires a listening
+session and analysis of the collected responses.

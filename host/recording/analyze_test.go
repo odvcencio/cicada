@@ -14,9 +14,12 @@ import (
 
 func fixture(t *testing.T) Audio {
 	t.Helper()
-	b, err := os.ReadFile("testdata/pencil-taps.wav")
+	b, err := os.ReadFile("testdata/taps.wav")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if Digest(b) != "2e05dd4b28e1a8c4674e502590483466918068779d047775b6c9708c1598b0d8" {
+		t.Fatal("synthetic taps fixture checksum changed")
 	}
 	a, err := DecodeWAV(b)
 	if err != nil {
@@ -53,7 +56,7 @@ func TestFifteenTapsToPinnedPack(t *testing.T) {
 			t.Errorf("normalized peak %f", peak)
 		}
 	}
-	p, err := Build("pencil", hits, 3)
+	p, err := Build("recorded", hits, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,7 +74,7 @@ func TestFifteenTapsToPinnedPack(t *testing.T) {
 		t.Fatal("velocity layers", counts)
 	}
 	for _, asset := range p.Manifest.Assets {
-		if asset.License != "owner recording" || asset.SourceSHA256 != a.SHA256 {
+		if asset.License != "user recording" || asset.SourceSHA256 != a.SHA256 {
 			t.Fatal("provenance")
 		}
 		g, err := gzip.NewReader(bytes.NewReader(p.Files[asset.Path]))
@@ -103,7 +106,7 @@ func TestFifteenTapsToPinnedPack(t *testing.T) {
 	if p.Write(dir) == nil {
 		t.Fatal("overwrote existing corrupt pack")
 	}
-	p2, err := Build("pencil", hits, 3)
+	p2, err := Build("recorded", hits, 3)
 	if err != nil || p2.Pin != p.Pin {
 		t.Fatal("nondeterministic pack")
 	}
@@ -164,7 +167,7 @@ func TestManifestWireFormat(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := Build("pencil", h, 3)
+	p, err := Build("recorded", h, 3)
 	if err != nil {
 		t.Fatal(err)
 	}

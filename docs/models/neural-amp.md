@@ -29,7 +29,7 @@ four tanh channels and a learned linear readout. All 36 coefficients are trained
 there are no biases, so zero input with empty history produces exact silence.
 It is a small original amp, rather than a loader for Neural Amp Modeler `.nam` files
 or a capture of commercial hardware. Its fictional reference combines nonlinear
-saturation and a short tone-filter memory. Human listening acceptance is pending.
+saturation and a short tone-filter memory. Acoustic similarity depends on the fitted model and source recording.
 
 [`kernel/amp/model.json`](../../kernel/amp/model.json) pins the architecture, seed,
 quantization, held-out results and SHA-256 of little-endian int16 convolution

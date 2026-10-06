@@ -63,9 +63,8 @@ initial retry delay that doubles to a 1 s cap. Deferred failures cannot monopoli
 current-page priority or starve other readers' prefetch. Successful publication
 clears only that page's error; retired demand is reclaimed before records are
 reused. Retry/error records never exceed the admitted arena's page count.
-This package provides lane A's
-streamed reader; arrangement scheduling and browser worker page transfer are
-separate integration work. Changing the core worklet or legacy engine is not
+This package provides a streamed reader. Hosts handle arrangement scheduling
+and browser worker page transfer. Changing the core worklet or legacy engine is not
 required to use the native page source.
 
 Checks: `go test -race ./kernel/stream ./host/sampleasset` covers one-hour

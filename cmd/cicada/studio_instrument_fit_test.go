@@ -14,7 +14,7 @@ import (
 
 func TestStudioInstrumentFitAndOfflineModel(t *testing.T) {
 	handler, path := studioTestHandler(t)
-	fixture := "../../host/recording/testdata/pencil-taps.wav"
+	fixture := "../../host/recording/testdata/taps.wav"
 	data, err := os.ReadFile(fixture)
 	if err != nil {
 		t.Fatal(err)
@@ -67,7 +67,7 @@ func TestStudioInstrumentFitAndOfflineModel(t *testing.T) {
 	}
 	dir := filepath.Join(t.TempDir(), "model")
 	var output bytes.Buffer
-	if err = fitModelCommand([]string{"-o", dir, "--name", "pencil_model", "--hit", "11", fixture}, &output); err != nil {
+	if err = fitModelCommand([]string{"-o", dir, "--name", "recorded_model", "--hit", "11", fixture}, &output); err != nil {
 		t.Fatal(err)
 	}
 	if !strings.Contains(output.String(), "fitted modes") || !strings.Contains(output.String(), "sha256 =") {

@@ -7,13 +7,15 @@ globalThis.crypto = webcrypto;
 const loader = readFile(`${__dirname}/instrument-pack.js`, 'utf8')
   .then(source => import('data:text/javascript;base64,' + Buffer.from(source).toString('base64')));
 
-test('owner recordings retain checksums without invented remote provenance', async () => {
+test('user recordings retain checksums without invented remote provenance', async () => {
   const {validateManifest}=await loader;
   const manifest=JSON.parse(await readFile(`${__dirname}/../../assets/sampler/grand/manifest.json`,'utf8'));
-  for(const asset of manifest.assets) { asset.license='owner recording';asset.source_url='';asset.license_url='';delete asset.attribution; }
-  assert.equal(validateManifest(manifest),manifest);
-  manifest.assets[0].source_url='https://example.org/foreign.wav';
-  assert.throws(()=>validateManifest(manifest),/licence/);
+  for (const license of ['user recording', 'owner recording']) {
+    for(const asset of manifest.assets) { asset.license=license;asset.source_url='';asset.license_url='';delete asset.attribution; }
+    assert.equal(validateManifest(manifest),manifest);
+    manifest.assets[0].source_url='https://example.org/foreign.wav';
+    assert.throws(()=>validateManifest(manifest),/licence/);
+  }
   manifest.assets[0].source_url='';manifest.assets[0].license='unknown';
   assert.throws(()=>validateManifest(manifest),/licence/);
 });
