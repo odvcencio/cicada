@@ -83,16 +83,14 @@ func toggledChordPitch(token notation.StepToken, notes []int, pitch int) (string
 	if close < 0 || !strings.HasPrefix(token.Text, "[") {
 		return "", fmt.Errorf("chord source no longer matches the projection")
 	}
-	pitches := strings.Fields(token.Text[1:close])
+	pitches := token.ChordPitches
 	if len(pitches) != len(notes) || len(notes) < 2 || len(notes) > 4 {
 		return "", fmt.Errorf("chord source no longer matches the projection")
 	}
 	starts, ends := make([]int, len(pitches)), make([]int, len(pitches))
-	offset, remove := 1, -1
+	remove := -1
 	for i, spelling := range pitches {
-		starts[i] = offset + strings.Index(token.Text[offset:close], spelling)
-		ends[i] = starts[i] + len(spelling)
-		offset = ends[i]
+		starts[i], ends[i] = spelling.Start, spelling.End
 		if notes[i] == pitch {
 			remove = i
 		}
@@ -101,14 +99,21 @@ func toggledChordPitch(token notation.StepToken, notes []int, pitch int) (string
 		if len(pitches) == 2 {
 			// One pitch is scalar again. Unlike chord suffixes, scalar modifiers
 			// must be adjacent; preserve their values and the surviving spelling.
-			suffix := strings.ReplaceAll(strings.TrimSpace(token.Text[close+1:]), " ", "")
-			return pitches[1-remove] + suffix, nil
+			prefix := ""
+			if len(token.ChordComments) > 0 {
+				prefix = strings.Join(token.ChordComments, "\n") + "\n"
+			}
+			return prefix + pitches[1-remove].Text + token.ChordModifiers, nil
 		}
 		start, end := starts[remove], ends[remove]
 		if remove+1 < len(pitches) {
-			end = starts[remove+1]
+			if strings.TrimSpace(token.Text[end:starts[remove+1]]) == "" {
+				end = starts[remove+1]
+			}
 		} else {
-			start = ends[remove-1]
+			if strings.TrimSpace(token.Text[ends[remove-1]:start]) == "" {
+				start = ends[remove-1]
+			}
 		}
 		return token.Text[:start] + token.Text[end:], nil
 	}

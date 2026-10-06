@@ -112,6 +112,24 @@
         "$ref": "#/$defs/export"
       }
     },
+    "assets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/asset"
+      }
+    },
+    "clips": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/clip"
+      }
+    },
+    "samplers": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/sampler"
+      }
+    },
     "live": {
       "$ref": "#/$defs/live"
     }
@@ -119,7 +137,7 @@
   "$defs": {
     "id": {
       "type": "string",
-      "pattern": "^[a-z_][a-z0-9_-]{0,63}$"
+      "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$", "maxLength": 64
     },
     "key": {
       "type": "object",
@@ -351,7 +369,7 @@
           },
           "additionalProperties": {
             "type": "string",
-            "pattern": "^(?:[a-z_][a-z0-9_-]*|builtin\\.(?:bd|sd|ch|oh|cp|rs|lt|mt|ht|cb|cy))$"
+            "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$", "maxLength": 64
           }
         }
       }
@@ -1416,6 +1434,133 @@
         },
         "normalize": {
           "type": "boolean"
+        }
+      }
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "path",
+        "sha256",
+        "format",
+        "frames",
+        "rate_hz",
+        "channels"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "path": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "format": {
+          "const": "wav"
+        },
+        "frames": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "rate_hz": {
+          "type": "integer",
+          "minimum": 8000,
+          "maximum": 384000
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 2
+        },
+        "source": {
+          "enum": [
+            "recorded",
+            "imported",
+            "generated"
+          ]
+        }
+      }
+    },
+    "clip": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "asset",
+        "start_frame",
+        "end_frame",
+        "gain_db",
+        "fade_in_frames",
+        "fade_out_frames"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "asset": {
+          "type": "string"
+        },
+        "start_frame": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "end_frame": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gain_db": {
+          "type": "number",
+          "minimum": -60,
+          "maximum": 24
+        },
+        "fade_in_frames": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "fade_out_frames": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "sampler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "asset",
+        "root_midi",
+        "mode",
+        "voices"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "asset": {
+          "type": "string"
+        },
+        "root_midi": {
+          "type": "integer",
+          "minimum": 12,
+          "maximum": 95
+        },
+        "mode": {
+          "enum": [
+            "oneshot",
+            "loop"
+          ]
+        },
+        "voices": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
         }
       }
     },

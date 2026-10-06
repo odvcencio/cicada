@@ -1,6 +1,9 @@
 ; Cicada folds query: every braced body folds.
 
 [
+  (asset_decl)
+  (clip_decl)
+  (sampler_decl)
   (instrument_decl)
   (kit_decl)
   (voice_decl)

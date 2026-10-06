@@ -20,7 +20,7 @@
 (scene_decl name: (identifier) @name) @definition.scene
 
 ((track_decl kind: (identifier) @name) @reference.voice
-  (#not-any-of? @name "acid" "drums"))
+  (#not-any-of? @name "acid" "drums" "audio"))
 (kit_target instrument: (identifier) @name) @reference.instrument
 (scene_assignment target: (scene_target (identifier) @name)) @reference.track
 ((scene_assignment value: (scene_value (identifier) @name)) @reference.pattern
@@ -34,3 +34,24 @@
   (#any-of? @field "insert" "out" "bus"))
 ((expression (identifier) @name) @reference.binding
   (#not-any-of? @name "pitch" "gate" "velocity" "sample_rate"))
+
+(asset_decl name: (identifier) @name) @definition.asset
+(clip_decl name: (identifier) @name) @definition.clip
+(clip_decl asset: (identifier) @name) @reference.asset
+(sampler_decl name: (identifier) @name) @definition.sampler
+
+((sampler_decl (param_decl name: (identifier) @field value: (value (identifier) @name))) @reference.asset
+  (#eq? @field "asset"))
+
+(track_decl kind: (qualified_name) @name) @reference.voice
+(kit_target instrument: (qualified_name) @name) @reference.instrument
+(scene_assignment value: (scene_value (qualified_name) @name)) @reference.pattern
+(phrase_use name: (qualified_name) @name) @reference.phrase
+(send_decl to: (qualified_name) @name) @reference.mixer
+(insert_chain first: (qualified_name) @name) @reference.mixer
+(insert_chain next: (qualified_name) @name) @reference.mixer
+(clip_decl asset: (qualified_name) @name) @reference.asset
+((param_decl name: (identifier) @field value: (value (qualified_name) @name)) @reference.mixer
+  (#any-of? @field "insert" "out" "bus"))
+((sampler_decl (param_decl name: (identifier) @field value: (value (qualified_name) @name))) @reference.asset
+  (#eq? @field "asset"))

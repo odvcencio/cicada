@@ -2,6 +2,9 @@
 ; level of its declaration, matching `cicada fmt`.
 
 [
+  (asset_decl)
+  (clip_decl)
+  (sampler_decl)
   (instrument_decl)
   (kit_decl)
   (voice_decl)

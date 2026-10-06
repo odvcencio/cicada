@@ -4,7 +4,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 const v8 = require('node:v8');
 
-const [wasmPath, imagePath] = process.argv.slice(2);
+const [wasmPath, imagePath, captureProfile] = process.argv.slice(2);
+let capturePort, capturePending, capturePosts = 0;
 if (!global.gc) throw new Error('run Node with --expose-gc');
 if (!wasmPath || !imagePath) throw new Error('usage: node --expose-gc processor_alloc_test.js kernel.wasm kernel.image');
 
@@ -41,7 +42,7 @@ globalThis.AudioWorkletProcessor = class {
   }
 };
 
-for (const name of ['Uint8Array', 'DataView', 'ArrayBuffer']) {
+for (const name of ['Uint8Array', 'Float32Array', 'DataView', 'ArrayBuffer']) {
   const Native = globalThis[name];
   globalThis[name] = new Proxy(Native, {
     construct(target, args) {
@@ -51,7 +52,8 @@ for (const name of ['Uint8Array', 'DataView', 'ArrayBuffer']) {
   });
 }
 
-const processorPath = path.resolve('../../host/web/processor.min.js');
+if (captureProfile) eval(fs.readFileSync(path.resolve('../../host/web/capture.js'), 'utf8'));
+const processorPath = path.resolve(captureProfile ? '../../host/web/processor-capture.min.js' : '../../host/web/processor.min.js');
 eval(fs.readFileSync(processorPath, 'utf8'));
 if (!processorType) throw new Error('the shipped minified asset did not register a processor');
 
@@ -67,6 +69,17 @@ async function main() {
   view.setUint8(0, 3); view.setUint8(1, 255); view.setUint8(24, 1); view.setUint8(25, 255);
   port.onmessage({ data: { t: 'c', bytes: commands } });
   const output = [[new Float32Array(128), new Float32Array(128)]];
+  const input = captureProfile ? [[new Float32Array(128)]] : [];
+  if (captureProfile) {
+    capturePort = {postMessage(packet, list) {
+      if (packet.t === 'pcm') {
+        capturePosts++;
+        capturePending = structuredClone(packet, {transfer:list});
+      }
+    }};
+    port.onmessage({data:{t:'capture-init',port:capturePort,channels:1,epoch:1}});
+    port.onmessage({data:{t:'capture-control',op:'begin',countInFrames:48000}});
+  }
   const returnBuffers = () => {
     for (let i = 0; i < queuedCount; i++) {
       const message = pending[i];
@@ -78,8 +91,13 @@ async function main() {
   const render = () => {
     callback++;
     inProcess = true;
-    try { processor.process([], output); }
+    try { processor.process(input, output); }
     finally { inProcess = false; }
+    if (capturePending) {
+      capturePending.t = 'recycle';
+      capturePort.onmessage({data:capturePending});
+      capturePending = null;
+    }
     if (queuedCount === pending.length) returnBuffers();
   };
 
@@ -96,6 +114,7 @@ async function main() {
   global.gc();
   const after = v8.getHeapStatistics().used_heap_size;
   const delta = after - before;
+  const steadyConstructorAllocations = constructorAllocations;
   constructorAllocations = 0;
   port.onmessage({ data: { t: 'i', i: image, r: 'allocation-stage' } });
   let stagedCallbacks = 0;
@@ -107,9 +126,11 @@ async function main() {
   const stagedConstructorAllocations = constructorAllocations;
   const result = {
     callbacks: 10000,
+    captureProfile: !!captureProfile,
+    capturePosts,
     postMessages: postCount,
     poolSlotsUsed: slots.size,
-    typedConstructorAllocationsInsideProcess: constructorAllocations,
+    typedConstructorAllocationsInsideProcess: steadyConstructorAllocations,
     stagedBankCopyCallbacks: stagedCallbacks,
     stagedTypedConstructorAllocationsInsideProcess: stagedConstructorAllocations,
     retainedHeapDeltaBytes: delta,
@@ -117,9 +138,10 @@ async function main() {
     method: 'Node --expose-gc, V8 used_heap_size before/after full GC across 10,000 callbacks; constructor traps and pooled postMessage identity checks scoped to process()'
   };
   process.stdout.write(JSON.stringify(result) + '\n');
+  if (captureProfile && capturePosts < 10000) throw new Error('capture path did not exercise enough callbacks');
   if (postCount < 1000) throw new Error(`message path did not run often enough: ${postCount}`);
   if (slots.size !== 1) throw new Error(`steady-state did not reuse the fixed pool buffer: ${slots.size}`);
-  if (constructorAllocations !== 0) throw new Error(`process() allocated ${constructorAllocations} typed buffers`);
+  if (steadyConstructorAllocations !== 0) throw new Error(`process() allocated ${steadyConstructorAllocations} typed buffers`);
   if (!stageComplete) throw new Error(`bank copy did not finish after ${stagedCallbacks} callbacks`);
   if (stagedConstructorAllocations !== 0) throw new Error(`process() allocated ${stagedConstructorAllocations} typed buffers during a staged bank copy`);
   if (delta > result.retainedHeapAllowanceBytes) throw new Error(`retained V8 heap grew by ${delta} bytes`);

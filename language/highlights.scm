@@ -110,9 +110,9 @@
 
 (track_decl name: (identifier) @variable.member)
 ((track_decl kind: (identifier) @type.builtin)
-  (#any-of? @type.builtin "acid" "drums"))
+  (#any-of? @type.builtin "acid" "drums" "audio"))
 ((track_decl kind: (identifier) @type)
-  (#not-any-of? @type "acid" "drums"))
+  (#not-any-of? @type "acid" "drums" "audio"))
 (fx_decl name: (identifier) @type.definition)
 
 ; Authored kits bind each drum lane to instrument code or a built-in voice.
@@ -239,6 +239,14 @@
 
 (comment) @comment
 
+["asset" "clip" "sampler"] @keyword.type
+(asset_decl name: (identifier) @type.definition)
+(asset_decl path: (string) @string.special.path)
+(clip_decl name: (identifier) @function)
+(clip_decl asset: (identifier) @type)
+(sampler_decl name: (identifier) @type.definition)
+((number) @number.frames (#match? @number.frames "frames$"))
+
 ; Live host controls.
 ["live" "land" "macro" "smooth" "layers" "attack" "release"] @keyword
 (live_land value: (identifier) @constant.builtin)
@@ -247,3 +255,9 @@
 (live_layers macro: (identifier) @variable.parameter)
 (live_layer track: (identifier) @variable.member)
 ">=" @operator
+
+"import" @keyword.directive
+(import_decl path: (string) @string)
+
+(qualified_name (identifier) @property.parameter_path)
+(qualified_name "." @punctuation.delimiter)

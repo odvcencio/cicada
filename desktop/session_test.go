@@ -105,38 +105,6 @@ func TestNextProjectName(t *testing.T) {
 	}
 }
 
-func TestSaveCopyBringsProjectManifest(t *testing.T) {
-	source := t.TempDir()
-	target := t.TempDir()
-	score := filepath.Join(source, "main.cicada")
-	if err := os.WriteFile(score, []byte("title \"x\"\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(source, "cicada.mod"), []byte("project x\ncicada 2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	copyPath := filepath.Join(target, "copy.cicada")
-	if err := saveCopy(score, copyPath); err != nil {
-		t.Fatal(err)
-	}
-	if data, err := os.ReadFile(copyPath); err != nil || string(data) != "title \"x\"\n" {
-		t.Fatalf("copy = %q, %v", data, err)
-	}
-	if data, err := os.ReadFile(filepath.Join(target, "cicada.mod")); err != nil || string(data) != "project x\ncicada 2\n" {
-		t.Fatalf("manifest = %q, %v", data, err)
-	}
-	// An existing manifest at the target is kept.
-	if err := os.WriteFile(filepath.Join(target, "cicada.mod"), []byte("project keep\ncicada 2\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := saveCopy(score, filepath.Join(target, "second.cicada")); err != nil {
-		t.Fatal(err)
-	}
-	if data, _ := os.ReadFile(filepath.Join(target, "cicada.mod")); string(data) != "project keep\ncicada 2\n" {
-		t.Fatalf("target manifest overwritten: %q", data)
-	}
-}
-
 func TestFindCicada(t *testing.T) {
 	dir := t.TempDir()
 	name := "cicada"

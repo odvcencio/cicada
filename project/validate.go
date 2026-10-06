@@ -3,6 +3,7 @@ package project
 import (
 	"fmt"
 	"math"
+	"strings"
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
@@ -27,6 +28,9 @@ func validateOctaveValue(value Value) error {
 func ValidateProject(p *Project) error {
 	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
 		return fmt.Errorf("unsupported project format or version")
+	}
+	if err := validateAudioProject(p); err != nil {
+		return err
 	}
 	if p.Live != nil {
 		if p.Edition != 2 || p.Format != FormatID2 {
@@ -113,12 +117,15 @@ func ValidateProject(p *Project) error {
 	if kindCounts["delay"] > 1 || kindCounts["reverb"] > 1 {
 		return fmt.Errorf("CICADA-UNSUPPORTED: multiple delay or reverb instances are not implemented")
 	}
-	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 || len(p.Song) == 0 {
+	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 {
 		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
 	}
 	instruments := map[string]*instrument.Program{}
 	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
+		if p.Edition == 2 && inst.ID == "audio" {
+			return fmt.Errorf("instrument name is reserved: audio")
+		}
 		if inst.Octave == nil || *inst.Octave < 0 || *inst.Octave > 6 {
 			return fmt.Errorf("instrument %s octave must be 0 to 6", inst.ID)
 		}
@@ -157,7 +164,7 @@ func ValidateProject(p *Project) error {
 	}
 	kits := map[string]Kit{}
 	for _, kit := range p.Kits {
-		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || instruments[kit.ID] != nil {
+		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || p.Edition == 2 && kit.ID == "audio" || instruments[kit.ID] != nil {
 			return fmt.Errorf("kit %s has an invalid or reserved ID", kit.ID)
 		}
 		if _, exists := kits[kit.ID]; exists {
@@ -168,6 +175,14 @@ func ValidateProject(p *Project) error {
 		}
 		kits[kit.ID] = kit
 	}
+	samplers := map[string]Sampler{}
+	for _, sampler := range p.Samplers {
+		samplers[sampler.Name] = sampler
+	}
+	clips := map[string]Clip{}
+	for _, clip := range p.Clips {
+		clips[clip.Name] = clip
+	}
 	tracks := map[string]Track{}
 	for _, track := range p.Tracks {
 		if _, exists := tracks[track.ID]; exists || !validID(track.ID) || track.ID == "music" || track.ID == "sfx" {
@@ -175,8 +190,11 @@ func ValidateProject(p *Project) error {
 		}
 		tracks[track.ID] = track
 		_, isKit := kits[track.Kind]
-		if track.Kind != "acid" && track.Kind != "drums" && !isKit && instruments[track.Kind] == nil {
+		if track.Kind != "acid" && track.Kind != "drums" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
 			return fmt.Errorf("track %s has unknown instrument %s", track.ID, track.Kind)
+		}
+		if (p.Edition == 2 && track.Kind == "audio" || samplers[track.Kind].Name != "") && len(track.Params) > 0 {
+			return fmt.Errorf("audio and sampler tracks accept mixer settings only")
 		}
 		if track.Params == nil {
 			return fmt.Errorf("track %s params must be explicit", track.ID)
@@ -382,7 +400,9 @@ func ValidateProject(p *Project) error {
 	}
 	allocatedVoices := 0
 	for _, track := range p.Tracks {
-		if track.Kind == "drums" {
+		if sampler := samplers[track.Kind]; sampler.Name != "" {
+			allocatedVoices += sampler.Voices
+		} else if track.Kind == "drums" {
 			allocatedVoices += drumVoiceCount(projectDrumLanes(p, track))
 		} else if kit, ok := kits[track.Kind]; ok {
 			allocatedVoices += len(kit.Lanes)
@@ -485,6 +505,12 @@ func ValidateProject(p *Project) error {
 			if patternID == "keep" || patternID == "off" {
 				continue
 			}
+			if p.Edition == 2 && track.Kind == "audio" {
+				if _, ok := clips[patternID]; !ok {
+					return fmt.Errorf("scene %s references unknown clip %s", scene.ID, patternID)
+				}
+				continue
+			}
 			pattern, ok := patterns[patternID]
 			if !ok || !compatible(track.Kind, pattern.Kind, kits) || !hasSlot(track, patternID) {
 				return fmt.Errorf("scene %s cannot bind %s to %s", scene.ID, trackID, patternID)
@@ -538,7 +564,9 @@ func ValidateProject(p *Project) error {
 		voices := 0
 		for trackID := range active {
 			kind := tracks[trackID].Kind
-			if kind == "drums" {
+			if sampler := samplers[kind]; sampler.Name != "" {
+				voices += sampler.Voices
+			} else if kind == "drums" {
 				voices += drumVoiceCount(projectDrumLanes(p, tracks[trackID]))
 			} else if kit, ok := kits[kind]; ok {
 				voices += len(kit.Lanes)
@@ -573,6 +601,17 @@ func validateMixerLevel(mixer Mixer) error {
 }
 
 func validID(id string) bool {
+	if strings.Contains(id, ".") {
+		if len(id) > 64 {
+			return false
+		}
+		for _, part := range strings.Split(id, ".") {
+			if !validID(part) {
+				return false
+			}
+		}
+		return true
+	}
 	if len(id) < 1 || len(id) > 64 || !(id[0] == '_' || id[0] >= 'a' && id[0] <= 'z') {
 		return false
 	}
