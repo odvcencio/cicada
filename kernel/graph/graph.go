@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
+	"m31labs.dev/cicada/kernel/voice/ddsp"
 )
 
 const MaxNodes = 128
@@ -45,6 +46,7 @@ const (
 	Delay  Op = 24
 	Comb   Op = 25
 	Period Op = 26 // unit / Hz, converted from seconds to milliseconds
+	DDSP   Op = 27 // ddsp(fundamental Hz, linear loudness)
 )
 
 type Node struct {
@@ -74,6 +76,7 @@ type nodeState struct {
 	filter [4]float32
 	noise  uint32
 	delay  uint8
+	neural uint8
 
 	// Each coefficient input is clamped above zero; zero marks an empty cache.
 	// The program and sample rate stay fixed for the lifetime of the voice.
@@ -97,6 +100,7 @@ type Voice struct {
 	velocity    float32
 	delays      []delayState
 	delayMemory []float32
+	ddspVoices  []ddsp.Synth
 }
 
 func NewVoice(program Program, sampleRate int) (*Voice, error) {
@@ -114,10 +118,25 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 	}
 	count = 0
 	for i := 0; i < int(program.Len); i++ {
+		if program.Nodes[i].Op == DDSP {
+			count++
+		}
+	}
+	if count > 0 {
+		v.ddspVoices = make([]ddsp.Synth, count)
+	}
+	count = 0
+	neural := 0
+	for i := 0; i < int(program.Len); i++ {
 		v.states[i].noise = uint32(i+1)*0x9e3779b9 ^ 0xa5a5a5a5
 		if program.Nodes[i].Op == Delay || program.Nodes[i].Op == Comb {
 			v.states[i].delay = uint8(count)
 			count++
+		}
+		if program.Nodes[i].Op == DDSP {
+			v.states[i].neural = uint8(neural)
+			v.ddspVoices[neural], _ = ddsp.New(sampleRate)
+			neural++
 		}
 	}
 	return v, nil
@@ -145,7 +164,7 @@ func Validate(program Program, sampleRate int) error {
 		case Pitch, Gate, Velocity, SampleRate, Constant, Noise:
 		case Saw, Square, Sine, Tanh, Exp2:
 			inputs = 1
-		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay:
+		case Add, Subtract, Multiply, Divide, Period, Envelope, Lowpass, Highpass, Delay, DDSP:
 			inputs = 2
 		case Ladder, Diode, Mix, Clamp:
 			inputs = 3
@@ -196,6 +215,8 @@ func (v *Voice) NoteOn(note, velocity uint8, slide bool) {
 			s.phase = 0
 		case Envelope:
 			s.env = 1
+		case DDSP:
+			v.ddspVoices[s.neural].Reset()
 		}
 	}
 }
@@ -205,11 +226,13 @@ func (v *Voice) NoteOff() { v.gate = 0 }
 // CopyStateFrom copies a voice constructed with the same program into this
 // voice's preallocated storage. Neither delay state nor ring memory is shared.
 func (v *Voice) CopyStateFrom(source *Voice) {
-	delays, memory := v.delays, v.delayMemory
+	delays, memory, neural := v.delays, v.delayMemory, v.ddspVoices
 	*v = *source
 	v.delays, v.delayMemory = delays, memory
+	v.ddspVoices = neural
 	copy(v.delays, source.delays)
 	copy(v.delayMemory, source.delayMemory)
+	copy(v.ddspVoices, source.ddspVoices)
 }
 
 func (v *Voice) Reset() {
@@ -224,6 +247,9 @@ func (v *Voice) Reset() {
 	}
 	clear(v.delayMemory)
 	clear(v.delays)
+	for i := range v.ddspVoices {
+		v.ddspVoices[i].Reset()
+	}
 }
 
 func (v *Voice) Next() float32 {
@@ -249,6 +275,8 @@ func (v *Voice) Next() float32 {
 			y = v.sampleRate
 		case Constant:
 			y = n.Value
+		case DDSP:
+			y = v.ddspVoices[s.neural].NextFloat(a, b)
 		case Add:
 			y = a + b
 		case Subtract:

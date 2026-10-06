@@ -9,6 +9,8 @@ type OperationInfo struct {
 
 func Operation(name string) (OperationInfo, bool) {
 	switch name {
+	case "ddsp":
+		return OperationInfo{name, "ddsp(hz, unit) -> audio", "Pinned CC0 quantized neural reed: eight harmonics plus filtered noise, controlled by fundamental frequency and linear loudness. Trained on synthetic 80..1600 Hz tones. Controls update every 64 frames; integer inference is allocation-free."}, true
 	case "delay":
 		return OperationInfo{name, "delay(audio, ms) -> audio", "Linear fractional delay; 1..4096 samples at the render rate. Reserves 16384 bytes per voice. Use 1 / pitch for a period in ms."}, true
 	case "comb":

@@ -173,6 +173,8 @@ song { main*8 }
 
 `delay(audio, ms)` and `comb(audio, ms, unit, unit)` add bounded delay lines and damped feedback loops. Unit divided by Hz produces a period in ms (`1 / pitch`). Their interpolation, memory, ranges, and diagnostics are specified in [graph delays and plucked strings](edition-2.md#graph-delays-and-plucked-strings).
 
+`ddsp(hz, unit)` produces a neural harmonic-plus-noise voice from fundamental frequency and linear loudness. The [model reference](../../kernel/voice/ddsp/README.md) specifies its trained range, integer arithmetic, 64-frame control rate, CC0 model license, and image capability bit 3. `cicada explain graph.ddsp` describes the operation.
+
 **Defaults:** Home octave is 2. A parameter's unit may be inferred from its default literal. `voice mono` is required. A track may override home octave from 0–6 unless its instrument declares a synthesis parameter named `octave`; in that case the track value sets the synthesis parameter and the instrument's home octave remains in effect.
 
 **Errors:** Duplicate or reserved names report `CICADA-DUPLICATE`; unknown symbols report `CICADA-REFERENCE`; incompatible types or units report `CICADA-UNIT`. Graphs above 128 nodes or 32 stateful nodes report `CICADA-LIMIT`. `voice poly` parses but reports `CICADA-UNSUPPORTED`.
