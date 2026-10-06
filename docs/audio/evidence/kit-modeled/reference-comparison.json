@@ -1,0 +1,606 @@
+{
+  "version": 1,
+  "license_manifest": "assets/reference/drum-kit.json",
+  "comparisons": [
+    {
+      "id": "kick",
+      "model": "model.kick",
+      "comparison_velocity": 88,
+      "reference_sha256": "642aaf3375eaff1307973f7de3ccbf74d18e71fb3cf9412e021b08fc3bf1981c",
+      "model_sha256": "1c21b1006589f2b06125dfd524fda9f81b94479411a964ac2975ab852940a2f1",
+      "model_96k_sha256": "7136916460056dea87960b7057a3124a9f1ff56a1de6640ad42d3f3f257b71de",
+      "reference_rate_hz": 44100,
+      "model_rate_hz": 48000,
+      "reference_onset_frame": 1,
+      "model_onset_frame": 74,
+      "model_96k_onset_frame": 148,
+      "spectra": {
+        "reference": {
+          "power_centroid_hz": 104.20375616230916,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 0.2915865717160802
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 0.6821262278225405
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.026003503733122164
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 0.00026872745960849543
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 1.477929402680481e-05
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 1.745154123039605e-07
+            }
+          ],
+          "power_above_045_rate_fraction": 1.671764709673056e-08
+        },
+        "model": {
+          "power_centroid_hz": 56.81603036533491,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 0.9834830276924322
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 0.01633051096189714
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.00018646133453293072
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 2.4029996686258803e-12
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 6.561469437612453e-12
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 1.905467631312597e-12
+            }
+          ],
+          "power_above_045_rate_fraction": 1.6542710852914848e-13
+        }
+      },
+      "envelopes": {
+        "reference": {
+          "peak_rms": 0.19463094042955778,
+          "sustained_minus20db_time_s": 0.27687074829931974,
+          "rms_t60_extrapolated_s": 1.6732743100436125,
+          "decay_fit_r_squared": 0.428102499969364,
+          "last_100ms_rms": 0.0,
+          "last_100ms_dc": 0.0,
+          "duration_from_onset_s": 3.333582766439909
+        },
+        "model": {
+          "peak_rms": 0.011016255894805805,
+          "sustained_minus20db_time_s": 0.4775,
+          "rms_t60_extrapolated_s": 1.5764392347673686,
+          "decay_fit_r_squared": 0.8909091487562167,
+          "last_100ms_rms": 0.0,
+          "last_100ms_dc": 0.0,
+          "duration_from_onset_s": 6.998458333333334
+        }
+      },
+      "differences": {
+        "model_minus_reference_centroid_hz": -47.38772579697425,
+        "normalized_envelope_rms_error": 0.0876780743489361
+      },
+      "rendered_rate_residual": {
+        "compared_seconds": 1.0,
+        "gain_fit": 0.9996417714119846,
+        "normalized_residual_rms": 0.005256702599050122,
+        "residual_to_signal_db": -45.58573185489501
+      }
+    },
+    {
+      "id": "snare",
+      "model": "model.snare",
+      "comparison_velocity": 80,
+      "reference_sha256": "6ec8445cb207df8f1178d8c3894f47969fd53fb2b81c404317e466de4598dc3e",
+      "model_sha256": "4127f42666a3b1476dc8baa5e0ed26ec191a154514793be0c92dfe06d405843b",
+      "model_96k_sha256": "3d25ea77ae4cdfaa1576ac25b5f4afe55519fb366c9e8f309e9bc7853b2549c6",
+      "reference_rate_hz": 44100,
+      "model_rate_hz": 48000,
+      "reference_onset_frame": 0,
+      "model_onset_frame": 73,
+      "model_96k_onset_frame": 148,
+      "spectra": {
+        "reference": {
+          "power_centroid_hz": 937.1357968109667,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 0.04101436773145001
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 0.4973203127640688
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.2519815835544799
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 0.11710914780916216
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 0.0846779173100644
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 0.007892398188337556
+            }
+          ],
+          "power_above_045_rate_fraction": 4.730192996165701e-06
+        },
+        "model": {
+          "power_centroid_hz": 1830.4291709915378,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 6.802500644473842e-08
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 0.7580334934544626
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.010079889877863863
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 0.04893194159574606
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 0.10627975048752246
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 0.06711639867369584
+            }
+          ],
+          "power_above_045_rate_fraction": 0.005314326945904878
+        }
+      },
+      "envelopes": {
+        "reference": {
+          "peak_rms": 0.03913822385246692,
+          "sustained_minus20db_time_s": 0.11723356009070295,
+          "rms_t60_extrapolated_s": 0.44557043954718056,
+          "decay_fit_r_squared": 0.8995680656668097,
+          "last_100ms_rms": 0.0002972433899749926,
+          "last_100ms_dc": 1.9064836220946711e-06,
+          "duration_from_onset_s": 1.3631065759637189
+        },
+        "model": {
+          "peak_rms": 0.005994683461527547,
+          "sustained_minus20db_time_s": 0.2125,
+          "rms_t60_extrapolated_s": 0.6011951216750363,
+          "decay_fit_r_squared": 0.9953644103253707,
+          "last_100ms_rms": 0.0,
+          "last_100ms_dc": 0.0,
+          "duration_from_onset_s": 6.998479166666667
+        }
+      },
+      "differences": {
+        "model_minus_reference_centroid_hz": 893.2933741805712,
+        "normalized_envelope_rms_error": 0.10356309688689244
+      },
+      "rendered_rate_residual": {
+        "compared_seconds": 1.0,
+        "gain_fit": 0.8748759822798475,
+        "normalized_residual_rms": 0.5729497822447129,
+        "residual_to_signal_db": -4.837668825914138
+      }
+    },
+    {
+      "id": "hat_closed",
+      "model": "model.hat_closed",
+      "comparison_velocity": 88,
+      "reference_sha256": "b65ca06ea4f8b5209fc8d98912094be1212911f21e01bd949cc9960db049d37c",
+      "model_sha256": "4b271f8abcb97c32bd0f583b8128f9099cc1058103865f1d0a2378dc266c579d",
+      "model_96k_sha256": "2f8f63b31210f5422d8395b7748ef2106e56d8b03f19c1f23e523edbba66862b",
+      "reference_rate_hz": 44100,
+      "model_rate_hz": 48000,
+      "reference_onset_frame": 277,
+      "model_onset_frame": 73,
+      "model_96k_onset_frame": 145,
+      "spectra": {
+        "reference": {
+          "power_centroid_hz": 9156.47268553192,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 0.0007600590114168826
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 0.008215744599929985
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.059369236955785665
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 0.05050398551728129
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 0.3539426607434427
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 0.5061730438429939
+            }
+          ],
+          "power_above_045_rate_fraction": 0.02452010030189131
+        },
+        "model": {
+          "power_centroid_hz": 6270.769276940014,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 4.0971819443329306e-10
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 1.098096866155586e-07
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.24493916169294652
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 0.25704200563635604
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 0.1684557597803939
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 0.27061472216877985
+            }
+          ],
+          "power_above_045_rate_fraction": 0.034247453485063785
+        }
+      },
+      "envelopes": {
+        "reference": {
+          "peak_rms": 0.03158913000188621,
+          "sustained_minus20db_time_s": 0.14217687074829932,
+          "rms_t60_extrapolated_s": 0.3013604713960735,
+          "decay_fit_r_squared": 0.9934207932384621,
+          "last_100ms_rms": 0.0,
+          "last_100ms_dc": 0.0,
+          "duration_from_onset_s": 1.2334467120181405
+        },
+        "model": {
+          "peak_rms": 0.0027679805880159547,
+          "sustained_minus20db_time_s": 0.0575,
+          "rms_t60_extrapolated_s": 0.15417589035772733,
+          "decay_fit_r_squared": 0.9955784390867627,
+          "last_100ms_rms": 0.0,
+          "last_100ms_dc": 0.0,
+          "duration_from_onset_s": 6.998479166666667
+        }
+      },
+      "differences": {
+        "model_minus_reference_centroid_hz": -2885.7034085919067,
+        "normalized_envelope_rms_error": 0.13382209068947507
+      },
+      "rendered_rate_residual": {
+        "compared_seconds": 1.0,
+        "gain_fit": 0.6790924568246272,
+        "normalized_residual_rms": 0.7773199894386513,
+        "residual_to_signal_db": -2.188003278045713
+      }
+    },
+    {
+      "id": "hat_open",
+      "model": "model.hat_open",
+      "comparison_velocity": 64,
+      "reference_sha256": "fa492ec14cc6924b43ad5fcf9e9a0f406d926998835bde2eb5847cd15ad25be7",
+      "model_sha256": "804f0a16b9390d6385f8da6f75029b3f3eac1c0e41be148276cdf56401131010",
+      "model_96k_sha256": "b6bcca826f4b82c704c66e43b9c61ec0b292938c68743b644a91933d290fc35c",
+      "reference_rate_hz": 44100,
+      "model_rate_hz": 48000,
+      "reference_onset_frame": 320,
+      "model_onset_frame": 73,
+      "model_96k_onset_frame": 145,
+      "spectra": {
+        "reference": {
+          "power_centroid_hz": 6599.420403339902,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 4.385645087026374e-06
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 0.00019035271809235324
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.06293799047771638
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 0.11140587104180484
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 0.4963143367853817
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 0.32165212342745736
+            }
+          ],
+          "power_above_045_rate_fraction": 0.008096105514724842
+        },
+        "model": {
+          "power_centroid_hz": 5649.821020606629,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 1.338752794436683e-09
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 8.046126587318037e-07
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.1851462510701396
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 0.2843857986724584
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 0.2661127543917212
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 0.2249879510476238
+            }
+          ],
+          "power_above_045_rate_fraction": 0.02389571702622828
+        }
+      },
+      "envelopes": {
+        "reference": {
+          "peak_rms": 0.059981551813767464,
+          "sustained_minus20db_time_s": 1.065079365079365,
+          "rms_t60_extrapolated_s": 3.6578705874792443,
+          "decay_fit_r_squared": 0.9608523648707255,
+          "last_100ms_rms": 0.0,
+          "last_100ms_dc": 0.0,
+          "duration_from_onset_s": 5.811950113378685
+        },
+        "model": {
+          "peak_rms": 0.0017564046769315148,
+          "sustained_minus20db_time_s": 0.5475,
+          "rms_t60_extrapolated_s": 1.6588972699868971,
+          "decay_fit_r_squared": 0.9968558125484219,
+          "last_100ms_rms": 0.0,
+          "last_100ms_dc": 0.0,
+          "duration_from_onset_s": 6.998479166666667
+        }
+      },
+      "differences": {
+        "model_minus_reference_centroid_hz": -949.5993827332732,
+        "normalized_envelope_rms_error": 0.05974278335462783
+      },
+      "rendered_rate_residual": {
+        "compared_seconds": 1.0,
+        "gain_fit": 0.6233678135123731,
+        "normalized_residual_rms": 0.8387356901913282,
+        "residual_to_signal_db": -1.5274975265981108
+      }
+    },
+    {
+      "id": "ride_bow",
+      "model": "model.ride_bow",
+      "comparison_velocity": 64,
+      "reference_sha256": "17294cefa7f50367d1d9ae885a5f63a52eab372b90aeb7c3a8b400942cc95b9f",
+      "model_sha256": "dc929afb78028cb9eeccf0b92048e5d27c857309c7bfbc6ca74498f4061be44b",
+      "model_96k_sha256": "cbde6168299a51ff6e6b17f96f178d66859b0e92b44cac01da97278ffc599f7a",
+      "reference_rate_hz": 44100,
+      "model_rate_hz": 48000,
+      "reference_onset_frame": 0,
+      "model_onset_frame": 73,
+      "model_96k_onset_frame": 145,
+      "spectra": {
+        "reference": {
+          "power_centroid_hz": 3101.675031336775,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 2.1545072912884932e-05
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 1.0862492948769642e-05
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.2243794932442354
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 0.4338860666310713
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 0.2859157640120115
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 0.055785558708125633
+            }
+          ],
+          "power_above_045_rate_fraction": 7.747743044987582e-07
+        },
+        "model": {
+          "power_centroid_hz": 1704.7656886391367,
+          "bands": [
+            {
+              "low_hz": 0,
+              "high_hz": 80,
+              "power_fraction": 4.998192582642865e-10
+            },
+            {
+              "low_hz": 80,
+              "high_hz": 250,
+              "power_fraction": 1.2436000332078863e-07
+            },
+            {
+              "low_hz": 250,
+              "high_hz": 1000,
+              "power_fraction": 0.5268641582677881
+            },
+            {
+              "low_hz": 1000,
+              "high_hz": 3000,
+              "power_fraction": 0.37146132230111956
+            },
+            {
+              "low_hz": 3000,
+              "high_hz": 8000,
+              "power_fraction": 0.06934886013715781
+            },
+            {
+              "low_hz": 8000,
+              "high_hz": 20000,
+              "power_fraction": 0.02775777755920682
+            }
+          ],
+          "power_above_045_rate_fraction": 0.002717109117974231
+        }
+      },
+      "envelopes": {
+        "reference": {
+          "peak_rms": 0.011738001253233165,
+          "sustained_minus20db_time_s": 1.6736961451247165,
+          "rms_t60_extrapolated_s": 10.72295154953595,
+          "decay_fit_r_squared": 0.8109625097971344,
+          "last_100ms_rms": 4.643992281897557e-05,
+          "last_100ms_dc": -1.8338227217970521e-07,
+          "duration_from_onset_s": 7.935827664399093
+        },
+        "model": {
+          "peak_rms": 0.0014352950250254022,
+          "sustained_minus20db_time_s": 1.0975,
+          "rms_t60_extrapolated_s": 3.424844282018792,
+          "decay_fit_r_squared": 0.9918250739993032,
+          "last_100ms_rms": 6.415169272756391e-09,
+          "last_100ms_dc": -5.906596523463839e-12,
+          "duration_from_onset_s": 6.998479166666667
+        }
+      },
+      "differences": {
+        "model_minus_reference_centroid_hz": -1396.9093426976385,
+        "normalized_envelope_rms_error": 0.07428184273988829
+      },
+      "rendered_rate_residual": {
+        "compared_seconds": 1.0,
+        "gain_fit": 0.932897057794883,
+        "normalized_residual_rms": 0.39770442146232243,
+        "residual_to_signal_db": -8.008791614727738
+      }
+    }
+  ],
+  "method": {
+    "mixdown": "arithmetic mean of channels",
+    "onset": "first sample within 60 dB of waveform peak",
+    "spectrum": "first 500 ms after onset; Hann window at native rate; separately normalized bands",
+    "envelope": "5 ms RMS windows; separately peak normalized; onset aligned",
+    "t60": "broadband RMS extrapolation from -5 to -25 dB; report fit quality",
+    "rate_residual": "onset aligned; 96 kHz FFT low-pass at 21.6 kHz; 2:1 decimation; first second; fitted scalar gain"
+  },
+  "limits": [
+    "Single reference take and model variation per piece; unequal recording dynamics.",
+    "Reference includes microphone, room and capture noise; no room is synthesized in this probe.",
+    "Suspended cymbal stick reference is related to a ride, not a dimension-matched ride recording.",
+    "Rendered rate residual also includes rate-dependent stochastic excitation and omitted modes; it is not an isolated alias rejection number.",
+    "Measured differences do not establish perceptual realism or equivalence to a DAW instrument."
+  ]
+}

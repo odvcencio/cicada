@@ -1,0 +1,9 @@
+cicada 2
+instrument tone { param bite = 0.4 voice mono { out = sine(pitch) * bite } }
+preset tone.bright { instrument = tone bite = 0.7 }
+preset acid-bright { instrument = acid cutoff = 900Hz }
+track lead tone.bright {}
+track bass acid-bright {}
+pattern notes { 1 . 3 . }
+scene verse { lead = notes bass = notes }
+song { verse }

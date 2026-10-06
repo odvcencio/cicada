@@ -29,7 +29,9 @@ async function processor(asset) {
     registerProcessor: (_, type) => { Type = type; }
   });
   vm.runInContext(fs.readFileSync(`${__dirname}/${asset}`, 'utf8'), context);
-  const instance = new Type({ processorOptions: { m: {}, i: new ArrayBuffer(32), l: 10 } });
+  const image = new ArrayBuffer(32);
+  new Uint8Array(image).set([67, 73, 67, 49, 13]);
+  const instance = new Type({ processorOptions: { m: {}, i: image, l: 10 } });
   await new Promise(resolve => setImmediate(resolve));
   assert.ok(messages.some(m => m.t === 'r'));
   const play = new Uint8Array(24); play[0] = 1;
@@ -101,7 +103,7 @@ for (const actualQuantum of [undefined, 512]) {
     let options;
     const context = vm.createContext({
       window, setTimeout, clearTimeout, setInterval: () => 1,
-      fetch: async () => ({ ok: true, headers: { get: () => 'test' }, arrayBuffer: async () => new ArrayBuffer(32) }),
+      fetch: async () => ({ ok: true, headers: { get: () => 'test' }, arrayBuffer: async () => { const image = new ArrayBuffer(32); new Uint8Array(image).set([67, 73, 67, 49, 13]); return image; } }),
       WebAssembly: { compile: async () => ({}) },
       AudioWorkletNode: class {
         constructor() { this.port = { postMessage() {} }; }

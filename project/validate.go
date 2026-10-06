@@ -9,6 +9,7 @@ import (
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/kernel/voice/piano"
 	"m31labs.dev/cicada/notation"
 )
@@ -30,6 +31,9 @@ func validateOctaveValue(value Value) error {
 func ValidateProject(p *Project) error {
 	if p == nil || !((p.Format == FormatID && p.Version == 1) || (p.Format == FormatID2 && p.Version == 2)) {
 		return fmt.Errorf("unsupported project format or version")
+	}
+	if err := validateArrangementProject(p); err != nil {
+		return err
 	}
 	if err := validateAudioProject(p); err != nil {
 		return err
@@ -129,14 +133,17 @@ func ValidateProject(p *Project) error {
 	if kindCounts["delay"] > 1 || kindCounts["reverb"] > 1 {
 		return fmt.Errorf("CICADA-UNSUPPORTED: multiple delay or reverb instances are not implemented")
 	}
-	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 {
+	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 && p.Arrange == nil {
 		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
 	}
 	instruments := map[string]*instrument.Program{}
 	trackGraphs := map[string]graph.Program{}
 	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
-		if p.Edition == 2 && inst.ID == "audio" {
+		if inst.ID == "guitar" || p.Edition == 2 && inst.ID == "audio" {
+			return fmt.Errorf("instrument name is reserved: %s", inst.ID)
+		}
+		if _, ok := modal.ParseTrackKind(inst.ID); ok {
 			return fmt.Errorf("instrument name is reserved: %s", inst.ID)
 		}
 		if inst.Octave == nil || *inst.Octave < 0 || *inst.Octave > 6 {
@@ -145,7 +152,7 @@ func ValidateProject(p *Project) error {
 		if err := uniqueID(inst.ID, seenInstruments); err != nil {
 			return fmt.Errorf("instrument: %w", err)
 		}
-		if inst.Mode != "mono" && inst.Mode != "poly" || inst.Params == nil || inst.Lets == nil {
+		if (inst.Mode != "mono" && inst.Mode != "poly") || inst.Params == nil || inst.Lets == nil {
 			return fmt.Errorf("instrument %s uses an unsupported voice mode or incomplete fields", inst.ID)
 		}
 		params := map[string]bool{}
@@ -177,7 +184,7 @@ func ValidateProject(p *Project) error {
 	}
 	kits := map[string]Kit{}
 	for _, kit := range p.Kits {
-		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || p.Edition == 2 && kit.ID == "audio" || instruments[kit.ID] != nil {
+		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || kit.ID == "guitar" || p.Edition == 2 && kit.ID == "audio" || instruments[kit.ID] != nil {
 			return fmt.Errorf("kit %s has an invalid or reserved ID", kit.ID)
 		}
 		if _, exists := kits[kit.ID]; exists {
@@ -203,7 +210,8 @@ func ValidateProject(p *Project) error {
 		}
 		tracks[track.ID] = track
 		_, isKit := kits[track.Kind]
-		if track.Kind != "acid" && track.Kind != "drums" && track.Kind != "piano" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
+		_, isModal := modal.ParseTrackKind(track.Kind)
+		if !isModal && track.Kind != "acid" && track.Kind != "drums" && track.Kind != "piano" && track.Kind != "guitar" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
 			return fmt.Errorf("track %s has unknown instrument %s", track.ID, track.Kind)
 		}
 		if (p.Edition == 2 && track.Kind == "audio" || samplers[track.Kind].Name != "") && len(track.Params) > 0 {
@@ -211,6 +219,24 @@ func ValidateProject(p *Project) error {
 		}
 		if track.Params == nil {
 			return fmt.Errorf("track %s params must be explicit", track.ID)
+		}
+		if track.Kind == "guitar" {
+			if p.Edition != 2 {
+				return fmt.Errorf("CICADA-VERSION: experimental guitar requires edition 2")
+			}
+			if _, err := guitarParamsFromValues(track.Params); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
+		}
+		if isModal {
+			for name, value := range track.Params {
+				if name != "octave" {
+					return fmt.Errorf("modeled track %s accepts only octave and mixer settings", track.ID)
+				}
+				if err := validateOctaveValue(value); err != nil {
+					return fmt.Errorf("track %s: %w", track.ID, err)
+				}
+			}
 		}
 		if track.Kind == "acid" {
 			if _, err := acidParamsFromValues(track.Params); err != nil {
@@ -227,8 +253,10 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
-		if isKit && len(track.Params) != 0 {
-			return fmt.Errorf("kit track %s does not accept drum or instrument parameters", track.ID)
+		if isKit {
+			if _, err := CompileKitTrack(kits[track.Kind], instruments, track.Params); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
 		}
 		for name, value := range track.Params {
 			if name == "level" || name == "pan" {
@@ -444,12 +472,14 @@ func ValidateProject(p *Project) error {
 			allocatedVoices += sampler.Voices
 		} else if isModeledPiano(p, track.Kind) {
 			allocatedVoices += piano.MaxVoices
+		} else if _, ok := modal.ParseTrackKind(track.Kind); ok {
+			allocatedVoices += modal.MaxVoices
 		} else if track.Kind == "drums" {
 			allocatedVoices += drumVoiceCount(projectDrumLanes(p, track))
 		} else if kit, ok := kits[track.Kind]; ok {
 			allocatedVoices += len(kit.Lanes)
 		} else if inst := instruments[track.Kind]; inst != nil && inst.Mode == "poly" {
-			allocatedVoices += 4
+			allocatedVoices += GraphPolyphony(p, track.Kind)
 		} else {
 			allocatedVoices++
 		}
@@ -517,6 +547,21 @@ func ValidateProject(p *Project) error {
 	}
 	for _, track := range p.Tracks {
 		seen := map[string]bool{}
+		if p.Edition == 2 && track.Kind == "audio" {
+			if _, err := ClipSlots(p, track); err != nil {
+				return err
+			}
+			for _, slot := range track.Slots {
+				if slot == nil {
+					continue
+				}
+				if _, ok := clips[*slot]; !ok || seen[*slot] {
+					return fmt.Errorf("audio track %s has invalid or duplicate clip slot %s", track.ID, *slot)
+				}
+				seen[*slot] = true
+			}
+			continue
+		}
 		for _, slot := range track.Slots {
 			if slot == nil {
 				continue
@@ -640,12 +685,14 @@ func ValidateProject(p *Project) error {
 				voices += sampler.Voices
 			} else if isModeledPiano(p, kind) {
 				voices += piano.MaxVoices
+			} else if _, ok := modal.ParseTrackKind(kind); ok {
+				voices += modal.MaxVoices
 			} else if kind == "drums" {
 				voices += drumVoiceCount(projectDrumLanes(p, tracks[trackID]))
 			} else if kit, ok := kits[kind]; ok {
 				voices += len(kit.Lanes)
 			} else if inst := instruments[kind]; inst != nil && inst.Mode == "poly" {
-				voices += 4
+				voices += GraphPolyphony(p, kind)
 			} else {
 				voices++
 			}
@@ -804,14 +851,16 @@ func validateExpr(expr Expr, depth int) (int, error) {
 
 func validExprArity(op string, n int) bool {
 	switch op {
-	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay", "neural_amp":
+	case "+", "-", "*", "/", "period", "env", "lowpass", "highpass", "delay", "neural_amp", "pulse", "ddsp":
 		return n == 2
 	case "saw", "square", "sine", "tanh", "exp2":
 		return n == 1
 	case "noise":
 		return n == 0
-	case "ladder", "diode", "mix", "clamp":
+	case "ladder", "diode", "mix", "clamp", "pm", "svf":
 		return n == 3
+	case "adsr":
+		return n == 5
 	case "comb":
 		return n == 4
 	}

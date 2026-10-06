@@ -178,10 +178,7 @@ func (a *backendStudioAudio) SetSource(reader io.Reader) {
 func (a *backendStudioAudio) captureInput(b capture.Block, input [][]float32) {
 	a.rendering.Add(1)
 	a.timingSeen = true
-	if source := a.source.Load(); source != nil && source != a.currentSource {
-		a.currentSource = source
-		a.engineEpoch, a.engineFrame = source.epoch, 0
-	}
+	a.adoptSource()
 	a.periodPlaying = a.playing.Load()
 	a.periodCapture = a.armed.Load()
 	b.EngineEpoch, b.EngineFrame = a.engineEpoch, a.engineFrame
@@ -190,9 +187,17 @@ func (a *backendStudioAudio) captureInput(b capture.Block, input [][]float32) {
 	}
 }
 
+func (a *backendStudioAudio) adoptSource() {
+	if source := a.source.Load(); source != nil && source != a.currentSource {
+		a.currentSource = source
+		a.engineEpoch, a.engineFrame = source.epoch, 0
+	}
+}
+
 func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 	if !a.timingSeen {
 		a.rendering.Add(1)
+		a.adoptSource()
 	}
 	defer a.rendering.Add(-1)
 	if len(output) == 0 {

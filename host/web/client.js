@@ -1,4 +1,15 @@
 (() => {
+  const CapabilityChords = 1, CapabilityUnifiedImage = 65536;
+  // Match the worklet allowlist, including when an older cached worklet runs.
+  const imageInfo = (image, capabilities) => {
+    const bytes = new Uint8Array(image);
+    if (bytes.length < 32 || bytes[0] !== 67 || bytes[1] !== 73 || bytes[2] !== 67 || bytes[3] !== 49) throw new Error('Invalid CIC1 image header');
+    const version = bytes[4] | bytes[5] << 8;
+    if (version === 14) throw new Error('Ambiguous development image14; recompile source for unified image15');
+    if (![8, 9, 10, 11, 12, 13, 15].includes(version)) throw new Error(`Unsupported image version ${version}`);
+    if (version === 15 && capabilities !== undefined && !(capabilities & CapabilityUnifiedImage)) throw new Error('Unified image15 requires CapabilityUnifiedImage (bit16); update the audio kernel');
+    return new DataView(image).getUint32(12, true);
+  };
   const audioFault = code => new Error(code === 20 ? "Polyphonic tracks require handle-aware live commands; legacy NoteOn/NoteOff are unsupported" : `Audio fault ${code}`);
   class CicadaBrowserAudio {
     constructor() {
@@ -14,11 +25,13 @@
       this.messages = new Set();
       this.errors = new Set();
       this.states = new Set();
+      this.beforePlay = new Set();
       this.meters = new Set();
       this.pendingMeters = new Map();
       this.meterFrame = 0;
       this.playing = false;
       this.clock = false;
+      this.capabilities = 0;
       this.outputTimeline = { available: false, samples: 0, misses: 0, maxLagMs: 0, maxExcessMs: 0, lastMiss: null };
       this.outputTimelineTimer = 0;
       this.callbackDurations = new Uint32Array(256);
@@ -47,7 +60,7 @@
         if (!imageResponse.ok) throw new Error((await imageResponse.text()) || 'Cannot load the score image');
         const revision = imageResponse.headers.get('X-Cicada-Revision') || '';
         const image = await imageResponse.arrayBuffer();
-        this.bpmMilli = new DataView(image).getUint32(12, true);
+        const bpmMilli = imageInfo(image);
         await this.context.audioWorklet.addModule('/audio/cicada-capture.js');
         await this.context.audioWorklet.addModule('/audio/cicada-capture-processor.js');
         this.node = new AudioWorkletNode(this.context, 'cicada', {
@@ -62,11 +75,19 @@
               clearTimeout(timeout);
               this.revision = data.r;
               this.clock = data.c;
-              resolve(data);
+              this.capabilities = data.p || 0;
+              try {
+                imageInfo(image, this.capabilities);
+                this.bpmMilli = bpmMilli;
+                resolve(data);
+              } catch (error) { reject(error); }
+            } else if (data.t === 'e') {
+              clearTimeout(timeout);
+              reject(new Error(data.e));
             }
             this.receive(data);
           };
-          this.node.port.onmessageerror = () => reject(new Error('AudioWorklet message could not be decoded'));
+          this.node.port.onmessageerror = () => { clearTimeout(timeout); reject(new Error('AudioWorklet message could not be decoded')); };
         });
         this.node.connect(this.context.destination);
         await this.readyPromise;
@@ -80,6 +101,7 @@
         this.node = null;
         this.readyPromise = null;
         this.modulePromise = null;
+        this.capabilities = 0;
         if (failed && failed.close) failed.close().catch(() => {});
         throw error;
       }
@@ -129,6 +151,7 @@
         this.raise(audioFault(data.a));
       } else if (data.t === 'r') {
         this.clock = data.c;
+        this.capabilities = data.p || 0;
       } else if (data.t === 't') {
         this.revision = data.r;
         const waiter = this.stageWaiters.get(data.r);
@@ -208,10 +231,12 @@
     onMessage(callback) { this.messages.add(callback); return () => this.messages.delete(callback); }
     onError(callback) { this.errors.add(callback); return () => this.errors.delete(callback); }
     onState(callback) { this.states.add(callback); return () => this.states.delete(callback); }
+    onBeforePlay(callback) { this.beforePlay.add(callback); return () => this.beforePlay.delete(callback); }
     onMeters(callback) { this.meters.add(callback); return () => this.meters.delete(callback); }
 
     sendCommands(records) {
       if (!this.node || !this.readyPromise) throw new Error('Select Browser mode and start audio first');
+      if (records.some(record => record.op === 22) && !(this.capabilities & CapabilityChords)) throw new Error('Unsupported chord opcode22');
       const bytes = new Uint8Array(records.length * 24), view = new DataView(bytes.buffer);
       records.forEach((record, index) => {
         const at = index * 24;
@@ -226,12 +251,13 @@
 
     play() {
       if (this.playing) return;
+      for (const callback of this.beforePlay) callback();
       this.sendCommands([{ op: 3, arg0: 0 }, { op: 1 }]);
     }
     stop(force = false) { if (this.playing || force) this.sendCommands([{ op: 2 }]); }
     launchScene(index) { this.sendCommands([{ op: 10, index, arg0: 2 }]); }
     selectPattern(track, slot) { this.sendCommands([{ op: 9, track, index: slot, arg0: 2 }]); }
-    playFrom(bar) { this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
+    playFrom(bar) { for (const callback of this.beforePlay) callback(); this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
 
     async stageCurrentScore(revision = '', capture = false) {
       if (!this.node) return false;
@@ -242,10 +268,11 @@
       const imageRevision = response.headers.get('X-Cicada-Revision') || '';
       if (revision && imageRevision !== revision) throw new Error('Score changed while preparing the browser kernel');
       const image = await response.arrayBuffer();
-      this.bpmMilli = new DataView(image).getUint32(12, true);
+      const bpmMilli = imageInfo(image, this.capabilities);
       const ready = new Promise((resolve, reject) => this.stageWaiters.set(imageRevision, { resolve, reject }));
       this.node.port.postMessage({ t: 'i', i: image, r: imageRevision }, [image]);
       await ready;
+      this.bpmMilli = bpmMilli;
       this.lastStageDurationMs = performance.now() - started;
       return true;
     }

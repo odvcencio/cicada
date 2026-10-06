@@ -125,13 +125,23 @@ func (s *studio) commitTake(id, expected string, candidate []byte) error {
 	}
 	return s.takes.Mark(id, takejournal.Committed)
 }
+
+// Prepared source remains in the durable journal, never in browser metadata.
+func (s *studio) takeProjection() []takejournal.Take {
+	if s.takes == nil {
+		return nil
+	}
+	takes := s.takes.Takes()
+	for i := range takes {
+		takes[i].Candidate = nil
+	}
+	return takes
+}
+
 func (s *studio) takeState(w http.ResponseWriter, r *http.Request) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var takes []takejournal.Take
-	if s.takes != nil {
-		takes = s.takes.Takes()
-	}
+	takes := s.takeProjection()
 	var snapshot *capture.Snapshot
 	if s.captureRecorder != nil {
 		current := s.captureRecorder.Snapshot()
@@ -139,6 +149,23 @@ func (s *studio) takeState(w http.ResponseWriter, r *http.Request) {
 	}
 	studioJSON(w, http.StatusOK, map[string]any{"takes": takes, "activeCapture": s.captureID, "capture": snapshot})
 }
+
+// Capture polling does not serialize retained source candidates or asset paths.
+func (s *studio) captureState(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var snapshot *capture.Snapshot
+	var rate int
+	if s.captureRecorder != nil {
+		current := s.captureRecorder.Snapshot()
+		snapshot = &current
+		if take, err := s.takes.Get(s.captureID); err == nil {
+			rate = take.Rate
+		}
+	}
+	studioJSON(w, http.StatusOK, map[string]any{"activeCapture": s.captureID, "sampleRate": rate, "capture": snapshot})
+}
+
 func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 	edit, ok := studioRequestLimit(w, r, 128<<20)
 	if !ok {
@@ -276,7 +303,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 		fail(err)
 		return
 	}
-	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(source), "source": string(source), "take": responseTake, "takes": s.takes.Takes(), "activeCapture": s.captureID})
+	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(source), "source": string(source), "take": responseTake, "takes": s.takeProjection(), "activeCapture": s.captureID})
 }
 
 func takeRoot(score string) string { dir, _ := takejournal.ProjectRoot(score); return dir }

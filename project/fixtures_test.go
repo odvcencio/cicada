@@ -26,7 +26,6 @@ func TestInvalidSourceFixtures(t *testing.T) {
 		"expansion-65.cicada":               {"CICADA-EXPANSION", 4},
 		"unknown-scene.cicada":              {"CICADA-REFERENCE", 5},
 		"incompatible-kind.cicada":          {"CICADA-PARAM", 4},
-		"unsupported-poly.cicada":           {"CICADA-UNSUPPORTED", 2},
 		"over-32-voices.cicada":             {"CICADA-LIMIT", 10},
 		"unsupported-drum-transpose.cicada": {"CICADA-UNSUPPORTED", 3},
 		"invalid-scale-degree.cicada":       {"CICADA-SCALE-DEGREE", 4},
