@@ -40,7 +40,7 @@ type Program struct {
 	StatefulNodes int
 	DelaySamples  int
 	// PeriodExpressions identifies the exact divisions converted from Hz to ms.
-	PeriodExpressions map[*notation.Expr]bool
+	PeriodExpressions map[*notation.Expr]bool `json:"-"`
 }
 
 // HasParameter reports whether the graph declares a synthesis parameter.
