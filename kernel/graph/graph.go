@@ -109,7 +109,7 @@ type Voice struct {
 }
 
 func NewVoice(program Program, sampleRate int) (*Voice, error) {
-	if err := Validate(program, sampleRate); err != nil {
+	if err := validateProgram(&program, sampleRate); err != nil {
 		return nil, err
 	}
 	v := &Voice{program: program, sampleRate: float32(sampleRate)}
@@ -117,7 +117,7 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(sampleRate)))
 	}
 	v.expression.Reset()
-	count := program.DelaySamples() / MaxDelaySamples
+	count := delaySamples(&program) / MaxDelaySamples
 	if count > 0 {
 		v.delayMemory = make([]float32, count*MaxDelaySamples)
 		v.delays = make([]delayState, count)
@@ -146,6 +146,10 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 // Validate checks untrusted images and statically known delay controls without
 // allocating voice storage. Dynamic controls are bounded again in Next.
 func Validate(program Program, sampleRate int) error {
+	return validateProgram(&program, sampleRate)
+}
+
+func validateProgram(program *Program, sampleRate int) error {
 	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
 		return Error("invalid graph program")
 	}
@@ -184,7 +188,7 @@ func Validate(program Program, sampleRate int) error {
 			return Error("non-finite graph constant")
 		}
 	}
-	if program.DelaySamples() > MaxVoiceDelaySamples {
+	if delaySamples(program) > MaxVoiceDelaySamples {
 		return Error("voice graph exceeds 8192 delay samples (two delay nodes)")
 	}
 	return validateDelayControls(program, sampleRate)

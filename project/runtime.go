@@ -151,7 +151,18 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				config.InsertDrive = &params
 			}
 		}
-		switch track.Kind {
+		kind := track.Kind
+		if kind == "piano" && !isModeledPiano(p, kind) {
+			kind = "declared"
+		}
+		switch kind {
+		case "piano":
+			config.Kind = engine.VoicePiano
+			sustain, err := PianoSustainFromValues(track.Params)
+			if err != nil {
+				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+			}
+			config.PianoSustain = sustain
 		case "acid":
 			config.Kind = engine.VoiceAcid
 			params, err := acidParamsFromValues(track.Params)

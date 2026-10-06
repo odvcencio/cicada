@@ -82,6 +82,11 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 		return nil, fmt.Errorf("project seed exceeds 32-bit kernel seed")
 	}
 	base := seq.Pattern{Len: uint8(count), GatePercent: 55, Seed: uint32(score.Seed)}
+	if len(source.Expression) > 0 {
+		if kind := unsupportedSourceExpression(score, track.Kind); kind != "" {
+			return nil, &patternCompileError{position: source.Expression[0].Position, err: fmt.Errorf("CICADA-UNSUPPORTED: %s track %s cannot play note expression in pattern %s", kind, track.Name, source.Name)}
+		}
+	}
 	if err := compileExpression(source, &base); err != nil {
 		return nil, err
 	}
@@ -156,7 +161,12 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 				octave = n
 			}
 		}
-		poly := track.Kind == "unused_notes" && track.Name == ""
+		poly := track.Kind == "piano" || track.Kind == "unused_notes" && track.Name == ""
+		for _, sampler := range score.Samplers {
+			if sampler.Name == track.Kind {
+				poly = false
+			}
+		}
 		for _, inst := range score.Instruments {
 			if inst.Name == track.Kind {
 				poly = inst.Mode == "poly"

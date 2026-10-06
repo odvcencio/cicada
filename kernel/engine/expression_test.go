@@ -41,6 +41,30 @@ func TestPolyLiveExpressionPreservesUnsupportedGuard(t *testing.T) {
 	}
 }
 
+func TestPianoExpressionRejectedBeforePlayback(t *testing.T) {
+	cfg := pianoConfig()
+	pattern := seq.Pattern{Len: 1, GatePercent: 50, Expression: new([64]seq.Expression)}
+	pattern.Steps[0], _ = seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100, Velocity: 100})
+	pattern.Expression[0] = seq.Expression{Set: true, PitchCents: 50, Timbre: .5}
+	cfg.Patterns = []PatternBank{{Slots: [16]seq.Pattern{pattern}}}
+	if engine, err := New(cfg); err == nil || engine != nil {
+		t.Fatal("piano score expression was silently accepted")
+	}
+	cfg.Patterns[0].Slots[0].Expression = nil
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !e.Push(expressionCommand(0, .5)) {
+		t.Fatal("valid wire expression rejected before the voice support guard")
+	}
+	var left, right [128]float32
+	e.Render(left[:], right[:])
+	if !e.faulted {
+		t.Fatal("live piano expression was silently accepted")
+	}
+}
+
 func TestLiveExpressionTargetsIdentityAndSameTickNoteOn(t *testing.T) {
 	e, err := New(expressionConfig())
 	if err != nil {

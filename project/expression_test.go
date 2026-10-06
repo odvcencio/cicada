@@ -327,3 +327,45 @@ func TestExpressionDirectorStingerRoundTrip(t *testing.T) {
 		t.Fatalf("director and stinger expression changed: %v", err)
 	}
 }
+
+func TestExpressionModeledPianoRejectsUnsupportedControls(t *testing.T) {
+	for _, row := range []string{"bend: 0ct +25ct", "vibrato: 0ct 4ct", "pressure: 0 0.7", "timbre: . 0.8"} {
+		source := "track grand piano {}\npattern take notes { c4 - " + row + " }\nscene main { grand=take }\nsong { main }"
+		score, diagnostics := notation.Parse([]byte(source))
+		if hasErrors(diagnostics) {
+			t.Fatalf("piano expression syntax: %+v", diagnostics)
+		}
+		_, diagnostics = Check(score)
+		if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-UNSUPPORTED" || diagnostics[0].Position.Line != 2 {
+			t.Fatalf("piano expression source diagnostic: %+v", diagnostics)
+		}
+		if _, err := CompilePattern(score, score.Patterns[0], score.Tracks[0]); err == nil || !strings.Contains(err.Error(), "CICADA-UNSUPPORTED") {
+			t.Fatalf("piano expression compiled: %v", err)
+		}
+		graphSource := "instrument piano { voice mono { out = sine(pitch) * env(gate, 100ms) } }\n" + source
+		score, diagnostics = notation.Parse([]byte(graphSource))
+		if hasErrors(diagnostics) {
+			t.Fatalf("graph piano syntax: %+v", diagnostics)
+		}
+		p, diagnostics := FromScore(score)
+		if p == nil || isModeledPiano(p, "piano") {
+			t.Fatalf("authored graph named piano rejected: %+v", diagnostics)
+		}
+	}
+	score, diagnostics := notation.Parse([]byte("track grand piano {} pattern take notes { c4 - } scene main { grand=take } song { main }"))
+	p, diagnostics := FromScore(score)
+	if p == nil {
+		t.Fatalf("valid modeled piano: %+v", diagnostics)
+	}
+	p.Patterns[0].Expression = []NoteExpression{{Timbre: 0.5}, {PitchCents: 25, Timbre: 0.5}}
+	if err := ValidateProject(p); err == nil || !strings.Contains(err.Error(), "CICADA-UNSUPPORTED") {
+		t.Fatalf("piano expression semantic validation: %v", err)
+	}
+	encoded, err := json.Marshal(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := DecodeJSON(encoded); err == nil || !strings.Contains(err.Error(), "CICADA-UNSUPPORTED") {
+		t.Fatalf("piano expression JSON validation: %v", err)
+	}
+}

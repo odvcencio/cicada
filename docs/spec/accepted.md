@@ -279,7 +279,7 @@ signed_cents ::= [ "+" | "-" ] , number , "ct" ;
 
 **Defaults:** Pitch, pressure, and vibrato depth start at zero; timbre starts at 0.5. A leading dot holds these defaults. Vibrato rows use 5 Hz with no delay; zero depth disables vibrato. No expression is added to a pattern without rows. Custom graph voices use a 60 ms glide on `~` notes, and the standard theremin library keeps its 70 ms glide.
 
-**Errors:** Duplicate rows, values outside the stated ranges, wrong units, and row lengths that differ from the melodic pattern report errors. Pitch-derived delay and comb times must stay within their ring bounds across bend and vibrato extrema, including tied steps. Drum patterns do not accept expression rows. Assigned sampler tracks reject expression rows because sampled voices do not yet implement note expression.
+**Errors:** Duplicate rows, values outside the stated ranges, wrong units, and row lengths that differ from the melodic pattern report errors. Pitch-derived delay and comb times must stay within their ring bounds across bend and vibrato extrema, including tied steps. Drum patterns do not accept expression rows. Assigned sampler and modeled piano tracks reject expression rows because those voices do not yet implement note expression.
 
 **Example:** Rows change a held note without retriggering its envelope:
 

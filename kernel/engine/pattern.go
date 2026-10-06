@@ -17,33 +17,36 @@ type chainEntry struct {
 }
 
 type patternTrack struct {
-	slots       [16]seq.Pattern
-	drumSlots   *[16][drum.LaneCount]seq.Pattern
-	active      int8 // -1 until a slot is selected
-	startStep   int64
-	generation  uint32
-	playingNote int64
-	playingGen  uint32
-	slideFrom   int64
-	slideAt     int64
-	forceOff    seq.Event
-	forceGen    uint32
-	forceValid  bool
-	chain       [32]chainEntry
-	chainLen    uint8
-	chainNext   uint8
-	chainDue    int64
-	chainArmed  bool
-	chainStart  int64
-	chainRepeat uint8
-	held        seq.Pattern
-	heldSlot    uint8
-	heldStart   int64
-	heldGen     uint32
-	heldValid   bool
-	events      [256]patternEvent
-	eventCount  int
-	eventIndex  int
+	slots             [16]seq.Pattern
+	drumSlots         *[16][drum.LaneCount]seq.Pattern
+	active            int8 // -1 until a slot is selected
+	startStep         int64
+	generation        uint32
+	playingNote       int64
+	playingPitch      uint8
+	playingPitches    [4]uint8
+	playingPitchCount uint8
+	playingGen        uint32
+	slideFrom         int64
+	slideAt           int64
+	forceOff          seq.Event
+	forceGen          uint32
+	forceValid        bool
+	chain             [32]chainEntry
+	chainLen          uint8
+	chainNext         uint8
+	chainDue          int64
+	chainArmed        bool
+	chainStart        int64
+	chainRepeat       uint8
+	held              seq.Pattern
+	heldSlot          uint8
+	heldStart         int64
+	heldGen           uint32
+	heldValid         bool
+	events            [256]patternEvent
+	eventCount        int
+	eventIndex        int
 }
 
 func (e *Engine) applyPatternCommand(c cmd.Command) {
@@ -121,7 +124,7 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		updated.Steps[c.Index] = c.Arg0
 		updated.Chords[c.Index] = seq.ChordStep{}
 	case cmd.OpSetChordStep:
-		if e.voices[track].poly == nil {
+		if e.voices[track].poly == nil && e.voices[track].kind != VoicePiano {
 			e.fault(17)
 			return
 		}
@@ -145,6 +148,10 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		}
 	}
 	if updated.Validate() != nil {
+		e.fault(15)
+		return
+	}
+	if e.voices[track].kind == VoicePiano && !validPianoPattern(&updated) {
 		e.fault(15)
 		return
 	}
@@ -527,7 +534,11 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				}
 				if matching {
 					if pool == nil {
-						e.noteOff(track, 0xffff)
+						if e.voices[track].kind == VoicePiano {
+							e.releasePianoPattern(track)
+						} else {
+							e.noteOff(track, 0xffff)
+						}
 						released = true
 					}
 					p.playingNote = 0
@@ -569,6 +580,20 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				} else {
 					e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
 				}
+			case VoicePiano:
+				if event.Slide && p.playingNote != 0 {
+					e.releasePianoPattern(track)
+				}
+				p.playingPitches, p.playingPitchCount = event.Notes, event.NoteCount
+				if p.playingPitchCount == 0 {
+					p.playingPitches[0], p.playingPitchCount = event.Note, 1
+				}
+				for n := uint8(0); n < p.playingPitchCount; n++ {
+					if e.voices[track].piano.NoteOn(p.playingPitches[n], event.Velocity) != nil {
+						e.fault(15)
+						return
+					}
+				}
 			case VoiceDrums:
 				if event.Note >= uint8(drum.LaneCount) {
 					e.fault(15)
@@ -583,6 +608,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				e.voices[track].noteActive = false // score notes use scheduler identities
 				p.playingNote, p.playingGen = event.NoteID, item.generation
 				e.applyStepExpression(track, p.slots[p.active].ExpressionAt(int(event.StepIndex)))
+				p.playingPitch = event.Note
 				p.heldValid = false
 				p.slideFrom, p.slideAt = 0, 0
 				p.forceValid = false

@@ -17,6 +17,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/piano"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -146,6 +147,41 @@ type acidVoice struct{ *acid.Voice }
 
 func (voice acidVoice) NoteOn(note, velocity uint8, accent, slide bool) {
 	voice.Voice.NoteOn(note, accent, slide, velocity)
+}
+
+type pianoVoice struct {
+	*piano.Instrument
+	notes [4]uint8
+	count uint8
+}
+
+func (voice *pianoVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
+	_ = voice.NoteChord([4]uint8{note}, 1, velocity, slide)
+}
+
+func (voice *pianoVoice) NoteChord(notes [4]uint8, count, velocity uint8, slide bool) error {
+	if slide {
+		voice.NoteOff()
+	}
+	voice.notes, voice.count = notes, count
+	for n := uint8(0); n < count; n++ {
+		if err := voice.Instrument.NoteOn(notes[n], velocity); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (voice *pianoVoice) NoteOff() {
+	for n := uint8(0); n < voice.count; n++ {
+		voice.Instrument.NoteOff(voice.notes[n])
+	}
+	voice.count = 0
+}
+
+func (voice *pianoVoice) Next() float32 {
+	left, right := voice.NextStereo()
+	return (left + right) * .5
 }
 
 type scheduled struct {
@@ -763,6 +799,38 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 			tracks = append(tracks, track)
 			continue
 		}
+		if source.Kind == "piano" && programs[source.Kind] == nil {
+			voice, err := piano.New(sampleRate)
+			if err != nil {
+				return nil, err
+			}
+			sustain, err := project.CompilePianoSustain(source)
+			if err != nil {
+				return nil, fmt.Errorf("track %s: %w", source.Name, err)
+			}
+			if err := voice.SetSustain(sustain); err != nil {
+				return nil, err
+			}
+			track := trackRuntime{name: source.Name, mixer: trackMix, voice: &pianoVoice{Instrument: voice}, patterns: map[string]seq.Pattern{}}
+			for _, pattern := range score.Patterns {
+				if pattern.Kind != "notes" {
+					continue
+				}
+				if !patternBoundToTrack(score, pattern.Name, source.Name) {
+					continue
+				}
+				compiled, err := project.CompilePattern(score, pattern, source)
+				if err != nil {
+					return nil, err
+				}
+				if compiled[0].Pattern.Expression != nil {
+					return nil, fmt.Errorf("track %s: piano voices do not support per-note expression", source.Name)
+				}
+				track.patterns[pattern.Name] = compiled[0].Pattern
+			}
+			tracks = append(tracks, track)
+			continue
+		}
 		program := programs[source.Kind]
 		if program == nil {
 			return nil, fmt.Errorf("audio renderer does not yet implement %s track %s", source.Kind, source.Name)
@@ -1115,7 +1183,17 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				}
 			} else {
 				if track.poly == nil {
-					track.voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Accent, event.event.Slide)
+					if voice, ok := track.voice.(*pianoVoice); ok {
+						notes, count := event.event.Notes, event.event.NoteCount
+						if count == 0 {
+							notes[0], count = event.event.Note, 1
+						}
+						if err := voice.NoteChord(notes, count, event.event.Velocity, event.event.Slide); err != nil {
+							return err
+						}
+					} else {
+						track.voice.NoteOn(event.event.Note, event.event.Velocity, event.event.Accent, event.event.Slide)
+					}
 				}
 				track.activeGen = event.generation
 				track.activeNoteID = event.event.NoteID
@@ -1139,6 +1217,8 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				if tracks[ti].drums.Fault() {
 					return fmt.Errorf("drum DSP fault on %s", tracks[ti].name)
 				}
+			} else if voice, ok := tracks[ti].voice.(*pianoVoice); ok {
+				l, r = voice.NextStereo()
 			} else {
 				if voice, ok := tracks[ti].voice.(*packVoice); ok {
 					l, r = voice.NextStereo()
