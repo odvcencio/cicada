@@ -77,6 +77,11 @@ func newApp(b *backend) (http.Handler, error) {
 	app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+			defer func() {
+				if r.MultipartForm != nil {
+					_ = r.MultipartForm.RemoveAll()
+				}
+			}()
 			next.ServeHTTP(w, r)
 		})
 	})
@@ -101,6 +106,7 @@ func newApp(b *backend) (http.Handler, error) {
 		s.takeAudio(w, r)
 	}))
 	app.Mount("GET /media/exports/{id}", http.HandlerFunc(s.exportAudio))
+	app.Mount("GET /media/transcription", http.HandlerFunc(s.transcriptionAudio))
 	app.Mount("GET /api/export", http.HandlerFunc(s.exportStatus))
 	for _, path := range []string{"/api/state", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

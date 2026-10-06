@@ -23,7 +23,11 @@ require (
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/icza/bitio v1.1.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
+	github.com/mewkiz/flac v1.0.14 // indirect
+	github.com/mewkiz/pkg v0.0.0-20250417130911-3f050ff8c56d // indirect
+	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
 	github.com/odvcencio/corkscrewdb v0.2.0 // indirect
 	github.com/odvcencio/gotreesitter v0.54.0 // indirect
 	github.com/odvcencio/turboquant v0.1.3 // indirect
