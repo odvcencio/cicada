@@ -105,3 +105,16 @@ test-phrase-wasm: build-phrase-wasm
 build-worklets:
 	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=false --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor.min.js
 	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=true --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor-capture.min.js
+
+# Optional sample kernel: one prepared immutable instrument per instance.
+# Audio packs stay external; the core kernel and its 300 KiB gate are unchanged.
+.PHONY: build-sampler-wasm test-sampler-wasm
+build-sampler-wasm:
+	mkdir -p build
+	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-sampler.wasm ./cmd/cicada-sampler-wasm
+	@test "$$(wc -c < build/cicada-sampler.wasm)" -le 65536 || { echo 'FAIL sampler kernel exceeds 64 KiB'; exit 1; }
+	@wc -c build/cicada-sampler.wasm
+
+test-sampler-wasm: build-sampler-wasm
+	go test -tags wasm_integration ./cmd/cicada-sampler-wasm -count=1
+	go test -tags sample_wasm ./kernel/voice/sample -run '^TestSampleNativeWASMDeterminism$$' -count=1

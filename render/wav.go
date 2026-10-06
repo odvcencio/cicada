@@ -8,6 +8,7 @@ import (
 	"math"
 	"slices"
 
+	"m31labs.dev/cicada/host/instrumentpack"
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
@@ -21,17 +22,19 @@ import (
 )
 
 type Options struct {
-	SampleRate   int
-	Bits         int // 16, 24, or 32-bit IEEE float; zero defaults to 24
-	Bars         int // zero renders from From through the song end
-	From         int // zero-based start bar; zero starts at the song beginning
-	TailSec      float64
-	Dither       *bool   // nil enables deterministic TPDF on integer formats
-	Normalize    bool    // peak normalize the post-limiter output to -1 dBFS
-	Block        int     // zero selects 4096 frames
-	MasterGainDB float64 // static gain immediately before the master limiter
-	MasterBiasL  float32 // static DC correction before the master limiter
-	MasterBiasR  float32 // static DC correction before the master limiter
+	AssetDir        string // host-only root for pinned sample packs
+	SamplerBaseline bool   // listening comparison: fixed layer/take and 2 ms release
+	SampleRate      int
+	Bits            int // 16, 24, or 32-bit IEEE float; zero defaults to 24
+	Bars            int // zero renders from From through the song end
+	From            int // zero-based start bar; zero starts at the song beginning
+	TailSec         float64
+	Dither          *bool   // nil enables deterministic TPDF on integer formats
+	Normalize       bool    // peak normalize the post-limiter output to -1 dBFS
+	Block           int     // zero selects 4096 frames
+	MasterGainDB    float64 // static gain immediately before the master limiter
+	MasterBiasL     float32 // static DC correction before the master limiter
+	MasterBiasR     float32 // static DC correction before the master limiter
 }
 
 type Report struct {
@@ -244,7 +247,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if dataBytes > int64(^uint32(0))-60 {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
-	tracks, err := compileTracks(score, semantic, opts.SampleRate)
+	banks, err := preparePackVoices(score, opts)
+	if err != nil {
+		return report, err
+	}
+	tracks, err := compileTracksWithPacks(score, semantic, opts.SampleRate, banks, opts.SamplerBaseline)
 	if err != nil {
 		return report, err
 	}
@@ -564,6 +571,9 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 }
 
 func compileTracks(score *notation.Score, semantic *project.Project, sampleRate int) ([]trackRuntime, error) {
+	return compileTracksWithPacks(score, semantic, sampleRate, nil, false)
+}
+func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sampleRate int, banks map[string]*instrumentpack.Prepared, baseline bool) ([]trackRuntime, error) {
 	programs := make(map[string]*instrument.Program, len(score.Instruments))
 	for _, definition := range score.Instruments {
 		program, ds := instrument.Compile(definition)
@@ -587,6 +597,31 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 			return nil, fmt.Errorf("track %s: %w", source.Name, err)
 		}
 		trackMix := mix.NewTrack(mixerParams.GainDB, mixerParams.Pan, mixerParams.Mute)
+
+		if bank := banks[source.Kind]; bank != nil {
+			voice := &packVoice{}
+			if baseline {
+				voice, err = legacyBaseline(bank, sampleRate)
+			} else {
+				voice.instrument, err = bank.New(sampleRate)
+			}
+			if err != nil {
+				return nil, err
+			}
+			track := trackRuntime{name: source.Name, mixer: trackMix, voice: voice, patterns: map[string]seq.Pattern{}}
+			for _, pattern := range score.Patterns {
+				if pattern.Kind != "notes" {
+					continue
+				}
+				compiled, err := project.CompilePattern(score, pattern, source)
+				if err != nil {
+					return nil, err
+				}
+				track.patterns[pattern.Name] = compiled[0].Pattern
+			}
+			tracks = append(tracks, track)
+			continue
+		}
 		kitDefinition, isAuthoredKit := authoredKits[source.Kind]
 		if source.Kind == "drums" || isAuthoredKit {
 			kit, err := drum.New(sampleRate, uint32(score.Seed))
@@ -1018,8 +1053,15 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 					return fmt.Errorf("drum DSP fault on %s", tracks[ti].name)
 				}
 			} else {
-				mono := tracks[ti].voice.Next()
-				l, r = mono, mono
+				if voice, ok := tracks[ti].voice.(*packVoice); ok {
+					l, r = voice.NextStereo()
+					if voice.fault != nil {
+						return fmt.Errorf("sampler %s: %w", tracks[ti].name, voice.fault)
+					}
+				} else {
+					mono := tracks[ti].voice.Next()
+					l, r = mono, mono
+				}
 			}
 			if tracks[ti].insert != nil {
 				l, r = tracks[ti].insert.Process(l, r)
