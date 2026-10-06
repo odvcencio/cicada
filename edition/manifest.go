@@ -14,13 +14,16 @@ import (
 // Manifest describes a project. Empty Entry and Sources retain independent
 // single-file loading. Sources are explicit paths, never patterns.
 type Manifest struct {
-	Project string
-	Edition int
-	Entry   string
-	Sources []string
-	License string
-	Author  string
-	Lines   map[string]int // source path to manifest directive line
+	Project       string
+	Library       string
+	EngineEdition int
+	Capabilities  uint64
+	Edition       int
+	Entry         string
+	Sources       []string
+	License       string
+	Author        string
+	Lines         map[string]int // source path to manifest directive line
 }
 
 // ManifestError is a typed, positioned manifest diagnostic.
@@ -34,6 +37,8 @@ type ManifestError struct {
 func (e *ManifestError) Error() string {
 	return fmt.Sprintf("%d:%d: %s: %s", e.Line, e.Column, e.Code, e.Message)
 }
+
+var libraryPart = regexp.MustCompile(`^[a-z_][a-z0-9_-]*$`)
 
 var spdxIdentifier = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+-]*$`)
 
@@ -96,6 +101,23 @@ func ParseProjectManifest(data []byte) (Manifest, error) {
 		}
 		seen[key] = true
 		switch key {
+		case "library":
+			if !ValidLibraryPath(value) {
+				return fail(line, "CICADA-LIB-PATH", "invalid library path")
+			}
+			m.Library = value
+		case "engine":
+			var err error
+			m.EngineEdition, err = strconv.Atoi(value)
+			if err != nil || m.EngineEdition < 1 {
+				return fail(line, "CICADA-MANIFEST", "engine requires a positive minimum edition")
+			}
+		case "capabilities":
+			var err error
+			m.Capabilities, err = strconv.ParseUint(value, 0, 64)
+			if err != nil {
+				return fail(line, "CICADA-MANIFEST", "capabilities requires an unsigned bit mask")
+			}
 		case "project":
 			if !ValidProjectName(value) {
 				return fail(line, "CICADA-MANIFEST", "invalid project name")
@@ -146,14 +168,37 @@ func ParseProjectManifest(data []byte) (Manifest, error) {
 	if err := scanner.Err(); err != nil {
 		return fail(1, "CICADA-MANIFEST", err.Error())
 	}
-	if m.Project == "" || m.Edition == 0 {
-		return fail(1, "CICADA-MANIFEST", "manifest requires project and cicada directives")
+	if (m.Project == "") == (m.Library == "") || m.Edition == 0 {
+		return fail(1, "CICADA-MANIFEST", "manifest requires exactly one project or library directive and cicada")
 	}
 	if m.Edition != 1 && m.Edition != 2 {
 		return fail(1, "CICADA-VERSION", "only cicada 1 and 2 are supported")
 	}
-	if len(m.Sources) > 0 && m.Entry == "" {
+	if m.Library != "" {
+		if m.Entry != "" || len(m.Sources) == 0 || m.License == "" || m.Author == "" {
+			return fail(1, "CICADA-MANIFEST", "library requires source, license and author, and cannot declare entry")
+		}
+		if m.EngineEdition == 0 {
+			m.EngineEdition = m.Edition
+		}
+	} else if seen["engine"] || seen["capabilities"] {
+		return fail(1, "CICADA-MANIFEST", "engine and capabilities are library directives")
+	}
+	if m.Library == "" && len(m.Sources) > 0 && m.Entry == "" {
 		return fail(1, "CICADA-MANIFEST", "an explicit source list requires entry")
 	}
 	return m, nil
+}
+
+// ValidLibraryPath accepts slash-separated namespace identifiers.
+func ValidLibraryPath(value string) bool {
+	if len(value) == 0 {
+		return false
+	}
+	for _, part := range strings.Split(value, "/") {
+		if !libraryPart.MatchString(part) {
+			return false
+		}
+	}
+	return true
 }
