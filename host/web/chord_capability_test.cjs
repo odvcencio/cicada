@@ -91,7 +91,7 @@ async function setup(asset, capture, version, capability, options = {}) {
       assert.equal(old.counts.projectAllocs, 0, 'unnegotiated image mutated old kernel');
       assert.equal(old.counts.initializations, 1);
     }
-    for (const capability of [65536, 65537, 65911, 66047]) {
+    for (const capability of [65536, 65537, 65911, 66047, 197119, 197631]) {
       const unified = await setup(asset, capture, 15, capability);
       assert.ok(unified.messages.some(m => m.t === 'r' && m.p === capability));
     }
@@ -131,6 +131,17 @@ async function setup(asset, capture, version, capability, options = {}) {
     }
     const keys = await setup(asset, capture, 15, 65537 | 512);
     assert.ok(keys.messages.some(m => m.t === 'r'), 'keyboard capability bit9 was rejected');
+    const noSpatial = await setup(asset, capture, 15, 66047);
+    const spatialMemory = new Uint8Array(noSpatial.instances[0].memory.buffer).slice();
+    for (const op of [26, 27, 28]) {
+      noSpatial.send(commands(1, op));
+      assert.match(noSpatial.messages.at(-1).e, /spatial/);
+      assert.equal(noSpatial.counts.commits, 0);
+      assert.deepEqual(new Uint8Array(noSpatial.instances[0].memory.buffer), spatialMemory);
+    }
+    const spatial = await setup(asset, capture, 15, 197119);
+    spatial.send(commands(26, 27, 28));
+    assert.equal(spatial.counts.commits, 1);
     const staged = await setup(asset, capture, 15, 65537);
     staged.send(commands(1));
     await staged.stage(image(15));

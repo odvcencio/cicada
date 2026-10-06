@@ -326,6 +326,7 @@
     sendCommands(records, node = this.node) {
       if (!node) throw new Error('Select Browser mode and start audio first');
       if (records.some(record => record.op === 22) && !(this.capabilities & CapabilityChords)) throw new Error('Unsupported chord opcode22');
+      if (records.some(record => record.op >= 26 && record.op <= 28) && !(this.capabilities & 131072)) throw new Error('Unsupported spatial commands');
       const bytes = new Uint8Array(records.length * 24), view = new DataView(bytes.buffer);
       records.forEach((record, index) => {
         const at = index * 24;
@@ -333,6 +334,7 @@
         view.setUint16(at + 2, record.index || 0, true);
         view.setUint32(at + 4, record.arg0 || 0, true);
         view.setUint32(at + 8, record.arg1 || 0, true);
+        view.setUint32(at + 12, record.pad || 0, true);
         view.setBigInt64(at + 16, BigInt(record.tick || 0), true);
         if (node === this.node && record.op === 3) this.anchorTick((record.arg0 || 0) * 3840 + (record.arg1 || 0));
       });

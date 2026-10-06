@@ -13,6 +13,9 @@ const CapabilityChords uint32 = 1
 // CapabilityChords alone does not imply support for version 15.
 const CapabilityUnifiedImage uint32 = 1 << 16
 
+// CapabilitySpatial supports track and listener commands (26 through 28).
+const CapabilitySpatial uint32 = 1 << 17
+
 // PatternCommands uploads one melodic slot through the unchanged 24-byte ABI.
 // A chord requires an advertised capability; no mono fallback is permitted.
 // cfg describes the currently loaded kernel, not the source project. Gate and

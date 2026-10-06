@@ -22,3 +22,12 @@ export class GameDirector {
   readonly state: string;
   readonly layerMask: number;
 }
+
+export const CapabilitySpatial: number;
+export class SpatialAudio {
+  constructor(send: (bytes: Uint8Array) => void, tracks: number, capabilities: number);
+  trackPosition(track: number, x: number, y: number, z: number, tick?: bigint | number): void;
+  trackStereo(track: number, tick?: bigint | number): void;
+  listenerPosition(x: number, y: number, z: number, tick?: bigint | number): void;
+  listenerRotation(yaw: number, pitch: number, roll: number, tick?: bigint | number): void;
+}
