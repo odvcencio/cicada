@@ -901,10 +901,10 @@ func (e *Engine) Render(outL, outR []float32) {
 		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
 		for track := 0; track < e.tracks; track++ {
 			v := &e.voices[track]
-			v.mix.Left += (v.targetMix.Left - v.mix.Left) * v.mixSmooth
-			v.mix.Right += (v.targetMix.Right - v.mix.Right) * v.mixSmooth
-			v.sendA += (v.targetSendA - v.sendA) * v.sendSmooth
-			v.sendB += (v.targetSendB - v.sendB) * v.sendSmooth
+			v.mix.Left += float32((v.targetMix.Left - v.mix.Left) * v.mixSmooth)
+			v.mix.Right += float32((v.targetMix.Right - v.mix.Right) * v.mixSmooth)
+			v.sendA += float32((v.targetSendA - v.sendA) * v.sendSmooth)
+			v.sendB += float32((v.targetSendB - v.sendB) * v.sendSmooth)
 			if v.muteGain < v.muteTarget {
 				v.muteGain = min(v.muteTarget, v.muteGain+v.muteStep)
 			} else if v.muteGain > v.muteTarget {
@@ -972,20 +972,20 @@ func (e *Engine) Render(outL, outR []float32) {
 				trackL, trackR = left*(v.mix.Left*v.muteGain), right*(v.mix.Right*v.muteGain)
 				if v.sendA > 0 && v.muteGain > 0 && !v.sourceOff {
 					if v.sendAPre {
-						sendAL += left * v.sendA * v.muteGain
-						sendAR += right * v.sendA * v.muteGain
+						sendAL += float32(left * v.sendA * v.muteGain)
+						sendAR += float32(right * v.sendA * v.muteGain)
 					} else {
-						sendAL += left * v.mix.Left * v.muteGain * v.sendA
-						sendAR += right * v.mix.Right * v.muteGain * v.sendA
+						sendAL += float32(left * v.mix.Left * v.muteGain * v.sendA)
+						sendAR += float32(right * v.mix.Right * v.muteGain * v.sendA)
 					}
 				}
 				if v.sendB > 0 && v.muteGain > 0 && !v.sourceOff {
 					if v.sendBPre {
-						sendBL += left * v.sendB * v.muteGain
-						sendBR += right * v.sendB * v.muteGain
+						sendBL += float32(left * v.sendB * v.muteGain)
+						sendBR += float32(right * v.sendB * v.muteGain)
 					} else {
-						sendBL += left * v.mix.Left * v.muteGain * v.sendB
-						sendBR += right * v.mix.Right * v.muteGain * v.sendB
+						sendBL += float32(left * v.mix.Left * v.muteGain * v.sendB)
+						sendBR += float32(right * v.mix.Right * v.muteGain * v.sendB)
 					}
 				}
 				tap := mix.Track{Left: v.mix.Left * v.muteGain, Right: v.mix.Right * v.muteGain}

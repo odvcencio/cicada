@@ -217,7 +217,7 @@ func (d *Delay) read(frames float64) stereo {
 		next = 0
 	}
 	a, b := d.buffer[base], d.buffer[next]
-	return stereo{a.left + (b.left-a.left)*frac, a.right + (b.right-a.right)*frac}
+	return stereo{a.left + float64((b.left-a.left)*frac), a.right + float64((b.right-a.right)*frac)}
 }
 
 func (d *Delay) Process(left, right float32) (float32, float32) {
@@ -229,25 +229,25 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 		d.fault = true
 		return 0, 0
 	}
-	d.feedback += (d.targetFeedback - d.feedback) * d.smooth
-	d.damp += (d.targetDamp - d.damp) * d.smooth
-	d.ping += (d.targetPing - d.ping) * d.smooth
-	d.width += (d.targetWidth - d.width) * d.smooth
-	d.mix += (d.targetMix - d.mix) * d.smooth
+	d.feedback += float64((d.targetFeedback - d.feedback) * d.smooth)
+	d.damp += float64((d.targetDamp - d.damp) * d.smooth)
+	d.ping += float64((d.targetPing - d.ping) * d.smooth)
+	d.width += float64((d.targetWidth - d.width) * d.smooth)
+	d.mix += float64((d.targetMix - d.mix) * d.smooth)
 	wet := d.read(d.newFrames)
 	if d.fade < 1 {
 		old := d.read(d.oldFrames)
-		wet.left = old.left*(1-d.fade) + wet.left*d.fade
-		wet.right = old.right*(1-d.fade) + wet.right*d.fade
+		wet.left = float64(old.left*(1-d.fade)) + float64(wet.left*d.fade)
+		wet.right = float64(old.right*(1-d.fade)) + float64(wet.right*d.fade)
 		d.fade += d.fadeStep
 		if d.fade > 1 {
 			d.fade = 1
 		}
 	}
-	feedbackL := wet.left*(1-d.ping) + wet.right*d.ping
-	feedbackR := wet.right*(1-d.ping) + wet.left*d.ping
-	d.feedbackState.left += (feedbackL - d.feedbackState.left) * d.damp
-	d.feedbackState.right += (feedbackR - d.feedbackState.right) * d.damp
+	feedbackL := float64(wet.left*(1-d.ping)) + float64(wet.right*d.ping)
+	feedbackR := float64(wet.right*(1-d.ping)) + float64(wet.left*d.ping)
+	d.feedbackState.left += float64((feedbackL - d.feedbackState.left) * d.damp)
+	d.feedbackState.right += float64((feedbackR - d.feedbackState.right) * d.damp)
 	d.buffer[d.position] = stereo{
 		x.left + fastmath.Tanh(d.feedbackState.left*d.feedback),
 		x.right + fastmath.Tanh(d.feedbackState.right*d.feedback),
@@ -258,8 +258,8 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	}
 	mid := (wet.left + wet.right) * .5
 	side := (wet.left - wet.right) * .5 * d.width
-	outL := x.left*(1-d.mix) + (mid+side)*d.mix
-	outR := x.right*(1-d.mix) + (mid-side)*d.mix
+	outL := float64(x.left*(1-d.mix)) + float64((mid+side)*d.mix)
+	outR := float64(x.right*(1-d.mix)) + float64((mid-side)*d.mix)
 	if !finite(outL) || !finite(outR) || math.Abs(outL) > math.MaxFloat32 || math.Abs(outR) > math.MaxFloat32 {
 		d.fault = true
 		return 0, 0

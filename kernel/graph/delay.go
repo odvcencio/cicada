@@ -148,7 +148,7 @@ func (s *delayState) linear(ring []float32, input, samples float32) float32 {
 	// Read before overwriting: a full-ring delay must see the oldest sample.
 	a := ring[(s.write-whole)&(MaxDelaySamples-1)]
 	b := ring[(s.write-whole-1)&(MaxDelaySamples-1)]
-	y := a + fraction*(b-a)
+	y := a + float32(fraction*(b-a))
 	ring[s.write] = input
 	s.write = (s.write + 1) & (MaxDelaySamples - 1)
 	return y
@@ -173,10 +173,10 @@ func (s *delayState) comb(ring []float32, input, period, feedback, damping float
 		s.period, s.damping = period, damping
 	}
 	x := ring[(s.write-s.integer)&(MaxDelaySamples-1)]
-	y := s.coefficient*x + s.previous - s.coefficient*s.allpass
+	y := float32(s.coefficient*x) + s.previous - float32(s.coefficient*s.allpass)
 	s.previous, s.allpass = x, y
-	s.damped = (1-damping)*y + damping*s.damped
-	ring[s.write] = input + feedback*s.damped
+	s.damped = float32((1-damping)*y) + float32(damping*s.damped)
+	ring[s.write] = input + float32(feedback*s.damped)
 	s.write = (s.write + 1) & (MaxDelaySamples - 1)
 	return y
 }
