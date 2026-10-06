@@ -2,12 +2,10 @@
 package edition
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 )
 
@@ -43,48 +41,10 @@ func ScoreEdition(scorePath string) (int, string, error) {
 	}
 }
 
+// ParseManifest preserves the edition-only API for existing callers.
 func ParseManifest(data []byte) (int, error) {
-	var name string
-	var edition int
-	scanner := bufio.NewScanner(strings.NewReader(string(data)))
-	for line := 1; scanner.Scan(); line++ {
-		text := strings.TrimSpace(scanner.Text())
-		if text == "" || strings.HasPrefix(text, "#") {
-			continue
-		}
-		parts := strings.Fields(text)
-		if len(parts) != 2 {
-			return 0, fmt.Errorf("line %d: expected directive and value", line)
-		}
-		switch parts[0] {
-		case "project":
-			if name != "" || !projectName.MatchString(parts[1]) {
-				return 0, fmt.Errorf("line %d: invalid or duplicate project name", line)
-			}
-			name = parts[1]
-		case "cicada":
-			if edition != 0 {
-				return 0, fmt.Errorf("line %d: duplicate cicada edition", line)
-			}
-			value, err := strconv.Atoi(parts[1])
-			if err != nil || value < 1 {
-				return 0, fmt.Errorf("line %d: invalid cicada edition", line)
-			}
-			edition = value
-		default:
-			return 0, fmt.Errorf("line %d: unknown directive %q", line, parts[0])
-		}
-	}
-	if err := scanner.Err(); err != nil {
-		return 0, err
-	}
-	if name == "" || edition == 0 {
-		return 0, fmt.Errorf("manifest requires project and cicada directives")
-	}
-	if edition != 1 && edition != 2 {
-		return 0, fmt.Errorf("CICADA-VERSION: only cicada 1 and 2 are supported")
-	}
-	return edition, nil
+	manifest, err := ParseProjectManifest(data)
+	return manifest.Edition, err
 }
 
 // UpgradeManifestEdition rewrites an edition-1 manifest to edition 2 while
