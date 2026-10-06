@@ -40,6 +40,10 @@ func TestAudioWASMPianoChordSampleParity(t *testing.T) {
 	compareWASMSource(t, "modeled-piano.cicada", source, 2, true)
 }
 
+func TestAudioWASMGraphPMSampleParity(t *testing.T) {
+	compareWASMFixture(t, "fm-bell.cicada", 2)
+}
+
 func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
 	compareWASMFixture(t, "authored-kit.cicada", 1)
 }
@@ -314,6 +318,9 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			if fixture == "modeled-piano.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.PianoCapability) == 0 {
 				t.Fatal("kernel does not advertise modeled piano capability")
 			}
+			if fixture == "fm-bell.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.PMCapability) == 0 {
+				t.Fatal("kernel does not advertise graph PM capability")
+			}
 			if fixture == "pluck.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.DelayCapability) == 0 {
 				t.Fatal("kernel does not advertise graph delay capability")
 			}
@@ -347,7 +354,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			var nonzero bool
 			var stableMemory uint32
 			var initialAllocations uint64
-			if fixture == "pluck.cicada" || fixture == "modeled-piano.cicada" {
+			if fixture == "pluck.cicada" || fixture == "modeled-piano.cicada" || fixture == "fm-bell.cicada" {
 				initialAllocations = call("gosx_audio_alloc_bytes")
 			}
 			pcm := sha256.New()
@@ -425,12 +432,12 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			if fixture == "modeled-piano.cicada" && peakDifference != 0 {
 				t.Fatalf("modeled piano native/WASM PCM differs at sample %d channel %d by %.9g", peakSample, peakChannel, peakDifference)
 			}
-			if fixture == "pluck.cicada" || fixture == "modeled-piano.cicada" {
+			if fixture == "pluck.cicada" || fixture == "modeled-piano.cicada" || fixture == "fm-bell.cicada" {
 				allocated := call("gosx_audio_alloc_bytes") - initialAllocations
 				if allocated != 0 {
 					t.Fatalf("WASM callback allocated %d bytes", allocated)
 				}
-				t.Logf("METRIC: graph delay WASM callback allocated bytes | rate=%d bytes=%d", rate, allocated)
+				t.Logf("METRIC: WASM callback allocated bytes | fixture=%s rate=%d bytes=%d", fixture, rate, allocated)
 			}
 			if exactMessages {
 				compareMessageLogs(t, wasmEvents, nativeEvents)
@@ -440,7 +447,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			if peakDifference > 1e-6 {
 				t.Fatalf("native/WASM peak sample difference %.9g at frame %d channel %d exceeds 1e-6", peakDifference, peakSample, peakChannel)
 			}
-			t.Logf("%s: %d bars at %d Hz, peak native/WASM sample difference %.9g", fixture, bars, rate, peakDifference)
+			t.Logf("METRIC: native/WASM PCM parity | fixture=%s bars=%d rate=%d peak_difference=%.9g tolerance=1e-6", fixture, bars, rate, peakDifference)
 		})
 	}
 	return hashes
