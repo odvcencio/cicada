@@ -282,7 +282,7 @@ func (s *server) handle(message request) error {
 		if err != nil || manifest == "" && !s.canCreateFiles {
 			return s.reply(message.ID, []any{})
 		}
-		if files, err := s.projectSources(uri); err == nil && files != nil && files.Manifest.ExplicitSources() {
+		if files, err := s.projectSources(uri); err == nil && usesSourceSet(files) {
 			return s.reply(message.ID, s.projectFixAction(files))
 		}
 		fixed, changed, err := migration.FixSource(source)

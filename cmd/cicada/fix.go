@@ -106,12 +106,9 @@ func fixCommandWithWriter(args []string, writeScore func(string, []byte, os.File
 		if err != nil {
 			return err
 		}
-		fixed, changed, fixErr := fixSourceForProject(before, currentEdition)
+		fixed, changed, fixErr := fixLoadedScoreForProject(candidate, before, currentEdition)
 		if fixErr != nil {
 			return fmt.Errorf("%s: %w", candidate, fixErr)
-		}
-		if err := validateSourceEdition(fixed, 2); err != nil {
-			return fmt.Errorf("%s: migrated score does not validate as edition 2: %w", candidate, err)
 		}
 		mode := os.FileMode(0)
 		if changed {
@@ -329,7 +326,7 @@ func isEditionOneScore(path string, projectEdition int, hasManifest bool) (bool,
 	if sourceEditionHeader(source) == 1 {
 		return true, nil
 	}
-	_, changed, err := fixSourceForProject(source, projectEdition)
+	_, changed, err := fixLoadedScoreForProject(path, source, projectEdition)
 	return err == nil && changed, nil
 }
 

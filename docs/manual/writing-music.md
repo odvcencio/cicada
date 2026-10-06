@@ -92,7 +92,7 @@ engine 2
 capabilities 0
 ```
 
-A library needs an explicit source list, license, and author. It has no entry score. `cicada` declares its source edition; `engine` declares its minimum engine edition and defaults to the source edition. `capabilities` is an unsigned engine capability bit mask, decimal or hexadecimal, and defaults to zero. This engine supports editions through 2 and no optional capability bits. Unsupported requirements produce `CICADA-LIB-CAPABILITY`. A library cannot declare tracks, scenes, songs, score headers, buses, clips, mastering settings, exports, or live controls; these produce `CICADA-LIB-DECL`. An optional source edition marker must match its library manifest.
+A library needs an explicit source list, license, and author. It has no entry score. `cicada` declares its source edition; `engine` declares its minimum engine edition and defaults to the source edition. `capabilities` is an unsigned engine capability bit mask, decimal or hexadecimal, and defaults to zero. This engine supports editions through 2 and no optional capability bits. Unsupported requirements produce `CICADA-LIB-CAPABILITY`. A library cannot declare tracks, scenes, songs, score headers, buses, clips, mastering settings, exports, or live controls; these produce `CICADA-LIB-DECL`. An optional source edition marker must match its library manifest. An importing score accepts libraries from the same or an older source edition. Edition-1 effect shorthand retains its processor kind as a qualified named effect; edition-2 library source still requires an explicit kind.
 
 In a score, import the path and use its final path component as the namespace:
 
@@ -107,7 +107,7 @@ Libraries can import other libraries. Imports in all files of a project or libra
 
 Paths use slash-separated source identifiers; `builtin` is a reserved namespace. Resolution checks embedded `std/` libraries, the project's `lib/`, and the user library in that order. The embedded standard namespace is initially empty. The user library is Go's per-OS user config directory plus `cicada/lib`; `$CICADA_LIBRARY` overrides it. Direct imports from it are allowed. If the same path exists in more than one location, two imports share the same final component, or an import namespace conflicts with a local declaration, loading fails with `CICADA-LIB-SHADOW`.
 
-Library assets live under the library's `audio/` folder. Their source paths resolve from that library root, and their own declared audio hashes are verified as well. Source and asset paths cannot escape the library through traversal or symlinks.
+Library assets live under the library's `audio/` folder. Their source paths resolve from that library root, and their own declared audio hashes are verified as well. Source and asset paths cannot escape the library through traversal or symlinks. `cicada convert` refuses library-owned audio with `CICADA-LIB-ASSET` before writing output. Keep the score imports until asset vendoring is supported.
 
 Run these commands from `examples/libraries/`:
 
@@ -124,7 +124,7 @@ cicada render main.cicada -o library.wav --rate 48000 --bits 24
 
 Every load recomputes the hashes. Missing pins, changed content, and changed resolution kinds produce `CICADA-LIB-HASH` at the importing file, line, and column. `check` reports them; playback and rendering refuse them. After an intended edit, run `cicada lib update demo/tone` to update that pin, or omit the path to update every imported library and remove unused pins. The command prints the old and new location kinds and hashes. A targeted update leaves dependency pins unchanged; update those dependencies explicitly or update all imports.
 
-The language server completes import paths and public qualified names and goes to definitions in library source. Unsaved library changes also trigger hash diagnostics. `explain` identifies the library behind a declaration or instrument value. Project-wide formatting and notation fixes keep imported library files untouched. Library vendoring, Save As with imports, bundle provenance, and `require` versions remain follow-up work.
+The language server completes import paths and public qualified names and goes to definitions in library source. Unsaved library changes also trigger hash diagnostics. `explain` identifies the library behind a declaration or instrument value. Project-wide formatting and notation fixes keep imported library files untouched. Notation fixes, local rename, and parameter hover retain import context for loose and independent scores too. Notation fixes stop on changed library pins. Library vendoring, Save As with imports, bundle provenance, and `require` versions remain follow-up work.
 
 ## Tracks and patterns
 
