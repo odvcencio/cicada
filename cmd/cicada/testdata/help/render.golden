@@ -15,6 +15,7 @@ Flags:
   --loudness <LUFS>            target integrated loudness
   --true-peak-max <dBTP>       maximum true peak for loudness rendering (default -1)
   --loudness-tolerance <LU>    target tolerance (default 0.5)
+  --sampler-baseline           compare one recorded layer/take and 2 ms release
   --export <name>              use a named export profile
   --help                       show this help
 
