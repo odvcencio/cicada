@@ -107,6 +107,8 @@ type Instrument struct {
 	delay                           [8192]float32
 	chorusPhases, chorusRates       [3]float32
 	chorusLP                        [2]float32
+	dcInput, dcOutput               [2]float32
+	dcAlpha                         float32
 	write                           int
 	voiceLimit                      int
 	clock                           uint64
@@ -170,6 +172,7 @@ func New(rate int, params Params) (*Instrument, error) {
 		i.sine[s] = float32(math.Sin(2 * math.Pi * float64(s) / 1024))
 	}
 	i.chorus = float32(params.Chorus)
+	i.dcAlpha = float32(math.Exp(-2 * math.Pi * 12 / sr))
 	i.chorusBase, i.chorusDepth = float32(sr*.013), float32(sr*.0034)
 	i.chorusInput, i.chorusOutput = float32(1-math.Exp(-2*math.Pi*8000/sr)), float32(1-math.Exp(-2*math.Pi*6500/sr))
 	for c := range i.chorusPhases {
@@ -280,6 +283,7 @@ func (i *Instrument) Reset() {
 	clear(i.voices[:])
 	clear(i.delay[:])
 	i.chorusLP = [2]float32{}
+	i.dcInput, i.dcOutput = [2]float32{}, [2]float32{}
 	i.write, i.clock, i.pwmPhase, i.sustainPedal = 0, 0, 0, false
 	for c := range i.chorusPhases {
 		i.chorusPhases[c] = float32(c) / 3
@@ -478,5 +482,11 @@ func (i *Instrument) NextStereo() (float32, float32) {
 		left = float32(float32(left*float32(1-float32(.45*i.chorus))) + float32(i.chorus*float32(wetL+correction)))
 		right = float32(float32(right*float32(1-float32(.45*i.chorus))) + float32(i.chorus*float32(wetR+correction)))
 	}
-	return float32(left * i.gain), float32(right * i.gain)
+	left, right = float32(left*i.gain), float32(right*i.gain)
+	// AC coupling after drive, filtering and chorus removes pulse-width bias
+	// and offsets introduced by nonlinear or time-varying processing.
+	i.dcOutput[0] = float32(float32(left-i.dcInput[0]) + float32(i.dcAlpha*i.dcOutput[0]))
+	i.dcOutput[1] = float32(float32(right-i.dcInput[1]) + float32(i.dcAlpha*i.dcOutput[1]))
+	i.dcInput[0], i.dcInput[1] = left, right
+	return i.dcOutput[0], i.dcOutput[1]
 }

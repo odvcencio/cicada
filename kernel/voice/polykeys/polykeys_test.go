@@ -210,7 +210,7 @@ func TestFilterCutoffCalibration(t *testing.T) {
 }
 
 func TestGolden(t *testing.T) {
-	want := map[string]uint64{"poly_keys": 0x29d3d82f0f536cd1, "brass_stab": 0xb8cf4cccde699da9, "soft_pad": 0xc8fef59bf1ce9348, "sync_lead": 0x353d1126d12471e3}
+	want := map[string]uint64{"poly_keys": 0x77d2a358a7f04147, "brass_stab": 0x7ebb45876297e216, "soft_pad": 0x636952cfadf0c656, "sync_lead": 0x2fea6f1122af6275}
 	for _, name := range []string{"poly_keys", "brass_stab", "soft_pad", "sync_lead"} {
 		p, _ := Patch(name)
 		i, _ := New(48000, p)
@@ -237,7 +237,7 @@ func TestGolden(t *testing.T) {
 			_, _ = h.Write(data[:])
 		}
 		if h.Sum64() != want[name] {
-			t.Fatalf("%s golden=%016x want=%016x", name, h.Sum64(), want[name])
+			t.Errorf("%s golden=%016x want=%016x", name, h.Sum64(), want[name])
 		}
 	}
 }
@@ -361,6 +361,80 @@ func TestVoiceLimit(t *testing.T) {
 				t.Fatalf("limit=%d active=%d", limit, active)
 			}
 			i.NextStereo()
+		}
+	}
+}
+
+func TestSustainedAsymmetricPulseHasNoDC(t *testing.T) {
+	for _, rate := range []int{44100, 48000, 96000, 192000} {
+		for _, filter := range []Filter{Ladder, StateVariable} {
+			p := DefaultParams()
+			p.Saw, p.Pulse, p.PulseWidth, p.PWM, p.Sub = 0, 1, .15, 0, 0
+			p.Detune, p.Drift, p.FilterEnv = 0, 0, 0
+			p.Attack, p.Sustain, p.Drive, p.Chorus = .01, 1, .8, .9
+			p.Filter = filter
+			i, _ := New(rate, p)
+			_ = i.NoteOn(69, 127)
+			for range rate {
+				i.NextStereo()
+			}
+			var sum, power, uncoupled [2]float64
+			for range rate * 4 {
+				l, r := i.NextStereo()
+				for c, x := range [...]float32{l, r} {
+					sum[c] += float64(x)
+					power[c] += float64(x) * float64(x)
+					uncoupled[c] += float64(i.dcInput[c])
+				}
+			}
+			for c := range sum {
+				mean, before := sum[c]/float64(rate*4), uncoupled[c]/float64(rate*4)
+				rms := math.Sqrt(power[c] / float64(rate*4))
+				if math.Abs(before) < .005 {
+					t.Fatalf("rate=%d filter=%d test did not exercise pulse bias: %g", rate, filter, before)
+				}
+				if math.Abs(mean) > rms*.001 {
+					t.Fatalf("rate=%d filter=%d channel=%d mean=%g RMS=%g", rate, filter, c, mean, rms)
+				}
+				t.Logf("rate=%d filter=%d channel=%d output DC/RMS=%.2fdB", rate, filter, c, 20*math.Log10(math.Abs(mean)/rms))
+			}
+		}
+	}
+}
+
+func TestChangingPadChordsHaveNoIntegratedDC(t *testing.T) {
+	for _, rate := range []int{44100, 48000, 96000, 192000} {
+		p, _ := Patch("soft_pad")
+		i, _ := New(rate, p)
+		var sum, power [2]float64
+		chords := [...][3]uint8{{48, 55, 60}, {53, 57, 65}, {43, 50, 59}, {48, 55, 64}}
+		for frame := range rate * 12 {
+			if frame%rate == 0 && frame < rate*4 {
+				i.AllNotesOff()
+				for _, note := range chords[frame/rate] {
+					_ = i.NoteOn(note, uint8(70+frame/rate*15))
+				}
+			}
+			if frame == rate*4 {
+				i.AllNotesOff()
+			}
+			l, r := i.NextStereo()
+			for c, x := range [...]float32{l, r} {
+				sum[c] += float64(x)
+				power[c] += float64(x) * float64(x)
+			}
+		}
+		for c := range sum {
+			mean := sum[c] / float64(rate*12)
+			rms := math.Sqrt(power[c] / float64(rate*12))
+			if math.Abs(mean) > rms*.0001 {
+				t.Fatalf("rate=%d channel=%d chord mean=%g RMS=%g", rate, c, mean, rms)
+			}
+			t.Logf("rate=%d channel=%d integrated DC/RMS=%.2fdB", rate, c, 20*math.Log10(math.Abs(mean)/rms))
+		}
+		i.Reset()
+		if i.dcInput != [2]float32{} || i.dcOutput != [2]float32{} {
+			t.Fatal("reset retained coupling history")
 		}
 	}
 }

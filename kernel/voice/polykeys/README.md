@@ -43,6 +43,8 @@ Parameters are prepared in `New` and cannot change during playback. The public f
 
 Oscillators use PolyBLEP discontinuity correction at twice the host rate. Sync resets the slave at the fractional master wrap and corrects that discontinuity; the slave rate clamps to 45% of the internal rate on extreme high notes. Filters use prepared coefficient tables and trapezoidal integration. The chorus uses a fixed circular buffer, three asynchronous LFOs, fractional delay interpolation, and bandwidth limiting inspired by bucket-brigade delays. It does not simulate clock pulses or component noise. The output decimator averages the two internal phases; this is an economical model, rather than a circuit reconstruction.
 
+A fixed 12 Hz stereo high-pass after gain and chorus removes DC from asymmetric pulse widths, nonlinear filtering and PWM. Its coefficients are prepared in `New`, its float32 state allocates no memory, and `Reset` clears its history. The cutoff slightly attenuates the lowest bass notes; a 27.5 Hz sine loses approximately 0.76 dB.
+
 Focused verification:
 
 ```sh
@@ -51,15 +53,15 @@ GOWORK=off go test -tags keys_wasm ./kernel/voice/polykeys -run TestNativeWASMPa
 GOWORK=off go test ./kernel/voice/polykeys -run '^$' -bench BenchmarkPolyKeys
 ```
 
-Tests cover validation, four-rate stability, releases, pedal behavior, velocity response, stealing, reset, circular-buffer boundaries, zero allocations, fixed PCM hashes, fractional hard sync, filter response, and alias energy. The synthetic saw test measures 15.44 dB less aliased energy than an uncorrected saw at 8976.6 Hz. Low-level filter measurements place the ladder cutoff at −3.01 dB and the state-variable cutoff at −3.06 dB relative to 100 Hz with a nominal 1000 Hz cutoff. These are DSP checks; they do not establish a match to a recorded commercial instrument. The optional parity test compares all four patches at all supported rates and block sizes 64, 128, and 256, and checks WASM allocations.
+Tests cover validation, four-rate stability, releases, pedal behavior, velocity response, stealing, reset, circular-buffer boundaries, zero allocations, fixed PCM hashes, fractional hard sync, filter response, alias energy, and sustained/dynamic DC rejection. Both filter choices with asymmetric pulse widths measure at most −86.8 dB DC relative to RMS after settling. Changing pad chords with released tails measure at most −145.0 dB across the supported rates. The synthetic saw test measures 15.44 dB less aliased energy than an uncorrected saw at 8976.6 Hz. Low-level filter measurements place the ladder cutoff at −3.01 dB and the state-variable cutoff at −3.06 dB relative to 100 Hz with a nominal 1000 Hz cutoff. These are DSP checks; they do not establish a match to a recorded commercial instrument. The optional parity test compares all four patches at all supported rates and block sizes 64, 128, and 256, and checks WASM allocations.
 
 Native measurements on an Intel Core Ultra 9 285, 2026-10-06, with 48000 Hz output, 128-frame blocks, `GOMAXPROCS=2`, and one-second sustained benchmarks:
 
 | Patch | One voice, ns/frame | Eight voices, ns/frame total | Eight voices, ns/frame/voice | Eight voices, one CPU core |
 | --- | ---: | ---: | ---: | ---: |
-| `poly_keys` | 108.39 | 512.82 | 64.10 | 2.46% |
-| `brass_stab` | 89.73 | 495.79 | 61.97 | 2.38% |
-| `soft_pad` | 147.02 | 552.04 | 69.00 | 2.65% |
-| `sync_lead` | 90.16 | 455.43 | 56.93 | 2.19% |
+| `poly_keys` | 111.03 | 537.26 | 67.16 | 2.58% |
+| `brass_stab` | 96.19 | 557.57 | 69.70 | 2.68% |
+| `soft_pad` | 107.09 | 564.02 | 70.50 | 2.71% |
+| `sync_lead` | 86.85 | 472.13 | 59.01 | 2.27% |
 
-All cases measured 0 B/op and 0 allocs/op. CPU figures include the shared chorus and are estimates from elapsed native render time on a loaded machine; browser runtime cost is not measured by this benchmark. The TinyGo parity fixture was 24394 raw bytes and matched 1572864 stereo samples bit for bit, including voice-limit changes, with zero WASM trigger/render/reset allocations. The package is not imported by the default core kernel in this capability change, so its core-kernel size delta is zero. The fixture size includes construction and test exports and is not an incremental kernel-size measurement.
+All cases measured 0 B/op and 0 allocs/op. CPU figures include the shared chorus and are estimates from elapsed native render time on a loaded machine; browser runtime cost is not measured by this benchmark. The TinyGo parity fixture was 24566 raw bytes and matched 1572864 stereo samples bit for bit, including voice-limit changes, with zero WASM trigger/render/reset allocations. The output coupling adds 172 bytes to the previous standalone fixture. The package is not imported by the default core kernel in this capability change, so its core-kernel size delta is zero. The fixture size includes construction and test exports and is not an incremental kernel-size measurement.
