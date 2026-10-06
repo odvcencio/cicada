@@ -7,7 +7,8 @@
       "acid",
       "drums",
       "instrument",
-      "piano"
+      "piano",
+      "guitar"
     ],
     "source": "level",
     "unit": "dB",
@@ -31,7 +32,8 @@
       "acid",
       "drums",
       "instrument",
-      "piano"
+      "piano",
+      "guitar"
     ],
     "source": "pan",
     "unit": "",
@@ -54,7 +56,8 @@
       "acid",
       "drums",
       "instrument",
-      "piano"
+      "piano",
+      "guitar"
     ],
     "source": "send",
     "unit": "",
@@ -77,7 +80,8 @@
       "acid",
       "drums",
       "instrument",
-      "piano"
+      "piano",
+      "guitar"
     ],
     "source": "send",
     "unit": "",
@@ -100,7 +104,8 @@
       "acid",
       "drums",
       "instrument",
-      "piano"
+      "piano",
+      "guitar"
     ],
     "source": "mute",
     "unit": "",
@@ -122,7 +127,8 @@
       "acid",
       "drums",
       "instrument",
-      "piano"
+      "piano",
+      "guitar"
     ],
     "source": "solo",
     "unit": "",
@@ -144,7 +150,8 @@
       "acid",
       "drums",
       "instrument",
-      "piano"
+      "piano",
+      "guitar"
     ],
     "source": "send_pre",
     "unit": "",
@@ -170,7 +177,8 @@
       "acid",
       "drums",
       "instrument",
-      "piano"
+      "piano",
+      "guitar"
     ],
     "source": "bus",
     "unit": "",
@@ -196,7 +204,8 @@
       "acid",
       "drums",
       "instrument",
-      "piano"
+      "piano",
+      "guitar"
     ],
     "source": "insert",
     "unit": "",
@@ -2566,5 +2575,169 @@
     "live": true,
     "automatable": true,
     "persist": "source"
+  },
+  {
+    "id": "guitar.bend",
+    "path": "bend",
+    "scope": "track",
+    "voices": [
+      "guitar"
+    ],
+    "source": "bend",
+    "unit": "semitone",
+    "min": -12,
+    "max": 12,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 8,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "guitar.vibrato",
+    "path": "vibrato",
+    "scope": "track",
+    "voices": [
+      "guitar"
+    ],
+    "source": "vibrato",
+    "unit": "cent",
+    "min": 0,
+    "max": 100,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 8,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "guitar.brightness",
+    "path": "brightness",
+    "scope": "track",
+    "voices": [
+      "guitar"
+    ],
+    "source": "brightness",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0.7,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 8,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "guitar.damping",
+    "path": "damping",
+    "scope": "track",
+    "voices": [
+      "guitar"
+    ],
+    "source": "damping",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 8,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "guitar.pickup",
+    "path": "pickup",
+    "scope": "track",
+    "voices": [
+      "guitar"
+    ],
+    "source": "pickup",
+    "unit": "ratio",
+    "min": 0.05,
+    "max": 0.45,
+    "default": 0.22,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 8,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "guitar.drive",
+    "path": "drive",
+    "scope": "track",
+    "voices": [
+      "guitar"
+    ],
+    "source": "drive",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 8,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "guitar.experimental",
+    "path": "experimental",
+    "scope": "track",
+    "voices": [
+      "guitar"
+    ],
+    "source": "experimental",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "toggle",
+    "display_step": 1,
+    "smoothing_ms": 0,
+    "live": false,
+    "automatable": false,
+    "persist": "source",
+    "values": [
+      "off",
+      "on"
+    ],
+    "type": "boolean"
+  },
+  {
+    "id": "guitar.octave",
+    "path": "octave",
+    "scope": "track",
+    "voices": [
+      "guitar"
+    ],
+    "source": "octave",
+    "unit": "",
+    "min": 0,
+    "max": 6,
+    "default": 2,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 0,
+    "live": false,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
   }
 ]

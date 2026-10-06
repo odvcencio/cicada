@@ -152,6 +152,25 @@ to 55%. `transpose` changes note patterns by −24 to +24 semitones. A pattern
 without its own `seed` inherits the project seed. The project defaults are
 130 BPM, A minor, and seed 0.
 
+## Try the experimental guitar
+
+Edition 2 can play the physical string and amp prototype with
+`track lead guitar { experimental = on }`. It is a research voice without
+listening acceptance. Use it for auditions; DSP checks do not establish timbre.
+
+The [guitar riff](../../examples/expressive-guitar.cicada) demonstrates bends,
+slides, palm mutes and clean versus driven amp settings. Render it with
+`cicada render examples/expressive-guitar.cicada -o guitar.wav`, or open the
+score in Studio. Native playback, the AudioWorklet and offline rendering all
+run the model. `~` slides into the next pitch; a new note replucks the string.
+Scene settings such as `lead.bend = 2` and `lead.damping = 0.8` change the
+sounding string. Bend is in semitones and vibrato is in cents, both written
+without a suffix. All six continuous controls smooth over 8 ms.
+
+See [controls and limits](../spec/edition-2.md#experimental-guitar-voice).
+Drive zero still has amp coloration. This voice models one string and a
+generic amp; it does not emulate a measured guitar, circuit or cabinet.
+
 ## Shape a note
 
 Keep modifiers next to the note they change:

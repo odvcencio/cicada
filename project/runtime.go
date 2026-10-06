@@ -163,6 +163,13 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 			}
 			config.PianoSustain = sustain
+		case "guitar":
+			config.Kind, config.Experimental = engine.VoiceGuitar, true
+			params, err := guitarParamsFromValues(track.Params)
+			if err != nil {
+				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+			}
+			config.Guitar = params
 		case "acid":
 			config.Kind = engine.VoiceAcid
 			params, err := acidParamsFromValues(track.Params)

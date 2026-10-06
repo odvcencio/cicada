@@ -103,7 +103,7 @@
     return Math.abs(result) < step / 1000 ? 0 : Number(result.toFixed(8));
   }
   function unitText(unit) {
-    return ({dB:'decibels', Hz:'hertz', ms:'milliseconds', ratio:'ratio', semitone:'semitones'})[unit] || '';
+    return ({dB:'decibels', Hz:'hertz', ms:'milliseconds', ratio:'ratio', semitone:'semitones', cent:'cents'})[unit] || '';
   }
   function delayDivisionMilliseconds(division, tempo) {
     const beats = ({'1/32':0.125, '1/16':0.25, '1/16T':1 / 6, '1/16.':0.375, '1/8':0.5, '1/8T':1 / 3, '1/8.':0.75, '3/16':0.75, '1/4':1, '1/4.':1.5, '1/2':2})[division];

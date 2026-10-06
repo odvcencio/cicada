@@ -45,10 +45,21 @@ TinyGo audio module:
 
 The image allocation accepts 32 bytes through 2 MiB and happens before audio
 initialization. A new module instance is required to load a different project.
-The current encoded image is version 10, with a little-endian header. It carries
+Existing voices encode as version 13; an opted-in experimental guitar uses
+version 15. Shipped versions 8..13 remain readable. Version 14 belongs to the
+in-flight chord/schedule lanes. The little-endian image carries
 mixer routing, effects, instrument graphs, authored kits, patterns, scenes,
 and song entries. Use `kernelimage.Encode` instead of constructing the image
 bytes yourself.
+
+The guitar runs through the same production AudioWorklet callback as other
+voices. Select it in an edition-2 score with `experimental = on` before
+compilation. It remains a research prototype without listening acceptance;
+see [its controls and limits](../spec/edition-2.md#experimental-guitar-voice).
+`gosx_audio_allocation_count` returns the TinyGo heap allocation count so
+hosts can verify that rendering, including sequenced note/control changes,
+does not allocate. Read it outside a timed callback; memory size alone cannot
+detect allocations that fit within the existing heap.
 
 The older direct-setup exports remain available when a host needs to set track
 kinds and arrangement tables itself. Set up to sixteen track kinds with

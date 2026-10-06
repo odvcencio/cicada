@@ -53,7 +53,8 @@ func Cicada() *grammargen.Grammar {
 	g.Define("seed_decl", seq(str("seed"), sym("integer")))
 
 	// `track <name> <voice> { key = value }` binds a name to the built-in acid
-	// or drums voice, or to a declared instrument.
+	// or drums voice, experimental guitar (edition 2 with experimental = on),
+	// or to a declared instrument. No new syntax is needed for guitar controls.
 	g.Define("track_decl", seq(
 		str("track"), field("name", sym("_name")), field("kind", sym("_name")),
 		str("{"), repeat(sym("mix_setting")), str("}"),

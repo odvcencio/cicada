@@ -44,6 +44,19 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 			})
 			diagnostics = append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: position})
 		}
+		if track.Kind == "guitar" {
+			if _, err := CompileGuitarParams(track); err != nil {
+				position := track.Position
+				for _, param := range track.Params {
+					single := notation.Track{Params: []notation.Param{{Name: "experimental", Value: "on"}, param}}
+					if _, singleErr := CompileGuitarParams(single); singleErr != nil {
+						position = param.ValuePosition
+						break
+					}
+				}
+				diagnostics = append(diagnostics, notation.Diagnostic{Code: projectDiagnosticCode(err), Severity: "error", Message: err.Error(), Position: position})
+			}
+		}
 		if track.Kind == "acid" {
 			if _, err := CompileAcidParams(track); err != nil {
 				position := parameterErrorPosition(track, func(single notation.Track) error {

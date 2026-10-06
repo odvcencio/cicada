@@ -156,6 +156,8 @@ func descriptorHasVoice(descriptor paramdefs.Descriptor, kind string) bool {
 
 func parameterVoiceKind(p *Project, kind string) string {
 	switch kind {
+	case "guitar":
+		return "guitar"
 	case "acid":
 		return "acid"
 	case "drums":
@@ -220,7 +222,7 @@ func validateParameterValue(descriptor paramdefs.Descriptor, value Value) error 
 		return fmt.Errorf("expected a finite numeric value")
 	}
 	want := strings.ToLower(descriptor.Unit)
-	if want == "" || want == "ratio" || want == "semitone" {
+	if want == "" || want == "ratio" || want == "semitone" || want == "cent" {
 		want = "unit"
 	}
 	if value.Unit != want {
