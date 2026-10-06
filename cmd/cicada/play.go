@@ -332,6 +332,17 @@ func playSourceHashBytes(path string, source []byte) ([32]byte, error) {
 	var empty [32]byte
 	hash := sha256.New()
 	_, _ = hash.Write(source)
+	sources, err := project.ReadSources(path, nil)
+	if err != nil {
+		return empty, err
+	}
+	if sources.Manifest.ExplicitSources() {
+		for _, file := range sources.Files {
+			_, _ = hash.Write([]byte(file.Path))
+			_, _ = hash.Write([]byte{0})
+			_, _ = hash.Write(file.Source)
+		}
+	}
 	dir := filepath.Dir(path)
 	for {
 		manifest := filepath.Join(dir, "cicada.mod")

@@ -42,3 +42,16 @@
 
 ((sampler_decl (param_decl name: (identifier) @field value: (value (identifier) @name))) @reference.asset
   (#eq? @field "asset"))
+
+(track_decl kind: (qualified_name) @name) @reference.voice
+(kit_target instrument: (qualified_name) @name) @reference.instrument
+(scene_assignment value: (scene_value (qualified_name) @name)) @reference.pattern
+(phrase_use name: (qualified_name) @name) @reference.phrase
+(send_decl to: (qualified_name) @name) @reference.mixer
+(insert_chain first: (qualified_name) @name) @reference.mixer
+(insert_chain next: (qualified_name) @name) @reference.mixer
+(clip_decl asset: (qualified_name) @name) @reference.asset
+((param_decl name: (identifier) @field value: (value (qualified_name) @name)) @reference.mixer
+  (#any-of? @field "insert" "out" "bus"))
+((sampler_decl (param_decl name: (identifier) @field value: (value (qualified_name) @name))) @reference.asset
+  (#eq? @field "asset"))
