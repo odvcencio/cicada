@@ -22,6 +22,7 @@ type sceneTrackParameters struct {
 	mix                       mix.Track
 	gainDB, pan, sendA, sendB float32
 	sourceOff                 bool
+	pianoSustain              float32
 	acid                      acid.Params
 	drums                     [drum.LaneCount]drum.Params
 	drive                     fx.DriveParams
@@ -46,6 +47,7 @@ func (e *Engine) captureSceneDefaults() {
 		p.mix, p.gainDB, p.pan = v.mix, v.gainDB, v.pan
 		p.sendA, p.sendB, p.sourceOff = v.sendA, v.sendB, v.sourceOff
 		p.acid, p.drums = v.acidTarget, v.drumTargets
+		p.pianoSustain = v.pianoSustain
 		if v.insert != nil {
 			p.drive = v.insert.Params()
 		}
@@ -77,6 +79,13 @@ func (e *Engine) restoreSceneDefaults() bool {
 		v.muted, v.soloed = false, false
 		v.muteGain, v.muteTarget = 1, 1
 		v.acidTarget, v.drumTargets = p.acid, p.drums
+		if v.piano != nil {
+			v.pianoSustain = p.pianoSustain
+			if v.piano.SetSustain(p.pianoSustain) != nil {
+				e.fault(18)
+				return false
+			}
+		}
 		if v.acid != nil && v.acid.SetParams(p.acid) != nil {
 			e.fault(18)
 			return false

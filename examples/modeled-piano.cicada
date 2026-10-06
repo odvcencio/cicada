@@ -1,0 +1,30 @@
+cicada 2
+title "Modeled grand piano"
+tempo 96
+key c major
+seed 42
+
+track grand piano {
+  level = -6db
+  sustain = 0
+}
+
+pattern motif notes steps=16 {
+  gate = 60%
+  c3 e3 g3 c4 | e4 . d4 c4 | a3 c4 e4 a4 | g4 e4 d4 .
+}
+
+scene dry {
+  grand = motif
+  grand.sustain = 0
+}
+
+scene pedal {
+  grand = motif
+  grand.sustain = 1
+}
+
+song {
+  dry*2
+  pedal*2
+}
