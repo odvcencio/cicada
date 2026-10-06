@@ -1,0 +1,69 @@
+import "std/presets"
+
+title "Standard presets"
+
+tempo 128
+
+key a minor
+
+seed 4242
+
+track acid-squelch presets.acid-squelch {
+  level = -18dB
+}
+
+track acid-round presets.acid-round {
+  level = -18dB
+}
+
+track acid-bite presets.acid-bite {
+  level = -18dB
+}
+
+track kit-tight presets.kit-tight {
+  level = -18dB
+}
+
+track kit-roomy presets.kit-roomy {
+  level = -18dB
+}
+
+track kit-lofi presets.kit-lofi {
+  level = -18dB
+}
+
+pattern melody {
+  gate = 55%
+  1^ . 3 . 5~ 1 . 7,
+}
+
+pattern beat drums {
+  bd: X... x... X... x...
+  sd: .... X... .... X...
+  ch: x.x. x.x. x.x. x.x.
+  oh: .... .... ..x. ....
+}
+
+scene first {
+  acid-squelch = melody
+  acid-round = melody
+  acid-bite = melody
+  kit-tight = beat
+  kit-roomy = beat
+  kit-lofi = beat
+}
+
+scene second {
+  acid-squelch = keep
+  acid-round = keep
+  acid-bite = keep
+  kit-tight = keep
+  kit-roomy = keep
+  kit-lofi = keep
+  acid-squelch.cutoff = 900Hz
+}
+
+song {
+  first
+  second
+}

@@ -5,7 +5,7 @@ import (
 	"m31labs.dev/cicada/kernel/voice/piano"
 )
 
-func validPianoPattern(pattern seq.Pattern) bool {
+func validPianoPattern(pattern *seq.Pattern) bool {
 	for i := uint8(0); i < pattern.Len; i++ {
 		step, err := seq.UnpackStep(pattern.Steps[i])
 		if err != nil {

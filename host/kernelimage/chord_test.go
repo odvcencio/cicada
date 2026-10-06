@@ -62,12 +62,12 @@ func TestChordImageAndRealCommandUploadPlayback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if binary.LittleEndian.Uint16(image[4:6]) != 14 {
-		t.Fatal("poly image not version14")
+	if binary.LittleEndian.Uint16(image[4:6]) != kernelimage.UnifiedImageVersion {
+		t.Fatal("poly image not version15")
 	}
 	decoded, err := kernelimage.Decode(image, 48000, 128)
 	if err != nil || !reflect.DeepEqual(cfg, decoded) {
-		t.Fatalf("v14 changed config: %v", err)
+		t.Fatalf("v15 changed config: %v", err)
 	}
 	reference, err := engine.New(decoded)
 	if err != nil {
@@ -129,7 +129,7 @@ func TestChordImageAndRealCommandUploadPlayback(t *testing.T) {
 	if err != nil || dc.Patterns[0].Slots[0].GatePercent != 60 || dc.Patterns[0].Slots[0].Seed != 7 {
 		t.Fatal("complete image dropped gate/seed")
 	}
-	image[4] = 15
+	image[4] = 16
 	if _, err := kernelimage.Decode(image, 48000, 128); err == nil {
 		t.Fatal("unsupported image version accepted")
 	}
@@ -162,6 +162,63 @@ func TestChordCommandUploadCanShrinkLoadedSlot(t *testing.T) {
 	}
 	if got := audioFrames(t, e); len(got) == 0 {
 		t.Fatal("shrunken chord did not render")
+	}
+}
+
+func TestPatternCommandUploadClearsRetainedStepsBeforeExpansion(t *testing.T) {
+	for _, test := range []struct {
+		name      string
+		note      uint8
+		length    uint8
+		transpose int8
+	}{
+		{"high-pitch", 127, 2, 12},
+		{"low-pitch-full-slot", 0, 64, -12},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			cfg := chordConfig(t)
+			loaded := seq.Pattern{Len: test.length, GatePercent: 55, Seed: cfg.Seed}
+			for i := uint8(0); i < loaded.Len; i++ {
+				loaded.Steps[i], _ = seq.PackStep(seq.Step{Note: 62, Gate: true, Ratchet: 1, Probability: 100})
+			}
+			loaded.Steps[loaded.Len-1], _ = seq.PackStep(seq.Step{Note: test.note, Gate: true, Ratchet: 1, Probability: 100})
+			cfg.Patterns[0].Slots[0] = loaded
+			uploaded, err := engine.New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !uploaded.Push(cmd.Command{Op: cmd.OpSetPatternLen, Track: 0, Index: 1}) {
+				t.Fatal("shrink command rejected")
+			}
+			var left, right [128]float32
+			uploaded.Render(left[:], right[:])
+			var message cmd.Message
+			for uploaded.Poll(&message) {
+				if message.Kind == cmd.Fault {
+					t.Fatalf("shrink fault: %+v", message)
+				}
+			}
+			cfg.Patterns[0].Slots[0].Len = 1
+			replacement := loaded
+			replacement.Transpose = test.transpose
+			replacement.Steps[replacement.Len-1] = replacement.Steps[0]
+			commands, err := kernelimage.PatternCommands(replacement, &cfg, 0, 0, kernelimage.CapabilityChords)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !uploaded.PushBatch(commands) {
+				t.Fatal("expand upload rejected")
+			}
+			cfg.Patterns[0].Slots[0] = replacement
+			reference, err := engine.New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			reference.Render(left[:], right[:])
+			if got, want := audioFrames(t, uploaded), audioFrames(t, reference); !reflect.DeepEqual(got, want) {
+				t.Fatal("expanded upload audio differs from complete image")
+			}
+		})
 	}
 }
 

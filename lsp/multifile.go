@@ -19,6 +19,9 @@ func (s *server) projectSources(uri string) (*project.Sources, error) {
 	if !ok {
 		return nil, nil
 	}
+	if context, ok := s.libraryContexts[uri]; ok {
+		path = context.entry
+	}
 	overrides := map[string][]byte{}
 	for uri, data := range s.documents {
 		if path, ok := scorePathFromURI(uri); ok {
@@ -27,7 +30,23 @@ func (s *server) projectSources(uri string) (*project.Sources, error) {
 			}
 		}
 	}
-	return project.ReadSources(path, overrides)
+	for uri, context := range s.libraryContexts {
+		if data, ok := s.documents[uri]; ok {
+			overrides[context.source] = data
+		}
+	}
+	sources, err := project.ReadSources(path, overrides)
+	if err != nil {
+		return nil, err
+	}
+	for i := range sources.Files {
+		for cached, context := range s.libraryContexts {
+			if sources.Files[i].Path == context.source {
+				sources.Files[i].Path, _ = scorePathFromURI(cached)
+			}
+		}
+	}
+	return sources, nil
 }
 
 func usesSourceSet(files *project.Sources) bool {
@@ -43,7 +62,7 @@ func sourceSetEdition(files *project.Sources) int {
 
 func symbolFamily(kind string) string {
 	switch kind {
-	case "instrument", "kit", "sampler":
+	case "instrument", "kit", "sampler", "preset":
 		return "voice"
 	case "pattern", "clip":
 		return "pattern"
@@ -60,7 +79,7 @@ func (s *server) projectDefinition(uri string, at position) any {
 		return nil
 	}
 	if files != nil {
-		if target, found := libraryDefinition(files, uri, source, at); found {
+		if target, found := s.libraryDefinition(files, uri, source, at); found {
 			return target
 		}
 	}
@@ -68,6 +87,10 @@ func (s *server) projectDefinition(uri string, at position) any {
 		return definition(uri, source, at)
 	}
 	selected, _, ok := symbolAt(source, at)
+	if selected.Kind == "preset-target" {
+		score, _ := files.Parse()
+		selected = resolvePresetSymbols([]language.Symbol{selected}, score)[0]
+	}
 	if match, found := parameterPathAt(source, byteOffset(source, at)); found {
 		score, ds := files.Parse()
 		if score == nil || hasErrors(ds) {
@@ -85,7 +108,11 @@ func (s *server) projectDefinition(uri string, at position) any {
 			for _, file := range files.Files {
 				if file.Path == origin.Position.File {
 					start := scalarOffset(file.Source, origin.Position)
-					return map[string]any{"uri": fileURI(file.Path), "range": region{Start: utf16Position(file.Source, start), End: utf16Position(file.Source, start+len(strings.TrimPrefix(resolved.Owner, strings.ReplaceAll(origin.Library, "/", ".")+".")))}}
+					uri, err := s.librarySourceURI(files, files.Libraries[file.Library], file)
+					if err != nil {
+						return nil
+					}
+					return map[string]any{"uri": uri, "range": region{Start: utf16Position(file.Source, start), End: utf16Position(file.Source, start+len(strings.TrimPrefix(resolved.Owner, strings.ReplaceAll(origin.Library, "/", ".")+".")))}}
 				}
 			}
 		}
@@ -105,7 +132,11 @@ func (s *server) projectDefinition(uri string, at position) any {
 		}
 		for _, symbol := range symbols {
 			if symbol.Role == "definition" && symbol.Name == selected.Name && symbolFamily(symbol.Kind) == symbolFamily(selected.Kind) {
-				return map[string]any{"uri": fileURI(file.Path), "range": symbolRegion(file.Source, symbol)}
+				uri, err := s.librarySourceURI(files, files.Libraries[file.Library], file)
+				if err != nil {
+					return nil
+				}
+				return map[string]any{"uri": uri, "range": symbolRegion(file.Source, symbol)}
 			}
 		}
 	}
@@ -159,6 +190,8 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 	if !ok {
 		return nil
 	}
+	originalScore, _ := files.Parse()
+	selected = resolvePresetSymbols([]language.Symbol{selected}, originalScore)[0]
 	local := selected.Kind == "binding" || selected.Kind == "parameter"
 	scope := instrumentScope(source, scalarOffset(source, selected.Position))
 	changes := map[string]any{}
@@ -178,6 +211,7 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 		if err != nil {
 			return nil
 		}
+		symbols = resolvePresetSymbols(symbols, originalScore)
 		var edits []map[string]any
 		var replacements []replacement
 		for _, symbol := range symbols {
@@ -272,6 +306,9 @@ func (s *server) projectCompletion(uri string, at position) any {
 		return items
 	}
 	files, err := s.projectSources(uri)
+	if items, ok := presetCompletion(files, source, at); ok {
+		return items
+	}
 	if files != nil {
 		if items := libraryItems(files, uri, source, at); len(items) > 0 {
 			return items

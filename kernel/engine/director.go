@@ -84,7 +84,7 @@ func (e *Engine) applyDirector(c cmd.Command) {
 	}
 	e.fadeDirectorTrack(track, 1, c.Arg1, false)
 	d.stinger, d.slot, d.fade = true, c.Index, c.Arg1
-	d.endTick = tick + int64(p.slots[c.Index].Len)*seq.TicksPerStep
+	d.endTick = tick + int64(p.slots[c.Index].Len)*p.slots[c.Index].GridTicks()
 	e.selectPatternNow(track, int(c.Index), true)
 	p.chainArmed = false
 	e.emit(cmd.Message{Kind: cmd.StingerStarted, Track: c.Track, A: c.Index, Tick: tick})

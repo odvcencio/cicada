@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/dsp/fastmath"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/voice/modeledkit"
 )
 
 type Lane uint8
@@ -134,7 +135,7 @@ func (f *filter) configure(cutoff, q, rate float64) {
 	cutoff = min(cutoff, .45*rate)
 	g := math.Tan(math.Pi * cutoff / rate)
 	f.k = 1 / q
-	f.a1 = 1 / (1 + g*(g+f.k))
+	f.a1 = 1 / (1 + float64(g*(g+f.k)))
 	f.a2 = g * f.a1
 	f.a3 = g * f.a2
 	f.ic1, f.ic2 = 0, 0
@@ -142,11 +143,11 @@ func (f *filter) configure(cutoff, q, rate float64) {
 
 func (f *filter) next(input float64) (band, high float64) {
 	v3 := input - f.ic2
-	v1 := f.a1*f.ic1 + f.a2*v3
-	v2 := f.ic2 + f.a2*f.ic1 + f.a3*v3
-	f.ic1 = 2*v1 - f.ic1
-	f.ic2 = 2*v2 - f.ic2
-	return v1, input - f.k*v1 - v2
+	v1 := float64(f.a1*f.ic1) + float64(f.a2*v3)
+	v2 := f.ic2 + float64(f.a2*f.ic1) + float64(f.a3*v3)
+	f.ic1 = float64(2*v1) - f.ic1
+	f.ic2 = float64(2*v2) - f.ic2
+	return v1, input - float64(f.k*v1) - v2
 }
 
 type state struct {
@@ -176,6 +177,9 @@ type laneVoice struct {
 	customChoke                         int
 	customAccent                        float64
 	customOldAccent                     float64
+	modeled                             *modeledkit.Voice
+	modeledProfile                      modeledkit.Profile
+	modeledAccent                       float64
 }
 
 type Kit struct {
@@ -245,6 +249,13 @@ func (k *Kit) SetParamsTarget(lane Lane, params Params, alpha float64) error {
 		return err
 	}
 	v := &k.lanes[lane]
+	if v.modeled != nil {
+		controls := params
+		controls.LevelDB, controls.Pan = v.params.LevelDB, v.params.Pan
+		if controls != v.params {
+			return Error("modeled kit synthesis controls require prepared lane bindings")
+		}
+	}
 	v.targetParams, v.paramAlpha = params, alpha
 	angle := (params.Pan + 1) * math.Pi / 4
 	v.targetPanL, v.targetPanR = math.Cos(angle), math.Sin(angle)
@@ -267,6 +278,7 @@ func (k *Kit) SetRecipe(lane, recipe Lane) error {
 	v.recipe = recipe
 	v.enabled = true
 	v.custom, v.customOld = nil, nil
+	v.modeled = nil
 	v.customActive = false
 	v.customChoke = 0
 	v.current = state{noise: k.seed ^ uint32(lane+1)*0x9e3779b9}
@@ -280,18 +292,24 @@ func (k *Kit) SetRecipe(lane, recipe Lane) error {
 // ignore or shape pitch in their instrument code. The lane retains one current
 // voice and a single old state for the 1 ms retrigger fade.
 func (k *Kit) SetGraph(lane Lane, program graph.Program) error {
+	return k.SetGraphFromProgram(lane, &program)
+}
+
+// SetGraphFromProgram prepares both retrigger voices without copying the node array.
+func (k *Kit) SetGraphFromProgram(lane Lane, program *graph.Program) error {
 	if lane >= LaneCount {
 		return Error("unsupported drum lane")
 	}
-	current, err := graph.NewVoice(program, int(k.rate))
+	current, err := graph.NewVoiceFromProgram(program, int(k.rate))
 	if err != nil {
 		return err
 	}
-	old, err := graph.NewVoice(program, int(k.rate))
+	old, err := graph.NewVoiceFromProgram(program, int(k.rate))
 	if err != nil {
 		return err
 	}
 	v := &k.lanes[lane]
+	v.modeled = nil
 	v.recipe = lane
 	v.custom, v.customOld = current, old
 	v.customActive = false
@@ -300,6 +318,33 @@ func (k *Kit) SetGraph(lane Lane, program graph.Program) error {
 	v.fadeRemaining = 0
 	v.enabled = true
 	p := DefaultParams(lane)
+	return k.SetParams(lane, p)
+}
+
+// SetModeled prepares one modal drum voice before rendering begins. Source
+// lanes may select any articulation; hat choking follows the selected models.
+func (k *Kit) SetModeled(lane Lane, profile modeledkit.Profile, params modeledkit.Params, levelDB, pan float64) error {
+	if lane >= LaneCount {
+		return Error("unsupported drum lane")
+	}
+	voice, err := modeledkit.NewVoice(profile, int(k.rate), k.seed^uint32(lane+1)*0x9e3779b9)
+	if err != nil {
+		return err
+	}
+	if err := voice.SetParams(params); err != nil {
+		return err
+	}
+	p := DefaultParams(lane)
+	p.LevelDB, p.Pan = levelDB, pan
+	if err := p.Validate(lane); err != nil {
+		return err
+	}
+	v := &k.lanes[lane]
+	v.recipe, v.enabled = lane, true
+	v.custom, v.customOld = nil, nil
+	v.customActive, v.customChoke, v.fadeRemaining = false, 0, 0
+	v.current, v.old = state{}, state{}
+	v.modeled, v.modeledProfile, v.modeledAccent = voice, profile, 1
 	return k.SetParams(lane, p)
 }
 
@@ -316,6 +361,9 @@ func (k *Kit) Disable(lane Lane) error {
 	v.customActive = false
 	v.customChoke = 0
 	v.fadeRemaining = 0
+	if v.modeled != nil {
+		v.modeled.Reset()
+	}
 	return nil
 }
 
@@ -335,6 +383,10 @@ func (k *Kit) Reset() {
 			v.custom.Reset()
 			v.customOld.Reset()
 		}
+		if v.modeled != nil {
+			v.modeled.Reset()
+			v.modeledAccent = 1
+		}
 	}
 }
 
@@ -345,10 +397,29 @@ func (k *Kit) Hit(lane Lane, velocity uint8, accent bool) {
 	if !k.lanes[lane].enabled {
 		return
 	}
-	if lane == CH {
+	if lane == CH && k.lanes[lane].modeled == nil {
 		k.NoteOff(OH)
 	}
 	v := &k.lanes[lane]
+	if v.modeled != nil {
+		if velocity == 0 {
+			return
+		}
+		if modeledkit.IsHat(v.modeledProfile) {
+			for i := range k.lanes {
+				other := &k.lanes[i]
+				if i != int(lane) && other.modeled != nil && modeledkit.IsHat(other.modeledProfile) {
+					other.modeled.Choke()
+				}
+			}
+		}
+		v.modeledAccent = 1
+		if accent {
+			velocity, v.modeledAccent = 127, math.Sqrt2
+		}
+		v.modeled.Hit(velocity)
+		return
+	}
 	if v.custom != nil {
 		if v.customActive {
 			v.customOld.CopyStateFrom(v.custom)
@@ -393,6 +464,10 @@ func (k *Kit) NoteOff(lane Lane) {
 	if lane >= LaneCount {
 		return
 	}
+	if v := &k.lanes[lane]; v.modeled != nil {
+		v.modeled.Choke()
+		return
+	}
 	if v := &k.lanes[lane]; v.custom != nil {
 		if v.customActive {
 			v.custom.NoteOff()
@@ -415,18 +490,24 @@ func (k *Kit) NextStereo() (left, right float32) {
 		v := &k.lanes[lane]
 		if v.paramAlpha > 0 {
 			alpha := v.paramAlpha
-			v.params.Tune += (v.targetParams.Tune - v.params.Tune) * alpha
+			v.params.Tune += float64((v.targetParams.Tune - v.params.Tune) * alpha)
 			decay := v.params.Decay
-			v.params.Decay += (v.targetParams.Decay - v.params.Decay) * alpha
+			v.params.Decay += float64((v.targetParams.Decay - v.params.Decay) * alpha)
 			if v.recipe == BD && v.params.Decay != decay {
 				coefficient := math.Exp(-1 / (v.params.Decay * k.rate))
 				v.current.ampDecay, v.old.ampDecay = coefficient, coefficient
 			}
-			v.level += (v.targetLevel - v.level) * alpha
-			v.panL += (v.targetPanL - v.panL) * alpha
-			v.panR += (v.targetPanR - v.panR) * alpha
+			v.level += float64((v.targetLevel - v.level) * alpha)
+			v.panL += float64((v.targetPanL - v.panL) * alpha)
+			v.panR += float64((v.targetPanR - v.panR) * alpha)
 		}
 		if !v.enabled {
+			continue
+		}
+		if v.modeled != nil {
+			output := float64(v.modeled.Next()) * v.modeledAccent * v.level
+			l += output * v.panL
+			r += output * v.panR
 			continue
 		}
 		if v.custom != nil {
@@ -442,22 +523,22 @@ func (k *Kit) NextStereo() (left, right float32) {
 				}
 			}
 			if v.fadeRemaining > 0 {
-				output += float64(v.customOld.Next()) * v.customOldAccent * float64(v.fadeRemaining) / max(1, k.rate/1000)
+				output += float64(float64(v.customOld.Next()) * v.customOldAccent * float64(v.fadeRemaining) / max(1, k.rate/1000))
 				v.fadeRemaining--
 			}
-			l += output * v.level * v.panL
-			r += output * v.level * v.panR
+			l += float64(output * v.level * v.panL)
+			r += float64(output * v.level * v.panR)
 			continue
 		}
 		output := k.nextState(v.recipe, &v.current, v.params)
 		if v.fadeRemaining > 0 {
 			old := k.nextState(v.recipe, &v.old, v.params)
-			output += old * float64(v.fadeRemaining) / max(1, k.rate/1000)
+			output += float64(old * float64(v.fadeRemaining) / max(1, k.rate/1000))
 			v.fadeRemaining--
 		}
 		output *= nominalTrim[v.recipe] * v.level
-		l += output * v.panL
-		r += output * v.panR
+		l += float64(output * v.panL)
+		r += float64(output * v.panR)
 	}
 	if math.IsNaN(l) || math.IsNaN(r) || math.IsInf(l, 0) || math.IsInf(r, 0) {
 		k.fault = true
@@ -509,11 +590,11 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 	var output float64
 	switch lane {
 	case BD:
-		frequency := p.Tune * (1 + p.Sweep*s.sweep)
+		frequency := p.Tune * (1 + float64(p.Sweep*s.sweep))
 		s.phase[0] = wrap(s.phase[0] + frequency/k.rate)
 		body := math.Sin(2*math.Pi*s.phase[0]) * s.amp * s.velocity
 		click := nextNoise(&s.noise) * s.click * p.Click * s.noiseVelocity
-		output = fastmath.Tanh((body+click)*(1+p.Drive*3)) / (1 + p.Drive*.7)
+		output = fastmath.Tanh((body+click)*(1+float64(p.Drive*3))) / (1 + float64(p.Drive*.7))
 		s.sweep *= s.sweepDecay
 		s.amp *= s.ampDecay
 		s.click *= k.clickDecay
@@ -521,16 +602,16 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		sweep := 1 + math.Exp(-age/.008)
 		s.phase[0] = wrap(s.phase[0] + 180*p.Tune*sweep/k.rate)
 		s.phase[1] = wrap(s.phase[1] + 330*p.Tune*sweep/k.rate)
-		body := (math.Sin(2*math.Pi*s.phase[0])*math.Exp(-age/p.Decay) + .6*math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/.06)) * s.velocity
+		body := (float64(math.Sin(2*math.Pi*s.phase[0])*math.Exp(-age/p.Decay)) + float64(.6*math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/.06))) * s.velocity
 		band, _ := s.band.next(nextNoise(&s.noise))
 		noise := band * math.Exp(-age/p.Snappy) * s.noiseVelocity
-		output = fastmath.Tanh(body*(1-p.Mix) + noise*p.Mix*1.6)
+		output = fastmath.Tanh(float64(body*(1-p.Mix)) + float64(noise*p.Mix*1.6))
 	case CH, OH:
 		bank := 0.0
 		if p.Metal {
 			s.phase[0] = wrap(s.phase[0] + 6000*p.Tune/k.rate)
 			s.phase[1] = wrap(s.phase[1] + 8400*p.Tune/k.rate)
-			bank = math.Sin(2*math.Pi*s.phase[0] + 8*math.Sin(2*math.Pi*s.phase[1]))
+			bank = math.Sin(float64(2*math.Pi*s.phase[0]) + float64(8*math.Sin(2*math.Pi*s.phase[1])))
 		} else {
 			for i, frequency := range [...]float64{205.3, 304.4, 369.6, 522.7, 540, 800} {
 				s.phase[i] = wrap(s.phase[i] + frequency*p.Tune/k.rate)
@@ -549,14 +630,16 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		band, _ := s.band.next(nextNoise(&s.noise))
 		bursts := 0.0
 		for i := 0; i < 4; i++ {
-			delta := age - float64(i)*p.Spread
+			// Round the burst time before subtraction. FMA can otherwise make
+			// delta negative at the exact onset and omit a whole clap burst.
+			delta := age - float64(float64(i)*p.Spread)
 			if delta >= 0 {
 				bursts += math.Exp(-delta / .006)
 			}
 		}
 		tail := 0.0
 		if age >= 3*p.Spread {
-			tail = .3981071705534972 * math.Exp(-(age-3*p.Spread)/p.Decay)
+			tail = .3981071705534972 * math.Exp(-(age-float64(3*p.Spread))/p.Decay)
 		}
 		output = band * (bursts + tail) * s.noiseVelocity * .4
 	case RS:
@@ -564,7 +647,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		s.phase[1] = wrap(s.phase[1] + 440*p.Tune/k.rate)
 		triangle := 4*math.Abs(s.phase[0]-.5) - 1
 		_, high := s.high1.next(nextNoise(&s.noise))
-		body := (triangle*math.Exp(-age/.004) + math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/p.Decay)) * s.velocity
+		body := (float64(triangle*math.Exp(-age/.004)) + float64(math.Sin(2*math.Pi*s.phase[1])*math.Exp(-age/p.Decay))) * s.velocity
 		noise := high * math.Exp(-age/.001) * s.noiseVelocity
 		output = (body + noise) * .45
 	case LT, MT, HT:
@@ -574,12 +657,12 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		} else if lane == HT {
 			base = 190
 		}
-		frequency := base * p.Tune * (1 + p.Sweep*math.Exp(-age/.04))
+		frequency := base * p.Tune * (1 + float64(p.Sweep*math.Exp(-age/.04)))
 		s.phase[0] = wrap(s.phase[0] + frequency/k.rate)
 		body := math.Sin(2*math.Pi*s.phase[0]) * math.Exp(-age/p.Decay) * s.velocity
 		band, _ := s.band.next(nextNoise(&s.noise))
 		noise := band * math.Exp(-age/.005) * s.noiseVelocity
-		output = body + noise*.3
+		output = body + float64(noise*.3)
 	case CB:
 		s.phase[0] = wrap(s.phase[0] + 540*p.Tune/k.rate)
 		s.phase[1] = wrap(s.phase[1] + 800*p.Tune/k.rate)
@@ -606,7 +689,7 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 		bank /= 6
 		low, _ := s.band.next(bank)
 		high, _ := s.high1.next(bank)
-		output = (low + high*(.5+math.Exp(-age/.06))) * math.Exp(-age/p.Decay) * s.velocity
+		output = (low + float64(high*(.5+math.Exp(-age/.06)))) * math.Exp(-age/p.Decay) * s.velocity
 	}
 	if s.chokeRemaining > 0 {
 		output *= float64(s.chokeRemaining) / max(1, k.rate*.005)

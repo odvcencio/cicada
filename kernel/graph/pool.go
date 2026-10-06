@@ -1,5 +1,7 @@
 package graph
 
+import "m31labs.dev/cicada/kernel/expression"
+
 // MaxPolyphony is the experimental per-track limit. Storage is fixed at load.
 const MaxPolyphony = 4
 
@@ -35,9 +37,14 @@ type Pool struct {
 }
 
 func NewPool(program Program, sampleRate int) (*Pool, error) {
+	return NewPoolFromProgram(&program, sampleRate)
+}
+
+// NewPoolFromProgram prepares the fixed voice pool from an immutable program.
+func NewPoolFromProgram(program *Program, sampleRate int) (*Pool, error) {
 	p := &Pool{releaseFrames: sampleRate * 30 / 1000, tailFrames: sampleRate * 5 / 1000}
 	for i := range p.slots {
-		v, err := NewVoice(program, sampleRate)
+		v, err := NewVoiceFromProgram(program, sampleRate)
 		if err != nil {
 			return nil, err
 		}
@@ -136,6 +143,20 @@ func (p *Pool) Release(cohort Cohort) bool {
 		}
 	}
 	return released
+}
+
+// SetExpression updates all gated pitches in one sequencer cohort. Stale
+// generations and releasing voices retain their own controls.
+func (p *Pool) SetExpression(cohort Cohort, params expression.Params) bool {
+	updated := false
+	for i := range p.slots {
+		s := &p.slots[i]
+		if s.gated && s.cohort == cohort {
+			s.voice.SetExpression(params)
+			updated = true
+		}
+	}
+	return updated
 }
 
 func (p *Pool) ReleaseAll() {

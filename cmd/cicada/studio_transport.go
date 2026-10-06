@@ -26,6 +26,9 @@ type studioTransport struct {
 	mu                sync.Mutex
 	pollMu            sync.Mutex
 	stream            *liveplay.Player
+	preview           *liveplay.Player
+	previewTimer      *time.Timer
+	previewGeneration uint64
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions
 	sampleRate        int
@@ -59,7 +62,7 @@ type studioMeterSnapshot struct {
 type transportSnapshot struct {
 	Type                string            `json:"type"`
 	Sequence            uint64            `json:"sequence"`
-	ActiveBackend       string            `json:"activeBackend,omitempty"`
+	ActiveBackend       string            `json:"activeBackend"`
 	BrowserPlaying      bool              `json:"browserPlaying,omitempty"`
 	Playing             bool              `json:"playing"`
 	Bar                 int64             `json:"bar"`
@@ -74,7 +77,7 @@ type transportSnapshot struct {
 	ActiveSlots         map[string]string `json:"activeSlots,omitempty"`
 	Scene               string            `json:"scene,omitempty"`
 	Landed              int64             `json:"landedBar,omitempty"`
-	Error               string            `json:"error,omitempty"`
+	Error               string            `json:"error"`
 }
 
 func newStudioTransport(path string) *studioTransport {
@@ -155,6 +158,9 @@ func (t *studioTransport) start() error { return t.startFrom(-1, "", nil, [32]by
 func (t *studioTransport) setBrowserAudioStatus(playing bool, sampleRate int) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	if playing {
+		t.stopPreviewLocked()
+	}
 	t.browserPlaying = playing
 	if playing {
 		t.browserSampleRate = sampleRate
@@ -179,6 +185,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.stopPreviewLocked()
 	if t.stream != nil {
 		audioFailed := false
 		if t.audio != nil {
@@ -342,6 +349,7 @@ func (t *studioTransport) stop() {
 }
 
 func (t *studioTransport) stopLocked() {
+	t.stopPreviewLocked()
 	t.pauseLocked()
 	if t.cancel != nil {
 		t.cancel()
@@ -611,7 +619,6 @@ func (t *studioTransport) poll() {
 	}
 	stream := t.stream
 	sampleRate := t.sampleRate
-	capturing := t.audio != nil && t.audio.Armed()
 	t.mu.Unlock()
 	if stream == nil {
 		return
@@ -622,9 +629,6 @@ func (t *studioTransport) poll() {
 	project, err := compileStudioSource(t.path, source)
 	var next liveplay.Score
 	if err == nil {
-		if capturing {
-			project = captureBacking(project)
-		}
 		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
 	}
 	if err == nil {

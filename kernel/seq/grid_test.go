@@ -41,3 +41,21 @@ func TestTupletRestartAtOffGridTick(t *testing.T) {
 		}
 	}
 }
+
+func TestTupletTiedExpressionAtOffGridTick(t *testing.T) {
+	p := gatePattern(t, note(69), Step{Gate: true, Tie: true, Ratchet: 1, Probability: 100}, rest(), rest())
+	p.StepTicks = 320
+	p.Expression = new([64]Expression)
+	p.Expression[1] = Expression{Set: true, PitchCents: 200, Timbre: .5}
+	clock, _ := NewClock(48000, 120000)
+	var dst [64]Event
+	n, overflow := EventsWithGatesAtTickInBlock(&p, clock, 0, 0, 240, 0, 30000, dst[:])
+	if overflow || n < 3 || dst[0].Kind != NoteOn || dst[1].Kind != NoteExpression || dst[1].Tick != 560 || dst[2].Kind != NoteOff {
+		t.Fatalf("incorrect triplet expression timing: %+v (overflow=%v)", dst[:n], overflow)
+	}
+	if allocs := testing.AllocsPerRun(100, func() {
+		EventsWithGatesAtTickInBlock(&p, clock, 0, 0, 240, 0, 30000, dst[:])
+	}); allocs != 0 {
+		t.Fatalf("%g allocations", allocs)
+	}
+}

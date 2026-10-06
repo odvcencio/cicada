@@ -149,6 +149,9 @@ func descriptorApplies(id, trackKind string) bool {
 	if strings.HasPrefix(id, "piano.") {
 		return trackKind == "piano"
 	}
+	if strings.HasPrefix(id, "guitar.") {
+		return trackKind == "guitar"
+	}
 	if strings.HasPrefix(id, "acid.") {
 		return trackKind == "acid"
 	}

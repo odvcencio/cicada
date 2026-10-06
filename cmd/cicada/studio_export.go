@@ -1,11 +1,13 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +20,8 @@ import (
 )
 
 type studioExportRequest struct {
+	ProjectDir  string  `json:"-"`
+	Revision    string  `json:"revision,omitempty"`
 	TargetLUFS  float64 `json:"target_lufs"`
 	TruePeakMax float64 `json:"true_peak_max"`
 	Tolerance   float64 `json:"tolerance"`
@@ -26,13 +30,15 @@ type studioExportRequest struct {
 }
 
 type studioExportStatus struct {
+	ID         string              `json:"id"`
+	Revision   string              `json:"revision"`
 	State      string              `json:"state"`
-	Path       string              `json:"path,omitempty"`
+	Path       string              `json:"path"`
 	TargetLUFS float64             `json:"target_lufs,omitempty"`
 	Pass       int                 `json:"pass,omitempty"`
 	PassLimit  int                 `json:"pass_limit,omitempty"`
 	Report     *loudnessFileReport `json:"report,omitempty"`
-	Error      string              `json:"error,omitempty"`
+	Error      string              `json:"error"`
 }
 
 type studioExportController struct {
@@ -72,12 +78,12 @@ func (c *studioExportController) start(score *notation.Score, path string, reque
 	}
 	c.shortfallPath = shortfallPath
 	c.status = studioExportStatus{
-		State: "queued", Path: path, TargetLUFS: request.TargetLUFS, PassLimit: loudnessPassLimit,
+		ID: rand.Text(), Revision: request.Revision, State: "queued", Path: path, TargetLUFS: request.TargetLUFS, PassLimit: loudnessPassLimit,
 	}
 	runner := c.render
 	c.mu.Unlock()
 
-	options := render.Options{SampleRate: request.Rate, Bits: request.Bits, TailSec: 3}
+	options := render.Options{AssetRoot: request.ProjectDir, AssetDir: request.ProjectDir, SampleRate: request.Rate, Bits: request.Bits, TailSec: 3}
 	target := renderTargetOptions{LoudnessTarget: request.TargetLUFS, TruePeakMaxDBTP: request.TruePeakMax, Tolerance: request.Tolerance}
 	go func() {
 		c.update(sequence, func(status *studioExportStatus) { status.State = "rendering" })
@@ -140,6 +146,36 @@ func (s *studio) exportStatus(w http.ResponseWriter, _ *http.Request) {
 	studioJSON(w, http.StatusOK, s.exports.snapshot())
 }
 
+// A client supplies an opaque completed job ID, never a filesystem path.
+// Starting a rerender invalidates its previous link before replacing audio.
+func (s *studio) exportFile(w http.ResponseWriter, r *http.Request) {
+	c := s.exports
+	c.mu.Lock()
+	status := c.status
+	if r.PathValue("id") == "" || r.PathValue("id") != status.ID || c.active || status.State != "succeeded" && status.State != "shortfall" {
+		c.mu.Unlock()
+		studioJSON(w, http.StatusConflict, map[string]string{"error": "this render is unavailable; refresh Export for the current completed job"})
+		return
+	}
+	file, err := os.Open(status.Path)
+	c.mu.Unlock()
+	if err != nil {
+		studioJSON(w, http.StatusNotFound, map[string]string{"error": "the rendered WAV is no longer on disk"})
+		return
+	}
+	defer file.Close()
+	info, err := file.Stat()
+	if err != nil || !info.Mode().IsRegular() {
+		studioJSON(w, http.StatusNotFound, map[string]string{"error": "rendered WAV is unavailable"})
+		return
+	}
+	w.Header().Set("Content-Type", "audio/wav")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filepath.Base(status.Path)}))
+	http.ServeContent(w, r, filepath.Base(status.Path), info.ModTime(), file)
+}
+
 func (s *studio) startExport(w http.ResponseWriter, r *http.Request) {
 	if !studioSameOrigin(r) {
 		studioJSON(w, http.StatusForbidden, map[string]string{"error": "cross-origin exports are not allowed"})
@@ -170,6 +206,12 @@ func (s *studio) startExport(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
 	}
+	if input.Revision != "" && input.Revision != studioRevision(inspection.source) {
+		studioJSON(w, http.StatusConflict, map[string]string{"error": "score changed; reload before rendering"})
+		return
+	}
+	input.Revision = studioRevision(inspection.source)
+	input.ProjectDir = filepath.Dir(s.path)
 	targetText := studioTargetFilename(input.TargetLUFS)
 	scoreName := strings.TrimSuffix(filepath.Base(s.path), filepath.Ext(s.path))
 	path := filepath.Join(filepath.Dir(s.path), "exports", scoreName+"-"+targetText+"LUFS.wav")

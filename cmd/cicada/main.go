@@ -28,6 +28,20 @@ func main() {
 		}
 		return
 	}
+	if len(os.Args) > 1 && os.Args[1] == "fit-model" {
+		if err := fitModelCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "record-pack" {
+		if err := recordPackCommand(os.Args[2:], os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "lib" {
 		if err := libCommand(os.Args[2:], os.Stdout); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -270,11 +284,15 @@ func main() {
 		}
 		writeJSON(program)
 	case "render":
+		renderOptions.AssetRoot = filepath.Dir(path)
+		renderOptions.AssetDir = filepath.Dir(path)
 		if err := renderFile(score, renderPath, renderOptions, renderTarget); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
 	case "stems":
+		renderOptions.AssetRoot = filepath.Dir(path)
+		renderOptions.AssetDir = filepath.Dir(path)
 		report, err := render.Stems(score, renderOptions, renderPath)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -974,6 +992,11 @@ type eventRecord struct {
 }
 
 func emitEvents(score *notation.Score, trackName, patternName string) error {
+	var diagnostics []notation.Diagnostic
+	score, diagnostics = notation.ResolvePresets(score)
+	if hasDiagnosticErrors(diagnostics) {
+		return fmt.Errorf("invalid presets: %v", diagnostics)
+	}
 	var track *notation.Track
 	var pattern *notation.Pattern
 	for i := range score.Tracks {
