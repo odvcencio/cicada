@@ -124,7 +124,7 @@ func (w *loweringWalker) referenceText(name string, position Position) string {
 			return strings.ReplaceAll(w.library, "/", ".") + "." + name
 		}
 		switch name {
-		case "acid", "drums", "audio", "off", "keep", "music", "sfx", "master":
+		case "acid", "drums", "piano", "audio", "off", "keep", "music", "sfx", "master":
 			return name
 		}
 		return strings.ReplaceAll(w.library, "/", ".") + "." + name

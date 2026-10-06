@@ -28,7 +28,7 @@ var audioSampleRate int
 var legacyConfigured bool
 
 //go:wasmexport gosx_audio_capabilities
-func capabilities() uint32 { return uint32(kernelimage.DelayCapability) }
+func capabilities() uint32 { return uint32(kernelimage.DelayCapability | kernelimage.PianoCapability) }
 
 // Allocation telemetry is queried by hosts outside the render callback.
 //

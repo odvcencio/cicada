@@ -8,6 +8,7 @@ import (
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/voice/piano"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -124,8 +125,8 @@ func ValidateProject(p *Project) error {
 	trackGraphs := map[string]graph.Program{}
 	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
-		if p.Edition == 2 && inst.ID == "audio" {
-			return fmt.Errorf("instrument name is reserved: audio")
+		if inst.ID == "piano" || p.Edition == 2 && inst.ID == "audio" {
+			return fmt.Errorf("instrument name is reserved: %s", inst.ID)
 		}
 		if inst.Octave == nil || *inst.Octave < 0 || *inst.Octave > 6 {
 			return fmt.Errorf("instrument %s octave must be 0 to 6", inst.ID)
@@ -165,7 +166,7 @@ func ValidateProject(p *Project) error {
 	}
 	kits := map[string]Kit{}
 	for _, kit := range p.Kits {
-		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || p.Edition == 2 && kit.ID == "audio" || instruments[kit.ID] != nil {
+		if !validID(kit.ID) || kit.ID == "acid" || kit.ID == "drums" || kit.ID == "piano" || p.Edition == 2 && kit.ID == "audio" || instruments[kit.ID] != nil {
 			return fmt.Errorf("kit %s has an invalid or reserved ID", kit.ID)
 		}
 		if _, exists := kits[kit.ID]; exists {
@@ -191,7 +192,7 @@ func ValidateProject(p *Project) error {
 		}
 		tracks[track.ID] = track
 		_, isKit := kits[track.Kind]
-		if track.Kind != "acid" && track.Kind != "drums" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
+		if track.Kind != "acid" && track.Kind != "drums" && track.Kind != "piano" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
 			return fmt.Errorf("track %s has unknown instrument %s", track.ID, track.Kind)
 		}
 		if (p.Edition == 2 && track.Kind == "audio" || samplers[track.Kind].Name != "") && len(track.Params) > 0 {
@@ -207,6 +208,11 @@ func ValidateProject(p *Project) error {
 		}
 		if track.Kind == "drums" {
 			if _, err := drumParamsFromValues(track.Params); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
+		}
+		if track.Kind == "piano" {
+			if _, err := PianoSustainFromValues(track.Params); err != nil {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
@@ -405,6 +411,8 @@ func ValidateProject(p *Project) error {
 	for _, track := range p.Tracks {
 		if sampler := samplers[track.Kind]; sampler.Name != "" {
 			allocatedVoices += sampler.Voices
+		} else if track.Kind == "piano" {
+			allocatedVoices += piano.MaxVoices
 		} else if track.Kind == "drums" {
 			allocatedVoices += drumVoiceCount(projectDrumLanes(p, track))
 		} else if kit, ok := kits[track.Kind]; ok {
@@ -466,6 +474,13 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("track %s has invalid or duplicate slot %s", track.ID, *slot)
 			}
 			seen[*slot] = true
+			if track.Kind == "piano" {
+				for _, step := range pattern.Data {
+					if step != nil && !step.Tie && (int(step.Note)+int(pattern.Transpose) < 21 || int(step.Note)+int(pattern.Transpose) > 108) {
+						return fmt.Errorf("track %s pattern %s: piano notes must be MIDI 21 to 108", track.ID, pattern.ID)
+					}
+				}
+			}
 			if program := trackGraphs[track.ID]; program.DelaySamples() > 0 {
 				for _, step := range pattern.Data {
 					if step == nil || step.Tie {
@@ -553,6 +568,8 @@ func ValidateProject(p *Project) error {
 			kind := tracks[trackID].Kind
 			if sampler := samplers[kind]; sampler.Name != "" {
 				voices += sampler.Voices
+			} else if kind == "piano" {
+				voices += piano.MaxVoices
 			} else if kind == "drums" {
 				voices += drumVoiceCount(projectDrumLanes(p, tracks[trackID]))
 			} else if kit, ok := kits[kind]; ok {

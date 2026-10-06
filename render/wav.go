@@ -16,6 +16,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	"m31labs.dev/cicada/kernel/voice/piano"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -120,6 +121,28 @@ type acidVoice struct{ *acid.Voice }
 
 func (voice acidVoice) NoteOn(note, velocity uint8, accent, slide bool) {
 	voice.Voice.NoteOn(note, accent, slide, velocity)
+}
+
+type pianoVoice struct {
+	*piano.Instrument
+	note uint8
+}
+
+func (voice *pianoVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
+	if slide {
+		voice.Instrument.NoteOff(voice.note)
+	}
+	voice.note = note
+	_ = voice.Instrument.NoteOn(note, velocity)
+}
+
+func (voice *pianoVoice) NoteOff() {
+	voice.Instrument.NoteOff(voice.note)
+}
+
+func (voice *pianoVoice) Next() float32 {
+	left, right := voice.NextStereo()
+	return (left + right) * .5
 }
 
 type scheduled struct {
@@ -679,6 +702,32 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 			tracks = append(tracks, track)
 			continue
 		}
+		if source.Kind == "piano" {
+			voice, err := piano.New(sampleRate)
+			if err != nil {
+				return nil, err
+			}
+			sustain, err := project.CompilePianoSustain(source)
+			if err != nil {
+				return nil, fmt.Errorf("track %s: %w", source.Name, err)
+			}
+			if err := voice.SetSustain(sustain); err != nil {
+				return nil, err
+			}
+			track := trackRuntime{name: source.Name, mixer: trackMix, voice: &pianoVoice{Instrument: voice}, patterns: map[string]seq.Pattern{}}
+			for _, pattern := range score.Patterns {
+				if pattern.Kind != "notes" {
+					continue
+				}
+				compiled, err := project.CompilePattern(score, pattern, source)
+				if err != nil {
+					return nil, err
+				}
+				track.patterns[pattern.Name] = compiled[0].Pattern
+			}
+			tracks = append(tracks, track)
+			continue
+		}
 		program := programs[source.Kind]
 		if program == nil {
 			return nil, fmt.Errorf("audio renderer does not yet implement %s track %s", source.Kind, source.Name)
@@ -1017,6 +1066,8 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				if tracks[ti].drums.Fault() {
 					return fmt.Errorf("drum DSP fault on %s", tracks[ti].name)
 				}
+			} else if voice, ok := tracks[ti].voice.(*pianoVoice); ok {
+				l, r = voice.NextStereo()
 			} else {
 				mono := tracks[ti].voice.Next()
 				l, r = mono, mono

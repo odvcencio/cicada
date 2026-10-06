@@ -119,6 +119,8 @@ func notationParameterVoiceKind(score *Score, kind string) string {
 		return "acid"
 	case "drums":
 		return "drums"
+	case "piano":
+		return "piano"
 	}
 	for _, kit := range score.Kits {
 		if kit.Name == kind {

@@ -31,6 +31,10 @@ func TestAudioWASMGraphDelaySampleParity(t *testing.T) {
 	compareWASMFixture(t, "pluck.cicada", 2)
 }
 
+func TestAudioWASMPianoSampleParity(t *testing.T) {
+	compareWASMFixture(t, "modeled-piano.cicada", 3)
+}
+
 func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
 	compareWASMFixture(t, "authored-kit.cicada", 1)
 }
@@ -301,6 +305,9 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 				return result[0]
 			}
 			call("_initialize")
+			if fixture == "modeled-piano.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.PianoCapability) == 0 {
+				t.Fatal("kernel does not advertise modeled piano capability")
+			}
 			if fixture == "pluck.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.DelayCapability) == 0 {
 				t.Fatal("kernel does not advertise graph delay capability")
 			}
@@ -331,7 +338,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			var nonzero bool
 			var stableMemory uint32
 			var initialAllocations uint64
-			if fixture == "pluck.cicada" {
+			if fixture == "pluck.cicada" || fixture == "modeled-piano.cicada" {
 				initialAllocations = call("gosx_audio_alloc_bytes")
 			}
 			pcm := sha256.New()
@@ -403,7 +410,10 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			if stableMemory == 0 || module.Memory().Size() != stableMemory {
 				t.Fatalf("WASM memory grew after warm-up: %d -> %d", stableMemory, module.Memory().Size())
 			}
-			if fixture == "pluck.cicada" {
+			if fixture == "modeled-piano.cicada" && peakDifference != 0 {
+				t.Fatalf("modeled piano native/WASM PCM differs at sample %d channel %d by %.9g", peakSample, peakChannel, peakDifference)
+			}
+			if fixture == "pluck.cicada" || fixture == "modeled-piano.cicada" {
 				allocated := call("gosx_audio_alloc_bytes") - initialAllocations
 				if allocated != 0 {
 					t.Fatalf("WASM callback allocated %d bytes", allocated)

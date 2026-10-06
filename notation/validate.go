@@ -93,7 +93,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 	instruments := make(map[string]Instrument, len(s.Instruments))
 	for _, inst := range s.Instruments {
 		checkID(inst.Name, inst.Position)
-		if inst.Name == "acid" || inst.Name == "drums" || s.Version == 2 && inst.Name == "audio" {
+		if inst.Name == "acid" || inst.Name == "drums" || inst.Name == "piano" || s.Version == 2 && inst.Name == "audio" {
 			add("CICADA-DUPLICATE", "instrument name is reserved: "+inst.Name, "error", inst.Position)
 		}
 		if _, exists := instruments[inst.Name]; exists {
@@ -130,7 +130,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 	for _, kit := range s.Kits {
 		checkID(kit.Name, kit.Position)
 		_, instrumentNameTaken := instruments[kit.Name]
-		if kit.Name == "acid" || kit.Name == "drums" || s.Version == 2 && kit.Name == "audio" || instrumentNameTaken {
+		if kit.Name == "acid" || kit.Name == "drums" || kit.Name == "piano" || s.Version == 2 && kit.Name == "audio" || instrumentNameTaken {
 			add("CICADA-DUPLICATE", "kit name is reserved or already declared: "+kit.Name, "error", kit.Position)
 		}
 		if _, exists := kits[kit.Name]; exists {
@@ -169,7 +169,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 		trackByName[t.Name] = t
 		namespace[t.Name] = "track"
-		if t.Kind != "acid" && t.Kind != "drums" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
+		if t.Kind != "acid" && t.Kind != "drums" && t.Kind != "piano" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
 			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
 				if _, kitOK := kits[t.Kind]; !kitOK {
 					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
@@ -189,6 +189,12 @@ func Validate(s *Score) (ds []Diagnostic) {
 			seen[key] = true
 			if !validTrackParam(t.Kind, param.Name, instruments) {
 				add("CICADA-PARAM", "unknown parameter "+param.Name, "error", param.Position)
+			}
+			if t.Kind == "piano" && param.Name == "sustain" {
+				value, unit, err := notationBaseValue(param.Value)
+				if err != nil || unit != "unit" || !finiteMixerNumber(value) || value < 0 || value > 1 {
+					add("CICADA-PARAM", "piano sustain must be a unitless value from 0 to 1", "error", param.ValuePosition)
+				}
 			}
 		}
 	}
@@ -555,6 +561,9 @@ func validTrackParam(kind, name string, instruments map[string]Instrument) bool 
 	}
 	if kind == "acid" {
 		return acidParams[name]
+	}
+	if kind == "piano" {
+		return name == "sustain" || name == "octave"
 	}
 	if kind == "drums" {
 		parts := strings.SplitN(name, "_", 2)
