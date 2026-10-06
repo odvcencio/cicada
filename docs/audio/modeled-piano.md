@@ -13,6 +13,9 @@ scene main { grand = motif }
 song { main }
 ```
 
+Explicit instruments, kits, or samplers named `piano` override the built-in.
+Piano note patterns also accept main’s bounded chord syntax, such as `[c4 e4 g4]`.
+
 `sustain` ranges from 0 (dampers lowered) to 1 (pedal down), with continuous half
 pedaling between them. Scenes can set `grand.sustain`. Live hosts use the existing
 24-byte `OpSetParam` command with `ParamPianoSustain`; there is no new opcode.
