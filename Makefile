@@ -11,6 +11,9 @@ KERNEL_WASM_BUILD_TIMEOUT ?= 180s
 # download budget. Audio parity and browser callback budgets gate this build.
 KERNEL_WASM_OPT ?= z
 
+# Set to +simd128 to enable LLVM's WebAssembly vector instructions.
+KERNEL_WASM_LLVM_FEATURES ?=
+
 # Redirect measurements outside the checkout; see docs/manual/engine-metrics.md.
 ENGINE_METRICS_ARGS ?=
 
@@ -18,6 +21,7 @@ test:
 	go test ./... -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs
 	node host/web/chord_capability_test.cjs
+	node --test host/web/render-quantum.test.cjs
 
 engine-metrics:
 	GOMAXPROCS=1 go run ./cmd/cicada-engine-metrics $(ENGINE_METRICS_ARGS)
@@ -89,7 +93,7 @@ probe-wasm:
 
 build-kernel-wasm:
 	mkdir -p build
-	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
+	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
 		status=$$?; \
 		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
 			echo "FAIL build-kernel-wasm: TinyGo kernel build exceeded $(KERNEL_WASM_BUILD_TIMEOUT) budget" >&2; \
@@ -128,7 +132,7 @@ test-worklet-negotiation: build-worklets
 
 test-browser: build-kernel-wasm
 	mkdir -p build
-	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations)$$' 5m build/test-browser.log
 
 budget-size: build-kernel-wasm
 	bash -o pipefail -c "go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm host/web/processor.min.js | tee build/budget-size-report.txt"
