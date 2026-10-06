@@ -79,7 +79,7 @@ jobs:
           CICADA_PARITY_REFERENCE="$PWD/build/amd64-reference/parity" \
           CICADA_PARITY_DIR="$PWD/build/parity" \
           go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm \
-            -run '^TestAudioWASMExamplesPCM24Parity$' -count=1 -v | tee build/parity/report.txt
+            -run '^TestExamplesPCM24Parity$' -count=1 -v | tee build/parity/report.txt
       - name: Save arm64 parity report
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

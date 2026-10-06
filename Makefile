@@ -71,7 +71,7 @@ test-kernel-wasm: build-kernel-wasm build-loudness-wasm
 
 test-parity: build-kernel-wasm
 	mkdir -p build/parity
-	bash -o pipefail -c 'CICADA_PARITY_DIR="$$PWD/build/parity" go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run "^TestAudioWASMExamplesPCM24Parity$$" -count=1 -v | tee build/parity/report.txt'
+	bash -o pipefail -c 'CICADA_PARITY_DIR="$$PWD/build/parity" go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run "^TestExamplesPCM24Parity$$" -count=1 -v | tee build/parity/report.txt'
 
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v

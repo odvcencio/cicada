@@ -22,9 +22,9 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
-// TestAudioWASMExamplesPCM24Parity gates complete arrangements and their tails.
+// TestExamplesPCM24Parity gates complete arrangements and their tails.
 // CI saves amd64 PCM and supplies it to the same test running natively on arm64.
-func TestAudioWASMExamplesPCM24Parity(t *testing.T) {
+func TestExamplesPCM24Parity(t *testing.T) {
 	paths, err := filepath.Glob(filepath.Join("..", "..", "examples", "*.cicada"))
 	if err != nil || len(paths) == 0 {
 		t.Fatalf("discover examples: %v (%d scores)", err, len(paths))
