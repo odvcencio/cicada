@@ -281,12 +281,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	lowerAudio(p, score)
 	for _, source := range score.Instruments {
-		periods := map[notation.Position]bool{}
-		for _, node := range programs[source.Name].Nodes {
-			if node.Op == "period" {
-				periods[node.Position] = true
-			}
-		}
+		periods := programs[source.Name].PeriodExpressions
 		octave := source.Octave
 		inst := Instrument{ID: source.Name, Octave: &octave, Mode: source.Mode, Params: []InstrumentParam{}, Lets: []Binding{}}
 		for _, param := range source.Params {
@@ -674,7 +669,7 @@ func assignSlots(p *Project, score *notation.Score) error {
 	return nil
 }
 
-func projectExpr(source *notation.Expr, periods map[notation.Position]bool) Expr {
+func projectExpr(source *notation.Expr, periods map[*notation.Expr]bool) Expr {
 	if source == nil {
 		return Expr{}
 	}
@@ -686,7 +681,7 @@ func projectExpr(source *notation.Expr, periods map[notation.Position]bool) Expr
 		return Expr{Name: source.Text}
 	case "binary":
 		op := source.Text
-		if op == "/" && periods[source.Position] {
+		if op == "/" && periods[source] {
 			op = "period"
 		}
 		return Expr{Op: op, Args: []Expr{projectExpr(source.Left, periods), projectExpr(source.Right, periods)}}

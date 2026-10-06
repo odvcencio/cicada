@@ -578,7 +578,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 		authoredKits[kit.ID] = kit
 	}
 	tracks := make([]trackRuntime, 0, len(score.Tracks))
-	for _, source := range score.Tracks {
+	for sourceIndex, source := range score.Tracks {
 		mixerParams, err := project.CompileMixerParams(source)
 		if err != nil {
 			return nil, fmt.Errorf("track %s: %w", source.Name, err)
@@ -591,7 +591,7 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 				return nil, err
 			}
 			if isAuthoredKit {
-				bindings, err := project.CompileKit(kitDefinition, programs)
+				bindings, err := project.CompileKitAtSampleRate(kitDefinition, programs, sampleRate)
 				if err != nil {
 					return nil, err
 				}
@@ -702,6 +702,12 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 			return nil, err
 		}
 		track := trackRuntime{name: source.Name, mixer: trackMix, voice: customVoice{voice}, patterns: map[string]seq.Pattern{}}
+		assignedPatterns := make(map[string]bool)
+		for _, slot := range semantic.Tracks[sourceIndex].Slots {
+			if slot != nil {
+				assignedPatterns[*slot] = true
+			}
+		}
 		for _, pattern := range score.Patterns {
 			if pattern.Kind != "notes" {
 				continue
@@ -709,6 +715,11 @@ func compileTracks(score *notation.Score, semantic *project.Project, sampleRate 
 			compiled, err := project.CompilePattern(score, pattern, source)
 			if err != nil {
 				return nil, err
+			}
+			if assignedPatterns[pattern.Name] {
+				if err := project.ValidateGraphDelayPattern(kernelProgram, sampleRate, compiled[0].Pattern); err != nil {
+					return nil, fmt.Errorf("CICADA-PARAM: track %s pattern %s: %w", source.Name, pattern.Name, err)
+				}
 			}
 			track.patterns[pattern.Name] = compiled[0].Pattern
 		}

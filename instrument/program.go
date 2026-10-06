@@ -39,6 +39,8 @@ type Program struct {
 	Output        int
 	StatefulNodes int
 	DelaySamples  int
+	// PeriodExpressions identifies the exact divisions converted from Hz to ms.
+	PeriodExpressions map[*notation.Expr]bool
 }
 
 // HasParameter reports whether the graph declares a synthesis parameter.
@@ -158,6 +160,10 @@ func (c *compiler) expr(e *notation.Expr) (int, Type) {
 		op := e.Text
 		if op == "/" && leftType == Unit && rightType == Hz {
 			op = "period"
+			if c.program.PeriodExpressions == nil {
+				c.program.PeriodExpressions = make(map[*notation.Expr]bool)
+			}
+			c.program.PeriodExpressions[e] = true
 		}
 		return c.emit(Node{Op: op, Type: result, Inputs: []int{left, right}, Position: e.Position}), result
 	case "call":
