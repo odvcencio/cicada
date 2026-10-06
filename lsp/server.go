@@ -6,12 +6,14 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf16"
@@ -189,19 +191,31 @@ func (s *server) handle(message request) error {
 		}
 		delete(s.documents, params.TextDocument.URI)
 		delete(s.versions, params.TextDocument.URI)
-		return s.send(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": map[string]any{"uri": params.TextDocument.URI, "diagnostics": []any{}}})
+		if err := s.send(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": map[string]any{"uri": params.TextDocument.URI, "diagnostics": []any{}}}); err != nil {
+			return err
+		}
+		closed, err := s.projectSources(params.TextDocument.URI)
+		if err == nil && closed != nil && closed.Manifest.ExplicitSources() {
+			for peer := range s.documents {
+				if files, err := s.projectSources(peer); err == nil && files != nil && files.ManifestPath == closed.ManifestPath {
+					return s.publish(peer)
+				}
+			}
+			return s.publish(params.TextDocument.URI)
+		}
+		return nil
 	case "textDocument/hover":
 		uri, at, err := documentPosition(message.Params)
 		if err != nil {
 			return err
 		}
-		return s.reply(message.ID, hover(s.documents[uri], at))
+		return s.reply(message.ID, s.projectHover(uri, at))
 	case "textDocument/definition":
 		uri, at, err := documentPosition(message.Params)
 		if err != nil {
 			return err
 		}
-		return s.reply(message.ID, definition(uri, s.documents[uri], at))
+		return s.reply(message.ID, s.projectDefinition(uri, at))
 	case "textDocument/rename":
 		var params struct {
 			TextDocument struct {
@@ -213,13 +227,13 @@ func (s *server) handle(message request) error {
 		if err := json.Unmarshal(message.Params, &params); err != nil {
 			return err
 		}
-		return s.reply(message.ID, rename(params.TextDocument.URI, s.documents[params.TextDocument.URI], params.Position, params.NewName))
+		return s.reply(message.ID, s.projectRename(params.TextDocument.URI, params.Position, params.NewName))
 	case "textDocument/completion":
 		uri, at, err := documentPosition(message.Params)
 		if err != nil {
 			return err
 		}
-		return s.reply(message.ID, parameterPathCompletion(s.documents[uri], at))
+		return s.reply(message.ID, s.projectCompletion(uri, at))
 	case "textDocument/inlayHint":
 		uri, err := documentURI(message.Params)
 		if err != nil {
@@ -268,6 +282,9 @@ func (s *server) handle(message request) error {
 		projectEdition, manifest, err := edition.ScoreEdition(path)
 		if err != nil || manifest == "" && !s.canCreateFiles {
 			return s.reply(message.ID, []any{})
+		}
+		if files, err := s.projectSources(uri); err == nil && files != nil && files.Manifest.ExplicitSources() {
+			return s.reply(message.ID, s.projectFixAction(files))
 		}
 		fixed, changed, err := migration.FixSource(source)
 		if err != nil || !changed {
@@ -385,7 +402,8 @@ func documentPosition(raw json.RawMessage) (string, position, error) {
 
 func (s *server) publish(uri string) error {
 	source := s.documents[uri]
-	score, diagnostics := parseDocumentScore(uri, source)
+	sources, score, diagnostics := s.parseProjectDocument(uri)
+
 	if score != nil && !hasErrors(diagnostics) {
 		_, extra := project.FromScore(score)
 		seen := map[string]bool{}
@@ -399,35 +417,75 @@ func (s *server) publish(uri string) error {
 			}
 		}
 	}
-	items := make([]any, 0, len(diagnostics))
+	groups := map[string][]any{uri: {}}
+	if sources != nil {
+		for _, file := range sources.Files {
+			groups[fileURI(file.Path)] = []any{}
+		}
+	}
+	sourceFor := func(target string) []byte {
+		if data, ok := s.documents[target]; ok {
+			return data
+		}
+		if sources != nil {
+			for _, file := range sources.Files {
+				if fileURI(file.Path) == target {
+					return file.Source
+				}
+			}
+		}
+		if path, ok := scorePathFromURI(target); ok {
+			data, _ := os.ReadFile(path)
+			return data
+		}
+		return source
+	}
 	for _, d := range diagnostics {
-		start := utf16Position(source, scalarOffset(source, d.Position))
+		target := uri
+		if d.Position.File != "" {
+			target = fileURI(d.Position.File)
+		}
+		start := utf16Position(sourceFor(target), scalarOffset(sourceFor(target), d.Position))
 		severity := 1
 		if d.Severity == "warning" {
 			severity = 2
 		}
-		items = append(items, map[string]any{"range": region{Start: start, End: position{Line: start.Line, Character: start.Character + 1}}, "severity": severity, "code": d.Code, "source": "cicada", "message": d.Message})
+		item := map[string]any{"range": region{Start: start, End: position{Line: start.Line, Character: start.Character + 1}}, "severity": severity, "code": d.Code, "source": "cicada", "message": d.Message}
+		if d.Related.Line > 0 {
+			relatedURI := fileURI(d.Related.File)
+			at := utf16Position(sourceFor(relatedURI), scalarOffset(sourceFor(relatedURI), d.Related))
+			item["relatedInformation"] = []any{map[string]any{"location": map[string]any{"uri": relatedURI, "range": region{Start: at, End: position{Line: at.Line, Character: at.Character + 1}}}, "message": "first declaration"}}
+		}
+		groups[target] = append(groups[target], item)
 	}
-	return s.send(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": map[string]any{"uri": uri, "diagnostics": items}})
+	uris := make([]string, 0, len(groups))
+	for target := range groups {
+		uris = append(uris, target)
+	}
+	sort.Strings(uris)
+	for _, target := range uris {
+		if err := s.send(map[string]any{"jsonrpc": "2.0", "method": "textDocument/publishDiagnostics", "params": map[string]any{"uri": target, "diagnostics": groups[target]}}); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-func parseDocumentScore(uri string, source []byte) (*notation.Score, []notation.Diagnostic) {
-	path, ok := scorePathFromURI(uri)
-	if !ok {
-		return notation.Parse(source)
-	}
-	projectEdition, manifest, err := edition.ScoreEdition(path)
+func (s *server) parseProjectDocument(uri string) (*project.Sources, *notation.Score, []notation.Diagnostic) {
+	files, err := s.projectSources(uri)
 	if err != nil {
-		return nil, []notation.Diagnostic{{
-			Code: "CICADA-VERSION", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1},
-		}}
+		var diagnostic *project.SourceError
+		if errors.As(err, &diagnostic) {
+			return nil, nil, []notation.Diagnostic{diagnostic.Diagnostic}
+		}
+		return nil, nil, []notation.Diagnostic{{Code: "CICADA-IO", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}}}
 	}
-	if manifest == "" {
-		return notation.Parse(source)
+	if files == nil {
+		score, ds := notation.Parse(s.documents[uri])
+		return nil, score, ds
 	}
-	score, diagnostics := notation.ParseEdition(source, projectEdition)
-	diagnostics = append(diagnostics, project.VerifyAssets(score, filepath.Dir(manifest))...)
-	return score, diagnostics
+	score, ds := files.Parse()
+	return files, score, ds
 }
 
 func hasErrors(ds []notation.Diagnostic) bool {
@@ -439,7 +497,7 @@ func hasErrors(ds []notation.Diagnostic) bool {
 	return false
 }
 func diagnosticKey(d notation.Diagnostic) string {
-	return fmt.Sprintf("%s/%s/%d/%d", d.Code, d.Message, d.Position.Line, d.Position.Column)
+	return fmt.Sprintf("%s/%s/%s/%d/%d", d.Code, d.Message, d.Position.File, d.Position.Line, d.Position.Column)
 }
 
 func scalarOffset(source []byte, at notation.Position) int {
@@ -491,6 +549,10 @@ func byteOffset(source []byte, at position) int {
 }
 
 func hover(source []byte, at position) any {
+	return hoverWithScore(source, at, nil)
+}
+
+func hoverWithScore(source []byte, at position, score *notation.Score) any {
 	if len(source) == 0 {
 		return nil
 	}
@@ -522,7 +584,7 @@ func hover(source []byte, at position) any {
 		return nil
 	}
 	value := string(source[selected.Start:selected.End])
-	message := hoverText(selected.Capture, value, source, selected.Start)
+	message := hoverText(selected.Capture, value, source, selected.Start, score)
 	if message == "" {
 		return nil
 	}
@@ -554,7 +616,7 @@ func mixerSymbolHover(source []byte, symbol language.Symbol) string {
 	return ""
 }
 
-func hoverText(capture, value string, source []byte, offset int) string {
+func hoverText(capture, value string, source []byte, offset int, score *notation.Score) string {
 	if strings.HasPrefix(capture, "function") {
 		if operation, ok := instrument.Operation(value); ok {
 			return "`" + operation.Signature + "`\n\n" + operation.Meaning
@@ -570,7 +632,9 @@ func hoverText(capture, value string, source []byte, offset int) string {
 	case strings.HasPrefix(capture, "constant.hit.accent"):
 		return "Accented drum hit at velocity **127/127**."
 	case strings.HasPrefix(capture, "constant.pitch.degree") && len(value) > 0:
-		score, _ := notation.Parse(source)
+		if score == nil {
+			score, _ = notation.Parse(source)
+		}
 		if score == nil {
 			return "Scale degree **" + value + "**."
 		}
