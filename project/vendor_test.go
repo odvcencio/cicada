@@ -174,3 +174,104 @@ func TestVendorAcceptsSameProjectDirectoryAlias(t *testing.T) {
 		t.Fatal(ds)
 	}
 }
+
+func TestVendorRollbackPreservesConcurrentEdits(t *testing.T) {
+	for _, kind := range []string{"addition", "edit"} {
+		t.Run(kind, func(t *testing.T) {
+			root, _, sources := userVendorFixture(t)
+			var installed, filename string
+			_, err := sources.vendorLibraries(root, func(from, to string) error {
+				if installed != "" {
+					return errors.New("injected publication failure")
+				}
+				if err := os.Rename(filepath.Join(root, from), filepath.Join(root, to)); err != nil {
+					return err
+				}
+				installed = to
+				filename = "notes.txt"
+				if kind == "edit" {
+					filename = "tone.cicada"
+				}
+				libraryWrite(t, root, filepath.ToSlash(filepath.Join(to, filename)), "concurrent user content")
+				return nil
+			})
+			if err == nil || !strings.Contains(err.Error(), "recovery copy retained at") {
+				t.Fatalf("missing recovery report: %v", err)
+			}
+			matches, globErr := filepath.Glob(filepath.Join(root, ".cicada-recovery-*", "demo", "*", filename))
+			if globErr != nil || len(matches) != 1 {
+				t.Fatalf("recovery copy: %v %v", matches, globErr)
+			}
+			data, readErr := os.ReadFile(matches[0])
+			if readErr != nil || string(data) != "concurrent user content" {
+				t.Fatalf("lost concurrent content: %s %v", data, readErr)
+			}
+		})
+	}
+}
+
+func TestLibraryUpdateCannotPublishDuringVendoring(t *testing.T) {
+	root, _, sources := userVendorFixture(t)
+	attempted := false
+	_, err := sources.vendorLibraries(root, func(from, to string) error {
+		if to == "cicada.sum" {
+			attempted = true
+			if _, err := sources.WriteLibraryUpdates("demo/tone"); err == nil || !strings.Contains(err.Error(), "cannot lock library pins") {
+				t.Fatalf("concurrent sum writer was not excluded: %v", err)
+			}
+		}
+		return os.Rename(filepath.Join(root, from), filepath.Join(root, to))
+	})
+	if err != nil || !attempted {
+		t.Fatalf("vendor publication: %v, attempted=%v", err, attempted)
+	}
+	loaded, err := ReadSources(filepath.Join(root, "main.cicada"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := loaded.WriteLibraryUpdates("demo/tone"); err != nil {
+		t.Fatalf("lock was not released: %v", err)
+	}
+	for name, pin := range mustReadLibraryPins(t, loaded) {
+		if pin.Kind != "project" {
+			t.Fatalf("lost vendor pin %s: %+v", name, pin)
+		}
+	}
+}
+
+func mustReadLibraryPins(t *testing.T, sources *Sources) map[string]LibraryPin {
+	t.Helper()
+	pins, err := sources.readSum()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pins
+}
+
+func TestVendoredProjectPinIgnoresInvalidUserLocation(t *testing.T) {
+	for _, kind := range []string{"library-file", "root-file"} {
+		t.Run(kind, func(t *testing.T) {
+			root, user, sources := userVendorFixture(t)
+			if _, err := sources.VendorLibraries(root); err != nil {
+				t.Fatal(err)
+			}
+			path := filepath.Join(user, "demo", "tone")
+			if kind == "root-file" {
+				path = user
+			}
+			if err := os.RemoveAll(path); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, []byte("unused location"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			loaded, err := ReadSources(filepath.Join(root, "main.cicada"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, ds := loaded.Parse(); len(ds) != 0 {
+				t.Fatal(ds)
+			}
+		})
+	}
+}
