@@ -165,7 +165,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		if graphNeedsDelay(spec.Graph) {
 			capabilities |= DelayCapability
 		}
-		if graphNeedsNeuralAmp(spec.Graph) {
+		if graphNeedsNeuralAmp(&spec.Graph) {
 			capabilities |= NeuralAmpCapability
 		}
 		if spec.Kit != nil {
@@ -173,7 +173,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				if graphNeedsDelay(binding.Program) {
 					capabilities |= DelayCapability
 				}
-				if graphNeedsNeuralAmp(binding.Program) {
+				if graphNeedsNeuralAmp(&binding.Program) {
 					capabilities |= NeuralAmpCapability
 				}
 			}
@@ -859,7 +859,7 @@ func graphNeedsDelay(program graph.Program) bool {
 	return false
 }
 
-func graphNeedsNeuralAmp(program graph.Program) bool {
+func graphNeedsNeuralAmp(program *graph.Program) bool {
 	for i := 0; i < int(program.Len) && i < graph.MaxNodes; i++ {
 		if program.Nodes[i].Op == graph.NeuralAmp {
 			return true
@@ -909,7 +909,7 @@ func readGraph(r *reader, version uint16, capabilities uint16) (graph.Program, e
 	if graphNeedsDelay(program) && capabilities&DelayCapability == 0 {
 		return program, Error("graph delay operations require capability bit 1")
 	}
-	if graphNeedsNeuralAmp(program) && capabilities&NeuralAmpCapability == 0 {
+	if graphNeedsNeuralAmp(&program) && capabilities&NeuralAmpCapability == 0 {
 		return program, Error("neural amp operation requires capability bit 4")
 	}
 	return program, nil
