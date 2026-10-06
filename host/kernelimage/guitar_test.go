@@ -43,6 +43,39 @@ func TestGuitarImageVersionAndLegacyEncoding(t *testing.T) {
 	if _, err := engine.New(decoded); err != nil {
 		t.Fatal(err)
 	}
+	t.Run("guitar with graph delay capability", func(t *testing.T) {
+		delaySource, err := os.ReadFile("../../examples/pluck.cicada")
+		if err != nil {
+			t.Fatal(err)
+		}
+		delayScore, ds := notation.Parse(delaySource)
+		delayProject, ds := project.FromScore(delayScore)
+		if delayProject == nil {
+			t.Fatal(ds)
+		}
+		delayConfig, err := project.CompileEngine(delayProject, 48000, 128)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mixed := cfg
+		mixed.Tracks = 2
+		mixed.Track[1] = delayConfig.Track[0]
+		mixed.Patterns = append(append([]engine.PatternBank(nil), cfg.Patterns...), delayConfig.Patterns[0])
+		data, err := kernelimage.Encode(mixed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if binary.LittleEndian.Uint16(data[4:6]) != 15 || binary.LittleEndian.Uint16(data[30:32]) != kernelimage.DelayCapability {
+			t.Fatal("guitar image lost graph delay capability")
+		}
+		decoded, err := kernelimage.Decode(data, 48000, 128)
+		if err != nil || !reflect.DeepEqual(mixed, decoded) {
+			t.Fatalf("mixed image roundtrip: %v", err)
+		}
+		if _, err := engine.New(decoded); err != nil {
+			t.Fatal(err)
+		}
+	})
 	for _, version := range []uint16{8, 9, 10, 11, 12, 13, 14} {
 		binary.LittleEndian.PutUint16(image[4:], version)
 		if _, err := kernelimage.Decode(image, 48000, 128); err == nil {

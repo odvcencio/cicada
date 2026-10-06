@@ -38,6 +38,18 @@ func allocationCount() uint64 {
 	return allocationStats.Mallocs
 }
 
+//go:wasmexport gosx_audio_capabilities
+func capabilities() uint32 { return uint32(kernelimage.DelayCapability) }
+
+// Allocation telemetry is queried by hosts outside the render callback.
+//
+//go:wasmexport gosx_audio_alloc_bytes
+func allocationBytes() uint64 {
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return stats.TotalAlloc
+}
+
 //go:wasmexport gosx_audio_bank_image_ptr
 func bankImagePtr() uint32 {
 	if len(oscillatorBankBytes) == 0 && audioEngine != nil {

@@ -31,6 +31,10 @@ func TestAudioWASMFirstAcidSampleParity(t *testing.T) {
 	compareWASMFixture(t, "first-acid.cicada", 16)
 }
 
+func TestAudioWASMGraphDelaySampleParity(t *testing.T) {
+	compareWASMFixture(t, "pluck.cicada", 2)
+}
+
 func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
 	compareWASMFixture(t, "authored-kit.cicada", 1)
 }
@@ -301,6 +305,9 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 				return result[0]
 			}
 			call("_initialize")
+			if fixture == "pluck.cicada" && call("gosx_audio_capabilities")&uint64(kernelimage.DelayCapability) == 0 {
+				t.Fatal("kernel does not advertise graph delay capability")
+			}
 			imagePtr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
 			if imagePtr == 0 || !module.Memory().Write(imagePtr, image) {
 				t.Fatal("project image buffer unavailable")
@@ -330,6 +337,10 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			var allocationsBefore uint64
 			if fixture == "expressive-guitar.cicada" {
 				allocationsBefore = call("gosx_audio_allocation_count")
+			}
+			var initialAllocations uint64
+			if fixture == "pluck.cicada" {
+				initialAllocations = call("gosx_audio_alloc_bytes")
 			}
 			pcm := sha256.New()
 			allocationsBeforeRender := wasmAllocations
@@ -406,6 +417,13 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			}
 			if stableMemory == 0 || module.Memory().Size() != stableMemory {
 				t.Fatalf("WASM memory grew after warm-up: %d -> %d", stableMemory, module.Memory().Size())
+			}
+			if fixture == "pluck.cicada" {
+				allocated := call("gosx_audio_alloc_bytes") - initialAllocations
+				if allocated != 0 {
+					t.Fatalf("WASM callback allocated %d bytes", allocated)
+				}
+				t.Logf("METRIC: graph delay WASM callback allocated bytes | rate=%d bytes=%d", rate, allocated)
 			}
 			if exactMessages {
 				compareMessageLogs(t, wasmEvents, nativeEvents)
