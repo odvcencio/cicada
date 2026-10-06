@@ -102,6 +102,7 @@ The probe checks all Q15 samples bit-for-bit across varied block sizes, drive
 changes, extreme inputs and reset. The kernel fixture checks float32 PCM bits at
 44.1 and 48 kHz and instruments WASM allocation calls. `TestAmpP99BlockBudget`
 measures eight simultaneous amps in 128-frame blocks against the existing 670 us
-budget. The dedicated WASM test includes exported-call overhead. These native and
+budget. The dedicated WASM test measures one and eight simultaneous amps on
+nonzero audio and includes exported-call overhead. These native and
 Wazero timings are local inference measurements; the browser release gate still
 requires its AudioWorklet CPU report.

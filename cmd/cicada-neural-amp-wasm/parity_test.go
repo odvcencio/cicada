@@ -92,17 +92,54 @@ func TestNeuralAmpWASMBitIdentical(t *testing.T) {
 			t.Fatal("reset left neural history")
 		}
 	}
-	// The call measures WASM inference plus runtime/export overhead for a full block.
-	times := make([]time.Duration, 4096)
-	for i := range times {
-		start := time.Now()
-		call("cicada_amp_process", 128, 8192)
-		times[i] = time.Since(start)
+	// The ensemble retains eight independent histories, checked before timing.
+	var nativeEnsemble [8]amp.Model
+	for block := 0; block < 64; block++ {
+		for i := 0; i < 128; i++ {
+			x := int32(i*512) - 32768
+			var output int32
+			for voice := range nativeEnsemble {
+				output += nativeEnsemble[voice].Process(x, 8192+int32(voice)*512)
+			}
+			expected[i] = output >> 3
+			binary.LittleEndian.PutUint32(transfer[i*4:], uint32(x))
+		}
+		if !module.Memory().Write(ptr, transfer[:]) || call("cicada_amp_process_eight", 128, 8192) != 0 {
+			t.Fatal("ensemble transfer/render failed")
+		}
+		for i := 0; i < 128; i++ {
+			bits, ok := module.Memory().ReadUint32Le(ptr + uint32(i*4))
+			if !ok || int32(bits) != expected[i] {
+				t.Fatalf("ensemble frame %d differs: native=%d WASM=%d", block*128+i, expected[i], int32(bits))
+			}
+		}
 	}
-	sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
-	p99 := times[len(times)*99/100]
-	if p99 > 670*time.Microsecond {
-		t.Fatalf("WASM p99 %s exceeds unchanged 670us budget", p99)
+	// Fresh nonzero audio enters each block; transfer finishes before timing.
+	// Timings include compiled WASM inference and runtime/export overhead.
+	for _, profile := range []struct {
+		export string
+		voices int
+	}{
+		{"cicada_amp_process", 1}, {"cicada_amp_process_eight", 8},
+	} {
+		times := make([]time.Duration, 4096)
+		for i := range times {
+			if !module.Memory().Write(ptr, transfer[:]) {
+				t.Fatal("timing input transfer failed")
+			}
+			start := time.Now()
+			call(profile.export, 128, 8192)
+			times[i] = time.Since(start)
+		}
+		sort.Slice(times, func(i, j int) bool { return times[i] < times[j] })
+		p99 := times[len(times)*99/100]
+		if p99 > 670*time.Microsecond {
+			t.Fatalf("%d-amp WASM p99 %s exceeds unchanged 670us budget", profile.voices, p99)
+		}
+		t.Logf("%d simultaneous amps, 128 frames at 48 kHz: WASM p50=%s p99=%s/670us", profile.voices, times[len(times)/2], p99)
 	}
-	t.Logf("%d Q15 frames bit-identical; memory=%d bytes with zero growth; WASM p50=%s p99=%s/670us per 128-frame block", frames, memory, times[len(times)/2], p99)
+	if module.Memory().Size() != memory {
+		t.Fatal("ensemble render grew WASM memory")
+	}
+	t.Logf("%d single-amp Q15 frames and 8192 eight-amp mixed Q15 frames bit-identical; memory=%d bytes with zero growth", frames, memory)
 }
