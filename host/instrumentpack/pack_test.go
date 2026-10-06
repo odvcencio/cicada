@@ -72,6 +72,58 @@ func TestLoadPinsAndDecodesBeforePublication(t *testing.T) {
 		t.Fatal("corrupt sample admitted")
 	}
 }
+
+func TestLoadAtRequested96kHz(t *testing.T) {
+	m, _, packed := fixturePack(t)
+	m.Config.Cutoff = 30000
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "samples"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "samples/take.wav.gz"), packed, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	p, err := LoadAtRate(dir, "manifest.json", digest(data), 96000)
+	if err != nil {
+		t.Fatal("valid 96 kHz pack rejected:", err)
+	}
+	if _, err := p.New(96000); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := LoadAtRate(dir, "manifest.json", digest(data), 48000); err == nil {
+		t.Fatal("accepted 30 kHz cutoff at 48 kHz")
+	}
+}
+
+func TestLoadRejectsOverflowingCrossfade(t *testing.T) {
+	m, _, packed := fixturePack(t)
+	m.Zones[0].Loop, m.Zones[0].LoopEnd = true, 1024
+	m.Zones[0].Crossfade = int(^uint(0) >> 1)
+	data, err := json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "samples"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "samples/take.wav.gz"), packed, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(dir, "manifest.json", digest(data)); err == nil {
+		t.Fatal("pack admission accepted overflowing crossfade")
+	}
+}
 func TestManifestRejectsLicenceTraversalAndResourceBombs(t *testing.T) {
 	m, _, _ := fixturePack(t)
 	for _, mutate := range []func(*Manifest){func(m *Manifest) { m.Assets[0].Path = "../escape.wav.gz" }, func(m *Manifest) { m.Assets[0].License = "personal-use" }, func(m *Manifest) { m.Assets[0].License = "CC-BY-4.0" }, func(m *Manifest) { m.Assets[0].Frames = 1 << 30 }, func(m *Manifest) { m.Zones[0].Root = 256 }, func(m *Manifest) { m.Assets[0].SourceURL = "http://example.org/a" }} {

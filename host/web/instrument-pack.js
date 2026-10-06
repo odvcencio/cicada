@@ -7,7 +7,7 @@ export async function sha256(bytes) {
   return Array.from(new Uint8Array(hash), x => x.toString(16).padStart(2, '0')).join('');
 }
 function requireThat(ok, message) { if (!ok) throw new Error(message); }
-function safePath(path) { return typeof path === 'string' && path.length && !path.startsWith('/') && !/[\\:\0?#]/.test(path) && path.split('/').every(x => x && x !== '.' && x !== '..'); }
+function safePath(path) { return typeof path === 'string' && path.length && !path.startsWith('/') && !/[\\:\0?#%]/.test(path) && path.split('/').every(x => x && x !== '.' && x !== '..'); }
 function https(url) { try { const u = new URL(url); return u.protocol === 'https:' && !u.username && !u.password; } catch { return false; } }
 export function validateManifest(m) {
   requireThat(m?.format === 'cicada.instrument-pack/1' && safePath(m.id) && !m.id.includes('/'), 'invalid pack format/id');
@@ -40,11 +40,13 @@ async function limitedBytes(response, limit) {
 export async function checkedFetch(url, hash, bytes, options={}) {
   requireThat(hashPattern.test(hash), 'explicit SHA-256 pin required');
   const cache = options.cache ?? (globalThis.caches ? await caches.open('cicada-instrument-pack-v1') : null);
-  let response=cache ? await cache.match(url) : null;
+  const cacheKey = new URL(url);
+  cacheKey.searchParams.set('__cicada_sha256', hash);
+  let response=cache ? await cache.match(cacheKey.href) : null;
   if(!response) response=await (options.fetch ?? fetch)(url,{signal:options.signal,credentials:'omit'});
   const data=await limitedBytes(response,bytes);
   requireThat(await sha256(data)===hash,'asset hash mismatch');
-  if(cache) await cache.put(url,new Response(data));
+  if(cache) await cache.put(cacheKey.href,new Response(data));
   return data;
 }
 export function decodeWAV(bytes,a) {
