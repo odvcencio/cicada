@@ -153,7 +153,12 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 				octave = n
 			}
 		}
-		poly := track.Kind == "unused_notes" && track.Name == ""
+		poly := track.Kind == "piano" || track.Kind == "unused_notes" && track.Name == ""
+		for _, sampler := range score.Samplers {
+			if sampler.Name == track.Kind {
+				poly = false
+			}
+		}
 		for _, inst := range score.Instruments {
 			if inst.Name == track.Kind {
 				poly = inst.Mode == "poly"
