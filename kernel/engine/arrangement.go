@@ -15,11 +15,13 @@ const (
 	SceneKeep SceneMode = iota
 	SceneOff
 	SceneSlot
+	SceneClip
 )
 
 type SceneBinding struct {
 	Mode SceneMode
 	Slot uint8
+	Clip uint16 `json:",omitempty"`
 }
 
 type SceneSetting struct {
@@ -80,23 +82,25 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 // including restart offsets. Their lengths are at most 64 steps, so each
 // congruence can be combined in bounded time without allocating.
 func (e *Engine) scenePatternEndTick() (int64, bool) {
-	const maxSteps = math.MaxInt64
-	period, residue := int64(1), int64(0)
+	period, residue := int64(0), int64(0)
 	active := false
 	for track := 0; track < e.tracks; track++ {
 		p := &e.patterns[track]
 		if p.active < 0 {
 			continue
 		}
-		active = true
 		length := int64(p.slots[p.active].Len) * p.slots[p.active].GridTicks()
 		target := p.startTick % length
+		if !active {
+			period, residue, active = length, target, true
+			continue
+		}
 		g := gcd(period, length)
 		if (target-residue)%g != 0 {
 			return 0, false
 		}
 		cycles := length / g
-		if period > maxSteps/cycles {
+		if period > math.MaxInt64/cycles {
 			return 0, false
 		}
 		for k := int64(0); k < cycles; k++ {
@@ -112,14 +116,13 @@ func (e *Engine) scenePatternEndTick() (int64, bool) {
 		period = seq.TicksPerBar
 	}
 	tick := e.transport.Tick()
-	step := tick
-	if step > residue {
-		delta := step - residue
+	if tick > residue {
+		delta := tick - residue
 		cycles := delta / period
 		if delta%period != 0 {
 			cycles++
 		}
-		if cycles > (maxSteps-residue)/period {
+		if cycles > (math.MaxInt64-residue)/period {
 			return 0, false
 		}
 		residue += cycles * period
@@ -154,7 +157,10 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 		p := &e.patterns[track]
 		switch binding.Mode {
 		case SceneKeep:
+		case SceneClip:
+			e.startClip(track, binding.Clip, -1, 0)
 		case SceneOff:
+			e.stopClips(track)
 			if e.fadeSceneTrack(track, true) {
 				continue
 			}
@@ -178,6 +184,10 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 		case SceneSlot:
 			e.fadeSceneTrack(track, false)
 			if p.active == int8(binding.Slot) {
+				if v := &e.voices[track]; v.preparedClip && v.prepared.SelectSlot(binding.Slot, 0, e.transport.Playing()) != nil {
+					e.fault(19)
+					return
+				}
 				p.chainArmed = false
 				continue
 			}
@@ -218,17 +228,18 @@ func (e *Engine) applySceneSettingsMode(index uint16, snap bool) {
 }
 
 func (e *Engine) startSong() {
-	if len(e.song) == 0 {
+	if e.placementSchedule {
+		e.startPlacementSchedule()
+		return
+	}
+	if len(e.schedule) == 0 {
 		return
 	}
 	defer e.reapplyMacroLayers()
 	if !e.restoreSceneDefaults() {
 		return
 	}
-	var total int64
-	for _, entry := range e.song {
-		total += int64(entry.Bars) * seq.TicksPerBar
-	}
+	total := e.schedule[len(e.schedule)-1].EndTick
 	tick := e.transport.Tick()
 	if tick >= total && !e.loopSong {
 		_ = e.transport.SeekTick(0)
@@ -239,19 +250,18 @@ func (e *Engine) startSong() {
 	if e.loopSong {
 		cycleStart = tick / total * total
 	}
-	end := cycleStart
-	for i, entry := range e.song {
-		end += int64(entry.Bars) * seq.TicksPerBar
+	for i, entry := range e.schedule {
+		end := cycleStart + entry.EndTick
 		if tick < end {
 			e.songMode = true
 			e.songIndex = i
 			e.songEndTick = end
-			entryStart := end - int64(entry.Bars)*seq.TicksPerBar
+			entryStart := cycleStart + entry.Tick
 			// Parameter settings carry forward from every earlier song scene.
 			// A seek reconstructs the settled parameter state immediately; at an
 			// exact scene boundary the current scene still starts its normal glide.
 			for prior := 0; tick > cycleStart && prior < i; prior++ {
-				e.applySceneSettingsMode(e.song[prior].Scene, true)
+				e.applySceneSettingsMode(e.schedule[prior].Scene, true)
 				if e.faulted {
 					return
 				}
@@ -261,7 +271,14 @@ func (e *Engine) startSong() {
 			if tick == entryStart {
 				e.settleSceneEffects()
 			}
+			// Natural completion can leave clips longer than the song active.
+			// Release those voices before launching the reconstructed scene.
+			e.resetClips()
 			e.launchSceneMode(entry.Scene, false, tick > entryStart)
+			if len(e.clipTemplates) > 0 {
+				e.restoreSongClips(i, cycleStart, tick)
+			}
+			e.restorePreparedClips(i, cycleStart)
 			if tick > entryStart {
 				e.settleSceneEffects()
 			}
@@ -271,11 +288,15 @@ func (e *Engine) startSong() {
 }
 
 func (e *Engine) advanceSong() {
+	if e.placementSchedule {
+		e.advancePlacementSchedule()
+		return
+	}
 	if !e.songMode || !e.transport.Playing() || e.transport.Tick() < e.songEndTick {
 		return
 	}
 	e.songIndex++
-	if e.songIndex == len(e.song) {
+	if e.songIndex == len(e.schedule) {
 		if !e.loopSong {
 			e.songMode = false
 			e.transport.Stop()
@@ -288,8 +309,8 @@ func (e *Engine) advanceSong() {
 		}
 		e.songIndex = 0
 	}
-	entry := e.song[e.songIndex]
-	e.songEndTick += int64(entry.Bars) * seq.TicksPerBar
+	entry := e.schedule[e.songIndex]
+	e.songEndTick += entry.EndTick - entry.Tick
 	if e.manualSceneTick != e.transport.Tick() {
 		e.launchSceneWithSkip(entry.Scene, true)
 	}

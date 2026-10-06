@@ -1,0 +1,7 @@
+cicada 2
+track bass acid {}
+pattern hits { c3 . c4 . }
+arrange {
+  place bass-1 bass hits { at = @2.3.4 length = 1920ticks }
+  marker chorus { at = @5.1.1 }
+}

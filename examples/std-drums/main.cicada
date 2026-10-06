@@ -1,0 +1,68 @@
+import "std/drums"
+
+title "Standard drums"
+
+tempo 128
+
+key a minor
+
+seed 4242
+
+track kick drums.kick {
+  level = -18dB
+}
+
+track circuit-kick drums.circuit-kick {
+  level = -18dB
+}
+
+track snare drums.snare {
+  level = -18dB
+}
+
+track hat drums.hat {
+  level = -18dB
+}
+
+track steel drums.steel {
+  level = -18dB
+}
+
+track circuit drums.circuit {
+  level = -18dB
+}
+
+pattern melody {
+  gate = 55%
+  1^ . 3 . 5~ 1 . 7,
+}
+
+pattern beat drums {
+  bd: X... x... X... x...
+  sd: .... X... .... X...
+  ch: x.x. x.x. x.x. x.x.
+  oh: .... .... ..x. ....
+}
+
+scene first {
+  kick = melody
+  circuit-kick = melody
+  snare = melody
+  hat = melody
+  steel = beat
+  circuit = beat
+}
+
+scene second {
+  kick = keep
+  circuit-kick = keep
+  snare = keep
+  hat = keep
+  steel = keep
+  circuit = keep
+}
+
+song {
+  first
+  second
+}

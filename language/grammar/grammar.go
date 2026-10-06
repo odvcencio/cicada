@@ -35,10 +35,10 @@ func Cicada() *grammargen.Grammar {
 	g.Define("source_file", seq(optional(seq(str("cicada"), sym("integer"))), repeat(sym("_declaration"))))
 	g.Define("_declaration", choice(
 		sym("import_decl"), sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
-		sym("instrument_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
+		sym("instrument_decl"), sym("preset_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
 		sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
-		sym("master_decl"), sym("export_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
+		sym("master_decl"), sym("export_decl"), sym("arrange_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
 	))
 
 	// Edition-2 audio declarations share typed key/value bodies.
@@ -53,7 +53,8 @@ func Cicada() *grammargen.Grammar {
 	g.Define("seed_decl", seq(str("seed"), sym("integer")))
 
 	// `track <name> <voice> { key = value }` binds a name to the built-in acid
-	// or drums voice, or to a declared instrument.
+	// or drums voice, experimental guitar (edition 2 with experimental = on),
+	// or to a declared instrument. No new syntax is needed for guitar controls.
 	g.Define("track_decl", seq(
 		str("track"), field("name", sym("_name")), field("kind", sym("_name")),
 		str("{"), repeat(choice(sym("mix_setting"), sym("chain_decl"))), str("}"),
@@ -68,7 +69,7 @@ func Cicada() *grammargen.Grammar {
 		str("{"), optional(sym("instrument_octave")), repeat(sym("instrument_param")), sym("voice_decl"), str("}"),
 	))
 	g.Define("instrument_octave", seq(str("octave"), str("="), field("value", sym("integer")), optional(str(";"))))
-	// A kit binds drum lanes to instruments or built-in drum voices.
+	// A kit binds drum lanes to instruments, built-in voices, or modeled pieces.
 	g.Define("kit_decl", seq(
 		str("kit"), field("name", sym("_name")),
 		str("{"), repeat(sym("kit_binding")), str("}"),
@@ -79,6 +80,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("kit_target", choice(
 		field("instrument", sym("_name")),
 		seq(str("builtin"), str("."), field("voice", sym("identifier"))),
+		seq(str("model"), str("."), field("voice", sym("identifier"))),
 	))
 	g.Define("instrument_param", seq(
 		str("param"), field("name", sym("identifier")), optional(seq(str(":"), field("unit", sym("identifier")))),
@@ -99,7 +101,7 @@ func Cicada() *grammargen.Grammar {
 		seq(str("("), sym("expression"), str(")")),
 	))
 	// Functions remain identifiers: typing checks delay(audio, ms) and
-	// comb(audio, ms, unit, unit), and unit / Hz yields a period in ms.
+	// comb(audio, ms, unit, unit), pm(hz, audio, unit), and unit / Hz yields ms.
 	g.Define("call_expr", seq(field("function", sym("identifier")), str("("), commaSep(sym("expression")), str(")")))
 
 	// Parameters of tracks and effects. Mixer routing has its own typed source
@@ -108,7 +110,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("param_decl", seq(field("name", sym("identifier")), str("="), field("value", sym("value"))))
 	g.Define("send_decl", seq(str("send"), field("to", sym("_name")), str("="), field("level", sym("number")), optional(field("tap", str("pre")))))
 	g.Define("mix_setting", choice(sym("send_decl"), sym("param_decl")))
-	g.Define("fx_decl", seq(str("fx"), field("name", sym("_name")), optional(field("kind", sym("identifier"))), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("fx_decl", seq(str("fx"), field("name", sym("_name")), optional(field("kind", sym("_name"))), str("{"), repeat(sym("param_decl")), str("}")))
 	g.Define("bus_decl", seq(str("bus"), field("name", sym("_name")), str("{"), repeat(sym("mix_setting")), str("}")))
 	g.Define("master_decl", seq(str("master"), str("{"), repeat(sym("mix_setting")), str("}")))
 	g.Define("export_decl", seq(str("export"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
@@ -121,11 +123,11 @@ func Cicada() *grammargen.Grammar {
 	))
 	g.Define("acid_pattern", seq(
 		str("pattern"), field("name", sym("_name")), str("acid"), repeat(sym("pattern_attr")),
-		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(sym("expression_row")), str("}"),
 	))
 	g.Define("note_pattern", seq(
 		str("pattern"), field("name", sym("_name")), optional(str("notes")), repeat(sym("pattern_attr")),
-		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(sym("expression_row")), str("}"),
 	))
 	g.Define("phrase_use", seq(
 		str("use"), field("name", sym("_name")),
@@ -140,6 +142,16 @@ func Cicada() *grammargen.Grammar {
 		str("{"), repeat(sym("pattern_attr")), repeat(sym("drum_lane")), str("}"),
 	))
 	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", choice(sym("number"), sym("fraction")))))
+
+	// Expression rows follow the melodic cells. Joined labels delimit rows
+	// even when semicolons and newlines are omitted.
+	g.Define("expression_row", seq(
+		choice(field("name", sym("expression_row_label")), seq(field("name", sym("identifier")), str(":"))),
+		repeat(sym("expression_cell")), optional(str(";")),
+	))
+	g.Define("expression_row_label", token(prec(3, pat(`(bend|vibrato|pressure|timbre):`))))
+	g.Define("expression_cell", choice(str("."), sym("expression_number")))
+	g.Define("expression_number", token(pat(`[+-]?[0-9]+(\.[0-9]+)?(ct)?`)))
 
 	// A step is a rest, a tie, a bar line (which takes no time), or a note.
 	// A note is a scale degree or a letter pitch, then octave marks, then
@@ -183,7 +195,7 @@ func Cicada() *grammargen.Grammar {
 	// Literals. A number carries its unit; a fraction is a note division such
 	// as 1/8, 1/8T (triplet), or 1/8. (dotted), lexed as one token so the
 	// longest match beats a plain number.
-	g.Define("value", choice(sym("number"), sym("insert_chain"), sym("_name"), sym("string"), sym("fraction")))
+	g.Define("value", choice(sym("musical_position"), sym("bar_count"), sym("tick_count"), sym("number"), sym("insert_chain"), sym("_name"), sym("string"), sym("fraction")))
 	g.Define("insert_chain", seq(field("first", sym("_name")), repeat(seq(str("->"), field("next", sym("_name"))))))
 	g.Define("fraction", token(pat(`[0-9]+\/[0-9]+[tT.]?`)))
 	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?`)))
@@ -193,6 +205,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("identifier", token(pat(`[a-z_][a-z0-9_-]*`)))
 	g.Define("_name", choice(sym("identifier"), sym("qualified_name")))
 	g.Define("qualified_name", seq(sym("identifier"), str("."), sym("identifier"), repeat(seq(str("."), sym("identifier")))))
+	g.Define("preset_decl", seq(str("preset"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
 	g.Define("import_decl", seq(str("import"), field("path", sym("string"))))
 	g.Define("comment", token(pat(`\/\/[^\n]*`)))
 
@@ -224,8 +237,10 @@ func Cicada() *grammargen.Grammar {
 		"(source_file (integer) (note_pattern (identifier) (acid_step (acid_note (pitch (degree)) (modifier))) (acid_step) (acid_step (acid_note (pitch (degree)) (octave_shift) (modifier) (modifier (ratchet (integer))) (modifier (probability (integer))))) (acid_step) (acid_step) (acid_step (acid_note (pitch (letter_pitch)) (octave_shift))) (phrase_use (identifier) (integer) (number))))")
 	g.Test("instrument", "cicada 1 instrument i { param c: hz = 1hz; voice mono { let s = env(gate, 9ms); out = saw(pitch - c) * (s * 2); } }", "")
 	g.Test("graph delays", "cicada 2 instrument i { voice mono { let s = comb(noise() * env(gate, 1ms), 1 / pitch, 0.99, 0.5); out = delay(s, 20ms); } }", "")
+	g.Test("phase modulation", "cicada 2 instrument i { voice mono { let m = sine(pitch * 3.5); out = pm(pitch, m, 4 * env(gate, 260ms)); } }", "")
 	g.Test("inferred instrument units", "instrument i { param cutoff = 720Hz param decay = 0.3s param level = -6dB param amount = 50% voice mono { out = saw(cutoff) * amount } }", "")
 	g.Test("scene parameter paths", "scene drop { bass = bass-b bass.cutoff = 900Hz drums.bd_level = off }", "")
+	g.Test("modeled kit targets", "kit acoustic { bd = model.kick ch = model.hat_closed cp = model.cross_stick }", "")
 	g.Test("chance spelling", "pattern p acid { 1?70 } pattern beat drums { bd: x?50; }", "")
 	g.Test("default notes", "phrase hook { 1 . } pattern p { use hook 5 . }", "")
 	g.Test("SI units", "track bass acid { cutoff = 2kHz level = -6dB } instrument i { param cutoff: hz = 720Hz; voice mono { out = saw(440Hz); } }", "")
@@ -240,5 +255,11 @@ func Cicada() *grammargen.Grammar {
 	g.Test("live controls", "live { land = bar phrase = 8bars macro intensity = 0.3 smooth 400ms layers intensity { drums >= 0.25 attack 1bar release 3bars } }", "")
 	g.Test("authored kit", "cicada 1 kit steel { bd=kick; ch=builtin.ch; }", "")
 
+	g.Define("arrange_decl", seq(str("arrange"), str("{"), repeat(choice(sym("place_decl"), sym("marker_decl"))), str("}")))
+	g.Define("place_decl", seq(str("place"), field("name", sym("_name")), field("track", sym("_name")), field("content", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("marker_decl", seq(str("marker"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("musical_position", token(pat(`@[0-9]+\.[0-9]+\.[0-9]+`)))
+	g.Define("tick_count", token(pat(`[0-9]+ticks`)))
+	g.Test("arrangement", "cicada 2 arrange { place vox-1 vox vocal-a { at = @1.1.1 length = 2bars } marker chorus { at = @5.1.1 } }", "")
 	return g
 }

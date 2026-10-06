@@ -121,6 +121,43 @@ func TestStudioMixerWriterInsertsInFormatterOrderAndIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestStudioMixerWriterAddsSettingsInsideInlineTrack(t *testing.T) {
+	source := []byte("cicada 2\ntempo 120\nkey c minor\n// Keep this track comment.\ntrack keys acid { cutoff=700Hz }\npattern pulse notes { 1 . . . }\nscene main { keys=pulse }\nsong { main }\n")
+	for _, test := range []struct {
+		field string
+		value string
+	}{
+		{"level", "-7.25"},
+		{"pan", "0.125"},
+		{"mute", "true"},
+	} {
+		t.Run(test.field, func(t *testing.T) {
+			updated, _, _, _, err := studioMixerSource(source, "keys."+test.field, json.RawMessage(test.value))
+			if err != nil {
+				t.Fatal(err)
+			}
+			score, diagnostics := notation.Parse(updated)
+			if score == nil || hasDiagnosticErrors(diagnostics) {
+				t.Fatalf("inline mixer edit produced invalid source: %v\n%s", diagnostics, updated)
+			}
+			if len(score.Tracks) != 1 || !strings.Contains(string(updated), "// Keep this track comment.\ntrack keys acid {") || !strings.Contains(string(updated), "cutoff=700Hz") {
+				t.Fatalf("inline mixer edit damaged its owner: %s", updated)
+			}
+			found := false
+			for _, parameter := range score.Tracks[0].Params {
+				found = found || parameter.Name == test.field
+			}
+			if !found {
+				t.Fatalf("new %s is outside the track: %s", test.field, updated)
+			}
+			second, _, _, _, err := studioMixerSource(updated, "keys."+test.field, json.RawMessage(test.value))
+			if err != nil || !bytes.Equal(updated, second) {
+				t.Fatalf("repeating inline mixer edit changed source: %v\n%s", err, second)
+			}
+		})
+	}
+}
+
 func TestStudioMixerWriterTrackLevelOffUsesMuteInEditionTwo(t *testing.T) {
 	updated, _, _, _, err := studioMixerSource([]byte(studioMixerScore), "bass.level", json.RawMessage(`"off"`))
 	if err != nil {
@@ -405,4 +442,44 @@ func studioMixerTestHandler(t *testing.T, source string) (http.Handler, string) 
 		t.Fatal(err)
 	}
 	return handler, path
+}
+
+func TestStudioMixerResolvesPresetEffectKinds(t *testing.T) {
+	source := []byte("cicada 2\npreset wet { instrument=builtin.delay feedback=0.3 }\nfx echo wet {}\ntrack lead acid { send echo=0.4 }\npattern melody { 1 . }\nscene main { lead=melody }\nsong { main }\n")
+	filename := filepath.Join(t.TempDir(), "main.cicada")
+	if err := os.WriteFile(filename, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	view, err := buildStudioMixerView(filename, source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(view.Tracks) != 1 || len(view.Tracks[0].Sends) != 1 || view.Tracks[0].Sends[0].Kind != "delay" || len(view.Returns) != 1 || view.Returns[0].Kind != "delay" {
+		t.Fatalf("preset sends and returns missing: tracks=%d sends=%d returns=%d", len(view.Tracks), len(view.Tracks[0].Sends), len(view.Returns))
+	}
+	if view.Returns[0].SourceRange == (mixerLineRange{}) {
+		t.Fatal("source range for preset instance lost")
+	}
+}
+
+func TestStudioMixerWritesPresetEffectParameters(t *testing.T) {
+	source := []byte("cicada 2\npreset wet { instrument=builtin.delay feedback=0.3 }\nfx echo wet {}\ntrack lead acid { send echo=0.4 }\npattern melody { 1 . }\nscene main { lead=melody }\nsong { main }\n")
+	for _, value := range []json.RawMessage{json.RawMessage(`0.6`), json.RawMessage(`0.7`)} {
+		updated, _, after, _, err := studioMixerSource(source, "echo.feedback", value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Contains(updated, []byte("preset wet { instrument=builtin.delay feedback=0.3 }")) || !bytes.Contains(updated, []byte("fx echo wet")) {
+			t.Fatalf("preset binding changed: %s", updated)
+		}
+		score, ds := notation.Parse(updated)
+		if score == nil || hasDiagnosticErrors(ds) {
+			t.Fatalf("updated score invalid: %+v", ds)
+		}
+		resolved, ds := notation.ResolvePresets(score)
+		if hasDiagnosticErrors(ds) || len(resolved.Effects) != 1 || trackMixerSourceText(resolved.Effects[0].Params, "feedback") != after {
+			t.Fatalf("effect override not saved: %+v %+v", resolved.Effects, ds)
+		}
+		source = updated
+	}
 }

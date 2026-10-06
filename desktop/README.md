@@ -22,12 +22,15 @@ Settings, logs (`logs\studio.log`), and the WebView2 profile live in
 
 ```sh
 # Development build next to a cicada.exe:
+make build-workstation-release
+(cd workstation && GOOS=windows GOARCH=amd64 go build -o ../build/cicada-workstation.exe .)
 GOOS=windows GOARCH=amd64 go build -o build/cicada.exe ./cmd/cicada
 (cd desktop && GOOS=windows GOARCH=amd64 go build -ldflags=-H=windowsgui -o ../build/cicada-studio.exe .)
 ```
 
 `cicada-studio.exe` looks for `cicada.exe` next to itself, then on `PATH`;
-`--cicada <path>` overrides both. It also needs `WebView2Loader.dll` beside it.
+`--cicada <path>` overrides both. It also needs `cicada-workstation.exe`, the
+`workstation/` runtime bundle, and `WebView2Loader.dll` beside it.
 
 ## Package
 
@@ -38,7 +41,7 @@ desktop/package.sh --version 0.1.0 \
 ```
 
 The script downloads the WebView2 SDK (pinned by SHA-256) for
-`WebView2Loader.dll`, builds both executables, and runs
+`WebView2Loader.dll`, builds the core, GoSX workstation, and desktop executables, and runs
 `gosx desktop package`. Output goes to `dist/desktop`.
 
 ## Options

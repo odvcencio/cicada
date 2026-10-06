@@ -6,9 +6,16 @@ require (
 	github.com/andybalholm/brotli v1.2.4
 	github.com/coder/websocket v1.8.15
 	github.com/ebitengine/oto/v3 v3.5.1
+	github.com/mewkiz/flac v1.0.14
 	github.com/odvcencio/gotreesitter v0.54.0
 	github.com/tetratelabs/wazero v1.12.0
 	golang.org/x/sys v0.47.0
+)
+
+require (
+	github.com/icza/bitio v1.1.0 // indirect
+	github.com/mewkiz/pkg v0.0.0-20250417130911-3f050ff8c56d // indirect
+	github.com/mewpkg/term v0.0.0-20241026122259-37a80af23985 // indirect
 )
 
 require (

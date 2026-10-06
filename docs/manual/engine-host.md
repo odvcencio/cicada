@@ -45,10 +45,21 @@ TinyGo audio module:
 
 The image allocation accepts 32 bytes through 2 MiB and happens before audio
 initialization. A new module instance is required to load a different project.
-The current encoded image is version 10, with a little-endian header. It carries
+Existing voices encode as version 13; an opted-in experimental guitar uses
+version 15. Shipped versions 8..13 remain readable. Version 14 belongs to the
+in-flight chord/schedule lanes. The little-endian image carries
 mixer routing, effects, instrument graphs, authored kits, patterns, scenes,
 and song entries. Use `kernelimage.Encode` instead of constructing the image
 bytes yourself.
+
+The guitar runs through the same production AudioWorklet callback as other
+voices. Select it in an edition-2 score with `experimental = on` before
+compilation. It remains a research prototype without listening acceptance;
+see [its controls and limits](../spec/edition-2.md#experimental-guitar-voice).
+`gosx_audio_allocation_count` returns the TinyGo heap allocation count so
+hosts can verify that rendering, including sequenced note/control changes,
+does not allocate. Read it outside a timed callback; memory size alone cannot
+detect allocations that fit within the existing heap.
 
 The older direct-setup exports remain available when a host needs to set track
 kinds and arrangement tables itself. Set up to sixteen track kinds with
@@ -73,6 +84,30 @@ Write a complete batch and commit it with `gosx_audio_cmd_commit(n)`; a
 rejected batch faults the engine. `gosx_audio_msg_drain` reads fixed 16-byte
 status records. Drain messages regularly so the host can report queued scenes,
 transport changes, and engine errors.
+
+`OpNoteExpression` uses the existing 24-byte record. `Index` identifies the
+note started by `OpNoteOn`; `Arg0`, `Arg1`, and the word at byte 12 carry
+float32 pitch offset in cents, pressure, and timbre respectively. Pitch is
+bounded to −9600…9600 cents; pressure and timbre are 0…1. Other commands still
+require the byte-12 word to be zero. A note starts with zero bend and pressure
+and centered timbre (0.5). Expression and note-off commands for an old identity
+cannot change its replacement. Identity zero preserves the legacy path, and
+65535 selects all-off. Live host adapters use identities 1…65534.
+
+Graph instruments expose `pitch_bend` in cents and normalized `pressure` and
+`timbre`. The existing `pitch` input includes bend and score vibrato. Built-in
+acid voices apply pitch expression; pressure and timbre need a graph that uses
+those inputs. Live expression targets monophonic tracks. [`host/midi`](../../host/midi) retains
+32-bit MIDI 2.0 pressure and timbre until normalization to the float32 ABI.
+It supplies pitch-sensitivity conversion, without a UMP transport or device
+negotiation layer. MIDI 2.0 defines high-resolution controllers and per-note
+pitch independently of MIDI 1.0 byte messages; see the
+[MIDI Association overview](https://midi.org/what-musicians-artists-need-to-know-about-midi-2-0).
+
+Images containing expression rows or graph inputs require
+`kernelimage.ExpressionCapability` (bit 3) from `gosx_audio_capabilities`. Existing
+images keep their layout; the capability appends expression records to each
+pattern record and is rejected by older readers.
 
 `gosx_audio_render(frames)` writes planar float32 stereo to
 `gosx_audio_out_ptr`. The right channel starts `maxBlock` frames after the

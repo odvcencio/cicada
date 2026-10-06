@@ -1,0 +1,62 @@
+cicada 2
+
+title "Domino impact surfaces"
+
+tempo 100
+
+key c major
+
+seed 4242
+
+track wood model_wood {
+  level = -10dB
+  octave = 3
+}
+
+track zinc model_zinc {
+  level = -15dB
+  octave = 3
+}
+
+track felt model_felt {
+  level = -10dB
+  octave = 3
+}
+
+track marble model_marble {
+  level = -12dB
+  octave = 3
+}
+
+pattern light {
+  c3 . . . c3 . . . | c3^ . . . c3 . . .
+}
+
+scene wooden {
+  wood = light
+  zinc = off
+  felt = off
+  marble = off
+}
+
+scene metal {
+  wood = off
+  zinc = light
+}
+
+scene soft {
+  zinc = off
+  felt = light
+}
+
+scene stone {
+  felt = off
+  marble = light
+}
+
+song {
+  wooden
+  metal
+  soft
+  stone
+}

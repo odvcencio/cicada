@@ -21,6 +21,7 @@ func (t *studioTransport) prepareTakeInput() (int, int, error) {
 	if !t.audioOptions.InputEnabled {
 		return 0, 0, fmt.Errorf("enable duplex input before arming capture")
 	}
+	t.stopPreviewLocked()
 	opened := false
 	if t.audio == nil {
 		open := t.takeInputOpener

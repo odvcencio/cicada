@@ -1,0 +1,27 @@
+import "std/synth"
+import "std/drums"
+import "std/presets"
+import "std/fx"
+
+title "Studio library"
+tempo 120
+key c minor
+seed 4242
+
+preset bright {
+  instrument = synth.glassbass
+  cutoff = 900Hz
+  bite = 0.7
+}
+
+track lead bright {
+  level = -18dB
+  insert = fx.drive
+}
+track beat drums.steel { level = -18dB }
+track bass presets.acid-round { level = -18dB }
+
+pattern melody { c3 . . . g3 . . . c3 . . . g3 . . . }
+pattern beat drums { bd: X...x...X...x... ch: x.x.x.x.x.x.x.x. }
+scene main { lead = melody beat = beat bass = melody }
+song { main * 2 }

@@ -5,8 +5,52 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
+	"strings"
 	"testing"
 )
+
+func TestMIDIScalarSlideIntoChordAtSceneBoundary(t *testing.T) {
+	for _, target := range []string{"[e4 g4 b4]", "e4"} {
+		t.Run(target, func(t *testing.T) {
+			source := `tempo 120
+instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }
+track keys piano {}
+pattern lead notes { d4~ }
+pattern next notes { TARGET }
+scene one { keys=lead }
+scene two { keys=next }
+song { one two }`
+			score, ds := notation.Parse([]byte(strings.Replace(source, "TARGET", target, 1)))
+			if score == nil || len(ds) != 0 {
+				t.Fatalf("parse: %+v", ds)
+			}
+			p, ds := project.FromScore(score)
+			if p == nil || len(ds) != 0 {
+				t.Fatalf("compile: %+v", ds)
+			}
+			file, err := FromProject(p, 2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			notes := file.Tracks[1].Notes
+			lastScalar := notes[15]
+			wantDuration := seq.TicksPerStep + 1
+			if strings.HasPrefix(target, "[") {
+				wantDuration = seq.TicksPerStep * 55 / 100
+			}
+			if lastScalar.Note != 62 || lastScalar.Tick != 15*seq.TicksPerStep || lastScalar.Dur != wantDuration {
+				t.Fatalf("scene-boundary scalar release: %+v, want duration %d", lastScalar, wantDuration)
+			}
+			if target == "[e4 g4 b4]" {
+				for i, pitch := range []uint8{64, 67, 71} {
+					if note := notes[16+i]; note.Note != pitch || note.Tick != seq.TicksPerBar {
+						t.Fatalf("next scene lost chord pitch or onset: %+v", note)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestChordMIDIExportsEveryPitchAndSharedTies(t *testing.T) {
 	source := `tempo 120 key d minor

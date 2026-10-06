@@ -132,6 +132,9 @@
     },
     "live": {
       "$ref": "#/$defs/live"
+    },
+    "arrange": {
+      "$ref": "#/$defs/arrangement"
     }
   },
   "$defs": {
@@ -321,7 +324,10 @@
           "maximum": 6
         },
         "mode": {
-          "enum": ["mono", "poly"]
+          "enum": [
+            "mono",
+            "poly"
+          ]
         },
         "params": {
           "type": "array",
@@ -476,7 +482,17 @@
           "minimum": 0,
           "maximum": 127
         },
-        "notes": {"type": "array", "minItems": 2, "maxItems": 4, "uniqueItems": true, "items": {"type": "integer", "minimum": 0, "maximum": 127}},
+        "notes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 127
+          }
+        },
         "accent": {
           "type": "boolean"
         },
@@ -645,7 +661,23 @@
         },
         "lanes": {
           "$ref": "#/$defs/lane_map"
+        },
+        "expression": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {"$ref": "#/$defs/note_expression"}
         }
+      }
+    },
+    "note_expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["pitch_cents", "pressure", "timbre", "vibrato_depth_cents"],
+      "properties": {
+        "pitch_cents": {"type": "number", "minimum": -9600, "maximum": 9600},
+        "pressure": {"type": "number", "minimum": 0, "maximum": 1},
+        "timbre": {"type": "number", "minimum": 0, "maximum": 1},
+        "vibrato_depth_cents": {"type": "number", "minimum": 0, "maximum": 9600}
       }
     },
     "scene": {
@@ -1544,8 +1576,13 @@
         "voices"
       ],
       "properties": {
-        "pack": {"type": "string"},
-        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "pack": {
+          "type": "string"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
         "name": {
           "type": "string"
         },
@@ -1789,6 +1826,79 @@
           "type": "number",
           "minimum": 0,
           "maximum": 60000
+        }
+      }
+    },
+    "arrangement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "placements",
+        "markers"
+      ],
+      "properties": {
+        "placements": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/placement"
+          }
+        },
+        "markers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/marker"
+          }
+        }
+      }
+    },
+    "placement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "track",
+        "content",
+        "at_tick",
+        "length_ticks"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "track": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string"
+        },
+        "at_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "length_ticks": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "marker": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "at_tick"
+      ],
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "at_tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
         }
       }
     }

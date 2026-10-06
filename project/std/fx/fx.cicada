@@ -1,0 +1,35 @@
+fx drive drive {
+  shape = soft
+  gain = 9dB
+  tone = 9kHz
+  mix = 0.7
+}
+
+fx delay delay {
+  time = 1/8T
+  feedback = 0.35
+  damp = 6kHz
+  pingpong = true
+  width = 1
+  mix = 1
+}
+
+fx reverb reverb {
+  size = 1
+  decay = 2.4s
+  damp = 8kHz
+  highpass = 120Hz
+  predelay = 25ms
+  mix = 1
+}
+
+fx comp comp {
+  detect = peak
+  threshold = -24dB
+  ratio = 4
+  knee = 6dB
+  attack = 5ms
+  release = 150ms
+  makeup = 0dB
+  mix = 1
+}
