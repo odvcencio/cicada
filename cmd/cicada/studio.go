@@ -222,6 +222,11 @@ func (s *studio) routes() http.Handler {
 	mux.HandleFunc("GET /api/export", s.exportStatus)
 	mux.HandleFunc("POST /api/export", s.startExport)
 	mux.HandleFunc("GET /api/history", s.historyState)
+	mux.HandleFunc("GET /api/library", s.libraryState)
+	mux.HandleFunc("POST /api/library/preview", s.libraryPreview)
+	mux.HandleFunc("POST /api/library/insert", s.libraryInsert)
+	mux.HandleFunc("POST /api/library/save", s.librarySavePreset)
+	mux.HandleFunc("GET /studio-library.js", s.libraryScript)
 	mux.HandleFunc("GET /api/kernel-image", s.kernelImage)
 	mux.HandleFunc("GET /api/kernel.wasm", s.kernelWASM)
 	mux.HandleFunc("GET /audio/cicada-processor.js", s.processorAsset)
@@ -344,6 +349,10 @@ type studioEdit struct {
 	Pitch          *int                  `json:"pitch,omitempty"`
 	Modifier       string                `json:"modifier,omitempty"`
 	Path           string                `json:"path,omitempty"`
+	Item           string                `json:"item,omitempty"`
+	Name           string                `json:"name,omitempty"`
+	Mode           string                `json:"mode,omitempty"`
+	Rate           int                   `json:"rate,omitempty"`
 	Value          json.RawMessage       `json:"value,omitempty"`
 	ConfirmUpgrade bool                  `json:"confirmUpgrade,omitempty"`
 }
@@ -486,7 +495,11 @@ func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change 
 		return
 	}
 	updated := mutation.Source
-	p, err := compileStudioSource(s.path, updated)
+	overrides := map[string][]byte{}
+	for _, file := range mutation.Files {
+		overrides[file.Path] = file.After
+	}
+	p, err := compileStudioSourceWithOverrides(s.path, updated, overrides)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -533,7 +546,7 @@ func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change 
 	for _, file := range mutation.Files {
 		if err := studioWriteAuxiliaryFile(file); err != nil {
 			_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
-			message := "mixer source saved but edition upgrade failed: " + err.Error()
+			message := "source auxiliary write failed: " + err.Error()
 			if rollbackErr != nil {
 				message += "; source rollback failed: " + rollbackErr.Error()
 			}
@@ -556,13 +569,25 @@ func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change 
 }
 
 func compileStudioSource(path string, source []byte) (*project.Project, error) {
+	return compileStudioSourceWithOverrides(path, source, nil)
+}
+
+func compileStudioSourceWithOverrides(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
 	if err := refuseMultiFileStudio(path); err != nil {
 		return nil, err
 	}
 	if !utf8.Valid(source) {
 		return nil, fmt.Errorf("score is not UTF-8")
 	}
-	score, diagnostics, err := parseScoreForPath(path, source)
+	if overrides == nil {
+		overrides = map[string][]byte{}
+	}
+	absolute, err := filepath.Abs(path)
+	if err != nil {
+		return nil, err
+	}
+	overrides[absolute] = source
+	score, diagnostics, err := project.LoadScore(path, overrides)
 	if err != nil {
 		return nil, err
 	}
