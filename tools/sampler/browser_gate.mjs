@@ -6,7 +6,7 @@ import http from 'node:http';
 const require=createRequire(import.meta.url);
 const {chromium}=require(process.env.PLAYWRIGHT_MODULE??'playwright');
 const server=http.createServer(async(req,res)=>{
- const files={'/instrument-pack.js':'host/web/instrument-pack.js','/sampler-processor.js':'host/web/sampler-processor.js','/sampler.wasm':'build/cicada-sampler.wasm'};
+ const files={'/audio-encoding.js':'host/web/audio-encoding.js','/instrument-pack.js':'host/web/instrument-pack.js','/sampler-processor.js':'host/web/sampler-processor.js','/sampler.wasm':'build/cicada-sampler.wasm'};
  try {if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Sampler gate</title>');return;}const path=files[req.url];if(!path){res.writeHead(404);res.end();return;}res.setHeader('Content-Type',path.endsWith('.wasm')?'application/wasm':'text/javascript');res.end(await readFile(path));}catch(e){res.writeHead(500);res.end(String(e));}
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url='http://127.0.0.1:'+server.address().port;

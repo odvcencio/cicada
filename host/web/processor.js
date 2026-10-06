@@ -6,7 +6,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     const CapabilityChords = 1, CapabilityUnifiedImage = 65536;
     const invalid = message => { throw new Error(message); };
     // Keep render state in constructor-scoped bindings so process reuses it.
-    let capture, module = o.m, active = null, previous = null, pending = null, bankCopy = null, playing = false, deferred = null, deferredCount = 0, rate = sampleRate, bank = null, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, gapLimit, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false;
+    let capture, module = o.m, active = null, previous = null, pending = null, bankCopy = null, playing = false, deferred = null, deferredCount = 0, rate = sampleRate, bank = null, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false;
     const create = async image => {
       const bytes = new Uint8Array(image), header = new DataView(image);
       if (bytes.length < 32 || header.getUint32(0) !== 0x43494331) invalid('Invalid CIC1 image header');
@@ -199,10 +199,10 @@ class CicadaKernel extends AudioWorkletProcessor {
     };
     const reject = (e, r) => post({ t: 'x', e, r });
     const report = l => {
-      gapLimit = l + durationLimit;
+      latency = l;
       post({ t: 'q', u: underruns,
-        dl: durationLimit, gl: gapLimit, m: active?.x.memory.buffer.byteLength || 0,
-        d: timingHistogram.slice() });
+        q: quantumMs, dl: durationLimit, gl: latency + durationLimit, m: active?.x.memory.buffer.byteLength || 0,
+        d: timingHistogram });
     };
     const process = (inputs, outputs) => {
       const start = clock();
@@ -210,8 +210,9 @@ class CicadaKernel extends AudioWorkletProcessor {
       lastStart = start;
       callbacks++;
       const measuredPlaying = playing;
-      const channels = outputs[0];
-      const left = channels[0], right = channels[1];
+      const left = outputs[0][0], right = outputs[0][1];
+      quantumMs = left.length * 1000 / rate;
+      durationLimit = quantumMs + (preciseClock ? 0.1 : 1);
       left.fill(0); right.fill(0);
       const lead = CICADA_CAPTURE && capture ? capture.process(inputs, left.length, engineSample - anchorSample + Math.ceil(anchorTick * 60000 * rate / (bpm * 960)), bpm, playing, left, right) : 0;
       if (bankCopy) {
@@ -265,15 +266,16 @@ class CicadaKernel extends AudioWorkletProcessor {
         const bucket = Math.min(253, Math.max(0, elapsed * 4 | 0));
         timingHistogram[bucket]++;
         if (elapsed > durationLimit) timingHistogram[254]++;
-        if (gap > gapLimit) timingHistogram[255]++;
+        if (gap > latency + durationLimit) timingHistogram[255]++;
       }
-      if (elapsed > durationLimit || gap > gapLimit) underruns++;
+      if (elapsed > durationLimit || gap > latency + durationLimit) underruns++;
       return true;
     };
     preciseClock = !!globalThis.performance?.now;
     clock = preciseClock ? performance.now.bind(performance) : Date.now;
-    durationLimit = 128000 / rate + (preciseClock ? 0.1 : 1);
-    gapLimit = (o.l || 0) + durationLimit;
+    quantumMs = 128000 / rate;
+    durationLimit = quantumMs + (preciseClock ? 0.1 : 1);
+    latency = o.l || 0;
     const buffer = new ArrayBuffer(4096);
     view = new Uint8Array(buffer);
     message = { t: 'm', bytes: buffer, n: 0 };

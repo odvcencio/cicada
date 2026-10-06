@@ -1,7 +1,9 @@
 // Measure the production optional sampler kernel in V8, including stereo SRC.
 import {readFile} from 'node:fs/promises';
 import {performance} from 'node:perf_hooks';
-const source=await readFile(new URL('../../host/web/instrument-pack.js',import.meta.url),'utf8');
+let source=await readFile(new URL('../../host/web/instrument-pack.js',import.meta.url),'utf8');
+const encoding=await readFile(new URL('../../host/web/audio-encoding.js',import.meta.url),'utf8');
+source=source.replace('./audio-encoding.js','data:text/javascript;base64,'+Buffer.from(encoding).toString('base64'));
 const {prepareSampler}=await import('data:text/javascript;base64,'+Buffer.from(source).toString('base64'));
 const wasm=await WebAssembly.compile(await readFile(process.argv[2]??'build/cicada-sampler.wasm'));
 for(const ratio of [1,1.5])for(const voices of [1,8])for(const layers of [1,2]) {
