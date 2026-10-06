@@ -116,20 +116,28 @@ type Voice struct {
 
 //go:noinline
 func NewVoice(program Program, sampleRate int) (*Voice, error) {
-	if err := Validate(program, sampleRate); err != nil {
+	return NewVoiceFromProgram(&program, sampleRate)
+}
+
+// NewVoiceFromProgram prepares voice storage without copying the input program at each call.
+// The voice owns its program after construction.
+//
+//go:noinline
+func NewVoiceFromProgram(program *Program, sampleRate int) (*Voice, error) {
+	if err := ValidateProgram(program, sampleRate); err != nil {
 		return nil, err
 	}
 	v := new(Voice)
-	v.program = program
+	v.program = *program
 	v.sampleRate = float32(sampleRate)
-	if usesQuality(&program) {
+	if usesQuality(program) {
 		v.quality = newQualityState(program, sampleRate)
 		v.sampleRate *= 2
 	}
 	if program.GlideMS > 0 {
 		v.pitchAlpha = 1 - math.Exp(-1/(program.GlideMS/1000*float64(v.sampleRate)))
 	}
-	count := delaySamples(&program) / MaxDelaySamples
+	count := delaySamples(program) / MaxDelaySamples
 	if count > 0 {
 		v.delayMemory = make([]float32, count*MaxDelaySamples)
 		v.delays = make([]delayState, count)
@@ -173,6 +181,11 @@ func NewVoice(program Program, sampleRate int) (*Voice, error) {
 // Validate checks untrusted images and statically known delay controls without
 // allocating voice storage. Dynamic controls are bounded again in Next.
 func Validate(program Program, sampleRate int) error {
+	return ValidateProgram(&program, sampleRate)
+}
+
+// ValidateProgram checks a program without passing its fixed node array by value.
+func ValidateProgram(program *Program, sampleRate int) error {
 	if program.Len == 0 || int(program.Len) > MaxNodes || program.Output >= program.Len {
 		return Error("invalid graph program")
 	}
@@ -213,10 +226,10 @@ func Validate(program Program, sampleRate int) error {
 			return Error("non-finite graph constant")
 		}
 	}
-	if delaySamples(&program) > MaxVoiceDelaySamples {
+	if delaySamples(program) > MaxVoiceDelaySamples {
 		return Error("voice graph exceeds 8192 delay samples (two delay nodes)")
 	}
-	return validateDelayControls(program, sampleRate)
+	return validateDelayPitch(program, sampleRate, 0)
 }
 
 func (v *Voice) NoteOn(note, velocity uint8, slide bool) {

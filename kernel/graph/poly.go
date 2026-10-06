@@ -25,10 +25,15 @@ type polySlot struct {
 
 //go:noinline
 func NewPoly(program Program, sampleRate int) (*Poly, error) {
+	return NewPolyFromProgram(&program, sampleRate)
+}
+
+// NewPolyFromProgram prepares the fixed voice pool from an immutable program.
+func NewPolyFromProgram(program *Program, sampleRate int) (*Poly, error) {
 	p := new(Poly)
 	p.fadeFrames = sampleRate / 500
 	for i := range p.slots {
-		v, err := NewVoice(program, sampleRate)
+		v, err := NewVoiceFromProgram(program, sampleRate)
 		if err != nil {
 			return nil, err
 		}
