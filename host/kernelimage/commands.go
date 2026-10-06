@@ -6,7 +6,12 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 )
 
+// CapabilityChords retains the development opcode-22 command capability.
 const CapabilityChords uint32 = 1
+
+// CapabilityUnifiedImage is required for the explicit version-15 image layout.
+// CapabilityChords alone does not imply support for version 15.
+const CapabilityUnifiedImage uint32 = 1 << 16
 
 // PatternCommands uploads one melodic slot through the unchanged 24-byte ABI.
 // A chord requires an advertised capability; no mono fallback is permitted.
@@ -16,6 +21,9 @@ const CapabilityChords uint32 = 1
 func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8, capabilities uint32) ([]cmd.Command, error) {
 	if cfg == nil || cfg.Tracks < 1 || cfg.Tracks > 16 || int(track) >= cfg.Tracks || slot >= 16 || len(cfg.Patterns) != 0 && len(cfg.Patterns) != cfg.Tracks || cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph {
 		return nil, Error("invalid melodic pattern upload target")
+	}
+	if pattern.Expression != nil || len(cfg.Patterns) > 0 && cfg.Patterns[track].Slots[slot].Expression != nil {
+		return nil, Error("step expression requires a complete project image")
 	}
 	gate, seed := uint8(55), cfg.Seed
 	if len(cfg.Patterns) > 0 {
@@ -36,19 +44,21 @@ func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8,
 		}
 	}
 	commands := make([]cmd.Command, 0, 66+int(pattern.Len)*2)
-	// Clear the loaded slot inside this same batch before setting length/meta.
-	// This avoids invalid intermediate chord/slide/transposition combinations.
+	// Clear both the loaded and replacement ranges before setting length/meta.
+	// Shrinking retains scalar steps outside Len; expansion must clear them too.
+	clearLen := pattern.Len
 	if len(cfg.Patterns) > 0 {
 		loaded := cfg.Patterns[track].Slots[slot]
 		if loaded.Len > 0 {
 			if err := loaded.Validate(); err != nil {
 				return nil, err
 			}
-			rest, _ := seq.PackStep(seq.Step{Ratchet: 1, Probability: 100})
-			for i := uint8(0); i < max(loaded.Len, pattern.Len); i++ {
-				commands = append(commands, cmd.Command{Op: cmd.OpSetStep, Track: track, Index: uint16(i), Arg0: rest, Arg1: uint32(slot)})
-			}
+			clearLen = max(clearLen, loaded.Len)
 		}
+	}
+	rest, _ := seq.PackStep(seq.Step{Ratchet: 1, Probability: 100})
+	for i := uint8(0); i < clearLen; i++ {
+		commands = append(commands, cmd.Command{Op: cmd.OpSetStep, Track: track, Index: uint16(i), Arg0: rest, Arg1: uint32(slot)})
 	}
 	commands = append(commands, cmd.Command{Op: cmd.OpSetPatternLen, Track: track, Index: uint16(pattern.Len), Arg1: uint32(slot)}, cmd.Command{Op: cmd.OpSetPatternMeta, Track: track, Arg0: uint32(pattern.SwingPermille) | uint32(uint16(int16(pattern.Transpose)))<<16, Arg1: uint32(slot)})
 	for i := uint8(0); i < pattern.Len; i++ {

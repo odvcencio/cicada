@@ -73,3 +73,28 @@ func TestLowerRejectsUnknownOverride(t *testing.T) {
 		t.Fatal("unknown instrument override was silently ignored")
 	}
 }
+
+func TestExpressionInputsCompileOnlyWhenUsed(t *testing.T) {
+	source := []byte("cicada 1 instrument expressive { voice mono { out = saw(pitch) * pressure * timbre * (1 + pitch_bend / 9600); } } track t expressive {} pattern p notes steps=1 { 1 } scene s { t=p } song { s }")
+	score, ds := notation.Parse(source)
+	if len(ds) != 0 {
+		t.Fatalf("parse: %+v", ds)
+	}
+	program, ds := Compile(score.Instruments[0])
+	if len(ds) != 0 {
+		t.Fatalf("expression inputs: %+v", ds)
+	}
+	lowered, err := Lower(program, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := map[string]bool{}
+	for _, node := range program.Nodes {
+		if node.Op == "input" {
+			found[node.Name] = true
+		}
+	}
+	if !found["pitch_bend"] || !found["pressure"] || !found["timbre"] || lowered.Len != uint8(len(program.Nodes)) {
+		t.Fatal("expression inputs missing")
+	}
+}

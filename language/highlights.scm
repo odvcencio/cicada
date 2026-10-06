@@ -71,19 +71,19 @@
 ; Built-in voice inputs. Parameter and let references are refined by
 ; locals.scm, which gives each reference the capture of its definition.
 ((expression (identifier) @variable.builtin)
-  (#any-of? @variable.builtin "pitch" "gate" "velocity" "sample_rate"))
+  (#any-of? @variable.builtin "pitch" "gate" "velocity" "sample_rate" "pitch_bend" "pressure" "timbre"))
 ((expression (identifier) @variable)
-  (#not-any-of? @variable "pitch" "gate" "velocity" "sample_rate"))
+  (#not-any-of? @variable "pitch" "gate" "velocity" "sample_rate" "pitch_bend" "pressure" "timbre"))
 
 ; Graph primitives.
 ((call_expr function: (identifier) @function.builtin)
   (#any-of? @function.builtin
-    "saw" "square" "sine" "noise" "env" "ladder" "diode"
-    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp"))
+    "saw" "square" "sine" "noise" "env" "adsr" "pulse" "svf" "ladder" "diode"
+    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp" "pm" "ddsp" "neural_amp" "delay" "comb"))
 ((call_expr function: (identifier) @function.call)
   (#not-any-of? @function.call
-    "saw" "square" "sine" "noise" "env" "ladder" "diode"
-    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp"))
+    "saw" "square" "sine" "noise" "env" "adsr" "pulse" "svf" "ladder" "diode"
+    "lowpass" "highpass" "mix" "tanh" "exp2" "clamp" "pm" "ddsp" "neural_amp" "delay" "comb"))
 
 (expression ["+" "-" "*" "/"] @operator)
 ("->" @operator)
@@ -115,9 +115,10 @@
   (#not-any-of? @type "acid" "drums" "audio"))
 (fx_decl name: (identifier) @type.definition)
 
-; Authored kits bind each drum lane to instrument code or a built-in voice.
+; Authored kits bind lanes to instrument code, built-in voices, or modeled pieces.
 "kit" @keyword.type
 "builtin" @keyword.builtin
+"model" @keyword.builtin
 (kit_decl name: (identifier) @type.definition)
 (kit_binding lane: (identifier) @tag.builtin)
 (kit_target instrument: (identifier) @type)
@@ -153,6 +154,12 @@
 (note_pattern name: (identifier) @function)
 (drum_pattern name: (identifier) @function)
 (pattern_attr name: (identifier) @attribute)
+
+(expression_row_label) @attribute.builtin
+(expression_row name: (identifier) @attribute)
+(expression_cell "." @punctuation.special)
+((expression_number) @number.cents (#match? @number.cents "ct$"))
+((expression_number) @number.float (#not-match? @number.float "ct$"))
 
 (phrase_use name: (identifier) @function.macro)
 (phrase_use "*" @operator.repeat)
@@ -272,3 +279,12 @@
 (live_transition to: (identifier) @variable.parameter)
 (live_transition quantize: (identifier) @constant.builtin)
 (live_stinger "." @punctuation.delimiter)
+"preset" @keyword.type
+(preset_decl name: (identifier) @type.definition)
+["arrange" "place" "marker"] @keyword
+(place_decl name: (identifier) @function)
+(place_decl track: (identifier) @variable.member)
+(place_decl content: (identifier) @function.call)
+(marker_decl name: (identifier) @constant)
+(musical_position) @number.position
+(tick_count) @number.ticks

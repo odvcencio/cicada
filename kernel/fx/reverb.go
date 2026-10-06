@@ -33,8 +33,9 @@ type allpass struct {
 
 func (a *allpass) process(input float64) float64 {
 	delayed := a.buffer[a.index]
-	output := delayed - .7*input
-	a.buffer[a.index] = input + .7*output
+	// Round feedback products before addition, matching native amd64 and WASM.
+	output := delayed - float64(.7*input)
+	a.buffer[a.index] = input + float64(.7*output)
 	a.index++
 	if a.index == len(a.buffer) {
 		a.index = 0
@@ -60,7 +61,7 @@ func (l *reverbLine) read(frames float64) float64 {
 	if next == len(l.buffer) {
 		next = 0
 	}
-	return l.buffer[base] + (l.buffer[next]-l.buffer[base])*frac
+	return l.buffer[base] + float64((l.buffer[next]-l.buffer[base])*frac)
 }
 
 var reverbLineLengths = [...]float64{1237, 1381, 1607, 1753, 1871, 2053, 2237, 2411}
@@ -141,7 +142,7 @@ func (r *Reverb) SetParams(p ReverbParams) error {
 		if initial {
 			r.oldLength[line] = frames
 		} else if r.newLength[line] != frames {
-			r.oldLength[line] = r.oldLength[line]*(1-lengthFade) + r.newLength[line]*lengthFade
+			r.oldLength[line] = float64(r.oldLength[line]*(1-lengthFade)) + float64(r.newLength[line]*lengthFade)
 			changedSize = true
 		}
 		r.newLength[line] = frames
@@ -154,7 +155,7 @@ func (r *Reverb) SetParams(p ReverbParams) error {
 	}
 	pre := p.PredelayMs * r.sampleRate / 1000
 	if r.newPre != pre {
-		r.oldPre = r.oldPre*(1-r.preFade) + r.newPre*r.preFade
+		r.oldPre = float64(r.oldPre*(1-r.preFade)) + float64(r.newPre*r.preFade)
 		r.newPre, r.preFade = pre, 0
 	}
 	r.targetDamp = 1 - math.Exp(-2*math.Pi*p.DampHz/r.sampleRate)
@@ -193,7 +194,7 @@ func (r *Reverb) preRead(channel int, frames float64, input float64) float64 {
 		if previous < 0 {
 			previous = len(buffer) - 1
 		}
-		return input*(1-frames) + buffer[previous]*frames
+		return float64(input*(1-frames)) + float64(buffer[previous]*frames)
 	}
 	position := float64(r.preIndex) - frames
 	if position < 0 {
@@ -205,7 +206,7 @@ func (r *Reverb) preRead(channel int, frames float64, input float64) float64 {
 	if next == len(buffer) {
 		next = 0
 	}
-	return buffer[base] + (buffer[next]-buffer[base])*frac
+	return buffer[base] + float64((buffer[next]-buffer[base])*frac)
 }
 
 func (r *Reverb) Process(left, right float32) (float32, float32) {
@@ -217,14 +218,14 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		r.fault = true
 		return 0, 0
 	}
-	r.damp += (r.targetDamp - r.damp) * r.smooth
-	r.highpass += (r.targetHP - r.highpass) * r.smooth
-	r.mix += (r.targetMix - r.mix) * r.smooth
+	r.damp += float64((r.targetDamp - r.damp) * r.smooth)
+	r.highpass += float64((r.targetHP - r.highpass) * r.smooth)
+	r.mix += float64((r.targetMix - r.mix) * r.smooth)
 	for channel := range input {
 		pre := r.preRead(channel, r.newPre, input[channel])
 		if r.preFade < 1 {
 			old := r.preRead(channel, r.oldPre, input[channel])
-			pre = old*(1-r.preFade) + pre*r.preFade
+			pre = float64(old*(1-r.preFade)) + float64(pre*r.preFade)
 		}
 		r.predelay[channel][r.preIndex] = input[channel]
 		for stage := range r.input[channel] {
@@ -239,7 +240,7 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	if r.preFade < 1 {
 		r.preFade = math.Min(1, r.preFade+r.fadeStep)
 	}
-	modulation := 3 * math.Sin(r.phase)
+	modulation := float64(3 * math.Sin(r.phase))
 	r.phase += r.phaseStep
 	if r.phase >= 2*math.Pi {
 		r.phase -= 2 * math.Pi
@@ -258,7 +259,7 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 				oldLength += modulation
 			}
 			old := r.lines[line].read(oldLength)
-			value = old*(1-r.lengthFade) + value*r.lengthFade
+			value = float64(old*(1-r.lengthFade)) + float64(value*r.lengthFade)
 		}
 		taps[line] = value
 		sum += value
@@ -270,13 +271,13 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	for line := range r.lines {
 		l := &r.lines[line]
 		// I - 2vvᵀ for v=(1,...,1)/sqrt(8) is orthogonal.
-		feedback := taps[line] - .25*sum
-		l.low += (feedback - l.low) * r.damp
-		l.high += (l.low - l.high) * (1 - r.highpass)
+		feedback := taps[line] - float64(.25*sum)
+		l.low += float64((feedback - l.low) * r.damp)
+		l.high += float64((l.low - l.high) * (1 - r.highpass))
 		high := l.low - l.high
-		r.gain[line] += (r.targetGain[line] - r.gain[line]) * r.smooth
+		r.gain[line] += float64((r.targetGain[line] - r.gain[line]) * r.smooth)
 		in := input[line&1] * .25
-		l.buffer[l.index] = in + high*r.gain[line]
+		l.buffer[l.index] = in + float64(high*r.gain[line])
 		l.index++
 		if l.index == len(l.buffer) {
 			l.index = 0
@@ -289,8 +290,8 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	}
 	wetL *= .25
 	wetR *= .25
-	outL := float64(left)*(1-r.mix) + wetL*r.mix
-	outR := float64(right)*(1-r.mix) + wetR*r.mix
+	outL := float64(float64(left)*(1-r.mix)) + float64(wetL*r.mix)
+	outR := float64(float64(right)*(1-r.mix)) + float64(wetR*r.mix)
 	if !finite(outL) || !finite(outR) || math.Abs(outL) > math.MaxFloat32 || math.Abs(outR) > math.MaxFloat32 {
 		r.fault = true
 		return 0, 0

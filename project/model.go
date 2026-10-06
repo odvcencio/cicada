@@ -33,6 +33,7 @@ type Project struct {
 	Tracks      []Track      `cicada:"Mixer tracks" json:"tracks"`
 	Patterns    []Pattern    `cicada:"Reusable step patterns" json:"patterns"`
 	Scenes      []Scene      `cicada:"Pattern arrangements" json:"scenes"`
+	Arrange     *Arrangement `cicada:"Named timeline placements" json:"arrange,omitempty" introduced:"cicada.project/2"`
 	Song        []SongEntry  `cicada:"Ordered scene playback" json:"song"`
 	Effects     []Effect     `cicada:"Project effects" json:"effects"`
 	Buses       []Bus        `cicada:"Named mixer buses" json:"buses,omitempty" introduced:"cicada.project/2"`
@@ -149,6 +150,14 @@ type Pattern struct {
 	Seed            uint32             `cicada:"Pattern random seed" json:"seed"`
 	Data            []*Step            `cicada:"Melodic steps" json:"data"`
 	Lanes           map[string][]*Step `cicada:"Drum lane steps" json:"lanes"`
+	Expression      []NoteExpression   `cicada:"Resolved expression at each melodic step" json:"expression,omitempty"`
+}
+
+type NoteExpression struct {
+	PitchCents        float32 `cicada:"Per-note pitch offset" unit:"ct" range:"-9600..9600" json:"pitch_cents"`
+	Pressure          float32 `cicada:"Normalized per-note pressure" range:"0..1" json:"pressure"`
+	Timbre            float32 `cicada:"Normalized per-note timbre" range:"0..1" json:"timbre"`
+	VibratoDepthCents float32 `cicada:"Per-note vibrato depth at 5 Hz" unit:"ct" range:"0..9600" json:"vibrato_depth_cents"`
 }
 
 type Step struct {
@@ -260,6 +269,12 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		return nil, []notation.Diagnostic{{Code: "CICADA-SYNTAX", Severity: "error", Message: "nil score", Position: notation.Position{Line: 1, Column: 1}}}
 	}
 	diagnostics = notation.Validate(score)
+	score, _ = notation.ResolvePresets(score)
+	// Resolve preset templates before selecting runtime instances. Imports
+	// expose definitions; only routed library effects consume mixer instances.
+	copy := *score
+	copy.Effects = routedEffects(score)
+	score = &copy
 	programs, compiledDiagnostics := Check(score)
 	diagnostics = append(diagnostics, compiledDiagnostics...)
 	for _, d := range diagnostics {
@@ -281,6 +296,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		Scenes: []Scene{}, Song: []SongEntry{}, Effects: []Effect{},
 	}
 	lowerAudio(p, score)
+	lowerArrangement(p, score)
 	for _, source := range score.Instruments {
 		periods := programs[source.Name].PeriodExpressions
 		octave := source.Octave
@@ -459,6 +475,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 			Transpose: compiled[0].Pattern.Transpose, Seed: compiled[0].Pattern.Seed,
 			Data: []*Step{}, Lanes: map[string][]*Step{},
 		}
+		pattern.Expression = projectExpression(compiled[0].Pattern)
 		for _, attr := range source.Attrs {
 			if attr.Name == "swing" {
 				pattern.SwingPercent100, _ = parsePercent100(attr.Value)
@@ -491,7 +508,12 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 		for _, setting := range source.Settings {
 			resolved, resolveErr := ResolveParameterPath(p, setting.Path)
 			if resolveErr != nil {
-				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-REFERENCE", Severity: "error", Message: resolveErr.Error(), Position: setting.Position})
+				code := "CICADA-REFERENCE"
+				var pathErr *PathError
+				if errors.As(resolveErr, &pathErr) {
+					code = pathErr.Code
+				}
+				return nil, append(diagnostics, notation.Diagnostic{Code: code, Severity: "error", Message: resolveErr.Error(), Position: setting.Position})
 			}
 			value, err := parseParameterValue(resolved.Descriptor, setting.Value)
 			if err != nil {
@@ -555,6 +577,20 @@ func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string
 		return pattern.Kind
 	}
 	usedByAcid := false
+	if score.Arrange != nil {
+		for _, p := range score.Arrange.Placements {
+			if p.Content == pattern.Name {
+				for _, t := range score.Tracks {
+					if t.Name == p.Track {
+						if t.Kind != "acid" {
+							return "notes"
+						}
+						usedByAcid = true
+					}
+				}
+			}
+		}
+	}
 	for _, scene := range score.Scenes {
 		for _, binding := range scene.Bindings {
 			if binding.Pattern != pattern.Name {
@@ -578,6 +614,17 @@ func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string
 }
 
 func representativeTrack(score *notation.Score, pattern notation.Pattern) notation.Track {
+	if score.Arrange != nil {
+		for _, p := range score.Arrange.Placements {
+			if p.Content == pattern.Name {
+				for _, t := range score.Tracks {
+					if t.Name == p.Track {
+						return t
+					}
+				}
+			}
+		}
+	}
 	for _, scene := range score.Scenes {
 		for _, binding := range scene.Bindings {
 			if binding.Pattern == pattern.Name {
@@ -643,6 +690,12 @@ func assignSlots(p *Project, score *notation.Score) error {
 			}
 		}
 	}
+	for _, placement := range arrangementPlacements(p) {
+		if used[placement.Track] == nil {
+			used[placement.Track] = map[string]bool{}
+		}
+		used[placement.Track][placement.Content] = true
+	}
 	for _, scene := range p.Scenes {
 		for track, pattern := range scene.Bindings {
 			if pattern == "off" || pattern == "keep" {
@@ -664,6 +717,14 @@ func assignSlots(p *Project, score *notation.Score) error {
 	}
 	for ti := range p.Tracks {
 		track := &p.Tracks[ti]
+		if p.Edition == 2 && track.Kind == "audio" {
+			var err error
+			track.Slots, err = ClipSlots(p, *track)
+			if err != nil {
+				return err
+			}
+			continue
+		}
 		for _, pattern := range p.Patterns {
 			if !used[track.ID][pattern.ID] {
 				continue

@@ -1,6 +1,9 @@
 package sample
 
-import "math"
+import (
+	"math"
+	"sync"
+)
 
 const phases = 1024
 
@@ -23,7 +26,16 @@ var banks = [...]sincBank{
 	{ratio: 8, taps: 768},
 }
 
-func init() {
+var banksOnce sync.Once
+
+// prepareBanks runs only in validated constructors, before a voice can enter
+// the audio callback. Every admitted note can select any of the eight banks.
+// Package import and nonsample engines leave their coefficient storage empty.
+func prepareBanks() {
+	banksOnce.Do(generateBanks)
+}
+
+func generateBanks() {
 	const beta = 12.0
 	normalizer := besselI0(beta)
 	for b := range banks {

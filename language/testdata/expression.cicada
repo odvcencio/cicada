@@ -1,0 +1,15 @@
+instrument expressive {
+  voice mono {
+    out = sine(pitch) * env(gate, 300ms) * velocity
+  }
+}
+track lead expressive {}
+pattern take {
+  c4 - - .
+  bend: +50ct . -1200ct 0ct
+  vibrato: 4ct . 12ct 0ct
+  pressure: 0 . 0.7 0
+  timbre: . 0.8 . 0.5
+}
+scene main { lead = take }
+song { main }
