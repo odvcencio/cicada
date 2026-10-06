@@ -12,22 +12,27 @@
       "case": "No score",
       "pageLoaded": true,
       "sidecarError": null,
-      "sidecarReadyMs": 418,
-      "studioLoadedMs": 718
+      "sidecarReadyMs": 307,
+      "studioLoadedMs": 686
     },
     {
       "case": "Single-file example",
       "pageLoaded": true,
       "sidecarError": null,
-      "sidecarReadyMs": 208,
-      "studioLoadedMs": 492
+      "sidecarReadyMs": 226,
+      "studioLoadedMs": 540
     },
     {
       "case": "Multi-file project",
       "pageLoaded": true,
       "sidecarError": null,
-      "sidecarReadyMs": 187,
-      "studioLoadedMs": 474
+      "sidecarReadyMs": 223,
+      "studioLoadedMs": 539
     }
-  ]
+  ],
+  "multiFileEdit": {
+    "partSaved": true,
+    "entryUnchanged": true,
+    "projectStagingFiles": 0
+  }
 }
