@@ -512,6 +512,8 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			switch e.voices[track].kind {
 			case VoiceAcid:
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
+			case VoiceModal:
+				e.voices[track].modal.NoteOn(event.Note, event.Velocity, event.Slide)
 			case VoiceGraph:
 				e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
 			case VoiceDrums:

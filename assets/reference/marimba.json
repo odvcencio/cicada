@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "vcsl-marimba-medium",
+      "source_url": "https://github.com/sgossner/VCSL/tree/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e",
+      "url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/Idiophones/Struck%20Idiophones/Marimba/Marimba_hit_Outrigger_C4_med_01.wav",
+      "license": "CC0-1.0",
+      "license_url": "https://raw.githubusercontent.com/sgossner/VCSL/c1ea7bcc3c7309650ab0da9d15c9cd1fbc4a4c7e/LICENSE",
+      "sha256": "3e88c006eef05e8f7891f8f6027042006199a4ec3b53a0ad7308f9782a52d4df",
+      "bytes": 655244,
+      "attribution": "Versilian Community Sample Library; CC0 attribution is optional",
+      "source_note_label": "C4",
+      "comparison_midi_note": 72,
+      "scientific_note_label": "C5",
+      "octave_compensation": "The source labels approximately 524 Hz as C4. Compare to MIDI 72, C5 in scientific pitch notation.",
+      "rate_hz": 44100,
+      "channels": 2,
+      "bit_depth": 24,
+      "frames": 109200,
+      "purpose": "Optional spectral and envelope reference; downloaded separately and excluded from the kernel."
+    }
+  ]
+}

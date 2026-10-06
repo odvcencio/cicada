@@ -6,6 +6,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -121,6 +122,9 @@ func ValidateProject(p *Project) error {
 	instruments := map[string]*instrument.Program{}
 	seenInstruments := map[string]bool{}
 	for _, inst := range p.Instruments {
+		if _, ok := modal.ParseTrackKind(inst.ID); ok {
+			return fmt.Errorf("instrument name is reserved: %s", inst.ID)
+		}
 		if p.Edition == 2 && inst.ID == "audio" {
 			return fmt.Errorf("instrument name is reserved: audio")
 		}
@@ -188,7 +192,8 @@ func ValidateProject(p *Project) error {
 		}
 		tracks[track.ID] = track
 		_, isKit := kits[track.Kind]
-		if track.Kind != "acid" && track.Kind != "drums" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
+		_, isModal := modal.ParseTrackKind(track.Kind)
+		if !isModal && track.Kind != "acid" && track.Kind != "drums" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
 			return fmt.Errorf("track %s has unknown instrument %s", track.ID, track.Kind)
 		}
 		if (p.Edition == 2 && track.Kind == "audio" || samplers[track.Kind].Name != "") && len(track.Params) > 0 {
@@ -196,6 +201,16 @@ func ValidateProject(p *Project) error {
 		}
 		if track.Params == nil {
 			return fmt.Errorf("track %s params must be explicit", track.ID)
+		}
+		if isModal {
+			for name, value := range track.Params {
+				if name != "octave" {
+					return fmt.Errorf("modeled track %s accepts only octave and mixer settings", track.ID)
+				}
+				if err := validateOctaveValue(value); err != nil {
+					return fmt.Errorf("track %s: %w", track.ID, err)
+				}
+			}
 		}
 		if track.Kind == "acid" {
 			if _, err := acidParamsFromValues(track.Params); err != nil {
@@ -400,6 +415,8 @@ func ValidateProject(p *Project) error {
 	for _, track := range p.Tracks {
 		if sampler := samplers[track.Kind]; sampler.Name != "" {
 			allocatedVoices += sampler.Voices
+		} else if _, ok := modal.ParseTrackKind(track.Kind); ok {
+			allocatedVoices += modal.MaxVoices
 		} else if track.Kind == "drums" {
 			allocatedVoices += drumVoiceCount(projectDrumLanes(p, track))
 		} else if kit, ok := kits[track.Kind]; ok {
@@ -538,6 +555,8 @@ func ValidateProject(p *Project) error {
 			kind := tracks[trackID].Kind
 			if sampler := samplers[kind]; sampler.Name != "" {
 				voices += sampler.Voices
+			} else if _, ok := modal.ParseTrackKind(kind); ok {
+				voices += modal.MaxVoices
 			} else if kind == "drums" {
 				voices += drumVoiceCount(projectDrumLanes(p, tracks[trackID]))
 			} else if kit, ok := kits[kind]; ok {
