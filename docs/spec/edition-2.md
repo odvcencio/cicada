@@ -122,11 +122,10 @@ state. Guitar is available in the core profile within its unchanged size gates.
 **Image format:** Guitar images use version 15 with voice kind 4 and six
 float64 control values in registry order. Existing voices retain version 13
 encoding; shipped versions 8..13 remain readable. Version 14 and capability
-bit 0 are reserved for the chord/schedule lanes (#100/#103). This extension
-does not change graph opcodes, the 24-byte command ABI or the worklet asset.
-Integration with those lanes must preserve their version-14 payloads before
-combining features in version 15; their unmerged layouts are not interpreted
-as legacy images here.
+bit 0 support chords and bounded graph polyphony. Version 15 retains that
+layout and adds the guitar payload, so guitar and chord tracks can share a
+project. This extension does not change graph opcodes or the 24-byte command
+ABI.
 
 See [the riff example](../../examples/expressive-guitar.cicada) for held-note
 bends, slides, palm mutes and clean/drive contrast. Zero drive still includes

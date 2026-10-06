@@ -2,6 +2,7 @@ package engine
 
 import (
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
 )
@@ -49,6 +50,9 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 	track := int(c.Track)
 	p := &e.patterns[track]
 	slot := int(c.Arg1)
+	if c.Op == cmd.OpSetChordStep {
+		slot = int(c.Arg1 & 15)
+	}
 	if c.Op == cmd.OpSelectPattern {
 		if e.voices[track].kind == VoiceOff {
 			e.fault(9)
@@ -115,8 +119,23 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			return
 		}
 		updated.Steps[c.Index] = c.Arg0
+		updated.Chords[c.Index] = seq.ChordStep{}
+	case cmd.OpSetChordStep:
+		if e.voices[track].poly == nil {
+			e.fault(17)
+			return
+		}
+		notes, count, err := cmd.DecodeChordPayload(c)
+		if err != nil {
+			e.fault(15)
+			return
+		}
+		updated.Chords[c.Index] = seq.ChordStep{Notes: notes, Count: count}
 	case cmd.OpSetPatternLen:
 		updated.Len = uint8(c.Index)
+		for i := int(updated.Len); i < 64; i++ {
+			updated.Chords[i] = seq.ChordStep{}
+		}
 	case cmd.OpSetPatternMeta:
 		updated.SwingPermille = uint16(c.Arg0)
 		updated.Transpose = int8(int16(c.Arg0 >> 16))
@@ -135,7 +154,9 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		p.heldStart = p.startStep
 		p.heldGen = p.generation
 		p.heldValid = true
-		p.generation++
+		if !e.nextPatternGeneration(track) {
+			return
+		}
 	}
 	p.slots[slot] = updated
 	if c.Op == cmd.OpSetPatternLen && p.active == int8(slot) && p.chainArmed {
@@ -178,7 +199,9 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 		p.forceOff, p.forceGen, p.forceValid = release, p.generation, true
 	}
 	p.active = int8(slot)
-	p.generation++
+	if !e.nextPatternGeneration(track) {
+		return
+	}
 	p.startStep = 0
 	if restart {
 		p.startStep = (e.transport.Tick() + seq.TicksPerStep - 1) / seq.TicksPerStep
@@ -333,7 +356,7 @@ func (e *Engine) switchWouldSlide(track, slot int, tick int64, restart bool) boo
 	}
 	targetIndex := uint8(localStep % int64(target.Len))
 	next, err := seq.UnpackStep(target.Steps[targetIndex])
-	return err == nil && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, uint8(track), uint8(slot), localStep/int64(target.Len), targetIndex)
+	return err == nil && target.Chords[targetIndex].Count == 0 && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, uint8(track), uint8(slot), localStep/int64(target.Len), targetIndex)
 }
 
 func (e *Engine) scheduleSwitchRelease(track int, clock seq.Clock, startSample int64, frames int) {
@@ -493,14 +516,25 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				continue
 			}
 			if kind == seq.NoteOff {
-				if p.playingNote == item.event.NoteID && p.playingGen == item.generation {
-					if p.slideFrom == item.event.NoteID && sample <= p.slideAt || e.pendingSwitchSlides(track, item.event) {
-						continue
+				matching := p.playingNote == item.event.NoteID && p.playingGen == item.generation
+				if matching && (p.slideFrom == item.event.NoteID && sample <= p.slideAt || e.pendingSwitchSlides(track, item.event)) {
+					continue
+				}
+				released := false
+				pool := e.voices[track].poly
+				if pool != nil {
+					released = pool.Release(graph.Cohort{NoteID: item.event.NoteID, Generation: uint64(item.generation)})
+				}
+				if matching {
+					if pool == nil {
+						e.noteOff(track, 0xffff)
+						released = true
 					}
-					e.noteOff(track, 0xffff)
 					p.playingNote = 0
 					p.heldValid = false
 					p.forceValid = false
+				}
+				if released {
 					e.emit(cmd.Message{Kind: cmd.NoteOff, Track: uint8(track), Tick: item.event.Tick})
 				}
 				continue
@@ -515,7 +549,22 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			case VoiceGuitar:
 				e.voices[track].guitar.NoteOn(event.Note, event.Velocity, event.Accent, event.Slide)
 			case VoiceGraph:
-				e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
+				if pool := e.voices[track].poly; pool != nil {
+					if !event.Slide {
+						pool.ReleaseAll()
+					}
+					notes, count := event.Notes, event.NoteCount
+					if count == 0 {
+						notes[0] = event.Note
+						count = 1
+					}
+					if _, err := pool.NoteOn(notes, count, event.Velocity, event.Slide, graph.Cohort{NoteID: event.NoteID, Generation: uint64(item.generation)}); err != nil {
+						e.fault(17)
+						return
+					}
+				} else {
+					e.voices[track].graph.NoteOn(event.Note, event.Velocity, event.Slide)
+				}
 			case VoiceDrums:
 				if event.Note >= uint8(drum.LaneCount) {
 					e.fault(15)
@@ -535,4 +584,16 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			e.emit(cmd.Message{Kind: cmd.NoteOn, Track: uint8(track), A: uint16(event.Note), Tick: event.Tick})
 		}
 	}
+}
+
+// Polyphonic generations must never wrap into an old cohort's identity.
+// Legacy mono wrapping behavior is retained for compatibility.
+func (e *Engine) nextPatternGeneration(track int) bool {
+	p := &e.patterns[track]
+	if p.generation == ^uint32(0) && e.voices[track].poly != nil {
+		e.fault(17)
+		return false
+	}
+	p.generation++
+	return true
 }

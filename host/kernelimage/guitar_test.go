@@ -98,3 +98,51 @@ func TestGuitarImageVersionAndLegacyEncoding(t *testing.T) {
 	}
 	t.Log("METRIC: legacy image loading | versions 8..13 covered by existing compatibility tests; legacy encoder remains version 13")
 }
+
+func TestGuitarChordImageRoundTripInEitherTrackOrder(t *testing.T) {
+	for _, tracks := range []string{
+		"track lead guitar { experimental=on } track keys piano {}",
+		"track keys piano {} track lead guitar { experimental=on }",
+	} {
+		t.Run(tracks, func(t *testing.T) {
+			source := `cicada 2
+tempo 120
+key d minor
+instrument piano { voice poly { out=sine(pitch)*env(gate,300ms)*0.1 } }
+` + tracks + `
+pattern riff notes { d4 . }
+pattern harmony notes { [d4 f4 a4] . }
+scene one { lead=riff keys=harmony }
+song { one }
+`
+			score, ds := notation.Parse([]byte(source))
+			if score == nil {
+				t.Fatal(ds)
+			}
+			p, ds := project.FromScore(score)
+			if p == nil {
+				t.Fatal(ds)
+			}
+			cfg, err := project.CompileEngine(p, 48000, 128)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := kernelimage.Encode(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if binary.LittleEndian.Uint16(data[4:6]) != 15 {
+				t.Fatal("mixed guitar/chord project lost version 15")
+			}
+			decoded, err := kernelimage.Decode(data, 48000, 128)
+			if err != nil || !reflect.DeepEqual(cfg, decoded) {
+				t.Fatalf("mixed guitar/chord image changed: %v", err)
+			}
+			e, err := engine.New(decoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			audioFrames(t, e)
+		})
+	}
+}
