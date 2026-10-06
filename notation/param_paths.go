@@ -45,6 +45,12 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 		return paramdefs.Descriptor{}, "", "", "CICADA-REFERENCE", "unknown parameter path owner or setting " + path
 	}
 	owner := parts[0]
+	for _, effect := range score.Effects {
+		if strings.HasPrefix(path, effect.Name+".") && len(effect.Name) > len(owner) {
+			owner = effect.Name
+		}
+	}
+	parts = append([]string{owner}, strings.Split(strings.TrimPrefix(path, owner+"."), ".")...)
 	track, trackOK := Track{}, false
 	for _, candidate := range score.Tracks {
 		if candidate.Name == owner {

@@ -34,7 +34,7 @@ func Cicada() *grammargen.Grammar {
 	// The legacy version directive is optional; a project manifest can own the edition.
 	g.Define("source_file", seq(optional(seq(str("cicada"), sym("integer"))), repeat(sym("_declaration"))))
 	g.Define("_declaration", choice(
-		sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
+		sym("import_decl"), sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
 		sym("instrument_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
 		sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
@@ -42,9 +42,9 @@ func Cicada() *grammargen.Grammar {
 	))
 
 	// Edition-2 audio declarations share typed key/value bodies.
-	g.Define("asset_decl", seq(str("asset"), field("name", sym("identifier")), field("path", sym("string")), str("{"), repeat(sym("param_decl")), str("}")))
-	g.Define("clip_decl", seq(str("clip"), field("name", sym("identifier")), field("asset", sym("identifier")), str("{"), repeat(sym("param_decl")), str("}")))
-	g.Define("sampler_decl", seq(str("sampler"), field("name", sym("identifier")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("asset_decl", seq(str("asset"), field("name", sym("_name")), field("path", sym("string")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("clip_decl", seq(str("clip"), field("name", sym("_name")), field("asset", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("sampler_decl", seq(str("sampler"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
 
 	// Header: `title "Night circuit"`, `tempo 138`, `key a minor`, `seed 4242`.
 	g.Define("title_decl", seq(str("title"), sym("string")))
@@ -56,27 +56,27 @@ func Cicada() *grammargen.Grammar {
 	// or drums voice, experimental guitar (edition 2 with experimental = on),
 	// or to a declared instrument. No new syntax is needed for guitar controls.
 	g.Define("track_decl", seq(
-		str("track"), field("name", sym("identifier")), field("kind", sym("identifier")),
+		str("track"), field("name", sym("_name")), field("kind", sym("_name")),
 		str("{"), repeat(sym("mix_setting")), str("}"),
 	))
 
 	// An instrument declares typed parameters and one voice. The voice binds
 	// ordered lets and ends with the audio it outputs.
 	g.Define("instrument_decl", seq(
-		str("instrument"), field("name", sym("identifier")),
+		str("instrument"), field("name", sym("_name")),
 		str("{"), optional(sym("instrument_octave")), repeat(sym("instrument_param")), sym("voice_decl"), str("}"),
 	))
 	g.Define("instrument_octave", seq(str("octave"), str("="), field("value", sym("integer")), optional(str(";"))))
 	// A kit binds drum lanes to instruments or built-in drum voices.
 	g.Define("kit_decl", seq(
-		str("kit"), field("name", sym("identifier")),
+		str("kit"), field("name", sym("_name")),
 		str("{"), repeat(sym("kit_binding")), str("}"),
 	))
 	g.Define("kit_binding", seq(
 		field("lane", sym("identifier")), str("="), field("target", sym("kit_target")), optional(str(";")),
 	))
 	g.Define("kit_target", choice(
-		field("instrument", sym("identifier")),
+		field("instrument", sym("_name")),
 		seq(str("builtin"), str("."), field("voice", sym("identifier"))),
 	))
 	g.Define("instrument_param", seq(
@@ -103,29 +103,29 @@ func Cicada() *grammargen.Grammar {
 	// forms; unsupported routes still parse so validation can name the exact
 	// construct instead of reporting a syntax error.
 	g.Define("param_decl", seq(field("name", sym("identifier")), str("="), field("value", sym("value"))))
-	g.Define("send_decl", seq(str("send"), field("to", sym("identifier")), str("="), field("level", sym("number")), optional(field("tap", str("pre")))))
+	g.Define("send_decl", seq(str("send"), field("to", sym("_name")), str("="), field("level", sym("number")), optional(field("tap", str("pre")))))
 	g.Define("mix_setting", choice(sym("send_decl"), sym("param_decl")))
-	g.Define("fx_decl", seq(str("fx"), field("name", sym("identifier")), optional(field("kind", sym("identifier"))), str("{"), repeat(sym("param_decl")), str("}")))
-	g.Define("bus_decl", seq(str("bus"), field("name", sym("identifier")), str("{"), repeat(sym("mix_setting")), str("}")))
+	g.Define("fx_decl", seq(str("fx"), field("name", sym("_name")), optional(field("kind", sym("identifier"))), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("bus_decl", seq(str("bus"), field("name", sym("_name")), str("{"), repeat(sym("mix_setting")), str("}")))
 	g.Define("master_decl", seq(str("master"), str("{"), repeat(sym("mix_setting")), str("}")))
-	g.Define("export_decl", seq(str("export"), field("name", sym("identifier")), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("export_decl", seq(str("export"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
 
 	// A phrase is a named run of steps that `use` splices into a pattern
 	// before scheduling, optionally repeated and transposed.
 	g.Define("phrase_decl", seq(
-		str("phrase"), field("name", sym("identifier")), optional(str("acid")),
+		str("phrase"), field("name", sym("_name")), optional(str("acid")),
 		str("{"), repeat(sym("acid_step")), str("}"),
 	))
 	g.Define("acid_pattern", seq(
-		str("pattern"), field("name", sym("identifier")), str("acid"), repeat(sym("pattern_attr")),
+		str("pattern"), field("name", sym("_name")), str("acid"), repeat(sym("pattern_attr")),
 		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
 	))
 	g.Define("note_pattern", seq(
-		str("pattern"), field("name", sym("identifier")), optional(str("notes")), repeat(sym("pattern_attr")),
+		str("pattern"), field("name", sym("_name")), optional(str("notes")), repeat(sym("pattern_attr")),
 		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), str("}"),
 	))
 	g.Define("phrase_use", seq(
-		str("use"), field("name", sym("identifier")),
+		str("use"), field("name", sym("_name")),
 		optional(seq(str("*"), field("repeat", sym("integer")))),
 		optional(choice(
 			seq(str("transpose"), str("="), field("transpose", sym("number"))),
@@ -133,7 +133,7 @@ func Cicada() *grammargen.Grammar {
 		)),
 	))
 	g.Define("drum_pattern", seq(
-		str("pattern"), field("name", sym("identifier")), str("drums"), repeat(sym("pattern_attr")),
+		str("pattern"), field("name", sym("_name")), str("drums"), repeat(sym("pattern_attr")),
 		str("{"), repeat(sym("pattern_attr")), repeat(sym("drum_lane")), str("}"),
 	))
 	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", sym("number"))))
@@ -169,10 +169,10 @@ func Cicada() *grammargen.Grammar {
 
 	// Scenes bind patterns to tracks, and also allow dotted parameter paths.
 	// Undotted identifiers keep their edition-1 binding meaning.
-	g.Define("scene_decl", seq(str("scene"), field("name", sym("identifier")), str("{"), repeat(sym("scene_assignment")), str("}")))
+	g.Define("scene_decl", seq(str("scene"), field("name", sym("_name")), str("{"), repeat(sym("scene_assignment")), str("}")))
 	g.Define("scene_assignment", seq(field("target", sym("scene_target")), str("="), field("value", sym("scene_value"))))
 	g.Define("scene_target", choice(sym("parameter_path"), sym("identifier")))
-	g.Define("scene_value", choice(sym("number"), sym("identifier"), sym("string"), sym("fraction")))
+	g.Define("scene_value", choice(sym("number"), sym("_name"), sym("string"), sym("fraction")))
 	g.Define("parameter_path", token(prec(3, pat(`[a-z_][a-z0-9_-]*(\.[a-z_][a-z0-9_-]*)+`))))
 	g.Define("song_decl", seq(str("song"), str("{"), repeat(sym("song_entry")), str("}")))
 	g.Define("song_entry", seq(field("scene", sym("identifier")), optional(seq(str("*"), field("bars", sym("integer"))))))
@@ -180,14 +180,17 @@ func Cicada() *grammargen.Grammar {
 	// Literals. A number carries its unit; a fraction is a note division such
 	// as 1/8, 1/8T (triplet), or 1/8. (dotted), lexed as one token so the
 	// longest match beats a plain number.
-	g.Define("value", choice(sym("number"), sym("insert_chain"), sym("identifier"), sym("string"), sym("fraction")))
-	g.Define("insert_chain", seq(field("first", sym("identifier")), repeat(seq(str("->"), field("next", sym("identifier"))))))
+	g.Define("value", choice(sym("number"), sym("insert_chain"), sym("_name"), sym("string"), sym("fraction")))
+	g.Define("insert_chain", seq(field("first", sym("_name")), repeat(seq(str("->"), field("next", sym("_name"))))))
 	g.Define("fraction", token(pat(`[0-9]+\/[0-9]+[tT.]?`)))
 	g.Define("number", token(pat(`-?[0-9]+(\.[0-9]+)?(frames|LUFS|dBTP|LU|khz|kHz|hz|Hz|ms|s|db|dB|%)?`)))
 	g.Define("integer", token(pat(`[0-9]+`)))
 	g.Define("key_root", token(pat(`[a-g][#b]?`)))
 	g.Define("string", token(pat(`"([^"\\]|\\.)*"`)))
 	g.Define("identifier", token(pat(`[a-z_][a-z0-9_-]*`)))
+	g.Define("_name", choice(sym("identifier"), sym("qualified_name")))
+	g.Define("qualified_name", seq(sym("identifier"), str("."), sym("identifier"), repeat(seq(str("."), sym("identifier")))))
+	g.Define("import_decl", seq(str("import"), field("path", sym("string"))))
 	g.Define("comment", token(pat(`\/\/[^\n]*`)))
 
 	// Live controls use ordinary numbers so unit and range errors get semantic diagnostics.

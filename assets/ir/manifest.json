@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "assets": [
+    {
+      "id": "room",
+      "url": "https://raw.githubusercontent.com/itsmusician/IR-Library/07cbb6f8779a4a448d02355c355f0cef8916b78d/Rooms/Residential/Colonial%20House/Colonial%20Bedroom%20%28Mid%20Treatment%29.wav",
+      "sha256": "5187a485fb5147c232054589b7c4baa4208f82490e118e5beaa8cd70f5a3967f",
+      "bytes": 144038,
+      "rate_hz": 48000,
+      "channels": 2,
+      "bit_depth": 24,
+      "frames": 23999,
+      "name": "Treated bedroom",
+      "category": "room",
+      "source_url": "https://github.com/itsmusician/IR-Library/tree/07cbb6f8779a4a448d02355c355f0cef8916b78d",
+      "license": "MIT",
+      "license_url": "https://raw.githubusercontent.com/itsmusician/IR-Library/07cbb6f8779a4a448d02355c355f0cef8916b78d/License.md",
+      "attribution": "IR-Library; preserve the fetched COPYING notice with redistributed audio"
+    },
+    {
+      "id": "hall",
+      "url": "https://raw.githubusercontent.com/itsmusician/IR-Library/07cbb6f8779a4a448d02355c355f0cef8916b78d/Rooms/Commercial/Hotels/Ballrooms/Royal%20Ballroom.wav",
+      "sha256": "60ed14f84c5075e3a768655232df5068d636e5d2c04ac323ed5c7613b4ff6d19",
+      "bytes": 1303724,
+      "rate_hz": 48000,
+      "channels": 2,
+      "bit_depth": 24,
+      "frames": 217280,
+      "name": "Ballroom",
+      "category": "hall",
+      "source_url": "https://github.com/itsmusician/IR-Library/tree/07cbb6f8779a4a448d02355c355f0cef8916b78d",
+      "license": "MIT",
+      "license_url": "https://raw.githubusercontent.com/itsmusician/IR-Library/07cbb6f8779a4a448d02355c355f0cef8916b78d/License.md",
+      "attribution": "IR-Library; preserve the fetched COPYING notice with redistributed audio"
+    },
+    {
+      "id": "plate",
+      "url": "https://raw.githubusercontent.com/itsmusician/IR-Library/07cbb6f8779a4a448d02355c355f0cef8916b78d/Plates/Conner%20Plate%20I/Conner%20Plate%20I%20Sweeps/Conner%20Plate%20I%201s%20-60.wav",
+      "sha256": "a51b27b3a4739300e6510f433d34930b102ac0f0045e0a57ba5fd2423f4bed61",
+      "bytes": 3270728,
+      "rate_hz": 192000,
+      "channels": 2,
+      "bit_depth": 24,
+      "frames": 544199,
+      "name": "Swept physical plate",
+      "category": "plate",
+      "source_url": "https://github.com/itsmusician/IR-Library/tree/07cbb6f8779a4a448d02355c355f0cef8916b78d",
+      "license": "MIT",
+      "license_url": "https://raw.githubusercontent.com/itsmusician/IR-Library/07cbb6f8779a4a448d02355c355f0cef8916b78d/License.md",
+      "attribution": "IR-Library; preserve the fetched COPYING notice with redistributed audio"
+    },
+    {
+      "id": "outdoor",
+      "url": "https://raw.githubusercontent.com/itsmusician/IR-Library/07cbb6f8779a4a448d02355c355f0cef8916b78d/Outdoors/Public/Parks/Medium%20Gazebo%20Bang%20Snap.wav",
+      "sha256": "efa93bcbdb4945667d76f0cb2560701b79e87ec4e2e3db859985c92e101a63d4",
+      "bytes": 497818,
+      "rate_hz": 48000,
+      "channels": 2,
+      "bit_depth": 24,
+      "frames": 82818,
+      "name": "Outdoor gazebo",
+      "category": "outdoor",
+      "source_url": "https://github.com/itsmusician/IR-Library/tree/07cbb6f8779a4a448d02355c355f0cef8916b78d",
+      "license": "MIT",
+      "license_url": "https://raw.githubusercontent.com/itsmusician/IR-Library/07cbb6f8779a4a448d02355c355f0cef8916b78d/License.md",
+      "attribution": "IR-Library; preserve the fetched COPYING notice with redistributed audio"
+    }
+  ]
+}

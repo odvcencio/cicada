@@ -95,11 +95,14 @@ type Config struct {
 	// MasterGainDB is a static gain applied immediately before the master
 	// limiter. Zero leaves the existing master path bit-identical.
 	MasterGainDB float64
-	MusicBusMute bool
-	MusicBusSolo bool
-	SFXBusMute   bool
-	SFXBusSolo   bool
-	MasterMute   bool
+	// MasterProcessor is prepared by the host before New. It is single-owner
+	// callback state, placed after master gain and before the existing limiter.
+	MasterProcessor StereoProcessor `json:"-"`
+	MusicBusMute    bool
+	MusicBusSolo    bool
+	SFXBusMute      bool
+	SFXBusSolo      bool
+	MasterMute      bool
 	// MasterSolo is retained as project state; the final output has no peer bus.
 	MasterSolo bool
 	// CompSidechainTrack is zero for self-detection, a one-based track index,
@@ -168,6 +171,7 @@ type Engine struct {
 	compMusic                    *fx.Compressor
 	compSidechainTrack           int
 	masterGain                   float32
+	masterProcessor              StereoProcessor
 	musicBusMute, musicBusSolo   bool
 	sfxBusMute, sfxBusSolo       bool
 	masterMute, masterSolo       bool
@@ -326,6 +330,14 @@ func (e *Engine) initEffects(cfg *Config, bpmMilli int64) error {
 
 //go:noinline
 func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
+	if cfg.MasterProcessor != nil {
+		latency := cfg.MasterProcessor.LatencyFrames()
+		if latency < 0 || latency > cfg.SampleRate {
+			return 0, Error("invalid master processor latency")
+		}
+		e.masterProcessor = cfg.MasterProcessor
+		e.masterProcessor.Reset()
+	}
 	var err error
 	voices := 0
 	hasDrive := false
@@ -630,6 +642,9 @@ func (e *Engine) Reset() {
 		e.patterns[i].chainRepeat = 0
 	}
 	e.limiter.Reset()
+	if e.masterProcessor != nil {
+		e.masterProcessor.Reset()
+	}
 	if e.delayA != nil {
 		e.delayA.Reset()
 	}
@@ -856,6 +871,15 @@ func (e *Engine) Render(outL, outR []float32) {
 		if e.masterGain != 1 {
 			left *= e.masterGain
 			right *= e.masterGain
+		}
+		if e.masterProcessor != nil {
+			left, right = e.masterProcessor.Process(left, right)
+			if e.masterProcessor.Fault() {
+				e.fault(19)
+				clear(outL[frame:])
+				clear(outR[frame:])
+				return
+			}
 		}
 		accumulateMeter(&e.preMasterMeter, left, right)
 		outL[frame], outR[frame], _ = e.limiter.Process(left, right)
