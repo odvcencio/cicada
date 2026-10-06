@@ -315,7 +315,7 @@ song { main }
 
 ## Flexible grid and pattern chains
 
-**Status:** Pattern step divisions, acid tuplet groups and source chains are implemented. Labeled parameter rows remain accepted-only.
+**Status:** Pattern step divisions, acid tuplet groups, source chains, melodic velocity rows and note-expression rows are implemented. Other labeled parameter rows remain accepted-only.
 
 **Syntax (EBNF):**
 
