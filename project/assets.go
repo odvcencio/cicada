@@ -21,6 +21,7 @@ type Asset struct {
 	RateHz   int    `json:"rate_hz" cicada:"Source sample rate" unit:"Hz" range:"8000..384000"`
 	Channels int    `json:"channels" cicada:"Source channels" range:"1..2"`
 	Source   string `json:"source,omitempty" cicada:"Asset provenance" introduced:"cicada.project/2"`
+	root     string
 }
 type Clip struct {
 	Name          string  `json:"name" cicada:"Clip name"`
@@ -92,7 +93,19 @@ func VerifyAssets(score *notation.Score, projectDir string) []notation.Diagnosti
 			add(a, "", "CICADA-ASSET-PATH", "path inside project", strconv.Quote(a.Path))
 			continue
 		}
-		file, err := root.Open(a.Path)
+		assetRoot := root
+		if a.Root != "" {
+			var err error
+			assetRoot, err = os.OpenRoot(a.Root)
+			if err != nil {
+				add(a, "", "CICADA-ASSET-MISSING", "readable library root", err.Error())
+				continue
+			}
+		}
+		file, err := assetRoot.Open(a.Path)
+		if assetRoot != root {
+			assetRoot.Close()
+		}
 		if err != nil {
 			code := "CICADA-ASSET-MISSING"
 			if strings.Contains(err.Error(), "escapes") {
@@ -144,7 +157,7 @@ func VerifyAssets(score *notation.Score, projectDir string) []notation.Diagnosti
 
 func lowerAudio(p *Project, s *notation.Score) {
 	for _, a := range s.Assets {
-		p.Assets = append(p.Assets, Asset{a.Name, a.Path, a.SHA256, a.Format, a.Frames, a.RateHz, a.Channels, a.Source})
+		p.Assets = append(p.Assets, Asset{root: a.Root, Name: a.Name, Path: a.Path, SHA256: a.SHA256, Format: a.Format, Frames: a.Frames, RateHz: a.RateHz, Channels: a.Channels, Source: a.Source})
 	}
 	for _, c := range s.Clips {
 		p.Clips = append(p.Clips, Clip{c.Name, c.Asset, c.StartFrame, c.EndFrame, c.GainDB, c.FadeInFrames, c.FadeOutFrames})
@@ -220,4 +233,12 @@ func audioSource(p *Project) []string {
 		sections = append(sections, fmt.Sprintf("sampler %s {\n  asset = %s\n  root = %s\n  mode = %s\n  voices = %d\n}", v.Name, v.Asset, root, v.Mode, v.Voices))
 	}
 	return sections
+}
+
+// Directory returns the host-only root of a library asset, or the project root.
+func (a Asset) Directory(fallback string) string {
+	if a.root != "" {
+		return a.root
+	}
+	return fallback
 }

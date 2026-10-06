@@ -66,6 +66,11 @@ type nodeState struct {
 	env    float32
 	filter [4]float32
 	noise  uint32
+
+	// Each coefficient input is clamped above zero; zero marks an empty cache.
+	// The program and sample rate stay fixed for the lifetime of the voice.
+	coefficientInput float32
+	coefficient      float32
 }
 
 // Voice owns all state and storage for one instance of a program. Next does
@@ -176,11 +181,12 @@ func (v *Voice) Reset() {
 	if v.quality != nil {
 		v.quality.reset()
 	}
-	for i := 0; i < int(v.program.Len); i++ {
-		v.values[i] = 0
-		v.states[i].phase = 0
-		v.states[i].env = 0
-		v.states[i].filter = [4]float32{}
+	for i := uint8(0); i < v.program.Len; i++ {
+		index := i & (MaxNodes - 1)
+		v.values[index] = 0
+		v.states[index].phase = 0
+		v.states[index].env = 0
+		v.states[index].filter = [4]float32{}
 	}
 }
 
@@ -205,10 +211,12 @@ func (v *Voice) nextSample() float32 {
 		v.pitchLog += (v.targetLog - v.pitchLog) * v.pitchAlpha
 		v.pitch = float32(fastmath.Exp2(v.pitchLog))
 	}
-	for i := 0; i < int(v.program.Len); i++ {
-		n := v.program.Nodes[i]
-		s := &v.states[i]
-		a, b, c := v.values[n.A], v.values[n.B], v.values[n.C]
+	// NewVoice validates the 128-node limit and all used input indices.
+	for i := uint8(0); i < v.program.Len; i++ {
+		index := i & (MaxNodes - 1)
+		n := v.program.Nodes[index]
+		s := &v.states[index]
+		a, b, c := v.values[n.A&(MaxNodes-1)], v.values[n.B&(MaxNodes-1)], v.values[n.C&(MaxNodes-1)]
 		var y float32
 		switch n.Op {
 		case Pitch:
@@ -233,7 +241,7 @@ func (v *Voice) nextSample() float32 {
 			}
 		case Saw, Square, Sine:
 			if v.quality != nil {
-				y = v.quality.oscillate(i, n.Op, a, 0.5, v.sampleRate)
+				y = v.quality.oscillate(int(index), n.Op, a, 0.5, v.sampleRate)
 				break
 			}
 			frequency := clamp(a, 0, v.sampleRate*0.49)
@@ -269,17 +277,25 @@ func (v *Voice) nextSample() float32 {
 				ms = 30
 			}
 			y = s.env
-			s.env *= float32(math.Exp(-4600 / float64(ms*v.sampleRate)))
+			if ms != s.coefficientInput {
+				s.coefficient = float32(math.Exp(-4600 / float64(ms*v.sampleRate)))
+				s.coefficientInput = ms
+			}
+			s.env *= s.coefficient
 		case Pulse:
-			y = v.quality.oscillate(i, Pulse, a, b, v.sampleRate)
+			y = v.quality.oscillate(int(index), Pulse, a, b, v.sampleRate)
 		case ADSR:
 			y = v.quality.nodes[i].envelope.next(a > 0, b, c, v.values[n.D], v.values[n.E], v.sampleRate)
 		case SVF:
 			y = v.quality.nodes[i].filter.next(a, b, c, v.sampleRate, v.quality.baseRate)
 		case Ladder, Diode:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
-			g := float32(math.Tan(math.Pi * float64(frequency/v.sampleRate)))
-			coef := g / (1 + g)
+			if frequency != s.coefficientInput {
+				g := float32(math.Tan(math.Pi * float64(frequency/v.sampleRate)))
+				s.coefficient = g / (1 + g)
+				s.coefficientInput = frequency
+			}
+			coef := s.coefficient
 			feedback := float32(3.2) * clamp(c, 0, 1)
 			if n.Op == Diode {
 				feedback = 2.8 * clamp(c, 0, 1)
@@ -292,7 +308,11 @@ func (v *Voice) nextSample() float32 {
 			y = s.filter[3]
 		case Lowpass, Highpass:
 			frequency := clamp(b, 20, v.sampleRate*0.45)
-			coef := float32(1 - math.Exp(-2*math.Pi*float64(frequency/v.sampleRate)))
+			if frequency != s.coefficientInput {
+				s.coefficient = float32(1 - math.Exp(-2*math.Pi*float64(frequency/v.sampleRate)))
+				s.coefficientInput = frequency
+			}
+			coef := s.coefficient
 			s.filter[0] += coef * (a - s.filter[0])
 			y = s.filter[0]
 			if n.Op == Highpass {
@@ -308,9 +328,9 @@ func (v *Voice) nextSample() float32 {
 		case Clamp:
 			y = clamp(a, b, c)
 		}
-		v.values[i] = y
+		v.values[index] = y
 	}
-	out := v.values[v.program.Output]
+	out := v.values[v.program.Output&(MaxNodes-1)]
 	if math.IsNaN(float64(out)) || math.IsInf(float64(out), 0) {
 		v.Reset()
 		return 0

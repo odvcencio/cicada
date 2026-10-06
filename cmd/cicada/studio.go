@@ -21,6 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/host/takejournal"
@@ -194,6 +195,9 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 	}
 	absolute, err = filepath.EvalSymlinks(absolute)
 	if err != nil {
+		return nil, err
+	}
+	if err := refuseMultiFileStudio(absolute); err != nil {
 		return nil, err
 	}
 	s := &studio{path: absolute}
@@ -619,6 +623,9 @@ func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change 
 }
 
 func compileStudioSource(path string, source []byte) (*project.Project, error) {
+	if err := refuseMultiFileStudio(path); err != nil {
+		return nil, err
+	}
 	if !utf8.Valid(source) {
 		return nil, fmt.Errorf("score is not UTF-8")
 	}
@@ -724,4 +731,26 @@ func studioJSON(w http.ResponseWriter, status int, value any) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(value)
+}
+
+func refuseMultiFileStudio(path string) error {
+	_, manifestPath, err := scoreEdition(path)
+	if err != nil {
+		return err
+	}
+	if manifestPath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(manifestPath)
+	if err != nil {
+		return err
+	}
+	manifest, err := edition.ParseProjectManifest(data)
+	if err != nil {
+		return err
+	}
+	if len(manifest.SourcePaths()) > 1 {
+		return fmt.Errorf("CICADA-UNSUPPORTED: Studio cannot edit multi-file projects yet; use a text editor and cicada check, play, or render")
+	}
+	return nil
 }

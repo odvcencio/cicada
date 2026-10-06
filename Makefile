@@ -1,4 +1,4 @@
-.PHONY: build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report
+.PHONY: build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics
 
 export GOWORK := off
 
@@ -10,8 +10,14 @@ KERNEL_WASM_BUILD_TIMEOUT ?= 180s
 # download budget. Audio parity and browser callback budgets gate this build.
 KERNEL_WASM_OPT ?= s
 
+# Redirect measurements outside the checkout; see docs/manual/engine-metrics.md.
+ENGINE_METRICS_ARGS ?=
+
 test:
 	go test ./... -count=1
+
+engine-metrics:
+	GOMAXPROCS=1 go run ./cmd/cicada-engine-metrics $(ENGINE_METRICS_ARGS)
 
 grammar:
 	go generate ./notation

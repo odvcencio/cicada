@@ -254,3 +254,9 @@
 (live_layers macro: (identifier) @variable.parameter)
 (live_layer track: (identifier) @variable.member)
 ">=" @operator
+
+"import" @keyword.directive
+(import_decl path: (string) @string)
+
+(qualified_name (identifier) @property.parameter_path)
+(qualified_name "." @punctuation.delimiter)
