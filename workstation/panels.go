@@ -22,6 +22,8 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 		return s.live(ctx, v, csrf)
 	case "code":
 		return s.code(ctx, v, csrf)
+	case "collaboration":
+		return s.collaborationPanel(ctx)
 	case "session":
 		return gosx.Fragment(s.session(v, csrf), s.automation(ctx, v, csrf))
 	case "patterns":

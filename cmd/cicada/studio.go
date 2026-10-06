@@ -34,6 +34,7 @@ import (
 )
 
 type studio struct {
+	transcribing        bool
 	recordedModels      map[string]modalfit.Model
 	recordedInstruments map[string]*recording.Pack
 	takes               *takejournal.Store
@@ -249,9 +250,13 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /api/capture", s.captureState)
 	mux.HandleFunc("POST /api/takes", s.takeCommand)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
+	mux.HandleFunc("GET /api/collaboration/store", s.collaborationStore)
+	mux.HandleFunc("POST /api/collaboration/store", s.collaborationStore)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
 	mux.HandleFunc("POST /api/record", s.recordTake)
 	mux.HandleFunc("POST /api/instrument-record", s.instrumentRecord)
+	mux.HandleFunc("POST /api/transcribe", s.transcribe)
+	mux.HandleFunc("GET /studio-transcribe.js", s.transcribeScript)
 	mux.HandleFunc("POST /api/instrument-fit", s.instrumentFit)
 	mux.HandleFunc("POST /api/instrument-audition", s.instrumentAudition)
 	mux.HandleFunc("GET /assets/recorded/{pack}/{file}", s.instrumentPackAsset)

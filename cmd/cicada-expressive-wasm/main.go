@@ -1,6 +1,6 @@
 //go:build js && wasm
 
-// Local research audition bridge. Intentionally independent of the instrument ABI.
+// Local instrument audition bridge. Intentionally independent of the instrument ABI.
 package main
 
 import (

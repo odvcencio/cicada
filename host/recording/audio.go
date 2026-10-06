@@ -1,4 +1,4 @@
-// Package recording prepares owner recordings outside the audio callback.
+// Package recording prepares user recordings outside the audio callback.
 package recording
 
 import (

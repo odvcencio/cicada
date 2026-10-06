@@ -1,4 +1,4 @@
-// Render deterministic research auditions, without sample or IR dependencies.
+// Render deterministic instrument auditions, without sample or IR dependencies.
 package main
 
 import (

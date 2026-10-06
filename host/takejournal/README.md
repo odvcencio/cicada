@@ -1,6 +1,6 @@
 # Durable takes
 
-`Store.Begin` journals a take before lane D's `capture.Recorder` accepts PCM.
+`Store.Begin` journals a take before `capture.Recorder` accepts PCM.
 Pass `Store.Writer(id)` to the recorder. Close/drain the recorder, then call
 `Finalize`, `Publish`, and the host's revision-checked source transaction.
 
@@ -9,8 +9,7 @@ before appending and flushing its timing records. Finalization also flushes a
 short last batch. At most the unacknowledged batch is omitted after a crash. Gaps remain silence in the raw frame domain; discontinuities
 mark the take incomplete. Recovery streams the journal, ignores only a torn final
 line, and finalizes acknowledged PCM. Timing records stay on disk, so memory does
-not grow with capture duration. RIFF capacity is checked before writing; RF64 is
-future work. The audio callback never performs journal I/O.
+not grow with capture duration. RIFF capacity is checked before writing; RF64 is not supported. The audio callback never performs journal I/O.
 
 Finalization verifies WAV dimensions and hashes exact container bytes. Publication
 uses immutable `audio/blobs/<sha256>.wav` and friendly
@@ -21,8 +20,7 @@ staged WAV files remain recovery roots; automatic garbage collection is absent.
 The score retains every asset and clip declaration. The newest pass becomes the
 selected scene binding; selecting an older pass changes only that binding. Clip
 preroll trim preserves original PCM. Placement and clock confidence are retained
-in the journal; independent occurrence offsets and comp maps belong to later
-arrangement work.
+in the journal; comp maps are not supported.
 
 Studio exposes `GET /api/takes` and revision-checked `POST /api/takes` with actions
 `arm`, `start`, `stop`, `recover`, and `select`. Arm takes `track` and `scene`;
@@ -40,11 +38,8 @@ then publishes the unchanged score. The CLI exposes this as
 On Unix, files and parent directories are synced at publication boundaries.
 Windows flushes file contents but does not support directory flushing through
 Go's directory handles; power-loss directory durability needs Windows filesystem
-qualification. Subprocess crash tests exit without cleanup at every durable
-journal/publication/source boundary and verify exact recovered PCM and idempotent
-reopening. These tests cover process crashes, not physical power cuts.
+qualification. Process-crash recovery does not establish durability under physical power loss.
 
-The Phase 1 base branch can validate and retain audio scores; its engine still
-rejects audio playback until the sample-engine lane is integrated. Browser
-capture and recording controls use the same publication contract but are separate
-host work.
+Hosts prepare audio assets before engine construction. Native playback and
+offline rendering support prepared audio; browser capture and recording controls
+use the same journal and publication APIs.

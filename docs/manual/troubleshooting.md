@@ -15,8 +15,7 @@ valid but still fail a name, type, unit, range, or engine check.
 ## Notation errors
 
 - **`CICADA-SYNTAX`** — check braces, spelling, separators, and whether the
-  construct exists in edition 2. The [accepted syntax list](../spec/accepted.md)
-  is not available in the current build.
+  construct exists in edition 2; see the [language reference](../spec/README.md).
 - **`CICADA-REFERENCE`** — check that a track, pattern, scene, instrument, kit,
   or phrase name exists and is spelled consistently.
 - **`CICADA-PARAM`** or **`CICADA-UNIT`** — check the field's range and unit in
