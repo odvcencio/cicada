@@ -205,7 +205,7 @@ Routing is an original acyclic network with six independent envelopes.
 Analog `filter` accepts `ladder` or `state_variable`.
 
 `decay`, `attack` and `release` accept seconds or milliseconds. Frequency
-controls require `hz`, detuning requires `cents`, and `output` requires `dB`.
+controls require `hz`, and `output` requires `dB`. Detuning values are cents.
 Other controls are numbers; integer selectors reject fractional values.
 `sustain` also accepts `off`/`on`.
 

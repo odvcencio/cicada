@@ -19,9 +19,42 @@ func genericInterpolate(v *Voice) (float64, float64) {
 	var left, right float64
 	for i, a := range row {
 		c := float64(a) + float64((float64(next[i])-float64(a))*fraction)
-		l, r := v.frame(first + i)
+		l, r := genericFrame(v, first+i)
 		left += float64(float64(l) * c)
 		right += float64(float64(r) * c)
+	}
+	return left, right
+}
+
+// Keep the original per-frame mapping and blend arithmetic independent from
+// all optimized branches, so the oracle cannot silently acquire a fast path.
+func genericFrame(v *Voice, index int) (float32, float32) {
+	r := &v.region
+	if r.Loop && (index >= r.LoopEnd || (v.looped && index < r.LoopStart+r.Crossfade)) {
+		length := r.LoopEnd - r.LoopStart - r.Crossfade
+		index = (index - r.LoopStart - r.Crossfade) % length
+		if index < 0 {
+			index += length
+		}
+		index += r.LoopStart + r.Crossfade
+	}
+	if index < r.Start || index >= r.End {
+		return 0, 0
+	}
+	left := r.Left[index]
+	right := left
+	if len(r.Right) != 0 {
+		right = r.Right[index]
+	}
+	if r.Crossfade > 0 && index >= r.LoopEnd-r.Crossfade && index < r.LoopEnd {
+		head := r.LoopStart + index - (r.LoopEnd - r.Crossfade)
+		blend := float64(index-(r.LoopEnd-r.Crossfade)) / float64(r.Crossfade)
+		left = float32(float64(left)*(1-blend) + float64(r.Left[head])*blend)
+		h := r.Left[head]
+		if len(r.Right) != 0 {
+			h = r.Right[head]
+		}
+		right = float32(float64(right)*(1-blend) + float64(h)*blend)
 	}
 	return left, right
 }
@@ -37,7 +70,7 @@ func TestCrossfadedLoopSRCMatchesGenericMapping(t *testing.T) {
 	}
 	comparisons := 0
 	for _, stereo := range []bool{false, true} {
-		for _, fade := range []int{0, 1, 31, 256, 700} {
+		for _, fade := range []int{0, 1, 31, 256, 700, 771} {
 			region := Region{Left: left[:], SampleRate: 48000, RootKey: 60, Start: 9, End: 2043, Loop: true, LoopStart: 257, LoopEnd: 1800, Crossfade: fade}
 			if stereo {
 				region.Right = right[:]

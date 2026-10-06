@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/workstation/control"
 	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
@@ -147,7 +148,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	var pitched, drums, targets []string
 	trackPatterns := map[string][]string{}
 	for _, t := range v.Project.Tracks {
-		if t.Kind == "acid" {
+		if t.Kind == "acid" || keyboard.ID(t.Kind) != 0 {
 			pitched = append(pitched, t.ID)
 		} else {
 			for _, voice := range v.Project.Instruments {
@@ -216,7 +217,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 		return nil
 	}
 	// The Go/WASM surface retains its existing selector hook; the pitched
-	// targets now include both built-in acid and authored mono/poly graphs.
+	// targets include acid, modeled keyboards and authored mono/poly graphs.
 	controls := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), field("Pitched track", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-acid", "")), options(pitched))), field("Pitched pattern", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-pattern", "")), options(patternsFor(pitched)))), field("Drum track", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-drums", "")), options(drums))), field("Drum pattern", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-drumpattern", "")), options(patternsFor(drums)))), button("record", "Record notes"), button("finish", "Finish note take"), button("panic", "Release notes"))
 	var quantize []gosx.Node
 	for _, q := range []struct{ value, label string }{{"1", "Next beat"}, {"2", "Next bar"}, {"5", "1 bar"}, {"6", "2 bars"}, {"8", "4 bars"}} {
@@ -236,7 +237,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	// subtree when props are unchanged without retaining detached listeners.
 	content := gosx.Fragment(controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
 	surface := ctx.Engine(engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, WASMPath: ui.MeterEnginePath, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
-	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and Web MIDI play acid, authored instruments, and drums through Tymbal. Note patterns retain single-note takes; overlapping polyphonic takes need separate patterns."}, s.liveLaunch(v, csrf), surface, preview)
+	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and Web MIDI play acid, modeled keyboards, authored instruments, and drums through Tymbal. Note patterns retain single-note takes; overlapping polyphonic takes need separate patterns."}, s.liveLaunch(v, csrf), surface, preview)
 }
 
 type liveLaunchCommand struct {

@@ -45,6 +45,13 @@
 // operations. Loop wrapping uses a rounded float64 integer-times-length
 // product before subtraction. Pitch math occurs only on NoteOn. See the
 // standalone WASM fixture test for native/TinyGo verification.
+// Contiguous FIR windows read planar PCM directly, including crossfaded loops
+// when the complete window lies outside the crossfade tail and wrapped head.
+// Windows entirely inside a fade tail read the two spans directly and retain
+// the original per-frame division and float32 blend rounding. Windows crossing
+// a fade, wrap or region boundary retain per-frame mapping. All paths preserve
+// identical coefficient interpolation and accumulation; no prepared PCM cache
+// or additional resident sample memory is required.
 //
 // Reproduce quality with go test ./kernel/voice/sample -run SRC -count=1 -v;
 // reproduce CPU percentiles with go run ./cmd/cicada-sample-metrics. Use
