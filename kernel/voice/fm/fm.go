@@ -77,13 +77,16 @@ func Patch(name string) (Params, error) {
 	case "bell_keys":
 		p.Gain = .27
 		p.Operators = [Operators]Operator{
-			op(1, 1, .65, .001, 7, 0, 1.1),
-			op(2.756, 1.9, 1, .0008, 2.3, 0, .7),
-			op(2, .3, .75, .0012, 3.4, 0, .8),
-			op(5.405, 1.1, .95, .0006, .85, 0, .3),
-			op(3.01, .19, .7, .0008, 2.8, 0, .65),
-			op(1, .5, .9, .001, .42, 0, .24),
+			op(1, 1, .65, .001, 2.4, 0, 1.1),
+			op(2.756, 3.4, .7, .0008, 3.1, 0, .7),
+			op(2, .34, .75, .0012, 2.8, 0, .8),
+			op(5.405, 1.6, .95, .0006, 1.25, 0, .3),
+			op(6.4, .4, .7, .0008, 2.2, 0, .65),
+			op(1, .7, .9, .001, .7, 0, .24),
 		}
+		// Keep modulation present into the treble while the audible carriers
+		// decay sooner. This gives a bell strike a bright, finite ring.
+		p.Operators[1].KeyTracking, p.Operators[3].KeyTracking, p.Operators[5].KeyTracking = .1, .1, .1
 		p.Operators[2].Pan, p.Operators[4].Pan = -.65, .65
 		p.Routing[0][1], p.Routing[2][3], p.Routing[4][5] = 1, 1, 1
 		p.Output[0], p.Output[2], p.Output[4] = .8, .8, .8
@@ -92,12 +95,12 @@ func Patch(name string) (Params, error) {
 		p.Operators = [Operators]Operator{
 			op(1, 1, .65, .002, 1.4, .3, .12),
 			op(.5, .6, .7, .003, 1.8, .25, .15),
-			op(1, 1.5, .95, .001, .8, .1, .1),
-			op(2, .55, .85, .001, .3, .03, .06),
+			op(1, 3, 1, .001, 1.3, .1, .1),
+			op(8, 2.2, 1, .001, .45, 0, .06),
 			op(.5, .6, .85, .002, .9, .07, .12),
 			op(1.5, .4, 1, .001, .2, 0, .08),
 		}
-		p.Operators[2].Feedback = .2
+		p.Operators[2].Feedback = .12
 		p.Routing[0][2], p.Routing[2][3], p.Routing[1][4], p.Routing[4][5] = 1, 1, 1, 1
 		p.Output[0], p.Output[1] = .7, .7
 	default:

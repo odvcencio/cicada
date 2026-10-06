@@ -58,16 +58,59 @@ Measurements from the native tests and TinyGo fixture on 2026-10-06:
 | Note, pedal, reset and render allocations | Zero native and WASM allocations |
 | Decimator stop band at/above output Nyquist | Maximum −86.57 dB |
 | Clean high carrier at 16,744 Hz | Total fitted-sine residual −129.06 dB |
-| Hard/soft normalized first-difference energy | EP 2.00×; bells 6.63×; bass 1.76× |
-| One voice, native 48 kHz | 451.6 ns/output frame, including shared decimator |
-| Eight voices, native 48 kHz | 2,525 ns/output frame; 315.6 ns/voice amortized |
-| Eight voices, native 128-frame block | 0.323 ms |
+| Hard/soft normalized first-difference energy, C4 | EP 2.00×; bells 3.83×; bass 113.21× |
+| Block-independent PCM goldens | All three patches, blocks 1/64/128/256 |
 
-CPU measurements used an x86-64 processor during concurrent builds and tests
-and include no browser p99 claim.
-These are numerical qualification results, not listening acceptance or a fit
-against recordings of a particular instrument. Score registration and the
-optional keyboard module are integrated in a separate capability.
+Native CPU medians from three 300 ms runs at 48 kHz, with `GOMAXPROCS=1`:
+
+| Patch | One voice, ns/frame | Eight voices, ns/frame | Eight voices, ns/voice | 128-frame block, ms |
+| --- | ---: | ---: | ---: | ---: |
+| `fm_ep` | 425.9 | 1,730 | 216.3 | 0.221 |
+| `bell_keys` | 379.3 | 2,532 | 316.5 | 0.324 |
+| `fm_bass` | 272.8 | 1,525 | 190.6 | 0.195 |
+
+CPU measurements used an x86-64 processor during concurrent builds and tests.
+The benchmark resets and strikes its fixed note slots every 4,800 frames to
+keep decaying patches audible without accumulating voices. Figures include
+the shared decimator and note preparation calls, with zero allocations. They
+include no browser p99 claim. Score registration and the optional keyboard
+module are integrated in a separate capability.
+
+The original bell and bass settings were revised after spectral analysis of a
+[six-operator hardware recording](https://commons.wikimedia.org/wiki/File:Korg_Volca_fm_2_-_Demo_using_Yamaha_DX7_presets.flac),
+licensed [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/).
+The recording stays outside the repository. Operator settings remain original;
+the comparison uses recorded audio without importing hardware patch data.
+
+Models were rendered at 192 kHz and reduced to mono 48 kHz with a polyphase
+filter. Spectra remove DC and use a Hann window, squared FFT magnitude, and
+power from 40 Hz to 12 kHz. Model velocity is 80. Low bells use C3; the upper
+reference components suggest a C6/E6/G6 chord, which the model plays together.
+That voicing is inferred, and source MIDI velocities and trigger offsets are
+unknown. Model windows are 50–350 ms for bells and 15–155 ms for bass.
+
+| Sound | Recorded centroid / 95% rolloff, Hz | Before, Hz | Revised, Hz |
+| --- | ---: | ---: | ---: |
+| C3 bell | 367 / 787 | 165 / 397 | 358 / 840 |
+| Upper bell chord | 4,314 / 9,397 | 1,508 / 3,133 | 3,415 / 8,443 |
+| Bass, 65/131 Hz components | 137 / 257 | 119 / 136 | 153 / 264 |
+
+The revised low bell's observed post-peak T20 is 845 ms, compared with 790 ms
+in the selected reference interval; its original carrier lasted beyond the
+two-second held-note measurement. This is an amplitude-decay comparison,
+with no inferred reference key-off. Five-millisecond RMS blocks set its time
+resolution. The upper model chord reaches 5,061 Hz centroid and 10,037 Hz
+rolloff at velocity 127.
+
+Controlled model centroids at velocities 32 / 80 / 127 are **263 / 358 / 546 Hz**
+for C3 bells, **2,541 / 3,415 / 5,061 Hz** for the upper chord and
+**117 / 153 / 717 Hz** for bass. The recorded repeated bass onset centroids
+have 10th / median / 90th percentiles of **132 / 150 / 770 Hz**, but those
+strikes do not supply known MIDI velocities. This broader model response is
+an improvement in expressive range, not a measured hardware velocity fit.
+The remaining upper-bell spectral difference, recording reverb and uncertain
+source voicing limit comparison. Matched-loudness listening remains required
+before claiming commercial sound quality.
 
 The package is not imported by the core kernel in this capability, so its
 core raw and Brotli size deltas are zero. No budget changes are required.

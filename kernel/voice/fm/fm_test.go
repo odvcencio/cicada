@@ -375,8 +375,8 @@ func TestHighRegisterCarrierHasNoAudibleImages(t *testing.T) {
 	t.Logf("high_carrier_hz=%.6f total_residual_db=%.2f", hz, db)
 }
 
-func goldenRender(t testing.TB, blockSize int) [32]byte {
-	f := mustInstrument(t, 48000, "fm_ep")
+func goldenRender(t testing.TB, name string, blockSize int) [32]byte {
+	f := mustInstrument(t, 48000, name)
 	hash := sha256.New()
 	var bytes [8]byte
 	for start := 0; start < 16384; start += blockSize {
@@ -413,33 +413,48 @@ func goldenRender(t testing.TB, blockSize int) [32]byte {
 }
 
 func TestBlockIndependentGolden(t *testing.T) {
-	var expected [32]byte
-	for _, blockSize := range []int{1, 64, 128, 256} {
-		got := goldenRender(t, blockSize)
-		if blockSize == 1 {
-			expected = got
-		} else if got != expected {
-			t.Fatalf("block=%d changed golden", blockSize)
-		}
-	}
-	const golden = "a795f342c7e5ece0452f97974c5f52c4cc8e1c1382779a948a7f449526e5341b"
-	got := fmt.Sprintf("%x", expected)
-	if got != golden {
-		t.Fatalf("golden=%s", got)
+	for name, golden := range map[string]string{
+		"fm_ep":     "a795f342c7e5ece0452f97974c5f52c4cc8e1c1382779a948a7f449526e5341b",
+		"bell_keys": "fa16baeaf72261f2d526d8c26e1edb598ae456b88dd4e97da432a48856f44849",
+		"fm_bass":   "fcddff6dfbbb04ac895c480e1e4a9deaf105c863f2e6776c323632728ddf6dd9",
+	} {
+		t.Run(name, func(t *testing.T) {
+			var expected [32]byte
+			for _, blockSize := range []int{1, 64, 128, 256} {
+				got := goldenRender(t, name, blockSize)
+				if blockSize == 1 {
+					expected = got
+				} else if got != expected {
+					t.Fatalf("block=%d changed golden", blockSize)
+				}
+			}
+			if got := fmt.Sprintf("%x", expected); got != golden {
+				t.Fatalf("golden=%s", got)
+			}
+		})
 	}
 }
 
 func BenchmarkStereo(b *testing.B) {
-	for _, count := range []int{1, 8} {
-		b.Run(fmt.Sprintf("voices_%d", count), func(b *testing.B) {
-			f := mustInstrument(b, 48000, "fm_ep")
-			for i := range count {
-				_ = f.NoteOn(uint8(48+i*3), 100)
-			}
-			b.ReportAllocs()
-			b.ResetTimer()
-			for i := 0; i < b.N; i++ {
-				f.NextStereo()
+	for _, name := range []string{"fm_ep", "bell_keys", "fm_bass"} {
+		b.Run(name, func(b *testing.B) {
+			for _, count := range []int{1, 8} {
+				b.Run(fmt.Sprintf("voices_%d", count), func(b *testing.B) {
+					f := mustInstrument(b, 48000, name)
+					b.ReportAllocs()
+					b.ResetTimer()
+					for i := 0; i < b.N; i++ {
+						if i%4800 == 0 {
+							// Keep decay-only bells audible and the measured slot
+							// count fixed throughout every benchmark iteration.
+							f.Reset()
+							for note := range count {
+								_ = f.NoteOn(uint8(48+note*3), 100)
+							}
+						}
+						f.NextStereo()
+					}
+				})
 			}
 		})
 	}
