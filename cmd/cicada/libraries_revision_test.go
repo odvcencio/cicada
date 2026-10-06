@@ -193,3 +193,122 @@ func TestIndependentImportFixRejectsChangedPinsWithoutWriting(t *testing.T) {
 		}
 	}
 }
+
+func TestIndependentImportedReturnMigrationUsesSourceAliases(t *testing.T) {
+	for _, kind := range []string{"delay", "reverb"} {
+		t.Run(kind, func(t *testing.T) {
+			main, library := revisionImportFixture(t, 1, false)
+			root := filepath.Dir(main)
+			data, err := os.ReadFile(main)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data = bytes.Replace(data, []byte("fx delay { feedback=0.2 }\n"), nil, 1)
+			if kind == "reverb" {
+				data = bytes.ReplaceAll(data, []byte("send_a"), []byte("send_b"))
+			}
+			if err := os.WriteFile(main, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			lib, err := os.ReadFile(library)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lib = append(lib, []byte("fx echo "+kind+" {}\n")...)
+			if err := os.WriteFile(library, lib, 0600); err != nil {
+				t.Fatal(err)
+			}
+			sources, err := project.ReadSources(main, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			sum, _, err := sources.UpdateLibraries("")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "cicada.sum"), sum, 0600); err != nil {
+				t.Fatal(err)
+			}
+			before, err := loadProject(main)
+			if err != nil {
+				t.Fatalf("original imported return: %v", err)
+			}
+			if err := fixCommand([]string{main, "--check"}); err == nil || !strings.Contains(err.Error(), "fix needed") {
+				t.Fatalf("imported return migration check: %v", err)
+			}
+			if err := fixCommand([]string{main}); err != nil {
+				t.Fatalf("imported return migration: %v", err)
+			}
+			after, err := loadProject(main)
+			if err != nil || !project.SemanticEqual(before, after) {
+				t.Fatalf("migrated return changed meaning: %v", err)
+			}
+			fixed, err := os.ReadFile(main)
+			if err != nil || !bytes.Contains(fixed, []byte("send tone.echo")) || bytes.Contains(fixed, []byte("send demo.tone.echo")) {
+				t.Fatalf("migration used an internal ID as source syntax: %v %s", err, fixed)
+			}
+			got, err := os.ReadFile(library)
+			if err != nil || !bytes.Equal(got, lib) {
+				t.Fatalf("library return was rewritten: %v", err)
+			}
+			got, err = os.ReadFile(filepath.Join(root, "cicada.sum"))
+			if err != nil || !bytes.Equal(got, sum) {
+				t.Fatalf("library pin was changed: %v", err)
+			}
+		})
+	}
+}
+
+func TestIndependentSamplerFixIsIdempotent(t *testing.T) {
+	main, library := revisionImportFixture(t, 2, true)
+	root := filepath.Dir(main)
+	p, err := loadProject(main)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := sampleasset.LoadSampler(root, p, "demo.tone.hit"); err != nil {
+		t.Fatal(err)
+	}
+	preserved := map[string][]byte{}
+	for _, path := range []string{main, library, filepath.Join(root, "cicada.mod"), filepath.Join(root, "cicada.sum")} {
+		preserved[path], err = os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, args := range [][]string{{main, "--check"}, {main}} {
+		if err := fixCommand(args); err != nil {
+			t.Fatalf("valid pinned sampler no-op fix: %v", err)
+		}
+	}
+	for path, want := range preserved {
+		got, err := os.ReadFile(path)
+		if err != nil || !bytes.Equal(got, want) {
+			t.Fatalf("sampler no-op changed %s: %v", path, err)
+		}
+	}
+	// Re-pin deliberately changed library bytes without altering the asset's
+	// declared hash. The independent-score fix still has to verify the asset.
+	audio := filepath.Join(root, "lib/demo/tone/audio/tone.wav")
+	if err := os.WriteFile(audio, testwav.Bytes(48000, 1, 16, 4800, 2), 0600); err != nil {
+		t.Fatal(err)
+	}
+	sources, err := project.ReadSources(main, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, _, err := sources.UpdateLibraries("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "cicada.sum"), sum, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixCommand([]string{main, "--check"}); err == nil || !strings.Contains(err.Error(), "CICADA-ASSET-") {
+		t.Fatalf("sampler fix skipped asset verification: %v", err)
+	}
+	got, err := os.ReadFile(main)
+	if err != nil || !bytes.Equal(got, preserved[main]) {
+		t.Fatalf("rejected sampler changed source: %v", err)
+	}
+}
