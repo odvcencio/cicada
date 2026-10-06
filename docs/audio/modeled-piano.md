@@ -58,29 +58,3 @@ forces into the struck strings. Those approximations affect acoustic realism.
 The [DAFx piano-model paper](https://www.dafx.de/paper-archive/2004/P_089.PDF)
 describes how longitudinal motion contributes to low-register piano timbre.
 No source code, sample, or measured impulse response from that paper is included.
-
-See [the listening comparison](piano-abx.md) for matched-loudness blind trials
-against the CC0 sampled grand. Generating those trials does not establish the
-roadmap's ten-listener acoustic acceptance.
-
-Focused checks:
-
-```sh
-GOWORK=off go test ./kernel/voice/piano ./kernel/engine ./host/kernelimage ./project ./render
-GOWORK=off go test -tags piano_wasm ./kernel/voice/piano -run TestPianoNativeWASMDeterminism -v
-GOWORK=off go test ./kernel/voice/piano -run '^$' -bench BenchmarkPianoBlock -benchmem
-GOWORK=off tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug \
-  -gc=leaking -scheduler=none -o build/piano-fixture.wasm ./kernel/voice/piano/testdata/wasm
-node tools/piano-cpu.mjs build/piano-fixture.wasm
-```
-
-The CPU fixture includes the shared soundboard and sympathetic bank. It reports
-128-frame block times for zero, one, four and eight struck keys, and incremental
-mean cost per voice after subtracting shared idle cost. V8 fixture timings do not
-measure AudioWorklet scheduling. Run the existing browser CPU gate as well.
-
-`CICADA_BROWSER=windows go test -tags browser ./cmd/cicada -run
-TestBrowserPianoCPUReport -v` checks eight sustained keys with simultaneous hammer
-strikes every 250 ms in the shipping AudioWorklet. It requires a stable renderer
-counter window and preserves the 0.67 ms callback limit. The report is written
-to `build/piano-browser-cpu-report.json`.

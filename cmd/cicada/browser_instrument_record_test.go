@@ -13,7 +13,7 @@ import (
 // This sends fixture PCM through a MediaStream and the real capture worklet,
 // journal worker, multipart admission, native sample voice and browser output.
 func TestBrowserInstrumentRecording(t *testing.T) {
-	// Parallel roadmap lanes must not share DevTools or Studio ports.
+	// Concurrent browser tests use separate DevTools and Studio ports.
 	if os.Getenv("CICADA_BROWSER") != "windows" {
 		oldStudio, oldDebug := browserStudioAddress, browserDebugAddress
 		t.Cleanup(func() { browserStudioAddress, browserDebugAddress = oldStudio, oldDebug })
@@ -28,7 +28,7 @@ func TestBrowserInstrumentRecording(t *testing.T) {
 		}
 		browserStudioAddress, browserDebugAddress = freeAddress(), freeAddress()
 	}
-	wav, err := os.ReadFile("../../host/recording/testdata/pencil-taps.wav")
+	wav, err := os.ReadFile("../../host/recording/testdata/taps.wav")
 	if err != nil {
 		t.Fatal(err)
 	}

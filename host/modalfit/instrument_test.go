@@ -16,7 +16,7 @@ import (
 
 func recordedModel(t *testing.T) Model {
 	t.Helper()
-	data, err := os.ReadFile("../recording/testdata/pencil-taps.wav")
+	data, err := os.ReadFile("../recording/testdata/taps.wav")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func recordedModel(t *testing.T) Model {
 func TestRecordedModelPinnedScoreAndFullKeyboard(t *testing.T) {
 	start := time.Now()
 	m := recordedModel(t)
-	p, err := m.Build("pencil_model")
+	p, err := m.Build("recorded_model")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,9 +76,20 @@ func TestRecordedModelPinnedScoreAndFullKeyboard(t *testing.T) {
 	if err != nil || report.OutputPeak <= 0 {
 		t.Fatal("modeled score is silent", err)
 	}
-	p2, err := m.Build("pencil_model")
+	p2, err := m.Build("recorded_model")
 	if err != nil || p2.Pin != p.Pin {
 		t.Fatal("nondeterministic model pack", err)
 	}
 	t.Logf("%d measured modes; root %.2f Hz; fit/bake/offline score in %s; all 128 MIDI notes mapped", len(m.Modes), m.RootHz, time.Since(start))
+}
+
+func TestLegacyRecordingModel(t *testing.T) {
+	m := recordedModel(t)
+	m.License = "owner recording"
+	if _, err := m.Voice(48000); err != nil {
+		t.Fatal("legacy model no longer plays", err)
+	}
+	if _, err := m.Build("recorded_model"); err != nil {
+		t.Fatal("legacy model no longer builds", err)
+	}
 }

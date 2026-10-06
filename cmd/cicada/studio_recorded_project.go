@@ -118,7 +118,7 @@ func (s *studio) publishRecorded(w http.ResponseWriter, pack *recording.Pack, ro
 			return studioMutation{}, err
 		}
 
-		response := map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": pack.Hits, "kept": len(pack.Hits), "instrument": name, "track": track, "declaration": declaration, "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "owner recording"}
+		response := map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": pack.Hits, "kept": len(pack.Hits), "instrument": name, "track": track, "declaration": declaration, "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "user recording"}
 		for key, value := range extra {
 			response[key] = value
 		}

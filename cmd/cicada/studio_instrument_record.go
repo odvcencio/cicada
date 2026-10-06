@@ -124,7 +124,6 @@ func (s *studio) instrumentRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.publishRecorded(w, pack, options.Root, studioEdit{Revision: revision, Scene: r.FormValue("scene")}, nil)
-
 }
 
 func (s *studio) instrumentAudition(w http.ResponseWriter, r *http.Request) {

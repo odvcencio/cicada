@@ -70,15 +70,15 @@ Code remains MIT. Audio keeps its separate license. For CrocellKit recordings an
 
 ## Browser host
 
-Use the matching optional sampler module and loader from this branch: descriptor word 19 bit 9 carries `ChokeSustain`. Older modules reject this flag. Prepare both nodes while the audio context is suspended. Configure one bank per node, with 16 voices per bank for 32 bounded note slots overall. Copy each catalog manifest pin into `createSampleInstrument`; the existing [host documentation](../../../docs/sampler/packs.md) supplies the API and exact event-seed rules. All fetching, decompression, hashing and PCM upload happen before playback.
+Use the matching optional sampler module and loader for this format: descriptor word 19 bit 9 carries `ChokeSustain`. Older modules reject this flag. Prepare both nodes while the audio context is suspended. Configure one bank per node, with 16 voices per bank for 32 bounded note slots overall. Copy each catalog manifest pin into `createSampleInstrument`; the existing [host documentation](../../../docs/sampler/packs.md) supplies the API and exact event-seed rules. All fetching, decompression, hashing and PCM upload happen before playback.
 
-## Listening and measurements
+## Example grooves
 
 The five scores cover rock, funk, reggae one-drop, soca and a jazz ride pattern. Groove source notation has fixed note velocity 100; ghosts use quiet recorded mappings. Explicit MIDI event scores in the listening pack demonstrate velocities 8–127, repeated takes, a 35 ms flam, a snare roll, overlapping cymbals and choking. Jazz groove timing uses the fixed-grid ride pattern, not a claim of triplet-grid support.
 
 `full_kit_demos.py` writes paired scores with identical notes/timing/seed/gain and different bank declarations. It also writes the starter VCSL substitution maps: toms use its kick, extra snare strokes use its center snare, ride uses closed hat, cymbals use open hat, and missing silent choke controls use zero-gain zones. Starter ghosts use a documented 0.25 gain. This is a palette comparison with the old three-piece kit, not a DSP-only comparison. Raw pairs preserve dynamics; optional FFmpeg `loudnorm` level versions target -18 LUFS/-1 dBTP and must not be used to judge absolute velocity response.
 
-See [acceptance targets](../../../docs/sampler/full-kit-quality.md). Generate validation evidence with `full_kit_metrics.py`, `full_kit_wasm.mjs` and `full_kit_browser.mjs`; keep their reports under `build/kit-reports/` and publish them as CI artifacts or PR attachments. Owner listening acceptance and target-device realtime CPU qualification remain pending. Studio/native live routing still belongs to the prerequisite integration work; the supported paths here are offline render and the optional browser/game host.
+See [pack hosting](../../../docs/sampler/packs.md) for manifest fields, loading, and playback. Sound quality and realtime CPU usage depend on the recordings and target device.
 
 ## Download quality
 

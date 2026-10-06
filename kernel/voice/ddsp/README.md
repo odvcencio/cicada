@@ -85,33 +85,5 @@ GOWORK=off go test -tags ddsp_wasm ./kernel/voice/ddsp -run TestDDSPNativeWASMPa
 GOWORK=off make test-kernel-wasm budget-size test-golden
 ```
 
-The DDSP probe compares 61,440 sample bits at three sample rates and five block
-sizes, and checks that WASM memory does not grow while rendering. It measures
-10,000 native and compiled-Wazero WASM blocks after warmup, using 32 simultaneous
-models at 128 frames and 48 kHz. Both p99 measurements must fit 670 microseconds.
-This is an inference measurement; the browser's complete AudioWorklet budget
-still uses the repository browser gate. The full-kernel score fixture separately
-requires exact float32 sample bits and observes zero WASM allocator calls.
-
 Project images retain their layout and set required capability bit 7. Older
-kernels reject the new operation before rendering. Existing graphs and their
-golden output retain their behavior.
-
-Measured on 2026-10-06 with native Go and compiled-Wazero WASM, 128-frame
-blocks at 48 kHz, one host execution thread:
-
-| Check | Result |
-| --- | --- |
-| 32 steady models, native p99 | 128.70 microseconds / 670 |
-| 32 steady models, WASM p99 | 194.04 microseconds / 670 |
-| Integer and float-control parity | 61,440 identical sample bits |
-| Native render allocations / WASM memory growth | 0 / 0 |
-| Original trained parameters | 210 bytes, CC0-1.0 |
-| Held-out quantized amplitude MSE | 0.0000055775 |
-| Core WASM, against main `e37df45` | 315,280 raw / 87,671 Brotli bytes |
-| Change from that main build | +3,121 raw / +1,665 Brotli bytes |
-
-The existing limits are 327,680 raw and 122,880 Brotli bytes. A combined build
-with the neural amp capability measured 317,084 raw / 88,435 Brotli bytes.
-These measurements cover inference and deterministic rendering; the complete
-browser AudioWorklet release profile remains the repository browser gate.
+kernels reject the operation before rendering.

@@ -21,7 +21,7 @@ import (
 // room noise near -50 dB. Each attack has a close reflection, not another hit.
 func microphoneStereo(t *testing.T) []byte {
 	t.Helper()
-	data, err := os.ReadFile("../../host/recording/testdata/pencil-taps.wav")
+	data, err := os.ReadFile("../../host/recording/testdata/taps.wav")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +221,7 @@ func TestRecordedInstrumentInPartSceneUndo(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.shutdown()
-	data, err := os.ReadFile("../../host/recording/testdata/pencil-taps.wav")
+	data, err := os.ReadFile("../../host/recording/testdata/taps.wav")
 	if err != nil {
 		t.Fatal(err)
 	}

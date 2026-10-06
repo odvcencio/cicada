@@ -23,7 +23,7 @@ func recordPackCommand(args []string, output io.Writer) error {
 		return err
 	}
 	if *dir == "" || flags.NArg() == 0 {
-		return fmt.Errorf("usage: cicada record-pack -o <pack-directory> [--name pencil] [--root 60] [--layers 3] <recording.wav>...")
+		return fmt.Errorf("usage: cicada record-pack -o <pack-directory> [--name recorded] [--root 60] [--layers 3] <recording.wav>...")
 	}
 	inputs := make([]recording.Audio, 0, flags.NArg())
 	if flags.NArg() > 32 {
@@ -56,6 +56,6 @@ func recordPackCommand(args []string, output io.Writer) error {
 	if err = pack.Write(*dir); err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(output, "%d hits · %d zones · owner recording\n%s", len(hits), len(pack.Manifest.Zones), pack.Source(filepath.Join(*dir, "manifest.json"), options.Root))
+	_, err = fmt.Fprintf(output, "%d hits · %d zones · user recording\n%s", len(hits), len(pack.Manifest.Zones), pack.Source(filepath.Join(*dir, "manifest.json"), options.Root))
 	return err
 }
