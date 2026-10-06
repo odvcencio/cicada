@@ -1,4 +1,5 @@
 (() => {
+  const audioFault = code => new Error(code === 20 ? "Polyphonic tracks require handle-aware live commands; legacy NoteOn/NoteOff are unsupported" : `Audio fault ${code}`);
   class CicadaBrowserAudio {
     constructor() {
       this.backend = 'browser';
@@ -109,7 +110,7 @@
             if (message.kind === 7) {
               this.playing = false;
               this.notifyState();
-              this.raise(new Error(`Audio fault ${message.a}`));
+              this.raise(audioFault(message.a));
             }
           }
         } catch (error) {
@@ -125,7 +126,7 @@
         this.notifyState();
         const message = { kind: 7, track: 255, a: data.a, b: 0, tick: 0 };
         for (const callback of this.messages) callback(message);
-        this.raise(new Error(`Audio fault ${data.a}`));
+        this.raise(audioFault(data.a));
       } else if (data.t === 'r') {
         this.clock = data.c;
       } else if (data.t === 't') {
