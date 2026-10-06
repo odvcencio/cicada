@@ -21,8 +21,10 @@ func NewTrack(gainDB, pan float64, mute bool) Track {
 type Dry struct{ Left, Right, SFXLeft, SFXRight float32 }
 
 func (d *Dry) Add(left, right float32, track Track) {
-	d.Left += left * track.Left
-	d.Right += right * track.Right
+	// Explicit conversions round products before accumulation, preventing
+	// arm64 FMA contraction from changing native/WASM PCM24 bytes.
+	d.Left += float32(left * track.Left)
+	d.Right += float32(right * track.Right)
 }
 
 func (d *Dry) AddReturn(left, right float32) {
@@ -31,8 +33,8 @@ func (d *Dry) AddReturn(left, right float32) {
 }
 
 func (d *Dry) AddSFX(left, right float32, track Track) {
-	d.SFXLeft += left * track.Left
-	d.SFXRight += right * track.Right
+	d.SFXLeft += float32(left * track.Left)
+	d.SFXRight += float32(right * track.Right)
 }
 
 func (d Dry) Music() (float32, float32) {
