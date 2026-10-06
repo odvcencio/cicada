@@ -87,6 +87,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
   const errors = [], warnings = [], requests = [];
   let armed = false, documentRequests = 0, inFlight = 0, maxInFlight = 0;
   let injectStale = false, delayNextPattern = false, staleRevision = '';
+  let injectInterveningSave = false, interveningState;
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => {
     const text = message.text(), location = message.location().url;
@@ -191,11 +192,27 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
         record.status = response.status();
         record.result = await response.json();
         record.responseMs = performance.now() - requestStarted;
+        if (injectInterveningSave && action === 'pattern') {
+          injectInterveningSave = false;
+          const writeRevision = record.result.data.writeRevision;
+          assert.equal(writeRevision, record.result.data.revision, 'initial write receipt must agree with its projection');
+          const current = await state('/api/state');
+          const saved = await nativeAction('source', {content: `${current.source}\n// intervening-save-regression\n`});
+          assert.equal(saved.status(), 303, 'intervening save must succeed');
+          interveningState = await state('/api/state');
+          assert.notEqual(interveningState.revision, writeRevision);
+          const projected = await context.request.get(new URL(`/__workspace${payload.__cicada_location.slice(1)}`, base).href);
+          assert.equal(projected.status(), 200);
+          // Model the server's receipt after another editor saves in the
+          // acknowledgment-to-projection interval; the Go test gates that interval.
+          record.result.data = {...await projected.json(), writeRevision, saved: true, refreshRequired: true};
+          record.result.message = 'Saved. The score changed before the workspace refreshed.';
+        }
         if (delayNextPattern && action === 'pattern') {
           delayNextPattern = false;
           await new Promise(resolve => setTimeout(resolve, 120));
         }
-        await route.fulfill({response});
+        await route.fulfill({response, body: JSON.stringify(record.result)});
         record.delivered = true;
       } finally { if (!engineOwned) inFlight--; }
     });
@@ -357,6 +374,22 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     await page.waitForFunction(() => new URL(location.href).searchParams.get('step') === '27');
     assert.equal(await page.locator('#step-inspector input[name="chance"]').inputValue(), '42', 'step27 conflict draft was not restored');
     await assertPatternContinuity(draft);
+
+    // A successful write can be followed by another editor's save before its
+    // projection. Drop the second queued gesture and retain the visible drafts.
+    draft = await snapshot(true);
+    injectInterveningSave = true; start = requests.length;
+    await page.evaluate(selectors => selectors.forEach(selector => document.querySelector(selector).click()), [cell(29), cell(30)]);
+    await waitRequests(start + 1);
+    await page.locator('[data-workspace-retry]').waitFor({state: 'visible'});
+    assert.equal(requests.length, start + 1, 'queued gesture overwrote an intervening save');
+    assert.deepEqual(await state('/api/state'), interveningState, 'queued write changed the intervening save');
+    await assertPatternContinuity(draft);
+    await click('[data-workspace-retry]');
+    await until(async () => /Workspace updated/i.test(await page.locator('[data-workspace-status]').textContent()), 'intervening-save refresh did not settle');
+    assert.deepEqual(await state('/api/state'), interveningState, 'refresh retried the saved command');
+    await assertPatternContinuity(draft);
+    t.diagnostic('A mismatched write receipt dropped queued gestures, retained drafts, and refreshed without retrying the saved command.');
 
     // A separate panel verifies preservation of a genuine nested GoSX engine.
     armed = false;

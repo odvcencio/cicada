@@ -52,9 +52,9 @@ func TestReactiveEditReturnsCanonicalProjectionWithoutRedirect(t *testing.T) {
 	if err := json.Unmarshal(result.Data, &projection); err != nil {
 		t.Fatal(err)
 	}
-	// Read the canonical workspace, not a guessed revision from the write's
-	// acknowledgement: this fixture deliberately returns different values.
-	if projection.Revision != "current" || projection.Location != patternURL("p", 4, "", "3") || !strings.Contains(projection.HTML, `class="studio"`) || len(*edits) != 1 {
+	// The acknowledgment and canonical workspace agree, so queued edits can
+	// safely advance to this confirmed revision.
+	if projection.Revision != "current" || projection.WriteRevision != projection.Revision || !projection.Saved || projection.RefreshRequired || projection.Location != patternURL("p", 4, "", "3") || !strings.Contains(projection.HTML, `class="studio"`) || len(*edits) != 1 {
 		t.Fatalf("canonical projection: %+v edits=%d", projection, len(*edits))
 	}
 }
@@ -109,6 +109,10 @@ func TestProjectionFailureAfterSaveDoesNotReportWriteFailure(t *testing.T) {
 	// Exercise the response adapter directly with a successful command and a
 	// failed read. The saved=true receipt prevents a client retrying the POST.
 	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost {
+			_, _ = io.WriteString(w, `{"revision":"own-save","valid":true}`)
+			return
+		}
 		w.WriteHeader(503)
 		_, _ = io.WriteString(w, `{"error":"temporarily unavailable"}`)
 	}))
@@ -124,17 +128,21 @@ func TestProjectionFailureAfterSaveDoesNotReportWriteFailure(t *testing.T) {
 	writes := 0
 	s.serveAction(response, request, "pattern", func(ctx *action.Context) error {
 		writes++
+		if err := b.call(ctx.Request.Context(), http.MethodPost, "/api/pattern", ctx.FormData, nil); err != nil {
+			return err
+		}
 		ctx.Redirect("/?panel=patterns")
 		return nil
 	})
 	var result action.Result
 	_ = json.Unmarshal(response.Body.Bytes(), &result)
 	var receipt struct {
-		Saved           bool `json:"saved"`
-		RefreshRequired bool `json:"refreshRequired"`
+		WriteRevision   string `json:"writeRevision"`
+		Saved           bool   `json:"saved"`
+		RefreshRequired bool   `json:"refreshRequired"`
 	}
 	_ = json.Unmarshal(result.Data, &receipt)
-	if response.Code != 200 || !result.OK || !receipt.Saved || !receipt.RefreshRequired || writes != 1 || result.Redirect != "" {
+	if response.Code != 200 || !result.OK || !receipt.Saved || !receipt.RefreshRequired || receipt.WriteRevision != "own-save" || writes != 1 || result.Redirect != "" {
 		t.Fatalf("ambiguous saved receipt: %d %+v %+v", response.Code, result, receipt)
 	}
 }

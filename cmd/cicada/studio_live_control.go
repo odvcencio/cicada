@@ -97,7 +97,11 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, message := range request.Messages {
 		key := ""
-		if message.Type == "note" && message.Note != nil && message.On != nil {
+		if message.Type == "note" {
+			if err := validateAudioNote(message); err != nil {
+				studioJSON(w, 422, map[string]any{"error": err.Error()})
+				return
+			}
 			key = fmt.Sprintf("%s:%d", message.Track, *message.Note)
 			if !*message.On {
 				if _, owned := lease.Notes[key]; !owned {
@@ -112,6 +116,15 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 				if _, ok := lease.Notes[key]; !ok {
 					studioJSON(w, 429, map[string]any{"error": "release a note before playing another"})
 					return
+				}
+			}
+			if *message.On {
+				_, held := lease.Notes[key]
+				if held || s.liveControls.heldByAnother(request.Owner, key) {
+					// One sounding voice represents all leases holding this pitch.
+					// Only the final owner sends its matching note-off.
+					lease.Notes[key] = message
+					continue
 				}
 			}
 		}

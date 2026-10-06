@@ -65,7 +65,7 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 		if score == nil || hasDiagnosticErrors(ds) {
 			return nil, fmt.Errorf("score must validate before recording a take")
 		}
-		updated, prefix, err := recordTransformSource(source, score.Version)
+		updated, prefix, err := studioTransformSource(source, score.Version)
 		if err != nil {
 			return nil, err
 		}
@@ -94,7 +94,7 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 // Existing grid transforms parse standalone source. A temporary edition header
 // supplies manifest context during that in-memory transform, and is stripped
 // before revision hashing or saving. Authored headers are never changed.
-func recordTransformSource(source []byte, edition int) ([]byte, []byte, error) {
+func studioTransformSource(source []byte, edition int) ([]byte, []byte, error) {
 	if edition != 2 {
 		return source, nil, nil
 	}

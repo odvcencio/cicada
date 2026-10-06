@@ -37,7 +37,7 @@ func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 				w.WriteHeader(422)
 				_, _ = io.WriteString(w, `{"error":"invalid score"}`)
 			} else {
-				_, _ = io.WriteString(w, `{"revision":"new","valid":true}`)
+				_, _ = io.WriteString(w, `{"revision":"current","valid":true}`)
 			}
 		default:
 			w.WriteHeader(404)
