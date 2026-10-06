@@ -44,6 +44,13 @@ export default function registerProcessor(moduleId) {
 
     async _onMessage(message) {
       const data = message.data;
+      if (data.request === 'get/parameterInfo') {
+        const ids = data.content.parameterIds.length ? data.content.parameterIds : Object.keys(this._parameterInfo);
+        const info = Object.create(null);
+        for (const id of ids) if (this._parameterInfo[id]) info[id] = this._parameterInfo[id];
+        this.port.postMessage({ id: data.id, response: data.request, content: info });
+        return;
+      }
       if (data.request === 'add/event') {
         if (!this.enqueue(data.content.event, data.id)) {
           this.eventResponse.id = data.id;

@@ -35,7 +35,10 @@ test('WAM2 timed MIDI, automation, state and allocation-free processing', async 
     const data = fs.readFileSync(path.join(plugin, 'score-48000.bin'));
     const image = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
     const manifest = JSON.parse(fs.readFileSync(path.join(plugin, 'score.json')));
-    const setup = Buffer.from(manifest.setup[48000], 'base64');
+    manifest.macros.push({id:'__proto__',index:1,defaultValue:.4,smoothMs:0});
+    const definition = Buffer.alloc(24);
+    definition[0]=17;definition[1]=255;definition.writeUInt16LE(1,2);definition.writeFloatLE(.4,4);
+    const setup = Buffer.concat([Buffer.from(manifest.setup[48000], 'base64'),definition]);
     const processor = new Processor({ processorOptions: { kernel, image, manifest, setup, moduleId: id, instanceId: 'test', groupId: 'test' } });
     await processor.ready;
     processor._initialize(); processor._initialized = true;
@@ -43,6 +46,8 @@ test('WAM2 timed MIDI, automation, state and allocation-free processing', async 
     const notices = processor.port.postMessage;
     let lastNotice = null;
     processor.port.postMessage = message => { lastNotice = message; notices(message); };
+    await processor._onMessage({data:{id:42,request:'get/parameterInfo',content:{parameterIds:[]}}});
+    assert.equal(lastNotice.content.__proto__.id,'__proto__','macro ID changed the metadata object prototype');
     processor.scheduleEvents(
       { type: 'wam-midi', time: 64/48000, data: { bytes: [0x90,60,100] } },
       { type: 'wam-automation', time: 96/48000, data: { id: 'intensity', value: .8, normalized: false } },
