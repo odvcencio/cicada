@@ -38,7 +38,7 @@ func TestNoteExpressionWirePrecisionAndValidation(t *testing.T) {
 			}
 		}
 	}
-	if (Command{Op: Op(26), Track: 0}).Validate(1) == nil {
+	if (Command{Op: Op(29), Track: 0}).Validate(1) == nil {
 		t.Fatal("accepted unknown opcode")
 	}
 	if count := testing.AllocsPerRun(100, func() { EncodeCommand(command, 1); DecodeCommand(encoded[:], 1) }); count != 0 {
