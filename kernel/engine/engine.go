@@ -51,8 +51,8 @@ type TrackConfig struct {
 	Drums        [drum.LaneCount]drum.Params
 	Kit          *[drum.LaneCount]KitLaneBinding
 	Graph        graph.Program
-	Polyphony    uint8 `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
-	PianoSustain float32
+	Polyphony    uint8   `json:",omitzero"` // zero: legacy mono; four: experimental graph pool
+	PianoSustain float32 `json:",omitempty"`
 	GainDB       float64
 	GainSet      bool
 	Pan          float64
