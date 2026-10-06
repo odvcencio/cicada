@@ -9,6 +9,7 @@ import (
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -230,6 +231,35 @@ func TestPatternCommandGrowClearsDormantScalarSteps(t *testing.T) {
 	}
 	if !e.PushBatch(commands) {
 		t.Fatal("grow rejected")
+	}
+	audioFrames(t, e)
+}
+
+func TestChordImageRetainsGraphDelayCapability(t *testing.T) {
+	source := strings.Replace(chordScore, "sine(pitch)", "comb(noise(), 1 / pitch, 0.9, 0.5)", 1)
+	score, ds := notation.Parse([]byte(source))
+	p, ds := project.FromScore(score)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	cfg, err := project.CompileEngine(p, 48000, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if binary.LittleEndian.Uint16(data[4:6]) != kernelimage.ChordImageVersion || binary.LittleEndian.Uint16(data[30:32]) != kernelimage.DelayCapability {
+		t.Fatal("chord image lost graph delay capability")
+	}
+	decoded, err := kernelimage.Decode(data, 48000, 128)
+	if err != nil || !reflect.DeepEqual(cfg, decoded) {
+		t.Fatalf("chord delay image roundtrip: %v", err)
+	}
+	e, err := engine.New(decoded)
+	if err != nil {
+		t.Fatal(err)
 	}
 	audioFrames(t, e)
 }
