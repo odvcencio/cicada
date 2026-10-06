@@ -33,9 +33,9 @@ type Options struct {
 	Dither          *bool   // nil enables deterministic TPDF on integer formats
 	Normalize       bool    // peak normalize the post-limiter output to -1 dBFS
 	Block           int     // zero selects 4096 frames
-	MasterGainDB    float64 // static gain immediately before the master limiter
-	MasterBiasL     float32 // static DC correction before the master limiter
-	MasterBiasR     float32 // static DC correction before the master limiter
+	MasterGainDB    float64 // export gain after authored DSP, before the safety limiter
+	MasterBiasL     float32 // export DC correction after authored DSP, before export gain
+	MasterBiasR     float32 // export DC correction after authored DSP, before export gain
 }
 
 type Report struct {
@@ -96,6 +96,8 @@ type trackRuntime struct {
 }
 
 type busMixerState struct {
+	masterProcessor      engine.StereoProcessor
+	outputGain           float32
 	musicMute, musicSolo bool
 	sfxMute, sfxSolo     bool
 	masterMute           bool
@@ -261,8 +263,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 		return report, fmt.Errorf("score cannot compile to a Cicada project")
 	}
-	busState := busMixerState{}
+	masterProcessor, err := project.PrepareMaster(semantic, opts.SampleRate)
+	if err != nil {
+		return report, err
+	}
+	busState := busMixerState{masterProcessor: masterProcessor, outputGain: 1}
 	masterGainDB := opts.MasterGainDB
+	authoredGainDB := float64(0)
 	for _, bus := range semantic.Buses {
 		switch bus.ID {
 		case "music":
@@ -274,7 +281,8 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if semantic.Master != nil {
 		busState.masterMute = semantic.Master.Mixer.Mute
 		if level := semantic.Master.Mixer.Level; level != nil && level.Unit == "db" && level.Number != nil {
-			masterGainDB += *level.Number
+			authoredGainDB = *level.Number
+			masterGainDB += authoredGainDB
 		}
 	}
 	if math.IsNaN(masterGainDB) || math.IsInf(masterGainDB, 0) || masterGainDB < -120 || masterGainDB > 24 {
@@ -414,14 +422,19 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			break
 		}
 	}
+	masterLatency := 0
+	if masterProcessor != nil {
+		masterLatency = masterProcessor.LatencyFrames()
+	}
+	report.skipFrames = insertLatency + masterLatency
 	if stems != nil {
 		stems.skipFrames = fromFrame + int64(insertLatency)
 	}
-	report.metricStart = fromFrame + int64(insertLatency)
+	report.metricStart = fromFrame + int64(insertLatency+masterLatency)
 	if report.From == 0 {
 		report.metricStart = 0
 	}
-	report.metricEnd = renderFrames + int64(insertLatency)
+	report.metricEnd = renderFrames + int64(insertLatency+masterLatency)
 	limiter, err := mix.NewLimiter(opts.SampleRate)
 	if err != nil {
 		return report, err
@@ -432,6 +445,10 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	masterGain := float32(1)
 	if masterGainDB != 0 {
 		masterGain = float32(math.Pow(10, masterGainDB/20))
+	}
+	if masterProcessor != nil {
+		masterGain = float32(math.Pow(10, authoredGainDB/20))
+		busState.outputGain = float32(math.Pow(10, opts.MasterGainDB/20))
 	}
 	var eventBuf [128]seq.Event
 	block := make([]byte, max(opts.Block, limiter.LatencyFrames())*encoder.frameBytes())
@@ -589,13 +606,15 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 		position += int64(frames)
 	}
-	if insertLatency != 0 {
-		// Drive and the aligned dry tracks have the same insert latency.
-		// Drain it, then omit the initial silent output frames so the WAV
-		// remains aligned to the score and has exactly report.Frames frames.
-		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, nil, position, insertLatency, block, &report); err != nil {
+	// Drain track and master delay in bounded blocks, then trim the initial
+	// latency so exports retain their exact duration and score alignment.
+	for remaining := insertLatency + masterLatency; remaining > 0; {
+		frames := min(remaining, opts.Block)
+		if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, nil, position, frames, block, &report); err != nil {
 			return report, err
 		}
+		position += int64(frames)
+		remaining -= frames
 	}
 	if err := flushLimiter(writer, limiter, stems, &encoder, block, &report); err != nil {
 		return report, err
@@ -1272,13 +1291,21 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		if busState.masterMute {
 			left, right = 0, 0
 		}
-		if masterBiasL != 0 || masterBiasR != 0 {
+		if busState.masterProcessor == nil && (masterBiasL != 0 || masterBiasR != 0) {
 			left += masterBiasL
 			right += masterBiasR
 		}
 		if masterGain != 1 {
 			left *= masterGain
 			right *= masterGain
+		}
+		if busState.masterProcessor != nil {
+			left, right = busState.masterProcessor.Process(left, right)
+			if busState.masterProcessor.Fault() {
+				return fmt.Errorf("master chain DSP fault")
+			}
+			left = (left + masterBiasL) * busState.outputGain
+			right = (right + masterBiasR) * busState.outputGain
 		}
 		if sample >= report.metricStart && sample < report.metricEnd {
 			if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {

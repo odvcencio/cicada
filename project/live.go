@@ -13,10 +13,13 @@ import (
 // Live is the edition-2 host control contract. A nil Live preserves the
 // interchange representation and command stream of existing scores.
 type Live struct {
-	Land       string       `cicada:"Default launch landing" json:"land,omitempty" introduced:"cicada.project/2"`
-	PhraseBars int          `cicada:"Phrase length in bars" json:"phrase_bars,omitempty" introduced:"cicada.project/2"`
-	Macros     []LiveMacro  `cicada:"Macros in host ID order" json:"macros" introduced:"cicada.project/2"`
-	Layers     []LiveLayers `cicada:"Macro-controlled track layers" json:"layers" introduced:"cicada.project/2"`
+	Land        string           `cicada:"Default launch landing" json:"land,omitempty" introduced:"cicada.project/2"`
+	PhraseBars  int              `cicada:"Phrase length in bars" json:"phrase_bars,omitempty" introduced:"cicada.project/2"`
+	Macros      []LiveMacro      `cicada:"Macros in host ID order" json:"macros" introduced:"cicada.project/2"`
+	States      []LiveState      `cicada:"Game state to scene map" json:"states,omitempty" introduced:"cicada.project/2"`
+	Stingers    []LiveStinger    `cicada:"One-shot game cues" json:"stingers,omitempty" introduced:"cicada.project/2"`
+	Transitions []LiveTransition `cicada:"State transition timing" json:"transitions,omitempty" introduced:"cicada.project/2"`
+	Layers      []LiveLayers     `cicada:"Macro-controlled track layers" json:"layers" introduced:"cicada.project/2"`
 }
 
 type LiveMacro struct {
@@ -37,6 +40,24 @@ type LiveLayer struct {
 	Threshold float64 `cicada:"Activation threshold" json:"threshold" introduced:"cicada.project/2"`
 }
 
+type LiveState struct {
+	Name  string `cicada:"Game state name" json:"name" introduced:"cicada.project/2"`
+	Scene string `cicada:"Scene identifier" json:"scene" introduced:"cicada.project/2"`
+}
+type LiveStinger struct {
+	Name        string  `cicada:"Game cue name" json:"name" introduced:"cicada.project/2"`
+	Track       string  `cicada:"Dedicated cue track" json:"track" introduced:"cicada.project/2"`
+	Pattern     string  `cicada:"One-shot pattern" json:"pattern" introduced:"cicada.project/2"`
+	Quantize    string  `cicada:"Landing boundary" json:"quantize" introduced:"cicada.project/2"`
+	CrossfadeMS float64 `cicada:"Fade length in milliseconds" json:"crossfade_ms" introduced:"cicada.project/2"`
+}
+type LiveTransition struct {
+	From        string  `cicada:"Source game state" json:"from" introduced:"cicada.project/2"`
+	To          string  `cicada:"Destination game state" json:"to" introduced:"cicada.project/2"`
+	Quantize    string  `cicada:"Landing boundary" json:"quantize" introduced:"cicada.project/2"`
+	CrossfadeMS float64 `cicada:"Track crossfade length in milliseconds" json:"crossfade_ms" introduced:"cicada.project/2"`
+}
+
 func liveFromScore(source *notation.Live) *Live {
 	if source == nil {
 		return nil
@@ -51,6 +72,15 @@ func liveFromScore(source *notation.Live) *Live {
 			layers.Rules = append(layers.Rules, LiveLayer{Track: r.Track, Threshold: r.Value})
 		}
 		live.Layers = append(live.Layers, layers)
+	}
+	for _, v := range source.States {
+		live.States = append(live.States, LiveState{Name: v.Name, Scene: v.Scene})
+	}
+	for _, v := range source.Stingers {
+		live.Stingers = append(live.Stingers, LiveStinger{Name: v.Name, Track: v.Track, Pattern: v.Pattern, Quantize: v.Quantize, CrossfadeMS: v.CrossfadeMS})
+	}
+	for _, v := range source.Transitions {
+		live.Transitions = append(live.Transitions, LiveTransition{From: v.From, To: v.To, Quantize: v.Quantize, CrossfadeMS: v.CrossfadeMS})
 	}
 	return live
 }
@@ -69,6 +99,15 @@ func liveToScore(source *Live) *notation.Live {
 			layers.Rules = append(layers.Rules, notation.LiveLayer{Track: r.Track, Value: r.Threshold})
 		}
 		live.Layers = append(live.Layers, layers)
+	}
+	for _, v := range source.States {
+		live.States = append(live.States, notation.LiveState{Name: v.Name, Scene: v.Scene})
+	}
+	for _, v := range source.Stingers {
+		live.Stingers = append(live.Stingers, notation.LiveStinger{Name: v.Name, Track: v.Track, Pattern: v.Pattern, Quantize: v.Quantize, CrossfadeMS: v.CrossfadeMS})
+	}
+	for _, v := range source.Transitions {
+		live.Transitions = append(live.Transitions, notation.LiveTransition{From: v.From, To: v.To, Quantize: v.Quantize, CrossfadeMS: v.CrossfadeMS})
 	}
 	return live
 }
@@ -175,6 +214,15 @@ func liveSource(live *Live) string {
 			out.WriteString("    " + r.Track + " >= " + decimal(r.Threshold) + "\n")
 		}
 		out.WriteString("    attack 1bar\n    release " + strconv.Itoa(l.ReleaseBars) + "bars\n  }\n")
+	}
+	for _, v := range live.States {
+		out.WriteString("  state " + v.Name + " = " + v.Scene + "\n")
+	}
+	for _, v := range live.Stingers {
+		out.WriteString("  stinger " + v.Name + " = " + v.Track + "." + v.Pattern + " quantize " + v.Quantize + " crossfade " + decimal(v.CrossfadeMS) + "ms\n")
+	}
+	for _, v := range live.Transitions {
+		out.WriteString("  transition " + v.From + " -> " + v.To + " quantize " + v.Quantize + " crossfade " + decimal(v.CrossfadeMS) + "ms\n")
 	}
 	out.WriteByte('}')
 	return out.String()

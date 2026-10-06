@@ -29,6 +29,12 @@ kit pulse { bd = builtin.bd }
 fx drive drive { shape = soft gain = 9dB tone = 9kHz mix = 0.7 }
 fx delay delay {}
 fx reverb reverb {}
+fx tone eq { type = highpass frequency = 25Hz }
+fx glue comp { threshold = -18dB }
+fx punch transient { attack = 2dB }
+fx stereo width { amount = 1.1 }
+fx ceiling limiter { ceiling = -1dBTP }
+master { insert = tone -> glue -> punch -> stereo -> ceiling }
 track acid acid { level = -24dB insert = drive send delay = 0.3 send reverb = 0.35 }
 track graph glassbass { level = -24dB insert = drive send delay = 0.3 send reverb = 0.35 }
 track drums pulse { level = -24dB insert = drive send delay = 0.3 send reverb = 0.35 }
@@ -82,16 +88,20 @@ song { first*2 }
 				{track: 1, event: seq.Event{Kind: seq.NoteOn, Note: 45, Velocity: 100}},
 				{track: 2, event: seq.Event{Kind: seq.NoteOn, Velocity: 100}},
 			}
+			master, err := project.PrepareMaster(p, rate)
+			if err != nil {
+				t.Fatal(err)
+			}
 			var report Report
 			allocs := testing.AllocsPerRun(100, func() {
-				if err := renderBlock(io.Discard, tracks, delay, reverb, nil, 0, 0, 0, 1, busMixerState{}, limiter, nil, &encoder, events, 0, block, buffer, &report); err != nil {
+				if err := renderBlock(io.Discard, tracks, delay, reverb, nil, 0, 0, 0, 1, busMixerState{masterProcessor: master, outputGain: 1}, limiter, nil, &encoder, events, 0, block, buffer, &report); err != nil {
 					panic(err)
 				}
 			})
 			if allocs != 0 {
 				t.Fatalf("offline audio loop at %d Hz / %d frames: %g allocations", rate, block, allocs)
 			}
-			t.Logf("METRIC ALLOC path=offline_audio_loop rate_hz=%d block_frames=%d tracks=3 drive=true sends=true allocs_block=0", rate, block)
+			t.Logf("METRIC ALLOC path=offline_audio_loop rate_hz=%d block_frames=%d tracks=3 drive=true sends=true master=true allocs_block=0", rate, block)
 		}
 	}
 }

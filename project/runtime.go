@@ -19,7 +19,7 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	if err := ValidateProject(p); err != nil {
 		return cfg, err
 	}
-	if p.HasAudio() {
+	if p.NeedsSampleEngine() {
 		return cfg, fmt.Errorf("CICADA-UNSUPPORTED: audio assets, clips, and samplers need a sample-capable engine")
 	}
 	if len(p.Scenes) > 1<<16 || len(p.Song) > 1<<16 {
@@ -55,6 +55,9 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 	var compSidechain string
 	for _, effect := range p.Effects {
 		effectsByID[effect.ID] = effect
+		if MasterHasInsert(p, effect.ID) {
+			continue
+		}
 		kind := semanticEffectKind(effect)
 		if kind == "delay" {
 			params, err := DelayParamsFromValues(effect.Params)
@@ -75,6 +78,11 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 			}
 			compParams, compSidechain = &params, sidechain
 		}
+	}
+	var masterErr error
+	cfg.MasterProcessor, masterErr = PrepareMaster(p, sampleRate)
+	if masterErr != nil {
+		return cfg, masterErr
 	}
 	cfg.CompMusic = compParams
 	cfg.DelayA = delayParams
