@@ -156,6 +156,8 @@ type Engine struct {
 	macroLayerRelease            [16]uint8
 	macroLayerLevel              [16]uint8
 	macroLayerQuiet              [16]uint8
+	director                     [16]directorTrack
+	sceneFadeFrames              uint32
 	phraseBars                   uint32
 	liveEvents                   bool // set by any live-control op; keeps Bar and MacroReached off for hosts that never drain messages
 	lastBarTick                  int64
@@ -371,6 +373,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		if spec.Polyphony != 0 && spec.Polyphony != 4 || spec.Polyphony == 4 && spec.Kind != VoiceGraph {
 			return 0, Error("polyphony requires a graph track and a four-voice limit")
 		}
+		e.director[i].gain = 1
 		v.kind = spec.Kind
 		v.mix = mix.NewTrack(gain, spec.Pan, false)
 		if spec.Mute {
@@ -685,6 +688,7 @@ func (e *Engine) Reset() {
 	for i := range e.manualPatternTick {
 		e.manualPatternTick[i] = -1
 	}
+	e.resetDirector()
 	e.faulted = false
 }
 
@@ -737,6 +741,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			clear(outR[frame:])
 			return
 		}
+		e.advanceDirector()
 		e.processBarBoundary()
 		if e.faulted {
 			clear(outL[frame:])
@@ -801,6 +806,8 @@ func (e *Engine) Render(outL, outR []float32) {
 			} else if v.align != nil {
 				left, right = v.align.Process(left, right)
 			}
+			left *= e.director[track].gain
+			right *= e.director[track].gain
 			var trackL, trackR float32
 			if e.layerMask&(1<<track) != 0 && v.kind != VoiceOff {
 				trackL, trackR = left*(v.mix.Left*v.muteGain), right*(v.mix.Right*v.muteGain)
@@ -1052,7 +1059,7 @@ func commandPriority(op cmd.Op) int {
 	switch op {
 	case cmd.OpNoteOff, cmd.OpStop, cmd.OpSeek:
 		return 0
-	case cmd.OpSelectPattern, cmd.OpLaunchScene, cmd.OpSetChain:
+	case cmd.OpSelectPattern, cmd.OpLaunchScene, cmd.OpSetChain, cmd.OpSetState, cmd.OpTriggerStinger:
 		return 1
 	case cmd.OpNoteOn, cmd.OpPlay:
 		return 3
@@ -1063,6 +1070,8 @@ func commandPriority(op cmd.Op) int {
 
 func (e *Engine) apply(c cmd.Command) {
 	switch c.Op {
+	case cmd.OpSetState, cmd.OpTriggerStinger:
+		e.applyDirector(c)
 	case cmd.OpPlay:
 		e.transport.Play()
 		if len(e.song) > 0 && !e.songMode {
@@ -1073,6 +1082,7 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		e.emit(cmd.Message{Kind: cmd.Playhead, Track: 0xff, Tick: e.transport.Tick()})
 	case cmd.OpStop:
+		e.resetDirector()
 		e.transport.Stop()
 		e.lastBarTick = -1
 		for i := 0; i < e.tracks; i++ {
@@ -1081,6 +1091,7 @@ func (e *Engine) apply(c cmd.Command) {
 			e.patterns[i].heldValid = false
 		}
 	case cmd.OpSeek:
+		e.resetDirector()
 		if e.transport.SeekTick(int64(c.Arg0)*seq.TicksPerBar+int64(c.Arg1)) != nil {
 			e.fault(6)
 			return

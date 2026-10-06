@@ -55,3 +55,11 @@
   (#any-of? @field "insert" "out" "bus"))
 ((sampler_decl (param_decl name: (identifier) @field value: (value (qualified_name) @name))) @reference.asset
   (#eq? @field "asset"))
+
+(live_state name: (identifier) @name) @definition.state
+(live_state scene: (identifier) @name) @reference.scene
+(live_stinger name: (identifier) @name) @definition.stinger
+(live_stinger track: (identifier) @name) @reference.track
+(live_stinger pattern: (identifier) @name) @reference.pattern
+(live_transition from: (identifier) @name) @reference.state
+(live_transition to: (identifier) @name) @reference.state

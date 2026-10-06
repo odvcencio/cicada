@@ -149,7 +149,7 @@ func TestLiveBlockIsOptional(t *testing.T) {
 			if walkErr != nil {
 				return walkErr
 			}
-			if entry.IsDir() || filepath.Ext(path) != ".cicada" || filepath.Base(path) == "live-intensity.cicada" {
+			if entry.IsDir() || filepath.Ext(path) != ".cicada" || (filepath.Base(path) == "live-intensity.cicada" || filepath.Base(path) == "game-director.cicada") {
 				return nil
 			}
 			score, ds, err := LoadScore(path, nil)
