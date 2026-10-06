@@ -529,6 +529,9 @@ func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, proj
 		out.WriteString(" " + pattern.Kind)
 	}
 	out.WriteString(" {\n")
+	if pattern.StepTicks != 0 {
+		out.WriteString("  step = " + strconv.Itoa(int(pattern.StepTicks)) + "/3840\n")
+	}
 	if pattern.SwingPercent100 != 5000 {
 		out.WriteString("  swing = " + percent100Text(pattern.SwingPercent100) + "%\n")
 	}

@@ -52,7 +52,7 @@ note_pattern ::= "pattern" , _name , [ "notes" ] , { pattern_attr } , "{" , { pa
 phrase_use ::= "use" , _name , [ "*" , integer ] , [ "transpose" , "=" , number | "+" , number ] ;
 drum_pattern ::= "pattern" , _name , "drums" , { pattern_attr } , "{" , { pattern_attr } ,
                  { drum_lane } , "}" ;
-pattern_attr ::= identifier , "=" , number ;
+pattern_attr ::= identifier , "=" , (number | fraction) ;
 acid_step ::= "." | "-" | "|" | acid_note | chord_note ;
 acid_note ::= pitch , { octave_shift } , { modifier } ;
 pitch ::= degree | letter_pitch ;

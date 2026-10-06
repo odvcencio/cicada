@@ -398,7 +398,7 @@ func kernelPattern(pattern Pattern) (seq.Pattern, error) {
 		return seq.Pattern{}, err
 	}
 	return seq.Pattern{
-		Len: pattern.Steps, SwingPermille: swing, GatePercent: pattern.GatePercent,
+		Len: pattern.Steps, StepTicks: pattern.StepTicks, SwingPermille: swing, GatePercent: pattern.GatePercent,
 		Transpose: pattern.Transpose, Seed: pattern.Seed,
 	}, nil
 }

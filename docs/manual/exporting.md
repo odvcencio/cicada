@@ -70,3 +70,5 @@ and defaults are materialized. Convert it back to normalized Cicada source and
 use `cicada compare --semantic` to check that both files mean the same thing.
 The [semantic model](../spec/semantic-model.md#semantic-json) documents the
 schema, field catalog, and round-trip rules.
+
+Pattern `step` divisions, including `1/8t` and `1/16t`, export on exact integer ticks at 960 PPQ. Divisions such as `1/28` are rejected because they do not fit that clock.

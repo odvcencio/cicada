@@ -1,0 +1,10 @@
+cicada 2
+title "Triplet circuit"
+tempo 120
+track bass acid {}
+pattern triplet {
+  step = 1/8t
+  1 3 5 1 3 5 1 3 5 1 3 5
+}
+scene main { bass = triplet }
+song { main*2 }

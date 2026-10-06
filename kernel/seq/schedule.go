@@ -76,16 +76,24 @@ func EventsInBlock(p *Pattern, clock Clock, track, slot uint8, startSample int64
 // EventsOffsetInBlock starts step zero at startStep. It supports a pattern
 // restart without changing the stored pattern or allocating in the callback.
 func EventsOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, startSample int64, frames int, dst []Event) (written int, overflow bool) {
+	return EventsAtTickInBlock(p, clock, track, slot, startStep*TicksPerStep, startSample, frames, dst)
+}
+
+// EventsAtTickInBlock schedules a pattern with its first cell at an exact tick.
+func EventsAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, startTickOffset, startSample int64, frames int, dst []Event) (written int, overflow bool) {
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
 	}
-	startTick := clock.TickAtSample(startSample)
-	endTick := clock.TickAtSample(startSample + int64(frames))
-	firstStep := startTick/TicksPerStep - 1
+	grid := p.GridTicks()
+	startStep := startTickOffset / grid
+	offset := startTickOffset % grid
+	startTick := clock.TickAtSample(startSample) - offset
+	endTick := clock.TickAtSample(startSample+int64(frames)) - offset
+	firstStep := startTick/grid - 1
 	if firstStep < 0 {
 		firstStep = 0
 	}
-	lastStep := endTick/TicksPerStep + 1
+	lastStep := endTick/grid + 1
 	for absoluteStep := firstStep; absoluteStep <= lastStep; absoluteStep++ {
 		localStep := absoluteStep - startStep
 		if localStep < 0 {
@@ -110,8 +118,8 @@ func EventsOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, 
 				incomingSlide = ProbabilityHit(previousStep.Probability, p.Seed, track, slot, previousIteration, previousIndex)
 			}
 		}
-		start := absoluteStep*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep)
-		end := (absoluteStep+1)*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep+1)
+		start := absoluteStep*grid + offset + swingDelayForGrid(p, absoluteStep)
+		end := (absoluteStep+1)*grid + offset + swingDelayForGrid(p, absoluteStep+1)
 		for r := uint8(0); r < step.Ratchet; r++ {
 			tick := RatchetTick(start, end, step.Ratchet, r)
 			sample := clock.SampleAtTick(tick)
@@ -150,17 +158,25 @@ func EventsWithGatesInBlock(p *Pattern, clock Clock, track, slot uint8, startSam
 // EventsWithGatesOffsetInBlock emits notes and releases for a restarted
 // pattern whose step zero is at startStep in the global transport grid.
 func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, startStep, startSample int64, frames int, dst []Event) (written int, overflow bool) {
+	return EventsWithGatesAtTickInBlock(p, clock, track, slot, startStep*TicksPerStep, startSample, frames, dst)
+}
+
+// EventsWithGatesAtTickInBlock includes releases at an exact restart tick.
+func EventsWithGatesAtTickInBlock(p *Pattern, clock Clock, track, slot uint8, startTickOffset, startSample int64, frames int, dst []Event) (written int, overflow bool) {
 	if p == nil || p.Len == 0 || frames <= 0 {
 		return 0, false
 	}
-	written, overflow = EventsOffsetInBlock(p, clock, track, slot, startStep, startSample, frames, dst)
-	startTick := clock.TickAtSample(startSample)
-	endTick := clock.TickAtSample(startSample + int64(frames))
-	firstStep := startTick/TicksPerStep - int64(p.Len) - 2
+	written, overflow = EventsAtTickInBlock(p, clock, track, slot, startTickOffset, startSample, frames, dst)
+	grid := p.GridTicks()
+	startStep := startTickOffset / grid
+	offset := startTickOffset % grid
+	startTick := clock.TickAtSample(startSample) - offset
+	endTick := clock.TickAtSample(startSample+int64(frames)) - offset
+	firstStep := startTick/grid - int64(p.Len) - 2
 	if firstStep < 0 {
 		firstStep = 0
 	}
-	lastStep := endTick/TicksPerStep + 1
+	lastStep := endTick/grid + 1
 	for absoluteStep := firstStep; absoluteStep <= lastStep; absoluteStep++ {
 		localStep := absoluteStep - startStep
 		if localStep < 0 {
@@ -175,8 +191,8 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 		if !ProbabilityHit(step.Probability, p.Seed, track, slot, iteration, stepIndex) {
 			continue
 		}
-		start := absoluteStep*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep)
-		end := (absoluteStep+1)*TicksPerStep + swingDelay(p.SwingPermille, absoluteStep+1)
+		start := absoluteStep*grid + offset + swingDelayForGrid(p, absoluteStep)
+		end := (absoluteStep+1)*grid + offset + swingDelayForGrid(p, absoluteStep+1)
 		for r := uint8(0); r < step.Ratchet; r++ {
 			onset := RatchetTick(start, end, step.Ratchet, r)
 			segmentEnd := end
@@ -190,7 +206,7 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 			offTick := onset + gateTicks
 			offSample := clock.SampleAtTick(offTick)
 			if r+1 == step.Ratchet {
-				offTick, offSample = extendedGateEnd(p, clock, track, slot, absoluteStep, startStep, step, offTick)
+				offTick, offSample = extendedGateEnd(p, clock, track, slot, absoluteStep, startStep, offset, step, offTick)
 			}
 			if offSample < startSample || offSample >= startSample+int64(frames) {
 				continue
@@ -226,7 +242,8 @@ func EventsWithGatesOffsetInBlock(p *Pattern, clock Clock, track, slot uint8, st
 	return written, overflow
 }
 
-func extendedGateEnd(p *Pattern, clock Clock, track, slot uint8, absoluteStep, startStep int64, step Step, normalEnd int64) (int64, int64) {
+func extendedGateEnd(p *Pattern, clock Clock, track, slot uint8, absoluteStep, startStep, tickOffset int64, step Step, normalEnd int64) (int64, int64) {
+	grid := p.GridTicks()
 	lastEnd := normalEnd
 	for offset := int64(1); offset <= int64(p.Len); offset++ {
 		nextAbsolute := absoluteStep + offset
@@ -236,9 +253,9 @@ func extendedGateEnd(p *Pattern, clock Clock, track, slot uint8, absoluteStep, s
 		if err != nil || !next.Gate || !ProbabilityHit(next.Probability, p.Seed, track, slot, nextLocal/int64(p.Len), nextIndex) {
 			break
 		}
-		nextOnset := nextAbsolute*TicksPerStep + swingDelay(p.SwingPermille, nextAbsolute)
+		nextOnset := nextAbsolute*grid + tickOffset + swingDelayForGrid(p, nextAbsolute)
 		if next.Tie {
-			lastEnd = (nextAbsolute+1)*TicksPerStep + swingDelay(p.SwingPermille, nextAbsolute+1)
+			lastEnd = (nextAbsolute+1)*grid + tickOffset + swingDelayForGrid(p, nextAbsolute+1)
 			continue
 		}
 		if offset == 1 && step.Slide {
@@ -271,4 +288,11 @@ func swingDelay(permille uint16, absoluteStep int64) int64 {
 		return 0
 	}
 	return SwingDelayTicks(permille)
+}
+
+func swingDelayForGrid(p *Pattern, step int64) int64 {
+	if step&1 == 0 {
+		return 0
+	}
+	return (p.GridTicks()*int64(p.SwingPermille) + 500) / 1000
 }

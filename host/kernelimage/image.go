@@ -28,6 +28,9 @@ const PianoCapability uint16 = 1 << 2
 // NeuralAmpCapability requires the pinned causal neural amp operation (28).
 const NeuralAmpCapability uint16 = 1 << 4
 
+// GridCapability adds a uint16 cell duration after each slot seed.
+const GridCapability uint16 = 1 << 5
+
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -167,6 +170,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w.u16(uint16(len(cfg.Scenes)))
 	w.u16(uint16(len(cfg.Song)))
 	var capabilities uint16
+	for _, bank := range cfg.Patterns {
+		for _, pattern := range bank.Slots {
+			if pattern.StepTicks != 0 {
+				capabilities |= GridCapability
+			}
+		}
+	}
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		if spec.Kind == engine.VoicePiano {
@@ -350,6 +360,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			w.byte(byte(pattern.Transpose))
 			w.byte(pattern.GatePercent)
 			w.u32(pattern.Seed)
+			if capabilities&GridCapability != 0 {
+				w.u16(pattern.StepTicks)
+			}
 			if pattern.Len > 64 {
 				return nil, Error("pattern length exceeds 64")
 			}
@@ -456,7 +469,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|NeuralAmpCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|NeuralAmpCapability|GridCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -753,6 +766,11 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 			pattern := seq.Pattern{Len: length, SwingPermille: swing, Transpose: int8(transpose), GatePercent: gate, Seed: seed}
+			if reserved&GridCapability != 0 {
+				if pattern.StepTicks, err = r.u16(); err != nil {
+					return err
+				}
+			}
 			if spec.Kind == engine.VoiceDrums {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 					compiled := pattern

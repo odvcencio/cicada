@@ -100,6 +100,7 @@ func (c ChordStep) Validate(step Step) error {
 }
 
 type Pattern struct {
+	StepTicks     uint16        `json:",omitempty"` // zero keeps the sixteenth-note grid
 	Chords        [64]ChordStep `json:",omitzero"`
 	Steps         [64]uint32
 	Len           uint8
@@ -109,7 +110,18 @@ type Pattern struct {
 	Seed          uint32
 }
 
+// GridTicks returns the duration of one cell.
+func (p *Pattern) GridTicks() int64 {
+	if p.StepTicks == 0 {
+		return TicksPerStep
+	}
+	return int64(p.StepTicks)
+}
+
 func (p *Pattern) Validate() error {
+	if p.StepTicks != 0 && (p.StepTicks < 30 || p.StepTicks > 3840) {
+		return Error("grid must be 30 to 3840 ticks")
+	}
 	if p.Len < 1 || p.Len > 64 {
 		return Error("pattern length must be 1 to 64")
 	}

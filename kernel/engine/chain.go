@@ -37,11 +37,11 @@ func chainStartTick(p *patternTrack, tick int64) int64 {
 	if p.active < 0 {
 		return ((tick + seq.TicksPerStep - 1) / seq.TicksPerStep) * seq.TicksPerStep
 	}
-	start := p.startStep * seq.TicksPerStep
+	start := p.startTick
 	if tick <= start {
 		return start
 	}
-	length := int64(p.slots[p.active].Len) * seq.TicksPerStep
+	length := int64(p.slots[p.active].Len) * p.slots[p.active].GridTicks()
 	return start + ((tick-start+length-1)/length)*length
 }
 
@@ -59,7 +59,7 @@ func (e *Engine) advanceChains() {
 		p.chainRepeat = entry.repeats
 		e.selectPatternNow(track, int(entry.slot), true)
 		p.chainNext = (p.chainNext + 1) % p.chainLen
-		p.chainDue = e.transport.Tick() + int64(p.slots[entry.slot].Len)*seq.TicksPerStep*int64(entry.repeats)
+		p.chainDue = e.transport.Tick() + int64(p.slots[entry.slot].Len)*p.slots[entry.slot].GridTicks()*int64(entry.repeats)
 	}
 }
 

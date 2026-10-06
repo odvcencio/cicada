@@ -308,7 +308,7 @@ song { main }
 
 ## Flexible grid and pattern chains
 
-**Status:** Accepted; not available in the current build.
+**Status:** Pattern step divisions and acid tuplet groups are implemented. Source chains and labeled parameter rows remain accepted-only.
 
 **Syntax (EBNF):**
 
@@ -327,20 +327,32 @@ chain_decl ::= "chain" , "=" , identifier , { identifier } ;
 
 **Errors:** Divisions that do not produce whole ticks, groups without valid cells, row lengths that differ from the pattern, and invalid chain references must be rejected. For example, `1/16t` and `1/20` fit the 960-PPQ grid; `1/28` does not.
 
-**Example:** The grid and labeled rows are planned for each pattern:
+**Runnable grid example:** Eighth-note triplets use 320 ticks per cell at 960 PPQ:
+
+```cicada
+cicada 2
+track bass acid {}
+pattern triplet { step = 1/8t 1 3 5 }
+scene main { bass = triplet }
+song { main*2 }
+```
+
+Acid brackets subdivide a cell into 2–8 pitches. `pattern triplet acid { step = 1/8 [1 3 5] - }` divides the 480-tick eighth into three 160-tick cells; the following tie occupies another whole eighth. Notes patterns on polyphonic instruments keep the existing bracket chord meaning. Groups lower to a common exact grid, with at most 64 expanded cells. Cell durations must be 30–3840 ticks. `1/8t [1 3 5]` would divide 320 ticks by three and is rejected rather than rounded.
+
+**Accepted row and chain example:** Pitch rows belong to the separate per-note expression design:
 
 ```cicada-accepted
 cicada 2
 pattern triplet {
   step = 1/8t
-  [1 3 5] -
-  cutoff: 600Hz . 900Hz
+  1 3 5 -
+  cutoff: 600Hz . 900Hz .
   bend: +50ct . -1200ct 0ct
 }
 track bass acid { chain = intro triplet chorus }
 ```
 
-**Edition history:** Accepted as an additive edition-1 form. The current source grammar still uses a fixed sixteenth-note grid and has no parameter rows or source chain declaration.
+**Edition history:** Pattern grids are additive in editions 1 and 2. Optional semantic `step_ticks` keeps absent values on the legacy sixteenth grid. Kernel image capability bit 5 adds a cell duration to each slot; older readers reject that capability. Pattern metadata uploads carry the duration in the existing command's index field. MIDI export retains exact tick positions; `cicada fmt` and semantic source round trips preserve grid timing.
 
 ## Multi-file projects and manifest metadata
 

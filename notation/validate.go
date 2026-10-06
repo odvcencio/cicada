@@ -233,6 +233,10 @@ func Validate(s *Score) (ds []Diagnostic) {
 			}
 			seenAttrs[a.Name] = true
 			switch a.Name {
+			case "step":
+				if _, err := GridTicks(a.Value); err != nil {
+					add("CICADA-GRID", err.Error(), "error", a.ValuePosition)
+				}
 			case "steps":
 				n, err := strconv.Atoi(a.Value)
 				if err != nil || n != steps {

@@ -153,6 +153,7 @@
 (note_pattern name: (identifier) @function)
 (drum_pattern name: (identifier) @function)
 (pattern_attr name: (identifier) @attribute)
+(pattern_attr value: (fraction) @number.fraction)
 
 (phrase_use name: (identifier) @function.macro)
 (phrase_use "*" @operator.repeat)
