@@ -7,6 +7,7 @@ toolchain go1.26.4
 tool m31labs.dev/gosx/cmd/gosx
 
 require (
+	github.com/gorilla/websocket v1.5.3
 	golang.org/x/net v0.52.0
 	m31labs.dev/cicada v0.0.0-00010101000000-000000000000
 	m31labs.dev/gosx v0.57.5
@@ -23,7 +24,6 @@ require (
 	github.com/gobwas/httphead v0.1.0 // indirect
 	github.com/gobwas/pool v0.2.1 // indirect
 	github.com/gobwas/ws v1.4.0 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/icza/bitio v1.1.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.0.9 // indirect
 	github.com/mewkiz/flac v1.0.14 // indirect
