@@ -4,6 +4,10 @@ import "math"
 
 // DelaySamples is the ring storage reserved per voice, in float32 samples.
 func (p Program) DelaySamples() int {
+	return delaySamples(&p)
+}
+
+func delaySamples(p *Program) int {
 	count := 0
 	for i := 0; i < int(p.Len); i++ {
 		if p.Nodes[i].Op == Delay || p.Nodes[i].Op == Comb {
@@ -22,14 +26,20 @@ type ParameterError struct {
 
 func (e *ParameterError) Error() string { return e.Message }
 
-func validateDelayControls(p Program, rate int) error {
-	return ValidateDelayPitch(p, rate, 0)
+func validateDelayControls(p *Program, rate int) error {
+	return validateDelayPitch(p, rate, 0)
 }
 
 // ValidateDelayPitch checks pitch-derived controls for a score note. Zero
 // leaves pitch unknown, so instrument defaults can be checked independently.
 func ValidateDelayPitch(p Program, rate int, pitch float32) error {
-	values, known := p.StaticValues(float32(rate), pitch)
+	return validateDelayPitch(&p, rate, pitch)
+}
+
+func validateDelayPitch(p *Program, rate int, pitch float32) error {
+	var values [MaxNodes]float32
+	var known [MaxNodes]bool
+	staticValuesInto(p, float32(rate), pitch, &values, &known)
 	for i := 0; i < int(p.Len); i++ {
 		n := p.Nodes[i]
 		if n.Op != Delay && n.Op != Comb {
@@ -61,6 +71,15 @@ func ValidateDelayPitch(p Program, rate int, pitch float32) error {
 func (p Program) StaticValues(rate, pitch float32) ([MaxNodes]float32, [MaxNodes]bool) {
 	var values [MaxNodes]float32
 	var known [MaxNodes]bool
+	staticValuesInto(&p, rate, pitch, &values, &known)
+	return values, known
+}
+
+// Fill prepared validation buffers without returning fixed arrays by value;
+// TinyGo would otherwise flatten them into graph-construction code.
+func staticValuesInto(p *Program, rate, pitch float32, values *[MaxNodes]float32, known *[MaxNodes]bool) {
+	clear(values[:])
+	clear(known[:])
 	for i := 0; i < int(p.Len); i++ {
 		n := p.Nodes[i]
 		a, b := values[n.A], values[n.B]
@@ -97,7 +116,6 @@ func (p Program) StaticValues(rate, pitch float32) ([MaxNodes]float32, [MaxNodes
 			values[i] = float32(math.Exp2(float64(clamp(a, -8, 8))))
 		}
 	}
-	return values, known
 }
 
 func finite(x float32) bool { return !math.IsNaN(float64(x)) && !math.IsInf(float64(x), 0) }

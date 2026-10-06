@@ -566,6 +566,7 @@ func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, proj
 			notes = append(notes, note)
 		}
 		out.WriteString("  " + strings.Join(notes, " ") + "\n")
+		writeExpressionSource(&out, pattern.Expression)
 	}
 	out.WriteByte('}')
 	return out.String(), nil

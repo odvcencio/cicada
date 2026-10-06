@@ -107,6 +107,26 @@ function adapterHarness() {
   const adapter=new context.CicadaCapture({port,channels:1,epoch:2},48000,control);
   return {adapter,writes,controls,context,port};
 }
+test('instrument packets batch source frames and flush a partial final packet',()=>{
+  const {adapter,writes}=adapterHarness(),inputs=[[new Float32Array(128).fill(.25)]];
+  adapter.receive({op:'begin',countInFrames:0,packetFrames:2048});
+  for(let i=0;i<17;i++) adapter.process(inputs,128,i*128,120000,false);
+  assert.equal(writes.length,1);assert.equal(writes[0].timing.Frames,2048);
+  assert.equal(writes[0].timing.Period,128);assert.equal(writes[0].timing.EngineFrame,0);
+  assert.equal(new Float32Array(writes[0].bytes)[2047],.25);
+  adapter.receive({op:'stop'});adapter.process(inputs,128,2176,120000,false);
+  assert.equal(writes.length,3);assert.equal(writes[1].timing.Frames,128);
+  assert.equal(writes[1].timing.DeviceFrame,2048);assert.equal(writes[2].t,'end');
+  assert.equal(writes[2].gapFrames,0);
+});
+test('batched capture flushes before invalid input and preserves its gap',()=>{
+  const {adapter,writes}=adapterHarness(),inputs=[[new Float32Array(128)]];
+  adapter.receive({op:'begin',countInFrames:0,packetFrames:2048});
+  adapter.process(inputs,128,0,120000,false);adapter.process([],128,128,120000,false);
+  adapter.process(inputs,128,256,120000,false);adapter.receive({op:'stop'});adapter.process(inputs,128,384,120000,false);
+  assert.equal(writes[0].timing.Frames,128);assert.equal(writes[1].timing.GapFrames,128);
+  assert.equal(writes[1].timing.DeviceFrame,256);assert.equal(writes[1].timing.Flags,2);
+});
 test('worklet contract uses D descriptor, variable periods, count-in, raw input and pooled gaps',()=>{
   const {adapter,writes,controls}=adapterHarness(),inputs=[[new Float32Array([.1,.2,.3,.4])]];
   adapter.receive({op:'begin',countInFrames:6});
@@ -170,8 +190,12 @@ test('client requests processing off, reports effective settings and wires worke
   await h.client.record();assert.equal(h.messages[1].countInFrames,96000);assert.equal(h.audio.playing,true);
   const stopped=h.client.stop();h.client.receive({t:'finished',incomplete:false});await stopped;assert.equal(h.track.stopped,true);assert.equal(h.client.status.state,'stopped');
 });
-test('channel mismatch releases permission stream; worker faults mark incomplete and stop',async()=>{
-  const h=clientHarness({channelCount:2});await assert.rejects(h.client.arm(1),/channel count/);assert.equal(h.track.stopped,true);
+test('a stereo device is mixed to a mono take; worker faults mark incomplete and stop',async()=>{
+  const h=clientHarness({channelCount:2});await h.client.arm(1);
+  assert.equal(h.client.status.state,'armed');assert.equal(h.audio.node.channelCount,1);assert.equal(h.audio.node.channelCountMode,'explicit');
+  assert.equal(h.client.status.settings.mixedFrom,2);assert.equal(h.messages[0].channels,1);assert.equal(h.track.stopped,undefined);
+  const mono=clientHarness({channelCount:1});await mono.client.arm(2);assert.equal(mono.audio.node.channelCount,2);assert.equal(mono.client.status.settings.mixedFrom,1);
+  const same=clientHarness({channelCount:1});await same.client.arm(1);assert.equal(same.client.status.settings.mixedFrom,0);
   const h2=clientHarness();await h2.client.arm();await h2.client.record();h2.client.receive({t:'fault',error:'quota'});
   assert.equal(h2.client.status.incomplete,true);assert.equal(h2.client.status.state,'saving');
   h2.client.receive({t:'finished',incomplete:true,error:'quota'});
@@ -282,4 +306,15 @@ test('fatal capture fault stops even a play command whose state acknowledgement 
  assert.equal(new DataView(commands.at(-1).bytes.buffer).getUint8(0),2,'a stop command must follow the queued play command');
  assert.ok(h.messages.some(message=>message.t==='capture-control'&&message.op==='stop'));
  audio.receive({t:'s',p:false});await h.client.arm();assert.equal(h.client.status.state,'armed');
+});
+
+test('instrument capture records without a score or accompaniment',async()=>{
+ const h=clientHarness();
+ h.audio.stageCurrentScore=async()=>{throw new Error('instrument recording must not stage the score');};
+ h.audio.play=()=>{throw new Error('instrument recording must not play accompaniment');};
+ await h.client.arm();await h.client.recordInstrument();
+ assert.equal(h.client.status.state,'recording');assert.equal(h.audio.playing,false);
+ assert.deepEqual(h.messages.at(-1),{t:'capture-control',op:'begin',countInFrames:0,packetFrames:2048});
+ const stopped=h.client.stop();h.client.receive({t:'finished',incomplete:false});await stopped;
+ assert.equal(h.client.status.state,'stopped');assert.equal(h.track.stopped,true);
 });
