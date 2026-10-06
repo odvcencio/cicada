@@ -257,8 +257,8 @@ func (c *Controller) SetParam(address string, value *float64) error {
 			v = float32(math.Inf(-1))
 		} else {
 			v = float32(*value)
-			if math.IsNaN(*value) || math.IsInf(*value, 0) {
-				return errors.New("CICADA-PARAM: finite value required")
+			if math.IsNaN(*value) || math.IsInf(*value, 0) || math.IsInf(float64(v), 0) {
+				return errors.New("CICADA-PARAM: finite float32 value required")
 			}
 		}
 		// The shared ABI validates bounds, live scope and toggle values again.

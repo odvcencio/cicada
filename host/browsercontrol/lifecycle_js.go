@@ -88,11 +88,13 @@ func (l *Lifecycle) Close() {
 	if l.closed {
 		return
 	}
-	l.panic()
+	// Error reporting can re-enter Close or dispatch lifecycle events.
+	// Complete listener teardown before reporting a failed Stop send.
 	l.closed = true
 	for _, entry := range l.listeners {
 		entry.target.Call("removeEventListener", entry.event, entry.fn)
 		entry.fn.Release()
 	}
 	l.listeners = nil
+	l.panic()
 }
