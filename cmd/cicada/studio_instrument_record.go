@@ -115,7 +115,7 @@ func (s *studio) instrumentRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	s.recordedInstruments[pack.Pin] = pack
 	s.mu.Unlock()
-	studioJSON(w, 200, map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": hits, "declaration": pack.Source(filepath.Join(relative, "manifest.json"), options.Root), "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "owner recording"})
+	studioJSON(w, 200, map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": hits, "declaration": pack.Source(filepath.Join(relative, "manifest.json"), options.Root), "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "user recording"})
 }
 
 func (s *studio) instrumentAudition(w http.ResponseWriter, r *http.Request) {

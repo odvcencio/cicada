@@ -1,6 +1,6 @@
 # Modeled drum kit acceptance targets
 
-The kit synthesizes 15 drum articulations inside Cicada from damped membrane, shell, rim and metallic modes with filtered contact and snare-wire excitation. It contains no samples or impulse responses. The targets below were defined before implementation. Listening acceptance remains the owner's final gate; passing engineering checks does not establish equivalence to an acoustic recording or commercial drum library.
+The kit synthesizes 15 drum articulations inside Cicada from damped membrane, shell, rim and metallic modes with filtered contact and snare-wire excitation. It contains no samples or impulse responses. The targets below were defined before implementation. acoustic evaluation remains the owner's final gate; passing engineering checks does not establish equivalence to an acoustic recording or commercial drum library.
 
 ```text
 cicada 2
@@ -113,4 +113,4 @@ The reference and measurement scripts require NumPy. `--generate-only` regenerat
 
 Cymbals are the hardest part: a compact finite modal/noise model cannot capture the dense, nonlinear flexing and strike-dependent shimmer of a recorded cymbal. A synthesized snare-wire model approximates buzz rather than simulating every wire contact. Repeated hits replace each lane's preceding tail after a 1 ms fade, so cymbal wash accumulates less richly than a polyphonic sample library. No cross-drum sympathetic coupling, microphone bleed, separately captured room microphones, brushes, mallets, continuous hi-hat pedal travel, or drummer limb constraints are claimed. Legato transitions do not apply to one-shot struck kit pieces. Lane-local synthesis controls are not yet live-automatable.
 
-Owner listening acceptance and device deadline qualification remain pending.
+acoustic evaluation and device deadline qualification remain pending.

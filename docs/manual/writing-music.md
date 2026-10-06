@@ -155,8 +155,7 @@ without its own `seed` inherits the project seed. The project defaults are
 ## Try the experimental guitar
 
 Edition 2 can play the physical string and amp prototype with
-`track lead guitar { experimental = on }`. It is a research voice without
-listening acceptance. Use it for auditions; DSP checks do not establish timbre.
+`track lead guitar { experimental = on }`. It uses an experimental physical model; acoustic realism is unverified. Use it for auditions; DSP checks do not establish timbre.
 
 The [guitar riff](../../examples/expressive-guitar.cicada) demonstrates bends,
 slides, palm mutes and clean versus driven amp settings. Render it with
@@ -367,8 +366,7 @@ channels and frame count. Asset paths resolve from the directory containing the
 nearest `cicada.mod`, including scores in subdirectories. Exact `frames` literals
 support sample editing; seconds and milliseconds must land on exact source frames.
 
-These declarations compile to project data. Playback and recording support arrive
-in the other Phase 1 lanes; the current engine reports `CICADA-UNSUPPORTED` for
+These declarations compile to project data. The current declarations describe audio data; the current engine reports `CICADA-UNSUPPORTED` for
 projects containing audio data.
 
 

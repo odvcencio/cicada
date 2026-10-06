@@ -1,6 +1,6 @@
 # Percussion and mix acceptance targets
 
-These are engineering gates for candidate sounds. Human A/B listening acceptance is required before claiming instrument realism. Existing scores and goldens must retain their output unless they opt into a new processor or voice.
+These are engineering gates for candidate sounds. Acoustic evaluation is required before claiming instrument realism. Existing scores and goldens must retain their output unless they opt into a new processor or voice.
 
 Reference behaviours: Ableton Live Collision models mallet hardness, velocity-dependent excitation, resonator decay and note-off damping; Logic Pro Sculpture offers velocity-sensitive excitation and independently controlled damping. These manuals establish behaviours, not a licensed audio reference or a claim of perceptual equivalence.
 
@@ -21,7 +21,7 @@ Reference behaviours: Ableton Live Collision models mallet hardness, velocity-de
 | Kernel | Raw production kernel <=307200 bytes. Report raw/Brotli deltas against main. Large IRs/samples remain fetchable assets, outside kernel. |
 | Evidence | Every new voice/effect has a demo score or reproducible score-based audition, tests, and matched before/after WAVs. Reference recordings require redistribution licenses before inclusion. |
 
-Modal profiles are mathematical approximations. Spectral matching to licensed instrument recordings, listening acceptance, and device deadline qualification are separate gates and must remain visible when incomplete.
+Modal profiles are mathematical approximations. Spectral matching to licensed instrument recordings, acoustic evaluation, and device deadline qualification are separate gates and must remain visible when incomplete.
 
 The score voice kinds use the `model_` prefix (for example `model_steelpan`) so ordinary authored names remain available. Each track reserves four strike tails under the existing 32-voice ceiling. Default home octave is 4; octave 0–6 and ordinary track mixer settings are supported. These are struck voices: slide retunes the most recent sounding strike; other strikes continue ringing. They do not implement bowed sustain or a sample-library legato transition.
 

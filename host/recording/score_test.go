@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -53,7 +54,7 @@ func TestRecordedPackPlaysInScore(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := Build("pencil", hits, 3)
+	p, err := Build("recorded", hits, 3)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,11 +94,26 @@ func TestRecordedPackPlaysInScore(t *testing.T) {
 	}
 	bad := p.Manifest
 	bad.Assets = append([]Asset(nil), bad.Assets...)
-	bad.Assets[0].License = "owner recording"
+	bad.Assets[0].License = "user recording"
 	bad.Assets[0].SourceURL = "https://example.com/foreign.wav"
 	data, _ := json.Marshal(bad)
 	if _, err := instrumentpack.DecodeManifest(data); err == nil {
-		t.Fatal("ambiguous owner provenance accepted")
+		t.Fatal("ambiguous recording provenance accepted")
+	}
+	legacy := p.Manifest
+	legacy.Assets = append([]Asset(nil), legacy.Assets...)
+	for i := range legacy.Assets {
+		legacy.Assets[i].License = "owner recording"
+	}
+	data, err = json.Marshal(legacy)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := instrumentpack.Load(dir, "manifest.json", Digest(data)); err != nil {
+		t.Fatal("legacy recording pack no longer loads", err)
 	}
 	t.Logf("pinned recorded score renders %d frames; render allocations %.0f", report.Frames, allocs)
 }

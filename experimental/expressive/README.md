@@ -1,4 +1,4 @@
-# Expressive instrument research tranche
+# Experimental expressive instruments
 
 Experimental monophonic bowed-string, brass and electric-guitar voices, with
 continuous expression, deterministic dry auditions and a small trio arrangement.
@@ -8,14 +8,14 @@ Graph opcodes, the modal pack and frozen-v15 DAW integration are unchanged.
 No samples or measured impulse responses are used.
 
 These are playable physical-model prototypes, not qualified realistic instruments.
-No human acoustic listening acceptance is claimed. Passing DSP tests, tuning
+Acoustic realism is unverified. Passing DSP tests, tuning
 measurements and headless browser execution does not establish convincing timbre.
 
 The guitar is also available from edition-2 scores as the explicitly experimental
 built-in `guitar` voice with `experimental = on`. The
 [score reference](../../docs/spec/edition-2.md#experimental-guitar-voice) covers
 its registry controls and production native, TinyGo AudioWorklet and offline
-paths. This adapter does not confer listening acceptance on the model.
+paths. The model remains experimental; acoustic realism is unverified.
 
 ## Models and controls
 

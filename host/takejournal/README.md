@@ -1,6 +1,6 @@
 # Durable takes
 
-`Store.Begin` journals a take before lane D's `capture.Recorder` accepts PCM.
+`Store.Begin` journals a take before `capture.Recorder` accepts PCM.
 Pass `Store.Writer(id)` to the recorder. Close/drain the recorder, then call
 `Finalize`, `Publish`, and the host's revision-checked source transaction.
 
@@ -44,7 +44,7 @@ qualification. Subprocess crash tests exit without cleanup at every durable
 journal/publication/source boundary and verify exact recovered PCM and idempotent
 reopening. These tests cover process crashes, not physical power cuts.
 
-The Phase 1 base branch can validate and retain audio scores; its engine still
-rejects audio playback until the sample-engine lane is integrated. Browser
+Cicada can validate and retain audio scores; the core engine
+rejects audio playback without a sample-engine host. Browser
 capture and recording controls use the same publication contract but are separate
 host work.

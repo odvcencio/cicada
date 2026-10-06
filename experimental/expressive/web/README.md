@@ -24,7 +24,7 @@ Use the keyboard A W S E D F T G Y H U J K, or hold onscreen note buttons. This 
 
 The bridge batches 1024 mono float samples per callback. It uses the deprecated main-thread ScriptProcessor API deliberately for this isolated research page; it is not an AudioWorklet or a production integration. Callback time is 21.3 ms at 48 kHz, plus platform buffering. Main-thread work and Go garbage collection can cause dropouts. Controls and DSP run serially on that same thread. Rendering does not establish polyphonic capacity, browser portability, artifact-free interaction, tuning accuracy, or acoustic realism.
 
-Manual acceptance still requires a real browser with audio output: enable audio, audition all three models, sweep controls while holding notes, check note releases and focus loss, and listen for dropouts under normal UI activity. A successful Go/WASM build or headless bridge execution cannot establish listening acceptance. No browser listening acceptance is claimed by this page or these instructions.
+Use a real browser with audio output to assess sound quality: enable audio, audition all three models, sweep controls while holding notes, check note releases and focus loss, and listen for dropouts under normal UI activity. A successful Go/WASM build or headless bridge execution cannot establish acoustic realism.
 
 ## Reproducible headless browser check
 

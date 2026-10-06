@@ -67,7 +67,7 @@ Unknown effect and bus names report `CICADA-REFERENCE`. Supported effect kinds, 
 
 ## Experimental guitar voice
 
-**Status:** Experimental research prototype. No human listening acceptance is claimed.
+**Status:** Experimental physical model; acoustic realism is unverified.
 
 **Syntax:** Select the built-in `guitar` voice with an explicit, saved opt-in:
 
@@ -134,7 +134,7 @@ or cabinet emulation; it has no sympathetic strings, fret buzz or feedback.
 
 ## Graph delays and plucked strings
 
-**Status:** Implemented in source editions 1 and 2; the example voices remain experimental pending listening acceptance.
+**Status:** Implemented in source editions 1 and 2; the example voices remain experimental; their acoustic realism is unverified.
 
 **Syntax:** `delay(audio, ms)` and `comb(audio, ms, unit, unit)` are ordinary typed function calls in an instrument's mono voice. Unit divided by Hz produces ms: `1 / pitch` is one period, and `2 / pitch` is two periods. Bare `1 / 440` remains a unit value and cannot supply a delay time. Semantic JSON preserves Hz-derived division as the two-argument `period` expression operator; source conversion writes it back as `/`, retaining the numerator's unit type and denominator's Hz type even for numeric literals.
 
@@ -167,7 +167,7 @@ song { main }
 
 ## Graph phase modulation
 
-**Status:** Implemented. The authored bell and PM bass are experimental pending owner listening acceptance. Choose them through instrument declarations and tracks in the score.
+**Status:** Implemented. The authored bell and PM bass are experimental; acoustic realism is unverified. Choose them through instrument declarations and tracks in the score.
 
 **Syntax and types:** `pm(carrier_hz, modulator, index)` takes Hz, audio, and unit and returns audio. Index is the phase deviation in radians for a unit-amplitude modulator; it accepts an envelope and negative values. `pm(pitch, sine(pitch * 3.5), 4 * env(gate, 260ms))` makes a two-operator voice. The sine modulator gives the classic FM sideband spectrum, with brightness controlled by the index envelope. No feedback edge is permitted.
 

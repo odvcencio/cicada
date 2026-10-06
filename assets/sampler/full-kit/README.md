@@ -78,7 +78,7 @@ The five scores cover rock, funk, reggae one-drop, soca and a jazz ride pattern.
 
 `full_kit_demos.py` writes paired scores with identical notes/timing/seed/gain and different bank declarations. It also writes the starter VCSL substitution maps: toms use its kick, extra snare strokes use its center snare, ride uses closed hat, cymbals use open hat, and missing silent choke controls use zero-gain zones. Starter ghosts use a documented 0.25 gain. This is a palette comparison with the old three-piece kit, not a DSP-only comparison. Raw pairs preserve dynamics; optional FFmpeg `loudnorm` level versions target -18 LUFS/-1 dBTP and must not be used to judge absolute velocity response.
 
-See [acceptance targets](../../../docs/sampler/full-kit-quality.md). Generate validation evidence with `full_kit_metrics.py`, `full_kit_wasm.mjs` and `full_kit_browser.mjs`; keep their reports under `build/kit-reports/` and publish them as CI artifacts or PR attachments. Owner listening acceptance and target-device realtime CPU qualification remain pending. Studio/native live routing still belongs to the prerequisite integration work; the supported paths here are offline render and the optional browser/game host.
+See [acceptance targets](../../../docs/sampler/full-kit-quality.md). Generate validation evidence with `full_kit_metrics.py`, `full_kit_wasm.mjs` and `full_kit_browser.mjs`; keep their reports under `build/kit-reports/` and publish them as CI artifacts or PR attachments. Sound quality and realtime CPU usage depend on the recordings and target device. Studio/native live routing still belongs to the prerequisite integration work; the supported paths here are offline render and the optional browser/game host.
 
 ## Download quality
 

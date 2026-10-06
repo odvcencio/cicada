@@ -70,4 +70,4 @@ placement re-entry and reset must retire the appropriate owners independently.
 The unified footer retains the existing engine MasterGainDB as well as the new
 DC-bias values, so direct and image playback cannot lose master gain. Legacy
 v13 writing is unchanged, including its historical absence of a master-gain
-field; a master-gain value alone does not select a new format in this tranche.
+field; a master-gain value alone does not select a new format in this version.

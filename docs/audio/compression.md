@@ -59,6 +59,6 @@ TurboQuant did not win the measured uses. Across 4/6/8 bits, raw 32-frame blocks
 
 The published keys branches use analytic/modal instrument models, with no sampled packs or dense learned weights. Keep those compact source parameters. Apply these tiers if that lane later publishes self-sampled packs; the acoustic parametric trial does not validate a future phase-aware keys codec.
 
-An external probe of the actual kernel found that one reachable TQ decoder increased raw WASM by 103,487 bytes and Brotli by 47,363 bytes, exceeding both unchanged limits. The delivered host codecs add zero kernel bytes. Timings in the study are preparation costs measured on a loaded machine, not real-time render acceptance. Objective metrics do not establish ABX listening acceptance.
+An external probe of the actual kernel found that one reachable TQ decoder increased raw WASM by 103,487 bytes and Brotli by 47,363 bytes, exceeding both unchanged limits. The delivered host codecs add zero kernel bytes. Timings in the study are preparation costs measured on a loaded machine, not real-time render acceptance. Objective metrics do not establish ABX acoustic evaluation.
 
 Sources: [TurboQuant](https://github.com/odvcencio/turboquant), [paper](https://arxiv.org/abs/2504.19874), [FLAC specification](https://www.rfc-editor.org/rfc/rfc9639.html), [Ogg Opus specification](https://www.rfc-editor.org/rfc/rfc7845.html).

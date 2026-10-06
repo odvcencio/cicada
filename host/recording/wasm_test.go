@@ -18,7 +18,7 @@ func TestRecordedPackNativeWASMParity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := Build("pencil", hits, 3)
+	p, err := Build("recorded", hits, 3)
 	if err != nil {
 		t.Fatal(err)
 	}

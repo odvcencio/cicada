@@ -54,7 +54,7 @@ bytes yourself.
 
 The guitar runs through the same production AudioWorklet callback as other
 voices. Select it in an edition-2 score with `experimental = on` before
-compilation. It remains a research prototype without listening acceptance;
+compilation. It remains a experimental physical model;
 see [its controls and limits](../spec/edition-2.md#experimental-guitar-voice).
 `gosx_audio_allocation_count` returns the TinyGo heap allocation count so
 hosts can verify that rendering, including sequenced note/control changes,

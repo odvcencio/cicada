@@ -8,7 +8,7 @@ key e minor
 
 seed 7
 
-// Research prototype: physical string and generic amp, no listening acceptance.
+// Experimental physical string and generic amp.
 // Bend uses semitones; vibrato uses cents. Both take bare numeric literals.
 track lead guitar {
   level = -12dB

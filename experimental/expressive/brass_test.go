@@ -50,7 +50,7 @@ func TestBrassCoupledTuningAndPressure(t *testing.T) {
 				cents := 1200 * math.Log2(measured/hz)
 				t.Logf("fs=%d target=%.0f pressure=%.1f measured=%.3f error=%+.2fc rms=%.4f", fs, hz, pressure, measured, cents, math.Sqrt(energy/float64(len(x))))
 				if math.Abs(cents) > 25 {
-					t.Errorf("coupled lip/bore tuning out of 25-cent research tolerance: %.2f cents", cents)
+					t.Errorf("coupled lip/bore tuning out of 25-cent pitch tolerance: %.2f cents", cents)
 				}
 				if half > .9 {
 					t.Errorf("possible octave lock, half-period correlation %.3f", half)

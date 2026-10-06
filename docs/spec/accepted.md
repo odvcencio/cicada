@@ -1,12 +1,12 @@
 # Accepted source syntax and implementation status
 
-These owner-accepted designs extend Cicada's source language. Each section says what is available in the current build. A `cicada-accepted` example records syntax that the validator does not yet accept; the documentation test skips those examples until the feature lands.
+These sections describe Cicada language extensions. Each section says what is available in the current build. A `cicada-accepted` example records syntax that the validator does not yet accept; the documentation test skips those examples until the feature lands.
 
 Runnable examples in this file use source edition 2. Examples marked `cicada-accepted` are designs for later support.
 
 ## Authored graph phase modulation
 
-**Status:** Implemented. The bell and feedback-free PM bass are experimental pending owner listening acceptance; scores select them through authored instruments.
+**Status:** Implemented. The bell and feedback-free PM bass are experimental; acoustic realism is unverified; scores select them through authored instruments.
 
 **Syntax and meaning:** `pm(hz, audio, unit)` returns a sine carrier with an audio phase offset scaled by index in radians. An index envelope changes brightness independently of amplitude. Stored phase stays bounded; the graph remains acyclic and keeps its 128-node and 32-stateful-node limits. PM needs no delay storage. Wrong units and arity report `CICADA-UNIT` and `CICADA-PARAM`.
 
@@ -16,7 +16,7 @@ Runnable examples in this file use source edition 2. Examples marked `cicada-acc
 
 ## Authored graph delay and comb
 
-**Status:** Implemented. Authored pluck and slapback voices are experimental pending owner listening acceptance.
+**Status:** Implemented. Authored pluck and slapback voices are experimental with acoustic realism dependent on the recording and synthesis settings.
 
 **Syntax and meaning:** `delay(audio, ms)` provides a linearly interpolated tap. `comb(audio, ms, unit, unit)` provides allpass interpolation, feedback, and one-pole damping, with the complete loop period tuned at its fundamental. `1 / pitch` has type ms. See [graph delays and plucked strings](edition-2.md#graph-delays-and-plucked-strings) for units, limits, diagnostics, interpolation, and image compatibility.
 
@@ -60,7 +60,7 @@ song { verse*4 chorus*4 }
 ## Experimental guitar voice
 
 **Status:** Implemented as an explicitly experimental built-in voice in
-edition 2. It remains a research prototype without human listening acceptance.
+edition 2. It remains an experimental physical model.
 
 Use `track lead guitar { experimental = on }` with an ordinary note pattern.
 Sequenced notes and gates drive a single physical string and its built-in amp;
@@ -107,7 +107,7 @@ song { main }
 
 ## Audio assets, clips and samplers
 
-**Status:** Implemented as edition-2 score and project data. `cicada check` verifies assets. Playback, capture, retained-take recovery and Studio controls belong to the other Phase 1 lanes.
+**Status:** Implemented as edition-2 score and project data. `cicada check` verifies assets. Playback, capture, retained-take recovery and Studio controls use separate host adapters.
 
 **Syntax (EBNF):**
 
@@ -117,7 +117,7 @@ clip_decl ::= "clip" , identifier , identifier , "{" , { param_decl } , "}" ;
 sampler_decl ::= "sampler" , identifier , "{" , { param_decl } , "}" ;
 ```
 
-**Meaning:** An asset identifies immutable file bytes by a project-relative path and SHA-256. A clip defines a half-open source region `[start, end)` with gain and fades. A scene binds a clip to an `audio` track. That binding denotes one start on scene entry; playback scheduling is implemented by the engine lane. A sampler names one whole-asset region and accepts note patterns. `loop` means the whole region; loop bounds and crossfades are later work.
+**Meaning:** An asset identifies immutable file bytes by a project-relative path and SHA-256. A clip defines a half-open source region `[start, end)` with gain and fades. A scene binds a clip to an `audio` track. That binding denotes one start on scene entry; the engine schedules playback. A sampler names one whole-asset region and accepts note patterns. `loop` means the whole region; loop bounds and crossfades are later work.
 
 **Types and units:** Required asset fields are `sha256` (64 lowercase hex digits in a quoted string), `format = wav`, positive integer `frames`, integer `rate` from 8000 to 384000Hz, and `channels` from 1 to 2. Optional `source` is `recorded`, `imported`, or `generated`. WAV validation supports PCM 16/24/32-bit and IEEE float32, including ancillary RIFF chunks. It verifies rate, channels and frame count against the declaration without decoding samples. Paths and symlinks must stay inside the project directory.
 
