@@ -440,6 +440,13 @@ func (s *Sources) verifyLibraries() []notation.Diagnostic {
 
 func (s *Sources) readSum() (map[string]LibraryPin, error) {
 	filename := filepath.Join(s.Root, "cicada.sum")
+	if s.librarySum != nil {
+		pins, err := ParseLibrarySum(s.librarySum)
+		if err != nil {
+			err.(*SourceError).Diagnostic.Position.File = filename
+		}
+		return pins, err
+	}
 	data, err := os.ReadFile(filename)
 	if os.IsNotExist(err) {
 		return map[string]LibraryPin{}, nil

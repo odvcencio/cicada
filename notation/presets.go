@@ -204,7 +204,7 @@ func mergePresetParams(defaults, overrides []Param) []Param {
 // ResolvePresets returns a copy with bindings lowered to ordinary values.
 // The source score remains intact for formatting, explain, and editor writes.
 func ResolvePresets(source *Score) (*Score, []Diagnostic) {
-	if source == nil || len(source.Presets) == 0 {
+	if source == nil || len(source.Presets) == 0 && len(source.Origins) == 0 {
 		return source, nil
 	}
 	s := *source
@@ -375,7 +375,9 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 	}
 	effects := make([]Effect, 0, len(s.Effects))
 	for _, e := range s.Effects {
-		if !prototypes[e.Name] || routed[e.Name] {
+		// Edition 1 retains imported effects as implicit global returns.
+		// Edition 2 includes imported effects only when routed or scene-addressed.
+		if (!prototypes[e.Name] && (source.Origins[e.Name].Library == "" || s.Version == 1)) || routed[e.Name] {
 			effects = append(effects, e)
 		}
 	}
