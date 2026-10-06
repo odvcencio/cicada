@@ -49,6 +49,9 @@ func libCommand(args []string, output io.Writer) error {
 		if sources == nil {
 			sources = current
 		} else {
+			if filepath.Clean(current.Root) != filepath.Clean(sources.Root) {
+				return fmt.Errorf("CICADA-LIB-ROOT: scores in %q and %q use separate library pins; run cicada lib update from each score directory or add a shared cicada.mod", sources.Root, current.Root)
+			}
 			for name, lib := range current.Libraries {
 				if sources.Libraries[name] == nil {
 					sources.Libraries[name] = lib
@@ -68,7 +71,7 @@ func libCommand(args []string, output io.Writer) error {
 	if err != nil {
 		return err
 	}
-	sum := filepath.Join(root, "cicada.sum")
+	sum := filepath.Join(sources.Root, "cicada.sum")
 	if len(changes) != 0 {
 		if err := writeNewAtomic(sum, data); err != nil {
 			return err
