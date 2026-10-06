@@ -1,5 +1,5 @@
 'use strict';
-// Exercise both worklet assets with the actual reactor, not mocked exports.
+// Exercise the source and both shipped profiles with the actual reactor.
 const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
@@ -13,6 +13,7 @@ async function check(asset, module, image) {
   const ready = new Promise((resolve, reject) => { resolveReady = resolve; rejectReady = reject; });
   const messages = [];
   const context = vm.createContext({
+    CICADA_CAPTURE: asset === 'processor-capture.min.js',
     sampleRate: 48000, performance, Date, ArrayBuffer, Uint8Array, Uint32Array, Float32Array, DataView, WebAssembly,
     AudioWorkletProcessor: class {
       constructor() {
@@ -54,5 +55,5 @@ async function check(asset, module, image) {
   const bytes = fs.readFileSync(imagePath);
   assert.equal(bytes.readUInt16LE(4), 14, 'test requires an opt-in chord image');
   const image = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  for (const asset of ['processor.js', 'processor.min.js']) await check(asset, module, image);
+  for (const asset of ['processor.js', 'processor.min.js', 'processor-capture.min.js']) await check(asset, module, image);
 })().catch(error => { console.error(error.stack || error); process.exitCode = 1; });

@@ -38,117 +38,215 @@ func Parse(src []byte) (*Score, []Diagnostic) {
 // manifest. An explicit source header must match that edition.
 func ParseEdition(src []byte, edition int) (*Score, []Diagnostic) {
 	if edition != 1 && edition != 2 {
-		return nil, []Diagnostic{{Code: "CICADA-VERSION", Severity: "error", Message: "only cicada 1 and 2 are supported", Position: Position{1, 1}}}
+		return nil, []Diagnostic{{Code: "CICADA-VERSION", Severity: "error", Message: "only cicada 1 and 2 are supported", Position: Position{Line: 1, Column: 1}}}
 	}
 	return parseEdition(src, edition)
 }
 
-func parseEdition(src []byte, edition int) (*Score, []Diagnostic) {
-	root, w, err := ParseTree(src)
-	if err != nil {
-		return nil, []Diagnostic{syntaxDiagnostic(err, src)}
+// ParseSource parses a named loose file, resolving its optional source header.
+func ParseSource(file SourceFile) (*Score, []Diagnostic) {
+	return parseFiles([]SourceFile{file}, 0)
+}
+
+// SourceFile keeps a source's identity and exact bytes for project tooling.
+type SourceFile struct {
+	Path   string
+	Source []byte
+}
+
+// ParseFiles lowers files in the supplied order into one score. References and
+// phrase expansion run only after every declaration has been loaded.
+func ParseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
+	if edition != 1 && edition != 2 {
+		return nil, []Diagnostic{{Code: "CICADA-VERSION", Severity: "error", Message: "only cicada 1 and 2 are supported", Position: Position{Line: 1, Column: 1}}}
 	}
+	return parseFiles(files, edition)
+}
+
+func parseEdition(src []byte, edition int) (*Score, []Diagnostic) {
+	return parseFiles([]SourceFile{{Source: src}}, edition)
+}
+
+type loweringWalker struct {
+	*walk.Walker
+	file string
+}
+
+func (w *loweringWalker) position(n *gts.Node) Position {
+	p := pos(w.Walker, n)
+	p.File = w.file
+	return p
+}
+
+func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 	requestedEdition := edition
 	if edition == 0 {
 		edition = 1
 	}
-	s := &Score{Version: edition, TempoMilli: 130_000, KeyRoot: "a", Scale: "minor"}
-	headerEdition := 0
+	s := &Score{Position: Position{Line: 1, Column: 1}, Version: edition, TempoMilli: 130_000, KeyRoot: "a", Scale: "minor"}
+	if len(files) > 0 {
+		s.Position.File = files[0].Path
+	}
 	var diagnostics []Diagnostic
-	seenDeclarations := map[string]bool{}
-	for i := 0; i < root.NamedChildCount(); i++ {
-		n := root.NamedChild(i)
-		kind := w.Type(n)
-		switch kind {
-		case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl":
-			if seenDeclarations[kind] {
-				diagnostics = append(diagnostics, Diagnostic{
-					Code: "CICADA-DUPLICATE", Severity: "error",
-					Message:  "duplicate " + strings.TrimSuffix(kind, "_decl") + " declaration",
-					Position: pos(w, n),
-				})
-			}
-			seenDeclarations[kind] = true
+	syntaxFailed := false
+	seenDeclarations := map[string]Position{}
+	seenNames := map[string]Position{}
+	duplicateLocations := map[Position]Position{}
+	for _, file := range files {
+		root, walker, err := ParseTree(file.Source)
+		if err != nil {
+			syntaxFailed = true
+			d := syntaxDiagnostic(err, file.Source)
+			d.Position.File = file.Path
+			diagnostics = append(diagnostics, d)
+			continue
 		}
-		switch kind {
-		case "integer":
-			s.Version, _ = strconv.Atoi(w.Text(n))
-			headerEdition = s.Version
-		case "title_decl":
-			v := childText(w, n, "string")
-			s.TitlePosition = pos(w, n)
-			var unquoteErr error
-			s.Title, unquoteErr = strconv.Unquote(v)
-			if unquoteErr != nil {
-				diagnostics = append(diagnostics, Diagnostic{
-					Code: "CICADA-SYNTAX", Severity: "error",
-					Message: "invalid title string", Position: s.TitlePosition,
-				})
-			}
-		case "tempo_decl":
-			value := childText(w, n, "number")
-			s.TempoMilli = parseMilli(value)
-		case "key_decl":
-			s.KeyRoot = childText(w, n, "key_root")
-			s.Scale = childText(w, n, "identifier")
-		case "seed_decl":
-			seed := w.ChildByType(n, "integer")
-			s.SeedLiteral = w.Text(seed)
-			s.SeedPosition = pos(w, seed)
-			s.Seed, _ = strconv.ParseUint(s.SeedLiteral, 10, 64)
-		case "instrument_decl":
-			s.Instruments = append(s.Instruments, parseInstrument(w, n))
-		case "kit_decl":
-			s.Kits = append(s.Kits, parseKit(w, n))
-		case "live_decl":
-			if s.Live != nil {
-				diagnostics = append(diagnostics, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "only one live block is allowed", Position: pos(w, n)})
-			} else {
-				s.Live, diagnostics = parseLive(w, n, diagnostics)
-			}
-		case "track_decl":
-			if s.Live != nil {
-				diagnostics = append(diagnostics, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "live block must appear after all tracks", Position: pos(w, n)})
-			}
-			s.Tracks = append(s.Tracks, parseTrack(w, n))
-		case "bus_decl":
-			s.Buses = append(s.Buses, parseBus(w, n))
-		case "master_decl":
-			s.HasMaster = true
-			s.Master = parseMixBlock(w, n)
-		case "export_decl":
-			s.Exports = append(s.Exports, parseExport(w, n))
-		case "phrase_decl":
-			s.Phrases = append(s.Phrases, parsePhrase(w, n))
-		case "acid_pattern", "note_pattern", "drum_pattern":
-			s.Patterns = append(s.Patterns, parsePattern(w, n))
-		case "scene_decl":
-			s.Scenes = append(s.Scenes, parseScene(w, n))
-		case "song_decl":
-			s.SongPosition = pos(w, n)
-			for j := 0; j < n.NamedChildCount(); j++ {
-				entry := n.NamedChild(j)
-				if w.Type(entry) == "song_entry" {
-					s.Song = append(s.Song, parseSongEntry(w, entry))
+		w := &loweringWalker{Walker: walker, file: file.Path}
+		headerEdition := 0
+		for i := 0; i < root.NamedChildCount(); i++ {
+			n := root.NamedChild(i)
+			kind := w.Type(n)
+			switch kind {
+			case "title_decl", "tempo_decl", "key_decl", "seed_decl", "song_decl", "master_decl", "live_decl":
+				if first, exists := seenDeclarations[kind]; exists {
+					diagnostics = append(diagnostics, Diagnostic{
+						Code: "CICADA-DUPLICATE", Severity: "error",
+						Message:  "duplicate " + strings.TrimSuffix(kind, "_decl") + " declaration",
+						Position: w.position(n), Related: first,
+					})
+				} else {
+					seenDeclarations[kind] = w.position(n)
 				}
 			}
-		case "fx_decl":
-			s.Effects = append(s.Effects, parseEffect(w, n))
+
+			if name := w.Field(n, "name"); name != nil {
+				namespace := kind
+				switch kind {
+				case "acid_pattern", "note_pattern", "drum_pattern", "clip_decl":
+					namespace = "pattern"
+				case "instrument_decl", "kit_decl", "sampler_decl":
+					namespace = "voice"
+				case "track_decl", "fx_decl", "bus_decl":
+					namespace = "mixer"
+				}
+				key := namespace + ":" + w.Text(name)
+				if first, exists := seenNames[key]; exists {
+					duplicateLocations[w.position(n)] = first
+					if first.File != file.Path {
+						diagnostics = append(diagnostics, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate declaration " + w.Text(name), Position: w.position(n), Related: first})
+					}
+				} else {
+					seenNames[key] = w.position(n)
+				}
+			}
+			switch kind {
+			case "integer":
+				headerEdition, _ = strconv.Atoi(w.Text(n))
+				if requestedEdition == 0 {
+					s.Version = headerEdition
+				}
+			case "title_decl":
+				v := childText(w, n, "string")
+				s.TitlePosition = w.position(n)
+				var unquoteErr error
+				s.Title, unquoteErr = strconv.Unquote(v)
+				if unquoteErr != nil {
+					diagnostics = append(diagnostics, Diagnostic{
+						Code: "CICADA-SYNTAX", Severity: "error",
+						Message: "invalid title string", Position: s.TitlePosition,
+					})
+				}
+			case "tempo_decl":
+				value := childText(w, n, "number")
+				s.TempoMilli = parseMilli(value)
+				s.TempoPosition = w.position(n)
+			case "key_decl":
+				s.KeyRoot = childText(w, n, "key_root")
+				s.KeyPosition = w.position(n)
+				s.Scale = childText(w, n, "identifier")
+			case "seed_decl":
+				seed := w.ChildByType(n, "integer")
+				s.SeedLiteral = w.Text(seed)
+				s.SeedPosition = w.position(seed)
+				s.Seed, _ = strconv.ParseUint(s.SeedLiteral, 10, 64)
+			case "asset_decl":
+				path, _ := strconv.Unquote(w.Text(w.Field(n, "path")))
+				s.Assets = append(s.Assets, Asset{Name: w.Text(w.Field(n, "name")), Path: path, Params: audioParams(w, n), Position: w.position(n)})
+			case "clip_decl":
+				s.Clips = append(s.Clips, Clip{Name: w.Text(w.Field(n, "name")), Asset: w.Text(w.Field(n, "asset")), Params: audioParams(w, n), Position: w.position(n)})
+			case "sampler_decl":
+				s.Samplers = append(s.Samplers, Sampler{Name: w.Text(w.Field(n, "name")), Params: audioParams(w, n), Position: w.position(n)})
+			case "instrument_decl":
+				s.Instruments = append(s.Instruments, parseInstrument(w, n))
+			case "kit_decl":
+				s.Kits = append(s.Kits, parseKit(w, n))
+			case "live_decl":
+				if s.Live != nil {
+					diagnostics = append(diagnostics, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "only one live block is allowed", Position: w.position(n)})
+				} else {
+					s.Live, diagnostics = parseLive(w, n, diagnostics)
+				}
+			case "track_decl":
+				if s.Live != nil {
+					diagnostics = append(diagnostics, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "live block must appear after all tracks", Position: w.position(n)})
+				}
+				s.Tracks = append(s.Tracks, parseTrack(w, n))
+			case "bus_decl":
+				s.Buses = append(s.Buses, parseBus(w, n))
+			case "master_decl":
+				s.HasMaster = true
+				s.Master = parseMixBlock(w, n)
+			case "export_decl":
+				s.Exports = append(s.Exports, parseExport(w, n))
+			case "phrase_decl":
+				s.Phrases = append(s.Phrases, parsePhrase(w, n))
+			case "acid_pattern", "note_pattern", "drum_pattern":
+				s.Patterns = append(s.Patterns, parsePattern(w, n))
+			case "scene_decl":
+				s.Scenes = append(s.Scenes, parseScene(w, n))
+			case "song_decl":
+				s.SongPosition = w.position(n)
+				for j := 0; j < n.NamedChildCount(); j++ {
+					entry := n.NamedChild(j)
+					if w.Type(entry) == "song_entry" {
+						s.Song = append(s.Song, parseSongEntry(w, entry))
+					}
+				}
+			case "fx_decl":
+				s.Effects = append(s.Effects, parseEffect(w, n))
+			}
+		}
+		if headerEdition != 0 && requestedEdition != 0 && headerEdition != requestedEdition {
+			diagnostics = append(diagnostics, Diagnostic{
+				Code: "CICADA-VERSION", Severity: "error", Message: "source header does not match the project edition",
+				Position: Position{File: file.Path, Line: 1, Column: 1},
+			})
 		}
 	}
-	if headerEdition != 0 && requestedEdition != 0 && headerEdition != requestedEdition {
-		diagnostics = append(diagnostics, Diagnostic{
-			Code: "CICADA-VERSION", Severity: "error", Message: "source header does not match the project edition",
-			Position: Position{1, 1},
-		})
+	if syntaxFailed {
+		return nil, diagnostics
 	}
+	s.Assets, s.Clips, s.Samplers, _ = resolveAudio(s)
 	diagnostics = append(diagnostics, expandPhrases(s)...)
 	diagnostics = append(diagnostics, Validate(s)...)
+
+	if len(files) > 0 {
+		for i := range diagnostics {
+			if diagnostics[i].Code == "CICADA-DUPLICATE" {
+				if first, ok := duplicateLocations[diagnostics[i].Position]; ok {
+					diagnostics[i].Related = first
+				}
+			}
+			if diagnostics[i].Position.File == "" {
+				diagnostics[i].Position.File = files[0].Path
+			}
+		}
+	}
 	return s, diagnostics
 }
 
-func parseTrack(w *walk.Walker, n *gts.Node) Track {
-	t := Track{Name: w.Text(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: pos(w, n)}
+func parseTrack(w *loweringWalker, n *gts.Node) Track {
+	t := Track{Name: w.Text(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		if w.Type(c) == "mix_setting" {
@@ -158,22 +256,22 @@ func parseTrack(w *walk.Walker, n *gts.Node) Track {
 	return t
 }
 
-func parseKit(w *walk.Walker, n *gts.Node) Kit {
-	k := Kit{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+func parseKit(w *loweringWalker, n *gts.Node) Kit {
+	k := Kit{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		binding := n.NamedChild(i)
 		if w.Type(binding) != "kit_binding" {
 			continue
 		}
 		k.Bindings = append(k.Bindings, KitBinding{
-			Lane: w.Text(w.Field(binding, "lane")), Target: w.Text(w.Field(binding, "target")), Position: pos(w, binding),
+			Lane: w.Text(w.Field(binding, "lane")), Target: w.Text(w.Field(binding, "target")), Position: w.position(binding),
 		})
 	}
 	return k
 }
 
-func parseEffect(w *walk.Walker, n *gts.Node) Effect {
-	e := Effect{Name: w.Text(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: pos(w, n)}
+func parseEffect(w *loweringWalker, n *gts.Node) Effect {
+	e := Effect{Name: w.Text(w.Field(n, "name")), Kind: w.Text(w.Field(n, "kind")), Position: w.position(n)}
 	if e.Kind == "" { // edition-1 shorthand: fx delay { ... }
 		e.Kind = e.Name
 		e.Legacy = true
@@ -187,8 +285,8 @@ func parseEffect(w *walk.Walker, n *gts.Node) Effect {
 	return e
 }
 
-func parseBus(w *walk.Walker, n *gts.Node) Bus {
-	b := Bus{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+func parseBus(w *loweringWalker, n *gts.Node) Bus {
+	b := Bus{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		if w.Type(n.NamedChild(i)) == "mix_setting" {
 			b.Params = append(b.Params, parseMixSetting(w, n.NamedChild(i)))
@@ -197,7 +295,7 @@ func parseBus(w *walk.Walker, n *gts.Node) Bus {
 	return b
 }
 
-func parseMixBlock(w *walk.Walker, n *gts.Node) []Param {
+func parseMixBlock(w *loweringWalker, n *gts.Node) []Param {
 	var params []Param
 	for i := 0; i < n.NamedChildCount(); i++ {
 		if w.Type(n.NamedChild(i)) == "mix_setting" {
@@ -207,8 +305,8 @@ func parseMixBlock(w *walk.Walker, n *gts.Node) []Param {
 	return params
 }
 
-func parseExport(w *walk.Walker, n *gts.Node) Export {
-	e := Export{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+func parseExport(w *loweringWalker, n *gts.Node) Export {
+	e := Export{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		if w.Type(n.NamedChild(i)) == "param_decl" {
 			e.Params = append(e.Params, parseParam(w, n.NamedChild(i)))
@@ -217,23 +315,23 @@ func parseExport(w *walk.Walker, n *gts.Node) Export {
 	return e
 }
 
-func parseMixSetting(w *walk.Walker, n *gts.Node) Param {
+func parseMixSetting(w *loweringWalker, n *gts.Node) Param {
 	for i := 0; i < n.NamedChildCount(); i++ {
 		child := n.NamedChild(i)
 		switch w.Type(child) {
 		case "send_decl":
 			level := w.Field(child, "level")
 			return Param{Name: "send", Target: w.Text(w.Field(child, "to")), Value: w.Text(level),
-				Pre: w.Field(child, "tap") != nil, Position: pos(w, child), ValuePosition: pos(w, level)}
+				Pre: w.Field(child, "tap") != nil, Position: w.position(child), ValuePosition: w.position(level)}
 		case "param_decl":
 			return parseParam(w, child)
 		}
 	}
-	return Param{Position: pos(w, n)}
+	return Param{Position: w.position(n)}
 }
 
-func parseInstrument(w *walk.Walker, n *gts.Node) Instrument {
-	inst := Instrument{Name: w.Text(w.Field(n, "name")), Octave: 2, Position: pos(w, n)}
+func parseInstrument(w *loweringWalker, n *gts.Node) Instrument {
+	inst := Instrument{Name: w.Text(w.Field(n, "name")), Octave: 2, Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		switch w.Type(c) {
@@ -244,11 +342,11 @@ func parseInstrument(w *walk.Walker, n *gts.Node) Instrument {
 				inst.Octave = -1
 			}
 			inst.OctaveSet = true
-			inst.OctavePosition = pos(w, c)
+			inst.OctavePosition = w.position(c)
 		case "instrument_param":
 			inst.Params = append(inst.Params, InstrumentParam{
 				Name: w.Text(w.Field(c, "name")), Unit: w.Text(w.Field(c, "unit")),
-				Default: w.Text(w.Field(c, "default")), Position: pos(w, c),
+				Default: w.Text(w.Field(c, "default")), Position: w.position(c),
 			})
 		case "voice_decl":
 			inst.Mode = w.Text(w.Field(c, "mode"))
@@ -258,7 +356,7 @@ func parseInstrument(w *walk.Walker, n *gts.Node) Instrument {
 				case "let_stmt":
 					inst.Lets = append(inst.Lets, Let{
 						Name:  w.Text(w.Field(stmt, "name")),
-						Value: parseExpr(w, w.Field(stmt, "value")), Position: pos(w, stmt),
+						Value: parseExpr(w, w.Field(stmt, "value")), Position: w.position(stmt),
 					})
 				case "out_stmt":
 					inst.Output = parseExpr(w, w.Field(stmt, "value"))
@@ -269,11 +367,11 @@ func parseInstrument(w *walk.Walker, n *gts.Node) Instrument {
 	return inst
 }
 
-func parseExpr(w *walk.Walker, n *gts.Node) *Expr {
+func parseExpr(w *loweringWalker, n *gts.Node) *Expr {
 	if n == nil {
 		return nil
 	}
-	e := &Expr{Position: pos(w, n)}
+	e := &Expr{Position: w.position(n)}
 	if left, right := w.Field(n, "left"), w.Field(n, "right"); left != nil && right != nil {
 		e.Kind = "binary"
 		e.Left, e.Right = parseExpr(w, left), parseExpr(w, right)
@@ -305,14 +403,14 @@ func parseExpr(w *walk.Walker, n *gts.Node) *Expr {
 	return e
 }
 
-func parseParam(w *walk.Walker, n *gts.Node) Param {
+func parseParam(w *loweringWalker, n *gts.Node) Param {
 	value := w.Field(n, "value")
 	text := strings.Join(strings.Fields(w.Text(value)), " ")
-	return Param{Name: w.Text(w.Field(n, "name")), Value: text, Position: pos(w, n), ValuePosition: pos(w, value)}
+	return Param{Name: w.Text(w.Field(n, "name")), Value: text, Position: w.position(n), ValuePosition: w.position(value)}
 }
 
-func parsePattern(w *walk.Walker, n *gts.Node) Pattern {
-	p := Pattern{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
+	p := Pattern{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
 	if w.Type(n) == "acid_pattern" {
 		p.Kind = "acid"
 	} else if w.Type(n) == "note_pattern" {
@@ -327,18 +425,18 @@ func parsePattern(w *walk.Walker, n *gts.Node) Pattern {
 			p.Attrs = append(p.Attrs, parseParam(w, c))
 		case "acid_step":
 			if w.Text(c) != "|" {
-				step := StepToken{Text: w.Text(c), Position: pos(w, c)}
+				step := parseStepToken(w, c)
 				p.Parts = append(p.Parts, PatternPart{Step: &step})
 			}
 		case "phrase_use":
 			use := parsePhraseUse(w, c)
 			p.Parts = append(p.Parts, PatternPart{Use: &use})
 		case "drum_lane":
-			lane := Lane{Name: strings.TrimSuffix(w.Text(w.Field(c, "name")), ":"), Position: pos(w, c)}
+			lane := Lane{Name: strings.TrimSuffix(w.Text(w.Field(c, "name")), ":"), Position: w.position(c)}
 			for j := 0; j < c.NamedChildCount(); j++ {
 				hit := c.NamedChild(j)
 				if w.Type(hit) == "drum_hit" {
-					lane.Hits = append(lane.Hits, StepToken{Text: w.Text(hit), Position: pos(w, hit)})
+					lane.Hits = append(lane.Hits, StepToken{Text: w.Text(hit), Position: w.position(hit)})
 				}
 			}
 			p.Lanes = append(p.Lanes, lane)
@@ -347,19 +445,52 @@ func parsePattern(w *walk.Walker, n *gts.Node) Pattern {
 	return p
 }
 
-func parsePhrase(w *walk.Walker, n *gts.Node) Phrase {
-	p := Phrase{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+func parsePhrase(w *loweringWalker, n *gts.Node) Phrase {
+	p := Phrase{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		if w.Type(c) == "acid_step" && w.Text(c) != "|" {
-			p.Steps = append(p.Steps, StepToken{Text: w.Text(c), Position: pos(w, c)})
+			p.Steps = append(p.Steps, parseStepToken(w, c))
 		}
 	}
 	return p
 }
 
-func parsePhraseUse(w *walk.Walker, n *gts.Node) PhraseUse {
-	u := PhraseUse{Name: w.Text(w.Field(n, "name")), Repeat: 1, Position: pos(w, n)}
+func parseStepToken(w *loweringWalker, n *gts.Node) StepToken {
+	step := StepToken{Text: w.Text(n), Position: w.position(n)}
+	chord := w.ChildByType(n, "chord_note")
+	if chord == nil {
+		return step
+	}
+	for i := 0; i < chord.NamedChildCount(); i++ {
+		child := chord.NamedChild(i)
+		switch w.Type(child) {
+		case "chord_pitch":
+			step.ChordPitches = append(step.ChordPitches, stepNodeText(w, child))
+		case "modifier":
+			step.ChordModifiers += stepNodeText(w, child)
+		}
+	}
+	return step
+}
+
+// Joining leaf tokens preserves pitch spelling while excluding grammar extras.
+func stepNodeText(w *loweringWalker, n *gts.Node) string {
+	if w.Type(n) == "comment" {
+		return ""
+	}
+	if n.ChildCount() == 0 {
+		return w.Text(n)
+	}
+	var text strings.Builder
+	for i := 0; i < n.ChildCount(); i++ {
+		text.WriteString(stepNodeText(w, n.Child(i)))
+	}
+	return text.String()
+}
+
+func parsePhraseUse(w *loweringWalker, n *gts.Node) PhraseUse {
+	u := PhraseUse{Name: w.Text(w.Field(n, "name")), Repeat: 1, Position: w.position(n)}
 	if count := childText(w, n, "integer"); count != "" {
 		u.Repeat, _ = strconv.Atoi(count)
 	}
@@ -369,8 +500,8 @@ func parsePhraseUse(w *walk.Walker, n *gts.Node) PhraseUse {
 	return u
 }
 
-func parseScene(w *walk.Walker, n *gts.Node) Scene {
-	s := Scene{Name: w.Text(w.Field(n, "name")), Position: pos(w, n)}
+func parseScene(w *loweringWalker, n *gts.Node) Scene {
+	s := Scene{Name: w.Text(w.Field(n, "name")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
 		if w.Type(c) == "scene_assignment" {
@@ -378,25 +509,25 @@ func parseScene(w *walk.Walker, n *gts.Node) Scene {
 			value := w.Field(c, "value")
 			if strings.Contains(target, ".") {
 				s.Settings = append(s.Settings, SceneSetting{
-					Path: target, Value: w.Text(value), Position: pos(w, c), ValuePosition: pos(w, value),
+					Path: target, Value: w.Text(value), Position: w.position(c), ValuePosition: w.position(value),
 				})
 			} else {
-				s.Bindings = append(s.Bindings, Binding{Track: target, Pattern: w.Text(value), Position: pos(w, c)})
+				s.Bindings = append(s.Bindings, Binding{Track: target, Pattern: w.Text(value), Position: w.position(c)})
 			}
 		}
 	}
 	return s
 }
 
-func parseSongEntry(w *walk.Walker, n *gts.Node) SongEntry {
-	e := SongEntry{Scene: w.Text(w.Field(n, "scene")), Bars: 1, Position: pos(w, n)}
+func parseSongEntry(w *loweringWalker, n *gts.Node) SongEntry {
+	e := SongEntry{Scene: w.Text(w.Field(n, "scene")), Bars: 1, Position: w.position(n)}
 	if bars := childText(w, n, "integer"); bars != "" {
 		e.Bars, _ = strconv.Atoi(bars)
 	}
 	return e
 }
 
-func childText(w *walk.Walker, n *gts.Node, typ string) string {
+func childText(w *loweringWalker, n *gts.Node, typ string) string {
 	if c := w.ChildByType(n, typ); c != nil {
 		return w.Text(c)
 	}
@@ -476,12 +607,22 @@ func parseMilli(s string) int64 {
 	return whole*1000 + frac
 }
 
-func parseLive(w *walk.Walker, n *gts.Node, ds []Diagnostic) (*Live, []Diagnostic) {
-	live := &Live{Position: pos(w, n)}
+func audioParams(w *loweringWalker, n *gts.Node) []Param {
+	params := []Param{}
+	for i := 0; i < n.NamedChildCount(); i++ {
+		if child := n.NamedChild(i); w.Type(child) == "param_decl" {
+			params = append(params, parseParam(w, child))
+		}
+	}
+	return params
+}
+
+func parseLive(w *loweringWalker, n *gts.Node, ds []Diagnostic) (*Live, []Diagnostic) {
+	live := &Live{Position: w.position(n)}
 	seen := map[string]bool{}
 	duplicate := func(kind string, node *gts.Node, settings map[string]bool) {
 		if settings[kind] {
-			ds = append(ds, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "duplicate " + strings.TrimPrefix(kind, "live_") + " setting", Position: pos(w, node)})
+			ds = append(ds, Diagnostic{Code: "CICADA-LIVE-BLOCK", Severity: "error", Message: "duplicate " + strings.TrimPrefix(kind, "live_") + " setting", Position: w.position(node)})
 		}
 		settings[kind] = true
 	}
@@ -491,33 +632,33 @@ func parseLive(w *walk.Walker, n *gts.Node, ds []Diagnostic) (*Live, []Diagnosti
 		switch w.Type(c) {
 		case "live_land":
 			duplicate(w.Type(c), c, seen)
-			live.Land, live.LandPosition = w.Text(value), pos(w, value)
+			live.Land, live.LandPosition = w.Text(value), w.position(value)
 		case "live_phrase":
 			duplicate(w.Type(c), c, seen)
-			live.PhraseBars, live.PhrasePosition = parseBars(w.Text(value)), pos(w, value)
+			live.PhraseBars, live.PhrasePosition = parseBars(w.Text(value)), w.position(value)
 		case "live_macro":
 			smooth := w.Field(c, "smooth")
 			ms := float64(0)
 			if smooth != nil {
 				ms = parseDurationMS(w.Text(smooth))
 			}
-			live.Macros = append(live.Macros, LiveMacro{Name: w.Text(w.Field(c, "name")), Value: parseLiveNumber(w.Text(value)), SmoothMS: ms, Position: pos(w, c), ValuePosition: pos(w, value), SmoothPosition: pos(w, smooth)})
+			live.Macros = append(live.Macros, LiveMacro{Name: w.Text(w.Field(c, "name")), Value: parseLiveNumber(w.Text(value)), SmoothMS: ms, Position: w.position(c), ValuePosition: w.position(value), SmoothPosition: w.position(smooth)})
 		case "live_layers":
 			macro := w.Field(c, "macro")
-			layers := LiveLayers{Macro: w.Text(macro), AttackBars: 1, ReleaseBars: 3, Position: pos(w, c), MacroPosition: pos(w, macro)}
+			layers := LiveLayers{Macro: w.Text(macro), AttackBars: 1, ReleaseBars: 3, Position: w.position(c), MacroPosition: w.position(macro)}
 			settings := map[string]bool{}
 			for j := 0; j < c.NamedChildCount(); j++ {
 				entry := c.NamedChild(j)
 				v := w.Field(entry, "value")
 				switch w.Type(entry) {
 				case "live_layer":
-					layers.Rules = append(layers.Rules, LiveLayer{Track: w.Text(w.Field(entry, "track")), Value: parseLiveNumber(w.Text(v)), Position: pos(w, entry), ValuePosition: pos(w, v)})
+					layers.Rules = append(layers.Rules, LiveLayer{Track: w.Text(w.Field(entry, "track")), Value: parseLiveNumber(w.Text(v)), Position: w.position(entry), ValuePosition: w.position(v)})
 				case "live_attack":
 					duplicate(w.Type(entry), entry, settings)
-					layers.AttackBars, layers.AttackPosition = parseBars(w.Text(v)), pos(w, v)
+					layers.AttackBars, layers.AttackPosition = parseBars(w.Text(v)), w.position(v)
 				case "live_release":
 					duplicate(w.Type(entry), entry, settings)
-					layers.ReleaseBars, layers.ReleasePosition = parseBars(w.Text(v)), pos(w, v)
+					layers.ReleaseBars, layers.ReleasePosition = parseBars(w.Text(v)), w.position(v)
 				}
 			}
 			live.Layers = append(live.Layers, layers)

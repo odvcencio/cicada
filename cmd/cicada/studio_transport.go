@@ -13,12 +13,14 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/cmd"
 )
 
 type studioTransport struct {
+	takeInputOpener   studioTakeInputOpener
 	path              string
 	audioBackend      string
 	mu                sync.Mutex
@@ -45,6 +47,7 @@ type studioTransport struct {
 	audioNull         bool
 	latestMeter       atomic.Pointer[studioMeterSnapshot]
 	meterSequence     atomic.Uint64
+	pendingCapture    *capture.Calibration
 }
 
 type studioMeterSnapshot struct {
@@ -213,6 +216,9 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			t.audio = audio
 		}
 		if t.audio != nil {
+			if err := t.prepareCaptureLocked(t.audio, t.stream.BPMMilli()); err != nil {
+				return err
+			}
 			if err := t.audio.Play(); err != nil {
 				t.audio.Pause()
 				_ = t.audio.Close()
@@ -237,7 +243,15 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 		if err != nil {
 			return err
 		}
-		initial, err = compileLiveScoreAtRate(t.path, sampleRate)
+		if t.audio != nil && t.audio.Armed() {
+			p, loadErr := loadProject(t.path)
+			err = loadErr
+			if err == nil {
+				initial, err = compileLiveProjectAtRate(t.path, captureBacking(p), sampleRate)
+			}
+		} else {
+			initial, err = compileLiveScoreAtRate(t.path, sampleRate)
+		}
 		if err != nil {
 			return err
 		}
@@ -253,14 +267,22 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			return err
 		}
 	}
-	var audio studioAudioDevice
-	audio, err = openStudioAudio(stream, t.audioOptions, t.selectedAudioBackend(), sampleRate)
-	if err != nil {
-		stream.Close()
-		return err
+	audio := t.audio
+	if audio != nil && audio.Armed() {
+		audio.SetSource(stream)
+	} else {
+		audio, err = openStudioAudio(stream, t.audioOptions, t.selectedAudioBackend(), sampleRate)
+		if err != nil {
+			stream.Close()
+			return err
+		}
 	}
 	audio.SetMonitor(studioMonitorOptions(t.audioOptions))
 	if audio != nil {
+		if err := t.prepareCaptureLocked(audio, initial.BPMMilli); err != nil {
+			stream.Close()
+			return err
+		}
 		if err := audio.Play(); err != nil {
 			audio.Pause()
 			_ = audio.Close()
@@ -308,6 +330,7 @@ func (t *studioTransport) pauseLocked() {
 	t.playing = false
 	t.pendingSong = ""
 	t.pendingSongID = 0
+	t.pendingCapture = nil
 }
 
 // stop halts playback and returns to bar 1 by discarding the stream (D18).
@@ -315,16 +338,23 @@ func (t *studioTransport) pauseLocked() {
 func (t *studioTransport) stop() {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	t.stopLocked()
+}
+
+func (t *studioTransport) stopLocked() {
 	t.pauseLocked()
 	if t.cancel != nil {
 		t.cancel()
 		t.cancel = nil
 	}
-	if t.audio != nil {
+	if t.audio != nil && !t.audio.Armed() {
 		if err := t.audio.Close(); err != nil {
 			t.errText = err.Error()
 		}
 		t.audio = nil
+	}
+	if t.audio != nil {
+		t.audio.SetSource(nil)
 	}
 	if t.stream != nil {
 		t.stream.Close()
@@ -581,6 +611,7 @@ func (t *studioTransport) poll() {
 	}
 	stream := t.stream
 	sampleRate := t.sampleRate
+	capturing := t.audio != nil && t.audio.Armed()
 	t.mu.Unlock()
 	if stream == nil {
 		return
@@ -591,6 +622,9 @@ func (t *studioTransport) poll() {
 	project, err := compileStudioSource(t.path, source)
 	var next liveplay.Score
 	if err == nil {
+		if capturing {
+			project = captureBacking(project)
+		}
 		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
 	}
 	if err == nil {

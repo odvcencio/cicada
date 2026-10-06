@@ -7,6 +7,8 @@ import (
 	"runtime"
 	"strings"
 	"time"
+
+	"m31labs.dev/cicada/host/capture"
 )
 
 type Name string
@@ -100,6 +102,9 @@ type Config struct {
 	CaptureDevice     string
 	CaptureChannels   int
 	AllowMissingInput bool
+	// Capture receives timing and raw input before rendering or monitoring.
+	// It runs on the audio thread and must not allocate or block.
+	Capture func(capture.Block, [][]float32)
 }
 
 type Format struct {

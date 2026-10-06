@@ -2,11 +2,14 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -52,5 +55,44 @@ func TestCheckCaretPreservesTabStops(t *testing.T) {
 	})
 	if !strings.Contains(output.String(), "  a\tbc\n   \t ^\n") {
 		t.Fatalf("caret did not preserve tab stop: %q", output.String())
+	}
+}
+
+func TestCheckAudioAssetsFromManifestRoot(t *testing.T) {
+	root := t.TempDir()
+	for _, dir := range []string{"audio", "scores"} {
+		if err := os.Mkdir(filepath.Join(root, dir), 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := os.WriteFile(filepath.Join(root, "cicada.mod"), []byte("project audio-test\ncicada 2\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	data := testwav.Bytes(48000, 1, 16, 4800, 1)
+	wav := filepath.Join(root, "audio", "example.wav")
+	if err := os.WriteFile(wav, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	source := fmt.Sprintf("asset vocal \"audio/example.wav\" { sha256 = \"%x\" format = wav frames = 4800 rate = 48000Hz channels = 1 }\nclip region vocal {}\ntrack vox audio {}\nscene verse {vox=region}\nsong {verse}\n", sha256.Sum256(data))
+	path := filepath.Join(root, "scores", "main.cicada")
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var out, diagnostics bytes.Buffer
+	if err := checkPaths([]string{path}, &out, &diagnostics); err != nil {
+		t.Fatalf("valid audio score: %v %s", err, diagnostics.String())
+	}
+	if err := os.Remove(wav); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	diagnostics.Reset()
+	if err := checkPaths([]string{path}, &out, &diagnostics); err == nil {
+		t.Fatal("missing asset passed check")
+	}
+	for _, want := range []string{path + ":1:1:", "CICADA-ASSET-MISSING", "expected", "actual"} {
+		if !strings.Contains(diagnostics.String(), want) {
+			t.Errorf("missing %q: %s", want, diagnostics.String())
+		}
 	}
 }
