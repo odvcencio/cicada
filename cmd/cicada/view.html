@@ -230,6 +230,13 @@ footer { border-top:1px solid var(--border); color:var(--muted); font-size:.78re
 .audio-io-actions button:disabled,.audio-io-panel :disabled { opacity:.55; cursor:not-allowed; }
 .audio-io-runtime { display:grid; gap:5px; color:var(--mint); font:12px/1.45 ui-monospace,SFMono-Regular,Consolas,monospace; overflow-wrap:anywhere; }
 .audio-io-error { color:var(--coral); }
+#instrument-record .audio-io-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+#instrument-record input[type="text"],#instrument-record input[type="number"] { min-height:42px; width:100%; box-sizing:border-box; border:1px solid #526451; border-radius:7px; background:#121a15; color:var(--text); padding:8px 10px; }
+#instrument-record .instrument-files { grid-column:1/-1; }
+#instrument-record input[type="file"] { max-width:100%; }
+#instrument-record .audio-io-actions { gap:6px; }
+#instrument-record .instrument-keys { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+#instrument-record .instrument-keys button { padding:8px 5px; }
 .master-readouts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
 .master-readout, .master-card { min-width:0; border:1px solid var(--border); border-radius:12px; background:var(--panel); padding:15px; }
 .master-readout span, .master-card h3 { display:block; margin:0 0 8px; color:var(--muted); font-size:.72rem; font-weight:800; text-transform:uppercase; letter-spacing:.09em; }
@@ -633,6 +640,23 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     </section>{{end}}
     {{if .Studio}}<section id="record" data-workspace-panel="record" aria-labelledby="record-heading">
       <h2 id="record-heading">Record</h2>
+      <section id="instrument-record" class="audio-io-panel" aria-labelledby="instrument-record-heading">
+        <h3 id="instrument-record-heading">Record your own instrument</h3>
+        <p>Record 15 pencil taps, soft to hard. Stop to build an instrument, or drop WAV files.</p>
+        <div class="audio-io-grid">
+          <label for="instrument-name">Instrument name<input id="instrument-name" type="text" value="pencil" pattern="[a-z][a-z0-9_]*" maxlength="48"></label>
+          <label for="instrument-root">Fallback root MIDI note<input id="instrument-root" type="number" min="12" max="95" value="60"></label>
+          <label for="instrument-layers">Velocity layers<select id="instrument-layers"><option value="1">1</option><option value="2">2</option><option value="3" selected>3</option><option value="4">4</option><option value="8">8</option></select></label>
+          <label for="instrument-pitch" class="audio-io-check"><input id="instrument-pitch" type="checkbox" checked>Detect note pitches</label>
+          <label for="instrument-files" class="instrument-files">Import WAV recordings<input id="instrument-files" type="file" accept=".wav,audio/wav" multiple></label>
+        </div>
+        <div class="audio-io-actions"><button id="instrument-mic" type="button" aria-pressed="false">Record microphone</button><button id="instrument-stop" type="button" disabled>Stop and build</button></div>
+        <p id="instrument-status" role="status" aria-live="polite">Ready · microphone monitoring off · audio license: owner recording</p>
+        <div class="audio-io-grid"><label for="instrument-velocity"><span>Playing velocity <output id="instrument-velocity-value">80</output></span><input id="instrument-velocity" type="range" min="1" max="127" value="80"></label></div>
+        <div class="audio-io-actions instrument-keys" role="group" aria-label="Play recorded instrument"><button data-instrument-note="-12" type="button" disabled>Octave down</button><button data-instrument-note="0" type="button" disabled>Root</button><button data-instrument-note="4" type="button" disabled>Third</button><button data-instrument-note="7" type="button" disabled>Fifth</button><button data-instrument-note="12" type="button" disabled>Octave up</button><button id="instrument-silence" type="button">Silence</button></div>
+        <div class="audio-io-actions"><button id="instrument-save-score" type="button" disabled>Download score</button></div>
+        <div id="instrument-result" hidden><p id="instrument-score-path" style="overflow-wrap:anywhere"></p><details><summary>Detected hits and pinned score declaration</summary><pre id="instrument-map" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre><pre id="instrument-declaration" style="white-space:pre-wrap;overflow-wrap:anywhere"></pre></details></div>
+      </section>
       <p class="section-note">Device setup and input monitoring. Use Live (L) for arming tracks and MIDI takes.</p>
       <section class="audio-io-panel" aria-labelledby="pcm-heading">
         <h3 id="pcm-heading">PCM capture</h3>
@@ -1294,6 +1318,6 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   }, true);
   initGrids();
 })();
-</script><script src="/audio/cicada-capture-client.js"></script><script src="/studio-capture.js"></script><script src="/studio-audio-devices.js"></script><script src="/studio-master.js"></script><script src="/studio-midi.js"></script><script src="/studio-live.js"></script>{{end}}
+</script><script src="/audio/cicada-capture-client.js"></script><script src="/studio-capture.js"></script><script src="/studio-instrument-record.js"></script><script src="/studio-audio-devices.js"></script><script src="/studio-master.js"></script><script src="/studio-midi.js"></script><script src="/studio-live.js"></script>{{end}}
 </body>
 </html>
