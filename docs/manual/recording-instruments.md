@@ -68,3 +68,49 @@ the 3.5-second recording, with three layers and five round robins. The native
 recorded-instrument render check measured zero allocations. Captured views:
 [desktop, 1440×1000](screenshots/recorded-instrument-1440.png) and
 [mobile, 390×900](screenshots/recorded-instrument-390.png).
+
+## Fit a playable model
+
+After recording or importing hits, choose a **Take** and press **Fit model**.
+Studio estimates up to ten resonant frequencies, their relative amplitudes and
+their decay times. The modeled instrument is selected automatically. Play the
+same note buttons and velocity slider; **Play sampled** returns to the original
+recording. The source WAV hash and the exact trimmed-hit WAV hash remain in
+`model.json`, with the `owner recording` license.
+
+The fitted voice uses the modal engine's bounded contact, resonator, glide and
+four-strike variation paths. Measured ratios and decay poles replace the built-in
+profile's poles. It accepts every MIDI note, omits modes above the passband, and
+allocates no memory during note handling or rendering. Fitting, file admission,
+WAV auditions and pack construction happen outside audio rendering.
+
+For immediate score playback, Studio also bakes the fitted engine at five root
+notes and three dynamics into a standard pinned sampler pack. The manifest pins
+the model JSON checksum as well as the generated audio. **Download score** and
+the saved `instrument.cicada` use this pack. Between baked roots, score playback
+resamples the modal renders; decay duration changes with that resampling. Studio
+audition evaluates the fitted resonators directly at the requested pitch.
+
+The offline equivalent uses the same fitter and bank builder:
+
+```sh
+GOWORK=off go run ./cmd/cicada fit-model -o assets/pencil_model \
+  --name pencil_model --hit 1 recordings/pencil-taps.wav
+GOWORK=off go run ./cmd/cicada render assets/pencil_model/instrument.cicada \
+  -o pencil-model.wav
+```
+
+Put flags before the WAV path. `--hit` is one-based after automatic slicing.
+Fitting rejects silent, invalid or very short input. A 60 ms attack spectrum
+identifies separated modes; windowed amplitude measurements estimate exponential
+decay. Closely spaced modes, rapidly changing pitch, noisy rooms and nonlinear
+impacts can reduce fit quality. The displayed decay confidence describes that
+regression, not perceptual similarity. Try another take when a fit sounds poor.
+
+The synthetic microphone fixture plays both versions in about four seconds,
+including its 3.5-second recording. Known three-mode fixtures at 16, 44.1, 48 and
+96 kHz meet ten-cent frequency and 15% decay-error bounds. The fitted voice maps
+all 128 MIDI notes and matches 65,536 native/WASM samples exactly, without render
+memory growth. This is fixture evidence; a physical pencil recording still needs
+listening evaluation. Captured [modeled desktop](screenshots/modeled-instrument-1440.png)
+and [modeled mobile](screenshots/modeled-instrument-390.png) views show the controls.

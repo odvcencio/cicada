@@ -140,12 +140,25 @@ func (s *studio) instrumentAudition(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	pack := s.recordedInstruments[request.Pin]
+	model, modeled := s.recordedModels[request.Pin]
 	s.mu.Unlock()
 	if pack == nil {
 		studioJSON(w, 404, map[string]string{"error": "record or import this instrument before auditioning"})
 		return
 	}
-	data, index, err := pack.Audition(request.Note, request.Velocity, request.Cycle)
+	var data []byte
+	index := 0
+	var err error
+	if modeled {
+		var pcm []float32
+		pcm, err = model.Render(request.Note, request.Velocity, request.Cycle, 48000)
+		if err == nil {
+			data = recording.EncodeWAV(pcm, 48000)
+			index = request.Cycle % 4
+		}
+	} else {
+		data, index, err = pack.Audition(request.Note, request.Velocity, request.Cycle)
+	}
 	if err != nil {
 		studioJSON(w, 422, map[string]string{"error": err.Error()})
 		return
@@ -159,7 +172,7 @@ func (s *studio) instrumentAudition(w http.ResponseWriter, r *http.Request) {
 // Asset serving stays confined to generated immutable recording directories.
 func (s *studio) instrumentPackAsset(w http.ResponseWriter, r *http.Request) {
 	name, file := r.PathValue("pack"), r.PathValue("file")
-	if !strings.Contains(name, "-") || strings.ContainsAny(name, "/\\.\x00:") || filepath.Base(file) != file || !(file == "manifest.json" || file == "instrument.cicada" || strings.HasSuffix(file, ".wav.gz")) {
+	if !strings.Contains(name, "-") || strings.ContainsAny(name, "/\\.\x00:") || filepath.Base(file) != file || !(file == "manifest.json" || file == "model.json" || file == "instrument.cicada" || strings.HasSuffix(file, ".wav.gz")) {
 		http.NotFound(w, r)
 		return
 	}

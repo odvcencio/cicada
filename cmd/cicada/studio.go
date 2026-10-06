@@ -23,6 +23,7 @@ import (
 
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/capture"
+	"m31labs.dev/cicada/host/modalfit"
 	"m31labs.dev/cicada/host/recording"
 	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/host/takejournal"
@@ -33,6 +34,7 @@ import (
 )
 
 type studio struct {
+	recordedModels      map[string]modalfit.Model
 	recordedInstruments map[string]*recording.Pack
 	takes               *takejournal.Store
 	captureID           string
@@ -250,6 +252,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)
 	mux.HandleFunc("POST /api/record", s.recordTake)
 	mux.HandleFunc("POST /api/instrument-record", s.instrumentRecord)
+	mux.HandleFunc("POST /api/instrument-fit", s.instrumentFit)
 	mux.HandleFunc("POST /api/instrument-audition", s.instrumentAudition)
 	mux.HandleFunc("GET /assets/recorded/{pack}/{file}", s.instrumentPackAsset)
 	mux.HandleFunc("GET /studio-instrument-record.js", s.instrumentRecordScript)
