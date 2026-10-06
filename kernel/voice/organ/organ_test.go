@@ -352,6 +352,17 @@ func TestVoiceLimit(t *testing.T) {
 	}
 }
 
+func TestCycleSineWrapRounding(t *testing.T) {
+	p := mustOrgan(t, 48000, DefaultParams())
+	for _, cycle := range []float32{-math.SmallestNonzeroFloat32, -1.0 / (1 << 26), -1.0 / (1 << 25), -1.0 / (1 << 24), 0, 1} {
+		got := p.cycleSine(cycle)
+		want := math.Sin(2 * math.Pi * float64(cycle))
+		if math.IsNaN(float64(got)) || math.IsInf(float64(got), 0) || math.Abs(float64(got)-want) > 1e-6 {
+			t.Fatalf("cycle=%g got=%g want=%g", cycle, got, want)
+		}
+	}
+}
+
 func TestGoldenStereo(t *testing.T) {
 	p := mustOrgan(t, 48000, DefaultParams())
 	pcm := make([]byte, 16384*8)

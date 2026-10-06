@@ -400,11 +400,12 @@ func (p *Instrument) phaseSine(phase uint32) float32 {
 }
 
 func (p *Instrument) cycleSine(cycle float32) float32 {
-	if cycle >= 1 {
-		cycle -= 1
-	}
 	if cycle < 0 {
 		cycle += 1
+	}
+	// A tiny negative phase can round to exactly one when wrapped.
+	if cycle >= 1 {
+		cycle -= 1
 	}
 	t := float32(cycle * tableSize)
 	i := int(t)
