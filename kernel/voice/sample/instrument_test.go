@@ -254,3 +254,20 @@ func TestInstrumentOneShotAndHatChoke(t *testing.T) {
 		t.Fatal("open hat survived choke")
 	}
 }
+
+func TestInstrumentEventSeedDoesNotDependOnOtherTriggers(t *testing.T) {
+	c := DefaultInstrumentConfig()
+	c.Humanize = Humanize{Seed: 42, Velocity: 10, Cents: 10, DelayMS: 5}
+	z := []Zone{mappedZone(.3, 64, 0, 0, 1, false)}
+	a, b := newMapped(t, z, c), newMapped(t, z, c)
+	for i := 0; i < 19; i++ {
+		b.jitter()
+	}
+	before := b.random
+	ah, _ := a.NoteOnSeeded(60, 64, 123456789)
+	bh, _ := b.NoteOnSeeded(60, 64, 123456789)
+	av, bv := a.voices[ah.Slot], b.voices[bh.Slot]
+	if b.random != before || av.velocity != bv.velocity || av.delay != bv.delay || av.attack[0].Ratio() != bv.attack[0].Ratio() {
+		t.Fatal("event seed depends on preceding stream or consumes default randomness")
+	}
+}

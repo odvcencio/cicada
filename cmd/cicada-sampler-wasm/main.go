@@ -158,6 +158,22 @@ func noteOn(note, velocity int32) uint32 {
 //go:wasmexport sampler_last_slot
 func noteSlot() int32 { return lastSlot }
 
+//go:wasmexport sampler_note_on_seeded
+func seededNoteOn(note, velocity int32, seedLow, seedHigh uint32) uint32 {
+	if !sealed || note < 0 || note > 127 || velocity < 0 || velocity > 127 {
+		return 0
+	}
+	h, err := instrument.NoteOnSeeded(uint8(note), uint8(velocity), uint64(seedLow)|uint64(seedHigh)<<32)
+	if err != nil || h.ID > math.MaxUint32 {
+		return 0
+	}
+	if h.ID != 0 {
+		handles[h.Slot] = h
+		lastSlot = int32(h.Slot)
+	}
+	return uint32(h.ID)
+}
+
 //go:wasmexport sampler_note_off
 func noteOff(id uint32) int32 {
 	if !sealed || id == 0 {
