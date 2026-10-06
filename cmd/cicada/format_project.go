@@ -127,11 +127,11 @@ func projectScorePaths(root string) ([]string, error) {
 			return walkErr
 		}
 		if entry.IsDir() {
-			if entry.Name() == "lib" {
-				return filepath.SkipDir
-			}
 			if path == root {
 				return nil
+			}
+			if entry.Name() == "lib" {
+				return filepath.SkipDir
 			}
 			if entry.Name() == ".git" {
 				return filepath.SkipDir
