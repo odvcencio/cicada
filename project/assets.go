@@ -242,3 +242,23 @@ func (a Asset) Directory(fallback string) string {
 	}
 	return fallback
 }
+
+// NeedsSampleEngine excludes assets used only as master impulse responses.
+func (p *Project) NeedsSampleEngine() bool {
+	if len(p.Clips) > 0 || len(p.Samplers) > 0 || projectHasAudioTrack(p) {
+		return true
+	}
+	for _, asset := range p.Assets {
+		used := false
+		for _, effect := range p.Effects {
+			if semanticEffectKind(effect) == "convolution" && MasterHasInsert(p, effect.ID) {
+				name, _, _, _ := convolutionSpec(effect)
+				used = used || name == asset.Name
+			}
+		}
+		if !used {
+			return true
+		}
+	}
+	return false
+}

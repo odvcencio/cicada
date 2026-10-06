@@ -669,6 +669,8 @@ func typedNumber(value float64, unit instrument.Type) (string, error) {
 		return decimal(value) + "LU", nil
 	case "lufs":
 		return decimal(value) + "LUFS", nil
+	case "frames":
+		return decimal(value) + "frames", nil
 	case "dbtp":
 		return decimal(value) + "dBTP", nil
 	case "ratio":

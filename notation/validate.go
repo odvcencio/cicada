@@ -402,8 +402,18 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 		namespace[effect.Name] = "effect"
 		declaredEffects[effect.Name] = effect
-		kindCounts[effect.Kind]++
-		if effect.Kind != "drive" && effect.Kind != "delay" && effect.Kind != "reverb" && effect.Kind != "comp" {
+		onMaster := false
+		for _, param := range s.Master {
+			if param.Name == "insert" {
+				for _, name := range strings.Fields(param.Value) {
+					onMaster = onMaster || name == effect.Name
+				}
+			}
+		}
+		if !onMaster {
+			kindCounts[effect.Kind]++
+		}
+		if effect.Kind != "drive" && effect.Kind != "delay" && effect.Kind != "reverb" && effect.Kind != "comp" && effect.Kind != "eq" && effect.Kind != "transient" && effect.Kind != "width" && effect.Kind != "limiter" && effect.Kind != "convolution" {
 			add("CICADA-UNSUPPORTED", "effect kind "+effect.Kind+" is not implemented", "error", effect.Position)
 		}
 		seen := map[string]bool{}
@@ -500,7 +510,24 @@ func Validate(s *Score) (ds []Diagnostic) {
 		switch param.Name {
 		case "insert":
 			if param.Value != "none" {
-				add("CICADA-UNSUPPORTED", "master inserts are not implemented", "error", param.ValuePosition)
+				seen := map[string]bool{}
+				for _, name := range strings.Fields(param.Value) {
+					if name == "->" {
+						continue
+					}
+					if effect, ok := declaredEffects[name]; !ok {
+						add("CICADA-REFERENCE", "master insert references undeclared effect "+name, "error", param.ValuePosition)
+					} else if effect.Kind != "eq" && effect.Kind != "comp" && effect.Kind != "transient" && effect.Kind != "width" && effect.Kind != "limiter" && effect.Kind != "convolution" {
+						add("CICADA-UNSUPPORTED", "master inserts of "+effect.Kind+" are not implemented", "error", param.ValuePosition)
+					}
+					if seen[name] {
+						add("CICADA-DUPLICATE", "master insert repeats effect "+name, "error", param.ValuePosition)
+					}
+					seen[name] = true
+				}
+				if len(seen) > 16 {
+					add("CICADA-LIMIT", "master supports at most 16 inserts", "error", param.ValuePosition)
+				}
 			}
 		case "level":
 			if param.Value != "off" {
