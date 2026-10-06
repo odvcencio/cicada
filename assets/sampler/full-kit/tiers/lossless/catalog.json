@@ -347,61 +347,21 @@
   "packs": [
     {
       "assets": 164,
-      "compressed_bytes": 117369398,
+      "compressed_bytes": 60626915,
       "id": "full-kit-shells",
       "manifest": "full-kit-shells/manifest.json",
       "pcm_bytes": 203902040,
-      "sha256": "16f76a8ec18103d262a30c8e4f362142e8d89a2040e3b019660878464a645453",
-      "zones": 206,
-      "tiers": {
-        "lossless": {
-          "assets": 164,
-          "compressed_bytes": 60626915,
-          "id": "full-kit-shells",
-          "manifest": "tiers/lossless/full-kit-shells/manifest.json",
-          "pcm_bytes": 203902040,
-          "sha256": "e83e70037b3f7e140280e9335ac91f80e1fbfc329faef911b05961fceb0135fc",
-          "zones": 206
-        },
-        "hq16": {
-          "assets": 164,
-          "compressed_bytes": 27153970,
-          "id": "full-kit-shells",
-          "manifest": "tiers/hq16/full-kit-shells/manifest.json",
-          "pcm_bytes": 203902040,
-          "sha256": "085648eea5d656ed4808d50cc96dd620c1cae9fc6cff54d6d39e2c27663733a9",
-          "zones": 206
-        }
-      }
+      "sha256": "e83e70037b3f7e140280e9335ac91f80e1fbfc329faef911b05961fceb0135fc",
+      "zones": 206
     },
     {
       "assets": 158,
-      "compressed_bytes": 135242974,
+      "compressed_bytes": 82062591,
       "id": "full-kit-metals",
       "manifest": "full-kit-metals/manifest.json",
       "pcm_bytes": 252660624,
-      "sha256": "f56f081c7d52e9a6f6dcaf20aa6d6ce332f241eed4453ab72b0ba965ea95a081",
-      "zones": 168,
-      "tiers": {
-        "lossless": {
-          "assets": 158,
-          "compressed_bytes": 82062591,
-          "id": "full-kit-metals",
-          "manifest": "tiers/lossless/full-kit-metals/manifest.json",
-          "pcm_bytes": 252660624,
-          "sha256": "3949571269506466fae2c4eba4e54ede9b755920aa178b7a2dfd8321086d6253",
-          "zones": 168
-        },
-        "hq16": {
-          "assets": 158,
-          "compressed_bytes": 52527385,
-          "id": "full-kit-metals",
-          "manifest": "tiers/hq16/full-kit-metals/manifest.json",
-          "pcm_bytes": 252660624,
-          "sha256": "0b449e904cb0a1b9df11bee69a28782a20143c3ef00c39403a20374421b74da5",
-          "zones": 168
-        }
-      }
+      "sha256": "3949571269506466fae2c4eba4e54ede9b755920aa178b7a2dfd8321086d6253",
+      "zones": 168
     }
   ],
   "processing": "48 kHz stereo, no decay trimming or normalization; 5 ms ending fade; source power-ranked hits partitioned into velocity/take bands",
@@ -2666,5 +2626,5 @@
     "sha256": "a6ec5a58987c90ba482f568005e01ed826a534fd9b3c041dc5efa07018c4d81d",
     "url": "https://drumgizmo.org/kits/CrocellKit/CrocellKit_Stereo_MIX.rar"
   },
-  "default_tier": "hq16"
+  "tier": "lossless"
 }

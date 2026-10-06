@@ -42,3 +42,8 @@ var samplerProcessor []byte
 
 func InstrumentPack() []byte   { return instrumentPack }
 func SamplerProcessor() []byte { return samplerProcessor }
+
+//go:embed audio-encoding.js
+var audioEncoding []byte
+
+func AudioEncoding() []byte { return audioEncoding }

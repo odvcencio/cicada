@@ -10,7 +10,7 @@ const {chromium}=require(process.env.PLAYWRIGHT_MODULE??'playwright');
 const root=path.resolve(process.argv[2]??'build/kit-final/packs');
 const catalog=JSON.parse(await readFile(path.join(root,'catalog.json'),'utf8'));
 const server=http.createServer(async(req,res)=>{
- const files={'/instrument-pack.js':'host/web/instrument-pack.js','/sampler-processor.js':'host/web/sampler-processor.js','/sampler.wasm':'build/cicada-sampler.wasm'};
+ const files={'/audio-encoding.js':'host/web/audio-encoding.js','/instrument-pack.js':'host/web/instrument-pack.js','/sampler-processor.js':'host/web/sampler-processor.js','/sampler.wasm':'build/cicada-sampler.wasm'};
  try {
   if(req.url==='/'){res.setHeader('Content-Type','text/html');res.end('<!doctype html><title>Full kit verification</title>');return;}
   let file=files[req.url];
