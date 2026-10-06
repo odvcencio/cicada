@@ -981,6 +981,11 @@ type eventRecord struct {
 }
 
 func emitEvents(score *notation.Score, trackName, patternName string) error {
+	var diagnostics []notation.Diagnostic
+	score, diagnostics = notation.ResolvePresets(score)
+	if hasDiagnosticErrors(diagnostics) {
+		return fmt.Errorf("invalid presets: %v", diagnostics)
+	}
 	var track *notation.Track
 	var pattern *notation.Pattern
 	for i := range score.Tracks {

@@ -82,7 +82,7 @@ The language server uses unsaved buffers alongside the other listed files. Go to
 
 ## Import a library
 
-A library packages instruments, effects, kits, phrases, patterns, samplers, and audio assets for reuse. The [library example](../../examples/libraries/main.cicada) imports `demo/tone` from the project's `lib/demo/tone/` folder. Its manifest uses `library` instead of `project`:
+A library packages instruments, effects, kits, phrases, patterns, samplers, presets, and audio assets for reuse. The [library example](../../examples/libraries/main.cicada) imports `demo/tone` from the project's `lib/demo/tone/` folder. Its manifest uses `library` instead of `project`:
 
 ```text
 library demo/tone
@@ -357,3 +357,55 @@ support sample editing; seconds and milliseconds must land on exact source frame
 These declarations compile to project data. Playback and recording support arrive
 in the other Phase 1 lanes; the current engine reports `CICADA-UNSUPPORTED` for
 projects containing audio data.
+
+
+## Reuse values with a preset
+
+A preset keeps a named set of values for an existing sound. Define it in your score or in an imported library:
+
+```cicada
+cicada 2
+
+instrument glassbass {
+  octave = 2
+  param cutoff = 540Hz
+  param bite = 0.58
+  voice mono {
+    out = lowpass(saw(pitch), cutoff) * bite * env(gate, 330ms)
+  }
+}
+
+preset glassbass.bright {
+  instrument = glassbass
+  cutoff = 900Hz
+  bite = 0.7
+}
+
+preset acid-bright {
+  instrument = acid
+  cutoff = 900Hz
+  decay = 180ms
+}
+
+track lead glassbass.bright { bite = 0.65 }
+track bass acid-bright { cutoff = 1100Hz }
+pattern melody { 1 . 3 . }
+scene verse { lead = melody bass = melody }
+song { verse }
+```
+
+`glassbass` must be a declared instrument. A library target can use a qualified name such as `tone.glass`. Library presets are also qualified at use: `track bell tone.soft {}`. Their source bytes are included in the library's `cicada.sum` hash, so changing a preset requires an explicit `cicada lib update`.
+
+Values resolve in this order: registry default, instrument default, preset, track setting, scene setting. For example, `bass.cutoff = 1400Hz` in a scene overrides both the preset's 900Hz and the track's 1100Hz. Run `cicada explain examples/presets/main.cicada bass.cutoff @2` to see the layers. Authored numeric parameters use their instrument defaults; they have no separate registry default. Scene settings support the engine's existing registry paths, including built-in voice and mixer parameters.
+
+For built-in drums, target `drums` and use lane-prefixed names such as `bd_tune` and `sd_decay`. To save one lane's values, target `builtin.bd` and use `tune` or `decay`; a track using this preset resolves to the same drum track with those lane values. An authored kit can bind an authored instrument preset to a lane. Kit presets can set mixer values. Use a drums track for built-in recipe settings; kit bindings cannot change those settings yet.
+
+For effects, use `preset warm { instrument = builtin.drive gain = 18dB mix = 0.75 }` and `fx grit warm { mix = 0.8 }`, then route the declared effect as usual. A declared effect can also supply defaults for an effect preset. An unreferenced effect used this way supplies defaults without creating a second runtime instance; a routed or scene-addressed target stays active. Existing effect instance limits still apply.
+
+A sampler preset targets a declared sampler and can change `root`, `mode`, `voices`, and mixer values. Track settings can override those values. The asset remains the sampler's original asset. The built-in `audio` target accepts mixer values. The experimental guitar is not a score voice in this edition.
+
+Presets cannot add DSP expressions, change routing, replace an asset, or inherit another preset. Unknown parameters, wrong types or units, out-of-range values, and a voice preset used as an effect (or an effect preset used as a track) produce typed errors with file, line, and column. Built-in bounds come from the shared registry. Authored parameters retain their declared units and must fit finite float32; authored bounds are not declared in this edition.
+
+The language server completes preset targets and their parameters, including imported instrument parameters. `cicada fmt` preserves preset declarations; conversion to semantic JSON or generated source writes their resolved values. Try [Preset circuit](../../examples/presets/main.cicada) for an authored instrument preset, an acid preset, and a preset imported from the vendored examples library.
+
+Studio has no “save as preset” action in this version. Write the declaration in the score editor. Studio still refuses multi-file projects; saving into a library belongs to the later library tools and Studio work.

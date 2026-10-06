@@ -35,7 +35,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("source_file", seq(optional(seq(str("cicada"), sym("integer"))), repeat(sym("_declaration"))))
 	g.Define("_declaration", choice(
 		sym("import_decl"), sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
-		sym("instrument_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
+		sym("instrument_decl"), sym("preset_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
 		sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
 		sym("master_decl"), sym("export_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
@@ -107,7 +107,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("param_decl", seq(field("name", sym("identifier")), str("="), field("value", sym("value"))))
 	g.Define("send_decl", seq(str("send"), field("to", sym("_name")), str("="), field("level", sym("number")), optional(field("tap", str("pre")))))
 	g.Define("mix_setting", choice(sym("send_decl"), sym("param_decl")))
-	g.Define("fx_decl", seq(str("fx"), field("name", sym("_name")), optional(field("kind", sym("identifier"))), str("{"), repeat(sym("param_decl")), str("}")))
+	g.Define("fx_decl", seq(str("fx"), field("name", sym("_name")), optional(field("kind", sym("_name"))), str("{"), repeat(sym("param_decl")), str("}")))
 	g.Define("bus_decl", seq(str("bus"), field("name", sym("_name")), str("{"), repeat(sym("mix_setting")), str("}")))
 	g.Define("master_decl", seq(str("master"), str("{"), repeat(sym("mix_setting")), str("}")))
 	g.Define("export_decl", seq(str("export"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
@@ -192,6 +192,7 @@ func Cicada() *grammargen.Grammar {
 	g.Define("identifier", token(pat(`[a-z_][a-z0-9_-]*`)))
 	g.Define("_name", choice(sym("identifier"), sym("qualified_name")))
 	g.Define("qualified_name", seq(sym("identifier"), str("."), sym("identifier"), repeat(seq(str("."), sym("identifier")))))
+	g.Define("preset_decl", seq(str("preset"), field("name", sym("_name")), str("{"), repeat(sym("param_decl")), str("}")))
 	g.Define("import_decl", seq(str("import"), field("path", sym("string"))))
 	g.Define("comment", token(pat(`\/\/[^\n]*`)))
 

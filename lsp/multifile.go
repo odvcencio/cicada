@@ -43,7 +43,7 @@ func sourceSetEdition(files *project.Sources) int {
 
 func symbolFamily(kind string) string {
 	switch kind {
-	case "instrument", "kit", "sampler":
+	case "instrument", "kit", "sampler", "preset":
 		return "voice"
 	case "pattern", "clip":
 		return "pattern"
@@ -68,6 +68,10 @@ func (s *server) projectDefinition(uri string, at position) any {
 		return definition(uri, source, at)
 	}
 	selected, _, ok := symbolAt(source, at)
+	if selected.Kind == "preset-target" {
+		score, _ := files.Parse()
+		selected = resolvePresetSymbols([]language.Symbol{selected}, score)[0]
+	}
 	if match, found := parameterPathAt(source, byteOffset(source, at)); found {
 		score, ds := files.Parse()
 		if score == nil || hasErrors(ds) {
@@ -159,6 +163,8 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 	if !ok {
 		return nil
 	}
+	originalScore, _ := files.Parse()
+	selected = resolvePresetSymbols([]language.Symbol{selected}, originalScore)[0]
 	local := selected.Kind == "binding" || selected.Kind == "parameter"
 	scope := instrumentScope(source, scalarOffset(source, selected.Position))
 	changes := map[string]any{}
@@ -178,6 +184,7 @@ func (s *server) projectRename(uri string, at position, newName string) any {
 		if err != nil {
 			return nil
 		}
+		symbols = resolvePresetSymbols(symbols, originalScore)
 		var edits []map[string]any
 		var replacements []replacement
 		for _, symbol := range symbols {
@@ -272,6 +279,9 @@ func (s *server) projectCompletion(uri string, at position) any {
 		return items
 	}
 	files, err := s.projectSources(uri)
+	if items, ok := presetCompletion(files, source, at); ok {
+		return items
+	}
 	if files != nil {
 		if items := libraryItems(files, uri, source, at); len(items) > 0 {
 			return items
