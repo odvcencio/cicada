@@ -2,6 +2,7 @@
 package main
 
 import (
+	"runtime"
 	"unsafe"
 
 	"m31labs.dev/cicada/host/kernelimage"
@@ -25,6 +26,18 @@ var oscillatorBankBytes []byte
 var oscillatorBankStorage [acid.MaxOscillatorBankImageBytes]byte
 var audioSampleRate int
 var legacyConfigured bool
+
+//go:wasmexport gosx_audio_capabilities
+func capabilities() uint32 { return kernelimage.CapabilityChords | uint32(kernelimage.DelayCapability) }
+
+// Allocation telemetry is queried by hosts outside the render callback.
+//
+//go:wasmexport gosx_audio_alloc_bytes
+func allocationBytes() uint64 {
+	var stats runtime.MemStats
+	runtime.ReadMemStats(&stats)
+	return stats.TotalAlloc
+}
 
 //go:wasmexport gosx_audio_bank_image_ptr
 func bankImagePtr() uint32 {

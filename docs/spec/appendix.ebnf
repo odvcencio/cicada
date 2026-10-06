@@ -34,6 +34,8 @@ let_stmt ::= "let" , identifier , "=" , expression , [ ";" ] ;
 out_stmt ::= "out" , "=" , expression , [ ";" ] ;
 expression ::= expression , ("+" | "-") , expression | expression , ("*" | "/") , expression |
                call_expr | number | identifier | "(" , expression , ")" ;
+(* Typed functions include delay(audio, ms) and comb(audio, ms, unit, unit).
+   Unit / Hz yields a period in ms, so 1 / pitch tunes a delay loop. *)
 call_expr ::= identifier , "(" , [ expression , { "," , expression } ] , ")" ;
 param_decl ::= identifier , "=" , value ;
 send_decl ::= "send" , _name , "=" , number , [ "pre" ] ;
@@ -51,7 +53,7 @@ phrase_use ::= "use" , _name , [ "*" , integer ] , [ "transpose" , "=" , number 
 drum_pattern ::= "pattern" , _name , "drums" , { pattern_attr } , "{" , { pattern_attr } ,
                  { drum_lane } , "}" ;
 pattern_attr ::= identifier , "=" , number ;
-acid_step ::= "." | "-" | "|" | acid_note ;
+acid_step ::= "." | "-" | "|" | acid_note | chord_note ;
 acid_note ::= pitch , { octave_shift } , { modifier } ;
 pitch ::= degree | letter_pitch ;
 degree ::= /[1-7][#b]?/ ;
@@ -94,3 +96,5 @@ live_layer ::= identifier , ">=" , number , [ ";" ] ;
 live_attack ::= "attack" , bar_count , [ ";" ] ;
 live_release ::= "release" , bar_count , [ ";" ] ;
 bar_count ::= /-?[0-9]+(\.[0-9]+)?bars?/ ;
+chord_note ::= "[" , { chord_pitch } , "]" , { modifier } ;
+chord_pitch ::= pitch , { octave_shift } ;
