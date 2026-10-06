@@ -1,6 +1,7 @@
 package notation
 
 import (
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"math"
 	"strconv"
 	"strings"
@@ -171,7 +172,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 		trackByName[t.Name] = t
 		namespace[t.Name] = "track"
-		if t.Kind != "acid" && t.Kind != "drums" && t.Kind != "piano" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
+		if t.Kind != "acid" && t.Kind != "drums" && t.Kind != "piano" && keyboard.ID(t.Kind) == 0 && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
 			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
 				if _, kitOK := kits[t.Kind]; !kitOK {
 					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
@@ -598,6 +599,9 @@ func validTrackParam(kind, name string, instruments map[string]Instrument) bool 
 	}
 	if kind == "acid" {
 		return acidParams[name]
+	}
+	if keyboard.ID(kind) != 0 && instruments[kind].Name == "" {
+		return validKeysParam(kind, name)
 	}
 	if kind == "piano" && instruments[kind].Name == "" {
 		return name == "sustain" || name == "octave"

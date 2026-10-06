@@ -166,7 +166,7 @@ func parameterVoiceKind(p *Project, kind string) string {
 			return "drums"
 		}
 	}
-	if isModeledPiano(p, kind) {
+	if isModeledPiano(p, kind) || isModeledKeys(p, kind) {
 		return "piano"
 	}
 	return "instrument"

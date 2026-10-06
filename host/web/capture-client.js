@@ -9,6 +9,7 @@
   class BrowserCapture {
     constructor(audio, env = root) {
       this.audio=audio; this.env=env; this.stream=null; this.source=null; this.worker=null; this.take=null;
+      this.audio.captureSession=this; this.stopPromise=null;
       this.listeners=new Set(); this.waiters=new Map(); this.busy=false;
       this.status={state:'idle',storage:'unchecked',timing:'unavailable',calibration:'uncalibrated',monitoring:false,settings:null,error:''};
     }
@@ -112,8 +113,13 @@
       this.audio.play();
       this.status.state='recording'; this.status.countInFrames=countInFrames; this.notify();
     }
-    async stop() {
-      if (!['armed','recording'].includes(this.status.state)) return this.take;
+    stop() {
+      if (this.stopPromise) return this.stopPromise;
+      if (!['armed','recording'].includes(this.status.state)) return Promise.resolve(this.take);
+      this.stopPromise=this.finishStop().finally(()=>{this.stopPromise=null;});
+      return this.stopPromise;
+    }
+    async finishStop() {
       const finished=this.wait('finished');
       this.status.state='saving'; this.notify();
       this.audio.node.port.postMessage({t:'capture-control',op:'stop'});

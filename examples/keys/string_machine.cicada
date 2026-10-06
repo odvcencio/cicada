@@ -1,0 +1,20 @@
+cicada 2
+title "String Machine"
+tempo 108
+key c major
+seed 61006
+track keys string_machine {
+  level = 0dB
+  voices = 8
+}
+pattern comp notes {
+  gate = 90%
+  [c4 e4 g4 b4] - - - - - - . [d4 f4 a4 c5] - - - - - - . [g3 b3 d4 f4] - - - - - - . [c4 e4 a4 b4] - - - - - - .
+}
+pattern melody notes {
+  gate = 90%
+  e4 - - - g4 - - - a4 - - - b4 - - - g4 - - - f4 - - - e4 - - - c4 - - -
+}
+scene comping { keys = comp }
+scene melodic { keys = melody }
+song { comping*2 melodic*2 }

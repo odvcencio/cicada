@@ -155,22 +155,29 @@ func CompileEngine(p *Project, sampleRate, maxBlock int) (engine.Config, error) 
 		if kind == "piano" && !isModeledPiano(p, kind) {
 			kind = "declared"
 		}
-		switch kind {
-		case "piano":
+		switch {
+		case isModeledKeys(p, kind):
+			config.Kind = engine.VoiceKeys
+			spec, err := KeysSpecFromValues(kind, track.Params)
+			if err != nil {
+				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+			}
+			config.Keys = &spec
+		case kind == "piano":
 			config.Kind = engine.VoicePiano
 			sustain, err := PianoSustainFromValues(track.Params)
 			if err != nil {
 				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 			}
 			config.PianoSustain = sustain
-		case "acid":
+		case kind == "acid":
 			config.Kind = engine.VoiceAcid
 			params, err := acidParamsFromValues(track.Params)
 			if err != nil {
 				return cfg, fmt.Errorf("track %s: %w", track.ID, err)
 			}
 			config.Acid = params
-		case "drums":
+		case kind == "drums":
 			config.Kind = engine.VoiceDrums
 			params, err := drumParamsFromValues(track.Params)
 			if err != nil {

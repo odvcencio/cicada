@@ -203,7 +203,7 @@ func ValidateProject(p *Project) error {
 		}
 		tracks[track.ID] = track
 		_, isKit := kits[track.Kind]
-		if track.Kind != "acid" && track.Kind != "drums" && track.Kind != "piano" && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
+		if track.Kind != "acid" && track.Kind != "drums" && track.Kind != "piano" && !isModeledKeys(p, track.Kind) && !(p.Edition == 2 && track.Kind == "audio") && samplers[track.Kind].Name == "" && !isKit && instruments[track.Kind] == nil {
 			return fmt.Errorf("track %s has unknown instrument %s", track.ID, track.Kind)
 		}
 		if (p.Edition == 2 && track.Kind == "audio" || samplers[track.Kind].Name != "") && len(track.Params) > 0 {
@@ -219,6 +219,11 @@ func ValidateProject(p *Project) error {
 		}
 		if track.Kind == "drums" {
 			if _, err := drumParamsFromValues(track.Params); err != nil {
+				return fmt.Errorf("track %s: %w", track.ID, err)
+			}
+		}
+		if isModeledKeys(p, track.Kind) {
+			if _, err := KeysSpecFromValues(track.Kind, track.Params); err != nil {
 				return fmt.Errorf("track %s: %w", track.ID, err)
 			}
 		}
@@ -442,6 +447,12 @@ func ValidateProject(p *Project) error {
 	for _, track := range p.Tracks {
 		if sampler := samplers[track.Kind]; sampler.Name != "" {
 			allocatedVoices += sampler.Voices
+		} else if isModeledKeys(p, track.Kind) {
+			spec, err := KeysSpecFromValues(track.Kind, track.Params)
+			if err != nil {
+				return err
+			}
+			allocatedVoices += int(spec.Controls[127])
 		} else if isModeledPiano(p, track.Kind) {
 			allocatedVoices += piano.MaxVoices
 		} else if track.Kind == "drums" {
@@ -525,13 +536,13 @@ func ValidateProject(p *Project) error {
 			for _, step := range pattern.Data {
 				if step != nil && len(step.Notes) > 0 {
 					inst := instruments[track.Kind]
-					if !isModeledPiano(p, track.Kind) && (inst == nil || inst.Mode != "poly") || pattern.Kind != "notes" {
+					if !isModeledPiano(p, track.Kind) && !isModeledKeys(p, track.Kind) && (inst == nil || inst.Mode != "poly") || pattern.Kind != "notes" {
 						return fmt.Errorf("chords require a voice poly instrument and a notes pattern")
 					}
 				}
 			}
 			seen[*slot] = true
-			if isModeledPiano(p, track.Kind) {
+			if isModeledPiano(p, track.Kind) || isModeledKeys(p, track.Kind) {
 				for _, step := range pattern.Data {
 					if step == nil || step.Tie {
 						continue
@@ -542,7 +553,7 @@ func ValidateProject(p *Project) error {
 					}
 					for _, note := range notes {
 						if note+int(pattern.Transpose) < 21 || note+int(pattern.Transpose) > 108 {
-							return fmt.Errorf("track %s pattern %s: piano notes must be MIDI 21 to 108", track.ID, pattern.ID)
+							return fmt.Errorf("track %s pattern %s: keyboard notes must be MIDI 21 to 108", track.ID, pattern.ID)
 						}
 					}
 				}
@@ -640,6 +651,12 @@ func ValidateProject(p *Project) error {
 			kind := tracks[trackID].Kind
 			if sampler := samplers[kind]; sampler.Name != "" {
 				voices += sampler.Voices
+			} else if isModeledKeys(p, kind) {
+				spec, err := KeysSpecFromValues(kind, tracks[trackID].Params)
+				if err != nil {
+					return err
+				}
+				voices += int(spec.Controls[127])
 			} else if isModeledPiano(p, kind) {
 				voices += piano.MaxVoices
 			} else if kind == "drums" {

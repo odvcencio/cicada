@@ -86,6 +86,13 @@ func (e *Engine) restoreSceneDefaults() bool {
 				return false
 			}
 		}
+		if keysEnabled && v.keys != nil {
+			v.pianoSustain = p.pianoSustain
+			if v.keys.SetSustain(p.pianoSustain) != nil {
+				e.fault(18)
+				return false
+			}
+		}
 		if v.acid != nil && v.acid.SetParams(p.acid) != nil {
 			e.fault(18)
 			return false

@@ -9,6 +9,7 @@ import (
 	"slices"
 
 	"m31labs.dev/cicada/host/instrumentpack"
+	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
@@ -17,6 +18,7 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
+	keyvoice "m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/kernel/voice/piano"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -137,9 +139,9 @@ func (voice acidVoice) NoteOn(note, velocity uint8, accent, slide bool) {
 }
 
 type pianoVoice struct {
-	*piano.Instrument
-	notes [4]uint8
-	count uint8
+	Instrument keyvoice.Voice
+	notes      [4]uint8
+	count      uint8
 }
 
 func (voice *pianoVoice) NoteOn(note, velocity uint8, _ bool, slide bool) {
@@ -165,6 +167,9 @@ func (voice *pianoVoice) NoteOff() {
 	}
 	voice.count = 0
 }
+
+func (voice *pianoVoice) NextStereo() (float32, float32) { return voice.Instrument.NextStereo() }
+func (voice *pianoVoice) SetSustain(v float32) error     { return voice.Instrument.SetSustain(v) }
 
 func (voice *pianoVoice) Next() float32 {
 	left, right := voice.NextStereo()
@@ -783,17 +788,27 @@ func compileTracksWithPacks(score *notation.Score, semantic *project.Project, sa
 			tracks = append(tracks, track)
 			continue
 		}
-		if source.Kind == "piano" && programs[source.Kind] == nil {
-			voice, err := piano.New(sampleRate)
-			if err != nil {
-				return nil, err
+		if (source.Kind == "piano" || keyboard.ID(source.Kind) != 0) && programs[source.Kind] == nil {
+			var voice keyvoice.Voice
+			var err error
+			if keyboard.ID(source.Kind) != 0 {
+				spec, e := project.CompileKeysSpec(source)
+				if e != nil {
+					return nil, e
+				}
+				voice, err = keyboard.New(sampleRate, &spec)
+			} else {
+				voice, err = piano.New(sampleRate)
+				if err == nil {
+					sustain, e := project.CompilePianoSustain(source)
+					if e != nil {
+						return nil, e
+					}
+					err = voice.SetSustain(sustain)
+				}
 			}
-			sustain, err := project.CompilePianoSustain(source)
 			if err != nil {
 				return nil, fmt.Errorf("track %s: %w", source.Name, err)
-			}
-			if err := voice.SetSustain(sustain); err != nil {
-				return nil, err
 			}
 			track := trackRuntime{name: source.Name, mixer: trackMix, voice: &pianoVoice{Instrument: voice}, patterns: map[string]seq.Pattern{}}
 			for _, pattern := range score.Patterns {
