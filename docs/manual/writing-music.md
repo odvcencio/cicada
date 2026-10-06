@@ -107,7 +107,7 @@ song { verse*2 }
 
 Libraries can import other libraries. Imports in all files of a project or library share that scope. A library's unqualified references select its own declarations; dependency references use the imported namespace. Dependencies are not re-exported. Names beginning with `_` are private to their library; referring to `tone._hook` from outside it produces `CICADA-LIB-PRIVATE`. Import cycles produce `CICADA-LIB-CYCLE`.
 
-Paths use slash-separated source identifiers. `builtin` is reserved as an import namespace and as the first component of a library path; built-in drum recipes such as `builtin.ch` remain available. Resolution checks embedded `std/` libraries, the project's `lib/`, and the user library in that order. The embedded standard namespace is initially empty. The user library is Go's per-OS user config directory plus `cicada/lib`; `$CICADA_LIBRARY` overrides it. Direct imports from it are allowed. If the same path exists in more than one location, two imports share the same final component, or an import namespace conflicts with a local declaration, loading fails with `CICADA-LIB-SHADOW`.
+Paths use slash-separated source identifiers. `builtin` is reserved as an import namespace and as the first component of a library path; built-in drum recipes such as `builtin.ch` remain available. Resolution checks embedded `std/` libraries, the project's `lib/`, and the user library in that order. The user library is Go's per-OS user config directory plus `cicada/lib`; `$CICADA_LIBRARY` overrides it. Direct imports from it are allowed. If the same path exists in more than one location, two imports share the same final component, or an import namespace conflicts with a local declaration, loading fails with `CICADA-LIB-SHADOW`.
 
 Library assets live under the library's `audio/` folder. Their source paths resolve from that library root, and their own declared audio hashes are verified as well. Source and asset paths cannot escape the library through traversal or symlinks. `cicada convert` refuses library-owned audio with `CICADA-LIB-ASSET` before writing output. Keep the score imports until asset vendoring is supported.
 
@@ -358,6 +358,73 @@ These declarations compile to project data. Playback and recording support arriv
 in the other Phase 1 lanes; the current engine reports `CICADA-UNSUPPORTED` for
 projects containing audio data.
 
+
+## Standard libraries
+
+Cicada embeds four MIT-licensed source libraries in its host binary. Use
+`cicada lib list` to see their paths alongside project and user libraries.
+
+| Import | Contents | Complete example |
+| --- | --- | --- |
+| `std/synth` | `glassbass`, `nightbass`, `tymbal`, `subline`, `glass` graph instruments | [Standard synth](../../examples/std-synth/main.cicada) |
+| `std/drums` | `kick`, `circuit-kick`, `snare`, `hat`; authored `steel` and `circuit` kits | [Standard drums](../../examples/std-drums/main.cicada) |
+| `std/fx` | `drive`, `delay`, `reverb`, `comp` defaults for inserts, sends, and bus compression | [Standard effects](../../examples/std-fx/main.cicada) |
+| `std/presets` | `acid-squelch`, `acid-round`, `acid-bite`; built-in drum-kit `kit-tight`, `kit-roomy`, `kit-lofi` presets | [Standard presets](../../examples/std-presets/main.cicada) |
+
+For a filtered bass graph from the Glassbass study:
+
+```text
+cicada 2
+import "std/synth"
+track bass synth.glassbass { cutoff = 680Hz }
+```
+
+For the three graph drum voices from Circuit kit, grouped into one kit:
+
+```text
+cicada 2
+import "std/drums"
+track beat drums.circuit {}
+```
+
+For a drive insert, delay and reverb sends, and music-bus compression:
+
+```text
+cicada 2
+import "std/fx"
+track bass acid {
+  insert = fx.drive
+  send fx.delay = 0.3
+  send fx.reverb = 0.35
+}
+bus music { insert = fx.comp }
+```
+
+For an acid sound and a short-decay built-in drum kit:
+
+```text
+cicada 2
+import "std/presets"
+track bass presets.acid-squelch {}
+track beat presets.kit-tight {}
+```
+
+Add patterns, a scene, and a song as in the complete examples. Track and scene
+values can override preset values. `acid-round` uses a darker cutoff and square
+wave; `acid-bite` uses a brighter cutoff, more resonance, and shorter decay.
+`kit-roomy` extends the drum decays; `kit-lofi` lowers the kick tuning and darkens
+the snare and hats. These kit presets target built-in `drums`; authored kits keep
+their source graphs. See the [std README](../../project/std/README.md) for source
+origins and planned additions.
+
+Run `cicada lib update` before the first check or render, and commit `cicada.sum`
+with the score. Std imports are pinned with `kind std` and a hash of the exact
+embedded manifest and source bytes. Upgrading Cicada does not rewrite the pins.
+If that binary ships changed std content, `cicada check` reports
+`CICADA-LIB-HASH`; playback and rendering refuse it. Review the change and run
+`cicada lib update std/presets` to accept the new bytes, or omit the path to
+re-pin every import. Unchanged content keeps its hash. Std source compiles on the
+host and leaves the WASM audio kernel unchanged.
 
 ## Reuse values with a preset
 

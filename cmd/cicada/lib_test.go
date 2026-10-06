@@ -82,12 +82,47 @@ func TestLibUpdateCheckAndExplain(t *testing.T) {
 }
 
 func TestLibraryCommandHelp(t *testing.T) {
-	for _, args := range [][]string{{"help", "lib"}, {"lib", "--help"}, {"lib", "update", "--help"}} {
+	for _, args := range [][]string{{"help", "lib"}, {"lib", "--help"}, {"lib", "list", "--help"}, {"lib", "update", "--help"}} {
 		var output, stderr bytes.Buffer
 		handled, status := handleCLIHelp(args, &output, &stderr)
-		if !handled || status != 0 || !strings.Contains(output.String(), "cicada lib update [PATH]") || stderr.Len() != 0 {
+		if !handled || status != 0 || !strings.Contains(output.String(), "cicada lib update [PATH]") || !strings.Contains(output.String(), "cicada lib list") || stderr.Len() != 0 {
 			t.Fatalf("help: %v %d %s %s", args, status, &output, &stderr)
 		}
+	}
+}
+
+func TestLibListStdProjectAndUserWithoutScores(t *testing.T) {
+	root, user := t.TempDir(), t.TempDir()
+	t.Setenv("CICADA_LIBRARY", user)
+	t.Chdir(root)
+	for _, base := range []string{filepath.Join(root, "lib"), user} {
+		dir := filepath.Join(base, "demo", "tone")
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "cicada.mod"), []byte("library demo/tone\n"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Listing discovers manifests without loading scores or interpreting pins.
+	sum := []byte("untouched pins\n")
+	if err := os.WriteFile("cicada.sum", sum, 0644); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := libCommand([]string{"list"}, &output); err != nil {
+		t.Fatal(err)
+	}
+	expected := "project\tdemo/tone\nuser\tdemo/tone\nstd\tstd/drums\nstd\tstd/fx\nstd\tstd/presets\nstd\tstd/synth\n"
+	if output.String() != expected {
+		t.Fatalf("list: %s", &output)
+	}
+	after, err := os.ReadFile("cicada.sum")
+	if err != nil || !bytes.Equal(sum, after) {
+		t.Fatalf("list changed pins: %s %v", after, err)
+	}
+	if err := libCommand([]string{"list", "extra"}, &output); err == nil {
+		t.Fatal("list accepted an argument")
 	}
 }
 

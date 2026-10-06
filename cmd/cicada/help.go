@@ -96,7 +96,7 @@ func findCommandHelp(name string) (commandHelpEntry, bool) {
 		return commandHelpEntry{name: "record-pack", summary: "slice owner WAV recordings into a pinned sampler pack", usage: "cicada record-pack -o <pack-directory> [flags] <recording.wav>...", flags: "  -o <directory>       required new pack directory\n  --name <id>          lowercase instrument name (default recorded)\n  --root <MIDI>        fallback root, 12–95 (default 60)\n  --layers <n>         velocity layers, 1–8 (default 3)\n  --auto-pitch=<bool>  map detected roots (default false)\n  --help               show this help", notes: "Put flags before input files. Prints a checksummed sampler declaration; audio retains the owner recording licence."}, true
 	}
 	if name == "lib" {
-		return commandHelpEntry{name: "lib", summary: "pin imported library content", usage: "cicada lib update [PATH]", flags: "  --help   show this help", notes: "Update one imported library, or all imported libraries when PATH is omitted. Prints the old and new resolution kinds and SHA-256 hashes."}, true
+		return commandHelpEntry{name: "lib", summary: "list libraries and pin imported content", usage: "cicada lib list\ncicada lib update [PATH]", flags: "  --help   show this help", notes: "List available std, project, and user library paths with their resolution kinds. Update one imported library, or all imported libraries when PATH is omitted. Prints the old and new resolution kinds and SHA-256 hashes."}, true
 	}
 	if name == "save-as" {
 		return commandHelpEntry{name: "save-as", summary: "copy a score and its audio dependencies", usage: "cicada save-as <score.cicada> <target.cicada>", flags: "  (no command flags)"}, true

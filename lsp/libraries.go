@@ -107,7 +107,7 @@ func libraryItems(files *project.Sources, uri string, source []byte, at position
 	return items
 }
 
-func libraryDefinition(files *project.Sources, uri string, source []byte, at position) (any, bool) {
+func (s *server) libraryDefinition(files *project.Sources, uri string, source []byte, at position) (any, bool) {
 	selected, _, ok := symbolAt(source, at)
 	if !ok {
 		return nil, false
@@ -150,7 +150,11 @@ func libraryDefinition(files *project.Sources, uri string, source []byte, at pos
 		}
 		for _, symbol := range symbols {
 			if symbol.Role == "definition" && symbol.Name == name && symbolFamily(symbol.Kind) == symbolFamily(selected.Kind) {
-				return map[string]any{"uri": fileURI(file.Path), "range": symbolRegion(file.Source, symbol)}, true
+				uri, err := s.librarySourceURI(files, lib, file)
+				if err != nil {
+					return nil, true
+				}
+				return map[string]any{"uri": uri, "range": symbolRegion(file.Source, symbol)}, true
 			}
 		}
 	}
