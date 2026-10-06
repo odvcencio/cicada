@@ -9,6 +9,8 @@ editions 1 and 2, with edition 2 used by new projects. Syntax marked
 **accepted** is approved for later work but is not available in the current
 build.
 
+For game integration, see [Game Director and the Go/JS SDKs](game-director.md).
+
 ## Start here
 
 ### Install and hear a score

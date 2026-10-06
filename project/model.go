@@ -654,6 +654,14 @@ func assignSlots(p *Project, score *notation.Score) error {
 			used[track][pattern] = true
 		}
 	}
+	if p.Live != nil {
+		for _, stinger := range p.Live.Stingers {
+			if used[stinger.Track] == nil {
+				used[stinger.Track] = map[string]bool{}
+			}
+			used[stinger.Track][stinger.Pattern] = true
+		}
+	}
 	for ti := range p.Tracks {
 		track := &p.Tracks[ti]
 		for _, pattern := range p.Patterns {

@@ -137,7 +137,8 @@
   "$defs": {
     "id": {
       "type": "string",
-      "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$", "maxLength": 64
+      "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$",
+      "maxLength": 64
     },
     "key": {
       "type": "object",
@@ -369,7 +370,8 @@
           },
           "additionalProperties": {
             "type": "string",
-            "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$", "maxLength": 64
+            "pattern": "^[a-z_][a-z0-9_-]*(\\.[a-z_][a-z0-9_-]*)*$",
+            "maxLength": 64
           }
         }
       }
@@ -1596,6 +1598,27 @@
           "items": {
             "$ref": "#/$defs/live_layers"
           }
+        },
+        "states": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/live_state"
+          }
+        },
+        "stingers": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/live_stinger"
+          }
+        },
+        "transitions": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/live_transition"
+          }
         }
       },
       "required": [
@@ -1672,6 +1695,100 @@
         "track",
         "threshold"
       ]
+    },
+    "live_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "scene"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "scene": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        }
+      }
+    },
+    "live_stinger": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "track",
+        "pattern",
+        "quantize",
+        "crossfade_ms"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "track": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "quantize": {
+          "enum": [
+            "beat",
+            "bar",
+            "phrase"
+          ]
+        },
+        "crossfade_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60000
+        }
+      }
+    },
+    "live_transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to",
+        "quantize",
+        "crossfade_ms"
+      ],
+      "properties": {
+        "from": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "to": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "quantize": {
+          "enum": [
+            "beat",
+            "bar",
+            "phrase"
+          ]
+        },
+        "crossfade_ms": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 60000
+        }
+      }
     }
   }
 }

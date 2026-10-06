@@ -52,6 +52,9 @@ func ValidateProject(p *Project) error {
 		if ds := notation.ValidateLive(liveToScore(p.Live), tracks); len(ds) > 0 {
 			return fmt.Errorf("%s: %s", ds[0].Code, ds[0].Message)
 		}
+		if err := validateDirectorProject(p, tracks); err != nil {
+			return err
+		}
 		for _, macro := range p.Live.Macros {
 			if !validID(macro.Name) {
 				return fmt.Errorf("CICADA-LIVE-MACRO: invalid macro name %s", macro.Name)
