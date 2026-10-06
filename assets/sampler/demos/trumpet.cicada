@@ -1,0 +1,33 @@
+cicada 2
+
+title "Sample trumpet dynamics and repetition"
+
+tempo 100
+
+key c major
+
+seed 4242
+
+sampler sound {
+  pack = "packs/trumpet/manifest.json"
+  sha256 = "e1894b3df5c264d85efa6518f16090d07a81fd45f3aa27b32d7da27485a6b0d7"
+  root = c4
+  voices = 16
+}
+
+track lead sound {
+  level = -6dB
+}
+
+pattern demo {
+  gate = 65%
+  c4 . e4 . g4 . c5 . | d5 . c5 . g4 . e4 . | c4 c4 e4 e4 g4 . c5 .
+}
+
+scene main {
+  lead = demo
+}
+
+song {
+  main*4
+}

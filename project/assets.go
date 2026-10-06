@@ -33,6 +33,8 @@ type Clip struct {
 	FadeOutFrames int64   `json:"fade_out_frames" cicada:"Fade-out length" unit:"frames"`
 }
 type Sampler struct {
+	Pack     string `json:"pack,omitempty" cicada:"Project-relative instrument pack manifest" introduced:"cicada.project/2"`
+	SHA256   string `json:"sha256,omitempty" cicada:"SHA-256 of instrument pack manifest" introduced:"cicada.project/2"`
 	Name     string `json:"name" cicada:"Sampler instrument name"`
 	Asset    string `json:"asset" cicada:"Single full-asset region"`
 	RootMIDI int    `json:"root_midi" cicada:"Root MIDI note" range:"12..95"`
@@ -163,7 +165,7 @@ func lowerAudio(p *Project, s *notation.Score) {
 		p.Clips = append(p.Clips, Clip{c.Name, c.Asset, c.StartFrame, c.EndFrame, c.GainDB, c.FadeInFrames, c.FadeOutFrames})
 	}
 	for _, v := range s.Samplers {
-		p.Samplers = append(p.Samplers, Sampler{v.Name, v.Asset, v.RootMIDI, v.Mode, v.Voices})
+		p.Samplers = append(p.Samplers, Sampler{Name: v.Name, Asset: v.Asset, RootMIDI: v.RootMIDI, Mode: v.Mode, Voices: v.Voices, Pack: v.Pack, SHA256: v.SHA256})
 	}
 }
 func validateAudioProject(p *Project) error {
@@ -187,7 +189,7 @@ func validateAudioProject(p *Project) error {
 		if !validID(v.Name) {
 			return fmt.Errorf("invalid sampler name %q", v.Name)
 		}
-		s.Samplers = append(s.Samplers, notation.Sampler{Name: v.Name, Asset: v.Asset, RootMIDI: v.RootMIDI, Mode: v.Mode, Voices: v.Voices})
+		s.Samplers = append(s.Samplers, notation.Sampler{Pack: v.Pack, SHA256: v.SHA256, Name: v.Name, Asset: v.Asset, RootMIDI: v.RootMIDI, Mode: v.Mode, Voices: v.Voices})
 	}
 	if ds := notation.ValidateAudio(s); len(ds) > 0 {
 		return fmt.Errorf("%s: %s", ds[0].Code, ds[0].Message)
@@ -230,6 +232,10 @@ func audioSource(p *Project) []string {
 	}
 	for _, v := range p.Samplers {
 		root := pitchNames[v.RootMIDI%12] + strconv.Itoa(v.RootMIDI/12-1)
+		if v.Pack != "" {
+			sections = append(sections, fmt.Sprintf("sampler %s {\n  pack = %s\n  sha256 = %s\n  root = %s\n  voices = %d\n}", v.Name, strconv.Quote(v.Pack), strconv.Quote(v.SHA256), root, v.Voices))
+			continue
+		}
 		sections = append(sections, fmt.Sprintf("sampler %s {\n  asset = %s\n  root = %s\n  mode = %s\n  voices = %d\n}", v.Name, v.Asset, root, v.Mode, v.Voices))
 	}
 	return sections
