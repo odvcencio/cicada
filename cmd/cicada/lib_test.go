@@ -279,10 +279,15 @@ func TestLibVendorUsesNestedLooseScoreRoot(t *testing.T) {
 }
 
 func TestLibUpdateHonorsVendorLock(t *testing.T) {
-	main, _ := looseImportFixture(t)
+	main, library := looseImportFixture(t)
 	root := filepath.Dir(main)
 	t.Chdir(root)
 	if err := os.WriteFile(filepath.Join(root, ".cicada-vendor.lock"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	// The lock must exclude loading too: a concurrent vendor may be moving
+	// libraries while it holds the pin lock.
+	if err := os.Remove(library); err != nil {
 		t.Fatal(err)
 	}
 	var output bytes.Buffer
