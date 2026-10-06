@@ -14,7 +14,7 @@ import (
 func TestStdCatalogAndMetadata(t *testing.T) {
 	root, user := t.TempDir(), t.TempDir()
 	t.Setenv("CICADA_LIBRARY", user)
-	expected := []string{"std/drums", "std/fx", "std/presets", "std/synth"}
+	expected := []string{"std/drums", "std/fx", "std/keys", "std/presets", "std/synth"}
 	if got := LibraryPaths(root); !reflect.DeepEqual(got, expected) {
 		t.Fatalf("std paths: %v", got)
 	}
