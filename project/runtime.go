@@ -239,6 +239,15 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				}
 				cfg.Patterns[ti].Drums = new([16][drum.LaneCount]seq.Pattern)
 			default:
+				if isModeledKeys(p, kind) {
+					config.Kind = engine.VoiceKeys
+					spec, err := KeysSpecFromValues(kind, track.Params)
+					if err != nil {
+						return cfg, fmt.Errorf("track %s: %w", track.ID, err)
+					}
+					config.Keys = &spec
+					break
+				}
 				if kit, ok := kits[track.Kind]; ok {
 					config.Kind = engine.VoiceDrums
 					bindings, err := CompileKitTrackAtSampleRate(kit, programs, track.Params, sampleRate)

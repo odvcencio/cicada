@@ -242,7 +242,7 @@ On acid tracks, brackets subdivide one cell into 2–8 pitches. `pattern triplet
 
 Groups lower to a common exact grid with at most 64 expanded cells. Cell durations must be 30–3840 ticks. Divisions and groups that require rounding are rejected: `1/16t` and `1/20` fit the grid, while `1/28` and `1/8t [1 3 5]` do not.
 
-Grids are additive in source editions 1 and 2. Optional semantic `step_ticks` retains the legacy grid when absent. Image capability bit 9 adds each slot's duration; older kernels reject that capability. Pattern metadata commands carry the duration in their index field. MIDI export, formatting, and source round trips preserve exact tick positions.
+Grids are additive in source editions 1 and 2. Optional semantic `step_ticks` retains the legacy grid when absent. Image capability bit 13 adds each slot's duration; older kernels reject that capability. Pattern metadata commands carry the duration in their index field. MIDI export, formatting, and source round trips preserve exact tick positions.
 
 ## Source pattern chains
 
@@ -258,7 +258,7 @@ scene main {}
 song { main*2 }
 ```
 
-Chains contain 1–32 entries and at most 16 distinct patterns per track. Each entry plays once, including repeated names. Mixed grids join at exact ticks. Seeking reconstructs the chain phase, and MIDI export uses the same section boundaries. The semantic track `chain` stores pattern names; image capability bit 10 carries the source slot list.
+Chains contain 1–32 entries and at most 16 distinct patterns per track. Each entry plays once, including repeated names. Mixed grids join at exact ticks. Seeking reconstructs the chain phase, and MIDI export uses the same section boundaries. The semantic track `chain` stores pattern names; image capability bit 14 carries the source slot list.
 
 ## Multi-file projects and manifest metadata
 

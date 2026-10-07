@@ -91,6 +91,13 @@ func (e *Engine) restoreSceneDefaults() bool {
 				return false
 			}
 		}
+		if keysEnabled && v.keys != nil {
+			v.pianoSustain = p.pianoSustain
+			if v.keys.SetSustain(p.pianoSustain) != nil {
+				e.fault(18)
+				return false
+			}
+		}
 		if v.guitar != nil && v.guitar.SetParams(p.guitar) != nil {
 			e.fault(18)
 			return false

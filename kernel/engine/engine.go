@@ -14,6 +14,7 @@ import (
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/kernel/voice/modeledkit"
 	"m31labs.dev/cicada/kernel/voice/piano"
@@ -42,6 +43,7 @@ const (
 	VoiceSample    VoiceKind = 9
 	VoicePrepared  VoiceKind = 10
 	VoiceGraphPoly VoiceKind = 11
+	VoiceKeys      VoiceKind = 12
 )
 
 type KitLaneKind uint8
@@ -79,6 +81,7 @@ type TrackConfig struct {
 	PianoSustain float32            `json:",omitempty"`
 	Prepared     StereoVoiceFactory `json:"-"`
 	PreparedClip bool               `json:"-"`
+	Keys         *keyboard.Spec     `json:",omitempty"`
 	GainDB       float64
 	GainSet      bool
 	Pan          float64
@@ -152,6 +155,7 @@ type voiceSlot struct {
 	noteIdentity                   uint16
 	noteActive                     bool
 	piano                          *piano.Instrument
+	keys                           keyboard.Voice
 	pianoSustain                   float32
 	legacyPoly                     *graph.Poly
 	graphNote                      uint8
@@ -579,6 +583,29 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 				err = v.piano.SetSustain(spec.PianoSustain)
 				v.pianoSustain = spec.PianoSustain
 			}
+		case VoiceKeys:
+			if !keysEnabled {
+				return 0, Error("keyboard module is unavailable")
+			}
+			if keyboard.Prepare == nil {
+				return 0, Error("keyboard factory is unavailable")
+			}
+			if err = spec.Keys.Validate(); err != nil {
+				return 0, err
+			}
+			limit := spec.Keys.Controls[127]
+			if limit < 1 || limit > keyboard.MaxVoices || float32(int(limit)) != limit {
+				return 0, Error("keyboard voice limit must be one to eight")
+			}
+			voices += int(limit)
+			v.keys, err = keyboard.Prepare(cfg.SampleRate, spec.Keys)
+			if err == nil {
+				if v.keys == nil {
+					return 0, Error("keyboard factory returned no voice")
+				}
+				v.pianoSustain = spec.Keys.Controls[keyboard.SustainControl]
+				err = v.keys.SetSustain(v.pianoSustain)
+			}
 		case VoiceGraphPoly:
 			voices += graph.PolyVoices
 			v.legacyPoly, err = graph.NewPolyFromProgram(&spec.Graph, cfg.SampleRate)
@@ -630,6 +657,9 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			if e.voices[track].kind == VoicePiano && pattern.Expression != nil {
 				return Error("piano voices do not support per-note expression")
 			}
+			if keysEnabled && e.voices[track].kind == VoiceKeys && pattern.Expression != nil {
+				return Error("keyboard voices do not support per-note expression")
+			}
 			if pattern.Len == 0 {
 				if pattern.Chords != [64]seq.ChordStep{} {
 					return Error("unused slot contains chord payload")
@@ -649,8 +679,11 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			if e.voices[track].kind == VoicePiano && !validPianoPattern(pattern) {
 				return Error("piano notes must be MIDI 21 to 108")
 			}
+			if keysEnabled && e.voices[track].kind == VoiceKeys && !validPianoPattern(pattern) {
+				return Error("keyboard notes must be MIDI 21 to 108")
+			}
 			for step := uint8(0); step < pattern.Len; step++ {
-				if pattern.Chords[step].Count > 0 && e.voices[track].poly == nil && e.voices[track].kind != VoicePiano {
+				if pattern.Chords[step].Count > 0 && e.voices[track].poly == nil && e.voices[track].kind != VoicePiano && (!keysEnabled || e.voices[track].kind != VoiceKeys) {
 					return Error("chord pattern requires a polyphonic graph track")
 				}
 			}
@@ -975,6 +1008,10 @@ func (e *Engine) Render(outL, outR []float32) {
 				left, right = sample, sample
 			case VoicePiano:
 				left, right = v.piano.NextStereo()
+			case VoiceKeys:
+				if keysEnabled {
+					left, right = v.keys.NextStereo()
+				}
 			case VoiceGraphPoly:
 				left, right = v.legacyPoly.NextStereo()
 			case VoicePrepared:
@@ -1439,6 +1476,9 @@ func (e *Engine) apply(c cmd.Command) {
 		if v.kind == VoicePiano && e.patterns[track].playingNote != 0 {
 			e.releasePianoPattern(track)
 		}
+		if keysEnabled && v.kind == VoiceKeys && e.patterns[track].playingNote != 0 {
+			e.releaseKeysPattern(track)
+		}
 		e.patterns[track].playingNote = 0
 		e.patterns[track].heldValid = false
 		switch v.kind {
@@ -1463,6 +1503,11 @@ func (e *Engine) apply(c cmd.Command) {
 				e.fault(8)
 				return
 			}
+		case VoiceKeys:
+			if !keysEnabled || v.keys.NoteOn(note, velocity) != nil {
+				e.fault(8)
+				return
+			}
 		case VoiceGraphPoly:
 			v.legacyPoly.NoteOn(note, velocity, slide)
 		case VoicePrepared:
@@ -1484,7 +1529,7 @@ func (e *Engine) apply(c cmd.Command) {
 		e.emit(cmd.Message{Kind: cmd.NoteOn, Track: c.Track, A: uint16(note), Tick: e.transport.Tick()})
 	case cmd.OpNoteExpression:
 		v := &e.voices[c.Track]
-		if v.kind == VoicePiano {
+		if v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys {
 			e.fault(9)
 			return
 		}
@@ -1508,11 +1553,11 @@ func (e *Engine) apply(c cmd.Command) {
 			return
 		}
 		v := &e.voices[c.Track]
-		if v.kind == VoicePiano && c.Index != 0xffff && (c.Index < 21 || c.Index > 108) {
+		if (v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys) && c.Index != 0xffff && (c.Index < 21 || c.Index > 108) {
 			e.fault(8)
 			return
 		}
-		if v.kind != VoiceDrums && v.kind != VoicePiano && c.Index != 0 && c.Index != 0xffff && (!v.noteActive || c.Index != v.noteIdentity) && !(v.kind == VoiceGraph && v.noteIdentity == 0 && c.Index >= MonoNoteOffPitchFlag && c.Index < MonoNoteOffPitchFlag+128) && v.kind != VoiceGraphPoly {
+		if v.kind != VoiceDrums && v.kind != VoicePiano && (!keysEnabled || v.kind != VoiceKeys) && c.Index != 0 && c.Index != 0xffff && (!v.noteActive || c.Index != v.noteIdentity) && !(v.kind == VoiceGraph && v.noteIdentity == 0 && c.Index >= MonoNoteOffPitchFlag && c.Index < MonoNoteOffPitchFlag+128) && v.kind != VoiceGraphPoly {
 			return
 		}
 		if e.voices[c.Track].kind == VoiceDrums && c.Index >= uint16(drum.LaneCount) {
@@ -1524,7 +1569,7 @@ func (e *Engine) apply(c cmd.Command) {
 			index = 0xffff
 		}
 		e.noteOff(int(c.Track), index)
-		if e.voices[c.Track].kind != VoicePiano || c.Index == 0xffff {
+		if e.voices[c.Track].kind != VoicePiano && (!keysEnabled || e.voices[c.Track].kind != VoiceKeys) || c.Index == 0xffff {
 			e.patterns[c.Track].playingNote = 0
 			e.patterns[c.Track].heldValid = false
 		}
@@ -1633,7 +1678,12 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				e.updateMuteTargets()
 			}
 		case kernel.ParamPianoSustain:
-			if v.kind != VoicePiano || v.piano.SetSustain(value) != nil {
+			if keysEnabled && v.kind == VoiceKeys {
+				if v.keys.SetSustain(value) != nil {
+					e.fault(18)
+					return
+				}
+			} else if v.kind != VoicePiano || v.piano.SetSustain(value) != nil {
 				e.fault(18)
 				return
 			}
@@ -1970,6 +2020,14 @@ func (e *Engine) noteOff(track int, lane uint16) {
 		} else {
 			v.piano.NoteOff(uint8(lane))
 		}
+	case VoiceKeys:
+		if keysEnabled {
+			if lane == 0xffff {
+				v.keys.AllNotesOff()
+			} else {
+				v.keys.NoteOff(uint8(lane))
+			}
+		}
 	case VoiceGraphPoly:
 		if lane < 128 {
 			v.legacyPoly.NoteOffNote(uint8(lane))
@@ -2021,6 +2079,11 @@ func (e *Engine) resetVoice(track int) {
 	case VoicePiano:
 		v.piano.Reset()
 		_ = v.piano.SetSustain(v.pianoSustain)
+	case VoiceKeys:
+		if keysEnabled {
+			v.keys.Reset()
+			_ = v.keys.SetSustain(v.pianoSustain)
+		}
 	case VoiceDrums:
 		v.drums.Reset()
 	}

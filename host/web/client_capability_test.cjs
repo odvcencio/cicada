@@ -15,7 +15,7 @@ function image(version, bpm = 120000) {
 }
 function setup(version = 13, message = { t: 'r', p: 65911, r: 'initial', c: true }) {
   let nextImage = image(version), nextRevision = 'initial';
-  const stats = { nodes: 0, closed: 0, posted: [], timers: new Set(), errors: [] };
+  const stats = { nodes: 0, disconnected: 0, closed: 0, posted: [], timers: new Set(), errors: [] };
   class Context {
     constructor() { this.sampleRate = 48000; this.audioWorklet = { addModule: async () => {} }; }
     async resume() {}
@@ -32,6 +32,7 @@ function setup(version = 13, message = { t: 'r', p: 65911, r: 'initial', c: true
     AudioWorkletNode: class {
       constructor() { stats.nodes++; this.port = { postMessage: data => stats.posted.push(data) }; }
       connect() { queueMicrotask(() => this.port.onmessage({ data: message })); }
+      disconnect() { stats.disconnected++; }
     }
   });
   vm.runInContext(fs.readFileSync(path.join(__dirname, 'client.js'), 'utf8'), context);
@@ -63,9 +64,11 @@ async function start(harness) {
   assert.match((await start(old)).error.message, /image15.*CapabilityUnifiedImage/);
   assert.equal(old.client.context, null);
   assert.equal(old.stats.closed, 1, 'failed startup did not close the context');
+  assert.equal(old.stats.disconnected, 1, 'failed startup did not disconnect the candidate node');
   const cached = setup(15, { t: 'r', p: 1, c: true });
   assert.match((await start(cached)).error.message, /image15.*CapabilityUnifiedImage/);
   assert.equal(cached.stats.closed, 1);
+  assert.equal(cached.stats.disconnected, 1);
 
   const legacy = setup(13, { t: 'r', p: 0, r: 'initial', c: true });
   assert.ok((await start(legacy)).result);

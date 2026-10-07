@@ -10,8 +10,8 @@ import (
 )
 
 func TestGridChainAndExpressionImageRoundTrip(t *testing.T) {
-	if kernelimage.GridCapability&kernelimage.PMCapability != 0 || kernelimage.ChainCapability&kernelimage.ModalCapability != 0 {
-		t.Fatal("grid and phase modulation share a capability bit")
+	if kernelimage.GridCapability&(kernelimage.PMCapability|kernelimage.KeysCapability) != 0 || kernelimage.ChainCapability&kernelimage.ModalCapability != 0 {
+		t.Fatal("pattern timing and voice features share a capability bit")
 	}
 	cfg := firstAcidConfig(t)
 	for track := range cfg.Patterns {
