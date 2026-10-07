@@ -10,7 +10,7 @@ import "std/synth"
 track bass synth.glassbass { cutoff = 680Hz }
 ```
 
-The layout groups related declarations into four libraries. Each directory has
+The layout groups related declarations into five libraries. Each directory has
 its own `cicada.mod`, source edition 2, license `MIT`, and author `Cicada project`.
 
 | Import | Public declarations | Source |
@@ -18,6 +18,7 @@ its own `cicada.mod`, source edition 2, license `MIT`, and author `Cicada projec
 | `std/synth` | `glassbass`, `nightbass`, `tymbal`, `subline`, `glass` instruments | `examples/glassbass.cicada`, `examples/cicada-chorus.cicada`, `examples/circuit-kit.cicada`, `examples/multifile/parts/voices.cicada` |
 | `std/drums` | `kick`, `circuit-kick`, `snare`, `hat` instruments; `steel`, `circuit` kits | `examples/authored-kit.cicada`, `examples/circuit-kit.cicada` |
 | `std/fx` | `drive`, `delay`, `reverb`, `comp` effects | `examples/fx-bus.cicada`, `examples/fx/compressor-bus.cicada` |
+| `std/keys` | 21 original native keyboard presets: electric pianos, Clav, tonewheel organ, FM, analog poly keys, ensemble strings | [Keyboard patches](keys/README.md) |
 | `std/presets` | `acid-squelch`, `acid-round`, `acid-bite`; `kit-tight`, `kit-roomy`, `kit-lofi` | Acid voice and built-in drum kit parameter values |
 
 The graph voices preserve their example definitions. `circuit-kick` renames the
@@ -47,7 +48,9 @@ the change, then run `cicada lib update std/synth` (or omit the path for all
 imports) to accept and re-pin it. A byte-identical std library needs no re-pin.
 
 Try the new examples under `examples/std-synth`, `examples/std-drums`,
-`examples/std-fx`, and `examples/std-presets`. Existing examples remain unchanged.
+`examples/std-fx`, `examples/std-presets`, and `examples/keys/std`. Existing
+examples remain unchanged.
 The [manual](../../docs/manual/writing-music.md#standard-libraries) includes one
 usage example for each library. Libraries compile on the host; they add no source
-or bytes to the WASM audio kernel.
+or bytes to the core WASM audio kernel. `std/keys` uses the separately loaded
+keyboard module in the browser; its manifest requires capability bit 9 (512).

@@ -82,6 +82,9 @@ Controller, program and expression events are outside this note importer.
 Variable tempo or meter and unsupported drum pitches are rejected.
 The output path must be new, so an import cannot replace an existing score.
 
+To package a score as a browser instrument with live macros and MIDI input,
+see [WAM2 instruments](wam2.md).
+
 ## Semantic JSON
 
 If another tool needs the typed project instead of audio, use
