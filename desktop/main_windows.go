@@ -100,13 +100,9 @@ func run() error {
 		smoke:     map[string]any{},
 	}
 	h.state = loadState(h.statePath)
-	score := initialScore(flags.Args(), h.state)
-	if score == "" {
-		parent := filepath.Join(documentsDir(), "Cicada")
-		score, err = newProject(cicada, parent, nextProjectName(parent))
-		if err != nil {
-			return err
-		}
+	score, err := resolveInitialScore(flags.Args(), h.state, cicada, filepath.Join(documentsDir(), "Cicada"))
+	if err != nil {
+		return err
 	}
 
 	h.app, err = desktop.New(desktop.Options{
@@ -120,7 +116,7 @@ func run() error {
 		UserDataDir:      filepath.Join(*dataDir, "WebView2"),
 		MuteAudio:        *mute,
 		DevTools:         *devTools,
-		SingleInstance:   true,
+		SingleInstance:   *smokeOut == "",
 		OnSecondInstance: h.onSecondInstance,
 		OnNavigationCompleted: func(event desktop.NavigationCompleted) {
 			h.onNavigationCompleted(event)

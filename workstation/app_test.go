@@ -286,3 +286,23 @@ func TestHighlightUTF16Offsets(t *testing.T) {
 		}
 	}
 }
+
+func TestBackendMediaQueryPreservesPackAndHit(t *testing.T) {
+	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/instrument-hit" || r.URL.Query().Get("sha256") != "pack-pin" || r.URL.Query().Get("hit") != "2" {
+			t.Errorf("media query changed: %s", r.URL.String())
+		}
+		_, _ = io.WriteString(w, `{}`)
+	}))
+	defer audio.Close()
+	b, err := newBackend(audio.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := b.call(t.Context(), http.MethodGet, "/api/instrument-hit?sha256=pack-pin&hit=2", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.request(t.Context(), http.MethodGet, "https://example.com/api/instrument-hit", nil); err == nil {
+		t.Fatal("backend accepted a remote resource")
+	}
+}

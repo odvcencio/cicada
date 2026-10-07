@@ -11,6 +11,7 @@ import (
 
 type draft struct {
 	Source, Revision, Owner string
+	File                    string
 	Kind                    string
 	Expires                 time.Time
 }
@@ -23,6 +24,14 @@ func (s *studioApp) preserveDraft(ctx *action.Context) map[string]string {
 	if err != nil {
 		return nil
 	}
+	s.draftMu.Lock()
+	d := s.drafts[key]
+	d.File = ctx.FormData["file"]
+	if ctx.FormData["fileRevision"] != "" {
+		d.Revision = ctx.FormData["fileRevision"]
+	}
+	s.drafts[key] = d
+	s.draftMu.Unlock()
 	session.Current(ctx.Request).Set("score-draft", key)
 	if action.WantsJSON(ctx.Request) {
 		return ctx.FormData

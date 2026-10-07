@@ -5,7 +5,8 @@ const path = require('node:path');
 const vm = require('node:vm');
 const assert = require('node:assert/strict');
 
-const [wasmPath, imagePath] = process.argv.slice(2);
+const [wasmPath, imagePath, pcmPath] = process.argv.slice(2);
+const expected = pcmPath ? fs.readFileSync(pcmPath) : null;
 if (!wasmPath || !imagePath) throw new Error('usage: node chord_worklet_reactor_test.cjs kernel.wasm poly.image');
 
 async function check(asset, capture, module, image) {
@@ -35,7 +36,7 @@ async function check(asset, capture, module, image) {
       timeout = setTimeout(() => reject(new Error('actual worklet did not become ready')), 30000);
     })]);
   } finally { clearTimeout(timeout); }
-  assert.equal(messages.find(message => message.t === 'r').p, 254463, 'unified/chord/grid/chain/automation/spatial capability handshake missing');
+  assert.equal(messages.find(message => message.t === 'r').p, 255487, 'unified/chord, pack and spatial capability handshake missing');
   const play = new Uint8Array(24); play[0] = 1; play[1] = 255;
   port.onmessage({ data: { t: 'c', bytes: play } });
   const output = [[new Float32Array(128), new Float32Array(128)]];
@@ -46,10 +47,15 @@ async function check(asset, capture, module, image) {
       assert.ok(Number.isFinite(sample), 'non-finite worklet output');
       nonzero ||= sample !== 0;
     }
+    if (expected) for (let frame = 0; frame < 128; frame++) for (let channel = 0; channel < 2; channel++) {
+      const at = ((block * 128 + frame) * 2 + channel) * 4;
+      assert.ok(Math.abs(output[0][channel][frame] - expected.readFloatLE(at)) < 2e-7,
+        `native/worklet drift at frame ${block * 128 + frame}, channel ${channel}`);
+    }
   }
   assert.ok(nonzero, 'actual chord image rendered only silence');
   assert.ok(!messages.some(message => ['e', 'x', 'f'].includes(message.t)), 'actual worklet faulted');
-  console.log(`${asset}: actual reactor initialized, accepted unified image15 and rendered chord audio`);
+  console.log(`${asset} (${capture ? 'capture' : 'playback'}): actual reactor initialized and rendered${expected ? ' with native PCM parity' : ' chord audio'}`);
 }
 (async () => {
   const module = await WebAssembly.compile(fs.readFileSync(wasmPath));

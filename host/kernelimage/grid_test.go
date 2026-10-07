@@ -14,7 +14,7 @@ import (
 )
 
 func TestGridChainAutomationAndExpressionImageRoundTrip(t *testing.T) {
-	if kernelimage.GridCapability&(kernelimage.PMCapability|kernelimage.KeysCapability) != 0 || kernelimage.ChainCapability&kernelimage.ModalCapability != 0 || kernelimage.AutomationCapability&kernelimage.DDSPCapability != 0 {
+	if kernelimage.GridCapability&(kernelimage.PMCapability|kernelimage.KeysCapability|kernelimage.PackCapability) != 0 || kernelimage.ChainCapability&(kernelimage.ModalCapability|kernelimage.KeysCapability|kernelimage.PackCapability) != 0 || kernelimage.AutomationCapability&(kernelimage.DDSPCapability|kernelimage.KeysCapability|kernelimage.PackCapability) != 0 {
 		t.Fatal("project extensions share a voice capability bit")
 	}
 	cfg := firstAcidConfig(t)

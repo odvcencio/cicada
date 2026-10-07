@@ -142,6 +142,8 @@ audio { max-width:100%; }
 footer { padding:20px 28px; color:var(--muted); border-top:1px solid var(--border); font-size:12px; }
 /* GoSX owns editor behavior; the code surface adopts the workstation palette. */
 .editor-page { --editor-bg:var(--bg); --editor-surface:var(--panel); }
+#score .editor-native-body { grid-template-columns:minmax(0,1fr); }
+#score .editor-native-sidebar { display:none; }
 @media(max-width:700px) { .masthead { gap:16px; flex-wrap:wrap; } .score-meta { width:100%; } .toolbar,.nav,.masthead,main { padding:14px 16px; } .panel { padding:14px; } .panel-heading { display:block; } .panel-heading p {text-align:left;} }
 @media(max-width:850px) { .pattern-editor { grid-template-columns:minmax(0,1fr); } .pattern-library { flex-direction:row; overflow:auto; } .pattern-choice { min-width:140px; flex-shrink:0; } }
 @media(prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; animation:none !important; transition:none !important; } }

@@ -146,3 +146,40 @@ func TestProjectionFailureAfterSaveDoesNotReportWriteFailure(t *testing.T) {
 		t.Fatalf("ambiguous saved receipt: %d %+v %+v", response.Code, result, receipt)
 	}
 }
+
+func TestReactivePartSaveAcknowledgesSelectedFileRevision(t *testing.T) {
+	for _, after := range []string{"part-saved", "external-part"} {
+		t.Run(after, func(t *testing.T) {
+			audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/api/files":
+					_, _ = io.WriteString(w, `{"revision":"part-saved","valid":true}`)
+				case "/api/workspace":
+					_ = json.NewEncoder(w).Encode(workspace{Revision: "entry-unchanged", Filename: "main.cicada", Files: []projectFile{{Name: "parts/notes.cicada", Revision: after, Source: "pattern p { 1 . }"}}})
+				default:
+					_, _ = io.WriteString(w, `{}`)
+				}
+			}))
+			defer audio.Close()
+			b, _ := newBackend(audio.URL)
+			s := &studioApp{backend: b}
+			request := httptest.NewRequest(http.MethodPost, "http://localhost/__actions/source", strings.NewReader(`{"file":"parts/notes.cicada","fileRevision":"part-before","content":"pattern p { 1 . }","__cicada_location":"/?panel=code&file=parts%2Fnotes.cicada"}`))
+			request.Header.Set("Content-Type", "application/json")
+			request.Header.Set("Accept", "application/json")
+			request.Header.Set("X-Cicada-Reactive", "1")
+			response := httptest.NewRecorder()
+			s.serveAction(response, request, "source", s.saveSource)
+			var result action.Result
+			if err := json.Unmarshal(response.Body.Bytes(), &result); err != nil {
+				t.Fatal(err)
+			}
+			var projection workspaceProjection
+			if err := json.Unmarshal(result.Data, &projection); err != nil {
+				t.Fatal(err)
+			}
+			if !result.OK || !projection.Saved || projection.WriteRevision != "part-saved" || projection.Revision != "entry-unchanged" || projection.FileRevision != after || projection.RefreshRequired != (after != "part-saved") {
+				t.Fatalf("selected file acknowledgment: %+v %+v", result, projection)
+			}
+		})
+	}
+}

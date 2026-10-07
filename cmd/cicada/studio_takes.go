@@ -173,6 +173,10 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.captureInstrument {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "stop instrument recording before changing takes", "retained": true})
+		return
+	}
 	responseTake := s.captureID
 	fail := func(err error) {
 		status := http.StatusUnprocessableEntity
@@ -312,29 +316,35 @@ func takeRoot(score string) string { dir, _ := takejournal.ProjectRoot(score); r
 // Only bytes identified by this prepared transaction gain a receipt; a later
 // external write still differs from that receipt and triggers the existing guard.
 func (s *studio) recoverTakeReceipts(t takejournal.Take) error {
-	entries, err := os.ReadDir(filepath.Dir(s.path))
+	dir, err := studioRecoveryDir(s.path)
 	if err != nil {
 		return err
 	}
-	prefix := strings.TrimSuffix(studioRecoveryPattern(s.path), "*")
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), prefix) || strings.HasSuffix(entry.Name(), ".revision") {
-			continue
-		}
-		path := filepath.Join(filepath.Dir(s.path), entry.Name())
-		if _, err := os.Stat(path + ".revision"); !os.IsNotExist(err) {
-			continue
-		}
-		data, err := os.ReadFile(path)
+	for _, dir := range []string{dir, filepath.Dir(s.path)} {
+		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return err
 		}
-		rev := studioRevision(data)
-		if rev != t.Before && rev != t.After {
-			continue
-		}
-		if err = studioKeepRecovery(path, rev); err != nil {
-			return err
+		prefix := strings.TrimSuffix(studioRecoveryPattern(s.path), "*")
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), prefix) || strings.HasSuffix(entry.Name(), ".revision") {
+				continue
+			}
+			path := filepath.Join(dir, entry.Name())
+			if _, err := os.Stat(path + ".revision"); !os.IsNotExist(err) {
+				continue
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return err
+			}
+			rev := studioRevision(data)
+			if rev != t.Before && rev != t.After {
+				continue
+			}
+			if err = studioKeepRecovery(path, rev); err != nil {
+				return err
+			}
 		}
 	}
 	return takejournal.SyncDirectory(filepath.Dir(s.path))
@@ -356,6 +366,9 @@ func (s *studio) shutdown() error {
 		}
 		if err := s.takes.Publish(s.captureID); err != nil {
 			return err
+		}
+		if s.captureInstrument {
+			return nil
 		}
 		t, err := s.takes.Get(s.captureID)
 		if err != nil {

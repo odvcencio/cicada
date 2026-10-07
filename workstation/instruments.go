@@ -38,6 +38,15 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 			}
 		}
 		if definition == nil {
+			for _, sampler := range p.Samplers {
+				if sampler.Name == track.Kind {
+					label := "Sampled"
+					if strings.HasSuffix(sampler.Name, "_model") {
+						label = "Model approximation"
+					}
+					tracks = append(tracks, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("data-instrument-track", track.ID)), gosx.El("h3", gosx.Text(track.ID)), gosx.El("p", gosx.Text(label+" · "+sampler.Name))))
+				}
+			}
 			continue
 		}
 		mode := "Monophonic"
@@ -70,7 +79,7 @@ func (s *studioApp) instruments(ctx *server.Context, v workspace, csrf string) g
 	if len(tracks) == 0 {
 		tracks = append(tracks, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Add a patch to create your first programmable instrument track.")))
 	}
-	return gosx.Fragment(s.samplePacks(ctx, v, csrf), ui.Panel(ui.PanelProps{ID: "instrument-library", Title: "Instrument library", Description: "Add a voiced starting point, then make it yours. Each patch is saved as an editable instrument graph in your score."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(library...)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Choose a notes pattern in Patterns and place it on the new track. Undo removes the instrument and track together."))), ui.Panel(ui.PanelProps{ID: "project-instruments", Title: "Your instruments", Description: "Shape each track with the declared controls. Use default removes its override; Undo restores any setting."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(tracks...)), gosx.El("p", gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=code")), gosx.Text("Edit the shared instrument graph in Score")))))
+	return gosx.Fragment(s.recorded(ctx, v, csrf), s.samplePacks(ctx, v, csrf), ui.Panel(ui.PanelProps{ID: "instrument-library", Title: "Instrument library", Description: "Add a voiced starting point, then make it yours. Each patch is saved as an editable instrument graph in your score."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "arrangement-blocks")), gosx.Fragment(library...)), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Choose a notes pattern in Patterns and place it on the new track. Undo removes the instrument and track together."))), ui.Panel(ui.PanelProps{ID: "project-instruments", Title: "Your instruments", Description: "Shape each track with the declared controls. Use default removes its override; Undo restores any setting."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(tracks...)), gosx.El("p", gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=code")), gosx.Text("Edit the shared instrument graph in Score")))))
 }
 
 func instrumentUnit(unit string) string {
