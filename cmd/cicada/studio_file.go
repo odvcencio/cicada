@@ -22,7 +22,11 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 }
 
 func studioWriteTakeIfRevision(path string, updated []byte, mode os.FileMode, expected string, beforeSwap func(), checkpoint func(takejournal.Stage)) (bool, string, error) {
-	stage, err := os.CreateTemp(filepath.Dir(path), studioRecoveryPattern(path))
+	dir, err := studioRecoveryDir(path)
+	if err != nil {
+		return false, "", err
+	}
+	stage, err := os.CreateTemp(dir, studioRecoveryPattern(path))
 	if err != nil {
 		return false, "", err
 	}
@@ -119,26 +123,46 @@ func studioKeepRecovery(path, revision string) error {
 	if err != nil {
 		return fmt.Errorf("cannot record recovery revision; keep %s and compare it with the score: %w", path, err)
 	}
-	return nil
+	return takejournal.SyncDirectory(filepath.Dir(path))
 }
 
 func studioRecoveryConflict(path string) error {
 	// ReadDir avoids treating metacharacters in the score's directory as glob syntax.
-	entries, err := os.ReadDir(filepath.Dir(path))
+	dir, err := studioRecoveryDir(path)
 	if err != nil {
 		return err
 	}
-	prefix := strings.TrimSuffix(studioRecoveryPattern(path), "*")
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), prefix) || strings.HasSuffix(entry.Name(), ".revision") {
-			continue
+	for _, dir := range []string{dir, filepath.Dir(path)} {
+		entries, err := os.ReadDir(dir)
+		if err != nil {
+			return err
 		}
-		recovery := filepath.Join(filepath.Dir(path), entry.Name())
-		revision, revisionErr := os.ReadFile(recovery + ".revision")
-		source, sourceErr := os.ReadFile(recovery)
-		if revisionErr != nil || sourceErr != nil || string(revision) != studioRevision(source) {
-			return fmt.Errorf("save refused: an external write or an incomplete save remains at %s; close other editors, compare and merge that file with the score, then move the recovery file and its .revision file out of this directory", recovery)
+		prefix := strings.TrimSuffix(studioRecoveryPattern(path), "*")
+		for _, entry := range entries {
+			if !strings.HasPrefix(entry.Name(), prefix) || strings.HasSuffix(entry.Name(), ".revision") {
+				continue
+			}
+			recovery := filepath.Join(dir, entry.Name())
+			revision, revisionErr := os.ReadFile(recovery + ".revision")
+			source, sourceErr := os.ReadFile(recovery)
+			if revisionErr != nil || sourceErr != nil || string(revision) != studioRevision(source) {
+				return fmt.Errorf("save refused: an external write or an incomplete save remains at %s; close other editors, compare and merge that file with the score, then move the recovery file and its .revision file out of this directory", recovery)
+			}
 		}
 	}
 	return nil
+}
+
+// Keep linked displaced inodes in app data: late writes through an external
+// editor's open handle remain detectable without littering the project.
+func studioRecoveryDir(path string) (string, error) {
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Join(base, "Cicada Studio", "revisions", studioRevision([]byte(path))[:16])
+	if err := os.MkdirAll(dir, 0700); err != nil {
+		return "", err
+	}
+	return dir, nil
 }

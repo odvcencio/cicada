@@ -1,0 +1,2 @@
+pattern riff { 1 . 5 . 3 . 7 . }
+pattern taps drums { bd: x...x... sd: ..x...x. }

@@ -34,6 +34,7 @@ type studioHistoryEntry struct {
 	RevisionBefore string    `json:"revisionBefore"`
 	RevisionAfter  string    `json:"revisionAfter"`
 	Diff           string    `json:"diff"`
+	files          []studioAuxiliaryFile
 	beforeSource   []byte
 	afterSource    []byte
 }
@@ -263,6 +264,7 @@ func (h *studioHistory) historySnapshot() studioHistorySnapshot {
 }
 
 func cloneStudioHistoryEntry(entry studioHistoryEntry) studioHistoryEntry {
+	entry.files = cloneStudioFiles(entry.files)
 	entry.beforeSource = bytes.Clone(entry.beforeSource)
 	entry.afterSource = bytes.Clone(entry.afterSource)
 	return entry
@@ -464,6 +466,13 @@ func (s *studio) applyHistoryRequest(w http.ResponseWriter, r *http.Request, ope
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "history edit no longer matches the score on disk; nothing was changed"})
 		return
 	}
+	request.historyFiles = cloneStudioFiles(target.files)
+	if operation == "undo" || operation == "revert" {
+		for i := range request.historyFiles {
+			file := &request.historyFiles[i]
+			file.Before, file.After = file.After, file.Before
+		}
+	}
 	request.Action = operation
 	request.Label = strings.ToUpper(operation[:1]) + operation[1:] + " · " + target.Label
 	kind := studioHistoryWriteUndo
@@ -477,7 +486,11 @@ func (s *studio) applyHistoryRequest(w http.ResponseWriter, r *http.Request, ope
 }
 
 func (s *studio) commitSourceLocked(w http.ResponseWriter, edit studioEdit, current, updated []byte, beforeSwap func(), historyKind studioHistoryWriteKind, targetID uint64) {
-	p, err := compileStudioSource(s.path, updated)
+	overrides := map[string][]byte{}
+	for _, file := range edit.historyFiles {
+		overrides[file.Path] = file.After
+	}
+	p, err := compileStudioSourceWithOverrides(s.path, updated, overrides)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -518,9 +531,15 @@ func (s *studio) commitSourceLocked(w http.ResponseWriter, edit studioEdit, curr
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during commit; reload before saving"})
 		return
 	}
+	if err := studioWriteAuxiliaryFiles(edit.historyFiles); err != nil {
+		_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
+		studioJSON(w, 409, map[string]any{"error": fmt.Sprintf("history file write failed: %v; rollback: %v", err, rollbackErr)})
+		return
+	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
 	if s.history != nil {
-		s.history.recordSourceWrite(current, updated, studioEditLabel(edit), historyKind, targetID)
+		entry := s.history.recordSourceWrite(current, updated, studioEditLabel(edit), historyKind, targetID)
+		s.history.attachFiles(entry.ID, edit.historyFiles)
 	}
 	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(updated), "valid": true, "source": string(updated), "preserved": preserved})
 }
@@ -532,4 +551,24 @@ func (s *studio) workspaceScript(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-cache")
 	_, _ = w.Write(studioWorkspaceScript)
+}
+
+func cloneStudioFiles(files []studioAuxiliaryFile) []studioAuxiliaryFile {
+	result := make([]studioAuxiliaryFile, len(files))
+	for i, file := range files {
+		file.Before = bytes.Clone(file.Before)
+		file.After = bytes.Clone(file.After)
+		result[i] = file
+	}
+	return result
+}
+func (h *studioHistory) attachFiles(id uint64, files []studioAuxiliaryFile) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	for i := range h.edits {
+		if h.edits[i].ID == id {
+			h.edits[i].files = cloneStudioFiles(files)
+			return
+		}
+	}
 }

@@ -73,7 +73,7 @@ func Analyze(inputs []Audio, options Options) ([]Hit, error) {
 		ordered := append([]float64(nil), energy...)
 		sort.Float64s(ordered)
 		noise := ordered[len(ordered)/5]
-		threshold := max(.0008, max(noise*6, ordered[len(ordered)-1]*.018))
+		threshold := max(.0008, max(noise*6, ordered[len(ordered)-1]*.10))
 		var onsets []int
 		last := -a.Rate
 		for w, e := range energy {
@@ -82,7 +82,7 @@ func Analyze(inputs []Audio, options Options) ([]Hit, error) {
 			if w > 0 {
 				previous = energy[w-1]
 			}
-			if e > threshold && (previous < threshold || e > max(threshold, previous*2.5)) && frame-last >= a.Rate*60/1000 {
+			if e > threshold && (previous < threshold || e > max(threshold, previous*2.5)) && frame-last >= a.Rate*120/1000 {
 				onsets = append(onsets, frame)
 				last = frame
 			}

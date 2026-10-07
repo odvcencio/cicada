@@ -125,7 +125,10 @@ probe-wasm:
 
 build-kernel-wasm:
 	mkdir -p build
-	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm || { \
+	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
+		tinygo build -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm && \
+		"$$(tinygo env TINYGOROOT)/bin/wasm-opt" -Oz build/cicada-kernel.wasm -o build/cicada-kernel.optimized.wasm && \
+		mv build/cicada-kernel.optimized.wasm build/cicada-kernel.wasm' || { \
 		status=$$?; \
 		if [ $$status -eq 124 ] || [ $$status -eq 137 ]; then \
 			echo "FAIL build-kernel-wasm: TinyGo kernel build exceeded $(KERNEL_WASM_BUILD_TIMEOUT) budget" >&2; \

@@ -10,7 +10,7 @@ import (
 )
 
 func TestGridAndExpressionImageRoundTrip(t *testing.T) {
-	if kernelimage.GridCapability&(kernelimage.PMCapability|kernelimage.KeysCapability) != 0 {
+	if kernelimage.GridCapability&(kernelimage.PMCapability|kernelimage.KeysCapability|kernelimage.PackCapability) != 0 {
 		t.Fatal("pattern timing and voice features share a capability bit")
 	}
 	cfg := firstAcidConfig(t)
