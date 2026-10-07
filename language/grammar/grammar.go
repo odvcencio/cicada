@@ -139,7 +139,7 @@ func Cicada() *grammargen.Grammar {
 		str("pattern"), field("name", sym("_name")), str("drums"), repeat(sym("pattern_attr")),
 		str("{"), repeat(sym("pattern_attr")), repeat(sym("drum_lane")), str("}"),
 	))
-	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", sym("number"))))
+	g.Define("pattern_attr", seq(field("name", sym("identifier")), str("="), field("value", choice(sym("number"), sym("fraction")))))
 
 	// Expression rows follow the melodic cells. Joined labels delimit rows
 	// even when semicolons and newlines are omitted.

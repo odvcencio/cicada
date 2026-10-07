@@ -504,6 +504,9 @@ func ValidateProject(p *Project) error {
 			return fmt.Errorf("duplicate or invalid pattern ID %q", pattern.ID)
 		}
 		patterns[pattern.ID] = pattern
+		if pattern.StepTicks != 0 && (pattern.StepTicks < 30 || pattern.StepTicks > 3840) {
+			return fmt.Errorf("pattern %s has invalid grid", pattern.ID)
+		}
 		if pattern.Steps < 1 || pattern.Steps > 64 || pattern.SwingPercent100 < 5000 || pattern.SwingPercent100 > 7500 || pattern.GatePercent < 10 || pattern.GatePercent > 100 || pattern.Transpose < -24 || pattern.Transpose > 24 {
 			return fmt.Errorf("pattern %s has invalid timing or length", pattern.ID)
 		}

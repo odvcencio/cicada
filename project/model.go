@@ -141,6 +141,7 @@ type Export struct {
 }
 
 type Pattern struct {
+	StepTicks       uint16             `cicada:"Cell duration at 960 PPQ; zero means 240 ticks" unit:"ticks" range:"0..3840" json:"step_ticks,omitempty"`
 	ID              string             `cicada:"Pattern identifier" json:"id"`
 	Kind            string             `cicada:"Melodic or drum pattern kind" json:"kind"`
 	Steps           uint8              `cicada:"Number of steps" range:"1..64" json:"steps"`
@@ -470,7 +471,7 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 			return nil, append(diagnostics, patternCompileDiagnostic(err, source.Position))
 		}
 		pattern := Pattern{
-			ID: source.Name, Kind: semanticPatternKind(score, source), Steps: compiled[0].Pattern.Len,
+			ID: source.Name, Kind: semanticPatternKind(score, source), Steps: compiled[0].Pattern.Len, StepTicks: compiled[0].Pattern.StepTicks,
 			SwingPercent100: 5000, GatePercent: compiled[0].Pattern.GatePercent,
 			Transpose: compiled[0].Pattern.Transpose, Seed: compiled[0].Pattern.Seed,
 			Data: []*Step{}, Lanes: map[string][]*Step{},

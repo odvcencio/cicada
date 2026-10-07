@@ -248,7 +248,7 @@ func (c Command) Validate(tracks uint8) error {
 		}
 	case OpSetPatternMeta:
 		transpose := int16(c.Arg0 >> 16)
-		if c.Arg0&0xffff > 500 || transpose < -24 || transpose > 24 || c.Arg1 >= 16 {
+		if c.Index != 0 && (c.Index < 30 || c.Index > 3840) || c.Arg0&0xffff > 500 || transpose < -24 || transpose > 24 || c.Arg1 >= 16 {
 			return Error("pattern metadata is out of range")
 		}
 	case OpSelectPattern:

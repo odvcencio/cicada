@@ -155,6 +155,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["id", "kind", "steps", "swing_percent100", "gate_percent", "transpose", "seed", "data", "lanes"],
       "properties": {
+        "step_ticks": {"type": "integer", "minimum": 0, "maximum": 3840},
         "id": {"$ref": "#/$defs/id"}, "kind": {"enum": ["acid", "notes", "drums"]},
         "steps": {"type": "integer", "minimum": 1, "maximum": 64},
         "swing_percent100": {"type": "integer", "minimum": 5000, "maximum": 7500},

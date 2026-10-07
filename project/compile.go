@@ -72,6 +72,16 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 	if !compatible {
 		return nil, fmt.Errorf("pattern %s kind differs from track %s", source.Name, track.Name)
 	}
+	// On a monophonic acid track brackets subdivide one cell. Polyphonic
+	// notes patterns retain their existing chord meaning.
+	var groupGrid uint16
+	if track.Kind == "acid" {
+		var err error
+		source, groupGrid, err = expandTuplets(source)
+		if err != nil {
+			return nil, err
+		}
+	}
 	count := len(source.Steps)
 	if source.Kind == "drums" && len(source.Lanes) > 0 {
 		count = len(source.Lanes[0].Hits)
@@ -104,6 +114,15 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 	}
 	for _, attr := range source.Attrs {
 		switch attr.Name {
+		case "step":
+			var err error
+			base.StepTicks, err = notation.GridTicks(attr.Value)
+			if err != nil {
+				return nil, err
+			}
+			if base.StepTicks == uint16(seq.TicksPerStep) {
+				base.StepTicks = 0
+			}
 		case "swing":
 			percent100, err := parsePercent100(attr.Value)
 			if err != nil {
@@ -132,6 +151,9 @@ func CompilePattern(score *notation.Score, source notation.Pattern, track notati
 			}
 			base.Seed = uint32(n)
 		}
+	}
+	if groupGrid != 0 {
+		base.StepTicks = groupGrid
 	}
 	if source.Kind == "acid" || source.Kind == "notes" {
 		octave := notation.DefaultAcidOctave

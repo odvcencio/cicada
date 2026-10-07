@@ -226,6 +226,24 @@ song { main }
 
 **Edition history:** Expression rows are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and vibrato depth. Instrument-level glide and vibrato settings are not supported.
 
+## Pattern grids and tuplets
+
+Pattern-level `step` selects an exact note division at 960 pulses per quarter note. Omitting it keeps the sixteenth-note grid. Eighth-note triplets occupy 320 ticks per cell:
+
+```cicada
+cicada 2
+track bass acid {}
+pattern triplet { step = 1/8t 1 3 5 }
+scene main { bass = triplet }
+song { main*2 }
+```
+
+On acid tracks, brackets subdivide one cell into 2–8 pitches. `pattern triplet acid { step = 1/8 [1 3 5] - }` divides the 480-tick eighth into three 160-tick cells; the following tie occupies another whole eighth. Polyphonic notes patterns keep the bracket chord syntax.
+
+Groups lower to a common exact grid with at most 64 expanded cells. Cell durations must be 30–3840 ticks. Divisions and groups that require rounding are rejected: `1/16t` and `1/20` fit the grid, while `1/28` and `1/8t [1 3 5]` do not.
+
+Grids are additive in source editions 1 and 2. Optional semantic `step_ticks` retains the legacy grid when absent. Image capability bit 13 adds each slot's duration; older kernels reject that capability. Pattern metadata commands carry the duration in their index field. MIDI export, formatting, and source round trips preserve exact tick positions.
+
 ## Multi-file projects and manifest metadata
 
 **Syntax (EBNF):**

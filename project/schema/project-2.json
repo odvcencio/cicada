@@ -615,6 +615,7 @@
         "lanes"
       ],
       "properties": {
+        "step_ticks": {"type": "integer", "minimum": 0, "maximum": 3840},
         "id": {
           "$ref": "#/$defs/id"
         },

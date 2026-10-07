@@ -1568,6 +1568,20 @@
     },
     {
       "construct": "pattern",
+      "name": "step_ticks",
+      "required": false,
+      "type": "integer",
+      "unit": "ticks",
+      "range": "0..3840",
+      "default": null,
+      "meaning": "Cell duration at 960 PPQ; zero means 240 ticks",
+      "order": 1,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "pattern",
       "name": "id",
       "required": true,
       "type": "string",
@@ -1575,7 +1589,7 @@
       "range": null,
       "default": null,
       "meaning": "Pattern identifier",
-      "order": 1,
+      "order": 2,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1589,7 +1603,7 @@
       "range": null,
       "default": null,
       "meaning": "Melodic or drum pattern kind",
-      "order": 2,
+      "order": 3,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1603,7 +1617,7 @@
       "range": "1..64",
       "default": null,
       "meaning": "Number of steps",
-      "order": 3,
+      "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1617,7 +1631,7 @@
       "range": "5000..7500",
       "default": null,
       "meaning": "Swing percentage scaled by one hundred",
-      "order": 4,
+      "order": 5,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1631,7 +1645,7 @@
       "range": "10..100",
       "default": null,
       "meaning": "Note gate percentage",
-      "order": 5,
+      "order": 6,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1645,7 +1659,7 @@
       "range": "-24..24",
       "default": null,
       "meaning": "Semitone transposition",
-      "order": 6,
+      "order": 7,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1659,7 +1673,7 @@
       "range": null,
       "default": null,
       "meaning": "Pattern random seed",
-      "order": 7,
+      "order": 8,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1673,7 +1687,7 @@
       "range": null,
       "default": null,
       "meaning": "Melodic steps",
-      "order": 8,
+      "order": 9,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1687,7 +1701,7 @@
       "range": null,
       "default": null,
       "meaning": "Drum lane steps",
-      "order": 9,
+      "order": 10,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1701,7 +1715,7 @@
       "range": null,
       "default": null,
       "meaning": "Resolved expression at each melodic step",
-      "order": 10,
+      "order": 11,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"

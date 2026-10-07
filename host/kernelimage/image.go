@@ -29,7 +29,7 @@ const PackCapability uint16 = 1 << 10
 
 const Capabilities = ModalCapability | ModeledKitCapability
 
-const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | Capabilities | PackCapability
+const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | GridCapability | Capabilities | PackCapability
 
 const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15  // experimental guitar in the unified image layout
@@ -50,6 +50,9 @@ const ExpressionCapability uint16 = 1 << 3
 
 // NeuralAmpCapability requires the pinned causal neural amp operation (28).
 const NeuralAmpCapability uint16 = 1 << 4
+
+// GridCapability adds a uint16 cell duration after each slot seed.
+const GridCapability uint16 = 1 << 13
 
 // PMCapability uses the next capability bit without changing node records.
 const PMCapability uint16 = 1 << 5
@@ -227,6 +230,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w.u16(uint16(len(cfg.Scenes)))
 	w.u16(uint16(len(cfg.Song)))
 	var capabilities uint16
+	for _, bank := range cfg.Patterns {
+		for _, pattern := range bank.Slots {
+			if pattern.StepTicks != 0 {
+				capabilities |= GridCapability
+			}
+		}
+	}
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
 		if spec.Kind == engine.VoicePrepared {
@@ -498,6 +508,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			w.byte(byte(pattern.Transpose))
 			w.byte(pattern.GatePercent)
 			w.u32(pattern.Seed)
+			if capabilities&GridCapability != 0 {
+				w.u16(pattern.StepTicks)
+			}
 			if pattern.Len > 64 {
 				return nil, Error("pattern length exceeds 64")
 			}
@@ -1038,9 +1051,15 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			pattern := &cfg.Patterns[track].Slots[slot]
 			pattern.Len, pattern.SwingPermille = length, swing
 			pattern.Transpose, pattern.GatePercent, pattern.Seed = int8(transpose), gate, seed
+			if reserved&GridCapability != 0 {
+				if pattern.StepTicks, err = r.u16(); err != nil {
+					return err
+				}
+			}
 			if spec.Kind == engine.VoiceDrums {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 					compiled := &cfg.Patterns[track].Drums[slot][lane]
+					compiled.StepTicks = pattern.StepTicks
 					compiled.Len, compiled.SwingPermille = length, swing
 					compiled.Transpose, compiled.GatePercent, compiled.Seed = int8(transpose), gate, seed
 					for step := uint8(0); step < length; step++ {

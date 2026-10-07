@@ -154,6 +154,7 @@
 (note_pattern name: (identifier) @function)
 (drum_pattern name: (identifier) @function)
 (pattern_attr name: (identifier) @attribute)
+(pattern_attr value: (fraction) @number.fraction)
 
 (expression_row_label) @attribute.builtin
 (expression_row name: (identifier) @attribute)

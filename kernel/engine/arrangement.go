@@ -89,7 +89,7 @@ func (e *Engine) scenePatternEndTick() (int64, bool) {
 		if p.active < 0 {
 			continue
 		}
-		length := int64(p.slots[p.active].Len) * seq.TicksPerStep
+		length := int64(p.slots[p.active].Len) * p.slots[p.active].GridTicks()
 		target := p.startTick % length
 		if !active {
 			period, residue, active = length, target, true

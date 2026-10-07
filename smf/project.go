@@ -96,30 +96,38 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 					slots[ti] = int(binding.Slot)
 				}
 			}
-			for step := 0; step < 16; step++ {
-				absoluteStep := int64(bar*16 + step)
-				for ti := range p.Tracks {
-					slot := slots[ti]
-					if slot < 0 {
-						continue
+			for ti := range p.Tracks {
+				slot := slots[ti]
+				if slot < 0 {
+					continue
+				}
+				probabilityTrack, probabilitySlot := uint8(ti), uint8(slot)
+				if identity != nil {
+					probabilityTrack, probabilitySlot = identity.track, identity.slot
+				}
+				appendPattern := func(pattern *seq.Pattern, lane uint8, isDrum bool) {
+					if pattern.Len == 0 {
+						return
 					}
-					probabilityTrack, probabilitySlot := uint8(ti), uint8(slot)
-					if identity != nil {
-						probabilityTrack, probabilitySlot = identity.track, identity.slot
+					grid := pattern.GridTicks()
+					first := (boundary + grid - 1) / grid
+					for absoluteStep := first; absoluteStep*grid < boundary+seq.TicksPerBar; absoluteStep++ {
+						appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, lane, isDrum, channels[ti], &held[ti][0])
 					}
-					if cfg.Track[ti].Kind == engine.VoiceDrums {
-						for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-							pattern := &cfg.Patterns[ti].Drums[slot][lane]
-							if pattern.Len != 0 {
-								appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, drum.MIDINotes[lane], true, channels[ti], &held[ti][lane])
-							}
+				}
+				if cfg.Track[ti].Kind == engine.VoiceDrums {
+					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+						pattern := &cfg.Patterns[ti].Drums[slot][lane]
+						if pattern.Len == 0 {
+							continue
 						}
-					} else {
-						pattern := &cfg.Patterns[ti].Slots[slot]
-						if pattern.Len != 0 {
-							appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, 0, false, channels[ti], &held[ti][0])
+						grid := pattern.GridTicks()
+						for absoluteStep := (boundary + grid - 1) / grid; absoluteStep*grid < boundary+seq.TicksPerBar; absoluteStep++ {
+							appendStep(&file.Tracks[ti+1], pattern, absoluteStep, uint8(ti), probabilityTrack, probabilitySlot, drum.MIDINotes[lane], true, channels[ti], &held[ti][lane])
 						}
 					}
+				} else {
+					appendPattern(&cfg.Patterns[ti].Slots[slot], 0, false)
 				}
 			}
 			bar++
@@ -182,7 +190,11 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 	track.Slots[0] = &patternID
 	clone.Tracks = []project.Track{track}
 	clone.Scenes = []project.Scene{{ID: "midi-pattern", Bindings: map[string]string{track.ID: patternID}}}
-	bars := int(pattern.Steps+15) / 16
+	grid := int64(pattern.StepTicks)
+	if grid == 0 {
+		grid = seq.TicksPerStep
+	}
+	bars := int((int64(pattern.Steps)*grid + seq.TicksPerBar - 1) / seq.TicksPerBar)
 	clone.Song = []project.SongEntry{{Scene: "midi-pattern", Bars: uint16(bars)}}
 	clone.Title = patternID
 	return fromProject(&clone, bars, &probabilityIdentity{track: uint8(selected), slot: uint8(selectedSlot)})
@@ -194,12 +206,12 @@ func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, tra
 	if err != nil || !step.Gate || !seq.ProbabilityHit(step.Probability, pattern.Seed, probabilityTrack, probabilitySlot, 0, index) {
 		return
 	}
-	start := absoluteStep * seq.TicksPerStep
-	end := (absoluteStep + 1) * seq.TicksPerStep
+	start := absoluteStep * pattern.GridTicks()
+	end := (absoluteStep + 1) * pattern.GridTicks()
 	if absoluteStep&1 != 0 {
-		start += seq.SwingDelayTicks(pattern.SwingPermille)
+		start += (pattern.GridTicks()*int64(pattern.SwingPermille) + 500) / 1000
 	} else {
-		end += seq.SwingDelayTicks(pattern.SwingPermille)
+		end += (pattern.GridTicks()*int64(pattern.SwingPermille) + 500) / 1000
 	}
 	if step.Tie {
 		if held.valid && held.step == absoluteStep-1 {

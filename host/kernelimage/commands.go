@@ -35,6 +35,9 @@ func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8,
 			gate, seed = loaded.GatePercent, loaded.Seed
 		}
 	}
+	if pattern.StepTicks != 0 && capabilities&uint32(GridCapability) == 0 {
+		return nil, Error("target kernel does not support flexible grids")
+	}
 	if pattern.GatePercent != gate || pattern.Seed != seed {
 		return nil, Error("command upload requires matching preloaded gate and seed metadata; use a complete project image")
 	}
@@ -63,7 +66,7 @@ func PatternCommands(pattern seq.Pattern, cfg *engine.Config, track, slot uint8,
 	for i := uint8(0); i < clearLen; i++ {
 		commands = append(commands, cmd.Command{Op: cmd.OpSetStep, Track: track, Index: uint16(i), Arg0: rest, Arg1: uint32(slot)})
 	}
-	commands = append(commands, cmd.Command{Op: cmd.OpSetPatternLen, Track: track, Index: uint16(pattern.Len), Arg1: uint32(slot)}, cmd.Command{Op: cmd.OpSetPatternMeta, Track: track, Arg0: uint32(pattern.SwingPermille) | uint32(uint16(int16(pattern.Transpose)))<<16, Arg1: uint32(slot)})
+	commands = append(commands, cmd.Command{Op: cmd.OpSetPatternLen, Track: track, Index: uint16(pattern.Len), Arg1: uint32(slot)}, cmd.Command{Op: cmd.OpSetPatternMeta, Track: track, Index: pattern.StepTicks, Arg0: uint32(pattern.SwingPermille) | uint32(uint16(int16(pattern.Transpose)))<<16, Arg1: uint32(slot)})
 	for i := uint8(0); i < pattern.Len; i++ {
 		commands = append(commands, cmd.Command{Op: cmd.OpSetStep, Track: track, Index: uint16(i), Arg0: pattern.Steps[i], Arg1: uint32(slot)})
 		chord := pattern.Chords[i]
