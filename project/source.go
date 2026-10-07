@@ -582,6 +582,26 @@ func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, proj
 			notes = append(notes, note)
 		}
 		out.WriteString("  " + strings.Join(notes, " ") + "\n")
+		needsVelocity := false
+		for _, step := range pattern.Data {
+			if step != nil && step.Velocity != 100 {
+				needsVelocity = true
+			}
+		}
+		if needsVelocity {
+			var values []string
+			for _, step := range pattern.Data {
+				velocity := 100
+				if step != nil {
+					velocity = int(step.Velocity)
+				}
+				if velocity < 1 {
+					return "", fmt.Errorf("velocity must be 1..127 for source")
+				}
+				values = append(values, strconv.Itoa(velocity))
+			}
+			out.WriteString("  velocity: " + strings.Join(values, " ") + "\n")
+		}
 		writeExpressionSource(&out, pattern.Expression)
 	}
 	out.WriteByte('}')

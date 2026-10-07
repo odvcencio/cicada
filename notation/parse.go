@@ -530,6 +530,17 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 				step := parseStepToken(w, c)
 				p.Parts = append(p.Parts, PatternPart{Step: &step})
 			}
+		case "velocity_row":
+			if p.Velocity != nil {
+				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate velocity row", Position: w.position(c)})
+			}
+			p.Velocity = []StepToken{}
+			for j := 0; j < c.ChildCount(); j++ {
+				value := c.Child(j)
+				if w.Type(value) == "number" || w.Text(value) == "." {
+					p.Velocity = append(p.Velocity, StepToken{Text: w.Text(value), Position: w.position(value)})
+				}
+			}
 		case "phrase_use":
 			use := parsePhraseUse(w, c)
 			p.Parts = append(p.Parts, PatternPart{Use: &use})

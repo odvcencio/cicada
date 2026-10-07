@@ -59,7 +59,28 @@ The file contains one track per Cicada track, tempo, meter, key signature, and
 General MIDI drum notes. Swing and ratchets affect tick positions; a slide
 creates a one-tick note overlap. `--pattern NAME` exports one pattern loop
 instead of the full song. Chance uses the first seeded pass on every
-repetition. MIDI import is not available.
+repetition.
+
+Import a type 0 or type 1 MIDI file into a new score:
+
+```sh
+cicada import-midi idea.mid -o idea.cicada --report
+cicada check idea.cicada
+```
+
+The importer infers an exact onset grid at 960 PPQ, including triplets.
+`--quantize 1/16` or `--quantize 1/8t` explicitly allows onset quantization.
+Melodic notes retain their MIDI velocities through `velocity:` rows; dots
+hold the preceding row value. Overlapping notes become independent piano
+tracks. General MIDI drums use the built-in lanes. The import report counts
+onset and duration edits, cross-bar note retriggers, and drum velocity edits.
+
+Import supports fixed tempo, 4/4 meter, 60–960 ticks per cell, at most 16
+tracks, 256 bars, and 16 distinct bar patterns per track. Pitch spellings
+support MIDI 12–95; the modeled piano supports 21–95 in imported scores.
+Controller, program and expression events are outside this note importer.
+Variable tempo or meter and unsupported drum pitches are rejected.
+The output path must be new, so an import cannot replace an existing score.
 
 To package a score as a browser instrument with live macros and MIDI input,
 see [WAM2 instruments](wam2.md).
