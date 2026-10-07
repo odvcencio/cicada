@@ -599,13 +599,30 @@ func parsePhrase(w *loweringWalker, n *gts.Node) Phrase {
 	return p
 }
 
+// parsePhraseUse reads the optional repeat count and transpose of a phrase use.
+// The grammar's number token also admits fractions and unit suffixes such as
+// 7.5 or 3Hz, so a transpose can fail to be a whole number. A value that fails
+// is reported and left at its default; keeping the clamped value that Atoi
+// returns for an overflow would make the range check in expandPhrases report a
+// second error for the same use.
 func parsePhraseUse(w *loweringWalker, n *gts.Node) PhraseUse {
 	u := PhraseUse{Name: w.reference(w.Field(n, "name")), Repeat: 1, Position: w.position(n)}
+	reject := func(message string) {
+		*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-USE", Severity: "error", Message: message, Position: u.Position})
+	}
 	if count := childText(w, n, "integer"); count != "" {
-		u.Repeat, _ = strconv.Atoi(count)
+		if repeat, err := strconv.Atoi(count); err != nil {
+			reject("phrase repeat " + strconv.Quote(count) + " must be a whole number from 1 to 64")
+		} else {
+			u.Repeat = repeat
+		}
 	}
 	if value := childText(w, n, "number"); value != "" {
-		u.Transpose, _ = strconv.Atoi(value)
+		if transpose, err := strconv.Atoi(value); err != nil {
+			reject("phrase transpose " + strconv.Quote(value) + " must be a whole number of semitones, such as +7 or -12")
+		} else {
+			u.Transpose = transpose
+		}
 	}
 	return u
 }
