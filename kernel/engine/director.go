@@ -40,7 +40,7 @@ func (e *Engine) applyDirector(c cmd.Command) {
 	}
 	if at > tick {
 		if e.pendingLen == len(e.pending) {
-			e.fault(5)
+			e.fault(FaultPendingFull)
 			return
 		}
 		c.Tick = at
@@ -56,7 +56,7 @@ func (e *Engine) applyDirector(c cmd.Command) {
 	if c.Op == cmd.OpSetState {
 		scene := uint16(c.Arg0)
 		if int(scene) >= len(e.scenes) {
-			e.fault(17)
+			e.fault(FaultSceneIndex)
 			return
 		}
 		e.songMode = false

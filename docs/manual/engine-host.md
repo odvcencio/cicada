@@ -81,9 +81,10 @@ success. It rejects invalid project data, channels, or block sizes and returns
 
 `gosx_audio_cmd_ptr` exposes 512 fixed 24-byte little-endian command records.
 Write a complete batch and commit it with `gosx_audio_cmd_commit(n)`; a
-rejected batch faults the engine. `gosx_audio_msg_drain` reads fixed 16-byte
-status records. Drain messages regularly so the host can report queued scenes,
-transport changes, and engine errors.
+rejected batch faults the engine with code 42. `gosx_audio_msg_drain` reads
+fixed 16-byte status records. Drain messages regularly so the host can report
+queued scenes, transport changes, and engine errors. See
+[Fault codes](#fault-codes).
 
 `OpNoteExpression` uses the existing 24-byte record. `Index` identifies the
 note started by `OpNoteOn`; `Arg0`, `Arg1`, and the word at byte 12 carry
@@ -113,7 +114,7 @@ pattern record and is rejected by older readers.
 `gosx_audio_render(frames)` writes planar float32 stereo to
 `gosx_audio_out_ptr`. The right channel starts `maxBlock` frames after the
 left. Keep block sizes within the configured limit and drain messages while
-rendering.
+rendering. A frame count outside 1 to the limit faults the engine with code 43.
 
 For drum patterns, a step command's note field selects a lane index from 0 to
 10 in this order: `bd sd ch oh cp rs lt mt ht cb cy`. Clear a rest for one
@@ -149,6 +150,58 @@ fields are in the [semantic reference](../spec/semantic-model.md).
 
 `make test-timing` checks musical boundary timing and block-size invariance.
 `make test-alloc` checks render allocations, including a sixteen-track chain.
+
+## Fault codes
+
+A `Fault` message (kind 7) means the engine stopped. It silences the rest of the
+block and stops transport, and its `A` field holds one of the codes below. In
+Go, `Engine.Reset` clears the fault. The Go names are constants in
+[`kernel/engine/faults.go`](../../kernel/engine/faults.go); codes 20 to 22 are
+in [`kernel/cmd`](../../kernel/cmd/command.go). Match on the number, not on the
+text.
+
+| Code | Go name | Meaning |
+|---:|---|---|
+| 1 | `FaultRenderBlock` | A render call got empty or unequal buffers, or more frames than the block limit. |
+| 2 | `FaultAcidVoice` | The acid voice reported a fault. |
+| 3 | `FaultDrumVoice` | The drum voice reported a fault. |
+| 4 | `FaultLimiter` | The master limiter reported a fault. |
+| 5 | `FaultPendingFull` | The queue of commands that wait for a future tick is full. |
+| 6 | `FaultSeek` | The transport rejected a seek. |
+| 7 | `FaultTempo` | The transport rejected a tempo change. |
+| 8 | `FaultNoteRange` | A live note-on or note-off named a pitch or drum lane that the track's voice rejects. |
+| 9 | `FaultVoiceUnsupported` | The track's voice cannot take the command or note: the track is off, its voice kind lacks the feature, or the sampler cannot pitch its sample to the note. |
+| 10 | `FaultUnhandledCommand` | The engine accepted a command that it cannot run. Validation must refuse such a command, so this signals an engine bug. |
+| 11 | `FaultMessageOverflow` | The status queue filled with messages that cannot be dropped. Drain messages more often. |
+| 20 | `cmd.FaultPolyLive` | A legacy `OpNoteOn`, `OpNoteExpression` or `OpNoteOff` went to a polyphonic track. Use the handle-aware commands. |
+| 21 | `cmd.FaultDirectorQuantize` | A director state or stinger asked for phrase quantize before a phrase length was set, or used a quantize value the sequencer rejects. |
+| 22 | `cmd.FaultDirectorStinger` | A stinger targeted an off track, or a track that is playing a pattern that is not a stinger. |
+| 23 | `FaultDriveInsert` | A track's drive insert reported a fault. |
+| 24 | `FaultDelayTempo` | The delay send could not follow a tempo change. |
+| 25 | `FaultDelay` | The delay send reported a fault. |
+| 26 | `FaultReverb` | The reverb return reported a fault. |
+| 27 | `FaultCompressor` | The music-bus compressor reported a fault. |
+| 28 | `FaultMasterProcessor` | The master processor reported a fault. |
+| 29 | `FaultPreparedVoice` | A prepared voice rejected a play, a slot selection or a note. |
+| 30 | `FaultParam` | A parameter command or scene setting could not be applied: the parameter is unknown or not live, the value is out of range, the track or voice does not own it, or a processor refused the value. |
+| 31 | `FaultQuantize` | A scene launch or pattern switch used a quantize value that the sequencer rejects. |
+| 32 | `FaultSceneIndex` | A scene launch or state change named a scene that does not exist. |
+| 33 | `FaultNoSharedPatternEnd` | A scene launch at pattern end found no tick where all active patterns end together. |
+| 34 | `FaultClipStart` | A clip could not start: the clip is unknown, the clip voice rejected the note, or no clip voice was free. |
+| 35 | `FaultChainPosition` | A chain entry was written past the end of the chain. |
+| 36 | `FaultPatternEdit` | A step, chord, length or metadata command would make a pattern invalid. |
+| 37 | `FaultPatternEvents` | A pattern produced more events in one block than the track can hold. |
+| 38 | `FaultScheduledNote` | The track's voice rejected a note that a pattern scheduled. |
+| 39 | `FaultChordUnsupported` | A chord step went to a track whose voice has no chord support. |
+| 40 | `FaultPolyNote` | The polyphonic voice pool rejected a pattern note. |
+| 41 | `FaultPolyGeneration` | A polyphonic track ran out of pattern generations. |
+| 42 | `FaultHostCommandBatch` | The host refused a command batch: the count was out of range, a record was invalid, or the queue was full. The WASM exports send this. |
+| 43 | `FaultHostRenderFrames` | The host asked for a frame count outside 1 to the block limit. The WASM exports send this. |
+
+Numbers 12 to 19 are retired. Earlier builds used each of them for two to five
+unrelated faults, so a log line that holds one cannot be decoded with certainty.
+No fault uses them now. `OpCue` (14) is reserved: `Validate` rejects it, so a
+Go `Push` returns false, and a WASM batch that holds it faults with code 42.
 
 ## Position tracks for headphones
 

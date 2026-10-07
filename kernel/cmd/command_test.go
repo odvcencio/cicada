@@ -230,3 +230,11 @@ func TestCueIsReservedAndRejected(t *testing.T) {
 		t.Errorf("batch with a cue was not rejected as a whole: count=%d err=%v dst=%+v", count, err, dst)
 	}
 }
+
+// host/web/client.js shows its own text for fault 20, so the number is part of
+// the host contract. Renumbering it would break that text without any error.
+func TestPolyLiveFaultKeepsTheNumberHostsMatchOn(t *testing.T) {
+	if FaultPolyLive != 20 {
+		t.Fatalf("FaultPolyLive = %d, but host/web/client.js matches on 20", FaultPolyLive)
+	}
+}
