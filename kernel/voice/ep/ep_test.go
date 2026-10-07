@@ -133,7 +133,7 @@ func TestElectricPianoGolden(t *testing.T) {
 				}
 			}
 		}
-		expected := map[string]uint64{"tine_ep": 0xc9e52a336e7cb905, "reed_ep": 0x4945223fda6ec6c9}[name]
+		expected := map[string]uint64{"tine_ep": 0x9ade8a6d693b8941, "reed_ep": 0x22794472f05887f9}[name]
 		if expected != 0 && hash != expected {
 			t.Fatalf("%s golden changed: %016x", name, hash)
 		}
@@ -190,4 +190,145 @@ func TestConfiguredVoiceLimit(t *testing.T) {
 			t.Fatal("reset lost voice limit")
 		}
 	}
+}
+
+// TestTineSpectralBalance measures inharmonic energy separately from pickup
+// harmonics. A centroid alone cannot distinguish bark from bending modes.
+func TestTineSpectralBalance(t *testing.T) {
+	// Pre-change reed second harmonics, in dB re f0, in the 10–70 ms window.
+	reedSecond := map[uint8][3]float64{
+		57: {-16.287, -9.880, -8.596},
+		62: {-16.366, -9.924, -8.549},
+		64: {-16.396, -9.941, -8.529},
+		73: {-16.579, -10.046, -8.450},
+	}
+	for _, name := range []string{"tine_ep", "tine_bark", "tine_tremolo", "reed_ep"} {
+		for _, note := range []uint8{57, 62, 64, 73} { // A3, D4, E4, C#5.
+			t.Run(fmt.Sprintf("%s/%d", name, note), func(t *testing.T) {
+				p, err := Patch(name)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f0 := 440 * math.Exp2(float64(int(note)-69)/12)
+				var seconds [3]float64
+				for index, velocity := range []uint8{64, 100, 120} {
+					i, err := New(48000, p)
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err := i.NoteOn(note, velocity); err != nil {
+						t.Fatal(err)
+					}
+					pcm := make([]float64, 3*48000)
+					unmodulated := make([]float64, len(pcm))
+					for frame := range pcm {
+						l, r := i.NextStereo()
+						pcm[frame] = (float64(l) + float64(r)) * .5
+						// Remove known gain modulation to measure modal decay and
+						// tonebar ripple rather than the intended tremolo envelope.
+						tremolo := 1 - p.Tremolo*(.5+.5*float64(i.lfoQ))
+						unmodulated[frame] = pcm[frame] / tremolo
+					}
+					fundamental := epPartial(pcm, f0, .01, .07)
+					bend := epPartial(pcm, 6.267*f0, .01, .07)
+					bendDB := epDB(bend / fundamental)
+					seconds[index] = epDB(epPartial(pcm, 2*f0, .01, .07) / fundamental)
+					first := epPartial(unmodulated, 6.267*f0, .01, .07)
+					last := epPartial(unmodulated, 6.267*f0, .16, .22)
+					drop := epDB(first / last)
+					// Calibrated once across the fixed presets: the note-scaled
+					// 0.6-second cap gives 13.5 dB at A3; pickup saturation
+					// gives tine_bark 14.6–14.8 dB at D4/E4. Higher notes fade faster.
+					minimumDrop := 15.
+					if p.Model == Tine {
+						if note == 57 {
+							minimumDrop = 13
+						} else if name == "tine_bark" && (note == 62 || note == 64) {
+							minimumDrop = 14.4
+						}
+					}
+					if drop < minimumDrop {
+						t.Errorf("v%d bending-mode 150 ms drop %.2f dB < %.1f", velocity, drop, minimumDrop)
+					}
+					if velocity == 100 && bendDB > -15 || velocity == 120 && bendDB > -12 {
+						t.Errorf("v%d bending mode too loud: %.2f dB re f0", velocity, bendDB)
+					}
+					if velocity == 100 && (name == "tine_ep" && seconds[index] < -15 || name == "tine_bark" && seconds[index] < -12) {
+						t.Errorf("v%d second harmonic too quiet: %.2f dB re f0", velocity, seconds[index])
+					}
+					if p.Model == Reed {
+						at50 := epDB(epPartial(pcm, 6.267*f0, .02, .08) / epPartial(pcm, f0, .02, .08))
+						if velocity == 100 && at50 > -20 {
+							t.Errorf("reed bending mode at 50 ms %.2f dB > -20", at50)
+						}
+						if velocity == 100 && math.Abs(seconds[index]-reedSecond[note][index]) > 1 {
+							t.Errorf("reed second harmonic moved more than 1 dB: %.2f -> %.2f", reedSecond[note][index], seconds[index])
+						}
+					} else {
+						if ripple := epFundamentalRipple(unmodulated, f0); ripple > 2.5 {
+							t.Errorf("v%d fundamental ripple %.2f dB > 2.5", velocity, ripple)
+						}
+					}
+					if note == 62 {
+						crossed := false
+						for shift := .01; shift <= .3; shift += .01 {
+							if epPartial(unmodulated, 6.267*f0, .01+shift, .07+shift) <= first*.1 {
+								crossed = true
+								break
+							}
+						}
+						if !crossed {
+							t.Errorf("v%d D4 bending-mode T20 exceeds 0.3 s", velocity)
+						}
+					}
+					t.Logf("v%d bend=%.2f dB drop150=%.2f dB second=%.2f dB", velocity, bendDB, drop, seconds[index])
+				}
+				if growth := seconds[2] - seconds[0]; growth < 3 {
+					t.Errorf("second-harmonic bark growth v64 to v120 %.2f dB < 3", growth)
+				}
+			})
+		}
+	}
+}
+
+// epPartial evaluates selected fractional FFT bins directly using the DFT.
+// Exact frequencies and equal Hann windows avoid peak tracking, bin rounding,
+// and leakage differences between the attack and tail. No third-harmonic gate
+// is used because its measured balance depends on the window.
+func epPartial(pcm []float64, hz, start, end float64) float64 {
+	window := pcm[int(math.Round(start*48000)):int(math.Round(end*48000))]
+	var mean, real, imaginary, weight float64
+	for _, x := range window {
+		mean += x
+	}
+	mean /= float64(len(window))
+	for frame, x := range window {
+		w := .5 - .5*math.Cos(2*math.Pi*float64(frame)/float64(len(window)-1))
+		s, c := math.Sincos(2 * math.Pi * hz * float64(frame) / 48000)
+		real += (x - mean) * w * c
+		imaginary -= (x - mean) * w * s
+		weight += w
+	}
+	return 2 * math.Hypot(real, imaginary) / weight
+}
+
+func epDB(ratio float64) float64 { return 20 * math.Log10(max(ratio, 1e-15)) }
+
+func epFundamentalRipple(pcm []float64, hz float64) float64 {
+	// Fit out the fundamental's exponential decay in dB, leaving tonebar beats.
+	var times, levels []float64
+	var sx, sy, sxx, sxy float64
+	for start := .1; start+.06 <= 3; start += .02 {
+		level := epDB(epPartial(pcm, hz, start, start+.06))
+		times, levels = append(times, start), append(levels, level)
+		sx, sy, sxx, sxy = sx+start, sy+level, sxx+start*start, sxy+start*level
+	}
+	n := float64(len(times))
+	slope := (n*sxy - sx*sy) / (n*sxx - sx*sx)
+	low, high := math.Inf(1), math.Inf(-1)
+	for index, level := range levels {
+		residual := level - slope*times[index]
+		low, high = min(low, residual), max(high, residual)
+	}
+	return high - low
 }
