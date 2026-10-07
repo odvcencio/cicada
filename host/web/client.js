@@ -16,9 +16,13 @@
       this.backend = 'browser';
       this.context = null;
       this.node = null;
+      this.nodes = new Map();
       this.modulePromises = new Map();
       this.moduleKind = '';
       this.startPromise = null;
+      this.closePromise = null;
+      this.generation = 0;
+      this.fault = null;
       this.stagePromise = Promise.resolve();
       this.readyPromise = null;
       this.revision = '';
@@ -47,6 +51,7 @@
     }
 
     async startAudio(capture = false) {
+      if (this.closePromise) await this.closePromise;
       if (this.startPromise) await this.startPromise;
       if (this.context) {
         await this.context.resume();
@@ -85,17 +90,44 @@
         if (!this.outputTimelineTimer) this.outputTimelineTimer = setInterval(() => this.sampleOutputTimeline(), 5);
       } catch (error) {
         // Leave no half-started context behind, so a later Start retries from scratch.
-        const failed = this.context;
-        if (this.node) this.disposeNode(this.node);
-        this.context = null;
-        this.node = null;
-        this.readyPromise = null;
-        this.capabilities = 0;
-        this.moduleKind = '';
-        if (failed && failed.close) failed.close().catch(() => {});
+        await this.closeContext();
         throw error;
       }
       return { sampleRate: this.context.sampleRate, clock: this.clock };
+    }
+
+    close() {
+      if (this.closePromise) return this.closePromise;
+      const pending = (async () => {
+        if (this.startPromise) await this.startPromise.catch(() => {});
+        await this.closeContext();
+      })();
+      this.closePromise = pending;
+      return pending.finally(() => { if (this.closePromise === pending) this.closePromise = null; });
+    }
+
+    async closeContext() {
+      this.generation++;
+      clearInterval(this.outputTimelineTimer);
+      this.outputTimelineTimer = 0;
+      if (this.meterFrame) cancelAnimationFrame(this.meterFrame);
+      this.meterFrame = 0;
+      this.pendingMeters.clear();
+      const error = new Error('Browser audio closed');
+      for (const waiter of this.stageWaiters.values()) waiter.reject(error);
+      this.stageWaiters.clear();
+      for (const waiter of this.metricWaiters) waiter.reject(error);
+      this.metricWaiters.length = 0;
+      const context = this.context;
+      for (const node of this.nodes.keys()) this.disposeNode(node);
+      this.context = this.node = this.readyPromise = null;
+      this.capabilities = 0;
+      this.moduleKind = this.revision = '';
+      this.playing = false;
+      this.fault = null;
+      this.anchorTick(0);
+      this.notifyState();
+      if (context) await context.close();
     }
 
     imageModuleKind(image) {
@@ -129,6 +161,7 @@
       let timeout;
       const ready = new Promise((resolve, reject) => {
         timeout = setTimeout(() => reject(new Error('AudioWorklet did not initialize')), 10000);
+        this.nodes.set(node, () => { clearTimeout(timeout); reject(new Error('Browser audio closed')); });
         node.port.onmessage = event => {
           const data = event.data;
           if (data.t === 'r') {
@@ -146,6 +179,10 @@
     }
 
     disposeNode(node) {
+      const cancel = this.nodes.get(node);
+      if (!cancel) return;
+      this.nodes.delete(node);
+      cancel();
       try { this.sendCommands([{ op: 2 }], node); } catch (_) {}
       node.disconnect();
       node.port.onmessage = node.port.onmessageerror = null;
@@ -163,16 +200,20 @@
     }
 
     async replaceModule(kind, image, revision) {
+      const context = this.context;
       const module = await this.loadModule(kind);
+      if (context !== this.context) throw new Error('Browser audio closed');
       const previous = this.node;
       const prepared = await this.createNode(module, image, revision);
       try {
+        if (context !== this.context) throw new Error('Browser audio closed');
         const capture = this.captureSession;
         if (capture && ['armed', 'recording', 'saving'].includes(capture.status.state)) {
           capture.status.error = 'Capture stopped because the score changed audio modules. Arm the microphone again to record.';
           capture.notify();
           await capture.stop();
         }
+        if (context !== this.context) throw new Error('Browser audio closed');
         const tick = this.currentTick(), playing = this.playing;
         this.node = prepared.node;
         this.readyPromise = Promise.resolve(prepared.ready);
@@ -180,6 +221,7 @@
         this.revision = prepared.ready.r;
         this.clock = prepared.ready.c;
         this.capabilities = prepared.ready.p || 0;
+        this.fault = null;
         this.bpmMilli = new DataView(image).getUint32(12, true);
         this.anchorTick(tick);
         this.pendingMeters.clear();
@@ -217,9 +259,7 @@
               });
             }
             if (message.kind === 7) {
-              this.playing = false;
-              this.notifyState();
-              this.raise(audioFault(message.a));
+              this.fail(audioFault(message.a));
             }
           }
         } catch (error) {
@@ -233,15 +273,14 @@
         this.anchorTick(tick);
         this.notifyState();
       } else if (data.t === 'f') {
-        this.playing = false;
-        this.notifyState();
         const message = { kind: 7, track: 255, a: data.a, b: 0, tick: 0 };
         for (const callback of this.messages) callback(message);
-        this.raise(audioFault(data.a));
+        this.fail(audioFault(data.a));
       } else if (data.t === 'r') {
         this.clock = data.c;
         this.capabilities = data.p || 0;
       } else if (data.t === 't') {
+        this.fault = null;
         this.revision = data.r;
         const waiter = this.stageWaiters.get(data.r);
         if (waiter) { this.stageWaiters.delete(data.r); waiter.resolve(data); }
@@ -261,7 +300,7 @@
           this.callbackGapExceedances = data.d[data.d.length - 1];
         }
         const waiter = this.metricWaiters.shift();
-        if (waiter) waiter({...data, q: data.q || this.quantumMs(), l: this.contextLatencyMs(), cp: this.clock ? .1 : 1, underruns: data.u, clock: this.clock, memoryBytes: data.m,
+        if (waiter) waiter.resolve({...data, q: data.q || this.quantumMs(), l: this.contextLatencyMs(), cp: this.clock ? .1 : 1, underruns: data.u, clock: this.clock, memoryBytes: data.m, peakMemoryBytes: data.mp, instanceCount: data.n,
           callbackP99Ms: this.callbackP99Ms(),
           callbackSamples: this.callbackSamples,
           callbackDurationExceedances: this.callbackDurationExceedances,
@@ -316,6 +355,7 @@
     }
 
     raise(error) { for (const callback of this.errors) callback(error); }
+    fail(error) { this.fault = error; this.playing = false; this.notifyState(); this.raise(error); }
     notifyState() { for (const callback of this.states) callback(this.playing); }
     onMessage(callback) { this.messages.add(callback); return () => this.messages.delete(callback); }
     onError(callback) { this.errors.add(callback); return () => this.errors.delete(callback); }
@@ -325,6 +365,7 @@
 
     sendCommands(records, node = this.node) {
       if (!node) throw new Error('Select Browser mode and start audio first');
+      if (node === this.node && this.fault) throw new Error(`${this.fault.message}. Press Play to reload the score`);
       if (records.some(record => record.op === 22) && !(this.capabilities & CapabilityChords)) throw new Error('Unsupported chord opcode22');
       if (records.some(record => record.op >= 26 && record.op <= 28) && !(this.capabilities & 131072)) throw new Error('Unsupported spatial commands');
       const bytes = new Uint8Array(records.length * 24), view = new DataView(bytes.buffer);
@@ -341,31 +382,38 @@
       node.port.postMessage({ t: 'c', bytes }, [bytes.buffer]);
     }
 
-    play() {
+    async play() {
       if (this.playing) return;
+      if (this.fault) await this.stageCurrentScore();
       for (const callback of this.beforePlay) callback();
       this.sendCommands([{ op: 3, arg0: 0 }, { op: 1 }]);
     }
     stop(force = false) { if (this.playing || force) this.sendCommands([{ op: 2 }]); }
     launchScene(index) { this.sendCommands([{ op: 10, index, arg0: 2 }]); }
     selectPattern(track, slot) { this.sendCommands([{ op: 9, track, index: slot, arg0: 2 }]); }
-    playFrom(bar) { for (const callback of this.beforePlay) callback(); this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
+    async playFrom(bar) { if (this.fault) await this.stageCurrentScore(); for (const callback of this.beforePlay) callback(); this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
 
     stageCurrentScore(revision = '', capture = false) {
-      const pending = this.stagePromise.catch(() => {}).then(() => this.prepareScore(revision, capture));
+      const generation = this.generation;
+      const pending = this.stagePromise.catch(() => {}).then(() => {
+        if (generation !== this.generation) throw new Error('Browser audio closed');
+        return this.prepareScore(revision, capture);
+      });
       this.stagePromise = pending;
       return pending;
     }
 
     async prepareScore(revision, capture) {
       if (!this.node) return false;
-      if (revision && revision === this.revision) return true;
+      const node = this.node;
+      if (revision && revision === this.revision && !this.fault) return true;
       const started = performance.now();
       const response = await fetch(`/api/kernel-image?rate=${this.context.sampleRate}${capture?'&capture=1':''}`, { cache: 'no-store' });
       if (!response.ok) throw new Error((await response.text()) || 'Cannot prepare the edited score');
       const imageRevision = response.headers.get('X-Cicada-Revision') || '';
       if (revision && imageRevision !== revision) throw new Error('Score changed while preparing the browser kernel');
       const image = await response.arrayBuffer();
+      if (node !== this.node) throw new Error('Browser audio closed');
       const kind = this.imageModuleKind(image);
       if (kind !== this.moduleKind) {
         await this.replaceModule(kind, image, imageRevision);
@@ -392,12 +440,11 @@
 
     requestMetrics() {
       if (!this.node) return Promise.reject(new Error('AudioWorklet is not running'));
-      return new Promise(resolve => {
-        this.metricWaiters.push(resolve);
+      return new Promise((resolve, reject) => {
+        this.metricWaiters.push({ resolve, reject });
         this.node.port.postMessage({ t: 'q', l: this.contextLatencyMs() });
       });
     }
-    injectStall() { if (this.node) this.node.port.postMessage({ t: 'z' }); }
   }
 
   window.cicadaBrowserAudio = new CicadaBrowserAudio();

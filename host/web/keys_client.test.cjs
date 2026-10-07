@@ -60,7 +60,7 @@ function setup(initialKeys = false) {
   const context = vm.createContext({
     window: {AudioContext: Context}, AudioWorkletNode: WorkletNode,
     ArrayBuffer, Uint8Array, Uint32Array, DataView, Set, Map, Error, Promise,
-    performance, setTimeout, clearTimeout, setInterval: () => 1,
+    performance, setTimeout, clearTimeout, setInterval: () => 1, clearInterval() {},
     requestAnimationFrame: callback => { queueMicrotask(callback); return 1; },
     WebAssembly: {compile: async bytes => { compilations++; return {kind: new Uint8Array(bytes)[0] === 2 ? 'keys' : 'core'}; }},
     fetch: async url => {

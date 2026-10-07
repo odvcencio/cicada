@@ -164,7 +164,7 @@
       const countInFrames=Math.ceil(3840*60000*this.audio.context.sampleRate/(bpm*960));
       this.audio.node.port.postMessage({t:'capture-control',op:'begin',countInFrames});
       this.capturePlayed=false;
-      this.audio.play();
+      await this.audio.play();
       this.capturePlayed=!!this.audio.playing;
       this.status.state='recording'; this.status.countInFrames=countInFrames; this.notify();
     }
