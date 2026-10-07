@@ -137,7 +137,7 @@ func New(rate int, p Params) (*Instrument, error) {
 		weights := [modeCount]float64{.88, .12, .04, .004, .0005, .0001}
 		if p.Model == Reed {
 			ratios = [modeCount]float64{1, 6.267, 17.55, 34.39, 56.84, 84.9}
-			weights = [modeCount]float64{1, .058, .011, .003, .001, .0003}
+			weights = [modeCount]float64{1, .02, .0038, .001, .001, .0003}
 		}
 		for m, ratio := range ratios {
 			hz := f * ratio
@@ -152,6 +152,10 @@ func New(rate int, p Params) (*Instrument, error) {
 			if p.Model == Tine && m >= 2 {
 				h := float64(m - 2)
 				t60 = min(t60, 0.6*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
+			}
+			if p.Model == Reed && m >= 1 {
+				h := float64(m - 1)
+				t60 = min(t60, .5*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
 			}
 			k.modes[m] = rotation{c: float32(math.Cos(a)), s: float32(math.Sin(a)), r: float32(math.Exp(-6.907755 / (t60 * fs))), weight: float32(weights[m])}
 		}
