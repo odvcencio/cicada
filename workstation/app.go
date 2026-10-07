@@ -77,7 +77,11 @@ func newApp(b *backend) (http.Handler, error) {
 	// The 2 MiB limit covers score forms and applies before CSRF form parsing.
 	app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			r.Body = http.MaxBytesReader(w, r.Body, 2<<20)
+			limit := int64(2 << 20)
+			if r.URL.Path == "/__instrument/import" {
+				limit = 65 << 20
+			}
+			r.Body = http.MaxBytesReader(w, r.Body, limit)
 			defer func() {
 				if r.MultipartForm != nil {
 					_ = r.MultipartForm.RemoveAll()
@@ -105,6 +109,9 @@ func newApp(b *backend) (http.Handler, error) {
 			s.serveAction(w, r, name, handler)
 		}))
 	}
+	app.Mount("POST /__instrument/import", http.HandlerFunc(s.importInstrument))
+	app.Mount("GET /media/instrument-hit", http.HandlerFunc(s.instrumentMedia))
+	app.Mount("GET /media/instrument", http.HandlerFunc(s.instrumentMedia))
 	app.Mount("GET /__workspace", http.HandlerFunc(s.workspaceProjection))
 	app.Mount("GET /studio.css", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/css; charset=utf-8")
@@ -118,7 +125,7 @@ func newApp(b *backend) (http.Handler, error) {
 	app.Mount("GET /media/exports/{id}", http.HandlerFunc(s.exportAudio))
 	app.Mount("GET /media/transcription", http.HandlerFunc(s.transcriptionAudio))
 	app.Mount("GET /api/export", http.HandlerFunc(s.exportStatus))
-	for _, path := range []string{"/api/state", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params"} {
+	for _, path := range []string{"/api/state", "/api/revision", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var data json.RawMessage
 			if err := b.call(r.Context(), http.MethodGet, path, nil, &data); err != nil {
@@ -157,8 +164,22 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 		ctx.SetStatus(http.StatusServiceUnavailable)
 		return ui.Panel(ui.PanelProps{ID: "workspace", Title: "Studio unavailable", Description: err.Error()}), workspace{}
 	}
+	if ctx.Request.URL.Query().Get("panel") == "code" {
+		selected := ctx.Request.URL.Query().Get("file")
+		for _, file := range view.Files {
+			if selected == file.Name || selected == "" && view.File == "" {
+				view.File, view.Source, view.FileRevision, view.Filename = file.Name, file.Source, file.Revision, file.Name
+				if selected != "" {
+					break
+				}
+			}
+		}
+	}
 	props := ui.ShellProps{Title: view.Filename, Filename: view.Filename, Message: view.Error, HasMessage: view.Error != ""}
 	view.DiskSource, view.DiskRevision = view.Source, view.Revision
+	if view.FileRevision != "" {
+		view.DiskRevision = view.FileRevision
+	}
 	if view.Project != nil {
 		props.Title = view.Project.Title
 		props.Tempo = strconv.FormatFloat(float64(view.Project.TempoMilli)/1000, 'f', -1, 64)
@@ -175,7 +196,7 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 		}
 		if name == "source" && !state.OK() {
 			if saved, ok := s.draft(state.Value("draft"), session.Token(ctx.Request)); ok {
-				view.Source, view.Revision = saved.Source, saved.Revision
+				view.Source, view.FileRevision = saved.Source, saved.Revision
 			}
 		}
 	}
@@ -184,8 +205,8 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 		panel = "session"
 	}
 	if panel == "code" {
-		if saved, ok := s.draft(session.Current(ctx.Request).String("score-draft"), session.Token(ctx.Request)); ok {
-			view.Source, view.Revision = saved.Source, saved.Revision
+		if saved, ok := s.draft(session.Current(ctx.Request).String("score-draft"), session.Token(ctx.Request)); ok && saved.File == view.File {
+			view.Source, view.FileRevision = saved.Source, saved.Revision
 			view.HasDraft = true
 			if !props.HasMessage {
 				props.Message, props.HasMessage = "Unsaved score draft restored. Save it after correcting the error or conflict.", true
@@ -215,7 +236,7 @@ func submit(name, value, label string) gosx.Node {
 func (s *studioApp) toolbar(view workspace, csrf, panel string, t transport) gosx.Node {
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "toolbar")),
 		s.form(view, csrf, panel, "transport", submit("action", "play", "Play"), submit("action", "pause", "Pause"), submit("action", "stop", "Stop"), submit("action", "home", "Return to start")),
-		s.form(view, csrf, panel, "undo", submit("", "", "Undo")), s.form(view, csrf, panel, "redo", submit("", "", "Redo")),
+		s.form(view, csrf, panel, "undo", hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Undo")), s.form(view, csrf, panel, "redo", hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Redo")),
 		ui.Position(ui.TransportProps{Playing: t.Playing, Bar: t.Bar, Step: t.Step, Backend: t.Backend, Error: t.Error}),
 	)
 }

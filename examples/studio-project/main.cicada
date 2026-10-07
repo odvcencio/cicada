@@ -1,0 +1,7 @@
+cicada 2
+title "Studio project"
+tempo 120
+key a minor
+
+scene main { lead = riff beat = taps }
+song { main*2 }

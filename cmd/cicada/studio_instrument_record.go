@@ -34,7 +34,7 @@ func instrumentSameOrigin(w http.ResponseWriter, r *http.Request) bool {
 }
 
 // instrumentRecord admits bounded WAV files and publishes an immutable pack.
-// It does not overwrite the current score or ask for an existing audio track.
+// Analyze allows review before publication; build adds an instrument and track.
 func (s *studio) instrumentRecord(w http.ResponseWriter, r *http.Request) {
 	if !instrumentSameOrigin(w, r) {
 		return
@@ -45,6 +45,10 @@ func (s *studio) instrumentRecord(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer r.MultipartForm.RemoveAll()
+	revision := r.FormValue("revision")
+	if revision == "" {
+		revision = s.recordedRevision()
+	}
 	options := recording.DefaultOptions()
 	var err error
 	if value := r.FormValue("root"); value != "" {
@@ -63,6 +67,9 @@ func (s *studio) instrumentRecord(w http.ResponseWriter, r *http.Request) {
 	}
 	options.AutoPitch = r.FormValue("autoPitch") == "true"
 	name := r.FormValue("name")
+	if name == "" {
+		name = "recorded"
+	}
 	if !recording.ValidName(name) {
 		studioJSON(w, 400, map[string]string{"error": "use a lowercase instrument name with letters, digits or underscores"})
 		return
@@ -104,18 +111,19 @@ func (s *studio) instrumentRecord(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, 422, map[string]string{"error": err.Error()})
 		return
 	}
-	relative := filepath.Join("assets", "recorded", name+"-"+pack.Pin[:16])
-	if err = pack.Write(filepath.Join(filepath.Dir(s.path), relative)); err != nil {
-		studioJSON(w, 500, map[string]string{"error": "cannot publish recording pack"})
-		return
-	}
+
 	s.mu.Lock()
 	if s.recordedInstruments == nil {
 		s.recordedInstruments = map[string]*recording.Pack{}
 	}
 	s.recordedInstruments[pack.Pin] = pack
+	s.recordingPreview = pack.Pin
 	s.mu.Unlock()
-	studioJSON(w, 200, map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": hits, "declaration": pack.Source(filepath.Join(relative, "manifest.json"), options.Root), "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "user recording"})
+	if r.FormValue("action") == "analyze" {
+		studioJSON(w, 200, map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": hits, "kept": len(hits)})
+		return
+	}
+	s.publishRecorded(w, pack, options.Root, studioEdit{Revision: revision, Scene: r.FormValue("scene")}, nil)
 }
 
 func (s *studio) instrumentAudition(w http.ResponseWriter, r *http.Request) {

@@ -1,8 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -52,9 +54,22 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	// Textareas normalize CRLF to LF. Decorate the exact browser text while
 	// retaining the original disk revision for the eventual write.
 	v.Source = strings.ReplaceAll(v.Source, "\r\n", "\n")
-	buttons := []editor.FormButton{{Label: "Save score", Class: "primary"}}
+	buttons := []editor.FormButton{{Label: "Save file", Class: "primary"}, {Name: "intent", Value: "check", Label: "Check file"}}
+	fileRevision := v.FileRevision
+	if fileRevision == "" {
+		fileRevision = v.Revision
+	}
+	returnTo := "/?panel=code&file=" + url.QueryEscape(v.File)
+	var fileLinks []gosx.Node
+	var diagnostics []gosx.Node
+	for _, file := range v.Files {
+		fileLinks = append(fileLinks, gosx.El("a", gosx.Attrs(gosx.Attr("href", "/?panel=code&file="+url.QueryEscape(file.Name)), gosx.Attr("aria-current", map[bool]string{true: "page", false: "false"}[file.Name == v.File])), gosx.Text(file.Name)))
+		for _, d := range file.Diagnostics {
+			diagnostics = append(diagnostics, gosx.El("li", gosx.Text(fmt.Sprintf("%s:%d:%d %s: %s", file.Name, d.Position.Line, d.Position.Column, d.Code, d.Message))))
+		}
+	}
 	var conflict gosx.Node = gosx.Fragment()
-	if v.HasDraft && v.Revision != v.DiskRevision {
+	if v.HasDraft && fileRevision != v.DiskRevision {
 		buttons = []editor.FormButton{{Name: "intent", Value: "merge", Label: "Save combined draft", Class: "primary"}}
 		conflict = gosx.El("details", gosx.Attrs(gosx.BoolAttr("open")), gosx.El("summary", gosx.Text("Current file: combine its changes with your draft below")), gosx.El("pre", gosx.Attrs(gosx.Attr("class", "history-diff")), gosx.Text(v.DiskSource)))
 	}
@@ -68,15 +83,20 @@ func (s *studioApp) code(ctx *server.Context, v workspace, csrf string) gosx.Nod
 			highlights = append(highlights, editor.HighlightSpan{StartByte: span.Start, EndByte: span.End, StartUTF16: offsets[span.Start], EndUTF16: offsets[span.End], Capture: span.Capture})
 		}
 	}
-	e := editor.New("source-editor", editor.Options{
+	id := "source-editor"
+	if len(v.Files) > 1 {
+		hash := sha256.Sum256([]byte(v.File))
+		id += fmt.Sprintf("-%x", hash[:4])
+	}
+	e := editor.New(id, editor.Options{
 		Surface: editor.SurfaceCode, Content: v.Source, Title: v.Filename, Label: "Cicada score", Language: editor.Lang("cicada"), Theme: editor.ThemeDark,
 		FormAction: "/__actions/source", CSRFToken: csrf,
-		ExtraFields: map[string]string{"revision": v.Revision, "diskRevision": v.DiskRevision, action.ReturnTargetField: "/?panel=code"},
+		ExtraFields: map[string]string{"revision": v.Revision, "fileRevision": fileRevision, "file": v.File, "diskRevision": v.DiskRevision, action.ReturnTargetField: returnTo},
 		Code:        &editor.CodeOptions{Language: "cicada", TabWidth: 2, InsertSpaces: true, Gutter: true, Highlights: highlights},
 		Buttons:     buttons,
 		Panels:      []editor.Panel{},
 	})
-	return ui.Panel(ui.PanelProps{ID: "score", Title: "Score", Description: "Changes validate before saving and land at the next bar."}, conflict, e.Render())
+	return ui.Panel(ui.PanelProps{ID: "score", Title: "Score", Description: "Changes validate before saving and land at the next bar."}, gosx.El("nav", gosx.Attrs(gosx.Attr("class", "toolbar"), gosx.Attr("aria-label", "Project files")), gosx.Fragment(fileLinks...)), gosx.El("ul", gosx.Fragment(diagnostics...)), conflict, e.Render())
 }
 
 // Map parser byte positions to the editor's UTF-16 positions in one pass.

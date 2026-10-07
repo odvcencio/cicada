@@ -37,6 +37,7 @@ func TestBrowserInstrumentRecording(t *testing.T) {
 	chrome.setViewport(1440, 1000)
 	chrome.navigate("http://" + browserStudioAddress + "/")
 	chrome.click("[data-panel-tab=record]")
+	chrome.waitFor(`document.querySelector('[data-workspace-panel=record]')?.hidden===false && typeof window.cicadaPlayRecordedInstrument==='function'`, 10*time.Second)
 	chrome.eval(`(() => { const mode=document.getElementById('audio-mode');mode.value='browser';mode.dispatchEvent(new Event('change',{bubbles:true}));return true; })()`)
 	chrome.eval(`(() => {
       window.instrumentTestStart=performance.now();
@@ -58,6 +59,16 @@ func TestBrowserInstrumentRecording(t *testing.T) {
 	chrome.waitFor(`window.instrumentFixtureEnded===true`, 15*time.Second)
 	chrome.click("#instrument-stop")
 	chrome.waitFor(`!document.getElementById('instrument-mic').disabled`, 30*time.Second)
+	chrome.waitFor(`!document.getElementById('instrument-build').disabled`, 30*time.Second)
+	if string(chrome.eval(`document.querySelectorAll('#instrument-hits audio').length`)) != "15" {
+		t.Fatal("recorded hits must be reviewed before building")
+	}
+	chrome.eval(`(()=>{document.getElementById('instrument-build').scrollIntoView({block:'center'});return true})()`)
+	chrome.click("#instrument-build")
+	chrome.waitFor(`document.getElementById('instrument-build').hidden || !document.getElementById('instrument-mic').disabled`, 30*time.Second)
+	if string(chrome.eval(`window.cicadaRecordedInstrument?.hits.length || 0`)) != "15" {
+		t.Fatal("instrument build failed", string(chrome.eval(`document.getElementById('instrument-status').textContent`)))
+	}
 	if string(chrome.eval(`window.cicadaRecordedInstrument?.hits.length || 0`)) != "15" {
 		t.Fatalf("browser slicing: %s", chrome.eval(`({hits:window.cicadaRecordedInstrument?.hits.length,status:document.getElementById('instrument-status').textContent})`))
 	}
@@ -91,6 +102,7 @@ func TestBrowserInstrumentRecording(t *testing.T) {
 		t.Fatalf("recording result: %s", data)
 	}
 	t.Logf("15 browser-recorded fixture taps ready and played in %.0f ms; soft/hard energy %.4f/%.4f; cycle %v", result.Milliseconds, result.Low, result.High, result.Takes)
+	chrome.eval(`(()=>{document.getElementById('instrument-fit').scrollIntoView({block:'center'});return true})()`)
 	chrome.click("#instrument-fit")
 	chrome.waitFor(`window.cicadaModeledInstrument && !document.getElementById('instrument-fit').disabled`, 30*time.Second)
 	var modeled struct {
@@ -98,20 +110,24 @@ func TestBrowserInstrumentRecording(t *testing.T) {
 		Modes        int
 		Sampled      bool
 	}
-	data = chrome.eval(`(async()=>{const p=window.cicadaModeledInstrument;await window.cicadaPlayRecordedInstrument(p.model.rootMIDI,80);await window.cicadaPlayRecordedInstrument(p.model.rootMIDI+12,120);return {Milliseconds:performance.now()-window.instrumentTestStart,Modes:p.model.modes.length,Sampled:window.cicadaRecordedInstrument.sha256!==p.sha256};})()`)
+	data = chrome.eval(`(()=>{const p=window.cicadaModeledInstrument;return {Milliseconds:performance.now()-window.instrumentTestStart,Modes:p.model.modes.length,Sampled:window.cicadaRecordedInstrument.sha256!==p.sha256};})()`)
 	if err = json.Unmarshal(data, &modeled); err != nil {
 		t.Fatal(err)
 	}
-	if modeled.Milliseconds >= 120000 || modeled.Modes == 0 || modeled.Sampled {
+	if modeled.Milliseconds >= 120000 || modeled.Modes == 0 || !modeled.Sampled {
 		t.Fatal("modeled browser playback", string(data))
 	}
 	t.Logf("sampled and modeled versions played in %.0f ms; %d fitted modes", modeled.Milliseconds, modeled.Modes)
 	chrome.screenshot("modeled-instrument-1440.png")
 	chrome.click("#instrument-mode")
+	if string(chrome.eval(`window.cicadaRecordedInstrument.model!==undefined`)) != "true" {
+		t.Fatal("cannot audition model approximation")
+	}
+	chrome.eval(`(async()=>{const p=window.cicadaModeledInstrument;await window.cicadaPlayRecordedInstrument(p.model.rootMIDI,80);await window.cicadaPlayRecordedInstrument(p.model.rootMIDI+12,120);return true})()`)
+	chrome.click("#instrument-mode")
 	if string(chrome.eval(`window.cicadaRecordedInstrument.model===undefined`)) != "true" {
 		t.Fatal("cannot return to sampled instrument")
 	}
-	chrome.click("#instrument-mode")
 	chrome.setViewport(390, 900)
 	chrome.eval(`new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(()=>resolve(true))))`)
 	if string(chrome.eval(`document.documentElement.scrollWidth<=window.innerWidth`)) != "true" {

@@ -74,13 +74,17 @@ func TestProjectFormatRetainsLateExternalWrite(t *testing.T) {
 	if err := writer.Sync(); err != nil {
 		t.Fatal(err)
 	}
-	entries, err := os.ReadDir(dir)
+	recoveryDir, err := studioRecoveryDir(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(recoveryDir)
 	if err != nil {
 		t.Fatal(err)
 	}
 	found := false
 	for _, entry := range entries {
-		if source, err := os.ReadFile(filepath.Join(dir, entry.Name())); err == nil && bytes.Equal(source, external) {
+		if source, err := os.ReadFile(filepath.Join(recoveryDir, entry.Name())); err == nil && bytes.Equal(source, external) {
 			found = true
 		}
 	}

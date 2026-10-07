@@ -607,7 +607,21 @@ func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 	if !bytes.Equal(current, file.Before) {
 		return fmt.Errorf("%s changed during source edit", filepath.Base(file.Path))
 	}
-	stage, err := os.CreateTemp(filepath.Dir(file.Path), ".cicada-studio-manifest-*")
+	if file.Before != nil {
+		committed, _, err := studioWriteIfRevision(file.Path, file.After, file.Mode, studioRevision(file.Before), nil)
+		if err != nil {
+			return err
+		}
+		if !committed {
+			return fmt.Errorf("auxiliary source changed during commit")
+		}
+		return nil
+	}
+	dir, err := studioRecoveryDir(file.Path)
+	if err != nil {
+		return err
+	}
+	stage, err := os.CreateTemp(dir, ".cicada-studio-manifest-*")
 	if err != nil {
 		return err
 	}
@@ -636,4 +650,20 @@ func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 		return fmt.Errorf("%s changed during source edit", filepath.Base(file.Path))
 	}
 	return os.Rename(stagePath, file.Path)
+}
+
+func studioWriteAuxiliaryFiles(files []studioAuxiliaryFile) error {
+	for i, file := range files {
+		if err := studioWriteAuxiliaryFile(file); err != nil {
+			for j := i - 1; j >= 0; j-- {
+				previous := files[j]
+				previous.Before, previous.After = previous.After, previous.Before
+				if rollbackErr := studioWriteAuxiliaryFile(previous); rollbackErr != nil {
+					err = fmt.Errorf("%w; auxiliary rollback: %v", err, rollbackErr)
+				}
+			}
+			return err
+		}
+	}
+	return nil
 }
