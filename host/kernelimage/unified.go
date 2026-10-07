@@ -52,7 +52,7 @@ func validateUnifiedFields(cfg *engine.Config) error {
 				return err
 			}
 			for _, chord := range p.Chords {
-				if chord.Count > 0 && spec.Polyphony != 4 && spec.Kind != engine.VoicePiano {
+				if chord.Count > 0 && spec.Polyphony != 4 && spec.Kind != engine.VoicePiano && (!keysImageEnabled || spec.Kind != engine.VoiceKeys) {
 					return Error("chord payload requires a polyphonic graph track")
 				}
 			}

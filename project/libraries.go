@@ -26,9 +26,9 @@ import (
 var standardLibraries embed.FS
 
 // LibraryEngineEdition and LibraryCapabilities describe this host's engine.
-// No optional graph capability bits are present in this kernel image version.
+// Native hosts prepare the optional modeled keyboard family before rendering.
 const LibraryEngineEdition = 2
-const LibraryCapabilities uint64 = 0
+const LibraryCapabilities uint64 = 1 << 9
 
 // LibraryPin records portable identity, resolution kind and exact content.
 type LibraryPin struct{ Path, Kind, SHA256 string }

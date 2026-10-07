@@ -6,6 +6,6 @@ Commands:
   new, fix, check, fmt, play, studio, lsp
   render, stems, verify-wav, verify-stems, midi, verify-midi, compare-midi
   gen, explain, view, highlight, symbols, convert, compare, validate, ast
-  events, graph, fields, params, golden, record-pack, fit-model, transcribe
+  events, graph, fields, params, golden, record-pack, fit-model, transcribe, wam2
 
 Run "cicada help <command>" for usage and flags.

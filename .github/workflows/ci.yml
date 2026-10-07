@@ -138,6 +138,7 @@ jobs:
           make probe-wasm
           make test-kernel-wasm | tee build/kernel-wasm-report.txt
           make test-sampler-wasm | tee build/sampler-wasm-report.txt
+          make test-keys-wasm | tee build/keys-wasm-report.txt
       - name: Native acid benchmark
         run: |
           set -euo pipefail
@@ -181,6 +182,7 @@ jobs:
             build/realtime-report.txt
             build/kernel-wasm-report.txt
             build/sampler-wasm-report.txt
+            build/keys-wasm-report.txt
             build/cicada-loudness.wasm
             build/acid-bench-report.txt
             build/m0-cli-report.txt
@@ -321,6 +323,17 @@ jobs:
           node --version
       - name: M2 parity, browser, and budgets
         run: make test-wasm test-chord-wasm test-browser test-demo-browser budget-size budget-browser
+      - name: WAM2 export and reference host
+        env:
+          CICADA_BROWSER_EVIDENCE_DIR: ${{ runner.temp }}/cicada-wam2-evidence
+        run: make test-wam2
+      - name: Save WAM2 GUI evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: wam2-gui-evidence
+          if-no-files-found: error
+          path: ${{ runner.temp }}/cicada-wam2-evidence/*.png
       - name: Save M2 gate reports
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6

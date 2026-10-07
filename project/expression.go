@@ -16,6 +16,9 @@ func unsupportedSourceExpression(score *notation.Score, kind string) string {
 			return "sampler"
 		}
 	}
+	if notationKeysBuiltin(score, kind) {
+		return "modeled keyboard"
+	}
 	if kind != "piano" {
 		return ""
 	}
