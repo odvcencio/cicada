@@ -2,6 +2,7 @@ package notation
 
 import (
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/kernel/voice/modeledkit"
 	"math"
@@ -183,7 +184,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 		trackByName[t.Name] = t
 		namespace[t.Name] = "track"
 		_, isModal := modal.ParseTrackKind(t.Kind)
-		if t.Kind != "acid" && !isModal && t.Kind != "drums" && t.Kind != "piano" && t.Kind != "guitar" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
+		if t.Kind != "acid" && !isModal && t.Kind != "drums" && t.Kind != "piano" && keyboard.ID(t.Kind) == 0 && t.Kind != "guitar" && !(s.Version == 2 && t.Kind == "audio") && !scoreHasSampler(s, t.Kind) {
 			if _, instrumentOK := instruments[t.Kind]; !instrumentOK {
 				if _, kitOK := kits[t.Kind]; !kitOK {
 					add("CICADA-REFERENCE", "unknown instrument "+t.Kind, "error", t.Position)
@@ -660,6 +661,9 @@ func validTrackParam(kind, name string, instruments map[string]Instrument, kits 
 	}
 	if kind == "acid" {
 		return acidParams[name]
+	}
+	if keyboard.ID(kind) != 0 && instruments[kind].Name == "" {
+		return validKeysParam(kind, name)
 	}
 	if kind == "piano" && instruments[kind].Name == "" {
 		return name == "sustain" || name == "octave"

@@ -6,6 +6,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
 func parsePreset(w *loweringWalker, n *gts.Node) Preset {
@@ -36,6 +37,9 @@ func PresetTarget(s *Score, target string) (kind string, found bool) {
 		return "effect", true
 	case "acid", "drums", "audio":
 		return target, true
+	}
+	if strings.HasPrefix(target, "builtin.") && keyboard.ID(strings.TrimPrefix(target, "builtin.")) != 0 {
+		return "keys", true
 	}
 	if strings.HasPrefix(target, "builtin.") && drumParams[strings.TrimPrefix(target, "builtin.")] != nil {
 		return "lane", true
@@ -68,7 +72,7 @@ func PresetTarget(s *Score, target string) (kind string, found bool) {
 func PresetDescriptors(s *Score, target string) []paramdefs.Descriptor {
 	kind, _ := PresetTarget(s, target)
 	voice := kind
-	if kind == "kit" || kind == "audio" || kind == "sampler" {
+	if kind == "kit" || kind == "audio" || kind == "sampler" || kind == "keys" {
 		voice = "instrument"
 	}
 	var descriptors []paramdefs.Descriptor
@@ -108,6 +112,9 @@ func PresetDescriptors(s *Score, target string) []paramdefs.Descriptor {
 			}
 		}
 	}
+	if kind == "keys" {
+		descriptors = append(descriptors, keysPresetDescriptors(strings.TrimPrefix(target, "builtin."))...)
+	}
 	if kind == "instrument" {
 		for _, inst := range s.Instruments {
 			if inst.Name == target {
@@ -125,7 +132,7 @@ func PresetDescriptors(s *Score, target string) []paramdefs.Descriptor {
 			}
 		}
 	}
-	if kind == "acid" || kind == "instrument" && !hasOctaveParameter {
+	if kind == "acid" || kind == "keys" || kind == "instrument" && !hasOctaveParameter {
 		octave := 3
 		if kind == "acid" {
 			octave = DefaultAcidOctave
@@ -170,7 +177,13 @@ func validatePresetValues(s *Score, target string, params []Param) []Diagnostic 
 				continue
 			}
 			found = true
-			if code, err := paramdefs.ValidateLiteral(d, p.Value); err != nil {
+			literal := p.Value
+			if kind, _ := PresetTarget(s, target); kind == "keys" && d.Unit == "ms" {
+				if number, unit, ok := paramdefs.LiteralNumber(literal); ok && unit == "unit" {
+					literal = strconv.FormatFloat(number, 'g', -1, 64) + "s"
+				}
+			}
+			if code, err := paramdefs.ValidateLiteral(d, literal); err != nil {
 				ds = append(ds, Diagnostic{Code: code, Severity: "error", Message: err.Error(), Position: p.ValuePosition})
 			}
 			break
@@ -252,6 +265,9 @@ func ResolvePresets(source *Score) (*Score, []Diagnostic) {
 		ds = append(ds, validatePresetParamDuplicates(t.Params)...)
 		ds = append(ds, validatePresetValues(source, p.Target, valueOverrides)...)
 		t.Kind = p.Target
+		if kind == "keys" {
+			t.Kind = strings.TrimPrefix(p.Target, "builtin.")
+		}
 		t.Params = mergePresetParams(p.Params, t.Params)
 		if kind == "lane" {
 			lane := strings.TrimPrefix(p.Target, "builtin.")

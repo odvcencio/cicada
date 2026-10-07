@@ -61,6 +61,9 @@ creates a one-tick note overlap. `--pattern NAME` exports one pattern loop
 instead of the full song. Chance uses the first seeded pass on every
 repetition. MIDI import is not available.
 
+To package a score as a browser instrument with live macros and MIDI input,
+see [WAM2 instruments](wam2.md).
+
 ## Semantic JSON
 
 If another tool needs the typed project instead of audio, use
