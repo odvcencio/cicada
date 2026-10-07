@@ -122,6 +122,19 @@ test('production client exposes no stall injection', () => {
   const h = setup(); assert.equal(h.audio.injectStall, undefined);
 });
 
+test('processor exceptions reset playback and Play replaces the stopped node', async () => {
+  const h = setup(); await h.audio.startAudio(); h.audio.receive({t: 's', p: true});
+  const failed = h.audio.node; failed.onprocessorerror();
+  assert.equal(h.audio.playing, false); assert.equal(h.stats.states.at(-1), false);
+  assert.match(h.stats.errors.at(-1).message, /AudioWorklet stopped unexpectedly.*Press Play/);
+  await h.audio.play();
+  assert.equal(h.stats.nodes.length, 2); assert.notEqual(h.audio.node, failed);
+  assert.equal(failed.closed, 1); assert.equal(failed.disconnected, 1); assert.equal(failed.onprocessorerror, null);
+  assert.equal(h.audio.fault, null); assert.equal(h.audio.nodeFault, false);
+  assert.equal(h.stats.posted.at(-1).bytes[24], 1);
+  await h.audio.close();
+});
+
 test('score page retains history controls without the unused historyList binding', () => {
   const page = fs.readFileSync(`${__dirname}/../../cmd/cicada/view.html`, 'utf8');
   assert.match(page, /id="history-list"/);

@@ -23,6 +23,7 @@
       this.closePromise = null;
       this.generation = 0;
       this.fault = null;
+      this.nodeFault = false;
       this.stagePromise = Promise.resolve();
       this.readyPromise = null;
       this.revision = '';
@@ -125,6 +126,7 @@
       this.moduleKind = this.revision = '';
       this.playing = false;
       this.fault = null;
+      this.nodeFault = false;
       this.anchorTick(0);
       this.notifyState();
       if (context) await context.close();
@@ -162,6 +164,12 @@
       const ready = new Promise((resolve, reject) => {
         timeout = setTimeout(() => reject(new Error('AudioWorklet did not initialize')), 10000);
         this.nodes.set(node, () => { clearTimeout(timeout); reject(new Error('Browser audio closed')); });
+        node.onprocessorerror = () => {
+          const error = new Error('AudioWorklet stopped unexpectedly. Press Play to reload audio');
+          clearTimeout(timeout);
+          if (node === this.node) { this.nodeFault = true; this.fail(error); }
+          else reject(error);
+        };
         node.port.onmessage = event => {
           const data = event.data;
           if (data.t === 'r') {
@@ -186,6 +194,7 @@
       try { this.sendCommands([{ op: 2 }], node); } catch (_) {}
       node.disconnect();
       node.port.onmessage = node.port.onmessageerror = null;
+      node.onprocessorerror = null;
       node.port.close?.();
     }
 
@@ -222,6 +231,7 @@
         this.clock = prepared.ready.c;
         this.capabilities = prepared.ready.p || 0;
         this.fault = null;
+        this.nodeFault = false;
         this.bpmMilli = new DataView(image).getUint32(12, true);
         this.anchorTick(tick);
         this.pendingMeters.clear();
@@ -415,7 +425,7 @@
       const image = await response.arrayBuffer();
       if (node !== this.node) throw new Error('Browser audio closed');
       const kind = this.imageModuleKind(image);
-      if (kind !== this.moduleKind) {
+      if (kind !== this.moduleKind || this.nodeFault) {
         await this.replaceModule(kind, image, imageRevision);
         this.lastStageDurationMs = performance.now() - started;
         return true;

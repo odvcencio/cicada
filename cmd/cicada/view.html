@@ -910,13 +910,11 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
         document.body.dataset.revision = result.revision;
       }
       if (typeof isBrowser === 'function' && isBrowser()) {
-        if (!dirty()) document.body.dataset.revision = result.revision;
         const stateResponse = await fetch('/api/state', {cache:'no-store'});
         const state = await stateResponse.json();
         if (state.valid) {
-          if (!dirty()) document.body.dataset.revision = state.revision;
           // Keep text typed since the save was sent; only replace a clean editor.
-          if (!dirty()) { original = state.source; editor.value = state.source; }
+          if (!dirty()) { document.body.dataset.revision = state.revision; original = state.source; editor.value = state.source; }
           if (window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(state.revision);
           await refreshProjection({revision: state.revision, source: state.source});
           setStatus(window.cicadaBrowserAudio.context && browserPlaying ? 'Saved; browser score queued for the next bar' : 'Saved to score file', 'success');
