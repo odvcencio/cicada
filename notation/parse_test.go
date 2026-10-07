@@ -596,3 +596,84 @@ func TestOverflowingHeaderAndBarCountAreStillReported(t *testing.T) {
 		t.Fatalf("overflowing song bar count was accepted: %+v", diagnostics)
 	}
 }
+
+// The parser recovers from a syntax error by skipping tokens, and that leaves
+// error nodes all the way to the end of the file. The first error node is the
+// real spot; the last one used to be reported, so a stray bracket on line 4
+// was blamed on the final brace of the file.
+func TestSyntaxErrorPointsAtTheFirstErrorNode(t *testing.T) {
+	const tail = "pattern p acid { use hook }\nscene main { bass = p }\nsong { main*2 }\n"
+	for _, tc := range []struct {
+		name, source string
+		want         Position
+		message      string
+	}{
+		{
+			"stray bracket after a complete declaration",
+			"cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\nkey a minor ]\n" + tail,
+			Position{Line: 4, Column: 13}, `syntax error near "]"`,
+		},
+		{
+			"stray bracket on its own line",
+			"cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\n]\n" + tail,
+			Position{Line: 4, Column: 1}, `syntax error near "]"`,
+		},
+		{
+			"stray bracket after a multibyte character",
+			"cicada 1\ntitle \"🎵\" ]\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\n" + tail,
+			Position{Line: 2, Column: 11}, `syntax error near "]"`,
+		},
+		{
+			"stray bracket in a scene",
+			"cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\npattern p acid { use hook }\nscene main { bass = ] p }\nsong { main*2 }\n",
+			Position{Line: 5, Column: 21}, `syntax error near "]"`,
+		},
+		{
+			"missing closing brace at the end of the file",
+			"cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\npattern p acid { use hook }\nscene main { bass = p }\nsong { main*2 \n",
+			Position{Line: 6, Column: 14}, "syntax error: expected }",
+		},
+		{
+			"first of two stray brackets",
+			"cicada 1\ntrack bass acid {}\n]\nphrase hook { 1^ . 1~ 5 }\n" + tail + "]\n",
+			Position{Line: 3, Column: 1}, `syntax error near "]"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diagnostics := Parse([]byte(tc.source))
+			if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-SYNTAX" || diagnostics[0].Severity != "error" {
+				t.Fatalf("want one CICADA-SYNTAX error, got %+v", diagnostics)
+			}
+			d := diagnostics[0]
+			if d.Position != tc.want {
+				t.Fatalf("syntax error at %+v, want %+v (%s)", d.Position, tc.want, d.Message)
+			}
+			if d.Message != tc.message {
+				t.Fatalf("message = %q, want %q", d.Message, tc.message)
+			}
+		})
+	}
+}
+
+// When the first error node wraps a whole declaration, the report names that
+// declaration's line, not the end of the file.
+func TestSyntaxErrorInsideADeclarationNamesItsLine(t *testing.T) {
+	for _, tc := range []struct {
+		name, source string
+		line         int
+	}{
+		{"stray bracket in a pattern", "cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\npattern p acid { 1 . 3 ] 5 }\nscene main { bass = p }\nsong { main*2 }\n", 4},
+		{"stray bracket in a phrase", "cicada 1\ntrack bass acid {}\nphrase hook { 1^ . ] 1~ 5 }\npattern p acid { use hook }\nscene main { bass = p }\nsong { main*2 }\n", 3},
+		{"stray bracket in a song", "cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\npattern p acid { use hook }\nscene main { bass = p }\nsong { main*2 ] }\n", 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diagnostics := Parse([]byte(tc.source))
+			if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-SYNTAX" {
+				t.Fatalf("want one CICADA-SYNTAX error, got %+v", diagnostics)
+			}
+			if diagnostics[0].Position.Line != tc.line {
+				t.Fatalf("syntax error on line %d, want line %d: %+v", diagnostics[0].Position.Line, tc.line, diagnostics[0])
+			}
+		})
+	}
+}
