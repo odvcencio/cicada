@@ -83,7 +83,7 @@ song { demo*999 demo*999 }
 `, name, name, -12+trackGain, gains[i]-trackGain, velocity)})
 	}
 	presets = append(presets,
-		Preset{ID: "kit", Name: "Modeled drum kit", Source: ensemble[:strings.Index(ensemble, "track bass")] + `track drums acoustic { level = 6dB }
+		Preset{ID: "kit", Name: "Modeled drum kit", Source: ensemble[:strings.Index(ensemble, "track bass")] + `track drums acoustic { level = 6dB bd_level = -4.3dB sd_level = -4.3dB ch_level = -4.3dB }
 master { level = 6dB }
 pattern beat drums {
  bd: x... x... x... x...
