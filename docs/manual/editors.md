@@ -24,19 +24,23 @@ the required `cicada.mod` manifest through a workspace edit.
 ## VS Code
 
 The public repository includes a VS Code extension. From the repository root,
-build the CLI, install the extension's dependencies, and package it:
+build the CLI and the Studio workstation, install the extension's dependencies,
+and package it:
 
 ```sh
-go build -o cicada ./cmd/cicada
+make build
 cd editors/vscode
 npm install
 npx @vscode/vsce package
 code --install-extension cicada-0.1.0.vsix
 ```
 
-Put `cicada` on `PATH` or set the extension's `cicada.serverPath` setting to
-the binary's absolute path. The extension starts Studio next to the open score
-with **Cicada: Open Studio Beside Score**. Its setup and WSL notes are in the
+The extension runs `cicada studio`, which needs what `make build` writes to
+`build/`: `cicada`, `cicada-workstation`, and the `workstation` folder. Set the
+extension's `cicada.serverPath` setting to the absolute path of `build/cicada`,
+or move those three together into a folder on `PATH`. The extension starts
+Studio next to the open score with **Cicada: Open Studio Beside Score**. Its
+setup and WSL notes are in the
 [extension README](../../editors/vscode/README.md). The repository does not
 currently publish this extension through the VS Code Marketplace.
 
