@@ -109,7 +109,7 @@ jobs:
   m0:
     name: M0 language and kernel
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -197,7 +197,7 @@ jobs:
   workstation:
     name: GoSX workstation and Tymbal boundary
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 20
     env:
       GOWORK: off
       CHROME_VERSION: 152.0.7977.64
