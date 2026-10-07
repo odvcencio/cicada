@@ -173,10 +173,10 @@ release-cpu-report: build-kernel-wasm
 .PHONY: build-demo-browser test-demo-browser
 build-demo-browser: build-kernel-wasm
 	mkdir -p build/demo
-	GOOS=js GOARCH=wasm go build -o build/demo/demo.wasm ./cmd/cicada-demo-browser
+	GOOS=js GOARCH=wasm go build -trimpath -o build/demo/demo.wasm ./cmd/cicada-demo-browser
 	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" build/demo/wasm_exec.js
 	cp build/cicada-kernel.wasm build/demo/kernel.wasm
-	go build -ldflags "-X main.revision=$$(git rev-parse HEAD)" -o build/cicada-demo ./cmd/cicada-demo
+	go build -trimpath -ldflags "-X main.revision=$$(git rev-parse HEAD)" -o build/cicada-demo ./cmd/cicada-demo
 
 test-demo-browser: build-demo-browser
 	node scripts/demo-browser/test.cjs

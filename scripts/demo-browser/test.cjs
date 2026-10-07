@@ -11,6 +11,7 @@ const repo = path.resolve(__dirname, '../..');
 const soak = process.argv.includes('--soak');
 const evidence = process.env.CICADA_DEMO_EVIDENCE_DIR || path.join(repo, 'build/demo-evidence');
 fs.mkdirSync(evidence, {recursive: true});
+assert(!fs.readFileSync(path.join(repo, 'build/demo/demo.wasm')).includes(Buffer.from(repo)), 'browser score tools must omit private build paths');
 
 async function until(run, timeout = 20000) {
   const deadline = Date.now() + timeout;
