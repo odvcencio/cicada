@@ -32,19 +32,19 @@ type Params struct {
 }
 
 func DefaultParams() Params {
-	return Params{Model: Tine, PickupPosition: .32, PickupDistance: .8, HammerFelt: .6, Decay: 20, Release: .12, TremoloRate: 4.6, Gain: .7, Oversample: 2}
+	return Params{Model: Tine, PickupPosition: .05, PickupDistance: .5, HammerFelt: .6, Decay: 20, Release: .12, TremoloRate: 4.6, Gain: .7, Oversample: 2}
 }
 func Patch(name string) (Params, error) {
 	p := DefaultParams()
 	switch name {
 	case "tine_ep":
 	case "tine_bell":
-		p.PickupDistance = 1.3
-		p.HammerFelt = .34
+		p.PickupDistance = .8
+		p.HammerFelt = .4
 		p.PickupPosition = .2
 	case "tine_bark":
-		p.PickupDistance = .48
-		p.Drive = .22
+		p.PickupDistance = .45
+		p.Drive = .3
 		p.HammerFelt = .48
 	case "tine_tremolo":
 		p.Tremolo = .5
@@ -58,6 +58,7 @@ func Patch(name string) (Params, error) {
 		p.HammerFelt = .46
 	case "reed_tremolo":
 		p.Model = Reed
+		p.PickupPosition = .32
 		p.Decay = 3.4
 		p.PickupDistance = .68
 		p.Tremolo = .48
