@@ -280,6 +280,15 @@
 (live_transition to: (identifier) @variable.parameter)
 (live_transition quantize: (identifier) @constant.builtin)
 (live_stinger "." @punctuation.delimiter)
+
+(chain_decl "chain" @attribute)
+(chain_decl (identifier) @function)
+
+(automate_decl "automate" @keyword)
+(automation_point shape: (identifier) @attribute)
+
+(velocity_row "velocity" @attribute)
+(velocity_row "." @punctuation.special.rest)
 "preset" @keyword.type
 (preset_decl name: (identifier) @type.definition)
 ["arrange" "place" "marker"] @keyword

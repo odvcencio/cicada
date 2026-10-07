@@ -25,8 +25,8 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 	if catalog.Format != "cicada.fields/2" || len(catalog.Fields) < 70 {
 		t.Fatalf("incomplete field catalog: %s, %d fields", catalog.Format, len(catalog.Fields))
 	}
-	if len(catalog.Constructs) != 35 {
-		t.Fatalf("expected 35 semantic constructs, got %d", len(catalog.Constructs))
+	if len(catalog.Constructs) != 37 {
+		t.Fatalf("expected 37 semantic constructs, got %d", len(catalog.Constructs))
 	}
 	arrangementConstructs := map[string]bool{"arrangement": false, "placement": false, "marker": false}
 	for _, construct := range catalog.Constructs {
@@ -73,6 +73,12 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 		if field.Construct == "scene" && field.Name == "settings" {
 			if field.Required || field.Introduced != "cicada.project/2" {
 				t.Errorf("scene settings field metadata is wrong: %+v", field)
+			}
+			continue
+		}
+		if field.Construct == "track" && field.Name == "chain" {
+			if field.Required || field.Range == nil || *field.Range != "0..32" {
+				t.Errorf("chain metadata is wrong: %+v", field)
 			}
 			continue
 		}

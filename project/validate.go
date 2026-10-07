@@ -69,6 +69,9 @@ func ValidateProject(p *Project) error {
 	if p.Format == FormatID && projectHasSceneSettings(p) {
 		return fmt.Errorf("scene settings require cicada.project/2")
 	}
+	if err := validateAutomation(p); err != nil {
+		return err
+	}
 	if p.Edition != 1 && p.Edition != 2 {
 		return fmt.Errorf("CICADA-VERSION: only cicada 1 and 2 are supported")
 	}
@@ -560,6 +563,18 @@ func ValidateProject(p *Project) error {
 		}
 	}
 	for _, track := range p.Tracks {
+		if len(track.Chain) > 32 {
+			return fmt.Errorf("CICADA-CHAIN: chain exceeds 32 patterns")
+		}
+		for _, id := range track.Chain {
+			assigned := false
+			for _, slot := range track.Slots {
+				assigned = assigned || slot != nil && *slot == id
+			}
+			if !assigned {
+				return fmt.Errorf("CICADA-REFERENCE: chain pattern %s has no slot on %s", id, track.ID)
+			}
+		}
 		seen := map[string]bool{}
 		if p.Edition == 2 && track.Kind == "audio" {
 			if _, err := ClipSlots(p, track); err != nil {

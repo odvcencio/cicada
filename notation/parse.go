@@ -238,6 +238,15 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.Phrases = append(s.Phrases, parsePhrase(w, n))
 			case "acid_pattern", "note_pattern", "drum_pattern":
 				s.Patterns = append(s.Patterns, parsePattern(w, n))
+			case "automate_decl":
+				lane := Automation{Path: w.parameterPath(w.Text(w.Field(n, "path")), w.position(n)), Position: w.position(n)}
+				for j := 0; j < n.NamedChildCount(); j++ {
+					point := n.NamedChild(j)
+					if w.Type(point) == "automation_point" {
+						lane.Points = append(lane.Points, AutomationPoint{At: w.Text(w.Field(point, "at")), Value: w.Text(w.Field(point, "value")), Shape: w.Text(w.Field(point, "shape")), Curve: w.Text(w.Field(point, "curve")), Position: w.position(point)})
+					}
+				}
+				s.Automation = append(s.Automation, lane)
 			case "scene_decl":
 				s.Scenes = append(s.Scenes, parseScene(w, n))
 			case "arrange_decl":
@@ -291,6 +300,18 @@ func parseTrack(w *loweringWalker, n *gts.Node) Track {
 	t := Track{Name: w.declaration(w.Field(n, "name")), Kind: w.reference(w.Field(n, "kind")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
+		if w.Type(c) == "chain_decl" {
+			if t.Chain != nil {
+				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate track chain", Position: w.position(c)})
+			}
+			t.Chain = []StepToken{}
+			for j := 0; j < c.NamedChildCount(); j++ {
+				name := c.NamedChild(j)
+				if w.Type(name) == "identifier" || w.Type(name) == "qualified_name" {
+					t.Chain = append(t.Chain, StepToken{Text: w.reference(name), Position: w.position(name)})
+				}
+			}
+		}
 		if w.Type(c) == "mix_setting" {
 			t.Params = append(t.Params, parseMixSetting(w, c))
 		}
@@ -529,6 +550,17 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 			if w.Text(c) != "|" {
 				step := parseStepToken(w, c)
 				p.Parts = append(p.Parts, PatternPart{Step: &step})
+			}
+		case "velocity_row":
+			if p.Velocity != nil {
+				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate velocity row", Position: w.position(c)})
+			}
+			p.Velocity = []StepToken{}
+			for j := 0; j < c.ChildCount(); j++ {
+				value := c.Child(j)
+				if w.Type(value) == "number" || w.Text(value) == "." {
+					p.Velocity = append(p.Velocity, StepToken{Text: w.Text(value), Position: w.position(value)})
+				}
 			}
 		case "phrase_use":
 			use := parsePhraseUse(w, c)

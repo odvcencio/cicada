@@ -15,7 +15,8 @@
         "song",
         "effects",
         "buses",
-        "exports"
+        "exports",
+        "automation"
       ],
       "variants": [],
       "introduced": "cicada.project/1",
@@ -108,6 +109,7 @@
     {
       "name": "track",
       "child_roles": [
+        "chain",
         "params",
         "slots"
       ],
@@ -334,6 +336,24 @@
     },
     {
       "name": "live_layer",
+      "child_roles": [],
+      "variants": [],
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "name": "automation_lane",
+      "child_roles": [
+        "points"
+      ],
+      "variants": [],
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "name": "automation_point",
       "child_roles": [],
       "variants": [],
       "introduced": "cicada.project/2",
@@ -646,6 +666,20 @@
       "default": null,
       "meaning": "Declared host controls",
       "order": 22,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "project",
+      "name": "automation",
+      "required": false,
+      "type": "array\u003cautomation_lane\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Continuous song parameter lanes",
+      "order": 23,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"
@@ -1230,6 +1264,20 @@
     },
     {
       "construct": "track",
+      "name": "chain",
+      "required": false,
+      "type": "array\u003cstring\u003e",
+      "unit": null,
+      "range": "0..32",
+      "default": null,
+      "meaning": "Ordered looping source patterns",
+      "order": 1,
+      "introduced": "cicada.project/1",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "track",
       "name": "id",
       "required": true,
       "type": "string",
@@ -1237,7 +1285,7 @@
       "range": null,
       "default": null,
       "meaning": "Track identifier",
-      "order": 1,
+      "order": 2,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1251,7 +1299,7 @@
       "range": null,
       "default": null,
       "meaning": "Track instrument kind",
-      "order": 2,
+      "order": 3,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1265,7 +1313,7 @@
       "range": null,
       "default": null,
       "meaning": "Track instrument parameters",
-      "order": 3,
+      "order": 4,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1279,7 +1327,7 @@
       "range": null,
       "default": null,
       "meaning": "Track mixer state",
-      "order": 4,
+      "order": 5,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -1293,7 +1341,7 @@
       "range": null,
       "default": null,
       "meaning": "Sixteen pattern slots",
-      "order": 5,
+      "order": 6,
       "introduced": "cicada.project/1",
       "profile": "M0",
       "layer": "semantic"
@@ -2713,6 +2761,90 @@
       "default": null,
       "meaning": "Activation threshold",
       "order": 2,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "automation_lane",
+      "name": "path",
+      "required": true,
+      "type": "string",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Registered parameter path",
+      "order": 1,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "automation_lane",
+      "name": "points",
+      "required": true,
+      "type": "array\u003cautomation_point\u003e",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Ordered musical control points",
+      "order": 2,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "automation_point",
+      "name": "tick",
+      "required": true,
+      "type": "integer",
+      "unit": "tick",
+      "range": "0..",
+      "default": null,
+      "meaning": "Musical position at 960 PPQ",
+      "order": 1,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "automation_point",
+      "name": "value",
+      "required": true,
+      "type": "scene_value",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Parameter value in base units",
+      "order": 2,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "automation_point",
+      "name": "shape",
+      "required": true,
+      "type": "string",
+      "unit": null,
+      "range": null,
+      "default": null,
+      "meaning": "Incoming segment shape",
+      "order": 3,
+      "introduced": "cicada.project/2",
+      "profile": "M0",
+      "layer": "semantic"
+    },
+    {
+      "construct": "automation_point",
+      "name": "curve",
+      "required": false,
+      "type": "number",
+      "unit": null,
+      "range": "-8..8",
+      "default": null,
+      "meaning": "Curve tension",
+      "order": 4,
       "introduced": "cicada.project/2",
       "profile": "M0",
       "layer": "semantic"

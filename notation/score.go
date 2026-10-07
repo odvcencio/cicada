@@ -46,6 +46,7 @@ type Score struct {
 	Tracks         []Track
 	Phrases        []Phrase
 	Patterns       []Pattern
+	Automation     []Automation
 	Scenes         []Scene
 	Arrange        *Arrangement
 	Song           []SongEntry
@@ -68,6 +69,7 @@ type Preset struct {
 }
 
 type Track struct {
+	Chain    []StepToken
 	Name     string
 	Kind     string
 	Params   []Param
@@ -136,6 +138,7 @@ type Pattern struct {
 	Name       string
 	Kind       string
 	Attrs      []Param
+	Velocity   []StepToken
 	Parts      []PatternPart // source order before expansion
 	Steps      []StepToken
 	Lanes      []Lane

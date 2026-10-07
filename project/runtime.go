@@ -354,6 +354,17 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 			cfg.Patterns[ti].Slots[slot] = base
 		}
 	}
+	for ti, track := range p.Tracks {
+		for _, id := range track.Chain {
+			for slot, stored := range track.Slots {
+				if stored != nil && *stored == id {
+					cfg.Patterns[ti].Chain = append(cfg.Patterns[ti].Chain, uint8(slot))
+					break
+				}
+			}
+		}
+	}
+
 	sceneIndex := make(map[string]uint16, len(p.Scenes))
 	for si, scene := range p.Scenes {
 		sceneIndex[scene.ID] = uint16(si)
@@ -388,6 +399,11 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	}
 	for i, entry := range p.Song {
 		cfg.Song[i] = engine.SongEntry{Scene: sceneIndex[entry.Scene], Bars: entry.Bars}
+	}
+	var automationErr error
+	cfg.Automation, automationErr = CompileAutomation(p)
+	if automationErr != nil {
+		return cfg, automationErr
 	}
 	if p.Arrange != nil {
 		cfg.Song = nil

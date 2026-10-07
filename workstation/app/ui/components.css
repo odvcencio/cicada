@@ -38,6 +38,17 @@ main { padding:24px 28px; }
 .actions .action-form { align-items:center; flex-wrap:wrap; }
 .actions .action-form .field { min-width:100px; }
 .grid-scroll { overflow-x:auto; }
+.continuous-lane { position:relative; margin:0 0 14px; padding:14px; border:1px solid var(--border); border-radius:8px; }
+.continuous-lane:last-child { margin-bottom:0; }
+.continuous-lane figcaption { display:flex; flex-wrap:wrap; justify-content:space-between; gap:6px; }
+.continuous-lane figcaption strong { color:var(--mint); overflow-wrap:anywhere; }
+.continuous-lane figcaption span,.continuous-scale,.continuous-time { color:var(--muted); font:12px/1.5 ui-monospace,monospace; }
+.continuous-lane svg { display:block; width:calc(100% - 60px); height:128px; margin-left:60px; overflow:visible; }
+.continuous-scale { position:absolute; top:43px; bottom:32px; left:14px; display:flex; flex-direction:column; justify-content:space-between; }
+.continuous-grid { stroke:var(--border); stroke-width:1; fill:none; vector-effect:non-scaling-stroke; }
+.continuous-curve { stroke:var(--mint); stroke-width:2; fill:none; vector-effect:non-scaling-stroke; }
+.continuous-point { stroke:var(--amber); stroke-width:6; stroke-linecap:round; fill:none; vector-effect:non-scaling-stroke; }
+.continuous-time { display:flex; justify-content:space-between; margin-left:60px; }
 .lane { display:flex; align-items:center; gap:6px; margin:6px 0; min-width:max-content; }
 .lane-label { width:70px; flex-shrink:0; color:var(--muted); font:12px ui-monospace,monospace; }
 .step { padding:4px; width:42px; height:42px; font:12px ui-monospace,monospace; }

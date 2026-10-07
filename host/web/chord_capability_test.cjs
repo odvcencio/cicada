@@ -91,7 +91,7 @@ async function setup(asset, capture, version, capability, options = {}) {
       assert.equal(old.counts.projectAllocs, 0, 'unnegotiated image mutated old kernel');
       assert.equal(old.counts.initializations, 1);
     }
-    for (const capability of [65536, 65537, 65911, 66047, 66559, 67071, 197119, 197631, 198143, 198655, 206335, 206847]) {
+    for (const capability of [65536, 65537, 65911, 66047, 66559, 67071, 197119, 197631, 198143, 198655, 206335, 206847, 222719, 223231, 255487, 255999]) {
       const unified = await setup(asset, capture, 15, capability);
       assert.ok(unified.messages.some(m => m.t === 'r' && m.p === capability));
     }

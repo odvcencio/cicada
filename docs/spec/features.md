@@ -226,9 +226,68 @@ song { main }
 
 **Edition history:** Expression rows are additive in source editions 1 and 2 and semantic formats /1 and /2. The optional `patterns[].expression` array stores resolved pitch cents, pressure, timbre, and vibrato depth. Instrument-level glide and vibrato settings are not supported.
 
+## Automation blocks
+
+**Status:** Song continuous numeric lanes are implemented in source, semantic JSON, native/WASM playback and Studio.
+
+**Syntax (EBNF):**
+
+```ebnf
+automate_decl ::= "automate" , parameter_path , "{" , { automation_point } , "}" ;
+automation_point ::= position , value , [ shape ] ;
+position ::= "@" , integer , "." , integer , "." , integer ;
+shape ::= "step" | "linear" | "smooth" | "exponential" | "curve" , number ;
+```
+
+**Meaning:** A lane changes a registered parameter over song time. Lanes are top-level declarations with absolute song positions. Interpolation uses the parameter's control space: for frequency and time parameters that space is logarithmic, so `exponential` has the same meaning as `linear` there. `linear_period` is not a supported shape.
+
+**Types and units:** Positions are one-based bar.beat.sixteenth values (beats and steps 1–4), within the song including its end boundary. Point values use the addressed parameter's registered type and unit. Shapes are step, linear, smooth, exponential-as-linear-in-control-space, or a curve with numeric tension.
+
+**Defaults:** `linear` is the default incoming segment shape. The lane contributes no value before its first point and holds its last value afterward. Song loops repeat the lane; seeks reconstruct the current value. At authored scene boundaries, automation takes precedence over scene settings on the same path.
+
+**Errors:** Invalid positions and out-of-order points report `CICADA-POSITION`; unresolved paths report `CICADA-REFERENCE`; incompatible units report `CICADA-UNIT`. Unsupported shapes, including `linear_period`, report `CICADA-UNSUPPORTED`. Duplicate paths report `CICADA-DUPLICATE`.
+
+**Example:** `exponential` uses the existing linear interpolation rule in control space:
+
+```cicada
+cicada 2
+tempo 120
+track bass acid {}
+pattern triplet { step = 1/8t 1 3 5 }
+automate bass.cutoff {
+  @1.1.1 400Hz
+  @5.1.1 2400Hz exponential
+}
+scene main { bass = triplet }
+song { main*4 }
+```
+
+**Edition history:** Additive in source editions 1 and 2, using semantic JSON version 2. Kernel images advertise capability bit 15 and append immutable parameter controls. Older readers reject that capability. The renderer remains allocation-free.
+
+The host prepares numeric targets every four ticks at 960 PPQ (2.08 ms at 120 BPM); the existing parameter smoothing connects them continuously. This uses the same float32 controls in native and WASM playback. Limits are 32 lanes, 1024 authored points per lane and 65535 prepared controls per project. Step segments and flat spans need only endpoints. Enum/toggle controls and static master inserts cannot be automated. `smooth` uses smoothstep; `curve n` uses `t^(2^n)` in control space with tension −8 to 8. Frequency/time lanes follow their registered logarithmic curve; other controls follow the registry curve.
+
 ## Pattern grids and tuplets
 
-Pattern-level `step` selects an exact note division at 960 pulses per quarter note. Omitting it keeps the sixteenth-note grid. Eighth-note triplets occupy 320 ticks per cell:
+**Status:** Pattern step divisions, acid tuplet groups, source chains, melodic velocity rows and note-expression rows are implemented.
+
+**Syntax (EBNF):**
+
+```ebnf
+grid_setting ::= "step" , "=" , fraction ;
+tuplet_group ::= "[" , { acid_step } , "]" ;
+parameter_row ::= identifier , ":" , { value | "." } ;
+chain_decl ::= "chain" , "=" , identifier , { identifier } ;
+```
+
+**Meaning:** A pattern-level step duration selects its grid resolution. A bracketed group subdivides one cell evenly; a following tie extends the group. Melodic rows attach velocity, vibrato depth, pitch bend, pressure, or timbre values to steps. A source chain plays its patterns in order and loops.
+
+**Types and units:** Step duration is a note division. At 960 pulses per quarter note (PPQ), accepted values must occupy a whole number of ticks. `bend:` values are signed cents, `vibrato:` values are cents of depth, and other rows use their parameter type or the MIDI velocity range. Chains contain at most 32 pattern names.
+
+**Defaults:** `step = 1/16` preserves the current grid. A missing row value (`.`) holds its previous value; `0ct` resets a pitch row. A track without a chain keeps its current pattern behavior.
+
+**Errors:** Divisions that do not produce whole ticks, groups without valid cells, row lengths that differ from the pattern, and invalid chain references must be rejected. For example, `1/16t` and `1/20` fit the 960-PPQ grid; `1/28` does not.
+
+**Runnable grid example:** Eighth-note triplets use 320 ticks per cell at 960 PPQ:
 
 ```cicada
 cicada 2
@@ -243,6 +302,24 @@ On acid tracks, brackets subdivide one cell into 2–8 pitches. `pattern triplet
 Groups lower to a common exact grid with at most 64 expanded cells. Cell durations must be 30–3840 ticks. Divisions and groups that require rounding are rejected: `1/16t` and `1/20` fit the grid, while `1/28` and `1/8t [1 3 5]` do not.
 
 Grids are additive in source editions 1 and 2. Optional semantic `step_ticks` retains the legacy grid when absent. Image capability bit 13 adds each slot's duration; older kernels reject that capability. Pattern metadata commands carry the duration in their index field. MIDI export, formatting, and source round trips preserve exact tick positions.
+
+## Source pattern chains
+
+A track's `chain` plays complete patterns in order and loops. An empty scene keeps the chain playing; a scene pattern binding or `off` takes over that track.
+
+```cicada
+cicada 2
+track bass acid { chain = intro triplet chorus }
+pattern intro { 1 }
+pattern triplet { step = 1/8t 3 5 7 }
+pattern chorus { step = 1/8 1 5 }
+scene main {}
+song { main*2 }
+```
+
+Source chains contain 1–32 entries and at most 16 distinct patterns per track. Each entry plays once, including repeated names. Mixed grids join at exact ticks; a seek reconstructs the chain phase. MIDI export uses those same section boundaries. Kernel image capability bit 14 carries the source slot list.
+
+**Edition history:** Pattern grids are additive in editions 1 and 2. Optional semantic `step_ticks` and track `chain` keep absent values on the legacy sixteenth grid. Kernel image capability bit 13 adds a cell duration to each slot; older readers reject that capability. Pattern metadata uploads carry the duration in the existing command's index field. MIDI export retains exact tick positions; `cicada fmt` and semantic source round trips preserve grid timing.
 
 ## Multi-file projects and manifest metadata
 

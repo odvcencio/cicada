@@ -12,7 +12,7 @@ import (
 type heldNote struct {
 	index int
 	count int
-	step  int64
+	end   int64
 	slide bool
 	valid bool
 }
@@ -78,6 +78,10 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	for i := range slots {
 		slots[i] = -1
 	}
+	var chained [16]bool
+	for ti := range p.Tracks {
+		chained[ti] = len(cfg.Patterns[ti].Chain) > 0
+	}
 	var held [16][drum.LaneCount]heldNote
 	bar := 0
 	for _, entry := range cfg.Song {
@@ -88,15 +92,21 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 				binding := scene.Track[ti]
 				switch binding.Mode {
 				case engine.SceneOff:
+					chained[ti] = false
 					for lane := range held[ti] {
 						closeAt(&file.Tracks[ti+1], &held[ti][lane], boundary)
 					}
 					slots[ti] = -1
 				case engine.SceneSlot:
+					chained[ti] = false
 					slots[ti] = int(binding.Slot)
 				}
 			}
 			for ti := range p.Tracks {
+				if chained[ti] {
+					appendChainBar(&file.Tracks[ti+1], &cfg.Patterns[ti], boundary, uint8(ti), channels[ti], cfg.Track[ti].Kind == engine.VoiceDrums, &held[ti])
+					continue
+				}
 				slot := slots[ti]
 				if slot < 0 {
 					continue
@@ -186,6 +196,7 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 	}
 	clone := *p
 	track := p.Tracks[selected]
+	track.Chain = nil
 	track.Slots = [16]*string{}
 	track.Slots[0] = &patternID
 	clone.Tracks = []project.Track{track}
@@ -201,25 +212,29 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 }
 
 func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, trackIndex, probabilityTrack, probabilitySlot, drumPitch uint8, isDrum bool, channel uint8, held *heldNote) {
+	appendStepOffset(track, pattern, absoluteStep, 0, trackIndex, probabilityTrack, probabilitySlot, drumPitch, isDrum, channel, held)
+}
+
+func appendStepOffset(track *TrackChunk, pattern *seq.Pattern, absoluteStep, tickOffset int64, trackIndex, probabilityTrack, probabilitySlot, drumPitch uint8, isDrum bool, channel uint8, held *heldNote) {
 	index := uint8(absoluteStep % int64(pattern.Len))
 	step, err := seq.UnpackStep(pattern.Steps[index])
 	if err != nil || !step.Gate || !seq.ProbabilityHit(step.Probability, pattern.Seed, probabilityTrack, probabilitySlot, 0, index) {
 		return
 	}
-	start := absoluteStep * pattern.GridTicks()
-	end := (absoluteStep + 1) * pattern.GridTicks()
-	if absoluteStep&1 != 0 {
+	start := tickOffset + absoluteStep*pattern.GridTicks()
+	end := tickOffset + (absoluteStep+1)*pattern.GridTicks()
+	if (absoluteStep+tickOffset/pattern.GridTicks())&1 != 0 {
 		start += (pattern.GridTicks()*int64(pattern.SwingPermille) + 500) / 1000
 	} else {
 		end += (pattern.GridTicks()*int64(pattern.SwingPermille) + 500) / 1000
 	}
 	if step.Tie {
-		if held.valid && held.step == absoluteStep-1 {
+		if held.valid && held.end == start {
 			for i := 0; i < max(1, held.count); i++ {
 				note := &track.Notes[held.index+i]
 				note.Dur = max(note.Dur, end-note.Tick)
 			}
-			held.step, held.slide = absoluteStep, false
+			held.end, held.slide = end, false
 		}
 		return
 	}
@@ -230,16 +245,19 @@ func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, tra
 		if ratchet+1 < step.Ratchet {
 			segmentEnd = seq.RatchetTick(start, end, step.Ratchet, ratchet+1)
 		}
-		if ratchet == 0 && held.valid && held.step == absoluteStep-1 && held.slide && !isDrum && chord.Count == 0 {
+		if ratchet == 0 && held.valid && held.end == start && held.slide && !isDrum && chord.Count == 0 {
 			previous := &track.Notes[held.index]
 			previous.Dur = max(int64(1), onset+1-previous.Tick)
 		}
 		gate := max(int64(30), (segmentEnd-onset)*int64(pattern.GatePercent)/100)
 		pitch := uint8(int(step.Note) + int(pattern.Transpose))
-		velocity := uint8(100)
+		velocity := step.Velocity
+		if velocity == 0 {
+			velocity = 100
+		}
 		if isDrum {
 			pitch, velocity = drumPitch, step.Velocity
-		} else if step.Accent {
+		} else if step.Accent && velocity == 100 {
 			velocity = 127
 		}
 		held.index, held.count = len(track.Notes), 1
@@ -252,7 +270,7 @@ func appendStep(track *TrackChunk, pattern *seq.Pattern, absoluteStep int64, tra
 			}
 			track.Notes = append(track.Notes, Note{Tick: onset, Dur: gate, Note: pitch, Vel: velocity, Chan: channel, Track: trackIndex + 1})
 		}
-		held.step, held.slide, held.valid = absoluteStep, step.Slide && !isDrum && ratchet+1 == step.Ratchet, true
+		held.end, held.slide, held.valid = end, step.Slide && !isDrum && ratchet+1 == step.Ratchet, true
 	}
 }
 
@@ -266,6 +284,35 @@ func closeAt(track *TrackChunk, held *heldNote, tick int64) {
 		}
 	}
 	held.valid = false
+}
+
+func appendChainBar(track *TrackChunk, bank *engine.PatternBank, boundary int64, trackIndex, channel uint8, isDrum bool, held *[drum.LaneCount]heldNote) {
+	var period int64
+	for _, slot := range bank.Chain {
+		p := &bank.Slots[slot]
+		period += int64(p.Len) * p.GridTicks()
+	}
+	for cycle := boundary / period * period; cycle < boundary+seq.TicksPerBar; cycle += period {
+		start := cycle
+		for _, slot := range bank.Chain {
+			p := &bank.Slots[slot]
+			length := int64(p.Len) * p.GridTicks()
+			for index := int64(0); index < int64(p.Len); index++ {
+				tick := start + index*p.GridTicks()
+				if tick < boundary || tick >= boundary+seq.TicksPerBar {
+					continue
+				}
+				if isDrum {
+					for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+						appendStepOffset(track, &bank.Drums[slot][lane], index, start, trackIndex, trackIndex, slot, drum.MIDINotes[lane], true, channel, &held[lane])
+					}
+				} else {
+					appendStepOffset(track, p, index, start, trackIndex, trackIndex, slot, 0, false, channel, &held[0])
+				}
+			}
+			start += length
+		}
+	}
 }
 
 func keySignature(key project.Key) (int8, uint8) {

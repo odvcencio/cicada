@@ -59,3 +59,16 @@ func TestTupletTiedExpressionAtOffGridTick(t *testing.T) {
 		t.Fatalf("%g allocations", allocs)
 	}
 }
+
+func TestTupletTiedExpressionDoesNotReplayBeforeSeek(t *testing.T) {
+	p := gatePattern(t, note(69), Step{Gate: true, Tie: true, Ratchet: 1, Probability: 100}, rest(), rest())
+	p.StepTicks = 320
+	p.Expression = new([64]Expression)
+	p.Expression[1] = Expression{Set: true, PitchCents: 200}
+	clock, _ := NewClock(48000, 120000)
+	clock.AnchorTick = 900
+	var dst [64]Event
+	if n, overflow := EventsWithGatesAtTickInBlock(&p, clock, 0, 0, 240, 0, 128, dst[:]); overflow || n != 0 {
+		t.Fatalf("replayed events before seek: %+v (overflow=%v)", dst[:n], overflow)
+	}
+}

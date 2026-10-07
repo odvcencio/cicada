@@ -327,6 +327,20 @@ Forms, editing, navigation, and transport commands also work with JavaScript
 disabled. Live bindings, editor enhancements, MIDI, note input, and meters require the
 GoSX browser runtime. The audio service continues to run natively.
 
+## Safe editing
+
+Studio edits the same `.cicada` source you can open in a text editor. It
+validates a proposed change before writing, checks that the file revision has
+not changed, and refuses writes when it detects an unresolved external
+recovery file. If Studio reports a conflict, read the message, compare the
+named recovery file with your current score, and resolve the edits before
+continuing.
+
+If you want Studio beside VS Code, install or run the extension described in
+[Editors and notation tools](editors.md#vs-code).
+
+Continuous automation appears below the Song lane. Each graph labels its parameter, range and musical endpoints; point descriptions retain positions, values and shapes for assistive technology. Edit `automate` blocks in the score and reload to update the curves. See [automation blocks](../spec/features.md#automation-blocks) and [the runnable example](../../examples/continuous-automation.cicada).
+
 Input recording uses the native device selected in **Audio**. The current
 Tymbal backend does not run in a browser AudioWorklet; native playback and
 capture are independent of browser microphone permission. Legacy portable-host
