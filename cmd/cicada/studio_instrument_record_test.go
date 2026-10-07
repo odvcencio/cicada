@@ -69,8 +69,8 @@ func TestStudioRecordedInstrument(t *testing.T) {
 	if err != nil || recording.Digest(manifest) != result.Pin {
 		t.Fatal("published pack pin", err)
 	}
-	if source, err := os.ReadFile(path); err != nil || string(source) != studioScore {
-		t.Fatal("recording changed existing score")
+	if source, err := os.ReadFile(path); err != nil || !strings.Contains(string(source), "track recorded_track recorded") {
+		t.Fatal("recording did not appear in the open score")
 	}
 	asset := studioCall(t, handler, "/"+result.Path, nil)
 	if asset.Code != 200 || !bytes.Equal(asset.Body.Bytes(), manifest) {

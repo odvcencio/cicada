@@ -682,6 +682,13 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	s.mu.Lock()
+	instrumentCapture := s.captureInstrument
+	s.mu.Unlock()
+	if instrumentCapture {
+		studioJSON(w, http.StatusConflict, map[string]string{"error": "stop instrument recording before changing transport"})
+		return
+	}
 	quantize := cmd.Quantize(input.Quantize)
 	if input.Action == "launch" || input.Action == "slot" {
 		if input.Quantize == 0 {

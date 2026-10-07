@@ -87,6 +87,15 @@ function setup(initialKeys = false) {
   };
 }
 
+test('sample packs use the core while mixed keys and packs use the optional module', () => {
+  const h = setup();
+  const image = scoreImage(false), view = new DataView(image);
+  view.setUint16(30, 1024, true);
+  assert.equal(h.audio.imageModuleKind(image), 'core');
+  view.setUint16(30, 512 | 1024, true);
+  assert.equal(h.audio.imageModuleKind(image), 'keys');
+});
+
 test('initial keys score fetches only the optional module', async () => {
   const h = setup(true);
   await h.audio.startAudio();

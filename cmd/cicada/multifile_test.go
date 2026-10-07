@@ -11,7 +11,7 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
-func TestMultiFileToolsAndStudioRefusal(t *testing.T) {
+func TestMultiFileToolsAndStudioLoad(t *testing.T) {
 	entry := filepath.Join("..", "..", "examples", "multifile", "main.cicada")
 	inspection, err := inspectScore(entry)
 	if err != nil || hasDiagnosticErrors(inspection.diagnostics) || inspection.semantic == nil {
@@ -50,9 +50,11 @@ func TestMultiFileToolsAndStudioRefusal(t *testing.T) {
 		}
 	}
 	for _, path := range paths {
-		if _, err := newStudioWithInvalid(path, true); err == nil || !strings.Contains(err.Error(), "Studio cannot edit multi-file projects") {
-			t.Fatalf("Studio should refuse before recovery or history writes: %v", err)
+		s, err := newStudioWithInvalid(path, true)
+		if err != nil {
+			t.Fatalf("Studio project load: %v", err)
 		}
+		s.shutdown()
 	}
 }
 

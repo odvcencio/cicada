@@ -21,6 +21,8 @@ import (
 // forms retain GoSX's redirect-after-POST contract; the mounted GoSX workspace
 // uses the framework's incremental tree diff and patch receiver instead.
 type workspaceProjection struct {
+	ProjectRevision string `json:"projectRevision"`
+	FileRevision    string `json:"fileRevision"`
 	HTML            string `json:"html"`
 	Revision        string `json:"revision"`
 	Location        string `json:"location"`
@@ -44,7 +46,7 @@ func (s *studioApp) reactiveWorkspace(ctx *server.Context, view workspace, body 
 		// Engine-only pages do not implicitly load the island patch receiver.
 		// Register GoSX's own standalone asset through its managed script API.
 		ctx.Runtime().ManagedScript("/gosx/patch.js", server.ManagedScriptOptions{Role: server.ManagedScriptRolePatch})
-		props, _ := json.Marshal(map[string]string{"revision": view.Revision, "csrf": session.Token(ctx.Request)})
+		props, _ := json.Marshal(map[string]string{"revision": view.Revision, "csrf": session.Token(ctx.Request), "projectRevision": view.ProjectRevision})
 		runtime = ctx.Engine(engine.Config{
 			Name: "CicadaWorkspace", Kind: engine.KindSurface,
 			MountID: "cicada-workspace-runtime", Runtime: engine.RuntimeGoWASM,
@@ -94,7 +96,7 @@ func (s *studioApp) projection(r *http.Request, location string) (workspaceProje
 	if view.Project != nil && view.Project.Title != "" {
 		title = view.Project.Title
 	}
-	return workspaceProjection{HTML: gosx.RenderHTML(body), Revision: view.Revision, Location: location, Title: title + " · Cicada Studio"}, nil
+	return workspaceProjection{ProjectRevision: view.ProjectRevision, FileRevision: view.FileRevision, HTML: gosx.RenderHTML(body), Revision: view.Revision, Location: location, Title: title + " · Cicada Studio"}, nil
 }
 
 func (s *studioApp) workspaceProjection(w http.ResponseWriter, r *http.Request) {
@@ -173,7 +175,11 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 		} else {
 			projection.WriteRevision = receipt.Revision
 			projection.Saved = receipt.Revision != ""
-			projection.RefreshRequired = receipt.Revision != "" && receipt.Revision != projection.Revision
+			readRevision := projection.Revision
+			if (name == "source" || name == "undo" || name == "redo") && fields["file"] != "" {
+				readRevision = projection.FileRevision
+			}
+			projection.RefreshRequired = receipt.Revision != "" && receipt.Revision != readRevision
 			if projection.RefreshRequired {
 				result.Message = "Saved. The score changed before the workspace refreshed."
 			}

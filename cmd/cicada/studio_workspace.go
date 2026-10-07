@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -26,8 +27,11 @@ func (s *studio) workspace(w http.ResponseWriter, r *http.Request) {
 	if parseErr != nil {
 		message = parseErr.Error()
 	}
+	files, _ := s.projectFileList()
+	projectHash, _ := playSourceHash(s.path)
 	w.Header().Set("Cache-Control", "no-store")
 	studioJSON(w, http.StatusOK, map[string]any{
+		"files": files, "projectRevision": fmt.Sprintf("%x", projectHash),
 		"source": string(source), "revision": studioRevision(source),
 		"project": s.lastGoodProject, "valid": parseErr == nil,
 		"error": message, "filename": filepath.Base(s.path),

@@ -1,0 +1,53 @@
+cicada 2
+title "FM Bass - sampled"
+tempo 108
+key c major
+seed 61006
+// Owned multisamples of the original modeled patch, with a pinned manifest.
+// Four monophonic parts preserve chord notes and timing with eight total voice slots.
+sampler fm_bass {
+  pack = "packs/fm_bass/manifest.json"
+  sha256 = "9af007ecc8e920a1d9c6f3cb440a488bac3c76e6c81ba70461f7ca1c8d9efaae"
+  root = c4
+  voices = 2
+}
+
+track keys_1 fm_bass {
+  level = 0dB
+}
+track keys_2 fm_bass {
+  level = 0dB
+}
+track keys_3 fm_bass {
+  level = 0dB
+}
+track keys_4 fm_bass {
+  level = 0dB
+}
+pattern comp_1 notes {
+
+  gate = 72%
+  c2 - - . d2 - - . g1 - - . c2 - - . a1 - - . d2 - - . g1 - - . c2 - - .
+}
+pattern comp_2 notes {
+
+  gate = 72%
+  e2 - - . f2 - - . b1 - - . e2 - - . c2 - - . f2 - - . b1 - - . e2 - - .
+}
+pattern comp_3 notes {
+
+  gate = 72%
+  g2 - - . a2 - - . d2 - - . a2 - - . e2 - - . a2 - - . e2 - - . g2 - - .
+}
+pattern comp_4 notes {
+
+  gate = 72%
+  b2 - - . c3 - - . f2 - - . b2 - - . g2 - - . c3 - - . f2 - - . b2 - - .
+}
+pattern melody notes {
+  gate = 78%
+  e2 . g2 a2 b2 . g2 . f2 . e2 d2 c2 . . . a1 . c2 e2 g2 . e2 . d2 . f2 a2 g2 . e2 .
+}
+scene comping { keys_1=comp_1 keys_2=comp_2 keys_3=comp_3 keys_4=comp_4 }
+scene melodic { keys_1=melody keys_2=off keys_3=off keys_4=off }
+song { comping*2 melodic*2 }

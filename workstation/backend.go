@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
 
@@ -52,7 +53,11 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 		body = bytes.NewReader(data)
 	}
 	u := *b.url
-	u.Path, u.RawQuery = path, ""
+	resource, err := url.ParseRequestURI(path)
+	if err != nil || resource.IsAbs() || resource.Host != "" {
+		return nil, fmt.Errorf("audio service resource must be a local path")
+	}
+	u.Path, u.RawPath, u.RawQuery = resource.Path, resource.RawPath, resource.RawQuery
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {
 		return nil, err
@@ -107,17 +112,28 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 	return json.Unmarshal(data, output)
 }
 
+type projectFile struct {
+	Name        string                `json:"name"`
+	Source      string                `json:"source"`
+	Revision    string                `json:"revision"`
+	Diagnostics []notation.Diagnostic `json:"diagnostics"`
+}
+
 type workspace struct {
-	DiskSource   string           `json:"-"`
-	DiskRevision string           `json:"-"`
-	HasDraft     bool             `json:"-"`
-	Edition      int              `json:"-"`
-	Source       string           `json:"source"`
-	Revision     string           `json:"revision"`
-	Filename     string           `json:"filename"`
-	Valid        bool             `json:"valid"`
-	Error        string           `json:"error"`
-	Project      *project.Project `json:"project"`
+	Files           []projectFile    `json:"files"`
+	File            string           `json:"-"`
+	FileRevision    string           `json:"-"`
+	ProjectRevision string           `json:"projectRevision"`
+	DiskSource      string           `json:"-"`
+	DiskRevision    string           `json:"-"`
+	HasDraft        bool             `json:"-"`
+	Edition         int              `json:"-"`
+	Source          string           `json:"source"`
+	Revision        string           `json:"revision"`
+	Filename        string           `json:"filename"`
+	Valid           bool             `json:"valid"`
+	Error           string           `json:"error"`
+	Project         *project.Project `json:"project"`
 }
 
 type transport struct {
