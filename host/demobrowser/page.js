@@ -2,7 +2,7 @@
 (() => {
   const $ = id => document.getElementById(id);
   const ui = {play: $('play'), stop: $('stop'), status: $('status'), source: $('source'), preset: $('preset')};
-  let api, context, node, gain, analyser, snapshot, modulePromise, resetPromise, stageResolve, stageReject, suppressReset = false, suppressedStopAcks = 0, starting = false, failed = false;
+  let api, context, node, gain, analyser, snapshot, modulePromise, resetPromise, recoveryPromise, metricsTimer, lastGoodSource, stageResolve, stageReject, suppressReset = false, suppressedStopAcks = 0, starting = false, failed = false, disposing = false;
   const state = {playing: false, metrics: null, messageCount: 0, faults: 0, playhead: 0, errors: [], revision: '', resets: 0};
   // Read-only diagnostics are also consumed by the browser acceptance checks.
   window.cicadaDemoState = state;
@@ -12,18 +12,43 @@
     return result;
   };
   const fail = error => {
+    if (disposing || recoveryPromise) return;
+    disposing = true;
     const message = error.message || String(error);
     state.errors.push(message);
-    failed = true;
-    ui.status.textContent = message;
+    failed = !api;
+    ui.status.textContent = api ? `${message} Press Play to retry the last working score.` : message;
     state.playing = false;
-    if (node) node.disconnect();
+    const oldNode = node, oldContext = context, reject = stageReject;
+    node = context = gain = analyser = null;
+    stageResolve = stageReject = null;
+    suppressedStopAcks = 0;
+    clearInterval(metricsTimer);
+    if (oldNode) {
+      oldNode.port.onmessage = oldNode.port.onmessageerror = null;
+      oldNode.onprocessorerror = null;
+      oldNode.disconnect();
+    }
+    if (reject) reject(error);
+    if (api) {
+      try {
+        call('close');
+        if (lastGoodSource && call('snapshot').source !== lastGoodSource) {
+          call('change', 'edit', call('snapshot').revision, lastGoodSource);
+          refreshSource();
+        }
+      } catch (closeError) { state.errors.push(closeError.message); }
+    }
+    if (oldNode) oldNode.port.close();
+    recoveryPromise = (oldContext ? oldContext.close() : Promise.resolve())
+      .catch(() => {}).finally(() => { recoveryPromise = null; refreshControls(); });
+    disposing = false;
     refreshControls();
   };
   window.cicadaDemoError = fail;
   const refreshControls = () => {
     const paused = context && context.state !== 'running';
-    ui.play.disabled = !api || failed || starting || (!paused && (!!resetPromise || state.playing));
+    ui.play.disabled = !api || failed || starting || !!recoveryPromise || (!paused && (!!resetPromise || state.playing));
     ui.stop.disabled = !node || !state.playing;
     ui.preset.disabled = !api || starting || !!resetPromise;
     for (const id of ['apply', 'reset']) $(id).disabled = !api || starting || !!resetPromise;
@@ -57,13 +82,16 @@
       });
       rebind();
       state.revision = fresh.revision;
+      lastGoodSource = call('snapshot').source;
       state.resets++;
-    })().catch(fail).finally(() => { resetPromise = null; refreshControls(); });
+      return true;
+    })().catch(error => { fail(error); return false; }).finally(() => { resetPromise = null; refreshControls(); });
     refreshControls();
     return resetPromise;
   };
   const kindNames = ['Unknown', 'Playhead', 'Meter', 'Note on', 'Note off', 'Switched', 'Overload', 'Fault', 'Late', 'Bar', 'Phrase end', 'Layer changed', 'Macro reached', 'State changed', 'Stinger started', 'Stinger ended'];
   const receive = data => {
+    const sender = node;
     if (data.t === 'm') {
       try {
         if (data.n % 16 || data.n > data.bytes.byteLength) throw new Error('Incomplete kernel message');
@@ -76,7 +104,7 @@
           state.lastMessage = {kind: kindNames[kind] || 'Unknown', track: view.getUint8(at + 1), tick};
         }
       } catch (error) { fail(error); }
-      finally { node.port.postMessage({t: 'b', bytes: data.bytes}, [data.bytes]); }
+      finally { if (sender === node) sender.port.postMessage({t: 'b', bytes: data.bytes}, [data.bytes]); }
     } else if (data.t === 'q') {
       const histogram = data.d;
       let samples = 0, seen = 0, p99 = 0;
@@ -122,6 +150,8 @@
       const module = await modulePromise, fresh = prepare();
       await context.audioWorklet.addModule('/audio/processor.js');
       node = new AudioWorkletNode(context, 'cicada', {numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: {m: module, i: fresh.image.buffer, r: fresh.revision, l: latency()}});
+      const activeNode = node;
+      node.onprocessorerror = () => fail(new Error('Audio processor stopped.'));
       const post = node.port.postMessage.bind(node.port);
       node.port.postMessage = (data, transfer) => {
         if (suppressReset && data.t === 'c' && data.bytes[0] === 2) suppressedStopAcks++;
@@ -130,6 +160,7 @@
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Audio did not start; reload to retry.')), 15000);
         node.port.onmessage = event => {
+          if (node !== activeNode) return;
           if (event.data.t === 'r') { clearTimeout(timeout); state.clock = event.data.c; state.revision = event.data.r; resolve(); }
           if (event.data.t === 'e') { clearTimeout(timeout); reject(new Error(event.data.e)); }
           receive(event.data);
@@ -142,13 +173,15 @@
       node.connect(gain); gain.connect(analyser); analyser.connect(context.destination);
       await context.resume();
       rebind();
-      setInterval(() => { if (node) node.port.postMessage({t: 'q', l: latency()}); }, 1000);
+      lastGoodSource = call('snapshot').source;
+      metricsTimer = setInterval(() => { if (node) node.port.postMessage({t: 'q', l: latency()}); }, 1000);
       // The same metrics request used by the UI; no render-thread test hooks.
       window.cicadaDemoAudio = {context, analyser, node};
     } catch (error) {
       if (node) node.disconnect();
       node = null;
-      await context.close(); context = null;
+      if (context) await context.close(); context = null;
+      modulePromise = null;
       throw error;
     }
   };
@@ -158,8 +191,8 @@
       const paused = context && context.state !== 'running';
       if (!context) await start();
       await context.resume();
-      if (paused) { call('stop'); await resetKernel(); }
-      else await resetPromise;
+      if (paused) { call('stop'); if (!await resetKernel()) return; }
+      else if (resetPromise && !await resetPromise) return;
       call('play');
       state.playing = true;
       ui.status.textContent = 'Playing locally. Stop, change a sketch, or edit the score below.';
@@ -176,7 +209,7 @@
       call('change', action, snapshot.revision, value);
       $('edit-error').textContent = '';
       refreshSource();
-      if (node) { call('stop'); await resetKernel(); }
+      if (node) { call('stop'); if (!await resetKernel()) return; }
       ui.status.textContent = 'Score ready. Press Play to hear your changes.';
     } catch (error) { $('edit-error').textContent = error.message; }
     refreshControls();
@@ -202,6 +235,7 @@
     const custom = document.createElement('option'); custom.value = 'custom'; custom.textContent = 'Custom score'; custom.disabled = true;
     ui.preset.append(custom);
     refreshSource();
+    lastGoodSource = snapshot.source;
     ui.status.textContent = 'Ready. Press Play to enable audio in this tab.';
   })().catch(fail);
 })();

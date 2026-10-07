@@ -121,6 +121,20 @@ async function until(run, timeout = 20000) {
     assert.equal(await evaluate('cicadaDemo.snapshot().revision'), revision, 'invalid score cannot commit');
     assert(await evaluate(`document.getElementById('edit-error').textContent.length>0`));
     await screenshot('demo-invalid-390.png');
+    await edit(original.replace('model_marimba', 'tine_ep'));
+    assert.equal(await evaluate('cicadaDemo.snapshot().revision'), revision, 'keyboard edit cannot commit');
+    assert.match(await evaluate(`document.getElementById('edit-error').textContent`), /keyboard instruments are unavailable/);
+    await play();
+    // Exercise the same teardown used by worklet and lifecycle failures.
+    await evaluate(`cicadaDemo.change('edit', cicadaDemo.snapshot().revision, cicadaDemo.snapshot().source.replace('tempo 112', 'tempo 117')); cicadaDemoError(new Error('Audio recovery check'))`);
+    await wait(`!document.getElementById('play').disabled && cicadaDemoAudio.context.state==='closed'`);
+    assert.equal(await evaluate('cicadaDemo.snapshot().source'), original, 'failure preserves the last working score');
+    assert.deepEqual(await evaluate('cicadaDemoState.errors'), ['Audio recovery check']);
+    await play();
+    assert.equal(await evaluate('cicadaDemoAudio.context.state'), 'running', 'failure retry creates fresh audio');
+    await click('#stop'); await wait(`!document.getElementById('play').disabled`);
+    // Keep the deliberate failure separate from unexpected soak errors.
+    await evaluate('cicadaDemoState.errors.length=0');
     await edit(original.replace('tempo 112', 'tempo 116'));
     await wait(`!document.getElementById('play').disabled && cicadaDemo.snapshot().revision!==${JSON.stringify(revision)}`);
     await click('#undo'); await wait(`!document.getElementById('play').disabled`);
