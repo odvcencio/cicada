@@ -16,7 +16,8 @@ Open `http://127.0.0.1:8170` and press **Play in browser**. Choose an
 instrument sketch or edit the score and press **Apply score**. Applying a
 score stops playback and initializes a fresh kernel before Play is enabled
 again. Undo and Redo restore validated scores; Reset clears the edit history.
-Reloading starts a new session. Volume starts at 15%.
+Reloading starts a new session. The sketches target about −20 LUFS, and
+Volume starts at 75%.
 
 Score parsing and compilation run in a separate Go/WASM module on the page;
 the audio kernel runs on the worklet thread. These are separate downloads.

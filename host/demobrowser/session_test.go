@@ -8,6 +8,7 @@ import (
 
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/loudness"
 )
 
 func TestPresetAudio(t *testing.T) {
@@ -42,6 +43,43 @@ func TestPresetAudio(t *testing.T) {
 				}
 				if energy < 1e-7 {
 					t.Fatal("silent sketch")
+				}
+			})
+		}
+	}
+}
+
+func TestPresetLoudness(t *testing.T) {
+	for _, preset := range Presets() {
+		for _, rate := range []int{44100, 48000} {
+			t.Run(preset.ID+"/"+strconv.Itoa(rate), func(t *testing.T) {
+				_, cfg, _, err := Prepare([]byte(preset.Source), rate)
+				if err != nil {
+					t.Fatal(err)
+				}
+				e, err := engine.New(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				meter, err := loudness.New(rate)
+				if err != nil {
+					t.Fatal(err)
+				}
+				e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+				left, right := make([]float32, 128), make([]float32, 128)
+				frames := int(int64(rate) * 60 * 4 * 16 * 1000 / cfg.BPMMilli)
+				for at := 0; at < frames; at += len(left) {
+					e.Render(left, right)
+					if err := meter.ProcessBlock(left, right); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := meter.Finish(); err != nil {
+					t.Fatal(err)
+				}
+				result := meter.Metrics()
+				if math.Abs(result.IntegratedLUFS+20) > 1.5 || result.TruePeakDBTP > -1 {
+					t.Fatalf("sketch loudness %.2f LUFS, true peak %.2f dBTP", result.IntegratedLUFS, result.TruePeakDBTP)
 				}
 			})
 		}
