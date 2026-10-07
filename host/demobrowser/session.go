@@ -43,10 +43,10 @@ kit acoustic {
   sd = model.snare
   ch = model.hat_closed
 }
-track bass acid { cutoff = 620Hz level = -12dB }
-track keys model_marimba { level = -12dB }
-track lead glass { level = -12dB }
-track drums acoustic { level = -16dB }
+track bass acid { cutoff = 620Hz level = 0.4dB }
+track keys model_marimba { level = 0.4dB }
+track lead glass { level = 0.4dB }
+track drums acoustic { level = -3.6dB }
 pattern bassline { 1 . 1 . 3 . 5 . | 1 . 1 3 . 5 7 . }
 pattern melody { a4 . c5 . e5 . c5 . | a4 . g4 . e4 . g4 . }
 pattern sparkle { . . e4 . . . a4 . | . . c5 . . . g4 . }
@@ -61,20 +61,30 @@ song { garden*999 garden*999 }
 
 func Presets() []Preset {
 	presets := []Preset{{ID: "ensemble", Name: "Night garden · four instruments", Source: ensemble}}
-	for _, name := range modal.Names {
+	// Split the sketch gain between track and master, retaining their +6 dB
+	// limits and the kernel's safety limiter. Custom edits keep these levels.
+	gains := [...]float64{12.6, 13.7, 14.2, 23.9, 18.1, 22, 18.8, 24, 24}
+	for i, name := range modal.Names {
+		trackGain := min(gains[i], 18)
+		velocity := ""
+		if name == "felt" {
+			velocity = "\n  velocity: 127 . . . . . . . . . . . . . . .\n"
+		}
 		presets = append(presets, Preset{ID: name, Name: strings.ToUpper(name[:1]) + name[1:], Source: fmt.Sprintf(`cicada 2
 title "%s"
 tempo 108
 key c major
 seed 4242
-track sound model_%s { level = -12dB }
-pattern phrase { c4 . e4 . g4 . c5 . | c4 c4 g4 . e4 . . . }
+track sound model_%s { level = %.1fdB }
+master { level = %.1fdB }
+pattern phrase { c4 . e4 . g4 . c5 . | c4 c4 g4 . e4 . . . %s}
 scene demo { sound = phrase }
 song { demo*999 demo*999 }
-`, name, name)})
+`, name, name, -12+trackGain, gains[i]-trackGain, velocity)})
 	}
 	presets = append(presets,
-		Preset{ID: "kit", Name: "Modeled drum kit", Source: ensemble[:strings.Index(ensemble, "track bass")] + `track drums acoustic { level = -12dB }
+		Preset{ID: "kit", Name: "Modeled drum kit", Source: ensemble[:strings.Index(ensemble, "track bass")] + `track drums acoustic { level = 6dB bd_level = -4.3dB sd_level = -4.3dB ch_level = -4.3dB }
+master { level = 6dB }
 pattern beat drums {
  bd: x... x... x... x...
  sd: .... x... .... x...
@@ -83,7 +93,8 @@ pattern beat drums {
 scene demo { drums = beat }
 song { demo*999 demo*999 }
 `},
-		Preset{ID: "graph", Name: "Glass · authored synth", Source: ensemble[:strings.Index(ensemble, "kit acoustic")] + `track lead glass { level = -9dB }
+		Preset{ID: "graph", Name: "Glass · authored synth", Source: ensemble[:strings.Index(ensemble, "kit acoustic")] + `track lead glass { level = 6dB }
+master { level = 1.5dB }
 pattern phrase { a3 . c4 . e4 . g4 . | a4 . g4 . e4 . c4 . }
 scene demo { lead = phrase }
 song { demo*999 demo*999 }

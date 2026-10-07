@@ -4,6 +4,7 @@ package demoweb
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -13,6 +14,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/andybalholm/brotli"
 )
 
 const PublicHost = "cicada.m31labs.dev"
@@ -39,7 +42,18 @@ type Build struct {
 
 type sealedAsset struct {
 	Asset
-	etag string
+	etag         string
+	gzip, brotli representation
+}
+
+type representation struct {
+	bytes []byte
+	etag  string
+}
+
+func entityTag(data []byte) string {
+	sum := sha256.Sum256(data)
+	return `"` + hex.EncodeToString(sum[:]) + `"`
 }
 
 type handler struct {
@@ -68,11 +82,33 @@ func NewHandler(build Build) (http.Handler, error) {
 			return nil, errors.New("CICADA-DEMO: invalid or oversized build asset")
 		}
 		total += len(asset.Bytes)
-		sum := sha256.Sum256(asset.Bytes)
-		h.assets[urlPath] = sealedAsset{
+		sealed := sealedAsset{
 			Asset: Asset{ContentType: asset.ContentType, Bytes: bytes.Clone(asset.Bytes)},
-			etag:  `"` + hex.EncodeToString(sum[:]) + `"`,
+			etag:  entityTag(asset.Bytes),
 		}
+		if strings.HasPrefix(asset.ContentType, "text/") || asset.ContentType == "application/javascript" || asset.ContentType == "application/wasm" {
+			var gz, br bytes.Buffer
+			gzipWriter, err := gzip.NewWriterLevel(&gz, gzip.BestCompression)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := gzipWriter.Write(asset.Bytes); err != nil {
+				return nil, err
+			}
+			if err := gzipWriter.Close(); err != nil {
+				return nil, err
+			}
+			brotliWriter := brotli.NewWriterLevel(&br, 9)
+			if _, err := brotliWriter.Write(asset.Bytes); err != nil {
+				return nil, err
+			}
+			if err := brotliWriter.Close(); err != nil {
+				return nil, err
+			}
+			sealed.gzip = representation{bytes: gz.Bytes(), etag: entityTag(gz.Bytes())}
+			sealed.brotli = representation{bytes: br.Bytes(), etag: entityTag(br.Bytes())}
+		}
+		h.assets[urlPath] = sealed
 	}
 	if _, ok := h.assets["/"]; !ok {
 		return nil, errors.New("CICADA-DEMO: GoSX entry document required")
@@ -169,14 +205,93 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", asset.ContentType)
-	w.Header().Set("ETag", asset.etag)
-	if r.Header.Get("If-None-Match") == asset.etag {
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Vary", "Accept-Encoding")
+	data, etag := asset.Bytes, asset.etag
+	encoding, acceptable := selectEncoding(r.Header.Values("Accept-Encoding"), asset.gzip.bytes != nil)
+	if !acceptable {
+		http.Error(w, "no acceptable content encoding", http.StatusNotAcceptable)
+		return
+	}
+	if encoding != "" {
+		compressed := asset.gzip
+		if encoding == "br" {
+			compressed = asset.brotli
+		}
+		data, etag = compressed.bytes, compressed.etag
+		w.Header().Set("Content-Encoding", encoding)
+	}
+	w.Header().Set("ETag", etag)
+	if matchesETag(r.Header.Values("If-None-Match"), etag) {
 		w.WriteHeader(http.StatusNotModified)
 		return
 	}
-	w.Header().Set("Content-Length", strconv.Itoa(len(asset.Bytes)))
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
 	w.WriteHeader(http.StatusOK)
 	if r.Method != http.MethodHead {
-		_, _ = w.Write(asset.Bytes)
+		_, _ = w.Write(data)
 	}
+}
+
+// Negotiation prefers Brotli on equal weights. Identity is acceptable unless
+// explicitly excluded, including by a zero-weight wildcard.
+func selectEncoding(headers []string, compressed bool) (string, bool) {
+	quality := map[string]float64{}
+	for _, field := range headers {
+		for _, part := range strings.Split(field, ",") {
+			parts := strings.Split(part, ";")
+			name := strings.ToLower(strings.TrimSpace(parts[0]))
+			q := 1.0
+			for _, parameter := range parts[1:] {
+				key, value, ok := strings.Cut(strings.TrimSpace(parameter), "=")
+				if ok && strings.EqualFold(key, "q") {
+					parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
+					if err != nil || !(parsed >= 0 && parsed <= 1) {
+						q = 0
+					} else {
+						q = parsed
+					}
+				}
+			}
+			quality[name] = q
+		}
+	}
+	weight := func(name string) float64 {
+		if q, ok := quality[name]; ok {
+			return q
+		}
+		if q, ok := quality["*"]; ok {
+			if name != "identity" || q == 0 {
+				return q
+			}
+		}
+		if name == "identity" {
+			return 1
+		}
+		return 0
+	}
+	best, bestQuality := "", 0.0
+	if compressed {
+		for _, name := range []string{"br", "gzip"} {
+			if q := weight(name); q > bestQuality {
+				best, bestQuality = name, q
+			}
+		}
+	}
+	if q := weight("identity"); q > bestQuality {
+		best, bestQuality = "", q
+	}
+	return best, bestQuality > 0
+}
+
+func matchesETag(headers []string, etag string) bool {
+	for _, field := range headers {
+		for _, candidate := range strings.Split(field, ",") {
+			candidate = strings.TrimSpace(candidate)
+			if candidate == "*" || strings.TrimPrefix(candidate, "W/") == etag {
+				return true
+			}
+		}
+	}
+	return false
 }

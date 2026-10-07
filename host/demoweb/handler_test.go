@@ -1,10 +1,15 @@
 package demoweb
 
 import (
+	"bytes"
+	"compress/gzip"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/andybalholm/brotli"
 )
 
 const testRevision = "954826cfd34f6f6ec3c1fde9f03c0dd0c111ea03"
@@ -15,6 +20,84 @@ func testBuild() Build {
 		"/assets/kernel.wasm": {ContentType: "application/wasm", Bytes: []byte("wasm fixture")},
 		"/audio/bundled.wav":  {ContentType: "audio/wav", Bytes: []byte("playback fixture")},
 	}}
+}
+
+func TestCompressedAssetsAndRevalidation(t *testing.T) {
+	build := testBuild()
+	data := bytes.Repeat([]byte("\x00asm browser runtime fixture\n"), 4096)
+	build.Assets["/assets/kernel.wasm"] = Asset{ContentType: "application/wasm", Bytes: data}
+	h, err := NewHandler(build)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, encoding, etag string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "https://"+PublicHost+"/assets/kernel.wasm", nil)
+		r.Header.Set("Accept-Encoding", encoding)
+		if etag != "" {
+			r.Header.Add("If-None-Match", `"unrelated"`)
+			r.Header.Add("If-None-Match", etag)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	tags := map[string]string{}
+	for _, encoding := range []string{"", "gzip", "br"} {
+		w := request("GET", encoding, "")
+		if w.Code != 200 || w.Header().Get("Content-Encoding") != encoding || w.Header().Get("Cache-Control") != "no-cache" || w.Header().Get("Vary") != "Accept-Encoding" {
+			t.Fatalf("%s: code=%d headers=%v", encoding, w.Code, w.Header())
+		}
+		var reader io.Reader = bytes.NewReader(w.Body.Bytes())
+		if encoding == "gzip" {
+			gz, err := gzip.NewReader(reader)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer gz.Close()
+			reader = gz
+		} else if encoding == "br" {
+			reader = brotli.NewReader(reader)
+		}
+		decoded, err := io.ReadAll(reader)
+		if err != nil || !bytes.Equal(decoded, data) {
+			t.Fatalf("%s: changed decoded asset: %v", encoding, err)
+		}
+		if encoding != "" && w.Body.Len() >= len(data) {
+			t.Fatal("compressible bundle was not reduced")
+		}
+		tags[encoding] = w.Header().Get("ETag")
+		head := request("HEAD", encoding, "")
+		if head.Code != 200 || head.Body.Len() != 0 || head.Header().Get("Content-Length") != w.Header().Get("Content-Length") || head.Header().Get("ETag") != tags[encoding] {
+			t.Fatalf("%s: HEAD differs from GET", encoding)
+		}
+		for _, condition := range []string{tags[encoding], "W/" + tags[encoding], `"stale", W/` + tags[encoding], "*"} {
+			for _, method := range []string{"GET", "HEAD"} {
+				cached := request(method, encoding, condition)
+				if cached.Code != 304 || cached.Body.Len() != 0 || cached.Header().Get("Cache-Control") != "no-cache" || cached.Header().Get("Vary") != "Accept-Encoding" {
+					t.Fatalf("%s %s: conditional request returned %d", method, condition, cached.Code)
+				}
+			}
+		}
+	}
+	if tags[""] == tags["gzip"] || tags["gzip"] == tags["br"] || request("GET", "br", tags[""]).Code != 200 {
+		t.Fatal("strong ETags must identify the selected representation")
+	}
+	for _, test := range []struct {
+		accept, want string
+		status       int
+	}{
+		{"gzip, br", "br", 200}, {"br;q=0, gzip", "gzip", 200},
+		{"gzip;q=0.5, br;q=0.8, identity;q=0", "br", 200},
+		{"br;q=0.5, gzip;q=0.8, identity;q=0", "gzip", 200},
+		{"br;q=0, gzip;q=0", "", 200}, {"deflate", "", 200},
+		{"*", "br", 200}, {"*;q=0", "", 406},
+		{"gzip;q=NaN, br;q=2", "", 200}, {"*;q=0, identity", "", 200},
+	} {
+		w := request("GET", test.accept, "")
+		if w.Code != test.status || w.Header().Get("Content-Encoding") != test.want {
+			t.Fatalf("%s: status=%d encoding=%s", test.accept, w.Code, w.Header().Get("Content-Encoding"))
+		}
+	}
 }
 
 func TestNoNativeExportAgentOrFilesystemRoutes(t *testing.T) {
