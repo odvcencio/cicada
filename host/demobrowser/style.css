@@ -1,0 +1,54 @@
+:root { color-scheme: dark; --bg: #101a17; --panel: #172620; --ink: #f0f2df; --muted: #aabbb0; --accent: #d5eb82; --line: #35453b; font-family: system-ui, sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); }
+main { max-width: 1080px; padding: 30px 36px; margin: auto; }
+header, .section-heading, footer, .transport, .edit-actions { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+a { color: var(--accent); text-underline-offset: 4px; }
+.wordmark { font-size: 28px; font-weight: 750; letter-spacing: -1px; color: var(--ink); text-decoration: none; }
+.wordmark span { color: var(--accent); margin-left: 7px; }
+.tag, .eyebrow { color: var(--accent); font-size: 13px; letter-spacing: .06em; }
+.intro { padding: 44px 0 24px; }
+h1 { font-size: clamp(42px, 6vw, 70px); line-height: 1.05; letter-spacing: -.05em; margin: 14px 0 20px; font-weight: 650; }
+.intro > p:last-child { max-width: 540px; font-size: 17px; line-height: 1.6; color: var(--muted); }
+.player, .metrics, .score { background: var(--panel); border: 1px solid var(--line); padding: 24px; margin-bottom: 18px; border-radius: 12px; }
+.player { display: grid; grid-template-columns: 1fr 1.6fr; align-items: end; gap: 16px 24px; }
+.preset label { display: block; color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+button, select { font: inherit; border: 1px solid var(--line); border-radius: 6px; background: #20382d; color: var(--ink); min-height: 44px; padding: 10px 15px; }
+button { cursor: pointer; white-space: nowrap; }
+button:hover:enabled { background: #355340; }
+button:disabled { opacity: .5; cursor: default; }
+button.primary { background: var(--accent); color: #18220d; border-color: var(--accent); font-weight: 650; }
+button.primary:hover:enabled { background: #e7f5ae; }
+select { width: 100%; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; }
+.transport { justify-content: flex-start; flex-wrap: wrap; }
+.volume { display: grid; gap: 6px; color: var(--muted); font-size: 12px; min-width: 100px; flex: 1; }
+input[type=range] { width: 100%; accent-color: var(--accent); margin: 0; }
+#status { grid-column: 1 / -1; color: var(--muted); margin: 0; font-size: 13px; }
+h2 { font-size: 16px; margin: 0; font-weight: 600; }
+.section-heading span { color: var(--muted); font-size: 12px; }
+.metric-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 24px 0 18px; }
+.metric-grid div + div { border-left: 1px solid var(--line); padding-left: 24px; }
+dt { color: var(--muted); font-size: 12px; }
+dd { font-family: ui-monospace, monospace; font-size: 25px; margin: 7px 0 0; color: var(--accent); font-variant-numeric: tabular-nums; }
+#timing-detail, .hint, footer { color: var(--muted); font-size: 12px; line-height: 1.6; }
+.drain { font: 12px/1.6 ui-monospace, monospace; min-height: 20px; margin-bottom: 0; overflow-wrap: anywhere; }
+textarea { display: block; resize: vertical; width: 100%; height: 320px; margin: 18px 0; padding: 16px; background: #101c16; color: var(--ink); border: 1px solid var(--line); border-radius: 6px; font: 13px/1.6 ui-monospace, monospace; tab-size: 2; }
+.edit-actions { justify-content: flex-start; flex-wrap: wrap; gap: 8px; }
+#edit-error { color: #ffbca8; font-size: 13px; overflow-wrap: anywhere; }
+footer { padding: 8px 0 24px; flex-wrap: wrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+@media (max-width: 700px) {
+  main { padding: 22px 18px; }
+  .tag { font-size: 11px; }
+  .intro { padding-top: 28px; }
+  .intro > p:last-child { font-size: 15px; line-height: 1.5; }
+  .player { grid-template-columns: 1fr; }
+  .player, .metrics, .score { padding: 18px; }
+  .metric-grid { grid-template-columns: repeat(2, 1fr); gap: 22px 14px; }
+  .metric-grid div + div { padding-left: 0; border: 0; }
+  dd { font-size: 23px; }
+  .section-heading { align-items: baseline; }
+  .section-heading span { text-align: right; max-width: 130px; }
+  .volume { flex-basis: 100%; }
+}

@@ -195,8 +195,19 @@ release-cpu-report: build-kernel-wasm
 	CICADA_BROWSER=windows bash -o pipefail -c "GOWORK=off go test -tags browser ./cmd/cicada -run '^TestBrowserCPUReport$$' -count=1 -timeout=5m -v | tee build/release-cpu-report.log"
 	grep -q 'Windows Chrome CPU budget' build/release-cpu-report.log
 
-test-browser-soak: build-kernel-wasm budget-browser
-	bash cmd/cicada/browser-runner.sh browser_soak '^TestBrowserSoak$$' 40m build/browser-soak.log
+.PHONY: build-demo-browser test-demo-browser
+build-demo-browser: build-kernel-wasm
+	mkdir -p build/demo
+	GOOS=js GOARCH=wasm go build -trimpath -o build/demo/demo.wasm ./cmd/cicada-demo-browser
+	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" build/demo/wasm_exec.js
+	cp build/cicada-kernel.wasm build/demo/kernel.wasm
+	go build -trimpath -ldflags "-X main.revision=$$(git rev-parse HEAD)" -o build/cicada-demo ./cmd/cicada-demo
+
+test-demo-browser: build-demo-browser
+	node scripts/demo-browser/test.cjs
+
+test-browser-soak: build-demo-browser budget-browser
+	@bash -c 'set +e; bash cmd/cicada/browser-runner.sh browser_soak "^TestBrowserSoak$$" 40m build/browser-soak.log & studio_pid=$$!; node scripts/demo-browser/test.cjs --soak & demo_pid=$$!; wait $$studio_pid; studio_status=$$?; wait $$demo_pid; demo_status=$$?; test $$studio_status -eq 0 && test $$demo_status -eq 0'
 
 build-phrase-wasm:
 	mkdir -p build

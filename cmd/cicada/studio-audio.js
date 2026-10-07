@@ -121,7 +121,11 @@
     return {
       backend: 'native',
       params() {
-        if (isBrowser()) { try { return Promise.resolve(browser().params()); } catch (error) { return Promise.reject(error); } }
+        // Registry discovery is read-only and available before audio starts.
+        // Live mutations still require the validated browser input adapter.
+        if (isBrowser() && root.cicadaBrowserPerformance) {
+          try { return Promise.resolve(root.cicadaBrowserPerformance.params()); } catch (error) { return Promise.reject(error); }
+        }
         if (!fetcher) return Promise.reject(new Error('fetch is unavailable'));
         return fetcher('/api/params').then(response => {
           if (!response.ok) throw new Error(`parameter request failed: ${response.status}`);
