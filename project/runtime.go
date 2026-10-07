@@ -400,6 +400,11 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 	for i, entry := range p.Song {
 		cfg.Song[i] = engine.SongEntry{Scene: sceneIndex[entry.Scene], Bars: entry.Bars}
 	}
+	var automationErr error
+	cfg.Automation, automationErr = CompileAutomation(p)
+	if automationErr != nil {
+		return cfg, automationErr
+	}
 	if p.Arrange != nil {
 		cfg.Song = nil
 		var scheduleErr error

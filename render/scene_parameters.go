@@ -8,6 +8,7 @@ import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/mix"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
@@ -17,12 +18,14 @@ import (
 // Keep the legacy offline scheduler, but use playback's compiled scene values,
 // source ordering, persistent targets, and sample-by-sample parameter glides.
 type sceneParameters struct {
-	scenes     map[string][]engine.SceneSetting
-	tracks     []trackRuntime
-	delay      *fx.Delay
-	reverb     *fx.Reverb
-	compressor *fx.Compressor
-	sampleRate int
+	automation      []offlineControl
+	automationIndex int
+	scenes          map[string][]engine.SceneSetting
+	tracks          []trackRuntime
+	delay           *fx.Delay
+	reverb          *fx.Reverb
+	compressor      *fx.Compressor
+	sampleRate      int
 }
 
 type sceneTrackParameters struct {
@@ -35,6 +38,9 @@ type sceneTrackParameters struct {
 }
 
 func hasSceneParameters(p *project.Project) bool {
+	if len(p.Automation) > 0 {
+		return true
+	}
 	for _, scene := range p.Scenes {
 		if len(scene.Settings) != 0 {
 			return true
@@ -80,6 +86,17 @@ func compileSceneParameters(p *project.Project, tracks []trackRuntime, sampleRat
 			}
 		}
 		track.parameters = state
+	}
+	controls, err := project.CompileAutomation(p)
+	if err != nil {
+		return nil, err
+	}
+	clock, err := seq.NewClock(sampleRate, int64(p.TempoMilli))
+	if err != nil {
+		return nil, err
+	}
+	for _, control := range controls {
+		parameters.automation = append(parameters.automation, offlineControl{Sample: clock.SampleAtTick(control.Tick), Setting: engine.SceneSetting{Track: control.Track, ID: kernel.ParamID(control.Index), Value: math.Float32frombits(control.Arg0)}})
 	}
 	parameters.updateMuteTargets()
 	return parameters, nil
@@ -420,5 +437,23 @@ func (p *sceneParameters) setGlobal(id kernel.ParamID, value float32) error {
 		return fmt.Errorf("unsupported effect parameter")
 	}
 
+	return nil
+}
+
+type offlineControl struct {
+	Sample  int64
+	Setting engine.SceneSetting
+}
+
+func (p *sceneParameters) advanceAutomation(sample int64) error {
+	if p == nil {
+		return nil
+	}
+	for p.automationIndex < len(p.automation) && p.automation[p.automationIndex].Sample <= sample {
+		if err := p.set(p.automation[p.automationIndex].Setting); err != nil {
+			return err
+		}
+		p.automationIndex++
+	}
 	return nil
 }

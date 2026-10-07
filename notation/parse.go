@@ -238,6 +238,15 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 				s.Phrases = append(s.Phrases, parsePhrase(w, n))
 			case "acid_pattern", "note_pattern", "drum_pattern":
 				s.Patterns = append(s.Patterns, parsePattern(w, n))
+			case "automate_decl":
+				lane := Automation{Path: w.parameterPath(w.Text(w.Field(n, "path")), w.position(n)), Position: w.position(n)}
+				for j := 0; j < n.NamedChildCount(); j++ {
+					point := n.NamedChild(j)
+					if w.Type(point) == "automation_point" {
+						lane.Points = append(lane.Points, AutomationPoint{At: w.Text(w.Field(point, "at")), Value: w.Text(w.Field(point, "value")), Shape: w.Text(w.Field(point, "shape")), Curve: w.Text(w.Field(point, "curve")), Position: w.position(point)})
+					}
+				}
+				s.Automation = append(s.Automation, lane)
 			case "scene_decl":
 				s.Scenes = append(s.Scenes, parseScene(w, n))
 			case "arrange_decl":

@@ -118,6 +118,8 @@ type Config struct {
 	Patterns   []PatternBank
 	Scenes     []Scene
 	Song       []SongEntry
+
+	Automation []cmd.Command   `json:",omitempty"`
 	Schedule   []ScheduleEvent `json:",omitempty"`
 	Assets     []AudioAsset    `json:",omitempty"`
 	Clips      []ClipConfig    `json:",omitempty"`
@@ -238,6 +240,10 @@ type Engine struct {
 	overflowRead, overflowLen    uint8
 	pending                      [512]cmd.Command
 	pendingLen                   int
+	automation                   []cmd.Command
+	automationIndex              int
+	automationTick               int64
+	automationCycle              int64
 	layerMask                    uint32 // effective: layerAuthored gated by the macro layer tables
 	layerAuthored                uint32 // set by scenes, OpSetLayerMask and source-off; never by macros
 	meterRate, meterBlock        uint32
@@ -366,6 +372,9 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 		return nil, err
 	}
 	if err := e.loadArrangement(cfg, bpmMilli); err != nil {
+		return nil, err
+	}
+	if err := e.loadAutomation(cfg); err != nil {
 		return nil, err
 	}
 	e.captureSceneDefaults()
@@ -870,6 +879,7 @@ func (e *Engine) Reset() {
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0
+	e.automationIndex, e.automationTick = 0, -1
 	e.pendingLen, e.meterBlock = 0, 0
 	e.liveEvents, e.phraseBars, e.lastBarTick = false, 0, -1
 	e.macroLayerEnabled = [16]bool{}
@@ -937,6 +947,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			clear(outR[frame:])
 			return
 		}
+		e.advanceAutomation()
 		e.advanceDirector()
 		e.processBarBoundary()
 		if e.faulted {
@@ -1343,6 +1354,7 @@ func (e *Engine) apply(c cmd.Command) {
 	case cmd.OpSetState, cmd.OpTriggerStinger:
 		e.applyDirector(c)
 	case cmd.OpPlay:
+		e.automationTick = -1
 		e.transport.Play()
 		if len(e.schedule) > 0 && !e.songMode {
 			e.startSong()
@@ -1373,6 +1385,7 @@ func (e *Engine) apply(c cmd.Command) {
 			e.patterns[i].heldValid = false
 		}
 	case cmd.OpSeek:
+		e.automationTick = -1
 		e.resetDirector()
 		e.resetClips()
 		if e.transport.SeekTick(int64(c.Arg0)*seq.TicksPerBar+int64(c.Arg1)) != nil {

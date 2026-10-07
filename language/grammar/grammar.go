@@ -37,9 +37,13 @@ func Cicada() *grammargen.Grammar {
 		sym("import_decl"), sym("title_decl"), sym("tempo_decl"), sym("key_decl"), sym("seed_decl"),
 		sym("instrument_decl"), sym("preset_decl"), sym("kit_decl"), sym("track_decl"), sym("phrase_decl"),
 		sym("acid_pattern"), sym("note_pattern"), sym("drum_pattern"),
-		sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
+		sym("automate_decl"), sym("scene_decl"), sym("song_decl"), sym("fx_decl"), sym("bus_decl"),
 		sym("master_decl"), sym("export_decl"), sym("arrange_decl"), sym("asset_decl"), sym("clip_decl"), sym("sampler_decl"), sym("live_decl"),
 	))
+
+	g.Define("automate_decl", seq(str("automate"), field("path", sym("parameter_path")), str("{"), repeat(sym("automation_point")), str("}")))
+	g.Define("automation_point", seq(field("at", sym("musical_position")), field("value", sym("number")), optional(seq(field("shape", sym("identifier")), optional(field("curve", sym("number")))))))
+	g.Define("musical_position", token(pat(`@[0-9]+\.[0-9]+\.[0-9]+`)))
 
 	// Edition-2 audio declarations share typed key/value bodies.
 	g.Define("asset_decl", seq(str("asset"), field("name", sym("_name")), field("path", sym("string")), str("{"), repeat(sym("param_decl")), str("}")))
@@ -123,11 +127,11 @@ func Cicada() *grammargen.Grammar {
 	))
 	g.Define("acid_pattern", seq(
 		str("pattern"), field("name", sym("_name")), str("acid"), repeat(sym("pattern_attr")),
-		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(choice(sym("velocity_row"), sym("expression_row"))), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(choice(sym("expression_row"), sym("velocity_row"))), str("}"),
 	))
 	g.Define("note_pattern", seq(
 		str("pattern"), field("name", sym("_name")), optional(str("notes")), repeat(sym("pattern_attr")),
-		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(choice(sym("velocity_row"), sym("expression_row"))), str("}"),
+		str("{"), repeat(sym("pattern_attr")), repeat(choice(sym("acid_step"), sym("phrase_use"))), repeat(choice(sym("expression_row"), sym("velocity_row"))), str("}"),
 	))
 	g.Define("velocity_row", seq(str("velocity"), str(":"), repeat(choice(sym("number"), str(".")))))
 	g.Define("phrase_use", seq(

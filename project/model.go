@@ -40,7 +40,9 @@ type Project struct {
 	Master      *Master      `cicada:"Master mixer" json:"master,omitempty" introduced:"cicada.project/2"`
 	Exports     []Export     `cicada:"Named render delivery targets" json:"exports,omitempty" introduced:"cicada.project/2"`
 	Live        *Live        `cicada:"Declared host controls" json:"live,omitempty" introduced:"cicada.project/2"`
-	p2Syntax    bool
+
+	Automation []AutomationLane `cicada:"Continuous song parameter lanes" json:"automation,omitempty" introduced:"cicada.project/2"`
+	p2Syntax   bool
 }
 
 type Key struct {
@@ -534,6 +536,9 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	for _, entry := range score.Song {
 		p.Song = append(p.Song, SongEntry{Scene: entry.Scene, Bars: uint16(entry.Bars)})
+	}
+	if ds := lowerAutomation(p, score); len(ds) > 0 {
+		return nil, append(diagnostics, ds...)
 	}
 	if err := assignSlots(p, score); err != nil {
 		return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-LIMIT", Severity: "error", Message: err.Error(), Position: notation.Position{Line: 1, Column: 1}})

@@ -108,6 +108,7 @@ type trackRuntime struct {
 	chain                                 []string
 	chainIndex                            int
 	chainDue, startTick, pendingStartTick int64
+	automation                            *sceneParameters
 }
 
 type busMixerState struct {
@@ -510,6 +511,9 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	parameters, err := compileSceneParameters(semantic, tracks, opts.SampleRate, delayA, reverbB, compMusic)
 	if err != nil {
 		return report, err
+	}
+	if len(tracks) > 0 {
+		tracks[0].automation = parameters
 	}
 	insertLatency := 0
 	for i := range tracks {
@@ -1360,6 +1364,11 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 	outFrames := 0
 	for frame := 0; frame < frames; frame++ {
 		sample := start + int64(frame)
+		if len(tracks) > 0 {
+			if err := tracks[0].automation.advanceAutomation(sample); err != nil {
+				return err
+			}
+		}
 		for eventIndex < len(events) && events[eventIndex].event.Sample == sample {
 			event := events[eventIndex]
 			track := &tracks[event.track]

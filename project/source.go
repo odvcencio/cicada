@@ -204,6 +204,25 @@ func ToSource(p *Project) ([]byte, error) {
 		}
 		sections = append(sections, source)
 	}
+	for _, lane := range p.Automation {
+		var out strings.Builder
+		out.WriteString("automate " + lane.Path + " {")
+		for _, point := range lane.Points {
+			value, err := sceneSettingSource(p, SceneSetting{Path: lane.Path, Value: point.Value})
+			if err != nil {
+				return nil, err
+			}
+			out.WriteString("\n  " + notation.TickPosition(point.Tick) + " " + value)
+			if point.Shape != "linear" {
+				out.WriteString(" " + point.Shape)
+			}
+			if point.Shape == "curve" {
+				out.WriteString(" " + strconv.FormatFloat(point.Curve, 'g', -1, 64))
+			}
+		}
+		out.WriteString("\n}")
+		sections = append(sections, out.String())
+	}
 	for _, scene := range p.Scenes {
 		var out strings.Builder
 		out.WriteString("scene " + scene.ID + " {")
@@ -585,6 +604,7 @@ func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, proj
 			notes = append(notes, note)
 		}
 		out.WriteString("  " + strings.Join(notes, " ") + "\n")
+		writeExpressionSource(&out, pattern.Expression)
 		needsVelocity := false
 		for _, step := range pattern.Data {
 			if step != nil && step.Velocity != 100 {
@@ -605,7 +625,6 @@ func patternSource(pattern Pattern, slot int, assigned, acidTrackOnly bool, proj
 			}
 			out.WriteString("  velocity: " + strings.Join(values, " ") + "\n")
 		}
-		writeExpressionSource(&out, pattern.Expression)
 	}
 	out.WriteByte('}')
 	return out.String(), nil

@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
@@ -29,7 +30,7 @@ const PackCapability uint16 = 1 << 10
 
 const Capabilities = ModalCapability | ModeledKitCapability
 
-const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | GridCapability | ChainCapability | Capabilities | PackCapability
+const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | Capabilities | GridCapability | ChainCapability | AutomationCapability | PackCapability
 
 const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15  // experimental guitar in the unified image layout
@@ -51,12 +52,6 @@ const ExpressionCapability uint16 = 1 << 3
 // NeuralAmpCapability requires the pinned causal neural amp operation (28).
 const NeuralAmpCapability uint16 = 1 << 4
 
-// GridCapability adds a uint16 cell duration after each slot seed.
-const GridCapability uint16 = 1 << 13
-
-// ChainCapability appends an ordered slot list after each track bank.
-const ChainCapability uint16 = 1 << 14
-
 // PMCapability uses the next capability bit without changing node records.
 const PMCapability uint16 = 1 << 5
 
@@ -66,6 +61,16 @@ const DDSPCapability uint16 = 1 << 7
 // KeysCapability requires the separately loaded keyboard module. The core
 // TinyGo module rejects this bit before decoding optional voice records.
 const KeysCapability uint16 = 1 << 9
+
+// GridCapability adds a uint16 cell duration after each slot seed.
+const GridCapability uint16 = 1 << 13
+
+// ChainCapability appends an ordered slot list after each track bank.
+const ChainCapability uint16 = 1 << 14
+
+// AutomationCapability appends prepared tick-addressed parameter controls.
+const AutomationCapability uint16 = 1 << 15
+
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -233,6 +238,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w.u16(uint16(len(cfg.Scenes)))
 	w.u16(uint16(len(cfg.Song)))
 	var capabilities uint16
+	if len(cfg.Automation) > 0 {
+		capabilities |= AutomationCapability
+	}
 	for _, bank := range cfg.Patterns {
 		if len(bank.Chain) > 0 {
 			capabilities |= ChainCapability
@@ -617,6 +625,22 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	for _, entry := range cfg.Song {
 		w.u16(entry.Scene)
 		w.u16(entry.Bars)
+	}
+	if capabilities&AutomationCapability != 0 {
+		if len(cfg.Automation) > 65535 {
+			return nil, Error("automation exceeds 65535 controls")
+		}
+		w.u16(uint16(len(cfg.Automation)))
+		for i, control := range cfg.Automation {
+			if control.Op != cmd.OpSetParam || i > 0 && control.Tick < cfg.Automation[i-1].Tick {
+				return nil, Error("invalid automation timeline")
+			}
+			data, err := cmd.EncodeCommand(control, uint8(cfg.Tracks))
+			if err != nil {
+				return nil, err
+			}
+			w.data = append(w.data, data[:]...)
+		}
 	}
 	if version == UnifiedImageVersion {
 		if err := writeSchedule(&w, &cfg); err != nil {
@@ -1209,6 +1233,24 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 		}
 		if cfg.Song[i].Bars, err = r.u16(); err != nil {
 			return err
+		}
+	}
+	if reserved&AutomationCapability != 0 {
+		count, err := r.u16()
+		if err != nil || count == 0 || len(r.data)-r.at < int(count)*cmd.CommandSize {
+			return Error("invalid automation control count")
+		}
+		cfg.Automation = make([]cmd.Command, int(count))
+		for i := range cfg.Automation {
+			control, err := cmd.DecodeCommand(r.data[r.at:r.at+cmd.CommandSize], tracks)
+			if err != nil {
+				return err
+			}
+			if control.Op != cmd.OpSetParam || i > 0 && control.Tick < cfg.Automation[i-1].Tick {
+				return Error("invalid automation timeline")
+			}
+			cfg.Automation[i] = control
+			r.at += cmd.CommandSize
 		}
 	}
 	if version == UnifiedImageVersion {

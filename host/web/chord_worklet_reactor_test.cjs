@@ -36,7 +36,7 @@ async function check(asset, capture, module, image) {
       timeout = setTimeout(() => reject(new Error('actual worklet did not become ready')), 30000);
     })]);
   } finally { clearTimeout(timeout); }
-  assert.equal(messages.find(message => message.t === 'r').p, 222719, 'unified/chord, pack and spatial capability handshake missing');
+  assert.equal(messages.find(message => message.t === 'r').p, 255487, 'unified/chord, pack and spatial capability handshake missing');
   const play = new Uint8Array(24); play[0] = 1; play[1] = 255;
   port.onmessage({ data: { t: 'c', bytes: play } });
   const output = [[new Float32Array(128), new Float32Array(128)]];
