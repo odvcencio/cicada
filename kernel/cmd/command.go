@@ -33,6 +33,8 @@ const (
 	OpSetChain
 	OpNoteOn
 	OpNoteOff
+	// OpCue (14) is reserved. The engine has no cue behavior, so Validate rejects
+	// it. The number stays fixed to keep the wire ABI stable.
 	OpCue
 	OpSetLayerMask
 	OpMeterRate
@@ -167,6 +169,12 @@ func (c Command) Validate(tracks uint8) error {
 	}
 	if c.Op < OpPlay || c.Op > OpSetListenerRotation {
 		return Error("unknown command opcode")
+	}
+	if c.Op == OpCue {
+		// Accepting a command that the engine cannot apply would queue it and then
+		// stop the engine with a fault, so refuse it here like any invalid command.
+		// Remove this check when the engine implements cues.
+		return Error("cue command is not implemented")
 	}
 	if c.Op != OpNoteExpression && !spatialOp(c.Op) && c.Pad != 0 || c.Tick < 0 {
 		return Error("nonzero command padding or negative tick")
