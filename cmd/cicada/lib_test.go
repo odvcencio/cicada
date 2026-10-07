@@ -113,7 +113,7 @@ func TestLibListStdProjectAndUserWithoutScores(t *testing.T) {
 	if err := libCommand([]string{"list"}, &output); err != nil {
 		t.Fatal(err)
 	}
-	expected := "project\tdemo/tone\nuser\tdemo/tone\nstd\tstd/drums\nstd\tstd/fx\nstd\tstd/presets\nstd\tstd/synth\n"
+	expected := "project\tdemo/tone\nuser\tdemo/tone\nstd\tstd/drums\nstd\tstd/fx\nstd\tstd/keys\nstd\tstd/presets\nstd\tstd/synth\n"
 	if output.String() != expected {
 		t.Fatalf("list: %s", &output)
 	}

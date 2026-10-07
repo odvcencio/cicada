@@ -262,7 +262,7 @@ scene main { bass = triplet }
 song { main*4 }
 ```
 
-**Edition history:** Additive in source editions 1 and 2, using semantic JSON version 2. Kernel images advertise capability bit 11 and append immutable parameter controls. Older readers reject that capability. The renderer remains allocation-free.
+**Edition history:** Additive in source editions 1 and 2, using semantic JSON version 2. Kernel images advertise capability bit 15 and append immutable parameter controls. Older readers reject that capability. The renderer remains allocation-free.
 
 The host prepares numeric targets every four ticks at 960 PPQ (2.08 ms at 120 BPM); the existing parameter smoothing connects them continuously. This uses the same float32 controls in native and WASM playback. Limits are 32 lanes, 1024 authored points per lane and 65535 prepared controls per project. Step segments and flat spans need only endpoints. Enum/toggle controls and static master inserts cannot be automated. `smooth` uses smoothstep; `curve n` uses `t^(2^n)` in control space with tension −8 to 8. Frequency/time lanes follow their registered logarithmic curve; other controls follow the registry curve.
 
@@ -311,9 +311,9 @@ scene main {}
 song { main*2 }
 ```
 
-Source chains contain 1–32 entries and at most 16 distinct patterns per track. Each entry plays once, including repeated names. Mixed grids join at exact ticks; a seek reconstructs the chain phase. MIDI export uses those same section boundaries. Kernel image capability bit 10 carries the source slot list.
+Source chains contain 1–32 entries and at most 16 distinct patterns per track. Each entry plays once, including repeated names. Mixed grids join at exact ticks; a seek reconstructs the chain phase. MIDI export uses those same section boundaries. Kernel image capability bit 14 carries the source slot list.
 
-**Edition history:** Pattern grids are additive in editions 1 and 2. Optional semantic `step_ticks` and track `chain` keep absent values on the legacy sixteenth grid. Kernel image capability bit 9 adds a cell duration to each slot; older readers reject that capability. Pattern metadata uploads carry the duration in the existing command's index field. MIDI export retains exact tick positions; `cicada fmt` and semantic source round trips preserve grid timing.
+**Edition history:** Pattern grids are additive in editions 1 and 2. Optional semantic `step_ticks` and track `chain` keep absent values on the legacy sixteenth grid. Kernel image capability bit 13 adds a cell duration to each slot; older readers reject that capability. Pattern metadata uploads carry the duration in the existing command's index field. MIDI export retains exact tick positions; `cicada fmt` and semantic source round trips preserve grid timing.
 
 ## Multi-file projects and manifest metadata
 

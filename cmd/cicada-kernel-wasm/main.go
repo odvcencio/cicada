@@ -40,7 +40,7 @@ func allocationCount() uint64 {
 
 //go:wasmexport gosx_audio_capabilities
 func capabilities() uint32 {
-	return kernelimage.CapabilityChords | kernelimage.CapabilityUnifiedImage | kernelimage.CapabilitySpatial | uint32(kernelimage.SupportedCapabilities)
+	return kernelimage.CapabilityChords | kernelimage.CapabilityUnifiedImage | kernelimage.CapabilitySpatial | uint32(kernelimage.SupportedCapabilities) | keyboardCapabilities
 }
 
 // Allocation telemetry is queried by hosts outside the render callback.
