@@ -151,3 +151,38 @@ func TestOpenQueueKeepsTheLatestRequestDuringASwitch(t *testing.T) {
 		t.Fatalf("nothing was requested during the second switch, got %q", next)
 	}
 }
+
+func TestNoScoreStartupCreatesNewProjectAndArgsOmitEmptyPath(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell fixture; desktop startup is exercised by the Windows smoke")
+	}
+	dir := t.TempDir()
+	cicada := filepath.Join(dir, "cicada")
+	script := `#!/bin/sh
+[ "$1" = new ] || exit 1
+mkdir "$2" || exit 1
+printf 'cicada 2\ntrack bass acid {}\npattern p {1 .}\nscene main {bass=p}\nsong {main}\n' > "$2/main.cicada"
+printf 'project %s\ncicada 2\n' "$2" > "$2/cicada.mod"
+`
+	if err := os.WriteFile(cicada, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(dir, "Documents", "Cicada")
+	first, err := resolveInitialScore(nil, hostState{LastFile: filepath.Join(dir, "gone.cicada")}, cicada, parent)
+	if err != nil || !isFile(first) || first != filepath.Join(parent, "untitled-1", "main.cicada") {
+		t.Fatalf("new startup: %q %v", first, err)
+	}
+	second, err := newProject(cicada, parent, nextProjectName(parent))
+	if err != nil || second != filepath.Join(parent, "untitled-2", "main.cicada") {
+		t.Fatalf("File > New: %q %v", second, err)
+	}
+	remembered, err := resolveInitialScore(nil, hostState{LastFile: first}, cicada, parent)
+	if err != nil || remembered != first {
+		t.Fatal("last project was not restored")
+	}
+	for _, arg := range studioArgs("", "null") {
+		if arg == "" {
+			t.Fatal("empty sidecar argument")
+		}
+	}
+}

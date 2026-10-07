@@ -157,7 +157,11 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 	if sampleRate <= 0 {
 		return liveplay.Score{}, fmt.Errorf("audio sample rate must be positive")
 	}
-	cfg, err := schedule.Compile(p, filepath.Dir(path), sampleRate, liveBlockFrames)
+	root, err := studioProjectRoot(path)
+	if err != nil {
+		return liveplay.Score{}, err
+	}
+	cfg, err := schedule.Compile(p, root, sampleRate, liveBlockFrames)
 	if err != nil {
 		return liveplay.Score{}, err
 	}

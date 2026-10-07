@@ -268,7 +268,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if opts.AssetDir == "" {
 		opts.AssetDir = opts.AssetRoot
 	}
-	if score != nil && score.Arrange != nil {
+	if score != nil && (score.Arrange != nil || hasPackSampler(score) && !opts.SamplerBaseline) {
 		return renderScheduleWAV(score, opts, writer, stemsDir, outputGain)
 	}
 	var report Report
@@ -1701,6 +1701,15 @@ func patternBoundToTrack(score *notation.Score, pattern, track string) bool {
 			if binding.Track == track && binding.Pattern == pattern {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func hasPackSampler(score *notation.Score) bool {
+	for _, sampler := range score.Samplers {
+		if sampler.Pack != "" {
+			return true
 		}
 	}
 	return false

@@ -1,0 +1,53 @@
+cicada 2
+title "String Machine - sampled"
+tempo 108
+key c major
+seed 61006
+// Owned multisamples of the original modeled patch, with a pinned manifest.
+// Four monophonic parts preserve chord notes and timing with eight total voice slots.
+sampler string_machine {
+  pack = "packs/string_machine/manifest.json"
+  sha256 = "5067bf193115fd03939d9dcc7b81bc00ba96042e3c6fb5752aac1d85805f3ad7"
+  root = c4
+  voices = 2
+}
+
+track keys_1 string_machine {
+  level = 0dB
+}
+track keys_2 string_machine {
+  level = 0dB
+}
+track keys_3 string_machine {
+  level = 0dB
+}
+track keys_4 string_machine {
+  level = 0dB
+}
+pattern comp_1 notes {
+
+  gate = 90%
+  c4 - - - - - - . d4 - - - - - - . g3 - - - - - - . c4 - - - - - - .
+}
+pattern comp_2 notes {
+
+  gate = 90%
+  e4 - - - - - - . f4 - - - - - - . b3 - - - - - - . e4 - - - - - - .
+}
+pattern comp_3 notes {
+
+  gate = 90%
+  g4 - - - - - - . a4 - - - - - - . d4 - - - - - - . a4 - - - - - - .
+}
+pattern comp_4 notes {
+
+  gate = 90%
+  b4 - - - - - - . c5 - - - - - - . f4 - - - - - - . b4 - - - - - - .
+}
+pattern melody notes {
+  gate = 90%
+  e4 - - - g4 - - - a4 - - - b4 - - - g4 - - - f4 - - - e4 - - - c4 - - -
+}
+scene comping { keys_1=comp_1 keys_2=comp_2 keys_3=comp_3 keys_4=comp_4 }
+scene melodic { keys_1=melody keys_2=off keys_3=off keys_4=off }
+song { comping*2 melodic*2 }

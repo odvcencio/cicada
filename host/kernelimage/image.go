@@ -24,9 +24,12 @@ const ModalCapability uint16 = 1 << 6
 // ModeledKitCapability opts version 13 images into modeled kit lane bindings.
 const ModeledKitCapability uint16 = 1 << 8
 
+// PackCapability requires resident instrument-pack samples.
+const PackCapability uint16 = 1 << 10
+
 const Capabilities = ModalCapability | ModeledKitCapability
 
-const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | GridCapability | ChainCapability | Capabilities
+const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | GridCapability | ChainCapability | Capabilities | PackCapability
 
 const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15  // experimental guitar in the unified image layout
@@ -205,7 +208,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		version = UnifiedImageVersion
 	}
 	for _, track := range cfg.Track[:cfg.Tracks] {
-		if track.Kind == engine.VoiceAudio || track.Kind == engine.VoiceSample {
+		if track.Kind == engine.VoiceAudio || track.Kind == engine.VoiceSample || track.Kind == engine.VoicePrepared {
 			version = UnifiedImageVersion
 		}
 	}
@@ -242,6 +245,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	}
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
+		if spec.Kind == engine.VoicePrepared {
+			capabilities |= PackCapability
+		}
 		if spec.Kind == engine.VoicePiano {
 			capabilities |= PianoCapability
 		}
@@ -442,6 +448,14 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				return nil, Error("invalid modal profile")
 			}
 			w.byte(byte(spec.Modal))
+		case engine.VoicePrepared:
+			pack, ok := spec.Prepared.(*engine.PackFactory)
+			if !ok || spec.PreparedClip {
+				return nil, Error("unsupported prepared image voice")
+			}
+			if err := writePack(&w, pack); err != nil {
+				return nil, err
+			}
 		case engine.VoiceSample:
 			if spec.Sample == nil {
 				return nil, Error("nil sampler image")
@@ -651,7 +665,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(DelayCapability|PianoCapability|PMCapability|ExpressionCapability|NeuralAmpCapability|ModalCapability|ModeledKitCapability|DDSPCapability|keysImageCapability|GridCapability|ChainCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -954,6 +968,15 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return Error("invalid modal profile image")
 			}
 			spec.Modal = modal.Profile(profile)
+		case engine.VoicePrepared:
+			if reserved&PackCapability == 0 || version != UnifiedImageVersion {
+				return Error("pack image requires capability")
+			}
+			pack, readErr := readPack(&r)
+			if readErr != nil {
+				return readErr
+			}
+			spec.Prepared = pack
 		case engine.VoiceSample:
 			if version != UnifiedImageVersion {
 				return Error("unsupported sampler image")

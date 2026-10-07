@@ -109,7 +109,11 @@ func isFile(path string) bool {
 
 // studioArgs builds the `cicada studio` command line for a score.
 func studioArgs(score, audio string) []string {
-	args := []string{"studio", score, "--listen", "127.0.0.1:0"}
+	args := []string{"studio"}
+	if score != "" {
+		args = append(args, score)
+	}
+	args = append(args, "--listen", "127.0.0.1:0")
 	if audio != "" {
 		args = append(args, "--audio", audio)
 	}
@@ -209,4 +213,13 @@ func (q *openQueue) done() string {
 	next := q.pending
 	q.pending = ""
 	return next
+}
+
+// resolveInitialScore is shared by launch and File > New. A sidecar is never
+// started with an empty score argument, even when recent files have vanished.
+func resolveInitialScore(args []string, state hostState, cicada, parent string) (string, error) {
+	if score := initialScore(args, state); score != "" {
+		return score, nil
+	}
+	return newProject(cicada, parent, nextProjectName(parent))
 }

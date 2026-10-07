@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/gosx/action"
 	"m31labs.dev/gosx/session"
 )
@@ -28,24 +29,42 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 			var failure *backendError
 			if errors.As(err, &failure) {
 				result := action.Error(failure.Status, failure.Message)
-				if path == "/api/source" {
+				if path == "/api/source" || path == "/api/files" {
 					result.Result.Values = s.preserveDraft(ctx)
 				} else {
 					result.Result.Values = ctx.FormData
 				}
 				return result
 			}
-			if path == "/api/source" {
+			if path == "/api/source" || path == "/api/files" {
 				result := action.Error(http.StatusServiceUnavailable, "The audio service is unavailable. The score was not saved.")
 				result.Result.Values = s.preserveDraft(ctx)
 				return result
 			}
 			return err
 		}
+		if path == "/api/files" && ctx.FormData["intent"] == "check" {
+			var checked struct {
+				Valid       bool                  `json:"valid"`
+				Diagnostics []notation.Diagnostic `json:"diagnostics"`
+				Error       string                `json:"error"`
+			}
+			_ = json.Unmarshal(response, &checked)
+			message := "File check passed."
+			if !checked.Valid {
+				message = checked.Error
+				for _, d := range checked.Diagnostics {
+					if d.Severity == "error" {
+						message += fmt.Sprintf(" %d:%d %s: %s", d.Position.Line, d.Position.Column, d.Code, d.Message)
+					}
+				}
+			}
+			return action.Validation(message, nil, s.preserveDraft(ctx))
+		}
 		// Explicit redirect gives native and enhanced forms the same refreshed
 		// projection. Never put full score text into a cookie-backed flash.
 		ctx.FormData = nil
-		if path == "/api/source" {
+		if path == "/api/source" || path == "/api/files" {
 			session.Current(ctx.Request).Delete("score-draft")
 			session.Current(ctx.Request).Delete("phrase-preview")
 		}
@@ -100,11 +119,45 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 	if ctx.FormData["intent"] == "merge" {
 		// Use the revision displayed beside this draft. The domain service
 		// rejects the write again if another editor saves in the meantime.
-		ctx.FormData["revision"] = ctx.FormData["diskRevision"]
+		ctx.FormData["fileRevision"] = ctx.FormData["diskRevision"]
 	}
-	return s.mutation("/api/source", func(f map[string]string) (any, error) {
-		return map[string]any{"revision": f["revision"], "source": f["content"]}, nil
+	path := "/api/source"
+	if ctx.FormData["file"] != "" {
+		path = "/api/files"
+	}
+	return s.mutation(path, func(f map[string]string) (any, error) {
+		revision := f["fileRevision"]
+		if revision == "" {
+			revision = f["revision"]
+		}
+		payload := map[string]any{"revision": revision, "source": f["content"]}
+		if path == "/api/files" {
+			payload["file"] = f["file"]
+			if f["intent"] == "check" {
+				payload["action"] = "check"
+			}
+		}
+		return payload, nil
 	})(ctx)
+}
+
+func (s *studioApp) fileHistory(command string) action.Handler {
+	return func(ctx *action.Context) error {
+		if err := actionValues(ctx); err != nil {
+			return err
+		}
+		path := "/api/" + command
+		if ctx.FormData["file"] != "" {
+			path = "/api/files"
+		}
+		return s.mutation(path, func(f map[string]string) (any, error) {
+			revision := f["revision"]
+			if f["file"] != "" && f["fileRevision"] != "" {
+				revision = f["fileRevision"]
+			}
+			return map[string]any{"revision": revision, "file": f["file"], "action": command}, nil
+		})(ctx)
+	}
 }
 
 func (s *studioApp) actions() map[string]action.Handler {
@@ -114,6 +167,27 @@ func (s *studioApp) actions() map[string]action.Handler {
 		"transcription-apply":   s.applyTranscription,
 		"transcription-discard": s.discardTranscription,
 		"sample-pack":           s.downloadSamplePack,
+		"instrument-capture": s.mutation("/api/instrument-capture", func(f map[string]string) (any, error) {
+			return map[string]any{"revision": f["revision"], "action": f["action"], "newName": f["newName"]}, nil
+		}),
+		"instrument-build": s.mutation("/api/instrument-build", func(f map[string]string) (any, error) {
+			p := map[string]any{"revision": f["revision"], "action": f["action"], "takeId": f["takeId"], "scene": f["scene"]}
+			if f["action"] == "remove" {
+				i, err := integer(f, "index")
+				if err != nil {
+					return nil, err
+				}
+				p["index"] = i
+			}
+			return p, nil
+		}),
+		"instrument-fit": s.mutation("/api/instrument-fit", func(f map[string]string) (any, error) {
+			hit, err := integer(f, "hit")
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"revision": f["revision"], "sha256": f["sha256"], "hit": hit}, nil
+		}),
 		"instrument": s.mutation("/api/instrument", func(f map[string]string) (any, error) {
 			return map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"], "newName": f["newName"], "track": f["track"], "value": f["value"]}, nil
 		}),
@@ -246,8 +320,8 @@ func (s *studioApp) actions() map[string]action.Handler {
 			p["takeId"] = f["takeId"]
 			return p, nil
 		}),
-		"undo": s.mutation("/api/undo", func(f map[string]string) (any, error) { return edit(f), nil }),
-		"redo": s.mutation("/api/redo", func(f map[string]string) (any, error) { return edit(f), nil }),
+		"undo": s.fileHistory("undo"),
+		"redo": s.fileHistory("redo"),
 		"revert": func(ctx *action.Context) error {
 			id, err := strconv.ParseUint(ctx.FormData["id"], 10, 64)
 			if err != nil || id == 0 {

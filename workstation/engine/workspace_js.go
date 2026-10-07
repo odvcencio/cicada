@@ -27,11 +27,14 @@ import (
 // patch receiver. The server remains responsible for every canonical view and
 // revision check; the engine only serializes gestures and retains browser state.
 type workspaceProps struct {
-	CSRF     string `json:"csrf"`
-	Revision string `json:"revision"`
+	ProjectRevision string `json:"projectRevision"`
+	CSRF            string `json:"csrf"`
+	Revision        string `json:"revision"`
 }
 
 type workspaceProjection struct {
+	ProjectRevision string `json:"projectRevision"`
+	FileRevision    string `json:"fileRevision"`
 	HTML            string `json:"html"`
 	Revision        string `json:"revision"`
 	Location        string `json:"location"`
@@ -166,6 +169,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	root.Call("setAttribute", "data-workspace-reactive", "ready")
 	confirmedWorkspaceRevision.Set(props.Revision)
 	go u.run()
+	go u.watchFiles()
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
@@ -857,7 +861,7 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 		}
 		return projection, "", &workspaceRequestError{response.StatusCode, result.Message}
 	}
-	if result.Data.RefreshRequired || (result.Data.WriteRevision != "" && result.Data.WriteRevision != result.Data.Revision) {
+	if result.Data.RefreshRequired || (result.Data.WriteRevision != "" && result.Data.WriteRevision != result.Data.Revision && result.Data.WriteRevision != result.Data.FileRevision) {
 		if result.Message == "" {
 			result.Message = "Saved. The score changed before the workspace refreshed."
 		}
@@ -1477,6 +1481,20 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 		control.Set("value", projection.Revision)
 		control.Set("defaultValue", projection.Revision)
 	}
+	if projection.FileRevision != "" {
+		fields := u.root.Call("querySelectorAll", "input[type=hidden][name=fileRevision],input[type=hidden][name=diskRevision]")
+		for i := 0; i < fields.Length(); i++ {
+			control := fields.Index(i)
+			if workspaceAttr(control, "name") == "fileRevision" {
+				editor := u.root.Call("querySelector", "textarea")
+				if workspacePresent(editor) && workspaceDirty(editor) {
+					continue
+				}
+			}
+			control.Set("value", projection.FileRevision)
+			control.Set("defaultValue", projection.FileRevision)
+		}
+	}
 	for _, scroll := range scrolls {
 		if scroll.node.Get("isConnected").Bool() {
 			scroll.node.Set("scrollTop", scroll.top)
@@ -1737,4 +1755,42 @@ func workspaceScrolls(root js.Value) []workspaceScroll {
 		}
 	}
 	return out
+}
+
+// Poll a compact content fingerprint, then reuse the workspace patch path.
+// It refreshes clean editors and projections while retaining unsaved drafts.
+func (u *workspaceUI) watchFiles() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	seen := u.props.ProjectRevision
+	client := &http.Client{Timeout: 3 * time.Second}
+	for {
+		select {
+		case <-u.ctx.Done():
+			return
+		case <-ticker.C:
+		}
+		req, err := http.NewRequestWithContext(u.ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/revision", nil)
+		if err != nil {
+			return
+		}
+		response, err := client.Do(req)
+		if err != nil {
+			continue
+		}
+		var state struct {
+			Revision string `json:"projectRevision"`
+		}
+		err = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&state)
+		response.Body.Close()
+		if err != nil || state.Revision == "" || state.Revision == seen {
+			continue
+		}
+		seen = state.Revision
+		if u.blocked.Load() {
+			continue
+		}
+		location, _ := url.Parse(workspaceLocation())
+		u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + location.RawQuery, form: js.Undefined()})
+	}
 }

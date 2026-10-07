@@ -51,7 +51,7 @@ func TestKeysImageSparseRoundtripAndCapability(t *testing.T) {
 	if len(data)-len(blank) != 3*5 {
 		t.Fatal("keyboard controls are not sparse")
 	}
-	for _, capability := range []uint16{0, kernelimage.PianoCapability, 1 << 15} {
+	for _, capability := range []uint16{0, kernelimage.PianoCapability, kernelimage.PackCapability, 1 << 15} {
 		binary.LittleEndian.PutUint16(data[30:32], capability)
 		if _, err := kernelimage.Decode(data, 48000, 128); err == nil {
 			t.Fatalf("accepted missing/unknown keys capability %d", capability)
@@ -133,6 +133,9 @@ func TestKeysChordImageAndCommandUpload(t *testing.T) {
 }
 
 func TestKeysAndExpressionCapabilitiesRemainIndependent(t *testing.T) {
+	if kernelimage.KeysCapability&kernelimage.SupportedCapabilities != 0 || kernelimage.PackCapability&kernelimage.KeysCapability != 0 {
+		t.Fatal("core sample-pack capabilities overlap optional keys")
+	}
 	if kernelimage.ExpressionCapability != 1<<3 || kernelimage.NeuralAmpCapability != 1<<4 || kernelimage.KeysCapability != 1<<9 {
 		t.Fatal("published additive capability bits changed")
 	}
