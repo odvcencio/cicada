@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/loudness"
@@ -83,6 +84,32 @@ func TestPresetLoudness(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestKeyboardEditsPreserveLastGoodScore(t *testing.T) {
+	s, err := NewSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := s.Snapshot()
+	for _, name := range keyboard.Names {
+		source := strings.Replace(ensemble, "model_marimba", name, 1)
+		if err := s.Apply(before.Revision, []byte(source)); err == nil || !strings.Contains(err.Error(), "keyboard instruments are unavailable") {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if after := s.Snapshot(); after.Revision != before.Revision || after.CanUndo {
+			t.Fatal("unsupported keyboard changed the last good score")
+		}
+	}
+	if _, _, _, err := Prepare(before.Source, 48000); err != nil {
+		t.Fatal("last good score cannot play:", err)
+	}
+	// A local graph instrument can use the same name as a keyboard patch.
+	source := strings.Replace(ensemble, "instrument glass", "instrument tine_ep", 1)
+	source = strings.ReplaceAll(source, " glass ", " tine_ep ")
+	if _, err := Parse([]byte(source)); err != nil {
+		t.Fatal("authored synth mistaken for a keyboard:", err)
 	}
 }
 
