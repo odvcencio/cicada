@@ -167,7 +167,7 @@
         node.onprocessorerror = () => {
           const error = new Error('AudioWorklet stopped unexpectedly. Press Play to reload audio');
           clearTimeout(timeout);
-          if (node === this.node) { this.nodeFault = true; this.fail(error); }
+          if (node === this.node) this.fail(error, true);
           else reject(error);
         };
         node.port.onmessage = event => {
@@ -290,11 +290,13 @@
         this.clock = data.c;
         this.capabilities = data.p || 0;
       } else if (data.t === 't') {
-        this.fault = null;
+        if (!this.nodeFault) this.fault = null;
         this.revision = data.r;
         const waiter = this.stageWaiters.get(data.r);
         if (waiter) { this.stageWaiters.delete(data.r); waiter.resolve(data); }
-      } else if (data.t === 'x' || data.t === 'e') {
+      } else if (data.t === 'e') {
+        this.fail(new Error(data.e), true);
+      } else if (data.t === 'x') {
         const waiter = this.stageWaiters.get(data.r);
         if (waiter) { this.stageWaiters.delete(data.r); waiter.reject(new Error(data.e)); }
         else this.raise(new Error(data.e));
@@ -365,7 +367,19 @@
     }
 
     raise(error) { for (const callback of this.errors) callback(error); }
-    fail(error) { this.fault = error; this.playing = false; this.notifyState(); this.raise(error); }
+    fail(error, nodeFault = false) {
+      this.fault = error;
+      this.playing = false;
+      if (nodeFault) {
+        this.nodeFault = true;
+        for (const waiter of this.stageWaiters.values()) waiter.reject(error);
+        this.stageWaiters.clear();
+        for (const waiter of this.metricWaiters) waiter.reject(error);
+        this.metricWaiters.length = 0;
+      }
+      this.notifyState();
+      this.raise(error);
+    }
     notifyState() { for (const callback of this.states) callback(this.playing); }
     onMessage(callback) { this.messages.add(callback); return () => this.messages.delete(callback); }
     onError(callback) { this.errors.add(callback); return () => this.errors.delete(callback); }
@@ -394,14 +408,14 @@
 
     async play() {
       if (this.playing) return;
-      if (this.fault) await this.stageCurrentScore();
+      if (this.fault || this.nodeFault) await this.stageCurrentScore();
       for (const callback of this.beforePlay) callback();
       this.sendCommands([{ op: 3, arg0: 0 }, { op: 1 }]);
     }
     stop(force = false) { if (this.playing || force) this.sendCommands([{ op: 2 }]); }
     launchScene(index) { this.sendCommands([{ op: 10, index, arg0: 2 }]); }
     selectPattern(track, slot) { this.sendCommands([{ op: 9, track, index: slot, arg0: 2 }]); }
-    async playFrom(bar) { if (this.fault) await this.stageCurrentScore(); for (const callback of this.beforePlay) callback(); this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
+    async playFrom(bar) { if (this.fault || this.nodeFault) await this.stageCurrentScore(); for (const callback of this.beforePlay) callback(); this.sendCommands([{ op: 3, arg0: Math.max(0, bar - 1) }, { op: 1 }]); }
 
     stageCurrentScore(revision = '', capture = false) {
       const generation = this.generation;
@@ -416,7 +430,7 @@
     async prepareScore(revision, capture) {
       if (!this.node) return false;
       const node = this.node;
-      if (revision && revision === this.revision && !this.fault) return true;
+      if (revision && revision === this.revision && !this.fault && !this.nodeFault) return true;
       const started = performance.now();
       const response = await fetch(`/api/kernel-image?rate=${this.context.sampleRate}${capture?'&capture=1':''}`, { cache: 'no-store' });
       if (!response.ok) throw new Error((await response.text()) || 'Cannot prepare the edited score');
@@ -450,6 +464,7 @@
 
     requestMetrics() {
       if (!this.node) return Promise.reject(new Error('AudioWorklet is not running'));
+      if (this.nodeFault) return Promise.reject(this.fault || new Error('AudioWorklet stopped'));
       return new Promise((resolve, reject) => {
         this.metricWaiters.push({ resolve, reject });
         this.node.port.postMessage({ t: 'q', l: this.contextLatencyMs() });

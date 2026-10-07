@@ -175,7 +175,7 @@ async function until(run, timeout = 20000) {
       while (Date.now() - started < 1800000) {
         await sleep(Math.min(10000, 1800000 - (Date.now() - started)));
         const current = await evaluate('({...cicadaDemoState.metrics, playing:cicadaDemoState.playing, faults:cicadaDemoState.faults})');
-        peakMemory = Math.max(peakMemory, current.peakMemoryBytes); samples++;
+        peakMemory = Math.max(peakMemory, current.memoryBytes); samples++;
         assert(current.playing, 'public demo transport continues playing'); assert.equal(current.faults, 0);
         if (samples % 6 === 0) console.log(`Public browser demo soak: ${Math.round((Date.now()-started)/1000)}s, underruns=${current.underruns-warmup.underruns}, callbacks=${current.callbackSamples-warmup.callbackSamples}`);
       }

@@ -135,6 +135,24 @@ test('processor exceptions reset playback and Play replaces the stopped node', a
   await h.audio.close();
 });
 
+for (const legacy of [false, true]) {
+  test(`fatal processor failure cancels in-flight staging and metrics (legacy=${legacy})`, async () => {
+    const h = setup(); await h.audio.startAudio(); h.revision('edited');
+    const stage = h.audio.stageCurrentScore('edited'); await settle();
+    const rejectedStage = assert.rejects(stage, /processor failed|stopped unexpectedly/);
+    const rejectedMetrics = assert.rejects(h.audio.requestMetrics(), /processor failed|stopped unexpectedly/);
+    if (legacy) h.audio.receive({t: 'e', e: 'processor failed'});
+    else h.audio.node.onprocessorerror();
+    await Promise.all([rejectedStage, rejectedMetrics]);
+    assert.equal(h.audio.stageWaiters.size, 0); assert.equal(h.audio.metricWaiters.length, 0);
+    // An acknowledgement queued before the crash must not hide the failure.
+    h.audio.receive({t: 't', r: 'edited'});
+    await assert.rejects(h.audio.requestMetrics(), /processor failed|stopped unexpectedly/);
+    await h.audio.play(); assert.equal(h.stats.nodes.length, 2);
+    assert.equal(h.audio.nodeFault, false); await h.audio.close();
+  });
+}
+
 test('score page retains history controls without the unused historyList binding', () => {
   const page = fs.readFileSync(`${__dirname}/../../cmd/cicada/view.html`, 'utf8');
   assert.match(page, /id="history-list"/);
