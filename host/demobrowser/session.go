@@ -112,6 +112,9 @@ func Parse(source []byte) (*project.Project, error) {
 	if len(p.Assets) != 0 {
 		return nil, fmt.Errorf("use instruments defined in this score; external files are unavailable")
 	}
+	if p.NeedsKeysEngine() {
+		return nil, fmt.Errorf("keyboard instruments are unavailable in this demo; choose a modeled instrument, acid bass, or an authored synth")
+	}
 	if err := project.ValidateProject(p); err != nil {
 		return nil, err
 	}
