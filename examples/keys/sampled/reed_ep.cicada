@@ -7,7 +7,7 @@ seed 61006
 // Four monophonic parts preserve chord notes and timing with eight total voice slots.
 sampler reed_ep {
   pack = "packs/reed_ep/manifest.json"
-  sha256 = "9aa5c7ef29c2dd6bf7a72d6943ee95fc496308c5d97c0c768f4fbfcb6f32a819"
+  sha256 = "fd20de92b9825311e5d828b4400f294688412ee5d97204bbce9d2d22982bdead"
   root = c4
   voices = 2
 }

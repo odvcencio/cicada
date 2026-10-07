@@ -7,7 +7,7 @@ seed 61006
 // Four monophonic parts preserve chord notes and timing with eight total voice slots.
 sampler tine_bell {
   pack = "packs/tine_bell/manifest.json"
-  sha256 = "299ca19bee9d04aee16de7188d31c94524d0d16164c0c47b5f8617330231243d"
+  sha256 = "d7a60abbefc4ef47f420b48a40de3e38d0ac58ba72654f18aca35f83f3de18ef"
   root = c4
   voices = 2
 }

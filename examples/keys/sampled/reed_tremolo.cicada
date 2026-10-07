@@ -7,7 +7,7 @@ seed 61006
 // Four monophonic parts preserve chord notes and timing with eight total voice slots.
 sampler reed_tremolo {
   pack = "packs/reed_tremolo/manifest.json"
-  sha256 = "500a7d8d5a4789173ea36b053d7b0a1833c6b6c24d21d36291386a1fe72a3413"
+  sha256 = "f8bb5879a86397277be82499713531d6e6c38e2b19adedb0429b66e69aa5303b"
   root = c4
   voices = 2
 }

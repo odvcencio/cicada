@@ -7,7 +7,7 @@ seed 61006
 // Four monophonic parts preserve chord notes and timing with eight total voice slots.
 sampler tine_tremolo {
   pack = "packs/tine_tremolo/manifest.json"
-  sha256 = "c1b6583df8961cd9a27131136a75058c8cae88fd9c2bedc752eefe0aed6fe13a"
+  sha256 = "0bbdcec8230aa179a132dbd568646fa690c4c8fa8c7ec7963358e5e09cd859db"
   root = c4
   voices = 2
 }

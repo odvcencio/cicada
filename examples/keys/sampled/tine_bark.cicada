@@ -7,7 +7,7 @@ seed 61006
 // Four monophonic parts preserve chord notes and timing with eight total voice slots.
 sampler tine_bark {
   pack = "packs/tine_bark/manifest.json"
-  sha256 = "1bf2dd9ab8d76cff838a7d98c541477740c1ac5adf4c33e2004c1c3af13a2111"
+  sha256 = "e44b08722eff556029ccf78180503181405031d8edf6f350f24ca5647dcbfcbf"
   root = c4
   voices = 2
 }
