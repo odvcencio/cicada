@@ -356,6 +356,17 @@ func Validate(s *Score) (ds []Diagnostic) {
 		}
 	}
 	scenes := make(map[string]bool, len(s.Scenes))
+	for _, track := range s.Tracks {
+		if track.Chain != nil && (len(track.Chain) < 1 || len(track.Chain) > 32) {
+			add("CICADA-CHAIN", "chain needs 1..32 pattern names", "error", track.Position)
+		}
+		for _, name := range track.Chain {
+			if _, ok := patterns[name.Text]; !ok {
+				add("CICADA-REFERENCE", "chain references unknown pattern "+name.Text, "error", name.Position)
+			}
+		}
+	}
+
 	for _, scene := range s.Scenes {
 		checkID(scene.Name, scene.Position)
 		if scenes[scene.Name] {

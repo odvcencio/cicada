@@ -139,10 +139,13 @@ func ToSource(p *Project) ([]byte, error) {
 			continue
 		}
 		hasMixer := track.Mixer.Mute || track.Mixer.GainDB != defaultMixer().GainDB || track.Mixer.Pan != 0 || track.Mixer.Insert != "none" || track.Mixer.SendA != 0 || track.Mixer.SendB != 0 || track.Mixer.SendPre || track.Mixer.Bus != "music"
-		if len(track.Params) == 0 && !hasMixer {
+		if len(track.Params) == 0 && !hasMixer && len(track.Chain) == 0 {
 			out.WriteString(" {}")
 		} else {
 			out.WriteString(" {\n")
+			if len(track.Chain) > 0 {
+				out.WriteString("  chain = " + strings.Join(track.Chain, " ") + "\n")
+			}
 			if track.Mixer.Mute {
 				out.WriteString("  level = off\n")
 			} else if track.Mixer.GainDB != defaultMixer().GainDB {
@@ -732,6 +735,9 @@ func trackMixerSource(track Track) (string, error) {
 	write := func(name, value string) {
 		out.WriteString("\n  " + name + " = " + value)
 		settings++
+	}
+	if len(track.Chain) > 0 {
+		write("chain", strings.Join(track.Chain, " "))
 	}
 	if track.Mixer.Level != nil {
 		value, err := valueSource(*track.Mixer.Level)

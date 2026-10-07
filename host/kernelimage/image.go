@@ -29,7 +29,7 @@ const PackCapability uint16 = 1 << 10
 
 const Capabilities = ModalCapability | ModeledKitCapability
 
-const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | GridCapability | Capabilities | PackCapability
+const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | GridCapability | ChainCapability | Capabilities | PackCapability
 
 const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15  // experimental guitar in the unified image layout
@@ -53,6 +53,9 @@ const NeuralAmpCapability uint16 = 1 << 4
 
 // GridCapability adds a uint16 cell duration after each slot seed.
 const GridCapability uint16 = 1 << 13
+
+// ChainCapability appends an ordered slot list after each track bank.
+const ChainCapability uint16 = 1 << 14
 
 // PMCapability uses the next capability bit without changing node records.
 const PMCapability uint16 = 1 << 5
@@ -231,6 +234,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	w.u16(uint16(len(cfg.Song)))
 	var capabilities uint16
 	for _, bank := range cfg.Patterns {
+		if len(bank.Chain) > 0 {
+			capabilities |= ChainCapability
+		}
 		for _, pattern := range bank.Slots {
 			if pattern.StepTicks != 0 {
 				capabilities |= GridCapability
@@ -550,6 +556,23 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				}
 			}
 		}
+		if capabilities&ChainCapability != 0 {
+			var chain []uint8
+			if len(cfg.Patterns) > 0 {
+				chain = cfg.Patterns[track].Chain
+			}
+			if len(chain) > 32 {
+				return nil, Error("source chain exceeds 32 entries")
+			}
+			w.byte(byte(len(chain)))
+			for _, slot := range chain {
+				if slot >= 16 || cfg.Patterns[track].Slots[slot].Len == 0 {
+					return nil, Error("invalid source chain slot")
+				}
+				w.byte(slot)
+			}
+		}
+
 	}
 	for _, scene := range cfg.Scenes {
 		if len(scene.Settings) > int(^uint16(0)) {
@@ -1105,6 +1128,24 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return Error("keyboard voices do not support per-note expression")
 			}
 		}
+		if reserved&ChainCapability != 0 {
+			count, err := r.byte()
+			if err != nil || count > 32 {
+				return Error("invalid source chain length")
+			}
+			if count > 0 {
+				chain := make([]uint8, int(count))
+				for i := range chain {
+					slot, err := r.byte()
+					if err != nil || slot >= 16 || cfg.Patterns[track].Slots[slot].Len == 0 {
+						return Error("invalid source chain slot")
+					}
+					chain[i] = slot
+				}
+				cfg.Patterns[track].Chain = chain
+			}
+		}
+
 	}
 	for scene := range cfg.Scenes {
 		for track := range cfg.Scenes[scene].Track {

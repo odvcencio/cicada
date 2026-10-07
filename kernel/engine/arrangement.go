@@ -245,6 +245,7 @@ func (e *Engine) startSong() {
 		_ = e.transport.SeekTick(0)
 		tick = 0
 	}
+	e.restoreSourceChains(tick)
 	cycleStart := int64(0)
 	if e.loopSong {
 		cycleStart = tick / total * total

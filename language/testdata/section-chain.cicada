@@ -1,0 +1,7 @@
+cicada 2
+track bass acid { chain = intro triplet chorus level = -8dB }
+pattern intro { 1 }
+pattern triplet { step = 1/8t 3 5 7 }
+pattern chorus { step = 1/8 1 5 }
+scene main {}
+song { main*2 }

@@ -283,6 +283,8 @@
 
 (velocity_row "velocity" @attribute)
 (velocity_row "." @punctuation.special.rest)
+(chain_decl "chain" @attribute)
+(chain_decl (identifier) @function)
 "preset" @keyword.type
 (preset_decl name: (identifier) @type.definition)
 ["arrange" "place" "marker"] @keyword

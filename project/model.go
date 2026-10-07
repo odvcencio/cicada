@@ -82,6 +82,7 @@ type Kit struct {
 }
 
 type Track struct {
+	Chain  []string         `cicada:"Ordered looping source patterns" range:"0..32" json:"chain,omitempty"`
 	ID     string           `cicada:"Track identifier" json:"id"`
 	Kind   string           `cicada:"Track instrument kind" json:"kind"`
 	Params map[string]Value `cicada:"Track instrument parameters" json:"params"`
@@ -370,6 +371,9 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 	}
 	for _, source := range score.Tracks {
 		track := Track{ID: source.Name, Kind: source.Kind, Params: map[string]Value{}, Mixer: defaultMixer()}
+		for _, name := range source.Chain {
+			track.Chain = append(track.Chain, name.Text)
+		}
 		mixer, err := CompileMixerParams(source)
 		if err != nil {
 			return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-PARAM", Severity: "error", Message: err.Error(), Position: source.Position})
@@ -578,6 +582,16 @@ func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string
 		return pattern.Kind
 	}
 	usedByAcid := false
+	for _, track := range score.Tracks {
+		for _, name := range track.Chain {
+			if name.Text == pattern.Name {
+				if track.Kind != "acid" {
+					return "notes"
+				}
+				usedByAcid = true
+			}
+		}
+	}
 	if score.Arrange != nil {
 		for _, p := range score.Arrange.Placements {
 			if p.Content == pattern.Name {
@@ -615,6 +629,13 @@ func semanticPatternKind(score *notation.Score, pattern notation.Pattern) string
 }
 
 func representativeTrack(score *notation.Score, pattern notation.Pattern) notation.Track {
+	for _, track := range score.Tracks {
+		for _, name := range track.Chain {
+			if name.Text == pattern.Name {
+				return track
+			}
+		}
+	}
 	if score.Arrange != nil {
 		for _, p := range score.Arrange.Placements {
 			if p.Content == pattern.Name {
@@ -689,6 +710,14 @@ func assignSlots(p *Project, score *notation.Score) error {
 				}
 				explicit[pattern.Name] = slot
 			}
+		}
+	}
+	for _, track := range p.Tracks {
+		if used[track.ID] == nil {
+			used[track.ID] = map[string]bool{}
+		}
+		for _, name := range track.Chain {
+			used[track.ID][name] = true
 		}
 	}
 	for _, placement := range arrangementPlacements(p) {

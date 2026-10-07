@@ -104,6 +104,10 @@ type trackRuntime struct {
 	transition     sceneTransition
 	slideFrom      int64
 	slideAt        int64
+
+	chain                                 []string
+	chainIndex                            int
+	chainDue, startTick, pendingStartTick int64
 }
 
 type busMixerState struct {
@@ -395,6 +399,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
+	for i := range tracks {
+		for _, ref := range score.Tracks[i].Chain {
+			tracks[i].chain = append(tracks[i].chain, ref.Text)
+		}
+	}
 	stopIsAction := true
 	for _, pattern := range score.Patterns {
 		if pattern.Name == "stop" {
@@ -578,9 +587,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock, stopIsAction)
 			end := clock.SampleAtTick(int64(bar+1) * seq.TicksPerBar)
 			for position < end {
+				if err := advanceRenderChains(tracks, clock.TickAtSample(position)); err != nil {
+					return report, err
+				}
+				blockEnd := nextRenderChainSample(tracks, clock, end)
 				frames := opts.Block
-				if position+int64(frames) > end {
-					frames = int(end - position)
+				if position+int64(frames) > blockEnd {
+					frames = int(blockEnd - position)
 				}
 				events = events[:0]
 				for ti := range tracks {
@@ -589,7 +602,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 							if pattern == nil {
 								continue
 							}
-							n, overflow := seq.EventsInBlock(pattern, clock, uint8(ti), tracks[ti].currentSlot, position, frames, eventBuf[:])
+							n, overflow := seq.EventsAtTickInBlock(pattern, clock, uint8(ti), tracks[ti].currentSlot, tracks[ti].startTick, position, frames, eventBuf[:])
 							if overflow {
 								return report, fmt.Errorf("too many drum events in render block")
 							}
@@ -602,7 +615,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 					if tracks[ti].active == nil {
 						continue
 					}
-					n, overflow := seq.EventsWithGatesInBlock(tracks[ti].active, clock, uint8(ti), tracks[ti].currentSlot, position, frames, eventBuf[:])
+					n, overflow := seq.EventsWithGatesAtTickInBlock(tracks[ti].active, clock, uint8(ti), tracks[ti].currentSlot, tracks[ti].startTick, position, frames, eventBuf[:])
 					if overflow {
 						return report, fmt.Errorf("too many events in render block")
 					}
@@ -620,7 +633,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 						events = append(events, scheduled{track: ti, generation: tracks[ti].generation, event: transition.release})
 					}
 					if tracks[ti].hasPendingGate {
-						n, overflow = seq.EventsWithGatesInBlock(&tracks[ti].pending, clock, uint8(ti), tracks[ti].pendingSlot, position, frames, eventBuf[:])
+						n, overflow = seq.EventsWithGatesAtTickInBlock(&tracks[ti].pending, clock, uint8(ti), tracks[ti].pendingSlot, tracks[ti].pendingStartTick, position, frames, eventBuf[:])
 						if overflow {
 							return report, fmt.Errorf("too many pending gate events in render block")
 						}
@@ -1266,6 +1279,9 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 			if binding.Pattern == "stop" && stopIsAction {
 				binding.Pattern = "off"
 			}
+			if binding.Pattern != "keep" {
+				tracks[ti].chain = nil
+			}
 			switch binding.Pattern {
 			case "keep":
 			case "off":
@@ -1321,11 +1337,13 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 					}
 				}
 				if tracks[ti].active != nil && tracks[ti].activeGen == tracks[ti].generation {
+					tracks[ti].pendingStartTick = tracks[ti].startTick
 					tracks[ti].pending = tracks[ti].current
 					tracks[ti].pendingGen = tracks[ti].generation
 					tracks[ti].pendingSlot = tracks[ti].currentSlot
 					tracks[ti].hasPendingGate = true
 				}
+				tracks[ti].startTick = 0
 				tracks[ti].generation++
 				tracks[ti].currentName = binding.Pattern
 				tracks[ti].currentSlot = tracks[ti].patternSlots[binding.Pattern]
@@ -1669,6 +1687,15 @@ func expressionEventPriority(kind seq.EventKind) int {
 }
 
 func patternBoundToTrack(score *notation.Score, pattern, track string) bool {
+	for _, source := range score.Tracks {
+		if source.Name == track {
+			for _, ref := range source.Chain {
+				if ref.Text == pattern {
+					return true
+				}
+			}
+		}
+	}
 	for _, scene := range score.Scenes {
 		for _, binding := range scene.Bindings {
 			if binding.Track == track && binding.Pattern == pattern {

@@ -118,6 +118,8 @@ type Pattern struct {
 }
 
 // GridTicks returns the duration of one cell.
+//
+//go:noinline
 func (p *Pattern) GridTicks() int64 {
 	if p.StepTicks == 0 {
 		return TicksPerStep

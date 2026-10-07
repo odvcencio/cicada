@@ -9,12 +9,13 @@ import (
 	"m31labs.dev/cicada/kernel/seq"
 )
 
-func TestGridAndExpressionImageRoundTrip(t *testing.T) {
-	if kernelimage.GridCapability&(kernelimage.PMCapability|kernelimage.KeysCapability|kernelimage.PackCapability) != 0 {
+func TestGridChainAndExpressionImageRoundTrip(t *testing.T) {
+	if kernelimage.GridCapability&(kernelimage.PMCapability|kernelimage.KeysCapability|kernelimage.PackCapability) != 0 || kernelimage.ChainCapability&(kernelimage.ModalCapability|kernelimage.KeysCapability|kernelimage.PackCapability) != 0 {
 		t.Fatal("pattern timing and voice features share a capability bit")
 	}
 	cfg := firstAcidConfig(t)
 	for track := range cfg.Patterns {
+		cfg.Patterns[track].Chain = []uint8{0}
 		for slot := range cfg.Patterns[track].Slots {
 			cfg.Patterns[track].Slots[slot].StepTicks = 320
 			if cfg.Patterns[track].Drums != nil {
@@ -30,7 +31,7 @@ func TestGridAndExpressionImageRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if bits := binary.LittleEndian.Uint16(data[30:32]); bits&(kernelimage.GridCapability|kernelimage.ExpressionCapability) != kernelimage.GridCapability|kernelimage.ExpressionCapability {
+	if bits := binary.LittleEndian.Uint16(data[30:32]); bits&(kernelimage.GridCapability|kernelimage.ChainCapability|kernelimage.ExpressionCapability) != kernelimage.GridCapability|kernelimage.ChainCapability|kernelimage.ExpressionCapability {
 		t.Fatalf("missing grid/expression capabilities: %#x", bits)
 	}
 	decoded, err := kernelimage.Decode(data, 48000, 128)

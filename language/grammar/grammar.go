@@ -57,8 +57,10 @@ func Cicada() *grammargen.Grammar {
 	// or to a declared instrument. No new syntax is needed for guitar controls.
 	g.Define("track_decl", seq(
 		str("track"), field("name", sym("_name")), field("kind", sym("_name")),
-		str("{"), repeat(sym("mix_setting")), str("}"),
+		str("{"), repeat(choice(sym("mix_setting"), sym("chain_decl"))), str("}"),
 	))
+
+	g.Define("chain_decl", seq(str("chain"), str("="), repeat(sym("_name"))))
 
 	// An instrument declares typed parameters and one voice. The voice binds
 	// ordered lets and ends with the audio it outputs.

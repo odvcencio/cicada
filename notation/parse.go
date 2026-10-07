@@ -291,6 +291,18 @@ func parseTrack(w *loweringWalker, n *gts.Node) Track {
 	t := Track{Name: w.declaration(w.Field(n, "name")), Kind: w.reference(w.Field(n, "kind")), Position: w.position(n)}
 	for i := 0; i < n.NamedChildCount(); i++ {
 		c := n.NamedChild(i)
+		if w.Type(c) == "chain_decl" {
+			if t.Chain != nil {
+				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-DUPLICATE", Severity: "error", Message: "duplicate track chain", Position: w.position(c)})
+			}
+			t.Chain = []StepToken{}
+			for j := 0; j < c.NamedChildCount(); j++ {
+				name := c.NamedChild(j)
+				if w.Type(name) == "identifier" || w.Type(name) == "qualified_name" {
+					t.Chain = append(t.Chain, StepToken{Text: w.reference(name), Position: w.position(name)})
+				}
+			}
+		}
 		if w.Type(c) == "mix_setting" {
 			t.Params = append(t.Params, parseMixSetting(w, c))
 		}

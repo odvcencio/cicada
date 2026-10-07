@@ -32,6 +32,8 @@ type patternTrack struct {
 	forceOff          seq.Event
 	forceGen          uint32
 	forceValid        bool
+	sourceChain       [32]uint8
+	sourceChainLen    uint8
 	chain             [32]chainEntry
 	chainLen          uint8
 	chainNext         uint8

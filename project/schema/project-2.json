@@ -431,6 +431,7 @@
         "slots"
       ],
       "properties": {
+        "chain": {"type": "array", "maxItems": 32, "items": {"type": "string"}},
         "id": {
           "$ref": "#/$defs/id"
         },

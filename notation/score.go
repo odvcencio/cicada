@@ -68,6 +68,7 @@ type Preset struct {
 }
 
 type Track struct {
+	Chain    []StepToken
 	Name     string
 	Kind     string
 	Params   []Param

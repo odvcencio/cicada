@@ -244,6 +244,22 @@ Groups lower to a common exact grid with at most 64 expanded cells. Cell duratio
 
 Grids are additive in source editions 1 and 2. Optional semantic `step_ticks` retains the legacy grid when absent. Image capability bit 13 adds each slot's duration; older kernels reject that capability. Pattern metadata commands carry the duration in their index field. MIDI export, formatting, and source round trips preserve exact tick positions.
 
+## Source pattern chains
+
+A track's `chain` plays complete patterns in order and loops. An empty scene keeps the chain playing; a scene pattern binding or `off` takes over that track.
+
+```cicada
+cicada 2
+track bass acid { chain = intro triplet chorus }
+pattern intro { 1 }
+pattern triplet { step = 1/8t 3 5 7 }
+pattern chorus { step = 1/8 1 5 }
+scene main {}
+song { main*2 }
+```
+
+Chains contain 1–32 entries and at most 16 distinct patterns per track. Each entry plays once, including repeated names. Mixed grids join at exact ticks. Seeking reconstructs the chain phase, and MIDI export uses the same section boundaries. The semantic track `chain` stores pattern names; image capability bit 14 carries the source slot list.
+
 ## Multi-file projects and manifest metadata
 
 **Syntax (EBNF):**

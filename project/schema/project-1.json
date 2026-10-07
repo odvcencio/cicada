@@ -115,6 +115,7 @@
     "track": {
       "type": "object", "additionalProperties": false, "required": ["id", "kind", "params", "mixer", "slots"],
       "properties": {
+        "chain": {"type": "array", "maxItems": 32, "items": {"type": "string"}},
         "id": {"$ref": "#/$defs/id"}, "kind": {"$ref": "#/$defs/id"},
         "params": {"type": "object", "additionalProperties": {"$ref": "#/$defs/value"}},
         "mixer": {"$ref": "#/$defs/mixer"},

@@ -102,6 +102,7 @@ const SFXSidechain = 17
 // PatternBank is immutable project data copied into the engine by New.
 // Drum slots hold an independent pattern for each synthesized lane.
 type PatternBank struct {
+	Chain []uint8 `json:",omitempty"` // source order, one pass per slot
 	Slots [16]seq.Pattern
 	Drums *[16][drum.LaneCount]seq.Pattern
 }
@@ -637,6 +638,16 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 	// makes TinyGo scalarize all 16 chord arrays into a large load routine.
 	for track := range cfg.Patterns {
 		bank := &cfg.Patterns[track]
+		if len(bank.Chain) > 32 {
+			return Error("source chain exceeds 32 entries")
+		}
+		for i, slot := range bank.Chain {
+			if slot >= 16 || bank.Slots[slot].Len == 0 {
+				return Error("source chain references an empty slot")
+			}
+			e.patterns[track].sourceChain[i] = slot
+		}
+		e.patterns[track].sourceChainLen = uint8(len(bank.Chain))
 		isDrum := e.voices[track].kind == VoiceDrums
 		if isDrum != (bank.Drums != nil) {
 			return Error("pattern bank kind differs from track")
@@ -690,7 +701,7 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			}
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				lanePattern := &bank.Drums[slot][lane]
-				if lanePattern.Len != pattern.Len || lanePattern.SwingPermille != pattern.SwingPermille || lanePattern.GatePercent != pattern.GatePercent || lanePattern.Seed != pattern.Seed || lanePattern.Transpose != 0 || lanePattern.Validate() != nil {
+				if lanePattern.Len != pattern.Len || lanePattern.StepTicks != pattern.StepTicks || lanePattern.SwingPermille != pattern.SwingPermille || lanePattern.GatePercent != pattern.GatePercent || lanePattern.Seed != pattern.Seed || lanePattern.Transpose != 0 || lanePattern.Validate() != nil {
 					return Error("invalid preloaded drum lane")
 				}
 				for step := uint8(0); step < lanePattern.Len; step++ {
@@ -1335,6 +1346,8 @@ func (e *Engine) apply(c cmd.Command) {
 		e.transport.Play()
 		if len(e.schedule) > 0 && !e.songMode {
 			e.startSong()
+		} else if len(e.schedule) == 0 {
+			e.restoreSourceChains(e.transport.Tick())
 		}
 		for i := 0; i < e.tracks; i++ {
 			v := &e.voices[i]
@@ -1394,6 +1407,8 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		if e.songMode {
 			e.startSong()
+		} else {
+			e.restoreSourceChains(e.transport.Tick())
 		}
 		if e.renderFrames > 0 {
 			e.scheduleAll()
