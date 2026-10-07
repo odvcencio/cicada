@@ -1,0 +1,53 @@
+cicada 2
+title "FM EP - sampled"
+tempo 108
+key c major
+seed 61006
+// Owned multisamples of the original modeled patch, with a pinned manifest.
+// Four monophonic parts preserve chord notes and timing with eight total voice slots.
+sampler fm_ep {
+  pack = "packs/fm_ep/manifest.json"
+  sha256 = "171011860bb4547f08a558c32717e074777e4a4e6c62162904225001948184af"
+  root = c4
+  voices = 2
+}
+
+track keys_1 fm_ep {
+  level = 0dB
+}
+track keys_2 fm_ep {
+  level = 0dB
+}
+track keys_3 fm_ep {
+  level = 0dB
+}
+track keys_4 fm_ep {
+  level = 0dB
+}
+pattern comp_1 notes {
+
+  gate = 72%
+  c4 - - . d4 - - . g3 - - . c4 - - . a3 - - . d4 - - . g3 - - . c4 - - .
+}
+pattern comp_2 notes {
+
+  gate = 72%
+  e4 - - . f4 - - . b3 - - . e4 - - . c4 - - . f4 - - . b3 - - . e4 - - .
+}
+pattern comp_3 notes {
+
+  gate = 72%
+  g4 - - . a4 - - . d4 - - . a4 - - . e4 - - . a4 - - . e4 - - . g4 - - .
+}
+pattern comp_4 notes {
+
+  gate = 72%
+  b4 - - . c5 - - . f4 - - . b4 - - . g4 - - . c5 - - . f4 - - . b4 - - .
+}
+pattern melody notes {
+  gate = 78%
+  e4 . g4 a4 b4 . g4 . f4 . e4 d4 c4 . . . a3 . c4 e4 g4 . e4 . d4 . f4 a4 g4 . e4 .
+}
+scene comping { keys_1=comp_1 keys_2=comp_2 keys_3=comp_3 keys_4=comp_4 }
+scene melodic { keys_1=melody keys_2=off keys_3=off keys_4=off }
+song { comping*2 melodic*2 }

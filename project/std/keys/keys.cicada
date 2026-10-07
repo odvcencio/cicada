@@ -1,0 +1,83 @@
+preset tine_ep {
+  instrument = builtin.tine_ep
+}
+
+preset tine_bell {
+  instrument = builtin.tine_bell
+}
+
+preset tine_bark {
+  instrument = builtin.tine_bark
+}
+
+preset tine_tremolo {
+  instrument = builtin.tine_tremolo
+}
+
+preset reed_ep {
+  instrument = builtin.reed_ep
+}
+
+preset reed_tremolo {
+  instrument = builtin.reed_tremolo
+}
+
+preset clav {
+  instrument = builtin.clav
+}
+
+preset clav_muted {
+  instrument = builtin.clav_muted
+}
+
+preset clav_hollow {
+  instrument = builtin.clav_hollow
+}
+
+preset tonewheel_organ {
+  instrument = builtin.tonewheel_organ
+}
+
+preset organ_jazz {
+  instrument = builtin.organ_jazz
+}
+
+preset organ_full {
+  instrument = builtin.organ_full
+}
+
+preset organ_soft {
+  instrument = builtin.organ_soft
+}
+
+preset fm_ep {
+  instrument = builtin.fm_ep
+}
+
+preset bell_keys {
+  instrument = builtin.bell_keys
+}
+
+preset fm_bass {
+  instrument = builtin.fm_bass
+}
+
+preset brass_stab {
+  instrument = builtin.brass_stab
+}
+
+preset soft_pad {
+  instrument = builtin.soft_pad
+}
+
+preset poly_keys {
+  instrument = builtin.poly_keys
+}
+
+preset sync_lead {
+  instrument = builtin.sync_lead
+}
+
+preset string_machine {
+  instrument = builtin.string_machine
+}

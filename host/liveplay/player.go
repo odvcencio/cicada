@@ -299,10 +299,12 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 	for index := 0; index < int(snapshot.count); index++ {
 		snapshot.ids[index] = score.Tracks[index].ID
 		snapshot.kinds[index] = score.Tracks[index].Kind
-		if snapshot.kinds[index] == "piano" && score.Engine != nil && score.Engine.TrackVoiceKind(index) != engine.VoicePiano {
+		if score.Engine != nil && score.Engine.TrackVoiceKind(index) == engine.VoiceKeys {
+			snapshot.kinds[index] = "keys"
+		} else if snapshot.kinds[index] == "piano" && score.Engine != nil && score.Engine.TrackVoiceKind(index) != engine.VoicePiano {
 			snapshot.kinds[index] = "instrument"
 		}
-		if score.Tracks[index].Pitched {
+		if score.Tracks[index].Pitched && snapshot.kinds[index] != "keys" {
 			snapshot.kinds[index] = "graph"
 		}
 		if score.Engine != nil {
@@ -376,9 +378,9 @@ func (p *Player) NoteOwnerID(track string, note, velocity int, on bool, id strin
 			if _, ok := GMDrumLane(note); !ok {
 				return fmt.Errorf("MIDI drum note %d is not in the General MIDI map", note)
 			}
-		} else if kind == "piano" {
+		} else if kind == "piano" || kind == "keys" {
 			if note < 21 || note > 108 {
-				return fmt.Errorf("piano note must be in MIDI range 21–108")
+				return fmt.Errorf("%s note must be in MIDI range 21–108", kind)
 			}
 		} else if kind != "acid" && kind != "graph" && kind != "poly" {
 			return fmt.Errorf("track %q does not accept live notes", track)
@@ -403,6 +405,9 @@ func (p *Player) NoteExpression(track string, noteID uint16, pitchCents, pressur
 	}
 	snapshot := p.trackNames.Load()
 	index, kind, found := findTrack(snapshot, track)
+	if found && kind == "keys" {
+		return fmt.Errorf("CICADA-UNSUPPORTED: modeled keyboards do not support per-note expression")
+	}
 	if !found || kind != "acid" && kind != "graph" {
 		return fmt.Errorf("track %q is not a pitched track in the playing score", track)
 	}
@@ -1119,7 +1124,7 @@ func (p *Player) queueLiveNotes() {
 			if kind == "drums" {
 				lane, _ = GMDrumLane(int(held.Note))
 				command.Index = lane
-			} else if kind == "piano" || kind == "poly" {
+			} else if kind == "piano" || kind == "keys" || kind == "poly" {
 				lane, command.Index = uint16(held.Note), uint16(held.Note)
 			}
 			final[track][lane], touched[track][lane] = command, true
@@ -1140,6 +1145,10 @@ func (p *Player) queueLiveNotes() {
 			continue
 		}
 		if input.Expression {
+			if kind == "keys" {
+				p.emit(Event{Track: input.Track, Name: "CICADA-UNSUPPORTED: modeled keyboards do not support per-note expression", Kind: "note-error"})
+				continue
+			}
 			if kind == "acid" || kind == "graph" {
 				command := cmd.Command{Track: track, Index: input.NoteID, Op: cmd.OpNoteExpression, Arg0: math.Float32bits(input.PitchCents), Arg1: math.Float32bits(input.Pressure), Pad: math.Float32bits(input.Timbre)}
 				if !p.current.Engine.Push(command) {
@@ -1153,7 +1162,7 @@ func (p *Player) queueLiveNotes() {
 			if a.Track != input.Track {
 				return false
 			}
-			if kind == "piano" || kind == "poly" {
+			if kind == "piano" || kind == "keys" || kind == "poly" {
 				return a.Note == input.Note
 			}
 			if kind != "drums" {
@@ -1207,9 +1216,9 @@ func (p *Player) queueLiveNotes() {
 			}
 		}
 		command := cmd.Command{Track: track, Index: input.NoteID}
-		if kind == "acid" || kind == "piano" || kind == "graph" || kind == "poly" {
-			if kind == "piano" && (input.Note < 21 || input.Note > 108) {
-				p.emit(Event{Track: input.Track, Name: "piano note must be in MIDI range 21–108", Kind: "note-error"})
+		if kind == "acid" || kind == "piano" || kind == "keys" || kind == "graph" || kind == "poly" {
+			if (kind == "piano" || kind == "keys") && (input.Note < 21 || input.Note > 108) {
+				p.emit(Event{Track: input.Track, Name: fmt.Sprintf("%s note must be in MIDI range 21–108", kind), Kind: "note-error"})
 				continue
 			}
 			if input.On {
@@ -1217,7 +1226,7 @@ func (p *Player) queueLiveNotes() {
 				command.Arg0 = uint32(input.Note) | uint32(input.Velocity)<<8
 			} else {
 				command.Op, command.Index = cmd.OpNoteOff, 0xffff
-				if kind == "piano" || kind == "poly" {
+				if kind == "piano" || kind == "keys" || kind == "poly" {
 					command.Index = uint16(input.Note)
 				} else if input.NoteID != 0 {
 					command.Index = input.NoteID
@@ -1246,7 +1255,7 @@ func (p *Player) queueLiveNotes() {
 			continue
 		}
 		lane := uint16(0)
-		if kind == "drums" || kind == "piano" || kind == "poly" {
+		if kind == "drums" || kind == "piano" || kind == "keys" || kind == "poly" {
 			lane = command.Index
 			if input.On && kind != "drums" {
 				lane = uint16(input.Note)

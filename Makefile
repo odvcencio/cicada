@@ -1,6 +1,17 @@
 .PHONY: test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-chord-wasm test-worklet-negotiation
+.PHONY: build-keys-wasm test-keys-wasm
 
 export GOWORK := off
+
+# The official SDK stays in build output and is copied into exported plugins.
+.PHONY: build-wam2 test-wam2
+build-wam2: build-kernel-wasm
+	npm install --prefix build/wam2-sdk --ignore-scripts --no-package-lock --no-save @webaudiomodules/sdk@0.0.12
+
+test-wam2: build-wam2
+	node --test host/wam2/processor.test.cjs
+	go test ./host/wam2 ./cmd/cicada -run WAM2 -count=1
+	go test -tags browser ./cmd/cicada -run '^TestBrowserWAM2$$' -count=1 -timeout=3m -v
 
 .PHONY: test-chord-wasm
 .PHONY: build-core build-workstation build-workstation-release test-workstation
@@ -129,6 +140,17 @@ build-kernel-wasm:
 build-loudness-wasm:
 	mkdir -p build
 	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-loudness.wasm ./cmd/cicada-loudness-wasm
+
+# Optional keyboard module; same ABI and AudioWorklet, loaded only for keys.
+build-keys-wasm:
+	mkdir -p build
+	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags keys -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
+	wc -c build/cicada-keys.wasm
+	test $$(wc -c < build/cicada-keys.wasm) -le 524288
+
+test-keys-wasm: build-kernel-wasm build-keys-wasm
+	CICADA_KEYS_CORE_WASM=$(CURDIR)/build/cicada-kernel.wasm GOWORK=off go test -p=2 -tags keys_wasm ./host/kernelimage -run '^TestKeysCoreWASM' -count=1 -v
+	CICADA_WASM_PATH=$(CURDIR)/build/cicada-keys.wasm GOWORK=off go test -p=2 -timeout=20m -tags 'wasm_integration keys' ./cmd/cicada-kernel-wasm -run '^TestAudioWASMKeys' -count=1 -v
 
 test-kernel-wasm: build-kernel-wasm build-loudness-wasm
 	CICADA_CHORD_WASM_PATH=$(CURDIR)/build/cicada-kernel.wasm go test -timeout=3m -tags chord_wasm ./cmd/cicada-kernel-wasm -count=1

@@ -529,8 +529,12 @@ func (s *studio) kernelImage(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(image)
 }
 
-func (s *studio) kernelWASM(w http.ResponseWriter, _ *http.Request) {
-	path, err := locateKernelWASM()
+func (s *studio) kernelWASM(w http.ResponseWriter, r *http.Request) {
+	locate := locateKernelWASM
+	if r.URL.Query().Get("keys") == "1" {
+		locate = locateKeysWASM
+	}
+	path, err := locate()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusServiceUnavailable)
 		return
@@ -546,24 +550,40 @@ func (s *studio) kernelWASM(w http.ResponseWriter, _ *http.Request) {
 }
 
 func locateKernelWASM() (string, error) {
-	if explicit := os.Getenv("CICADA_KERNEL_WASM"); explicit != "" {
+	return locateAudioWASM("CICADA_KERNEL_WASM", "cicada-kernel.wasm", "build-kernel-wasm")
+}
+
+func locateKeysWASM() (string, error) {
+	return locateAudioWASM("CICADA_KEYS_WASM", "cicada-keys.wasm", "build-keys-wasm")
+}
+
+func locateAudioWASM(environment, filename, target string) (string, error) {
+	if explicit := os.Getenv(environment); explicit != "" {
 		if info, err := os.Stat(explicit); err == nil && info.Mode().IsRegular() {
 			return explicit, nil
 		}
-		return "", fmt.Errorf("CICADA_KERNEL_WASM does not name a kernel module")
+		return "", fmt.Errorf("%s does not name a kernel module", environment)
 	}
-	if executable, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(executable), "cicada-kernel.wasm")
+	executable, _ := os.Executable()
+	working, _ := os.Getwd()
+	if path := findAudioWASM(filename, executable, working); path != "" {
+		return path, nil
+	}
+	return "", fmt.Errorf("kernel WASM is missing; run make %s first", target)
+}
+
+func findAudioWASM(filename, executable, working string) string {
+	if executable != "" {
+		candidate := filepath.Join(filepath.Dir(executable), filename)
 		if info, statErr := os.Stat(candidate); statErr == nil && info.Mode().IsRegular() {
-			return candidate, nil
+			return candidate
 		}
 	}
-	working, err := os.Getwd()
-	if err == nil {
+	if working != "" {
 		for directory := working; ; directory = filepath.Dir(directory) {
-			candidate := filepath.Join(directory, "build", "cicada-kernel.wasm")
+			candidate := filepath.Join(directory, "build", filename)
 			if info, statErr := os.Stat(candidate); statErr == nil && info.Mode().IsRegular() {
-				return candidate, nil
+				return candidate
 			}
 			parent := filepath.Dir(directory)
 			if parent == directory {
@@ -571,7 +591,7 @@ func locateKernelWASM() (string, error) {
 			}
 		}
 	}
-	return "", fmt.Errorf("kernel WASM is missing; run make build-kernel-wasm first")
+	return ""
 }
 
 func (s *studio) processorAsset(w http.ResponseWriter, _ *http.Request) {

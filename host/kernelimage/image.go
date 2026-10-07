@@ -13,6 +13,7 @@ import (
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/kernel/voice/modeledkit"
 )
@@ -23,7 +24,8 @@ const ModalCapability uint16 = 1 << 6
 // ModeledKitCapability opts version 13 images into modeled kit lane bindings.
 const ModeledKitCapability uint16 = 1 << 8
 
-const PackCapability uint16 = 1 << 9
+// PackCapability requires resident instrument-pack samples.
+const PackCapability uint16 = 1 << 10
 
 const Capabilities = ModalCapability | ModeledKitCapability
 
@@ -54,6 +56,10 @@ const PMCapability uint16 = 1 << 5
 
 // DDSPCapability requires the pinned integer harmonic-plus-noise model.
 const DDSPCapability uint16 = 1 << 7
+
+// KeysCapability requires the separately loaded keyboard module. The core
+// TinyGo module rejects this bit before decoding optional voice records.
+const KeysCapability uint16 = 1 << 9
 const imageVersion = 13              // built-in bus mute/solo and master mute/solo state
 const busMixerImageVersion = 12      // built-in bus mute/solo and master mute
 const sendTapImageVersion = 11       // named mixer per-send taps and track solo
@@ -150,7 +156,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 	version := uint16(masterSoloImageVersion)
 	for track := 0; track < cfg.Tracks; track++ {
 		spec := cfg.Track[track]
-		if spec.Kind == engine.VoiceGuitar {
+		if spec.Kind == engine.VoiceGuitar || keysImageEnabled && spec.Kind == engine.VoiceKeys {
 			version = guitarImageVersion
 		}
 		if spec.Polyphony != 0 && (spec.Polyphony != 4 || spec.Kind != engine.VoiceGraph) {
@@ -175,7 +181,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 					return nil, Error("unused slot contains chord payload")
 				}
 				for i, chord := range pattern.Chords {
-					if chord.Count > 0 && (spec.Polyphony != 4 && spec.Kind != engine.VoicePiano || i >= int(pattern.Len)) {
+					if chord.Count > 0 && (spec.Polyphony != 4 && spec.Kind != engine.VoicePiano && (!keysImageEnabled || spec.Kind != engine.VoiceKeys) || i >= int(pattern.Len)) {
 						return nil, Error("chord payload requires an active polyphonic step")
 					}
 					if chord.Count > 0 {
@@ -228,6 +234,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		}
 		if spec.Kind == engine.VoicePiano {
 			capabilities |= PianoCapability
+		}
+		if keysImageEnabled && spec.Kind == engine.VoiceKeys {
+			capabilities |= KeysCapability
 		}
 		capabilities |= graphCapabilities(&spec.Graph)
 		if len(cfg.Patterns) != 0 {
@@ -448,6 +457,27 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				return nil, Error("invalid piano sustain")
 			}
 			w.f32(spec.PianoSustain)
+		case engine.VoiceKeys:
+			if !keysImageEnabled {
+				return nil, Error("keyboard module is unavailable")
+			}
+			if err := spec.Keys.Validate(); err != nil {
+				return nil, err
+			}
+			w.byte(spec.Keys.Patch)
+			var count uint8
+			for _, value := range spec.Keys.Controls {
+				if value != 0 {
+					count++
+				}
+			}
+			w.byte(count)
+			for index, value := range spec.Keys.Controls {
+				if value != 0 {
+					w.byte(uint8(index))
+					w.f32(value)
+				}
+			}
 		default:
 			return nil, Error("invalid track voice kind")
 		}
@@ -459,6 +489,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			pattern := bank.Slots[slot]
 			if spec.Kind == engine.VoicePiano && pattern.Expression != nil {
 				return nil, Error("piano voices do not support per-note expression")
+			}
+			if keysImageEnabled && spec.Kind == engine.VoiceKeys && pattern.Expression != nil {
+				return nil, Error("keyboard voices do not support per-note expression")
 			}
 			w.byte(pattern.Len)
 			w.u16(pattern.SwingPermille)
@@ -596,7 +629,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(SupportedCapabilities) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -944,6 +977,37 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			if math.IsNaN(float64(spec.PianoSustain)) || math.IsInf(float64(spec.PianoSustain), 0) || spec.PianoSustain < 0 || spec.PianoSustain > 1 {
 				return Error("invalid piano sustain")
 			}
+		case engine.VoiceKeys:
+			if !keysImageEnabled || reserved&KeysCapability == 0 || version != UnifiedImageVersion {
+				return Error("keyboard voice requires version 15 and capability bit 9")
+			}
+			spec.Keys = new(keyboard.Spec)
+			if spec.Keys.Patch, err = r.byte(); err != nil {
+				return err
+			}
+			count, err := r.byte()
+			if err != nil || count > 128 {
+				return Error("invalid keyboard control count")
+			}
+			previous := -1
+			for i := uint8(0); i < count; i++ {
+				index, err := r.byte()
+				if err != nil || index >= 128 || int(index) <= previous {
+					return Error("invalid keyboard control index")
+				}
+				value, err := r.f32()
+				if err != nil {
+					return err
+				}
+				if value == 0 {
+					return Error("keyboard payload contains a zero control")
+				}
+				spec.Keys.Controls[index] = value
+				previous = int(index)
+			}
+			if err := spec.Keys.Validate(); err != nil {
+				return err
+			}
 		default:
 			return Error("invalid track image kind")
 		}
@@ -1017,6 +1081,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						pattern.Expression[step] = expression
 					}
 				}
+			}
+			if keysImageEnabled && spec.Kind == engine.VoiceKeys && pattern.Expression != nil {
+				return Error("keyboard voices do not support per-note expression")
 			}
 		}
 	}
