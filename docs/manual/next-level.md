@@ -2,7 +2,7 @@
 
 Cicada projects use source edition 2. A new project includes bass, drums, and
 two scenes. You can save mixer routes and scene parameter changes in the score,
-record MIDI note takes in Studio, and render a WAV.
+record MIDI note takes and audio takes in Studio, and render a WAV.
 
 ## Start playing
 
@@ -109,16 +109,21 @@ thresholds to 8 bits, so nearby values can share a level. `land` stores a launch
 
 ### Live MIDI performance and note takes
 
-Studio's **Live** mode has scene and track launch pads. Turn on **Enable MIDI**
-to receive notes and controls from a connected MIDI device. Choose a note track
-and drum track, then use **Record-arm** checkboxes to select which tracks
-receive a note take.
+Studio's **Live** panel has a launch matrix for scenes and track slots, an
+onscreen keyboard, and drum pads. Select **Enable MIDI** to play from a
+connected MIDI device. Choose a **Pitched track** and a **Drum track**, then
+choose the pattern each one records into.
 
-Start playback before selecting **Record**. Play notes, select **Stop
-recording**, review the take, then choose **Commit take** or **Discard**. The
-take stays in page memory until you commit it. Drum hits keep separate lanes
-and supported velocities. Acid notation keeps pitch and slides at its fixed
-velocity; it cannot save arbitrary MIDI velocity. MIDI overdub and replace modes are not available. See the [recording chapter](recording-instruments.md) for audio input.
+Press **Play**, then select **Record notes**. Play notes, select **Finish note
+take**, and review the **Retained note take**. Choose **Commit notes to
+patterns** to write it, or **Discard note take** to drop it. The take stays in
+the page while you record, and Studio keeps a finished take for thirty minutes
+or until Studio closes. Drum hits keep separate lanes and the nearest supported
+velocity level. Acid notation keeps pitch and slides at its fixed velocity; it
+cannot save arbitrary MIDI velocity. MIDI overdub and replace modes are not
+available. The **Takes** panel records audio input; see
+[Audio, takes, and export](studio.md#audio-takes-and-export) and the
+[recording chapter](recording-instruments.md).
 
 Open Studio without an audio device for a silent session:
 
@@ -126,7 +131,8 @@ Open Studio without an audio device for a silent session:
 cicada studio examples/first-acid.cicada --audio null
 ```
 
-The [Studio chapter](studio.md#live-mode) explains the controls and shortcuts.
+The [Studio chapter](studio.md#live-performance) explains the controls and
+what Live plays.
 
 ### Native audio
 

@@ -59,12 +59,12 @@ func (e *Engine) prepareClips(cfg *Config) error {
 }
 func (e *Engine) startClip(track int, clip uint16, id int, elapsed int64) {
 	if int(clip) >= len(e.clipTemplates) {
-		e.fault(17)
+		e.fault(FaultClipStart)
 		return
 	}
 	voice := e.clipTemplates[clip]
 	if voice.NoteOn(60, 127) != nil {
-		e.fault(17)
+		e.fault(FaultClipStart)
 		return
 	}
 	voice.SeekFrames(elapsed)
@@ -81,7 +81,7 @@ func (e *Engine) startClip(track int, clip uint16, id int, elapsed int64) {
 		v.sourceFrame = float64(elapsed) * v.ratio
 		return
 	}
-	e.fault(17)
+	e.fault(FaultClipStart)
 }
 func (e *Engine) stopClips(track int) {
 	for i := range e.clipVoices {

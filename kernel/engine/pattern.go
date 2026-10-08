@@ -60,7 +60,7 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 	}
 	if c.Op == cmd.OpSelectPattern {
 		if e.voices[track].kind == VoiceOff {
-			e.fault(9)
+			e.fault(FaultVoiceUnsupported)
 			return
 		}
 		slot = int(c.Index)
@@ -81,12 +81,12 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			}
 		}
 		if err != nil {
-			e.fault(14)
+			e.fault(FaultQuantize)
 			return
 		}
 		if at > e.transport.Tick() {
 			if e.pendingLen == len(e.pending) {
-				e.fault(5)
+				e.fault(FaultPendingFull)
 				return
 			}
 			c.Tick, c.Arg0 = at, 0
@@ -103,19 +103,19 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 	case cmd.OpSetStep:
 		step, err := seq.UnpackStep(c.Arg0)
 		if err != nil {
-			e.fault(15)
+			e.fault(FaultPatternEdit)
 			return
 		}
 		if p.drumSlots != nil {
 			if step.Note >= uint8(drum.LaneCount) || step.Tie {
-				e.fault(15)
+				e.fault(FaultPatternEdit)
 				return
 			}
 			lane := drum.Lane(step.Note)
 			lanePattern := p.drumSlots[slot][lane]
 			lanePattern.Steps[c.Index] = c.Arg0
 			if lanePattern.Validate() != nil {
-				e.fault(15)
+				e.fault(FaultPatternEdit)
 				return
 			}
 			p.drumSlots[slot][lane] = lanePattern
@@ -128,12 +128,12 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		updated.Chords[c.Index] = seq.ChordStep{}
 	case cmd.OpSetChordStep:
 		if e.voices[track].poly == nil && e.voices[track].kind != VoicePiano && (!keysEnabled || e.voices[track].kind != VoiceKeys) {
-			e.fault(17)
+			e.fault(FaultChordUnsupported)
 			return
 		}
 		notes, count, err := cmd.DecodeChordPayload(c)
 		if err != nil {
-			e.fault(15)
+			e.fault(FaultPatternEdit)
 			return
 		}
 		updated.Chords[c.Index] = seq.ChordStep{Notes: notes, Count: count}
@@ -147,20 +147,20 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		updated.SwingPermille = uint16(c.Arg0)
 		updated.Transpose = int8(int16(c.Arg0 >> 16))
 		if e.voices[track].kind == VoiceDrums && updated.Transpose != 0 {
-			e.fault(15)
+			e.fault(FaultPatternEdit)
 			return
 		}
 	}
 	if updated.Validate() != nil {
-		e.fault(15)
+		e.fault(FaultPatternEdit)
 		return
 	}
 	if e.voices[track].kind == VoicePiano && !validPianoPattern(&updated) {
-		e.fault(15)
+		e.fault(FaultPatternEdit)
 		return
 	}
 	if keysEnabled && e.voices[track].kind == VoiceKeys && !validPianoPattern(&updated) {
-		e.fault(15)
+		e.fault(FaultPatternEdit)
 		return
 	}
 	if p.active == int8(slot) && p.playingNote != 0 && p.playingGen == p.generation {
@@ -217,7 +217,7 @@ func (e *Engine) selectPatternNow(track, slot int, restart bool) {
 	p.active = int8(slot)
 	if v := &e.voices[track]; v.prepared != nil {
 		if v.prepared.SelectSlot(uint8(slot), 0, e.transport.Playing()) != nil {
-			e.fault(19)
+			e.fault(FaultPreparedVoice)
 			return
 		}
 	}
@@ -256,7 +256,7 @@ func (e *Engine) scheduleTrack(track int) {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				n, overflow = seq.EventsAtTickInBlock(&p.drumSlots[p.active][lane], clock, uint8(track), uint8(p.active), p.startTick, startSample, frames, e.eventScratch[:])
 				if overflow || p.eventCount+n > len(p.events) {
-					e.fault(16)
+					e.fault(FaultPatternEvents)
 					return
 				}
 				for _, event := range e.eventScratch[:n] {
@@ -267,7 +267,7 @@ func (e *Engine) scheduleTrack(track int) {
 		} else {
 			n, overflow = seq.EventsWithGatesAtTickInBlock(&p.slots[p.active], clock, uint8(track), uint8(p.active), p.startTick, startSample, frames, e.eventScratch[:])
 			if overflow || p.eventCount+n > len(p.events) {
-				e.fault(16)
+				e.fault(FaultPatternEvents)
 				return
 			}
 			for _, event := range e.eventScratch[:n] {
@@ -282,7 +282,7 @@ func (e *Engine) scheduleTrack(track int) {
 	if p.heldValid && p.playingNote != 0 {
 		n, overflow := seq.EventsWithGatesAtTickInBlock(&p.held, clock, uint8(track), p.heldSlot, p.heldStartTick, startSample, frames, e.eventScratch[:])
 		if overflow {
-			e.fault(16)
+			e.fault(FaultPatternEvents)
 			return
 		}
 		for _, event := range e.eventScratch[:n] {
@@ -290,7 +290,7 @@ func (e *Engine) scheduleTrack(track int) {
 				continue
 			}
 			if p.eventCount == len(p.events) {
-				e.fault(16)
+				e.fault(FaultPatternEvents)
 				return
 			}
 			p.events[p.eventCount] = patternEvent{event: event, generation: p.heldGen}
@@ -299,7 +299,7 @@ func (e *Engine) scheduleTrack(track int) {
 	}
 	if p.forceValid && p.playingNote == p.forceOff.NoteID && p.forceOff.Sample >= startSample && p.forceOff.Sample < startSample+int64(frames) {
 		if p.eventCount == len(p.events) {
-			e.fault(16)
+			e.fault(FaultPatternEvents)
 			return
 		}
 		p.events[p.eventCount] = patternEvent{event: p.forceOff, generation: p.forceGen}
@@ -441,7 +441,7 @@ func (e *Engine) scheduleNormalRelease(track, slot int, switchTick int64, restar
 		return
 	}
 	if p.eventCount == len(p.events) {
-		e.fault(16)
+		e.fault(FaultPatternEvents)
 		return
 	}
 	p.events[p.eventCount] = patternEvent{event: release, generation: p.generation}
@@ -592,7 +592,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				var err error
 				v.samplerNote, err = v.sampler.NoteOn(event.Note, event.Velocity)
 				if err != nil {
-					e.fault(9)
+					e.fault(FaultVoiceUnsupported)
 					return
 				}
 			case VoiceGraph:
@@ -606,7 +606,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 						count = 1
 					}
 					if _, err := pool.NoteOn(notes, count, event.Velocity, event.Slide, graph.Cohort{NoteID: event.NoteID, Generation: uint64(item.generation)}); err != nil {
-						e.fault(17)
+						e.fault(FaultPolyNote)
 						return
 					}
 				} else {
@@ -617,7 +617,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				e.voices[track].legacyPoly.NoteOn(event.Note, event.Velocity, event.Slide)
 			case VoicePrepared:
 				if e.voices[track].prepared.NoteOn(event.Note, event.Velocity) != nil {
-					e.fault(19)
+					e.fault(FaultPreparedVoice)
 					return
 				}
 			case VoicePiano:
@@ -630,7 +630,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				}
 				for n := uint8(0); n < p.playingPitchCount; n++ {
 					if e.voices[track].piano.NoteOn(p.playingPitches[n], event.Velocity) != nil {
-						e.fault(15)
+						e.fault(FaultScheduledNote)
 						return
 					}
 				}
@@ -645,19 +645,19 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 					}
 					for n := uint8(0); n < p.playingPitchCount; n++ {
 						if e.voices[track].keys.NoteOn(p.playingPitches[n], event.Velocity) != nil {
-							e.fault(15)
+							e.fault(FaultScheduledNote)
 							return
 						}
 					}
 				}
 			case VoiceDrums:
 				if event.Note >= uint8(drum.LaneCount) {
-					e.fault(15)
+					e.fault(FaultScheduledNote)
 					return
 				}
 				e.voices[track].drums.Hit(drum.Lane(event.Note), event.Velocity, event.Accent)
 			default:
-				e.fault(9)
+				e.fault(FaultVoiceUnsupported)
 				return
 			}
 			if e.voices[track].kind != VoiceDrums {
@@ -703,7 +703,7 @@ func (e *Engine) applyStepExpression(track int, params seq.Expression) {
 func (e *Engine) nextPatternGeneration(track int) bool {
 	p := &e.patterns[track]
 	if p.generation == ^uint32(0) && e.voices[track].poly != nil {
-		e.fault(17)
+		e.fault(FaultPolyGeneration)
 		return false
 	}
 	p.generation++

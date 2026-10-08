@@ -901,7 +901,7 @@ func (e *Engine) Render(outL, outR []float32) {
 	if len(outL) != len(outR) || len(outL) < 1 || len(outL) > e.maxBlock {
 		clear(outL)
 		clear(outR)
-		e.fault(1)
+		e.fault(FaultRenderBlock)
 		return
 	}
 	clear(outL)
@@ -926,7 +926,7 @@ func (e *Engine) Render(outL, outR []float32) {
 		e.renderFrame = frame
 		if e.transport.BPMMilli() != scheduledTempo {
 			if e.delayA != nil && e.delayA.SetTempo(e.transport.BPMMilli()) != nil {
-				e.fault(13)
+				e.fault(FaultDelayTempo)
 				clear(outL[frame:])
 				clear(outR[frame:])
 				return
@@ -985,7 +985,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			case VoiceAcid:
 				sample := v.acid.Next()
 				if v.acid.Fault() {
-					e.fault(2)
+					e.fault(FaultAcidVoice)
 					clear(outL[frame:])
 					clear(outR[frame:])
 					return
@@ -994,7 +994,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			case VoiceDrums:
 				left, right = v.drums.NextStereo()
 				if v.drums.Fault() {
-					e.fault(3)
+					e.fault(FaultDrumVoice)
 					clear(outL[frame:])
 					clear(outR[frame:])
 					return
@@ -1031,7 +1031,7 @@ func (e *Engine) Render(outL, outR []float32) {
 			if v.insert != nil {
 				left, right = v.insert.Process(left, right)
 				if v.insert.Fault() {
-					e.fault(12)
+					e.fault(FaultDriveInsert)
 					clear(outL[frame:])
 					clear(outR[frame:])
 					return
@@ -1091,7 +1091,7 @@ func (e *Engine) Render(outL, outR []float32) {
 		if e.delayA != nil {
 			returnL, returnR := e.delayA.Process(sendAL, sendAR)
 			if e.delayA.Fault() {
-				e.fault(14)
+				e.fault(FaultDelay)
 				clear(outL[frame:])
 				clear(outR[frame:])
 				return
@@ -1105,7 +1105,7 @@ func (e *Engine) Render(outL, outR []float32) {
 		if e.reverbB != nil {
 			returnL, returnR := e.reverbB.Process(sendBL, sendBR)
 			if e.reverbB.Fault() {
-				e.fault(15)
+				e.fault(FaultReverb)
 				clear(outL[frame:])
 				clear(outR[frame:])
 				return
@@ -1147,7 +1147,7 @@ func (e *Engine) Render(outL, outR []float32) {
 				left, right = e.compMusic.ProcessSidechain(left, right, sideL, sideR)
 			}
 			if e.compMusic.Fault() {
-				e.fault(16)
+				e.fault(FaultCompressor)
 				clear(outL[frame:])
 				clear(outR[frame:])
 				return
@@ -1174,7 +1174,7 @@ func (e *Engine) Render(outL, outR []float32) {
 		if e.masterProcessor != nil {
 			left, right = e.masterProcessor.Process(left, right)
 			if e.masterProcessor.Fault() {
-				e.fault(19)
+				e.fault(FaultMasterProcessor)
 				clear(outL[frame:])
 				clear(outR[frame:])
 				return
@@ -1183,7 +1183,7 @@ func (e *Engine) Render(outL, outR []float32) {
 		accumulateMeter(&e.preMasterMeter, left, right)
 		outL[frame], outR[frame], _ = e.limiter.Process(left, right)
 		if e.limiter.Fault() {
-			e.fault(4)
+			e.fault(FaultLimiter)
 			clear(outL[frame:])
 			clear(outR[frame:])
 			return
@@ -1287,7 +1287,7 @@ func (e *Engine) drainCommands() {
 			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
 		}
 		if e.pendingLen == len(e.pending) {
-			e.fault(5)
+			e.fault(FaultPendingFull)
 			return
 		}
 		if c.Tick > 0 && c.Tick < e.transport.Tick() {
@@ -1367,7 +1367,7 @@ func (e *Engine) apply(c cmd.Command) {
 				continue
 			}
 			if v.prepared != nil && v.prepared.Play() != nil {
-				e.fault(19)
+				e.fault(FaultPreparedVoice)
 				return
 			}
 		}
@@ -1389,7 +1389,7 @@ func (e *Engine) apply(c cmd.Command) {
 		e.resetDirector()
 		e.resetClips()
 		if e.transport.SeekTick(int64(c.Arg0)*seq.TicksPerBar+int64(c.Arg1)) != nil {
-			e.fault(6)
+			e.fault(FaultSeek)
 			return
 		}
 		e.lastBarTick = -1
@@ -1428,7 +1428,7 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 	case cmd.OpSetTempo:
 		if e.transport.QueueTempo(int64(c.Arg0)) != nil {
-			e.fault(7)
+			e.fault(FaultTempo)
 		}
 	case cmd.OpSetParam:
 		e.setParam(c)
@@ -1505,7 +1505,7 @@ func (e *Engine) apply(c cmd.Command) {
 			var err error
 			v.samplerNote, err = v.sampler.NoteOn(note, velocity)
 			if err != nil {
-				e.fault(9)
+				e.fault(FaultVoiceUnsupported)
 				return
 			}
 		case VoiceGraph:
@@ -1513,29 +1513,29 @@ func (e *Engine) apply(c cmd.Command) {
 			v.graphNote, v.graphHeld = note, true
 		case VoicePiano:
 			if v.piano.NoteOn(note, velocity) != nil {
-				e.fault(8)
+				e.fault(FaultNoteRange)
 				return
 			}
 		case VoiceKeys:
 			if !keysEnabled || v.keys.NoteOn(note, velocity) != nil {
-				e.fault(8)
+				e.fault(FaultNoteRange)
 				return
 			}
 		case VoiceGraphPoly:
 			v.legacyPoly.NoteOn(note, velocity, slide)
 		case VoicePrepared:
 			if v.prepared.NoteOn(note, velocity) != nil {
-				e.fault(19)
+				e.fault(FaultPreparedVoice)
 				return
 			}
 		case VoiceDrums:
 			if c.Index >= uint16(drum.LaneCount) {
-				e.fault(8)
+				e.fault(FaultNoteRange)
 				return
 			}
 			v.drums.Hit(drum.Lane(c.Index), velocity, accent)
 		default:
-			e.fault(9)
+			e.fault(FaultVoiceUnsupported)
 			return
 		}
 		v.noteIdentity, v.noteActive = c.Index, true
@@ -1543,7 +1543,7 @@ func (e *Engine) apply(c cmd.Command) {
 	case cmd.OpNoteExpression:
 		v := &e.voices[c.Track]
 		if v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys {
-			e.fault(9)
+			e.fault(FaultVoiceUnsupported)
 			return
 		}
 		if v.poly != nil {
@@ -1567,14 +1567,14 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		v := &e.voices[c.Track]
 		if (v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys) && c.Index != 0xffff && (c.Index < 21 || c.Index > 108) {
-			e.fault(8)
+			e.fault(FaultNoteRange)
 			return
 		}
 		if v.kind != VoiceDrums && v.kind != VoicePiano && (!keysEnabled || v.kind != VoiceKeys) && c.Index != 0 && c.Index != 0xffff && (!v.noteActive || c.Index != v.noteIdentity) && !(v.kind == VoiceGraph && v.noteIdentity == 0 && c.Index >= MonoNoteOffPitchFlag && c.Index < MonoNoteOffPitchFlag+128) && v.kind != VoiceGraphPoly {
 			return
 		}
 		if e.voices[c.Track].kind == VoiceDrums && c.Index >= uint16(drum.LaneCount) {
-			e.fault(8)
+			e.fault(FaultNoteRange)
 			return
 		}
 		index := c.Index
@@ -1601,7 +1601,7 @@ func (e *Engine) apply(c cmd.Command) {
 	case cmd.OpMeterRate:
 		e.meterRate = c.Arg0
 	default:
-		e.fault(10) // No accepted command may be silently discarded.
+		e.fault(FaultUnhandledCommand) // No accepted command may be silently discarded.
 	}
 }
 
@@ -1612,22 +1612,22 @@ func (e *Engine) setParamImmediate(c cmd.Command) { e.setParamMode(c, true) }
 func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 	spec, ok := kernel.Param(kernel.ParamID(c.Index))
 	if !ok || !spec.Live {
-		e.fault(18)
+		e.fault(FaultParam)
 		return
 	}
 	value := math.Float32frombits(c.Arg0)
 	off := spec.Off && math.IsInf(float64(value), -1)
 	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
-		e.fault(18)
+		e.fault(FaultParam)
 		return
 	}
 	if spec.Curve == "toggle" && value != 0 && value != 1 {
-		e.fault(18)
+		e.fault(FaultParam)
 		return
 	}
 	if spec.Scope == "track" {
 		if int(c.Track) >= e.tracks {
-			e.fault(18)
+			e.fault(FaultParam)
 			return
 		}
 		v := &e.voices[c.Track]
@@ -1693,17 +1693,17 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 		case kernel.ParamPianoSustain:
 			if keysEnabled && v.kind == VoiceKeys {
 				if v.keys.SetSustain(value) != nil {
-					e.fault(18)
+					e.fault(FaultParam)
 					return
 				}
 			} else if v.kind != VoicePiano || v.piano.SetSustain(value) != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return
 			}
 			v.pianoSustain = value
 		case kernel.ParamGuitarBend, kernel.ParamGuitarVibrato, kernel.ParamGuitarBrightness, kernel.ParamGuitarDamping, kernel.ParamGuitarPickup, kernel.ParamGuitarDrive:
 			if v.kind != VoiceGuitar || v.guitar == nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return
 			}
 			var setErr error
@@ -1713,11 +1713,11 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				setErr = v.guitar.SetParam(kernel.ParamID(c.Index), float64(value))
 			}
 			if setErr != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 			}
 		case kernel.ParamAcidCutoff, kernel.ParamAcidReso, kernel.ParamAcidEnvmod, kernel.ParamAcidDecay, kernel.ParamAcidAccent:
 			if v.kind != VoiceAcid || v.acid == nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return
 			}
 			params := v.acidTarget
@@ -1741,12 +1741,12 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				setErr = v.acid.SetParamsTarget(params, float64(e.paramAlpha[c.Index]))
 			}
 			if setErr != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 			}
 		default:
 			lane, control, drumParameter := drumParamControl(kernel.ParamID(c.Index))
 			if !drumParameter || v.kind != VoiceDrums || v.drums == nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return
 			}
 			params := v.drumTargets[lane]
@@ -1771,13 +1771,13 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				setErr = v.drums.SetParamsTarget(lane, params, float64(e.paramAlpha[c.Index]))
 			}
 			if setErr != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 			}
 		}
 		return
 	}
 	if c.Track != 0xff {
-		e.fault(18)
+		e.fault(FaultParam)
 		return
 	}
 	e.setGlobalParam(kernel.ParamID(c.Index), value)
@@ -1899,13 +1899,13 @@ func (e *Engine) updateMuteTargets() {
 
 func (e *Engine) setDelayDivision(division fx.DelayDivision) {
 	if e.delayA == nil {
-		e.fault(18)
+		e.fault(FaultParam)
 		return
 	}
 	params := e.delayA.Params()
 	params.Division, params.TimeMs = division, 0
 	if e.delayA.SetParams(params) != nil {
-		e.fault(18)
+		e.fault(FaultParam)
 	}
 }
 
@@ -1927,7 +1927,7 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 				params.Mix = float64(value)
 			}
 			if drive.SetParams(params) != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return
 			}
 		}
@@ -1949,7 +1949,7 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 				params.Mix = float64(value)
 			}
 			if e.delayA.SetParams(params) != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return
 			}
 		}
@@ -1971,7 +1971,7 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 				params.Mix = float64(value)
 			}
 			if e.reverbB.SetParams(params) != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return
 			}
 		}
@@ -1995,12 +1995,12 @@ func (e *Engine) setGlobalParam(id kernel.ParamID, value float32) {
 				params.Mix = float64(value)
 			}
 			if e.compMusic.SetParams(params) != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return
 			}
 		}
 	default:
-		e.fault(18)
+		e.fault(FaultParam)
 		return
 	}
 }
@@ -2134,7 +2134,7 @@ func (e *Engine) emit(message cmd.Message) {
 				e.overflowMessages[0] = message
 				e.overflowLen = 1
 				if message.Kind != cmd.Fault {
-					e.overflowMessages[1] = cmd.Message{Kind: cmd.Fault, Track: 0xff, A: 11, Tick: e.transport.Tick()}
+					e.overflowMessages[1] = cmd.Message{Kind: cmd.Fault, Track: 0xff, A: FaultMessageOverflow, Tick: e.transport.Tick()}
 					e.overflowLen = 2
 				}
 			}

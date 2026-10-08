@@ -93,7 +93,7 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 				}
 				text := "No active capture. Enable input in Audio, then arm an audio track."
 				if active {
-					text = "Armed take " + state.Active + ". Press Record for the two-bar count-in."
+					text = "Armed take " + state.Active + ". Press Record for the one-bar count-in."
 				}
 				if recording {
 					c := state.Capture

@@ -31,7 +31,7 @@ func (e *Engine) RenderWithBFormat(left, right []float32, buses []spatial.Frame)
 	if len(buses) != len(left) {
 		clear(left)
 		clear(right)
-		e.fault(1)
+		e.fault(FaultRenderBlock)
 		return
 	}
 	e.spatial.taps = buses

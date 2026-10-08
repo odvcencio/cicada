@@ -48,7 +48,7 @@ func (e *Engine) restorePreparedClips(songIndex int, cycleStart int64) {
 		if slot >= 0 {
 			elapsed := clock.SampleAtTick(e.transport.Tick()) - clock.SampleAtTick(origin)
 			if v.prepared.SelectSlot(uint8(slot), max(0, elapsed), e.transport.Playing()) != nil {
-				e.fault(19)
+				e.fault(FaultPreparedVoice)
 				return
 			}
 		}

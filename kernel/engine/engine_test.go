@@ -470,7 +470,7 @@ func TestCriticalMessagesSurviveQueuePressure(t *testing.T) {
 		if count == 257 && (message.Kind != cmd.Switched || message.A != 1000) {
 			t.Fatalf("overflow switch was lost: %+v", message)
 		}
-		if count == 258 && (message.Kind != cmd.Fault || message.A != 11) {
+		if count == 258 && (message.Kind != cmd.Fault || message.A != FaultMessageOverflow) {
 			t.Fatalf("overflow fault was lost: %+v", message)
 		}
 	}
