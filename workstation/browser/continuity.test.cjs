@@ -158,6 +158,25 @@ async function scenario(t) {
     return record.result.data.revision;
   };
   const click = async selector => page.locator(selector).evaluate(button => button.click());
+  // Record history writes and busy spans inside the page. Navigation discards
+  // that log, so collect it into the timeline before leaving a document.
+  const watchPage = () => page.evaluate(() => {
+    if (window.__continuityTimeline) return;
+    const log = window.__continuityTimeline = [];
+    for (const name of ['pushState', 'replaceState']) {
+      const original = history[name].bind(history);
+      history[name] = (...args) => { log.push({at: Date.now(), text: `history.${name} ${args[2]}`}); return original(...args); };
+    }
+    const root = document.querySelector('#cicada-workspace');
+    new MutationObserver(records => records.forEach(record => log.push({at: Date.now(), text: `workspace ${record.attributeName}=${root.getAttribute(record.attributeName)}`})))
+      .observe(root, {attributes: true, attributeFilter: ['aria-busy']});
+  });
+  const collectPage = async () => {
+    try {
+      const log = await page.evaluate(() => window.__continuityTimeline || []);
+      for (const entry of log) timeline.push({at: entry.at - clock, text: `page ${entry.text}`});
+    } catch (_) { /* The page may already be gone. */ }
+  };
   const assertPatternContinuity = async draft => {
     const actual = await page.evaluate(() => {
       const refs = window.__continuityRefs;
@@ -196,16 +215,7 @@ async function scenario(t) {
     assert.ok([200, 303].includes(reset.status()), `fixture reset failed: ${reset.status()}`);
     await page.goto(url('patterns'), {waitUntil: 'domcontentloaded'});
     await ready();
-    await page.evaluate(() => {
-      const log = window.__continuityTimeline = [];
-      for (const name of ['pushState', 'replaceState']) {
-        const original = history[name].bind(history);
-        history[name] = (...args) => { log.push({at: Date.now(), text: `history.${name} ${args[2]}`}); return original(...args); };
-      }
-      const root = document.querySelector('#cicada-workspace');
-      new MutationObserver(records => records.forEach(record => log.push({at: Date.now(), text: `workspace ${record.attributeName}=${root.getAttribute(record.attributeName)}`})))
-        .observe(root, {attributes: true, attributeFilter: ['aria-busy']});
-    });
+    await watchPage();
     await page.route('**/__actions/**', async route => {
       if (route.request().method() !== 'POST') return route.continue();
       const contentType = route.request().headers()['content-type'] || '';
@@ -443,8 +453,10 @@ async function scenario(t) {
 
     // A separate panel verifies preservation of a genuine nested GoSX engine.
     armed = false;
+    await collectPage();
     await page.goto(url('mixer'), {waitUntil: 'domcontentloaded'});
     await ready();
+    await watchPage();
     await page.locator('#cicada-meters canvas').waitFor();
     await page.evaluate(() => { window.__continuityMeters = {root: document.querySelector('#cicada-workspace'), mount: document.querySelector('#cicada-meters'), canvas: document.querySelector('#cicada-meters canvas'), document: window.__continuityDocument}; });
     documentRequests = 0; armed = true;
@@ -468,8 +480,10 @@ async function scenario(t) {
 
     // An active Live lease must survive workspace changes and note-take review.
     armed = false;
+    await collectPage();
     await page.goto(url('live'), {waitUntil: 'domcontentloaded'});
     await ready();
+    await watchPage();
     await page.locator('[data-live-acid]').selectOption('keys');
     const livePatterns = await page.locator('[data-live-pattern] option').evaluateAll(options => options.map(option => option.value));
     assert.ok(livePatterns.includes('continuity'), 'fixture must expose the continuity live pattern');
@@ -559,8 +573,10 @@ async function scenario(t) {
     // The first-party GoSX editor retains its surface while clean canonical
     // updates and dirty drafts follow their respective owners.
     armed = false;
+    await collectPage();
     await page.goto(url('code'), {waitUntil: 'domcontentloaded'});
     await ready();
+    await watchPage();
     const textarea = page.locator('#editor-content');
     const beforeCode = await state('/api/state');
     const codeOriginal = beforeCode.source.replace(/\r\n/g, '\n');
@@ -613,7 +629,8 @@ async function scenario(t) {
     let codeDraft = await codeSnapshot();
     assert.ok(codeDraft.scroll.top > 0 && codeDraft.scroll.y > 0, 'Score fixture must exercise inner and page scrolling');
     documentRequests = 0; armed = true; start = requests.length;
-    await click('#editor-native-form button[type="submit"]');
+    // Save is the only unnamed submit button; Check file carries name="intent".
+    await click('#editor-native-form button[type="submit"]:not([name])');
     await waitRequests(start + 1);
     assert.equal(requests[start].action, 'source');
     await projectedRevision(requests[start]);
@@ -649,7 +666,7 @@ async function scenario(t) {
     assert.ok(latencies[11] < 5000, 'rapid edit queue stalled beyond five seconds');
   } catch (error) {
     try {
-      for (const entry of await page.evaluate(() => window.__continuityTimeline || [])) timeline.push({at: entry.at - clock, text: `page ${entry.text}`});
+      await collectPage();
       timeline.sort((a, b) => a.at - b.at);
       const view = await page.evaluate(() => ({
         search: location.search, busy: document.querySelector('#cicada-workspace')?.getAttribute('aria-busy'),
