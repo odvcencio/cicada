@@ -16,6 +16,7 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/project"
 )
 
 //go:embed studio-history.js
@@ -501,6 +502,9 @@ type commitHook struct {
 	// historyError keeps the undo, redo and revert error text for a failed
 	// auxiliary write ("history file write failed"), which clients already see.
 	historyError bool
+	// compiled is the project already compiled from exactly the mutation's
+	// source and files; the tail then skips its own compile.
+	compiled *project.Project
 }
 
 type commitOutcome struct {
@@ -523,9 +527,12 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	for _, file := range mutation.Files {
 		overrides[file.Path] = file.After
 	}
-	p, err := compileStudioSourceWithOverrides(s.path, updated, overrides)
-	if err != nil {
-		return fail(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+	p := hook.compiled
+	if p == nil {
+		var err error
+		if p, err = studioCompile(s.path, updated, overrides); err != nil {
+			return fail(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		}
 	}
 	latest, err := os.ReadFile(s.path)
 	if err != nil {

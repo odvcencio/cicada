@@ -14,16 +14,49 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
-// studioCompiler compiles a candidate for the edit service with the same
-// checks Studio applies before it writes a score.
-type studioCompiler struct{ path string }
+// studioCompile is the compile step shared by the edit service and the commit
+// tail; tests wrap it to count compiles.
+var studioCompile = compileStudioSourceWithOverrides
 
-func (c studioCompiler) Compile(source []byte, files map[string][]byte) (*edits.Plan, error) {
-	p, err := compileStudioSourceWithOverrides(c.path, source, files)
+// studioCompiler compiles a candidate for the edit service with the same
+// checks Studio applies before it writes a score. It keeps its latest
+// successful compile so the commit tail can reuse it instead of compiling the
+// same bytes again.
+type studioCompiler struct {
+	path    string
+	source  []byte
+	files   map[string][]byte
+	project *project.Project
+}
+
+func (c *studioCompiler) Compile(source []byte, files map[string][]byte) (*edits.Plan, error) {
+	overrides := make(map[string][]byte, len(files)+1)
+	for path, data := range files {
+		overrides[path] = data
+	}
+	p, err := studioCompile(c.path, source, overrides)
 	if err != nil {
 		return nil, err
 	}
+	c.source, c.files, c.project = bytes.Clone(source), make(map[string][]byte, len(files)), p
+	for path, data := range files {
+		c.files[path] = bytes.Clone(data)
+	}
 	return project.EditPlan(p, source), nil
+}
+
+// compiled returns the project from the latest compile when it was made from
+// exactly this source and these auxiliary files, and nil otherwise.
+func (c *studioCompiler) compiled(source []byte, files []edits.File) *project.Project {
+	if c.project == nil || !bytes.Equal(c.source, source) || len(c.files) != len(files) {
+		return nil
+	}
+	for _, file := range files {
+		if data, ok := c.files[file.Path]; !ok || !bytes.Equal(data, file.After) {
+			return nil
+		}
+	}
+	return c.project
 }
 
 // upgradeEdition is the Options.UpgradeEdition hook: the edition-1 to 2
@@ -70,7 +103,7 @@ func (s *studio) editOptions() (edits.Options, error) {
 	if err != nil {
 		return edits.Options{}, err
 	}
-	opts := edits.Options{Compiler: studioCompiler{s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath)}
+	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath)}
 	if manifestPath != "" {
 		if opts.Manifest, err = os.ReadFile(manifestPath); err != nil {
 			return edits.Options{}, err
@@ -101,7 +134,7 @@ func auxiliaryFiles(files []edits.File) ([]studioAuxiliaryFile, error) {
 
 // applyIntents is the intent-side twin of applyWithResult: the same prologue,
 // then edits.Apply, then the shared commit tail.
-func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, beforeSwap func()) {
+func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, writer edits.ParamWriter, beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := studioRecoveryConflict(s.path); err != nil {
@@ -127,6 +160,7 @@ func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
+	opts.ParamWriter = writer
 	env.Version, env.Revision = edits.EnvelopeVersion, edit.Revision
 	if env.Author == "" {
 		env.Author = edit.Author
@@ -134,6 +168,7 @@ func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.
 	if env.Session == "" {
 		env.Session = edit.Session
 	}
+	compiler := opts.Compiler.(*studioCompiler)
 	result, err := edits.Apply(current, env, opts)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
@@ -148,6 +183,6 @@ func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.
 		return
 	}
 	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files}
-	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env})
+	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
 	studioJSON(w, outcome.Status, outcome.Response)
 }

@@ -1,0 +1,42 @@
+title "Delay send"
+
+tempo 120
+
+key a minor
+
+seed 4242
+
+fx delay delay {
+  time = 1/8T
+  feedback = 0.4
+  damp = 6kHz
+  pingpong = true
+  width = 1
+  mix = 1
+}
+
+track bass acid {
+  level = -3.5dB
+  send delay = 0.4
+  cutoff = 620Hz
+}
+
+track beat drums {}
+
+pattern riff {
+  1 . . . | 5 . . . | 1 . . . | 3 . . .
+}
+
+pattern beat-a drums {
+  bd: X... x... X... x...
+  sd: .... X... .... X...
+}
+
+scene main {
+  bass = riff
+  beat = beat-a
+}
+
+song {
+  main*4
+}

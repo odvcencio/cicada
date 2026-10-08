@@ -1,8 +1,9 @@
-package main
+package edit
 
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -12,77 +13,12 @@ import (
 	"github.com/odvcencio/gotreesitter/taproot/walk"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/notation"
-	"m31labs.dev/cicada/project"
 )
 
-type mixerLineRange struct {
+// LineRange is a 1-based inclusive line span in the score.
+type LineRange struct {
 	Start int `json:"start"`
 	End   int `json:"end"`
-}
-
-type mixerField struct {
-	Path        string               `json:"path"`
-	Address     string               `json:"address,omitempty"`
-	Value       any                  `json:"value"`
-	SourceValue string               `json:"sourceValue,omitempty"`
-	Descriptor  paramdefs.Descriptor `json:"descriptor"`
-	Choices     []string             `json:"choices,omitempty"`
-	SourceRange mixerLineRange       `json:"sourceRange"`
-	Supported   bool                 `json:"supported"`
-	Reason      string               `json:"reason,omitempty"`
-}
-
-type mixerSendView struct {
-	Path        string               `json:"path"`
-	Address     string               `json:"address,omitempty"`
-	To          string               `json:"to"`
-	Kind        string               `json:"kind"`
-	Level       string               `json:"level"`
-	Value       any                  `json:"value"`
-	Pre         bool                 `json:"pre"`
-	Descriptor  paramdefs.Descriptor `json:"descriptor"`
-	SourceRange mixerLineRange       `json:"sourceRange"`
-	Supported   bool                 `json:"supported"`
-	Reason      string               `json:"reason,omitempty"`
-}
-
-type mixerStripView struct {
-	ID          string                `json:"id"`
-	Name        string                `json:"name"`
-	Kind        string                `json:"kind"`
-	SourceKind  string                `json:"sourceKind,omitempty"`
-	Meter       string                `json:"meter"`
-	SourceRange mixerLineRange        `json:"sourceRange"`
-	Fields      map[string]mixerField `json:"fields"`
-	Sends       []mixerSendView       `json:"sends,omitempty"`
-	Inserts     []string              `json:"inserts"`
-	InsertPath  string                `json:"insertPath"`
-	InsertAddr  string                `json:"insertAddress,omitempty"`
-	InsertOK    bool                  `json:"insertSupported"`
-	InsertWhy   string                `json:"insertReason,omitempty"`
-	RouteReason string                `json:"routeReason,omitempty"`
-}
-
-type mixerReturnView struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Kind        string         `json:"kind"`
-	Meter       string         `json:"meter"`
-	SourceRange mixerLineRange `json:"sourceRange"`
-	Fields      []mixerField   `json:"fields"`
-}
-
-type studioMixerView struct {
-	Revision  string                 `json:"revision"`
-	Edition   int                    `json:"edition"`
-	Tempo     float64                `json:"tempo"`
-	Tracks    []mixerStripView       `json:"tracks"`
-	Buses     []mixerStripView       `json:"buses"`
-	Returns   []mixerReturnView      `json:"returns"`
-	Master    mixerStripView         `json:"master"`
-	Effects   []mixerReturnView      `json:"effects"`
-	Registry  json.RawMessage        `json:"registry"`
-	Addresses []project.ParamAddress `json:"addresses"`
 }
 
 type mixerSendValue struct {
@@ -96,48 +32,48 @@ type mixerFXValue struct {
 	InsertOn string `json:"insertOn,omitempty"`
 }
 
-// studioMixerSource writes one mixer gesture into the smallest CST span. It
+// mixerSource writes one mixer gesture into the smallest CST span. It
 // returns the prior and canonical new value for the session history entry.
-func studioMixerSource(source []byte, path string, raw json.RawMessage) ([]byte, string, string, mixerLineRange, error) {
+func mixerSource(source []byte, path string, raw json.RawMessage) ([]byte, string, string, LineRange, error) {
 	if path == "" || len(raw) == 0 {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("mixer path and value are required")
+		return nil, "", "", LineRange{}, fmt.Errorf("mixer path and value are required")
 	}
 	score, diagnostics := notation.Parse(source)
-	if score == nil || hasDiagnosticErrors(diagnostics) {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("score must validate before a mixer edit")
+	if score == nil || hasErrors(diagnostics) {
+		return nil, "", "", LineRange{}, fmt.Errorf("score must validate before a mixer edit")
 	}
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {
-		return nil, "", "", mixerLineRange{}, err
+		return nil, "", "", LineRange{}, err
 	}
 	if strings.HasPrefix(path, "fx.") && len(strings.Split(path, ".")) == 2 {
 		name := strings.TrimPrefix(path, "fx.")
 		request, err := requestedFX(raw)
 		if err != nil {
-			return nil, "", "", mixerLineRange{}, err
+			return nil, "", "", LineRange{}, err
 		}
 		kind := request.Kind
-		if !validMixerIdentifier(name) {
-			return nil, "", "", mixerLineRange{}, fmt.Errorf("invalid effect name %q", name)
+		if !ValidMixerIdentifier(name) {
+			return nil, "", "", LineRange{}, fmt.Errorf("invalid effect name %q", name)
 		}
 		for _, effect := range score.Effects {
 			if effect.Name == name {
-				return nil, "", "", mixerLineRange{}, fmt.Errorf("effect %s already exists", name)
+				return nil, "", "", LineRange{}, fmt.Errorf("effect %s already exists", name)
 			}
 		}
 		if !knownMixerEffectKind(kind) {
-			return nil, "", "", mixerLineRange{}, fmt.Errorf("unknown effect kind %q", kind)
+			return nil, "", "", LineRange{}, fmt.Errorf("unknown effect kind %q", kind)
 		}
 		updated := insertTopLevelFX(source, root, walker, name, kind)
 		line := lineNumberAt(updated, bytes.Index(updated, []byte("fx "+name+" ")))
-		changed := mixerLineRange{Start: line, End: line}
+		changed := LineRange{Start: line, End: line}
 		if request.InsertOn != "" {
 			if request.InsertOn != "music" || kind != "comp" {
-				return nil, "", "", mixerLineRange{}, unsupportedMixerRoute("a compressor can only be inserted on bus music")
+				return nil, "", "", LineRange{}, unsupportedMixerRoute("a compressor can only be inserted on bus music")
 			}
-			placed, _, _, insertedRange, insertErr := studioMixerSource(updated, "music.insert", json.RawMessage(strconv.Quote(name)))
+			placed, _, _, insertedRange, insertErr := mixerSource(updated, "music.insert", json.RawMessage(strconv.Quote(name)))
 			if insertErr != nil {
-				return nil, "", "", mixerLineRange{}, insertErr
+				return nil, "", "", LineRange{}, insertErr
 			}
 			updated = placed
 			changed.Start = min(changed.Start, insertedRange.Start)
@@ -148,7 +84,7 @@ func studioMixerSource(source []byte, path string, raw json.RawMessage) ([]byte,
 
 	parts := strings.Split(path, ".")
 	if len(parts) < 2 {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("mixer path %q must name an owner and field", path)
+		return nil, "", "", LineRange{}, fmt.Errorf("mixer path %q must name an owner and field", path)
 	}
 	owner, field := parts[0], strings.Join(parts[1:], ".")
 	var decl *gts.Node
@@ -176,28 +112,28 @@ func studioMixerSource(source []byte, path string, raw json.RawMessage) ([]byte,
 		return addMixerBlock(source, root, walker, owner, want, field, raw, score)
 	}
 	if decl == nil {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("unknown mixer owner %q", owner)
+		return nil, "", "", LineRange{}, fmt.Errorf("unknown mixer owner %q", owner)
 	}
 	if declKind == "fx_decl" {
 		resolved, diagnostics := notation.ResolvePresets(score)
-		if hasDiagnosticErrors(diagnostics) {
-			return nil, "", "", mixerLineRange{}, fmt.Errorf("score must validate before a mixer edit")
+		if hasErrors(diagnostics) {
+			return nil, "", "", LineRange{}, fmt.Errorf("score must validate before a mixer edit")
 		}
 		return editFXField(source, walker, decl, owner, field, raw, resolved)
 	}
 	if field == "send" || strings.HasPrefix(field, "send.") {
 		if declKind != "track_decl" || len(parts) != 3 || parts[1] != "send" {
-			return nil, "", "", mixerLineRange{}, fmt.Errorf("send path must be <track>.send.<effect>")
+			return nil, "", "", LineRange{}, fmt.Errorf("send path must be <track>.send.<effect>")
 		}
 		return editMixerSend(source, walker, decl, owner, parts[2], raw, score)
 	}
 	if field != "level" && field != "pan" && field != "mute" && field != "solo" && field != "insert" && field != "out" {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("unsupported mixer field %q", field)
+		return nil, "", "", LineRange{}, fmt.Errorf("unsupported mixer field %q", field)
 	}
 	return editMixerSetting(source, walker, decl, declKind, owner, field, raw, score)
 }
 
-func editFXField(source []byte, walker *walk.Walker, decl *gts.Node, owner, field string, raw json.RawMessage, score *notation.Score) ([]byte, string, string, mixerLineRange, error) {
+func editFXField(source []byte, walker *walk.Walker, decl *gts.Node, owner, field string, raw json.RawMessage, score *notation.Score) ([]byte, string, string, LineRange, error) {
 	kind := walker.Text(walker.Field(decl, "kind"))
 	if kind == "" {
 		kind = owner
@@ -210,11 +146,11 @@ func editFXField(source []byte, walker *walk.Walker, decl *gts.Node, owner, fiel
 	}
 	descriptor, ok := mixerFXDescriptor(kind, field)
 	if !ok {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("unknown %s setting %q", kind, field)
+		return nil, "", "", LineRange{}, fmt.Errorf("unknown %s setting %q", kind, field)
 	}
-	literal, err := canonicalMixerLiteral(descriptor, raw)
+	literal, err := CanonicalMixerLiteral(descriptor, raw)
 	if err != nil {
-		return nil, "", "", mixerLineRange{}, err
+		return nil, "", "", LineRange{}, err
 	}
 	var found *gts.Node
 	for i := 0; i < decl.NamedChildCount(); i++ {
@@ -229,19 +165,19 @@ func editFXField(source []byte, walker *walk.Walker, decl *gts.Node, owner, fiel
 		old := walker.Text(value)
 		start, end := int(value.StartByte()), int(value.EndByte())
 		updated := replaceMixerSpan(source, start, end, []byte(literal))
-		return updated, old, literal, sourceRangeAt(updated, start, start+len(literal)), nil
+		return updated, old, literal, SourceRangeAt(updated, start, start+len(literal)), nil
 	}
 	updated := insertMixerSetting(source, walker, decl, "fx_decl", descriptor.Source, literal, descriptorOrder(kind, descriptor.Source))
 	line := lineNumberAt(updated, findInsertedValue(updated, descriptor.Source, literal, int(decl.StartByte())))
-	return updated, "absent", literal, mixerLineRange{Start: line, End: line}, nil
+	return updated, "absent", literal, LineRange{Start: line, End: line}, nil
 }
 
-func editMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKind, owner, field string, raw json.RawMessage, score *notation.Score) ([]byte, string, string, mixerLineRange, error) {
+func editMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKind, owner, field string, raw json.RawMessage, score *notation.Score) ([]byte, string, string, LineRange, error) {
 	if field == "level" {
 		step := mixerDisplayStep(declKind, field, .01)
 		literal, isOff, err := mixerLevelLiteral(raw, step)
 		if err != nil {
-			return nil, "", "", mixerLineRange{}, err
+			return nil, "", "", LineRange{}, err
 		}
 		if isOff {
 			before := mixerOwnerLevel(score, declKind, owner, step)
@@ -249,13 +185,13 @@ func editMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKi
 				updated, _, _, changed, switchErr := setMixerSwitch(source, walker, decl, declKind, "mute", json.RawMessage(`true`), score)
 				return updated, before, "off", changed, switchErr
 			}
-			withMute, _, _, muteRange, muteErr := studioMixerSource(source, owner+".mute", json.RawMessage(`true`))
+			withMute, _, _, muteRange, muteErr := mixerSource(source, owner+".mute", json.RawMessage(`true`))
 			if muteErr != nil {
-				return nil, "", "", mixerLineRange{}, muteErr
+				return nil, "", "", LineRange{}, muteErr
 			}
 			updated, _, _, levelRange, editErr := editMixerValueUnchecked(withMute, owner, declKind, field, "off")
 			if editErr != nil {
-				return nil, "", "", mixerLineRange{}, editErr
+				return nil, "", "", LineRange{}, editErr
 			}
 			levelRange.Start = min(levelRange.Start, muteRange.Start)
 			levelRange.End = max(levelRange.End, muteRange.End)
@@ -265,13 +201,13 @@ func editMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKi
 		params := mixerOwnerParams(score, declKind, owner)
 		// Moving the fader up from Off wakes the strip: Off is saved as mute on a track, and as
 		// level off plus mute on a bus or the master. Clear the saved mute with the level write.
-		mutedTrack := declKind == "track_decl" && (trackMixerSourceText(params, "mute") == "on" || trackMixerSourceText(params, "mute") == "true")
-		if editErr != nil || (trackMixerSourceText(params, "level") != "off" && !mutedTrack) {
+		mutedTrack := declKind == "track_decl" && (TrackMixerSourceText(params, "mute") == "on" || TrackMixerSourceText(params, "mute") == "true")
+		if editErr != nil || (TrackMixerSourceText(params, "level") != "off" && !mutedTrack) {
 			return updated, before, after, changed, editErr
 		}
-		withMute, _, _, muteRange, muteErr := studioMixerSource(updated, owner+".mute", json.RawMessage(`false`))
+		withMute, _, _, muteRange, muteErr := mixerSource(updated, owner+".mute", json.RawMessage(`false`))
 		if muteErr != nil {
-			return nil, "", "", mixerLineRange{}, muteErr
+			return nil, "", "", LineRange{}, muteErr
 		}
 		changed.Start = min(changed.Start, muteRange.Start)
 		changed.End = max(changed.End, muteRange.End)
@@ -280,7 +216,7 @@ func editMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKi
 	if field == "pan" {
 		literal, err := mixerNumericLiteral(raw, -1, 1, mixerDisplayStep(declKind, field, .01), "")
 		if err != nil {
-			return nil, "", "", mixerLineRange{}, err
+			return nil, "", "", LineRange{}, err
 		}
 		return editOneMixerSetting(source, walker, decl, declKind, field, literal)
 	}
@@ -290,7 +226,7 @@ func editMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKi
 	if field == "insert" {
 		names, err := insertNames(raw)
 		if err != nil {
-			return nil, "", "", mixerLineRange{}, err
+			return nil, "", "", LineRange{}, err
 		}
 		literal := "none"
 		if len(names) > 0 {
@@ -301,17 +237,17 @@ func editMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKi
 	if field == "out" {
 		value, err := jsonStringOrNumber(raw)
 		if err != nil {
-			return nil, "", "", mixerLineRange{}, fmt.Errorf("out must be a bus name")
+			return nil, "", "", LineRange{}, fmt.Errorf("out must be a bus name")
 		}
 		return editOneMixerSetting(source, walker, decl, declKind, field, value)
 	}
-	return nil, "", "", mixerLineRange{}, fmt.Errorf("unsupported mixer field %q", field)
+	return nil, "", "", LineRange{}, fmt.Errorf("unsupported mixer field %q", field)
 }
 
-func editMixerValueUnchecked(source []byte, owner, wantKind, field, literal string) ([]byte, string, string, mixerLineRange, error) {
+func editMixerValueUnchecked(source []byte, owner, wantKind, field, literal string) ([]byte, string, string, LineRange, error) {
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {
-		return nil, "", "", mixerLineRange{}, err
+		return nil, "", "", LineRange{}, err
 	}
 	for i := 0; i < root.NamedChildCount(); i++ {
 		decl := root.NamedChild(i)
@@ -329,12 +265,12 @@ func editMixerValueUnchecked(source []byte, owner, wantKind, field, literal stri
 			return editOneMixerSetting(source, walker, decl, kind, field, literal)
 		}
 	}
-	return nil, "", "", mixerLineRange{}, fmt.Errorf("unknown mixer owner %q", owner)
+	return nil, "", "", LineRange{}, fmt.Errorf("unknown mixer owner %q", owner)
 }
 
 func mixerOwnerLevel(score *notation.Score, declKind, owner string, step float64) string {
 	params := mixerOwnerParams(score, declKind, owner)
-	if value := trackMixerSourceText(params, "level"); value != "" {
+	if value := TrackMixerSourceText(params, "level"); value != "" {
 		return spacedMixerValue(value)
 	}
 	defaultValue := -6.0
@@ -353,9 +289,9 @@ func mixerOwnerLevel(score *notation.Score, declKind, owner string, step float64
 func mixerOwnerParams(score *notation.Score, declKind, owner string) []notation.Param {
 	switch declKind {
 	case "track_decl":
-		return trackParams(score, owner)
+		return TrackParams(score, owner)
 	case "bus_decl":
-		return busParams(score, owner)
+		return BusParams(score, owner)
 	case "master_decl":
 		return score.Master
 	default:
@@ -363,10 +299,10 @@ func mixerOwnerParams(score *notation.Score, declKind, owner string) []notation.
 	}
 }
 
-func setMixerSwitch(source []byte, walker *walk.Walker, decl *gts.Node, declKind, field string, raw json.RawMessage, _ *notation.Score) ([]byte, string, string, mixerLineRange, error) {
+func setMixerSwitch(source []byte, walker *walk.Walker, decl *gts.Node, declKind, field string, raw json.RawMessage, _ *notation.Score) ([]byte, string, string, LineRange, error) {
 	value, err := jsonBool(raw)
 	if err != nil {
-		return nil, "", "", mixerLineRange{}, err
+		return nil, "", "", LineRange{}, err
 	}
 	literal := "off"
 	if value {
@@ -375,7 +311,7 @@ func setMixerSwitch(source []byte, walker *walk.Walker, decl *gts.Node, declKind
 	return editOneMixerSetting(source, walker, decl, declKind, field, literal)
 }
 
-func editOneMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKind, field, literal string) ([]byte, string, string, mixerLineRange, error) {
+func editOneMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKind, field, literal string) ([]byte, string, string, LineRange, error) {
 	var found *gts.Node
 	for i := 0; i < decl.NamedChildCount(); i++ {
 		setting := decl.NamedChild(i)
@@ -397,25 +333,25 @@ func editOneMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, dec
 		old := walker.Text(value)
 		start, end := int(value.StartByte()), int(value.EndByte())
 		updated := replaceMixerSpan(source, start, end, []byte(literal))
-		return updated, old, literal, sourceRangeAt(updated, start, start+len(literal)), nil
+		return updated, old, literal, SourceRangeAt(updated, start, start+len(literal)), nil
 	}
 	updated := insertMixerSetting(source, walker, decl, declKind, field, literal, mixerFieldOrder(field))
 	line := lineNumberAt(updated, findInsertedValue(updated, field, literal, int(decl.StartByte())))
-	return updated, "absent", literal, mixerLineRange{Start: line, End: line}, nil
+	return updated, "absent", literal, LineRange{Start: line, End: line}, nil
 }
 
-func editMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, owner, target string, raw json.RawMessage, score *notation.Score) ([]byte, string, string, mixerLineRange, error) {
-	if !validMixerIdentifier(target) {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("invalid send destination %q", target)
+func editMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, owner, target string, raw json.RawMessage, score *notation.Score) ([]byte, string, string, LineRange, error) {
+	if !ValidMixerIdentifier(target) {
+		return nil, "", "", LineRange{}, fmt.Errorf("invalid send destination %q", target)
 	}
-	effect := findNotationEffect(score, target)
+	effect := FindNotationEffect(score, target)
 	if effect == nil && target != "music" && target != "sfx" {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("send references unknown effect %s", target)
+		return nil, "", "", LineRange{}, fmt.Errorf("send references unknown effect %s", target)
 	}
 	var request mixerSendValue
 	if len(raw) > 0 && raw[0] == '{' {
 		if err := json.Unmarshal(raw, &request); err != nil {
-			return nil, "", "", mixerLineRange{}, fmt.Errorf("invalid send value: %w", err)
+			return nil, "", "", LineRange{}, fmt.Errorf("invalid send value: %w", err)
 		}
 		if request.Remove {
 			return removeMixerSend(source, walker, decl, target)
@@ -424,7 +360,7 @@ func editMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, owner, ta
 		request.Level = bytes.Clone(raw)
 	}
 	if len(request.Level) == 0 {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("send value needs a level")
+		return nil, "", "", LineRange{}, fmt.Errorf("send value needs a level")
 	}
 	step := .01
 	if effect != nil {
@@ -432,13 +368,13 @@ func editMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, owner, ta
 		if effect.Kind == "reverb" {
 			parameter = "mix.send_b"
 		}
-		if descriptor, found := project.LookupParamDescriptor(parameter); found {
+		if descriptor, found := paramdefs.Lookup(parameter); found {
 			step = descriptor.DisplayStep
 		}
 	}
 	literal, err := canonicalSendLiteral(request.Level, step)
 	if err != nil {
-		return nil, "", "", mixerLineRange{}, err
+		return nil, "", "", LineRange{}, err
 	}
 	var found *gts.Node
 	var priorLevel, priorPre string
@@ -469,15 +405,15 @@ func editMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, owner, ta
 		start, end := int(found.StartByte()), int(found.EndByte())
 		old := "send " + target + " = " + priorLevel + priorPre
 		updated := replaceMixerSpan(source, start, end, []byte(newLiteral))
-		return updated, old, newLiteral, sourceRangeAt(updated, start, start+len(newLiteral)), nil
+		return updated, old, newLiteral, SourceRangeAt(updated, start, start+len(newLiteral)), nil
 	}
 	// A named send is ordered by destination after the ordinary mixer fields.
 	updated := insertMixerSend(source, walker, decl, target, newLiteral)
 	line := lineNumberAt(updated, bytes.Index(updated, []byte(newLiteral)))
-	return updated, "absent", newLiteral, mixerLineRange{Start: line, End: line}, nil
+	return updated, "absent", newLiteral, LineRange{Start: line, End: line}, nil
 }
 
-func removeMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, target string) ([]byte, string, string, mixerLineRange, error) {
+func removeMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, target string) ([]byte, string, string, LineRange, error) {
 	for i := 0; i < decl.NamedChildCount(); i++ {
 		setting := decl.NamedChild(i)
 		if walker.Type(setting) != "mix_setting" || setting.NamedChildCount() == 0 {
@@ -503,9 +439,9 @@ func removeMixerSend(source []byte, walker *walk.Walker, decl *gts.Node, target 
 		}
 		updated := replaceMixerSpan(source, start, end, nil)
 		line := max(1, lineNumberAt(updated, max(0, start-1)))
-		return updated, old, "removed", mixerLineRange{Start: line, End: line}, nil
+		return updated, old, "removed", LineRange{Start: line, End: line}, nil
 	}
-	return bytes.Clone(source), "absent", "absent", mixerLineRange{}, nil
+	return bytes.Clone(source), "absent", "absent", LineRange{}, nil
 }
 
 func insertMixerSetting(source []byte, walker *walk.Walker, decl *gts.Node, declKind, field, literal string, order int) []byte {
@@ -653,7 +589,7 @@ func mixerDisplayStep(declKind, field string, fallback float64) float64 {
 	case "master_decl":
 		id = "mix.master." + field
 	}
-	if descriptor, found := project.LookupParamDescriptor(id); found && descriptor.DisplayStep > 0 {
+	if descriptor, found := paramdefs.Lookup(id); found && descriptor.DisplayStep > 0 {
 		return descriptor.DisplayStep
 	}
 	return fallback
@@ -694,7 +630,7 @@ func mixerNumericLiteral(raw json.RawMessage, minValue, maxValue, step float64, 
 	return formatMixerNumber(roundMixer(n, step)) + unit, nil
 }
 
-func canonicalMixerLiteral(descriptor paramdefs.Descriptor, raw json.RawMessage) (string, error) {
+func CanonicalMixerLiteral(descriptor paramdefs.Descriptor, raw json.RawMessage) (string, error) {
 	if descriptor.Off {
 		if value, err := jsonStringOrNumber(raw); err == nil && value == "off" {
 			return "off", nil
@@ -803,19 +739,19 @@ func insertNames(raw json.RawMessage) ([]string, error) {
 		}
 	}
 	for _, name := range names {
-		if !validMixerIdentifier(name) {
+		if !ValidMixerIdentifier(name) {
 			return nil, fmt.Errorf("invalid insert name %q", name)
 		}
 	}
 	return names, nil
 }
 
-func addMixerBlock(source []byte, root *gts.Node, walker *walk.Walker, owner, kind, field string, raw json.RawMessage, score *notation.Score) ([]byte, string, string, mixerLineRange, error) {
+func addMixerBlock(source []byte, root *gts.Node, walker *walk.Walker, owner, kind, field string, raw json.RawMessage, score *notation.Score) ([]byte, string, string, LineRange, error) {
 	if kind == "bus_decl" && owner != "music" && owner != "sfx" {
-		return nil, "", "", mixerLineRange{}, unsupportedMixerRoute("user-declared bus " + owner + " is not implemented")
+		return nil, "", "", LineRange{}, unsupportedMixerRoute("user-declared bus " + owner + " is not implemented")
 	}
 	if field != "level" && field != "mute" && field != "solo" && field != "insert" && field != "pan" && field != "out" && !strings.HasPrefix(field, "send.") {
-		return nil, "", "", mixerLineRange{}, fmt.Errorf("unsupported mixer field %q", field)
+		return nil, "", "", LineRange{}, fmt.Errorf("unsupported mixer field %q", field)
 	}
 	base := ""
 	if kind == "master_decl" {
@@ -824,7 +760,7 @@ func addMixerBlock(source []byte, root *gts.Node, walker *walk.Walker, owner, ki
 		base = "bus " + owner + " {}"
 	}
 	updated := insertTopLevelMixerBlock(source, root, walker, kind, owner, base)
-	return studioMixerSource(updated, owner+"."+field, raw)
+	return mixerSource(updated, owner+"."+field, raw)
 }
 
 func insertTopLevelMixerBlock(source []byte, root *gts.Node, walker *walk.Walker, kind, owner, declaration string) []byte {
@@ -928,7 +864,7 @@ func mixerFieldOrder(field string) int {
 	}
 }
 
-func findNotationEffect(score *notation.Score, name string) *notation.Effect {
+func FindNotationEffect(score *notation.Score, name string) *notation.Effect {
 	for i := range score.Effects {
 		if score.Effects[i].Name == name {
 			return &score.Effects[i]
@@ -956,7 +892,7 @@ func knownMixerEffectKind(kind string) bool {
 	return kind == "drive" || kind == "delay" || kind == "reverb" || kind == "comp"
 }
 
-func validMixerIdentifier(name string) bool {
+func ValidMixerIdentifier(name string) bool {
 	if len(name) == 0 || len(name) > 64 || !(name[0] == '_' || name[0] >= 'a' && name[0] <= 'z') {
 		return false
 	}
@@ -1033,8 +969,8 @@ func replaceMixerSpan(source []byte, start, end int, replacement []byte) []byte 
 	return updated
 }
 
-func sourceRangeAt(source []byte, start, end int) mixerLineRange {
-	return mixerLineRange{Start: lineNumberAt(source, start), End: lineNumberAt(source, max(start, end-1))}
+func SourceRangeAt(source []byte, start, end int) LineRange {
+	return LineRange{Start: lineNumberAt(source, start), End: lineNumberAt(source, max(start, end-1))}
 }
 
 func lineNumberAt(source []byte, offset int) int {
@@ -1063,4 +999,172 @@ func findInsertedValue(source []byte, name, literal string, from int) int {
 
 func unsupportedMixerRoute(reason string) error {
 	return fmt.Errorf("CICADA-UNSUPPORTED: %s", reason)
+}
+
+func TrackMixerSourceText(params []notation.Param, name string) string {
+	for _, param := range params {
+		if param.Name == name {
+			return param.Value
+		}
+	}
+	return ""
+}
+
+func TrackParams(score *notation.Score, owner string) []notation.Param {
+	for _, track := range score.Tracks {
+		if track.Name == owner {
+			return track.Params
+		}
+	}
+	return nil
+}
+
+func BusParams(score *notation.Score, owner string) []notation.Param {
+	for _, bus := range score.Buses {
+		if bus.Name == owner {
+			return bus.Params
+		}
+	}
+	return nil
+}
+
+// spacedMixerValue puts a space before a dB unit: -3.5dB becomes -3.5 dB.
+func spacedMixerValue(value string) string {
+	if strings.HasSuffix(value, "dB") {
+		return strings.TrimSuffix(value, "dB") + " dB"
+	}
+	if strings.HasSuffix(value, "db") {
+		return strings.TrimSuffix(value, "db") + " dB"
+	}
+	return value
+}
+
+// AddEffect declares a new effect; it is SetParam's fx.<name> path with a
+// typed request. The effect kind is EffectKind because the envelope's "kind"
+// key names the intent.
+type AddEffect struct {
+	Name           string `json:"name"`
+	EffectKind     string `json:"effectkind"`
+	InsertOn       string `json:"inserton,omitempty"`
+	ConfirmUpgrade bool   `json:"confirmupgrade,omitempty"`
+}
+
+func (AddEffect) Kind() string { return "addeffect" }
+
+func init() {
+	Register("addeffect", func() Intent { return &AddEffect{} })
+	Handle("addeffect", addEffect)
+}
+
+func addEffect(ctx *Context, intent Intent) error {
+	in := intent.(*AddEffect)
+	raw, err := json.Marshal(mixerFXValue{Kind: in.EffectKind, InsertOn: in.InsertOn})
+	if err != nil {
+		return err
+	}
+	return setMixerParam(ctx, "fx."+in.Name, raw, in.ConfirmUpgrade)
+}
+
+// paramWriterFor resolves owner.field for the generic intent surface. An
+// instrument that declares the parameter keeps it. A mixer field name or a
+// mixer owner (the fixed buses, fx, a declared effect or bus) goes to the mixer
+// writer. A track that shares its name with a mixer owner is resolved by the
+// field: a mixer field name there is ambiguous and refused, and any other
+// field belongs to the instrument.
+func paramWriterFor(score *notation.Score, owner, field string) (ParamWriter, error) {
+	isTrack := false
+	for _, track := range score.Tracks {
+		if track.Name != owner {
+			continue
+		}
+		isTrack = true
+		for _, definition := range score.Instruments {
+			if definition.Name != track.Kind {
+				continue
+			}
+			for _, param := range definition.Params {
+				if param.Name == field {
+					return ParamWriterInstrument, nil
+				}
+			}
+		}
+	}
+	fieldIsMixer := strings.HasPrefix(field, "send")
+	switch field {
+	case "level", "pan", "mute", "solo", "insert", "out":
+		fieldIsMixer = true
+	}
+	ownerIsMixer := false
+	switch owner {
+	case "master", "music", "sfx", "fx":
+		ownerIsMixer = true
+	}
+	for _, effect := range score.Effects {
+		ownerIsMixer = ownerIsMixer || effect.Name == owner
+	}
+	for _, bus := range score.Buses {
+		ownerIsMixer = ownerIsMixer || bus.Name == owner
+	}
+	switch {
+	case isTrack && ownerIsMixer && fieldIsMixer:
+		return "", fmt.Errorf("parameter path %q is ambiguous: %s names both a track and a mixer owner; use the instrument or mixer route", owner+"."+field, owner)
+	case isTrack && ownerIsMixer:
+		return ParamWriterInstrument, nil
+	case fieldIsMixer || ownerIsMixer:
+		return ParamWriterMixer, nil
+	}
+	return ParamWriterInstrument, nil
+}
+
+// setMixerParam is the /api/mixer gesture: an edition-1 score is upgraded
+// first (with confirmation), then the writer edits the smallest CST span.
+func setMixerParam(ctx *Context, path string, raw json.RawMessage, confirm bool) error {
+	if path == "" || len(raw) == 0 {
+		return errors.New("mixer path and value are required")
+	}
+	score, ds, err := ctx.ParseProject()
+	if err != nil {
+		return err
+	}
+	if score == nil || hasErrors(ds) {
+		return errors.New("score must validate before mixer edits")
+	}
+	working := bytes.Clone(ctx.Source)
+	if score.Version == 1 {
+		if !confirm {
+			return errors.New("This score uses edition 1. Upgrade to edition 2 to save mixer changes?")
+		}
+		if ctx.Options.UpgradeEdition == nil {
+			return ErrNoUpgrade
+		}
+		upgraded, files, err := ctx.Options.UpgradeEdition(working)
+		if err != nil {
+			return err
+		}
+		working = upgraded
+		for _, file := range files {
+			ctx.AddFile(file)
+		}
+	}
+	updated, before, after, changedRange, err := mixerSource(working, path, raw)
+	if err != nil {
+		return err
+	}
+	if strings.HasSuffix(path, ".level") {
+		var requested string
+		_ = json.Unmarshal(raw, &requested)
+		if requested == "off" {
+			after = "off"
+		}
+		before = spacedMixerValue(before)
+		after = spacedMixerValue(after)
+	}
+	ctx.Source = updated
+	ctx.SetLabel(fmt.Sprintf("Mix: %s %s to %s", strings.ReplaceAll(path, ".", " "), before, after))
+	ctx.Respond("path", path)
+	ctx.Respond("value", after)
+	ctx.Respond("previous", before)
+	ctx.Respond("changedRange", changedRange)
+	ctx.Respond("source", string(updated))
+	return nil
 }

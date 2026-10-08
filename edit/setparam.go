@@ -7,12 +7,13 @@ import (
 	"strings"
 )
 
-// SetParam sets or resets one parameter. M1 handles instrument parameters
-// (param:<track>.<field>); mixer paths arrive with the mixer port.
+// SetParam sets or resets one parameter. Entity param:<track>.<field> names an
+// instrument parameter; mixer paths (level, pan, sends, inserts, buses, effect
+// settings) go to the mixer writer.
 type SetParam struct {
 	Entity         EntityID        `json:"entity"`                   // param:<owner>.<field>
 	Value          json.RawMessage `json:"value,omitempty"`          // number or unit literal string; omitted resets to the default
-	ConfirmUpgrade bool            `json:"confirmupgrade,omitempty"` // M2: edition-1 scores need confirmation for mixer writes
+	ConfirmUpgrade bool            `json:"confirmupgrade,omitempty"` // edition-1 scores need confirmation for mixer writes
 }
 
 func (SetParam) Kind() string { return "setparam" }
@@ -27,6 +28,9 @@ func setParam(ctx *Context, intent Intent) error {
 	if in.Entity.Kind() != KindParam {
 		return fmt.Errorf("setparam needs a param entity, got %q", in.Entity)
 	}
+	if ctx.Options.ParamWriter == ParamWriterMixer {
+		return setMixerParam(ctx, in.Entity.Name(), in.Value, in.ConfirmUpgrade)
+	}
 	owner, field, ok := strings.Cut(in.Entity.Name(), ".")
 	if !ok {
 		return fmt.Errorf("parameter path %q must name an owner and field", in.Entity.Name())
@@ -36,6 +40,15 @@ func setParam(ctx *Context, intent Intent) error {
 	score, ds, err := ctx.ParseProject()
 	if err != nil {
 		return err
+	}
+	if score != nil && !hasErrors(ds) && ctx.Options.ParamWriter == ParamWriterAuto {
+		writer, err := paramWriterFor(score, owner, field)
+		if err != nil {
+			return err
+		}
+		if writer == ParamWriterMixer {
+			return setMixerParam(ctx, in.Entity.Name(), in.Value, in.ConfirmUpgrade)
+		}
 	}
 	if score == nil || hasErrors(ds) {
 		return errors.New("score must validate before adding an instrument") // studio_instrument.go text, kept for parity
