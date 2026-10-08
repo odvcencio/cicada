@@ -16,7 +16,7 @@ make -f tools/audio/convolution.mk convolution-wasm convolution-wasm-test
 
 The CLI conditions the impulse with a 20 Hz highpass and linked unit-energy ceiling, then compensates both wet and dry latency for its offline audition. All four IRs can use the same score. Source-file hashes refer to unmodified WAVs; preparation is a reproducible transformation.
 
-Browser hosts lazily load and verify selected audio with `host/irasset/loader.mjs`, optionally call `conditionImpulse`, and prepare a separate `cicada-convolution.wasm` module through `processor.mjs`. Module compilation and IR transfer happen before the AudioWorklet connects. Its callback wrapper reuses typed-array views and clears output on a processing fault. Companion download bytes and resident IR/FFT memory are additional to the default core; the core's 300 KiB budget and worklet bytes remain unchanged.
+Browser hosts lazily load and verify selected audio with `host/irasset/loader.mjs`, optionally call `conditionImpulse`, and prepare a separate `cicada-convolution.wasm` module through `processor.mjs`. Module compilation and IR transfer happen before the AudioWorklet connects. Its callback wrapper reuses typed-array views and clears output on a processing fault. Companion download bytes and resident IR/FFT memory are additional to the default core; the core kernel's size gate (320 KiB raw and 120 KiB Brotli) and worklet bytes remain unchanged.
 
 ## Score impulses
 

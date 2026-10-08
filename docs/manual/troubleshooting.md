@@ -29,6 +29,19 @@ valid but still fail a name, type, unit, range, or engine check.
   cells; drum rows in a pattern must have equal lengths. A declared `steps`
   value is a check and must match the expanded pattern.
 
+## Studio does not start
+
+- **`GoSX workstation executable is missing`** — Studio runs as two programs,
+  `cicada` and `cicada-workstation` (`cicada-workstation.exe` on Windows).
+  `cicada studio` looks for the workstation next to `cicada`, then on `PATH`.
+  `go build ./cmd/cicada` builds only `cicada`. From the repository root, run
+  `make build`, then start Studio with `./build/cicada studio main.cicada`;
+  both programs are in `build/`. If you move `cicada`, move
+  `cicada-workstation` and the `workstation` folder with it, because the
+  workstation reads its browser files from that folder. The VS Code extension
+  needs the same files, so set `cicada.serverPath` to the absolute path of
+  `build/cicada`.
+
 ## Studio or editor does not update
 
 - If a source save is rejected, read the status line. Studio validates before

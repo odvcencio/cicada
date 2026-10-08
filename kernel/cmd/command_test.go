@@ -3,6 +3,7 @@ package cmd
 import (
 	"math"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -188,5 +189,52 @@ func TestConductorCommandsValidate(t *testing.T) {
 				t.Fatalf("EncodeCommand(%+v) error = %v, valid = %v", tt.cmd, err, tt.valid)
 			}
 		})
+	}
+}
+
+// The engine has no cue behavior yet. A cue that validation accepted would be
+// queued and then stop the engine with a fault, so validation must refuse it.
+// The opcode keeps its number so the wire ABI does not move.
+func TestCueIsReservedAndRejected(t *testing.T) {
+	if OpCue != 14 || OpNoteOff != 13 || OpSetLayerMask != 15 {
+		t.Fatalf("opcode numbers moved: OpNoteOff=%d OpCue=%d OpSetLayerMask=%d, want 13, 14, 15", OpNoteOff, OpCue, OpSetLayerMask)
+	}
+	for _, command := range []Command{
+		{Op: OpCue, Track: 0xff},
+		{Op: OpCue, Track: 0xff, Arg0: 3},
+		{Op: OpCue, Track: 0xff, Arg0: 20},
+		{Op: OpCue, Track: 0xff, Index: 7, Tick: 3840},
+		{Op: OpCue, Track: 0},
+		{Op: OpCue, Track: 0xff, Arg0: 4},
+	} {
+		err := command.Validate(2)
+		if err == nil {
+			t.Errorf("Validate accepted %+v", command)
+			continue
+		}
+		if !strings.Contains(err.Error(), "cue") {
+			t.Errorf("Validate(%+v) = %q, want a message that names the cue command", command, err)
+		}
+		if _, err := EncodeCommand(command, 2); err == nil {
+			t.Errorf("EncodeCommand accepted %+v", command)
+		}
+	}
+	record := [CommandSize]byte{byte(OpCue), 0xff}
+	if _, err := DecodeCommand(record[:], 2); err == nil {
+		t.Error("DecodeCommand accepted a cue record")
+	}
+	play, _ := EncodeCommand(Command{Op: OpPlay, Track: 0xff}, 2)
+	batch := append(play[:], record[:]...)
+	dst := []Command{{Op: OpStop}, {Op: OpStop}}
+	if count, err := DecodeCommands(batch, 2, dst); err == nil || count != 0 || dst[0].Op != OpStop || dst[1].Op != OpStop {
+		t.Errorf("batch with a cue was not rejected as a whole: count=%d err=%v dst=%+v", count, err, dst)
+	}
+}
+
+// host/web/client.js shows its own text for fault 20, so the number is part of
+// the host contract. Renumbering it would break that text without any error.
+func TestPolyLiveFaultKeepsTheNumberHostsMatchOn(t *testing.T) {
+	if FaultPolyLive != 20 {
+		t.Fatalf("FaultPolyLive = %d, but host/web/client.js matches on 20", FaultPolyLive)
 	}
 }

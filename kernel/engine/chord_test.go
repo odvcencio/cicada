@@ -214,7 +214,7 @@ func TestPolyGenerationExhaustionFailsBeforeReuse(t *testing.T) {
 	var m cmd.Message
 	found := false
 	for e.Poll(&m) {
-		if m.Kind == cmd.Fault && m.A == 17 {
+		if m.Kind == cmd.Fault && m.A == FaultPolyGeneration {
 			found = true
 		}
 	}

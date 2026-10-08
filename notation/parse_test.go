@@ -480,3 +480,200 @@ func TestSourceRecordLimitsMatchProjectFormat(t *testing.T) {
 	}
 	t.Fatalf("invalid title escape was accepted: %+v", diagnostics)
 }
+
+// phraseUseScore puts one phrase use on line 4, starting at column 18, so the
+// tests below can check the position of the diagnostic it should produce.
+func phraseUseScore(use string) []byte {
+	return []byte("cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\npattern p acid { " + use + " }\nscene main { bass = p }\nsong { main*2 }\n")
+}
+
+// A transpose that is not a whole number must be reported. Before the fix the
+// parser dropped the strconv error and silently transposed by zero.
+func TestPhraseUseRejectsTransposeThatIsNotAWholeNumber(t *testing.T) {
+	for _, tc := range []struct{ name, use, literal string }{
+		{"fraction", "use hook +7.5", "7.5"},
+		{"fraction spelled with transpose", "use hook transpose = 2.5", "2.5"},
+		{"whole number with a decimal point", "use hook +7.0", "7.0"},
+		{"frequency unit", "use hook transpose = 3Hz", "3Hz"},
+		{"percent", "use hook +7%", "7%"},
+		{"too large for an int", "use hook +99999999999999999999", "99999999999999999999"},
+		{"after a repeat count", "use hook*2 +7.5", "7.5"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diagnostics := Parse(phraseUseScore(tc.use))
+			if len(diagnostics) != 1 {
+				t.Fatalf("want exactly one diagnostic, got %+v", diagnostics)
+			}
+			d := diagnostics[0]
+			if d.Code != "CICADA-USE" || d.Severity != "error" {
+				t.Fatalf("want a CICADA-USE error, got %+v", d)
+			}
+			if d.Position != (Position{Line: 4, Column: 18}) {
+				t.Fatalf("diagnostic is at %+v, want the use at 4:18", d.Position)
+			}
+			for _, want := range []string{"transpose", `"` + tc.literal + `"`, "whole number of semitones", "+7", "-12"} {
+				if !strings.Contains(d.Message, want) {
+					t.Fatalf("message %q does not mention %q", d.Message, want)
+				}
+			}
+			if strings.Contains(d.Message, "strconv") || strings.Contains(d.Message, "invalid syntax") {
+				t.Fatalf("message leaks the Go parse error: %q", d.Message)
+			}
+		})
+	}
+}
+
+// A repeat count is a digit string, so only a value past the int range can fail.
+// It must get its own message instead of relying on the clamped value that a
+// failed Atoi returns.
+func TestPhraseUseRejectsRepeatCountTooLargeForAnInt(t *testing.T) {
+	_, diagnostics := Parse(phraseUseScore("use hook*99999999999999999999"))
+	if len(diagnostics) != 1 {
+		t.Fatalf("want exactly one diagnostic, got %+v", diagnostics)
+	}
+	d := diagnostics[0]
+	if d.Code != "CICADA-USE" || d.Position != (Position{Line: 4, Column: 18}) {
+		t.Fatalf("want CICADA-USE at 4:18, got %+v", d)
+	}
+	for _, want := range []string{"repeat", `"99999999999999999999"`, "whole number", "1 to 64"} {
+		if !strings.Contains(d.Message, want) {
+			t.Fatalf("message %q does not mention %q", d.Message, want)
+		}
+	}
+}
+
+// Whole-number transposes and repeat counts keep working, and the value reaches
+// the expanded steps.
+func TestPhraseUseKeepsWholeNumberTransposeAndRepeat(t *testing.T) {
+	for _, tc := range []struct {
+		name, use string
+		steps     int
+		transpose int
+	}{
+		{"plus form", "use hook +7", 4, 7},
+		{"keyword form", "use hook transpose = 12", 4, 12},
+		{"negative keyword form", "use hook transpose = -12", 4, -12},
+		{"negative plus form", "use hook +-5", 4, -5},
+		{"limits", "use hook +24", 4, 24},
+		{"repeat and transpose", "use hook*2 +7", 8, 7},
+		{"no transpose", "use hook*3", 12, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			score, diagnostics := Parse(phraseUseScore(tc.use))
+			if len(diagnostics) != 0 {
+				t.Fatalf("unexpected diagnostics: %+v", diagnostics)
+			}
+			steps := score.Patterns[0].Steps
+			if len(steps) != tc.steps {
+				t.Fatalf("expanded to %d steps, want %d", len(steps), tc.steps)
+			}
+			for i, step := range steps {
+				if step.Transpose != tc.transpose {
+					t.Fatalf("step %d transpose = %d, want %d", i, step.Transpose, tc.transpose)
+				}
+			}
+		})
+	}
+}
+
+// The edition header and a song entry's bar count are digit strings too. They
+// can only fail by overflow, and the existing range checks must still report it.
+func TestOverflowingHeaderAndBarCountAreStillReported(t *testing.T) {
+	_, diagnostics := Parse([]byte("cicada 99999999999999999999\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass = p }\nsong { main }\n"))
+	found := false
+	for _, d := range diagnostics {
+		found = found || d.Code == "CICADA-VERSION" && d.Position.Line == 1
+	}
+	if !found {
+		t.Fatalf("overflowing edition header was accepted: %+v", diagnostics)
+	}
+	_, diagnostics = Parse([]byte("cicada 1\ntrack bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass = p }\nsong { main*99999999999999999999 }\n"))
+	found = false
+	for _, d := range diagnostics {
+		found = found || d.Code == "CICADA-LIMIT" && d.Position.Line == 5
+	}
+	if !found {
+		t.Fatalf("overflowing song bar count was accepted: %+v", diagnostics)
+	}
+}
+
+// The parser recovers from a syntax error by skipping tokens, and that leaves
+// error nodes all the way to the end of the file. The first error node is the
+// real spot; the last one used to be reported, so a stray bracket on line 4
+// was blamed on the final brace of the file.
+func TestSyntaxErrorPointsAtTheFirstErrorNode(t *testing.T) {
+	const tail = "pattern p acid { use hook }\nscene main { bass = p }\nsong { main*2 }\n"
+	for _, tc := range []struct {
+		name, source string
+		want         Position
+		message      string
+	}{
+		{
+			"stray bracket after a complete declaration",
+			"cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\nkey a minor ]\n" + tail,
+			Position{Line: 4, Column: 13}, `syntax error near "]"`,
+		},
+		{
+			"stray bracket on its own line",
+			"cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\n]\n" + tail,
+			Position{Line: 4, Column: 1}, `syntax error near "]"`,
+		},
+		{
+			"stray bracket after a multibyte character",
+			"cicada 1\ntitle \"🎵\" ]\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\n" + tail,
+			Position{Line: 2, Column: 11}, `syntax error near "]"`,
+		},
+		{
+			"stray bracket in a scene",
+			"cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\npattern p acid { use hook }\nscene main { bass = ] p }\nsong { main*2 }\n",
+			Position{Line: 5, Column: 21}, `syntax error near "]"`,
+		},
+		{
+			"missing closing brace at the end of the file",
+			"cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\npattern p acid { use hook }\nscene main { bass = p }\nsong { main*2 \n",
+			Position{Line: 6, Column: 14}, "syntax error: expected }",
+		},
+		{
+			"first of two stray brackets",
+			"cicada 1\ntrack bass acid {}\n]\nphrase hook { 1^ . 1~ 5 }\n" + tail + "]\n",
+			Position{Line: 3, Column: 1}, `syntax error near "]"`,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diagnostics := Parse([]byte(tc.source))
+			if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-SYNTAX" || diagnostics[0].Severity != "error" {
+				t.Fatalf("want one CICADA-SYNTAX error, got %+v", diagnostics)
+			}
+			d := diagnostics[0]
+			if d.Position != tc.want {
+				t.Fatalf("syntax error at %+v, want %+v (%s)", d.Position, tc.want, d.Message)
+			}
+			if d.Message != tc.message {
+				t.Fatalf("message = %q, want %q", d.Message, tc.message)
+			}
+		})
+	}
+}
+
+// When the first error node wraps a whole declaration, the report names that
+// declaration's line, not the end of the file.
+func TestSyntaxErrorInsideADeclarationNamesItsLine(t *testing.T) {
+	for _, tc := range []struct {
+		name, source string
+		line         int
+	}{
+		{"stray bracket in a pattern", "cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\npattern p acid { 1 . 3 ] 5 }\nscene main { bass = p }\nsong { main*2 }\n", 4},
+		{"stray bracket in a phrase", "cicada 1\ntrack bass acid {}\nphrase hook { 1^ . ] 1~ 5 }\npattern p acid { use hook }\nscene main { bass = p }\nsong { main*2 }\n", 3},
+		{"stray bracket in a song", "cicada 1\ntrack bass acid {}\nphrase hook { 1^ . 1~ 5 }\npattern p acid { use hook }\nscene main { bass = p }\nsong { main*2 ] }\n", 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, diagnostics := Parse([]byte(tc.source))
+			if len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-SYNTAX" {
+				t.Fatalf("want one CICADA-SYNTAX error, got %+v", diagnostics)
+			}
+			if diagnostics[0].Position.Line != tc.line {
+				t.Fatalf("syntax error on line %d, want line %d: %+v", diagnostics[0].Position.Line, tc.line, diagnostics[0])
+			}
+		})
+	}
+}

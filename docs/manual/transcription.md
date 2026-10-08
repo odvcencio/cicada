@@ -6,7 +6,7 @@ Cicada score:
 ```sh
 cicada transcribe melody.wav --tempo 120 --key "c major" -o melody.cicada
 cicada check melody.cicada
-cicada render melody.cicada -o melody-preview.wav --tail 0.1
+cicada render melody.cicada -o melody-preview.wav --tail 0.1s
 ```
 
 Omit `--tempo` and `--key` to estimate them. Estimates include confidence and

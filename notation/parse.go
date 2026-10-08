@@ -123,7 +123,7 @@ func parseFiles(files []SourceFile, edition int) (*Score, []Diagnostic) {
 		root, walker, err := ParseTree(file.Source)
 		if err != nil {
 			syntaxFailed = true
-			d := syntaxDiagnostic(err, file.Source)
+			d := syntaxDiagnostic(root, walker, err, file.Source)
 			d.Position.File = file.Path
 			diagnostics = append(diagnostics, d)
 			continue
@@ -599,13 +599,30 @@ func parsePhrase(w *loweringWalker, n *gts.Node) Phrase {
 	return p
 }
 
+// parsePhraseUse reads the optional repeat count and transpose of a phrase use.
+// The grammar's number token also admits fractions and unit suffixes such as
+// 7.5 or 3Hz, so a transpose can fail to be a whole number. A value that fails
+// is reported and left at its default; keeping the clamped value that Atoi
+// returns for an overflow would make the range check in expandPhrases report a
+// second error for the same use.
 func parsePhraseUse(w *loweringWalker, n *gts.Node) PhraseUse {
 	u := PhraseUse{Name: w.reference(w.Field(n, "name")), Repeat: 1, Position: w.position(n)}
+	reject := func(message string) {
+		*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-USE", Severity: "error", Message: message, Position: u.Position})
+	}
 	if count := childText(w, n, "integer"); count != "" {
-		u.Repeat, _ = strconv.Atoi(count)
+		if repeat, err := strconv.Atoi(count); err != nil {
+			reject("phrase repeat " + strconv.Quote(count) + " must be a whole number from 1 to 64")
+		} else {
+			u.Repeat = repeat
+		}
 	}
 	if value := childText(w, n, "number"); value != "" {
-		u.Transpose, _ = strconv.Atoi(value)
+		if transpose, err := strconv.Atoi(value); err != nil {
+			reject("phrase transpose " + strconv.Quote(value) + " must be a whole number of semitones, such as +7 or -12")
+		} else {
+			u.Transpose = transpose
+		}
 	}
 	return u
 }
@@ -657,7 +674,59 @@ func pos(w *walk.Walker, n *gts.Node) Position {
 	return Position{Line: line, Column: utf8.RuneCount(w.Src[lineStart:start]) + 1}
 }
 
-func syntaxDiagnostic(err error, src []byte) Diagnostic {
+// syntaxDiagnostic reports a failed parse at the first ERROR or MISSING node of
+// the concrete syntax tree. The parser recovers by skipping tokens, so one stray
+// bracket leaves error nodes all the way to the end of the file. The walker's own
+// message names the last of them, which put a bracket on line 4 at the final
+// brace of the file. When the first error node wraps a whole declaration, the
+// position is the start of that declaration.
+func syntaxDiagnostic(root *gts.Node, w *walk.Walker, err error, src []byte) Diagnostic {
+	if node := firstSyntaxError(w, root); node != nil {
+		return Diagnostic{Code: "CICADA-SYNTAX", Severity: "error", Message: syntaxErrorMessage(w, node), Position: pos(w, node)}
+	}
+	return syntaxDiagnosticFromText(err, src)
+}
+
+// firstSyntaxError returns the first node in source order that is an ERROR or a
+// MISSING node, or nil when the tree has none.
+func firstSyntaxError(w *walk.Walker, n *gts.Node) *gts.Node {
+	if w == nil || n == nil {
+		return nil
+	}
+	if n.Type(w.Lang) == "ERROR" || n.IsError() || n.IsMissing() {
+		return n
+	}
+	for i := 0; i < n.ChildCount(); i++ {
+		if found := firstSyntaxError(w, n.Child(i)); found != nil {
+			return found
+		}
+	}
+	return nil
+}
+
+// syntaxErrorMessage keeps the wording of the walker's error: a MISSING node
+// says what the parser expected, and an ERROR node quotes the first line of the
+// source it covers, cut to 30 characters.
+func syntaxErrorMessage(w *walk.Walker, n *gts.Node) string {
+	if n.IsMissing() {
+		return "syntax error: expected " + w.Type(n)
+	}
+	near := strings.TrimSpace(w.Text(n))
+	if first, _, multiline := strings.Cut(near, "\n"); multiline {
+		near = strings.TrimSpace(first)
+	}
+	if runes := []rune(near); len(runes) > 30 {
+		near = string(runes[:30]) + "…"
+	}
+	if near == "" {
+		return "syntax error"
+	}
+	return "syntax error near " + strconv.Quote(near)
+}
+
+// syntaxDiagnosticFromText is the fallback when no tree is available. It reads
+// the walker's "line:column: message" text, whose column counts bytes.
+func syntaxDiagnosticFromText(err error, src []byte) Diagnostic {
 	d := Diagnostic{Code: "CICADA-SYNTAX", Severity: "error", Message: err.Error(), Position: Position{Line: 1, Column: 1}}
 	parts := strings.SplitN(err.Error(), ":", 3)
 	if len(parts) == 3 {

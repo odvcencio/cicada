@@ -29,6 +29,13 @@ func TestSampleAndClipFirstCallbackDoesNotAllocate(t *testing.T) {
 		t.Fatal("play rejected")
 	}
 	var left, right [128]float32
+	// MemStats counts allocations from every goroutine. Use one processor,
+	// as AllocsPerRun does, so GC workers cannot overlap the first callback,
+	// and finish setup's GC work first. The voices stay cold: Render has not
+	// run yet.
+	previousProcs := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previousProcs) })
+	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	e.Render(left[:], right[:])
