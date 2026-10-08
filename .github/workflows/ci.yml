@@ -286,7 +286,9 @@ jobs:
 
   m2-pr:
     name: M2 AudioWorklet gates
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    # This job runs on the self-hosted reference machine, so a pull request from
+    # a fork must not run it.
+    if: (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 40
     env:
@@ -355,7 +357,9 @@ jobs:
   m2-soak:
     name: M2 AudioWorklet nightly soak
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    # Its CPU gate (0.67 ms per callback) is measured on the reference machine.
+    # A hosted runner measured 1.296 ms, so this job stays on the self-hosted one.
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 55
     env:
       GOWORK: off
