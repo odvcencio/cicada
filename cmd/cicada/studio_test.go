@@ -26,6 +26,19 @@ func studioTestHandler(t *testing.T) (http.Handler, string) {
 	return handler, path
 }
 
+func studioTestStudio(t *testing.T) (http.Handler, string, *studio) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, []byte(studioScore), 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s.routes(), path, s
+}
+
 func studioCall(t *testing.T, handler http.Handler, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var input bytes.Buffer

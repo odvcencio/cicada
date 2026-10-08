@@ -310,6 +310,10 @@ func (e *Engine) MacroValue(id int) (current, target float32) {
 // Call it only from the goroutine that owns Render.
 func (e *Engine) CurrentScene() (int, uint64) { return e.currentScene, e.sceneSequence }
 
+// Playing reports whether the transport is running.
+// Call it only from the goroutine that owns Render.
+func (e *Engine) Playing() bool { return e.transport.Playing() }
+
 func New(cfg Config) (*Engine, error) {
 	return NewFromConfig(&cfg)
 }

@@ -708,3 +708,101 @@ func TestInitialSceneUsesSongOrderInsteadOfDeclarationOrder(t *testing.T) {
 		t.Fatalf("rendered scene=%q", got)
 	}
 }
+
+func TestPlayerPublishesTransportFramesWhileRendering(t *testing.T) {
+	p, err := New(meterScore(t, "frames", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	pub := NewPublisher()
+	p.SetPublisher(pub)
+	if _, err := io.CopyN(io.Discard, p, 48_000*8); err != nil { // one second = two beats at 120 BPM
+		t.Fatal(err)
+	}
+	p.PublishTelemetry()
+	frame, err := DecodeTransportFrame(pub.Latest()[FrameTransport])
+	if err != nil || !frame.Playing || frame.SampleFrame < 47_000 || frame.Bar != 1 || frame.Beat != 3 {
+		t.Fatalf("transport frame after one second (bar 1, beat 3, both 1-based): %+v %v", frame, err)
+	}
+	if m, err := DecodeMetersFrame(pub.Latest()[FrameMeters]); err != nil || m.TrackCount != 1 || m.Tracks[0].PeakL <= 0 {
+		t.Fatalf("meters frame: %+v %v", m, err)
+	}
+}
+
+func TestTelemetrySkipsTransportFrameBeforeFirstBlock(t *testing.T) {
+	p, err := New(meterScore(t, "early", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	pub := NewPublisher()
+	p.SetPublisher(pub)
+	p.PublishTelemetry()
+	if pub.Latest()[FrameTransport] != nil {
+		t.Fatal("transport frame published before any block rendered")
+	}
+}
+
+func TestTelemetryFollowsHostPlayingFlag(t *testing.T) {
+	p, err := New(meterScore(t, "pause", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	pub := NewPublisher()
+	p.SetPublisher(pub)
+	if _, err := io.CopyN(io.Discard, p, 48_000*4); err != nil {
+		t.Fatal(err)
+	}
+	p.SetTransportPlaying(false)
+	p.PublishTelemetry()
+	frame, err := DecodeTransportFrame(pub.Latest()[FrameTransport])
+	if err != nil || frame.Playing || frame.SampleFrame == 0 {
+		t.Fatalf("paused frame: %+v %v", frame, err)
+	}
+	p.SetTransportPlaying(true)
+	p.PublishTelemetry()
+	if frame, _ := DecodeTransportFrame(pub.Latest()[FrameTransport]); !frame.Playing {
+		t.Fatalf("resumed frame: %+v", frame)
+	}
+}
+
+func TestTelemetryKeepsPreviousFrameWhileCounterIsOdd(t *testing.T) {
+	p, err := New(meterScore(t, "odd", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	pub := NewPublisher()
+	p.SetPublisher(pub)
+	if _, err := io.CopyN(io.Discard, p, 48_000*4); err != nil {
+		t.Fatal(err)
+	}
+	p.PublishTelemetry()
+	before := pub.Latest()
+	p.telemetry.seq.Add(1) // simulate a preempted writer
+	p.PublishTelemetry()
+	after := pub.Latest()
+	if string(before[FrameTransport]) != string(after[FrameTransport]) || string(before[FrameMeters]) != string(after[FrameMeters]) {
+		t.Fatal("inconsistent read replaced the previous frames")
+	}
+}
+
+func TestTelemetryDetachedPublisherReceivesNothing(t *testing.T) {
+	p, err := New(meterScore(t, "detach", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	pub := NewPublisher()
+	p.SetPublisher(pub)
+	if _, err := io.CopyN(io.Discard, p, 48_000*4); err != nil {
+		t.Fatal(err)
+	}
+	p.SetPublisher(nil)
+	p.PublishTelemetry()
+	if pub.Latest()[FrameTransport] != nil {
+		t.Fatal("detached player published")
+	}
+}
