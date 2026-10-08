@@ -1,8 +1,13 @@
 package keyboard
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
 	"math"
 	"testing"
+
+	"m31labs.dev/cicada/instrument/keyboardpresets"
 )
 
 func TestAllPatchesPrepareAndRenderWithoutAllocating(t *testing.T) {
@@ -78,5 +83,27 @@ func TestCompoundValidationAndFloat32Boundaries(t *testing.T) {
 		if _, err := New(48000, &s); err == nil {
 			t.Fatalf("accepted voice limit %g", bad)
 		}
+	}
+}
+
+func TestDefaultSpecDelegatesUnchanged(t *testing.T) {
+	for _, name := range Names {
+		got, err := DefaultSpec(name)
+		want, wantErr := keyboardpresets.DefaultSpec(name)
+		if err != nil || wantErr != nil || got != want {
+			t.Fatalf("%s: delegate differs (%v, %v)", name, err, wantErr)
+		}
+	}
+	hash := sha256.New()
+	for _, name := range Names {
+		spec, err := DefaultSpec(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = binary.Write(hash, binary.LittleEndian, spec.Patch)
+		_ = binary.Write(hash, binary.LittleEndian, spec.Controls[:])
+	}
+	if got := hex.EncodeToString(hash.Sum(nil)); got != "f00b7923e2695cb8e55930ce22dec2e9f8b095c7f61a19f45887cb81e79a8605" {
+		t.Fatalf("preset table changed: %s", got)
 	}
 }

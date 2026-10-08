@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	_ "embed"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/edit/editlog"
+	"m31labs.dev/cicada/host/takejournal"
 )
 
 //go:embed studio-history.js
@@ -486,62 +491,123 @@ func (s *studio) applyHistoryRequest(w http.ResponseWriter, r *http.Request, ope
 }
 
 func (s *studio) commitSourceLocked(w http.ResponseWriter, edit studioEdit, current, updated []byte, beforeSwap func(), historyKind studioHistoryWriteKind, targetID uint64) {
+	outcome := s.commitMutationLocked(edit, current, studioMutation{Source: updated, Files: edit.historyFiles}, beforeSwap, historyKind, targetID, commitHook{historyError: true})
+	studioJSON(w, outcome.Status, outcome.Response)
+}
+
+type commitHook struct {
+	checkpoint func(takejournal.Stage) // take journal boundary; nil for ordinary edits
+	envelope   *edits.Envelope         // logged after a successful write; nil logs an empty intent list
+	// historyError keeps the undo, redo and revert error text for a failed
+	// auxiliary write ("history file write failed"), which clients already see.
+	historyError bool
+}
+
+type commitOutcome struct {
+	Status   int
+	Response map[string]any
+	Written  bool
+}
+
+// commitMutationLocked is the single commit tail: compile with auxiliary
+// overrides, re-check the revision, exchange the score atomically, write
+// auxiliary files with rollback, record history, append the edit log.
+// Callers hold s.mu and have already run studioRecoveryConflict. It never
+// writes an HTTP response itself.
+func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation studioMutation, beforeSwap func(), historyKind studioHistoryWriteKind, targetID uint64, hook commitHook) commitOutcome {
+	fail := func(status int, body map[string]any) commitOutcome {
+		return commitOutcome{Status: status, Response: body}
+	}
+	updated := mutation.Source
 	overrides := map[string][]byte{}
-	for _, file := range edit.historyFiles {
+	for _, file := range mutation.Files {
 		overrides[file.Path] = file.After
 	}
 	p, err := compileStudioSourceWithOverrides(s.path, updated, overrides)
 	if err != nil {
-		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
-		return
+		return fail(http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 	}
 	latest, err := os.ReadFile(s.path)
 	if err != nil {
-		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
+		return fail(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 	}
 	if studioRevision(latest) != edit.Revision {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during validation; reload before saving"})
-		return
+		return fail(http.StatusConflict, map[string]any{"error": "score changed during validation; reload before saving"})
 	}
 	if bytes.Equal(current, updated) {
 		s.lastGoodSource, s.lastGoodProject = bytes.Clone(current), p
-		studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(current), "valid": true, "source": string(current), "unchanged": true})
-		return
+		response := map[string]any{"revision": studioRevision(current), "valid": true, "source": string(current), "unchanged": true}
+		for key, value := range mutation.Response {
+			response[key] = value
+		}
+		response["playingRevision"] = studioRevision(s.lastGoodSource)
+		return commitOutcome{Status: http.StatusOK, Response: response}
 	}
 	info, err := os.Stat(s.path)
-	if err != nil {
-		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
+	committed, preserved := false, ""
+	if err == nil {
+		committed, preserved, err = studioWriteTakeIfRevision(s.path, updated, info.Mode().Perm(), edit.Revision, beforeSwap, hook.checkpoint)
 	}
-	committed, preserved, err := studioWriteIfRevision(s.path, updated, info.Mode().Perm(), edit.Revision, beforeSwap)
 	if err != nil {
-		if errStudioSwapUnavailable == err {
-			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
-			return
+		if errors.Is(err, errStudioSwapUnavailable) {
+			return fail(http.StatusConflict, map[string]any{"error": err.Error()})
 		}
 		if preserved != "" {
-			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "preserved": preserved})
-			return
+			return fail(http.StatusConflict, map[string]any{"error": err.Error(), "preserved": preserved})
 		}
-		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
+		return fail(http.StatusInternalServerError, map[string]any{"error": err.Error()})
 	}
 	if !committed {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during commit; reload before saving"})
-		return
+		return fail(http.StatusConflict, map[string]any{"error": "score changed during commit; reload before saving"})
 	}
-	if err := studioWriteAuxiliaryFiles(edit.historyFiles); err != nil {
+	if err := studioWriteAuxiliaryFiles(mutation.Files); err != nil {
 		_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
-		studioJSON(w, 409, map[string]any{"error": fmt.Sprintf("history file write failed: %v; rollback: %v", err, rollbackErr)})
-		return
+		message := "source auxiliary write failed: " + err.Error()
+		if rollbackErr != nil {
+			message += "; source rollback failed: " + rollbackErr.Error()
+		}
+		if hook.historyError {
+			message = fmt.Sprintf("history file write failed: %v; rollback: %v", err, rollbackErr)
+		}
+		return fail(http.StatusConflict, map[string]any{"error": message})
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
+	if mutation.HistoryDetail != "" {
+		edit.Label = mutation.HistoryDetail
+	}
 	if s.history != nil {
 		entry := s.history.recordSourceWrite(current, updated, studioEditLabel(edit), historyKind, targetID)
-		s.history.attachFiles(entry.ID, edit.historyFiles)
+		s.history.attachFiles(entry.ID, mutation.Files)
 	}
-	studioJSON(w, http.StatusOK, map[string]any{"revision": studioRevision(updated), "valid": true, "source": string(updated), "preserved": preserved})
+	response := map[string]any{"revision": studioRevision(updated), "valid": true, "source": string(updated), "preserved": preserved}
+	for key, value := range mutation.Response {
+		response[key] = value
+	}
+	response["playingRevision"] = studioRevision(s.lastGoodSource)
+	if err := s.appendEditLog(edit, hook.envelope, current, updated); err != nil {
+		response["editLogError"] = err.Error() // the score is already committed; report, do not fail
+	}
+	return commitOutcome{Status: http.StatusOK, Response: response, Written: true}
+}
+
+// appendEditLog records one committed edit in .cicada/edits.jsonl. envelope is
+// nil for writers that are not intents yet; they log an empty intent list.
+func (s *studio) appendEditLog(edit studioEdit, envelope *edits.Envelope, current, updated []byte) error {
+	env := edits.Envelope{Version: edits.EnvelopeVersion, Author: edit.Author, Session: edit.Session}
+	if envelope != nil {
+		env = *envelope
+	}
+	if env.Author == "" {
+		env.Author = "local"
+	}
+	if env.Session == "" {
+		env.Session = s.sessionID
+	}
+	record, err := editlog.Commit(env, studioRevision(current), studioRevision(updated), studioEditLabel(edit), time.Now().UTC())
+	if err == nil {
+		err = editlog.AppendCommit(editlog.Path(s.path), record)
+	}
+	return err
 }
 
 //go:embed studio-workspace.js

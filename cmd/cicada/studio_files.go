@@ -123,7 +123,7 @@ func (s *studio) editFile(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, 500, map[string]any{"error": readErr.Error()})
 				return
 			}
-			target = &studio{path: path, transport: s.transport, history: newStudioHistory(source)}
+			target = &studio{path: path, sessionID: newStudioSessionID(), transport: s.transport, history: newStudioHistory(source)}
 			s.fileSessions[path] = target
 		}
 	}
