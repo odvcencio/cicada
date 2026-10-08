@@ -66,6 +66,25 @@ async function until(predicate, message, timeout = 15_000) {
   assert.fail(message);
 }
 
+// The first browser session to reach a Studio owns it, so repeated runs share
+// one context. Each run still gets its own page.
+let shared;
+async function sharedBrowser() {
+  if (!shared) {
+    let executablePath = process.env.CICADA_CHROME_PATH;
+    if (!executablePath && process.platform === 'win32') {
+      executablePath = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]
+        .filter(Boolean).map(root => path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')).find(candidate => fs.existsSync(candidate));
+    }
+    const browser = await playwright().chromium.launch({
+      headless: process.env.CICADA_HEADLESS !== '0', executablePath,
+      args: ['--autoplay-policy=no-user-gesture-required'],
+    });
+    shared = {browser, context: await browser.newContext({viewport: {width: 1100, height: 760}})};
+  }
+  return shared;
+}
+
 async function scenario(t) {
   assert.ok(process.env.CICADA_STUDIO_URL, 'set CICADA_STUDIO_URL to the disposable Studio instance');
   const base = new URL(process.env.CICADA_STUDIO_URL);
@@ -75,16 +94,7 @@ async function scenario(t) {
     target.search = new URLSearchParams({panel, ...(panel === 'patterns' ? {pattern: 'continuity', step: '1'} : {})}).toString();
     return target.href;
   };
-  let executablePath = process.env.CICADA_CHROME_PATH;
-  if (!executablePath && process.platform === 'win32') {
-    executablePath = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]
-      .filter(Boolean).map(root => path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')).find(candidate => fs.existsSync(candidate));
-  }
-  const browser = await playwright().chromium.launch({
-    headless: process.env.CICADA_HEADLESS !== '0', executablePath,
-    args: ['--autoplay-policy=no-user-gesture-required'],
-  });
-  const context = await browser.newContext({viewport: {width: 1100, height: 760}});
+  const {context} = await sharedBrowser();
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
   const errors = [], warnings = [], requests = [];
@@ -655,7 +665,7 @@ async function scenario(t) {
   } finally {
     await page.unroute('**/__actions/**');
     try { await nativeAction('transport', {action: 'stop'}); } catch (_) { /* Preserve the primary regression failure. */ }
-    await browser.close();
+    await page.close();
   }
 }
 
@@ -664,3 +674,4 @@ for (let run = 1; run <= repeat; run++) {
   const suffix = repeat > 1 ? ` (run ${run} of ${repeat})` : '';
   test(`GoSX projections retain Studio edits, focus, scroll, playback and engine mounts${suffix}`, {timeout: 120_000}, scenario);
 }
+test.after(async () => { if (shared) await shared.browser.close(); });
