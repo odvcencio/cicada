@@ -29,15 +29,15 @@ Every patch maps MIDI notes 21–108, with 30 recorded roots at minor-third inte
 | `organ_jazz` | 300 | 163703880 | 230400000 | 0 | 300 |
 | `organ_soft` | 300 | 162475090 | 230400000 | 0 | 300 |
 | `poly_keys` | 300 | 148248556 | 230400000 | 0 | 0 |
-| `reed_ep` | 600 | 107684992 | 241920000 | 300 | 0 |
-| `reed_tremolo` | 600 | 104646930 | 241920000 | 300 | 0 |
+| `reed_ep` | 600 | 107241016 | 241920000 | 300 | 0 |
+| `reed_tremolo` | 600 | 104239685 | 241920000 | 300 | 0 |
 | `soft_pad` | 300 | 153653153 | 230400000 | 0 | 300 |
 | `string_machine` | 300 | 159825504 | 230400000 | 0 | 300 |
 | `sync_lead` | 300 | 159809086 | 230400000 | 0 | 0 |
-| `tine_bark` | 600 | 156666059 | 241920000 | 300 | 0 |
-| `tine_bell` | 600 | 149210991 | 241920000 | 300 | 0 |
-| `tine_ep` | 600 | 153277131 | 241920000 | 300 | 0 |
-| `tine_tremolo` | 600 | 160537728 | 253440000 | 300 | 0 |
+| `tine_bark` | 600 | 153953852 | 241920000 | 300 | 0 |
+| `tine_bell` | 600 | 153417653 | 241920000 | 300 | 0 |
+| `tine_ep` | 600 | 154241199 | 241920000 | 300 | 0 |
+| `tine_tremolo` | 600 | 162139893 | 253440000 | 300 | 0 |
 | `tonewheel_organ` | 300 | 164385723 | 230400000 | 0 | 300 |
 
 Use the [single-file score demos](../../examples/keys/sampled/) in native Studio after copying them beside generated `packs/`. Each demo contains a two-bar comping phrase and a two-bar melodic phrase. Four monophonic comping parts preserve the modeled chord notes and timing with eight total sampler slots, following the sampler score language's current monophonic pattern contract.

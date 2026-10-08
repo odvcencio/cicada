@@ -188,6 +188,35 @@ level curve. Follow-up: measure known MIDI velocities and registers, and assess
 both patches in matched dry musical phrases. The source's reverb, voicing and
 unknown settings prevent a commercial-equivalence claim from these figures.
 
+## Tine and Reed EP calibration
+
+The Tine and Reed calibration uses original model notes at A3, D4, E4 and
+C#5. Exact-frequency Hann windows at 10–70 ms and 160–220 ms separate the
+6.267-times-fundamental bending mode from the pickup's second harmonic.
+The first 500 ms spectrum additionally measures 1.5–4 kHz energy against
+40 Hz–12 kHz power. This band includes D4's approximately 1.84 kHz bending
+mode, which a check above 2 kHz would miss; A3's lower bending frequency
+still needs the separate partial measurement.
+
+The [EP calibration table](../../kernel/voice/ep/README.md) records all six
+patches at velocity 100 and the reference-layer comparison. At D4,
+`tine_ep` has a bending mode at −18.1 dB relative to the fundamental,
+a 15.4 dB bending-mode drop over 150 ms, and a second harmonic at −8.2 dB.
+`reed_ep` measures −25.5 dB, 18.3 dB and −9.6 dB respectively. These figures
+use 48 kHz output with four internal substeps and default controls.
+
+`TestTineSpectralBalance` also checks velocities 64 and 120. It removes
+known tremolo gain to measure modal decay and removes the fitted exponential
+fundamental decay to measure tonebar ripple. The calibrated A3 and saturated
+`tine_bark` decay bounds reflect their longer note-scaled tails; D4 bending
+T20 remains below 0.3 s. The second harmonic increases with velocity, while
+the bending transient remains bounded. Third-harmonic readings are sensitive
+to the analysis window and do not determine acceptance.
+
+The recorded Tine and Reed layer sets and their license limitations are
+linked from the EP README. These controlled metrics describe the current
+model and do not establish acoustic equivalence to those recordings.
+
 ## Controlled velocity response
 
 Each model was rendered at velocities **32, 56, 80, 104 and 127**, with the

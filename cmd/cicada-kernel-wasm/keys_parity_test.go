@@ -39,8 +39,8 @@ func TestAudioWASMKeysScoreParity(t *testing.T) {
 		})
 	}
 	expected := map[int]string{
-		44100: "aa69ebe731df8712914e6ed476729ccbccdd6117a5584cb55faf5106ceb18605",
-		48000: "c48ec5b7762994f6d9448b2bc8a74ea636540cf032288d99e96cad8561bbc5fd",
+		44100: "36a164339a4f51d726a84258fcf428ebc4cc6f7d7ede87258d331655e8a476cf",
+		48000: "79a4ab8fff78425a552fc6ff068aab65247c272a33e6dd4c42bb709a31aeaf81",
 	}
 	for _, rate := range []int{44100, 48000} {
 		golden := sha256.Sum256(hashes[rate])

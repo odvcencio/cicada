@@ -32,19 +32,19 @@ type Params struct {
 }
 
 func DefaultParams() Params {
-	return Params{Model: Tine, PickupPosition: .32, PickupDistance: .8, HammerFelt: .6, Decay: 20, Release: .12, TremoloRate: 4.6, Gain: .7, Oversample: 2}
+	return Params{Model: Tine, PickupPosition: .05, PickupDistance: .5, HammerFelt: .6, Decay: 20, Release: .12, TremoloRate: 4.6, Gain: .7, Oversample: 2}
 }
 func Patch(name string) (Params, error) {
 	p := DefaultParams()
 	switch name {
 	case "tine_ep":
 	case "tine_bell":
-		p.PickupDistance = 1.3
-		p.HammerFelt = .34
+		p.PickupDistance = .8
+		p.HammerFelt = .4
 		p.PickupPosition = .2
 	case "tine_bark":
-		p.PickupDistance = .48
-		p.Drive = .22
+		p.PickupDistance = .45
+		p.Drive = .3
 		p.HammerFelt = .48
 	case "tine_tremolo":
 		p.Tremolo = .5
@@ -58,6 +58,7 @@ func Patch(name string) (Params, error) {
 		p.HammerFelt = .46
 	case "reed_tremolo":
 		p.Model = Reed
+		p.PickupPosition = .32
 		p.Decay = 3.4
 		p.PickupDistance = .68
 		p.Tremolo = .48
@@ -133,11 +134,11 @@ func New(rate int, p Params) (*Instrument, error) {
 	for n := MinNote; n <= MaxNote; n++ {
 		k := &i.keys[n-MinNote]
 		f := 440 * math.Exp2(float64(n-69)/12)
-		ratios := [modeCount]float64{1, 1.004, 6.267, 17.55, 34.39, 56.84}
-		weights := [modeCount]float64{.77, .23, .1, .018, .006, .002}
+		ratios := [modeCount]float64{1, 1.0015, 6.267, 17.55, 34.39, 56.84}
+		weights := [modeCount]float64{.88, .12, .04, .004, .0005, .0001}
 		if p.Model == Reed {
 			ratios = [modeCount]float64{1, 6.267, 17.55, 34.39, 56.84, 84.9}
-			weights = [modeCount]float64{1, .058, .011, .003, .001, .0003}
+			weights = [modeCount]float64{1, .02, .0038, .001, .001, .0003}
 		}
 		for m, ratio := range ratios {
 			hz := f * ratio
@@ -151,7 +152,11 @@ func New(rate int, p Params) (*Instrument, error) {
 			}
 			if p.Model == Tine && m >= 2 {
 				h := float64(m - 2)
-				t60 = min(t60, 1.8*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
+				t60 = min(t60, 0.6*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
+			}
+			if p.Model == Reed && m >= 1 {
+				h := float64(m - 1)
+				t60 = min(t60, .5*math.Exp2(float64(60-n)/50)/(1+.7*h*h))
 			}
 			k.modes[m] = rotation{c: float32(math.Cos(a)), s: float32(math.Sin(a)), r: float32(math.Exp(-6.907755 / (t60 * fs))), weight: float32(weights[m])}
 		}
@@ -217,7 +222,7 @@ func (i *Instrument) NoteOn(note, velocity uint8) error {
 			if i.params.Model == Tine {
 				excitation = 1.85 - i.params.HammerFelt
 			}
-			brightness = float32(.18) + float32(x*x)*float32(excitation)
+			brightness = float32(.06) + float32(x*x)*float32(excitation)
 		}
 		v.modes[m].p = float32(strike * brightness)
 	}

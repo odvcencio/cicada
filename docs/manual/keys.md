@@ -63,21 +63,32 @@ assess the sound.
 
 ## Tine and Reed EP controls
 
-| Parameter | Range | Unit |
-| --- | --- | --- |
-| `sustain` | 0–1 | normalized |
-| `voices` | 1–8 | integer |
-| `pickup_position` | 0–1 | normalized |
-| `pickup_distance` | 0.2–2 | normalized |
-| `hammer_felt` | 0–1 | normalized |
-| `decay` | 0.3–20 | s |
-| `release` | 0.02–2 | s |
-| `drive` | 0–1 | normalized |
-| `tremolo` | 0–1 | normalized |
-| `tremolo_rate` | 0.1–12 | hz |
-| `auto_pan` | 0–1 | normalized |
-| `gain` | 0–2 | normalized |
-| `oversample` | 2–4 | integer |
+| Parameter | Range | Unit | Effect when increased |
+| --- | --- | --- | --- |
+| `sustain` | 0–1 | normalized | Values above 0.5 hold released notes until the pedal is lifted. |
+| `voices` | 1–8 | integer | Allows more simultaneous notes before the oldest voice is replaced. |
+| `pickup_position` | 0–1 | normalized | On Tine, moving away from 0.5 toward either end adds the second harmonic; the center gives odd pickup harmonics. Reed's pickup field does not use this control. |
+| `pickup_distance` | 0.2–2 | normalized | Gives a cleaner, quieter tone with less nonlinear bark. Moving the pickup closer adds harmonic body and saturation. |
+| `hammer_felt` | 0–1 | normalized | Softens the strike and reduces bending-mode ping and contact noise. Lower values add ping. |
+| `decay` | 0.3–20 | s | Extends the held fundamental's decay. Bending modes retain their shorter decay caps. |
+| `release` | 0.02–2 | s | Slows damping after key-off or pedal release. |
+| `drive` | 0–1 | normalized | Increases pickup-stage saturation and harmonic bite. |
+| `tremolo` | 0–1 | normalized | Deepens the periodic volume change. |
+| `tremolo_rate` | 0.1–12 | hz | Speeds up tremolo and auto-pan. |
+| `auto_pan` | 0–1 | normalized | Widens left/right motion when tremolo is enabled. |
+| `gain` | 0–2 | normalized | Raises output level after pickup shaping. |
+| `oversample` | 2 or 4 | integer | Four internal substeps reduce aliasing at greater CPU cost. |
+
+Harder strikes increase the pickup's harmonic bark as well as level. The Tine
+presets use a short bending transient over the longer fundamental. `tine_ep`
+and `tine_tremolo` place the pickup near an end for harmonic body. `tine_bark`
+adds a closer pickup and more drive; `tine_bell` keeps a cleaner pickup and
+firmer strike for a distinct ping. Reed's bending transient also fades early.
+
+Track overrides replace preset controls. Raising `pickup_distance` on
+`tine_bark` reduces its defining bark; raising `hammer_felt` on `tine_bell`
+softens its ping. Start with the preset defaults, then change one control at a
+time to keep the intended character audible.
 
 ## Clav controls
 
