@@ -11,13 +11,13 @@ import (
 func (e *Engine) applyChainCommand(c cmd.Command) {
 	track := int(c.Track)
 	if e.voices[track].kind == VoiceOff {
-		e.fault(9)
+		e.fault(FaultVoiceUnsupported)
 		return
 	}
 	p := &e.patterns[track]
 	position := uint8(c.Index)
 	if position > p.chainLen {
-		e.fault(19)
+		e.fault(FaultChainPosition)
 		return
 	}
 	entry := chainEntry{slot: uint8(c.Arg0), repeats: uint8(c.Arg0 >> 8)}

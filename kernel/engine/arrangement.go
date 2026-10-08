@@ -45,7 +45,7 @@ type SongEntry struct {
 
 func (e *Engine) applySceneCommand(c cmd.Command) {
 	if int(c.Index) >= len(e.scenes) {
-		e.fault(17)
+		e.fault(FaultSceneIndex)
 		return
 	}
 	var at int64
@@ -53,20 +53,20 @@ func (e *Engine) applySceneCommand(c cmd.Command) {
 		var ok bool
 		at, ok = e.scenePatternEndTick()
 		if !ok {
-			e.fault(18)
+			e.fault(FaultNoSharedPatternEnd)
 			return
 		}
 	} else {
 		var err error
 		at, err = seq.QuantizeTick(e.transport.Tick(), cmd.Quantize(c.Arg0), 16)
 		if err != nil {
-			e.fault(14)
+			e.fault(FaultQuantize)
 			return
 		}
 	}
 	if at > e.transport.Tick() {
 		if e.pendingLen == len(e.pending) {
-			e.fault(5)
+			e.fault(FaultPendingFull)
 			return
 		}
 		c.Tick, c.Arg0 = at, 0
@@ -185,7 +185,7 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 			e.fadeSceneTrack(track, false)
 			if p.active == int8(binding.Slot) {
 				if v := &e.voices[track]; v.preparedClip && v.prepared.SelectSlot(binding.Slot, 0, e.transport.Playing()) != nil {
-					e.fault(19)
+					e.fault(FaultPreparedVoice)
 					return
 				}
 				p.chainArmed = false

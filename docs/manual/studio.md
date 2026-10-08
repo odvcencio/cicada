@@ -71,9 +71,20 @@ place points at scene boundaries. Continuous curves and recording control moveme
 ## Patterns
 
 Choose a pattern from the library. The piano roll shows pitched patterns;
-drum patterns show their authored lanes. Click a cell to write or clear a note
-or hit. Choose a step number (starting at **1**) to inspect it without changing
-it. **View register** moves the piano roll to another octave; the editor reports
+drum patterns show their authored lanes.
+
+With browser scripting on, the **Piano-roll tools** start on **Select**. Click
+a cell to inspect its step without changing it, or double-click an empty cell
+to add a note or hit. Choose **Draw (B)** and a click writes or erases a cell.
+Press **B** to switch between the two tools. With a cell focused, **Delete** or
+**Backspace** clears its step, and the left and right arrow keys select the
+neighboring step. In a notes pattern, with the selected note's cell focused, the
+up and down arrows transpose it by a semitone; hold **Shift** for an octave.
+Without browser scripting there are no tools: a click on a cell writes or
+clears it. In either mode, choose a step number (starting at **1**) to inspect
+that step without changing it.
+
+**View register** moves the piano roll to another octave; the editor reports
 notes outside the displayed register.
 
 The step inspector sets note, tie, or rest; MIDI pitch; accent and slide;
@@ -120,67 +131,54 @@ It checks the original revision; it cannot overwrite another editor's save.
 
 ![GoSX Live performance with scene launches, note input, and MIDI learning.](screenshots/studio-live-1440.png)
 
-**Live** plays an acid track from the A/W/S/E/D/F/T/G/Y/H/U/J/K keys or the
-onscreen keyboard. Drum pads use General MIDI notes. Press **Play** first;
-changing tracks, leaving the panel, or losing focus releases held notes.
+**Live** plays the **Pitched track** you choose from the A/W/S/E/D/F/T/G/Y/H/U/J/K
+keys or the onscreen keyboard. That list offers acid tracks, the modeled
+keyboards, and authored instrument tracks; audio and sampler tracks are not
+offered. The drum pads play the **Drum track** you choose and use General MIDI
+notes. Press **Play** first; changing tracks, leaving the panel, or losing focus
+releases held notes, and **Release notes** releases them on demand.
 The launch matrix queues scenes or individual slots with the selected timing;
 mint marks a playing slot and amber marks a queued slot. Its forms also work
 without browser scripting.
 
-Live accepts MIDI Polyphonic Expression (MPE) lower and upper zones. Send the
-controller's MPE zone setup (RPN 0,6) before playing. Member-channel pitch bend
-uses a default range of ±48 semitones; pitch-bend sensitivity RPN 0,0 overrides
-that range. Channel pressure, polyphonic pressure, and CC74 become per-note
-pressure and timbre. Each input device, channel, and note-on has its own note
-identity, so equal pitches on different channels remain independent.
-
-Without a zone setup, expression received on a non-master channel enables the
-default lower zone. Until expression or zone setup identifies MPE, channel 10
-keeps its General MIDI drum routing. Choose a monophonic programmable instrument
-track or an acid track as the note destination. Experimental poly tracks cannot
-audition MPE input live. Web MIDI supplies MIDI 1 packets; this
-input does not decode MIDI 2 Universal MIDI Packets.
+**Enable MIDI** asks for browser permission without system-exclusive access.
+Live then reads Note On, Note Off, and Control Change messages from each
+connected input. Notes play the selected pitched track. On channel 10, General
+MIDI drum notes play the selected drum track and other notes are ignored. Live
+ignores every other message, including pitch bend, channel and polyphonic
+pressure, and MPE zone setup, so an MPE controller plays plain notes without
+per-note expression. Web MIDI supplies MIDI 1 packets; this input does not
+decode MIDI 2 Universal MIDI Packets.
 
 #### Record and Arm
 
-**Enable MIDI** asks for browser permission without system-exclusive access.
 Select a parameter, scene, slot, track stop, or transport target, then **Learn
 next input**. Parameters learn controller messages; launches learn note
 messages. **MIDI launch timing** chooses next beat, next bar, or one, two, or four
 bars. Mapping and track selections are saved in this browser. **Clear mappings**
 removes them. Browsers without Web MIDI can still use keyboard and drum pads.
 
-Choose each track's pattern, then **Record notes**. Acid and drum recordings
-use separate pattern targets. **Finish note take** retains the notes for
-review without changing the score. **Commit notes to patterns** quantizes them
-to the nearest step; **Undo** restores the previous patterns. An interrupted
-take is retained in the tab's session storage when available. A source conflict
-keeps the preview; applying it to the current score requires explicit review.
-Server previews expire after thirty minutes or when Studio closes.
-Ordinary MIDI take commits support acid, drum, and eight-voice programmable tracks with single-note takes. Expressive takes also
-support programmable instrument tracks with scalar note patterns. Existing
-chord patterns are refused without changing the score; edit their chords in
-the grid or source pane. Chord recording is not available through the take editor.
+Press **Play**, choose the **Pitched pattern** and **Drum pattern** to record
+into, then select **Record notes**. Acid and drum recordings use separate
+pattern targets. **Finish note take** retains the notes for review without
+changing the score. Under **Retained note take**, **Commit notes to patterns**
+quantizes the notes to the nearest step and **Discard note take** drops them;
+after a commit, **Undo** restores the previous patterns. While you record, the
+take stays in the page, and an interrupted take is retained in the tab's session
+storage when available. If the score changes after you finish, the preview
+stays and a message asks you to review the notes against the current patterns
+before you choose **Apply notes to current score**. Server previews expire
+after thirty minutes or when Studio closes.
+Take commits support acid, drum, and eight-voice programmable tracks with
+single-note takes. Existing chord patterns are refused without changing the
+score; edit their chords in the grid or source pane. Chord recording is not
+available through the take editor. An acid take turns a note that is still held
+when the next one starts into a slide.
 
-Expression takes write `bend:`, `vibrato:`, `pressure:`, and `timbre:` rows and
-use ties for held notes. Samples and note durations quantize to the pattern's
-step grid. A one-way bend keeps its cents value. Pitch samples with at least
-two direction reversals within a step become a bend center and vibrato depth;
-playback uses the score's fixed 5 Hz vibrato rate. Other steps use `0ct` vibrato
-depth. This estimate preserves depth rather than the original oscillation rate
-or every controller sample. The raw samples remain in the page's take buffer
-until commit or discard.
-
-Expression takes use one note per step. Studio keeps the take buffered and
-refuses to commit overlapping expressive notes, notes that occupy the same
-quantized step, or notes longer than one pattern loop. Record those voices into
-separate tracks and patterns without chord steps. Expression recording also
-requires directly authored note steps rather than a reused phrase. Ordinary acid takes retain
-their existing overlapping-slide behavior.
-
-![A committed MPE take adds bend, vibrato, pressure, and timbre rows beside the pitch grid.](screenshots/studio-mpe-score.png)
-
-![The recorded take preview and commit controls at 390 pixels wide.](screenshots/studio-mpe-mobile-390.png)
+The Live panel records each note's pitch, timing, and velocity. It does not
+record bend, vibrato, pressure, or timbre. To add expression, write `bend:`,
+`vibrato:`, `pressure:`, and `timbre:` rows in **Score**; see [expression
+rows](../spec/features.md#expression-rows).
 
 ## Mixer and instruments
 
@@ -249,7 +247,7 @@ settings. Device errors stay visible; Cicada does not silently switch engines.
 
 **Takes** selects an audio track and scene for native input recording. Enable input in
 **Audio**, then **Arm take**, **Record**, and **Finish take**. Recording begins
-after a two-bar count-in; status shows saved frames or seconds and incomplete
+after a one-bar count-in; status shows saved frames or seconds and incomplete
 input. The durable journal
 retains failed or conflicting takes. **Select take** commits a selected take;
 **Recover take** retries its recovery against the current revision.
@@ -277,13 +275,14 @@ playing from a later block reconstructs an inherited clip's elapsed position.
 Clips play once at their source rate; they are not stretched to fit scene bars.
 Sampler patterns use the declared root pitch, voice budget, and oneshot or loop
 mode; note gates release their voices. Supported playback ratios are 0.125–8.
-Live keyboard input currently targets the existing acid and drum controls.
+**Live** does not offer sampler tracks; see [Live performance](#live-performance).
 
 Assets are verified and decoded before playback, confined to the project
 directory, and shared immutably between regions. Native playback admits up to
 64 MiB of resident PCM per prepared project and 16 clips per audio track. File
-I/O and decoding never run in the audio callback. Existing audio accompanies
-new native recordings; the portable AudioWorklet image uses the same sample-capable engine and
+I/O and decoding never run in the audio callback. While a new native take
+records, existing audio clips and sampler tracks are silent and synth tracks
+play as accompaniment. The portable AudioWorklet image uses the same sample-capable engine and
 verified pack map as native playback and offline render. The existing 2 MiB
 project-image and 64 MiB native resident-PCM limits still apply.
 

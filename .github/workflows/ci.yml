@@ -13,7 +13,9 @@ permissions:
 
 concurrency:
   group: cicada-ci-${{ github.ref }}-${{ github.event_name }}
-  cancel-in-progress: true
+  # A newer push to a pull request cancels its older run. Runs on main finish,
+  # so a merge is not left without a result when the next merge lands.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   commit-hygiene:
@@ -106,9 +108,8 @@ jobs:
 
   m0:
     name: M0 language and kernel
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
-    runs-on: [self-hosted, linux, x64]
-    timeout-minutes: 25
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
@@ -195,7 +196,7 @@ jobs:
 
   workstation:
     name: GoSX workstation and Tymbal boundary
-    runs-on: [self-hosted, linux, x64]
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     env:
       GOWORK: off
@@ -285,7 +286,9 @@ jobs:
 
   m2-pr:
     name: M2 AudioWorklet gates
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    # This job runs on the self-hosted reference machine, so a pull request from
+    # a fork must not run it.
+    if: (github.event_name == 'pull_request' || github.event_name == 'push') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: [self-hosted, linux, x64]
     timeout-minutes: 40
     env:
@@ -354,7 +357,9 @@ jobs:
   m2-soak:
     name: M2 AudioWorklet nightly soak
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    # Its CPU gate (0.67 ms per callback) is measured on the reference machine.
+    # A hosted runner measured 1.296 ms, so this job stays on the self-hosted one.
+    runs-on: [self-hosted, linux, x64]
     timeout-minutes: 55
     env:
       GOWORK: off

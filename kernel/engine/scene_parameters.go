@@ -87,48 +87,48 @@ func (e *Engine) restoreSceneDefaults() bool {
 		if v.piano != nil {
 			v.pianoSustain = p.pianoSustain
 			if v.piano.SetSustain(p.pianoSustain) != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return false
 			}
 		}
 		if keysEnabled && v.keys != nil {
 			v.pianoSustain = p.pianoSustain
 			if v.keys.SetSustain(p.pianoSustain) != nil {
-				e.fault(18)
+				e.fault(FaultParam)
 				return false
 			}
 		}
 		if v.guitar != nil && v.guitar.SetParams(p.guitar) != nil {
-			e.fault(18)
+			e.fault(FaultParam)
 			return false
 		}
 		if v.acid != nil && v.acid.SetParams(p.acid) != nil {
-			e.fault(18)
+			e.fault(FaultParam)
 			return false
 		}
 		if v.drums != nil {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				if v.drums.SetParams(lane, p.drums[lane]) != nil {
-					e.fault(18)
+					e.fault(FaultParam)
 					return false
 				}
 			}
 		}
 		if v.insert != nil && v.insert.SetParams(p.drive) != nil {
-			e.fault(18)
+			e.fault(FaultParam)
 			return false
 		}
 	}
 	if e.delayA != nil && e.delayA.SetParams(base.delay) != nil {
-		e.fault(18)
+		e.fault(FaultParam)
 		return false
 	}
 	if e.reverbB != nil && e.reverbB.SetParams(base.reverb) != nil {
-		e.fault(18)
+		e.fault(FaultParam)
 		return false
 	}
 	if e.compMusic != nil && e.compMusic.SetParams(base.compressor) != nil {
-		e.fault(18)
+		e.fault(FaultParam)
 		return false
 	}
 	return true

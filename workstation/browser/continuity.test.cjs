@@ -9,7 +9,10 @@
  * Install Playwright in the test environment, or set CICADA_PLAYWRIGHT_MODULE
  * to its package path or a createRequire anchor such as the runtime's browser.cjs.
  * CICADA_CHROME_PATH selects an installed Chrome; CICADA_HEADLESS=0 shows it.
+ * CICADA_CONTINUITY_REPEAT=N runs the scenario N times to measure flakiness.
  * The runner refuses unmarked scores and resets its own fixture before testing.
+ * A failing run prints its action list and a timeline of requests, history
+ * changes and busy spans.
  */
 'use strict';
 
@@ -63,7 +66,26 @@ async function until(predicate, message, timeout = 15_000) {
   assert.fail(message);
 }
 
-test('GoSX projections retain Studio edits, focus, scroll, playback and engine mounts', {timeout: 120_000}, async t => {
+// The first browser session to reach a Studio owns it, so repeated runs share
+// one context. Each run still gets its own page.
+let shared;
+async function sharedBrowser() {
+  if (!shared) {
+    let executablePath = process.env.CICADA_CHROME_PATH;
+    if (!executablePath && process.platform === 'win32') {
+      executablePath = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]
+        .filter(Boolean).map(root => path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')).find(candidate => fs.existsSync(candidate));
+    }
+    const browser = await playwright().chromium.launch({
+      headless: process.env.CICADA_HEADLESS !== '0', executablePath,
+      args: ['--autoplay-policy=no-user-gesture-required'],
+    });
+    shared = {browser, context: await browser.newContext({viewport: {width: 1100, height: 760}})};
+  }
+  return shared;
+}
+
+async function scenario(t) {
   assert.ok(process.env.CICADA_STUDIO_URL, 'set CICADA_STUDIO_URL to the disposable Studio instance');
   const base = new URL(process.env.CICADA_STUDIO_URL);
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname), 'use a local disposable Studio');
@@ -72,22 +94,29 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     target.search = new URLSearchParams({panel, ...(panel === 'patterns' ? {pattern: 'continuity', step: '1'} : {})}).toString();
     return target.href;
   };
-  let executablePath = process.env.CICADA_CHROME_PATH;
-  if (!executablePath && process.platform === 'win32') {
-    executablePath = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]
-      .filter(Boolean).map(root => path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')).find(candidate => fs.existsSync(candidate));
-  }
-  const browser = await playwright().chromium.launch({
-    headless: process.env.CICADA_HEADLESS !== '0', executablePath,
-    args: ['--autoplay-policy=no-user-gesture-required'],
-  });
-  const context = await browser.newContext({viewport: {width: 1100, height: 760}});
+  const {context} = await sharedBrowser();
   const page = await context.newPage();
   page.setDefaultTimeout(15_000);
   const errors = [], warnings = [], requests = [];
   let armed = false, documentRequests = 0, inFlight = 0, maxInFlight = 0;
   let injectStale = false, delayNextPattern = false, staleRevision = '';
   let injectInterveningSave = false, interveningState;
+  // Evidence for a failing run: the network the engine used, the history it
+  // wrote and when it was busy, in one ordered list.
+  const clock = Date.now(), timeline = [];
+  const note = (kind, detail) => timeline.push({at: Date.now() - clock, text: `${kind} ${detail}`});
+  const watched = request => {
+    const target = new URL(request.url());
+    return /^\/(__workspace|api\/revision|__actions\/)/.test(target.pathname) ? target : null;
+  };
+  page.on('request', request => {
+    const target = watched(request);
+    if (target) note('request', `${request.method()} ${target.pathname}${target.search}`);
+  });
+  page.on('response', response => {
+    const target = watched(response.request());
+    if (target) note('response', `${response.status()} ${target.pathname}`);
+  });
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => {
     const text = message.text(), location = message.location().url;
@@ -129,6 +158,25 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     return record.result.data.revision;
   };
   const click = async selector => page.locator(selector).evaluate(button => button.click());
+  // Record history writes and busy spans inside the page. Navigation discards
+  // that log, so collect it into the timeline before leaving a document.
+  const watchPage = () => page.evaluate(() => {
+    if (window.__continuityTimeline) return;
+    const log = window.__continuityTimeline = [];
+    for (const name of ['pushState', 'replaceState']) {
+      const original = history[name].bind(history);
+      history[name] = (...args) => { log.push({at: Date.now(), text: `history.${name} ${args[2]}`}); return original(...args); };
+    }
+    const root = document.querySelector('#cicada-workspace');
+    new MutationObserver(records => records.forEach(record => log.push({at: Date.now(), text: `workspace ${record.attributeName}=${root.getAttribute(record.attributeName)}`})))
+      .observe(root, {attributes: true, attributeFilter: ['aria-busy']});
+  });
+  const collectPage = async () => {
+    try {
+      const log = await page.evaluate(() => window.__continuityTimeline || []);
+      for (const entry of log) timeline.push({at: entry.at - clock, text: `page ${entry.text}`});
+    } catch (_) { /* The page may already be gone. */ }
+  };
   const assertPatternContinuity = async draft => {
     const actual = await page.evaluate(() => {
       const refs = window.__continuityRefs;
@@ -167,6 +215,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     assert.ok([200, 303].includes(reset.status()), `fixture reset failed: ${reset.status()}`);
     await page.goto(url('patterns'), {waitUntil: 'domcontentloaded'});
     await ready();
+    await watchPage();
     await page.route('**/__actions/**', async route => {
       if (route.request().method() !== 'POST') return route.continue();
       const contentType = route.request().headers()['content-type'] || '';
@@ -217,6 +266,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
       } finally { if (!engineOwned) inFlight--; }
     });
     armed = true;
+    note('step', 'play');
     await click('.toolbar form[action="/__actions/transport"] button[value="play"]');
     await until(async () => (await state('/api/transport')).playing, 'transport did not start');
     await waitRequests(1);
@@ -277,6 +327,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     // Hold one response to prove that a focused draft survives a real in-flight projection.
     delayNextPattern = true;
     start = requests.length;
+    note('step', 'draw cell 15');
     await click(cell(15));
     await waitRequests(start + 1);
     let revision = await projectedRevision(requests[start]);
@@ -300,6 +351,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
       }).observe(window.__continuityRefs.grid, {attributes: true, subtree: true, attributeFilter: ['data-active']});
     });
     start = requests.length;
+    note('step', '12 queued edits');
     await page.evaluate(pitch => {
       for (let step = 16; step <= 27; step++) document.querySelector(`.piano-roll form:has(input[name="pitch"][value="${pitch}"]) .roll-cell[value="${step}"]`).click();
     }, rowPitch);
@@ -311,6 +363,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     }
     await projectedRevision(requests[start + 11]);
     await page.waitForFunction(() => window.__continuityLatencies.length === 12);
+    note('step', '12 edits painted');
     const latencies = await page.evaluate(() => window.__continuityLatencies.slice().sort((a, b) => a - b));
     t.diagnostic(`12 queued cell edits, click→painted projection p50=${latencies[5].toFixed(1)} ms, p95=${latencies[11].toFixed(1)} ms; peak in-flight writes=${maxInFlight}`);
     const serverTimes = requests.slice(start, start + 12).map(record => record.responseMs).sort((a, b) => a - b);
@@ -321,6 +374,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     await assertPatternContinuity(draft);
 
     start = requests.length;
+    note('step', 'undo');
     await click('.toolbar form[action="/__actions/undo"] button');
     await waitRequests(start + 1);
     revision = await projectedRevision(requests[start]);
@@ -334,6 +388,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     draft = await snapshot(true);
     const beforeInvalid = await state('/api/state');
     start = requests.length;
+    note('step', 'submit invalid chance');
     await page.locator('#step-inspector form').evaluate(form => { form.noValidate = true; form.requestSubmit(form.querySelector('button[type="submit"]')); });
     await waitRequests(start + 1);
     assert.equal(requests[start].status, 422);
@@ -343,6 +398,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     await page.locator('#step-inspector input[name="chance"]').fill('55');
     draft = await snapshot(true);
     start = requests.length;
+    note('step', 'save chance 55');
     await click('#step-inspector button[type="submit"]');
     await waitRequests(start + 1);
     revision = await projectedRevision(requests[start]);
@@ -354,6 +410,7 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     const beforeStale = await state('/api/state');
     assert.notEqual(staleRevision, beforeStale.revision, 'conflict fixture must use an older revision');
     injectStale = true; start = requests.length;
+    note('step', 'stale write');
     await click(cell(28));
     await waitRequests(start + 1);
     assert.equal(requests[start].status, 409);
@@ -361,15 +418,18 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     assert.deepEqual(await state('/api/state'), beforeStale, 'stale write altered the score');
     await assertPatternContinuity(draft);
     await page.locator('[data-workspace-retry]').waitFor({state: 'visible'});
+    note('step', 'retry');
     await click('[data-workspace-retry]');
     await until(async () => /Workspace updated/i.test(await page.locator('[data-workspace-status]').textContent()), 'saved-state refresh did not settle');
     assert.deepEqual(await state('/api/state'), beforeStale, 'conflict recovery altered the score');
     await assertPatternContinuity(draft);
     draft = await snapshot();
+    note('step', 'select step 23');
     await click('.piano-roll .step-number:nth-of-type(23)');
     await page.waitForFunction(() => new URL(location.href).searchParams.get('step') === '23');
     assert.equal(await page.locator('#step-inspector input[name="chance"]').inputValue(), '100', 'step23 inherited step27 conflict draft');
     await assertPatternContinuity(draft);
+    note('step', 'select step 27');
     await click('.piano-roll .step-number:nth-of-type(27)');
     await page.waitForFunction(() => new URL(location.href).searchParams.get('step') === '27');
     assert.equal(await page.locator('#step-inspector input[name="chance"]').inputValue(), '42', 'step27 conflict draft was not restored');
@@ -393,8 +453,10 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
 
     // A separate panel verifies preservation of a genuine nested GoSX engine.
     armed = false;
+    await collectPage();
     await page.goto(url('mixer'), {waitUntil: 'domcontentloaded'});
     await ready();
+    await watchPage();
     await page.locator('#cicada-meters canvas').waitFor();
     await page.evaluate(() => { window.__continuityMeters = {root: document.querySelector('#cicada-workspace'), mount: document.querySelector('#cicada-meters'), canvas: document.querySelector('#cicada-meters canvas'), document: window.__continuityDocument}; });
     documentRequests = 0; armed = true;
@@ -418,8 +480,10 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
 
     // An active Live lease must survive workspace changes and note-take review.
     armed = false;
+    await collectPage();
     await page.goto(url('live'), {waitUntil: 'domcontentloaded'});
     await ready();
+    await watchPage();
     await page.locator('[data-live-acid]').selectOption('keys');
     const livePatterns = await page.locator('[data-live-pattern] option').evaluateAll(options => options.map(option => option.value));
     assert.ok(livePatterns.includes('continuity'), 'fixture must expose the continuity live pattern');
@@ -509,8 +573,10 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     // The first-party GoSX editor retains its surface while clean canonical
     // updates and dirty drafts follow their respective owners.
     armed = false;
+    await collectPage();
     await page.goto(url('code'), {waitUntil: 'domcontentloaded'});
     await ready();
+    await watchPage();
     const textarea = page.locator('#editor-content');
     const beforeCode = await state('/api/state');
     const codeOriginal = beforeCode.source.replace(/\r\n/g, '\n');
@@ -563,7 +629,8 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     let codeDraft = await codeSnapshot();
     assert.ok(codeDraft.scroll.top > 0 && codeDraft.scroll.y > 0, 'Score fixture must exercise inner and page scrolling');
     documentRequests = 0; armed = true; start = requests.length;
-    await click('#editor-native-form button[type="submit"]');
+    // Save is the only unnamed submit button; Check file carries name="intent".
+    await click('#editor-native-form button[type="submit"]:not([name])');
     await waitRequests(start + 1);
     assert.equal(requests[start].action, 'source');
     await projectedRevision(requests[start]);
@@ -597,9 +664,31 @@ test('GoSX projections retain Studio edits, focus, scroll, playback and engine m
     assert.equal(mixerRecord.status, 200, `action mixer: ${mixerRecord.result?.message || 'missing success response'}`);
     t.diagnostic('Select left source/revision unchanged; Draw serialized writes. No document GET, root/grid/cell/timing-input replacements, nested meter or Live remounts, callback errors or warnings; same-step inspector identity and draft/focus/scroll/playback survived422 correction and409 recovery. Held Live lease survived launch; take review and discard stayed in place.');
     assert.ok(latencies[11] < 5000, 'rapid edit queue stalled beyond five seconds');
+  } catch (error) {
+    try {
+      await collectPage();
+      timeline.sort((a, b) => a.at - b.at);
+      const view = await page.evaluate(() => ({
+        search: location.search, busy: document.querySelector('#cicada-workspace')?.getAttribute('aria-busy'),
+        status: document.querySelector('[data-workspace-status]')?.textContent,
+        inspectorStep: document.querySelector('#step-inspector input[name="step"]')?.value,
+        chance: document.querySelector('#step-inspector input[name="chance"]')?.value,
+      }));
+      t.diagnostic(`failure view ${JSON.stringify(view)}`);
+      requests.forEach((record, index) => t.diagnostic(`action ${index} ${record.action} status=${record.status} step=${record.payload.step ?? ''} mode=${record.payload.mode ?? ''} chance=${record.payload.chance ?? ''}`));
+      timeline.forEach(entry => t.diagnostic(`${String(entry.at).padStart(6)} ms ${entry.text}`));
+    } catch (_) { /* The original assertion remains the failure. */ }
+    throw error;
   } finally {
     await page.unroute('**/__actions/**');
     try { await nativeAction('transport', {action: 'stop'}); } catch (_) { /* Preserve the primary regression failure. */ }
-    await browser.close();
+    await page.close();
   }
-});
+}
+
+const repeat = Math.max(1, Number(process.env.CICADA_CONTINUITY_REPEAT) || 1);
+for (let run = 1; run <= repeat; run++) {
+  const suffix = repeat > 1 ? ` (run ${run} of ${repeat})` : '';
+  test(`GoSX projections retain Studio edits, focus, scroll, playback and engine mounts${suffix}`, {timeout: 120_000}, scenario);
+}
+test.after(async () => { if (shared) await shared.browser.close(); });

@@ -54,7 +54,7 @@ func SourceEdition(file SourceFile) int {
 func CheckLibrary(file SourceFile) []Diagnostic {
 	root, walker, err := ParseTree(file.Source)
 	if err != nil {
-		d := syntaxDiagnostic(err, file.Source)
+		d := syntaxDiagnostic(root, walker, err, file.Source)
 		d.Position.File = file.Path
 		return []Diagnostic{d}
 	}

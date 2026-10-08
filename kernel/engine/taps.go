@@ -14,7 +14,7 @@ type TapFrame struct {
 
 func (e *Engine) RenderWithTaps(left, right []float32, taps []TapFrame) {
 	if len(taps) != len(left) {
-		e.fault(1)
+		e.fault(FaultRenderBlock)
 		clear(left)
 		clear(right)
 		return

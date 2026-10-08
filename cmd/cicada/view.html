@@ -829,7 +829,6 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   const scenePads = () => [...document.querySelectorAll('.scene-pad[data-scene]')];
   const sceneSlots = () => [...document.querySelectorAll('button.scene-slot[data-track]')];
   const patternsRoot = document.getElementById('patterns');
-  let historyList = document.getElementById('history-list');
   const masterMeter = document.querySelector('.master-meter');
   const masterMeterFill = document.getElementById('master-meter-fill');
   const masterMeterHold = document.getElementById('master-meter-hold');
@@ -882,9 +881,11 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
     }).catch(() => {});
   }
   window.addEventListener('pagehide', () => {
-    if (!browserPlaying) return;
-    const sampleRate = window.cicadaBrowserAudio.context?.sampleRate || 0;
-    navigator.sendBeacon('/api/transport/browser-audio', new Blob([JSON.stringify({playing:false, sampleRate})], {type:'application/json'}));
+    if (browserPlaying) {
+      const sampleRate = window.cicadaBrowserAudio.context?.sampleRate || 0;
+      navigator.sendBeacon('/api/transport/browser-audio', new Blob([JSON.stringify({playing:false, sampleRate})], {type:'application/json'}));
+    }
+    window.cicadaBrowserAudio.close().catch(() => {});
   });
   const editing = () => !shell.hidden;
   const dirty = () => editing() && editor.value !== original;
@@ -909,13 +910,11 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
         document.body.dataset.revision = result.revision;
       }
       if (typeof isBrowser === 'function' && isBrowser()) {
-        document.body.dataset.revision = result.revision;
         const stateResponse = await fetch('/api/state', {cache:'no-store'});
         const state = await stateResponse.json();
         if (state.valid) {
-          document.body.dataset.revision = state.revision;
           // Keep text typed since the save was sent; only replace a clean editor.
-          if (!dirty()) { original = state.source; editor.value = state.source; }
+          if (!dirty()) { document.body.dataset.revision = state.revision; original = state.source; editor.value = state.source; }
           if (window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(state.revision);
           await refreshProjection({revision: state.revision, source: state.source});
           setStatus(window.cicadaBrowserAudio.context && browserPlaying ? 'Saved; browser score queued for the next bar' : 'Saved to score file', 'success');
@@ -971,7 +970,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       try {
         if (isBrowser()) {
           if (!window.cicadaBrowserAudio.context) throw new Error('Start browser audio before starting a song block');
-          window.cicadaBrowserAudio.playFrom(Number(block.dataset.startBar));
+          await window.cicadaBrowserAudio.playFrom(Number(block.dataset.startBar));
           setStatus(`Starting ${block.dataset.scene} at bar ${block.dataset.startBar}`, 'success');
           return;
         }
@@ -1069,7 +1068,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       if (isBrowser()) {
         if (!window.cicadaBrowserAudio.context) throw new Error('Start browser audio before pressing Play');
         if (browserPlaying) window.cicadaBrowserAudio.stop();
-        else window.cicadaBrowserAudio.play();
+        else await window.cicadaBrowserAudio.play();
         return;
       }
       const response = await fetch('/api/transport', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:playing ? 'pause' : 'play'})});
@@ -1155,6 +1154,10 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   window.cicadaBrowserAudio.onState(state => {
     browserPlaying = state;
     reportBrowserAudioStatus(state);
+    if (!window.cicadaBrowserAudio.context) {
+      startAudioButton.disabled = false;
+      startAudioButton.textContent = 'Start audio';
+    }
     if (isBrowser()) transportButton.textContent = state ? 'Stop' : 'Play';
   });
   window.cicadaBrowserAudio.onMessage(message => {

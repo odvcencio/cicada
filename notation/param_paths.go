@@ -1,6 +1,7 @@
 package notation
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -162,6 +163,9 @@ func notationModeledPiano(score *Score, kind string) bool {
 	return true
 }
 
+// validateSceneValue accepts the values the registry accepts for a live
+// setting. The error says what the setting expects in the registry's own terms,
+// so it never shows the text of a Go parse error.
 func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {
 	if source == "off" && descriptor.Off {
 		return nil
@@ -178,22 +182,95 @@ func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {
 	}
 	value, unit, err := notationBaseValue(source)
 	if err != nil {
-		return err
+		return sceneValueMismatch(descriptor, source)
 	}
 	want := strings.ToLower(descriptor.Unit)
 	if want == "ratio" || want == "" || want == "semitone" || want == "cent" {
 		want = "unit"
 	}
 	if unit != want {
-		return strconv.ErrSyntax
+		return sceneValueMismatch(descriptor, source)
+	}
+	if descriptor.Curve == "toggle" {
+		if value != 0 && value != 1 || value < descriptor.Min || value > descriptor.Max {
+			return sceneValueMismatch(descriptor, source)
+		}
+		return nil
 	}
 	if math.IsNaN(value) || math.IsInf(value, 0) || value < descriptor.Min || value > descriptor.Max {
-		return strconv.ErrRange
-	}
-	if descriptor.Curve == "toggle" && value != 0 && value != 1 {
-		return strconv.ErrRange
+		return fmt.Errorf("%s is outside the range %s", source, sceneValueRange(descriptor))
 	}
 	return nil
+}
+
+// sceneValueMismatch reports a value of the wrong kind, such as 5 for a
+// frequency or a word for a number.
+func sceneValueMismatch(descriptor paramdefs.Descriptor, source string) error {
+	return fmt.Errorf("expected %s; got %s", sceneValueExpectation(descriptor), source)
+}
+
+// sceneValueExpectation says in plain words what a registered setting accepts.
+// The example is the registry default, so it is always inside the range.
+func sceneValueExpectation(descriptor paramdefs.Descriptor) string {
+	if descriptor.Curve == "toggle" {
+		return "on or off"
+	}
+	words := append([]string(nil), descriptor.Values...)
+	if descriptor.Off {
+		words = append(words, "off")
+	}
+	if descriptor.Curve == "enum" {
+		return "one of " + strings.Join(words, ", ")
+	}
+	example := sceneValueNumber(descriptor, descriptor.Default)
+	var expected string
+	switch strings.ToLower(descriptor.Unit) {
+	case "hz":
+		expected = "a frequency in Hz or kHz, such as " + example
+	case "ms":
+		expected = "a time in ms or s, such as " + example
+	case "db":
+		expected = "a level in dB, such as " + example
+	case "semitone":
+		expected = "a number of semitones, such as " + example
+	case "cent":
+		expected = "a number of cents, such as " + example
+	default:
+		expected = "a plain number, such as " + example
+	}
+	switch len(words) {
+	case 0:
+	case 1:
+		expected += ", or " + words[0]
+	default:
+		expected += ", or one of " + strings.Join(words, ", ")
+	}
+	return expected
+}
+
+// sceneValueRange writes the registry range with the setting's unit, such as
+// "20Hz to 8000Hz".
+func sceneValueRange(descriptor paramdefs.Descriptor) string {
+	low, high := strconv.FormatFloat(descriptor.Min, 'f', -1, 64), strconv.FormatFloat(descriptor.Max, 'f', -1, 64)
+	switch strings.ToLower(descriptor.Unit) {
+	case "hz", "ms", "db":
+		return low + descriptor.Unit + " to " + high + descriptor.Unit
+	case "semitone":
+		return low + " to " + high + " semitones"
+	case "cent":
+		return low + " to " + high + " cents"
+	}
+	return low + " to " + high
+}
+
+// sceneValueNumber writes one registry number with the setting's unit.
+func sceneValueNumber(descriptor paramdefs.Descriptor, value float64) string {
+	text := strconv.FormatFloat(value, 'f', -1, 64)
+	switch strings.ToLower(descriptor.Unit) {
+	case "hz", "ms", "db":
+		return text + descriptor.Unit
+	}
+	return text
 }
 
 func notationBaseValue(source string) (float64, string, error) {
