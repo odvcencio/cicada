@@ -260,12 +260,7 @@ func registryValue(descriptor paramdefs.Descriptor, value Value) any {
 }
 
 func LookupParamDescriptor(id string) (paramdefs.Descriptor, bool) {
-	for _, descriptor := range paramdefs.Registry {
-		if descriptor.ID == id {
-			return descriptor, true
-		}
-	}
-	return paramdefs.Descriptor{}, false
+	return paramdefs.Lookup(id)
 }
 
 func ParamAddressByName(p *Project, address string) (ParamAddress, error) {

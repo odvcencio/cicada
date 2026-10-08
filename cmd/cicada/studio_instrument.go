@@ -38,7 +38,7 @@ func (s *studio) editInstrument(w http.ResponseWriter, r *http.Request) {
 		if edit.Action == "set-parameter" {
 			intent.Value = edit.Value
 		}
-		s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, nil)
+		s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterInstrument, nil)
 		return
 	}
 	if patch, exists := instrument.FindPatch(edit.Pattern); exists {

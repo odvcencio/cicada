@@ -1,0 +1,51 @@
+title "Mixer"
+
+tempo 120
+
+key a minor
+
+fx room delay {
+  feedback = 0.35
+}
+
+fx space reverb {}
+
+fx grit drive {}
+
+fx edge drive {}
+
+fx glue comp {}
+
+bus music {
+  insert = glue
+}
+
+bus sfx {}
+
+master {
+  level = -1dB
+  mute = off
+  solo = off
+  insert = none
+}
+
+track bass acid {
+  // stored level
+  level = -3.5dB
+  mute = off
+  insert = grit
+  send room = 0.25
+  out = music
+}
+
+pattern pulse acid {
+  1 . 5 .
+}
+
+scene main {
+  bass = pulse
+}
+
+song {
+  main
+}

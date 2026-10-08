@@ -13,12 +13,78 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
-	"m31labs.dev/cicada/edition"
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/internal/paramdefs"
-	"m31labs.dev/cicada/migration"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
+
+type mixerLineRange = edits.LineRange
+
+type mixerField struct {
+	Path        string               `json:"path"`
+	Address     string               `json:"address,omitempty"`
+	Value       any                  `json:"value"`
+	SourceValue string               `json:"sourceValue,omitempty"`
+	Descriptor  paramdefs.Descriptor `json:"descriptor"`
+	Choices     []string             `json:"choices,omitempty"`
+	SourceRange mixerLineRange       `json:"sourceRange"`
+	Supported   bool                 `json:"supported"`
+	Reason      string               `json:"reason,omitempty"`
+}
+
+type mixerSendView struct {
+	Path        string               `json:"path"`
+	Address     string               `json:"address,omitempty"`
+	To          string               `json:"to"`
+	Kind        string               `json:"kind"`
+	Level       string               `json:"level"`
+	Value       any                  `json:"value"`
+	Pre         bool                 `json:"pre"`
+	Descriptor  paramdefs.Descriptor `json:"descriptor"`
+	SourceRange mixerLineRange       `json:"sourceRange"`
+	Supported   bool                 `json:"supported"`
+	Reason      string               `json:"reason,omitempty"`
+}
+
+type mixerStripView struct {
+	ID          string                `json:"id"`
+	Name        string                `json:"name"`
+	Kind        string                `json:"kind"`
+	SourceKind  string                `json:"sourceKind,omitempty"`
+	Meter       string                `json:"meter"`
+	SourceRange mixerLineRange        `json:"sourceRange"`
+	Fields      map[string]mixerField `json:"fields"`
+	Sends       []mixerSendView       `json:"sends,omitempty"`
+	Inserts     []string              `json:"inserts"`
+	InsertPath  string                `json:"insertPath"`
+	InsertAddr  string                `json:"insertAddress,omitempty"`
+	InsertOK    bool                  `json:"insertSupported"`
+	InsertWhy   string                `json:"insertReason,omitempty"`
+	RouteReason string                `json:"routeReason,omitempty"`
+}
+
+type mixerReturnView struct {
+	ID          string         `json:"id"`
+	Name        string         `json:"name"`
+	Kind        string         `json:"kind"`
+	Meter       string         `json:"meter"`
+	SourceRange mixerLineRange `json:"sourceRange"`
+	Fields      []mixerField   `json:"fields"`
+}
+
+type studioMixerView struct {
+	Revision  string                 `json:"revision"`
+	Edition   int                    `json:"edition"`
+	Tempo     float64                `json:"tempo"`
+	Tracks    []mixerStripView       `json:"tracks"`
+	Buses     []mixerStripView       `json:"buses"`
+	Returns   []mixerReturnView      `json:"returns"`
+	Master    mixerStripView         `json:"master"`
+	Effects   []mixerReturnView      `json:"effects"`
+	Registry  json.RawMessage        `json:"registry"`
+	Addresses []project.ParamAddress `json:"addresses"`
+}
 
 func (s *studio) mixerState(w http.ResponseWriter, _ *http.Request) {
 	s.mu.Lock()
@@ -53,7 +119,7 @@ func (s *studio) editMixer(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	editionNumber, manifest, err := scoreEdition(s.path)
+	editionNumber, _, err := scoreEdition(s.path)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -73,70 +139,10 @@ func (s *studio) editMixer(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = editionNumber // scoreEdition also verifies the project manifest.
 
-	s.applyWithResult(w, edit, func(current []byte) (studioMutation, error) {
-		working := bytes.Clone(current)
-		var files []studioAuxiliaryFile
-		if sourceEdition == 1 {
-			fixed, _, fixErr := migration.FixSource(working)
-			if fixErr != nil {
-				return studioMutation{}, fixErr
-			}
-			document, parseErr := notation.ParseDocument(fixed)
-			if parseErr != nil {
-				return studioMutation{}, parseErr
-			}
-			working, fixErr = notation.Format(document)
-			if fixErr != nil {
-				return studioMutation{}, fixErr
-			}
-			if manifest == "" {
-				if !bytes.HasPrefix(working, []byte("cicada 2\n")) {
-					working = append([]byte("cicada 2\n\n"), working...)
-				}
-			} else {
-				manifestBefore, readErr := os.ReadFile(manifest)
-				if readErr != nil {
-					return studioMutation{}, readErr
-				}
-				manifestAfter, changed, upgradeErr := edition.UpgradeManifestEdition(manifestBefore)
-				if upgradeErr != nil {
-					return studioMutation{}, upgradeErr
-				}
-				if changed {
-					info, statErr := os.Stat(manifest)
-					if statErr != nil {
-						return studioMutation{}, statErr
-					}
-					files = append(files, studioAuxiliaryFile{Path: manifest, Before: manifestBefore, After: manifestAfter, Mode: info.Mode().Perm()})
-				}
-			}
-		}
-		updated, before, after, changedRange, patchErr := studioMixerSource(working, edit.Path, edit.Value)
-		if patchErr != nil {
-			return studioMutation{}, patchErr
-		}
-		if strings.HasSuffix(edit.Path, ".level") {
-			var requested string
-			_ = json.Unmarshal(edit.Value, &requested)
-			if requested == "off" {
-				after = "off"
-			}
-		}
-		if strings.HasSuffix(edit.Path, ".level") {
-			before = spacedMixerValue(before)
-			after = spacedMixerValue(after)
-		}
-		detail := fmt.Sprintf("Mix: %s %s to %s", strings.ReplaceAll(edit.Path, ".", " "), before, after)
-		return studioMutation{
-			Source:        updated,
-			Files:         files,
-			HistoryDetail: detail,
-			Response: map[string]any{
-				"path": edit.Path, "value": after, "previous": before,
-				"changedRange": changedRange, "source": string(updated),
-			},
-		}, nil
-	}, nil)
+	// The route pins the mixer writer, so an unsupported owner or field keeps
+	// the mixer writer's error text.
+	intent := &edits.SetParam{Entity: edits.EntityID("param:" + edit.Path), Value: edit.Value, ConfirmUpgrade: edit.ConfirmUpgrade}
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterMixer, nil)
 }
 
 func mixerSourceEdition(path string) (int, error) {
@@ -402,15 +408,6 @@ func mixerSendAddressValue(sourceValue string) float64 {
 	return number
 }
 
-func trackMixerSourceText(params []notation.Param, name string) string {
-	for _, param := range params {
-		if param.Name == name {
-			return param.Value
-		}
-	}
-	return ""
-}
-
 func trackMixerSourceValue(params []notation.Param, name string, fallback any) any {
 	value := trackMixerSourceText(params, name)
 	if value != "" {
@@ -568,34 +565,6 @@ func mixerSendCapability(track notation.Track, target, kind string, score *notat
 	return true, ""
 }
 
-func trackParams(score *notation.Score, owner string) []notation.Param {
-	for _, track := range score.Tracks {
-		if track.Name == owner {
-			return track.Params
-		}
-	}
-	return nil
-}
-
-func busParams(score *notation.Score, owner string) []notation.Param {
-	for _, bus := range score.Buses {
-		if bus.Name == owner {
-			return bus.Params
-		}
-	}
-	return nil
-}
-
-func spacedMixerValue(value string) string {
-	if strings.HasSuffix(value, "dB") {
-		return strings.TrimSuffix(value, "dB") + " dB"
-	}
-	if strings.HasSuffix(value, "db") {
-		return strings.TrimSuffix(value, "db") + " dB"
-	}
-	return value
-}
-
 func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 	current, err := os.ReadFile(file.Path)
 	if os.IsNotExist(err) && file.Before == nil {
@@ -667,3 +636,15 @@ func studioWriteAuxiliaryFiles(files []studioAuxiliaryFile) error {
 	}
 	return nil
 }
+
+// The mixer writer lives in the edit package; these names keep the view code
+// and the other routes readable.
+var (
+	trackMixerSourceText  = edits.TrackMixerSourceText
+	trackParams           = edits.TrackParams
+	busParams             = edits.BusParams
+	findNotationEffect    = edits.FindNotationEffect
+	sourceRangeAt         = edits.SourceRangeAt
+	validMixerIdentifier  = edits.ValidMixerIdentifier
+	canonicalMixerLiteral = edits.CanonicalMixerLiteral
+)

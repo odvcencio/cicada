@@ -24,7 +24,20 @@ var ErrNoRenderCheck = errors.New("render check unavailable; the conversion is r
 
 var ErrNoUpgrade = errors.New("edition upgrade unavailable")
 
+// ParamWriter says which writer a SetParam runs. Routes pin it; the generic
+// intent surface leaves it empty and resolves by entity.
+type ParamWriter string
+
+const (
+	ParamWriterAuto       ParamWriter = ""
+	ParamWriterInstrument ParamWriter = "instrument"
+	ParamWriterMixer      ParamWriter = "mixer"
+)
+
 type Options struct {
+	// ParamWriter pins SetParam to one writer. It belongs to the route that
+	// calls Apply, so it is not part of any intent's JSON.
+	ParamWriter  ParamWriter
 	Compiler     Compiler
 	RenderCheck  RenderCheck
 	Path         string                // absolute path of the entry score
