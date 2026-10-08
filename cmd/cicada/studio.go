@@ -3,7 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -21,6 +21,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/modalfit"
 	"m31labs.dev/cicada/host/recording"
@@ -52,6 +53,8 @@ type studio struct {
 	history             *studioHistory
 	exports             *studioExportController
 	liveControls        studioLiveControls
+	sessionID           string
+	renderCheck         edits.RenderCheck // nil until the render check is wired (M8)
 }
 
 func studioCommand(args []string) error {
@@ -206,7 +209,7 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &studio{path: absolute}
+	s := &studio{path: absolute, sessionID: newStudioSessionID()}
 	opened := false
 	defer func() {
 		if !opened && s.takes != nil {
@@ -345,9 +348,15 @@ func studioLoopbackHost(address string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func studioRevision(source []byte) string {
-	hash := sha256.Sum256(source)
-	return hex.EncodeToString(hash[:])
+func studioRevision(source []byte) string { return edits.Revision(source) }
+
+// newStudioSessionID names one Studio process in the edit log.
+func newStudioSessionID() string {
+	var raw [8]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "session"
+	}
+	return hex.EncodeToString(raw[:])
 }
 
 func (s *studio) page(w http.ResponseWriter, r *http.Request) {
@@ -406,6 +415,10 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 	if parseErr != nil {
 		response["error"] = parseErr.Error()
 	}
+	if s.lastGoodSource != nil {
+		// The score the engine is playing; it stays put while the file on disk is invalid.
+		response["playingRevision"] = studioRevision(s.lastGoodSource)
+	}
 	studioJSON(w, http.StatusOK, response)
 }
 
@@ -419,6 +432,8 @@ type studioEdit struct {
 	Scene          string                 `json:"scene,omitempty"`
 	Revision       string                 `json:"revision"`
 	Label          string                 `json:"label,omitempty"`
+	Author         string                 `json:"author,omitempty"`
+	Session        string                 `json:"session,omitempty"`
 	Action         string                 `json:"action,omitempty"`
 	Index          int                    `json:"index,omitempty"`
 	Target         int                    `json:"target,omitempty"`
@@ -587,77 +602,8 @@ func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change 
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
-	updated := mutation.Source
-	overrides := map[string][]byte{}
-	for _, file := range mutation.Files {
-		overrides[file.Path] = file.After
-	}
-	p, err := compileStudioSourceWithOverrides(s.path, updated, overrides)
-	if err != nil {
-		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
-		return
-	}
-	latest, err := os.ReadFile(s.path)
-	if err != nil {
-		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
-	}
-	if studioRevision(latest) != edit.Revision {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during validation; reload before saving"})
-		return
-	}
-	if bytes.Equal(current, updated) {
-		s.lastGoodSource, s.lastGoodProject = bytes.Clone(current), p
-		response := map[string]any{"revision": studioRevision(current), "valid": true, "source": string(current), "unchanged": true}
-		for key, value := range mutation.Response {
-			response[key] = value
-		}
-		studioJSON(w, http.StatusOK, response)
-		return
-	}
-	info, err := os.Stat(s.path)
-	committed, preserved := false, ""
-	if err == nil {
-		committed, preserved, err = studioWriteIfRevision(s.path, updated, info.Mode().Perm(), edit.Revision, beforeSwap)
-	}
-	if err != nil {
-		if errors.Is(err, errStudioSwapUnavailable) {
-			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
-			return
-		}
-		if preserved != "" {
-			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "preserved": preserved})
-			return
-		}
-		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
-	}
-	if !committed {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed during commit; reload before saving"})
-		return
-	}
-	if err := studioWriteAuxiliaryFiles(mutation.Files); err != nil {
-		_, _, rollbackErr := studioWriteIfRevision(s.path, current, info.Mode().Perm(), studioRevision(updated), nil)
-		message := "source auxiliary write failed: " + err.Error()
-		if rollbackErr != nil {
-			message += "; source rollback failed: " + rollbackErr.Error()
-		}
-		studioJSON(w, http.StatusConflict, map[string]any{"error": message})
-		return
-	}
-	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
-	if s.history != nil {
-		if mutation.HistoryDetail != "" {
-			edit.Label = mutation.HistoryDetail
-		}
-		entry := s.history.recordSourceWrite(current, updated, studioEditLabel(edit), studioHistoryWriteNew, 0)
-		s.history.attachFiles(entry.ID, mutation.Files)
-	}
-	response := map[string]any{"revision": studioRevision(updated), "valid": true, "source": string(updated), "preserved": preserved}
-	for key, value := range mutation.Response {
-		response[key] = value
-	}
-	studioJSON(w, http.StatusOK, response)
+	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{})
+	studioJSON(w, outcome.Status, outcome.Response)
 }
 
 func compileStudioSource(path string, source []byte) (*project.Project, error) {

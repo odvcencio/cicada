@@ -123,6 +123,8 @@ func (s *studio) commitTake(id, expected string, candidate []byte) error {
 	if s.history != nil {
 		s.history.recordSourceWrite(current, candidate, "Select audio take", studioHistoryWriteNew, 0)
 	}
+	// Best effort: the score and journal are already committed.
+	_ = s.appendEditLog(studioEdit{Label: "Select audio take"}, nil, current, candidate)
 	return s.takes.Mark(id, takejournal.Committed)
 }
 

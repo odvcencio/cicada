@@ -3,14 +3,14 @@ package notation
 import (
 	"strconv"
 
-	hostkeys "m31labs.dev/cicada/host/keyboard"
+	"m31labs.dev/cicada/instrument/keyboardpresets"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
 // Keyboard presets use the native patch controls without changing the kernel ABI.
 func keysPresetDescriptors(name string) []paramdefs.Descriptor {
-	spec, err := hostkeys.DefaultSpec(name)
+	spec, err := keyboardpresets.DefaultSpec(name)
 	if err != nil {
 		return nil
 	}

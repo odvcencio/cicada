@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/notation"
 )
@@ -20,20 +21,27 @@ func (s *studio) editInstrument(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown instrument action"})
 		return
 	}
-	var value string
-	if edit.Action == "set-parameter" {
-		if err := json.Unmarshal(edit.Value, &value); err != nil {
-			var number json.Number
-			if err := json.Unmarshal(edit.Value, &number); err != nil || number == "" {
-				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "parameter value must be a number or compatible unit literal"})
-				return
+	if edit.Action == "set-parameter" || edit.Action == "reset-parameter" {
+		if edit.Action == "set-parameter" {
+			// Keep the writer's early refusal: it answers before the revision check,
+			// and an absent value would otherwise read as a reset.
+			var text string
+			if err := json.Unmarshal(edit.Value, &text); err != nil {
+				var number json.Number
+				if err := json.Unmarshal(edit.Value, &number); err != nil || number == "" {
+					studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": "parameter value must be a number or compatible unit literal"})
+					return
+				}
 			}
-			value = number.String()
 		}
-		edit.Label = "Set " + edit.Track + "." + edit.NewName
-	} else if edit.Action == "reset-parameter" {
-		edit.Label = "Use default " + edit.Track + "." + edit.NewName
-	} else if patch, exists := instrument.FindPatch(edit.Pattern); exists {
+		intent := &edits.SetParam{Entity: edits.EntityID("param:" + edit.Track + "." + edit.NewName)}
+		if edit.Action == "set-parameter" {
+			intent.Value = edit.Value
+		}
+		s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, nil)
+		return
+	}
+	if patch, exists := instrument.FindPatch(edit.Pattern); exists {
 		edit.Label = "Add " + patch.Name + " instrument and track"
 	}
 	s.apply(w, edit, func(source []byte) ([]byte, error) {
@@ -44,10 +52,7 @@ func (s *studio) editInstrument(w http.ResponseWriter, r *http.Request) {
 		if score == nil || hasDiagnosticErrors(ds) {
 			return nil, fmt.Errorf("score must validate before adding an instrument")
 		}
-		if edit.Action == "add-preset" {
-			return addPresetSourceParsed(source, edit.Pattern, edit.NewName, edit.Track, score)
-		}
-		return instrumentParameterSource(source, score, edit.Track, edit.NewName, value, edit.Action == "reset-parameter")
+		return addPresetSourceParsed(source, edit.Pattern, edit.NewName, edit.Track, score)
 	})
 }
 
