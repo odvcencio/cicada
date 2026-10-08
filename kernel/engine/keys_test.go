@@ -297,7 +297,7 @@ func TestKeysRejectPerNoteExpressionBeforePlayback(t *testing.T) {
 		var message cmd.Message
 		found := false
 		for e.Poll(&message) {
-			found = found || message.Kind == cmd.Fault && message.A == 9
+			found = found || message.Kind == cmd.Fault && message.A == FaultVoiceUnsupported
 		}
 		if !e.faulted || !found || left != [128]float32{} || right != [128]float32{} {
 			t.Fatal("keys failed to reject live expression explicitly and silence playback")

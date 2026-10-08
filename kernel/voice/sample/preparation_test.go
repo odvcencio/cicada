@@ -142,6 +142,11 @@ func TestSRCPreparationFreshProcess(t *testing.T) {
 	var left, right [128]float32
 	// Measure the first note and render, not an AllocsPerRun warmup that could
 	// hide a first-use preparation. All buffers and MemStats are ready already.
+	// MemStats counts allocations from every goroutine, so use one processor,
+	// as AllocsPerRun does, and finish setup's GC work before measuring.
+	previousProcs := runtime.GOMAXPROCS(1)
+	t.Cleanup(func() { runtime.GOMAXPROCS(previousProcs) })
+	runtime.GC()
 	var before, after runtime.MemStats
 	runtime.ReadMemStats(&before)
 	voiceErr := voice.NoteOn(67, 127)

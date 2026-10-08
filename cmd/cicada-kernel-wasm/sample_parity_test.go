@@ -13,8 +13,6 @@ import (
 	"testing"
 
 	"github.com/tetratelabs/wazero"
-	"github.com/tetratelabs/wazero/api"
-	"github.com/tetratelabs/wazero/experimental"
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -292,19 +290,6 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 				t.Fatal(err)
 			}
 			ctx := context.Background()
-			var wasmAllocations uint64
-			var allocatorFound bool
-			if exactPCM || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") || strings.HasPrefix(fixture, "std/") {
-				ctx = experimental.WithFunctionListenerFactory(ctx, experimental.FunctionListenerFactoryFunc(func(def api.FunctionDefinition) experimental.FunctionListener {
-					if !strings.Contains(def.DebugName(), "runtime.alloc") {
-						return nil
-					}
-					allocatorFound = true
-					return experimental.FunctionListenerFunc(func(context.Context, api.Module, api.FunctionDefinition, []uint64, experimental.StackIterator) {
-						wasmAllocations++
-					})
-				}))
-			}
 			runtime := wazero.NewRuntime(ctx)
 			t.Cleanup(func() { _ = runtime.Close(ctx) })
 			module, err := runtime.Instantiate(ctx, wasm)
@@ -377,7 +362,10 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 				initialAllocations = call("gosx_audio_alloc_bytes")
 			}
 			pcm := sha256.New()
-			allocationsBeforeRender := wasmAllocations
+			// The kernel counts its own allocations. Reading that export does not
+			// depend on the WASM name section, which wasm-opt removes from the
+			// production kernel.
+			allocationsBeforeRender := call("gosx_audio_allocation_count")
 			for block := 0; block*blockSize < frames; block++ {
 				call("gosx_audio_render", blockSize)
 				if exactPCM || strings.HasPrefix(fixture, "multifile") || strings.HasPrefix(fixture, "libraries") || strings.HasPrefix(fixture, "presets") || strings.HasPrefix(fixture, "std/") {
@@ -444,11 +432,11 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 				copyHash := [32]byte{}
 				copy(copyHash[:], pcm.Sum(nil))
 				hashes[rate] = copyHash
-				if !allocatorFound || allocationsBeforeRender == 0 {
-					t.Fatal("WASM allocator probe did not observe initialization allocations")
+				if allocationsBeforeRender == 0 {
+					t.Fatal("WASM allocation counter did not observe initialization allocations")
 				}
-				if wasmAllocations != allocationsBeforeRender {
-					t.Fatalf("WASM render allocated %d times", wasmAllocations-allocationsBeforeRender)
+				if allocationsAfterRender := call("gosx_audio_allocation_count"); allocationsAfterRender != allocationsBeforeRender {
+					t.Fatalf("WASM render allocated %d times", allocationsAfterRender-allocationsBeforeRender)
 				}
 				t.Logf("METRIC %s rate=%d wasm_render_allocs=0", fixture, rate)
 			}

@@ -13,16 +13,23 @@ For game integration, see [Game Director and the Go/JS SDKs](game-director.md).
 
 ### Install and hear a score
 
-Cicada requires Go 1.25 or newer. Clone the public repository and build the
-command-line tool:
+Cicada requires Go 1.25 or newer and `make`. Clone the public repository and
+build the command-line tool and the Studio workstation:
 
 ```sh
 git clone https://github.com/odvcencio/cicada.git
 cd cicada
-go build -o cicada ./cmd/cicada
-./cicada validate examples/first-acid.cicada
-./cicada play examples/first-acid.cicada
+make build
+./build/cicada validate examples/first-acid.cicada
+./build/cicada play examples/first-acid.cicada
 ```
+
+`make build` writes `build/cicada`, `build/cicada-workstation`, and the
+workstation's browser files in `build/workstation`. `cicada studio` starts the
+workstation, so it looks for `cicada-workstation` next to `cicada` and then on
+your `PATH`. If you move `cicada`, move those three together. The workstation
+module pins Go 1.26.4, which Go downloads when it needs it. To build only the
+command-line tool, run `make build-core`.
 
 `play` opens the system audio device and loops the score. Press Ctrl-C to stop.
 If you want a file instead, `render` writes a WAV without opening an audio
@@ -34,10 +41,10 @@ device; see [Exporting](exporting.md).
 root, run:
 
 ```sh
-./cicada new night-circuit
+./build/cicada new night-circuit
 cd night-circuit
-../cicada check
-../cicada studio main.cicada
+../build/cicada check
+../build/cicada studio main.cicada
 ```
 
 The manifest selects edition 2, so `main.cicada` does not need an edition

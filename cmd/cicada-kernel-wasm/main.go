@@ -218,12 +218,12 @@ func commandCommit(n int32) {
 		return
 	}
 	if n < 0 || int(n) > len(decoded) {
-		audioEngine.InjectFault(12)
+		audioEngine.InjectFault(engine.FaultHostCommandBatch)
 		return
 	}
 	written, err := cmd.DecodeCommands(commandBytes[:int(n)*cmd.CommandSize], uint8(trackCount), decoded[:])
 	if err != nil || !audioEngine.PushBatch(decoded[:written]) {
-		audioEngine.InjectFault(12)
+		audioEngine.InjectFault(engine.FaultHostCommandBatch)
 	}
 }
 
@@ -234,7 +234,7 @@ func render(frames int32) {
 	}
 	if frames < 1 || int(frames) > maxFrames {
 		clear(output[:maxFrames*2])
-		audioEngine.InjectFault(13)
+		audioEngine.InjectFault(engine.FaultHostRenderFrames)
 		return
 	}
 	audioEngine.Render(output[:frames], output[maxFrames:maxFrames+int(frames)])
