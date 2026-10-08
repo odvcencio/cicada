@@ -54,9 +54,14 @@ type workspaceJob struct {
 	form                      js.Value
 	controls                  []workspaceControl
 	refresh                   bool
-	pitchDelta                int
-	focusRow, focusStep       string
-	pendingCell               js.Value
+	// A current job reads the location when it runs, not when it was queued.
+	// Gestures queued before it can change the step, and a refresh built from
+	// the earlier location would put that older step back in front of the user.
+	current     bool
+	pitchDelta  int
+	focusRow    string
+	focusStep   string
+	pendingCell js.Value
 }
 
 type workspaceUI struct {
@@ -66,6 +71,7 @@ type workspaceUI struct {
 	cancel      context.CancelFunc
 	closed      atomic.Bool
 	blocked     atomic.Bool
+	busy        atomic.Bool
 	jobs        chan workspaceJob
 	events      []workspaceEvent
 	revision    *signal.Signal[string]
@@ -74,6 +80,9 @@ type workspaceUI struct {
 	drafts      map[string]workspaceDraft
 	scrolls     []workspaceScroll
 	editors     map[string]workspaceEditorBaseline
+	// The newest project revision this tab has rendered. Only a different
+	// revision on disk is another editor's change worth refreshing for.
+	projectRevision atomic.Value
 }
 
 type workspaceEditorBaseline struct {
@@ -136,6 +145,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	u := &workspaceUI{root: root, patch: patch, props: props, ctx: ctx, cancel: cancel, jobs: make(chan workspaceJob, 128), revision: signal.New(props.Revision), status: signal.New(""), tool: signal.New("select"), drafts: map[string]workspaceDraft{}, editors: map[string]workspaceEditorBaseline{}}
+	u.projectRevision.Store(props.ProjectRevision)
 	u.seedEditorBaseline()
 	watch := signal.Watch(func() {
 		if u.closed.Load() {
@@ -156,8 +166,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 			return
 		}
 		seenRefresh = requested
-		location, _ := url.Parse(workspaceLocation())
-		u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + location.RawQuery, form: js.Undefined()})
+		u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()})
 	})
 	u.listen(document, "submit", u.submit)
 	u.listen(document, "click", u.click)
@@ -370,8 +379,7 @@ func (u *workspaceUI) click(event js.Value) {
 	if workspacePresent(target.Call("closest", "[data-workspace-retry]")) {
 		event.Call("preventDefault")
 		event.Call("stopImmediatePropagation")
-		location, _ := url.Parse(workspaceLocation())
-		u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + location.RawQuery, form: js.Undefined(), refresh: true})
+		u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined(), refresh: true})
 		return
 	}
 	anchor := target.Call("closest", "a[href]")
@@ -734,74 +742,93 @@ func (u *workspaceUI) run() {
 		case <-u.ctx.Done():
 			return
 		case job := <-u.jobs:
-			if u.blocked.Load() && !job.refresh {
-				workspacePending(job, -1)
-				continue
-			}
-			if job.pitchDelta != 0 {
-				values, ok := u.transposeValues(job.values["pattern"], job.values["step"], job.pitchDelta)
-				if !ok {
-					workspacePending(job, -1)
-					continue
-				}
-				job.values = values
-				job.confirmed = u.revision.Get()
-			}
-			if revision, exists := job.values["revision"]; exists && revision == job.confirmed {
-				// Only advance our own queued gestures. A form already stale when
-				// queued keeps its stale revision for authoritative rejection.
-				job.values["revision"] = u.revision.Get()
-			}
-			if job.method == http.MethodPost {
-				job.values["__cicada_location"] = workspaceLocation()
-			}
-			u.root.Call("setAttribute", "aria-busy", "true")
-			u.status.Set("Saving…")
-			projection, message, err := u.request(client, job)
-			if u.closed.Load() {
-				workspacePending(job, -1)
+			u.busy.Store(true)
+			open := u.runJob(client, job)
+			u.busy.Store(false)
+			if !open {
 				return
 			}
-			if err == nil {
-				err = u.apply(projection, job)
-			}
-			workspacePending(job, -1)
-			u.root.Call("removeAttribute", "aria-busy")
-			if err != nil {
-				var rejected *workspaceRequestError
-				if errors.As(err, &rejected) && (rejected.status == http.StatusBadRequest || rejected.status == http.StatusUnprocessableEntity) {
-					// Validation has not mutated the score. Keep the draft editable
-					// and let a corrected submission use the same revision.
-					u.status.Set(err.Error())
-					continue
-				}
-				// A failed/ambiguous mutation is never automatically submitted a
-				// second time. Re-read canonical state before another edit.
-				u.blocked.Store(true)
-				u.clearQueue()
-				u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained.")
-				continue
-			}
-			if projection.WriteRevision == "" && projection.Revision != u.revision.Get() {
-				// A read can discover somebody else's edit. Queued gestures
-				// based on the old projection must not be rebased over it.
-				u.clearQueue()
-			}
-			u.revision.Set(projection.Revision)
-			confirmedWorkspaceRevision.Set(projection.Revision)
-			u.focusGesture(job)
-			if job.refresh {
-				u.blocked.Store(false)
-			}
-			if message == "" {
-				message = "Saved."
-				if job.method == http.MethodGet {
-					message = "Workspace updated."
-				}
-			}
-			u.status.Set(message)
 		}
 	}
+}
+
+// runJob sends one queued gesture or refresh and applies its projection. It
+// reports false once the engine has closed.
+func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
+	if u.blocked.Load() && !job.refresh {
+		workspacePending(job, -1)
+		return true
+	}
+	if job.pitchDelta != 0 {
+		values, ok := u.transposeValues(job.values["pattern"], job.values["step"], job.pitchDelta)
+		if !ok {
+			workspacePending(job, -1)
+			return true
+		}
+		job.values = values
+		job.confirmed = u.revision.Get()
+	}
+	if revision, exists := job.values["revision"]; exists && revision == job.confirmed {
+		// Only advance our own queued gestures. A form already stale when
+		// queued keeps its stale revision for authoritative rejection.
+		job.values["revision"] = u.revision.Get()
+	}
+	if job.method == http.MethodPost {
+		job.values["__cicada_location"] = workspaceLocation()
+	}
+	if job.current {
+		location, _ := url.Parse(workspaceLocation())
+		job.target = "/__workspace?" + location.RawQuery
+	}
+	u.root.Call("setAttribute", "aria-busy", "true")
+	u.status.Set("Saving…")
+	projection, message, err := u.request(client, job)
+	if u.closed.Load() {
+		workspacePending(job, -1)
+		return false
+	}
+	if err == nil {
+		err = u.apply(projection, job)
+	}
+	workspacePending(job, -1)
+	u.root.Call("removeAttribute", "aria-busy")
+	if err != nil {
+		var rejected *workspaceRequestError
+		if errors.As(err, &rejected) && (rejected.status == http.StatusBadRequest || rejected.status == http.StatusUnprocessableEntity) {
+			// Validation has not mutated the score. Keep the draft editable
+			// and let a corrected submission use the same revision.
+			u.status.Set(err.Error())
+			return true
+		}
+		// A failed/ambiguous mutation is never automatically submitted a
+		// second time. Re-read canonical state before another edit.
+		u.blocked.Store(true)
+		u.clearQueue()
+		u.status.Set(err.Error() + " Refresh the workspace; your drafts are retained.")
+		return true
+	}
+	if projection.WriteRevision == "" && projection.Revision != u.revision.Get() {
+		// A read can discover somebody else's edit. Queued gestures
+		// based on the old projection must not be rebased over it.
+		u.clearQueue()
+	}
+	u.revision.Set(projection.Revision)
+	if projection.ProjectRevision != "" {
+		u.projectRevision.Store(projection.ProjectRevision)
+	}
+	confirmedWorkspaceRevision.Set(projection.Revision)
+	u.focusGesture(job)
+	if job.refresh {
+		u.blocked.Store(false)
+	}
+	if message == "" {
+		message = "Saved."
+		if job.method == http.MethodGet {
+			message = "Workspace updated."
+		}
+	}
+	u.status.Set(message)
+	return true
 }
 
 type workspaceRequestError struct {
@@ -1759,10 +1786,15 @@ func workspaceScrolls(root js.Value) []workspaceScroll {
 
 // Poll a compact content fingerprint, then reuse the workspace patch path.
 // It refreshes clean editors and projections while retaining unsaved drafts.
+//
+// This tab's own saves already return projections, so only a revision it has
+// not rendered is another editor's change. The refresh waits while gestures are
+// queued or running, reads the location when it runs, and is tried once for
+// each revision on disk, so it cannot undo a step change the user just made.
 func (u *workspaceUI) watchFiles() {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
-	seen := u.props.ProjectRevision
+	requested := ""
 	client := &http.Client{Timeout: 3 * time.Second}
 	for {
 		select {
@@ -1783,14 +1815,19 @@ func (u *workspaceUI) watchFiles() {
 		}
 		err = json.NewDecoder(io.LimitReader(response.Body, 4096)).Decode(&state)
 		response.Body.Close()
-		if err != nil || state.Revision == "" || state.Revision == seen {
+		if err != nil || state.Revision == "" || state.Revision == requested || state.Revision == u.renderedProject() {
 			continue
 		}
-		seen = state.Revision
-		if u.blocked.Load() {
+		if u.blocked.Load() || u.busy.Load() || len(u.jobs) > 0 {
+			// Try again on the next tick, when the user's gestures have settled.
 			continue
 		}
-		location, _ := url.Parse(workspaceLocation())
-		u.queue(workspaceJob{method: http.MethodGet, target: "/__workspace?" + location.RawQuery, form: js.Undefined()})
+		requested = state.Revision
+		u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined()})
 	}
+}
+
+func (u *workspaceUI) renderedProject() string {
+	revision, _ := u.projectRevision.Load().(string)
+	return revision
 }
