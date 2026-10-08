@@ -273,6 +273,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /assets/recorded/{pack}/{file}", s.instrumentPackAsset)
 	mux.HandleFunc("GET /studio-instrument-record.js", s.instrumentRecordScript)
 	mux.HandleFunc("POST /api/live", s.liveControl)
+	mux.HandleFunc("GET /api/live", s.liveSocket)
 	mux.HandleFunc("POST /api/loudness/reset", s.resetLiveLoudness)
 	mux.HandleFunc("POST /api/song", s.editSong)
 	mux.HandleFunc("POST /api/pattern", s.editPattern)

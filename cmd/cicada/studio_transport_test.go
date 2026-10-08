@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
@@ -854,5 +855,98 @@ func TestStudioStopClearsStoppedTracksAndPauseKeepsPosition(t *testing.T) {
 	}
 	if len(snapshot.StoppedTracks) != 0 || snapshot.Bar != 1 || snapshot.Step != 1 || transport.stream != nil {
 		t.Fatalf("after Stop: stopped tracks %v, bar %d step %d, stream nil=%v", snapshot.StoppedTracks, snapshot.Bar, snapshot.Step, transport.stream == nil)
+	}
+}
+
+func TestStudioTransportSnapshotCarriesTelemetryFrames(t *testing.T) {
+	_, path := studioTestHandler(t)
+	transport := newStudioTransport(path)
+	transport.audioNull = true
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	defer transport.close()
+	time.Sleep(80 * time.Millisecond)
+	state := transport.snapshot()
+	if state.Frames == nil || state.Frames.Transport == "" {
+		t.Fatalf("snapshot carries no transport frame: %+v", state.Frames)
+	}
+	raw, err := base64.StdEncoding.DecodeString(state.Frames.Transport)
+	if err != nil {
+		t.Fatal(err)
+	}
+	frame, err := liveplay.DecodeTransportFrame(raw)
+	if err != nil || !frame.Playing {
+		t.Fatalf("transport frame: %+v %v", frame, err)
+	}
+	for name, value := range map[string]string{"meters": state.Frames.Meters, "health": state.Frames.Health} {
+		if value == "" {
+			continue
+		}
+		if _, err := base64.StdEncoding.DecodeString(value); err != nil {
+			t.Fatalf("%s frame is not base64: %v", name, err)
+		}
+	}
+}
+
+func studioLatestTransportFrame(t *testing.T, transport *studioTransport) (liveplay.TransportFrame, bool) {
+	t.Helper()
+	raw := transport.telemetry.Latest()[liveplay.FrameTransport]
+	if raw == nil {
+		return liveplay.TransportFrame{}, false
+	}
+	frame, err := liveplay.DecodeTransportFrame(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return frame, true
+}
+
+func TestStudioTelemetryTransportFrameFollowsPauseStopAndRestart(t *testing.T) {
+	_, path := studioTestHandler(t)
+	transport := newStudioTransport(path)
+	transport.audioNull = true
+	if err := transport.startFrom(0, "main", nil, [32]byte{}); err != nil {
+		t.Fatal(err)
+	}
+	defer transport.close()
+	if frame, ok := studioLatestTransportFrame(t, transport); ok && frame.SampleFrame == 0 {
+		t.Fatalf("all-zero transport frame published before the first block: %+v", frame)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if frame, ok := studioLatestTransportFrame(t, transport); !ok || !frame.Playing || frame.SampleFrame == 0 {
+		t.Fatalf("playing frame: %+v %v", frame, ok)
+	}
+	transport.pause()
+	frame, _ := studioLatestTransportFrame(t, transport)
+	if frame.Playing || transport.snapshot().Playing {
+		t.Fatalf("after pause: frame.Playing=%v snapshot.Playing=%v", frame.Playing, transport.snapshot().Playing)
+	}
+	time.Sleep(120 * time.Millisecond) // the watcher keeps republishing
+	if again, _ := studioLatestTransportFrame(t, transport); again.Playing || again.SampleFrame != frame.SampleFrame {
+		t.Fatalf("paused frame drifted: %+v then %+v", frame, again)
+	}
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(120 * time.Millisecond)
+	if frame, _ := studioLatestTransportFrame(t, transport); !frame.Playing {
+		t.Fatalf("resumed frame: %+v", frame)
+	}
+	transport.stop()
+	frame, _ = studioLatestTransportFrame(t, transport)
+	if frame.Playing || frame.Bar != 1 || frame.Beat != 1 || frame.Tick != 0 || frame.SampleFrame != 0 {
+		t.Fatalf("stopped frame must be at bar 1 and not playing: %+v", frame)
+	}
+	time.Sleep(120 * time.Millisecond)
+	if again, _ := studioLatestTransportFrame(t, transport); again != frame {
+		t.Fatalf("old watcher published after stop: %+v then %+v", frame, again)
+	}
+	if err := transport.start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(150 * time.Millisecond)
+	if frame, _ := studioLatestTransportFrame(t, transport); !frame.Playing || frame.SampleFrame == 0 || !transport.snapshot().Playing {
+		t.Fatalf("restarted frame: %+v", frame)
 	}
 }

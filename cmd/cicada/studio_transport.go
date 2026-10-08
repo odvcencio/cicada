@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -50,6 +51,7 @@ type studioTransport struct {
 	audioNull         bool
 	latestMeter       atomic.Pointer[studioMeterSnapshot]
 	meterSequence     atomic.Uint64
+	telemetry         *liveplay.Publisher
 	pendingCapture    *capture.Calibration
 }
 
@@ -59,7 +61,15 @@ type studioMeterSnapshot struct {
 	loudness liveplay.LoudnessSnapshot
 }
 
+// snapshotFrames carries the latest binary telemetry frames, base64-encoded.
+type snapshotFrames struct {
+	Transport string `json:"transport,omitempty"`
+	Meters    string `json:"meters,omitempty"`
+	Health    string `json:"health,omitempty"`
+}
+
 type transportSnapshot struct {
+	Frames              *snapshotFrames   `json:"frames,omitempty"`
 	Type                string            `json:"type"`
 	Sequence            uint64            `json:"sequence"`
 	ActiveBackend       string            `json:"activeBackend"`
@@ -81,7 +91,7 @@ type transportSnapshot struct {
 }
 
 func newStudioTransport(path string) *studioTransport {
-	return &studioTransport{path: path, audioBackend: string(audiobackend.DefaultFor("studio")), audioOptions: defaultStudioAudioOptions()}
+	return &studioTransport{telemetry: liveplay.NewPublisher(), path: path, audioBackend: string(audiobackend.DefaultFor("studio")), audioOptions: defaultStudioAudioOptions()}
 }
 
 func (t *studioTransport) selectedAudioBackend() string {
@@ -148,6 +158,17 @@ func (t *studioTransport) snapshot() transportSnapshot {
 	for track, stopped := range t.stoppedTracks {
 		if stopped {
 			state.StoppedTracks = append(state.StoppedTracks, track)
+		}
+	}
+	if t.telemetry != nil {
+		latest := t.telemetry.Latest()
+		frames := snapshotFrames{
+			Transport: base64.StdEncoding.EncodeToString(latest[liveplay.FrameTransport]),
+			Meters:    base64.StdEncoding.EncodeToString(latest[liveplay.FrameMeters]),
+			Health:    base64.StdEncoding.EncodeToString(latest[liveplay.FrameHealth]),
+		}
+		if frames != (snapshotFrames{}) {
+			state.Frames = &frames
 		}
 	}
 	return state
@@ -235,6 +256,9 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			}
 		}
 		t.playing, t.errText = true, ""
+		t.stream.SetTransportPlaying(true)
+		t.stream.PublishTelemetry()
+		t.publishHealthLocked()
 		return nil
 	}
 	var fingerprint [32]byte
@@ -305,8 +329,23 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	} else {
 		t.scene = stream.CurrentScene()
 	}
+	stream.SetPublisher(t.telemetry)
+	stream.PublishTelemetry()
+	t.publishHealthLocked()
 	go t.watch(ctx, stream)
 	return nil
+}
+
+// publishHealthLocked publishes one health frame. Call it with t.mu held.
+// CPULoad stays 0 until the player measures it.
+func (t *studioTransport) publishHealthLocked() {
+	var frame liveplay.HealthFrame
+	if t.audio != nil {
+		snapshot := t.audio.Snapshot()
+		frame.Dropouts = uint32(min(snapshot.Dropouts, uint64(^uint32(0))))
+		frame.LatencyNanos = int64(snapshot.OutputLatencyMS * float64(time.Millisecond))
+	}
+	t.telemetry.PublishHealth(frame)
 }
 
 // pause halts playback and keeps the stream, so play resumes at the same
@@ -333,6 +372,9 @@ func (t *studioTransport) pauseLocked() {
 		t.stream.CancelScene()
 		t.stream.CancelPatterns()
 		t.stream.CancelStart()
+		// Rendering has halted, so tell telemetry clients the transport is paused.
+		t.stream.SetTransportPlaying(false)
+		t.stream.PublishTelemetry()
 	}
 	t.playing = false
 	t.pendingSong = ""
@@ -351,6 +393,14 @@ func (t *studioTransport) stop() {
 func (t *studioTransport) stopLocked() {
 	t.stopPreviewLocked()
 	t.pauseLocked()
+	if t.stream != nil {
+		// Detach first so the old watcher cannot publish after a restart.
+		t.stream.SetPublisher(nil)
+		t.telemetry.PublishTransport(liveplay.TransportFrame{
+			SampleRate: uint32(t.sampleRate), TempoMilli: uint32(t.stream.BPMMilli()),
+			Bar: 1, Beat: 1,
+		})
+	}
 	if t.cancel != nil {
 		t.cancel()
 		t.cancel = nil
@@ -502,8 +552,12 @@ func (t *studioTransport) loudness() liveplay.LoudnessSnapshot {
 func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	health := time.NewTicker(time.Second)
+	telemetryTicker := time.NewTicker(40 * time.Millisecond)
+	healthFrames := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	defer health.Stop()
+	defer telemetryTicker.Stop()
+	defer healthFrames.Stop()
 	for {
 		select {
 		case <-ctx.Done():
@@ -514,6 +568,12 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 			t.publishMeter(frame, stream.Loudness())
 		case <-ticker.C:
 			t.poll()
+		case <-telemetryTicker.C:
+			stream.PublishTelemetry()
+		case <-healthFrames.C:
+			t.mu.Lock()
+			t.publishHealthLocked()
+			t.mu.Unlock()
 		case <-health.C:
 			t.mu.Lock()
 			if t.audio != nil {

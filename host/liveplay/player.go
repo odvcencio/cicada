@@ -206,6 +206,10 @@ type Player struct {
 	meterTick         int64
 	meterStarted      bool
 	loudness          *liveLoudness
+	publishMu         sync.Mutex
+	publisher         *Publisher
+	hostPaused        atomic.Bool
+	telemetry         telemetryState
 }
 
 func New(initial Score, rate int) (*Player, error) {
@@ -659,6 +663,7 @@ func assignMeter(meter *MeterValue, quantity uint16, value float32) {
 }
 
 func (p *Player) publishMeter(frame MeterFrame) {
+	p.telemetry.storeMeters(&frame)
 	select {
 	case p.meters <- frame:
 	default:
@@ -1089,6 +1094,7 @@ func (p *Player) renderBlock() {
 	p.completeSceneLaunch(endTick)
 	p.completeSlotLaunches(endTick)
 	p.sample += int64(frames)
+	p.telemetry.storeTransport(p.sample, p.clock.TickAtSample(p.sample), p.current.Engine.Playing())
 	p.buffered, p.read = frames*8, 0
 }
 
