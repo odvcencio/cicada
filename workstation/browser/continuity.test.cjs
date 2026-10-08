@@ -686,7 +686,7 @@ async function scenario(t) {
   }
 }
 
-const repeat = Math.max(1, Number(process.env.CICADA_CONTINUITY_REPEAT) || 5); // experiment: 5 samples per job
+const repeat = Math.max(1, Number(process.env.CICADA_CONTINUITY_REPEAT) || 1);
 for (let run = 1; run <= repeat; run++) {
   const suffix = repeat > 1 ? ` (run ${run} of ${repeat})` : '';
   test(`GoSX projections retain Studio edits, focus, scroll, playback and engine mounts${suffix}`, {timeout: 120_000}, scenario);
