@@ -175,10 +175,12 @@ test-wasm: build-kernel-wasm test-chord-wasm
 test-worklet-negotiation: build-worklets
 	node host/web/chord_capability_test.cjs
 	node host/web/client_capability_test.cjs
+	node --test host/web/worklet-followups.test.cjs host/web/client-lifecycle.test.cjs
 
 test-browser: build-kernel-wasm
 	mkdir -p build
-	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|UnderrunDetector|ProcessorAllocations|StepEditQueueRegression|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser '^TestBrowser(Parity|SpatialParity|RenderSizeHint|StudioFlow|CaptureTargets|CaptureFault|ProcessorAllocations|StepEditQueueRegression|DraftConflict|UnifiedMixedParity|ChordGridIntegration|StudioLibrary|StudioLibraryProcessorAllocations)$$' 5m build/test-browser.log
+	bash cmd/cicada/browser-runner.sh browser,worklet_testhooks '^TestBrowserUnderrunDetector$$' 2m build/test-worklet-stall.log
 
 budget-size: build-kernel-wasm
 	bash -o pipefail -c "go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm host/web/processor.min.js | tee build/budget-size-report.txt"
@@ -218,8 +220,8 @@ test-phrase-wasm: build-phrase-wasm
 
 # One source, two profiles: the core asset keeps its existing 5 KiB gate.
 build-worklets:
-	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=false --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor.min.js
-	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=true --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor-capture.min.js
+	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=false --define CICADA_TEST=false --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor.min.js
+	npm exec --yes --package=terser@5.39.0 -- terser host/web/processor.js --define CICADA_CAPTURE=true --define CICADA_TEST=false --ecma 2020 -c passes=5,unsafe=true -m toplevel -o host/web/processor-capture.min.js
 
 # Optional sample kernel: one prepared immutable instrument per instance.
 # Audio packs stay external; the core kernel keeps its shared size gate.

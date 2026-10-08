@@ -6,59 +6,77 @@ class CicadaKernel extends AudioWorkletProcessor {
     const CapabilityChords = 1, CapabilityUnifiedImage = 65536;
     const invalid = message => { throw new Error(message); };
     // Keep render state in constructor-scoped bindings so process reuses it.
-    let capture, module = o.m, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false;
+    let capture, module = o.m, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false, memoryPeak = 0;
+    const instances = [];
+    let memoryCount = 0;
+    const memoryBytes = () => {
+      let total = 0;
+      memoryCount = 0;
+      for (const memory of instances) if (memory) { memoryCount++; total += memory.buffer.byteLength; }
+      if (total > memoryPeak) memoryPeak = total;
+      return total;
+    };
+    // Reuse slots: deleting from a Set can resize its backing store on render.
+    const release = target => { if (target) instances[target.s] = null; };
     const create = async image => {
       const bytes = new Uint8Array(image), header = new DataView(image);
       if (bytes.length < 32 || header.getUint32(0) !== 0x43494331) invalid('Invalid CIC1 image header');
       const version = bytes[4] | bytes[5] << 8;
-      if (version === 14) invalid('Ambiguous image14; recompile source');
-      if (![8, 9, 10, 11, 12, 13, 15].includes(version)) invalid(`Unsupported image version ${version}`);
+      if (version === 14) invalid('Ambiguous image14; recompile');
+      if (version < 8 || version > 15) invalid(`Unsupported image version ${version}`);
       const instance = await WebAssembly.instantiate(module);
       const exports = instance.exports;
-      // TinyGo reactor exports require actual runtime initialization, including
-      // the capability query. No image/bank upload occurs before negotiation.
-      if (typeof exports._initialize !== 'function') invalid('Reactor initializer missing');
-      exports._initialize();
-      // Short local aliases reduce downloads without changing the export ABI.
-      // These are the original exports, never wrappers around realtime calls.
-      const x = {};
-      for (const name in exports) x[name.replace('gosx_audio_', '')] = exports[name];
-      if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability export');
-      const capability = x.capabilities ? x.capabilities() : 0;
-      if (capability !== (capability >>> 0) || (capability & ~0x3e7ff)) invalid('Invalid capabilities');
-      if (version === 15 && !(capability & CapabilityUnifiedImage)) invalid('image15 requires CapabilityUnifiedImage');
-      if (bank) {
-        const bankPtr = x.bank_alloc(bank.byteLength);
-        if (!bankPtr) invalid('bank');
-        const source = new Uint8Array(bank);
-        const destination = new Uint8Array(x.memory.buffer, bankPtr, source.byteLength);
-        const chunks = [];
-        for (let at = 0; at < source.byteLength; at += 65_536) {
-          const end = at + 65_536;
-          chunks.push([source.subarray(at, end), destination.subarray(at, end)]);
+      let slot = 0;
+      while (instances[slot]) slot++;
+      instances[slot] = exports.memory;
+      memoryBytes();
+      try {
+        // TinyGo reactor exports require actual runtime initialization, including
+        // the capability query. No image/bank upload occurs before negotiation.
+        if (typeof exports._initialize !== 'function') invalid('Reactor initializer missing');
+        exports._initialize();
+        // Short local aliases reduce downloads without changing the export ABI.
+        // These are the original exports, never wrappers around realtime calls.
+        const x = {};
+        for (const name in exports) x[name.replace('gosx_audio_', '')] = exports[name];
+        if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability export');
+        const capability = x.capabilities ? x.capabilities() : 0;
+        if (capability !== (capability >>> 0) || (capability & ~0x3e7ff)) invalid('Invalid capabilities');
+        if (version === 15 && !(capability & CapabilityUnifiedImage)) invalid('image15 needs CapabilityUnifiedImage');
+        if (bank) {
+          const bankPtr = x.bank_alloc(bank.byteLength);
+          if (!bankPtr) invalid('bank');
+          const source = new Uint8Array(bank);
+          const destination = new Uint8Array(x.memory.buffer, bankPtr, source.length);
+          const chunks = [];
+          for (let at = 0; at < source.length; at += 65_536) {
+            const end = at + 65_536;
+            chunks.push([source.subarray(at, end), destination.subarray(at, end)]);
+          }
+          await new Promise(resolve => { bankCopy = [chunks, 0, resolve]; });
+          if (x.bank_install(rate) !== 0) invalid('bank');
         }
-        await new Promise(resolve => { bankCopy = [chunks, 0, resolve]; });
-        if (x.bank_install(rate) !== 0) invalid('bank');
-      }
-      const ptr = x.project_alloc(bytes.length);
-      if (!ptr) invalid('image');
-      new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
-      if (x.init(rate, 128, 2) !== 0) invalid('rate');
-      if (!bank) {
-        const bankPtr = x.bank_image_ptr(), bankLen = x.bank_image_len();
-        if (!bankPtr || !bankLen) invalid('bank');
-        bank = new Uint8Array(x.memory.buffer, bankPtr, bankLen).slice().buffer;
-      }
-      const max = 128;
-      const commandBuffer = x.cmd_cap() * 24;
-      if (!deferred) deferred = new Uint8Array(commandBuffer);
-      return {
-        x, p: capability, b: header.getUint32(12, true),
-        d: new Uint8Array(x.memory.buffer, x.cmd_ptr(), commandBuffer),
-        m: new Uint8Array(x.memory.buffer, x.msg_ptr(), 256 * 16),
-        l: new Float32Array(x.memory.buffer, x.out_ptr(), max),
-        r: new Float32Array(x.memory.buffer, x.out_ptr() + max * 4, max)
-      };
+        const ptr = x.project_alloc(bytes.length);
+        if (!ptr) invalid('image');
+        new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes);
+        if (x.init(rate, 128, 2) !== 0) invalid('rate');
+        if (!bank) {
+          const bankPtr = x.bank_image_ptr(), bankLen = x.bank_image_len();
+          if (!bankPtr || !bankLen) invalid('bank');
+          bank = new Uint8Array(x.memory.buffer, bankPtr, bankLen).slice().buffer;
+        }
+        const max = 128, out = x.out_ptr();
+        const commandBuffer = x.cmd_cap() * 24;
+        if (!deferred) deferred = new Uint8Array(commandBuffer);
+        memoryBytes();
+        return {
+          x, s: slot, p: capability, b: header.getUint32(12, true),
+          d: new Uint8Array(x.memory.buffer, x.cmd_ptr(), commandBuffer),
+          m: new Uint8Array(x.memory.buffer, x.msg_ptr(), 256 * 16),
+          l: new Float32Array(x.memory.buffer, out, max),
+          r: new Float32Array(x.memory.buffer, out + max * 4, max)
+        };
+      } catch (error) { instances[slot] = null; throw error; }
     };
     // Shared fixed little-endian tick writer: no temporary view or allocation.
     const putTick = (bytes, at, tick) => {
@@ -68,15 +86,19 @@ class CicadaKernel extends AudioWorkletProcessor {
       for (let i = 0; i < deferredCount; i++) commit(active, deferred, i * 24, 24);
       deferredCount = 0;
     };
-    // Make a staged instance the active one: at a stop, or when nothing is playing.
-    const promote = (next) => {
+    // Promote before transport commands so their seek wins over reset anchors.
+    const promote = (next, tick = 0) => {
+      release(previous);
+      previous = tick ? active : null;
+      if (!tick) release(active);
       pending = null;
       if (CICADA_CAPTURE && capture) capture.engineEpoch++;
       active = next;
       bpm = next.b;
       engineSample = anchorSample = 0;
-      anchorTick = 0;
-      nextBarTick = 3840;
+      anchorTick = tick;
+      nextBarTick = tick + 3840;
+      if (tick) fadeLeft = fadeTotal;
       flush();
     };
     const receive = (data) => {
@@ -95,6 +117,7 @@ class CicadaKernel extends AudioWorkletProcessor {
         const staged = pending;
         pending = true;
         create(data.i).then(next => {
+          release(staged);
           if (playing) pending = next;
           else promote(next);
           post({ t: 't', r: data.r });
@@ -104,34 +127,41 @@ class CicadaKernel extends AudioWorkletProcessor {
           reject(String(error), data.r);
         });
       }
-      if (data.t === 'z') stallNext = true;
+      if (typeof CICADA_TEST !== 'undefined' && CICADA_TEST && data.t === 'z') stallNext = true;
       if (data.t === 'p') {
         timingHistogram.fill(0);
       }
-      if (data.t === 'q') report(data.l);
+      if (data.t === 'q') { latency = data.l; report(); }
     };
-    const commit = (target, bytes, start = 0, length = bytes.byteLength) => {
+    const commit = (target, bytes, start = 0, length = bytes.length) => {
       // Reject the whole batch before writing command memory or changing playback.
-      if (!target || length % 24 || length > target.d.length || start + length > bytes.byteLength) return reject('cmd');
+      if (!target) return reject('Reload audio');
+      if (length % 24 || start + length > bytes.length) return reject();
       const count = length / 24;
-      let queued = 0;
+      let seekTick = null, starts = false, stops = false, committed = 0, queued = 0;
+      for (let i = 0; i < count; i++) {
+        const at = start + i * 24, op = bytes[at];
+        if (op === 3) {
+          let bar = 0, tick = 0;
+          for (let j = 3; j >= 0; j--) { bar = bar * 256 + bytes[at + 4 + j]; tick = tick * 256 + bytes[at + 8 + j]; }
+          seekTick = bar * 3840 + tick;
+        }
+        if (op === 1) starts = true;
+        if (op === 2) stops = true;
+      }
+      const promotes = pending && pending !== true && (stops || starts && seekTick !== null);
+      if (promotes) target = pending;
+      if (length > target.d.length) return reject();
       for (let i = 0; i < count; i++) {
         const op = bytes[start + i * 24];
         if (op === 22 && !(target.p & CapabilityChords)) return reject('Unsupported chord opcode22');
         if (op >= 26 && op <= 28 && !(target.p & 131072)) return reject('spatial');
-        if (pending && (op === 10 || op === 9)) queued++;
+        if (pending && !promotes && (op === 10 || op === 9)) queued++;
       }
-      if (deferredCount + queued > deferred.byteLength / 24) return reject('cmd');
-      let seekTick = null, starts = false, stops = false, committed = 0;
+      if (deferredCount + queued > deferred.length / 24) return reject();
+      if (promotes) promote(target);
       for (let i = 0; i < count; i++) {
         const at = start + i * 24, op = bytes[at];
-        if (target === active && op === 3) {
-          const bar = bytes[at + 4] | bytes[at + 5] << 8 | bytes[at + 6] << 16 | bytes[at + 7] << 24;
-          const tick = bytes[at + 8] | bytes[at + 9] << 8 | bytes[at + 10] << 16 | bytes[at + 11] << 24;
-          seekTick = (bar >>> 0) * 3840 + (tick >>> 0);
-        }
-        if (target === active && op === 1) starts = true;
-        if (target === active && op === 2) stops = true;
         const launch = op === 10 || op === 9;
         const queued = launch && pending;
         const destination = queued ? deferred : target.d;
@@ -140,69 +170,50 @@ class CicadaKernel extends AudioWorkletProcessor {
         if (launch && !queued) putTick(destination, to + 16, nextBarTick);
       }
       if (committed) target.x.cmd_commit(committed);
-      if (target === active) {
-        if (seekTick !== null) {
-          anchorSample = engineSample;
-          anchorTick = seekTick;
-          nextBarTick = (Math.floor(seekTick / 3840) + 1) * 3840;
-          if (starts) { previous = null; fadeLeft = fadeTotal; }
-        }
-        if (starts) { playing = true; post({ t: 's', p: true }); }
-        if (stops) { if (CICADA_CAPTURE && capture && capture.recording) capture.stopping = true; playing = false; post({ t: 's', p: false }); if (pending && pending !== true) promote(pending); }
+      if (seekTick !== null) {
+        anchorSample = engineSample;
+        anchorTick = seekTick;
+        nextBarTick = (Math.floor(seekTick / 3840) + 1) * 3840;
+        if (starts) { release(previous); previous = null; fadeLeft = fadeTotal; }
       }
+      if (starts) { playing = true; post({ t: 's', p: true }); }
+      if (stops) { if (CICADA_CAPTURE && capture && capture.recording) capture.stopping = true; playing = false; post(stoppedMessage); }
     };
     const sampleAtTick = (tick) => {
-      const delta = Math.max(0, tick - anchorTick);
+      const delta = tick - anchorTick;
       return anchorSample + Math.ceil(delta * 60000 * rate / (bpm * 960));
     };
     const swapAtBoundary = (tick) => {
       if (!pending || pending === true) { nextBarTick += 3840; return; }
       const next = pending;
-      pending = null;
       swapView.setUint32(4, tick / 3840, true);
       next.d.set(swap, 0);
       next.x.cmd_commit(2);
-      previous = active;
-      if (CICADA_CAPTURE && capture) capture.engineEpoch++;
-      active = next;
-      bpm = next.b;
-      engineSample = anchorSample = 0;
-      anchorTick = tick;
-      nextBarTick = tick + 3840;
-      fadeLeft = fadeTotal;
-      for (let i = 0; i < deferredCount; i++) {
-        const from = i * 24;
-        for (let j = 0; j < 24; j++) active.d[from + j] = deferred[from + j];
-        putTick(active.d, from + 16, nextBarTick);
-      }
-      if (deferredCount) active.x.cmd_commit(deferredCount);
-      deferredCount = 0;
+      promote(next, tick);
     };
     const drain = (target, active) => {
       if (!target) return false;
       const count = target.x.msg_drain();
       let fault = false;
-      let sent = false;
-      for (let i = 0; i < count; i++) if (target.m[i * 16] === 7) fault = true;
-      if (active && ready && count) {
+      for (let i = 0; i < count; i++) {
+        const at = i * 16;
+        if (target.m[at] === 7) { fault = true; faultMessage.a = target.m[at + 2] | target.m[at + 3] << 8; }
+      }
+      if (active && count) {
           let length = count * 16;
           for (let i = 0; i < length; i++) view[i] = target.m[i];
           message.n = length;
           ready = false;
           post(message, transfer);
-          sent = true;
-      }
-      if (fault && !sent) {
-        faultMessage.a = target.m[2] | target.m[3] << 8;
+      } else if (fault) {
         post(faultMessage);
       }
       return fault;
     };
-    const reject = (e, r) => post({ t: 'x', e, r });
-    const report = l => {
-      latency = l;
+    const reject = (e = 'cmd', r) => post({ t: 'x', e, r });
+    const report = () => {
       post({ t: 'q', u: underruns,
-        q: quantumMs, dl: durationLimit, gl: latency + durationLimit, m: active?.x.memory.buffer.byteLength || 0,
+        q: quantumMs, dl: durationLimit, gl: latency + durationLimit, m: memoryBytes(), mp: memoryPeak, n: memoryCount,
         d: timingHistogram });
     };
     const process = (inputs, outputs) => {
@@ -230,7 +241,7 @@ class CicadaKernel extends AudioWorkletProcessor {
             else nextBarTick += 3840;
             boundary = sampleAtTick(nextBarTick);
           }
-          const frames = Math.min(128, left.length - offset, pending ? Math.max(1, boundary - engineSample) : left.length - offset);
+          const frames = Math.min(128, left.length - offset, pending ? boundary - engineSample : left.length - offset);
           active.x.render(frames);
           if (previous && fadeLeft > 0) previous.x.render(frames);
           for (let i = 0; i < frames; i++) {
@@ -243,7 +254,7 @@ class CicadaKernel extends AudioWorkletProcessor {
                 r = previous.r[i] * (1 - gain) + r * gain;
               } else { l *= gain; r *= gain; }
               fadeLeft--;
-              if (!fadeLeft) previous = null;
+              if (!fadeLeft) { release(previous); previous = null; }
             }
             left[n] = l; right[n] = r;
           }
@@ -253,11 +264,10 @@ class CicadaKernel extends AudioWorkletProcessor {
           else if (!pending && engineSample >= boundary) nextBarTick += 3840;
         }
         if (!(callbacks & 7) && ready) {
-          if (previous) drain(previous, false);
-          if (drain(active, true)) { active = null; playing = false; left.fill(0); right.fill(0); }
+          if (drain(active, true) || previous && drain(previous, false)) { release(active); release(previous); active = previous = null; playing = false; post(stoppedMessage); left.fill(0); right.fill(0); }
         }
       }
-      if (stallNext) {
+      if (typeof CICADA_TEST !== 'undefined' && CICADA_TEST && stallNext) {
         stallNext = false;
         const until = Date.now() + 20;
         while (Date.now() < until) {}
@@ -290,8 +300,6 @@ class CicadaKernel extends AudioWorkletProcessor {
       bpm = next.b;
       post({ t: 'r', r: o.r, mem: next.x.memory.buffer.byteLength, c: preciseClock, p: next.p });
     }, error => {
-      active = null;
-      playing = false;
       post({ t: 'e', e: String(error) });
     });
     port.onmessage = event => receive(event.data);

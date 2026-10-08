@@ -85,7 +85,7 @@ test('page metrics and output timeline use the negotiated quantum with a legacy 
   audio.sampleOutputTimeline();
   assert.equal(audio.outputTimeline.misses, 0);
   let metrics;
-  audio.metricWaiters.push(value => { metrics = value; });
+  audio.metricWaiters.push({ resolve: value => { metrics = value; } });
   audio.receive({ t: 'q', q: 256000 / 48000, u: 0 });
   assert.equal(metrics.q, 256000 / 48000);
   assert.equal(metrics.outputTimeline.quantumMs, metrics.q);

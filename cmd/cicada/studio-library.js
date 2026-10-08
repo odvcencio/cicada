@@ -27,7 +27,9 @@
       if (audio.playing) throw new Error('Stop playback before previewing');
       await audio.startAudio();
       if (ticket !== generation) return false;
-      const preview = new Node(audio.context, 'cicada', {numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: {m: await audio.modulePromise, i: image, r: 'preview'}});
+      const module = await audio.loadModule(audio.imageModuleKind(image));
+      if (ticket !== generation) return false;
+      const preview = new Node(audio.context, 'cicada', {numberOfInputs: 0, numberOfOutputs: 1, outputChannelCount: [2], processorOptions: {m: module, i: image, r: 'preview'}});
       if (ticket !== generation) { preview.port.close(); return false; }
       node = preview;
       try { await new Promise((resolve, reject) => {

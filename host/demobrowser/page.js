@@ -113,7 +113,7 @@
         seen += histogram[i];
         if (samples && seen >= Math.ceil(samples * .99)) { p99 = (i + 1) / 4; break; }
       }
-      state.metrics = {underruns: data.u, memoryBytes: data.m, callbackSamples: samples, callbackP99Ms: p99, durationExceedances: histogram[254], gapExceedances: histogram[255], quantumMs: data.q, durationLimitMs: data.dl, gapLimitMs: data.gl};
+      state.metrics = {underruns: data.u, memoryBytes: data.m, peakMemoryBytes: data.mp, instanceCount: data.n, callbackSamples: samples, callbackP99Ms: p99, durationExceedances: histogram[254], gapExceedances: histogram[255], quantumMs: data.q, durationLimitMs: data.dl, gapLimitMs: data.gl};
       $('p99').textContent = samples ? `${p99.toFixed(2)} ms` : '—';
       $('underruns').textContent = String(data.u);
       $('memory').textContent = `${(data.m / 1048576).toFixed(1)} MiB`;

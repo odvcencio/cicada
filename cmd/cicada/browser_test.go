@@ -366,7 +366,14 @@ func TestBrowserUnderrunDetector(t *testing.T) {
 	}
 	chrome.eval(`(()=>{const bytes=new Uint8Array(24);bytes[0]=250;bytes[1]=255;window.cicadaBrowserAudio.node.port.postMessage({t:'c',bytes},[bytes.buffer]);return true})()`)
 	chrome.waitFor("document.getElementById('studio-status').textContent.startsWith('Audio fault') && window.cicadaBrowserAudio.playing===false && document.getElementById('transport-button').textContent==='Play'", 5*time.Second)
+	chrome.screenshot("worklet-fault.png")
 	t.Log("kernel Fault message stopped Browser transport and appeared in Studio status")
+	chrome.click("#transport-button")
+	chrome.waitFor("window.cicadaBrowserAudio.playing===true && document.getElementById('transport-button').textContent==='Stop'", 5*time.Second)
+	chrome.eval("(async()=>{await window.cicadaBrowserAudio.close();return true})()")
+	chrome.waitFor("window.cicadaBrowserAudio.context===null && !document.getElementById('start-audio').disabled && document.getElementById('start-audio').textContent==='Start audio'", 5*time.Second)
+	chrome.screenshot("worklet-closed.png")
+	t.Log("Play reloaded the faulted kernel; close released the context and enabled Start audio")
 }
 
 func TestBrowserProcessorAllocations(t *testing.T) {

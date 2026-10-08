@@ -29,6 +29,7 @@ function setup(version = 13, message = { t: 'r', p: 65911, r: 'initial', c: true
     setTimeout: callback => { stats.timers.add(callback); return callback; },
     clearTimeout: callback => stats.timers.delete(callback),
     setInterval: () => 1,
+    clearInterval() {},
     AudioWorkletNode: class {
       constructor() { stats.nodes++; this.port = { postMessage: data => stats.posted.push(data) }; }
       connect() { queueMicrotask(() => this.port.onmessage({ data: message })); }

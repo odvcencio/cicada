@@ -87,6 +87,8 @@ func TestBrowserSoak(t *testing.T) {
 		CallbackDurationLimitMs    float64 `json:"dl"`
 		CallbackGapLimitMs         float64 `json:"gl"`
 		MemoryBytes                int     `json:"memoryBytes"`
+		PeakMemoryBytes            int     `json:"peakMemoryBytes"`
+		InstanceCount              int     `json:"instanceCount"`
 		MessageCount               int     `json:"workletPortMessages"`
 		DecodedMessageCount        int     `json:"decodedMessages"`
 		GCCount                    int     `json:"gcCount"`
@@ -214,8 +216,8 @@ func TestBrowserSoak(t *testing.T) {
 		}
 		if edit%6 == 0 || edit == editCount {
 			current = readMetrics()
-			if current.MemoryBytes > memoryPeak {
-				memoryPeak = current.MemoryBytes
+			if current.PeakMemoryBytes > memoryPeak {
+				memoryPeak = current.PeakMemoryBytes
 			}
 			t.Logf("browser soak progress: %d/30 min, step edits=%d (failures=%d), source edits=%d (failures=%d), worklet underruns=%d, faults=%d, memory=%d bytes", edit/6, stepEdits, stepEditFailures, sourceEdits, sourceEditFailures, current.Underruns, current.Faults, current.MemoryBytes)
 			soFarUnderruns := current.Underruns - warmup.Underruns
@@ -223,13 +225,23 @@ func TestBrowserSoak(t *testing.T) {
 			t.Logf("soak measurement so far: worklet underruns=%d, output timeline exceedances=%d", soFarUnderruns, soFarTimelineMisses)
 		}
 	}
+	// A prepared edit and a short crossfade may retain extra instances. Wait for
+	// the last swap, then require that only the active instance remains.
+	if !waitFor(`(async()=> (await window.cicadaBrowserAudio.requestMetrics()).instanceCount===1)()`, 5*time.Second) {
+		t.Error("staged or fading WASM instance was retained after the last edit")
+	}
 	current = readMetrics()
+	if current.PeakMemoryBytes > memoryPeak {
+		memoryPeak = current.PeakMemoryBytes
+	}
 	chrome.eval(`window.cicadaBrowserAudio.stop();true`)
 	editsComplete := stepEdits == 180 && sourceEdits == 30
 	soakUnderruns := current.Underruns - warmup.Underruns
 	soakTimelineMisses := current.OutputTimeline.Misses - warmup.OutputTimeline.Misses
 	transportAdvanced := current.Playing && current.Playhead > warmup.Playhead
-	memoryStable := afterWarmup.MemoryBytes != 0 && memoryPeak <= afterWarmup.MemoryBytes
+	// At most four instances overlap: active, fading, prepared and loading.
+	memoryLimit := 4 * afterWarmup.MemoryBytes
+	memoryStable := afterWarmup.MemoryBytes != 0 && current.InstanceCount == 1 && current.MemoryBytes <= afterWarmup.MemoryBytes && memoryPeak <= memoryLimit
 	cpuBudgetMs := cpuReport.P99
 	cpuBudgetMetric := "Node V8 WebAssembly p99"
 	if os.Getenv("CICADA_BROWSER") == "windows" {
@@ -247,6 +259,8 @@ func TestBrowserSoak(t *testing.T) {
 	}
 
 	report := map[string]any{
+		"wasmInstanceCount":              current.InstanceCount,
+		"wasmTransientMemoryLimitBytes":  memoryLimit,
 		"gatePass":                       soakPass,
 		"requestedDurationSeconds":       1800,
 		"actualDurationSeconds":          time.Since(started).Seconds(),
@@ -325,7 +339,7 @@ func TestBrowserSoak(t *testing.T) {
 		t.Errorf("browser transport did not keep advancing through the soak: warmup playhead=%d final=%d playing=%v", warmup.Playhead, current.Playhead, current.Playing)
 	}
 	if !memoryStable {
-		t.Errorf("WASM memory grew after warmup: warmup=%d peak=%d", afterWarmup.MemoryBytes, memoryPeak)
+		t.Errorf("WASM instances did not settle or exceeded the transient bound: warmup=%d peak=%d final=%d instances=%d limit=%d", afterWarmup.MemoryBytes, memoryPeak, current.MemoryBytes, current.InstanceCount, memoryLimit)
 	}
 	if !cpuWithinLimit {
 		t.Errorf("browser CPU metric %.4f ms/callback exceeds 0.67 ms budget", cpuBudgetMs)

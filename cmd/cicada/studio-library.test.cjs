@@ -14,17 +14,19 @@ function harness() {
   connect(destination) { this.destination=destination; }
   disconnect() { this.disconnected=true; }
  }
- const audio={context:{destination:{}},modulePromise:Promise.resolve({kernel:true}),playing:false,async startAudio(){}};
+ const module={kernel:true},kinds=[];
+ const audio={context:{destination:{}},playing:false,async startAudio(){},imageModuleKind(){return 'keys';},async loadModule(kind){kinds.push(kind);return module;}};
  const preview=createPreview({Node,audio,setTimeout:fn=>{timers.set(++id,fn);return id;},clearTimeout:id=>timers.delete(id)});
- return {nodes,timers,preview,audio};
+ return {nodes,timers,preview,audio,module,kinds};
 }
 test('preview uses the score kernel and processor, replaces prior node and stops after one bar',async () => {
- const {nodes,timers,preview,audio}=harness();
+ const {nodes,timers,preview,audio,module,kinds}=harness();
  const image=new ArrayBuffer(32);
  assert.equal(await preview.play(image),true);
  assert.equal(nodes[0].name,'cicada');
  assert.equal(nodes[0].options.processorOptions.i,image);
- assert.equal(nodes[0].options.processorOptions.m,await audio.modulePromise);
+ assert.equal(nodes[0].options.processorOptions.m,module);
+ assert.deepEqual(kinds,['keys']);
  assert.equal(nodes[0].sent.bytes[0],1);
  await preview.play(image);
  assert.equal(nodes[0].disconnected,true); assert.equal(nodes[0].closed,true);
