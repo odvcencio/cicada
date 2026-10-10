@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"m31labs.dev/cicada/host/liveplay"
@@ -13,6 +14,46 @@ import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 )
+
+func TestPreviewPausedThenStoppedReleasesSocketTeardown(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		p, err := liveplay.New(studioPreviewScore(t, -6), 48_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		s := &studio{transport: &studioTransport{stream: p, telemetry: liveplay.NewPublisher(), sampleRate: 48_000}}
+		session := make(livePreviewSession)
+		if err := s.handleLiveMessage([]byte(`{"type":"preview-set","entity":"track:bass","param":"mix.gain","value":0}`), session); err != nil {
+			t.Fatal(err)
+		}
+		version := session[livePreviewKey{entity: "track:bass", param: kernel.ParamMixGain}].version
+		for p.CancelPreview(version) == nil {
+		}
+		s.transport.pause()
+		done := make(chan struct{})
+		go func() { session.close(); close(done) }()
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("paused teardown discarded a cancellation from a full queue")
+		default:
+		}
+		s.transport.stop()
+		synctest.Wait()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("pause then stop retained the socket reader and its player/engine")
+			// Let an unfixed teardown finish without leaking this test's reader.
+			renderStudioPreview(t, p, 256)
+			<-done
+		}
+		if s.transport.stream != nil || len(session) != 0 {
+			t.Fatal("stopped socket teardown retained its player")
+		}
+	})
+}
 
 func TestPreviewTeardownKeepsCommittedVersionsAndNewerGestures(t *testing.T) {
 	for _, scenario := range []string{"committed", "newer-client", "new-gesture-after-commit"} {

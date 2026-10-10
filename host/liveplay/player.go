@@ -196,6 +196,8 @@ type Player struct {
 	buffered          int
 	read              int
 	fault             error
+	closed            chan struct{}
+	closedOnce        sync.Once
 	jumpFadeRemaining int
 	position          atomic.Uint64
 	tempoMilli        atomic.Int64
@@ -209,6 +211,7 @@ type Player struct {
 	appliedVersions   [17][kernel.ParamCount]uint64
 	clearedVersions   [17][kernel.ParamCount]uint64
 	overrideClears    chan overrideClear
+	overrideHook      func(snapshotLoaded bool) // Optional deterministic scheduler for tests.
 	cancelledVersions [17][kernel.ParamCount]uint64
 	retiredVersions   [17][kernel.ParamCount]atomic.Uint64
 	meters            chan MeterFrame
@@ -245,6 +248,7 @@ func New(initial Score, rate int) (*Player, error) {
 		offers:        make(chan Score, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
 		meters: make(chan MeterFrame, 1), loudness: masterLoudness,
 		overrideClears: make(chan overrideClear, 64),
+		closed:         make(chan struct{}),
 	}
 	p.overrides.Store(&liveOverrides{})
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
@@ -275,9 +279,10 @@ func (p *Player) Loudness() LoudnessSnapshot {
 	return LoudnessSnapshot{}
 }
 
-// Close stops the meter worker. It must be called after the audio device has
-// stopped reading this player.
+// Close permanently ends rendering, releases cancellation producers and stops
+// the meter worker. Call it after the audio device has stopped reading this player.
 func (p *Player) Close() {
+	p.closedOnce.Do(func() { close(p.closed) })
 	if p.loudness != nil {
 		p.loudness.close()
 	}
@@ -609,6 +614,11 @@ func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint
 // restores the playing score's committed value and publishes the retirement.
 // A superseded or already retired version is harmless.
 func (p *Player) CancelPreview(version uint64) error {
+	select {
+	case <-p.closed:
+		return nil // Nothing plays after permanent shutdown.
+	default:
+	}
 	request, override, ok := p.previewClear(version)
 	if !ok {
 		return nil
@@ -629,6 +639,8 @@ func (p *Player) CancelPreview(version uint64) error {
 		}
 	}
 	select {
+	case <-p.closed:
+		return nil
 	case p.overrideClears <- request:
 		return nil
 	default:
@@ -636,12 +648,21 @@ func (p *Player) CancelPreview(version uint64) error {
 	}
 }
 
-// CancelPreviewWait queues retirement reliably, waiting for Read to make
-// room if necessary. Call it only off the render thread. It does not wait for
-// retirement itself and must not use a disconnected socket's canceled context.
+// CancelPreviewWait queues retirement reliably, waiting for Read to make room.
+// While paused it waits until rendering resumes or Close permanently ends it.
+// Call it only off the render thread. It does not wait for retirement itself
+// and must not use a disconnected socket's canceled context.
 func (p *Player) CancelPreviewWait(version uint64) {
+	select {
+	case <-p.closed:
+		return
+	default:
+	}
 	if request, _, ok := p.previewClear(version); ok {
-		p.overrideClears <- request
+		select {
+		case p.overrideClears <- request:
+		case <-p.closed:
+		}
 	}
 }
 
@@ -681,13 +702,23 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 	if newEngine {
 		clear(p.appliedVersions[:])
 	}
+	// Count first so the snapshot includes the override publication for every
+	// request we drain. Requests arriving later wait for the next boundary,
+	// rather than being rejected against an older snapshot and lost.
+	if p.overrideHook != nil {
+		p.overrideHook(false)
+	}
+	remaining := len(p.overrideClears)
 	snapshot := p.overrides.Load()
 	if snapshot == nil {
 		return
 	}
+	if p.overrideHook != nil {
+		p.overrideHook(true)
+	}
 	// Drain only the requests present at this boundary. Retain a matching
 	// cancellation until its restoration command fits in the engine queue.
-	for remaining := len(p.overrideClears); remaining > 0; remaining-- {
+	for ; remaining > 0; remaining-- {
 		request := <-p.overrideClears
 		override := snapshot.values[request.slot][request.id]
 		if override.active && override.version == request.version {

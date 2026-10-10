@@ -103,6 +103,8 @@ type livePreviewSession map[livePreviewKey]livePreview
 
 // close runs on the socket reader, after its context has been canceled. It
 // waits for cancellation queue space instead of losing a disconnected gesture.
+// A paused player can keep it waiting until resume; stop closes the player and
+// releases the reader, which then drops all of its player references.
 func (previews livePreviewSession) close() {
 	for _, preview := range previews {
 		if !preview.committed {
