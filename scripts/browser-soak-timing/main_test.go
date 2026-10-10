@@ -104,3 +104,50 @@ func TestDemoSoakProtocol(t *testing.T) {
 		t.Fatalf("early runner failure must still stop sampling cleanly: %v", err)
 	}
 }
+
+func TestDemoSoakMeasurementWindow(t *testing.T) {
+	for _, test := range []struct {
+		name               string
+		ownLoad, otherLoad float64
+		verdict            string
+		pass               bool
+	}{
+		{"quiet demo ignores busy evidence from another window", 1, 5, "fail", false},
+		{"busy demo ignores quiet evidence from another window", 5, 1, "inconclusive", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			report := healthyDemoReport()
+			report.Underruns = 8
+			data, err := json.Marshal(struct {
+				demoSoakReport
+				HostLoadSamples []soaktiming.HostSample `json:"hostLoadSamples"`
+			}{report, []soaktiming.HostSample{{Load1: test.otherLoad, CPUCount: 8}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ownSamples := []soaktiming.HostSample{{Load1: test.ownLoad, CPUCount: 8}}
+			start := func() func() []soaktiming.HostSample {
+				return func() []soaktiming.HostSample { return ownSamples }
+			}
+			var output bytes.Buffer
+			if err := run(bytes.NewReader(data), &output, start); err != nil {
+				t.Fatal(err)
+			}
+			decoder := json.NewDecoder(&output)
+			var ready struct{ Ready bool }
+			if err := decoder.Decode(&ready); err != nil || !ready.Ready {
+				t.Fatalf("sampler readiness: %v, %v", ready, err)
+			}
+			var result struct {
+				soaktiming.Result
+				HostLoadSamples []soaktiming.HostSample `json:"hostLoadSamples"`
+			}
+			if err := decoder.Decode(&result); err != nil {
+				t.Fatal(err)
+			}
+			if result.TimingVerdict != test.verdict || result.GatePass != test.pass || len(result.HostLoadSamples) != 1 || result.HostLoadSamples[0].Load1 != test.ownLoad {
+				t.Errorf("demo must use its own measurement window: %+v", result)
+			}
+		})
+	}
+}

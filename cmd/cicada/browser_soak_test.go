@@ -63,15 +63,7 @@ func TestBrowserSoak(t *testing.T) {
 	if err != nil {
 		t.Fatal("run budget-browser before the soak to provide the Node CPU fallback report:", err)
 	}
-	var cpuReport struct {
-		Engine            string  `json:"engine"`
-		Clock             string  `json:"clock"`
-		ClockResolutionMs float64 `json:"cpuClockResolutionMs"`
-		P99               float64 `json:"p99"`
-		CPUMsPerCallback  float64 `json:"cpuMsPerCallback"`
-		BudgetMs          float64 `json:"cpuBudgetMs"`
-		BudgetMetric      string  `json:"cpuBudgetMetric"`
-	}
+	var cpuReport browserSoakCPUReport
 	expectedCPUEngine := "Node V8 WebAssembly"
 	if os.Getenv("CICADA_BROWSER") == "windows" {
 		expectedCPUEngine = "Windows Chrome AudioWorklet"
@@ -264,7 +256,7 @@ func TestBrowserSoak(t *testing.T) {
 		EditsComplete: editsComplete, Faults: current.Faults, TransportAdvanced: transportAdvanced,
 		MemoryStable: memoryStable, Underruns: soakUnderruns, CPUUsedMs: cpuBudgetMs,
 		HighResolutionClock: current.Clock, QuantumMs: current.QuantumMs,
-	}, hostSamples, cpuClockResolutionMs)
+	}, hostSamples, cpuReport.HostLoadSamples, cpuClockResolutionMs)
 	soakPass := verdict.GatePass
 	clockUsed := "Date.now()"
 	if current.Clock {
@@ -284,6 +276,8 @@ func TestBrowserSoak(t *testing.T) {
 		"callbackClockResolutionMs":      soaktiming.CallbackClockResolutionMs(current.Clock),
 		"hostLoadSamples":                hostSamples,
 		"hostBusy":                       browserSoakHostBusy(hostSamples),
+		"browserCPUHostLoadSamples":      cpuReport.HostLoadSamples,
+		"browserCPUHostBusy":             browserSoakHostBusy(cpuReport.HostLoadSamples),
 		"hostLoadSampleIntervalSeconds":  int(browserSoakHostSampleInterval.Seconds()),
 		"requestedDurationSeconds":       1800,
 		"actualDurationSeconds":          time.Since(started).Seconds(),

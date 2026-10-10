@@ -49,6 +49,8 @@ func run(input io.Reader, output io.Writer, start func() func() []soaktiming.Hos
 		}
 		return err
 	}
+	// This sampler covers the demo's own callbacks. Cached CPU-report or
+	// Studio-soak load evidence does not describe this measurement window.
 	samples := stop()
 	return encoder.Encode(struct {
 		soaktiming.Result

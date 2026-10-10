@@ -30,18 +30,32 @@ type browserSoakChecks struct {
 	QuantumMs           float64
 }
 
+type browserSoakCPUReport struct {
+	Engine            string                  `json:"engine"`
+	Clock             string                  `json:"clock"`
+	ClockResolutionMs float64                 `json:"cpuClockResolutionMs"`
+	P99               float64                 `json:"p99"`
+	CPUMsPerCallback  float64                 `json:"cpuMsPerCallback"`
+	BudgetMs          float64                 `json:"cpuBudgetMs"`
+	BudgetMetric      string                  `json:"cpuBudgetMetric"`
+	HostLoadSamples   []browserSoakHostSample `json:"hostLoadSamples"`
+}
+
 type browserSoakResult struct {
 	soaktiming.Result
 	UnderrunTiming soaktiming.Result
 	CPUTiming      soaktiming.Result
 }
 
-func browserSoakVerdict(checks browserSoakChecks, samples []browserSoakHostSample, cpuClockResolutionMs float64) browserSoakResult {
+func browserSoakVerdict(checks browserSoakChecks, soakSamples, cpuSamples []browserSoakHostSample, cpuClockResolutionMs float64) browserSoakResult {
 	correctnessPass := checks.EditsComplete && checks.Faults == 0 && checks.TransportAdvanced && checks.MemoryStable
 	// Underrun detection measures callback duration and gaps against a quantum.
 	// Its worklet clock is independent of the CPU report's calibrated clock.
-	underruns := soaktiming.Evaluate(checks.Underruns == 0, correctnessPass, samples, soaktiming.CallbackClockResolutionMs(checks.HighResolutionClock), checks.QuantumMs)
-	cpu := soaktiming.Evaluate(checks.CPUUsedMs <= browserSoakCPUBudgetMs, correctnessPass, samples, cpuClockResolutionMs, browserSoakCPUBudgetMs)
+	underruns := soaktiming.Evaluate(checks.Underruns == 0, correctnessPass, soakSamples, soaktiming.CallbackClockResolutionMs(checks.HighResolutionClock), checks.QuantumMs)
+	// The CPU value is cached from budget-browser. Only that report's load
+	// samples describe its measurement window; later soak samples cannot
+	// establish whether that earlier CPU measurement was quiet.
+	cpu := soaktiming.Evaluate(checks.CPUUsedMs <= browserSoakCPUBudgetMs, correctnessPass, cpuSamples, cpuClockResolutionMs, browserSoakCPUBudgetMs)
 	result := browserSoakResult{UnderrunTiming: underruns, CPUTiming: cpu}
 	result.TimingVerdict = "pass"
 	result.GatePass = underruns.GatePass && cpu.GatePass

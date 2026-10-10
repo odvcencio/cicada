@@ -52,7 +52,8 @@ func TestBrowserSoakVerdict(t *testing.T) {
 				Underruns: test.underruns, CPUUsedMs: test.cpuMs,
 				HighResolutionClock: true, QuantumMs: 128000.0 / 48000,
 			}
-			result := browserSoakVerdict(checks, []browserSoakHostSample{{Load1: test.load, CPUCount: 8}}, test.resolutionMs)
+			samples := []browserSoakHostSample{{Load1: test.load, CPUCount: 8}}
+			result := browserSoakVerdict(checks, samples, samples, test.resolutionMs)
 			if result.TimingVerdict != test.verdict || result.GatePass != test.pass {
 				t.Errorf("verdict = %+v, want timing=%s pass=%v", result, test.verdict, test.pass)
 			}
@@ -84,7 +85,8 @@ func TestBrowserSoakCorrectnessFailures(t *testing.T) {
 			}
 			test.change(&checks)
 			for _, environment := range []struct{ load, resolutionMs float64 }{{5, 0.1}, {1, 1}} {
-				result := browserSoakVerdict(checks, []browserSoakHostSample{{Load1: environment.load, CPUCount: 8}}, environment.resolutionMs)
+				samples := []browserSoakHostSample{{Load1: environment.load, CPUCount: 8}}
+				result := browserSoakVerdict(checks, samples, samples, environment.resolutionMs)
 				if result.GatePass || result.TimingVerdict != "inconclusive" {
 					t.Errorf("correctness failure must fail despite inconclusive timing: %+v", result)
 				}
@@ -119,7 +121,7 @@ func TestBrowserSoakHostSamplingUnavailable(t *testing.T) {
 		{{Load1: 1, CPUCount: 0}},
 	} {
 		checks := browserSoakChecks{EditsComplete: true, TransportAdvanced: true, MemoryStable: true, HighResolutionClock: true, QuantumMs: 128000.0 / 48000}
-		result := browserSoakVerdict(checks, samples, 0.1)
+		result := browserSoakVerdict(checks, samples, samples, 0.1)
 		if result.TimingVerdict != "inconclusive" || !result.GatePass || !strings.Contains(result.TimingReason, "host quietness unavailable") {
 			t.Errorf("missing host evidence must not be treated as quiet: %+v", result)
 		}
