@@ -45,6 +45,30 @@ func (v *PreviewParamValidator) Validate(id kernel.ParamID, value float32) error
 	return v.lanes[lane].Validate(params)
 }
 
+// CommittedValue reports the prepared kit's effective value in registry units.
+// Recipe remapping and modeled level/pan can differ from descriptor defaults.
+func (v *PreviewParamValidator) CommittedValue(id kernel.ParamID) (float64, bool) {
+	lane, control, ok := drumParamControl(id)
+	if !ok || !v.drums {
+		return 0, false
+	}
+	params := v.targets[lane]
+	switch control {
+	case drumTune:
+		return params.Tune, true
+	case drumDecay:
+		return params.Decay * 1000, true
+	case drumLevel:
+		if params.LevelDB == -1000 {
+			return math.Inf(-1), true
+		}
+		return params.LevelDB, true
+	case drumPan:
+		return params.Pan, true
+	}
+	return 0, false
+}
+
 func drumParamValue(params drum.Params, control drumParamField, value float32, off bool) drum.Params {
 	switch control {
 	case drumTune:

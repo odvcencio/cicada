@@ -481,14 +481,16 @@ func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved Resolved
 	if value.Number == nil {
 		return 0, fx.FreeDelay, fmt.Errorf("setting has no numeric value")
 	}
-	compiled, err := sceneSettingFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *value.Number)
+	compiled, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *value.Number)
 	if err != nil {
 		return 0, fx.FreeDelay, err
 	}
 	return compiled, fx.FreeDelay, nil
 }
 
-func sceneSettingFloat32Value(minimum, maximum, value float64) (float32, error) {
+// ParameterFloat32Value preserves authored bounds when compiling command values.
+// A bound rounded outside its float64 range moves one float32 step inward.
+func ParameterFloat32Value(minimum, maximum, value float64) (float32, error) {
 	compiled := float32(value)
 	if float64(compiled) < minimum {
 		if value != minimum {

@@ -142,7 +142,7 @@ type slotLaunch struct {
 type Event struct {
 	Bar   int64 // one-based bar that has just begun
 	Name  string
-	Kind  string // edit, scene, or scene-error
+	Kind  string // edit, scene, scene-error, preview-error, or a live input event
 	Track string // set for one-track slot events
 }
 
@@ -612,17 +612,8 @@ func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint
 		trackID = names.ids[track]
 		validator = &names.previewValues[track]
 	}
-	off := spec.Off && math.IsInf(float64(value), -1)
-	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
-		return 0, fmt.Errorf("parameter value is out of range")
-	}
-	if spec.Curve == "toggle" && value != 0 && value != 1 {
-		return 0, fmt.Errorf("toggle parameter must be zero or one")
-	}
-	if validator != nil {
-		if err := validator.Validate(id, value); err != nil {
-			return 0, fmt.Errorf("parameter %q is rejected by the playing voice: %w", spec.Name, err)
-		}
+	if err := validatePreviewValue(spec, validator, value); err != nil {
+		return 0, fmt.Errorf("parameter %q is rejected by the playing voice: %w", spec.Name, err)
 	}
 	version := p.overrideSequence.Add(1)
 	for {
@@ -645,6 +636,26 @@ func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint
 	}
 }
 
+type previewValueError string
+
+func (e previewValueError) Error() string { return string(e) }
+
+// Admission and restoration use the same checks. Errors are static values so
+// rejecting a restoration cannot allocate on the render thread.
+func validatePreviewValue(spec kernel.ParamSpec, validator *engine.PreviewParamValidator, value float32) error {
+	off := spec.Off && math.IsInf(float64(value), -1)
+	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
+		return previewValueError("parameter value is out of range")
+	}
+	if spec.Curve == "toggle" && value != 0 && value != 1 {
+		return previewValueError("toggle parameter must be zero or one")
+	}
+	if validator != nil {
+		return validator.Validate(spec.ID, value)
+	}
+	return nil
+}
+
 // CancelPreview requests retirement of exactly one override version. Read
 // restores the playing score's committed value and publishes the retirement.
 // A superseded or already retired version is harmless.
@@ -654,24 +665,9 @@ func (p *Player) CancelPreview(version uint64) error {
 		return nil // Nothing plays after permanent shutdown.
 	default:
 	}
-	request, override, ok := p.previewClear(version)
+	request, _, ok := p.previewClear(version)
 	if !ok {
 		return nil
-	}
-	track := request.slot
-	if request.slot == 16 {
-		track = 0xff
-	} else if override.trackID != "" {
-		if resolved, ok := p.TrackIndex(override.trackID); ok {
-			track = resolved
-		} else {
-			track = 0xff // A removed track needs no restoration.
-		}
-	}
-	if request.slot == 16 || track != 0xff {
-		if _, ok := p.CommittedValue(track, request.id); !ok {
-			return fmt.Errorf("committed preview value is unavailable")
-		}
 	}
 	select {
 	case <-p.closed:
@@ -802,7 +798,16 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 			}
 			if cancelled {
 				value, ok := parameterValue(score.Parameters, track, kernel.ParamID(id))
-				if ok && target.Push(cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(value)}) {
+				var validator *engine.PreviewParamValidator
+				if track != 0xff {
+					validator = &score.trackNames.previewValues[track]
+				}
+				if !ok || validatePreviewValue(kernel.Params[id], validator, value) != nil {
+					p.retireOverride(slot, kernel.ParamID(id), override.version)
+					p.emit(Event{Kind: "preview-error", Name: kernel.Params[id].Name, Track: override.trackID})
+					continue
+				}
+				if target.Push(cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(value)}) {
 					p.retireOverride(slot, kernel.ParamID(id), override.version)
 				}
 				continue

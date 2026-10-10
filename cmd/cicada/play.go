@@ -208,7 +208,7 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 	}
 	return liveplay.Score{
 		Engine: created, SampleRate: sampleRate, BPMMilli: int64(p.TempoMilli), Name: path,
-		SceneIDs: sceneIDs, Tracks: tracks, Song: song, Parameters: liveProjectParameters(p),
+		SceneIDs: sceneIDs, Tracks: tracks, Song: song, Parameters: liveProjectParameters(p, created),
 		HasReturnA: cfg.DelayA != nil, HasReturnB: cfg.ReverbB != nil, HasSFX: hasSFXTracks(p),
 	}, nil
 }
@@ -222,9 +222,13 @@ func hasSFXTracks(p *project.Project) bool {
 	return false
 }
 
-func liveProjectParameters(p *project.Project) []liveplay.ParameterValue {
+func liveProjectParameters(p *project.Project, prepared *engine.Engine) []liveplay.ParameterValue {
 	addresses := project.ParamAddresses(p)
 	values := make([]liveplay.ParameterValue, 0, len(addresses))
+	var validators [16]engine.PreviewParamValidator
+	for track := 0; track < prepared.TrackCount(); track++ {
+		validators[track] = prepared.PreviewParamValidator(track)
+	}
 	for _, address := range addresses {
 		descriptor, ok := project.LookupParamDescriptor(address.Param)
 		if !ok || !descriptor.Live {
@@ -243,24 +247,40 @@ func liveProjectParameters(p *project.Project) []liveplay.ParameterValue {
 				continue
 			}
 		}
-		value := float32(0)
+		id, ok := kernel.FindParam(address.Param)
+		if !ok {
+			continue
+		}
+		numeric := float64(0)
 		switch number := address.Value.(type) {
 		case float64:
-			value = float32(number)
+			numeric = number
 		case float32:
-			value = number
+			numeric = float64(number)
 		case int:
-			value = float32(number)
+			numeric = float64(number)
 		case nil:
 			if !descriptor.Off {
 				continue
 			}
-			value = float32(math.Inf(-1))
+			numeric = math.Inf(-1)
 		default:
 			continue
 		}
-		id, ok := kernel.FindParam(address.Param)
-		if !ok {
+		if track != 0xff {
+			if effective, ok := validators[track].CommittedValue(id); ok {
+				numeric = effective
+			}
+		}
+		value := float32(numeric)
+		if !descriptor.Off || !math.IsInf(numeric, -1) {
+			var err error
+			value, err = project.ParameterFloat32Value(descriptor.Min, descriptor.Max, numeric)
+			if err != nil {
+				continue // Valid prepared recipes may have no command representation.
+			}
+		}
+		if track != 0xff && validators[track].Validate(id, value) != nil {
 			continue
 		}
 		values = append(values, liveplay.ParameterValue{Track: track, ID: id, Value: value})
@@ -313,7 +333,11 @@ func watchLiveScore(ctx context.Context, path string, initialHash [32]byte, stre
 			audio.Pause()
 			return nil
 		case event := <-stream.Events():
-			fmt.Fprintf(errorsTo, "landed %s at bar %d\n", event.Name, event.Bar)
+			if event.Kind == "preview-error" {
+				fmt.Fprintf(errorsTo, "preview %s on track %s ended, but its saved value could not be restored\n", event.Name, event.Track)
+			} else {
+				fmt.Fprintf(errorsTo, "landed %s at bar %d\n", event.Name, event.Bar)
+			}
 		case <-ticker.C:
 			watcher.poll()
 		case <-health.C:
