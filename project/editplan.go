@@ -15,11 +15,11 @@ func EditPlan(p *Project, source []byte) *edit.Plan {
 	plan.KeyRoot = p.Key.Root
 	plan.Scale = p.Key.Scale
 	for _, track := range p.Tracks {
-		plan.Tracks = append(plan.Tracks, edit.Track{ID: track.ID, Kind: track.Kind, Polyphony: GraphPolyphony(p, track.Kind)})
+		plan.Tracks = append(plan.Tracks, edit.Track{ID: track.ID, Kind: track.Kind, Polyphony: GraphPolyphony(p, track.Kind), Slots: track.Slots})
 		plan.Names[track.ID] = true
 	}
 	for _, pattern := range p.Patterns {
-		out := edit.Pattern{ID: pattern.ID, Kind: pattern.Kind, Steps: pattern.Steps, StepTicks: pattern.StepTicks, Data: editSteps(pattern.Data)}
+		out := edit.Pattern{ID: pattern.ID, Kind: pattern.Kind, Steps: pattern.Steps, StepTicks: pattern.StepTicks, Transpose: pattern.Transpose, Data: editSteps(pattern.Data)}
 		if pattern.Lanes != nil {
 			out.Lanes = make(map[string][]*edit.Step, len(pattern.Lanes))
 			for lane, steps := range pattern.Lanes {

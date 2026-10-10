@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
@@ -804,5 +805,15 @@ func TestTelemetryDetachedPublisherReceivesNothing(t *testing.T) {
 	p.PublishTelemetry()
 	if pub.Latest()[FrameTransport] != nil {
 		t.Fatal("detached player published")
+	}
+}
+
+func TestGMDrumLaneEditParity(t *testing.T) {
+	for note := 0; note <= 127; note++ {
+		got, ok := GMDrumLane(note)
+		want, wantOK := edit.GMDrumLane(note)
+		if got != want || ok != wantOK {
+			t.Fatalf("note %d: (%d,%v), want (%d,%v)", note, got, ok, want, wantOK)
+		}
 	}
 }

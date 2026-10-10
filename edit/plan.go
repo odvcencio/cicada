@@ -36,11 +36,13 @@ type Plan struct {
 type Track struct {
 	ID, Kind  string
 	Polyphony int
+	Slots     [16]*string
 }
 
 type Pattern struct {
 	ID, Kind   string
 	Steps      uint8
+	Transpose  int8
 	StepTicks  uint16 // zero means 240 (project/model.go:147)
 	Data       []*Step
 	Lanes      map[string][]*Step

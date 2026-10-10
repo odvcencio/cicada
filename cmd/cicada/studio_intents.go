@@ -23,25 +23,34 @@ var studioCompile = compileStudioSourceWithOverrides
 // successful compile so the commit tail can reuse it instead of compiling the
 // same bytes again.
 type studioCompiler struct {
-	path    string
-	source  []byte
-	files   map[string][]byte
-	project *project.Project
+	// validationFiles supplies host-prepared pins during candidate validation.
+	// They are still committed only when finish adds them to the result.
+	validationFiles map[string][]byte
+	path            string
+	source          []byte
+	files           map[string][]byte
+	project         *project.Project
 }
 
 func (c *studioCompiler) Compile(source []byte, files map[string][]byte) (*edits.Plan, error) {
-	overrides := make(map[string][]byte, len(files)+1)
+	overrides := make(map[string][]byte, len(files)+len(c.validationFiles))
+	for path, data := range c.validationFiles {
+		overrides[path] = data
+	}
 	for path, data := range files {
 		overrides[path] = data
+	}
+	// The host compiler adds the entry source to overrides. Keep only the
+	// auxiliary inputs when matching the compiled result to a commit.
+	compiledFiles := make(map[string][]byte, len(overrides))
+	for path, data := range overrides {
+		compiledFiles[path] = bytes.Clone(data)
 	}
 	p, err := studioCompile(c.path, source, overrides)
 	if err != nil {
 		return nil, err
 	}
-	c.source, c.files, c.project = bytes.Clone(source), make(map[string][]byte, len(files)), p
-	for path, data := range files {
-		c.files[path] = bytes.Clone(data)
-	}
+	c.source, c.files, c.project = bytes.Clone(source), compiledFiles, p
 	return project.EditPlan(p, source), nil
 }
 
@@ -140,6 +149,13 @@ func auxiliaryFiles(files []edits.File) ([]studioAuxiliaryFile, error) {
 // applyIntents is the intent-side twin of applyWithResult: the same prologue,
 // then edits.Apply, then the shared commit tail.
 func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, writer edits.ParamWriter, beforeSwap func()) {
+	s.applyPreparedIntents(w, edit, env, writer, nil, nil, beforeSwap)
+}
+
+// applyPreparedIntents keeps host IO around the pure text edit. prepare may
+// resolve library items or supply auxiliary source bytes; finish may prepare
+// pins and response data after Apply, before the shared commit tail.
+func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, writer edits.ParamWriter, prepare func([]byte, *edits.Options) (edits.Envelope, error), finish func(*edits.Result) error, beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := studioRecoveryConflict(s.path); err != nil {
@@ -166,6 +182,13 @@ func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.
 		return
 	}
 	opts.ParamWriter = writer
+	if prepare != nil {
+		env, err = prepare(current, &opts)
+		if err != nil {
+			studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+			return
+		}
+	}
 	env.Version, env.Revision = edits.EnvelopeVersion, edit.Revision
 	if env.Author == "" {
 		env.Author = edit.Author
@@ -178,6 +201,12 @@ func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
+	}
+	if finish != nil {
+		if err := finish(result); err != nil {
+			studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+			return
+		}
 	}
 	if edit.Label == "" && result.Label != "" {
 		edit.Label = result.Label
