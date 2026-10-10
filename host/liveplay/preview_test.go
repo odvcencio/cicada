@@ -3,6 +3,7 @@ package liveplay
 import (
 	"io"
 	"math"
+	"runtime"
 	"testing"
 
 	"m31labs.dev/cicada/kernel"
@@ -151,4 +152,59 @@ func TestPreviewCancelRetriesWhenTheEngineQueueIsFull(t *testing.T) {
 	}
 	renderPreview(t, p, 24_064)
 	assertPreviewGain(t, p, -6)
+}
+
+func TestPreviewBlockedTeardownDrainDoesNotAllocateOnTheRenderThread(t *testing.T) {
+	p, err := New(meterScore(t, "preview", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	noise, err := p.SetPreview(0, kernel.ParamMixGain, -3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noiseSnapshot := p.overrides.Load()
+	var snapshots [101]*liveOverrides
+	var versions [101]uint64
+	for i := range snapshots {
+		versions[i], err = p.SetPreview(0, kernel.ParamMixGain, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		snapshots[i] = p.overrides.Load()
+	}
+	jobs, done := make(chan uint64), make(chan struct{})
+	defer close(jobs)
+	go func() {
+		for version := range jobs {
+			p.CancelPreviewWait(version)
+			done <- struct{}{}
+		}
+	}()
+	var output [blockFrames * 8]byte
+	var cancelErr, readErr error
+	iteration := 0
+	allocs := testing.AllocsPerRun(100, func() {
+		p.overrides.Store(noiseSnapshot)
+		for count := 0; count < cap(p.overrideClears); count++ {
+			cancelErr = p.CancelPreview(noise)
+		}
+		p.overrides.Store(snapshots[iteration])
+		jobs <- versions[iteration]
+		runtime.Gosched() // The teardown producer blocks on the full queue.
+		_, readErr = p.Read(output[:])
+		<-done
+		_, readErr = p.Read(output[:])
+		iteration++
+	})
+	if cancelErr != nil || readErr != nil {
+		t.Fatalf("cancel/read: %v, %v", cancelErr, readErr)
+	}
+	if allocs != 0 {
+		t.Fatalf("draining blocked teardown allocated %g times per render", allocs)
+	}
+	if _, active := p.OverrideValue(0, kernel.ParamMixGain); active {
+		t.Fatal("blocked teardown did not retire its override")
+	}
 }

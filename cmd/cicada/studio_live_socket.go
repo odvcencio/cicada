@@ -38,8 +38,9 @@ func (s *studio) liveSocket(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
-		defer cancel()
 		previews := make(livePreviewSession)
+		defer previews.close()
+		defer cancel()
 		for {
 			kind, data, err := connection.Read(ctx)
 			if err != nil {
@@ -92,12 +93,24 @@ type livePreviewKey struct {
 }
 
 type livePreview struct {
-	stream  *liveplay.Player
-	version uint64
+	stream    *liveplay.Player
+	version   uint64
+	committed bool
 }
 
 // Each socket owns only the override versions its messages published.
 type livePreviewSession map[livePreviewKey]livePreview
+
+// close runs on the socket reader, after its context has been canceled. It
+// waits for cancellation queue space instead of losing a disconnected gesture.
+func (previews livePreviewSession) close() {
+	for _, preview := range previews {
+		if !preview.committed {
+			preview.stream.CancelPreviewWait(preview.version)
+		}
+	}
+	clear(previews)
+}
 
 // handleLiveMessage queues previews through the player's control snapshot.
 func (s *studio) handleLiveMessage(data []byte, previews livePreviewSession) error {
@@ -145,6 +158,10 @@ func (s *studio) handleLiveMessage(data []byte, previews livePreviewSession) err
 		return nil
 	}
 	if input.Commit {
+		if preview, ok := previews[key]; ok && preview.stream == stream {
+			preview.committed = true
+			previews[key] = preview
+		}
 		return nil // Activation clears the preview after the committed value lands.
 	}
 	preview, ok := previews[key]

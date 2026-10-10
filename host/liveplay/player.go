@@ -609,42 +609,56 @@ func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint
 // restores the playing score's committed value and publishes the retirement.
 // A superseded or already retired version is harmless.
 func (p *Player) CancelPreview(version uint64) error {
-	if version == 0 {
+	request, override, ok := p.previewClear(version)
+	if !ok {
 		return nil
 	}
-	snapshot := p.overrides.Load()
-	if snapshot == nil {
+	track := request.slot
+	if request.slot == 16 {
+		track = 0xff
+	} else if override.trackID != "" {
+		if resolved, ok := p.TrackIndex(override.trackID); ok {
+			track = resolved
+		} else {
+			track = 0xff // A removed track needs no restoration.
+		}
+	}
+	if request.slot == 16 || track != 0xff {
+		if _, ok := p.CommittedValue(track, request.id); !ok {
+			return fmt.Errorf("committed preview value is unavailable")
+		}
+	}
+	select {
+	case p.overrideClears <- request:
 		return nil
+	default:
+		return fmt.Errorf("preview cancellation queue is full")
+	}
+}
+
+// CancelPreviewWait queues retirement reliably, waiting for Read to make
+// room if necessary. Call it only off the render thread. It does not wait for
+// retirement itself and must not use a disconnected socket's canceled context.
+func (p *Player) CancelPreviewWait(version uint64) {
+	if request, _, ok := p.previewClear(version); ok {
+		p.overrideClears <- request
+	}
+}
+
+func (p *Player) previewClear(version uint64) (overrideClear, parameterOverride, bool) {
+	snapshot := p.overrides.Load()
+	if version == 0 || snapshot == nil {
+		return overrideClear{}, parameterOverride{}, false
 	}
 	for slot := range snapshot.values {
 		for id, override := range snapshot.values[slot] {
 			if !override.active || override.version != version || p.retiredVersions[slot][id].Load() == version {
 				continue
 			}
-			track := uint8(slot)
-			if slot == 16 {
-				track = 0xff
-			} else if override.trackID != "" {
-				if resolved, ok := p.TrackIndex(override.trackID); ok {
-					track = resolved
-				} else {
-					track = 0xff // A removed track needs no restoration.
-				}
-			}
-			if slot == 16 || track != 0xff {
-				if _, ok := p.CommittedValue(track, kernel.ParamID(id)); !ok {
-					return fmt.Errorf("committed preview value is unavailable")
-				}
-			}
-			select {
-			case p.overrideClears <- overrideClear{slot: uint8(slot), id: kernel.ParamID(id), version: version}:
-				return nil
-			default:
-				return fmt.Errorf("preview cancellation queue is full")
-			}
+			return overrideClear{slot: uint8(slot), id: kernel.ParamID(id), version: version}, override, true
 		}
 	}
-	return nil
+	return overrideClear{}, parameterOverride{}, false
 }
 
 func (p *Player) SetMute(track uint8, on bool) error {

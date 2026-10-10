@@ -223,3 +223,69 @@ func TestLiveSocketPreviewReportsUnavailablePlayer(t *testing.T) {
 	}
 	readLiveSocketError(t, ctx, conn)
 }
+
+func TestLiveSocketPreviewTeardownRetiresUncommittedOverrides(t *testing.T) {
+	for _, exit := range []string{"close", "drop", "context-cancel"} {
+		t.Run(exit, func(t *testing.T) {
+			stream, err := liveplay.New(studioPreviewScore(t, -6), 48_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			s := &studio{transport: &studioTransport{stream: stream, telemetry: liveplay.NewPublisher()}}
+			serverCtx, stop := context.WithCancel(context.Background())
+			defer stop()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				s.liveSocket(w, r.WithContext(serverCtx))
+			}))
+			defer server.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.CloseNow()
+			for _, message := range []string{
+				`{"type":"preview-set","entity":"track:bass","param":"mix.gain","value":0}`,
+				`{"type":"unknown"}`,
+			} {
+				if err := conn.Write(ctx, websocket.MessageText, []byte(message)); err != nil {
+					t.Fatal(err)
+				}
+			}
+			readLiveSocketError(t, ctx, conn) // Reader has published the preview.
+			renderStudioPreview(t, stream, 24_064)
+			assertStudioPreviewGain(t, stream, 0)
+			switch exit {
+			case "close":
+				if err := conn.Close(websocket.StatusNormalClosure, "finished"); err != nil {
+					t.Fatal(err)
+				}
+			case "drop":
+				conn.CloseNow()
+			case "context-cancel":
+				stop()
+			}
+			// The test owns rendering; let teardown race with block boundaries.
+			for {
+				renderStudioPreview(t, stream, 256)
+				if _, active := stream.OverrideValue(0, kernel.ParamMixGain); !active {
+					break
+				}
+				select {
+				case <-ctx.Done():
+					t.Fatal("socket teardown left an uncommitted override active")
+				case <-time.After(time.Millisecond):
+				}
+			}
+			renderStudioPreview(t, stream, 24_064)
+			assertStudioPreviewGain(t, stream, -6)
+			if err := stream.Offer(studioPreviewScore(t, -3)); err != nil {
+				t.Fatal(err)
+			}
+			renderStudioPreview(t, stream, 120_064)
+			assertStudioPreviewGain(t, stream, -3)
+		})
+	}
+}
