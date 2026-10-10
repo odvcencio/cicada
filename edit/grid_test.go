@@ -77,3 +77,34 @@ func TestGridExactBytesAndErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestSetPitchJSONRequiresPitch(t *testing.T) {
+	for _, raw := range []string{
+		`{"kind":"setpitch","entity":"step:pulse/0","shared":"pattern"}`,
+		`{"kind":"setpitch","entity":"step:pulse/0","shared":"pattern","pitch":null}`,
+	} {
+		_, err := applyGridJSON(t, []byte(gridScore), raw)
+		if err == nil || err.Error() != "choose a pitch" {
+			t.Fatalf("missing pitch: %v", err)
+		}
+		var env edit.Envelope
+		if err := json.Unmarshal([]byte(`{"version":1,"intents":[`+raw+`]}`), &env); err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(env)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(data, &env); err != nil {
+			t.Fatal(err)
+		}
+		_, err = edit.Apply([]byte(gridScore), env, edit.Options{Compiler: gridCompiler{}})
+		if err == nil || err.Error() != "choose a pitch" {
+			t.Fatalf("roundtrip turned missing pitch into MIDI zero: %v", err)
+		}
+	}
+	got, err := applyGridJSON(t, []byte(gridScore), `{"kind":"setpitch","entity":"step:pulse/0","pitch":0}`)
+	if err != nil || !strings.Contains(string(got.Source), "c0,") {
+		t.Fatalf("MIDI zero is valid: %+v, %v", got, err)
+	}
+}

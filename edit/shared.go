@@ -57,6 +57,9 @@ func resolveShared(ctx *Context, entity EntityID, policy string) ([]byte, error)
 		return nil, err
 	}
 	if policy == "pattern" {
+		if err := patternPreflight(ctx); err != nil {
+			return nil, err
+		}
 		return independentPatternSource(ctx, pattern)
 	}
 	score, ds := ctx.Parse()

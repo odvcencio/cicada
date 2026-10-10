@@ -174,7 +174,7 @@ func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
-	if result.Label != "" {
+	if edit.Label == "" && result.Label != "" {
 		edit.Label = result.Label
 	}
 	files, err := auxiliaryFiles(result.Files)

@@ -1,6 +1,8 @@
 package edit
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -22,13 +24,46 @@ type ToggleStep struct {
 
 func (ToggleStep) Kind() string { return "togglestep" }
 
+// SetPitch's JSON pitch is required and accepts MIDI 0–127. An omitted or
+// null pitch is refused. Shared uses ToggleStep's JSON schema.
 type SetPitch struct {
-	Entity EntityID `json:"entity"`
-	Pitch  int      `json:"pitch"`
-	Shared string   `json:"shared,omitempty"`
+	Entity       EntityID `json:"entity"`
+	Pitch        int      `json:"pitch"`
+	Shared       string   `json:"shared,omitempty"`
+	missingPitch bool
 }
 
 func (SetPitch) Kind() string { return "setpitch" }
+
+func (in SetPitch) MarshalJSON() ([]byte, error) {
+	if in.missingPitch {
+		return json.Marshal(struct {
+			Entity EntityID `json:"entity"`
+			Shared string   `json:"shared,omitempty"`
+		}{in.Entity, in.Shared})
+	}
+	type wire SetPitch
+	return json.Marshal(wire(in))
+}
+
+func (in *SetPitch) UnmarshalJSON(data []byte) error {
+	type wire SetPitch
+	var decoded wire
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&decoded); err != nil {
+		return err
+	}
+	var required struct {
+		Pitch *int `json:"pitch"`
+	}
+	if err := json.Unmarshal(data, &required); err != nil {
+		return err
+	}
+	*in = SetPitch(decoded)
+	in.missingPitch = required.Pitch == nil
+	return nil
+}
 
 type ToggleModifier struct {
 	Entity   EntityID `json:"entity"`
@@ -105,7 +140,7 @@ func editGrid(ctx *Context, intent Intent) error {
 	if err != nil {
 		return err
 	}
-	if string(source) != string(ctx.Source) {
+	if !bytes.Equal(source, ctx.Source) {
 		ctx.Source, ctx.plan = source, nil
 	}
 	var updated []byte
@@ -114,6 +149,9 @@ func editGrid(ctx *Context, intent Intent) error {
 	case *ToggleStep:
 		updated, err = toggledSource(ctx, pattern, lane, index)
 	case *SetPitch:
+		if in.missingPitch {
+			return fmt.Errorf("choose a pitch")
+		}
 		updated, err = pitchedSource(ctx, pattern, lane, index, in.Pitch)
 		what = "pitch changed"
 	case *ToggleModifier:

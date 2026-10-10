@@ -98,6 +98,9 @@ func patternTarget(entity EntityID) (string, error) {
 }
 
 func editPattern(ctx *Context, intent Intent) error {
+	if err := patternPreflight(ctx); err != nil {
+		return err
+	}
 	var updated []byte
 	var label string
 	var err error
@@ -146,6 +149,22 @@ func editPattern(ctx *Context, intent Intent) error {
 	}
 	ctx.Source, ctx.plan = updated, nil
 	ctx.SetLabel(label)
+	return nil
+}
+
+// Hosts that supply project parsing retain the old route's validation before
+// invoking a standalone writer. The inherited edition stays in Options.
+func patternPreflight(ctx *Context) error {
+	if ctx.Options.ParseProject == nil {
+		return nil
+	}
+	score, ds, err := ctx.ParseProject()
+	if err != nil {
+		return err
+	}
+	if score == nil || hasErrors(ds) {
+		return fmt.Errorf("score must validate before editing")
+	}
 	return nil
 }
 

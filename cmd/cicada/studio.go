@@ -532,25 +532,19 @@ func (s *studio) toggleStep(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "choose one grid edit per request"})
 		return
 	}
+	entity := studioStepEntity(edit)
+	var intent edits.Intent = &edits.ToggleStep{Entity: entity, Shared: "definition"}
 	if edit.Pitch != nil {
-		s.apply(w, edit, func(source []byte) ([]byte, error) {
-			return pitchedSource(source, edit.Pattern, edit.Lane, edit.Step, *edit.Pitch)
-		})
-		return
-	}
-	if edit.Modifier != "" {
+		intent = &edits.SetPitch{Entity: entity, Pitch: *edit.Pitch, Shared: "definition"}
+	} else if edit.Modifier != "" {
 		if edit.Modifier == "ratchet" || edit.Modifier == "chance" {
-			s.apply(w, edit, func(source []byte) ([]byte, error) {
-				return cycledStepSource(source, edit.Pattern, edit.Lane, edit.Step, edit.Modifier)
-			})
-			return
+			intent = &edits.CycleStep{Entity: entity, Field: edit.Modifier, Shared: "definition"}
+		} else {
+			intent = &edits.ToggleModifier{Entity: entity, Modifier: edit.Modifier, Shared: "definition"}
 		}
-		s.apply(w, edit, func(source []byte) ([]byte, error) {
-			return toggledModifierSource(source, edit.Pattern, edit.Lane, edit.Step, edit.Modifier)
-		})
-		return
 	}
-	s.apply(w, edit, func(source []byte) ([]byte, error) { return toggledSource(source, edit.Pattern, edit.Lane, edit.Step) })
+	edit.Label = studioEditLabel(edit)
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
 func (s *studio) apply(w http.ResponseWriter, edit studioEdit, change func([]byte) ([]byte, error)) {

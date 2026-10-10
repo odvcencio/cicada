@@ -1,0 +1,2126 @@
+{
+  "pattern/bad length/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "patterns must have 1–64 steps"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/bad length/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "patterns must have 1–64 steps"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/bad name/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "name must start with a lowercase letter or underscore and contain at most 64 letters, digits, underscores, or hyphens"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/bad name/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "name must start with a lowercase letter or underscore and contain at most 64 letters, digits, underscores, or hyphens"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/bad velocity/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a drum velocity from x1–x9, normal x, or accented X"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/bad velocity/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a drum velocity from x1–x9, normal x, or accented X"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/bind keep/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "32ad96f3b84be6fcd600ee6aacd382793f7dce1a97d60b3a9230423000706cc0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "32ad96f3b84be6fcd600ee6aacd382793f7dce1a97d60b3a9230423000706cc0",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=keep drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=keep drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Scene · main / bass assigned keep"
+    ]
+  },
+  "pattern/bind keep/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d5bb418f99844f890dc970f08a279128fc2ac0f08b46b9caafe3c6d288a9ba31",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d5bb418f99844f890dc970f08a279128fc2ac0f08b46b9caafe3c6d288a9ba31",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=keep drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=keep drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Scene · main / bass assigned keep"
+    ]
+  },
+  "pattern/bind off/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ce47bac8dac40e2e236886115bc60eea63542bd4a385799c1c0c43077134ed8f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ce47bac8dac40e2e236886115bc60eea63542bd4a385799c1c0c43077134ed8f",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=off drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=off drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Scene · main / bass assigned off"
+    ]
+  },
+  "pattern/bind off/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "92eea3141d21a4d06b169e0ad608c805b7778a23a0e374b84be3425f937d381a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "92eea3141d21a4d06b169e0ad608c805b7778a23a0e374b84be3425f937d381a",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=off drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=off drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Scene · main / bass assigned off"
+    ]
+  },
+  "pattern/bind/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ab3864cf246a64c8e621941b2c8b89c047b4426effb92504e3ba10e0ad123fec",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ab3864cf246a64c8e621941b2c8b89c047b4426effb92504e3ba10e0ad123fec",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\npattern pulse2 acid { 1 . 5 . }\nscene main { bass=pulse2 drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\npattern pulse2 acid { 1 . 5 . }\nscene main { bass=pulse2 drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Scene · main / bass assigned pulse2"
+    ]
+  },
+  "pattern/bind/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c9c0f4eb54fed1cfbf801f585db7f77acdf7f93c1e9074001ba6ee7dcb084023",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c9c0f4eb54fed1cfbf801f585db7f77acdf7f93c1e9074001ba6ee7dcb084023",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\npattern pulse2 acid { 1 . 5 . }\r\nscene main { bass=pulse2 drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\npattern pulse2 acid { 1 . 5 . }\r\nscene main { bass=pulse2 drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Scene · main / bass assigned pulse2"
+    ]
+  },
+  "pattern/clear/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "51d21a3063766fb7b4660026654bff2016e7045bf6d3bb3705796a0454f3b237",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "51d21a3063766fb7b4660026654bff2016e7045bf6d3bb3705796a0454f3b237",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–2 · clear"
+    ]
+  },
+  "pattern/clear/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5165bbeac8fbe3b0a6fefaf0173c0e08486e7036b15b6bb653a8135f9b73cbdd",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5165bbeac8fbe3b0a6fefaf0173c0e08486e7036b15b6bb653a8135f9b73cbdd",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–2 · clear"
+    ]
+  },
+  "pattern/comment duplicate/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "e9032745383af71c5037c50a77540c7f0ea17c015d723fcf04268c76cf88436f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "e9032745383af71c5037c50a77540c7f0ea17c015d723fcf04268c76cf88436f",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . } // keep me\n\n\npattern pulse2 acid steps=4 { a2 . e3 . }pattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . } // keep me\n\n\npattern pulse2 acid steps=4 { a2 . e3 . }pattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse duplicated as pulse2"
+    ]
+  },
+  "pattern/comment duplicate/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "44f4a2b9b5f7d5aaa3dcf8333e7b115f9263fdfd5a11c43756c1ff95d1b30c04",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "44f4a2b9b5f7d5aaa3dcf8333e7b115f9263fdfd5a11c43756c1ff95d1b30c04",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . } // keep me\r\n\r\n\r\npattern pulse2 acid steps=4 { a2 . e3 . }pattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . } // keep me\r\n\r\n\r\npattern pulse2 acid steps=4 { a2 . e3 . }pattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse duplicated as pulse2"
+    ]
+  },
+  "pattern/copy/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "32dff3d38a1c7d9b51385fa6e6083fa30f0369cb736d54eb9f5bbb8be5156933",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "32dff3d38a1c7d9b51385fa6e6083fa30f0369cb736d54eb9f5bbb8be5156933",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 1 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 1 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–2 · copy"
+    ]
+  },
+  "pattern/copy/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "520cc6b3cf0b0b85826c5fa6316ff21c9f9b57a7de918ced54024cbe8640c851",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "520cc6b3cf0b0b85826c5fa6316ff21c9f9b57a7de918ced54024cbe8640c851",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 1 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 1 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–2 · copy"
+    ]
+  },
+  "pattern/disk invalid/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "score must validate before editing"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n???\n",
+    "Labels": [
+      "External file change"
+    ]
+  },
+  "pattern/disk invalid/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "score must validate before editing"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n???\r\n",
+    "Labels": [
+      "External file change"
+    ]
+  },
+  "pattern/drum range transpose/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "drum lanes cannot transpose"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/drum range transpose/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "drum lanes cannot transpose"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/drum tie/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "drum hits cannot tie"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/drum tie/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "drum hits cannot tie"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/drum transpose/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "drum lanes cannot transpose"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/drum transpose/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "drum lanes cannot transpose"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/drum velocity/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "0a36c9b897b95b40e41e4a3d0f2c18db865c95d94513ceadd0d014c28e877227",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "0a36c9b897b95b40e41e4a3d0f2c18db865c95d94513ceadd0d014c28e877227",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x4*3?50... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x4*3?50... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · beat / bd step 1 edited"
+    ]
+  },
+  "pattern/drum velocity/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "1892b1154a4bb15fdc04ec23b15a6c4908648c163054d4ef9e4cf639ae17973d",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "1892b1154a4bb15fdc04ec23b15a6c4908648c163054d4ef9e4cf639ae17973d",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x4*3?50... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x4*3?50... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · beat / bd step 1 edited"
+    ]
+  },
+  "pattern/duplicate/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "cc04306b674f81b89e7ebeeb25ea1b59d0f8da8aae86a47cdb9df54bae12db09",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "cc04306b674f81b89e7ebeeb25ea1b59d0f8da8aae86a47cdb9df54bae12db09",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\n\npattern pulse2 acid steps=4 { a2 . e3 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\n\npattern pulse2 acid steps=4 { a2 . e3 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse duplicated as pulse2"
+    ]
+  },
+  "pattern/duplicate/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "f2bc41f224e66914ef8aca698170d3317a7f7dad9617e387e63242bd8137f410",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "f2bc41f224e66914ef8aca698170d3317a7f7dad9617e387e63242bd8137f410",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\n\r\npattern pulse2 acid steps=4 { a2 . e3 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\n\r\npattern pulse2 acid steps=4 { a2 . e3 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse duplicated as pulse2"
+    ]
+  },
+  "pattern/edition2 bind false/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "96f201aaae1dfe6954b99c2d837a155aea891ce687248b748de02326db6878bb",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "96f201aaae1dfe6954b99c2d837a155aea891ce687248b748de02326db6878bb",
+      "source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=p }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=p }\nsong { main*2 other }\n",
+    "Labels": [
+      "Scene · other / bass assigned p"
+    ]
+  },
+  "pattern/edition2 bind false/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "86a1c19c472182c80eabd23ebb9863aee07b396e1da71a8138b6d08c48a88863",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "86a1c19c472182c80eabd23ebb9863aee07b396e1da71a8138b6d08c48a88863",
+      "source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=p }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=p }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Scene · other / bass assigned p"
+    ]
+  },
+  "pattern/edition2 bind true/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "90a5c9f0c23ec5c32bcc663bb20db281eb8a6b6c12c34f9491c6f9a72bda777e",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "90a5c9f0c23ec5c32bcc663bb20db281eb8a6b6c12c34f9491c6f9a72bda777e",
+      "source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=p }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=p }\nsong { main*2 other }\n",
+    "Labels": [
+      "Scene · other / bass assigned p"
+    ]
+  },
+  "pattern/edition2 bind true/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "0ff2de857c9ac3e30f9b5f8c927f8ec6d3cd84ab5e179a3e6813f562e47c44e2",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "0ff2de857c9ac3e30f9b5f8c927f8ec6d3cd84ab5e179a3e6813f562e47c44e2",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=p }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=p }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Scene · other / bass assigned p"
+    ]
+  },
+  "pattern/edition2 duplicate false/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "543e3132c4261c49ee16e6d0ec24f7b9c604cb9835de6772b5e2669db96b6a83",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "543e3132c4261c49ee16e6d0ec24f7b9c604cb9835de6772b5e2669db96b6a83",
+      "source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p duplicated as variation"
+    ]
+  },
+  "pattern/edition2 duplicate false/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "9c36d378f70cf8b77553829ea032f465167acfcd98467701f2b92c48c34f1374",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "9c36d378f70cf8b77553829ea032f465167acfcd98467701f2b92c48c34f1374",
+      "source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\n\r\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\n\r\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p duplicated as variation"
+    ]
+  },
+  "pattern/edition2 duplicate true/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "fd3be2e79e2affd09ef2670db21baec62053dc549da5d856963dd3ab4300686a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "fd3be2e79e2affd09ef2670db21baec62053dc549da5d856963dd3ab4300686a",
+      "source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p duplicated as variation"
+    ]
+  },
+  "pattern/edition2 duplicate true/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5416caf33f3e0fe047066d723ecbbba954029cc6185e875cf0bc73b5ed9c566f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5416caf33f3e0fe047066d723ecbbba954029cc6185e875cf0bc73b5ed9c566f",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\n\r\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\n\r\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p duplicated as variation"
+    ]
+  },
+  "pattern/edition2 pitch false/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4916d00cd8ddb85a8f463ae420cb30ec72cae227f1e934ed32aeeb886dcfdad4",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4916d00cd8ddb85a8f463ae420cb30ec72cae227f1e934ed32aeeb886dcfdad4",
+      "source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 2 pitch changed"
+    ]
+  },
+  "pattern/edition2 pitch false/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "8e9c6f644b50d6255674f07cbbc0245c26f852803873b62e3cf569d2df09ad65",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "8e9c6f644b50d6255674f07cbbc0245c26f852803873b62e3cf569d2df09ad65",
+      "source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 2 pitch changed"
+    ]
+  },
+  "pattern/edition2 pitch true/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "51ec8bd30faaf332d17f69895bda6d8c3341962a17649148f02e145733569be2",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "51ec8bd30faaf332d17f69895bda6d8c3341962a17649148f02e145733569be2",
+      "source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 2 pitch changed"
+    ]
+  },
+  "pattern/edition2 pitch true/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "312fc984252d31b3d18f5f25854085af792674189d2a5cb2f7262f178c01953a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "312fc984252d31b3d18f5f25854085af792674189d2a5cb2f7262f178c01953a",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 2 pitch changed"
+    ]
+  },
+  "pattern/edition2 range false/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c872349eafa8578dbfe6384508325f80fc873a4cae7509aec62bfe7b0404a017",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c872349eafa8578dbfe6384508325f80fc873a4cae7509aec62bfe7b0404a017",
+      "source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p / steps 1–8 · reverse"
+    ]
+  },
+  "pattern/edition2 range false/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "8a3fa0bb7cec95cecd6e929352d0be10af3da2d9cf401b3fa9862169fa77ed21",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "8a3fa0bb7cec95cecd6e929352d0be10af3da2d9cf401b3fa9862169fa77ed21",
+      "source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p / steps 1–8 · reverse"
+    ]
+  },
+  "pattern/edition2 range true/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "106ce8c01ccc424c8b9b923ec7f82177822a3eaf9ec384bdc3315d5b9843e21c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "106ce8c01ccc424c8b9b923ec7f82177822a3eaf9ec384bdc3315d5b9843e21c",
+      "source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p / steps 1–8 · reverse"
+    ]
+  },
+  "pattern/edition2 range true/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "0c7b71080341bda3d5110e796521dec4994c6897f34e8a7af624aa187a26a71c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "0c7b71080341bda3d5110e796521dec4994c6897f34e8a7af624aa187a26a71c",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p / steps 1–8 · reverse"
+    ]
+  },
+  "pattern/edition2 resize false/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c2aefb18e971e4962acca79645fa5e4bcf7d563ac4edf488aedb8e8ff515b297",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c2aefb18e971e4962acca79645fa5e4bcf7d563ac4edf488aedb8e8ff515b297",
+      "source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p resized to 16 steps"
+    ]
+  },
+  "pattern/edition2 resize false/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "3c84553eb7114ff599ee2ad9783ffad7af72450d95fe635c799d045bc2842274",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "3c84553eb7114ff599ee2ad9783ffad7af72450d95fe635c799d045bc2842274",
+      "source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p resized to 16 steps"
+    ]
+  },
+  "pattern/edition2 resize true/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "f9029caef05c6952b4a64979cf4d582e8423f47845232324171c507e9aa2e52f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "f9029caef05c6952b4a64979cf4d582e8423f47845232324171c507e9aa2e52f",
+      "source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p resized to 16 steps"
+    ]
+  },
+  "pattern/edition2 resize true/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "e6c1d50bd2b63d5430fed6b6a5360593264d7cdae88641eb1bb82852b218892c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "e6c1d50bd2b63d5430fed6b6a5360593264d7cdae88641eb1bb82852b218892c",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p resized to 16 steps"
+    ]
+  },
+  "pattern/edition2 settings false/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "10136e0142cf5684fc88bcaa53613e2dbd12de798c0f69643b0c57cb404217d2",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "10136e0142cf5684fc88bcaa53613e2dbd12de798c0f69643b0c57cb404217d2",
+      "source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { gate = 60% transpose = 0  swing = 55% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { gate = 60% transpose = 0  swing = 55% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p timing and transpose changed"
+    ]
+  },
+  "pattern/edition2 settings false/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "1441cb3e53fe019b46c4089b8adc4c27f8c57f8c5cfe4b9b9c0d88a63ac13332",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "1441cb3e53fe019b46c4089b8adc4c27f8c57f8c5cfe4b9b9c0d88a63ac13332",
+      "source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { gate = 60% transpose = 0  swing = 55% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { gate = 60% transpose = 0  swing = 55% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p timing and transpose changed"
+    ]
+  },
+  "pattern/edition2 settings true/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "444abec7617c762a5f41fe52d2bc0bcc5bff4b701fdc69c1c65240f08e77e114",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "444abec7617c762a5f41fe52d2bc0bcc5bff4b701fdc69c1c65240f08e77e114",
+      "source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { gate = 60% transpose = 0  swing = 55% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { gate = 60% transpose = 0  swing = 55% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p timing and transpose changed"
+    ]
+  },
+  "pattern/edition2 settings true/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "eba45e228642cfcb12e5f852a0300cae6f82962249c9177d782796ab0fced74a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "eba45e228642cfcb12e5f852a0300cae6f82962249c9177d782796ab0fced74a",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { gate = 60% transpose = 0  swing = 55% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { gate = 60% transpose = 0  swing = 55% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p timing and transpose changed"
+    ]
+  },
+  "pattern/edition2 step false/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4916d00cd8ddb85a8f463ae420cb30ec72cae227f1e934ed32aeeb886dcfdad4",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4916d00cd8ddb85a8f463ae420cb30ec72cae227f1e934ed32aeeb886dcfdad4",
+      "source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p / step 2 edited"
+    ]
+  },
+  "pattern/edition2 step false/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "8e9c6f644b50d6255674f07cbbc0245c26f852803873b62e3cf569d2df09ad65",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "8e9c6f644b50d6255674f07cbbc0245c26f852803873b62e3cf569d2df09ad65",
+      "source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p / step 2 edited"
+    ]
+  },
+  "pattern/edition2 step true/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "51ec8bd30faaf332d17f69895bda6d8c3341962a17649148f02e145733569be2",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "51ec8bd30faaf332d17f69895bda6d8c3341962a17649148f02e145733569be2",
+      "source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p / step 2 edited"
+    ]
+  },
+  "pattern/edition2 step true/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "312fc984252d31b3d18f5f25854085af792674189d2a5cb2f7262f178c01953a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "312fc984252d31b3d18f5f25854085af792674189d2a5cb2f7262f178c01953a",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ c5 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p / step 2 edited"
+    ]
+  },
+  "pattern/edition2 toggle false/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "f336d3a4560e6e6af2a808501af3c54b1b8a7358670856db4f293d256fcface7",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "f336d3a4560e6e6af2a808501af3c54b1b8a7358670856db4f293d256fcface7",
+      "source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ 1 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ 1 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 2 pitch changed"
+    ]
+  },
+  "pattern/edition2 toggle false/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "fb822f1c6ea1866ea5c9016caccbf95a83e720fab258533de3c620c4bf79058a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "fb822f1c6ea1866ea5c9016caccbf95a83e720fab258533de3c620c4bf79058a",
+      "source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ 1 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ 1 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 2 pitch changed"
+    ]
+  },
+  "pattern/edition2 toggle true/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2e96bf1b7a01d5f7bd1dfac9c93076e397f6985ce09f7a451c17d9888566811f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2e96bf1b7a01d5f7bd1dfac9c93076e397f6985ce09f7a451c17d9888566811f",
+      "source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ 1 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack input audio {} // keep audio\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ 1 5~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 2 pitch changed"
+    ]
+  },
+  "pattern/edition2 toggle true/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "13a144be6323d80736e5486d886762c66c4410e7a3339b1bfac478f7c100605d",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "13a144be6323d80736e5486d886762c66c4410e7a3339b1bfac478f7c100605d",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ 1 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack input audio {} // keep audio\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ 1 5~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 2 pitch changed"
+    ]
+  },
+  "pattern/label/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "1a67eaec9a97a0fbdb1a0f2beed8ba2f8549935cf5d4cdaf669b85605dc3ea4f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "1a67eaec9a97a0fbdb1a0f2beed8ba2f8549935cf5d4cdaf669b85605dc3ea4f",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=8 { 1 . 5 . . . . . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=8 { 1 . 5 . . . . . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Authored pattern gesture"
+    ]
+  },
+  "pattern/label/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ce2711b667747f08114a4110235f202f0565462f7f3e62d9bc139cf5d9d5e4f4",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ce2711b667747f08114a4110235f202f0565462f7f3e62d9bc139cf5d9d5e4f4",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=8 { 1 . 5 . . . . . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=8 { 1 . 5 . . . . . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Authored pattern gesture"
+    ]
+  },
+  "pattern/missing pattern pitch/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"ghost\""
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/missing pattern pitch/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"ghost\""
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/missing pattern/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"ghost\""
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/missing pattern/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"ghost\""
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/missing pitch/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a pitch"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/missing pitch/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a pitch"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/missing scene/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"ghost\""
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/missing scene/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"ghost\""
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/mixed toggle/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2c98f5468050022ef0546e64769196b2452b154ca51f394cd78471c7b51a37d0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2c98f5468050022ef0546e64769196b2452b154ca51f394cd78471c7b51a37d0",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% . . 1^ . 5~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% . . 1^ . 5~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 1 toggled"
+    ]
+  },
+  "pattern/mixed toggle/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "937ee08a34ff58a516ef8f84714f74702890c276e9fd8bbac39929e01c3bb093",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "937ee08a34ff58a516ef8f84714f74702890c276e9fd8bbac39929e01c3bb093",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% . . 1^ . 5~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% . . 1^ . 5~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 1 toggled"
+    ]
+  },
+  "pattern/name exists/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern \"beat\" already exists"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/name exists/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern \"beat\" already exists"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/range copy outside/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "copied range would extend past the last step"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/range copy outside/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "copied range would extend past the last step"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/range missing/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a valid step range and shift −127 to +127"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/range missing/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a valid step range and shift −127 to +127"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/range mode/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose clear, copy, reverse, rotate, or transpose"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/range mode/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose clear, copy, reverse, rotate, or transpose"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/range outside/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "range is outside the pattern lane"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/range outside/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "range is outside the pattern lane"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/resize unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "80b8bf31516818bad4f22254d9e2be17a4ff4be43676c779677a6ef20a3097f3",
+      "revision": "80b8bf31516818bad4f22254d9e2be17a4ff4be43676c779677a6ef20a3097f3",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/resize unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "33b2809fb09e75220cfa6544016a2539fd0257087a28ddc3d76f8ce823e553f8",
+      "revision": "33b2809fb09e75220cfa6544016a2539fd0257087a28ddc3d76f8ce823e553f8",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/resize/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "1a67eaec9a97a0fbdb1a0f2beed8ba2f8549935cf5d4cdaf669b85605dc3ea4f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "1a67eaec9a97a0fbdb1a0f2beed8ba2f8549935cf5d4cdaf669b85605dc3ea4f",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=8 { 1 . 5 . . . . . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=8 { 1 . 5 . . . . . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse resized to 8 steps"
+    ]
+  },
+  "pattern/resize/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ce2711b667747f08114a4110235f202f0565462f7f3e62d9bc139cf5d9d5e4f4",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ce2711b667747f08114a4110235f202f0565462f7f3e62d9bc139cf5d9d5e4f4",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=8 { 1 . 5 . . . . . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=8 { 1 . 5 . . . . . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse resized to 8 steps"
+    ]
+  },
+  "pattern/reverse/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "64f32135db7a3ead817bf8ff681fcc909a7f42f3903dee8bb0c74d5d438222d0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "64f32135db7a3ead817bf8ff681fcc909a7f42f3903dee8bb0c74d5d438222d0",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . 5 . 1 }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . 5 . 1 }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–4 · reverse"
+    ]
+  },
+  "pattern/reverse/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d2bda81936d11d8e49a682f760aa1f01d0bafd304e88ac296a15dbcbbbd59fd3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d2bda81936d11d8e49a682f760aa1f01d0bafd304e88ac296a15dbcbbbd59fd3",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . 5 . 1 }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . 5 . 1 }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–4 · reverse"
+    ]
+  },
+  "pattern/rotate/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ddf076b3a80728f9dae125e4a2dec1ccb848f4b887b27a4956ebfa23ada736d3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ddf076b3a80728f9dae125e4a2dec1ccb848f4b887b27a4956ebfa23ada736d3",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . 1 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . 1 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–2 · rotate"
+    ]
+  },
+  "pattern/rotate/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "98890b9be00579ebf0f9438d937eb8f427b8343c991ab2a39f1aab5ec24a956e",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "98890b9be00579ebf0f9438d937eb8f427b8343c991ab2a39f1aab5ec24a956e",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . 1 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . 1 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–2 · rotate"
+    ]
+  },
+  "pattern/settings missing/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "swing must be 50–75%, gate 10–100%, and transpose −24 to +24 semitones"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/settings missing/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "swing must be 50–75%, gate 10–100%, and transpose −24 to +24 semitones"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/settings/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "89765d25b392cf92ec90926477bbda30f0cc7ca22139a22e55d18f8e9ba39dbc",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "89765d25b392cf92ec90926477bbda30f0cc7ca22139a22e55d18f8e9ba39dbc",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { swing = 55% gate = 60% transpose = 0  1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { swing = 55% gate = 60% transpose = 0  1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse timing and transpose changed"
+    ]
+  },
+  "pattern/settings/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5d4df9814d2bb45361e44ca7662daeebbac26f718f90b03ffaea35055a5f6bcc",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5d4df9814d2bb45361e44ca7662daeebbac26f718f90b03ffaea35055a5f6bcc",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { swing = 55% gate = 60% transpose = 0  1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { swing = 55% gate = 60% transpose = 0  1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse timing and transpose changed"
+    ]
+  },
+  "pattern/shared /\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "34e574ac378a8be0a62dc2a6f3ac4c0be72428b320c8ab835a48674da442e577",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "34e574ac378a8be0a62dc2a6f3ac4c0be72428b320c8ab835a48674da442e577",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 5 toggled"
+    ]
+  },
+  "pattern/shared /\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "282cb70dfec02f40aac2abf77901507c275e997d52ce52213a06cdf0f2969ba8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "282cb70dfec02f40aac2abf77901507c275e997d52ce52213a06cdf0f2969ba8",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 5 toggled"
+    ]
+  },
+  "pattern/shared accent/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "34e574ac378a8be0a62dc2a6f3ac4c0be72428b320c8ab835a48674da442e577",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "34e574ac378a8be0a62dc2a6f3ac4c0be72428b320c8ab835a48674da442e577",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 5 accent changed"
+    ]
+  },
+  "pattern/shared accent/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "282cb70dfec02f40aac2abf77901507c275e997d52ce52213a06cdf0f2969ba8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "282cb70dfec02f40aac2abf77901507c275e997d52ce52213a06cdf0f2969ba8",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 5 accent changed"
+    ]
+  },
+  "pattern/shared chance/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "34e574ac378a8be0a62dc2a6f3ac4c0be72428b320c8ab835a48674da442e577",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "34e574ac378a8be0a62dc2a6f3ac4c0be72428b320c8ab835a48674da442e577",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 5 chance changed"
+    ]
+  },
+  "pattern/shared chance/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "282cb70dfec02f40aac2abf77901507c275e997d52ce52213a06cdf0f2969ba8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "282cb70dfec02f40aac2abf77901507c275e997d52ce52213a06cdf0f2969ba8",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 5 chance changed"
+    ]
+  },
+  "pattern/shared duplicate/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "76e4f3f4337d4afd29fa64fdfa17b92270ee2fa0f3945c62810bf368a6360ccf",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "76e4f3f4337d4afd29fa64fdfa17b92270ee2fa0f3945c62810bf368a6360ccf",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p duplicated as variation"
+    ]
+  },
+  "pattern/shared duplicate/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ddae63abe1427f6e3d7738e77c472b19f63c864380366f1dcb7c289e04761546",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ddae63abe1427f6e3d7738e77c472b19f63c864380366f1dcb7c289e04761546",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\n\r\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\n\r\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p duplicated as variation"
+    ]
+  },
+  "pattern/shared pitch/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "79775aea21a2be2f96c8711503549c0304d5d0150e369aec39b7965c55001624",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "79775aea21a2be2f96c8711503549c0304d5d0150e369aec39b7965c55001624",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - c5^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - c5^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 5 pitch changed"
+    ]
+  },
+  "pattern/shared pitch/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "8ba05f4066357836608d0164796f57d0457b490044ad69b2d9fc86a37bd827a9",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "8ba05f4066357836608d0164796f57d0457b490044ad69b2d9fc86a37bd827a9",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - c5^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - c5^ . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 5 pitch changed"
+    ]
+  },
+  "pattern/shared range/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "692acbb5f8224eab91e465785348efbb12f9646b57ed83807773d92fabf063bb",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "692acbb5f8224eab91e465785348efbb12f9646b57ed83807773d92fabf063bb",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p / steps 1–8 · reverse"
+    ]
+  },
+  "pattern/shared range/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "20373ef020393d863aa47d7749779ed4dc8868d59f2c085fe4b3f49977defb95",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "20373ef020393d863aa47d7749779ed4dc8868d59f2c085fe4b3f49977defb95",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p / steps 1–8 · reverse"
+    ]
+  },
+  "pattern/shared ratchet/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "34e574ac378a8be0a62dc2a6f3ac4c0be72428b320c8ab835a48674da442e577",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "34e574ac378a8be0a62dc2a6f3ac4c0be72428b320c8ab835a48674da442e577",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 5 ratchet changed"
+    ]
+  },
+  "pattern/shared ratchet/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "282cb70dfec02f40aac2abf77901507c275e997d52ce52213a06cdf0f2969ba8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "282cb70dfec02f40aac2abf77901507c275e997d52ce52213a06cdf0f2969ba8",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - . . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 5 ratchet changed"
+    ]
+  },
+  "pattern/shared resize unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "7f07be01c986ed2a40edf85bbf5236c03447ee09652fd940271aca8609513fa9",
+      "revision": "7f07be01c986ed2a40edf85bbf5236c03447ee09652fd940271aca8609513fa9",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": null
+  },
+  "pattern/shared resize unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "cdd185379998205448dd8872c7bb6a7e6286a16db59ac548c70ffb3ef86dad7a",
+      "revision": "cdd185379998205448dd8872c7bb6a7e6286a16db59ac548c70ffb3ef86dad7a",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": null
+  },
+  "pattern/shared resize/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "17ac35213e6014a0b5e5e52831d3e2b19147c251f5dd18e2a4d2dfd1b1a698fe",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "17ac35213e6014a0b5e5e52831d3e2b19147c251f5dd18e2a4d2dfd1b1a698fe",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p resized to 16 steps"
+    ]
+  },
+  "pattern/shared resize/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "0ee392fdef1036849497a9c92dc98146e0088ac37f2bc266abbea2fd744c71ad",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "0ee392fdef1036849497a9c92dc98146e0088ac37f2bc266abbea2fd744c71ad",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p resized to 16 steps"
+    ]
+  },
+  "pattern/shared step/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "22b68d12b3adce44b1ba1e52148cde22c8801823edac83befee89581b2e72d1c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "22b68d12b3adce44b1ba1e52148cde22c8801823edac83befee89581b2e72d1c",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - c5^~*8?23 . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - c5^~*8?23 . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p / step 5 edited"
+    ]
+  },
+  "pattern/shared step/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "8ee31d05a1923e21303a57aa3f4816eb122299c9f8682eee3b5cb6e675398c34",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "8ee31d05a1923e21303a57aa3f4816eb122299c9f8682eee3b5cb6e675398c34",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - c5^~*8?23 . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - c5^~*8?23 . e4~*2?70 - }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p / step 5 edited"
+    ]
+  },
+  "pattern/slot duplicate/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "495163033a38ff38fb8d1916051487991340327bef82830870a80e0a72e01257",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "495163033a38ff38fb8d1916051487991340327bef82830870a80e0a72e01257",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 } // keep me\n\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }pattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 } // keep me\n\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }pattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Pattern · p duplicated as variation"
+    ]
+  },
+  "pattern/slot duplicate/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "215521817f678c0bcf9370048ab6027346098f2ba630b4d7a78223c2e0c6b1d9",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "215521817f678c0bcf9370048ab6027346098f2ba630b4d7a78223c2e0c6b1d9",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 } // keep me\r\n\r\n\r\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }pattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^ . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 } // keep me\r\n\r\n\r\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }pattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Pattern · p duplicated as variation"
+    ]
+  },
+  "pattern/step hit/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "hits require a drum pattern"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/step hit/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "hits require a drum pattern"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/step missing/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a step, ratchet 1–8, and chance 1–100%"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/step missing/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a step, ratchet 1–8, and chance 1–100%"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/step mode/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose note, hit, tie, or rest"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/step mode/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose note, hit, tie, or rest"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/step outside/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "step is outside the authored pattern lane"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/step outside/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "step is outside the authored pattern lane"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "pattern/step/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b6c74c71f290bde18e3f53161af224266dbcb2539228fb595dea94f92e85bd14",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b6c74c71f290bde18e3f53161af224266dbcb2539228fb595dea94f92e85bd14",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 d4^ 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 d4^ 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse / step 2 edited"
+    ]
+  },
+  "pattern/step/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "78b58c2d3e9f80d34393d580609db868a48018964f8716abb8c8403fbcb8f916",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "78b58c2d3e9f80d34393d580609db868a48018964f8716abb8c8403fbcb8f916",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 d4^ 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 d4^ 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse / step 2 edited"
+    ]
+  },
+  "pattern/toggle label with pitch/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "51d21a3063766fb7b4660026654bff2016e7045bf6d3bb3705796a0454f3b237",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "51d21a3063766fb7b4660026654bff2016e7045bf6d3bb3705796a0454f3b237",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Grid · pulse step 1 pitch changed"
+    ]
+  },
+  "pattern/toggle label with pitch/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5165bbeac8fbe3b0a6fefaf0173c0e08486e7036b15b6bb653a8135f9b73cbdd",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5165bbeac8fbe3b0a6fefaf0173c0e08486e7036b15b6bb653a8135f9b73cbdd",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · pulse step 1 pitch changed"
+    ]
+  },
+  "pattern/transpose/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "356008cc787c1ec1b8459a758280c3d57967a7a7cececc06f62a96c13fc2ac50",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "356008cc787c1ec1b8459a758280c3d57967a7a7cececc06f62a96c13fc2ac50",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { a#2 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { a#2 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–2 · transpose"
+    ]
+  },
+  "pattern/transpose/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "e7c4ea089b49d8d7bccf1df6e1431c8e417619d1072815006d45c1f2175595f8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "e7c4ea089b49d8d7bccf1df6e1431c8e417619d1072815006d45c1f2175595f8",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { a#2 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { a#2 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · pulse / steps 1–2 · transpose"
+    ]
+  },
+  "pattern/unknown/\"\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "unknown pattern action"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "pattern/unknown/\"\\r\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "unknown pattern action"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/accent/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "06ace364482a0575e1f7c64426abb42f28dea70cbb42232594b87fe296207cef",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "06ace364482a0575e1f7c64426abb42f28dea70cbb42232594b87fe296207cef",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1^ . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1^ . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Grid · pulse step 1 accent changed"
+    ]
+  },
+  "toggle/accent/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b1114cb6591721eea7951511b349e24c4e40b7a0a7d8c2a8bd1f1635c793b4f0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b1114cb6591721eea7951511b349e24c4e40b7a0a7d8c2a8bd1f1635c793b4f0",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1^ . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1^ . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · pulse step 1 accent changed"
+    ]
+  },
+  "toggle/bad modifier/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "a note pattern, nonnegative step, and accent or slide are required"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/bad modifier/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "a note pattern, nonnegative step, and accent or slide are required"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/bad pitch/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "a note pattern, nonnegative step, and MIDI pitch 0–127 are required"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/bad pitch/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "a note pattern, nonnegative step, and MIDI pitch 0–127 are required"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/both/\"\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "choose one grid edit per request"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/both/\"\\r\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "choose one grid edit per request"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/chance/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "8d36afbddb4b89f5b6abd90f45e23c01dc216e5553dd22e9579d7dcf54674cd7",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "8d36afbddb4b89f5b6abd90f45e23c01dc216e5553dd22e9579d7dcf54674cd7",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1?75 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1?75 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Grid · pulse step 1 chance changed"
+    ]
+  },
+  "toggle/chance/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "cadcb422133af6ef95b35eb8981900778bc0f8663451e16c951df878a27d6a72",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "cadcb422133af6ef95b35eb8981900778bc0f8663451e16c951df878a27d6a72",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1?75 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1?75 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · pulse step 1 chance changed"
+    ]
+  },
+  "toggle/disk invalid/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "score must validate before a grid edit"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n???\n",
+    "Labels": [
+      "External file change"
+    ]
+  },
+  "toggle/disk invalid/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "score must validate before a grid edit"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n???\r\n",
+    "Labels": [
+      "External file change"
+    ]
+  },
+  "toggle/drum pitch/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "a note pattern, nonnegative step, and MIDI pitch 0–127 are required"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/drum pitch/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "a note pattern, nonnegative step, and MIDI pitch 0–127 are required"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/drum/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d5bbe55d17fc1115927e65cf6848d28cb12224615bef78aa1bcb2697c8c6c34e",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d5bbe55d17fc1115927e65cf6848d28cb12224615bef78aa1bcb2697c8c6c34e",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: xx.. sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: xx.. sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Grid · beat / bd step 2 toggled"
+    ]
+  },
+  "toggle/drum/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "350abae478a95655a1de073063a13010172235ee39ed6ef32e7e1173cd45169e",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "350abae478a95655a1de073063a13010172235ee39ed6ef32e7e1173cd45169e",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: xx.. sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: xx.. sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · beat / bd step 2 toggled"
+    ]
+  },
+  "toggle/empty/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern and nonnegative step are required"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/empty/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern and nonnegative step are required"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/label/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "51d21a3063766fb7b4660026654bff2016e7045bf6d3bb3705796a0454f3b237",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "51d21a3063766fb7b4660026654bff2016e7045bf6d3bb3705796a0454f3b237",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Authored gesture"
+    ]
+  },
+  "toggle/label/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5165bbeac8fbe3b0a6fefaf0173c0e08486e7036b15b6bb653a8135f9b73cbdd",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5165bbeac8fbe3b0a6fefaf0173c0e08486e7036b15b6bb653a8135f9b73cbdd",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Authored gesture"
+    ]
+  },
+  "toggle/missing/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown pattern \"missing\""
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/missing/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown pattern \"missing\""
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/negative/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern and nonnegative step are required"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/negative/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern and nonnegative step are required"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/note/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "51d21a3063766fb7b4660026654bff2016e7045bf6d3bb3705796a0454f3b237",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "51d21a3063766fb7b4660026654bff2016e7045bf6d3bb3705796a0454f3b237",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Grid · pulse step 1 toggled"
+    ]
+  },
+  "toggle/note/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5165bbeac8fbe3b0a6fefaf0173c0e08486e7036b15b6bb653a8135f9b73cbdd",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5165bbeac8fbe3b0a6fefaf0173c0e08486e7036b15b6bb653a8135f9b73cbdd",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { . . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · pulse step 1 toggled"
+    ]
+  },
+  "toggle/outside/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern pulse has no step 9 in lane "
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/outside/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern pulse has no step 9 in lane "
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/pitch/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c4383026325246716202df684d02585f23f4306005bbf703e006f51b51b91911",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c4383026325246716202df684d02585f23f4306005bbf703e006f51b51b91911",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 c4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 c4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Grid · pulse step 2 pitch changed"
+    ]
+  },
+  "toggle/pitch/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "27038eb03de7a2f1507bbe77c4d9f50765e6df502c916360dac9de9638ea53f5",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "27038eb03de7a2f1507bbe77c4d9f50765e6df502c916360dac9de9638ea53f5",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 c4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 c4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · pulse step 2 pitch changed"
+    ]
+  },
+  "toggle/ratchet/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "8f4792531ae21a72a3b1a073b0011aad514f17532598a05a86cabcd5cf6c76a0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "8f4792531ae21a72a3b1a073b0011aad514f17532598a05a86cabcd5cf6c76a0",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1*2 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1*2 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Grid · pulse step 1 ratchet changed"
+    ]
+  },
+  "toggle/ratchet/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "da78a98ffd825e60ff7686c20b4388fb78c23ce13cbca56880d1d1019bf0a0c9",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "da78a98ffd825e60ff7686c20b4388fb78c23ce13cbca56880d1d1019bf0a0c9",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1*2 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1*2 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · pulse step 1 ratchet changed"
+    ]
+  },
+  "toggle/rest accent/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "step 2 needs a note before setting accent"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/rest accent/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "step 2 needs a note before setting accent"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/rest ratchet/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "step 2 needs a note before changing ratchet"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "toggle/rest ratchet/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "step 2 needs a note before changing ratchet"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "toggle/shared /\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d12700eaa5748afd0c269193ecf2a5f2c625df862621dd099621a93542a02abe",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d12700eaa5748afd0c269193ecf2a5f2c625df862621dd099621a93542a02abe",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { . . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { . . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 5 toggled"
+    ]
+  },
+  "toggle/shared /\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c028aa247a08187c99229119776642da64e08a1646ef81a00c263e924a81fecd",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c028aa247a08187c99229119776642da64e08a1646ef81a00c263e924a81fecd",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { . . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { . . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 5 toggled"
+    ]
+  },
+  "toggle/shared accent/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "0f3e42eff491bd6e7fa6030b7adeb1075909d97388dc10e26a0eec4c2067f8d3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "0f3e42eff491bd6e7fa6030b7adeb1075909d97388dc10e26a0eec4c2067f8d3",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1 . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1 . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 5 accent changed"
+    ]
+  },
+  "toggle/shared accent/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "acfad5ddec966402d2b35c1ea954b09f0c7c20d4e37965e1b9056a512c4cad65",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "acfad5ddec966402d2b35c1ea954b09f0c7c20d4e37965e1b9056a512c4cad65",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1 . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1 . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 5 accent changed"
+    ]
+  },
+  "toggle/shared chance/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "1189de5b52c3cf19a04e6303f543d0120f19309c1ab814c794c37db03e962c5b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "1189de5b52c3cf19a04e6303f543d0120f19309c1ab814c794c37db03e962c5b",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^?75 . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^?75 . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 5 chance changed"
+    ]
+  },
+  "toggle/shared chance/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "01dc2064448869b07a8ca3dca2ef90d0aa64b6f225b3abfd6470bafcc2a3c93e",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "01dc2064448869b07a8ca3dca2ef90d0aa64b6f225b3abfd6470bafcc2a3c93e",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^?75 . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^?75 . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 5 chance changed"
+    ]
+  },
+  "toggle/shared ratchet/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "8f1f72e21534730c0ff67e079019d0f2511a26c0a0b1c103c2b1671fd9a7dfb8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "8f1f72e21534730c0ff67e079019d0f2511a26c0a0b1c103c2b1671fd9a7dfb8",
+      "source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^*2 . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^*2 . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Labels": [
+      "Grid · p step 5 ratchet changed"
+    ]
+  },
+  "toggle/shared ratchet/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "f8c638f73d7b677b8fc4270ea5cf1855665ea06a1bc121707aec03157c2f252a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "f8c638f73d7b677b8fc4270ea5cf1855665ea06a1bc121707aec03157c2f252a",
+      "source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^*2 . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Precise edits\"\r\nkey a minor\r\ntrack bass acid {}\r\ntrack drums drums {}\r\nphrase hook { 1^*2 . 5~*2?70 - }\r\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\r\npattern shared { use hook }\r\npattern beat drums { bd: x.Xx3; }\r\nscene main { bass = p drums=beat }\r\nscene other { bass=shared }\r\nsong { main*2 other }\r\n",
+    "Labels": [
+      "Grid · p step 5 ratchet changed"
+    ]
+  },
+  "toggle/slide/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "3643a22afd48e5df9a1e15bd612c46434286ba6a8fa6630cdefbe44814d29117",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "3643a22afd48e5df9a1e15bd612c46434286ba6a8fa6630cdefbe44814d29117",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1~ . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1~ . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Grid · pulse step 1 slide changed"
+    ]
+  },
+  "toggle/slide/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "282328fa17f00b27cec37c9c655be5d8af3afa17873a4a4964cc10b2b3c6efc1",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "282328fa17f00b27cec37c9c655be5d8af3afa17873a4a4964cc10b2b3c6efc1",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1~ . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1~ . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · pulse step 1 slide changed"
+    ]
+  }
+}
