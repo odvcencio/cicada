@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/phrase"
@@ -204,9 +205,13 @@ func (s *studioApp) mutatePhrase(ctx *action.Context) error {
 	if err != nil {
 		return action.Validation(err.Error(), nil, ctx.FormData)
 	}
-	updated, err := replacePreviewBar(generated.Source, result.Notation)
+	updated, err := edits.ReplacePreviewBar(generated.Source, result.Notation)
 	if err != nil {
 		return err
+	}
+	score, _ := notation.Parse([]byte(updated))
+	if p, diagnostics := project.FromScore(score); p == nil {
+		return fmt.Errorf("variation is invalid: %v", diagnostics)
 	}
 	receipt, err := s.storeDraft(updated, generated.Revision, session.Token(ctx.Request), "phrase")
 	if err != nil {
@@ -218,72 +223,6 @@ func (s *studioApp) mutatePhrase(ctx *action.Context) error {
 	ctx.FormData = nil
 	ctx.RedirectBackWithMessage("/?panel=generator", "Variation is ready. Locked steps were preserved; the open score has not changed.")
 	return nil
-}
-
-// Mutation returns a single bar. Replace only that generated declaration and
-// the seed, preserving the preview's header, other patterns, and arrangement.
-func replacePreviewBar(original, variation string) (string, error) {
-	type span struct {
-		start, end int
-		text, name string
-	}
-	read := func(source string) (map[string]span, error) {
-		document, err := notation.ParseDocument([]byte(source))
-		if err != nil {
-			return nil, err
-		}
-		found := map[string]span{}
-		for i := 0; i < document.Root.NamedChildCount(); i++ {
-			node := document.Root.NamedChild(i)
-			kind := document.Walker.Type(node)
-			if kind == "acid_pattern" || kind == "note_pattern" {
-				kind = "pattern"
-			}
-			if kind != "pattern" && kind != "seed_decl" {
-				continue
-			}
-			if _, exists := found[kind]; exists {
-				continue
-			}
-			found[kind] = span{int(node.StartByte()), int(node.EndByte()), document.Walker.Text(node), document.Walker.Text(document.Walker.Field(node, "name"))}
-		}
-		if _, ok := found["pattern"]; !ok {
-			return nil, fmt.Errorf("phrase preview has no acid bar")
-		}
-		return found, nil
-	}
-	before, err := read(original)
-	if err != nil {
-		return "", err
-	}
-	after, err := read(variation)
-	if err != nil {
-		return "", err
-	}
-	if before["pattern"].name != after["pattern"].name {
-		return "", fmt.Errorf("phrase preview pattern changed")
-	}
-	// Pattern declarations follow the seed. Apply replacements backwards so
-	// changed seed lengths cannot invalidate the original byte positions.
-	pattern := before["pattern"]
-	updated := original[:pattern.start] + after["pattern"].text + original[pattern.end:]
-	if seed, ok := before["seed_decl"]; ok {
-		newSeed, exists := after["seed_decl"]
-		if !exists || seed.end > pattern.start {
-			return "", fmt.Errorf("phrase preview seed is unavailable")
-		}
-		updated = updated[:seed.start] + newSeed.text + updated[seed.end:]
-	}
-	score, diagnostics := notation.Parse([]byte(updated))
-	for _, d := range diagnostics {
-		if d.Severity == "error" {
-			return "", fmt.Errorf("variation is invalid: %s", d.Message)
-		}
-	}
-	if p, diagnostics := project.FromScore(score); p == nil {
-		return "", fmt.Errorf("variation is invalid: %v", diagnostics)
-	}
-	return updated, nil
 }
 
 func (s *studioApp) mutationControls(v workspace, csrf string, values map[string]string, mask, source string) gosx.Node {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -20,14 +21,18 @@ func (s *studio) editAutomation(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose an automation operation"})
 		return
 	}
-	edition, err := mixerSourceEdition(s.path)
+	_, err := mixerSourceEdition(s.path)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
 	}
-	s.apply(w, edit, func(source []byte) ([]byte, error) {
-		return sceneAutomationSource(source, edit.Scene, edit.Path, edit.Value, edit.Action == "automation-remove", edition)
-	})
+	entity := edits.EntityID("setting:" + edit.Scene + "/" + edit.Path)
+	var intent edits.Intent = &edits.SetSceneSetting{Entity: entity, Value: edit.Value}
+	if edit.Action == "automation-remove" {
+		intent = &edits.RemoveSceneSetting{Entity: entity}
+	}
+	edit.Label = studioEditLabel(edit)
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
 // Scene points use the existing parameter catalog and playback/render glides.

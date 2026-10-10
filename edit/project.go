@@ -1,40 +1,47 @@
-package main
+package edit
 
 import (
 	"bytes"
 	"fmt"
-	"net/http"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/notation"
-	"m31labs.dev/cicada/project"
 )
 
-type studioProjectSettings struct {
+type SetProjectSettings struct {
 	Title      string `json:"title"`
-	TempoMilli int    `json:"tempoMilli"`
+	TempoMilli int    `json:"tempomilli"`
 	Root       string `json:"root"`
 	Scale      string `json:"scale"`
 }
 
-func (s *studio) editProject(w http.ResponseWriter, r *http.Request) {
-	edit, ok := studioRequest(w, r)
-	if !ok {
-		return
-	}
-	edit.Action = "project"
-	intent := &edits.SetProjectSettings{}
-	if settings := edit.Metadata; settings != nil {
-		intent.Title, intent.TempoMilli, intent.Root, intent.Scale = settings.Title, settings.TempoMilli, settings.Root, settings.Scale
-	}
-	edit.Label = studioEditLabel(edit)
-	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
-}
+func (SetProjectSettings) Kind() string { return "setprojectsettings" }
 
-func projectSettingsSource(source []byte, settings *studioProjectSettings) ([]byte, error) {
+func init() {
+	Register("setprojectsettings", func() Intent { return &SetProjectSettings{} })
+	Handle("setprojectsettings", func(ctx *Context, intent Intent) error {
+		updated, err := projectSettingsSource(ctx, intent.(*SetProjectSettings))
+		if err != nil {
+			return err
+		}
+		ctx.Source, ctx.plan = updated, nil
+		ctx.SetLabel("Project title, tempo, and key changed")
+		return nil
+	})
+}
+func projectSettingsSource(ctx *Context, settings *SetProjectSettings) ([]byte, error) {
+	source := ctx.Source
+	if ctx.Options.ParseProject != nil {
+		score, ds, err := ctx.ParseProject()
+		if err != nil {
+			return nil, err
+		}
+		if score == nil || hasErrors(ds) {
+			return nil, fmt.Errorf("score must validate before editing")
+		}
+	}
 	if settings == nil || strings.TrimSpace(settings.Title) == "" || utf8.RuneCountInString(settings.Title) > 256 || settings.TempoMilli < 20000 || settings.TempoMilli > 300000 {
 		return nil, fmt.Errorf("choose a title of 1–256 characters and tempo 20–300 BPM")
 	}
@@ -51,12 +58,12 @@ func projectSettingsSource(source []byte, settings *studioProjectSettings) ([]by
 	if rootIndex < 0 || !validScale {
 		return nil, fmt.Errorf("choose a supported key and scale")
 	}
-	score, ds := notation.Parse(source)
-	if score == nil || hasDiagnosticErrors(ds) {
+	score, ds := ctx.Parse()
+	if score == nil || hasErrors(ds) {
 		return nil, fmt.Errorf("score must validate before changing its settings")
 	}
-	semantic, ds := project.FromScore(score)
-	if semantic == nil || hasDiagnosticErrors(ds) {
+	semantic, err := ctx.CurrentPlan()
+	if err != nil {
 		return nil, fmt.Errorf("score must compile before changing its settings")
 	}
 	root, walker, err := notation.ParseTree(source)
@@ -68,7 +75,7 @@ func projectSettingsSource(source []byte, settings *studioProjectSettings) ([]by
 		"tempo_decl": "tempo " + strconv.FormatFloat(float64(settings.TempoMilli)/1000, 'f', -1, 64),
 		"key_decl":   "key " + settings.Root + " " + settings.Scale,
 	}
-	var edits []studioSpanEdit
+	var edits []Span
 	at := len(source)
 	for i := 0; i < root.NamedChildCount(); i++ {
 		node := root.NamedChild(i)
@@ -85,7 +92,7 @@ func projectSettingsSource(source []byte, settings *studioProjectSettings) ([]by
 			if settings.Title != score.Title {
 				for j := 0; j < node.NamedChildCount(); j++ {
 					if value := node.NamedChild(j); walker.Type(value) == "string" {
-						edits = append(edits, studioSpanEdit{int(value.StartByte()), int(value.EndByte()), strconv.Quote(settings.Title)})
+						edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), strconv.Quote(settings.Title)})
 					}
 				}
 			}
@@ -93,18 +100,18 @@ func projectSettingsSource(source []byte, settings *studioProjectSettings) ([]by
 			if int64(settings.TempoMilli) != score.TempoMilli {
 				for j := 0; j < node.NamedChildCount(); j++ {
 					if value := node.NamedChild(j); walker.Type(value) == "number" {
-						edits = append(edits, studioSpanEdit{int(value.StartByte()), int(value.EndByte()), strconv.FormatFloat(float64(settings.TempoMilli)/1000, 'f', -1, 64)})
+						edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), strconv.FormatFloat(float64(settings.TempoMilli)/1000, 'f', -1, 64)})
 					}
 				}
 			}
 		case "key_decl":
-			if uint8(rootIndex) != semantic.Key.Root {
+			if uint8(rootIndex) != semantic.KeyRoot {
 				value := walker.Field(node, "root")
-				edits = append(edits, studioSpanEdit{int(value.StartByte()), int(value.EndByte()), settings.Root})
+				edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), settings.Root})
 			}
 			if settings.Scale != score.Scale {
 				value := walker.Field(node, "scale")
-				edits = append(edits, studioSpanEdit{int(value.StartByte()), int(value.EndByte()), settings.Scale})
+				edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), settings.Scale})
 			}
 		}
 	}
@@ -119,7 +126,7 @@ func projectSettingsSource(source []byte, settings *studioProjectSettings) ([]by
 		}
 	}
 	if len(declarations) > 0 {
-		edits = append(edits, studioSpanEdit{at, at, strings.Join(declarations, newline) + newline})
+		edits = append(edits, Span{at, at, strings.Join(declarations, newline) + newline})
 	}
-	return patchStudioSpans(source, edits)
+	return PatchSpans(source, edits)
 }
