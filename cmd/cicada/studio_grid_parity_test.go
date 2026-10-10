@@ -71,3 +71,51 @@ func TestGridWriterParity(t *testing.T) {
 }
 
 func gridParityPitch(pitch int) *int { return &pitch }
+
+func TestGridSharedWriterParity(t *testing.T) {
+	for _, policy := range []string{"definition", "detach", "pattern"} {
+		for _, c := range []struct {
+			raw  string
+			body studioEdit
+			old  func([]byte) ([]byte, error)
+		}{
+			{`"kind":"togglestep"`, studioEdit{Pattern: "p", Step: 4}, func(s []byte) ([]byte, error) { return toggledSource(s, "p", "", 4) }},
+			{`"kind":"setpitch","pitch":72`, studioEdit{Pattern: "p", Step: 4, Pitch: gridParityPitch(72)}, func(s []byte) ([]byte, error) { return pitchedSource(s, "p", "", 4, 72) }},
+			{`"kind":"togglemodifier","modifier":"accent"`, studioEdit{Pattern: "p", Step: 4, Modifier: "accent"}, func(s []byte) ([]byte, error) { return toggledModifierSource(s, "p", "", 4, "accent") }},
+			{`"kind":"cyclestep","field":"ratchet"`, studioEdit{Pattern: "p", Step: 4, Modifier: "ratchet"}, func(s []byte) ([]byte, error) { return cycledStepSource(s, "p", "", 4, "ratchet") }},
+		} {
+			t.Run(policy+"/"+c.raw, func(t *testing.T) {
+				old := func(s []byte) ([]byte, error) {
+					if policy == "detach" || policy == "pattern" {
+						var err error
+						s, err = independentPatternSource(s, "p")
+						if err != nil {
+							return nil, err
+						}
+						if policy == "detach" {
+							s = bytes.Replace(s, []byte("swing = 54% 1^ . 5~*2?70 -"), []byte("swing = 54% use hook |"), 1)
+						}
+					}
+					return c.old(s)
+				}
+				assertWriterParity(t, []byte(studioPatternScore), `{`+c.raw+`,"entity":"step:p/4","shared":"`+policy+`"}`, studioEditLabel(c.body), old)
+			})
+		}
+	}
+	mixed := []byte("track bass acid {}\nphrase riff { 1 . 5 . }\npattern pulse acid { 1 . use riff }\nscene main { bass=pulse }\nsong { main }\n")
+	assertWriterParity(t, mixed, `{"kind":"togglestep","entity":"step:pulse/0","shared":"pattern"}`, "Grid · pulse step 1 toggled", func(s []byte) ([]byte, error) {
+		local, err := independentPatternSource(s, "pulse")
+		if err != nil {
+			return nil, err
+		}
+		return toggledSource(local, "pulse", "", 0)
+	})
+	for _, pitch := range []int{62, 64} {
+		for _, steps := range []string{"[d4 f4 a4]^?70", "use harmony"} {
+			source := []byte("instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 }\npattern chords notes { " + steps + " }\nscene main { keys=chords }\nsong { main }\n")
+			t.Run(fmt.Sprintf("chord/%s/%d", steps, pitch), func(t *testing.T) {
+				assertWriterParity(t, source, fmt.Sprintf(`{"kind":"setpitch","entity":"step:chords/0","pitch":%d,"shared":"definition"}`, pitch), "Grid · chords step 1 pitch changed", func(s []byte) ([]byte, error) { return pitchedSource(s, "chords", "", 0, pitch) })
+			})
+		}
+	}
+}

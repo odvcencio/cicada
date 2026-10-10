@@ -8,6 +8,13 @@ import (
 	"m31labs.dev/cicada/notation"
 )
 
+// ToggleStep changes one grid token. JSON shared accepts:
+// "" (default): ask when the step comes from a shared phrase;
+// "definition": edit the phrase token;
+// "detach": expand only the use containing the step;
+// "pattern": expand every use in the pattern before editing.
+// Directly authored steps ignore "" and "detach"; "pattern" still expands
+// every use. The same shared schema applies to the other grid intents.
 type ToggleStep struct {
 	Entity EntityID `json:"entity"`
 	Shared string   `json:"shared,omitempty"`
@@ -77,21 +84,29 @@ func stepTarget(id EntityID) (pattern, lane string, index int, err error) {
 
 func editGrid(ctx *Context, intent Intent) error {
 	var entity EntityID
+	var shared string
 	switch in := intent.(type) {
 	case *ToggleStep:
-		entity = in.Entity
+		entity, shared = in.Entity, in.Shared
 	case *SetPitch:
-		entity = in.Entity
+		entity, shared = in.Entity, in.Shared
 	case *ToggleModifier:
-		entity = in.Entity
+		entity, shared = in.Entity, in.Shared
 	case *CycleStep:
-		entity = in.Entity
+		entity, shared = in.Entity, in.Shared
 	case *SetDrumVelocity:
-		entity = in.Entity
+		entity, shared = in.Entity, in.Shared
 	}
 	pattern, lane, index, err := stepTarget(entity)
 	if err != nil {
 		return err
+	}
+	source, err := resolveShared(ctx, entity, shared)
+	if err != nil {
+		return err
+	}
+	if string(source) != string(ctx.Source) {
+		ctx.Source, ctx.plan = source, nil
 	}
 	var updated []byte
 	what := "toggled"
