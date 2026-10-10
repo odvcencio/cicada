@@ -43,11 +43,15 @@ func editClip(ctx *Context, intent Intent) error {
 		updated, err = newAudioTrackSource(ctx, in.Name)
 		label = "Audio track added · " + in.Name
 	case *SetClipSettings:
-		if _, e := ParseEntityID(string(in.Entity)); e != nil {
-			return e
-		}
 		if in.Entity.Kind() != KindClip {
 			return fmt.Errorf("clip settings need a clip entity, got %q", in.Entity)
+		}
+		// Keep the writer's validation order for an empty Studio target:
+		// invalid settings first, then an unknown clip after parsing the score.
+		if in.Entity.Name() != "" {
+			if _, e := ParseEntityID(string(in.Entity)); e != nil {
+				return e
+			}
 		}
 		updated, err = clipSettingsSource(ctx, in.Entity.Name(), in)
 		label = "Audio region edited · " + in.Entity.Name()

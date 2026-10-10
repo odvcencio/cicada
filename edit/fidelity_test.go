@@ -67,6 +67,24 @@ func TestFidelityRule5_CommentsFollowMovedEntry(t *testing.T) {
 	}
 }
 
+func TestFidelityRule5_CompactSongCommentMove(t *testing.T) {
+	for _, newline := range []string{"\n", "\r\n"} {
+		prefix := songScore[:strings.Index(songScore, "song {")]
+		before := []byte(strings.ReplaceAll(prefix+"song { main*2 // the hook\n  break*2 }\n", "\n", newline))
+		got, err := applyM4Intent(before, `{"kind":"movesongentry","entity":"song:0","target":1}`, Options{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []byte(strings.ReplaceAll(prefix+"song {   break*2\nmain*2 // the hook\n }\n", "\n", newline))
+		if !bytes.Equal(got.Source, want) {
+			t.Fatalf("compact move %q, want %q", got.Source, want)
+		}
+		if a, b := commentAnchor(t, before, "// the hook"), commentAnchor(t, got.Source, "// the hook"); a != b {
+			t.Fatalf("comment moved from %q to %q", a, b)
+		}
+	}
+}
+
 // changedWindow returns after minus the longest common prefix and suffix with
 // before: the bytes an edit actually inserted or replaced.
 func changedWindow(before, after []byte) []byte {

@@ -49,6 +49,10 @@ func TestM4SettingsWriterParity(t *testing.T) {
 			}},
 			{"audio track", clipSource, `{"kind":"addaudiotrack","name":"vocal-b"}`, studioEdit{Action: "audio-track", NewName: "vocal-b"}, func(s []byte) ([]byte, error) { return newAudioTrackSource(s, "vocal-b", 2) }},
 			{"duplicate track", clipSource, `{"kind":"addaudiotrack","name":"vox"}`, studioEdit{}, func(s []byte) ([]byte, error) { return newAudioTrackSource(s, "vox", 2) }},
+			{"missing clip target", clipSource, `{"kind":"setclipsettings","entity":"clip:","start":480,"end":4800}`, studioEdit{}, func(s []byte) ([]byte, error) {
+				return clipSettingsSource(s, "", &studioClipSettings{Start: 480, End: 4800}, 2)
+			}},
+			{"missing clip target and settings", clipSource, `{"kind":"setclipsettings","entity":"clip:"}`, studioEdit{}, func(s []byte) ([]byte, error) { return clipSettingsSource(s, "", nil, 2) }},
 		} {
 			t.Run(c.name+newline, func(t *testing.T) {
 				source := []byte(strings.ReplaceAll(c.source, "\n", newline))

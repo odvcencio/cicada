@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -25,7 +26,12 @@ func (s *studio) editProject(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	edit.Action = "project"
-	s.apply(w, edit, s.sourceTransform(func(source []byte) ([]byte, error) { return projectSettingsSource(source, edit.Metadata) }))
+	intent := &edits.SetProjectSettings{}
+	if settings := edit.Metadata; settings != nil {
+		intent.Title, intent.TempoMilli, intent.Root, intent.Scale = settings.Title, settings.TempoMilli, settings.Root, settings.Scale
+	}
+	edit.Label = studioEditLabel(edit)
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
 func projectSettingsSource(source []byte, settings *studioProjectSettings) ([]byte, error) {

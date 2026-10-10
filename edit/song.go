@@ -327,12 +327,29 @@ func moveSongCommentUnits(source []byte, song *gts.Node, entries []*gts.Node, in
 		copy(texts[target+1:index+1], texts[target:index])
 	}
 	texts[target] = moving
+	startsWithComment := func(text []byte) bool { return bytes.HasPrefix(bytes.TrimSpace(text), []byte("//")) }
+	endsWithComment := func(text []byte) bool {
+		lastLine := bytes.LastIndexByte(text, '\n') + 1
+		return bytes.Contains(text[lastLine:], []byte("//"))
+	}
 	updated := append([]byte(nil), source[:units[0].start]...)
+	if startsWithComment(texts[0]) && !bytes.Contains(source[open:units[0].start], []byte("\n")) {
+		updated = append(updated, Newline(source)...)
+	}
 	for i, text := range texts {
 		updated = append(updated, text...)
 		if i+1 < len(units) {
-			updated = append(updated, source[units[i].end:units[i+1].start]...)
+			gap := source[units[i].end:units[i+1].start]
+			// A line comment must not swallow the following entry or brace,
+			// and an own-line comment must stay on its own line after a move.
+			if (endsWithComment(text) || startsWithComment(texts[i+1])) && !bytes.Contains(gap, []byte("\n")) {
+				updated = append(updated, Newline(source)...)
+			}
+			updated = append(updated, gap...)
 		}
+	}
+	if endsWithComment(texts[len(texts)-1]) && !bytes.Contains(source[units[len(units)-1].end:close], []byte("\n")) {
+		updated = append(updated, Newline(source)...)
 	}
 	updated = append(updated, source[units[len(units)-1].end:]...)
 	return updated, nil
