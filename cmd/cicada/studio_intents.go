@@ -50,8 +50,14 @@ func (c *studioCompiler) Compile(source []byte, files map[string][]byte) (*edits
 	if err != nil {
 		return nil, err
 	}
+	// The runtime project omits templates such as unused presets. Keep the
+	// authored names from every source, including libraries, for allocation.
+	sources, err := project.ReadSources(c.path, overrides)
+	if err != nil {
+		return nil, err
+	}
 	c.source, c.files, c.project = bytes.Clone(source), compiledFiles, p
-	return project.EditPlan(p, source), nil
+	return project.EditPlan(p, source, sources.Files...), nil
 }
 
 // compiled returns the project from the latest compile when it was made from

@@ -29,7 +29,7 @@ type Plan struct {
 	Placements   []Placement
 	Markers      []Marker
 	Clips        []Clip
-	Names        map[string]bool // every declared identifier (samplers, instruments, kits, tracks, patterns, clips, effects, buses)
+	Names        map[string]bool // occupied authored identifiers and import aliases, including templates omitted by compilation
 	ResolveParam func(path string) (Param, error)
 }
 

@@ -55,7 +55,7 @@ func (c multiFileCompiler) Compile(source []byte, overrides map[string][]byte) (
 			return nil, fmt.Errorf("%s", d.Message)
 		}
 	}
-	return project.EditPlan(p, source), nil
+	return project.EditPlan(p, source, c.sources(source, overrides)...), nil
 }
 
 func TestEveryIntentRespectsMultiFileOwnership(t *testing.T) {
