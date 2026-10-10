@@ -187,6 +187,90 @@
       "Pattern · pulse duplicated as pulse2"
     ]
   },
+  "pattern/continuity pitch inherited edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c26c60cc194d438a8c2556e5ca7c6cd20f5383b04242e2bf0aec5f33012f4ada",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c26c60cc194d438a8c2556e5ca7c6cd20f5383b04242e2bf0aec5f33012f4ada",
+      "source": "// cicada-continuity-test: disposable fixture\ntitle \"Studio continuity regression\"\ntempo 120\nkey c minor\ntrack keys acid { cutoff=700Hz }\n  \npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\nscene main { keys=continuity }\nscene alternate { keys=alternate }\nsong { main*999 }\n",
+      "valid": true
+    },
+    "Source": "// cicada-continuity-test: disposable fixture\ntitle \"Studio continuity regression\"\ntempo 120\nkey c minor\ntrack keys acid { cutoff=700Hz }\n  \npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\nscene main { keys=continuity }\nscene alternate { keys=alternate }\nsong { main*999 }\n",
+    "Labels": [
+      "Grid · continuity step 15 pitch changed"
+    ]
+  },
+  "pattern/continuity pitch inherited edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "f40129b70987306c890ac9a4595873bc45bd40e4ef6f94fccf231231fa80244b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "f40129b70987306c890ac9a4595873bc45bd40e4ef6f94fccf231231fa80244b",
+      "source": "// cicada-continuity-test: disposable fixture\r\ntitle \"Studio continuity regression\"\r\ntempo 120\r\nkey c minor\r\ntrack keys acid { cutoff=700Hz }\r\n  \r\npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\nscene main { keys=continuity }\r\nscene alternate { keys=alternate }\r\nsong { main*999 }\r\n",
+      "valid": true
+    },
+    "Source": "// cicada-continuity-test: disposable fixture\r\ntitle \"Studio continuity regression\"\r\ntempo 120\r\nkey c minor\r\ntrack keys acid { cutoff=700Hz }\r\n  \r\npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\nscene main { keys=continuity }\r\nscene alternate { keys=alternate }\r\nsong { main*999 }\r\n",
+    "Labels": [
+      "Grid · continuity step 15 pitch changed"
+    ]
+  },
+  "pattern/continuity pitch loose edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c95ba2d0d967bb2a967948e6a0ff014a4a9fba3f6d893ecbff1ee968a2facfe0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c95ba2d0d967bb2a967948e6a0ff014a4a9fba3f6d893ecbff1ee968a2facfe0",
+      "source": "cicada 2\n// cicada-continuity-test: disposable fixture\ntitle \"Studio continuity regression\"\ntempo 120\nkey c minor\ntrack keys acid { cutoff=700Hz }\n  \npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\nscene main { keys=continuity }\nscene alternate { keys=alternate }\nsong { main*999 }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// cicada-continuity-test: disposable fixture\ntitle \"Studio continuity regression\"\ntempo 120\nkey c minor\ntrack keys acid { cutoff=700Hz }\n  \npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\nscene main { keys=continuity }\nscene alternate { keys=alternate }\nsong { main*999 }\n",
+    "Labels": [
+      "Grid · continuity step 15 pitch changed"
+    ]
+  },
+  "pattern/continuity pitch loose edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "837bb04c9093140a903046e49aefcb1ae28cdbb39316e7295666e438576ccc7b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "837bb04c9093140a903046e49aefcb1ae28cdbb39316e7295666e438576ccc7b",
+      "source": "cicada 2\r\n// cicada-continuity-test: disposable fixture\r\ntitle \"Studio continuity regression\"\r\ntempo 120\r\nkey c minor\r\ntrack keys acid { cutoff=700Hz }\r\n  \r\npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\nscene main { keys=continuity }\r\nscene alternate { keys=alternate }\r\nsong { main*999 }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// cicada-continuity-test: disposable fixture\r\ntitle \"Studio continuity regression\"\r\ntempo 120\r\nkey c minor\r\ntrack keys acid { cutoff=700Hz }\r\n  \r\npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\nscene main { keys=continuity }\r\nscene alternate { keys=alternate }\r\nsong { main*999 }\r\n",
+    "Labels": [
+      "Grid · continuity step 15 pitch changed"
+    ]
+  },
+  "pattern/continuity pitch manifest edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c95ba2d0d967bb2a967948e6a0ff014a4a9fba3f6d893ecbff1ee968a2facfe0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c95ba2d0d967bb2a967948e6a0ff014a4a9fba3f6d893ecbff1ee968a2facfe0",
+      "source": "cicada 2\n// cicada-continuity-test: disposable fixture\ntitle \"Studio continuity regression\"\ntempo 120\nkey c minor\ntrack keys acid { cutoff=700Hz }\n  \npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\nscene main { keys=continuity }\nscene alternate { keys=alternate }\nsong { main*999 }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// cicada-continuity-test: disposable fixture\ntitle \"Studio continuity regression\"\ntempo 120\nkey c minor\ntrack keys acid { cutoff=700Hz }\n  \npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\nscene main { keys=continuity }\nscene alternate { keys=alternate }\nsong { main*999 }\n",
+    "Labels": [
+      "Grid · continuity step 15 pitch changed"
+    ]
+  },
+  "pattern/continuity pitch manifest edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "837bb04c9093140a903046e49aefcb1ae28cdbb39316e7295666e438576ccc7b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "837bb04c9093140a903046e49aefcb1ae28cdbb39316e7295666e438576ccc7b",
+      "source": "cicada 2\r\n// cicada-continuity-test: disposable fixture\r\ntitle \"Studio continuity regression\"\r\ntempo 120\r\nkey c minor\r\ntrack keys acid { cutoff=700Hz }\r\n  \r\npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\nscene main { keys=continuity }\r\nscene alternate { keys=alternate }\r\nsong { main*999 }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// cicada-continuity-test: disposable fixture\r\ntitle \"Studio continuity regression\"\r\ntempo 120\r\nkey c minor\r\ntrack keys acid { cutoff=700Hz }\r\n  \r\npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\nscene main { keys=continuity }\r\nscene alternate { keys=alternate }\r\nsong { main*999 }\r\n",
+    "Labels": [
+      "Grid · continuity step 15 pitch changed"
+    ]
+  },
   "pattern/copy/\"\\n\"": {
     "Code": 200,
     "Body": {
@@ -1591,6 +1675,146 @@
       "Pattern · pulse / steps 1–2 · transpose"
     ]
   },
+  "pattern/transposed phrase chord pitch/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5fd722f5a43629cb1555c82e9d08a72908d97d06961b2db9ee3427d4c721d207",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5fd722f5a43629cb1555c82e9d08a72908d97d06961b2db9ee3427d4c721d207",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { f#3 d5^?70 c5 d6^?70 c6 }\nscene main { keys=chords }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { f#3 d5^?70 c5 d6^?70 c6 }\nscene main { keys=chords }\nsong { main }\n",
+    "Labels": [
+      "Grid · chords step 1 pitch changed"
+    ]
+  },
+  "pattern/transposed phrase chord pitch/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "84dec8dcedb3423ca933077446084b26990db7502165fbe693f471d01b8e17db",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "84dec8dcedb3423ca933077446084b26990db7502165fbe693f471d01b8e17db",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { f#3 d5^?70 c5 d6^?70 c6 }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { f#3 d5^?70 c5 d6^?70 c6 }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · chords step 1 pitch changed"
+    ]
+  },
+  "pattern/transposed phrase chord range/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "85901e5068467a583784624b786cd9e1dbd5b40af27fa87ae976a2601dd5f02f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "85901e5068467a583784624b786cd9e1dbd5b40af27fa87ae976a2601dd5f02f",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { . d5^?70 c5 d6^?70 c6 }\nscene main { keys=chords }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { . d5^?70 c5 d6^?70 c6 }\nscene main { keys=chords }\nsong { main }\n",
+    "Labels": [
+      "Pattern · chords / steps 1–1 · reverse"
+    ]
+  },
+  "pattern/transposed phrase chord range/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "790624ad41a0e6ea41d6e821823952c3e5edbc98ef942daddbc6208ad4b969ba",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "790624ad41a0e6ea41d6e821823952c3e5edbc98ef942daddbc6208ad4b969ba",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { . d5^?70 c5 d6^?70 c6 }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { . d5^?70 c5 d6^?70 c6 }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · chords / steps 1–1 · reverse"
+    ]
+  },
+  "pattern/transposed phrase chord resize/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "a93e70f1900bd77e5c1423f295edf1665a61d0761722e3ca663602e4a3828b00",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "a93e70f1900bd77e5c1423f295edf1665a61d0761722e3ca663602e4a3828b00",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { . d5^?70 c5 d6^?70 c6 . . . }\nscene main { keys=chords }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { . d5^?70 c5 d6^?70 c6 . . . }\nscene main { keys=chords }\nsong { main }\n",
+    "Labels": [
+      "Pattern · chords resized to 8 steps"
+    ]
+  },
+  "pattern/transposed phrase chord resize/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "9f48b884841286efd8b162aaac56dab4962625db3cf908bb083d50f7a86261e5",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "9f48b884841286efd8b162aaac56dab4962625db3cf908bb083d50f7a86261e5",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { . d5^?70 c5 d6^?70 c6 . . . }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { . d5^?70 c5 d6^?70 c6 . . . }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · chords resized to 8 steps"
+    ]
+  },
+  "pattern/transposed phrase chord step/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5fd722f5a43629cb1555c82e9d08a72908d97d06961b2db9ee3427d4c721d207",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5fd722f5a43629cb1555c82e9d08a72908d97d06961b2db9ee3427d4c721d207",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { f#3 d5^?70 c5 d6^?70 c6 }\nscene main { keys=chords }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { f#3 d5^?70 c5 d6^?70 c6 }\nscene main { keys=chords }\nsong { main }\n",
+    "Labels": [
+      "Pattern · chords / step 1 edited"
+    ]
+  },
+  "pattern/transposed phrase chord step/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "84dec8dcedb3423ca933077446084b26990db7502165fbe693f471d01b8e17db",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "84dec8dcedb3423ca933077446084b26990db7502165fbe693f471d01b8e17db",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { f#3 d5^?70 c5 d6^?70 c6 }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { f#3 d5^?70 c5 d6^?70 c6 }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+    "Labels": [
+      "Pattern · chords / step 1 edited"
+    ]
+  },
+  "pattern/transposed phrase chord toggle/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "21380e2afff71de44110a4e2a93c2940e378fe60680647130753e767aac46b9a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "21380e2afff71de44110a4e2a93c2940e378fe60680647130753e767aac46b9a",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { 1 d5^?70 c5 d6^?70 c6 }\nscene main { keys=chords }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { 1 d5^?70 c5 d6^?70 c6 }\nscene main { keys=chords }\nsong { main }\n",
+    "Labels": [
+      "Grid · chords step 1 pitch changed"
+    ]
+  },
+  "pattern/transposed phrase chord toggle/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "16d68ed739b10766e8b2fff142ca666eb5adbc5e0c08f424c0584c91af957041",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "16d68ed739b10766e8b2fff142ca666eb5adbc5e0c08f424c0584c91af957041",
+      "source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { 1 d5^?70 c5 d6^?70 c6 }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\r\ntrack keys piano {}\r\nphrase harmony { [d4 f4 a4]^?70 c4 }\r\npattern chords notes { 1 d5^?70 c5 d6^?70 c6 }\r\nscene main { keys=chords }\r\nsong { main }\r\n",
+    "Labels": [
+      "Grid · chords step 1 pitch changed"
+    ]
+  },
   "pattern/unknown/\"\\n\"": {
     "Code": 400,
     "Body": {
@@ -1709,6 +1933,34 @@
     "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1?75 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
     "Labels": [
       "Grid · pulse step 1 chance changed"
+    ]
+  },
+  "toggle/continuity pitch loose edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c95ba2d0d967bb2a967948e6a0ff014a4a9fba3f6d893ecbff1ee968a2facfe0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c95ba2d0d967bb2a967948e6a0ff014a4a9fba3f6d893ecbff1ee968a2facfe0",
+      "source": "cicada 2\n// cicada-continuity-test: disposable fixture\ntitle \"Studio continuity regression\"\ntempo 120\nkey c minor\ntrack keys acid { cutoff=700Hz }\n  \npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\nscene main { keys=continuity }\nscene alternate { keys=alternate }\nsong { main*999 }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// cicada-continuity-test: disposable fixture\ntitle \"Studio continuity regression\"\ntempo 120\nkey c minor\ntrack keys acid { cutoff=700Hz }\n  \npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\nscene main { keys=continuity }\nscene alternate { keys=alternate }\nsong { main*999 }\n",
+    "Labels": [
+      "Grid · continuity step 15 pitch changed"
+    ]
+  },
+  "toggle/continuity pitch loose edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "837bb04c9093140a903046e49aefcb1ae28cdbb39316e7295666e438576ccc7b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "837bb04c9093140a903046e49aefcb1ae28cdbb39316e7295666e438576ccc7b",
+      "source": "cicada 2\r\n// cicada-continuity-test: disposable fixture\r\ntitle \"Studio continuity regression\"\r\ntempo 120\r\nkey c minor\r\ntrack keys acid { cutoff=700Hz }\r\n  \r\npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\nscene main { keys=continuity }\r\nscene alternate { keys=alternate }\r\nsong { main*999 }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// cicada-continuity-test: disposable fixture\r\ntitle \"Studio continuity regression\"\r\ntempo 120\r\nkey c minor\r\ntrack keys acid { cutoff=700Hz }\r\n  \r\npattern continuity notes steps=64 { 1 . . . . . . . . . . . . . f#3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\npattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }\r\nscene main { keys=continuity }\r\nscene alternate { keys=alternate }\r\nsong { main*999 }\r\n",
+    "Labels": [
+      "Grid · continuity step 15 pitch changed"
     ]
   },
   "toggle/disk invalid/\"\\n\"": {

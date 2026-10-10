@@ -31,7 +31,8 @@ type gridPatternRouteSnapshot struct {
 	Labels []string
 }
 
-func gridPatternRouteCases() []gridPatternRouteCase {
+func gridPatternRouteCases(t *testing.T) []gridPatternRouteCase {
+	t.Helper()
 	var cases []gridPatternRouteCase
 	for _, c := range patternParityCases() {
 		cases = append(cases, gridPatternRouteCase{name: "pattern/" + c.name, route: "/api/pattern", source: c.source, body: c.body})
@@ -77,6 +78,34 @@ func gridPatternRouteCases() []gridPatternRouteCase {
 		for _, header := range []string{"", "cicada 2\n"} {
 			cases = append(cases, gridPatternRouteCase{name: fmt.Sprintf("pattern/edition2 %s %t", action, header != ""), route: "/api/pattern", source: header + source, body: body, edition: 2})
 		}
+	}
+	// Generated with the continuity runner's --write-fixture mode. The first
+	// request draws cell 15 at MIDI 54, translated to the zero-based step 14.
+	continuity, err := os.ReadFile("testdata/studio-continuity.cicada")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, layout := range []struct {
+		name       string
+		edition    int
+		headerless bool
+	}{
+		{"loose edition2", 0, false}, {"manifest edition2", 2, false}, {"inherited edition2", 2, true},
+	} {
+		source := string(continuity)
+		if layout.headerless {
+			source = strings.TrimPrefix(source, "cicada 2\n")
+		}
+		cases = append(cases, gridPatternRouteCase{name: "pattern/continuity pitch " + layout.name, route: "/api/pattern", source: source, edition: layout.edition, body: studioEdit{Action: "pitch", Pattern: "continuity", Step: 14, Pitch: gridParityPitch(54)}})
+	}
+	cases = append(cases, gridPatternRouteCase{name: "toggle/continuity pitch loose edition2", route: "/api/toggle", source: string(continuity), body: studioEdit{Pattern: "continuity", Step: 14, Pitch: gridParityPitch(54)}})
+	// Listed parity exceptions: transposed phrase chord toggle, pitch, step,
+	// range, and resize preserve all chord pitches instead of the old scalar.
+	chordSource := "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 c4 }\npattern chords notes { . use harmony +12 use harmony +24 }\nscene main { keys=chords }\nsong { main }\n"
+	for _, action := range []string{"toggle", "pitch", "step", "range", "resize"} {
+		cases = append(cases, gridPatternRouteCase{name: "pattern/transposed phrase chord " + action, route: "/api/pattern", source: chordSource,
+			body: studioEdit{Action: action, Pattern: "chords", Pitch: gridParityPitch(54), Length: 8,
+				NoteEdit: &studioStepEdit{Mode: "note", Pitch: 54, Ratchet: 1, Chance: 100}, Range: &studioPatternRange{Operation: "reverse"}}})
 	}
 	// Every error is deliberate; a write or environment failure must never become a fixture.
 	intendedErrors := map[string]struct {
@@ -219,8 +248,8 @@ func TestGridPatternCaptureInventory(t *testing.T) {
 	if err := json.Unmarshal(data, &golden); err != nil {
 		t.Fatal(err)
 	}
-	cases := gridPatternRouteCases()
-	if len(cases) != 180 || len(golden) != len(cases) {
+	cases := gridPatternRouteCases(t)
+	if len(cases) != 198 || len(golden) != len(cases) {
 		t.Fatalf("capture inventory: %d cases, %d snapshots", len(cases), len(golden))
 	}
 	var successes, intendedErrors int
@@ -249,7 +278,7 @@ func assertGridPatternRoutes(t *testing.T, route string) {
 	if err := json.Unmarshal(data, &golden); err != nil {
 		t.Fatal(err)
 	}
-	for _, c := range gridPatternRouteCases() {
+	for _, c := range gridPatternRouteCases(t) {
 		if c.route != route {
 			continue
 		}
@@ -263,6 +292,7 @@ func assertGridPatternRoutes(t *testing.T, route string) {
 			if !reflect.DeepEqual(old, want) {
 				t.Fatalf("old handler changed since capture\n got: %+v\nwant: %+v", old, want)
 			}
+			want = gridPatternParityExpectation(t, c, want)
 			got := gridPatternRoute(t, c)
 			if !reflect.DeepEqual(got, want) {
 				t.Fatalf("route parity\n got: %+v\nwant: %+v", got, want)
@@ -329,4 +359,43 @@ func TestGridPatternRoutesCommitPublicIntents(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestContinuityPatternRouteParity(t *testing.T) {
+	for _, c := range gridPatternRouteCases(t) {
+		if !strings.Contains(c.name, "/continuity ") {
+			continue
+		}
+		t.Run(c.name, func(t *testing.T) {
+			old := gridPatternRouteWithHandler(t, c, legacyGridPatternHandler)
+			got := gridPatternRoute(t, c)
+			if !reflect.DeepEqual(got, old) {
+				t.Fatalf("continuity route parity: got %+v, want %+v", got, old)
+			}
+		})
+	}
+}
+
+// Only these named transposed-chord cases differ from the legacy captures.
+// Byte, response, and label parity still apply everywhere else.
+func gridPatternParityExpectation(t *testing.T, c gridPatternRouteCase, old gridPatternRouteSnapshot) gridPatternRouteSnapshot {
+	t.Helper()
+	if !strings.HasPrefix(c.name, "pattern/transposed phrase chord ") {
+		return old
+	}
+	want := old
+	want.Body = make(map[string]any, len(old.Body))
+	for key, value := range old.Body {
+		want.Body[key] = value
+	}
+	for scalar, chord := range map[string]string{"d5^?70": "[d5 f5 a5]^?70", "d6^?70": "[d6 f6 a6]^?70"} {
+		if strings.Count(want.Source, scalar) != 1 {
+			t.Fatalf("parity exception %s lacks the old scalar %q", c.name, scalar)
+		}
+		want.Source = strings.Replace(want.Source, scalar, chord, 1)
+	}
+	want.Body["source"] = want.Source
+	want.Body["revision"] = studioRevision([]byte(want.Source))
+	want.Body["playingRevision"] = want.Body["revision"]
+	return want
 }

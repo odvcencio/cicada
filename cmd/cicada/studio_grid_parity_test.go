@@ -110,12 +110,25 @@ func TestGridSharedWriterParity(t *testing.T) {
 		}
 		return toggledSource(local, "pulse", "", 0)
 	})
-	for _, pitch := range []int{62, 64} {
-		for _, steps := range []string{"[d4 f4 a4]^?70", "use harmony"} {
+	for _, pitch := range []int{62, 64, 74} {
+		for _, steps := range []string{"[d4 f4 a4]^?70", "use harmony", "use harmony +12"} {
 			source := []byte("instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 }\npattern chords notes { " + steps + " }\nscene main { keys=chords }\nsong { main }\n")
 			t.Run(fmt.Sprintf("chord/%s/%d", steps, pitch), func(t *testing.T) {
 				assertWriterParity(t, source, fmt.Sprintf(`{"kind":"setpitch","entity":"step:chords/0","pitch":%d,"shared":"definition"}`, pitch), "Grid · chords step 1 pitch changed", func(s []byte) ([]byte, error) { return pitchedSource(s, "chords", "", 0, pitch) })
 			})
 		}
+	}
+}
+
+func TestUntransposedChordPatternWriterParity(t *testing.T) {
+	for _, pitch := range []int{62, 64} {
+		source := []byte("instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { [d4 f4 a4]^?70 }\npattern chords notes { use harmony }\nscene main { keys=chords }\nsong { main }\n")
+		assertWriterParity(t, source, fmt.Sprintf(`{"kind":"setpitch","entity":"step:chords/0","pitch":%d,"shared":"pattern"}`, pitch), "Grid · chords step 1 pitch changed", func(s []byte) ([]byte, error) {
+			local, err := independentPatternSource(s, "chords")
+			if err != nil {
+				return nil, err
+			}
+			return pitchedSource(local, "chords", "", 0, pitch)
+		})
 	}
 }

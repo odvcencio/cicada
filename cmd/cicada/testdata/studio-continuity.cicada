@@ -1,0 +1,12 @@
+cicada 2
+// cicada-continuity-test: disposable fixture
+title "Studio continuity regression"
+tempo 120
+key c minor
+track keys acid { cutoff=700Hz }
+  
+pattern continuity notes steps=64 { 1 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }
+pattern alternate notes steps=64 { 5 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . c4 }
+scene main { keys=continuity }
+scene alternate { keys=alternate }
+song { main*999 }

@@ -103,6 +103,11 @@ func (s *studio) editOptions() (edits.Options, error) {
 	if err != nil {
 		return edits.Options{}, err
 	}
+	// ScoreEdition's loose-file default is a fallback, not an inherited
+	// manifest edition. Let Parse resolve an explicit header in a loose file.
+	if manifestPath == "" {
+		editionNumber = 0
+	}
 	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath)}
 	if manifestPath != "" {
 		if opts.Manifest, err = os.ReadFile(manifestPath); err != nil {

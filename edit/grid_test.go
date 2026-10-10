@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -106,5 +107,51 @@ func TestSetPitchJSONRequiresPitch(t *testing.T) {
 	got, err := applyGridJSON(t, []byte(gridScore), `{"kind":"setpitch","entity":"step:pulse/0","pitch":0}`)
 	if err != nil || !strings.Contains(string(got.Source), "c0,") {
 		t.Fatalf("MIDI zero is valid: %+v, %v", got, err)
+	}
+}
+
+func TestSharedTransposedChordPreservesPitchesAndModifiers(t *testing.T) {
+	for _, chord := range []string{"[d4 f4 a4]^?70", "[d4  f4\t a4] ^?70", "[d4 // keep chord color\n f4 a4]^?70"} {
+		for _, policy := range []string{"definition", "detach", "pattern"} {
+			for _, newline := range []string{"\n", "\r\n"} {
+				t.Run(fmt.Sprintf("%s/%s/%q", policy, chord, newline), func(t *testing.T) {
+					source := "instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\ntrack keys piano {}\nphrase harmony { " + chord + " c4 }\npattern chords notes { . use harmony +12 use harmony +24 }\nscene main { keys=chords }\nsong { main }\n"
+					source = strings.ReplaceAll(source, "\n", newline)
+					got, err := applyGridJSON(t, []byte(source), `{"kind":"togglemodifier","entity":"step:chords/1","modifier":"accent","shared":"`+policy+`"}`)
+					if err != nil {
+						t.Fatal(err)
+					}
+					authoredChord := strings.ReplaceAll(chord, "\n", newline)
+					first := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(authoredChord, "d4", "d5"), "f4", "f5"), "a4", "a5")
+					first = strings.Replace(first, "^", "", 1)
+					want := source
+					switch policy {
+					case "definition":
+						want = strings.Replace(source, authoredChord, strings.Replace(authoredChord, "^", "", 1), 1)
+					case "detach":
+						want = strings.Replace(source, "use harmony +12", first+" c5", 1)
+					case "pattern":
+						second := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(authoredChord, "d4", "d6"), "f4", "f6"), "a4", "a6")
+						want = strings.Replace(strings.Replace(source, "use harmony +12", first+" c5", 1), "use harmony +24", second+" c6", 1)
+					}
+					if string(got.Source) != want {
+						t.Fatalf("expansion dropped chord bytes\n got: %s\nwant: %s", got.Source, want)
+					}
+					plan := got.Plan
+					for _, p := range plan.Patterns {
+						if p.ID != "chords" {
+							continue
+						}
+						for i, pitches := range map[int][]int{1: {74, 77, 81}, 3: {86, 89, 93}} {
+							step := p.Data[i]
+							accent := i == 3 && policy != "definition"
+							if step == nil || !reflect.DeepEqual(step.Notes, pitches) || step.Accent != accent || step.Slide || step.Ratchet != 1 || step.Probability != 70 {
+								t.Fatalf("%s chord %d lost pitches/modifiers: %+v", policy, i, step)
+							}
+						}
+					}
+				})
+			}
+		}
 	}
 }

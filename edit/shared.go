@@ -157,7 +157,10 @@ func expandPatternUses(ctx *Context, id string, useStart int) ([]byte, error) {
 					}
 					text := token.Text
 					if step := pattern.Data[index]; transformed && step != nil && !step.Tie {
-						text = sourcePitch(int(step.Note)) + noteSuffix(token.Text)
+						text, err = transposedPhraseToken(token, step)
+						if err != nil {
+							return nil, err
+						}
 					}
 					tokens = append(tokens, text)
 					index++
@@ -175,6 +178,24 @@ func expandPatternUses(ctx *Context, id string, useStart int) ([]byte, error) {
 		}
 	}
 	return PatchSpans(source, edits)
+}
+
+// Patch chord pitches in their authored spans so transposition retains every
+// voice, internal comment, whitespace, and modifier. Scalar spelling stays
+// identical to the legacy expansion.
+func transposedPhraseToken(token notation.StepToken, step *Step) (string, error) {
+	if len(step.Notes) == 0 {
+		return sourcePitch(int(step.Note)) + noteSuffix(token.Text), nil
+	}
+	if len(token.ChordPitches) != len(step.Notes) {
+		return "", fmt.Errorf("chord source no longer matches the projection")
+	}
+	patches := make([]Span, len(step.Notes))
+	for i, pitch := range token.ChordPitches {
+		patches[i] = Span{pitch.Start, pitch.End, sourcePitch(step.Notes[i])}
+	}
+	updated, err := PatchSpans([]byte(token.Text), patches)
+	return string(updated), err
 }
 
 func noteSuffix(text string) string {
