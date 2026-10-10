@@ -43,6 +43,67 @@ func meterScore(t *testing.T, name string, gain float64) Score {
 	}
 }
 
+func TestCommittedValueClearsMatchingOverrideOnTheAudioThread(t *testing.T) {
+	p, err := New(meterScore(t, "preview", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.SetParam(0, kernel.ParamMixGain, -3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, blockFrames*8); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := p.overrides.Load()
+	version := snapshot.values[0][kernel.ParamMixGain].version
+	p.noteCommitted(0, kernel.ParamMixGain, -3) // The test owns Read.
+	if p.clearedVersions[0][kernel.ParamMixGain] != version {
+		t.Fatal("matching committed value did not clear the override")
+	}
+	if p.overrides.Load() != snapshot {
+		t.Fatal("committed value changed the control-thread snapshot")
+	}
+	p.noteCommitted(0, kernel.ParamMixGain, -4)
+	if p.clearedVersions[0][kernel.ParamMixGain] != version {
+		t.Fatal("a different committed value must not clear a newer override")
+	}
+	if err := p.SetParam(0, kernel.ParamMixGain, -5); err != nil {
+		t.Fatal(err)
+	}
+	p.noteCommitted(0, kernel.ParamMixGain, -3)
+	if p.clearedVersions[0][kernel.ParamMixGain] == p.overrides.Load().values[0][kernel.ParamMixGain].version {
+		t.Fatal("stale commit cleared a newer gesture")
+	}
+}
+
+func TestCommittedOverrideUsesExactBitsAndGlobalSlotWithoutAllocating(t *testing.T) {
+	p, err := New(meterScore(t, "preview", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.SetParam(0, kernel.ParamMixGain, 0); err != nil {
+		t.Fatal(err)
+	}
+	p.noteCommitted(0, kernel.ParamMixGain, float32(math.Copysign(0, -1)))
+	if p.clearedVersions[0][kernel.ParamMixGain] != 0 {
+		t.Fatal("different float bits cleared an override")
+	}
+	if err := p.SetParam(0xff, kernel.ParamFxDelayFeedback, .4); err != nil {
+		t.Fatal(err)
+	}
+	version := p.overrides.Load().values[16][kernel.ParamFxDelayFeedback].version
+	if allocs := testing.AllocsPerRun(100, func() {
+		p.noteCommitted(0xff, kernel.ParamFxDelayFeedback, .4)
+	}); allocs != 0 {
+		t.Fatalf("committed override clear allocated %g", allocs)
+	}
+	if p.clearedVersions[16][kernel.ParamFxDelayFeedback] != version {
+		t.Fatal("matching global value did not clear its override")
+	}
+}
+
 func TestLiveParameterOverrideSurvivesOfferedScore(t *testing.T) {
 	initial := meterScore(t, "initial", -6)
 	p, err := New(initial, 48_000)
