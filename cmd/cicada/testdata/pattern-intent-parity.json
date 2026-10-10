@@ -1,0 +1,306 @@
+[
+  {
+    "Name": "settings",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"gate\":60,\"kind\":\"setpatternsettings\",\"swing100\":5500,\"transpose\":0}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { swing = 55% gate = 60% transpose = 0  1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse timing and transpose changed"
+  },
+  {
+    "Name": "step",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"accent\":true,\"chance\":100,\"entity\":\"step:pulse/1\",\"kind\":\"setstep\",\"mode\":\"note\",\"pitch\":62,\"ratchet\":1,\"shared\":\"pattern\",\"slide\":false,\"velocity\":\"\"}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 d4^ 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse /  step 2 edited"
+  },
+  {
+    "Name": "duplicate",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"kind\":\"duplicatepattern\",\"name\":\"pulse2\"}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\n\npattern pulse2 acid steps=4 { a2 . e3 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse duplicated as pulse2"
+  },
+  {
+    "Name": "reverse",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"amount\":0,\"entity\":\"pattern:pulse\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"\",\"last\":3,\"operation\":\"reverse\",\"shared\":\"pattern\",\"target\":0}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . 5 . 1 }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse /  steps 1–4 · reverse"
+  },
+  {
+    "Name": "resize",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"kind\":\"resizepattern\",\"length\":8,\"shared\":\"pattern\"}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=8 { 1 . 5 . . . . . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse resized to 8 steps"
+  },
+  {
+    "Name": "bind",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\npattern pulse2 acid { 1 . 5 . }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"kind\":\"bindscene\",\"pattern\":\"pulse2\",\"scene\":\"main\",\"track\":\"bass\"}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\npattern pulse2 acid { 1 . 5 . }\nscene main { bass=pulse2 drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Scene · main / bass assigned pulse2"
+  },
+  {
+    "Name": "settings missing",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"kind\":\"setpatternsettings\"}",
+    "Result": "",
+    "Error": "swing must be 50–75%, gate 10–100%, and transpose −24 to +24 semitones",
+    "Label": "Pattern · pulse timing and transpose changed"
+  },
+  {
+    "Name": "drum transpose",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:beat\",\"gate\":60,\"kind\":\"setpatternsettings\",\"swing100\":5500,\"transpose\":1}",
+    "Result": "",
+    "Error": "drum lanes cannot transpose",
+    "Label": "Pattern · beat timing and transpose changed"
+  },
+  {
+    "Name": "step missing",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"step:pulse/0\",\"kind\":\"setstep\",\"shared\":\"pattern\"}",
+    "Result": "",
+    "Error": "choose a step, ratchet 1–8, and chance 1–100%",
+    "Label": "Pattern · pulse /  step 1 edited"
+  },
+  {
+    "Name": "step outside",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"accent\":false,\"chance\":100,\"entity\":\"step:pulse/9\",\"kind\":\"setstep\",\"mode\":\"rest\",\"pitch\":0,\"ratchet\":1,\"shared\":\"pattern\",\"slide\":false,\"velocity\":\"\"}",
+    "Result": "",
+    "Error": "step is outside the authored pattern lane",
+    "Label": "Pattern · pulse /  step 10 edited"
+  },
+  {
+    "Name": "step mode",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"accent\":false,\"chance\":100,\"entity\":\"step:pulse/0\",\"kind\":\"setstep\",\"mode\":\"bad\",\"pitch\":0,\"ratchet\":1,\"shared\":\"pattern\",\"slide\":false,\"velocity\":\"\"}",
+    "Result": "",
+    "Error": "choose note, hit, tie, or rest",
+    "Label": "Pattern · pulse /  step 1 edited"
+  },
+  {
+    "Name": "step hit",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"accent\":false,\"chance\":100,\"entity\":\"step:pulse/0\",\"kind\":\"setstep\",\"mode\":\"hit\",\"pitch\":0,\"ratchet\":1,\"shared\":\"pattern\",\"slide\":false,\"velocity\":\"\"}",
+    "Result": "",
+    "Error": "hits require a drum pattern",
+    "Label": "Pattern · pulse /  step 1 edited"
+  },
+  {
+    "Name": "drum tie",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"accent\":false,\"chance\":100,\"entity\":\"step:beat/bd/0\",\"kind\":\"setstep\",\"mode\":\"tie\",\"pitch\":0,\"ratchet\":1,\"shared\":\"pattern\",\"slide\":false,\"velocity\":\"\"}",
+    "Result": "",
+    "Error": "drum hits cannot tie",
+    "Label": "Pattern · beat / bd step 1 edited"
+  },
+  {
+    "Name": "drum velocity",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"accent\":false,\"chance\":50,\"entity\":\"step:beat/bd/0\",\"kind\":\"setstep\",\"mode\":\"hit\",\"pitch\":0,\"ratchet\":3,\"shared\":\"pattern\",\"slide\":false,\"velocity\":\"4\"}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x4*3?50... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · beat / bd step 1 edited"
+  },
+  {
+    "Name": "bad velocity",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"accent\":false,\"chance\":100,\"entity\":\"step:beat/bd/0\",\"kind\":\"setstep\",\"mode\":\"hit\",\"pitch\":0,\"ratchet\":1,\"shared\":\"pattern\",\"slide\":false,\"velocity\":\"bad\"}",
+    "Result": "",
+    "Error": "choose a drum velocity from x1–x9, normal x, or accented X",
+    "Label": "Pattern · beat / bd step 1 edited"
+  },
+  {
+    "Name": "bad name",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"kind\":\"duplicatepattern\",\"name\":\"Invalid\"}",
+    "Result": "",
+    "Error": "name must start with a lowercase letter or underscore and contain at most 64 letters, digits, underscores, or hyphens",
+    "Label": "Pattern · pulse duplicated as Invalid"
+  },
+  {
+    "Name": "name exists",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"kind\":\"duplicatepattern\",\"name\":\"beat\"}",
+    "Result": "",
+    "Error": "pattern \"beat\" already exists",
+    "Label": "Pattern · pulse duplicated as beat"
+  },
+  {
+    "Name": "bad length",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"kind\":\"resizepattern\",\"length\":65,\"shared\":\"pattern\"}",
+    "Result": "",
+    "Error": "patterns must have 1–64 steps",
+    "Label": "Pattern · pulse resized to 65 steps"
+  },
+  {
+    "Name": "resize unchanged",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"kind\":\"resizepattern\",\"length\":4,\"shared\":\"pattern\"}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse resized to 4 steps"
+  },
+  {
+    "Name": "range missing",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"first\":-1,\"kind\":\"setrange\",\"lane\":\"\",\"shared\":\"pattern\"}",
+    "Result": "",
+    "Error": "choose a valid step range and shift −127 to +127",
+    "Label": "Grid · pulse step 1 toggled"
+  },
+  {
+    "Name": "range outside",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"amount\":0,\"entity\":\"pattern:pulse\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"\",\"last\":8,\"operation\":\"clear\",\"shared\":\"pattern\",\"target\":0}",
+    "Result": "",
+    "Error": "range is outside the pattern lane",
+    "Label": "Pattern · pulse /  steps 1–9 · clear"
+  },
+  {
+    "Name": "range copy outside",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"amount\":0,\"entity\":\"pattern:pulse\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"\",\"last\":3,\"operation\":\"copy\",\"shared\":\"pattern\",\"target\":2}",
+    "Result": "",
+    "Error": "copied range would extend past the last step",
+    "Label": "Pattern · pulse /  steps 1–4 · copy"
+  },
+  {
+    "Name": "range mode",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"amount\":0,\"entity\":\"pattern:pulse\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"\",\"last\":3,\"operation\":\"bad\",\"shared\":\"pattern\",\"target\":0}",
+    "Result": "",
+    "Error": "choose clear, copy, reverse, rotate, or transpose",
+    "Label": "Pattern · pulse /  steps 1–4 · bad"
+  },
+  {
+    "Name": "drum range transpose",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"amount\":1,\"entity\":\"pattern:beat\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"bd\",\"last\":3,\"operation\":\"transpose\",\"shared\":\"pattern\",\"target\":0}",
+    "Result": "",
+    "Error": "drum lanes cannot transpose",
+    "Label": "Pattern · beat / bd steps 1–4 · transpose"
+  },
+  {
+    "Name": "missing pattern",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:ghost\",\"kind\":\"resizepattern\",\"length\":8,\"shared\":\"pattern\"}",
+    "Result": "",
+    "Error": "unknown declaration \"ghost\"",
+    "Label": "Pattern · ghost resized to 8 steps"
+  },
+  {
+    "Name": "missing scene",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"kind\":\"bindscene\",\"pattern\":\"pulse\",\"scene\":\"ghost\",\"track\":\"bass\"}",
+    "Result": "",
+    "Error": "unknown declaration \"ghost\"",
+    "Label": "Scene · ghost / bass assigned pulse"
+  },
+  {
+    "Name": "bind off",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"kind\":\"bindscene\",\"pattern\":\"off\",\"scene\":\"main\",\"track\":\"bass\"}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=off drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Scene · main / bass assigned off"
+  },
+  {
+    "Name": "bind keep",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"kind\":\"bindscene\",\"pattern\":\"keep\",\"scene\":\"main\",\"track\":\"bass\"}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=keep drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Scene · main / bass assigned keep"
+  },
+  {
+    "Name": "clear",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"amount\":1,\"entity\":\"pattern:pulse\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"\",\"last\":1,\"operation\":\"clear\",\"shared\":\"pattern\",\"target\":2}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse /  steps 1–2 · clear"
+  },
+  {
+    "Name": "copy",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"amount\":1,\"entity\":\"pattern:pulse\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"\",\"last\":1,\"operation\":\"copy\",\"shared\":\"pattern\",\"target\":2}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 1 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse /  steps 1–2 · copy"
+  },
+  {
+    "Name": "rotate",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"amount\":1,\"entity\":\"pattern:pulse\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"\",\"last\":1,\"operation\":\"rotate\",\"shared\":\"pattern\",\"target\":2}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { . 1 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse /  steps 1–2 · rotate"
+  },
+  {
+    "Name": "transpose",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"amount\":1,\"entity\":\"pattern:pulse\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"\",\"last\":1,\"operation\":\"transpose\",\"shared\":\"pattern\",\"target\":2}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { a#2 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse /  steps 1–2 · transpose"
+  },
+  {
+    "Name": "shared step",
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Intent": "{\"accent\":true,\"chance\":23,\"entity\":\"step:p/4\",\"kind\":\"setstep\",\"mode\":\"note\",\"pitch\":72,\"ratchet\":8,\"shared\":\"pattern\",\"slide\":true,\"velocity\":\"\"}",
+    "Result": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - c5^~*8?23 . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Error": "",
+    "Label": "Pattern · p /  step 5 edited"
+  },
+  {
+    "Name": "shared duplicate",
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Intent": "{\"entity\":\"pattern:p\",\"kind\":\"duplicatepattern\",\"name\":\"variation\"}",
+    "Result": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Error": "",
+    "Label": "Pattern · p duplicated as variation"
+  },
+  {
+    "Name": "shared range",
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Intent": "{\"amount\":0,\"entity\":\"pattern:p\",\"first\":0,\"kind\":\"setrange\",\"lane\":\"\",\"last\":7,\"operation\":\"reverse\",\"shared\":\"pattern\",\"target\":0}",
+    "Result": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% - e4~*2?70 . a3^ - 5~*2?70 . 1^ }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Error": "",
+    "Label": "Pattern · p /  steps 1–8 · reverse"
+  },
+  {
+    "Name": "shared resize",
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Intent": "{\"entity\":\"pattern:p\",\"kind\":\"resizepattern\",\"length\":16,\"shared\":\"pattern\"}",
+    "Result": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% 1^ . 5~*2?70 - a3^ . e4~*2?70 - . . . . . . . . }\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Error": "",
+    "Label": "Pattern · p resized to 16 steps"
+  },
+  {
+    "Name": "comment duplicate",
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . } // keep me\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Intent": "{\"entity\":\"pattern:pulse\",\"kind\":\"duplicatepattern\",\"name\":\"pulse2\"}",
+    "Result": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . } // keep me\n\n\npattern pulse2 acid steps=4 { a2 . e3 . }pattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Error": "",
+    "Label": "Pattern · pulse duplicated as pulse2"
+  },
+  {
+    "Name": "slot duplicate",
+    "Source": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 } // keep me\npattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Intent": "{\"entity\":\"pattern:p\",\"kind\":\"duplicatepattern\",\"name\":\"variation\"}",
+    "Result": "title \"Precise edits\"\nkey a minor\ntrack bass acid {}\ntrack drums drums {}\nphrase hook { 1^ . 5~*2?70 - }\npattern p acid slot=7 { swing = 54% use hook use hook +12 } // keep me\n\n\npattern variation acid  { swing = 54% a2^ . e3~*2?70 - a3^ . e4~*2?70 - }pattern shared { use hook }\npattern beat drums { bd: x.Xx3; }\nscene main { bass = p drums=beat }\nscene other { bass=shared }\nsong { main*2 other }\n",
+    "Error": "",
+    "Label": "Pattern · p duplicated as variation"
+  }
+]

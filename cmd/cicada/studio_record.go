@@ -106,6 +106,7 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 // Existing grid transforms parse standalone source. A temporary edition header
 // supplies manifest context during that in-memory transform, and is stripped
 // before revision hashing or saving. Authored headers are never changed.
+// studioTransformSource remains only for the unported M4 and M5 callers.
 func studioTransformSource(source []byte, edition int) ([]byte, []byte, error) {
 	if edition != 2 {
 		return source, nil, nil
