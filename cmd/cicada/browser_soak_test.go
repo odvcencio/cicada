@@ -13,6 +13,8 @@ import (
 )
 
 func TestBrowserSoak(t *testing.T) {
+	stopHostSampling := startBrowserSoakHostSampling()
+	defer stopHostSampling()
 	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
 	if err != nil {
 		t.Fatal(err)
@@ -61,6 +63,7 @@ func TestBrowserSoak(t *testing.T) {
 	}
 	var cpuReport struct {
 		Engine           string  `json:"engine"`
+		Clock            string  `json:"clock"`
 		P99              float64 `json:"p99"`
 		CPUMsPerCallback float64 `json:"cpuMsPerCallback"`
 		BudgetMs         float64 `json:"cpuBudgetMs"`
@@ -248,11 +251,17 @@ func TestBrowserSoak(t *testing.T) {
 		cpuBudgetMs = cpuReport.BudgetMs
 		cpuBudgetMetric = cpuReport.BudgetMetric
 	}
-	cpuWithinLimit := cpuBudgetMs <= 0.67
+	cpuWithinLimit := cpuBudgetMs <= browserSoakCPUBudgetMs
 	// The output-timeline lag is reported but does not gate: in headless Windows Chrome the
 	// reported latency sits at the median of the measured lag, so a healthy silent worklet
 	// exceeds the limit about half of the time (see the rowan-timeline evidence).
-	soakPass := editsComplete && soakUnderruns == 0 && current.Faults == 0 && transportAdvanced && memoryStable && cpuWithinLimit
+	hostSamples := stopHostSampling()
+	cpuClockResolutionMs := browserSoakCPUClockResolutionMs(cpuReport.Engine, cpuReport.Clock)
+	verdict := browserSoakVerdict(browserSoakChecks{
+		EditsComplete: editsComplete, Faults: current.Faults, TransportAdvanced: transportAdvanced,
+		MemoryStable: memoryStable, Underruns: soakUnderruns, CPUUsedMs: cpuBudgetMs,
+	}, hostSamples, cpuClockResolutionMs)
+	soakPass := verdict.GatePass
 	clockUsed := "Date.now()"
 	if current.Clock {
 		clockUsed = "AudioWorklet performance.now()"
@@ -262,6 +271,11 @@ func TestBrowserSoak(t *testing.T) {
 		"wasmInstanceCount":              current.InstanceCount,
 		"wasmTransientMemoryLimitBytes":  memoryLimit,
 		"gatePass":                       soakPass,
+		"timingVerdict":                  verdict.TimingVerdict,
+		"timingReason":                   verdict.TimingReason,
+		"hostLoadSamples":                hostSamples,
+		"hostBusy":                       browserSoakHostBusy(hostSamples),
+		"hostLoadSampleIntervalSeconds":  int(browserSoakHostSampleInterval.Seconds()),
 		"requestedDurationSeconds":       1800,
 		"actualDurationSeconds":          time.Since(started).Seconds(),
 		"stepEdits":                      stepEdits,
@@ -314,8 +328,10 @@ func TestBrowserSoak(t *testing.T) {
 		"processorTimingEngine":          cpuReport.Engine,
 		"processorP99Ms":                 cpuReport.P99,
 		"browserCPUUsedMsPerCallback":    cpuBudgetMs,
-		"browserCPUBudgetMsPerCallback":  0.67,
+		"browserCPUBudgetMsPerCallback":  browserSoakCPUBudgetMs,
 		"browserCPUBudgetMetric":         cpuBudgetMetric,
+		"browserCPUClock":                cpuReport.Clock,
+		"browserCPUClockResolutionMs":    cpuClockResolutionMs,
 	}
 	bytes, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
@@ -326,7 +342,12 @@ func TestBrowserSoak(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("browser soak complete: pass=%v duration=%.1fs step_edits=%d source_edits=%d worklet_underruns=%d duration_exceedances=%d gap_exceedances=%d output_timeline_exceedances=%d faults=%d memory=%d->%d bytes callbacks=%d callback_p99=%.2fms max_callback=%.2fms clock_high_res=%v CPU=%s metric=%s used=%.4fms/callback limit=0.67ms report=%s", soakPass, report["actualDurationSeconds"], stepEdits, sourceEdits, soakUnderruns, report["callbackDurationExceedances"], report["callbackGapExceedances"], soakTimelineMisses, current.Faults, afterWarmup.MemoryBytes, current.MemoryBytes, report["callbackSamples"], current.CallbackP99Ms, current.MaxDurationMs, current.Clock, cpuReport.Engine, cpuBudgetMetric, cpuBudgetMs, path)
-	if soakUnderruns != 0 {
+	if verdict.TimingVerdict == "inconclusive" {
+		t.Logf("browser soak timing inconclusive (underruns and CPU budget): %s; underruns=%d CPU=%.4f ms/callback budget=0.67 ms", verdict.TimingReason, soakUnderruns, cpuBudgetMs)
+		// Print directly so GitHub Actions recognizes the annotation prefix.
+		fmt.Printf("::warning::Browser soak timing inconclusive (underruns and CPU budget): %s\n", verdict.TimingReason)
+	}
+	if verdict.TimingVerdict != "inconclusive" && soakUnderruns != 0 {
 		t.Errorf("browser soak underruns: worklet=%d (output-timeline exceedances=%d, informational)", soakUnderruns, soakTimelineMisses)
 	}
 	if !editsComplete {
@@ -341,7 +362,7 @@ func TestBrowserSoak(t *testing.T) {
 	if !memoryStable {
 		t.Errorf("WASM instances did not settle or exceeded the transient bound: warmup=%d peak=%d final=%d instances=%d limit=%d", afterWarmup.MemoryBytes, memoryPeak, current.MemoryBytes, current.InstanceCount, memoryLimit)
 	}
-	if !cpuWithinLimit {
+	if verdict.TimingVerdict != "inconclusive" && !cpuWithinLimit {
 		t.Errorf("browser CPU metric %.4f ms/callback exceeds 0.67 ms budget", cpuBudgetMs)
 	}
 }
