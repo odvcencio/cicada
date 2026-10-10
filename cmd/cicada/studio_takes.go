@@ -102,7 +102,9 @@ func (s *studio) commitTake(id, expected string, candidate []byte) error {
 	intent := &edits.SelectTake{ID: t.ID, Track: t.Track, Scene: t.Scene, Rate: t.Rate, Channels: t.Channels, StartFrame: t.StartFrame(), Asset: edits.TakeAsset{Name: t.Asset.Name, Path: t.Asset.Path, SHA256: t.Asset.SHA256, Frames: t.Asset.Frames, RateHz: t.Asset.RateHz, Channels: t.Asset.Channels}}
 	env := edits.Envelope{Version: edits.EnvelopeVersion, Revision: expected, Intents: []edits.Intent{intent}}
 	outcome := s.commitMutationLocked(studioEdit{Revision: expected, Label: "Select audio take"}, current, studioMutation{Source: candidate}, nil, studioHistoryWriteNew, 0, commitHook{checkpoint: s.takes.Checkpoint, envelope: &env, compiled: p})
-	if !outcome.Written {
+	// An already-selected take succeeds without exchanging the source. Both
+	// changed and unchanged successes must complete the journal transition.
+	if outcome.Status != http.StatusOK {
 		if e := s.takes.Mark(id, takejournal.Conflict); e != nil {
 			return e
 		}

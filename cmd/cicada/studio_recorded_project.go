@@ -152,11 +152,15 @@ func (s *studio) recordedRevision() string {
 
 type studioRecordingResponse struct {
 	http.ResponseWriter
-	status int
+	status   int
+	onStatus func(int)
 }
 
 func (w *studioRecordingResponse) WriteHeader(status int) {
 	w.status = status
+	if w.onStatus != nil {
+		w.onStatus(status)
+	}
 	w.ResponseWriter.WriteHeader(status)
 }
 func (w *studioRecordingResponse) Write(data []byte) (int, error) {

@@ -60,13 +60,21 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var committedRevision string
+	var cancelHandoff func()
+	receipt := &studioRecordingResponse{ResponseWriter: w, onStatus: func(status int) {
+		// applyPreparedIntents still holds the edit lock while sending the
+		// outcome, so cancellation cannot race another recording commit.
+		if status != http.StatusOK && cancelHandoff != nil {
+			cancelHandoff()
+		}
+	}}
 	intent := &edits.RecordTake{Recordings: editRecordings(edit.Recordings)}
-	s.applyPreparedIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil, func(result *edits.Result) error {
+	s.applyPreparedIntents(receipt, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil, func(result *edits.Result) error {
 		committedRevision = edits.Revision(result.Source)
 		return nil
 	}, func() {
 		if s.history != nil {
-			s.history.expectRecordedTake(committedRevision)
+			cancelHandoff = s.history.expectRecordedTake(committedRevision)
 		}
 	})
 }
