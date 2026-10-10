@@ -1753,20 +1753,7 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				e.fault(FaultParam)
 				return
 			}
-			params := v.drumTargets[lane]
-			switch control {
-			case drumTune:
-				params.Tune = float64(value)
-			case drumDecay:
-				params.Decay = float64(value) / 1000
-			case drumLevel:
-				params.LevelDB = float64(value)
-				if off {
-					params.LevelDB = -1000
-				}
-			case drumPan:
-				params.Pan = float64(value)
-			}
+			params := drumParamValue(v.drumTargets[lane], control, value, off)
 			v.drumTargets[lane] = params
 			var setErr error
 			if immediate {

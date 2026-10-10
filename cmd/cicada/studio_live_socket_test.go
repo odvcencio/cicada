@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,7 +14,58 @@ import (
 	"github.com/coder/websocket"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/engine"
 )
+
+func TestLiveSocketPreviewRejectsUnsupportedVoiceWithoutFault(t *testing.T) {
+	for _, input := range []struct {
+		name  string
+		kind  engine.VoiceKind
+		param string
+		value float32
+	}{
+		{"graph-sustain", engine.VoiceGraph, "piano.sustain", .5},
+		{"acid-sustain", engine.VoiceAcid, "piano.sustain", .5},
+		{"drum-kernel-minimum", engine.VoiceDrums, "drum.sd.tune", .7},
+		{"drum-outside-range", engine.VoiceDrums, "drum.sd.tune", .69},
+	} {
+		t.Run(input.name, func(t *testing.T) {
+			score := studioPreviewScore(t, -6)
+			if input.kind != engine.VoiceGraph {
+				created, err := engine.New(engine.Config{SampleRate: 48_000, MaxBlock: 256, Tracks: 1, MaxVoices: 32, BPMMilli: 120_000, Track: [16]engine.TrackConfig{{Kind: input.kind}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				score.Engine = created
+			}
+			stream, err := liveplay.New(score, 48_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stream.Close()
+			s := &studio{transport: &studioTransport{stream: stream, telemetry: liveplay.NewPublisher()}}
+			server := httptest.NewServer(http.HandlerFunc(s.liveSocket))
+			defer server.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			conn, _, err := websocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.CloseNow()
+			message := fmt.Sprintf(`{"type":"preview-set","entity":"track:bass","param":%q,"value":%g}`, input.param, input.value)
+			if err := conn.Write(ctx, websocket.MessageText, []byte(message)); err != nil {
+				t.Fatal(err)
+			}
+			readLiveSocketError(t, ctx, conn)
+			renderStudioPreview(t, stream, 256)
+			id, _ := kernel.FindParam(input.param)
+			if _, active := stream.OverrideValue(0, id); active || !score.Engine.Playing() {
+				t.Fatal("unsupported preview changed or stopped playback")
+			}
+		})
+	}
+}
 
 func TestLiveSocketSendsLatestFramesThenStreamsTransport(t *testing.T) {
 	handler, _, s := studioTestStudio(t)

@@ -240,22 +240,47 @@ func (v *laneVoice) updateDecays(rate float64) {
 	v.current.ampDecay, v.old.ampDecay = amp, amp
 }
 
-// SetParamsTarget smooths live lane controls in NextStereo without allocating.
-func (k *Kit) SetParamsTarget(lane Lane, params Params, alpha float64) error {
-	if lane >= LaneCount || math.IsNaN(alpha) || math.IsInf(alpha, 0) || alpha <= 0 || alpha > 1 {
-		return Error("drum parameter smoothing is out of range")
-	}
-	if err := params.Validate(k.lanes[lane].recipe); err != nil {
-		return err
+// LiveParamValidator is a detached copy of a prepared lane's validation context.
+// It contains no reference to the kit or its render state.
+type LiveParamValidator struct {
+	recipe  Lane
+	modeled bool
+	params  Params
+}
+
+// LiveParamValidator returns the lane's current validation context.
+// Hosts must capture it before rendering starts; the render owner may call it.
+func (k *Kit) LiveParamValidator(lane Lane) LiveParamValidator {
+	if lane >= LaneCount {
+		return LiveParamValidator{recipe: LaneCount}
 	}
 	v := &k.lanes[lane]
-	if v.modeled != nil {
+	return LiveParamValidator{recipe: v.recipe, modeled: v.modeled != nil, params: v.params}
+}
+
+func (v LiveParamValidator) Validate(params Params) error {
+	if err := params.Validate(v.recipe); err != nil {
+		return err
+	}
+	if v.modeled {
 		controls := params
 		controls.LevelDB, controls.Pan = v.params.LevelDB, v.params.Pan
 		if controls != v.params {
 			return Error("modeled kit synthesis controls require prepared lane bindings")
 		}
 	}
+	return nil
+}
+
+// SetParamsTarget smooths live lane controls in NextStereo without allocating.
+func (k *Kit) SetParamsTarget(lane Lane, params Params, alpha float64) error {
+	if lane >= LaneCount || math.IsNaN(alpha) || math.IsInf(alpha, 0) || alpha <= 0 || alpha > 1 {
+		return Error("drum parameter smoothing is out of range")
+	}
+	if err := k.LiveParamValidator(lane).Validate(params); err != nil {
+		return err
+	}
+	v := &k.lanes[lane]
 	v.targetParams, v.paramAlpha = params, alpha
 	angle := (params.Pan + 1) * math.Pi / 4
 	v.targetPanL, v.targetPanR = math.Cos(angle), math.Sin(angle)

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
@@ -44,11 +45,13 @@ type Score struct {
 }
 
 type trackNameSnapshot struct {
-	ids        [16]string
-	kinds      [16]string
-	poly       [16]bool
-	count      uint8
-	parameters []ParameterValue
+	ids           [16]string
+	kinds         [16]string
+	poly          [16]bool
+	count         uint8
+	parameters    []ParameterValue
+	previewParams [16][kernel.ParamCount]bool
+	previewValues [16]engine.PreviewParamValidator
 }
 
 type ParameterValue struct {
@@ -334,6 +337,27 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 			snapshot.poly[index] = score.Engine.TrackPolyphonic(index)
 		}
 	}
+	if score.Engine != nil {
+		for index := 0; index < min(score.Engine.TrackCount(), 16); index++ {
+			snapshot.previewValues[index] = score.Engine.PreviewParamValidator(index)
+			family := "instrument"
+			switch score.Engine.TrackVoiceKind(index) {
+			case engine.VoiceAcid:
+				family = "acid"
+			case engine.VoiceDrums:
+				family = "drums"
+			case engine.VoicePiano, engine.VoiceKeys:
+				family = "piano"
+			case engine.VoiceGuitar:
+				family = "guitar"
+			}
+			for _, spec := range kernel.Params {
+				if descriptor, ok := paramdefs.Lookup(spec.Name); ok && spec.Live && spec.Scope == "track" {
+					snapshot.previewParams[index][spec.ID] = paramdefs.HasVoice(descriptor, family)
+				}
+			}
+		}
+	}
 	return snapshot
 }
 
@@ -572,6 +596,7 @@ func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint
 	}
 	slot := int(track)
 	trackID := ""
+	var validator *engine.PreviewParamValidator
 	if spec.Scope == "global" {
 		if track != 0xff {
 			return 0, fmt.Errorf("global parameter requires track 255")
@@ -579,8 +604,13 @@ func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint
 		slot = 16
 	} else if spec.Scope != "track" || track >= 16 || uint32(track) >= p.trackCount.Load() {
 		return 0, fmt.Errorf("track parameter index is out of range")
-	} else if names := p.trackNames.Load(); names != nil && int(track) < int(names.count) {
+	} else {
+		names := p.trackNames.Load()
+		if names == nil || !names.previewParams[track][id] {
+			return 0, fmt.Errorf("parameter %q is unsupported by the track in the playing score", spec.Name)
+		}
 		trackID = names.ids[track]
+		validator = &names.previewValues[track]
 	}
 	off := spec.Off && math.IsInf(float64(value), -1)
 	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
@@ -588,6 +618,11 @@ func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint
 	}
 	if spec.Curve == "toggle" && value != 0 && value != 1 {
 		return 0, fmt.Errorf("toggle parameter must be zero or one")
+	}
+	if validator != nil {
+		if err := validator.Validate(id, value); err != nil {
+			return 0, fmt.Errorf("parameter %q is rejected by the playing voice: %w", spec.Name, err)
+		}
 	}
 	version := p.overrideSequence.Add(1)
 	for {
@@ -757,6 +792,12 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 				if cancelled {
 					p.retireOverride(slot, kernel.ParamID(id), override.version)
 				}
+				continue
+			}
+			// A later score may replace the voice or drum recipe that admitted
+			// this preview. Retire it before publishing an invalid command.
+			if track != 0xff && (score.trackNames == nil || !score.trackNames.previewParams[track][id] || score.trackNames.previewValues[track].Validate(kernel.ParamID(id), override.value) != nil) {
+				p.retireOverride(slot, kernel.ParamID(id), override.version)
 				continue
 			}
 			if cancelled {
