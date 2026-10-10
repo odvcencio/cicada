@@ -79,7 +79,7 @@ func gridPatternRouteCases(t *testing.T) []gridPatternRouteCase {
 			cases = append(cases, gridPatternRouteCase{name: fmt.Sprintf("pattern/edition2 %s %t", action, header != ""), route: "/api/pattern", source: header + source, body: body, edition: 2})
 		}
 	}
-	// Generated with the continuity runner's --write-fixture mode. The first
+	// The continuity runner's --write-fixture mode produces this fixture. The first
 	// request draws cell 15 at MIDI 54, translated to the zero-based step 14.
 	continuity, err := os.ReadFile("testdata/studio-continuity.cicada")
 	if err != nil {
