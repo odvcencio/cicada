@@ -208,6 +208,7 @@ build-demo-browser: build-kernel-wasm
 test-demo-browser: build-demo-browser
 	node scripts/demo-browser/test.cjs
 
+test-browser-soak: export CICADA_BROWSER_SOAK := 1
 test-browser-soak: build-demo-browser budget-browser
 	@bash -c 'set +e; bash cmd/cicada/browser-runner.sh browser_soak "^TestBrowserSoak$$" 40m build/browser-soak.log & studio_pid=$$!; node scripts/demo-browser/test.cjs --soak & demo_pid=$$!; wait $$studio_pid; studio_status=$$?; wait $$demo_pid; demo_status=$$?; test $$studio_status -eq 0 && test $$demo_status -eq 0'
 

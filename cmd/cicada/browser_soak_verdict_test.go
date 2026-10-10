@@ -143,3 +143,51 @@ func TestBrowserSoakHostSampling(t *testing.T) {
 		t.Fatalf("stopping twice changed the samples: %+v", again)
 	}
 }
+
+func TestBrowserCPUSoakSamplingScope(t *testing.T) {
+	t.Setenv("CICADA_BROWSER_SOAK", "0")
+	if stop := startBrowserCPUSoakSampling(t); stop != nil {
+		t.Fatal("ordinary CPU budgets must retain their timing gates")
+	}
+	t.Setenv("CICADA_BROWSER_SOAK", "1")
+	stop := startBrowserCPUSoakSampling(t)
+	if stop == nil || len(stop()) != 2 {
+		t.Fatal("nightly CPU prerequisite must sample host quietness")
+	}
+}
+
+func TestBrowserCPUSoakTiming(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		nightly  bool
+		load     float64
+		engine   string
+		clock    string
+		correct  bool
+		enforced bool
+		gatePass bool
+	}{
+		{"ordinary budget stays strict", false, 5, "Node V8 WebAssembly", "process.cpuUsage() user milliseconds", true, true, false},
+		{"nightly busy high resolution", true, 5, "Windows Chrome AudioWorklet", "AudioWorklet performance.now()", true, false, true},
+		{"nightly quiet high resolution", true, 1, "Windows Chrome AudioWorklet", "AudioWorklet performance.now()", true, true, false},
+		{"nightly quiet coarse clock", true, 1, "Node V8 WebAssembly", "process.cpuUsage() user milliseconds", true, false, true},
+		{"nightly correctness failure", true, 5, "Node V8 WebAssembly", "process.cpuUsage() user milliseconds", false, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var stop func() []browserSoakHostSample
+			if test.nightly {
+				stop = func() []browserSoakHostSample { return []browserSoakHostSample{{Load1: test.load, CPUCount: 8}} }
+			}
+			report := make(map[string]any)
+			if enforced := browserCPUSoakTiming(t, stop, report, false, test.correct, test.engine, test.clock); enforced != test.enforced {
+				t.Errorf("CPU timing enforced = %v, want %v", enforced, test.enforced)
+			}
+			if test.nightly && report["gatePass"] != test.gatePass {
+				t.Errorf("CPU report gatePass = %v, want %v", report["gatePass"], test.gatePass)
+			}
+			if !test.nightly && len(report) != 0 {
+				t.Errorf("ordinary CPU report unexpectedly changed: %v", report)
+			}
+		})
+	}
+}
