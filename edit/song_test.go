@@ -58,7 +58,6 @@ func TestSongIntents(t *testing.T) {
 func TestSongStructuralEditsRefuseCommentGaps(t *testing.T) {
 	source := []byte(strings.Replace(songScore, "main*2 break*2", "main*2 // hook\n break*2", 1))
 	for _, raw := range []string{
-		`{"kind":"movesongentry","entity":"song:0","target":1}`,
 		`{"kind":"appendsongentry","scene":"break","bars":2}`,
 		`{"kind":"duplicatesongentry","entity":"song:0"}`,
 		`{"kind":"deletesongentry","entity":"song:0"}`,

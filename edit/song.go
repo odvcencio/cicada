@@ -3,10 +3,11 @@ package edit
 import (
 	"bytes"
 	"fmt"
+	"strconv"
+
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
 	"m31labs.dev/cicada/notation"
-	"strconv"
 )
 
 type MoveSongEntry struct {
@@ -206,7 +207,7 @@ func songSource(ctx *Context, action string, index, target, bars int, scene stri
 			return bytes.Clone(source), nil
 		}
 		if err := songGapsAreWhitespace(source, song, entries); err != nil {
-			return nil, err
+			return moveSongCommentUnits(source, song, entries, index, target)
 		}
 		texts := make([][]byte, len(entries))
 		for i, entry := range entries {
@@ -267,4 +268,72 @@ func songGapsAreWhitespace(source []byte, song *gts.Node, entries []*gts.Node) e
 		return fmt.Errorf("song comments need a source edit to preserve their attachment")
 	}
 	return nil
+}
+
+// A unit includes the entry's indentation, immediately preceding own-line
+// comments, and a same-line trailing comment. Blank lines remain separators.
+func moveSongCommentUnits(source []byte, song *gts.Node, entries []*gts.Node, index, target int) ([]byte, error) {
+	type unit struct{ start, end int }
+	units := make([]unit, len(entries))
+	open := int(song.StartByte()) + bytes.IndexByte(source[song.StartByte():song.EndByte()], '{') + 1
+	close := int(song.EndByte()) - 1
+	refusal := func() ([]byte, error) {
+		return nil, fmt.Errorf("song comments need a source edit to preserve their attachment")
+	}
+	for i, entry := range entries {
+		start, end := int(entry.StartByte()), int(entry.EndByte())
+		lineStart := bytes.LastIndexByte(source[:start], '\n') + 1
+		if lineStart >= open && len(bytes.TrimSpace(source[lineStart:start])) == 0 {
+			start = lineStart
+			for start > open {
+				previousEnd := start - 1
+				if previousEnd > open && source[previousEnd-1] == '\r' {
+					previousEnd--
+				}
+				previousStart := bytes.LastIndexByte(source[:previousEnd], '\n') + 1
+				if previousStart < open || !bytes.HasPrefix(bytes.TrimSpace(source[previousStart:previousEnd]), []byte("//")) {
+					break
+				}
+				start = previousStart
+			}
+		}
+		lineEnd := end
+		for lineEnd < close && source[lineEnd] != '\n' && source[lineEnd] != '\r' {
+			lineEnd++
+		}
+		if bytes.HasPrefix(bytes.TrimSpace(source[end:lineEnd]), []byte("//")) {
+			end = lineEnd
+		}
+		units[i] = unit{start, end}
+	}
+	previous := open
+	for _, u := range units {
+		if u.start < previous || len(bytes.TrimSpace(source[previous:u.start])) != 0 {
+			return refusal()
+		}
+		previous = u.end
+	}
+	if len(bytes.TrimSpace(source[previous:close])) != 0 {
+		return refusal()
+	}
+	texts := make([][]byte, len(units))
+	for i, u := range units {
+		texts[i] = source[u.start:u.end]
+	}
+	moving := texts[index]
+	if index < target {
+		copy(texts[index:target], texts[index+1:target+1])
+	} else {
+		copy(texts[target+1:index+1], texts[target:index])
+	}
+	texts[target] = moving
+	updated := append([]byte(nil), source[:units[0].start]...)
+	for i, text := range texts {
+		updated = append(updated, text...)
+		if i+1 < len(units) {
+			updated = append(updated, source[units[i].end:units[i+1].start]...)
+		}
+	}
+	updated = append(updated, source[units[len(units)-1].end:]...)
+	return updated, nil
 }
