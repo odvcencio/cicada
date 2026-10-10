@@ -26,18 +26,11 @@ type demoSoakReport struct {
 	QuantumMs                float64  `json:"quantumMs"`
 }
 
-func (r demoSoakReport) clock() string {
-	if r.AudioWorkletHighResClock {
-		return "AudioWorklet performance.now()"
-	}
-	return "Date.now()"
-}
-
 func (r demoSoakReport) verdict(samples []soaktiming.HostSample) soaktiming.Result {
 	correctnessPass := r.Faults == 0 && r.MemoryPeakBytes == r.MemoryAfterWarmupBytes && r.PlayheadAdvanced && r.CallbackSamples > 1000 && r.MessagesDrained > 0 && len(r.Errors) == 0 && len(r.BrowserErrors) == 0
 	// The demo gates callback underruns against a quantum, not the separate
 	// 0.67 ms CPU budget. A 1 ms clock can still resolve a 128-frame quantum.
-	resolution := soaktiming.ClockResolutionMs("Public browser demo AudioWorklet", r.clock())
+	resolution := soaktiming.CallbackClockResolutionMs(r.AudioWorkletHighResClock)
 	return soaktiming.Evaluate(r.Underruns == 0, correctnessPass, samples, resolution, r.QuantumMs)
 }
 
@@ -63,7 +56,7 @@ func run(input io.Reader, output io.Writer, start func() func() []soaktiming.Hos
 		HostBusy                      bool                    `json:"hostBusy"`
 		HostLoadSampleIntervalSeconds int                     `json:"hostLoadSampleIntervalSeconds"`
 		ClockResolutionMs             float64                 `json:"clockResolutionMs"`
-	}{report.verdict(samples), samples, soaktiming.HostBusy(samples), int(soaktiming.HostSampleInterval.Seconds()), soaktiming.ClockResolutionMs("Public browser demo AudioWorklet", report.clock())})
+	}{report.verdict(samples), samples, soaktiming.HostBusy(samples), int(soaktiming.HostSampleInterval.Seconds()), soaktiming.CallbackClockResolutionMs(report.AudioWorkletHighResClock)})
 }
 
 func main() {

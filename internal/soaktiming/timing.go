@@ -88,14 +88,30 @@ func HostBusy(samples []HostSample) bool {
 	return false
 }
 
-func ClockResolutionMs(engine, clock string) float64 {
-	if (engine == "Windows Chrome AudioWorklet" || engine == "Public browser demo AudioWorklet") && clock == "AudioWorklet performance.now()" {
+func CallbackClockResolutionMs(highResolution bool) float64 {
+	if highResolution {
 		// Use the existing high-resolution worklet allowance conservatively.
 		return 0.1
 	}
-	// The Node CPU fallback and Date.now timing are treated as millisecond
-	// clocks. Compare their resolution with the budget of the selected metric.
+	// Date.now measures callback duration and gaps in whole milliseconds.
 	return 1
+}
+
+func CPUClockResolutionMs(engine, clock string, observedMs float64) float64 {
+	if engine == "Node V8 WebAssembly" {
+		// The producer calibrates process.cpuUsage's user CPU clock. The label
+		// names the reported unit; it does not imply millisecond resolution.
+		return observedMs
+	}
+	if engine == "Windows Chrome AudioWorklet" {
+		switch clock {
+		case "AudioWorklet performance.now()":
+			return CallbackClockResolutionMs(true)
+		case "Date.now()":
+			return CallbackClockResolutionMs(false)
+		}
+	}
+	return 0 // No measurement evidence for an unknown clock.
 }
 
 type Result struct {

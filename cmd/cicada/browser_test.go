@@ -542,17 +542,18 @@ func TestBrowserCPUReport(t *testing.T) {
 		t.Fatalf("Node V8 kernel timing failed: %v\n%s", err, output)
 	}
 	var report struct {
-		Engine       string  `json:"engine"`
-		Clock        string  `json:"clock"`
-		Blocks       int     `json:"blocks"`
-		Measured     int     `json:"measuredBlocks"`
-		P50          float64 `json:"p50"`
-		P95          float64 `json:"p95"`
-		P99          float64 `json:"p99"`
-		Max          float64 `json:"max"`
-		Faults       int     `json:"faults"`
-		MemoryBytes  int     `json:"finalMemoryBytes"`
-		MemoryGrowth int     `json:"memoryGrowthAfterWarmupBytes"`
+		Engine            string  `json:"engine"`
+		Clock             string  `json:"clock"`
+		ClockResolutionMs float64 `json:"cpuClockResolutionMs"`
+		Blocks            int     `json:"blocks"`
+		Measured          int     `json:"measuredBlocks"`
+		P50               float64 `json:"p50"`
+		P95               float64 `json:"p95"`
+		P99               float64 `json:"p99"`
+		Max               float64 `json:"max"`
+		Faults            int     `json:"faults"`
+		MemoryBytes       int     `json:"finalMemoryBytes"`
+		MemoryGrowth      int     `json:"memoryGrowthAfterWarmupBytes"`
 	}
 	if err := json.Unmarshal(output, &report); err != nil {
 		t.Fatalf("decode Node CPU report %s: %v", output, err)
@@ -573,7 +574,7 @@ func TestBrowserCPUReport(t *testing.T) {
 	if err := os.WriteFile(path, append(reportBytes, '\n'), 0644); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("Browser AudioWorklet clock unavailable; Node V8 WASM fallback (%s), milliseconds per 128-frame block: blocks=%d measured=%d p50=%.4f p95=%.4f p99=%.4f max=%.4f kernel_faults=%d memory=%d growth=%d report=%s", report.Clock, report.Blocks, report.Measured, report.P50, report.P95, report.P99, report.Max, report.Faults, report.MemoryBytes, report.MemoryGrowth, path)
+	t.Logf("Browser AudioWorklet clock unavailable; Node V8 WASM fallback (%s), measured clock resolution=%.4f ms, milliseconds per 128-frame block: blocks=%d measured=%d p50=%.4f p95=%.4f p99=%.4f max=%.4f kernel_faults=%d memory=%d growth=%d report=%s", report.Clock, report.ClockResolutionMs, report.Blocks, report.Measured, report.P50, report.P95, report.P99, report.Max, report.Faults, report.MemoryBytes, report.MemoryGrowth, path)
 	// The Node fallback runs on shared CI runners, where one block in a hundred can take
 	// several times longer from OS scheduling. It counts user CPU time only, and the 0.67 ms
 	// budget gates p95; p99 and max are logged, and a p99 above three times the budget

@@ -40,7 +40,9 @@ func TestBrowserSoakVerdict(t *testing.T) {
 		{"quiet fine underruns fail", 1, 0.1, 1, 0.2, "fail", "", false},
 		{"quiet fine CPU fails", 1, 0.1, 0, 0.671, "fail", "", false},
 		{"busy fine timing inconclusive", 5, 0.1, 316, 1.231, "inconclusive", "host busy", true},
-		{"quiet coarse timing inconclusive", 1, 1, 316, 1.231, "inconclusive", "clock resolution", true},
+		{"quiet fine Node CPU fails", 1, 0.001, 0, 1.231, "fail", "", false},
+		{"quiet coarse CPU still fails underruns", 1, 1, 316, 1.231, "fail", "clock resolution", false},
+		{"quiet coarse CPU inconclusive", 1, 1, 0, 1.231, "inconclusive", "clock resolution", true},
 		{"coarse passing metric still inconclusive", 1, 1, 0, 0.2, "inconclusive", "clock resolution", true},
 		{"busy coarse timing inconclusive", 5, 1, 316, 1.231, "inconclusive", "host busy", true},
 	} {
@@ -48,6 +50,7 @@ func TestBrowserSoakVerdict(t *testing.T) {
 			checks := browserSoakChecks{
 				EditsComplete: true, TransportAdvanced: true, MemoryStable: true,
 				Underruns: test.underruns, CPUUsedMs: test.cpuMs,
+				HighResolutionClock: true, QuantumMs: 128000.0 / 48000,
 			}
 			result := browserSoakVerdict(checks, []browserSoakHostSample{{Load1: test.load, CPUCount: 8}}, test.resolutionMs)
 			if result.TimingVerdict != test.verdict || result.GatePass != test.pass {
@@ -76,7 +79,8 @@ func TestBrowserSoakCorrectnessFailures(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			checks := browserSoakChecks{
 				EditsComplete: true, TransportAdvanced: true, MemoryStable: true,
-				Underruns: 316, CPUUsedMs: 1.231,
+				CPUUsedMs:           1.231,
+				HighResolutionClock: true, QuantumMs: 128000.0 / 48000,
 			}
 			test.change(&checks)
 			for _, environment := range []struct{ load, resolutionMs float64 }{{5, 0.1}, {1, 1}} {
@@ -91,16 +95,18 @@ func TestBrowserSoakCorrectnessFailures(t *testing.T) {
 
 func TestBrowserSoakCPUClockResolution(t *testing.T) {
 	for _, test := range []struct {
-		engine string
-		clock  string
-		want   float64
+		engine   string
+		clock    string
+		observed float64
+		want     float64
 	}{
-		{"Node V8 WebAssembly", "process.cpuUsage() user milliseconds", 1},
-		{"Node V8 WebAssembly", "AudioWorklet performance.now()", 1},
-		{"Windows Chrome AudioWorklet", "Date.now()", 1},
-		{"Windows Chrome AudioWorklet", "AudioWorklet performance.now()", 0.1},
+		{"Node V8 WebAssembly", "process.cpuUsage() user milliseconds", 0.001, 0.001},
+		{"Node V8 WebAssembly", "process.cpuUsage() user milliseconds", 1, 1},
+		{"Node V8 WebAssembly", "process.cpuUsage() user milliseconds", 0, 0},
+		{"Windows Chrome AudioWorklet", "Date.now()", 0.001, 1},
+		{"Windows Chrome AudioWorklet", "AudioWorklet performance.now()", 0, 0.1},
 	} {
-		if got := browserSoakCPUClockResolutionMs(test.engine, test.clock); got != test.want {
+		if got := browserSoakCPUClockResolutionMs(test.engine, test.clock, test.observed); got != test.want {
 			t.Errorf("%s / %s resolution = %g ms, want %g ms", test.engine, test.clock, got, test.want)
 		}
 	}
@@ -112,7 +118,7 @@ func TestBrowserSoakHostSamplingUnavailable(t *testing.T) {
 		{{CPUCount: 8, Error: "load average unavailable"}},
 		{{Load1: 1, CPUCount: 0}},
 	} {
-		checks := browserSoakChecks{EditsComplete: true, TransportAdvanced: true, MemoryStable: true}
+		checks := browserSoakChecks{EditsComplete: true, TransportAdvanced: true, MemoryStable: true, HighResolutionClock: true, QuantumMs: 128000.0 / 48000}
 		result := browserSoakVerdict(checks, samples, 0.1)
 		if result.TimingVerdict != "inconclusive" || !result.GatePass || !strings.Contains(result.TimingReason, "host quietness unavailable") {
 			t.Errorf("missing host evidence must not be treated as quiet: %+v", result)
@@ -170,7 +176,7 @@ func TestBrowserCPUSoakTiming(t *testing.T) {
 		{"ordinary budget stays strict", false, 5, "Node V8 WebAssembly", "process.cpuUsage() user milliseconds", true, true, false},
 		{"nightly busy high resolution", true, 5, "Windows Chrome AudioWorklet", "AudioWorklet performance.now()", true, false, true},
 		{"nightly quiet high resolution", true, 1, "Windows Chrome AudioWorklet", "AudioWorklet performance.now()", true, true, false},
-		{"nightly quiet coarse clock", true, 1, "Node V8 WebAssembly", "process.cpuUsage() user milliseconds", true, false, true},
+		{"nightly quiet missing calibration", true, 1, "Node V8 WebAssembly", "process.cpuUsage() user milliseconds", true, false, true},
 		{"nightly correctness failure", true, 5, "Node V8 WebAssembly", "process.cpuUsage() user milliseconds", false, false, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
