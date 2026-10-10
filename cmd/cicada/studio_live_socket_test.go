@@ -145,8 +145,8 @@ func TestLiveSocketPreviewSetAndEndRestoreTheCommittedValue(t *testing.T) {
 	}
 	write(`{"type":"preview-end","entity":"track:bass","param":"mix.gain","commit":false}`)
 	time.Sleep(60 * time.Millisecond)
-	if value, ok := stream.OverrideValue(track, kernel.ParamMixGain); !ok || value != -6 {
-		t.Fatalf("cancel did not restore the committed value: %g, %v", value, ok)
+	if value, ok := stream.OverrideValue(track, kernel.ParamMixGain); ok {
+		t.Fatalf("cancel left an active override: %g", value)
 	}
 	current, err := os.ReadFile(path)
 	if err != nil || string(current) != source {

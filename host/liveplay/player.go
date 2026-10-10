@@ -82,6 +82,12 @@ type liveOverrides struct {
 	values [17][kernel.ParamCount]parameterOverride
 }
 
+type overrideClear struct {
+	slot    uint8
+	id      kernel.ParamID
+	version uint64
+}
+
 type SongEntry struct {
 	Scene    string
 	StartBar uint32
@@ -202,6 +208,9 @@ type Player struct {
 	trackCount        atomic.Uint32
 	appliedVersions   [17][kernel.ParamCount]uint64
 	clearedVersions   [17][kernel.ParamCount]uint64
+	overrideClears    chan overrideClear
+	cancelledVersions [17][kernel.ParamCount]uint64
+	retiredVersions   [17][kernel.ParamCount]atomic.Uint64
 	meters            chan MeterFrame
 	meterScratch      MeterFrame
 	meterTick         int64
@@ -235,6 +244,7 @@ func New(initial Score, rate int) (*Player, error) {
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
 		offers:        make(chan Score, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
 		meters: make(chan MeterFrame, 1), loudness: masterLoudness,
+		overrideClears: make(chan overrideClear, 64),
 	}
 	p.overrides.Store(&liveOverrides{})
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
@@ -351,8 +361,8 @@ func (p *Player) CommittedValue(track uint8, id kernel.ParamID) (float32, bool) 
 	return 0, false
 }
 
-// OverrideValue returns the latest queued SetParam value for a playing track.
-// It reads only control snapshots, so audio-thread clears are not reflected.
+// OverrideValue returns the latest override that the render thread has not
+// retired. Both the control snapshot and retirement versions are safe to read.
 func (p *Player) OverrideValue(track uint8, id kernel.ParamID) (float32, bool) {
 	if id >= kernel.ParamCount {
 		return 0, false
@@ -371,7 +381,7 @@ func (p *Player) OverrideValue(track uint8, id kernel.ParamID) (float32, bool) {
 		if names := p.trackNames.Load(); names != nil && track < names.count {
 			for i := 0; i < 16; i++ {
 				override := snapshot.values[i][id]
-				if override.active && override.trackID == names.ids[track] {
+				if override.active && override.trackID == names.ids[track] && override.version != p.retiredVersions[i][id].Load() {
 					return override.value, true
 				}
 			}
@@ -379,7 +389,7 @@ func (p *Player) OverrideValue(track uint8, id kernel.ParamID) (float32, bool) {
 		}
 	}
 	override := snapshot.values[slot][id]
-	return override.value, override.active
+	return override.value, override.active && override.version != p.retiredVersions[slot][id].Load()
 }
 
 // Note queues a live note for an acid, authored instrument, or drum track. Requests are
@@ -544,28 +554,35 @@ func GMDrumLane(note int) (uint16, bool) {
 // SetParam accepts concurrent control calls. A snapshot CAS makes the latest
 // value for each parameter win; Read never takes a mutex.
 func (p *Player) SetParam(track uint8, id kernel.ParamID, value float32) error {
+	_, err := p.SetPreview(track, id, value)
+	return err
+}
+
+// SetPreview publishes an override using SetParam's snapshot CAS and returns
+// its exact version, so a later cancellation cannot retire a newer gesture.
+func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint64, error) {
 	spec, ok := kernel.Param(id)
 	if !ok || !spec.Live {
-		return fmt.Errorf("parameter is unknown or not live")
+		return 0, fmt.Errorf("parameter is unknown or not live")
 	}
 	slot := int(track)
 	trackID := ""
 	if spec.Scope == "global" {
 		if track != 0xff {
-			return fmt.Errorf("global parameter requires track 255")
+			return 0, fmt.Errorf("global parameter requires track 255")
 		}
 		slot = 16
 	} else if spec.Scope != "track" || track >= 16 || uint32(track) >= p.trackCount.Load() {
-		return fmt.Errorf("track parameter index is out of range")
+		return 0, fmt.Errorf("track parameter index is out of range")
 	} else if names := p.trackNames.Load(); names != nil && int(track) < int(names.count) {
 		trackID = names.ids[track]
 	}
 	off := spec.Off && math.IsInf(float64(value), -1)
 	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
-		return fmt.Errorf("parameter value is out of range")
+		return 0, fmt.Errorf("parameter value is out of range")
 	}
 	if spec.Curve == "toggle" && value != 0 && value != 1 {
-		return fmt.Errorf("toggle parameter must be zero or one")
+		return 0, fmt.Errorf("toggle parameter must be zero or one")
 	}
 	version := p.overrideSequence.Add(1)
 	for {
@@ -583,9 +600,51 @@ func (p *Player) SetParam(track uint8, id kernel.ParamID, value float32) error {
 		}
 		next.values[slot][id] = parameterOverride{value: value, version: version, active: true, trackID: trackID}
 		if p.overrides.CompareAndSwap(old, next) {
-			return nil
+			return version, nil
 		}
 	}
+}
+
+// CancelPreview requests retirement of exactly one override version. Read
+// restores the playing score's committed value and publishes the retirement.
+// A superseded or already retired version is harmless.
+func (p *Player) CancelPreview(version uint64) error {
+	if version == 0 {
+		return nil
+	}
+	snapshot := p.overrides.Load()
+	if snapshot == nil {
+		return nil
+	}
+	for slot := range snapshot.values {
+		for id, override := range snapshot.values[slot] {
+			if !override.active || override.version != version || p.retiredVersions[slot][id].Load() == version {
+				continue
+			}
+			track := uint8(slot)
+			if slot == 16 {
+				track = 0xff
+			} else if override.trackID != "" {
+				if resolved, ok := p.TrackIndex(override.trackID); ok {
+					track = resolved
+				} else {
+					track = 0xff // A removed track needs no restoration.
+				}
+			}
+			if slot == 16 || track != 0xff {
+				if _, ok := p.CommittedValue(track, kernel.ParamID(id)); !ok {
+					return fmt.Errorf("committed preview value is unavailable")
+				}
+			}
+			select {
+			case p.overrideClears <- overrideClear{slot: uint8(slot), id: kernel.ParamID(id), version: version}:
+				return nil
+			default:
+				return fmt.Errorf("preview cancellation queue is full")
+			}
+		}
+	}
+	return nil
 }
 
 func (p *Player) SetMute(track uint8, on bool) error {
@@ -612,11 +671,25 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 	if snapshot == nil {
 		return
 	}
+	// Drain only the requests present at this boundary. Retain a matching
+	// cancellation until its restoration command fits in the engine queue.
+	for remaining := len(p.overrideClears); remaining > 0; remaining-- {
+		request := <-p.overrideClears
+		override := snapshot.values[request.slot][request.id]
+		if override.active && override.version == request.version {
+			p.cancelledVersions[request.slot][request.id] = request.version
+		}
+	}
 	for slot := range snapshot.values {
 		for id := range snapshot.values[slot] {
 			override := snapshot.values[slot][id]
 			if !override.active || override.version == p.clearedVersions[slot][id] {
 				continue
+			}
+			cancelled := p.cancelledVersions[slot][id] == override.version
+			if cancelled && newEngine {
+				p.retireOverride(slot, kernel.ParamID(id), override.version)
+				continue // The new engine already has its committed value.
 			}
 			track := uint8(slot)
 			if slot == 16 {
@@ -630,13 +703,26 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 					}
 				}
 				if track == 0xff {
+					if cancelled {
+						p.retireOverride(slot, kernel.ParamID(id), override.version)
+					}
 					continue
 				}
 			} else if slot >= target.TrackCount() {
+				if cancelled {
+					p.retireOverride(slot, kernel.ParamID(id), override.version)
+				}
+				continue
+			}
+			if cancelled {
+				value, ok := parameterValue(score.Parameters, track, kernel.ParamID(id))
+				if ok && target.Push(cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(value)}) {
+					p.retireOverride(slot, kernel.ParamID(id), override.version)
+				}
 				continue
 			}
 			if newEngine && parameterMatches(score.Parameters, track, kernel.ParamID(id), override.value) {
-				p.clearedVersions[slot][id] = override.version
+				p.retireOverride(slot, kernel.ParamID(id), override.version)
 				continue
 			}
 			if !newEngine && p.appliedVersions[slot][id] == override.version {
@@ -651,12 +737,17 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 }
 
 func parameterMatches(parameters []ParameterValue, track uint8, id kernel.ParamID, value float32) bool {
+	committed, ok := parameterValue(parameters, track, id)
+	return ok && math.Float32bits(committed) == math.Float32bits(value)
+}
+
+func parameterValue(parameters []ParameterValue, track uint8, id kernel.ParamID) (float32, bool) {
 	for _, parameter := range parameters {
 		if parameter.Track == track && parameter.ID == id {
-			return math.Float32bits(parameter.Value) == math.Float32bits(value)
+			return parameter.Value, true
 		}
 	}
-	return false
+	return 0, false
 }
 
 func (p *Player) resetMeters() {

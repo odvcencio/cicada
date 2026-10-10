@@ -22,6 +22,14 @@ func (p *Player) noteCommitted(track uint8, id kernel.ParamID, value float32) {
 	}
 	override := snapshot.values[slot][id]
 	if override.active && math.Float32bits(value) == math.Float32bits(override.value) {
-		p.clearedVersions[slot][id] = override.version
+		p.retireOverride(slot, id, override.version)
 	}
+}
+
+// retireOverride runs only on the render thread. Its atomic mirror lets
+// control callers observe retirement without mutating SetParam's snapshot.
+func (p *Player) retireOverride(slot int, id kernel.ParamID, version uint64) {
+	p.clearedVersions[slot][id] = version
+	p.cancelledVersions[slot][id] = 0
+	p.retiredVersions[slot][id].Store(version)
 }

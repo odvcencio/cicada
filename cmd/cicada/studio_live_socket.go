@@ -39,13 +39,14 @@ func (s *studio) liveSocket(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	go func() {
 		defer cancel()
+		previews := make(livePreviewSession)
 		for {
 			kind, data, err := connection.Read(ctx)
 			if err != nil {
 				return
 			}
 			if kind == websocket.MessageText {
-				if err := s.handleLiveMessage(data); err != nil {
+				if err := s.handleLiveMessage(data, previews); err != nil {
 					response, _ := json.Marshal(struct {
 						Type    string `json:"type"`
 						Message string `json:"message"`
@@ -85,8 +86,21 @@ func (s *studio) liveSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+type livePreviewKey struct {
+	entity string
+	param  kernel.ParamID
+}
+
+type livePreview struct {
+	stream  *liveplay.Player
+	version uint64
+}
+
+// Each socket owns only the override versions its messages published.
+type livePreviewSession map[livePreviewKey]livePreview
+
 // handleLiveMessage queues previews through the player's control snapshot.
-func (s *studio) handleLiveMessage(data []byte) error {
+func (s *studio) handleLiveMessage(data []byte, previews livePreviewSession) error {
 	var input struct {
 		Type   string   `json:"type"`
 		Entity string   `json:"entity"`
@@ -118,18 +132,28 @@ func (s *studio) handleLiveMessage(data []byte) error {
 	if !ok {
 		return fmt.Errorf("unknown preview parameter %q", input.Param)
 	}
+	key := livePreviewKey{entity: input.Entity, param: id}
 	if input.Type == "preview-set" {
 		if input.Value == nil {
 			return fmt.Errorf("preview-set requires a value")
 		}
-		return stream.SetParam(track, id, *input.Value)
+		version, err := stream.SetPreview(track, id, *input.Value)
+		if err != nil {
+			return err
+		}
+		previews[key] = livePreview{stream: stream, version: version}
+		return nil
 	}
 	if input.Commit {
 		return nil // Activation clears the preview after the committed value lands.
 	}
-	value, ok := stream.CommittedValue(track, id)
-	if !ok {
-		return fmt.Errorf("committed value is unavailable for %q on %q", input.Param, input.Entity)
+	preview, ok := previews[key]
+	if !ok || preview.stream != stream {
+		return nil
 	}
-	return stream.SetParam(track, id, value)
+	if err := stream.CancelPreview(preview.version); err != nil {
+		return err
+	}
+	delete(previews, key)
+	return nil
 }

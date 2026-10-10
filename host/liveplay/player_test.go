@@ -64,6 +64,9 @@ func TestCommittedValueClearsMatchingOverrideOnTheAudioThread(t *testing.T) {
 	if p.overrides.Load() != snapshot {
 		t.Fatal("committed value changed the control-thread snapshot")
 	}
+	if _, active := p.OverrideValue(0, kernel.ParamMixGain); active {
+		t.Fatal("render-thread retirement was not visible to control callers")
+	}
 	p.noteCommitted(0, kernel.ParamMixGain, -4)
 	if p.clearedVersions[0][kernel.ParamMixGain] != version {
 		t.Fatal("a different committed value must not clear a newer override")
