@@ -144,14 +144,14 @@ func songSource(ctx *Context, action string, index, target, bars int, scene stri
 		}
 		if action == "scene" {
 			value := walker.Field(entries[index], "scene")
-			return ReplaceSpan(source, int(value.StartByte()), int(value.EndByte()), []byte(scene))
+			return ReplaceSpan(source, ctx.Options.Path, Span{int(value.StartByte()), int(value.EndByte()), scene, ctx.Options.Path})
 		}
 		if bars < 1 || bars > 999 {
 			return nil, fmt.Errorf("song entry must last 1–999 bars")
 		}
 		if len(entries) == 0 {
 			at := int(song.EndByte()) - 1
-			return ReplaceSpan(source, at, at, []byte(" "+scene+"*"+strconv.Itoa(bars)+" "))
+			return ReplaceSpan(source, ctx.Options.Path, Span{at, at, " " + scene + "*" + strconv.Itoa(bars) + " ", ctx.Options.Path})
 		}
 		if err := songGapsAreWhitespace(source, song, entries); err != nil {
 			return nil, err
@@ -165,7 +165,7 @@ func songSource(ctx *Context, action string, index, target, bars int, scene stri
 			}
 		}
 		at := int(entries[len(entries)-1].EndByte())
-		return ReplaceSpan(source, at, at, []byte(separator+scene+"*"+strconv.Itoa(bars)))
+		return ReplaceSpan(source, ctx.Options.Path, Span{at, at, separator + scene + "*" + strconv.Itoa(bars), ctx.Options.Path})
 	case "duplicate", "delete":
 		if err := songGapsAreWhitespace(source, song, entries); err != nil {
 			return nil, err
@@ -175,7 +175,7 @@ func songSource(ctx *Context, action string, index, target, bars int, scene stri
 			if len(entries) < 2 {
 				return nil, fmt.Errorf("keep at least one arrangement block")
 			}
-			return ReplaceSpan(source, int(entry.StartByte()), int(entry.EndByte()), nil)
+			return ReplaceSpan(source, ctx.Options.Path, Span{int(entry.StartByte()), int(entry.EndByte()), "", ctx.Options.Path})
 		}
 		separator := " "
 		if bytes.Contains(source[song.StartByte():song.EndByte()], []byte("\n")) {
@@ -185,20 +185,20 @@ func songSource(ctx *Context, action string, index, target, bars int, scene stri
 			}
 		}
 		at := int(entry.EndByte())
-		return ReplaceSpan(source, at, at, append([]byte(separator), source[entry.StartByte():entry.EndByte()]...))
+		return ReplaceSpan(source, ctx.Options.Path, Span{at, at, string(append([]byte(separator), source[entry.StartByte():entry.EndByte()]...)), ctx.Options.Path})
 	case "bars":
 		if bars < 1 || bars > 999 {
 			return nil, fmt.Errorf("song entry must last 1–999 bars")
 		}
 		entry := entries[index]
 		if count := walker.Field(entry, "bars"); count != nil {
-			return ReplaceSpan(source, int(count.StartByte()), int(count.EndByte()), []byte(strconv.Itoa(bars)))
+			return ReplaceSpan(source, ctx.Options.Path, Span{int(count.StartByte()), int(count.EndByte()), strconv.Itoa(bars), ctx.Options.Path})
 		}
 		if bars == 1 {
 			return bytes.Clone(source), nil
 		}
 		at := int(entry.EndByte())
-		return ReplaceSpan(source, at, at, []byte("*"+strconv.Itoa(bars)))
+		return ReplaceSpan(source, ctx.Options.Path, Span{at, at, "*" + strconv.Itoa(bars), ctx.Options.Path})
 	case "move":
 		if target < 0 || target >= len(entries) {
 			return nil, fmt.Errorf("song destination is out of range")

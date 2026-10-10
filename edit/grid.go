@@ -204,7 +204,10 @@ func toggledSource(ctx *Context, patternID, laneID string, index int) ([]byte, e
 		if token.Position.Line == 0 {
 			return nil, fmt.Errorf("pattern %s has no step %d in lane %s", patternID, index+1, laneID)
 		}
-		start := Offset(source, token.Position)
+		start, err := Offset(source, ctx.Options.Path, token.Position)
+		if err != nil {
+			return nil, err
+		}
 		end := start + len(token.Text)
 		if end > len(source) || string(source[start:end]) != token.Text {
 			return nil, fmt.Errorf("step source no longer matches the projection")
@@ -253,7 +256,10 @@ func pitchedSource(ctx *Context, patternID, laneID string, index, pitch int) ([]
 			return nil, fmt.Errorf("pattern %s has no note step %d", patternID, index+1)
 		}
 		token := pattern.Steps[index]
-		start := Offset(source, token.Position)
+		start, err := Offset(source, ctx.Options.Path, token.Position)
+		if err != nil {
+			return nil, err
+		}
 		end := start + len(token.Text)
 		if end > len(source) || string(source[start:end]) != token.Text {
 			return nil, fmt.Errorf("step source no longer matches the projection")
@@ -378,7 +384,10 @@ func toggledModifierSource(ctx *Context, patternID, laneID string, index int, mo
 		if token.Text == "." || token.Text == "-" {
 			return nil, fmt.Errorf("step %d needs a note before setting %s", index+1, modifier)
 		}
-		start := Offset(source, token.Position)
+		start, err := Offset(source, ctx.Options.Path, token.Position)
+		if err != nil {
+			return nil, err
+		}
 		end := start + len(token.Text)
 		if end > len(source) || string(source[start:end]) != token.Text {
 			return nil, fmt.Errorf("step source no longer matches the projection")
@@ -426,7 +435,10 @@ func cycledStepSource(ctx *Context, patternID, laneID string, index int, kind st
 		if token.Text == "." || token.Text == "-" {
 			return nil, fmt.Errorf("step %d needs a note before changing %s", index+1, kind)
 		}
-		start := Offset(source, token.Position)
+		start, err := Offset(source, ctx.Options.Path, token.Position)
+		if err != nil {
+			return nil, err
+		}
 		end := start + len(token.Text)
 		if end > len(source) || string(source[start:end]) != token.Text {
 			return nil, fmt.Errorf("step source no longer matches the projection")
@@ -524,7 +536,10 @@ func drumVelocitySource(ctx *Context, patternID, laneID string, index, velocity 
 				suffix = token.Text[1+suffixAt:]
 			}
 			replacement := base + suffix
-			start := Offset(source, token.Position)
+			start, err := Offset(source, ctx.Options.Path, token.Position)
+			if err != nil {
+				return nil, err
+			}
 			end := start + len(token.Text)
 			if end > len(source) || string(source[start:end]) != token.Text {
 				return nil, fmt.Errorf("step source no longer matches the projection")

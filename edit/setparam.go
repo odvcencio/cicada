@@ -63,7 +63,7 @@ func setParam(ctx *Context, intent Intent) error {
 			value = number.String()
 		}
 	}
-	updated, err := instrumentParameterSource(ctx.Source, score, owner, field, value, reset)
+	updated, err := instrumentParameterSource(ctx.Source, ctx.Options.Path, score, owner, field, value, reset)
 	if err != nil {
 		return err
 	}

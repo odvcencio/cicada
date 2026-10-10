@@ -92,7 +92,7 @@ func projectSettingsSource(ctx *Context, settings *SetProjectSettings) ([]byte, 
 			if settings.Title != score.Title {
 				for j := 0; j < node.NamedChildCount(); j++ {
 					if value := node.NamedChild(j); walker.Type(value) == "string" {
-						edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), strconv.Quote(settings.Title)})
+						edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), strconv.Quote(settings.Title), ctx.Options.Path})
 					}
 				}
 			}
@@ -100,18 +100,18 @@ func projectSettingsSource(ctx *Context, settings *SetProjectSettings) ([]byte, 
 			if int64(settings.TempoMilli) != score.TempoMilli {
 				for j := 0; j < node.NamedChildCount(); j++ {
 					if value := node.NamedChild(j); walker.Type(value) == "number" {
-						edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), strconv.FormatFloat(float64(settings.TempoMilli)/1000, 'f', -1, 64)})
+						edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), strconv.FormatFloat(float64(settings.TempoMilli)/1000, 'f', -1, 64), ctx.Options.Path})
 					}
 				}
 			}
 		case "key_decl":
 			if uint8(rootIndex) != semantic.KeyRoot {
 				value := walker.Field(node, "root")
-				edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), settings.Root})
+				edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), settings.Root, ctx.Options.Path})
 			}
 			if settings.Scale != score.Scale {
 				value := walker.Field(node, "scale")
-				edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), settings.Scale})
+				edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), settings.Scale, ctx.Options.Path})
 			}
 		}
 	}
@@ -126,7 +126,7 @@ func projectSettingsSource(ctx *Context, settings *SetProjectSettings) ([]byte, 
 		}
 	}
 	if len(declarations) > 0 {
-		edits = append(edits, Span{at, at, strings.Join(declarations, newline) + newline})
+		edits = append(edits, Span{at, at, strings.Join(declarations, newline) + newline, ctx.Options.Path})
 	}
-	return PatchSpans(source, edits)
+	return PatchSpans(source, ctx.Options.Path, edits)
 }

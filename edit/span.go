@@ -12,8 +12,12 @@ import (
 )
 
 // Offset converts a 1-based line and column (columns count runes) to a byte
-// offset in source. Ports studioSourceOffset.
-func Offset(source []byte, at notation.Position) int {
+// offset in source. An empty position file denotes a standalone parse of source.
+// Project positions must belong to targetFile. Ports studioSourceOffset.
+func Offset(source []byte, targetFile string, at notation.Position) (int, error) {
+	if at.File != "" && at.File != targetFile {
+		return 0, fmt.Errorf("source position belongs to another source file; edit its owning file")
+	}
 	line, offset := 1, 0
 	for offset < len(source) && line < at.Line {
 		if source[offset] == '\n' {
@@ -25,19 +29,26 @@ func Offset(source []byte, at notation.Position) int {
 		_, size := utf8.DecodeRune(source[offset:])
 		offset += size
 	}
-	return offset
+	return offset, nil
 }
 
-// Span replaces source[Start:End] with Text.
+// Span replaces source[Start:End] with Text. File identifies the source that
+// supplied the coordinates; it must equal the patch target, even for insertions.
 type Span struct {
 	Start, End int
 	Text       string
+	File       string
 }
 
 // PatchSpans applies disjoint spans from the end so offsets refer to the
 // original source throughout. Everything outside the spans stays
 // byte-identical. Ports patchStudioSpans.
-func PatchSpans(source []byte, spans []Span) ([]byte, error) {
+func PatchSpans(source []byte, targetFile string, spans []Span) ([]byte, error) {
+	for _, span := range spans {
+		if span.File != targetFile {
+			return nil, fmt.Errorf("source span belongs to another source file; edit its owning file")
+		}
+	}
 	spans = append([]Span(nil), spans...)
 	sort.Slice(spans, func(i, j int) bool { return spans[i].Start > spans[j].Start })
 	updated := bytes.Clone(source)
@@ -47,7 +58,7 @@ func PatchSpans(source []byte, spans []Span) ([]byte, error) {
 			return nil, fmt.Errorf("overlapping or invalid source patches")
 		}
 		var err error
-		updated, err = ReplaceSpan(updated, span.Start, span.End, []byte(span.Text))
+		updated, err = ReplaceSpan(updated, targetFile, span)
 		if err != nil {
 			return nil, err
 		}
@@ -57,7 +68,11 @@ func PatchSpans(source []byte, spans []Span) ([]byte, error) {
 }
 
 // ReplaceSpan ports replaceSongSpan; the error text is kept verbatim for parity.
-func ReplaceSpan(source []byte, start, end int, text []byte) ([]byte, error) {
+func ReplaceSpan(source []byte, targetFile string, span Span) ([]byte, error) {
+	if span.File != targetFile {
+		return nil, fmt.Errorf("source span belongs to another source file; edit its owning file")
+	}
+	start, end, text := span.Start, span.End, span.Text
 	if start < 0 || end < start || end > len(source) {
 		return nil, fmt.Errorf("song source span is invalid")
 	}

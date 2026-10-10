@@ -71,7 +71,10 @@ func insertLibraryItem(ctx *Context, intent Intent) error {
 			if field == nil {
 				return fmt.Errorf("track binding is missing")
 			}
-			updated = replaceSourceSpan(updated, int(field.StartByte()), int(field.EndByte()), []byte(in.Reference))
+			updated, err = ReplaceSpan(updated, ctx.Options.Path, Span{int(field.StartByte()), int(field.EndByte()), in.Reference, ctx.Options.Path})
+			if err != nil {
+				return err
+			}
 		}
 		break
 	}
@@ -92,14 +95,14 @@ func insertLibraryItem(ctx *Context, intent Intent) error {
 		}
 		switch in.EffectKind {
 		case "comp":
-			updated, err = LibrarySetting(updated, "bus_decl", "music", "insert", ref)
+			updated, err = librarySetting(updated, ctx.Options.Path, "bus_decl", "music", "insert", ref)
 			if err == nil {
-				updated, err = LibrarySetting(updated, "track_decl", in.Track, "out", "music")
+				updated, err = librarySetting(updated, ctx.Options.Path, "track_decl", in.Track, "out", "music")
 			}
 		case "delay", "reverb":
-			updated, err = LibrarySetting(updated, "track_decl", in.Track, "send "+ref, "0.4")
+			updated, err = librarySetting(updated, ctx.Options.Path, "track_decl", in.Track, "send "+ref, "0.4")
 		default:
-			updated, err = LibrarySetting(updated, "track_decl", in.Track, "insert", ref)
+			updated, err = librarySetting(updated, ctx.Options.Path, "track_decl", in.Track, "insert", ref)
 		}
 		if err != nil {
 			return err
@@ -122,6 +125,10 @@ func LibraryImport(source []byte, library string) []byte {
 
 // LibrarySetting patches one track or bus setting.
 func LibrarySetting(source []byte, declKind, owner, field, literal string) ([]byte, error) {
+	return librarySetting(source, "", declKind, owner, field, literal)
+}
+
+func librarySetting(source []byte, targetFile, declKind, owner, field, literal string) ([]byte, error) {
 	root, w, err := notation.ParseTree(source)
 	if err != nil {
 		return nil, err
@@ -138,15 +145,15 @@ func LibrarySetting(source []byte, declKind, owner, field, literal string) ([]by
 			}
 			if w.Type(p) == "param_decl" && w.Text(w.Field(p, "name")) == field {
 				v := w.Field(p, "value")
-				return replaceSourceSpan(source, int(v.StartByte()), int(v.EndByte()), []byte(literal)), nil
+				return ReplaceSpan(source, targetFile, Span{int(v.StartByte()), int(v.EndByte()), literal, targetFile})
 			}
 			if w.Type(p) == "send_decl" && "send "+w.Text(w.Field(p, "to")) == field {
 				v := w.Field(p, "level")
-				return replaceSourceSpan(source, int(v.StartByte()), int(v.EndByte()), []byte(literal)), nil
+				return ReplaceSpan(source, targetFile, Span{int(v.StartByte()), int(v.EndByte()), literal, targetFile})
 			}
 		}
 		at := int(n.EndByte()) - 1
-		return replaceSourceSpan(source, at, at, []byte("\n  "+field+" = "+literal+"\n")), nil
+		return ReplaceSpan(source, targetFile, Span{at, at, "\n  " + field + " = " + literal + "\n", targetFile})
 	}
 	if declKind == "bus_decl" {
 		return append(bytes.Clone(source), []byte("\nbus "+owner+" { "+field+" = "+literal+" }\n")...), nil

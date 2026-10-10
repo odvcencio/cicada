@@ -33,7 +33,7 @@ func (SelectTake) Kind() string { return "selecttake" }
 func init() {
 	Register("selecttake", func() Intent { return &SelectTake{} })
 	Handle("selecttake", func(ctx *Context, intent Intent) error {
-		updated, err := SelectTakeSource(ctx.Source, *intent.(*SelectTake))
+		updated, err := selectTakeSource(ctx.Source, ctx.Options.Path, *intent.(*SelectTake))
 		if err != nil {
 			return err
 		}
@@ -45,6 +45,10 @@ func init() {
 
 // SelectTakeSource is the pure text half used by the take journal wrapper.
 func SelectTakeSource(source []byte, t SelectTake) ([]byte, error) {
+	return selectTakeSource(source, "", t)
+}
+
+func selectTakeSource(source []byte, targetFile string, t SelectTake) ([]byte, error) {
 	score, ds := notation.ParseEdition(source, 2)
 	if score == nil {
 		return nil, errors.New("score cannot be parsed")
@@ -88,12 +92,18 @@ func SelectTakeSource(source []byte, t SelectTake) ([]byte, error) {
 			if value == nil {
 				return nil, errors.New("scene binding is missing value")
 			}
-			updated = replaceSourceSpan(source, int(value.StartByte()), int(value.EndByte()), []byte(t.ID+"-clip"))
+			updated, err = ReplaceSpan(source, targetFile, Span{int(value.StartByte()), int(value.EndByte()), t.ID + "-clip", targetFile})
+			if err != nil {
+				return nil, err
+			}
 			break
 		}
 		if updated == nil {
 			at := int(node.EndByte()) - 1
-			updated = replaceSourceSpan(source, at, at, []byte("\n  "+t.Track+" = "+t.ID+"-clip\n"))
+			updated, err = ReplaceSpan(source, targetFile, Span{at, at, "\n  " + t.Track + " = " + t.ID + "-clip\n", targetFile})
+			if err != nil {
+				return nil, err
+			}
 		}
 		break
 	}
@@ -130,10 +140,4 @@ func SelectTakeSource(source []byte, t SelectTake) ([]byte, error) {
 		fmt.Fprintf(&text, "\nclip %s-clip %s {\n  start = %dframes\n  end = %dframes\n}\n", t.ID, t.ID, start, t.Asset.Frames)
 	}
 	return append(updated, text.Bytes()...), nil
-}
-func replaceSourceSpan(source []byte, start, end int, text []byte) []byte {
-	result := make([]byte, 0, len(source)+len(text))
-	result = append(result, source[:start]...)
-	result = append(result, text...)
-	return append(result, source[end:]...)
 }

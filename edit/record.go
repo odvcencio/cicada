@@ -3,7 +3,6 @@ package edit
 import (
 	"fmt"
 	"math"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -193,7 +192,7 @@ func recordedTakeSource(ctx *Context, trackID, patternID string, take []TakeNote
 		if drums {
 			return nil, fmt.Errorf("drum takes cannot contain per-note expression")
 		}
-		return recordedExpressionSource(source, score, pattern, take)
+		return recordedExpressionSource(source, ctx.Options.Path, score, pattern, take)
 	}
 	if polyphonic && track.Polyphony == 4 {
 		return nil, fmt.Errorf("track %q is not an acid track", trackID)
@@ -344,7 +343,7 @@ func validateTakeExpression(note TakeNote) error {
 
 // A melodic pattern has one voice per step. Refuse overlapping expressive
 // voices rather than silently replacing their pitches or expression curves.
-func recordedExpressionSource(source []byte, score *notation.Score, pattern *Pattern, take []TakeNote) ([]byte, error) {
+func recordedExpressionSource(source []byte, targetFile string, score *notation.Score, pattern *Pattern, take []TakeNote) ([]byte, error) {
 	var authored *notation.Pattern
 	for i := range score.Patterns {
 		if score.Patterns[i].Name == pattern.ID {
@@ -354,6 +353,21 @@ func recordedExpressionSource(source []byte, score *notation.Score, pattern *Pat
 	}
 	if authored == nil {
 		return nil, fmt.Errorf("unknown pattern %q", pattern.ID)
+	}
+	if _, err := Offset(source, targetFile, authored.Position); err != nil {
+		return nil, fmt.Errorf("cannot record expression into pattern %q: %w", pattern.ID, err)
+	}
+	for _, token := range authored.Steps {
+		if _, err := Offset(source, targetFile, token.Position); err != nil {
+			return nil, fmt.Errorf("cannot record expression into pattern %q: %w", pattern.ID, err)
+		}
+	}
+	for _, row := range authored.Expression {
+		for _, token := range row.Values {
+			if _, err := Offset(source, targetFile, token.Position); err != nil {
+				return nil, fmt.Errorf("cannot record expression into pattern %q: %w", pattern.ID, err)
+			}
+		}
 	}
 	for _, step := range pattern.Data {
 		if step != nil && len(step.Notes) != 0 {
@@ -378,11 +392,7 @@ func recordedExpressionSource(source []byte, score *notation.Score, pattern *Pat
 	}
 	copy(values, pattern.Expression)
 	occupied := make([]bool, pattern.Steps)
-	type sourceEdit struct {
-		start, end int
-		text       string
-	}
-	edits := make([]sourceEdit, 0, len(take)+4)
+	edits := make([]Span, 0, len(take)+4)
 	quantize := func(tick int64) int64 { return (tick + seq.TicksPerStep/2) / seq.TicksPerStep }
 	for _, note := range take {
 		start, end := quantize(note.Tick), quantize(note.EndTick)
@@ -426,12 +436,15 @@ func recordedExpressionSource(source []byte, score *notation.Score, pattern *Pat
 			}
 			values[index] = value
 			token := authored.Steps[index]
-			at := Offset(source, token.Position)
+			at, err := Offset(source, targetFile, token.Position)
+			if err != nil {
+				return nil, err
+			}
 			text := "-"
 			if step == start {
 				text = sourcePitch(note.Note)
 			}
-			edits = append(edits, sourceEdit{at, at + len(token.Text), text})
+			edits = append(edits, Span{at, at + len(token.Text), text, targetFile})
 		}
 	}
 	for i := range occupied {
@@ -462,8 +475,11 @@ func recordedExpressionSource(source []byte, score *notation.Score, pattern *Pat
 				continue
 			}
 			for i, token := range prior.Values {
-				at := Offset(source, token.Position)
-				edits = append(edits, sourceEdit{at, at + len(token.Text), cells[i]})
+				at, err := Offset(source, targetFile, token.Position)
+				if err != nil {
+					return nil, err
+				}
+				edits = append(edits, Span{at, at + len(token.Text), cells[i], targetFile})
 			}
 			found = true
 		}
@@ -475,34 +491,30 @@ func recordedExpressionSource(source []byte, score *notation.Score, pattern *Pat
 		// Directly authored melodic patterns contain no nested braces. The
 		// last step or existing expression row identifies the closing brace.
 		last := authored.Steps[len(authored.Steps)-1]
-		end := Offset(source, last.Position) + len(last.Text)
+		end, err := Offset(source, targetFile, last.Position)
+		if err != nil {
+			return nil, err
+		}
+		end += len(last.Text)
 		for _, row := range authored.Expression {
 			if len(row.Values) == 0 {
 				continue
 			}
 			token := row.Values[len(row.Values)-1]
-			end = max(end, Offset(source, token.Position)+len(token.Text))
+			at, err := Offset(source, targetFile, token.Position)
+			if err != nil {
+				return nil, err
+			}
+			end = max(end, at+len(token.Text))
 		}
 		closing := takeClosingBrace(source[end:])
 		if closing < 0 {
 			return nil, fmt.Errorf("pattern closing brace is missing")
 		}
 		at := end + closing
-		edits = append(edits, sourceEdit{at, at, additions.String() + "\n"})
+		edits = append(edits, Span{at, at, additions.String() + "\n", targetFile})
 	}
-	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
-	updated := append([]byte(nil), source...)
-	for _, edit := range edits {
-		if edit.start < 0 || edit.end > len(updated) || edit.start > edit.end {
-			return nil, fmt.Errorf("recorded expression source no longer matches the score")
-		}
-		replacement := make([]byte, 0, len(updated)-edit.end+edit.start+len(edit.text))
-		replacement = append(replacement, updated[:edit.start]...)
-		replacement = append(replacement, edit.text...)
-		replacement = append(replacement, updated[edit.end:]...)
-		updated = replacement
-	}
-	return updated, nil
+	return PatchSpans(source, targetFile, edits)
 }
 
 func takeClosingBrace(source []byte) int {

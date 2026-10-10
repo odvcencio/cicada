@@ -543,7 +543,7 @@ func studioSnapshotPrivateInstrument(scorePath string, source []byte, score *not
 				continue
 			}
 			declaration := bytes.Clone(file.Source[node.StartByte():node.EndByte()])
-			declaration, err = edits.ReplaceSpan(declaration, int(identifier.StartByte()-node.StartByte()), int(identifier.EndByte()-node.StartByte()), []byte(name))
+			declaration, err = edits.ReplaceSpan(declaration, file.Path, edits.Span{Start: int(identifier.StartByte() - node.StartByte()), End: int(identifier.EndByte() - node.StartByte()), Text: name, File: file.Path})
 			if err != nil {
 				return nil, "", err
 			}

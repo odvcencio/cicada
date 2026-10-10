@@ -81,7 +81,7 @@ func publishRecorded(ctx *Context, intent Intent) error {
 			}
 			found = true
 			var after []byte
-			after, err = bindRecordedScene(file.Source, scene, track, pattern)
+			after, err = bindRecordedScene(file.Source, file.Path, scene, track, pattern)
 			if err == nil {
 				ctx.AddFile(File{Path: file.Path, Before: bytes.Clone(file.Source), After: after})
 			}
@@ -102,7 +102,7 @@ func publishRecorded(ctx *Context, intent Intent) error {
 	return nil
 }
 
-func bindRecordedScene(source []byte, scene, track, pattern string) ([]byte, error) {
+func bindRecordedScene(source []byte, targetFile, scene, track, pattern string) ([]byte, error) {
 	node, _, err := declaration(source, []string{"scene_decl"}, scene)
 	if err != nil {
 		return nil, err
@@ -112,5 +112,5 @@ func bindRecordedScene(source []byte, scene, track, pattern string) ([]byte, err
 		newline = "\r\n"
 	}
 	at := int(node.EndByte()) - 1
-	return ReplaceSpan(source, at, at, []byte(newline+"  "+track+" = "+pattern+newline))
+	return ReplaceSpan(source, targetFile, Span{at, at, newline + "  " + track + " = " + pattern + newline, targetFile})
 }

@@ -10,7 +10,7 @@ import (
 )
 
 // instrumentParameterSource ports studio_instrument.go instrumentParameterSource.
-func instrumentParameterSource(source []byte, score *notation.Score, trackID, parameterID, value string, reset bool) ([]byte, error) {
+func instrumentParameterSource(source []byte, targetFile string, score *notation.Score, trackID, parameterID, value string, reset bool) ([]byte, error) {
 	var definition *notation.Instrument
 	for _, track := range score.Tracks {
 		if track.Name != trackID {
@@ -57,16 +57,16 @@ func instrumentParameterSource(source []byte, score *notation.Score, trackID, pa
 			if bytes.Contains(text, []byte("//")) || bytes.Contains(text, []byte("/*")) {
 				return nil, fmt.Errorf("this override contains a comment; remove it in Score to preserve the annotation")
 			}
-			return ReplaceSpan(source, start, end, nil)
+			return ReplaceSpan(source, targetFile, Span{start, end, "", targetFile})
 		}
 		node := walker.Field(parameter, "value")
-		return ReplaceSpan(source, int(node.StartByte()), int(node.EndByte()), []byte(literal))
+		return ReplaceSpan(source, targetFile, Span{int(node.StartByte()), int(node.EndByte()), literal, targetFile})
 	}
 	if reset {
 		return bytes.Clone(source), nil
 	}
 	at := int(decl.StartByte()) + bytes.IndexByte(source[decl.StartByte():decl.EndByte()], '{') + 1
-	return ReplaceSpan(source, at, at, []byte(" "+parameterID+" = "+literal+" "))
+	return ReplaceSpan(source, targetFile, Span{at, at, " " + parameterID + " = " + literal + " ", targetFile})
 }
 
 // AddPreset inserts an authored instrument and its track in one edit.
@@ -88,7 +88,7 @@ func init() {
 		if score == nil || hasErrors(ds) {
 			return fmt.Errorf("score must validate before adding an instrument")
 		}
-		updated, err := addPresetSourceParsed(ctx.Source, in.Preset, in.Instrument, in.Track, score)
+		updated, err := addPresetSourceParsed(ctx.Source, ctx.Options.Path, in.Preset, in.Instrument, in.Track, score)
 		if err != nil {
 			return err
 		}
@@ -99,7 +99,7 @@ func init() {
 	})
 }
 
-func addPresetSourceParsed(source []byte, presetID, instrumentName, trackName string, score *notation.Score) ([]byte, error) {
+func addPresetSourceParsed(source []byte, targetFile, presetID, instrumentName, trackName string, score *notation.Score) ([]byte, error) {
 	patch, ok := instrument.FindPatch(presetID)
 	if !ok {
 		return nil, fmt.Errorf("choose a patch from the instrument library")
@@ -154,5 +154,5 @@ func addPresetSourceParsed(source []byte, presetID, instrumentName, trackName st
 	if at > 0 && source[at-1] != '\n' {
 		text = newline + text
 	}
-	return ReplaceSpan(source, at, at, []byte(text))
+	return ReplaceSpan(source, targetFile, Span{at, at, text, targetFile})
 }

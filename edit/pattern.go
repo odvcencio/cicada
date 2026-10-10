@@ -238,7 +238,7 @@ func patternSettingsSource(ctx *Context, id string, settings *SetPatternSettings
 		name := walker.Text(walker.Field(attr, "name"))
 		if text, ok := values[name]; ok {
 			value := walker.Field(attr, "value")
-			edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), text})
+			edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), text, ctx.Options.Path})
 			delete(values, name)
 		}
 	}
@@ -251,9 +251,9 @@ func patternSettingsSource(ctx *Context, id string, settings *SetPatternSettings
 	if missing != "" {
 		content := source[node.StartByte():node.EndByte()]
 		at := int(node.StartByte()) + bytes.IndexByte(content, '{') + 1
-		edits = append(edits, Span{at, at, missing + " "})
+		edits = append(edits, Span{at, at, missing + " ", ctx.Options.Path})
 	}
-	return PatchSpans(source, edits)
+	return PatchSpans(source, ctx.Options.Path, edits)
 }
 
 func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) ([]byte, error) {
@@ -341,11 +341,14 @@ func patternStepSource(ctx *Context, id, lane string, index int, edit *SetStep) 
 				text += "?" + strconv.Itoa(edit.Chance)
 			}
 		}
-		start := Offset(updated, token.Position)
+		start, err := Offset(updated, ctx.Options.Path, token.Position)
+		if err != nil {
+			return nil, err
+		}
 		if start < 0 || start+len(token.Text) > len(updated) || string(updated[start:start+len(token.Text)]) != token.Text {
 			return nil, fmt.Errorf("step no longer matches its source")
 		}
-		return ReplaceSpan(updated, start, start+len(token.Text), []byte(text))
+		return ReplaceSpan(updated, ctx.Options.Path, Span{start, start + len(token.Text), text, ctx.Options.Path})
 	}
 	return nil, fmt.Errorf("unknown pattern %q", id)
 }
@@ -389,11 +392,14 @@ func duplicatePatternSource(ctx *Context, id, name string) ([]byte, error) {
 			var notes []Span
 			for i, token := range authored.Steps {
 				if note := pattern.Data[i]; note != nil && !note.Tie {
-					start := Offset(independent, token.Position)
-					notes = append(notes, Span{start, start + len(token.Text), sourcePitch(int(note.Note)) + noteSuffix(token.Text)})
+					start, err := Offset(independent, ctx.Options.Path, token.Position)
+					if err != nil {
+						return nil, err
+					}
+					notes = append(notes, Span{start, start + len(token.Text), sourcePitch(int(note.Note)) + noteSuffix(token.Text), ctx.Options.Path})
 				}
 			}
-			independent, err = PatchSpans(independent, notes)
+			independent, err = PatchSpans(independent, ctx.Options.Path, notes)
 			if err != nil {
 				return nil, err
 			}
@@ -405,16 +411,16 @@ func duplicatePatternSource(ctx *Context, id, name string) ([]byte, error) {
 	}
 	start, end := int(node.StartByte()), int(node.EndByte())
 	identifier := walker.Field(node, "name")
-	edits := []Span{{int(identifier.StartByte()) - start, int(identifier.EndByte()) - start, name}}
+	edits := []Span{{int(identifier.StartByte()) - start, int(identifier.EndByte()) - start, name, ctx.Options.Path}}
 	// An explicit slot is placement metadata. A new variation gets a free
 	// slot when assigned to a scene instead of colliding with its parent.
 	for i := 0; i < node.NamedChildCount(); i++ {
 		attr := node.NamedChild(i)
 		if walker.Type(attr) == "pattern_attr" && walker.Text(walker.Field(attr, "name")) == "slot" {
-			edits = append(edits, Span{int(attr.StartByte()) - start, int(attr.EndByte()) - start, ""})
+			edits = append(edits, Span{int(attr.StartByte()) - start, int(attr.EndByte()) - start, "", ctx.Options.Path})
 		}
 	}
-	clone, err := PatchSpans(independent[start:end], edits)
+	clone, err := PatchSpans(independent[start:end], ctx.Options.Path, edits)
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +441,7 @@ func duplicatePatternSource(ctx *Context, id, name string) ([]byte, error) {
 			at = len(source)
 		}
 	}
-	return ReplaceSpan(source, at, at, append([]byte(newline+newline), clone...))
+	return ReplaceSpan(source, ctx.Options.Path, Span{at, at, string(append([]byte(newline+newline), clone...)), ctx.Options.Path})
 }
 
 // Range edits share the same atomic revision and Undo entry as a single
@@ -531,10 +537,13 @@ func patternRangeSource(ctx *Context, id, lane string, edit *SetRange) ([]byte, 
 		var edits []Span
 		for i, text := range texts {
 			token := tokens[start+i]
-			at := Offset(local, token.Position)
-			edits = append(edits, Span{at, at + len(token.Text), text})
+			at, err := Offset(local, ctx.Options.Path, token.Position)
+			if err != nil {
+				return nil, err
+			}
+			edits = append(edits, Span{at, at + len(token.Text), text, ctx.Options.Path})
 		}
-		return PatchSpans(local, edits)
+		return PatchSpans(local, ctx.Options.Path, edits)
 	}
 	return nil, fmt.Errorf("unknown pattern %q", id)
 }
@@ -581,23 +590,33 @@ func resizePatternSource(ctx *Context, id string, length int, shared string) ([]
 			}
 			if length > len(tokens) {
 				last := tokens[len(tokens)-1]
-				at := Offset(local, last.Position) + len(last.Text)
+				at, err := Offset(local, ctx.Options.Path, last.Position)
+				if err != nil {
+					return nil, err
+				}
+				at += len(last.Text)
 				text := strings.Repeat(" .", length-len(tokens))
-				edits = append(edits, Span{at, at, text})
+				edits = append(edits, Span{at, at, text, ctx.Options.Path})
 			} else {
 				for _, token := range tokens[length:] {
-					at := Offset(local, token.Position)
-					edits = append(edits, Span{at, at + len(token.Text), ""})
+					at, err := Offset(local, ctx.Options.Path, token.Position)
+					if err != nil {
+						return nil, err
+					}
+					edits = append(edits, Span{at, at + len(token.Text), "", ctx.Options.Path})
 				}
 			}
 		}
 		for _, attr := range pattern.Attrs {
 			if attr.Name == "steps" {
-				at := Offset(local, attr.ValuePosition)
-				edits = append(edits, Span{at, at + len(attr.Value), strconv.Itoa(length)})
+				at, err := Offset(local, ctx.Options.Path, attr.ValuePosition)
+				if err != nil {
+					return nil, err
+				}
+				edits = append(edits, Span{at, at + len(attr.Value), strconv.Itoa(length), ctx.Options.Path})
 			}
 		}
-		return PatchSpans(local, edits)
+		return PatchSpans(local, ctx.Options.Path, edits)
 	}
 	return nil, fmt.Errorf("unknown pattern %q", id)
 }
@@ -620,7 +639,7 @@ func bindPatternSource(ctx *Context, sceneID, trackID, patternID string) ([]byte
 		binding := node.NamedChild(i)
 		if walker.Type(binding) == "scene_assignment" && walker.Text(walker.Field(binding, "target")) == trackID {
 			value := walker.Field(binding, "value")
-			return ReplaceSpan(source, int(value.StartByte()), int(value.EndByte()), []byte(patternID))
+			return ReplaceSpan(source, ctx.Options.Path, Span{int(value.StartByte()), int(value.EndByte()), patternID, ctx.Options.Path})
 		}
 	}
 	newline := "\n"
@@ -628,5 +647,5 @@ func bindPatternSource(ctx *Context, sceneID, trackID, patternID string) ([]byte
 		newline = "\r\n"
 	}
 	at := int(node.EndByte()) - 1
-	return ReplaceSpan(source, at, at, []byte(newline+"  "+trackID+" = "+patternID+newline))
+	return ReplaceSpan(source, ctx.Options.Path, Span{at, at, newline + "  " + trackID + " = " + patternID + newline, ctx.Options.Path})
 }
