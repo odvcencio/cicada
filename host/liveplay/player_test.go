@@ -165,6 +165,72 @@ func TestLiveParameterOverrideFollowsTrackIDAcrossReorderedScore(t *testing.T) {
 	}
 }
 
+func TestPreviewOverrideAppliesOnTheNextBlock(t *testing.T) {
+	p, err := New(meterScore(t, "preview", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	var pcm [blockFrames * 8]byte
+	if _, err := p.Read(pcm[:]); err != nil {
+		t.Fatal(err)
+	}
+	initialPeak := float64(0)
+	for _, sample := range p.left {
+		initialPeak = max(initialPeak, math.Abs(float64(sample)))
+	}
+	if err := p.SetParam(0, kernel.ParamMixGain, 0); err != nil {
+		t.Fatal(err)
+	}
+	version := p.overrides.Load().values[0][kernel.ParamMixGain].version
+	if _, err := p.Read(pcm[:]); err != nil {
+		t.Fatal(err)
+	}
+	if p.appliedVersions[0][kernel.ParamMixGain] != version {
+		t.Fatal("preview did not reach the engine on the next block")
+	}
+	previewPeak := float64(0)
+	for _, sample := range p.left {
+		previewPeak = max(previewPeak, math.Abs(float64(sample)))
+	}
+	if previewPeak <= initialPeak {
+		t.Fatalf("preview did not change the next block's audio: peak %g, initial %g", previewPeak, initialPeak)
+	}
+}
+
+func TestPreviewValuesFollowThePlayingScoreSnapshot(t *testing.T) {
+	p, err := New(reorderedMeterScore(t, "initial", [2]string{"bass", "lead"}, -6, -12), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.SetParam(0, kernel.ParamMixGain, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Offer(reorderedMeterScore(t, "offered", [2]string{"lead", "bass"}, -12, -3)); err != nil {
+		t.Fatal(err)
+	}
+	if value, ok := p.CommittedValue(0, kernel.ParamMixGain); !ok || value != -6 {
+		t.Fatalf("pending score changed the committed value: %g, %v", value, ok)
+	}
+	if _, err := io.CopyN(io.Discard, p, 100_000*8); err != nil {
+		t.Fatal(err)
+	}
+	track, ok := p.TrackIndex("bass")
+	if !ok || track != 1 {
+		t.Fatalf("playing bass track: %d, %v", track, ok)
+	}
+	if value, ok := p.OverrideValue(track, kernel.ParamMixGain); !ok || value != 0 {
+		t.Fatalf("override did not follow the playing bass track: %g, %v", value, ok)
+	}
+	if value, ok := p.CommittedValue(track, kernel.ParamMixGain); !ok || value != -3 {
+		t.Fatalf("committed value did not follow the playing bass track: %g, %v", value, ok)
+	}
+	if _, ok := p.OverrideValue(0, kernel.ParamMixGain); ok {
+		t.Fatal("bass override leaked to the lead track")
+	}
+}
+
 func reorderedMeterScore(t *testing.T, name string, ids [2]string, firstGain, secondGain float64) Score {
 	t.Helper()
 	program := graph.Program{}

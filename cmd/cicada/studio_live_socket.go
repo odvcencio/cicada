@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/kernel"
 )
 
 // liveSocket streams binary telemetry frames. It sends the latest frame of
@@ -41,7 +45,18 @@ func (s *studio) liveSocket(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if kind == websocket.MessageText {
-				s.handleLiveMessage(data)
+				if err := s.handleLiveMessage(data); err != nil {
+					response, _ := json.Marshal(struct {
+						Type    string `json:"type"`
+						Message string `json:"message"`
+					}{Type: "error", Message: err.Error()})
+					writeCtx, done := context.WithTimeout(ctx, time.Second)
+					err := connection.Write(writeCtx, websocket.MessageText, response)
+					done()
+					if err != nil {
+						return
+					}
+				}
 			}
 		}
 	}()
@@ -70,6 +85,51 @@ func (s *studio) liveSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleLiveMessage receives text messages from a live client. Preview
-// overrides arrive here in a later change; for now they are ignored.
-func (s *studio) handleLiveMessage([]byte) {}
+// handleLiveMessage queues previews through the player's control snapshot.
+func (s *studio) handleLiveMessage(data []byte) error {
+	var input struct {
+		Type   string   `json:"type"`
+		Entity string   `json:"entity"`
+		Param  string   `json:"param"`
+		Value  *float32 `json:"value"`
+		Commit bool     `json:"commit"`
+	}
+	if err := json.Unmarshal(data, &input); err != nil {
+		return fmt.Errorf("invalid live message: %w", err)
+	}
+	if input.Type != "preview-set" && input.Type != "preview-end" {
+		return fmt.Errorf("unknown live message type %q", input.Type)
+	}
+	s.transport.mu.Lock()
+	stream := s.transport.stream
+	s.transport.mu.Unlock()
+	if stream == nil {
+		return fmt.Errorf("live player is unavailable")
+	}
+	trackID, ok := strings.CutPrefix(input.Entity, "track:")
+	if !ok || trackID == "" {
+		return fmt.Errorf("unknown preview entity %q", input.Entity)
+	}
+	track, ok := stream.TrackIndex(trackID)
+	if !ok {
+		return fmt.Errorf("unknown preview entity %q", input.Entity)
+	}
+	id, ok := kernel.FindParam(input.Param)
+	if !ok {
+		return fmt.Errorf("unknown preview parameter %q", input.Param)
+	}
+	if input.Type == "preview-set" {
+		if input.Value == nil {
+			return fmt.Errorf("preview-set requires a value")
+		}
+		return stream.SetParam(track, id, *input.Value)
+	}
+	if input.Commit {
+		return nil // Activation clears the preview after the committed value lands.
+	}
+	value, ok := stream.CommittedValue(track, id)
+	if !ok {
+		return fmt.Errorf("committed value is unavailable for %q on %q", input.Param, input.Entity)
+	}
+	return stream.SetParam(track, id, value)
+}

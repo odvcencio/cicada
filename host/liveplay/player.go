@@ -44,10 +44,11 @@ type Score struct {
 }
 
 type trackNameSnapshot struct {
-	ids   [16]string
-	kinds [16]string
-	poly  [16]bool
-	count uint8
+	ids        [16]string
+	kinds      [16]string
+	poly       [16]bool
+	count      uint8
+	parameters []ParameterValue
 }
 
 type ParameterValue struct {
@@ -299,7 +300,10 @@ func (p *Player) Events() <-chan Event { return p.events }
 func (p *Player) Meters() <-chan MeterFrame { return p.meters }
 
 func makeTrackNames(score Score) *trackNameSnapshot {
-	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), 16))}
+	snapshot := &trackNameSnapshot{
+		count:      uint8(min(len(score.Tracks), 16)),
+		parameters: append([]ParameterValue(nil), score.Parameters...),
+	}
 	for index := 0; index < int(snapshot.count); index++ {
 		snapshot.ids[index] = score.Tracks[index].ID
 		snapshot.kinds[index] = score.Tracks[index].Kind
@@ -330,6 +334,52 @@ func (p *Player) TrackIndex(id string) (uint8, bool) {
 		}
 	}
 	return 0, false
+}
+
+// CommittedValue reads a parameter from the playing score's immutable snapshot.
+// Offered scores become visible only when the render thread lands them.
+func (p *Player) CommittedValue(track uint8, id kernel.ParamID) (float32, bool) {
+	snapshot := p.trackNames.Load()
+	if snapshot == nil {
+		return 0, false
+	}
+	for _, parameter := range snapshot.parameters {
+		if parameter.Track == track && parameter.ID == id {
+			return parameter.Value, true
+		}
+	}
+	return 0, false
+}
+
+// OverrideValue returns the latest queued SetParam value for a playing track.
+// It reads only control snapshots, so audio-thread clears are not reflected.
+func (p *Player) OverrideValue(track uint8, id kernel.ParamID) (float32, bool) {
+	if id >= kernel.ParamCount {
+		return 0, false
+	}
+	snapshot := p.overrides.Load()
+	if snapshot == nil {
+		return 0, false
+	}
+	slot := int(track)
+	if track == 0xff {
+		slot = 16
+	} else {
+		if track >= 16 || uint32(track) >= p.trackCount.Load() {
+			return 0, false
+		}
+		if names := p.trackNames.Load(); names != nil && track < names.count {
+			for i := 0; i < 16; i++ {
+				override := snapshot.values[i][id]
+				if override.active && override.trackID == names.ids[track] {
+					return override.value, true
+				}
+			}
+			return 0, false
+		}
+	}
+	override := snapshot.values[slot][id]
+	return override.value, override.active
 }
 
 // Note queues a live note for an acid, authored instrument, or drum track. Requests are
