@@ -1,0 +1,1034 @@
+{
+  "instrument/duplicate track/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "track bass already exists"
+    },
+    "Source": "cicada 1\r\ntitle \"Keep my title\"\r\n// authored track\r\ntrack bass acid { cutoff = 723.25Hz } // preserve this\r\npattern p acid { 1 . 5 . }\r\n// scene annotation\r\nscene main { bass=p }\r\nsong { main*2 }\r\n",
+    "Labels": null
+  },
+  "instrument/duplicate track/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "track bass already exists"
+    },
+    "Source": "cicada 1\ntitle \"Keep my title\"\n// authored track\ntrack bass acid { cutoff = 723.25Hz } // preserve this\npattern p acid { 1 . 5 . }\n// scene annotation\nscene main { bass=p }\nsong { main*2 }\n",
+    "Labels": null
+  },
+  "instrument/inherited/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "cf59881f697f8792f89050bc93535476ed68cfb7e183ba8247229bf9401458d0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "cf59881f697f8792f89050bc93535476ed68cfb7e183ba8247229bf9401458d0",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\ninstrument voice-b {\r\n  param brightness = 1100Hz\r\n  param resonance = 0.16\r\n  param detune = 0.005\r\n  param attack = 320ms\r\n  param decay = 900ms\r\n  param sustain = 0.72\r\n  param release = 1400ms\r\n  voice poly {\r\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\r\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\ninstrument voice-b {\r\n  param brightness = 1100Hz\r\n  param resonance = 0.16\r\n  param detune = 0.005\r\n  param attack = 320ms\r\n  param decay = 900ms\r\n  param sustain = 0.72\r\n  param release = 1400ms\r\n  voice poly {\r\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\r\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Add Warm pad instrument and track"
+    ]
+  },
+  "instrument/inherited/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "1e7f09de16159773b0d59960af47d22fa7124222a17787a465875bebb39fc708",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "1e7f09de16159773b0d59960af47d22fa7124222a17787a465875bebb39fc708",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\ninstrument voice-b {\n  param brightness = 1100Hz\n  param resonance = 0.16\n  param detune = 0.005\n  param attack = 320ms\n  param decay = 900ms\n  param sustain = 0.72\n  param release = 1400ms\n  voice poly {\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\ninstrument voice-b {\n  param brightness = 1100Hz\n  param resonance = 0.16\n  param detune = 0.005\n  param attack = 320ms\n  param decay = 900ms\n  param sustain = 0.72\n  param release = 1400ms\n  voice poly {\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Add Warm pad instrument and track"
+    ]
+  },
+  "instrument/invalid name/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a lowercase track name"
+    },
+    "Source": "cicada 1\r\ntitle \"Keep my title\"\r\n// authored track\r\ntrack bass acid { cutoff = 723.25Hz } // preserve this\r\npattern p acid { 1 . 5 . }\r\n// scene annotation\r\nscene main { bass=p }\r\nsong { main*2 }\r\n",
+    "Labels": null
+  },
+  "instrument/invalid name/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a lowercase track name"
+    },
+    "Source": "cicada 1\ntitle \"Keep my title\"\n// authored track\ntrack bass acid { cutoff = 723.25Hz } // preserve this\npattern p acid { 1 . 5 . }\n// scene annotation\nscene main { bass=p }\nsong { main*2 }\n",
+    "Labels": null
+  },
+  "instrument/loose/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "a423bf14393badb2701fb10fc87f1f2f1e695654c47bd172827969247db9ccf5",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "a423bf14393badb2701fb10fc87f1f2f1e695654c47bd172827969247db9ccf5",
+      "source": "cicada 2\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\ninstrument voice-b {\r\n  param brightness = 1100Hz\r\n  param resonance = 0.16\r\n  param detune = 0.005\r\n  param attack = 320ms\r\n  param decay = 900ms\r\n  param sustain = 0.72\r\n  param release = 1400ms\r\n  voice poly {\r\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\r\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\ninstrument voice-b {\r\n  param brightness = 1100Hz\r\n  param resonance = 0.16\r\n  param detune = 0.005\r\n  param attack = 320ms\r\n  param decay = 900ms\r\n  param sustain = 0.72\r\n  param release = 1400ms\r\n  voice poly {\r\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\r\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Add Warm pad instrument and track"
+    ]
+  },
+  "instrument/loose/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "09ebb1728e8a4aa2f9061f849a59c6770fcb3eb9a3cc15adfa7b8d9676c5abf3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "09ebb1728e8a4aa2f9061f849a59c6770fcb3eb9a3cc15adfa7b8d9676c5abf3",
+      "source": "cicada 2\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\ninstrument voice-b {\n  param brightness = 1100Hz\n  param resonance = 0.16\n  param detune = 0.005\n  param attack = 320ms\n  param decay = 900ms\n  param sustain = 0.72\n  param release = 1400ms\n  voice poly {\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\ninstrument voice-b {\n  param brightness = 1100Hz\n  param resonance = 0.16\n  param detune = 0.005\n  param attack = 320ms\n  param decay = 900ms\n  param sustain = 0.72\n  param release = 1400ms\n  voice poly {\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Add Warm pad instrument and track"
+    ]
+  },
+  "instrument/manifest/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "a423bf14393badb2701fb10fc87f1f2f1e695654c47bd172827969247db9ccf5",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "a423bf14393badb2701fb10fc87f1f2f1e695654c47bd172827969247db9ccf5",
+      "source": "cicada 2\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\ninstrument voice-b {\r\n  param brightness = 1100Hz\r\n  param resonance = 0.16\r\n  param detune = 0.005\r\n  param attack = 320ms\r\n  param decay = 900ms\r\n  param sustain = 0.72\r\n  param release = 1400ms\r\n  voice poly {\r\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\r\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\ninstrument voice-b {\r\n  param brightness = 1100Hz\r\n  param resonance = 0.16\r\n  param detune = 0.005\r\n  param attack = 320ms\r\n  param decay = 900ms\r\n  param sustain = 0.72\r\n  param release = 1400ms\r\n  voice poly {\r\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\r\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Add Warm pad instrument and track"
+    ]
+  },
+  "instrument/manifest/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "09ebb1728e8a4aa2f9061f849a59c6770fcb3eb9a3cc15adfa7b8d9676c5abf3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "09ebb1728e8a4aa2f9061f849a59c6770fcb3eb9a3cc15adfa7b8d9676c5abf3",
+      "source": "cicada 2\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\ninstrument voice-b {\n  param brightness = 1100Hz\n  param resonance = 0.16\n  param detune = 0.005\n  param attack = 320ms\n  param decay = 900ms\n  param sustain = 0.72\n  param release = 1400ms\n  voice poly {\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\ninstrument voice-b {\n  param brightness = 1100Hz\n  param resonance = 0.16\n  param detune = 0.005\n  param attack = 320ms\n  param decay = 900ms\n  param sustain = 0.72\n  param release = 1400ms\n  voice poly {\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Add Warm pad instrument and track"
+    ]
+  },
+  "instrument/poly-brass/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "f404f598d91fbab911f082101f66e4ce0a86b3424c0dc8df21d29171fa15b6de",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "f404f598d91fbab911f082101f66e4ce0a86b3424c0dc8df21d29171fa15b6de",
+      "source": "cicada 1\r\ntitle \"Keep my title\"\r\n// authored track\r\ntrack bass acid { cutoff = 723.25Hz } // preserve this\r\npattern p acid { 1 . 5 . }\r\n// scene annotation\r\ninstrument voice-b {\r\n  param brightness = 850Hz\r\n  param resonance = 0.2\r\n  param width = 0.43\r\n  param attack = 12ms\r\n  param decay = 550ms\r\n  param sustain = 0.65\r\n  param release = 180ms\r\n  voice poly {\r\n    let tone = (saw(pitch) + pulse(pitch * 1.003, width)) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bite = adsr(gate, 9ms, 320ms, 0.18, 160ms)\r\n    out = svf(tone, brightness * exp2(bite * (1.7 + velocity)), resonance) * amp * (0.45 + velocity * 0.55) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=p }\r\nsong { main*2 }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 1\r\ntitle \"Keep my title\"\r\n// authored track\r\ntrack bass acid { cutoff = 723.25Hz } // preserve this\r\npattern p acid { 1 . 5 . }\r\n// scene annotation\r\ninstrument voice-b {\r\n  param brightness = 850Hz\r\n  param resonance = 0.2\r\n  param width = 0.43\r\n  param attack = 12ms\r\n  param decay = 550ms\r\n  param sustain = 0.65\r\n  param release = 180ms\r\n  voice poly {\r\n    let tone = (saw(pitch) + pulse(pitch * 1.003, width)) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bite = adsr(gate, 9ms, 320ms, 0.18, 160ms)\r\n    out = svf(tone, brightness * exp2(bite * (1.7 + velocity)), resonance) * amp * (0.45 + velocity * 0.55) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=p }\r\nsong { main*2 }\r\n",
+    "Labels": [
+      "Add Poly brass instrument and track"
+    ]
+  },
+  "instrument/poly-brass/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "3f0e7a3d44ea2f193ef186c753c015666bf9c1f7972646e97224caf416f024c9",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "3f0e7a3d44ea2f193ef186c753c015666bf9c1f7972646e97224caf416f024c9",
+      "source": "cicada 1\ntitle \"Keep my title\"\n// authored track\ntrack bass acid { cutoff = 723.25Hz } // preserve this\npattern p acid { 1 . 5 . }\n// scene annotation\ninstrument voice-b {\n  param brightness = 850Hz\n  param resonance = 0.2\n  param width = 0.43\n  param attack = 12ms\n  param decay = 550ms\n  param sustain = 0.65\n  param release = 180ms\n  voice poly {\n    let tone = (saw(pitch) + pulse(pitch * 1.003, width)) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bite = adsr(gate, 9ms, 320ms, 0.18, 160ms)\n    out = svf(tone, brightness * exp2(bite * (1.7 + velocity)), resonance) * amp * (0.45 + velocity * 0.55) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=p }\nsong { main*2 }\n",
+      "valid": true
+    },
+    "Source": "cicada 1\ntitle \"Keep my title\"\n// authored track\ntrack bass acid { cutoff = 723.25Hz } // preserve this\npattern p acid { 1 . 5 . }\n// scene annotation\ninstrument voice-b {\n  param brightness = 850Hz\n  param resonance = 0.2\n  param width = 0.43\n  param attack = 12ms\n  param decay = 550ms\n  param sustain = 0.65\n  param release = 180ms\n  voice poly {\n    let tone = (saw(pitch) + pulse(pitch * 1.003, width)) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bite = adsr(gate, 9ms, 320ms, 0.18, 160ms)\n    out = svf(tone, brightness * exp2(bite * (1.7 + velocity)), resonance) * amp * (0.45 + velocity * 0.55) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=p }\nsong { main*2 }\n",
+    "Labels": [
+      "Add Poly brass instrument and track"
+    ]
+  },
+  "instrument/unknown preset/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a patch from the instrument library"
+    },
+    "Source": "cicada 1\r\ntitle \"Keep my title\"\r\n// authored track\r\ntrack bass acid { cutoff = 723.25Hz } // preserve this\r\npattern p acid { 1 . 5 . }\r\n// scene annotation\r\nscene main { bass=p }\r\nsong { main*2 }\r\n",
+    "Labels": null
+  },
+  "instrument/unknown preset/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a patch from the instrument library"
+    },
+    "Source": "cicada 1\ntitle \"Keep my title\"\n// authored track\ntrack bass acid { cutoff = 723.25Hz } // preserve this\npattern p acid { 1 . 5 . }\n// scene annotation\nscene main { bass=p }\nsong { main*2 }\n",
+    "Labels": null
+  },
+  "instrument/warm-pad/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2e76a6c5c0d36a91f7e1ca1ad2f0d51e69c5068496c289af8732ee556b6adf24",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2e76a6c5c0d36a91f7e1ca1ad2f0d51e69c5068496c289af8732ee556b6adf24",
+      "source": "cicada 1\r\ntitle \"Keep my title\"\r\n// authored track\r\ntrack bass acid { cutoff = 723.25Hz } // preserve this\r\npattern p acid { 1 . 5 . }\r\n// scene annotation\r\ninstrument voice-b {\r\n  param brightness = 1100Hz\r\n  param resonance = 0.16\r\n  param detune = 0.005\r\n  param attack = 320ms\r\n  param decay = 900ms\r\n  param sustain = 0.72\r\n  param release = 1400ms\r\n  voice poly {\r\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\r\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=p }\r\nsong { main*2 }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 1\r\ntitle \"Keep my title\"\r\n// authored track\r\ntrack bass acid { cutoff = 723.25Hz } // preserve this\r\npattern p acid { 1 . 5 . }\r\n// scene annotation\r\ninstrument voice-b {\r\n  param brightness = 1100Hz\r\n  param resonance = 0.16\r\n  param detune = 0.005\r\n  param attack = 320ms\r\n  param decay = 900ms\r\n  param sustain = 0.72\r\n  param release = 1400ms\r\n  voice poly {\r\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\r\n    let amp = adsr(gate, attack, decay, sustain, release)\r\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\r\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\r\n  }\r\n}\r\n\r\ntrack keys voice-b {}\r\n\r\nscene main { bass=p }\r\nsong { main*2 }\r\n",
+    "Labels": [
+      "Add Warm pad instrument and track"
+    ]
+  },
+  "instrument/warm-pad/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "7549548eae0f4a7c08cfe42e2ed81fd90111368b1965955edcb2e407b9633691",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "7549548eae0f4a7c08cfe42e2ed81fd90111368b1965955edcb2e407b9633691",
+      "source": "cicada 1\ntitle \"Keep my title\"\n// authored track\ntrack bass acid { cutoff = 723.25Hz } // preserve this\npattern p acid { 1 . 5 . }\n// scene annotation\ninstrument voice-b {\n  param brightness = 1100Hz\n  param resonance = 0.16\n  param detune = 0.005\n  param attack = 320ms\n  param decay = 900ms\n  param sustain = 0.72\n  param release = 1400ms\n  voice poly {\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=p }\nsong { main*2 }\n",
+      "valid": true
+    },
+    "Source": "cicada 1\ntitle \"Keep my title\"\n// authored track\ntrack bass acid { cutoff = 723.25Hz } // preserve this\npattern p acid { 1 . 5 . }\n// scene annotation\ninstrument voice-b {\n  param brightness = 1100Hz\n  param resonance = 0.16\n  param detune = 0.005\n  param attack = 320ms\n  param decay = 900ms\n  param sustain = 0.72\n  param release = 1400ms\n  voice poly {\n    let tone = (saw(pitch / exp2(detune)) + saw(pitch * exp2(detune))) * 0.5\n    let amp = adsr(gate, attack, decay, sustain, release)\n    let bloom = adsr(gate, 480ms, 1200ms, 0.28, 1700ms)\n    out = svf(tone, brightness * exp2(bloom * 2), resonance) * amp * (0.65 + velocity * 0.35) * 0.065\n  }\n}\n\ntrack keys voice-b {}\n\nscene main { bass=p }\nsong { main*2 }\n",
+    "Labels": [
+      "Add Warm pad instrument and track"
+    ]
+  },
+  "library/insert/acid-bite/extra/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c2d8dac213f6cf9cfdfaa9b018942acc3889e7d626d1ad6ab1da4d4a6efc4af0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c2d8dac213f6cf9cfdfaa9b018942acc3889e7d626d1ad6ab1da4d4a6efc4af0",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/presets\"\n\ntrack extra presets.acid-bite {}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/presets\"\n\ntrack extra presets.acid-bite {}\n",
+    "Labels": [
+      "Library: insert presets.acid-bite on extra"
+    ]
+  },
+  "library/insert/acid-bite/extra/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "3161b2b5c1f0a6d165d8755a527d5ecdf0d3d10fa5ac343a7d21be4f119b4445",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "3161b2b5c1f0a6d165d8755a527d5ecdf0d3d10fa5ac343a7d21be4f119b4445",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/presets\"\n\ntrack extra presets.acid-bite {}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/presets\"\n\ntrack extra presets.acid-bite {}\n",
+    "Labels": [
+      "Library: insert presets.acid-bite on extra"
+    ]
+  },
+  "library/insert/acid-bite/lead/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "13b517f37d43416eeead7698b51be866b9676f546a675f4422818a11bc617b5b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "13b517f37d43416eeead7698b51be866b9676f546a675f4422818a11bc617b5b",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead presets.acid-bite { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/presets\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead presets.acid-bite { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/presets\"\n",
+    "Labels": [
+      "Library: insert presets.acid-bite on lead"
+    ]
+  },
+  "library/insert/acid-bite/lead/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ab4442567f3aac227954be107e810238ad757765c771605b6855d6b568e4c5c0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ab4442567f3aac227954be107e810238ad757765c771605b6855d6b568e4c5c0",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead presets.acid-bite { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/presets\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead presets.acid-bite { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/presets\"\n",
+    "Labels": [
+      "Library: insert presets.acid-bite on lead"
+    ]
+  },
+  "library/insert/comp/extra/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "099afd5ea7107d5f2a0aa1e6b246a4af8760e51addf3e7373e6e784614d741ac",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "099afd5ea7107d5f2a0aa1e6b246a4af8760e51addf3e7373e6e784614d741ac",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
+    "Labels": [
+      "Library: insert fx.comp on extra"
+    ]
+  },
+  "library/insert/comp/extra/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "27ce8b34d3977a38c070cd90a641116dfa2238a494353682b6a56113a0c56a9f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "27ce8b34d3977a38c070cd90a641116dfa2238a494353682b6a56113a0c56a9f",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  out = music\n}\n\nbus music { insert = fx.comp }\n",
+    "Labels": [
+      "Library: insert fx.comp on extra"
+    ]
+  },
+  "library/insert/comp/lead/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "acbe2004a12a7ce9ca5259950f55ff13762e345f128a73274622679877d233ca",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "acbe2004a12a7ce9ca5259950f55ff13762e345f128a73274622679877d233ca",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 \n  out = music\n}\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\nbus music { insert = fx.comp }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 \n  out = music\n}\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\nbus music { insert = fx.comp }\n",
+    "Labels": [
+      "Library: insert fx.comp on lead"
+    ]
+  },
+  "library/insert/comp/lead/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "6fd82e77f76836fb09492e679b4a178c074ed3438e37b23223f17016d5b6b406",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "6fd82e77f76836fb09492e679b4a178c074ed3438e37b23223f17016d5b6b406",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 \n  out = music\n}\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\nbus music { insert = fx.comp }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 \n  out = music\n}\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\nbus music { insert = fx.comp }\n",
+    "Labels": [
+      "Library: insert fx.comp on lead"
+    ]
+  },
+  "library/insert/delay/extra/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "57d6895637d5f29e40ae1b6c7fa83e9f86be8924c4a05f5629d59704f2639032",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "57d6895637d5f29e40ae1b6c7fa83e9f86be8924c4a05f5629d59704f2639032",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.delay = 0.4\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.delay = 0.4\n}\n",
+    "Labels": [
+      "Library: insert fx.delay on extra"
+    ]
+  },
+  "library/insert/delay/extra/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "3e2a03fce2585f8347c1142a0bfeea73ac874c3478423beb508b29f9eb9020a0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "3e2a03fce2585f8347c1142a0bfeea73ac874c3478423beb508b29f9eb9020a0",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.delay = 0.4\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.delay = 0.4\n}\n",
+    "Labels": [
+      "Library: insert fx.delay on extra"
+    ]
+  },
+  "library/insert/delay/lead/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b7e0a352bc6c8bb34dc76e7a1704d1d5b1e7bf4b61eeb04abf219f261027edfb",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b7e0a352bc6c8bb34dc76e7a1704d1d5b1e7bf4b61eeb04abf219f261027edfb",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 \n  send fx.delay = 0.4\n}\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 \n  send fx.delay = 0.4\n}\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n",
+    "Labels": [
+      "Library: insert fx.delay on lead"
+    ]
+  },
+  "library/insert/delay/lead/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "0d18afda86f1ce984127d7aeb52e1c53c2e8beba675e03685f20b54f9c729970",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "0d18afda86f1ce984127d7aeb52e1c53c2e8beba675e03685f20b54f9c729970",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 \n  send fx.delay = 0.4\n}\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 \n  send fx.delay = 0.4\n}\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n",
+    "Labels": [
+      "Library: insert fx.delay on lead"
+    ]
+  },
+  "library/insert/drive/extra/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "3dfb27c58a2d7d89603c22895a64bff0c745b62f29bf9c27a808d14eb8edaff4",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "3dfb27c58a2d7d89603c22895a64bff0c745b62f29bf9c27a808d14eb8edaff4",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  insert = fx.drive\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  insert = fx.drive\n}\n",
+    "Labels": [
+      "Library: insert fx.drive on extra"
+    ]
+  },
+  "library/insert/drive/extra/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "a758a411564323ce9f5319c1c24b9f53a042a4e5fe0bddc39b9af2a9add4db5d",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "a758a411564323ce9f5319c1c24b9f53a042a4e5fe0bddc39b9af2a9add4db5d",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  insert = fx.drive\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  insert = fx.drive\n}\n",
+    "Labels": [
+      "Library: insert fx.drive on extra"
+    ]
+  },
+  "library/insert/drive/lead/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "da2c43211d158b6d7b08b13def17231ad5da531972cbb352d899b6b39750c26f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "da2c43211d158b6d7b08b13def17231ad5da531972cbb352d899b6b39750c26f",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 \n  insert = fx.drive\n}\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 \n  insert = fx.drive\n}\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n",
+    "Labels": [
+      "Library: insert fx.drive on lead"
+    ]
+  },
+  "library/insert/drive/lead/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4a8c9f76ebfcf10bde1273d9e7e152b2a775777960c09c3cfa5767e8c0f1a700",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4a8c9f76ebfcf10bde1273d9e7e152b2a775777960c09c3cfa5767e8c0f1a700",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 \n  insert = fx.drive\n}\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 \n  insert = fx.drive\n}\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n",
+    "Labels": [
+      "Library: insert fx.drive on lead"
+    ]
+  },
+  "library/insert/glassbass/extra/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d84f6b91f731053448d2341296f1a97fff6874000d0a974584e056a2878b945c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d84f6b91f731053448d2341296f1a97fff6874000d0a974584e056a2878b945c",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/synth\"\n\ntrack extra synth.glassbass {}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/synth\"\n\ntrack extra synth.glassbass {}\n",
+    "Labels": [
+      "Library: insert synth.glassbass on extra"
+    ]
+  },
+  "library/insert/glassbass/extra/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2826c52a93a0e7bffa682ace13bf48fa64f2a6988d7f0f0344bf8f36eb6d2b2c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2826c52a93a0e7bffa682ace13bf48fa64f2a6988d7f0f0344bf8f36eb6d2b2c",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/synth\"\n\ntrack extra synth.glassbass {}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/synth\"\n\ntrack extra synth.glassbass {}\n",
+    "Labels": [
+      "Library: insert synth.glassbass on extra"
+    ]
+  },
+  "library/insert/glassbass/lead/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "817a643f5faf9b4d70a6084a9c0635fe660c82d7a117b469e50d160cb6219e2f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "817a643f5faf9b4d70a6084a9c0635fe660c82d7a117b469e50d160cb6219e2f",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead synth.glassbass { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/synth\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead synth.glassbass { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/synth\"\n",
+    "Labels": [
+      "Library: insert synth.glassbass on lead"
+    ]
+  },
+  "library/insert/glassbass/lead/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "faf9180dcd8cbb7232a425050e6c6cd96c40c0bee2909014365e6d29b8b19c87",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "faf9180dcd8cbb7232a425050e6c6cd96c40c0bee2909014365e6d29b8b19c87",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead synth.glassbass { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/synth\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead synth.glassbass { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/synth\"\n",
+    "Labels": [
+      "Library: insert synth.glassbass on lead"
+    ]
+  },
+  "library/insert/invalid track/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "select a track or enter a valid new track name"
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "library/insert/invalid track/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "select a track or enter a valid new track name"
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n",
+    "Labels": null
+  },
+  "library/insert/missing item/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "library item is missing or private"
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "library/insert/missing item/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "library item is missing or private"
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n",
+    "Labels": null
+  },
+  "library/insert/reverb/extra/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "e79511d70435949ff4672932169e64056594d900cafb1f20d8755bbdfdd6c4f3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "e79511d70435949ff4672932169e64056594d900cafb1f20d8755bbdfdd6c4f3",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.reverb = 0.4\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.reverb = 0.4\n}\n",
+    "Labels": [
+      "Library: insert fx.reverb on extra"
+    ]
+  },
+  "library/insert/reverb/extra/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "677d5c7ba2cae72d6fbe0e432f1fd23d2ce15d0c08a32930a8e17e02cb1f7528",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "677d5c7ba2cae72d6fbe0e432f1fd23d2ce15d0c08a32930a8e17e02cb1f7528",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.reverb = 0.4\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n\ntrack extra acid {\n  send fx.reverb = 0.4\n}\n",
+    "Labels": [
+      "Library: insert fx.reverb on extra"
+    ]
+  },
+  "library/insert/reverb/lead/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5dea8acb596a92af1701b9d0ee0d19c3d75e1cc9ca55f24859fd7c2ce6c61d88",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5dea8acb596a92af1701b9d0ee0d19c3d75e1cc9ca55f24859fd7c2ce6c61d88",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 \n  send fx.reverb = 0.4\n}\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 \n  send fx.reverb = 0.4\n}\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\nimport \"std/fx\"\n",
+    "Labels": [
+      "Library: insert fx.reverb on lead"
+    ]
+  },
+  "library/insert/reverb/lead/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "18a3eb701029fb00d344b9bd059e4ba6b0eb4de21b32cef606d638ec8a095f6c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "18a3eb701029fb00d344b9bd059e4ba6b0eb4de21b32cef606d638ec8a095f6c",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 \n  send fx.reverb = 0.4\n}\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 \n  send fx.reverb = 0.4\n}\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\nimport \"std/fx\"\n",
+    "Labels": [
+      "Library: insert fx.reverb on lead"
+    ]
+  },
+  "library/save/defaults/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "6e2fd26e5cad44e64542d34a19374f039977958a4bf2db8bc5fbef50ea64e44e",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "6e2fd26e5cad44e64542d34a19374f039977958a4bf2db8bc5fbef50ea64e44e",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=0.54kHz pan=0 mute=off }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\npreset defaults {\n  instrument = acid\n  cutoff = 0.54kHz\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=0.54kHz pan=0 mute=off }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\npreset defaults {\n  instrument = acid\n  cutoff = 0.54kHz\n}\n",
+    "Labels": [
+      "Preset: save defaults from lead"
+    ]
+  },
+  "library/save/defaults/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "1eb139d4598a2ccba70f90a1ca3f209411578d0cbdc997bb23378b9d1ae1071b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "1eb139d4598a2ccba70f90a1ca3f209411578d0cbdc997bb23378b9d1ae1071b",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=0.54kHz pan=0 mute=off }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\npreset defaults {\n  instrument = acid\n  cutoff = 0.54kHz\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=0.54kHz pan=0 mute=off }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\npreset defaults {\n  instrument = acid\n  cutoff = 0.54kHz\n}\n",
+    "Labels": [
+      "Preset: save defaults from lead"
+    ]
+  },
+  "library/save/invalid name/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "enter a public preset name"
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "library/save/invalid name/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "enter a public preset name"
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n",
+    "Labels": null
+  },
+  "library/save/missing track/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "selected track does not exist"
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "library/save/missing track/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "selected track does not exist"
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n",
+    "Labels": null
+  },
+  "library/save/values/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "6f7db5bf505bcb97e238537768771a0b1881f222daef643ee7a602c421d06f5b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "6f7db5bf505bcb97e238537768771a0b1881f222daef643ee7a602c421d06f5b",
+      "source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\npreset bright {\n  instrument = acid\n  cutoff = 900Hz\n  pan = 0.2\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\nkey c minor\r\ntrack lead acid { cutoff=900Hz pan=0.2 }\r\npattern melody { c3 . g3 . }\r\nscene main { lead=melody }\r\nsong { main }\r\n\npreset bright {\n  instrument = acid\n  cutoff = 900Hz\n  pan = 0.2\n}\n",
+    "Labels": [
+      "Preset: save bright from lead"
+    ]
+  },
+  "library/save/values/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c1dcafa5c0a7c769f451548593e94cbf906a141f7b0a15c34eacfe0e643df95f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c1dcafa5c0a7c769f451548593e94cbf906a141f7b0a15c34eacfe0e643df95f",
+      "source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\npreset bright {\n  instrument = acid\n  cutoff = 900Hz\n  pan = 0.2\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\nkey c minor\ntrack lead acid { cutoff=900Hz pan=0.2 }\npattern melody { c3 . g3 . }\nscene main { lead=melody }\nsong { main }\n\npreset bright {\n  instrument = acid\n  cutoff = 900Hz\n  pan = 0.2\n}\n",
+    "Labels": [
+      "Preset: save bright from lead"
+    ]
+  },
+  "record/acid slide/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "6ccc48824b0b12939a21bdfd1df7d879faf1fd11ee136c4eef4b557a28a056b8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "6ccc48824b0b12939a21bdfd1df7d879faf1fd11ee136c4eef4b557a28a056b8",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · pulse · 2 notes"
+    ]
+  },
+  "record/acid slide/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "480d28da8d45a3e44358a2b34a45cee4b35e30fc5ed5203c80dcc571d60e8ea1",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "480d28da8d45a3e44358a2b34a45cee4b35e30fc5ed5203c80dcc571d60e8ea1",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Take committed · pulse · 2 notes"
+    ]
+  },
+  "record/empty/crlf": {
+    "Code": 400,
+    "Body": {
+      "error": "at least one recorded track and pattern are required"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "record/empty/lf": {
+    "Code": 400,
+    "Body": {
+      "error": "at least one recorded track and pattern are required"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "record/expression comments/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "5e9d9d9fc81855cf8022b6220ed1b49fab028a317d6a47337fa31eb1d83ad985",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "5e9d9d9fc81855cf8022b6220ed1b49fab028a317d6a47337fa31eb1d83ad985",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 .\r\n bend: 50ct -50ct 0ct 10ct // keep\r\n\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 .\r\n bend: 50ct -50ct 0ct 10ct // keep\r\n\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · pulse · 1 notes"
+    ]
+  },
+  "record/expression comments/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4ce316b068e14cf3f65b412a16fc2437a9e85fe6b6a9a202eeddef9587d92222",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4ce316b068e14cf3f65b412a16fc2437a9e85fe6b6a9a202eeddef9587d92222",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4 - 5 .\n bend: 50ct -50ct 0ct 10ct // keep\n\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4 - 5 .\n bend: 50ct -50ct 0ct 10ct // keep\n\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Take committed · pulse · 1 notes"
+    ]
+  },
+  "record/expression/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b0525c16c15b8f34198797cb1400df0dae4232569d9ccb7ef229f0238e0d320b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b0525c16c15b8f34198797cb1400df0dae4232569d9ccb7ef229f0238e0d320b",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 . \n  bend: 50ct -50ct 0ct 0ct\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4 - 5 . \n  bend: 50ct -50ct 0ct 0ct\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · pulse · 1 notes"
+    ]
+  },
+  "record/expression/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b5ebdf1f5e95d8e8b255365edf46b6a3bb4093e44d10f8a79f8473e26cc4b886",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b5ebdf1f5e95d8e8b255365edf46b6a3bb4093e44d10f8a79f8473e26cc4b886",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4 - 5 . \n  bend: 50ct -50ct 0ct 0ct\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4 - 5 . \n  bend: 50ct -50ct 0ct 0ct\n  vibrato: 0ct 0ct 0ct 0ct\n  pressure: 0.25 1 0 0\n  timbre: 0.75 1 0.5 0.5\n}\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Take committed · pulse · 1 notes"
+    ]
+  },
+  "record/fm_bass/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "a3cb439d0a8b2c2c8b51e39728f2dbbd55c66f635078b58e3e64458518203389",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "a3cb439d0a8b2c2c8b51e39728f2dbbd55c66f635078b58e3e64458518203389",
+      "source": "cicada 2\r\ntrack part fm_bass { voices=2 } // keep controls\r\npattern take notes steps=4 { c4 . . . }\r\nscene main { part=take }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntrack part fm_bass { voices=2 } // keep controls\r\npattern take notes steps=4 { c4 . . . }\r\nscene main { part=take }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · take · 1 notes"
+    ]
+  },
+  "record/fm_bass/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "84cf27464d89d73c1584b0722f7cfb1379d4ff6cad58c6f806580f56d2ca87a6",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "84cf27464d89d73c1584b0722f7cfb1379d4ff6cad58c6f806580f56d2ca87a6",
+      "source": "cicada 2\ntrack part fm_bass { voices=2 } // keep controls\npattern take notes steps=4 { c4 . . . }\nscene main { part=take }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntrack part fm_bass { voices=2 } // keep controls\npattern take notes steps=4 { c4 . . . }\nscene main { part=take }\nsong { main }\n",
+    "Labels": [
+      "Take committed · take · 1 notes"
+    ]
+  },
+  "record/inherited/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "6ccc48824b0b12939a21bdfd1df7d879faf1fd11ee136c4eef4b557a28a056b8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "6ccc48824b0b12939a21bdfd1df7d879faf1fd11ee136c4eef4b557a28a056b8",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · pulse · 2 notes"
+    ]
+  },
+  "record/inherited/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "480d28da8d45a3e44358a2b34a45cee4b35e30fc5ed5203c80dcc571d60e8ea1",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "480d28da8d45a3e44358a2b34a45cee4b35e30fc5ed5203c80dcc571d60e8ea1",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Take committed · pulse · 2 notes"
+    ]
+  },
+  "record/invalid expression/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "recorded expression needs finite pitch cents -9600–9600 and pressure/timbre 0–1"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "record/invalid expression/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "recorded expression needs finite pitch cents -9600–9600 and pressure/timbre 0–1"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "record/invalid note/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "recorded note must be in MIDI range 0–127"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "record/invalid note/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "recorded note must be in MIDI range 0–127"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "record/loose/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d2fbd2d22bddb29e442fb9e5417f546c3bea1cd24174bfc44c7dd4614885f673",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d2fbd2d22bddb29e442fb9e5417f546c3bea1cd24174bfc44c7dd4614885f673",
+      "source": "cicada 2\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · pulse · 2 notes"
+    ]
+  },
+  "record/loose/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b526dd54db5cd5a0db4598624f8aefa021c0628aa1b918f5ef0d5651948949db",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b526dd54db5cd5a0db4598624f8aefa021c0628aa1b918f5ef0d5651948949db",
+      "source": "cicada 2\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Take committed · pulse · 2 notes"
+    ]
+  },
+  "record/manifest/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d2fbd2d22bddb29e442fb9e5417f546c3bea1cd24174bfc44c7dd4614885f673",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d2fbd2d22bddb29e442fb9e5417f546c3bea1cd24174bfc44c7dd4614885f673",
+      "source": "cicada 2\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · pulse · 2 notes"
+    ]
+  },
+  "record/manifest/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b526dd54db5cd5a0db4598624f8aefa021c0628aa1b918f5ef0d5651948949db",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b526dd54db5cd5a0db4598624f8aefa021c0628aa1b918f5ef0d5651948949db",
+      "source": "cicada 2\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Take committed · pulse · 2 notes"
+    ]
+  },
+  "record/multiple tracks/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "22bbe38ecf86e3c3880f1f1ca53f58ce29cd4214d059b0fa1652ec84fc5775ac",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "22bbe38ecf86e3c3880f1f1ca53f58ce29cd4214d059b0fa1652ec84fc5775ac",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: xx6.. sd: .X.. }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { c4~ e4 5 . }\r\npattern beat drums steps=4 { bd: xx6.. sd: .X.. }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · 4 notes across 2 patterns"
+    ]
+  },
+  "record/multiple tracks/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "f87e41a4c0e922125c7ba046ca58dc1d80bc51b2c05bef6283f59c3dfce01585",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "f87e41a4c0e922125c7ba046ca58dc1d80bc51b2c05bef6283f59c3dfce01585",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: xx6.. sd: .X.. }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { c4~ e4 5 . }\npattern beat drums steps=4 { bd: xx6.. sd: .X.. }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Take committed · 4 notes across 2 patterns"
+    ]
+  },
+  "record/organ_full/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "893ac2047baa907d8a4777f77bad89a10b4673e2bf651af205f9ed223af9b003",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "893ac2047baa907d8a4777f77bad89a10b4673e2bf651af205f9ed223af9b003",
+      "source": "cicada 2\r\ntrack part organ_full { voices=2 } // keep controls\r\npattern take notes steps=4 { c4 . . . }\r\nscene main { part=take }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntrack part organ_full { voices=2 } // keep controls\r\npattern take notes steps=4 { c4 . . . }\r\nscene main { part=take }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · take · 1 notes"
+    ]
+  },
+  "record/organ_full/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "cccb99f3da85215c11fe24e1b6f0a0e1a6896293f30c781e518748bab9ccf80a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "cccb99f3da85215c11fe24e1b6f0a0e1a6896293f30c781e518748bab9ccf80a",
+      "source": "cicada 2\ntrack part organ_full { voices=2 } // keep controls\npattern take notes steps=4 { c4 . . . }\nscene main { part=take }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntrack part organ_full { voices=2 } // keep controls\npattern take notes steps=4 { c4 . . . }\nscene main { part=take }\nsong { main }\n",
+    "Labels": [
+      "Take committed · take · 1 notes"
+    ]
+  },
+  "record/simultaneous drums/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "60c74493d3b2ece1dbc516bc7415fb107290812abbaf828e93616e99935ac8dd",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "60c74493d3b2ece1dbc516bc7415fb107290812abbaf828e93616e99935ac8dd",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: xx6.. sd: .X.. }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: xx6.. sd: .X.. }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · beat · 2 notes"
+    ]
+  },
+  "record/simultaneous drums/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "571f2522ac0731c6c0f6c60f3b2de9e67ed903b6c471edb10269ee25f8af27d9",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "571f2522ac0731c6c0f6c60f3b2de9e67ed903b6c471edb10269ee25f8af27d9",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: xx6.. sd: .X.. }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: xx6.. sd: .X.. }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Take committed · beat · 2 notes"
+    ]
+  },
+  "record/tine_ep/crlf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "00208b5d77268a5ec5288823eeb9518d411e76f93151f4f57cfe8e6fd0b3ca86",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "00208b5d77268a5ec5288823eeb9518d411e76f93151f4f57cfe8e6fd0b3ca86",
+      "source": "cicada 2\r\ntrack part tine_ep { voices=2 } // keep controls\r\npattern take notes steps=4 { c4 . . . }\r\nscene main { part=take }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntrack part tine_ep { voices=2 } // keep controls\r\npattern take notes steps=4 { c4 . . . }\r\nscene main { part=take }\r\nsong { main }\r\n",
+    "Labels": [
+      "Take committed · take · 1 notes"
+    ]
+  },
+  "record/tine_ep/lf": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "01a46caf0e6c31c8d2b6cf38195e557cc2bf09404640bf3fdabac1f68b85a649",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "01a46caf0e6c31c8d2b6cf38195e557cc2bf09404640bf3fdabac1f68b85a649",
+      "source": "cicada 2\ntrack part tine_ep { voices=2 } // keep controls\npattern take notes steps=4 { c4 . . . }\nscene main { part=take }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntrack part tine_ep { voices=2 } // keep controls\npattern take notes steps=4 { c4 . . . }\nscene main { part=take }\nsong { main }\n",
+    "Labels": [
+      "Take committed · take · 1 notes"
+    ]
+  },
+  "record/unknown track/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown track \"ghost\""
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "record/unknown track/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown track \"ghost\""
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "record/wrong track/crlf": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern \"beat\" is not on track \"bass\""
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "record/wrong track/lf": {
+    "Code": 422,
+    "Body": {
+      "error": "pattern \"beat\" is not on track \"bass\""
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  }
+}

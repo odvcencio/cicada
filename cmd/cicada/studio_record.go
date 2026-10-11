@@ -1,14 +1,11 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"net/http"
 	"strings"
 
-	"m31labs.dev/cicada/host/liveplay"
-	"m31labs.dev/cicada/kernel/seq"
-	"m31labs.dev/cicada/kernel/voice/keyboard"
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -37,12 +34,6 @@ type studioTakeRecording struct {
 	Notes   []studioTakeNote `json:"notes"`
 }
 
-type recordedStep struct {
-	note, velocity int
-	step           int
-	slide          bool
-}
-
 func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 	edit, ok := studioRequest(w, r)
 	if !ok {
@@ -69,272 +60,38 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	var committedRevision string
-	s.applyWithHook(w, edit, func(source []byte) ([]byte, error) {
-		score, ds, err := parseScoreForPath(s.path, source)
-		if err != nil {
-			return nil, err
+	var cancelHandoff func()
+	receipt := &studioRecordingResponse{ResponseWriter: w, onStatus: func(status int) {
+		// applyPreparedIntents still holds the edit lock while sending the
+		// outcome, so cancellation cannot race another recording commit.
+		if status != http.StatusOK && cancelHandoff != nil {
+			cancelHandoff()
 		}
-		if score == nil || hasDiagnosticErrors(ds) {
-			return nil, fmt.Errorf("score must validate before recording a take")
-		}
-		updated, prefix, err := studioTransformSource(source, score.Version)
-		if err != nil {
-			return nil, err
-		}
-		for _, recording := range edit.Recordings {
-			var err error
-			updated, err = recordedTakeSource(updated, recording.Track, recording.Pattern, recording.Notes)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if len(prefix) > 0 {
-			if !bytes.HasPrefix(updated, prefix) {
-				return nil, fmt.Errorf("recorded source no longer matches its inherited edition")
-			}
-			updated = bytes.Clone(updated[len(prefix):])
-		}
-		committedRevision = studioRevision(updated)
-		return updated, nil
+	}}
+	intent := &edits.RecordTake{Recordings: editRecordings(edit.Recordings)}
+	s.applyPreparedIntents(receipt, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil, func(result *edits.Result) error {
+		committedRevision = edits.Revision(result.Source)
+		return nil
 	}, func() {
 		if s.history != nil {
-			s.history.expectRecordedTake(committedRevision)
+			cancelHandoff = s.history.expectRecordedTake(committedRevision)
 		}
 	})
 }
 
-// Existing grid transforms parse standalone source. A temporary edition header
-// supplies manifest context during that in-memory transform, and is stripped
-// before revision hashing or saving. Authored headers are never changed.
-// studioTransformSource remains only for the unported M4 and M5 callers.
-func studioTransformSource(source []byte, edition int) ([]byte, []byte, error) {
-	if edition != 2 {
-		return source, nil, nil
-	}
-	root, walker, err := notation.ParseTree(source)
-	if err != nil {
-		return nil, nil, err
-	}
-	for i := 0; i < root.NamedChildCount(); i++ {
-		if walker.Type(root.NamedChild(i)) == "integer" {
-			return source, nil, nil
-		}
-	}
-	newline := "\n"
-	if bytes.Contains(source, []byte("\r\n")) {
-		newline = "\r\n"
-	}
-	prefix := []byte("cicada 2" + newline)
-	return append(bytes.Clone(prefix), source...), prefix, nil
-}
-
-func recordedTakeSource(source []byte, trackID, patternID string, take []studioTakeNote) ([]byte, error) {
-	if trackID == "" || patternID == "" || len(take) == 0 {
-		return nil, fmt.Errorf("track, pattern, and at least one recorded note are required")
-	}
-	score, diagnostics := notation.Parse(source)
-	if score == nil || hasDiagnosticErrors(diagnostics) {
-		return nil, fmt.Errorf("score must validate before recording a take")
-	}
-	semantic, diagnostics := project.FromScore(score)
-	if semantic == nil || hasDiagnosticErrors(diagnostics) {
-		return nil, fmt.Errorf("score must compile before recording a take")
-	}
-	var track *project.Track
-	for index := range semantic.Tracks {
-		if semantic.Tracks[index].ID == trackID {
-			track = &semantic.Tracks[index]
-			break
-		}
-	}
-	if track == nil {
-		return nil, fmt.Errorf("unknown track %q", trackID)
-	}
-	var pattern *project.Pattern
-	for index := range semantic.Patterns {
-		if semantic.Patterns[index].ID == patternID {
-			pattern = &semantic.Patterns[index]
-			break
-		}
-	}
-	if pattern == nil {
-		return nil, fmt.Errorf("unknown pattern %q", patternID)
-	}
-	usesPattern := false
-	for _, slot := range track.Slots {
-		if slot != nil && *slot == patternID {
-			usesPattern = true
-			break
-		}
-	}
-	if !usesPattern {
-		return nil, fmt.Errorf("pattern %q is not on track %q", patternID, trackID)
-	}
-	drumTrack := track.Kind == "drums"
-	modeledKeys := keyboard.ID(track.Kind) != 0
-	for _, kit := range semantic.Kits {
-		if kit.ID == track.Kind {
-			drumTrack = true
-			modeledKeys = false
-			break
-		}
-	}
-	for _, sampler := range semantic.Samplers {
-		if sampler.Name == track.Kind {
-			modeledKeys = false
-			break
-		}
-	}
-	drums := pattern.Kind == "drums"
-	if drums != drumTrack {
-		return nil, fmt.Errorf("pattern %q does not match track %q", patternID, trackID)
-	}
-	pitched, polyphonic := track.Kind == "acid" || modeledKeys, modeledKeys
-	for _, voice := range semantic.Instruments {
-		if voice.ID == track.Kind {
-			pitched, polyphonic = true, voice.Mode == "poly"
-			modeledKeys = false
-			break
-		}
-	}
-	if !drums && !pitched {
-		return nil, fmt.Errorf("track %q is not a pitched instrument track", trackID)
-	}
-	if pattern.Steps < 1 || pattern.Steps > 64 {
-		return nil, fmt.Errorf("pattern %q has an invalid length", patternID)
-	}
-
-	steps := make(map[int]recordedStep)
-	expressive := false
-	for _, note := range take {
-		if note.Tick < 0 || note.EndTick < note.Tick || note.Tick > 1<<60 || note.EndTick > 1<<60 {
-			return nil, fmt.Errorf("recorded note time is out of range")
-		}
-		if note.Note < 0 || note.Note > 127 {
-			return nil, fmt.Errorf("recorded note must be in MIDI range 0–127")
-		}
-		if modeledKeys && (note.Note < keyboard.MinNote || note.Note > keyboard.MaxNote || note.Note+int(pattern.Transpose) < keyboard.MinNote || note.Note+int(pattern.Transpose) > keyboard.MaxNote) {
-			return nil, fmt.Errorf("recorded keyboard note must stay in MIDI range 21–108 after pattern transposition")
-		}
-		if note.Velocity < 1 || note.Velocity > 127 {
-			return nil, fmt.Errorf("recorded velocity must be in MIDI range 1–127")
-		}
-		if note.Channel > 15 || note.NoteID == 65535 {
-			return nil, fmt.Errorf("recorded note identity is out of range")
-		}
-		if err := validateTakeExpression(note); err != nil {
-			return nil, err
-		}
-		expressive = expressive || len(note.Expressions) != 0
-		step := int((note.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
-		key := step
-		if drums {
-			lane, ok := liveplay.GMDrumLane(note.Note)
-			if !ok {
-				return nil, fmt.Errorf("MIDI drum note %d is not in the General MIDI map", note.Note)
+func editRecordings(recordings []studioTakeRecording) []edits.Recording {
+	result := make([]edits.Recording, len(recordings))
+	for i, recording := range recordings {
+		result[i] = edits.Recording{Track: recording.Track, Pattern: recording.Pattern}
+		for _, note := range recording.Notes {
+			out := edits.TakeNote{Tick: note.Tick, EndTick: note.EndTick, Note: note.Note, Velocity: note.Velocity, NoteID: note.NoteID, Channel: note.Channel}
+			for _, value := range note.Expressions {
+				out.Expressions = append(out.Expressions, edits.TakeExpression{Tick: value.Tick, PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre, VibratoDepthCents: value.VibratoDepthCents})
 			}
-			key += int(lane) * 64
-		}
-		steps[key] = recordedStep{note: note.Note, velocity: note.Velocity, step: step}
-	}
-	if expressive {
-		if modeledKeys {
-			return nil, fmt.Errorf("CICADA-UNSUPPORTED: modeled keyboard track %q cannot record per-note expression", trackID)
-		}
-		if drums {
-			return nil, fmt.Errorf("drum takes cannot contain per-note expression")
-		}
-		return recordedExpressionSource(source, score, pattern, take)
-	}
-	if polyphonic && project.GraphPolyphony(semantic, track.Kind) == 4 {
-		return nil, fmt.Errorf("track %q is not an acid track", trackID)
-	}
-	if polyphonic {
-		// Existing notes patterns hold one pitch per step. Refuse a chord take
-		// before editing any steps, preserving every retained performance note.
-		for i, note := range take {
-			for _, other := range take[i+1:] {
-				if note.Tick < other.EndTick && other.Tick < note.EndTick {
-					return nil, fmt.Errorf("notes patterns hold one pitch per step; record a single-note take for polyphonic track %q", trackID)
-				}
-			}
+			result[i].Notes = append(result[i].Notes, out)
 		}
 	}
-	if !drums && !polyphonic {
-		for _, prior := range take {
-			priorStep := int((prior.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
-			for _, next := range take {
-				if prior.Tick >= next.Tick || prior.EndTick <= next.Tick {
-					continue
-				}
-				nextStep := int((next.Tick + seq.TicksPerStep/2) / seq.TicksPerStep % int64(pattern.Steps))
-				if priorStep != nextStep {
-					current := steps[priorStep]
-					current.slide = true
-					steps[priorStep] = current
-				}
-			}
-		}
-	}
-	ordered := make([]recordedStep, 0, len(steps))
-	for _, step := range steps {
-		ordered = append(ordered, step)
-	}
-	for left := 0; left < len(ordered); left++ {
-		for right := left + 1; right < len(ordered); right++ {
-			if ordered[right].step < ordered[left].step {
-				ordered[left], ordered[right] = ordered[right], ordered[left]
-			}
-		}
-	}
-	updated := append([]byte(nil), source...)
-	for _, captured := range ordered {
-		if drums {
-			laneIndex, ok := liveplay.GMDrumLane(captured.note)
-			if !ok {
-				return nil, fmt.Errorf("MIDI drum note %d is not in the General MIDI map", captured.note)
-			}
-			lane := drumLaneName(laneIndex)
-			token, err := studioDrumToken(updated, patternID, lane, captured.step)
-			if err != nil {
-				return nil, err
-			}
-			if token == "." || token == "-" {
-				updated, err = toggledSource(updated, patternID, lane, captured.step)
-				if err != nil {
-					return nil, err
-				}
-			}
-			updated, err = drumVelocitySource(updated, patternID, lane, captured.step, captured.velocity)
-			if err != nil {
-				return nil, err
-			}
-			continue
-		}
-		current, err := studioPatternStep(updated, patternID, captured.step)
-		if err != nil {
-			return nil, err
-		}
-		if current == nil || int(current.Note) != captured.note || current.Tie {
-			updated, err = pitchedSource(updated, patternID, "", captured.step, captured.note)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if captured.slide {
-			token, err := studioNoteToken(updated, patternID, captured.step)
-			if err != nil {
-				return nil, err
-			}
-			if token != "." && token != "-" && !strings.Contains(token, "~") {
-				updated, err = toggledModifierSource(updated, patternID, "", captured.step, "slide")
-				if err != nil {
-					return nil, err
-				}
-			}
-		}
-	}
-	return updated, nil
+	return result
 }
 
 func studioPatternStep(source []byte, patternID string, index int) (*project.Step, error) {

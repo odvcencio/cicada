@@ -1,10 +1,11 @@
-package main
+package edit_test
 
 import (
 	"math"
 	"strings"
 	"testing"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -13,11 +14,11 @@ import (
 func recordedPattern(t *testing.T, source []byte, id string) project.Pattern {
 	t.Helper()
 	score, diagnostics := notation.Parse(source)
-	if score == nil || hasDiagnosticErrors(diagnostics) {
+	if score == nil || hasRecordErrors(diagnostics) {
 		t.Fatalf("recorded source parse: %+v\n%s", diagnostics, source)
 	}
 	semantic, diagnostics := project.FromScore(score)
-	if semantic == nil || hasDiagnosticErrors(diagnostics) {
+	if semantic == nil || hasRecordErrors(diagnostics) {
 		t.Fatalf("recorded source compile: %+v\n%s", diagnostics, source)
 	}
 	for _, pattern := range semantic.Patterns {
@@ -30,9 +31,9 @@ func recordedPattern(t *testing.T, source []byte, id string) project.Pattern {
 }
 
 func TestRecordedExpressionTakeWritesRowsOnHeldTies(t *testing.T) {
-	source, err := recordedTakeSource([]byte(studioScore), "bass", "pulse", []studioTakeNote{{
+	source, err := recordTakeSource(t, []byte(recordScore), "bass", "pulse", []edits.TakeNote{{
 		Tick: 0, EndTick: 3 * seq.TicksPerStep, Note: 60, Velocity: 96, NoteID: 12, Channel: 1,
-		Expressions: []studioTakeExpression{
+		Expressions: []edits.TakeExpression{
 			{Tick: 0, PitchCents: 50, Pressure: .25, Timbre: .75},
 			{Tick: seq.TicksPerStep, PitchCents: 100, Pressure: .5, Timbre: .25},
 			{Tick: 2 * seq.TicksPerStep, PitchCents: -50, Pressure: 1, Timbre: 1},
@@ -64,9 +65,9 @@ func TestRecordedExpressionTakeWritesRowsOnHeldTies(t *testing.T) {
 }
 
 func TestRecordedExpressionTakeSeparatesVibratoCenterAndDepth(t *testing.T) {
-	source, err := recordedTakeSource([]byte(studioScore), "bass", "pulse", []studioTakeNote{{
+	source, err := recordTakeSource(t, []byte(recordScore), "bass", "pulse", []edits.TakeNote{{
 		Tick: 0, EndTick: 120, Note: 60, Velocity: 96,
-		Expressions: []studioTakeExpression{
+		Expressions: []edits.TakeExpression{
 			{Tick: 0, PitchCents: 30, Timbre: .5},
 			{Tick: 10, PitchCents: 70, Timbre: .5},
 			{Tick: 20, PitchCents: 30, Timbre: .5},
@@ -80,15 +81,19 @@ func TestRecordedExpressionTakeSeparatesVibratoCenterAndDepth(t *testing.T) {
 	if value.PitchCents != 50 || value.VibratoDepthCents != 20 {
 		t.Fatalf("oscillation lost center or depth: %+v\n%s", value, source)
 	}
-	if _, _, ok := takeVibrato([]studioTakeExpression{{PitchCents: -20}, {PitchCents: 0}, {PitchCents: 10}, {PitchCents: 20}}); ok {
+	bend, err := recordTakeSource(t, []byte(recordScore), "bass", "pulse", []edits.TakeNote{{Note: 60, Velocity: 90, EndTick: 120, Expressions: []edits.TakeExpression{{Tick: 0, PitchCents: -20}, {Tick: 10, PitchCents: 0}, {Tick: 20, PitchCents: 10}, {Tick: 30, PitchCents: 20}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recordedPattern(t, bend, "pulse").Expression[0].VibratoDepthCents != 0 {
 		t.Fatal("a one-way bend was classified as vibrato")
 	}
 }
 
 func TestRecordedExpressionTakeUpdatesRowsWithoutDuplicatingOrLosingComments(t *testing.T) {
-	source := strings.Replace(studioScore, "{ 1 . 5 . }", "{ 1 . 5 .\n  bend: 10ct . . . // keep bend comment\n  vibrato: 4ct . . .\n  pressure: 0 . . .\n  timbre: 0.5 . . .\n  // } keep closing-brace comment\n}", 1)
-	updated, err := recordedTakeSource([]byte(source), "bass", "pulse", []studioTakeNote{{
-		Tick: 0, EndTick: 120, Note: 60, Velocity: 96, Expressions: []studioTakeExpression{{Tick: 0, PitchCents: 50, Timbre: .75}},
+	source := strings.Replace(recordScore, "{ 1 . 5 . }", "{ 1 . 5 .\n  bend: 10ct . . . // keep bend comment\n  vibrato: 4ct . . .\n  pressure: 0 . . .\n  timbre: 0.5 . . .\n  // } keep closing-brace comment\n}", 1)
+	updated, err := recordTakeSource(t, []byte(source), "bass", "pulse", []edits.TakeNote{{
+		Tick: 0, EndTick: 120, Note: 60, Velocity: 96, Expressions: []edits.TakeExpression{{Tick: 0, PitchCents: 50, Timbre: .75}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -116,9 +121,9 @@ scene main { lead=line }
 song { main }
 `)
 	depth := float64(12)
-	updated, err := recordedTakeSource(source, "lead", "line", []studioTakeNote{{
+	updated, err := recordTakeSource(t, source, "lead", "line", []edits.TakeNote{{
 		Tick: 0, EndTick: 2 * seq.TicksPerStep, Note: 64, Velocity: 90, NoteID: 1, Channel: 14,
-		Expressions: []studioTakeExpression{{Tick: 0, PitchCents: 25, Pressure: .8, Timbre: .2, VibratoDepthCents: &depth}},
+		Expressions: []edits.TakeExpression{{Tick: 0, PitchCents: 25, Pressure: .8, Timbre: .2, VibratoDepthCents: &depth}},
 	}})
 	if err != nil {
 		t.Fatal(err)
@@ -130,33 +135,63 @@ song { main }
 }
 
 func TestRecordedExpressionTakeRejectsAmbiguousPolyphonyAndInvalidSamples(t *testing.T) {
-	base := studioTakeNote{Tick: 0, EndTick: 240, Note: 60, Velocity: 96, Expressions: []studioTakeExpression{{Tick: 0, Timbre: .5}}}
-	for _, take := range [][]studioTakeNote{
+	base := edits.TakeNote{Tick: 0, EndTick: 240, Note: 60, Velocity: 96, Expressions: []edits.TakeExpression{{Tick: 0, Timbre: .5}}}
+	for _, take := range [][]edits.TakeNote{
 		{base, {Tick: 120, EndTick: 360, Note: 64, Velocity: 96}},
 		{{Tick: 0, EndTick: 10, Note: 60, Velocity: 96, Expressions: base.Expressions}, {Tick: 20, EndTick: 40, Note: 64, Velocity: 96}},
 		{{Tick: 0, EndTick: 5 * seq.TicksPerStep, Note: 60, Velocity: 96, Expressions: base.Expressions}},
 	} {
-		if _, err := recordedTakeSource([]byte(studioScore), "bass", "pulse", take); err == nil {
+		if _, err := recordTakeSource(t, []byte(recordScore), "bass", "pulse", take); err == nil {
 			t.Fatalf("accepted ambiguous expressive take: %+v", take)
 		}
 	}
-	for _, expression := range []studioTakeExpression{
+	for _, expression := range []edits.TakeExpression{
 		{Tick: -1, Timbre: .5}, {Tick: 241, Timbre: .5}, {PitchCents: 9601}, {Pressure: 1.01}, {Timbre: -.01}, {PitchCents: math.NaN()},
 	} {
 		note := base
-		note.Expressions = []studioTakeExpression{expression}
-		if _, err := recordedTakeSource([]byte(studioScore), "bass", "pulse", []studioTakeNote{note}); err == nil {
+		note.Expressions = []edits.TakeExpression{expression}
+		if _, err := recordTakeSource(t, []byte(recordScore), "bass", "pulse", []edits.TakeNote{note}); err == nil {
 			t.Fatalf("accepted invalid expression: %+v", expression)
 		}
 	}
 }
 
 func TestRecordedExpressionTakeRefusesExistingChords(t *testing.T) {
-	_, err := recordedTakeSource([]byte(studioChordScore), "keys", "harmony", []studioTakeNote{{
+	_, err := recordTakeSource(t, []byte(studioChordScore), "keys", "harmony", []edits.TakeNote{{
 		Tick: 0, EndTick: seq.TicksPerStep, Note: 62, Velocity: 96,
-		Expressions: []studioTakeExpression{{Tick: 0, PitchCents: 20, Pressure: .5, Timbre: .5}},
+		Expressions: []edits.TakeExpression{{Tick: 0, PitchCents: 20, Pressure: .5, Timbre: .5}},
 	}})
 	if err == nil || !strings.Contains(err.Error(), "without chord steps") {
 		t.Fatalf("expressive recording could overwrite a chord: %v", err)
 	}
+}
+
+const studioChordScore = `tempo 120
+key d minor
+instrument piano { voice poly { out = sine(pitch) * env(gate, 300ms) * 0.1 } }
+track keys piano {}
+pattern harmony notes gate=75 { [d4 f4 a4]^?70 - . c4 }
+scene verse { keys=harmony }
+song { verse }
+`
+
+func hasRecordErrors(ds []notation.Diagnostic) bool {
+	for _, d := range ds {
+		if d.Severity == "error" {
+			return true
+		}
+	}
+	return false
+}
+func patternProject(t *testing.T, source []byte) *project.Project {
+	t.Helper()
+	score, ds := notation.Parse(source)
+	if score == nil || hasRecordErrors(ds) {
+		t.Fatalf("parse: %+v", ds)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil || hasRecordErrors(ds) {
+		t.Fatalf("compile: %+v", ds)
+	}
+	return p
 }

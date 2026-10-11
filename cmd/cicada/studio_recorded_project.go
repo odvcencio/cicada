@@ -1,40 +1,16 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/recording"
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
-
-func recordedName(p *project.Project, base string) string {
-	used := map[string]bool{}
-	for _, v := range p.Samplers {
-		used[v.Name] = true
-	}
-	for _, v := range p.Instruments {
-		used[v.ID] = true
-	}
-	for _, v := range p.Tracks {
-		used[v.ID] = true
-	}
-	for _, v := range p.Patterns {
-		used[v.ID] = true
-	}
-	for n := 1; ; n++ {
-		name := base
-		if n > 1 {
-			name = fmt.Sprintf("%s_%d", base, n)
-		}
-		if !used[name] && !used[name+"_track"] && !used[name+"_taps"] {
-			return name
-		}
-	}
-}
 
 // Publication and insertion share the score's ordinary revision checked edit
 // transaction. Undo removes the sampler, track and scene binding together;
@@ -57,12 +33,12 @@ func (s *studio) publishRecorded(w http.ResponseWriter, pack *recording.Pack, ro
 	s.recordedInstruments[pack.Pin] = pack
 	s.mu.Unlock()
 	receipt := &studioRecordingResponse{ResponseWriter: w}
-	s.applyWithResult(receipt, edit, func(source []byte) (studioMutation, error) {
-		p, err := compileStudioSource(s.path, source)
+	edit.Label = ""
+	s.applyPreparedIntents(receipt, edit, edits.Envelope{}, edits.ParamWriterAuto, func(source []byte, opts *edits.Options) (edits.Envelope, error) {
+		p, err := opts.Compiler.Compile(source, nil)
 		if err != nil {
-			return studioMutation{}, err
+			return edits.Envelope{}, err
 		}
-		name := recordedName(p, pack.Manifest.ID)
 		scene := edit.Scene
 		if scene == "" {
 			scene = s.transport.snapshot().Scene
@@ -70,25 +46,14 @@ func (s *studio) publishRecorded(w http.ResponseWriter, pack *recording.Pack, ro
 				scene = p.Scenes[0].ID
 			}
 		}
-		declaration := strings.Replace(pack.Source(filepath.Join(relative, "manifest.json"), root), "sampler "+pack.Manifest.ID+" {", "sampler "+name+" {", 1)
-		// Small recorded instruments leave room in the existing 32 voice budget.
-		declaration = strings.Replace(declaration, "voices = 16", "voices = 4", 1)
-		track, pattern := name+"_track", name+"_taps"
-		note := recording.NoteName(root)
-		updated := append([]byte(nil), source...)
-		if p.Edition == 1 {
-			updated = append([]byte("cicada 2\n"), updated...)
-		}
+		declaration := strings.Replace(pack.Source(filepath.Join(relative, "manifest.json"), root), "voices = 16", "voices = 4", 1)
 		level := "-6dB"
 		if extra["model"] != nil {
 			level = "-6dB mute = on"
 		}
-		updated = append(updated, []byte(fmt.Sprintf("\n%s\ntrack %s %s { level = %s }\npattern %s { %s . . . %s . . . }\n", declaration, track, name, level, pattern, note, note))...)
-
-		var files []studioAuxiliaryFile
 		score, _, err := project.LoadScore(s.path, map[string][]byte{s.path: source})
 		if err != nil {
-			return studioMutation{}, err
+			return edits.Envelope{}, err
 		}
 		scenePath := s.path
 		for _, decl := range score.Scenes {
@@ -97,32 +62,23 @@ func (s *studio) publishRecorded(w http.ResponseWriter, pack *recording.Pack, ro
 				break
 			}
 		}
-		if scenePath == s.path {
-			updated, err = bindPatternSource(updated, scene, track, pattern)
-		} else {
-			before, readErr := os.ReadFile(scenePath)
-			if readErr != nil {
-				return studioMutation{}, readErr
+		if scenePath != s.path {
+			before, err := os.ReadFile(scenePath)
+			if err != nil {
+				return edits.Envelope{}, err
 			}
-			after, bindErr := bindRecordedScene(before, scene, track, pattern)
-			if bindErr != nil {
-				return studioMutation{}, bindErr
-			}
-			info, statErr := os.Stat(scenePath)
-			if statErr != nil {
-				return studioMutation{}, statErr
-			}
-			files = append(files, studioAuxiliaryFile{Path: scenePath, Before: before, After: after, Mode: info.Mode().Perm()})
+			opts.Sources = []notation.SourceFile{{Path: scenePath, Source: before}}
 		}
-		if err != nil {
-			return studioMutation{}, err
+		return edits.Envelope{Intents: []edits.Intent{&edits.PublishRecorded{Name: pack.Manifest.ID, Declaration: declaration, Scene: scene, ScenePath: scenePath, Level: level, Note: recording.NoteName(root)}}}, nil
+	}, func(result *edits.Result) error {
+		response := map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": pack.Hits, "kept": len(pack.Hits), "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "user recording"}
+		for key, value := range response {
+			result.Response[key] = value
 		}
-
-		response := map[string]any{"sha256": pack.Pin, "manifest": pack.Manifest, "hits": pack.Hits, "kept": len(pack.Hits), "instrument": name, "track": track, "declaration": declaration, "manifestPath": filepath.ToSlash(filepath.Join(relative, "manifest.json")), "scorePath": filepath.ToSlash(filepath.Join(relative, "instrument.cicada")), "license": "user recording"}
 		for key, value := range extra {
-			response[key] = value
+			result.Response[key] = value
 		}
-		return studioMutation{Source: updated, Files: files, Response: response, HistoryDetail: "Recorded instrument added · " + name}, nil
+		return nil
 	}, nil)
 	if receipt.status == http.StatusOK {
 		s.mu.Lock()
@@ -196,11 +152,15 @@ func (s *studio) recordedRevision() string {
 
 type studioRecordingResponse struct {
 	http.ResponseWriter
-	status int
+	status   int
+	onStatus func(int)
 }
 
 func (w *studioRecordingResponse) WriteHeader(status int) {
 	w.status = status
+	if w.onStatus != nil {
+		w.onStatus(status)
+	}
 	w.ResponseWriter.WriteHeader(status)
 }
 func (w *studioRecordingResponse) Write(data []byte) (int, error) {
@@ -208,17 +168,4 @@ func (w *studioRecordingResponse) Write(data []byte) (int, error) {
 		w.WriteHeader(http.StatusOK)
 	}
 	return w.ResponseWriter.Write(data)
-}
-
-func bindRecordedScene(source []byte, scene, track, pattern string) ([]byte, error) {
-	node, _, err := studioDeclaration(source, []string{"scene_decl"}, scene)
-	if err != nil {
-		return nil, err
-	}
-	newline := "\n"
-	if strings.Contains(string(source), "\r\n") {
-		newline = "\r\n"
-	}
-	at := int(node.EndByte()) - 1
-	return replaceSongSpan(source, at, at, []byte(newline+"  "+track+" = "+pattern+newline))
 }

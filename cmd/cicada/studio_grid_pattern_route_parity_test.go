@@ -288,10 +288,6 @@ func assertGridPatternRoutes(t *testing.T, route string) {
 				t.Fatalf("missing pre-port capture %q", c.name)
 			}
 			assertGridPatternCapture(t, c, want)
-			old := gridPatternRouteWithHandler(t, c, legacyGridPatternHandler)
-			if !reflect.DeepEqual(old, want) {
-				t.Fatalf("old handler changed since capture\n got: %+v\nwant: %+v", old, want)
-			}
 			want = gridPatternParityExpectation(t, c, want)
 			got := gridPatternRoute(t, c)
 			if !reflect.DeepEqual(got, want) {
@@ -310,10 +306,9 @@ func TestGridPatternRouteConflictParity(t *testing.T) {
 			c := gridPatternRouteCase{name: route + "/stale revision", route: route, source: studioScore,
 				body: studioEdit{Action: "toggle", Pattern: "pulse"}, revision: "stale", wantStatus: http.StatusConflict,
 				wantError: "score changed on disk; reload before saving"}
-			old := gridPatternRouteWithHandler(t, c, legacyGridPatternHandler)
 			got := gridPatternRoute(t, c)
-			if got.Code != old.Code || got.Body["error"] != old.Body["error"] || got.Source != old.Source || !reflect.DeepEqual(got.Labels, old.Labels) {
-				t.Fatalf("conflict parity: got %+v, want %+v", got, old)
+			if got.Code != c.wantStatus || got.Body["error"] != c.wantError || got.Source != c.source || len(got.Labels) != 0 {
+				t.Fatalf("conflict parity: %+v", got)
 			}
 			// The M1 intent adapter also returns the current state on a revision conflict.
 			if got.Body["source"] != studioScore || got.Body["revision"] != studioRevision([]byte(studioScore)) {
@@ -367,7 +362,7 @@ func TestContinuityPatternRouteParity(t *testing.T) {
 			continue
 		}
 		t.Run(c.name, func(t *testing.T) {
-			old := gridPatternRouteWithHandler(t, c, legacyGridPatternHandler)
+			old := gridPatternCapturedRoute(t, c.name)
 			got := gridPatternRoute(t, c)
 			if !reflect.DeepEqual(got, old) {
 				t.Fatalf("continuity route parity: got %+v, want %+v", got, old)
@@ -398,4 +393,21 @@ func gridPatternParityExpectation(t *testing.T, c gridPatternRouteCase, old grid
 	want.Body["revision"] = studioRevision([]byte(want.Source))
 	want.Body["playingRevision"] = want.Body["revision"]
 	return want
+}
+
+func gridPatternCapturedRoute(t *testing.T, name string) gridPatternRouteSnapshot {
+	t.Helper()
+	data, err := os.ReadFile("testdata/grid-pattern-route-parity.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var golden map[string]gridPatternRouteSnapshot
+	if err = json.Unmarshal(data, &golden); err != nil {
+		t.Fatal(err)
+	}
+	reply, ok := golden[name]
+	if !ok {
+		t.Fatalf("missing pre-port capture %q", name)
+	}
+	return reply
 }
