@@ -125,29 +125,39 @@ type previewRenderClient struct {
 
 // Gesture identities and the cancellation ledger belong to the reference
 // model; they are independent of Player's version tokens and queue contents.
+type previewRenderCounts struct {
+	operations, checks, structuralOffers, supersededPatches int
+	additions, removals                                     int
+}
+
 type previewRenderReference struct {
-	clients   [3]previewRenderClient
-	sequence  int
-	gesture   int
-	values    map[int]float32
-	retired   map[int]bool
-	queue     []int
-	committed float32
-	offer     float32
-	hasOffer  bool
-	start     bool
-	paused    bool
-	closed    bool
-	patches   []previewRenderPatch
-	defaults  float32
-	seek      int
-	scene     int
-	launch    bool
+	otherDefaults, otherCommitted [16]float32
+	publication, offerPublication int
+	tracks, offerTracks           int
+	clients                       [3]previewRenderClient
+	sequence                      int
+	gesture                       int
+	values                        map[int]float32
+	retired                       map[int]bool
+	queue                         []int
+	committed                     float32
+	offer                         float32
+	hasOffer                      bool
+	start                         bool
+	paused                        bool
+	closed                        bool
+	patches                       []previewRenderPatch
+	defaults                      float32
+	seek                          int
+	scene                         int
+	launch                        bool
 }
 
 type previewRenderPatch struct {
-	value    float32
-	commands int
+	publication int
+	tracks      int
+	value       float32
+	commands    int
 }
 
 type previewRenderBoundary struct {
@@ -168,6 +178,10 @@ type previewRenderProducer struct {
 }
 
 func previewRenderScore(t *testing.T, gain float32) Score {
+	return previewRenderScoreTracks(t, gain, 16)
+}
+
+func previewRenderScoreTracks(t *testing.T, gain float32, count int) Score {
 	t.Helper()
 	program := graph.Program{}
 	program.Nodes[0] = graph.Node{Op: graph.Constant, Value: 375}
@@ -175,11 +189,11 @@ func previewRenderScore(t *testing.T, gain float32) Score {
 	program.Nodes[2] = graph.Node{Op: graph.Constant, Value: .125}
 	program.Nodes[3] = graph.Node{Op: graph.Multiply, A: 1, B: 2}
 	program.Len, program.Output = 4, 3
-	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 16, MaxVoices: 16, BPMMilli: 20_000}
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: count, MaxVoices: count, BPMMilli: 20_000}
 	cfg.Track[0].Kind, cfg.Track[0].Graph = engine.VoiceGraph, program
 	cfg.Track[0].GainDB, cfg.Track[0].GainSet = float64(gain), true
 	cfg.Track[0].Pan, cfg.Track[0].BusSFX = -1, true
-	for i := 1; i < 16; i++ {
+	for i := 1; i < count; i++ {
 		cfg.Track[i] = cfg.Track[0]
 		cfg.Track[i].Graph.Nodes[2].Value = 0
 	}
@@ -190,28 +204,41 @@ func previewRenderScore(t *testing.T, gain float32) Score {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tracks := make([]TrackSlots, 16)
+	tracks := make([]TrackSlots, count)
 	for i := range tracks {
 		tracks[i].ID = fmt.Sprintf("extra%d", i)
 	}
 	tracks[0].ID = "bass"
+	parameters := make([]ParameterValue, 0, 4*count)
+	for track := range tracks {
+		parameters = append(parameters, ParameterValue{Track: uint8(track), ID: kernel.ParamMixGain, Value: gain},
+			ParameterValue{Track: uint8(track), ID: kernel.ParamMixPan, Value: -1},
+			ParameterValue{Track: uint8(track), ID: kernel.ParamMixSendA, Value: 0},
+			ParameterValue{Track: uint8(track), ID: kernel.ParamMixSendB, Value: 0})
+	}
 	return Score{
 		Engine: created, SampleRate: 48_000, BPMMilli: 20_000, Name: "preview",
 		Tracks: tracks, HasSFX: true, SceneIDs: []string{"preview", "later", "last"},
 		SceneParameters: [][]ParameterValue{nil, {{Track: 0, ID: kernel.ParamMixGain, Value: -9}}, nil},
 		Song:            []SongEntry{{Scene: "preview", StartBar: 1}, {Scene: "later", StartBar: 2}, {Scene: "last", StartBar: 3}},
-		Parameters:      []ParameterValue{{Track: 0, ID: kernel.ParamMixGain, Value: gain}},
+		Parameters:      parameters,
 	}
 }
 
-func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation) (failure error) {
+func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation, counts *previewRenderCounts) (failure error) {
 	t.Helper()
+	if counts == nil {
+		counts = new(previewRenderCounts)
+	}
 	synctest.Test(t, func(t *testing.T) {
 		p, err := New(previewRenderScore(t, -6), 48_000)
 		if err != nil {
 			t.Fatal(err)
 		}
-		model := previewRenderReference{committed: -6, defaults: -6, values: make(map[int]float32), retired: make(map[int]bool)}
+		model := previewRenderReference{tracks: 16, offerTracks: 16, committed: -6, defaults: -6, values: make(map[int]float32), retired: make(map[int]bool)}
+		for track := range model.otherDefaults {
+			model.otherDefaults[track], model.otherCommitted[track] = -6, -6
+		}
 		var versions = make(map[int]uint64)
 		var boundary *previewRenderBoundary
 		var producers []previewRenderProducer
@@ -270,21 +297,33 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 			}
 			producers = pending
 		}
-		applyPatches := func() {
+		applyPatches := func() bool {
+			applied := false
 			consumed, commands := 0, 0
 			for _, patch := range model.patches {
+				if model.hasOffer && patch.publication > model.offerPublication {
+					break
+				}
 				if commands+patch.commands > 128 {
 					break
 				}
 				commands += patch.commands
 				consumed++
+				if patch.tracks > model.tracks {
+					continue
+				}
+				applied = true
 				value := patch.value
 				model.committed, model.defaults = value, value
+				for track := 1; track < patch.tracks; track++ {
+					model.otherDefaults[track], model.otherCommitted[track] = value, value
+				}
 				if gesture := activeGesture(); gesture != 0 && model.values[gesture] == value {
 					model.retired[gesture] = true
 				}
 			}
 			model.patches = model.patches[consumed:]
+			return applied
 		}
 		begin := func() {
 			boundary = &previewRenderBoundary{
@@ -293,6 +332,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 			}
 			if model.start {
 				model.scene = model.seek
+				model.otherCommitted = model.otherDefaults
 				model.committed = model.defaults
 				if model.scene > 0 {
 					model.committed = -9
@@ -303,7 +343,25 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 						boundary.committed = -9
 					}
 					model.hasOffer = false
+					if model.offerTracks > model.tracks {
+						counts.additions++
+					} else if model.offerTracks < model.tracks {
+						counts.removals++
+					}
+					model.tracks = model.offerTracks
+					kept := model.patches[:0]
+					for _, patch := range model.patches {
+						if patch.publication > model.offerPublication {
+							kept = append(kept, patch)
+						} else {
+							counts.supersededPatches++
+						}
+					}
+					model.patches = kept
 					model.defaults = model.offer
+					for track := range model.otherDefaults {
+						model.otherDefaults[track], model.otherCommitted[track] = model.offer, model.offer
+					}
 				}
 				model.start = false
 			}
@@ -327,7 +385,8 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				return
 			}
 			if !captured.activates {
-				applyPatches()
+				patched := applyPatches()
+				captured.sceneChanged = launched && !patched
 				if launched && model.committed == -9 {
 					if gesture := activeGesture(); gesture != 0 && model.values[gesture] == -9 {
 						model.retired[gesture] = true
@@ -392,6 +451,31 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 			if committed, ok := p.CommittedValue(0, kernel.ParamMixGain); !ok || committed != model.committed {
 				return fmt.Errorf("committed %g/%v, reference %g", committed, ok, model.committed)
 			}
+			// Invariant (n): all modeled controls, including reconstruction bases,
+			// agree with the latest publication that has actually landed.
+			names := p.trackNames.Load()
+			for track := 0; track < model.tracks; track++ {
+				base, committed := model.otherDefaults[track], model.otherCommitted[track]
+				if track == 0 {
+					base, committed = model.defaults, model.committed
+				}
+				for _, control := range []struct {
+					id              kernel.ParamID
+					base, committed float32
+				}{
+					{kernel.ParamMixGain, base, committed}, {kernel.ParamMixPan, -1, -1},
+					{kernel.ParamMixSendA, 0, 0}, {kernel.ParamMixSendB, 0, 0},
+				} {
+					bits := names.defaults[track][control.id]
+					if bits>>32 == 0 || math.Float32frombits(uint32(bits)) != control.base {
+						return fmt.Errorf("track %d reconstruction control %d differs from newest landed publication: got %g, want %g", track, control.id, math.Float32frombits(uint32(bits)), control.base)
+					}
+					if value, ok := names.committedValue(uint8(track), control.id); !ok || value != control.committed {
+						return fmt.Errorf("track %d committed control %d got %g/%v, want %g", track, control.id, value, ok, control.committed)
+					}
+					counts.checks++
+				}
+			}
 			return nil
 		}
 		settle := func() error {
@@ -415,7 +499,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 						return err
 					}
 				}
-				if len(model.patches) == 0 {
+				if len(model.patches) == 0 || model.hasOffer && model.patches[0].publication > model.offerPublication {
 					settled++
 				} else {
 					settled = 0
@@ -445,6 +529,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 			if model.closed {
 				continue
 			}
+			counts.operations++
 			client := &model.clients[op.client]
 			switch op.kind {
 			case "set", "newer-gesture":
@@ -477,7 +562,9 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 					client.committed = true
 					model.offer, model.hasOffer, model.start = model.values[client.gesture], true, true
 					model.seek = 0
-					failure = p.Offer(previewRenderScore(t, model.offer))
+					model.publication++
+					model.offerPublication, model.offerTracks = model.publication, model.tracks
+					failure = p.Offer(previewRenderScoreTracks(t, model.offer, model.offerTracks))
 					if failure == nil {
 						failure = p.StartSongEntry(0, "preview")
 					}
@@ -507,7 +594,8 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 					batch.SetResolvedParam(target, kernel.ParamMixGain, op.value)
 					failure = p.Patch(batch)
 					if failure == nil {
-						model.patches = append(model.patches, previewRenderPatch{value: op.value, commands: 1})
+						model.publication++
+						model.patches = append(model.patches, previewRenderPatch{publication: model.publication, value: op.value, commands: 1})
 					}
 				}
 			case "burst":
@@ -517,7 +605,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 					if batch == nil {
 						break
 					}
-					for track := uint8(0); track < 16; track++ {
+					for track := uint8(0); track < p.trackNames.Load().count; track++ {
 						value := float32(-1)
 						batch.SetParam(track, kernel.ParamMixPan, value)
 						batch.SetParam(track, kernel.ParamMixSendA, 0)
@@ -525,7 +613,8 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 						batch.SetParam(track, kernel.ParamMixGain, op.value)
 					}
 					if err := p.Patch(batch); err == nil {
-						model.patches = append(model.patches, previewRenderPatch{value: op.value, commands: 64})
+						model.publication++
+						model.patches = append(model.patches, previewRenderPatch{publication: model.publication, tracks: int(p.trackNames.Load().count), value: op.value, commands: int(p.trackNames.Load().count) * 4})
 					} else {
 						break
 					}
@@ -548,7 +637,10 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1}) {
 					failure = fmt.Errorf("scene command rejected")
 				}
-			case "offer":
+			case "offer", "offer-add", "offer-remove":
+				if op.kind != "offer" {
+					counts.structuralOffers++
+				}
 				value := op.value
 				if value == model.committed {
 					value = -15
@@ -557,7 +649,15 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 					}
 				}
 				model.offer, model.hasOffer = value, true
-				failure = p.Offer(previewRenderScore(t, value))
+				model.publication++
+				model.offerPublication, model.offerTracks = model.publication, model.tracks
+				if op.kind == "offer-add" {
+					model.offerTracks = 16
+				}
+				if op.kind == "offer-remove" {
+					model.offerTracks = 15
+				}
+				failure = p.Offer(previewRenderScoreTracks(t, value, model.offerTracks))
 			case "activate":
 				model.start, model.seek = true, 0
 				failure = p.StartSongEntry(0, "preview")
@@ -623,7 +723,7 @@ func minimizePreviewRenderLifecycle(t *testing.T, operations []previewRenderOper
 		for i := range minimal {
 			candidate := append([]previewRenderOperation(nil), minimal[:i]...)
 			candidate = append(candidate, minimal[i+1:]...)
-			if runPreviewRenderLifecycle(t, candidate) != nil {
+			if runPreviewRenderLifecycle(t, candidate, nil) != nil {
 				minimal, changed = candidate, true
 				break
 			}
@@ -634,6 +734,7 @@ func minimizePreviewRenderLifecycle(t *testing.T, operations []previewRenderOper
 
 func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 	const seeds, steps = 2048, 36
+	var counts previewRenderCounts
 	kinds := [...]string{"set", "newer-gesture", "cancel", "commit", "close", "drop", "offer", "activate", "render-begin", "render-drain-N", "pause", "resume", "Close", "pressure", "settle", "patch", "seek-forward", "seek-backward", "scene", "burst"}
 	values := [...]float32{-12, -9, -6, -3, 0}
 	for seed := int64(0); seed < seeds; seed++ {
@@ -656,19 +757,43 @@ func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 		for client := 0; client < 3; client++ {
 			operations = append(operations, previewRenderOperation{kind: "close", client: client})
 		}
-		operations = append(operations, previewRenderOperation{kind: "resume"}, previewRenderOperation{kind: "settle"}, previewRenderOperation{kind: "Close"})
-		if err := runPreviewRenderLifecycle(t, operations); err != nil {
+		operations = append(operations, previewRenderOperation{kind: "resume"}, previewRenderOperation{kind: "settle"})
+		// Keep the M2/M3 random lifecycle stream stable and generate additional
+		// publication schedules after its owners have finished their gestures.
+		kind, secondKind := "offer-add", "offer-remove"
+		if seed%2 == 0 {
+			kind, secondKind = secondKind, kind
+		}
+		operations = append(operations,
+			previewRenderOperation{kind: "pause"}, previewRenderOperation{kind: "burst", value: values[seed%5]},
+			previewRenderOperation{kind: kind, value: values[(seed+1)%5]},
+			previewRenderOperation{kind: "patch", value: values[(seed+2)%5]},
+			previewRenderOperation{kind: "activate"}, previewRenderOperation{kind: "resume"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "burst", value: values[(seed+3)%5]},
+			previewRenderOperation{kind: "render-begin"}, previewRenderOperation{kind: "render-drain-N"},
+			previewRenderOperation{kind: secondKind, value: values[(seed+4)%5]}, previewRenderOperation{kind: "activate"},
+			previewRenderOperation{kind: "settle"}, previewRenderOperation{kind: "seek-forward"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "seek-backward"}, previewRenderOperation{kind: "settle"}, previewRenderOperation{kind: "Close"})
+		if err := runPreviewRenderLifecycle(t, operations, &counts); err != nil {
 			t.Fatalf("seed %d: %v; minimized counterexample: %v", seed, err, minimizePreviewRenderLifecycle(t, operations))
 		}
 	}
+	if counts.additions == 0 || counts.removals == 0 {
+		t.Fatal("publication schedules did not add and remove tracks")
+	}
+	t.Logf("landed additions %d, removals %d", counts.additions, counts.removals)
+	t.Logf("executed operations %d, parameter/default checks %d, structural offers %d, superseded batches %d", counts.operations, counts.checks, counts.structuralOffers, counts.supersededPatches)
 	t.Logf("%d seeds, %d random operations with controlled snapshot/drain boundaries, pause/resume and shutdown", seeds, seeds*steps)
 }
 
 func TestPreviewRenderLifecycleInterleavingRegressions(t *testing.T) {
 	for name, operations := range map[string][]previewRenderOperation{
-		"patch-seek":      {{kind: "patch", value: -3}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "settle"}},
-		"backward-cancel": {{kind: "seek-forward"}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "set", value: 0}, {kind: "cancel"}, {kind: "settle"}},
-		"paused-burst":    {{kind: "pause"}, {kind: "burst", value: -3}, {kind: "resume"}, {kind: "settle"}},
+		"older-structural":      {{kind: "patch", value: -3}, {kind: "offer-add", value: -12}, {kind: "activate"}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "settle"}},
+		"deferred-structural":   {{kind: "burst", value: -3}, {kind: "render-begin"}, {kind: "render-drain-N"}, {kind: "offer-remove", value: -12}, {kind: "patch", value: 0}, {kind: "activate"}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "settle"}},
+		"later-waits-for-offer": {{kind: "offer-remove", value: -12}, {kind: "patch", value: -3}, {kind: "settle"}, {kind: "activate"}, {kind: "settle"}},
+		"patch-seek":            {{kind: "patch", value: -3}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "settle"}},
+		"backward-cancel":       {{kind: "seek-forward"}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "set", value: 0}, {kind: "cancel"}, {kind: "settle"}},
+		"paused-burst":          {{kind: "pause"}, {kind: "burst", value: -3}, {kind: "resume"}, {kind: "settle"}},
 		"late-cancel": {
 			{kind: "render-begin"}, {kind: "set", value: 0}, {kind: "cancel"}, {kind: "render-drain-N"},
 			{kind: "offer", value: -3}, {kind: "activate"}, {kind: "settle"},
@@ -678,7 +803,7 @@ func TestPreviewRenderLifecycleInterleavingRegressions(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if err := runPreviewRenderLifecycle(t, operations); err != nil {
+			if err := runPreviewRenderLifecycle(t, operations, nil); err != nil {
 				t.Fatalf("%v; minimized counterexample: %v", err, minimizePreviewRenderLifecycle(t, operations))
 			}
 		})

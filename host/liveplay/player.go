@@ -44,6 +44,7 @@ type Score struct {
 	HasReturnB      bool
 	HasSFX          bool
 	trackNames      *trackNameSnapshot
+	publication     uint64 // Assigned by Offer, ordered with patch publications.
 }
 
 type trackNameSnapshot struct {
@@ -214,7 +215,9 @@ type Player struct {
 	reconstructed     engine.ParameterState
 	blockParameters   engine.ParameterState
 	initialParameters bool
-	patchMu           sync.Mutex // Serializes publication with Close, never Read.
+	publicationMu     sync.Mutex // Orders patches/offers with Close, never Read.
+	publication       uint64
+	offerPublication  atomic.Uint64
 	landedRevision    atomic.Uint64
 	launches          atomic.Pointer[sceneLaunch]
 	launchSequence    atomic.Uint64
@@ -324,8 +327,8 @@ func (p *Player) Loudness() LoudnessSnapshot {
 // the meter worker. Call it after the audio device has stopped reading this player.
 func (p *Player) Close() {
 	p.closedOnce.Do(func() {
-		p.patchMu.Lock()
-		defer p.patchMu.Unlock()
+		p.publicationMu.Lock()
+		defer p.publicationMu.Unlock()
 		close(p.closed)
 		if p.deferredPatch != nil {
 			p.deferredPatch.recycle()
@@ -354,6 +357,16 @@ func (p *Player) Offer(score Score) error {
 		return err
 	}
 	score.trackNames = makeTrackNames(score)
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+	select {
+	case <-p.closed:
+		return cmd.Error("player is closed")
+	default:
+	}
+	p.publication++
+	score.publication = p.publication
+	p.offerPublication.Store(score.publication)
 	for {
 		select {
 		case p.offers <- score:
@@ -1321,6 +1334,7 @@ func (p *Player) beginRequestedSong() {
 		p.previous, p.fadeRemaining = nil, 0
 		if hasOffer {
 			p.previous = p.current.Engine
+			p.discardSupersededPatches(next.publication)
 			p.rebuildCommitted(next, int64(start-1)*seq.TicksPerBar)
 			p.applyOverrides(next.Engine, next, true)
 			p.heldNotes = [128]noteInput{}
@@ -1364,6 +1378,7 @@ func (p *Player) renderBlock() {
 				return
 			}
 			p.previous = p.current.Engine
+			p.discardSupersededPatches(next.publication)
 			p.rebuildCommitted(next, p.bar*seq.TicksPerBar)
 			p.applyOverrides(next.Engine, next, true)
 			p.fadeTotal = p.rate / 200 // five milliseconds

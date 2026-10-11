@@ -26,13 +26,14 @@ type PatchArena struct {
 }
 
 type Patch struct {
-	revision uint64
-	commands []cmd.Command
-	targets  [patchCapacity]PreviewTarget
-	n        int
-	err      error
-	arena    *PatchArena
-	state    atomic.Uint32 // 0: free, 1: building, 2: queued/render-owned
+	revision    uint64
+	publication uint64
+	commands    []cmd.Command
+	targets     [patchCapacity]PreviewTarget
+	n           int
+	err         error
+	arena       *PatchArena
+	state       atomic.Uint32 // 0: free, 1: building, 2: queued/render-owned
 }
 
 func NewPatchArena(n int) *PatchArena {
@@ -159,8 +160,8 @@ func (p *Player) Patch(patch *Patch) error {
 	if patch == nil || !patch.state.CompareAndSwap(1, 2) {
 		return cmd.Error("patch is not owned by its builder")
 	}
-	p.patchMu.Lock()
-	defer p.patchMu.Unlock()
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
 	fail := func(err error) error { patch.recycle(); return err }
 	if patch.n > min(patchBlockBudget, engine.CommandCapacity-renderCommandReserve) {
 		return fail(cmd.Error("patch cannot fit beside render commands"))
@@ -199,6 +200,8 @@ func (p *Player) Patch(patch *Patch) error {
 			}
 		}
 	}
+	p.publication++
+	patch.publication = p.publication
 	select {
 	case p.patches <- patch:
 		return nil
@@ -208,6 +211,28 @@ func (p *Player) Patch(patch *Patch) error {
 }
 
 func (p *Player) LandedRevision() uint64 { return p.landedRevision.Load() }
+
+// Publications are serialized on the control side, so the mailbox and its
+// deferred head are ordered. Recycle the superseded prefix without moving any
+// later batch back through the mailbox or taking a render-thread lock.
+func (p *Player) discardSupersededPatches(publication uint64) {
+	remaining := len(p.patches)
+	if p.deferredPatch != nil {
+		remaining++
+	}
+	for ; remaining > 0; remaining-- {
+		patch := p.deferredPatch
+		if patch == nil {
+			patch = <-p.patches
+		}
+		if patch.publication > publication {
+			p.deferredPatch = patch
+			return
+		}
+		p.deferredPatch = nil
+		patch.recycle()
+	}
+}
 
 func (p *Player) drainPatches() {
 	reserve := renderCommandReserve
@@ -237,6 +262,18 @@ func (p *Player) drainPatches() {
 		patch := p.deferredPatch
 		if patch == nil {
 			patch = <-p.patches
+		}
+		if patch.publication < p.current.publication {
+			p.deferredPatch = nil
+			patch.recycle()
+			continue
+		}
+		// A later patch must wait for the earlier offer to land. Otherwise it
+		// could land on the old engine and then disappear when that offer seeks
+		// from its compiled defaults. A newer offer may supersede it meanwhile.
+		if offered := p.offerPublication.Load(); offered > p.current.publication && patch.publication > offered {
+			p.deferredPatch = patch
+			return
 		}
 		if patch.n > max(0, budget) {
 			p.deferredPatch = patch

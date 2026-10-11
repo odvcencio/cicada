@@ -3,12 +3,254 @@ package liveplay
 import (
 	"fmt"
 	"io"
+	"sync"
 	"testing"
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/voice/drum"
 )
+
+func TestPatchBeforeStructuralOfferCannotOverwriteReplacement(t *testing.T) {
+	makeScore := func(t *testing.T, decay float32, tracks int) Score {
+		cfg := previewParameterConfig(t, engine.VoiceDrums)
+		cfg.Tracks, cfg.MaxVoices = tracks, 32
+		cfg.Track[0].Drums[drum.BD].Decay = float64(decay) / 1000
+		cfg.Scenes = []engine.Scene{{Settings: []engine.SceneSetting{{Track: 0, ID: kernel.ParamMixGain, Value: -6}}}, {}}
+		cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}}
+		if tracks == 2 {
+			cfg.Track[1] = cfg.Track[0]
+		}
+		created, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids := []TrackSlots{{ID: "drums"}}
+		if tracks == 2 {
+			ids = append(ids, TrackSlots{ID: "added"})
+		}
+		return Score{Engine: created, SampleRate: 48_000, BPMMilli: cfg.BPMMilli,
+			Tracks: ids, SceneIDs: []string{"first", "last"},
+			Song:       []SongEntry{{Scene: "first", StartBar: 1}, {Scene: "last", StartBar: 2}},
+			Parameters: []ParameterValue{{Track: 0, ID: kernel.ParamDrumBdDecay, Value: decay}}}
+	}
+	for _, later := range []bool{false, true} {
+		t.Run(fmt.Sprintf("later-patch-%v", later), func(t *testing.T) {
+			p, err := New(makeScore(t, 80, 1), 48_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			arena := NewPatchArena(2)
+			old := arena.Begin(1)
+			old.SetParam(0, kernel.ParamDrumBdDecay, 120)
+			if err := p.Patch(old); err != nil {
+				t.Fatal(err)
+			}
+			var laterBatch *Patch
+			if later {
+				// Builder revision and capture time do not order publications.
+				laterBatch = arena.Begin(0)
+				laterBatch.SetParam(0, kernel.ParamDrumBdDecay, 240)
+			}
+			next := makeScore(t, 200, 2)
+			if err := p.Offer(next); err != nil {
+				t.Fatal(err)
+			}
+			want := float32(200)
+			if later {
+				if err := p.Patch(laterBatch); err != nil {
+					t.Fatal(err)
+				}
+				want = 240
+			}
+			var pcm [blockFrames * 8]byte
+			if err := p.StartSongEntry(0, "first"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Read(pcm[:]); err != nil {
+				t.Fatal(err)
+			}
+			check := func() {
+				validator := next.Engine.PreviewParamValidator(0)
+				value, ok := validator.CommittedValue(kernel.ParamDrumBdDecay)
+				got := float32(value)
+				if !ok || got != want {
+					t.Fatalf("engine decay %g/%v, want newest published value %g", got, ok, want)
+				}
+				got, ok = p.CommittedValue(0, kernel.ParamDrumBdDecay)
+				if !ok || got != want {
+					t.Fatalf("cancellation value %g/%v, want %g", got, ok, want)
+				}
+			}
+			check()
+			if err := p.StartSongEntry(1, "last"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Read(pcm[:]); err != nil {
+				t.Fatal(err)
+			}
+			check() // Saved reconstruction defaults must also survive a seek.
+			version, err := p.SetPreview(0, kernel.ParamDrumBdDecay, 300)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Read(pcm[:]); err != nil {
+				t.Fatal(err)
+			}
+			if err := p.CancelPreview(version); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := p.Read(pcm[:]); err != nil {
+				t.Fatal(err)
+			}
+			check()
+			if arena.Free() != 2 {
+				t.Fatal("superseded patches did not recycle")
+			}
+		})
+	}
+}
+
+func TestPatchAndOfferConcurrentPublicationOrder(t *testing.T) {
+	p, err := New(previewRenderScoreTracks(t, -6, 2), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	const producers = 8
+	arena := NewPatchArena(producers)
+	var scores [producers]Score
+	var batches [producers]*Patch
+	var errors [producers]error
+	for i := range scores {
+		value := -float32(i + 1)
+		scores[i] = previewRenderScoreTracks(t, value, 3)
+		batches[i] = arena.Begin(uint64(i))
+		batches[i].SetParam(0, kernel.ParamMixGain, value)
+	}
+	var done sync.WaitGroup
+	for i := range scores {
+		done.Go(func() {
+			if err := p.Offer(scores[i]); err != nil {
+				errors[i] = err
+				return
+			}
+			errors[i] = p.Patch(batches[i])
+		})
+	}
+	done.Wait()
+	for _, err := range errors {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The test owns the reader and inspects the publication records before
+	// allowing any batch to recycle. Reinsert the same pending score unchanged.
+	next := <-p.offers
+	p.offers <- next
+	newest := next.publication
+	want := next.Parameters[0].Value
+	for i, batch := range batches {
+		if batch.publication > newest {
+			newest, want = batch.publication, -float32(i+1)
+		}
+	}
+	if err := p.StartSongEntry(0, "preview"); err != nil {
+		t.Fatal(err)
+	}
+	var pcm [blockFrames * 8]byte
+	if _, err := p.Read(pcm[:]); err != nil {
+		t.Fatal(err)
+	}
+	if got, ok := p.CommittedValue(0, kernel.ParamMixGain); !ok || got != want {
+		t.Fatalf("concurrent publications committed %g/%v, want sequence %d value %g", got, ok, newest, want)
+	}
+	if arena.Free() != producers {
+		t.Fatal("concurrent patches did not recycle")
+	}
+}
+
+func TestReplacementSupersedesDeferredPatchesWithoutAllocation(t *testing.T) {
+	for _, songStart := range []bool{false, true} {
+		t.Run(fmt.Sprintf("song-start-%v", songStart), func(t *testing.T) {
+			// Prepare each publication outside the measured reader. Each run
+			// activates a real replacement with a deferred head, queued older
+			// batches, and a later patch targeting the surviving incarnation.
+			var players [21]*Player
+			var arenas [21]*PatchArena
+			var pcm [blockFrames * 8]byte
+			for i := range players {
+				p, err := New(previewRenderScoreTracks(t, -6, 2), 48_000)
+				if err != nil {
+					t.Fatal(err)
+				}
+				players[i] = p
+				t.Cleanup(p.Close)
+				arena := NewPatchArena(10)
+				arenas[i] = arena
+				for revision := uint64(1); revision <= 9; revision++ {
+					batch := arena.Begin(revision)
+					for repeat := 0; repeat < 16; repeat++ {
+						batch.SetParam(0, kernel.ParamMixGain, -3)
+						batch.SetParam(0, kernel.ParamMixPan, -1)
+						batch.SetParam(0, kernel.ParamMixSendA, 0)
+						batch.SetParam(0, kernel.ParamMixSendB, 0)
+					}
+					if err := p.Patch(batch); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err := p.Read(pcm[:]); err != nil {
+					t.Fatal(err)
+				}
+				if p.deferredPatch == nil {
+					t.Fatal("burst did not defer")
+				}
+				if err := p.Offer(previewRenderScoreTracks(t, -12, 3)); err != nil {
+					t.Fatal(err)
+				}
+				later := arena.Begin(10)
+				later.SetParam(0, kernel.ParamMixGain, 0)
+				if err := p.Patch(later); err != nil {
+					t.Fatal(err)
+				}
+				if songStart {
+					if err := p.StartSongEntry(0, "preview"); err != nil {
+						t.Fatal(err)
+					}
+				} else {
+					// The test owns the reader and advances it to its next bar.
+					p.sample = p.nextBarSample
+				}
+			}
+			i := 0
+			allocs := testing.AllocsPerRun(20, func() {
+				p := players[i]
+				if _, err := p.Read(pcm[:]); err != nil {
+					panic(err)
+				}
+				if err := p.StartSongEntry(0, "preview"); err != nil {
+					panic(err)
+				}
+				if _, err := p.Read(pcm[:]); err != nil {
+					panic(err)
+				}
+				if p.LandedRevision() != 10 || arenas[i].Free() != 10 {
+					panic("publication order or recycling failed")
+				}
+				if value, ok := p.CommittedValue(0, kernel.ParamMixGain); !ok || value != 0 {
+					panic("newest reconstruction value lost")
+				}
+				i++
+			})
+			if allocs != 0 {
+				t.Fatalf("replacement/deferred recycling allocated %g", allocs)
+			}
+		})
+	}
+
+}
 
 func TestPatchCapacityBurstDefersWithoutFaultOrAllocation(t *testing.T) {
 	cfg := previewParameterConfig(t, engine.VoiceGraph)

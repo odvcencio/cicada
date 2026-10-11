@@ -214,7 +214,15 @@ type previewReferenceScore struct {
 	gains        [4]float32
 }
 
+type previewReferencePatch struct {
+	publication, commands int
+	values                [4]float32
+	incarnations          [4]int
+	tracks                []int
+}
+
 type previewLifecycleCounts struct {
+	structuralOffers, supersededPatches, deferredBlocks, rejectedPatches           int
 	seeks, scenes, bursts, pausedBatches                                           int
 	checks, sets, cancels, teardowns, activations, reorders, adds, removes, shifts int
 	captures, publications, stalePublications, readdedPublications, readds         int
@@ -225,7 +233,7 @@ func previewLifecycleScore(t *testing.T, score previewReferenceScore) liveplay.S
 	t.Helper()
 	cfg := engine.Config{SampleRate: 48_000, MaxBlock: 256, Tracks: len(score.order), MaxVoices: len(score.order), BPMMilli: 20_000}
 	tracks := make([]liveplay.TrackSlots, len(score.order))
-	parameters := make([]liveplay.ParameterValue, len(score.order))
+	parameters := make([]liveplay.ParameterValue, 0, 4*len(score.order))
 	for index, identity := range score.order {
 		program := graph.Program{}
 		program.Nodes[0] = graph.Node{Op: graph.Constant, Value: float32(375 * (identity + 1))}
@@ -237,7 +245,10 @@ func previewLifecycleScore(t *testing.T, score previewReferenceScore) liveplay.S
 		cfg.Track[index].GainDB, cfg.Track[index].GainSet = float64(score.gains[identity]), true
 		cfg.Track[index].Pan, cfg.Track[index].BusSFX = -1, true
 		tracks[index].ID = previewTrackIDs[identity]
-		parameters[index] = liveplay.ParameterValue{Track: uint8(index), ID: kernel.ParamMixGain, Value: score.gains[identity]}
+		parameters = append(parameters, liveplay.ParameterValue{Track: uint8(index), ID: kernel.ParamMixGain, Value: score.gains[identity]},
+			liveplay.ParameterValue{Track: uint8(index), ID: kernel.ParamMixPan, Value: -1},
+			liveplay.ParameterValue{Track: uint8(index), ID: kernel.ParamMixSendA, Value: 0},
+			liveplay.ParameterValue{Track: uint8(index), ID: kernel.ParamMixSendB, Value: 0})
 	}
 	// A slow clock keeps offers pending until explicit song-start activation.
 	cfg.Scenes = []engine.Scene{{}, {}, {}}
@@ -295,6 +306,10 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 	committed := playing.gains
 	paused := false
 	patchRevision := uint64(0)
+	publication, offerPublication, playingPublication := 0, 0, 0
+	var patches []previewReferencePatch
+	startPending, startIndex := false, 0
+	scenePending := false
 	for i := range sessions {
 		sessions[i] = make(livePreviewSession)
 		clients[i].open = true
@@ -307,10 +322,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 		}
 		return false
 	}
-	activate := func() error {
-		if err := p.StartSongEntry(0, "preview"); err != nil {
-			return err
-		}
+	landOffer := func() {
 		next := offer
 		for _, identity := range next.order {
 			if present(identity) {
@@ -324,18 +336,33 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 		playingEngine = offerEngine
 		committed = playing.gains
 		for identity := range overrides {
-			if !present(identity) || overrides[identity].value == playing.gains[identity] {
+			if !present(identity) {
 				overrides[identity].active = false
 			}
 		}
+		playingPublication = offerPublication
+		kept := patches[:0]
+		for _, patch := range patches {
+			if patch.publication > playingPublication {
+				kept = append(kept, patch)
+			} else {
+				counts.supersededPatches++
+			}
+		}
+		patches = kept
 		counts.activations++
-		return nil
+	}
+	activate := func() error {
+		startPending, startIndex = true, 0
+		return p.StartSongEntry(0, "preview")
 	}
 	publish := func(next previewReferenceScore) error {
 		prepared := previewLifecycleScore(t, next)
 		if err := p.Offer(prepared); err != nil {
 			return err
 		}
+		publication++
+		offerPublication = publication
 		offer, hasOffer, offerEngine = next, true, prepared.Engine
 		return nil
 	}
@@ -347,7 +374,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 		}
 		clients[client].gestures[identity] = previewReferenceGesture{}
 	}
-	var pcm [2048 * 8]byte
+	var pcm [4096 * 8]byte
 	for step, op := range operations {
 		client := &clients[op.client]
 		gesture := &client.gestures[op.track]
@@ -439,7 +466,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			client.open = false
 			client.pending = previewReferencePending{}
 			counts.teardowns++
-		case "patch", "patch-capture", "patch-publish":
+		case "patch", "queue-patch", "patch-capture", "patch-publish":
 			if op.kind == "patch-capture" {
 				if !client.pending.valid && present(op.track) {
 					target, err := p.ResolvePreviewTrack(previewTrackIDs[op.track])
@@ -451,7 +478,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 				break
 			}
 			pending := client.pending
-			if op.kind == "patch" {
+			if op.kind == "patch" || op.kind == "queue-patch" {
 				if !present(op.track) {
 					break
 				}
@@ -473,38 +500,22 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			}
 			batch.SetResolvedParam(pending.target, kernel.ParamMixGain, pending.value)
 			if err := p.Patch(batch); err != nil {
-				return err
+				counts.rejectedPatches++
+				break
 			}
 			counts.patches++
-			if present(pending.track) && playing.incarnations[pending.track] == pending.incarnation {
-				playing.gains[pending.track], committed[pending.track] = pending.value, pending.value
-				if overrides[pending.track].active && overrides[pending.track].value == pending.value {
-					overrides[pending.track].active = false
-				}
-			} else {
-				counts.stalePatches++
-			}
+			publication++
+			patch := previewReferencePatch{publication: publication, commands: 1, tracks: []int{pending.track}}
+			patch.values[pending.track], patch.incarnations[pending.track] = pending.value, pending.incarnation
+			patches = append(patches, patch)
 		case "seek-forward", "seek-backward":
 			index := 2
 			if op.kind == "seek-backward" {
 				index = 0
 			}
-			if hasOffer {
-				if err := activate(); err != nil {
-					return err
-				}
-				if _, err := p.Read(pcm[:]); err != nil {
-					return err
-				}
-			}
+			startPending, startIndex = true, index
 			if err := p.StartSongEntry(index, []string{"preview", "later", "last"}[index]); err != nil {
 				return err
-			}
-			committed = playing.gains
-			if index > 0 {
-				for _, identity := range playing.order {
-					committed[identity] = -9
-				}
 			}
 			counts.seeks++
 		case "scene":
@@ -513,15 +524,13 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			}
 			for _, identity := range playing.order {
 				committed[identity] = -9
-				if overrides[identity].active && overrides[identity].value == -9 {
-					overrides[identity].active = false
-				}
 			}
+			scenePending = true
 			counts.scenes++
 		case "pause", "resume":
 			paused = op.kind == "pause"
 			p.SetTransportPlaying(!paused)
-		case "burst":
+		case "burst", "queue-burst":
 			for n := 0; n < 32; n++ {
 				patchRevision++
 				batch := arena.Begin(patchRevision)
@@ -539,17 +548,18 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 					batch.SetParam(uint8(index), kernel.ParamMixSendB, 0)
 				}
 				if err := p.Patch(batch); err != nil {
+					counts.rejectedPatches++
 					break
 				}
 				if paused {
 					counts.pausedBatches++
 				}
-				for _, identity := range playing.order {
-					playing.gains[identity], committed[identity] = op.value, op.value
-					if overrides[identity].active && overrides[identity].value == op.value {
-						overrides[identity].active = false
-					}
+				publication++
+				patch := previewReferencePatch{publication: publication, commands: 4 * len(playing.order), tracks: append([]int(nil), playing.order...), incarnations: playing.incarnations}
+				for _, identity := range patch.tracks {
+					patch.values[identity] = op.value
 				}
+				patches = append(patches, patch)
 			}
 			counts.bursts++
 		case "offer":
@@ -561,6 +571,28 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			if err := publish(next); err != nil {
 				return err
 			}
+		case "structural-offer-add", "structural-offer-remove":
+			next := playing
+			next.order = append([]int(nil), playing.order...)
+			if op.kind == "structural-offer-add" && !present(op.track) {
+				next.order = append(next.order, op.track)
+			}
+			if op.kind == "structural-offer-remove" && len(next.order) > 1 {
+				for i, identity := range next.order {
+					if identity == op.track {
+						next.order = append(next.order[:i], next.order[i+1:]...)
+						break
+					}
+				}
+			}
+			for _, identity := range next.order {
+				next.gains[identity] = op.value
+			}
+			if err := publish(next); err != nil {
+				return err
+			}
+			counts.structuralOffers++
+		case "render", "render-block":
 		case "activate":
 			if hasOffer {
 				if err := activate(); err != nil {
@@ -624,10 +656,76 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 				return err
 			}
 		}
-		if paused {
+		if paused || op.kind == "queue-patch" || op.kind == "queue-burst" || op.kind == "structural-offer-add" || op.kind == "structural-offer-remove" {
 			continue
 		}
-		if _, err := p.Read(pcm[:]); err != nil {
+		if startPending {
+			replaced := hasOffer
+			if hasOffer {
+				landOffer()
+				scenePending = false
+			}
+			committed = playing.gains
+			if startIndex > 0 {
+				for _, identity := range playing.order {
+					committed[identity] = -9
+				}
+			}
+			if replaced {
+				for _, identity := range playing.order {
+					if overrides[identity].value == committed[identity] {
+						overrides[identity].active = false
+					}
+				}
+			}
+			startPending = false
+		}
+		// Allow smoothing after the final batch of a deferred capacity burst.
+		blocks := 16
+		if op.kind == "render-block" {
+			blocks = 1
+		}
+		for block := 0; block < blocks; block++ {
+			var patched [4]bool
+			consumed, commands := 0, 0
+			for _, patch := range patches {
+				if hasOffer && patch.publication > offerPublication || commands+patch.commands > 128 {
+					break
+				}
+				commands += patch.commands
+				consumed++
+				valid := true
+				for _, identity := range patch.tracks {
+					if !present(identity) || playing.incarnations[identity] != patch.incarnations[identity] {
+						valid = false
+					}
+				}
+				if !valid {
+					counts.stalePatches++
+					continue
+				}
+				for _, identity := range patch.tracks {
+					patched[identity] = true
+					playing.gains[identity], committed[identity] = patch.values[identity], patch.values[identity]
+					if overrides[identity].active && overrides[identity].value == patch.values[identity] {
+						overrides[identity].active = false
+					}
+				}
+			}
+			patches = patches[consumed:]
+			if scenePending {
+				for _, identity := range playing.order {
+					if !patched[identity] && overrides[identity].value == committed[identity] {
+						overrides[identity].active = false
+					}
+				}
+				scenePending = false
+			}
+			if len(patches) > 0 {
+				counts.deferredBlocks++
+			}
+		}
+		if _, err := p.Read(pcm[:blocks*256*8]); err != nil {
 			return fmt.Errorf("step %d %v: %w", step, op, err)
 		}
 		frame := <-p.Meters()
@@ -646,6 +744,14 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			track, ok := p.TrackIndex(name)
 			if !ok || track != uint8(index) || frame.TrackIDs[index] != name {
 				return fmt.Errorf("step %d: %s index %d/%v, expected %d", step, name, track, ok, index)
+			}
+			for _, control := range []struct {
+				id    kernel.ParamID
+				value float32
+			}{{kernel.ParamMixPan, -1}, {kernel.ParamMixSendA, 0}, {kernel.ParamMixSendB, 0}} {
+				if got, ok := p.CommittedValue(track, control.id); !ok || got != control.value {
+					return fmt.Errorf("step %d %v: %s control %d committed %g/%v, want %g", step, op, name, control.id, got, ok, control.value)
+				}
 			}
 			saved := committed[identity]
 			if got, ok := p.CommittedValue(track, kernel.ParamMixGain); !ok || got != saved {
@@ -668,7 +774,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 				want = override.value
 			}
 			wantPeak := .125 * math.Pow(10, float64(want)/20)
-			if got := float64(frame.Tracks[index].Peak); math.Abs(got-wantPeak) > .002 {
+			if got := float64(frame.Tracks[index].Peak); math.Abs(got-wantPeak) > .002 && op.kind != "render-block" && len(patches) == 0 {
 				return fmt.Errorf("step %d %v: %s audible peak %g, want %g (%g dB)", step, op, name, got, wantPeak, want)
 			}
 			counts.checks++
@@ -696,7 +802,7 @@ func minimizePreviewLifecycle(t *testing.T, operations []previewOperation) []pre
 
 func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 	const seeds, steps = 2048, 36
-	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture", "reorder", "add", "remove", "shift", "capture", "publish", "remove-add", "patch", "patch-capture", "patch-publish", "seek-forward", "seek-backward", "scene", "burst"}
+	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture", "reorder", "add", "remove", "shift", "capture", "publish", "remove-add", "patch", "patch-capture", "patch-publish", "seek-forward", "seek-backward", "scene", "burst", "queue-patch", "queue-burst", "structural-offer-add", "structural-offer-remove", "render", "render-block"}
 	values := [...]float32{-12, -9, -6, -3, 0}
 	var counts previewLifecycleCounts
 	operationsCount := 0
@@ -720,7 +826,14 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 			operations = append(operations, op)
 		}
 		if seed < 64 {
-			operations = append(operations, previewOperation{kind: "pause"}, previewOperation{kind: "burst", value: -3}, previewOperation{kind: "resume"})
+			operations = append(operations,
+				previewOperation{kind: "pause"}, previewOperation{kind: "burst", value: -3},
+				previewOperation{kind: "structural-offer-add", track: 3, value: -12},
+				previewOperation{kind: "queue-patch", track: 0, value: 0},
+				previewOperation{kind: "activate"}, previewOperation{kind: "resume"},
+				previewOperation{kind: "queue-burst", value: -6}, previewOperation{kind: "render-block"},
+				previewOperation{kind: "structural-offer-remove", track: 3, value: -3},
+				previewOperation{kind: "activate"}, previewOperation{kind: "seek-backward"})
 			// Force a suspended socket publication around two score activations,
 			// alongside a newer gesture on the replacement track from another client.
 			operations = append(operations,
@@ -749,8 +862,23 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 	if counts.patches == 0 || counts.stalePatches == 0 {
 		t.Fatal("patches did not exercise delayed stale incarnations")
 	}
+	t.Logf("structural offers %d, superseded patches %d, deferred blocks %d, rejected patches %d", counts.structuralOffers, counts.supersededPatches, counts.deferredBlocks, counts.rejectedPatches)
 	t.Logf("seeks %d, scene changes %d, capacity bursts %d, batches queued while paused %d", counts.seeks, counts.scenes, counts.bursts, counts.pausedBatches)
 	t.Logf("patch publications %d, stale patch publications %d", counts.patches, counts.stalePatches)
 	t.Logf("captures %d, delayed publications %d, stale publications %d (re-added targets %d), re-added incarnations %d; 64 forced capture/remove/re-add/newer-gesture/publish sequences", counts.captures, counts.publications, counts.stalePublications, counts.readdedPublications, counts.readds)
 	t.Logf("%d seeds (0..%d), %d random choices, %d executed operations including expanded remove/add pairs, forced interleavings and final closures; %d per-track lifecycle cases; sets %d, cancels %d, teardowns %d, activations %d, reorders %d, additions %d, removals %d, index shifts %d", seeds, seeds-1, seeds*steps, operationsCount, counts.checks, counts.sets, counts.cancels, counts.teardowns, counts.activations, counts.reorders, counts.adds, counts.removes, counts.shifts)
+}
+
+func TestPreviewLifecycleReplacementOrderingRegressions(t *testing.T) {
+	for name, operations := range map[string][]previewOperation{
+		"older-structural":    {{kind: "queue-patch", value: -3}, {kind: "structural-offer-add", track: 3, value: -12}, {kind: "activate"}, {kind: "render"}, {kind: "seek-backward"}},
+		"deferred-structural": {{kind: "queue-burst", value: -3}, {kind: "render-block"}, {kind: "structural-offer-remove", track: 2, value: -12}, {kind: "queue-patch", value: 0}, {kind: "activate"}, {kind: "seek-backward"}},
+		"later-waits":         {{kind: "offer", value: -12}, {kind: "patch", value: -3}, {kind: "activate"}, {kind: "seek-backward"}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if err := runPreviewLifecycle(t, operations, nil); err != nil {
+				t.Fatalf("%v; minimized counterexample: %v", err, minimizePreviewLifecycle(t, operations))
+			}
+		})
+	}
 }
