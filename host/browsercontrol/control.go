@@ -39,6 +39,7 @@ type Controller struct {
 	policy     demopolicy.Policy
 	tracks     map[string]route
 	params     map[string]project.ResolvedParam
+	validators [16]engine.PreviewParamValidator
 	count      uint8
 	send       func([]byte) error
 	held       map[string]heldNote
@@ -56,6 +57,11 @@ func New(p *project.Project, cfg engine.Config, policy demopolicy.Policy, send f
 		return nil, errors.New("CICADA-AUDIO: compiled project and local worklet sender required")
 	}
 	c := &Controller{policy: policy, tracks: make(map[string]route), params: make(map[string]project.ResolvedParam), count: uint8(cfg.Tracks), send: send, held: make(map[string]heldNote), blocked: make(map[string]bool)}
+	validators, err := engine.PrepareParamValidators(&cfg)
+	if err != nil {
+		return nil, fmt.Errorf("CICADA-PARAM: prepare validation: %w", err)
+	}
+	c.validators = validators
 	for index, track := range p.Tracks {
 		if track.ID == "" {
 			return nil, errors.New("CICADA-AUDIO: empty track ID")
@@ -261,7 +267,15 @@ func (c *Controller) SetParam(address string, value *float64) error {
 				return errors.New("CICADA-PARAM: finite float32 value required")
 			}
 		}
-		// The shared ABI validates bounds, live scope and toggle values again.
+		var global engine.PreviewParamValidator
+		validator := &global
+		if param.Track != 0xff {
+			validator = &c.validators[param.Track]
+		}
+		if err := validator.Validate(param.ID, v); err != nil {
+			return fmt.Errorf("CICADA-PARAM: %s: %w", address, err)
+		}
+		// Encode only after prepared validation; rejected controls send nothing.
 		return c.emit(cmd.Command{Op: cmd.OpSetParam, Track: param.Track, Index: uint16(param.ID), Arg0: math.Float32bits(v)})
 	})
 }

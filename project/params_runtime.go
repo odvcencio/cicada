@@ -28,15 +28,9 @@ func ParamAddresses(p *Project) []ParamAddress {
 	}
 	addresses := make([]ParamAddress, 0, len(p.Tracks)*8+len(p.Effects)*8)
 	for _, track := range p.Tracks {
-		kind := track.Kind
-		if isModeledKeys(p, kind) {
-			kind = "piano"
-		}
-		if kind == "piano" && !isModeledPiano(p, track.Kind) && !isModeledKeys(p, track.Kind) {
-			kind = "instrument"
-		}
+		kind := parameterVoiceKind(p, track.Kind)
 		for _, descriptor := range paramdefs.Registry {
-			if descriptor.Scope != "track" || !descriptorApplies(descriptor.ID, kind) {
+			if descriptor.Scope != "track" || !paramdefs.HasVoice(descriptor, kind) {
 				continue
 			}
 			value := trackParamValue(track, descriptor)
@@ -146,22 +140,6 @@ func delayDivisionMilliseconds(division string, tempoMilli int) float64 {
 		return 250
 	}
 	return beats * 60_000_000 / float64(tempoMilli)
-}
-
-func descriptorApplies(id, trackKind string) bool {
-	if strings.HasPrefix(id, "piano.") {
-		return trackKind == "piano"
-	}
-	if strings.HasPrefix(id, "guitar.") {
-		return trackKind == "guitar"
-	}
-	if strings.HasPrefix(id, "acid.") {
-		return trackKind == "acid"
-	}
-	if strings.HasPrefix(id, "drum.") {
-		return trackKind == "drums"
-	}
-	return strings.HasPrefix(id, "mix.")
 }
 
 func trackParamValue(track Track, descriptor paramdefs.Descriptor) any {

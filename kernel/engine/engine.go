@@ -533,39 +533,11 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 					e.patterns[i].drumSlots[slot][lane] = e.patterns[i].slots[slot]
 				}
 			}
-			v.drums, err = drum.New(cfg.SampleRate, cfg.Seed)
+			var drumVoices int
+			v.drums, drumVoices, err = prepareDrumKit(spec, cfg.SampleRate, cfg.Seed)
+			voices += drumVoices
 			if err == nil {
 				for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
-					if spec.Kit != nil {
-						binding := &spec.Kit[lane]
-						switch binding.Kind {
-						case KitLaneOff:
-							err = v.drums.Disable(lane)
-						case KitLaneBuiltin:
-							err = v.drums.SetRecipe(lane, binding.Recipe)
-						case KitLaneGraph:
-							err = v.drums.SetGraphFromProgram(lane, &binding.Program)
-						case KitLaneModeled:
-							err = v.drums.SetModeled(lane, binding.Model, binding.ModelParams, binding.ModelLevelDB, binding.ModelPan)
-						default:
-							return 0, Error("unknown kit lane kind")
-						}
-						if binding.Kind != KitLaneOff {
-							voices++
-						}
-					} else if lane >= drum.LT && spec.Drums[lane] == (drum.Params{}) {
-						// Zero params leave added lanes off. Legacy lanes retain
-						// their defaults for direct host configurations.
-						err = v.drums.Disable(lane)
-					} else {
-						voices++
-						if spec.Drums[lane] != (drum.Params{}) {
-							err = v.drums.SetParams(lane, spec.Drums[lane])
-						}
-					}
-					if err != nil {
-						break
-					}
 					v.drumTargets[lane] = v.drums.Params(lane)
 				}
 			}
@@ -1753,20 +1725,7 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 				e.fault(FaultParam)
 				return
 			}
-			params := v.drumTargets[lane]
-			switch control {
-			case drumTune:
-				params.Tune = float64(value)
-			case drumDecay:
-				params.Decay = float64(value) / 1000
-			case drumLevel:
-				params.LevelDB = float64(value)
-				if off {
-					params.LevelDB = -1000
-				}
-			case drumPan:
-				params.Pan = float64(value)
-			}
+			params := drumParamValue(v.drumTargets[lane], control, value, off)
 			v.drumTargets[lane] = params
 			var setErr error
 			if immediate {

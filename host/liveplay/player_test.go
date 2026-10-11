@@ -44,6 +44,70 @@ func meterScore(t *testing.T, name string, gain float64) Score {
 	}
 }
 
+func TestCommittedValueClearsMatchingOverrideOnTheAudioThread(t *testing.T) {
+	p, err := New(meterScore(t, "preview", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.SetParam(0, kernel.ParamMixGain, -3); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, blockFrames*8); err != nil {
+		t.Fatal(err)
+	}
+	snapshot := p.overrides.Load()
+	version := snapshot.tracks[p.trackNames.Load().overrideTrack(0)].values[kernel.ParamMixGain].version
+	p.noteCommitted(0, kernel.ParamMixGain, -3) // The test owns Read.
+	if p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].state.clearedVersions[kernel.ParamMixGain] != version {
+		t.Fatal("matching committed value did not clear the override")
+	}
+	if p.overrides.Load() != snapshot {
+		t.Fatal("committed value changed the control-thread snapshot")
+	}
+	if _, active := p.OverrideValue(0, kernel.ParamMixGain); active {
+		t.Fatal("render-thread retirement was not visible to control callers")
+	}
+	p.noteCommitted(0, kernel.ParamMixGain, -4)
+	if p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].state.clearedVersions[kernel.ParamMixGain] != version {
+		t.Fatal("a different committed value must not clear a newer override")
+	}
+	if err := p.SetParam(0, kernel.ParamMixGain, -5); err != nil {
+		t.Fatal(err)
+	}
+	p.noteCommitted(0, kernel.ParamMixGain, -3)
+	if p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].state.clearedVersions[kernel.ParamMixGain] == p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].values[kernel.ParamMixGain].version {
+		t.Fatal("stale commit cleared a newer gesture")
+	}
+}
+
+func TestCommittedOverrideUsesExactBitsAndGlobalSlotWithoutAllocating(t *testing.T) {
+	p, err := New(meterScore(t, "preview", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.SetParam(0, kernel.ParamMixGain, 0); err != nil {
+		t.Fatal(err)
+	}
+	p.noteCommitted(0, kernel.ParamMixGain, float32(math.Copysign(0, -1)))
+	if p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].state.clearedVersions[kernel.ParamMixGain] != 0 {
+		t.Fatal("different float bits cleared an override")
+	}
+	if err := p.SetParam(0xff, kernel.ParamFxDelayFeedback, .4); err != nil {
+		t.Fatal(err)
+	}
+	version := p.overrides.Load().tracks[overrideTrack{}].values[kernel.ParamFxDelayFeedback].version
+	if allocs := testing.AllocsPerRun(100, func() {
+		p.noteCommitted(0xff, kernel.ParamFxDelayFeedback, .4)
+	}); allocs != 0 {
+		t.Fatalf("committed override clear allocated %g", allocs)
+	}
+	if p.overrides.Load().tracks[overrideTrack{}].state.clearedVersions[kernel.ParamFxDelayFeedback] != version {
+		t.Fatal("matching global value did not clear its override")
+	}
+}
+
 func TestLiveParameterOverrideSurvivesOfferedScore(t *testing.T) {
 	initial := meterScore(t, "initial", -6)
 	p, err := New(initial, 48_000)
@@ -74,9 +138,9 @@ func TestLiveParameterOverrideSurvivesOfferedScore(t *testing.T) {
 	default:
 		t.Fatal("render thread did not deliver meter data")
 	}
-	override := p.overrides.Load().values[0][kernel.ParamMixGain]
-	if !override.active || p.appliedVersions[0][kernel.ParamMixGain] != override.version || p.clearedVersions[0][kernel.ParamMixGain] == override.version {
-		t.Fatalf("offered score lost live override: override=%+v applied=%d cleared=%d", override, p.appliedVersions[0][kernel.ParamMixGain], p.clearedVersions[0][kernel.ParamMixGain])
+	override := p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].values[kernel.ParamMixGain]
+	if !override.active || p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].state.appliedVersions[kernel.ParamMixGain] != override.version || p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].state.clearedVersions[kernel.ParamMixGain] == override.version {
+		t.Fatalf("offered score lost live override: override=%+v applied=%d cleared=%d", override, p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].state.appliedVersions[kernel.ParamMixGain], p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].state.clearedVersions[kernel.ParamMixGain])
 	}
 }
 
@@ -102,6 +166,72 @@ func TestLiveParameterOverrideFollowsTrackIDAcrossReorderedScore(t *testing.T) {
 		}
 	default:
 		t.Fatal("reordered score emitted no meter frame")
+	}
+}
+
+func TestPreviewOverrideAppliesOnTheNextBlock(t *testing.T) {
+	p, err := New(meterScore(t, "preview", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	var pcm [blockFrames * 8]byte
+	if _, err := p.Read(pcm[:]); err != nil {
+		t.Fatal(err)
+	}
+	initialPeak := float64(0)
+	for _, sample := range p.left {
+		initialPeak = max(initialPeak, math.Abs(float64(sample)))
+	}
+	if err := p.SetParam(0, kernel.ParamMixGain, 0); err != nil {
+		t.Fatal(err)
+	}
+	version := p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].values[kernel.ParamMixGain].version
+	if _, err := p.Read(pcm[:]); err != nil {
+		t.Fatal(err)
+	}
+	if p.overrides.Load().tracks[p.trackNames.Load().overrideTrack(0)].state.appliedVersions[kernel.ParamMixGain] != version {
+		t.Fatal("preview did not reach the engine on the next block")
+	}
+	previewPeak := float64(0)
+	for _, sample := range p.left {
+		previewPeak = max(previewPeak, math.Abs(float64(sample)))
+	}
+	if previewPeak <= initialPeak {
+		t.Fatalf("preview did not change the next block's audio: peak %g, initial %g", previewPeak, initialPeak)
+	}
+}
+
+func TestPreviewValuesFollowThePlayingScoreSnapshot(t *testing.T) {
+	p, err := New(reorderedMeterScore(t, "initial", [2]string{"bass", "lead"}, -6, -12), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.SetParam(0, kernel.ParamMixGain, 0); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Offer(reorderedMeterScore(t, "offered", [2]string{"lead", "bass"}, -12, -3)); err != nil {
+		t.Fatal(err)
+	}
+	if value, ok := p.CommittedValue(0, kernel.ParamMixGain); !ok || value != -6 {
+		t.Fatalf("pending score changed the committed value: %g, %v", value, ok)
+	}
+	if _, err := io.CopyN(io.Discard, p, 100_000*8); err != nil {
+		t.Fatal(err)
+	}
+	track, ok := p.TrackIndex("bass")
+	if !ok || track != 1 {
+		t.Fatalf("playing bass track: %d, %v", track, ok)
+	}
+	if value, ok := p.OverrideValue(track, kernel.ParamMixGain); !ok || value != 0 {
+		t.Fatalf("override did not follow the playing bass track: %g, %v", value, ok)
+	}
+	if value, ok := p.CommittedValue(track, kernel.ParamMixGain); !ok || value != -3 {
+		t.Fatalf("committed value did not follow the playing bass track: %g, %v", value, ok)
+	}
+	if _, ok := p.OverrideValue(0, kernel.ParamMixGain); ok {
+		t.Fatal("bass override leaked to the lead track")
 	}
 }
 
@@ -147,10 +277,10 @@ func TestLiveParameterControlsKeepLastValueAcrossConcurrentCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot := p.overrides.Load()
-	if got := snapshot.values[0][kernel.ParamMixGain].value; got < -7 || got > 0 {
+	if got := snapshot.tracks[p.trackNames.Load().overrideTrack(0)].values[kernel.ParamMixGain].value; got < -7 || got > 0 {
 		t.Fatalf("latest concurrent gain is out of range: %g", got)
 	}
-	if snapshot.values[0][kernel.ParamMixMute].value != 1 || snapshot.values[0][kernel.ParamMixSolo].value != 1 {
+	if snapshot.tracks[p.trackNames.Load().overrideTrack(0)].values[kernel.ParamMixMute].value != 1 || snapshot.tracks[p.trackNames.Load().overrideTrack(0)].values[kernel.ParamMixSolo].value != 1 {
 		t.Fatal("mute or solo control was lost")
 	}
 	if err := p.SetParam(0xff, kernel.ParamMixGain, 0); err == nil {

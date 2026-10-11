@@ -630,6 +630,8 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 		t.errText = fmt.Sprintf("pattern %q is no longer on track %q in the playing score", event.Name, event.Track)
 	case "note-error":
 		t.errText = event.Name
+	case "preview-error":
+		t.errText = fmt.Sprintf("Preview %s on track %s ended, but its saved value could not be restored", event.Name, event.Track)
 	default:
 		t.pending, t.landed = false, event.Bar
 	}

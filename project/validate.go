@@ -685,7 +685,7 @@ func ValidateProject(p *Project) error {
 				return fmt.Errorf("scene %s setting %s: %w", scene.ID, setting.Path, err)
 			}
 			if setting.Value.Number != nil {
-				if _, err := sceneSettingFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *setting.Value.Number); err != nil {
+				if _, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *setting.Value.Number); err != nil {
 					return fmt.Errorf("scene %s setting %s: %w", scene.ID, setting.Path, err)
 				}
 			}
