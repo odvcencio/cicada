@@ -13,9 +13,15 @@ import (
 
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/engine"
 )
 
 func activationStudio(t *testing.T, source string) (*studio, *liveplay.Player) {
+	s, stream, _ := activationStudioEngine(t, source)
+	return s, stream
+}
+
+func activationStudioEngine(t *testing.T, source string) (*studio, *liveplay.Player, *engine.Engine) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "score.cicada")
 	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
@@ -47,7 +53,81 @@ func activationStudio(t *testing.T, source string) (*studio, *liveplay.Player) {
 	transport.stream, transport.playing, transport.last, transport.sampleRate = stream, true, fingerprint, liveSampleRate
 	transport.livePlan = plan
 	transport.arena = liveplay.NewPatchArena(16)
-	return &studio{path: path, lastGoodSource: []byte(source), lastGoodProject: p, transport: transport}, stream
+	return &studio{path: path, lastGoodSource: []byte(source), lastGoodProject: p, transport: transport}, stream, initial.Engine
+}
+
+func TestActivationSavedPatchSurvivesSongSeek(t *testing.T) {
+	source := "cicada 2\ntrack drums drums { bd_decay=80ms }\npattern beat drums steps=4 { bd: x... }\nscene first { drums=beat drums.bd_level=-6dB }\nscene later { drums=beat }\nsong { first later }\n"
+	s, stream, created := activationStudioEngine(t, source)
+	renderStudioPreview(t, stream, 256)
+	response := httptest.NewRecorder()
+	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
+		return bytes.Replace(source, []byte("bd_decay=80ms"), []byte("bd_decay=120ms"), 1), nil
+	})
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Body.String())
+	}
+	renderStudioPreview(t, stream, 256)
+	if stream.LandedRevision() != 1 {
+		t.Fatal("save did not patch")
+	}
+	for _, index := range []int{1, 0, 1} {
+		name := []string{"first", "later"}[index]
+		if err := stream.StartSongEntry(index, name); err != nil {
+			t.Fatal(err)
+		}
+		renderStudioPreview(t, stream, 256)
+		validator := created.PreviewParamValidator(0)
+		actual, _ := validator.CommittedValue(kernel.ParamDrumBdDecay)
+		if actual != 120 {
+			t.Fatalf("seek %s engine decay %g, want 120", name, actual)
+		}
+		value, _ := stream.CommittedValue(0, kernel.ParamDrumBdDecay)
+		version, err := stream.SetTrackPreview("drums", kernel.ParamDrumBdDecay, 200)
+		if err != nil {
+			t.Fatal(err)
+		}
+		renderStudioPreview(t, stream, 256)
+		stream.CancelPreviewWait(version)
+		renderStudioPreview(t, stream, 256)
+		if value != 120 {
+			t.Fatalf("seek %s committed decay %g, want 120", name, value)
+		}
+	}
+}
+
+func TestActivationBackwardSeekReconstructsCancellation(t *testing.T) {
+	source := "cicada 2\ntrack drums drums { bd_decay=80ms }\npattern beat drums steps=4 { bd: x... }\nscene first { drums=beat }\nscene later { drums=beat drums.bd_decay=90ms }\nscene last { drums=beat }\nsong { first later last }\n"
+	_, stream, created := activationStudioEngine(t, source)
+	for _, index := range []int{1, 2, 0, 2, 0} {
+		name := []string{"first", "later", "last"}[index]
+		if err := stream.StartSongEntry(index, name); err != nil {
+			t.Fatal(err)
+		}
+		renderStudioPreview(t, stream, 256)
+		want := float64(90)
+		if index == 0 {
+			want = 80
+		}
+		validator := created.PreviewParamValidator(0)
+		actual, _ := validator.CommittedValue(kernel.ParamDrumBdDecay)
+		value, _ := stream.CommittedValue(0, kernel.ParamDrumBdDecay)
+		if actual != want || float64(value) != want {
+			t.Fatalf("seek %s: engine %g, committed %g, want %g", name, actual, value, want)
+		}
+		version, err := stream.SetTrackPreview("drums", kernel.ParamDrumBdDecay, 200)
+		if err != nil {
+			t.Fatal(err)
+		}
+		renderStudioPreview(t, stream, 256)
+		stream.CancelPreviewWait(version)
+		renderStudioPreview(t, stream, 256)
+		validator = created.PreviewParamValidator(0)
+		actual, _ = validator.CommittedValue(kernel.ParamDrumBdDecay)
+		if actual != want {
+			t.Fatalf("cancel after %s: engine %g, want %g", name, actual, want)
+		}
+	}
 }
 
 func TestActivationNamedKitSceneSettingsBecomeCommittedRestoreValues(t *testing.T) {

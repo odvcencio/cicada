@@ -1,7 +1,6 @@
 package liveplay
 
 import (
-	"io"
 	"math"
 	"sync/atomic"
 
@@ -12,6 +11,11 @@ import (
 )
 
 const patchCapacity = 64
+
+// Leave room for the largest note batch, all slot/scene launches, transport,
+// and currently active overrides. Limit work even when the kernel is empty.
+const patchBlockBudget = 2 * patchCapacity
+const renderCommandReserve = 256 + 16 + 1 + 2
 
 // PatchArena owns reusable batches. A successful Patch transfers ownership to
 // Read; rejected batches return immediately. Builders must stop after transfer.
@@ -158,6 +162,9 @@ func (p *Player) Patch(patch *Patch) error {
 	p.patchMu.Lock()
 	defer p.patchMu.Unlock()
 	fail := func(err error) error { patch.recycle(); return err }
+	if patch.n > min(patchBlockBudget, engine.CommandCapacity-renderCommandReserve) {
+		return fail(cmd.Error("patch cannot fit beside render commands"))
+	}
 	select {
 	case <-p.closed:
 		return fail(cmd.Error("player is closed"))
@@ -202,6 +209,45 @@ func (p *Player) Patch(patch *Patch) error {
 
 func (p *Player) LandedRevision() uint64 { return p.landedRevision.Load() }
 
+func (p *Player) drainPatches() {
+	reserve := renderCommandReserve
+	active := 0
+	if snapshot := p.overrides.Load(); snapshot != nil {
+		for _, overrides := range snapshot.tracks {
+			for id, override := range overrides.values {
+				if override.active && override.version != overrides.state.clearedVersions[id] {
+					active++
+					if overrides.state.appliedVersions[id] != override.version {
+						reserve++
+					}
+				}
+			}
+		}
+	}
+	// A patch may invalidate at most 64 applied previews, and cancellation
+	// drains at most the captured queue length. Already applied previews do
+	// not otherwise consume capacity, so a wide active gesture cannot starve edits.
+	reserve += min(active, patchCapacity) + len(p.overrideClears)
+	budget := min(patchBlockBudget, p.current.Engine.AvailableCommands()-reserve)
+	remaining := len(p.patches)
+	if p.deferredPatch != nil {
+		remaining++
+	}
+	for ; remaining > 0; remaining-- {
+		patch := p.deferredPatch
+		if patch == nil {
+			patch = <-p.patches
+		}
+		if patch.n > max(0, budget) {
+			p.deferredPatch = patch
+			return
+		}
+		p.deferredPatch = nil
+		budget -= patch.n
+		p.applyPatch(patch)
+	}
+}
+
 func (p *Player) applyPatch(patch *Patch) {
 	defer patch.recycle()
 	names := p.trackNames.Load()
@@ -229,13 +275,15 @@ func (p *Player) applyPatch(patch *Patch) {
 			c.Tick = (p.clock.TickAtSample(p.sample)/seq.TicksPerStep + 1) * seq.TicksPerStep
 		}
 	}
-	if !p.current.Engine.PushBatch(patch.commands[:patch.n]) {
-		p.fault = io.ErrShortBuffer
+	if !p.current.Engine.PushCommittedBatch(patch.commands[:patch.n]) {
+		p.emit(Event{Kind: "patch-error", Name: "patch could not be published"})
 		return
 	}
 	for _, c := range patch.commands[:patch.n] {
 		if c.Op == cmd.OpSetParam {
 			id, value := kernel.ParamID(c.Index), math.Float32frombits(c.Arg0)
+			names.defaults.Set(c.Track, id, value)
+			p.blockParameters.Set(c.Track, id, value)
 			p.recordCommitted(c.Track, id, value)
 		}
 	}
@@ -260,6 +308,28 @@ func (p *Player) applyPatch(patch *Patch) {
 	p.landedRevision.Store(patch.revision)
 }
 
+// The engine owns the scene traversal. Rebuild into scratch first so a
+// matching earlier default cannot retire a preview of a different final value.
+func (p *Player) rebuildCommitted(score Score, tick int64) {
+	clear(p.reconstructed[:])
+	score.Engine.ReconstructParameters(&score.trackNames.defaults, tick, func(setting engine.SceneSetting, _ bool) {
+		if setting.Division == 0 {
+			p.reconstructed.Set(setting.Track, setting.ID, setting.Value)
+		}
+	})
+	names := score.trackNames
+	for track := range names.committed {
+		for id, bits := range p.reconstructed[track] {
+			names.committed[track][id].Store(bits)
+		}
+	}
+	if snapshot := p.overrides.Load(); snapshot != nil {
+		for _, overrides := range snapshot.tracks {
+			clear(overrides.state.appliedVersions[:])
+		}
+	}
+}
+
 func (p *Player) recordCommitted(track uint8, id kernel.ParamID, value float32) {
 	names := p.trackNames.Load()
 	names.storeCommitted(track, id, value)
@@ -271,12 +341,40 @@ func (p *Player) recordCommitted(track uint8, id kernel.ParamID, value float32) 
 	}
 }
 
-func (p *Player) noteSceneCommitted(index int) {
-	if index < len(p.current.SceneParameters) {
-		for _, parameter := range p.current.SceneParameters[index] {
-			p.recordCommitted(parameter.Track, parameter.ID, parameter.Value)
+func (p *Player) noteSceneCommitted(index int, blockTick int64) {
+	p.current.Engine.VisitSceneParameters(uint16(index), func(parameter engine.SceneSetting, _ bool) {
+		if parameter.Division != 0 {
+			return
 		}
-	}
+		track := parameter.Track
+		if track == 0xff {
+			track = 16
+		}
+		// A same-tick patch follows scene launch in the kernel command order.
+		// A later transition within this block supersedes the patch instead.
+		if p.current.Engine.CurrentSceneTick() <= blockTick && p.blockParameters[track][parameter.ID]>>32 != 0 {
+			return
+		}
+		p.recordCommitted(parameter.Track, parameter.ID, parameter.Value)
+	})
+}
+
+func (p *Player) notePendingScenes(tick int64) {
+	clear(p.reconstructed[:])
+	p.current.Engine.VisitPendingSceneParameters(tick, func(setting engine.SceneSetting, _ bool) {
+		if setting.Division == 0 {
+			p.reconstructed.Set(setting.Track, setting.ID, setting.Value)
+		}
+	})
+	p.reconstructed.Visit(func(setting engine.SceneSetting, _ bool) {
+		track := setting.Track
+		if track == 0xff {
+			track = 16
+		}
+		if p.blockParameters[track][setting.ID]>>32 == 0 {
+			p.recordCommitted(setting.Track, setting.ID, setting.Value)
+		}
+	})
 }
 
 // noteCommitted clears a matching preview after its committed value lands.

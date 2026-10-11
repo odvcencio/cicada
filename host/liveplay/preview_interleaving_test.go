@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 )
@@ -137,17 +138,27 @@ type previewRenderReference struct {
 	start     bool
 	paused    bool
 	closed    bool
-	patches   []float32
+	patches   []previewRenderPatch
+	defaults  float32
+	seek      int
+	scene     int
+	launch    bool
+}
+
+type previewRenderPatch struct {
+	value    float32
+	commands int
 }
 
 type previewRenderBoundary struct {
-	gesture   int
-	count     int
-	committed float32
-	activates bool
-	phases    chan bool
-	permit    chan struct{}
-	done      chan error
+	gesture      int
+	count        int
+	committed    float32
+	activates    bool
+	sceneChanged bool
+	phases       chan bool
+	permit       chan struct{}
+	done         chan error
 }
 
 type previewRenderProducer struct {
@@ -164,20 +175,32 @@ func previewRenderScore(t *testing.T, gain float32) Score {
 	program.Nodes[2] = graph.Node{Op: graph.Constant, Value: .125}
 	program.Nodes[3] = graph.Node{Op: graph.Multiply, A: 1, B: 2}
 	program.Len, program.Output = 4, 3
-	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 20_000}
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 16, MaxVoices: 16, BPMMilli: 20_000}
 	cfg.Track[0].Kind, cfg.Track[0].Graph = engine.VoiceGraph, program
 	cfg.Track[0].GainDB, cfg.Track[0].GainSet = float64(gain), true
 	cfg.Track[0].Pan, cfg.Track[0].BusSFX = -1, true
-	cfg.Scenes, cfg.Song, cfg.LoopSong = []engine.Scene{{}}, []engine.SongEntry{{Scene: 0, Bars: 1}}, true
+	for i := 1; i < 16; i++ {
+		cfg.Track[i] = cfg.Track[0]
+		cfg.Track[i].Graph.Nodes[2].Value = 0
+	}
+	cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0, ID: kernel.ParamMixGain, Value: -9}}}, {}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
+	cfg.LoopSong = true
 	created, err := engine.New(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
+	tracks := make([]TrackSlots, 16)
+	for i := range tracks {
+		tracks[i].ID = fmt.Sprintf("extra%d", i)
+	}
+	tracks[0].ID = "bass"
 	return Score{
 		Engine: created, SampleRate: 48_000, BPMMilli: 20_000, Name: "preview",
-		Tracks: []TrackSlots{{ID: "bass"}}, HasSFX: true,
-		Song:       []SongEntry{{Scene: "preview", StartBar: 1}},
-		Parameters: []ParameterValue{{Track: 0, ID: kernel.ParamMixGain, Value: gain}},
+		Tracks: tracks, HasSFX: true, SceneIDs: []string{"preview", "later", "last"},
+		SceneParameters: [][]ParameterValue{nil, {{Track: 0, ID: kernel.ParamMixGain, Value: -9}}, nil},
+		Song:            []SongEntry{{Scene: "preview", StartBar: 1}, {Scene: "later", StartBar: 2}, {Scene: "last", StartBar: 3}},
+		Parameters:      []ParameterValue{{Track: 0, ID: kernel.ParamMixGain, Value: gain}},
 	}
 }
 
@@ -188,7 +211,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 		if err != nil {
 			t.Fatal(err)
 		}
-		model := previewRenderReference{committed: -6, values: make(map[int]float32), retired: make(map[int]bool)}
+		model := previewRenderReference{committed: -6, defaults: -6, values: make(map[int]float32), retired: make(map[int]bool)}
 		var versions = make(map[int]uint64)
 		var boundary *previewRenderBoundary
 		var producers []previewRenderProducer
@@ -248,13 +271,20 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 			producers = pending
 		}
 		applyPatches := func() {
-			for _, value := range model.patches {
-				model.committed = value
+			consumed, commands := 0, 0
+			for _, patch := range model.patches {
+				if commands+patch.commands > 128 {
+					break
+				}
+				commands += patch.commands
+				consumed++
+				value := patch.value
+				model.committed, model.defaults = value, value
 				if gesture := activeGesture(); gesture != 0 && model.values[gesture] == value {
 					model.retired[gesture] = true
 				}
 			}
-			model.patches = nil
+			model.patches = model.patches[consumed:]
 		}
 		begin := func() {
 			boundary = &previewRenderBoundary{
@@ -262,21 +292,47 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				phases:    make(chan bool), permit: make(chan struct{}), done: make(chan error, 1),
 			}
 			if model.start {
+				model.scene = model.seek
+				model.committed = model.defaults
+				if model.scene > 0 {
+					model.committed = -9
+				}
 				if model.hasOffer {
 					boundary.committed, boundary.activates = model.offer, true
+					if model.seek > 0 {
+						boundary.committed = -9
+					}
 					model.hasOffer = false
+					model.defaults = model.offer
 				}
 				model.start = false
 			}
+			launched := model.launch && !boundary.activates
+			boundary.sceneChanged = launched && len(model.patches) == 0
+			if launched {
+				model.scene, model.committed = 1, -9
+			}
+			model.launch = false
 			captured := boundary
 			p.overrideHook = func(snapshotLoaded bool) {
 				captured.phases <- snapshotLoaded
 				<-captured.permit
 			}
 			go func() { _, err := p.Read(pcm[:]); captured.done <- err }()
-			<-captured.phases // Before the render goroutine counts queued requests.
+			select {
+			case <-captured.phases: // Before the render goroutine counts queued requests.
+			case err := <-captured.done:
+				failure = fmt.Errorf("admitted patches faulted before render boundary: %v", err)
+				boundary, p.overrideHook = nil, nil
+				return
+			}
 			if !captured.activates {
 				applyPatches()
+				if launched && model.committed == -9 {
+					if gesture := activeGesture(); gesture != 0 && model.values[gesture] == -9 {
+						model.retired[gesture] = true
+					}
+				}
 				captured.committed = model.committed
 			}
 			collectProducers()
@@ -309,6 +365,11 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 					return err
 				}
 				collectProducers()
+				if captured.sceneChanged && captured.committed == -9 {
+					if gesture := activeGesture(); gesture != 0 && model.values[gesture] == -9 {
+						model.retired[gesture] = true
+					}
+				}
 			case <-captured.phases:
 				// Activation has a second boundary before the first PCM block.
 				// Stop it before counting, publish any woken producers, then load
@@ -344,12 +405,20 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 			}
 			// Eight explicitly scheduled blocks settle gain smoothing and any
 			// pending commit/activation or next-block cancellation. Never sleep.
-			for block := 0; block < 8; block++ {
+			for settled := 0; settled < 8; {
 				begin()
+				if failure != nil {
+					return failure
+				}
 				for boundary != nil {
 					if err := drain(); err != nil {
 						return err
 					}
+				}
+				if len(model.patches) == 0 {
+					settled++
+				} else {
+					settled = 0
 				}
 			}
 			want := model.committed
@@ -407,6 +476,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				if client.open && client.gesture != 0 && !model.paused {
 					client.committed = true
 					model.offer, model.hasOffer, model.start = model.values[client.gesture], true, true
+					model.seek = 0
 					failure = p.Offer(previewRenderScore(t, model.offer))
 					if failure == nil {
 						failure = p.StartSongEntry(0, "preview")
@@ -437,8 +507,46 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 					batch.SetResolvedParam(target, kernel.ParamMixGain, op.value)
 					failure = p.Patch(batch)
 					if failure == nil {
-						model.patches = append(model.patches, op.value)
+						model.patches = append(model.patches, previewRenderPatch{value: op.value, commands: 1})
 					}
+				}
+			case "burst":
+				for n := 0; n < 9; n++ {
+					patchRevision++
+					batch := arena.Begin(patchRevision)
+					if batch == nil {
+						break
+					}
+					for track := uint8(0); track < 16; track++ {
+						value := float32(-1)
+						batch.SetParam(track, kernel.ParamMixPan, value)
+						batch.SetParam(track, kernel.ParamMixSendA, 0)
+						batch.SetParam(track, kernel.ParamMixSendB, 0)
+						batch.SetParam(track, kernel.ParamMixGain, op.value)
+					}
+					if err := p.Patch(batch); err == nil {
+						model.patches = append(model.patches, previewRenderPatch{value: op.value, commands: 64})
+					} else {
+						break
+					}
+				}
+			case "seek-forward", "seek-backward":
+				model.seek = 2
+				if op.kind == "seek-backward" {
+					model.seek = 0
+				}
+				model.start = true
+				failure = p.StartSongEntry(model.seek, []string{"preview", "later", "last"}[model.seek])
+			case "scene":
+				for boundary != nil {
+					failure = drain()
+					if failure != nil {
+						break
+					}
+				}
+				model.scene, model.launch = 1, true
+				if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1}) {
+					failure = fmt.Errorf("scene command rejected")
 				}
 			case "offer":
 				value := op.value
@@ -451,7 +559,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				model.offer, model.hasOffer = value, true
 				failure = p.Offer(previewRenderScore(t, value))
 			case "activate":
-				model.start = true
+				model.start, model.seek = true, 0
 				failure = p.StartSongEntry(0, "preview")
 			case "render-begin":
 				if boundary == nil && !model.paused {
@@ -526,7 +634,7 @@ func minimizePreviewRenderLifecycle(t *testing.T, operations []previewRenderOper
 
 func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 	const seeds, steps = 2048, 36
-	kinds := [...]string{"set", "newer-gesture", "cancel", "commit", "close", "drop", "offer", "activate", "render-begin", "render-drain-N", "pause", "resume", "Close", "pressure", "settle", "patch"}
+	kinds := [...]string{"set", "newer-gesture", "cancel", "commit", "close", "drop", "offer", "activate", "render-begin", "render-drain-N", "pause", "resume", "Close", "pressure", "settle", "patch", "seek-forward", "seek-backward", "scene", "burst"}
 	values := [...]float32{-12, -9, -6, -3, 0}
 	for seed := int64(0); seed < seeds; seed++ {
 		random := rand.New(rand.NewSource(seed))
@@ -558,6 +666,9 @@ func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 
 func TestPreviewRenderLifecycleInterleavingRegressions(t *testing.T) {
 	for name, operations := range map[string][]previewRenderOperation{
+		"patch-seek":      {{kind: "patch", value: -3}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "settle"}},
+		"backward-cancel": {{kind: "seek-forward"}, {kind: "settle"}, {kind: "seek-backward"}, {kind: "set", value: 0}, {kind: "cancel"}, {kind: "settle"}},
+		"paused-burst":    {{kind: "pause"}, {kind: "burst", value: -3}, {kind: "resume"}, {kind: "settle"}},
 		"late-cancel": {
 			{kind: "render-begin"}, {kind: "set", value: 0}, {kind: "cancel"}, {kind: "render-drain-N"},
 			{kind: "offer", value: -3}, {kind: "activate"}, {kind: "settle"},

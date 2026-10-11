@@ -215,6 +215,7 @@ type previewReferenceScore struct {
 }
 
 type previewLifecycleCounts struct {
+	seeks, scenes, bursts, pausedBatches                                           int
 	checks, sets, cancels, teardowns, activations, reorders, adds, removes, shifts int
 	captures, publications, stalePublications, readdedPublications, readds         int
 	patches, stalePatches                                                          int
@@ -239,8 +240,11 @@ func previewLifecycleScore(t *testing.T, score previewReferenceScore) liveplay.S
 		parameters[index] = liveplay.ParameterValue{Track: uint8(index), ID: kernel.ParamMixGain, Value: score.gains[identity]}
 	}
 	// A slow clock keeps offers pending until explicit song-start activation.
-	cfg.Scenes = []engine.Scene{{}}
-	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}}
+	cfg.Scenes = []engine.Scene{{}, {}, {}}
+	for index := range score.order {
+		cfg.Scenes[1].Settings = append(cfg.Scenes[1].Settings, engine.SceneSetting{Track: uint8(index), ID: kernel.ParamMixGain, Value: -9})
+	}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
 	cfg.LoopSong = true
 	created, err := engine.New(cfg)
 	if err != nil {
@@ -253,8 +257,15 @@ func previewLifecycleScore(t *testing.T, score previewReferenceScore) liveplay.S
 	}
 	return liveplay.Score{
 		Engine: created, SampleRate: 48_000, BPMMilli: 20_000, Name: "preview",
-		Tracks: tracks, HasSFX: true,
-		Song: []liveplay.SongEntry{{Scene: "preview", StartBar: 1}}, Parameters: parameters,
+		Tracks: tracks, HasSFX: true, SceneIDs: []string{"preview", "later", "last"},
+		Song: []liveplay.SongEntry{{Scene: "preview", StartBar: 1}, {Scene: "later", StartBar: 2}, {Scene: "last", StartBar: 3}}, Parameters: parameters,
+		SceneParameters: func() [][]liveplay.ParameterValue {
+			values := make([]liveplay.ParameterValue, len(tracks))
+			for i := range values {
+				values[i] = liveplay.ParameterValue{Track: uint8(i), ID: kernel.ParamMixGain, Value: -9}
+			}
+			return [][]liveplay.ParameterValue{nil, values, nil}
+		}(),
 	}
 }
 
@@ -264,7 +275,10 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 		counts = new(previewLifecycleCounts)
 	}
 	playing := previewReferenceScore{order: []int{0, 1, 2}, gains: [4]float32{-6, -12, -9, -3}, incarnations: [4]int{1, 2, 3, 0}}
-	p, err := liveplay.New(previewLifecycleScore(t, playing), 48_000)
+	initial := previewLifecycleScore(t, playing)
+	playingEngine := initial.Engine
+	var offerEngine *engine.Engine
+	p, err := liveplay.New(initial, 48_000)
 	if err != nil {
 		return err
 	}
@@ -277,7 +291,9 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 	incarnation := 3
 	var offer previewReferenceScore
 	hasOffer := false
-	arena := liveplay.NewPatchArena(4)
+	arena := liveplay.NewPatchArena(40)
+	committed := playing.gains
+	paused := false
 	patchRevision := uint64(0)
 	for i := range sessions {
 		sessions[i] = make(livePreviewSession)
@@ -305,6 +321,8 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			}
 		}
 		playing, hasOffer = next, false
+		playingEngine = offerEngine
+		committed = playing.gains
 		for identity := range overrides {
 			if !present(identity) || overrides[identity].value == playing.gains[identity] {
 				overrides[identity].active = false
@@ -314,10 +332,11 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 		return nil
 	}
 	publish := func(next previewReferenceScore) error {
-		if err := p.Offer(previewLifecycleScore(t, next)); err != nil {
+		prepared := previewLifecycleScore(t, next)
+		if err := p.Offer(prepared); err != nil {
 			return err
 		}
-		offer, hasOffer = next, true
+		offer, hasOffer, offerEngine = next, true, prepared.Engine
 		return nil
 	}
 	cancel := func(client, identity int) {
@@ -458,13 +477,81 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			}
 			counts.patches++
 			if present(pending.track) && playing.incarnations[pending.track] == pending.incarnation {
-				playing.gains[pending.track] = pending.value
+				playing.gains[pending.track], committed[pending.track] = pending.value, pending.value
 				if overrides[pending.track].active && overrides[pending.track].value == pending.value {
 					overrides[pending.track].active = false
 				}
 			} else {
 				counts.stalePatches++
 			}
+		case "seek-forward", "seek-backward":
+			index := 2
+			if op.kind == "seek-backward" {
+				index = 0
+			}
+			if hasOffer {
+				if err := activate(); err != nil {
+					return err
+				}
+				if _, err := p.Read(pcm[:]); err != nil {
+					return err
+				}
+			}
+			if err := p.StartSongEntry(index, []string{"preview", "later", "last"}[index]); err != nil {
+				return err
+			}
+			committed = playing.gains
+			if index > 0 {
+				for _, identity := range playing.order {
+					committed[identity] = -9
+				}
+			}
+			counts.seeks++
+		case "scene":
+			if !playingEngine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1}) {
+				return fmt.Errorf("scene command rejected")
+			}
+			for _, identity := range playing.order {
+				committed[identity] = -9
+				if overrides[identity].active && overrides[identity].value == -9 {
+					overrides[identity].active = false
+				}
+			}
+			counts.scenes++
+		case "pause", "resume":
+			paused = op.kind == "pause"
+			p.SetTransportPlaying(!paused)
+		case "burst":
+			for n := 0; n < 32; n++ {
+				patchRevision++
+				batch := arena.Begin(patchRevision)
+				if batch == nil {
+					break
+				}
+				for index, identity := range playing.order {
+					target, err := p.ResolvePreviewTrack(previewTrackIDs[identity])
+					if err != nil {
+						return err
+					}
+					batch.SetResolvedParam(target, kernel.ParamMixGain, op.value)
+					batch.SetParam(uint8(index), kernel.ParamMixPan, -1)
+					batch.SetParam(uint8(index), kernel.ParamMixSendA, 0)
+					batch.SetParam(uint8(index), kernel.ParamMixSendB, 0)
+				}
+				if err := p.Patch(batch); err != nil {
+					break
+				}
+				if paused {
+					counts.pausedBatches++
+				}
+				for _, identity := range playing.order {
+					playing.gains[identity], committed[identity] = op.value, op.value
+					if overrides[identity].active && overrides[identity].value == op.value {
+						overrides[identity].active = false
+					}
+				}
+			}
+			counts.bursts++
 		case "offer":
 			next := playing
 			next.gains[op.track] = op.value
@@ -537,6 +624,9 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 				return err
 			}
 		}
+		if paused {
+			continue
+		}
 		if _, err := p.Read(pcm[:]); err != nil {
 			return fmt.Errorf("step %d %v: %w", step, op, err)
 		}
@@ -557,16 +647,16 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			if !ok || track != uint8(index) || frame.TrackIDs[index] != name {
 				return fmt.Errorf("step %d: %s index %d/%v, expected %d", step, name, track, ok, index)
 			}
-			committed := playing.gains[identity]
-			if got, ok := p.CommittedValue(track, kernel.ParamMixGain); !ok || got != committed {
-				return fmt.Errorf("step %d %v: %s committed %g/%v, want %g", step, op, name, got, ok, committed)
+			saved := committed[identity]
+			if got, ok := p.CommittedValue(track, kernel.ParamMixGain); !ok || got != saved {
+				return fmt.Errorf("step %d %v: %s committed %g/%v, want %g", step, op, name, got, ok, saved)
 			}
 			override := overrides[identity]
 			value, active := p.OverrideValue(track, kernel.ParamMixGain)
 			if active != override.active || active && value != override.value {
 				return fmt.Errorf("step %d %v: %s override %g/%v, model %g/%v", step, op, name, value, active, override.value, override.active)
 			}
-			want := committed
+			want := saved
 			if active {
 				owner := clients[override.owner]
 				if !owner.open || owner.gestures[identity].committed {
@@ -606,7 +696,7 @@ func minimizePreviewLifecycle(t *testing.T, operations []previewOperation) []pre
 
 func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 	const seeds, steps = 2048, 36
-	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture", "reorder", "add", "remove", "shift", "capture", "publish", "remove-add", "patch", "patch-capture", "patch-publish"}
+	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture", "reorder", "add", "remove", "shift", "capture", "publish", "remove-add", "patch", "patch-capture", "patch-publish", "seek-forward", "seek-backward", "scene", "burst"}
 	values := [...]float32{-12, -9, -6, -3, 0}
 	var counts previewLifecycleCounts
 	operationsCount := 0
@@ -630,6 +720,7 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 			operations = append(operations, op)
 		}
 		if seed < 64 {
+			operations = append(operations, previewOperation{kind: "pause"}, previewOperation{kind: "burst", value: -3}, previewOperation{kind: "resume"})
 			// Force a suspended socket publication around two score activations,
 			// alongside a newer gesture on the replacement track from another client.
 			operations = append(operations,
@@ -642,6 +733,7 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 				previewOperation{kind: "publish", client: 0},
 			)
 		}
+		operations = append(operations, previewOperation{kind: "resume"})
 		for client := 0; client < 3; client++ {
 			operations = append(operations, previewOperation{kind: "close", client: client})
 		}
@@ -657,6 +749,7 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 	if counts.patches == 0 || counts.stalePatches == 0 {
 		t.Fatal("patches did not exercise delayed stale incarnations")
 	}
+	t.Logf("seeks %d, scene changes %d, capacity bursts %d, batches queued while paused %d", counts.seeks, counts.scenes, counts.bursts, counts.pausedBatches)
 	t.Logf("patch publications %d, stale patch publications %d", counts.patches, counts.stalePatches)
 	t.Logf("captures %d, delayed publications %d, stale publications %d (re-added targets %d), re-added incarnations %d; 64 forced capture/remove/re-add/newer-gesture/publish sequences", counts.captures, counts.publications, counts.stalePublications, counts.readdedPublications, counts.readds)
 	t.Logf("%d seeds (0..%d), %d random choices, %d executed operations including expanded remove/add pairs, forced interleavings and final closures; %d per-track lifecycle cases; sets %d, cancels %d, teardowns %d, activations %d, reorders %d, additions %d, removals %d, index shifts %d", seeds, seeds-1, seeds*steps, operationsCount, counts.checks, counts.sets, counts.cancels, counts.teardowns, counts.activations, counts.reorders, counts.adds, counts.removes, counts.shifts)

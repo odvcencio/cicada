@@ -53,6 +53,7 @@ type trackNameSnapshot struct {
 	poly          [16]bool
 	count         uint8
 	committed     [17][kernel.ParamCount]atomic.Uint64 // Render writes; controls read.
+	defaults      engine.ParameterState                // Render-owned saved values, separate from scene values.
 	previewParams [16][kernel.ParamCount]bool
 	previewValues [16]engine.PreviewParamValidator
 }
@@ -209,6 +210,10 @@ type Player struct {
 	fadeRemaining     int
 	offers            chan Score
 	patches           chan *Patch
+	deferredPatch     *Patch // Render-owned head batch carried to the next block.
+	reconstructed     engine.ParameterState
+	blockParameters   engine.ParameterState
+	initialParameters bool
 	patchMu           sync.Mutex // Serializes publication with Close, never Read.
 	landedRevision    atomic.Uint64
 	launches          atomic.Pointer[sceneLaunch]
@@ -280,9 +285,10 @@ func New(initial Score, rate int) (*Player, error) {
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
 		offers:        make(chan Score, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
 		meters: make(chan MeterFrame, 1), loudness: masterLoudness,
-		overrideClears: make(chan overrideClear, 64),
-		patches:        make(chan *Patch, 32),
-		closed:         make(chan struct{}),
+		overrideClears:    make(chan overrideClear, 64),
+		patches:           make(chan *Patch, 32),
+		closed:            make(chan struct{}),
+		initialParameters: true,
 	}
 	p.overrides.Store(&liveOverrides{})
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
@@ -321,6 +327,10 @@ func (p *Player) Close() {
 		p.patchMu.Lock()
 		defer p.patchMu.Unlock()
 		close(p.closed)
+		if p.deferredPatch != nil {
+			p.deferredPatch.recycle()
+			p.deferredPatch = nil
+		}
 		for {
 			select {
 			case patch := <-p.patches:
@@ -365,6 +375,7 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), 16))}
 	for _, parameter := range score.Parameters {
 		snapshot.storeCommitted(parameter.Track, parameter.ID, parameter.Value)
+		snapshot.defaults.Set(parameter.Track, parameter.ID, parameter.Value)
 	}
 	for index := 0; index < int(snapshot.count); index++ {
 		snapshot.ids[index] = score.Tracks[index].ID
@@ -932,7 +943,7 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 				}
 				continue
 			}
-			if newEngine && parameterMatches(score.Parameters, track, kernel.ParamID(id), override.value) {
+			if value, ok := score.trackNames.committedValue(track, kernel.ParamID(id)); newEngine && ok && math.Float32bits(value) == math.Float32bits(override.value) {
 				state.retire(kernel.ParamID(id), override.version)
 				continue
 			}
@@ -1310,6 +1321,7 @@ func (p *Player) beginRequestedSong() {
 		p.previous, p.fadeRemaining = nil, 0
 		if hasOffer {
 			p.previous = p.current.Engine
+			p.rebuildCommitted(next, int64(start-1)*seq.TicksPerBar)
 			p.applyOverrides(next.Engine, next, true)
 			p.heldNotes = [128]noteInput{}
 			p.heldOrder = [128]uint64{}
@@ -1328,6 +1340,8 @@ func (p *Player) beginRequestedSong() {
 			p.fault = fmt.Errorf("live engine rejected song start at bar %d", start)
 			return
 		}
+		p.rebuildCommitted(p.current, int64(start-1)*seq.TicksPerBar)
+		p.initialParameters = false
 		p.bar = int64(start) - 1
 		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.BPMMilli, AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
 		p.tempoMilli.Store(selected.BPMMilli)
@@ -1339,6 +1353,7 @@ func (p *Player) beginRequestedSong() {
 }
 
 func (p *Player) renderBlock() {
+	clear(p.blockParameters[:])
 	if p.sample == p.nextBarSample {
 		p.bar++
 		swapped := false
@@ -1349,6 +1364,7 @@ func (p *Player) renderBlock() {
 				return
 			}
 			p.previous = p.current.Engine
+			p.rebuildCommitted(next, p.bar*seq.TicksPerBar)
 			p.applyOverrides(next.Engine, next, true)
 			p.fadeTotal = p.rate / 200 // five milliseconds
 			p.fadeRemaining = p.fadeTotal
@@ -1382,22 +1398,22 @@ func (p *Player) renderBlock() {
 	}
 	tick := p.clock.TickAtSample(p.sample)
 	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
-	for remaining := len(p.patches); remaining > 0; remaining-- {
-		p.applyPatch(<-p.patches)
-		if p.fault != nil {
-			return
-		}
+	if p.initialParameters {
+		p.rebuildCommitted(p.current, tick)
+		p.initialParameters = false
 	}
+	p.drainPatches()
 	p.queueLiveNotes()
 	if p.fault != nil {
 		return
 	}
 	p.queueSceneLaunch()
 	p.queueSlotLaunches()
+	p.notePendingScenes(tick)
 	p.applyOverrides(p.current.Engine, p.current, false)
 	p.current.Engine.Render(p.left[:frames], p.right[:frames])
 	if index, sequence := p.current.Engine.CurrentScene(); index >= 0 && index < len(p.current.SceneIDs) && (p.sceneEngine != p.current.Engine || p.sceneSequence != sequence) {
-		p.noteSceneCommitted(index)
+		p.noteSceneCommitted(index, tick)
 		firstScene := p.sceneEngine == nil
 		p.sceneEngine, p.sceneSequence = p.current.Engine, sequence
 		p.scene.Store(&p.current.SceneIDs[index])

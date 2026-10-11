@@ -146,6 +146,12 @@ func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
 }
 
 func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings bool) {
+	e.launchSceneTracks(index, skipManualPatterns)
+	e.applySceneSettingsMode(index, snapSettings)
+}
+
+func (e *Engine) launchSceneTracks(index uint16, skipManualPatterns bool) {
+	e.sceneTick = e.transport.Tick()
 	e.currentScene = int(index)
 	e.sceneSequence++
 	scene := &e.scenes[index]
@@ -194,8 +200,10 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 			e.applyPatternCommand(cmd.Command{Op: cmd.OpSelectPattern, Track: uint8(track), Index: uint16(binding.Slot)})
 		}
 	}
-	e.applySceneSettingsMode(index, snapSettings)
 }
+
+// CurrentSceneTick is the render-owned tick of the latest scene transition.
+func (e *Engine) CurrentSceneTick() int64 { return e.sceneTick }
 
 func (e *Engine) applySceneSettings(index uint16) {
 	e.applySceneSettingsMode(index, false)
@@ -207,23 +215,32 @@ func (e *Engine) applySceneSettingsMode(index uint16, snap bool) {
 	}
 	settings := e.scenes[index].Settings
 	for i := range settings {
-		setting := settings[i]
-		if setting.Division != fx.FreeDelay {
-			e.setDelayDivision(setting.Division)
-			if e.faulted {
-				return
-			}
-			continue
-		}
-		command := cmd.Command{Op: cmd.OpSetParam, Track: setting.Track, Index: uint16(setting.ID), Arg0: math.Float32bits(setting.Value)}
-		if snap {
-			e.setParamImmediate(command)
-		} else {
-			e.setParam(command)
-		}
+		e.applySceneSetting(settings[i], snap)
 		if e.faulted {
 			return
 		}
+	}
+}
+
+func (e *Engine) applySceneSetting(setting SceneSetting, snap bool) {
+	if e.faulted {
+		return
+	}
+	if setting.Division != fx.FreeDelay {
+		e.setDelayDivision(setting.Division)
+		if e.faulted {
+			return
+		}
+		return
+	}
+	command := cmd.Command{Op: cmd.OpSetParam, Track: setting.Track, Index: uint16(setting.ID), Arg0: math.Float32bits(setting.Value)}
+	if snap {
+		e.setParamImmediate(command)
+	} else {
+		e.setParam(command)
+	}
+	if e.faulted {
+		return
 	}
 }
 
@@ -239,51 +256,30 @@ func (e *Engine) startSong() {
 	if !e.restoreSceneDefaults() {
 		return
 	}
-	total := e.schedule[len(e.schedule)-1].EndTick
-	tick := e.transport.Tick()
-	if tick >= total && !e.loopSong {
-		_ = e.transport.SeekTick(0)
-		tick = 0
+	index, cycleStart, tick := e.songPosition(e.transport.Tick())
+	if index < 0 {
+		return
+	}
+	if tick != e.transport.Tick() {
+		_ = e.transport.SeekTick(tick)
 	}
 	e.restoreSourceChains(tick)
-	cycleStart := int64(0)
-	if e.loopSong {
-		cycleStart = tick / total * total
+	entry := e.schedule[index]
+	e.songMode, e.songIndex, e.songEndTick = true, index, cycleStart+entry.EndTick
+	entryStart := cycleStart + entry.Tick
+	// Reconstruction and host cancellation share the saved-default/scene walk.
+	// At a boundary the current scene keeps its normal glide; earlier settings
+	// and seeks into a scene settle immediately.
+	e.reconstructParameters(&e.savedParameters, tick, parameterVisitor{engine: e})
+	if e.faulted {
+		return
 	}
-	for i, entry := range e.schedule {
-		end := cycleStart + entry.EndTick
-		if tick < end {
-			e.songMode = true
-			e.songIndex = i
-			e.songEndTick = end
-			entryStart := cycleStart + entry.Tick
-			// Parameter settings carry forward from every earlier song scene.
-			// A seek reconstructs the settled parameter state immediately; at an
-			// exact scene boundary the current scene still starts its normal glide.
-			for prior := 0; tick > cycleStart && prior < i; prior++ {
-				e.applySceneSettingsMode(e.schedule[prior].Scene, true)
-				if e.faulted {
-					return
-				}
-			}
-			// Settle the reconstructed effects before a boundary's normal
-			// transition, or after the current scene when seeking into it.
-			if tick == entryStart {
-				e.settleSceneEffects()
-			}
-			// Natural completion can leave clips longer than the song active.
-			// Release those voices before launching the reconstructed scene.
-			e.resetClips()
-			e.launchSceneMode(entry.Scene, false, tick > entryStart)
-			if len(e.clipTemplates) > 0 {
-				e.restoreSongClips(i, cycleStart, tick)
-			}
-			e.restorePreparedClips(i, cycleStart)
-			if tick > entryStart {
-				e.settleSceneEffects()
-			}
-			return
-		}
+	if len(e.clipTemplates) > 0 {
+		e.restoreSongClips(index, cycleStart, tick)
+	}
+	e.restorePreparedClips(index, cycleStart)
+	if tick > entryStart {
+		e.settleSceneEffects()
 	}
 }
 

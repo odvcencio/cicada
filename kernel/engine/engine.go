@@ -232,13 +232,13 @@ type Engine struct {
 	musicBusMute, musicBusSolo   bool
 	sfxBusMute, sfxBusSolo       bool
 	masterMute, masterSolo       bool
-	commands                     [512]cmd.Command
+	commands                     [CommandCapacity]cmd.Command
 	commandRead, commandWrite    uint16
 	messages                     [256]cmd.Message
 	messageRead, messageWrite    uint16
 	overflowMessages             [2]cmd.Message
 	overflowRead, overflowLen    uint8
-	pending                      [512]cmd.Command
+	pending                      [CommandCapacity]cmd.Command
 	pendingLen                   int
 	automation                   []cmd.Command
 	automationIndex              int
@@ -261,6 +261,8 @@ type Engine struct {
 	eventScratch                 [128]seq.Event
 	renderFrame, renderFrames    int
 	sceneDefaults                *sceneParameterState
+	sceneTick                    int64
+	savedParameters              ParameterState
 	scenes                       []Scene
 	currentScene                 int
 	sceneSequence                uint64
@@ -781,7 +783,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 }
 
 func (e *Engine) Push(c cmd.Command) bool {
-	if c.Validate(uint8(e.tracks)) != nil || e.commandWrite-e.commandRead >= uint16(len(e.commands)) {
+	if c.Validate(uint8(e.tracks)) != nil || e.AvailableCommands() < 1 {
 		return false
 	}
 	e.commands[e.commandWrite%uint16(len(e.commands))] = c
@@ -791,7 +793,7 @@ func (e *Engine) Push(c cmd.Command) bool {
 
 // PushBatch accepts all commands or none, including on queue exhaustion.
 func (e *Engine) PushBatch(commands []cmd.Command) bool {
-	if len(commands) > len(e.commands)-int(e.commandWrite-e.commandRead) {
+	if len(commands) > e.AvailableCommands() {
 		return false
 	}
 	for _, command := range commands {
@@ -802,6 +804,31 @@ func (e *Engine) PushBatch(commands []cmd.Command) bool {
 	for _, command := range commands {
 		e.commands[e.commandWrite%uint16(len(e.commands))] = command
 		e.commandWrite++
+	}
+	return true
+}
+
+// CommandCapacity is the fixed command and pending-command capacity.
+const CommandCapacity = 512
+
+// AvailableCommands includes commands waiting for a future tick. Only the
+// render owner may inspect or mutate the engine's queues.
+func (e *Engine) AvailableCommands() int {
+	queued := int(e.commandWrite - e.commandRead)
+	return min(len(e.commands)-queued, len(e.pending)-e.pendingLen-queued)
+}
+
+// PushCommittedBatch publishes a saved edit and its seek defaults together.
+// Preview commands use Push and never change the saved reconstruction state.
+// Like PushBatch, this method belongs exclusively to the render owner.
+func (e *Engine) PushCommittedBatch(commands []cmd.Command) bool {
+	if len(commands) > e.AvailableCommands() || !e.PushBatch(commands) {
+		return false
+	}
+	for _, c := range commands {
+		if c.Op == cmd.OpSetParam {
+			e.savedParameters.Set(c.Track, kernel.ParamID(c.Index), math.Float32frombits(c.Arg0))
+		}
 	}
 	return true
 }
@@ -1310,11 +1337,11 @@ func (e *Engine) applyPending() {
 
 func commandPriority(op cmd.Op) int {
 	switch op {
-	case cmd.OpNoteOff, cmd.OpStop, cmd.OpSeek:
+	case cmd.OpNoteOff, cmd.OpStop, cmd.OpSeek, cmd.OpPlay:
 		return 0
 	case cmd.OpSelectPattern, cmd.OpLaunchScene, cmd.OpSetChain, cmd.OpSetState, cmd.OpTriggerStinger:
 		return 1
-	case cmd.OpNoteOn, cmd.OpPlay:
+	case cmd.OpNoteOn:
 		return 3
 	case cmd.OpNoteExpression:
 		return 4

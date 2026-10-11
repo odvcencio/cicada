@@ -1,6 +1,7 @@
 package liveplay
 
 import (
+	"fmt"
 	"io"
 	"testing"
 
@@ -8,6 +9,118 @@ import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/voice/drum"
 )
+
+func TestPatchCapacityBurstDefersWithoutFaultOrAllocation(t *testing.T) {
+	cfg := previewParameterConfig(t, engine.VoiceGraph)
+	cfg.Tracks, cfg.MaxVoices = 16, 16
+	tracks := make([]TrackSlots, 16)
+	for i := range tracks {
+		cfg.Track[i] = cfg.Track[0]
+		tracks[i] = TrackSlots{ID: fmt.Sprintf("drums%d", i)}
+	}
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := New(Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Tracks: tracks}, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	arena := NewPatchArena(16)
+	for revision := uint64(1); revision <= 9; revision++ {
+		batch := arena.Begin(revision)
+		for track := uint8(0); track < 16; track++ {
+			for _, id := range []kernel.ParamID{kernel.ParamMixGain, kernel.ParamMixPan, kernel.ParamMixSendA, kernel.ParamMixSendB} {
+				batch.SetParam(track, id, 0)
+			}
+		}
+		if err := p.Patch(batch); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var pcm [blockFrames * 8]byte
+	if _, err := p.Read(pcm[:]); err != nil {
+		t.Fatalf("nine admitted batches faulted: %v", err)
+	}
+	if p.LandedRevision() >= 9 {
+		t.Fatal("capacity burst was not deferred")
+	}
+	for block := 0; block < 16 && p.LandedRevision() < 9; block++ {
+		if _, err := p.Read(pcm[:]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if p.LandedRevision() != 9 || arena.Free() != 16 {
+		t.Fatal("deferred patches did not land/recycle")
+	}
+	base := uint64(9)
+	allocs := testing.AllocsPerRun(50, func() {
+		for revision := base + 1; revision <= base+9; revision++ {
+			batch := arena.Begin(revision)
+			for track := uint8(0); track < 16; track++ {
+				batch.SetParam(track, kernel.ParamMixGain, 0)
+				batch.SetParam(track, kernel.ParamMixPan, 0)
+				batch.SetParam(track, kernel.ParamMixSendA, 0)
+				batch.SetParam(track, kernel.ParamMixSendB, 0)
+			}
+			if err := p.Patch(batch); err != nil {
+				panic(err)
+			}
+		}
+		for block := 0; block < 8; block++ {
+			if _, err := p.Read(pcm[:]); err != nil {
+				panic(err)
+			}
+		}
+		base += 9
+		if p.LandedRevision() != base || arena.Free() != 16 {
+			panic("deferred burst did not finish")
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("capacity burst allocated %g", allocs)
+	}
+}
+
+func TestPatchSeekReconstructionDoesNotAllocate(t *testing.T) {
+	score := previewRenderScore(t, -6)
+	p, err := New(score, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	arena := NewPatchArena(1)
+	batch := arena.Begin(1)
+	batch.SetParam(0, kernel.ParamMixGain, -3)
+	if err := p.Patch(batch); err != nil {
+		t.Fatal(err)
+	}
+	var pcm [blockFrames * 8]byte
+	if _, err := p.Read(pcm[:]); err != nil {
+		t.Fatal(err)
+	}
+	index := 0
+	allocs := testing.AllocsPerRun(50, func() {
+		index = 2 - index
+		if err := p.StartSongEntry(index, []string{"preview", "later", "last"}[index]); err != nil {
+			panic(err)
+		}
+		if _, err := p.Read(pcm[:]); err != nil {
+			panic(err)
+		}
+		want := float32(-3)
+		if index == 2 {
+			want = -9
+		}
+		if got, ok := p.CommittedValue(0, kernel.ParamMixGain); !ok || got != want {
+			panic("seek reconstruction diverged")
+		}
+	})
+	if allocs != 0 {
+		t.Fatalf("seek reconstruction allocated %g", allocs)
+	}
+}
 
 func TestPatchAppliesAtNextBlockWithoutAllocating(t *testing.T) {
 	p, err := New(meterScore(t, "patch", -6), 48_000)
