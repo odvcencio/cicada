@@ -16,15 +16,15 @@ func (p *Player) noteCommitted(track uint8, id kernel.ParamID, value float32) {
 	if snapshot == nil {
 		return
 	}
-	trackID := ""
+	identity := overrideTrack{}
 	if track != 0xff {
 		names := p.trackNames.Load()
 		if names == nil || track >= names.count {
 			return
 		}
-		trackID = names.ids[track]
+		identity = names.overrideTrack(track)
 	}
-	overrides := snapshot.tracks[trackID]
+	overrides := snapshot.tracks[identity]
 	if overrides == nil {
 		return
 	}

@@ -148,7 +148,11 @@ func (s *studio) handleLiveMessage(data []byte, previews livePreviewSession) err
 		if input.Value == nil {
 			return fmt.Errorf("preview-set requires a value")
 		}
-		version, err := stream.SetTrackPreview(trackID, id, *input.Value)
+		target, err := stream.ResolvePreviewTrack(trackID)
+		if err != nil {
+			return err
+		}
+		version, err := stream.SetResolvedPreview(target, id, *input.Value)
 		if err != nil {
 			return err
 		}

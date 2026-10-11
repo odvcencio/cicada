@@ -187,25 +187,36 @@ type previewReferenceGesture struct {
 	committed bool
 }
 
+type previewReferencePending struct {
+	target             liveplay.PreviewTarget
+	track, incarnation int
+	value              float32
+	valid              bool
+}
+
 type previewReferenceClient struct {
 	open     bool
 	gestures [4]previewReferenceGesture
+	pending  previewReferencePending
 }
 
 type previewReferenceOverride struct {
-	owner   int
-	gesture int
-	value   float32
-	active  bool
+	incarnation int
+	owner       int
+	gesture     int
+	value       float32
+	active      bool
 }
 
 type previewReferenceScore struct {
-	order []int
-	gains [4]float32
+	incarnations [4]int
+	order        []int
+	gains        [4]float32
 }
 
 type previewLifecycleCounts struct {
 	checks, sets, cancels, teardowns, activations, reorders, adds, removes, shifts int
+	captures, publications, stalePublications, readdedPublications, readds         int
 }
 
 func previewLifecycleScore(t *testing.T, score previewReferenceScore) liveplay.Score {
@@ -251,7 +262,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 	if counts == nil {
 		counts = new(previewLifecycleCounts)
 	}
-	playing := previewReferenceScore{order: []int{0, 1, 2}, gains: [4]float32{-6, -12, -9, -3}}
+	playing := previewReferenceScore{order: []int{0, 1, 2}, gains: [4]float32{-6, -12, -9, -3}, incarnations: [4]int{1, 2, 3, 0}}
 	p, err := liveplay.New(previewLifecycleScore(t, playing), 48_000)
 	if err != nil {
 		return err
@@ -262,6 +273,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 	var clients [3]previewReferenceClient
 	var overrides [4]previewReferenceOverride
 	sequence := 0
+	incarnation := 3
 	var offer previewReferenceScore
 	hasOffer := false
 	for i := range sessions {
@@ -280,7 +292,16 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 		if err := p.StartSongEntry(0, "preview"); err != nil {
 			return err
 		}
-		playing, hasOffer = offer, false
+		next := offer
+		for _, identity := range next.order {
+			if present(identity) {
+				next.incarnations[identity] = playing.incarnations[identity]
+			} else {
+				incarnation++
+				next.incarnations[identity] = incarnation
+			}
+		}
+		playing, hasOffer = next, false
 		for identity := range overrides {
 			if !present(identity) || overrides[identity].value == playing.gains[identity] {
 				overrides[identity].active = false
@@ -311,6 +332,9 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 		message := ""
 		switch op.kind {
 		case "set", "newer-gesture":
+			if client.pending.valid {
+				break
+			}
 			if !client.open {
 				sessions[op.client] = make(livePreviewSession)
 				*client = previewReferenceClient{open: true}
@@ -319,7 +343,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			if present(op.track) {
 				sequence++
 				*gesture = previewReferenceGesture{version: sequence, value: op.value}
-				overrides[op.track] = previewReferenceOverride{owner: op.client, gesture: sequence, value: op.value, active: true}
+				overrides[op.track] = previewReferenceOverride{owner: op.client, gesture: sequence, value: op.value, active: true, incarnation: playing.incarnations[op.track]}
 				counts.sets++
 			} else {
 				if err := s.handleLiveMessage([]byte(message), sessions[op.client]); err == nil {
@@ -327,13 +351,58 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 				}
 				message = ""
 			}
+		case "capture":
+			if client.pending.valid {
+				break
+			}
+			if !client.open {
+				sessions[op.client] = make(livePreviewSession)
+				*client = previewReferenceClient{open: true}
+			}
+			if present(op.track) {
+				target, err := p.ResolvePreviewTrack(previewTrackIDs[op.track])
+				if err != nil {
+					return err
+				}
+				client.pending = previewReferencePending{target: target, track: op.track, value: op.value, incarnation: playing.incarnations[op.track], valid: true}
+				counts.captures++
+			}
+		case "publish":
+			if client.open && client.pending.valid {
+				pending := client.pending
+				client.pending = previewReferencePending{}
+				version, err := p.SetResolvedPreview(pending.target, kernel.ParamMixGain, pending.value)
+				if err != nil {
+					return err
+				}
+				sequence++
+				client.gestures[pending.track] = previewReferenceGesture{version: sequence, value: pending.value}
+				key := livePreviewKey{entity: "track:" + previewTrackIDs[pending.track], param: kernel.ParamMixGain}
+				sessions[op.client][key] = livePreview{stream: p, version: version}
+				counts.publications++
+				if present(pending.track) && playing.incarnations[pending.track] == pending.incarnation {
+					overrides[pending.track] = previewReferenceOverride{owner: op.client, gesture: sequence, value: pending.value, active: true, incarnation: pending.incarnation}
+					counts.sets++
+				} else {
+					counts.stalePublications++
+					if present(pending.track) {
+						counts.readdedPublications++
+					}
+				}
+			}
 		case "cancel":
+			if client.pending.valid {
+				break
+			}
 			if client.open && (present(op.track) || gesture.version != 0) {
 				cancel(op.client, op.track)
 				message = fmt.Sprintf(`{"type":"preview-end","entity":"track:%s","param":"mix.gain","commit":false}`, previewTrackIDs[op.track])
 				counts.cancels++
 			}
 		case "commit":
+			if client.pending.valid {
+				break
+			}
 			if client.open && gesture.version != 0 {
 				gesture.committed = true
 				message = fmt.Sprintf(`{"type":"preview-end","entity":"track:%s","param":"mix.gain","commit":true}`, previewTrackIDs[op.track])
@@ -346,6 +415,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 				}
 			}
 			client.open = false
+			client.pending = previewReferencePending{}
 			counts.teardowns++
 		case "offer":
 			next := playing
@@ -374,6 +444,9 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			case "add":
 				if present(op.track) {
 					break
+				}
+				if playing.incarnations[op.track] != 0 {
+					counts.readds++
 				}
 				next.order = append([]int{op.track}, next.order...)
 				counts.adds++
@@ -451,6 +524,9 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 				if !owner.open || owner.gestures[identity].committed {
 					return fmt.Errorf("step %d: %s override has no open uncommitted owner", step, name)
 				}
+				if override.incarnation != playing.incarnations[identity] {
+					return fmt.Errorf("step %d: %s preview crossed incarnations %d -> %d", step, name, override.incarnation, playing.incarnations[identity])
+				}
 				want = override.value
 			}
 			wantPeak := .125 * math.Pow(10, float64(want)/20)
@@ -482,9 +558,10 @@ func minimizePreviewLifecycle(t *testing.T, operations []previewOperation) []pre
 
 func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 	const seeds, steps = 2048, 36
-	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture", "reorder", "add", "remove", "shift"}
+	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture", "reorder", "add", "remove", "shift", "capture", "publish", "remove-add"}
 	values := [...]float32{-12, -9, -6, -3, 0}
 	var counts previewLifecycleCounts
+	operationsCount := 0
 	for seed := int64(0); seed < seeds; seed++ {
 		random := rand.New(rand.NewSource(seed))
 		operations := make([]previewOperation, 0, steps+3)
@@ -497,15 +574,38 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 			if op.kind == "set" || op.kind == "newer-gesture" {
 				lastGestureClient = op.client
 			}
+			if op.kind == "remove-add" {
+				op.kind = "remove"
+				operations = append(operations, op)
+				op.kind = "add"
+			}
 			operations = append(operations, op)
+		}
+		if seed < 64 {
+			// Force a suspended socket publication around two score activations,
+			// alongside a newer gesture on the replacement track from another client.
+			operations = append(operations,
+				previewOperation{kind: "close", client: 0}, previewOperation{kind: "close", client: 1},
+				previewOperation{kind: "add", track: 1}, previewOperation{kind: "add", track: 0},
+				previewOperation{kind: "set", client: 0, track: 0, value: 0},
+				previewOperation{kind: "capture", client: 0, track: 0, value: 0},
+				previewOperation{kind: "remove", track: 0}, previewOperation{kind: "add", track: 0},
+				previewOperation{kind: "set", client: 1, track: 0, value: -3},
+				previewOperation{kind: "publish", client: 0},
+			)
 		}
 		for client := 0; client < 3; client++ {
 			operations = append(operations, previewOperation{kind: "close", client: client})
 		}
+		operationsCount += len(operations)
 		if err := runPreviewLifecycle(t, operations, &counts); err != nil {
 			minimal := minimizePreviewLifecycle(t, operations)
 			t.Fatalf("seed %d: %v; minimized counterexample: %v", seed, err, minimal)
 		}
 	}
-	t.Logf("%d seeds (0..%d), %d random operations plus final closure of every client; %d per-track lifecycle cases; sets %d, cancels %d, teardowns %d, activations %d, reorders %d, additions %d, removals %d, index shifts %d", seeds, seeds-1, seeds*steps, counts.checks, counts.sets, counts.cancels, counts.teardowns, counts.activations, counts.reorders, counts.adds, counts.removes, counts.shifts)
+	if counts.readdedPublications < 64 || counts.readds == 0 {
+		t.Fatal("no delayed publication crossed a remove/re-add boundary")
+	}
+	t.Logf("captures %d, delayed publications %d, stale publications %d (re-added targets %d), re-added incarnations %d; 64 forced capture/remove/re-add/newer-gesture/publish sequences", counts.captures, counts.publications, counts.stalePublications, counts.readdedPublications, counts.readds)
+	t.Logf("%d seeds (0..%d), %d random choices, %d executed operations including expanded remove/add pairs, forced interleavings and final closures; %d per-track lifecycle cases; sets %d, cancels %d, teardowns %d, activations %d, reorders %d, additions %d, removals %d, index shifts %d", seeds, seeds-1, seeds*steps, operationsCount, counts.checks, counts.sets, counts.cancels, counts.teardowns, counts.activations, counts.reorders, counts.adds, counts.removes, counts.shifts)
 }

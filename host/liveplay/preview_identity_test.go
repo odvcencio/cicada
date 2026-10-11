@@ -7,6 +7,132 @@ import (
 	"m31labs.dev/cicada/kernel"
 )
 
+func TestPreviewDelayedPublicationCannotReachReaddedTrack(t *testing.T) {
+	for _, newer := range []bool{false, true} {
+		t.Run(map[bool]string{false: "saved-value", true: "newer-gesture"}[newer], func(t *testing.T) {
+			p, err := New(reorderedMeterScore(t, "initial", [2]string{"bass", "lead"}, -6, -12), 48_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			captured := p.trackNames.Load()
+			original, err := p.SetPreview(0, kernel.ParamMixGain, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			renderPreview(t, p, blockFrames)
+			if err := p.Offer(reorderedMeterScore(t, "removed", [2]string{"pad", "lead"}, -9, -12)); err != nil {
+				t.Fatal(err)
+			}
+			renderPreview(t, p, 100_096)
+			if _, _, active := p.previewClear(original); active {
+				t.Fatal("original preview survived removal")
+			}
+			if err := p.Offer(reorderedMeterScore(t, "readded", [2]string{"bass", "lead"}, -6, -12)); err != nil {
+				t.Fatal(err)
+			}
+			renderPreview(t, p, 100_096)
+			want := -6.
+			if newer {
+				if _, err := p.SetTrackPreview("bass", kernel.ParamMixGain, -3); err != nil {
+					t.Fatal(err)
+				}
+				want = -3
+			}
+			// Resume the control call after both activations. It must retain
+			// the captured incarnation, including when a newer gesture exists.
+			delayed, err := p.setPreview(captured, 0, kernel.ParamMixGain, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			renderPreview(t, p, 4096)
+			frame := <-p.Meters()
+			if got, expected := float64(frame.Tracks[0].Peak), math.Pow(10, want/20); math.Abs(got-expected) > .01 {
+				t.Fatalf("re-added bass peak %g, want %g (%g dB)", got, expected, want)
+			}
+			if _, _, active := p.previewClear(delayed); active {
+				t.Fatal("delayed publication was not retired")
+			}
+			p.CancelPreviewWait(delayed)
+			renderPreview(t, p, blockFrames)
+			if value, active := p.OverrideValue(0, kernel.ParamMixGain); active != newer || active && value != -3 {
+				t.Fatal("old incarnation changed the replacement track's ownership")
+			}
+		})
+	}
+}
+
+func TestPreviewResolvedTargetRejectsOtherPlayers(t *testing.T) {
+	p, err := New(meterScore(t, "first", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	other, err := New(meterScore(t, "second", -6), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	target, err := p.ResolvePreviewTrack("bass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, invalid := range []PreviewTarget{{}, target} {
+		before := other.overrides.Load()
+		if _, err := other.SetResolvedPreview(invalid, kernel.ParamMixGain, 0); err == nil || other.overrides.Load() != before {
+			t.Fatal("invalid target published to a different player")
+		}
+	}
+}
+
+func TestPreviewStaleIncarnationRetirementDoesNotAllocate(t *testing.T) {
+	p, err := New(reorderedMeterScore(t, "initial", [2]string{"bass", "lead"}, -6, -12), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	target, err := p.ResolvePreviewTrack("bass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, score := range []Score{
+		reorderedMeterScore(t, "removed", [2]string{"pad", "lead"}, -9, -12),
+		reorderedMeterScore(t, "readded", [2]string{"bass", "lead"}, -6, -12),
+	} {
+		if err := p.Offer(score); err != nil {
+			t.Fatal(err)
+		}
+		renderPreview(t, p, 100_096)
+	}
+	var snapshots [101]*liveOverrides
+	for i := range snapshots {
+		if _, err := p.SetResolvedPreview(target, kernel.ParamMixGain, 0); err != nil {
+			t.Fatal(err)
+		}
+		snapshots[i] = p.overrides.Load()
+	}
+	var pcm [blockFrames * 8]byte
+	var readErr error
+	iteration := 0
+	retired := true
+	identity := target.names.overrideTrack(target.track)
+	allocations := testing.AllocsPerRun(100, func() {
+		snapshot := snapshots[iteration]
+		p.overrides.Store(snapshot)
+		_, readErr = p.Read(pcm[:])
+		overrides := snapshot.tracks[identity]
+		retired = retired && overrides.state.retiredVersions[kernel.ParamMixGain].Load() == overrides.values[kernel.ParamMixGain].version
+		iteration++
+	})
+	if allocations != 0 || readErr != nil || !retired {
+		t.Fatalf("stale retirement allocations=%g, error=%v, retired=%v", allocations, readErr, retired)
+	}
+	if _, active := p.OverrideValue(0, kernel.ParamMixGain); active {
+		t.Fatal("stale incarnation became active")
+	}
+	assertPreviewGain(t, p, -6)
+}
+
 func TestPreviewCancelAfterReorderAndIndexReuse(t *testing.T) {
 	for _, teardown := range []bool{false, true} {
 		t.Run(map[bool]string{false: "cancel", true: "teardown"}[teardown], func(t *testing.T) {
@@ -161,7 +287,7 @@ func TestPreviewTopologyChangesAndCancellationDoNotAllocate(t *testing.T) {
 		p.applyOverrides(reordered.Engine, reordered, false)
 		p.applyOverrides(removed.Engine, removed, true)
 		state := snapshots[iteration]
-		retired = retired && state.tracks["bass"].state.retiredVersions[kernel.ParamMixGain].Load() == bass[iteration] && state.tracks["lead"].state.retiredVersions[kernel.ParamMixGain].Load() == lead[iteration]
+		retired = retired && state.tracks[p.trackNames.Load().overrideTrack(0)].state.retiredVersions[kernel.ParamMixGain].Load() == bass[iteration] && state.tracks[p.trackNames.Load().overrideTrack(1)].state.retiredVersions[kernel.ParamMixGain].Load() == lead[iteration]
 		iteration++
 	})
 	if allocations != 0 || cancelErr != nil {
