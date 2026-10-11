@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/seq"
@@ -411,6 +412,26 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 		cfg.Schedule, scheduleErr = CompileSchedule(p)
 		if scheduleErr != nil {
 			return cfg, scheduleErr
+		}
+	}
+	validators, err := engine.PrepareParamValidators(&cfg)
+	if err != nil {
+		return cfg, fmt.Errorf("prepare parameter validation: %w", err)
+	}
+	for si, scene := range cfg.Scenes {
+		for pi, setting := range scene.Settings {
+			if setting.Track != 0xff {
+				if err := validators[setting.Track].Validate(setting.ID, setting.Value); err != nil {
+					return cfg, fmt.Errorf("scene %s path %s: %w", p.Scenes[si].ID, p.Scenes[si].Settings[pi].Path, err)
+				}
+			}
+		}
+	}
+	for _, control := range cfg.Automation {
+		if control.Track != 0xff {
+			if err := validators[control.Track].Validate(kernel.ParamID(control.Index), math.Float32frombits(control.Arg0)); err != nil {
+				return cfg, fmt.Errorf("automation %s.%s tick %d: %w", p.Tracks[control.Track].ID, kernel.Params[control.Index].Path, control.Tick, err)
+			}
 		}
 	}
 	return cfg, nil

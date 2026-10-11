@@ -280,7 +280,12 @@ func liveProjectParameters(p *project.Project, prepared *engine.Engine) []livepl
 				continue // Valid prepared recipes may have no command representation.
 			}
 		}
-		if track != 0xff && validators[track].Validate(id, value) != nil {
+		var global engine.PreviewParamValidator
+		validator := &global
+		if track != 0xff {
+			validator = &validators[track]
+		}
+		if validator.Validate(id, value) != nil {
 			continue
 		}
 		values = append(values, liveplay.ParameterValue{Track: track, ID: id, Value: value})

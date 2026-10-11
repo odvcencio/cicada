@@ -737,24 +737,14 @@ func (overrides *trackOverrides) retired() bool {
 	return true
 }
 
-type previewValueError string
-
-func (e previewValueError) Error() string { return string(e) }
-
 // Admission and restoration use the same checks. Errors are static values so
 // rejecting a restoration cannot allocate on the render thread.
 func validatePreviewValue(spec kernel.ParamSpec, validator *engine.PreviewParamValidator, value float32) error {
-	off := spec.Off && math.IsInf(float64(value), -1)
-	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
-		return previewValueError("parameter value is out of range")
+	if validator == nil {
+		var global engine.PreviewParamValidator
+		validator = &global
 	}
-	if spec.Curve == "toggle" && value != 0 && value != 1 {
-		return previewValueError("toggle parameter must be zero or one")
-	}
-	if validator != nil {
-		return validator.Validate(spec.ID, value)
-	}
-	return nil
+	return validator.Validate(spec.ID, value)
 }
 
 // CancelPreview requests retirement of exactly one override version. Read
