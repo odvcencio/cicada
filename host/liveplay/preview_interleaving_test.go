@@ -137,6 +137,7 @@ type previewRenderReference struct {
 	start     bool
 	paused    bool
 	closed    bool
+	patches   []float32
 }
 
 type previewRenderBoundary struct {
@@ -192,6 +193,8 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 		var boundary *previewRenderBoundary
 		var producers []previewRenderProducer
 		var pcm [blockFrames * 8]byte
+		arena := NewPatchArena(32)
+		patchRevision := uint64(0)
 		for i := range model.clients {
 			model.clients[i].open = true
 		}
@@ -244,6 +247,15 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 			}
 			producers = pending
 		}
+		applyPatches := func() {
+			for _, value := range model.patches {
+				model.committed = value
+				if gesture := activeGesture(); gesture != 0 && model.values[gesture] == value {
+					model.retired[gesture] = true
+				}
+			}
+			model.patches = nil
+		}
 		begin := func() {
 			boundary = &previewRenderBoundary{
 				committed: model.committed,
@@ -263,6 +275,10 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 			}
 			go func() { _, err := p.Read(pcm[:]); captured.done <- err }()
 			<-captured.phases // Before the render goroutine counts queued requests.
+			if !captured.activates {
+				applyPatches()
+				captured.committed = model.committed
+			}
 			collectProducers()
 			captured.gesture, captured.count = activeGesture(), len(model.queue)
 			captured.permit <- struct{}{}
@@ -298,6 +314,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				// Stop it before counting, publish any woken producers, then load
 				// its snapshot. Client operations can interleave here too.
 				collectProducers()
+				applyPatches()
 				captured.gesture, captured.count = activeGesture(), len(model.queue)
 				captured.committed, captured.activates = model.committed, false
 				captured.permit <- struct{}{}
@@ -407,6 +424,22 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				}
 				client.open, client.gesture = false, 0
 				collectProducers()
+			case "patch":
+				patchRevision++
+				batch := arena.Begin(patchRevision)
+				if batch != nil {
+					target, err := p.ResolvePreviewTrack("bass")
+					if err != nil {
+						failure = err
+						batch.Release()
+						break
+					}
+					batch.SetResolvedParam(target, kernel.ParamMixGain, op.value)
+					failure = p.Patch(batch)
+					if failure == nil {
+						model.patches = append(model.patches, op.value)
+					}
+				}
 			case "offer":
 				value := op.value
 				if value == model.committed {
@@ -493,7 +526,7 @@ func minimizePreviewRenderLifecycle(t *testing.T, operations []previewRenderOper
 
 func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 	const seeds, steps = 2048, 36
-	kinds := [...]string{"set", "newer-gesture", "cancel", "commit", "close", "drop", "offer", "activate", "render-begin", "render-drain-N", "pause", "resume", "Close", "pressure", "settle"}
+	kinds := [...]string{"set", "newer-gesture", "cancel", "commit", "close", "drop", "offer", "activate", "render-begin", "render-drain-N", "pause", "resume", "Close", "pressure", "settle", "patch"}
 	values := [...]float32{-12, -9, -6, -3, 0}
 	for seed := int64(0); seed < seeds; seed++ {
 		random := rand.New(rand.NewSource(seed))

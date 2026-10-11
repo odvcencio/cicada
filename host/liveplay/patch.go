@@ -1,10 +1,283 @@
 package liveplay
 
 import (
+	"io"
 	"math"
+	"sync/atomic"
 
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/seq"
 )
+
+const patchCapacity = 64
+
+// PatchArena owns reusable batches. A successful Patch transfers ownership to
+// Read; rejected batches return immediately. Builders must stop after transfer.
+type PatchArena struct {
+	patches  []Patch
+	commands []cmd.Command
+	free     chan *Patch
+}
+
+type Patch struct {
+	revision uint64
+	commands []cmd.Command
+	targets  [patchCapacity]PreviewTarget
+	n        int
+	err      error
+	arena    *PatchArena
+	state    atomic.Uint32 // 0: free, 1: building, 2: queued/render-owned
+}
+
+func NewPatchArena(n int) *PatchArena {
+	if n < 0 {
+		n = 0
+	}
+	a := &PatchArena{patches: make([]Patch, n), commands: make([]cmd.Command, n*patchCapacity), free: make(chan *Patch, n)}
+	for i := range a.patches {
+		patch := &a.patches[i]
+		patch.arena, patch.commands = a, a.commands[i*patchCapacity:(i+1)*patchCapacity]
+		a.free <- patch
+	}
+	return a
+}
+
+func (a *PatchArena) Begin(revision uint64) *Patch {
+	select {
+	case patch := <-a.free:
+		patch.revision, patch.n, patch.err = revision, 0, nil
+		clear(patch.targets[:])
+		patch.state.Store(1)
+		return patch
+	default:
+		return nil
+	}
+}
+
+func (a *PatchArena) Free() int { return len(a.free) }
+func (patch *Patch) Err() error { return patch.err }
+
+// Release returns a batch abandoned by its builder. Player.Patch releases
+// rejected batches itself; a submitted batch belongs to the render thread.
+func (patch *Patch) Release() {
+	if patch != nil && patch.state.CompareAndSwap(1, 0) {
+		patch.arena.free <- patch
+	}
+}
+
+func (patch *Patch) recycle() {
+	patch.state.Store(0)
+	select {
+	case patch.arena.free <- patch:
+	default:
+	}
+}
+
+func (patch *Patch) append(c cmd.Command, target PreviewTarget) {
+	if patch.err != nil {
+		return
+	}
+	if patch.state.Load() != 1 {
+		patch.err = cmd.Error("patch is not owned by its builder")
+		return
+	}
+	if patch.n == len(patch.commands) {
+		patch.err = cmd.Error("patch command capacity exceeded")
+		return
+	}
+	if err := c.Validate(16); err != nil {
+		patch.err = err
+		return
+	}
+	patch.commands[patch.n], patch.targets[patch.n] = c, target
+	patch.n++
+}
+
+// SetParam accepts an index resolved at submission. Entity-based builders use
+// SetResolvedParam to retain the incarnation captured before publication.
+func (patch *Patch) SetParam(track uint8, id kernel.ParamID, value float32) {
+	patch.append(cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(value)}, PreviewTarget{})
+}
+
+func (patch *Patch) SetResolvedParam(target PreviewTarget, id kernel.ParamID, value float32) {
+	if err := validatePatchParam(target.names, target.track, id, value); err != nil {
+		patch.err = err
+		return
+	}
+	patch.append(cmd.Command{Op: cmd.OpSetParam, Track: target.track, Index: uint16(id), Arg0: math.Float32bits(value)}, target)
+}
+
+func validatePatchParam(names *trackNameSnapshot, track uint8, id kernel.ParamID, value float32) error {
+	spec, ok := kernel.Param(id)
+	if !ok || !spec.Live {
+		return cmd.Error("parameter is unknown or not live")
+	}
+	var validator *engine.PreviewParamValidator
+	if spec.Scope == "global" {
+		if track != 0xff {
+			return cmd.Error("global parameter requires track 255")
+		}
+	} else {
+		if names == nil || track >= names.count || !names.previewParams[track][id] {
+			return cmd.Error("parameter is unsupported by the playing track")
+		}
+		validator = &names.previewValues[track]
+	}
+	return validatePreviewValue(spec, validator, value)
+}
+
+func (patch *Patch) Step(track, slot, index uint8, packed uint32) {
+	patch.append(cmd.Command{Op: cmd.OpSetStep, Track: track, Index: uint16(index), Arg0: packed, Arg1: uint32(slot)}, PreviewTarget{})
+}
+
+func (patch *Patch) PatternLen(track, slot, length uint8) {
+	patch.append(cmd.Command{Op: cmd.OpSetPatternLen, Track: track, Index: uint16(length), Arg1: uint32(slot)}, PreviewTarget{})
+}
+
+func (patch *Patch) PatternMeta(track, slot uint8, grid uint16, gate uint16, transpose int16) {
+	patch.append(cmd.Command{Op: cmd.OpSetPatternMeta, Track: track, Index: grid, Arg0: uint32(gate) | uint32(uint16(transpose))<<16, Arg1: uint32(slot)}, PreviewTarget{})
+}
+
+func (patch *Patch) Chord(track, slot, index uint8, notes [4]uint8, count uint8) {
+	c, err := cmd.ChordStepCommand(track, slot, index, notes, count)
+	if err != nil {
+		patch.err = err
+		return
+	}
+	patch.append(c, PreviewTarget{})
+}
+
+// Patch publishes without waiting for audio. Success transfers batch ownership;
+// all admission failures recycle it. No control path reads the playing engine.
+func (p *Player) Patch(patch *Patch) error {
+	if patch == nil || !patch.state.CompareAndSwap(1, 2) {
+		return cmd.Error("patch is not owned by its builder")
+	}
+	p.patchMu.Lock()
+	defer p.patchMu.Unlock()
+	fail := func(err error) error { patch.recycle(); return err }
+	select {
+	case <-p.closed:
+		return fail(cmd.Error("player is closed"))
+	default:
+	}
+	if patch.err != nil {
+		return fail(patch.err)
+	}
+	names := p.trackNames.Load()
+	for i := 0; i < patch.n; i++ {
+		c := patch.commands[i]
+		target := patch.targets[i]
+		if c.Track != 0xff {
+			if target.names == nil {
+				if names == nil || c.Track >= names.count {
+					return fail(cmd.Error("patch track is out of range"))
+				}
+				target = PreviewTarget{player: p, names: names, track: c.Track}
+				patch.targets[i] = target
+			}
+			if target.player != p {
+				return fail(cmd.Error("patch target belongs to a different player"))
+			}
+		}
+		if c.Op == cmd.OpSetParam {
+			context := names
+			if target.names != nil {
+				context = target.names
+			}
+			if err := validatePatchParam(context, c.Track, kernel.ParamID(c.Index), math.Float32frombits(c.Arg0)); err != nil {
+				return fail(err)
+			}
+		}
+	}
+	select {
+	case p.patches <- patch:
+		return nil
+	default:
+		return fail(cmd.Error("patch mailbox is full"))
+	}
+}
+
+func (p *Player) LandedRevision() uint64 { return p.landedRevision.Load() }
+
+func (p *Player) applyPatch(patch *Patch) {
+	defer patch.recycle()
+	names := p.trackNames.Load()
+	for i := 0; i < patch.n; i++ {
+		c := &patch.commands[i]
+		if c.Track != 0xff {
+			identity := patch.targets[i].names.overrideTrack(patch.targets[i].track)
+			if !names.containsTrack(identity) {
+				p.emit(Event{Kind: "patch-error", Name: "patch track incarnation is stale"})
+				return
+			}
+			c.Track, _ = names.trackIndex(identity.id)
+		}
+		if c.Op == cmd.OpSetParam {
+			if err := validatePatchParam(names, c.Track, kernel.ParamID(c.Index), math.Float32frombits(c.Arg0)); err != nil {
+				p.emit(Event{Kind: "patch-error", Name: "patch parameter is incompatible with the playing voice"})
+				return
+			}
+		}
+		if err := c.Validate(names.count); err != nil {
+			p.emit(Event{Kind: "patch-error", Name: "patch command is invalid"})
+			return
+		}
+		if c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta {
+			c.Tick = (p.clock.TickAtSample(p.sample)/seq.TicksPerStep + 1) * seq.TicksPerStep
+		}
+	}
+	if !p.current.Engine.PushBatch(patch.commands[:patch.n]) {
+		p.fault = io.ErrShortBuffer
+		return
+	}
+	for _, c := range patch.commands[:patch.n] {
+		if c.Op == cmd.OpSetParam {
+			id, value := kernel.ParamID(c.Index), math.Float32frombits(c.Arg0)
+			p.recordCommitted(c.Track, id, value)
+		}
+	}
+	// A semantic no-op can finish a gesture whose saved value was already
+	// current. Retire through the same versioned method as a parameter patch.
+	if snapshot := p.overrides.Load(); patch.n == 0 && snapshot != nil {
+		for identity, overrides := range snapshot.tracks {
+			track := uint8(0xff)
+			if identity.id != "" {
+				if !names.containsTrack(identity) {
+					continue
+				}
+				track, _ = names.trackIndex(identity.id)
+			}
+			for id, override := range overrides.values {
+				if value, ok := names.committedValue(track, kernel.ParamID(id)); override.active && ok && math.Float32bits(value) == math.Float32bits(override.value) {
+					p.noteCommitted(track, kernel.ParamID(id), value)
+				}
+			}
+		}
+	}
+	p.landedRevision.Store(patch.revision)
+}
+
+func (p *Player) recordCommitted(track uint8, id kernel.ParamID, value float32) {
+	names := p.trackNames.Load()
+	names.storeCommitted(track, id, value)
+	p.noteCommitted(track, id, value)
+	if snapshot := p.overrides.Load(); snapshot != nil {
+		if overrides := snapshot.tracks[names.overrideTrack(track)]; overrides != nil {
+			overrides.state.appliedVersions[id] = 0 // Reapply any different active gesture.
+		}
+	}
+}
+
+func (p *Player) noteSceneCommitted(index int) {
+	if index < len(p.current.SceneParameters) {
+		for _, parameter := range p.current.SceneParameters[index] {
+			p.recordCommitted(parameter.Track, parameter.ID, parameter.Value)
+		}
+	}
+}
 
 // noteCommitted clears a matching preview after its committed value lands.
 // Call it only on the render thread; the control snapshot stays immutable.

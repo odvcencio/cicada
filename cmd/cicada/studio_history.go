@@ -552,6 +552,15 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		return fail(http.StatusConflict, map[string]any{"error": "score changed during validation; reload before saving"})
 	}
 	if bytes.Equal(current, updated) {
+		if s.transport != nil {
+			func() {
+				s.transport.pollMu.Lock()
+				defer s.transport.pollMu.Unlock()
+				if fingerprint, err := playSourceHashBytes(s.path, current); err == nil {
+					s.transport.activateLocked(s.path, current, fingerprint)
+				}
+			}()
+		}
 		s.lastGoodSource, s.lastGoodProject = bytes.Clone(current), p
 		response := map[string]any{"revision": studioRevision(current), "valid": true, "source": string(current), "unchanged": true}
 		for key, value := range mutation.Response {
@@ -559,6 +568,12 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		}
 		response["playingRevision"] = studioRevision(s.lastGoodSource)
 		return commitOutcome{Status: http.StatusOK, Response: response}
+	}
+	// Keep the watcher outside the entire exchange, auxiliary write/rollback
+	// and activation. All mutation routes use this shared commit tail.
+	if s.transport != nil {
+		s.transport.pollMu.Lock()
+		defer s.transport.pollMu.Unlock()
 	}
 	info, err := os.Stat(s.path)
 	committed, preserved := false, ""
@@ -589,6 +604,11 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		return fail(http.StatusConflict, map[string]any{"error": message})
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
+	if s.transport != nil {
+		if fingerprint, err := playSourceHashBytes(s.path, updated); err == nil {
+			s.transport.activateLocked(s.path, updated, fingerprint)
+		}
+	}
 	if mutation.HistoryDetail != "" {
 		edit.Label = mutation.HistoryDetail
 	}

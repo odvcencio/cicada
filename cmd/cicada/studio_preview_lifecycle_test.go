@@ -217,6 +217,7 @@ type previewReferenceScore struct {
 type previewLifecycleCounts struct {
 	checks, sets, cancels, teardowns, activations, reorders, adds, removes, shifts int
 	captures, publications, stalePublications, readdedPublications, readds         int
+	patches, stalePatches                                                          int
 }
 
 func previewLifecycleScore(t *testing.T, score previewReferenceScore) liveplay.Score {
@@ -276,6 +277,8 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 	incarnation := 3
 	var offer previewReferenceScore
 	hasOffer := false
+	arena := liveplay.NewPatchArena(4)
+	patchRevision := uint64(0)
 	for i := range sessions {
 		sessions[i] = make(livePreviewSession)
 		clients[i].open = true
@@ -417,6 +420,51 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			client.open = false
 			client.pending = previewReferencePending{}
 			counts.teardowns++
+		case "patch", "patch-capture", "patch-publish":
+			if op.kind == "patch-capture" {
+				if !client.pending.valid && present(op.track) {
+					target, err := p.ResolvePreviewTrack(previewTrackIDs[op.track])
+					if err != nil {
+						return err
+					}
+					client.pending = previewReferencePending{target: target, track: op.track, value: op.value, incarnation: playing.incarnations[op.track], valid: true}
+				}
+				break
+			}
+			pending := client.pending
+			if op.kind == "patch" {
+				if !present(op.track) {
+					break
+				}
+				target, err := p.ResolvePreviewTrack(previewTrackIDs[op.track])
+				if err != nil {
+					return err
+				}
+				pending = previewReferencePending{target: target, track: op.track, value: op.value, incarnation: playing.incarnations[op.track], valid: true}
+			} else {
+				client.pending = previewReferencePending{}
+			}
+			if !pending.valid {
+				break
+			}
+			patchRevision++
+			batch := arena.Begin(patchRevision)
+			if batch == nil {
+				return fmt.Errorf("patch arena exhausted")
+			}
+			batch.SetResolvedParam(pending.target, kernel.ParamMixGain, pending.value)
+			if err := p.Patch(batch); err != nil {
+				return err
+			}
+			counts.patches++
+			if present(pending.track) && playing.incarnations[pending.track] == pending.incarnation {
+				playing.gains[pending.track] = pending.value
+				if overrides[pending.track].active && overrides[pending.track].value == pending.value {
+					overrides[pending.track].active = false
+				}
+			} else {
+				counts.stalePatches++
+			}
 		case "offer":
 			next := playing
 			next.gains[op.track] = op.value
@@ -558,7 +606,7 @@ func minimizePreviewLifecycle(t *testing.T, operations []previewOperation) []pre
 
 func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 	const seeds, steps = 2048, 36
-	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture", "reorder", "add", "remove", "shift", "capture", "publish", "remove-add"}
+	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture", "reorder", "add", "remove", "shift", "capture", "publish", "remove-add", "patch", "patch-capture", "patch-publish"}
 	values := [...]float32{-12, -9, -6, -3, 0}
 	var counts previewLifecycleCounts
 	operationsCount := 0
@@ -606,6 +654,10 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 	if counts.readdedPublications < 64 || counts.readds == 0 {
 		t.Fatal("no delayed publication crossed a remove/re-add boundary")
 	}
+	if counts.patches == 0 || counts.stalePatches == 0 {
+		t.Fatal("patches did not exercise delayed stale incarnations")
+	}
+	t.Logf("patch publications %d, stale patch publications %d", counts.patches, counts.stalePatches)
 	t.Logf("captures %d, delayed publications %d, stale publications %d (re-added targets %d), re-added incarnations %d; 64 forced capture/remove/re-add/newer-gesture/publish sequences", counts.captures, counts.publications, counts.stalePublications, counts.readdedPublications, counts.readds)
 	t.Logf("%d seeds (0..%d), %d random choices, %d executed operations including expanded remove/add pairs, forced interleavings and final closures; %d per-track lifecycle cases; sets %d, cancels %d, teardowns %d, activations %d, reorders %d, additions %d, removals %d, index shifts %d", seeds, seeds-1, seeds*steps, operationsCount, counts.checks, counts.sets, counts.cancels, counts.teardowns, counts.activations, counts.reorders, counts.adds, counts.removes, counts.shifts)
 }
