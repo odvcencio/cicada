@@ -472,7 +472,7 @@ func simpleDiff(before, after []byte) string {
 }
 
 func writeAtomic(path string, data []byte) error {
-	path, err := filetarget.Resolve(path)
+	path, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return err
 	}

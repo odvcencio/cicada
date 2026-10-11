@@ -24,7 +24,7 @@ import (
 // are copied and verified before the target score becomes visible. Existing
 // dependencies must match; a collision never replaces unrelated audio.
 func SaveAs(score, target string) error {
-	score, err := filetarget.Resolve(score)
+	score, err := filetarget.Resolve(score, filetarget.Existing)
 	if err != nil {
 		return err
 	}

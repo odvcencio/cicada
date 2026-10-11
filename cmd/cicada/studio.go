@@ -204,7 +204,7 @@ func newStudio(path string) (*studio, error) {
 }
 
 func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
-	absolute, err := filetarget.Resolve(path)
+	absolute, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return nil, err
 	}

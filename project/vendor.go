@@ -27,7 +27,7 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 	if len(s.Libraries) == 0 {
 		return nil, nil
 	}
-	target, err = filetarget.Resolve(target)
+	target, err = filetarget.Resolve(target, filetarget.Existing)
 	if err != nil {
 		return nil, err
 	}

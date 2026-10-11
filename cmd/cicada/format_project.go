@@ -36,7 +36,7 @@ func projectRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	cwd, err = filetarget.Resolve(cwd)
+	cwd, err = filetarget.Resolve(cwd, filetarget.Existing)
 	if err != nil {
 		return "", err
 	}
@@ -182,7 +182,7 @@ func writeProjectFormatEdit(edit projectFormatEdit) error {
 // Check recovery files even when the current source needs no format change.
 // A late write through a displaced handle can arrive after a prior run exits.
 func projectFormatRecoveryPath(path string) (string, error) {
-	absolute, err := filetarget.Resolve(path)
+	absolute, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return "", err
 	}

@@ -42,7 +42,7 @@ func lockLibrarySum(root *os.Root) (func(), error) {
 // WriteLibraryUpdates holds the same lock as vendoring from reading pins
 // through atomic publication, so concurrent commands cannot lose updates.
 func (s *Sources) WriteLibraryUpdates(name string) ([]string, error) {
-	directory, err := filetarget.Resolve(s.Root)
+	directory, err := filetarget.Resolve(s.Root, filetarget.Existing)
 	if err != nil {
 		return nil, err
 	}

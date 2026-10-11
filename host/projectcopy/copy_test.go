@@ -17,6 +17,51 @@ import (
 
 const copyScore = "cicada 2\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off }\nsong { main }\n"
 
+func TestSaveAsDestinationParents(t *testing.T) {
+	for _, kind := range []string{"missing-nested", "symlink-parent", "existing-parent"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "main.cicada")
+			for name, source := range map[string]string{"main.cicada": copyScore, "cicada.mod": "project copy\ncicada 2\n"} {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			parent := filepath.Join(root, "exports", "nested")
+			physical := parent
+			if kind == "existing-parent" {
+				if err := os.MkdirAll(parent, 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if kind == "symlink-parent" {
+				actual := filepath.Join(root, "actual")
+				if err := os.Mkdir(actual, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("actual", filepath.Join(root, "exports")); err != nil {
+					t.Fatal(err)
+				}
+				physical = filepath.Join(actual, "nested")
+			}
+			target := filepath.Join(parent, "copy.cicada")
+			if err := SaveAs(path, target); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := os.ReadFile(filepath.Join(physical, "copy.cicada")); err != nil || string(got) != copyScore {
+				t.Fatalf("destination source: %q %v", got, err)
+			}
+			if err := SaveAs(path, target); err == nil {
+				t.Error("existing destination replaced")
+			}
+			if kind == "symlink-parent" {
+				if got, err := os.Readlink(filepath.Join(root, "exports")); err != nil || got != "actual" {
+					t.Errorf("parent link changed: %q %v", got, err)
+				}
+			}
+		})
+	}
+}
+
 func pending(t *testing.T, dir string, finalize bool) (string, *takejournal.Store, string) {
 	t.Helper()
 	path := filepath.Join(dir, "main.cicada")
@@ -89,7 +134,10 @@ func TestSaveAsAssetCollisionAndMissingFailBeforeScore(t *testing.T) {
 	for _, kind := range []string{"collision", "missing", "corrupt", "symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
-			target := filepath.Join(dir, "copy.cicada")
+			if err := os.WriteFile(filepath.Join(dir, "cicada.mod"), []byte("project destination\ncicada 2\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(dir, "exports", "nested", "copy.cicada")
 			if kind == "collision" {
 				asset := filepath.Join(dir, take.Asset.Path)
 				os.MkdirAll(filepath.Dir(asset), 0700)

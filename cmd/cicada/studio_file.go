@@ -23,7 +23,7 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 }
 
 func studioWriteTakeIfRevision(path string, updated []byte, mode os.FileMode, expected string, beforeSwap func(), checkpoint func(takejournal.Stage)) (bool, string, error) {
-	path, err := filetarget.Resolve(path)
+	path, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return false, "", err
 	}

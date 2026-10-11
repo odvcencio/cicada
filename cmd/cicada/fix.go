@@ -45,7 +45,7 @@ func fixCommandWithHooks(args []string, writeScore func(string, []byte, os.FileM
 		return err
 	}
 	if path != "" {
-		path, err = filetarget.Resolve(path)
+		path, err = filetarget.Resolve(path, filetarget.Existing)
 		if err != nil {
 			return err
 		}
