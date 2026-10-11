@@ -160,7 +160,7 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 		last := uint32(0)
 		emit := func(tick int64) error {
 			value, _ := AutomationValue(p, lane, tick)
-			compiled, err := sceneSettingFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, value)
+			compiled, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, value)
 			if err != nil {
 				return err
 			}

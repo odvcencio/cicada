@@ -88,7 +88,7 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 		setting := strings.Join(parts[1:], ".")
 		kind := parameterVoiceKind(p, p.Tracks[trackIndex].Kind)
 		for _, candidate := range paramdefs.Registry {
-			if candidate.Scope == "track" && candidate.Path == setting && descriptorHasVoice(candidate, kind) {
+			if candidate.Scope == "track" && candidate.Path == setting && paramdefs.HasVoice(candidate, kind) {
 				descriptor, found = candidate, true
 				break
 			}
@@ -153,15 +153,6 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 		result.OwnerKind = "effect"
 	}
 	return result, nil
-}
-
-func descriptorHasVoice(descriptor paramdefs.Descriptor, kind string) bool {
-	for _, voice := range descriptor.Voices {
-		if voice == kind {
-			return true
-		}
-	}
-	return false
 }
 
 func parameterVoiceKind(p *Project, kind string) string {

@@ -6,6 +6,7 @@ import (
 	"slices"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/seq"
@@ -413,6 +414,26 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 			return cfg, scheduleErr
 		}
 	}
+	validators, err := engine.PrepareParamValidators(&cfg)
+	if err != nil {
+		return cfg, fmt.Errorf("prepare parameter validation: %w", err)
+	}
+	for si, scene := range cfg.Scenes {
+		for pi, setting := range scene.Settings {
+			if setting.Track != 0xff {
+				if err := validators[setting.Track].Validate(setting.ID, setting.Value); err != nil {
+					return cfg, fmt.Errorf("scene %s path %s: %w", p.Scenes[si].ID, p.Scenes[si].Settings[pi].Path, err)
+				}
+			}
+		}
+	}
+	for _, control := range cfg.Automation {
+		if control.Track != 0xff {
+			if err := validators[control.Track].Validate(kernel.ParamID(control.Index), math.Float32frombits(control.Arg0)); err != nil {
+				return cfg, fmt.Errorf("automation %s.%s tick %d: %w", p.Tracks[control.Track].ID, kernel.Params[control.Index].Path, control.Tick, err)
+			}
+		}
+	}
 	return cfg, nil
 }
 
@@ -481,14 +502,16 @@ func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved Resolved
 	if value.Number == nil {
 		return 0, fx.FreeDelay, fmt.Errorf("setting has no numeric value")
 	}
-	compiled, err := sceneSettingFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *value.Number)
+	compiled, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *value.Number)
 	if err != nil {
 		return 0, fx.FreeDelay, err
 	}
 	return compiled, fx.FreeDelay, nil
 }
 
-func sceneSettingFloat32Value(minimum, maximum, value float64) (float32, error) {
+// ParameterFloat32Value preserves authored bounds when compiling command values.
+// A bound rounded outside its float64 range moves one float32 step inward.
+func ParameterFloat32Value(minimum, maximum, value float64) (float32, error) {
 	compiled := float32(value)
 	if float64(compiled) < minimum {
 		if value != minimum {

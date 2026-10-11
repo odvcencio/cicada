@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/coder/websocket"
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/kernel"
 )
 
 // liveSocket streams binary telemetry frames. It sends the latest frame of
@@ -34,6 +38,8 @@ func (s *studio) liveSocket(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 	go func() {
+		previews := make(livePreviewSession)
+		defer previews.close()
 		defer cancel()
 		for {
 			kind, data, err := connection.Read(ctx)
@@ -41,7 +47,18 @@ func (s *studio) liveSocket(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			if kind == websocket.MessageText {
-				s.handleLiveMessage(data)
+				if err := s.handleLiveMessage(data, previews); err != nil {
+					response, _ := json.Marshal(struct {
+						Type    string `json:"type"`
+						Message string `json:"message"`
+					}{Type: "error", Message: err.Error()})
+					writeCtx, done := context.WithTimeout(ctx, time.Second)
+					err := connection.Write(writeCtx, websocket.MessageText, response)
+					done()
+					if err != nil {
+						return
+					}
+				}
 			}
 		}
 	}()
@@ -70,6 +87,99 @@ func (s *studio) liveSocket(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleLiveMessage receives text messages from a live client. Preview
-// overrides arrive here in a later change; for now they are ignored.
-func (s *studio) handleLiveMessage([]byte) {}
+type livePreviewKey struct {
+	entity string
+	param  kernel.ParamID
+}
+
+type livePreview struct {
+	stream    *liveplay.Player
+	version   uint64
+	committed bool
+}
+
+// Each socket owns only the override versions its messages published.
+type livePreviewSession map[livePreviewKey]livePreview
+
+// close runs on the socket reader, after its context has been canceled. It
+// waits for cancellation queue space instead of losing a disconnected gesture.
+// A paused player can keep it waiting until resume; stop closes the player and
+// releases the reader, which then drops all of its player references.
+func (previews livePreviewSession) close() {
+	for _, preview := range previews {
+		if !preview.committed {
+			preview.stream.CancelPreviewWait(preview.version)
+		}
+	}
+	clear(previews)
+}
+
+// handleLiveMessage queues previews through the player's control snapshot.
+func (s *studio) handleLiveMessage(data []byte, previews livePreviewSession) error {
+	var input struct {
+		Type   string   `json:"type"`
+		Entity string   `json:"entity"`
+		Param  string   `json:"param"`
+		Value  *float32 `json:"value"`
+		Commit bool     `json:"commit"`
+	}
+	if err := json.Unmarshal(data, &input); err != nil {
+		return fmt.Errorf("invalid live message: %w", err)
+	}
+	if input.Type != "preview-set" && input.Type != "preview-end" {
+		return fmt.Errorf("unknown live message type %q", input.Type)
+	}
+	s.transport.mu.Lock()
+	stream := s.transport.stream
+	s.transport.mu.Unlock()
+	if stream == nil {
+		return fmt.Errorf("live player is unavailable")
+	}
+	trackID, ok := strings.CutPrefix(input.Entity, "track:")
+	if !ok || trackID == "" {
+		return fmt.Errorf("unknown preview entity %q", input.Entity)
+	}
+	id, ok := kernel.FindParam(input.Param)
+	if !ok {
+		return fmt.Errorf("unknown preview parameter %q", input.Param)
+	}
+	key := livePreviewKey{entity: input.Entity, param: id}
+	if input.Type == "preview-set" {
+		if input.Value == nil {
+			return fmt.Errorf("preview-set requires a value")
+		}
+		target, err := stream.ResolvePreviewTrack(trackID)
+		if err != nil {
+			return err
+		}
+		version, err := stream.SetResolvedPreview(target, id, *input.Value)
+		if err != nil {
+			return err
+		}
+		previews[key] = livePreview{stream: stream, version: version}
+		return nil
+	}
+	// End a known gesture by its version even if its track was removed. The
+	// render thread has already retired it, and socket ownership can be dropped.
+	if _, owned := previews[key]; !owned {
+		if _, present := stream.TrackIndex(trackID); !present {
+			return fmt.Errorf("unknown preview entity %q", input.Entity)
+		}
+	}
+	if input.Commit {
+		if preview, ok := previews[key]; ok && preview.stream == stream {
+			preview.committed = true
+			previews[key] = preview
+		}
+		return nil // Activation clears the preview after the committed value lands.
+	}
+	preview, ok := previews[key]
+	if !ok || preview.stream != stream {
+		return nil
+	}
+	if err := stream.CancelPreview(preview.version); err != nil {
+		return err
+	}
+	delete(previews, key)
+	return nil
+}

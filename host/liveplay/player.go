@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
@@ -44,10 +45,22 @@ type Score struct {
 }
 
 type trackNameSnapshot struct {
-	ids   [16]string
-	kinds [16]string
-	poly  [16]bool
-	count uint8
+	ids           [16]string
+	incarnations  [16]uint64 // Assigned before publication when this score plays.
+	kinds         [16]string
+	poly          [16]bool
+	count         uint8
+	parameters    []ParameterValue
+	previewParams [16][kernel.ParamCount]bool
+	previewValues [16]engine.PreviewParamValidator
+}
+
+// PreviewTarget retains the immutable playing-track metadata and incarnation
+// resolved by a control caller, even if publication happens after activation.
+type PreviewTarget struct {
+	player *Player
+	names  *trackNameSnapshot
+	track  uint8
 }
 
 type ParameterValue struct {
@@ -74,11 +87,35 @@ type parameterOverride struct {
 	value   float32
 	version uint64
 	active  bool
-	trackID string
+}
+
+// A track incarnation owns its render bookkeeping across control snapshot copies.
+// Only retirement is read by control callers; the audio reader owns the rest.
+type overrideState struct {
+	appliedVersions   [kernel.ParamCount]uint64
+	clearedVersions   [kernel.ParamCount]uint64
+	cancelledVersions [kernel.ParamCount]uint64
+	retiredVersions   [kernel.ParamCount]atomic.Uint64
+}
+
+type trackOverrides struct {
+	values [kernel.ParamCount]parameterOverride
+	state  *overrideState
+}
+
+type overrideTrack struct {
+	id          string
+	incarnation uint64
 }
 
 type liveOverrides struct {
-	values [17][kernel.ParamCount]parameterOverride
+	tracks map[overrideTrack]*trackOverrides // Empty ID/token is global.
+}
+
+type overrideClear struct {
+	track   overrideTrack
+	id      kernel.ParamID
+	version uint64
 }
 
 type SongEntry struct {
@@ -132,7 +169,7 @@ type slotLaunch struct {
 type Event struct {
 	Bar   int64 // one-based bar that has just begun
 	Name  string
-	Kind  string // edit, scene, or scene-error
+	Kind  string // edit, scene, scene-error, preview-error, or a live input event
 	Track string // set for one-track slot events
 }
 
@@ -189,6 +226,8 @@ type Player struct {
 	buffered          int
 	read              int
 	fault             error
+	closed            chan struct{}
+	closedOnce        sync.Once
 	jumpFadeRemaining int
 	position          atomic.Uint64
 	tempoMilli        atomic.Int64
@@ -198,9 +237,10 @@ type Player struct {
 	overrides         atomic.Pointer[liveOverrides]
 	trackNames        atomic.Pointer[trackNameSnapshot]
 	overrideSequence  atomic.Uint64
+	trackIncarnation  uint64 // Render-owned; increments when an identity appears.
 	trackCount        atomic.Uint32
-	appliedVersions   [17][kernel.ParamCount]uint64
-	clearedVersions   [17][kernel.ParamCount]uint64
+	overrideClears    chan overrideClear
+	overrideHook      func(snapshotLoaded bool) // Optional deterministic scheduler for tests.
 	meters            chan MeterFrame
 	meterScratch      MeterFrame
 	meterTick         int64
@@ -234,9 +274,12 @@ func New(initial Score, rate int) (*Player, error) {
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
 		offers:        make(chan Score, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
 		meters: make(chan MeterFrame, 1), loudness: masterLoudness,
+		overrideClears: make(chan overrideClear, 64),
+		closed:         make(chan struct{}),
 	}
 	p.overrides.Store(&liveOverrides{})
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
+	p.assignTrackIncarnations(initial.trackNames)
 	p.trackNames.Store(initial.trackNames)
 	p.position.Store(1<<8 | 1)
 	p.tempoMilli.Store(initial.BPMMilli)
@@ -264,9 +307,10 @@ func (p *Player) Loudness() LoudnessSnapshot {
 	return LoudnessSnapshot{}
 }
 
-// Close stops the meter worker. It must be called after the audio device has
-// stopped reading this player.
+// Close permanently ends rendering, releases cancellation producers and stops
+// the meter worker. Call it after the audio device has stopped reading this player.
 func (p *Player) Close() {
+	p.closedOnce.Do(func() { close(p.closed) })
 	if p.loudness != nil {
 		p.loudness.close()
 	}
@@ -299,7 +343,10 @@ func (p *Player) Events() <-chan Event { return p.events }
 func (p *Player) Meters() <-chan MeterFrame { return p.meters }
 
 func makeTrackNames(score Score) *trackNameSnapshot {
-	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), 16))}
+	snapshot := &trackNameSnapshot{
+		count:      uint8(min(len(score.Tracks), 16)),
+		parameters: append([]ParameterValue(nil), score.Parameters...),
+	}
 	for index := 0; index < int(snapshot.count); index++ {
 		snapshot.ids[index] = score.Tracks[index].ID
 		snapshot.kinds[index] = score.Tracks[index].Kind
@@ -315,12 +362,36 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 			snapshot.poly[index] = score.Engine.TrackPolyphonic(index)
 		}
 	}
+	if score.Engine != nil {
+		for index := 0; index < min(score.Engine.TrackCount(), 16); index++ {
+			snapshot.previewValues[index] = score.Engine.PreviewParamValidator(index)
+			family := "instrument"
+			switch score.Engine.TrackVoiceKind(index) {
+			case engine.VoiceAcid:
+				family = "acid"
+			case engine.VoiceDrums:
+				family = "drums"
+			case engine.VoicePiano, engine.VoiceKeys:
+				family = "piano"
+			case engine.VoiceGuitar:
+				family = "guitar"
+			}
+			for _, spec := range kernel.Params {
+				if descriptor, ok := paramdefs.Lookup(spec.Name); ok && spec.Live && spec.Scope == "track" {
+					snapshot.previewParams[index][spec.ID] = paramdefs.HasVoice(descriptor, family)
+				}
+			}
+		}
+	}
 	return snapshot
 }
 
 // TrackIndex resolves a stable score track ID against the engine that Read owns.
 func (p *Player) TrackIndex(id string) (uint8, bool) {
-	snapshot := p.trackNames.Load()
+	return p.trackNames.Load().trackIndex(id)
+}
+
+func (snapshot *trackNameSnapshot) trackIndex(id string) (uint8, bool) {
 	if snapshot == nil {
 		return 0, false
 	}
@@ -330,6 +401,77 @@ func (p *Player) TrackIndex(id string) (uint8, bool) {
 		}
 	}
 	return 0, false
+}
+
+func (snapshot *trackNameSnapshot) overrideTrack(track uint8) overrideTrack {
+	if track == 0xff {
+		return overrideTrack{}
+	}
+	return overrideTrack{id: snapshot.ids[track], incarnation: snapshot.incarnations[track]}
+}
+
+func (snapshot *trackNameSnapshot) containsTrack(identity overrideTrack) bool {
+	index, ok := snapshot.trackIndex(identity.id)
+	return ok && snapshot.incarnations[index] == identity.incarnation
+}
+
+// Assign only when a prepared score becomes the playing plan. The snapshot
+// has not been published yet; control callers see its tokens as immutable.
+// Reorders and value changes keep a token. Removal followed by re-add does not.
+func (p *Player) assignTrackIncarnations(next *trackNameSnapshot) {
+	if next == nil {
+		return
+	}
+	previous := p.trackNames.Load()
+	for index := 0; index < int(next.count); index++ {
+		if old, ok := previous.trackIndex(next.ids[index]); ok {
+			next.incarnations[index] = previous.incarnations[old]
+		} else {
+			p.trackIncarnation++
+			next.incarnations[index] = p.trackIncarnation
+		}
+	}
+}
+
+// CommittedValue reads a parameter from the playing score's immutable snapshot.
+// Offered scores become visible only when the render thread lands them.
+func (p *Player) CommittedValue(track uint8, id kernel.ParamID) (float32, bool) {
+	snapshot := p.trackNames.Load()
+	if snapshot == nil {
+		return 0, false
+	}
+	for _, parameter := range snapshot.parameters {
+		if parameter.Track == track && parameter.ID == id {
+			return parameter.Value, true
+		}
+	}
+	return 0, false
+}
+
+// OverrideValue returns the latest override that the render thread has not
+// retired. Both the control snapshot and retirement versions are safe to read.
+func (p *Player) OverrideValue(track uint8, id kernel.ParamID) (float32, bool) {
+	if id >= kernel.ParamCount {
+		return 0, false
+	}
+	snapshot := p.overrides.Load()
+	if snapshot == nil {
+		return 0, false
+	}
+	identity := overrideTrack{}
+	if track != 0xff {
+		names := p.trackNames.Load()
+		if names == nil || track >= names.count {
+			return 0, false
+		}
+		identity = names.overrideTrack(track)
+	}
+	overrides := snapshot.tracks[identity]
+	if overrides == nil {
+		return 0, false
+	}
+	override := overrides.values[id]
+	return override.value, override.active && override.version != overrides.state.retiredVersions[id].Load()
 }
 
 // Note queues a live note for an acid, authored instrument, or drum track. Requests are
@@ -494,48 +636,172 @@ func GMDrumLane(note int) (uint16, bool) {
 // SetParam accepts concurrent control calls. A snapshot CAS makes the latest
 // value for each parameter win; Read never takes a mutex.
 func (p *Player) SetParam(track uint8, id kernel.ParamID, value float32) error {
+	_, err := p.SetPreview(track, id, value)
+	return err
+}
+
+// SetPreview publishes an override using SetParam's snapshot CAS and returns
+// its exact version, so a later cancellation cannot retire a newer gesture.
+func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint64, error) {
+	return p.setPreview(p.trackNames.Load(), track, id, value)
+}
+
+// SetTrackPreview resolves and validates an entity in one playing-score
+// snapshot. Publication keeps its ID and incarnation across activation.
+func (p *Player) SetTrackPreview(trackID string, id kernel.ParamID, value float32) (uint64, error) {
+	target, err := p.ResolvePreviewTrack(trackID)
+	if err != nil {
+		return 0, err
+	}
+	return p.SetResolvedPreview(target, id, value)
+}
+
+// ResolvePreviewTrack captures a target from the playing score, independently
+// of offered scores and without reading the engine on the control thread.
+func (p *Player) ResolvePreviewTrack(trackID string) (PreviewTarget, error) {
+	names := p.trackNames.Load()
+	track, ok := names.trackIndex(trackID)
+	if !ok {
+		return PreviewTarget{}, fmt.Errorf("unknown preview track %q", trackID)
+	}
+	return PreviewTarget{player: p, names: names, track: track}, nil
+}
+
+// SetResolvedPreview publishes only to the player that resolved the target.
+// Read retires stale incarnations without applying them to a replacement track.
+func (p *Player) SetResolvedPreview(target PreviewTarget, id kernel.ParamID, value float32) (uint64, error) {
+	if target.player != p || target.names == nil {
+		return 0, fmt.Errorf("preview target belongs to a different player")
+	}
+	return p.setPreview(target.names, target.track, id, value)
+}
+
+func (p *Player) setPreview(names *trackNameSnapshot, track uint8, id kernel.ParamID, value float32) (uint64, error) {
 	spec, ok := kernel.Param(id)
 	if !ok || !spec.Live {
-		return fmt.Errorf("parameter is unknown or not live")
+		return 0, fmt.Errorf("parameter is unknown or not live")
 	}
-	slot := int(track)
-	trackID := ""
+	identity := overrideTrack{}
+	var validator *engine.PreviewParamValidator
 	if spec.Scope == "global" {
 		if track != 0xff {
-			return fmt.Errorf("global parameter requires track 255")
+			return 0, fmt.Errorf("global parameter requires track 255")
 		}
-		slot = 16
-	} else if spec.Scope != "track" || track >= 16 || uint32(track) >= p.trackCount.Load() {
-		return fmt.Errorf("track parameter index is out of range")
-	} else if names := p.trackNames.Load(); names != nil && int(track) < int(names.count) {
-		trackID = names.ids[track]
+	} else if spec.Scope != "track" || names == nil || track >= names.count || names.ids[track] == "" {
+		return 0, fmt.Errorf("track parameter index is out of range")
+	} else {
+		if !names.previewParams[track][id] {
+			return 0, fmt.Errorf("parameter %q is unsupported by the track in the playing score", spec.Name)
+		}
+		identity = names.overrideTrack(track)
+		validator = &names.previewValues[track]
 	}
-	off := spec.Off && math.IsInf(float64(value), -1)
-	if math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) && !off || !off && (value < spec.Min || value > spec.Max) {
-		return fmt.Errorf("parameter value is out of range")
-	}
-	if spec.Curve == "toggle" && value != 0 && value != 1 {
-		return fmt.Errorf("toggle parameter must be zero or one")
+	if err := validatePreviewValue(spec, validator, value); err != nil {
+		return 0, fmt.Errorf("parameter %q is rejected by the playing voice: %w", spec.Name, err)
 	}
 	version := p.overrideSequence.Add(1)
 	for {
 		old := p.overrides.Load()
-		next := new(liveOverrides)
+		next := &liveOverrides{tracks: make(map[overrideTrack]*trackOverrides)}
+		playing := p.trackNames.Load()
 		if old != nil {
-			*next = *old
-		}
-		if trackID != "" {
-			for existing := 0; existing < 16; existing++ {
-				if existing != slot && next.values[existing][id].trackID == trackID {
-					next.values[existing][id].active = false
+			for identity, overrides := range old.tracks {
+				// Discard absent identities only after audio-thread retirement.
+				// This keeps repeated topology changes from growing the map.
+				if identity.id != "" && !playing.containsTrack(identity) && overrides.retired() {
+					continue
 				}
+				next.tracks[identity] = overrides
 			}
 		}
-		next.values[slot][id] = parameterOverride{value: value, version: version, active: true, trackID: trackID}
+		overrides := new(trackOverrides)
+		if previous := next.tracks[identity]; previous != nil {
+			*overrides = *previous
+		} else {
+			overrides.state = new(overrideState)
+		}
+		overrides.values[id] = parameterOverride{value: value, version: version, active: true}
+		next.tracks[identity] = overrides
 		if p.overrides.CompareAndSwap(old, next) {
-			return nil
+			return version, nil
 		}
 	}
+}
+
+func (overrides *trackOverrides) retired() bool {
+	for id, override := range overrides.values {
+		if override.active && override.version != overrides.state.retiredVersions[id].Load() {
+			return false
+		}
+	}
+	return true
+}
+
+// Admission and restoration use the same checks. Errors are static values so
+// rejecting a restoration cannot allocate on the render thread.
+func validatePreviewValue(spec kernel.ParamSpec, validator *engine.PreviewParamValidator, value float32) error {
+	if validator == nil {
+		var global engine.PreviewParamValidator
+		validator = &global
+	}
+	return validator.Validate(spec.ID, value)
+}
+
+// CancelPreview requests retirement of exactly one override version. Read
+// restores the playing score's committed value and publishes the retirement.
+// A superseded or already retired version is harmless.
+func (p *Player) CancelPreview(version uint64) error {
+	select {
+	case <-p.closed:
+		return nil // Nothing plays after permanent shutdown.
+	default:
+	}
+	request, _, ok := p.previewClear(version)
+	if !ok {
+		return nil
+	}
+	select {
+	case <-p.closed:
+		return nil
+	case p.overrideClears <- request:
+		return nil
+	default:
+		return fmt.Errorf("preview cancellation queue is full")
+	}
+}
+
+// CancelPreviewWait queues retirement reliably, waiting for Read to make room.
+// While paused it waits until rendering resumes or Close permanently ends it.
+// Call it only off the render thread. It does not wait for retirement itself
+// and must not use a disconnected socket's canceled context.
+func (p *Player) CancelPreviewWait(version uint64) {
+	select {
+	case <-p.closed:
+		return
+	default:
+	}
+	if request, _, ok := p.previewClear(version); ok {
+		select {
+		case p.overrideClears <- request:
+		case <-p.closed:
+		}
+	}
+}
+
+func (p *Player) previewClear(version uint64) (overrideClear, parameterOverride, bool) {
+	snapshot := p.overrides.Load()
+	if version == 0 || snapshot == nil {
+		return overrideClear{}, parameterOverride{}, false
+	}
+	for identity, overrides := range snapshot.tracks {
+		for id, override := range overrides.values {
+			if !override.active || override.version != version || overrides.state.retiredVersions[id].Load() == version {
+				continue
+			}
+			return overrideClear{track: identity, id: kernel.ParamID(id), version: version}, override, true
+		}
+	}
+	return overrideClear{}, parameterOverride{}, false
 }
 
 func (p *Player) SetMute(track uint8, on bool) error {
@@ -556,57 +822,106 @@ func (p *Player) SetSolo(track uint8, on bool) error {
 
 func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bool) {
 	if newEngine {
-		clear(p.appliedVersions[:])
+		p.assignTrackIncarnations(score.trackNames)
 	}
+	// Count first so the snapshot includes the override publication for every
+	// request we drain. Requests arriving later wait for the next boundary,
+	// rather than being rejected against an older snapshot and lost.
+	if p.overrideHook != nil {
+		p.overrideHook(false)
+	}
+	remaining := len(p.overrideClears)
 	snapshot := p.overrides.Load()
 	if snapshot == nil {
 		return
 	}
-	for slot := range snapshot.values {
-		for id := range snapshot.values[slot] {
-			override := snapshot.values[slot][id]
-			if !override.active || override.version == p.clearedVersions[slot][id] {
+	if p.overrideHook != nil {
+		p.overrideHook(true)
+	}
+	// Drain only the requests present at this boundary. Retain a matching
+	// cancellation until its restoration command fits in the engine queue.
+	for ; remaining > 0; remaining-- {
+		request := <-p.overrideClears
+		overrides := snapshot.tracks[request.track]
+		if overrides != nil {
+			override := overrides.values[request.id]
+			if override.active && override.version == request.version {
+				overrides.state.cancelledVersions[request.id] = request.version
+			}
+		}
+	}
+	for identity, overrides := range snapshot.tracks {
+		state := overrides.state
+		if newEngine {
+			clear(state.appliedVersions[:])
+		}
+		for id, override := range overrides.values {
+			if !override.active || override.version == state.clearedVersions[id] {
 				continue
 			}
-			track := uint8(slot)
-			if slot == 16 {
-				track = 0xff
-			} else if override.trackID != "" {
-				track = 0xff
-				for index := 0; index < len(score.Tracks); index++ {
-					if score.Tracks[index].ID == override.trackID {
-						track = uint8(index)
-						break
-					}
+			cancelled := state.cancelledVersions[id] == override.version
+			if cancelled && newEngine {
+				state.retire(kernel.ParamID(id), override.version)
+				continue // The new engine already has its committed value.
+			}
+			track := uint8(0xff)
+			if identity.id != "" {
+				var present bool
+				track, present = score.trackNames.trackIndex(identity.id)
+				if !present || score.trackNames.incarnations[track] != identity.incarnation {
+					state.retire(kernel.ParamID(id), override.version)
+					continue // A captured target cannot cross a remove/re-add.
 				}
-				if track == 0xff {
+			}
+			// A later score may replace the voice or drum recipe that admitted
+			// this preview. Retire it before publishing an invalid command.
+			if track != 0xff && (score.trackNames == nil || !score.trackNames.previewParams[track][id] || score.trackNames.previewValues[track].Validate(kernel.ParamID(id), override.value) != nil) {
+				state.retire(kernel.ParamID(id), override.version)
+				continue
+			}
+			if cancelled {
+				value, ok := parameterValue(score.Parameters, track, kernel.ParamID(id))
+				var validator *engine.PreviewParamValidator
+				if track != 0xff {
+					validator = &score.trackNames.previewValues[track]
+				}
+				if !ok || validatePreviewValue(kernel.Params[id], validator, value) != nil {
+					state.retire(kernel.ParamID(id), override.version)
+					p.emit(Event{Kind: "preview-error", Name: kernel.Params[id].Name, Track: identity.id})
 					continue
 				}
-			} else if slot >= target.TrackCount() {
+				if target.Push(cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(value)}) {
+					state.retire(kernel.ParamID(id), override.version)
+				}
 				continue
 			}
 			if newEngine && parameterMatches(score.Parameters, track, kernel.ParamID(id), override.value) {
-				p.clearedVersions[slot][id] = override.version
+				state.retire(kernel.ParamID(id), override.version)
 				continue
 			}
-			if !newEngine && p.appliedVersions[slot][id] == override.version {
+			if !newEngine && state.appliedVersions[id] == override.version {
 				continue
 			}
 			command := cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(override.value)}
 			if target.Push(command) {
-				p.appliedVersions[slot][id] = override.version
+				state.appliedVersions[id] = override.version
 			}
 		}
 	}
 }
 
 func parameterMatches(parameters []ParameterValue, track uint8, id kernel.ParamID, value float32) bool {
+	committed, ok := parameterValue(parameters, track, id)
+	return ok && math.Float32bits(committed) == math.Float32bits(value)
+}
+
+func parameterValue(parameters []ParameterValue, track uint8, id kernel.ParamID) (float32, bool) {
 	for _, parameter := range parameters {
 		if parameter.Track == track && parameter.ID == id {
-			return math.Float32bits(parameter.Value) == math.Float32bits(value)
+			return parameter.Value, true
 		}
 	}
-	return false
+	return 0, false
 }
 
 func (p *Player) resetMeters() {
