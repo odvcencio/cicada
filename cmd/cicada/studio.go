@@ -259,6 +259,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /api/capture", s.captureState)
 	mux.HandleFunc("POST /api/takes", s.takeCommand)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
+	mux.HandleFunc("POST /api/intents", s.intents)
 	mux.HandleFunc("POST /api/proposals", s.stageProposal)
 	mux.HandleFunc("POST /api/proposals/{id}/accept", s.acceptProposal)
 	mux.HandleFunc("DELETE /api/proposals/{id}", s.discardProposal)

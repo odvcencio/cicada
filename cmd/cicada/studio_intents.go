@@ -200,6 +200,46 @@ func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.
 	s.applyPreparedIntents(w, edit, env, writer, nil, nil, beforeSwap)
 }
 
+func (s *studio) intents(w http.ResponseWriter, r *http.Request) {
+	if !studioSameOrigin(r) {
+		studioJSON(w, http.StatusForbidden, map[string]any{"error": "cross-origin edits are not allowed"})
+		return
+	}
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		studioJSON(w, http.StatusUnsupportedMediaType, map[string]any{"error": "expected JSON"})
+		return
+	}
+	var env edits.Envelope
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&env); err != nil {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "expected one JSON request"})
+		return
+	}
+	if env.Revision == "" {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "missing revision"})
+		return
+	}
+	s.applyIntents(w, studioEdit{Revision: env.Revision, Author: env.Author, Session: env.Session}, env, edits.ParamWriterAuto, nil)
+}
+
+// intentDiff includes auxiliary changes so a dry run shows the whole batch.
+func intentDiff(before []byte, result *edits.Result) string {
+	diff := studioUnifiedDiff(before, result.Source)
+	for _, file := range result.Files {
+		name := filepath.Base(file.Path)
+		fileDiff := studioUnifiedDiff(file.Before, file.After)
+		fileDiff = strings.Replace(fileDiff, "--- a/score.cicada\n+++ b/score.cicada\n", "--- a/"+name+"\n+++ b/"+name+"\n", 1)
+		diff += fileDiff
+	}
+	return diff
+}
+
 // applyPreparedIntents keeps host IO around the pure text edit. prepare may
 // resolve library items or supply auxiliary source bytes; finish may prepare
 // pins and response data after Apply, before the shared commit tail.
@@ -221,7 +261,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	}
 	if studioRevision(current) != edit.Revision {
 		// The body also carries the canonical state for clients that queue edits.
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving", "revision": studioRevision(current), "source": string(current)})
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving", "revision": studioRevision(current), "source": string(current), "playingRevision": studioRevision(s.lastGoodSource)})
 		return
 	}
 	opts, err := s.editOptions(current, nil)
@@ -250,6 +290,10 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
+	if env.DryRun {
+		studioJSON(w, http.StatusOK, map[string]any{"diff": intentDiff(current, result), "revision": studioRevision(current), "valid": true, "dryRun": true})
+		return
+	}
 	if finish != nil {
 		if err := finish(result); err != nil {
 			studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
@@ -266,6 +310,12 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	}
 	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
+	if outcome.Status == http.StatusConflict {
+		if latest, err := os.ReadFile(s.path); err == nil {
+			outcome.Response["revision"], outcome.Response["source"] = studioRevision(latest), string(latest)
+		}
+		outcome.Response["playingRevision"] = studioRevision(s.lastGoodSource)
+	}
 	studioJSON(w, outcome.Status, outcome.Response)
 }
 

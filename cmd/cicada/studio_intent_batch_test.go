@@ -13,13 +13,14 @@ import (
 	"testing"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/host/recording"
 	"m31labs.dev/cicada/notation"
 )
 
-// Compare a batch with separate Apply calls over each preceding candidate,
-// then pass that batch to the real Studio writer. No batch HTTP route is needed.
-func TestGeneratedIntentBatchesMatchSequentialApplyAndCommit(t *testing.T) {
+// Compare generated HTTP batches with sequential single-intent HTTP requests,
+// including repeated edits to each auxiliary path and exact undo/redo.
+func TestGeneratedIntentBatchesMatchSequentialHTTP(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	pack, err := recording.Build("captured", []recording.Hit{{Rate: 48000, Root: 60, Peak: .5, SourceSHA256: strings.Repeat("a", 64), PCM: []float32{0, .25, .5, .25, 0}}}, 1)
 	if err != nil {
@@ -81,26 +82,31 @@ func TestGeneratedIntentBatchesMatchSequentialApplyAndCommit(t *testing.T) {
 					for file, data := range initial {
 						state[file] = bytes.Clone(data)
 					}
-					var sequential *edits.Result
+					sequentialHandler := s.domainRoutes()
 					for _, intent := range intents {
-						opts, err := s.editOptions(state[path], nil)
-						if err != nil {
-							t.Fatal(err)
-						}
-						sequential, err = edits.Apply(state[path], edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{intent}}, opts)
-						if err != nil {
-							t.Fatalf("sequential %s: %v", intent.Kind(), err)
-						}
-						state[path] = sequential.Source
-						for _, file := range sequential.Files {
-							if !bytes.Equal(file.Before, state[file.Path]) {
-								t.Fatalf("sequential %s has stale Before", intent.Kind())
+						r := studioCall(t, sequentialHandler, "/api/intents", edits.Envelope{Version: 1, Revision: edits.Revision(state[path]), Intents: []edits.Intent{intent}})
+						assertProposalResponseMatchesDisk(t, path, r)
+						for file := range state {
+							var err error
+							state[file], err = os.ReadFile(file)
+							if err != nil {
+								t.Fatal(err)
 							}
-							state[file.Path] = file.After
 						}
-						write(state)
+					}
+					sequentialPlan, err := (&studioCompiler{path: path}).Compile(state[path], nil)
+					if err != nil {
+						t.Fatal(err)
 					}
 					write(initial)
+					if err := os.Remove(editlog.Path(path)); err != nil {
+						t.Fatal(err)
+					}
+					s, err = newStudio(path)
+					if err != nil {
+						t.Fatal(err)
+					}
+					t.Cleanup(func() { _ = s.shutdown() })
 					opts, err := s.editOptions(entry, nil)
 					if err != nil {
 						t.Fatal(err)
@@ -110,8 +116,8 @@ func TestGeneratedIntentBatchesMatchSequentialApplyAndCommit(t *testing.T) {
 					if err != nil {
 						t.Fatalf("batch: %v", err)
 					}
-					if !bytes.Equal(batch.Source, state[path]) || !reflect.DeepEqual(batch.Plan.Scenes, sequential.Plan.Scenes) || !reflect.DeepEqual(batch.Plan.Tracks, sequential.Plan.Tracks) || !reflect.DeepEqual(batch.Plan.Patterns, sequential.Plan.Patterns) {
-						t.Fatal("batch bytes or compiled music differ from sequential Apply")
+					if !bytes.Equal(batch.Source, state[path]) || !reflect.DeepEqual(batch.Plan.Scenes, sequentialPlan.Scenes) || !reflect.DeepEqual(batch.Plan.Tracks, sequentialPlan.Tracks) || !reflect.DeepEqual(batch.Plan.Patterns, sequentialPlan.Patterns) {
+						t.Fatal("batch bytes or compiled music differ from sequential HTTP")
 					}
 					seen := map[string]bool{}
 					for _, file := range batch.Files {
@@ -123,18 +129,39 @@ func TestGeneratedIntentBatchesMatchSequentialApplyAndCommit(t *testing.T) {
 					if len(seen) != auxiliaries {
 						t.Fatalf("got %d auxiliary paths, want %d", len(seen), auxiliaries)
 					}
-					files, err := auxiliaryFiles(batch.Files)
-					if err != nil {
-						t.Fatal(err)
+					handler := s.domainRoutes()
+					before := noopFiles(t, root)
+					env.DryRun = true
+					r := studioCall(t, handler, "/api/intents", env)
+					if r.Code != 200 || !strings.Contains(r.Body.String(), "part0.cicada") || !reflect.DeepEqual(before, noopFiles(t, root)) || len(studioHistoryEdits(t, handler)) != 0 {
+						t.Fatalf("auxiliary dry run: %d %s", r.Code, r.Body.String())
 					}
-					outcome := s.commitMutationLocked(studioEdit{Revision: env.Revision}, entry, studioMutation{Source: batch.Source, Files: files}, nil, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: opts.Compiler.(*studioCompiler).compiled(batch.Source, batch.Files)})
-					if outcome.Status != http.StatusOK || !outcome.Written {
-						t.Fatalf("Studio rejected cumulative candidate: %+v", outcome)
+					env.DryRun = false
+					r = studioCall(t, handler, "/api/intents", env)
+					assertProposalResponseMatchesDisk(t, path, r)
+					records, skipped, err := editlog.ReadLog(editlog.Path(path))
+					if err != nil || skipped != 0 || len(records) != 1 || len(records[0].Intents) != len(intents) || len(studioHistoryEdits(t, handler)) != 1 {
+						t.Fatalf("batch log: %+v, skipped=%d, err=%v", records, skipped, err)
 					}
 					for file, want := range state {
 						got, err := os.ReadFile(file)
 						if err != nil || !bytes.Equal(got, want) {
 							t.Fatalf("committed %s differs from sequential result: %v", filepath.Base(file), err)
+						}
+					}
+					for _, c := range []struct {
+						route string
+						want  map[string][]byte
+					}{{"/api/undo", initial}, {"/api/redo", state}} {
+						current, _ := os.ReadFile(path)
+						r := studioCall(t, handler, c.route, studioEdit{Revision: edits.Revision(current)})
+						if r.Code != http.StatusOK {
+							t.Fatalf("%s: %d %s", c.route, r.Code, r.Body.String())
+						}
+						for file, want := range c.want {
+							if got, err := os.ReadFile(file); err != nil || !bytes.Equal(got, want) {
+								t.Fatalf("%s did not restore %s: %v", c.route, filepath.Base(file), err)
+							}
 						}
 					}
 				})
