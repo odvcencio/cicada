@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -37,16 +38,21 @@ func (s *studio) editClip(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown audio clip action"})
 		return
 	}
-	s.apply(w, edit, func(source []byte) ([]byte, error) {
-		switch edit.Action {
-		case "audio-track":
-			return newAudioTrackSource(source, edit.NewName, edition)
-		case "clip-settings":
-			return clipSettingsSource(source, edit.Pattern, edit.ClipSettings, edition)
-		default:
-			return bindPatternSource(source, edit.Scene, edit.Track, edit.Pattern)
+	var intent edits.Intent
+	switch edit.Action {
+	case "audio-track":
+		intent = &edits.AddAudioTrack{Name: edit.NewName}
+	case "clip-settings":
+		settings := &edits.SetClipSettings{Entity: edits.EntityID("clip:" + edit.Pattern)}
+		if original := edit.ClipSettings; original != nil {
+			settings.Start, settings.End, settings.GainDB, settings.FadeIn, settings.FadeOut = original.Start, original.End, original.GainDB, original.FadeIn, original.FadeOut
 		}
-	})
+		intent = settings
+	default:
+		intent = &edits.BindScene{Scene: edit.Scene, Track: edit.Track, Pattern: edit.Pattern}
+	}
+	edit.Label = studioEditLabel(edit)
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
 func newAudioTrackSource(source []byte, name string, edition int) ([]byte, error) {

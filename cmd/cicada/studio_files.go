@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -137,7 +138,8 @@ func (s *studio) editFile(w http.ResponseWriter, r *http.Request) {
 		}
 		return
 	}
-	target.apply(w, edit, func([]byte) ([]byte, error) { return []byte(edit.Source), nil })
+	edit.Label = studioEditLabel(edit)
+	target.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{&edits.ReplaceText{Source: edit.Source}}}, edits.ParamWriterAuto, nil)
 }
 
 func studioEditRequest(r *http.Request, edit studioEdit) *http.Request {

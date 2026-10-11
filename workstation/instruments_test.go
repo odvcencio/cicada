@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"golang.org/x/net/html"
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -61,10 +62,44 @@ func TestInstrumentLibraryUsesGoSXFormsAndShowsOverrides(t *testing.T) {
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	page := getPage(t, client, app.URL+"/?panel=instruments")
-	for _, text := range []string{"Instrument library", "Soft bell", "Round bass", "8-note polyphony", `action="/__actions/instrument"`, `name="newName" value="warm-pad-2"`, `name="track" value="warm-pad-2"`, "brightness · track override", `name="value" value="1200.25"`, "release · default", "1400ms", "Use default", "data-gosx-managed"} {
+	for _, text := range []string{"Instrument library", "Soft bell", "Round bass", "8-note polyphony", `action="/__actions/instrument"`, `name="newName" value="warm-pad-2"`, `name="track" value="warm-pad-2"`, "brightness · track override", `name="value" value="1200.25"`, "release · default", "1400ms", "Use default"} {
 		if !strings.Contains(page, text) {
 			t.Fatalf("missing instrument UI %q", text)
 		}
+	}
+	// Check actual forms: the authored shorthand expands during rendering.
+	// A string in the navigation runtime must not satisfy this assertion.
+	document, err := html.Parse(strings.NewReader(page))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var forms int
+	var checkForms func(*html.Node)
+	checkForms = func(node *html.Node) {
+		if node.Type == html.ElementNode && node.Data == "form" {
+			attrs := make(map[string]string)
+			for _, attr := range node.Attr {
+				attrs[attr.Key] = attr.Val
+			}
+			if attrs["action"] == "/__actions/instrument" {
+				forms++
+				if _, ok := attrs["data-gosx-form"]; !ok {
+					t.Error("instrument form lacks the managed form contract")
+				}
+				for name, want := range map[string]string{"method": "post", "data-gosx-form-state": "idle", "data-gosx-enhance": "form", "data-gosx-enhance-layer": "bootstrap", "data-gosx-fallback": "native-form"} {
+					if attrs[name] != want {
+						t.Errorf("instrument form %s=%q, want %q", name, attrs[name], want)
+					}
+				}
+			}
+		}
+		for child := node.FirstChild; child != nil; child = child.NextSibling {
+			checkForms(child)
+		}
+	}
+	checkForms(document)
+	if forms == 0 {
+		t.Fatal("no instrument forms found")
 	}
 	csrf := tokenFromPage(t, page)
 	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "action": {"add-preset"}, "pattern": {"soft-bell"}, "newName": {"bell"}, "track": {"keys"}, "__gosx_return_to": {"/?panel=instruments"}}

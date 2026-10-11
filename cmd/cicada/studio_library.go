@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/kernelimage"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/notation"
@@ -121,12 +122,7 @@ func studioLibrarySelection(scorePath, library, name string) (studioLibraryItem,
 }
 
 func studioLibraryImport(source []byte, library string) []byte {
-	for _, imp := range notation.ReadImports(notation.SourceFile{Source: source}) {
-		if imp.Path == library {
-			return bytes.Clone(source)
-		}
-	}
-	return append(bytes.Clone(source), []byte(fmt.Sprintf("\nimport %q\n", library))...)
+	return edits.LibraryImport(source, library)
 }
 
 // Prepare pins with the same update code as the CLI. The overlay is validated
@@ -362,119 +358,44 @@ func (s *studio) libraryInsert(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer unlock()
-	s.applyWithResult(w, edit, func(current []byte) (studioMutation, error) {
-		if _, err := compileStudioSource(s.path, current); err != nil {
-			return studioMutation{}, err
+	edit.Label = ""
+	s.applyPreparedIntents(w, edit, edits.Envelope{}, edits.ParamWriterAuto, func(current []byte, opts *edits.Options) (edits.Envelope, error) {
+		if _, err := opts.Compiler.Compile(current, nil); err != nil {
+			return edits.Envelope{}, err
 		}
 		item, _, err := studioLibrarySelection(s.path, edit.Path, edit.Item)
 		if err != nil {
-			return studioMutation{}, err
+			return edits.Envelope{}, err
 		}
 		if !validMixerIdentifier(edit.Track) {
-			return studioMutation{}, fmt.Errorf("select a track or enter a valid new track name")
+			return edits.Envelope{}, fmt.Errorf("select a track or enter a valid new track name")
 		}
-		updated := studioLibraryImport(current, item.Path)
-		sources, _, err := studioLibraryPins(s.path, updated)
+		sources, pins, err := studioLibraryPins(s.path, edits.LibraryImport(current, item.Path))
 		if err != nil {
-			return studioMutation{}, err
+			return edits.Envelope{}, err
 		}
 		kind, err := libraryTarget(sources, item)
 		if err != nil {
-			return studioMutation{}, err
+			return edits.Envelope{}, err
 		}
-		root, walker, err := notation.ParseTree(updated)
+		opts.Compiler.(*studioCompiler).validationFiles = map[string][]byte{pins.Path: pins.After}
+		intent := &edits.InsertLibraryItem{Track: edit.Track, ImportPath: item.Path, Reference: libraryReference(item), ItemKind: kind, EffectKind: libraryEffectKind(sources, item)}
+		if kind == "effect" && item.Kind == "preset" {
+			intent.PresetInstance = "library-" + studioRevision([]byte(intent.Reference))[:8]
+		}
+		return edits.Envelope{Intents: []edits.Intent{intent}}, nil
+	}, func(result *edits.Result) error {
+		_, pins, err := studioLibraryPins(s.path, result.Source)
 		if err != nil {
-			return studioMutation{}, err
+			return err
 		}
-		found := false
-		for i := 0; i < root.NamedChildCount(); i++ {
-			n := root.NamedChild(i)
-			if walker.Type(n) != "track_decl" || walker.Text(walker.Field(n, "name")) != edit.Track {
-				continue
-			}
-			found = true
-			if kind != "effect" {
-				field := walker.Field(n, "kind")
-				if field == nil {
-					return studioMutation{}, fmt.Errorf("track binding is missing")
-				}
-				updated = replaceSourceSpan(updated, int(field.StartByte()), int(field.EndByte()), libraryReference(item))
-			}
-			break
-		}
-		if !found {
-			binding := libraryReference(item)
-			if kind == "effect" {
-				binding = "acid"
-			}
-			updated = append(updated, []byte("\ntrack "+edit.Track+" "+binding+" {}\n")...)
-		}
-		if kind == "effect" {
-			ref := libraryReference(item)
-			if item.Kind == "preset" {
-				instance := "library-" + studioRevision([]byte(ref))[:8]
-				if !notation.DeclarationNames([]notation.SourceFile{{Source: updated}})[instance] {
-					updated = append(updated, []byte("\nfx "+instance+" "+ref+" {}\n")...)
-				}
-				ref = instance
-			}
-			switch libraryEffectKind(sources, item) {
-			case "comp":
-				updated, err = studioLibrarySetting(updated, "bus_decl", "music", "insert", ref)
-				if err == nil {
-					updated, err = studioLibrarySetting(updated, "track_decl", edit.Track, "out", "music")
-				}
-			case "delay", "reverb":
-				updated, err = studioLibrarySetting(updated, "track_decl", edit.Track, "send "+ref, "0.4")
-			default:
-				updated, err = studioLibrarySetting(updated, "track_decl", edit.Track, "insert", ref)
-			}
-			if err != nil {
-				return studioMutation{}, err
-			}
-		}
-		_, pins, err := studioLibraryPins(s.path, updated)
-		return studioMutation{Source: updated, Files: []studioAuxiliaryFile{pins}, HistoryDetail: "Library: insert " + libraryReference(item) + " on " + edit.Track}, err
+		result.Files = append(result.Files, edits.File{Path: pins.Path, Before: pins.Before, After: pins.After})
+		return nil
 	}, nil)
 }
 
-func replaceSourceSpan(source []byte, start, end int, text string) []byte {
-	result := append([]byte(nil), source[:start]...)
-	result = append(result, []byte(text)...)
-	return append(result, source[end:]...)
-}
-
 func studioLibrarySetting(source []byte, declKind, owner, field, literal string) ([]byte, error) {
-	root, w, err := notation.ParseTree(source)
-	if err != nil {
-		return nil, err
-	}
-	for i := 0; i < root.NamedChildCount(); i++ {
-		n := root.NamedChild(i)
-		if w.Type(n) != declKind || w.Text(w.Field(n, "name")) != owner {
-			continue
-		}
-		for j := 0; j < n.NamedChildCount(); j++ {
-			p := n.NamedChild(j)
-			if w.Type(p) == "mix_setting" && p.NamedChildCount() > 0 {
-				p = p.NamedChild(0)
-			}
-			if w.Type(p) == "param_decl" && w.Text(w.Field(p, "name")) == field {
-				v := w.Field(p, "value")
-				return replaceSourceSpan(source, int(v.StartByte()), int(v.EndByte()), literal), nil
-			}
-			if w.Type(p) == "send_decl" && "send "+w.Text(w.Field(p, "to")) == field {
-				v := w.Field(p, "level")
-				return replaceSourceSpan(source, int(v.StartByte()), int(v.EndByte()), literal), nil
-			}
-		}
-		at := int(n.EndByte()) - 1
-		return replaceSourceSpan(source, at, at, "\n  "+field+" = "+literal+"\n"), nil
-	}
-	if declKind == "bus_decl" {
-		return append(bytes.Clone(source), []byte("\nbus "+owner+" { "+field+" = "+literal+" }\n")...), nil
-	}
-	return nil, fmt.Errorf("selected track does not exist")
+	return edits.LibrarySetting(source, declKind, owner, field, literal)
 }
 
 func (s *studio) librarySavePreset(w http.ResponseWriter, r *http.Request) {
@@ -482,13 +403,28 @@ func (s *studio) librarySavePreset(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.applyWithResult(w, edit, func(current []byte) (studioMutation, error) {
-		updated, err := studioSavedPresetSource(s.path, current, edit.Track, edit.Name)
-		return studioMutation{Source: updated, HistoryDetail: "Preset: save " + edit.Name + " from " + edit.Track}, err
-	}, nil)
+	edit.Label = ""
+	s.applyPreparedIntents(w, edit, edits.Envelope{}, edits.ParamWriterAuto, func(current []byte, _ *edits.Options) (edits.Envelope, error) {
+		declaration, err := studioSavedPresetDeclaration(s.path, current, edit.Track, edit.Name)
+		if err != nil {
+			return edits.Envelope{}, err
+		}
+		return edits.Envelope{Intents: []edits.Intent{&edits.SavePreset{Track: edit.Track, Name: edit.Name, Declaration: string(declaration)}}}, nil
+	}, nil, nil)
 }
 
 func studioSavedPresetSource(scorePath string, source []byte, track, name string) ([]byte, error) {
+	declaration, err := studioSavedPresetDeclaration(scorePath, source, track, name)
+	if err != nil {
+		return nil, err
+	}
+	return append(bytes.Clone(source), declaration...), nil
+}
+
+// Library resolution and private instrument snapshots stay in the host. The
+// returned declaration is appended by SavePreset inside the edit service.
+func studioSavedPresetDeclaration(scorePath string, source []byte, track, name string) ([]byte, error) {
+	originalLength := len(source)
 	if !validMixerIdentifier(name) || strings.HasPrefix(name, "_") {
 		return nil, fmt.Errorf("enter a public preset name")
 	}
@@ -532,7 +468,7 @@ func studioSavedPresetSource(scorePath string, source []byte, track, name string
 			} else {
 				// A preset can target a transitive dependency. Give the new local
 				// declaration a direct import without changing any pinned bytes.
-				source = studioLibraryImport(source, origin.Library)
+				source = edits.LibraryImport(source, origin.Library)
 				target = path.Base(origin.Library) + strings.TrimPrefix(targetKind, namespace)
 			}
 		}
@@ -571,7 +507,7 @@ func studioSavedPresetSource(scorePath string, source []byte, track, name string
 			fmt.Fprintf(&out, "  %s = %s\n", d.Source, literal)
 		}
 		out.WriteString("}\n")
-		return append(bytes.Clone(source), []byte(out.String())...), nil
+		return append(bytes.Clone(source[originalLength:]), []byte(out.String())...), nil
 	}
 	return nil, fmt.Errorf("selected track does not exist")
 }
@@ -607,7 +543,10 @@ func studioSnapshotPrivateInstrument(scorePath string, source []byte, score *not
 				continue
 			}
 			declaration := bytes.Clone(file.Source[node.StartByte():node.EndByte()])
-			declaration = replaceSourceSpan(declaration, int(identifier.StartByte()-node.StartByte()), int(identifier.EndByte()-node.StartByte()), name)
+			declaration, err = edits.ReplaceSpan(declaration, file.Path, edits.Span{Start: int(identifier.StartByte() - node.StartByte()), End: int(identifier.EndByte() - node.StartByte()), Text: name, File: file.Path})
+			if err != nil {
+				return nil, "", err
+			}
 			updated := append(bytes.Clone(source), '\n')
 			updated = append(updated, declaration...)
 			return append(updated, '\n'), name, nil

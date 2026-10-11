@@ -475,9 +475,24 @@ func (s *studio) editSong(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "unknown arrangement action"})
 		return
 	}
-	s.apply(w, edit, func(source []byte) ([]byte, error) {
-		return editedSongBlockSource(source, edit.Action, edit.Index, edit.Target, edit.Bars, edit.Scene)
-	})
+	entity := edits.EntityID(fmt.Sprintf("song:%d", edit.Index))
+	var intent edits.Intent
+	switch edit.Action {
+	case "move":
+		intent = &edits.MoveSongEntry{Entity: entity, Target: edit.Target}
+	case "bars":
+		intent = &edits.SetSongBars{Entity: entity, Bars: edit.Bars}
+	case "append":
+		intent = &edits.AppendSongEntry{Scene: edit.Scene, Bars: edit.Bars}
+	case "duplicate":
+		intent = &edits.DuplicateSongEntry{Entity: entity}
+	case "delete":
+		intent = &edits.DeleteSongEntry{Entity: entity}
+	case "scene":
+		intent = &edits.SetSongScene{Entity: entity, Scene: edit.Scene}
+	}
+	edit.Label = studioEditLabel(edit)
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
 func studioRequest(w http.ResponseWriter, r *http.Request) (studioEdit, bool) {
@@ -520,7 +535,8 @@ func (s *studio) replaceSource(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.apply(w, edit, func([]byte) ([]byte, error) { return []byte(edit.Source), nil })
+	edit.Label = studioEditLabel(edit)
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{&edits.ReplaceText{Source: edit.Source}}}, edits.ParamWriterAuto, nil)
 }
 
 func (s *studio) toggleStep(w http.ResponseWriter, r *http.Request) {
@@ -532,25 +548,19 @@ func (s *studio) toggleStep(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "choose one grid edit per request"})
 		return
 	}
+	entity := studioStepEntity(edit)
+	var intent edits.Intent = &edits.ToggleStep{Entity: entity, Shared: "definition"}
 	if edit.Pitch != nil {
-		s.apply(w, edit, func(source []byte) ([]byte, error) {
-			return pitchedSource(source, edit.Pattern, edit.Lane, edit.Step, *edit.Pitch)
-		})
-		return
-	}
-	if edit.Modifier != "" {
+		intent = &edits.SetPitch{Entity: entity, Pitch: *edit.Pitch, Shared: "definition"}
+	} else if edit.Modifier != "" {
 		if edit.Modifier == "ratchet" || edit.Modifier == "chance" {
-			s.apply(w, edit, func(source []byte) ([]byte, error) {
-				return cycledStepSource(source, edit.Pattern, edit.Lane, edit.Step, edit.Modifier)
-			})
-			return
+			intent = &edits.CycleStep{Entity: entity, Field: edit.Modifier, Shared: "definition"}
+		} else {
+			intent = &edits.ToggleModifier{Entity: entity, Modifier: edit.Modifier, Shared: "definition"}
 		}
-		s.apply(w, edit, func(source []byte) ([]byte, error) {
-			return toggledModifierSource(source, edit.Pattern, edit.Lane, edit.Step, edit.Modifier)
-		})
-		return
 	}
-	s.apply(w, edit, func(source []byte) ([]byte, error) { return toggledSource(source, edit.Pattern, edit.Lane, edit.Step) })
+	edit.Label = studioEditLabel(edit)
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
 func (s *studio) apply(w http.ResponseWriter, edit studioEdit, change func([]byte) ([]byte, error)) {

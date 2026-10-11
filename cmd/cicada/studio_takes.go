@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
 )
@@ -96,35 +96,29 @@ func (s *studio) commitTake(id, expected string, candidate []byte) error {
 	if err = s.takes.Prepare(id, current, candidate); err != nil {
 		return err
 	}
-	info, err := os.Stat(s.path)
-	if err != nil {
-		return err
-	}
 	if err = studioRecoveryConflict(s.path); err != nil {
 		return err
 	}
-	committed, preserved, err := studioWriteTakeIfRevision(s.path, candidate, info.Mode().Perm(), expected, nil, s.takes.Checkpoint)
-	if !committed {
+	intent := &edits.SelectTake{ID: t.ID, Track: t.Track, Scene: t.Scene, Rate: t.Rate, Channels: t.Channels, StartFrame: t.StartFrame(), Asset: edits.TakeAsset{Name: t.Asset.Name, Path: t.Asset.Path, SHA256: t.Asset.SHA256, Frames: t.Asset.Frames, RateHz: t.Asset.RateHz, Channels: t.Asset.Channels}}
+	env := edits.Envelope{Version: edits.EnvelopeVersion, Revision: expected, Intents: []edits.Intent{intent}}
+	outcome := s.commitMutationLocked(studioEdit{Revision: expected, Label: "Select audio take"}, current, studioMutation{Source: candidate}, nil, studioHistoryWriteNew, 0, commitHook{checkpoint: s.takes.Checkpoint, envelope: &env, compiled: p})
+	// An already-selected take succeeds without exchanging the source. Both
+	// changed and unchanged successes must complete the journal transition.
+	if outcome.Status != http.StatusOK {
 		if e := s.takes.Mark(id, takejournal.Conflict); e != nil {
 			return e
 		}
-		if err != nil {
-			return fmt.Errorf("%w: %v (source recovery %s)", errTakeRevision, err, preserved)
+		if message, ok := outcome.Response["error"]; ok {
+			if preserved, ok := outcome.Response["preserved"]; ok {
+				return fmt.Errorf("%w: %v (source recovery %s)", errTakeRevision, message, preserved)
+			}
+			return fmt.Errorf("%w: %v", errTakeRevision, message)
 		}
 		return errTakeRevision
-	}
-	if err != nil {
-		return err
 	}
 	if err = s.takes.Mark(id, takejournal.Source); err != nil {
 		return err
 	}
-	s.lastGoodSource, s.lastGoodProject = bytes.Clone(candidate), p
-	if s.history != nil {
-		s.history.recordSourceWrite(current, candidate, "Select audio take", studioHistoryWriteNew, 0)
-	}
-	// Best effort: the score and journal are already committed.
-	_ = s.appendEditLog(studioEdit{Label: "Select audio take"}, nil, current, candidate)
 	return s.takes.Mark(id, takejournal.Committed)
 }
 

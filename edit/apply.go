@@ -36,13 +36,14 @@ func Handle(kind string, handler Handler) {
 }
 
 type Context struct {
-	Source   []byte // working source; handlers replace it
-	Options  Options
-	Envelope Envelope
-	plan     *Plan
-	files    []File
-	label    string
-	response map[string]any
+	Source    []byte // working source; handlers replace it
+	Options   Options
+	Envelope  Envelope
+	plan      *Plan
+	files     []File
+	fileIndex map[string]int
+	label     string
+	response  map[string]any
 }
 
 // Parse parses the working source standalone, as today's writers do.
@@ -57,17 +58,20 @@ func (c *Context) Parse() (*notation.Score, []notation.Diagnostic) {
 // Options.ParseProject when the host provides it.
 func (c *Context) ParseProject() (*notation.Score, []notation.Diagnostic, error) {
 	if c.Options.ParseProject != nil {
-		return c.Options.ParseProject(c.Source)
+		return c.Options.ParseProject(c.Source, c.fileOverrides())
 	}
 	if len(c.Options.Sources) == 0 {
 		score, ds := c.Parse()
 		return score, ds, nil
 	}
 	files := append([]notation.SourceFile(nil), c.Options.Sources...)
+	entryFound := false
 	for i := range files {
-		if files[i].Path == c.Options.Path {
-			files[i].Source = c.Source
-		}
+		files[i].Source, _ = c.FileSource(files[i].Path)
+		entryFound = entryFound || files[i].Path == c.Options.Path
+	}
+	if !entryFound {
+		files = append([]notation.SourceFile{{Path: c.Options.Path, Source: c.Source}}, files...)
 	}
 	score, ds := notation.ParseFiles(files, c.Options.Edition)
 	return score, ds, nil
@@ -78,7 +82,7 @@ func (c *Context) CurrentPlan() (*Plan, error) {
 	if c.plan != nil {
 		return c.plan, nil
 	}
-	plan, err := c.Options.Compiler.Compile(c.Source, nil)
+	plan, err := c.Options.Compiler.Compile(c.Source, c.fileOverrides())
 	if err != nil {
 		return nil, err
 	}
@@ -93,7 +97,49 @@ func (c *Context) Respond(key string, value any) {
 	}
 	c.response[key] = value
 }
-func (c *Context) AddFile(file File) { c.files = append(c.files, file) }
+
+// FileSource returns the latest working bytes for a supplied source or
+// manifest. It never reads disk, and the returned copy is safe to edit.
+func (c *Context) FileSource(path string) ([]byte, bool) {
+	if path == c.Options.Path {
+		return bytes.Clone(c.Source), true
+	}
+	if index, ok := c.fileIndex[path]; ok {
+		return bytes.Clone(c.files[index].After), true
+	}
+	if path != "" && path == c.Options.ManifestPath {
+		return bytes.Clone(c.Options.Manifest), true
+	}
+	for _, file := range c.Options.Sources {
+		if file.Path == path {
+			return bytes.Clone(file.Source), true
+		}
+	}
+	return nil, false
+}
+
+// AddFile stages one cumulative change per path, retaining the first Before
+// for the commit's revision check. Callers patch FileSource's working bytes.
+func (c *Context) AddFile(file File) {
+	if c.fileIndex == nil {
+		c.fileIndex = make(map[string]int)
+	}
+	if index, ok := c.fileIndex[file.Path]; ok {
+		c.files[index].After = bytes.Clone(file.After)
+	} else {
+		c.fileIndex[file.Path] = len(c.files)
+		c.files = append(c.files, File{Path: file.Path, Before: bytes.Clone(file.Before), After: bytes.Clone(file.After)})
+	}
+	c.plan = nil
+}
+
+func (c *Context) fileOverrides() map[string][]byte {
+	files := make(map[string][]byte, len(c.files))
+	for _, file := range c.files {
+		files[file.Path] = bytes.Clone(file.After)
+	}
+	return files
+}
 
 func hasErrors(ds []notation.Diagnostic) bool {
 	for _, d := range ds {
@@ -125,12 +171,11 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 		if err := handler(ctx, intent); err != nil {
 			return nil, err
 		}
+		// A handler may replace Source without resolving a plan. The next
+		// intent must compile the latest entry and auxiliary bytes together.
+		ctx.plan = nil
 	}
-	overrides := map[string][]byte{}
-	for _, file := range ctx.files {
-		overrides[file.Path] = file.After
-	}
-	plan, err := opts.Compiler.Compile(ctx.Source, overrides)
+	plan, err := opts.Compiler.Compile(ctx.Source, ctx.fileOverrides())
 	if err != nil {
 		return nil, err
 	}

@@ -341,7 +341,7 @@ func TestStudioMixerWritesPresetEffectParameters(t *testing.T) {
 	}
 }
 
-func fakeUpgrade(source []byte) ([]byte, []File, error) {
+func fakeUpgrade(source []byte, _ map[string][]byte) ([]byte, []File, error) {
 	return append([]byte("cicada 2\n\n"), source...), []File{{Path: "cicada.mod", Before: []byte("old"), After: []byte("new")}}, nil
 }
 

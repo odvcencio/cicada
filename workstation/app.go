@@ -41,7 +41,9 @@ func newApp(b *backend) (http.Handler, error) {
 		identity := sha256.Sum256([]byte(b.url.String()))
 		cookieName += "-" + hex.EncodeToString(identity[:8])
 	}
-	sessions, err := session.New(hex.EncodeToString(key[:]), session.Options{CookieName: cookieName, AllowInsecure: true, HTTPOnly: true, SameSite: http.SameSiteStrictMode, Encrypt: true})
+	// CSRF field reads must support native instrument uploads. The request
+	// middleware below still applies each route's smaller body limit first.
+	sessions, err := session.New(hex.EncodeToString(key[:]), session.Options{CookieName: cookieName, AllowInsecure: true, HTTPOnly: true, SameSite: http.SameSiteStrictMode, Encrypt: true, MaxCSRFBodyBytes: 65 << 20})
 	if err != nil {
 		return nil, err
 	}
@@ -153,6 +155,9 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 	// establish state before requesting the CSRF token used by every action.
 	if store := session.Current(ctx.Request); store != nil {
 		store.Set("workspace", true)
+		if store.String("workspace-owner") == "" {
+			store.Set("workspace-owner", rand.Text())
+		}
 	}
 	if s.collaboration != nil {
 		s.collaboration.member(ctx.Request, true)
@@ -195,7 +200,7 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 			props.HasMessage = true
 		}
 		if name == "source" && !state.OK() {
-			if saved, ok := s.draft(state.Value("draft"), session.Token(ctx.Request)); ok {
+			if saved, ok := s.draft(state.Value("draft"), workspaceOwner(ctx.Request)); ok {
 				view.Source, view.FileRevision = saved.Source, saved.Revision
 			}
 		}
@@ -205,7 +210,7 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 		panel = "session"
 	}
 	if panel == "code" {
-		if saved, ok := s.draft(session.Current(ctx.Request).String("score-draft"), session.Token(ctx.Request)); ok && saved.File == view.File {
+		if saved, ok := s.draft(session.Current(ctx.Request).String("score-draft"), workspaceOwner(ctx.Request)); ok && saved.File == view.File {
 			view.Source, view.FileRevision = saved.Source, saved.Revision
 			view.HasDraft = true
 			if !props.HasMessage {

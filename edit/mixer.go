@@ -1137,7 +1137,7 @@ func setMixerParam(ctx *Context, path string, raw json.RawMessage, confirm bool)
 		if ctx.Options.UpgradeEdition == nil {
 			return ErrNoUpgrade
 		}
-		upgraded, files, err := ctx.Options.UpgradeEdition(working)
+		upgraded, files, err := ctx.Options.UpgradeEdition(working, ctx.fileOverrides())
 		if err != nil {
 			return err
 		}
@@ -1145,6 +1145,7 @@ func setMixerParam(ctx *Context, path string, raw json.RawMessage, confirm bool)
 		for _, file := range files {
 			ctx.AddFile(file)
 		}
+		ctx.Options.Edition = 2
 	}
 	updated, before, after, changedRange, err := mixerSource(working, path, raw)
 	if err != nil {

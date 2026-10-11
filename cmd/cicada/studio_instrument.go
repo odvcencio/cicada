@@ -41,19 +41,7 @@ func (s *studio) editInstrument(w http.ResponseWriter, r *http.Request) {
 		s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterInstrument, nil)
 		return
 	}
-	if patch, exists := instrument.FindPatch(edit.Pattern); exists {
-		edit.Label = "Add " + patch.Name + " instrument and track"
-	}
-	s.apply(w, edit, func(source []byte) ([]byte, error) {
-		score, ds, err := parseScoreForPath(s.path, source)
-		if err != nil {
-			return nil, err
-		}
-		if score == nil || hasDiagnosticErrors(ds) {
-			return nil, fmt.Errorf("score must validate before adding an instrument")
-		}
-		return addPresetSourceParsed(source, edit.Pattern, edit.NewName, edit.Track, score)
-	})
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{&edits.AddPreset{Preset: edit.Pattern, Instrument: edit.NewName, Track: edit.Track}}}, edits.ParamWriterAuto, nil)
 }
 
 func instrumentParameterSource(source []byte, score *notation.Score, trackID, parameterID, value string, reset bool) ([]byte, error) {
