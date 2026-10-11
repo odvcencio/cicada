@@ -1,5 +1,19 @@
 const fs = require('node:fs');
 
+function calibrateCPUClockResolutionMs(cpuUsage = process.cpuUsage, sampleCount = 4096) {
+  // Calibrate the user CPU clock used below, not the units in its report label.
+  // cpuUsage reports microseconds; retain the smallest observed nonzero tick.
+  let previous = cpuUsage().user;
+  let smallest = Infinity;
+  for (let sample = 0; sample < sampleCount; sample++) {
+    const current = cpuUsage().user;
+    const difference = current - previous;
+    if (difference > 0) smallest = Math.min(smallest, difference);
+    previous = current;
+  }
+  return Number.isFinite(smallest) ? smallest / 1000 : null;
+}
+
 async function main() {
   const [wasmPath, imagePath, blockCountText] = process.argv.slice(2);
   const blockCount = Number(blockCountText);
@@ -33,6 +47,7 @@ async function main() {
   let faults = 0;
   let blocksOverDeadlineCpuTime = 0;
   const warmupBlocks = Math.min(256, blockCount);
+  const cpuClockResolutionMs = calibrateCPUClockResolutionMs();
 
   for (let block = 0; block < blockCount; block++) {
     const started = process.cpuUsage();
@@ -54,6 +69,7 @@ async function main() {
   const report = {
     engine: 'Node V8 WebAssembly',
     clock: 'process.cpuUsage() user milliseconds',
+    cpuClockResolutionMs,
     blockFrames: 128,
     blocks: blockCount,
     warmupBlocks,
@@ -73,7 +89,10 @@ async function main() {
   process.stdout.write(`${JSON.stringify(report)}\n`);
 }
 
-main().catch(error => {
-  process.stderr.write(`${error.stack || error}\n`);
-  process.exitCode = 1;
-});
+module.exports = {calibrateCPUClockResolutionMs};
+if (require.main === module) {
+  main().catch(error => {
+    process.stderr.write(`${error.stack || error}\n`);
+    process.exitCode = 1;
+  });
+}

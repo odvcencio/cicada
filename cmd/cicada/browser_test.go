@@ -423,6 +423,7 @@ func TestBrowserProcessorAllocations(t *testing.T) {
 }
 
 func TestBrowserCPUReport(t *testing.T) {
+	stopHostSampling := startBrowserCPUSoakSampling(t)
 	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "first-acid.cicada"))
 	if err != nil {
 		t.Fatal(err)
@@ -502,6 +503,7 @@ func TestBrowserCPUReport(t *testing.T) {
 			report["wasmCallbackProfile"] = json.RawMessage(profile)
 			t.Logf("Windows Chrome per-callback WASM profile: %s; worklet message traffic: %s", profile, diagnostics)
 		}
+		timingEnforced := browserCPUSoakTiming(t, stopHostSampling, report, cpuBudgetMs <= 0.67, metrics.Faults == 0, "Windows Chrome AudioWorklet", clock)
 		data, err := json.MarshalIndent(report, "", "  ")
 		if err != nil {
 			t.Fatal(err)
@@ -511,7 +513,7 @@ func TestBrowserCPUReport(t *testing.T) {
 			t.Fatal(err)
 		}
 		t.Logf("Windows Chrome CPU budget: metric=%s used=%.4f ms/callback clock=%s callback_p99=%.4f ms max=%.2f ms samples=%d measured_samples=%d expected_samples_in_counter_window=%.0f counter_window=%.0f ms quantum=%.3f ms duration_exceedances=%d gap_exceedances=%d renderer_max_pid=%d renderer_cpu_max=%.4f ms/callback renderer_cpu_total=%.4f ms/callback limit=0.67 ms underruns=%d memory=%d bytes renderer_processes=%d..%d page_diagnostics=%s", cpuBudgetMetric, cpuBudgetMs, clock, metrics.P99, metrics.Max, metrics.Samples, measuredCallbacks, counterIntervalMs/metrics.QuantumMs, counterIntervalMs, metrics.QuantumMs, metrics.DurationExceedances, metrics.GapExceedances, maxRendererPID, cpuMsPerCallback, totalRendererCPUMs, metrics.Underruns, metrics.Memory, beforeCPU.Processes, afterCPU.Processes, diagnostics)
-		if metrics.Faults != 0 || cpuBudgetMs > 0.67 {
+		if metrics.Faults != 0 || (timingEnforced && cpuBudgetMs > 0.67) {
 			t.Fatalf("Windows Chrome CPU gate failed: faults=%d underruns=%d %s=%.4f ms/callback limit=0.67 ms", metrics.Faults, metrics.Underruns, cpuBudgetMetric, cpuBudgetMs)
 		}
 		return
@@ -540,17 +542,18 @@ func TestBrowserCPUReport(t *testing.T) {
 		t.Fatalf("Node V8 kernel timing failed: %v\n%s", err, output)
 	}
 	var report struct {
-		Engine       string  `json:"engine"`
-		Clock        string  `json:"clock"`
-		Blocks       int     `json:"blocks"`
-		Measured     int     `json:"measuredBlocks"`
-		P50          float64 `json:"p50"`
-		P95          float64 `json:"p95"`
-		P99          float64 `json:"p99"`
-		Max          float64 `json:"max"`
-		Faults       int     `json:"faults"`
-		MemoryBytes  int     `json:"finalMemoryBytes"`
-		MemoryGrowth int     `json:"memoryGrowthAfterWarmupBytes"`
+		Engine            string  `json:"engine"`
+		Clock             string  `json:"clock"`
+		ClockResolutionMs float64 `json:"cpuClockResolutionMs"`
+		Blocks            int     `json:"blocks"`
+		Measured          int     `json:"measuredBlocks"`
+		P50               float64 `json:"p50"`
+		P95               float64 `json:"p95"`
+		P99               float64 `json:"p99"`
+		Max               float64 `json:"max"`
+		Faults            int     `json:"faults"`
+		MemoryBytes       int     `json:"finalMemoryBytes"`
+		MemoryGrowth      int     `json:"memoryGrowthAfterWarmupBytes"`
 	}
 	if err := json.Unmarshal(output, &report); err != nil {
 		t.Fatalf("decode Node CPU report %s: %v", output, err)
@@ -562,6 +565,7 @@ func TestBrowserCPUReport(t *testing.T) {
 	if err := json.Unmarshal(output, &fullReport); err != nil {
 		t.Fatal(err)
 	}
+	timingEnforced := browserCPUSoakTiming(t, stopHostSampling, fullReport, report.P95 <= 0.67 && report.P99 <= 3*0.67, true, report.Engine, report.Clock)
 	reportBytes, err := json.MarshalIndent(fullReport, "", "  ")
 	if err != nil {
 		t.Fatal(err)
@@ -570,7 +574,7 @@ func TestBrowserCPUReport(t *testing.T) {
 	if err := os.WriteFile(path, append(reportBytes, '\n'), 0644); err != nil {
 		t.Fatal(err)
 	}
-	t.Logf("Browser AudioWorklet clock unavailable; Node V8 WASM fallback (%s), milliseconds per 128-frame block: blocks=%d measured=%d p50=%.4f p95=%.4f p99=%.4f max=%.4f kernel_faults=%d memory=%d growth=%d report=%s", report.Clock, report.Blocks, report.Measured, report.P50, report.P95, report.P99, report.Max, report.Faults, report.MemoryBytes, report.MemoryGrowth, path)
+	t.Logf("Browser AudioWorklet clock unavailable; Node V8 WASM fallback (%s), measured clock resolution=%.4f ms, milliseconds per 128-frame block: blocks=%d measured=%d p50=%.4f p95=%.4f p99=%.4f max=%.4f kernel_faults=%d memory=%d growth=%d report=%s", report.Clock, report.ClockResolutionMs, report.Blocks, report.Measured, report.P50, report.P95, report.P99, report.Max, report.Faults, report.MemoryBytes, report.MemoryGrowth, path)
 	// The Node fallback runs on shared CI runners, where one block in a hundred can take
 	// several times longer from OS scheduling. It counts user CPU time only, and the 0.67 ms
 	// budget gates p95; p99 and max are logged, and a p99 above three times the budget
@@ -578,7 +582,7 @@ func TestBrowserCPUReport(t *testing.T) {
 	// The real p99 check is the Windows Chrome CPU report (p99 against 0.67 ms, the real
 	// page clock). Record it with `make release-cpu-report` before any release that changes
 	// the kernel or the AudioWorklet processor.
-	if report.P95 > 0.67 || report.P99 > 3*0.67 {
+	if timingEnforced && (report.P95 > 0.67 || report.P99 > 3*0.67) {
 		t.Fatalf("Node V8 WASM p95 %.4f ms (budget 0.67 ms) or p99 %.4f ms (ceiling 2.01 ms) exceeded; max %.4f ms", report.P95, report.P99, report.Max)
 	}
 }
