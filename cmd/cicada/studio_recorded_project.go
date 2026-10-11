@@ -8,7 +8,6 @@ import (
 
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/recording"
-	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
 
@@ -61,13 +60,6 @@ func (s *studio) publishRecorded(w http.ResponseWriter, pack *recording.Pack, ro
 				scenePath = decl.Position.File
 				break
 			}
-		}
-		if scenePath != s.path {
-			before, err := os.ReadFile(scenePath)
-			if err != nil {
-				return edits.Envelope{}, err
-			}
-			opts.Sources = []notation.SourceFile{{Path: scenePath, Source: before}}
 		}
 		return edits.Envelope{Intents: []edits.Intent{&edits.PublishRecorded{Name: pack.Manifest.ID, Declaration: declaration, Scene: scene, ScenePath: scenePath, Level: level, Note: recording.NoteName(root)}}}, nil
 	}, func(result *edits.Result) error {

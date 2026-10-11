@@ -106,4 +106,5 @@ type Clip struct {
 type Param struct {
 	Path       string
 	Descriptor paramdefs.Descriptor
+	Value      *float64 // effective compiled numeric value, when supplied by the host
 }

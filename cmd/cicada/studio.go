@@ -55,6 +55,8 @@ type studio struct {
 	liveControls        studioLiveControls
 	sessionID           string
 	renderCheck         edits.RenderCheck // nil until the render check is wired (M8)
+	proposals           map[string]stagedProposal
+	previewProposal     string
 }
 
 func studioCommand(args []string) error {
@@ -257,6 +259,9 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /api/capture", s.captureState)
 	mux.HandleFunc("POST /api/takes", s.takeCommand)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
+	mux.HandleFunc("POST /api/proposals", s.stageProposal)
+	mux.HandleFunc("POST /api/proposals/{id}/accept", s.acceptProposal)
+	mux.HandleFunc("DELETE /api/proposals/{id}", s.discardProposal)
 	mux.HandleFunc("GET /api/collaboration/store", s.collaborationStore)
 	mux.HandleFunc("POST /api/collaboration/store", s.collaborationStore)
 	mux.HandleFunc("POST /api/toggle", s.toggleStep)

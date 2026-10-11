@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/internal/audiobackend"
@@ -31,6 +32,7 @@ type studioTransport struct {
 	preview           *liveplay.Player
 	previewTimer      *time.Timer
 	previewGeneration uint64
+	previewOps        []edits.PreviewOp
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions
 	sampleRate        int
