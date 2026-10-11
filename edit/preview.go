@@ -79,5 +79,8 @@ func (in *SetParam) Preview(plan *Plan, _ Intent) ([]PreviewOp, error) {
 			return nil, nil
 		}
 	}
+	if param.Descriptor.Curve == "enum" || param.Descriptor.Curve == "toggle" {
+		return nil, nil
+	}
 	return []PreviewOp{{Kind: in.Kind(), Track: track, Param: field, Value: value}}, nil
 }

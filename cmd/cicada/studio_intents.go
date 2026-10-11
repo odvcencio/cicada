@@ -2,10 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	edits "m31labs.dev/cicada/edit"
@@ -237,4 +242,174 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
 	studioJSON(w, outcome.Status, outcome.Response)
+}
+
+type stagedProposal struct {
+	proposal edits.Proposal
+	staged   *edits.Staged
+}
+
+func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
+	if !studioSameOrigin(r) {
+		studioJSON(w, http.StatusForbidden, map[string]any{"error": "cross-origin edits are not allowed"})
+		return
+	}
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		studioJSON(w, http.StatusUnsupportedMediaType, map[string]any{"error": "expected JSON"})
+		return
+	}
+	var proposal edits.Proposal
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&proposal); err != nil {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "expected one JSON request"})
+		return
+	}
+	if proposal.Envelope.Revision == "" {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "missing revision"})
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.proposalSource(w, proposal.Envelope.Revision)
+	if !ok {
+		return
+	}
+	opts, err := s.editOptions()
+	if err != nil {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		return
+	}
+	staged, err := edits.Stage(current, proposal, opts)
+	if err != nil {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		return
+	}
+	var raw [16]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	proposal.ID = hex.EncodeToString(raw[:])
+	proposal.Label = staged.Result.Label
+	if s.proposals == nil {
+		s.proposals = make(map[string]stagedProposal)
+	}
+	s.proposals[proposal.ID] = stagedProposal{proposal: proposal, staged: staged}
+	s.previewProposal = proposal.ID
+	s.transport.applyPreview(staged.Ops)
+	studioJSON(w, http.StatusOK, map[string]any{"id": proposal.ID, "diff": staged.Diff, "ops": staged.Ops})
+}
+
+// proposalSource checks the revision fixed at staging, never one supplied by
+// an accept request. The caller holds s.mu; read-only staging adds no history.
+func (s *studio) proposalSource(w http.ResponseWriter, revision string) ([]byte, bool) {
+	if err := studioRecoveryConflict(s.path); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return nil, false
+	}
+	current, err := os.ReadFile(s.path)
+	if err != nil {
+		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return nil, false
+	}
+	if studioRevision(current) != revision {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving", "revision": studioRevision(current), "source": string(current)})
+		return nil, false
+	}
+	return current, true
+}
+
+func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
+	if !studioSameOrigin(r) {
+		studioJSON(w, http.StatusForbidden, map[string]any{"error": "cross-origin edits are not allowed"})
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := r.PathValue("id")
+	staged, ok := s.proposals[id]
+	if !ok {
+		studioJSON(w, http.StatusNotFound, map[string]any{"error": "unknown proposal"})
+		return
+	}
+	proposal, result := staged.proposal, staged.staged.Result
+	current, ok := s.proposalSource(w, proposal.Envelope.Revision)
+	if !ok {
+		return
+	}
+	// Refuse changed auxiliary inputs before exchanging the entry source.
+	for _, file := range result.Files {
+		latest, err := os.ReadFile(file.Path)
+		if errors.Is(err, os.ErrNotExist) && file.Before == nil {
+			continue
+		}
+		if err != nil || !bytes.Equal(latest, file.Before) {
+			studioJSON(w, http.StatusConflict, map[string]any{"error": "proposal file changed on disk; stage the proposal again", "revision": studioRevision(current), "source": string(current)})
+			return
+		}
+	}
+	files, err := auxiliaryFiles(result.Files)
+	if err != nil {
+		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
+		return
+	}
+	if s.history != nil {
+		bar, step := s.historyPosition()
+		s.history.observe(current, bar, step)
+	}
+	edit := studioEdit{Revision: proposal.Envelope.Revision, Label: proposal.Label, Author: proposal.Envelope.Author, Session: proposal.Envelope.Session}
+	mutation := studioMutation{Source: result.Source, Files: files, Response: result.Response}
+	// Revalidate at acceptance, including project dependencies that may have
+	// changed since staging. The tail commits this candidate once.
+	outcome := s.commitMutationLocked(edit, current, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &proposal.Envelope})
+	if outcome.Status == http.StatusOK {
+		s.removeProposal(id)
+		if outcome.Written && s.previewProposal != "" {
+			s.previewProposal = ""
+			s.transport.applyPreview(nil)
+		}
+	} else if outcome.Status == http.StatusConflict {
+		if latest, err := os.ReadFile(s.path); err == nil {
+			outcome.Response["revision"], outcome.Response["source"] = studioRevision(latest), string(latest)
+		}
+	}
+	studioJSON(w, outcome.Status, outcome.Response)
+}
+
+func (s *studio) discardProposal(w http.ResponseWriter, r *http.Request) {
+	if !studioSameOrigin(r) {
+		studioJSON(w, http.StatusForbidden, map[string]any{"error": "cross-origin edits are not allowed"})
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := r.PathValue("id")
+	if _, ok := s.proposals[id]; !ok {
+		studioJSON(w, http.StatusNotFound, map[string]any{"error": "unknown proposal"})
+		return
+	}
+	s.removeProposal(id)
+	studioJSON(w, http.StatusOK, map[string]any{"id": id, "discarded": true})
+}
+
+func (s *studio) removeProposal(id string) {
+	delete(s.proposals, id)
+	if s.previewProposal == id {
+		s.previewProposal = ""
+		s.transport.applyPreview(nil)
+	}
+}
+
+// applyPreview is the edit-service seam. The engine lane supplies live
+// overrides; this stub retains only the last resolved operations.
+func (t *studioTransport) applyPreview(ops []edits.PreviewOp) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.previewOps = append([]edits.PreviewOp(nil), ops...)
 }

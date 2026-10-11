@@ -88,3 +88,24 @@ func TestPreviewOpsNumericValuesAndOptionalPreviewers(t *testing.T) {
 		}
 	}
 }
+
+func TestPreviewOpsLeaveNonnumericAndGlobalParametersInDiff(t *testing.T) {
+	plan := previewPlan()
+	plan.ResolveParam = func(path string) (Param, error) {
+		id := "mix.mute"
+		if path == "master.level" {
+			id = "mix.master.level"
+		}
+		descriptor, ok := paramdefs.Lookup(id)
+		if !ok {
+			t.Fatalf("missing descriptor %s", id)
+		}
+		return Param{Path: path, Descriptor: descriptor}, nil
+	}
+	for _, intent := range []Intent{&SetParam{Entity: "param:master.level", Value: json.RawMessage(`-3`)}, &SetParam{Entity: "param:bass.mute", Value: json.RawMessage(`true`)}, &SetParam{Entity: "param:bass.mute"}} {
+		ops, err := PreviewOps(plan, []Intent{intent})
+		if err != nil || len(ops) != 0 {
+			t.Fatalf("nonnumeric preview: %+v, %v", ops, err)
+		}
+	}
+}
