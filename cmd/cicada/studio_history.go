@@ -533,6 +533,15 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		return commitOutcome{Status: status, Response: body}
 	}
 	updated := mutation.Source
+	// Library routes may carry identical pins. Only actual auxiliary changes
+	// turn an unchanged entry source into a commit.
+	files := make([]studioAuxiliaryFile, 0, len(mutation.Files))
+	for _, file := range mutation.Files {
+		if !bytes.Equal(file.Before, file.After) || (file.Before == nil) != (file.After == nil) {
+			files = append(files, file)
+		}
+	}
+	mutation.Files = files
 	overrides := map[string][]byte{}
 	for _, file := range mutation.Files {
 		overrides[file.Path] = file.After
@@ -551,12 +560,13 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	if studioRevision(latest) != edit.Revision {
 		return fail(http.StatusConflict, map[string]any{"error": "score changed during validation; reload before saving"})
 	}
-	if bytes.Equal(current, updated) {
+	if bytes.Equal(current, updated) && len(mutation.Files) == 0 {
 		s.lastGoodSource, s.lastGoodProject = bytes.Clone(current), p
 		response := map[string]any{"revision": studioRevision(current), "valid": true, "source": string(current), "unchanged": true}
 		for key, value := range mutation.Response {
 			response[key] = value
 		}
+		response["source"], response["revision"] = string(current), studioRevision(current)
 		response["playingRevision"] = studioRevision(s.lastGoodSource)
 		return commitOutcome{Status: http.StatusOK, Response: response}
 	}
@@ -600,6 +610,7 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	for key, value := range mutation.Response {
 		response[key] = value
 	}
+	response["source"], response["revision"] = string(updated), studioRevision(updated)
 	response["playingRevision"] = studioRevision(s.lastGoodSource)
 	if err := s.appendEditLog(edit, hook.envelope, current, updated); err != nil {
 		response["editLogError"] = err.Error() // the score is already committed; report, do not fail

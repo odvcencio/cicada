@@ -76,3 +76,29 @@ func TestStageDiffIncludesAuxiliaryFilesWithoutHostPaths(t *testing.T) {
 		t.Fatalf("auxiliary diff: %q, files=%+v", staged.Diff, staged.Result.Files)
 	}
 }
+
+func TestStagePreviewUsesFinalCandidateValues(t *testing.T) {
+	source := "cicada 2\ntrack bass acid { level = -6dB }\npattern p acid { c3 . }\nscene main { bass=p }\nsong { main }\n"
+	for _, replacement := range []bool{false, true} {
+		t.Run(map[bool]string{false: "repeated parameter", true: "replacement"}[replacement], func(t *testing.T) {
+			intents := []edits.Intent{&edits.SetParam{Entity: "param:bass.level", Value: json.RawMessage(`-3`)}}
+			if replacement {
+				intents = append(intents, &edits.ReplaceText{Source: strings.Replace(source, "-6dB", "-9dB", 1)})
+			} else {
+				intents = append(intents, &edits.SetParam{Entity: "param:bass.level", Value: json.RawMessage(`-9`)})
+			}
+			staged, err := edits.Stage([]byte(source), edits.Proposal{Envelope: edits.Envelope{Version: 1, Intents: intents}}, edits.Options{Compiler: m5Compiler{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(staged.Ops) == 0 || !strings.Contains(string(staged.Result.Source), "-9dB") {
+				t.Fatalf("missing preview or wrong candidate: %+v", staged)
+			}
+			for _, op := range staged.Ops {
+				if op.Track != 0 || op.Param != "level" || op.Value != -9 {
+					t.Fatalf("superseded preview: %+v", op)
+				}
+			}
+		})
+	}
+}
