@@ -7,6 +7,19 @@ Flags:
   (no command flags)
   --help      show this help
 
+### apply
+cicada apply <score.cicada> <intents.json> [--write] [--author <name>] [--session <id>]
+
+apply typed edit intents to a score
+
+Flags:
+  --write         write the validated edits (default: print a diff only)
+  --author <name>  commit author (default: envelope author or cli)
+  --session <id>   commit session
+  --help          show this help
+
+A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes.
+
 ### fix
 cicada fix <score.cicada> [--all] [--check]
 

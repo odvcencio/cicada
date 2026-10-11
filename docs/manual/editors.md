@@ -60,6 +60,42 @@ comments and checks that the compiled project keeps the same meaning. See the
 [migration reference](../spec/semantic-model.md#cicada-fix-and-migrations)
 for the complete list of rewrites.
 
+## Applying intents from the command line
+
+Save a version-1 envelope as `intents.json`:
+
+```json
+{
+  "version": 1,
+  "intents": [
+    {"kind": "setpatternsettings", "entity": "pattern:pulse", "swing100": 5500, "gate": 55, "transpose": 0}
+  ]
+}
+```
+
+Validate the edits and print a unified diff:
+
+```sh
+cicada apply main.cicada intents.json
+```
+
+Add `--write` to save the validated changes. Writes check the source revision
+again at the atomic exchange, so a concurrent save is preserved. Auxiliary
+changes, including a confirmed edition upgrade in `cicada.mod`, appear in the
+diff and are saved with the edit. Unchanged edits write nothing.
+
+The envelope can include `revision`, `author`, `session`, and `dryrun`. A supplied
+revision must match the exact score bytes; omit it to use the current revision.
+`dryrun: true` prevents writes even with `--write`. `--author` and `--session`
+override envelope attribution; the default author is `cli` when the envelope
+has none. Successful writes append one record to `.cicada/edits.jsonl`.
+
+Studio accepts the same envelope at `POST /api/intents`, with a required
+`revision`. It commits the whole batch as one undoable edit. A dry run returns
+`diff`, the current `revision`, `valid: true`, and `dryRun: true` without saving.
+Unknown fields and intent kinds are rejected. A revision conflict returns
+HTTP 409 with `error`, `revision`, `source`, and `playingRevision`.
+
 ## Highlighting and navigation
 
 `highlight` draws source in the terminal, writes a standalone HTML page, or

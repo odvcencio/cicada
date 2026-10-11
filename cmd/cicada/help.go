@@ -12,6 +12,7 @@ type commandHelpEntry struct {
 
 var commandHelpEntries = []commandHelpEntry{
 	{name: "new", summary: "create an edition-2 project", usage: "cicada new <name>", flags: "  (no command flags)"},
+	{name: "apply", summary: "apply typed edit intents to a score", usage: "cicada apply <score.cicada> <intents.json> [--write] [--author <name>] [--session <id>]", flags: "  --write         write the validated edits (default: print a diff only)\n  --author <name>  commit author (default: envelope author or cli)\n  --session <id>   commit session\n  --help          show this help", notes: "A supplied revision must match the score. Writes also check for concurrent saves. An envelope with dryrun:true never writes."},
 	{name: "fix", summary: "migrate legacy source spellings", usage: "cicada fix <score.cicada> [--all] [--check]", flags: "  --all       migrate every edition-1 score under the project folder together\n  --check     report required source or manifest changes without writing\n  --help      show this help", notes: "With --all, the score path is optional; run the command from the project folder."},
 	{name: "check", summary: "validate one score or the current project", usage: "cicada check [score.cicada]", flags: "  (no command flags)"},
 	{name: "fmt", summary: "format a score or current project", usage: "cicada fmt [--check|-w] [score.cicada]", flags: "  --check     report formatting changes without writing\n  -w          write formatted source\n  --help      show this help"},
@@ -46,7 +47,7 @@ var commandHelpEntries = []commandHelpEntry{
 var shortHelpText = "Usage: cicada <command> [arguments]\n\n" +
 	"Create a project, edit and validate scores, play them in Studio, or render files.\n\n" +
 	"Commands:\n" +
-	"  new, fix, check, fmt, play, studio, lsp\n" +
+	"  new, apply, fix, check, fmt, play, studio, lsp\n" +
 	"  render, stems, verify-wav, verify-stems, midi, verify-midi, compare-midi, import-midi\n" +
 	"  gen, explain, view, highlight, symbols, convert, compare, validate, ast\n" +
 	"  events, graph, fields, params, golden, record-pack, fit-model, transcribe, wam2\n\n" +
