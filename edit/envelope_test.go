@@ -23,3 +23,10 @@ func TestEnvelopeCarriesAuthorSessionAndIntents(t *testing.T) {
 		t.Fatalf("version: %v", err)
 	}
 }
+
+func TestEnvelopeRejectsUnknownFields(t *testing.T) {
+	var env Envelope
+	if err := json.Unmarshal([]byte(`{"version":1,"intents":[],"write":true}`), &env); err == nil || !strings.Contains(err.Error(), `unknown field "write"`) {
+		t.Fatalf("unknown field: %v", err)
+	}
+}
