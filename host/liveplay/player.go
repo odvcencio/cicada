@@ -78,15 +78,28 @@ type parameterOverride struct {
 	value   float32
 	version uint64
 	active  bool
-	trackID string
+}
+
+// An identity owns its render bookkeeping across control snapshot copies.
+// Only retirement is read by control callers; the audio reader owns the rest.
+type overrideState struct {
+	appliedVersions   [kernel.ParamCount]uint64
+	clearedVersions   [kernel.ParamCount]uint64
+	cancelledVersions [kernel.ParamCount]uint64
+	retiredVersions   [kernel.ParamCount]atomic.Uint64
+}
+
+type trackOverrides struct {
+	values [kernel.ParamCount]parameterOverride
+	state  *overrideState
 }
 
 type liveOverrides struct {
-	values [17][kernel.ParamCount]parameterOverride
+	tracks map[string]*trackOverrides // Stable track ID; empty ID is global.
 }
 
 type overrideClear struct {
-	slot    uint8
+	trackID string
 	id      kernel.ParamID
 	version uint64
 }
@@ -211,12 +224,8 @@ type Player struct {
 	trackNames        atomic.Pointer[trackNameSnapshot]
 	overrideSequence  atomic.Uint64
 	trackCount        atomic.Uint32
-	appliedVersions   [17][kernel.ParamCount]uint64
-	clearedVersions   [17][kernel.ParamCount]uint64
 	overrideClears    chan overrideClear
 	overrideHook      func(snapshotLoaded bool) // Optional deterministic scheduler for tests.
-	cancelledVersions [17][kernel.ParamCount]uint64
-	retiredVersions   [17][kernel.ParamCount]atomic.Uint64
 	meters            chan MeterFrame
 	meterScratch      MeterFrame
 	meterTick         int64
@@ -363,7 +372,10 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 
 // TrackIndex resolves a stable score track ID against the engine that Read owns.
 func (p *Player) TrackIndex(id string) (uint8, bool) {
-	snapshot := p.trackNames.Load()
+	return p.trackNames.Load().trackIndex(id)
+}
+
+func (snapshot *trackNameSnapshot) trackIndex(id string) (uint8, bool) {
 	if snapshot == nil {
 		return 0, false
 	}
@@ -400,25 +412,20 @@ func (p *Player) OverrideValue(track uint8, id kernel.ParamID) (float32, bool) {
 	if snapshot == nil {
 		return 0, false
 	}
-	slot := int(track)
-	if track == 0xff {
-		slot = 16
-	} else {
-		if track >= 16 || uint32(track) >= p.trackCount.Load() {
+	trackID := ""
+	if track != 0xff {
+		names := p.trackNames.Load()
+		if names == nil || track >= names.count {
 			return 0, false
 		}
-		if names := p.trackNames.Load(); names != nil && track < names.count {
-			for i := 0; i < 16; i++ {
-				override := snapshot.values[i][id]
-				if override.active && override.trackID == names.ids[track] && override.version != p.retiredVersions[i][id].Load() {
-					return override.value, true
-				}
-			}
-			return 0, false
-		}
+		trackID = names.ids[track]
 	}
-	override := snapshot.values[slot][id]
-	return override.value, override.active && override.version != p.retiredVersions[slot][id].Load()
+	overrides := snapshot.tracks[trackID]
+	if overrides == nil {
+		return 0, false
+	}
+	override := overrides.values[id]
+	return override.value, override.active && override.version != overrides.state.retiredVersions[id].Load()
 }
 
 // Note queues a live note for an acid, authored instrument, or drum track. Requests are
@@ -590,23 +597,35 @@ func (p *Player) SetParam(track uint8, id kernel.ParamID, value float32) error {
 // SetPreview publishes an override using SetParam's snapshot CAS and returns
 // its exact version, so a later cancellation cannot retire a newer gesture.
 func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint64, error) {
+	return p.setPreview(p.trackNames.Load(), track, id, value)
+}
+
+// SetTrackPreview resolves and validates an entity in one playing-score
+// snapshot. Publication keeps that ID even if activation reorders the tracks.
+func (p *Player) SetTrackPreview(trackID string, id kernel.ParamID, value float32) (uint64, error) {
+	names := p.trackNames.Load()
+	track, ok := names.trackIndex(trackID)
+	if !ok {
+		return 0, fmt.Errorf("unknown preview track %q", trackID)
+	}
+	return p.setPreview(names, track, id, value)
+}
+
+func (p *Player) setPreview(names *trackNameSnapshot, track uint8, id kernel.ParamID, value float32) (uint64, error) {
 	spec, ok := kernel.Param(id)
 	if !ok || !spec.Live {
 		return 0, fmt.Errorf("parameter is unknown or not live")
 	}
-	slot := int(track)
 	trackID := ""
 	var validator *engine.PreviewParamValidator
 	if spec.Scope == "global" {
 		if track != 0xff {
 			return 0, fmt.Errorf("global parameter requires track 255")
 		}
-		slot = 16
-	} else if spec.Scope != "track" || track >= 16 || uint32(track) >= p.trackCount.Load() {
+	} else if spec.Scope != "track" || names == nil || track >= names.count || names.ids[track] == "" {
 		return 0, fmt.Errorf("track parameter index is out of range")
 	} else {
-		names := p.trackNames.Load()
-		if names == nil || !names.previewParams[track][id] {
+		if !names.previewParams[track][id] {
 			return 0, fmt.Errorf("parameter %q is unsupported by the track in the playing score", spec.Name)
 		}
 		trackID = names.ids[track]
@@ -618,22 +637,38 @@ func (p *Player) SetPreview(track uint8, id kernel.ParamID, value float32) (uint
 	version := p.overrideSequence.Add(1)
 	for {
 		old := p.overrides.Load()
-		next := new(liveOverrides)
+		next := &liveOverrides{tracks: make(map[string]*trackOverrides)}
 		if old != nil {
-			*next = *old
-		}
-		if trackID != "" {
-			for existing := 0; existing < 16; existing++ {
-				if existing != slot && next.values[existing][id].trackID == trackID {
-					next.values[existing][id].active = false
+			for identity, overrides := range old.tracks {
+				// Discard absent identities only after audio-thread retirement.
+				// This keeps repeated topology changes from growing the map.
+				if _, present := names.trackIndex(identity); identity != "" && !present && overrides.retired() {
+					continue
 				}
+				next.tracks[identity] = overrides
 			}
 		}
-		next.values[slot][id] = parameterOverride{value: value, version: version, active: true, trackID: trackID}
+		overrides := new(trackOverrides)
+		if previous := next.tracks[trackID]; previous != nil {
+			*overrides = *previous
+		} else {
+			overrides.state = new(overrideState)
+		}
+		overrides.values[id] = parameterOverride{value: value, version: version, active: true}
+		next.tracks[trackID] = overrides
 		if p.overrides.CompareAndSwap(old, next) {
 			return version, nil
 		}
 	}
+}
+
+func (overrides *trackOverrides) retired() bool {
+	for id, override := range overrides.values {
+		if override.active && override.version != overrides.state.retiredVersions[id].Load() {
+			return false
+		}
+	}
+	return true
 }
 
 type previewValueError string
@@ -702,12 +737,12 @@ func (p *Player) previewClear(version uint64) (overrideClear, parameterOverride,
 	if version == 0 || snapshot == nil {
 		return overrideClear{}, parameterOverride{}, false
 	}
-	for slot := range snapshot.values {
-		for id, override := range snapshot.values[slot] {
-			if !override.active || override.version != version || p.retiredVersions[slot][id].Load() == version {
+	for trackID, overrides := range snapshot.tracks {
+		for id, override := range overrides.values {
+			if !override.active || override.version != version || overrides.state.retiredVersions[id].Load() == version {
 				continue
 			}
-			return overrideClear{slot: uint8(slot), id: kernel.ParamID(id), version: version}, override, true
+			return overrideClear{trackID: trackID, id: kernel.ParamID(id), version: version}, override, true
 		}
 	}
 	return overrideClear{}, parameterOverride{}, false
@@ -730,9 +765,6 @@ func (p *Player) SetSolo(track uint8, on bool) error {
 }
 
 func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bool) {
-	if newEngine {
-		clear(p.appliedVersions[:])
-	}
 	// Count first so the snapshot includes the override publication for every
 	// request we drain. Requests arriving later wait for the next boundary,
 	// rather than being rejected against an older snapshot and lost.
@@ -751,49 +783,41 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 	// cancellation until its restoration command fits in the engine queue.
 	for ; remaining > 0; remaining-- {
 		request := <-p.overrideClears
-		override := snapshot.values[request.slot][request.id]
-		if override.active && override.version == request.version {
-			p.cancelledVersions[request.slot][request.id] = request.version
+		overrides := snapshot.tracks[request.trackID]
+		if overrides != nil {
+			override := overrides.values[request.id]
+			if override.active && override.version == request.version {
+				overrides.state.cancelledVersions[request.id] = request.version
+			}
 		}
 	}
-	for slot := range snapshot.values {
-		for id := range snapshot.values[slot] {
-			override := snapshot.values[slot][id]
-			if !override.active || override.version == p.clearedVersions[slot][id] {
+	for trackID, overrides := range snapshot.tracks {
+		state := overrides.state
+		if newEngine {
+			clear(state.appliedVersions[:])
+		}
+		for id, override := range overrides.values {
+			if !override.active || override.version == state.clearedVersions[id] {
 				continue
 			}
-			cancelled := p.cancelledVersions[slot][id] == override.version
+			cancelled := state.cancelledVersions[id] == override.version
 			if cancelled && newEngine {
-				p.retireOverride(slot, kernel.ParamID(id), override.version)
+				state.retire(kernel.ParamID(id), override.version)
 				continue // The new engine already has its committed value.
 			}
-			track := uint8(slot)
-			if slot == 16 {
-				track = 0xff
-			} else if override.trackID != "" {
-				track = 0xff
-				for index := 0; index < len(score.Tracks); index++ {
-					if score.Tracks[index].ID == override.trackID {
-						track = uint8(index)
-						break
-					}
+			track := uint8(0xff)
+			if trackID != "" {
+				var present bool
+				track, present = score.trackNames.trackIndex(trackID)
+				if !present {
+					state.retire(kernel.ParamID(id), override.version)
+					continue // Removal ends the gesture, including on re-add.
 				}
-				if track == 0xff {
-					if cancelled {
-						p.retireOverride(slot, kernel.ParamID(id), override.version)
-					}
-					continue
-				}
-			} else if slot >= target.TrackCount() {
-				if cancelled {
-					p.retireOverride(slot, kernel.ParamID(id), override.version)
-				}
-				continue
 			}
 			// A later score may replace the voice or drum recipe that admitted
 			// this preview. Retire it before publishing an invalid command.
 			if track != 0xff && (score.trackNames == nil || !score.trackNames.previewParams[track][id] || score.trackNames.previewValues[track].Validate(kernel.ParamID(id), override.value) != nil) {
-				p.retireOverride(slot, kernel.ParamID(id), override.version)
+				state.retire(kernel.ParamID(id), override.version)
 				continue
 			}
 			if cancelled {
@@ -803,25 +827,25 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 					validator = &score.trackNames.previewValues[track]
 				}
 				if !ok || validatePreviewValue(kernel.Params[id], validator, value) != nil {
-					p.retireOverride(slot, kernel.ParamID(id), override.version)
-					p.emit(Event{Kind: "preview-error", Name: kernel.Params[id].Name, Track: override.trackID})
+					state.retire(kernel.ParamID(id), override.version)
+					p.emit(Event{Kind: "preview-error", Name: kernel.Params[id].Name, Track: trackID})
 					continue
 				}
 				if target.Push(cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(value)}) {
-					p.retireOverride(slot, kernel.ParamID(id), override.version)
+					state.retire(kernel.ParamID(id), override.version)
 				}
 				continue
 			}
 			if newEngine && parameterMatches(score.Parameters, track, kernel.ParamID(id), override.value) {
-				p.retireOverride(slot, kernel.ParamID(id), override.version)
+				state.retire(kernel.ParamID(id), override.version)
 				continue
 			}
-			if !newEngine && p.appliedVersions[slot][id] == override.version {
+			if !newEngine && state.appliedVersions[id] == override.version {
 				continue
 			}
 			command := cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(override.value)}
 			if target.Push(command) {
-				p.appliedVersions[slot][id] = override.version
+				state.appliedVersions[id] = override.version
 			}
 		}
 	}

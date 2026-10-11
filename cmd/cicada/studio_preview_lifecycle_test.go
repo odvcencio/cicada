@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/binary"
 	"fmt"
 	"math"
 	"math/rand"
@@ -11,6 +10,7 @@ import (
 
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 )
@@ -167,53 +167,66 @@ func TestPreviewTeardownWaitsForCancellationQueue(t *testing.T) {
 	}
 }
 
+// Track identities stay fixed while each offered score has its own ordering.
+var previewTrackIDs = [...]string{"bass", "lead", "pad", "drums"}
+
 type previewOperation struct {
 	kind   string
 	client int
+	track  int
 	value  float32
 }
 
 func (op previewOperation) String() string {
-	if op.kind == "set" || op.kind == "newer-gesture" || op.kind == "offer" {
-		return fmt.Sprintf("%s(client=%d,value=%g)", op.kind, op.client, op.value)
-	}
-	return fmt.Sprintf("%s(client=%d)", op.kind, op.client)
+	return fmt.Sprintf("%s(client=%d,track=%s,value=%g)", op.kind, op.client, previewTrackIDs[op.track], op.value)
 }
 
-// The model uses gesture identities independent of Player's version tokens.
-type previewReferenceClient struct {
-	open      bool
-	gesture   int
+type previewReferenceGesture struct {
+	version   int
 	value     float32
 	committed bool
 }
 
-type previewReference struct {
-	clients   [3]previewReferenceClient
-	sequence  int
-	owner     int
-	gesture   int
-	value     float32
-	active    bool
-	committed float32
-	offer     float32
-	hasOffer  bool
+type previewReferenceClient struct {
+	open     bool
+	gestures [4]previewReferenceGesture
 }
 
-func previewLifecycleScore(t *testing.T, gain float32) liveplay.Score {
+type previewReferenceOverride struct {
+	owner   int
+	gesture int
+	value   float32
+	active  bool
+}
+
+type previewReferenceScore struct {
+	order []int
+	gains [4]float32
+}
+
+type previewLifecycleCounts struct {
+	checks, sets, cancels, teardowns, activations, reorders, adds, removes, shifts int
+}
+
+func previewLifecycleScore(t *testing.T, score previewReferenceScore) liveplay.Score {
 	t.Helper()
-	program := graph.Program{}
-	program.Nodes[0] = graph.Node{Op: graph.Constant, Value: 375}
-	program.Nodes[1] = graph.Node{Op: graph.Sine, A: 0}
-	program.Nodes[2] = graph.Node{Op: graph.Constant, Value: .125}
-	program.Nodes[3] = graph.Node{Op: graph.Multiply, A: 1, B: 2}
-	program.Len, program.Output = 4, 3
-	// A slow clock keeps offers pending between generated operations. Explicit
-	// song starts exercise the real render-thread offer activation path.
-	cfg := engine.Config{SampleRate: 48_000, MaxBlock: 256, Tracks: 1, MaxVoices: 1, BPMMilli: 20_000}
-	cfg.Track[0].Kind, cfg.Track[0].Graph = engine.VoiceGraph, program
-	cfg.Track[0].GainDB, cfg.Track[0].GainSet = float64(gain), true
-	cfg.Track[0].Pan, cfg.Track[0].BusSFX = -1, true
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: 256, Tracks: len(score.order), MaxVoices: len(score.order), BPMMilli: 20_000}
+	tracks := make([]liveplay.TrackSlots, len(score.order))
+	parameters := make([]liveplay.ParameterValue, len(score.order))
+	for index, identity := range score.order {
+		program := graph.Program{}
+		program.Nodes[0] = graph.Node{Op: graph.Constant, Value: float32(375 * (identity + 1))}
+		program.Nodes[1] = graph.Node{Op: graph.Sine, A: 0}
+		program.Nodes[2] = graph.Node{Op: graph.Constant, Value: .125}
+		program.Nodes[3] = graph.Node{Op: graph.Multiply, A: 1, B: 2}
+		program.Len, program.Output = 4, 3
+		cfg.Track[index].Kind, cfg.Track[index].Graph = engine.VoiceGraph, program
+		cfg.Track[index].GainDB, cfg.Track[index].GainSet = float64(score.gains[identity]), true
+		cfg.Track[index].Pan, cfg.Track[index].BusSFX = -1, true
+		tracks[index].ID = previewTrackIDs[identity]
+		parameters[index] = liveplay.ParameterValue{Track: uint8(index), ID: kernel.ParamMixGain, Value: score.gains[identity]}
+	}
+	// A slow clock keeps offers pending until explicit song-start activation.
 	cfg.Scenes = []engine.Scene{{}}
 	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}}
 	cfg.LoopSong = true
@@ -221,87 +234,167 @@ func previewLifecycleScore(t *testing.T, gain float32) liveplay.Score {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// This engine has not been handed to a player yet. Emit per-track meters
+	// every block so the final frame measures each identity after smoothing.
+	if !created.Push(cmd.Command{Op: cmd.OpMeterRate, Track: 0xff, Arg0: 1}) {
+		t.Fatal("meter rate publication failed")
+	}
 	return liveplay.Score{
 		Engine: created, SampleRate: 48_000, BPMMilli: 20_000, Name: "preview",
-		Tracks: []liveplay.TrackSlots{{ID: "bass"}}, HasSFX: true,
-		Song:       []liveplay.SongEntry{{Scene: "preview", StartBar: 1}},
-		Parameters: []liveplay.ParameterValue{{Track: 0, ID: kernel.ParamMixGain, Value: gain}},
+		Tracks: tracks, HasSFX: true,
+		Song: []liveplay.SongEntry{{Scene: "preview", StartBar: 1}}, Parameters: parameters,
 	}
 }
 
-func runPreviewLifecycle(t *testing.T, operations []previewOperation) error {
+func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *previewLifecycleCounts) error {
 	t.Helper()
-	p, err := liveplay.New(previewLifecycleScore(t, -6), 48_000)
+	if counts == nil {
+		counts = new(previewLifecycleCounts)
+	}
+	playing := previewReferenceScore{order: []int{0, 1, 2}, gains: [4]float32{-6, -12, -9, -3}}
+	p, err := liveplay.New(previewLifecycleScore(t, playing), 48_000)
 	if err != nil {
 		return err
 	}
 	defer p.Close()
 	s := &studio{transport: &studioTransport{stream: p}}
 	var sessions [3]livePreviewSession
-	model := previewReference{committed: -6}
+	var clients [3]previewReferenceClient
+	var overrides [4]previewReferenceOverride
+	sequence := 0
+	var offer previewReferenceScore
+	hasOffer := false
 	for i := range sessions {
 		sessions[i] = make(livePreviewSession)
-		model.clients[i].open = true
+		clients[i].open = true
+	}
+	present := func(identity int) bool {
+		for _, track := range playing.order {
+			if track == identity {
+				return true
+			}
+		}
+		return false
 	}
 	activate := func() error {
 		if err := p.StartSongEntry(0, "preview"); err != nil {
 			return err
 		}
-		model.committed, model.hasOffer = model.offer, false
-		if model.active && model.value == model.committed {
-			model.active = false
+		playing, hasOffer = offer, false
+		for identity := range overrides {
+			if !present(identity) || overrides[identity].value == playing.gains[identity] {
+				overrides[identity].active = false
+			}
 		}
+		counts.activations++
 		return nil
+	}
+	publish := func(next previewReferenceScore) error {
+		if err := p.Offer(previewLifecycleScore(t, next)); err != nil {
+			return err
+		}
+		offer, hasOffer = next, true
+		return nil
+	}
+	cancel := func(client, identity int) {
+		gesture := clients[client].gestures[identity]
+		override := &overrides[identity]
+		if override.active && override.owner == client && override.gesture == gesture.version {
+			override.active = false
+		}
+		clients[client].gestures[identity] = previewReferenceGesture{}
 	}
 	var pcm [2048 * 8]byte
 	for step, op := range operations {
-		client := &model.clients[op.client]
+		client := &clients[op.client]
+		gesture := &client.gestures[op.track]
 		message := ""
 		switch op.kind {
 		case "set", "newer-gesture":
 			if !client.open {
 				sessions[op.client] = make(livePreviewSession)
+				*client = previewReferenceClient{open: true}
 			}
-			model.sequence++
-			*client = previewReferenceClient{open: true, gesture: model.sequence, value: op.value}
-			model.owner, model.gesture, model.value, model.active = op.client, client.gesture, op.value, true
-			message = fmt.Sprintf(`{"type":"preview-set","entity":"track:bass","param":"mix.gain","value":%g}`, op.value)
-		case "cancel":
-			if client.open {
-				if model.active && model.owner == op.client && model.gesture == client.gesture {
-					model.active = false
+			message = fmt.Sprintf(`{"type":"preview-set","entity":"track:%s","param":"mix.gain","value":%g}`, previewTrackIDs[op.track], op.value)
+			if present(op.track) {
+				sequence++
+				*gesture = previewReferenceGesture{version: sequence, value: op.value}
+				overrides[op.track] = previewReferenceOverride{owner: op.client, gesture: sequence, value: op.value, active: true}
+				counts.sets++
+			} else {
+				if err := s.handleLiveMessage([]byte(message), sessions[op.client]); err == nil {
+					return fmt.Errorf("step %d: preview accepted for absent %s", step, previewTrackIDs[op.track])
 				}
-				client.gesture = 0
-				message = `{"type":"preview-end","entity":"track:bass","param":"mix.gain","commit":false}`
+				message = ""
+			}
+		case "cancel":
+			if client.open && (present(op.track) || gesture.version != 0) {
+				cancel(op.client, op.track)
+				message = fmt.Sprintf(`{"type":"preview-end","entity":"track:%s","param":"mix.gain","commit":false}`, previewTrackIDs[op.track])
+				counts.cancels++
 			}
 		case "commit":
-			if client.open && client.gesture != 0 {
-				client.committed = true
-				message = `{"type":"preview-end","entity":"track:bass","param":"mix.gain","commit":true}`
+			if client.open && gesture.version != 0 {
+				gesture.committed = true
+				message = fmt.Sprintf(`{"type":"preview-end","entity":"track:%s","param":"mix.gain","commit":true}`, previewTrackIDs[op.track])
 			}
 		case "close", "drop":
 			sessions[op.client].close()
-			if !client.committed && model.active && model.owner == op.client && model.gesture == client.gesture {
-				model.active = false
-			}
-			client.open = false
-		case "offer":
-			value := op.value
-			if value == model.committed {
-				value = -15 // Always offer a different value.
-				if value == model.committed {
-					value = 0
+			for identity, owned := range client.gestures {
+				if !owned.committed {
+					cancel(op.client, identity)
 				}
 			}
-			if err := p.Offer(previewLifecycleScore(t, value)); err != nil {
+			client.open = false
+			counts.teardowns++
+		case "offer":
+			next := playing
+			next.gains[op.track] = op.value
+			if next.gains[op.track] == playing.gains[op.track] {
+				next.gains[op.track] = -15
+			}
+			if err := publish(next); err != nil {
 				return err
 			}
-			model.offer, model.hasOffer = value, true
 		case "activate":
-			if model.hasOffer {
+			if hasOffer {
 				if err := activate(); err != nil {
 					return err
 				}
+			}
+		case "reorder", "add", "remove", "shift":
+			next := playing
+			next.order = append([]int(nil), playing.order...)
+			switch op.kind {
+			case "reorder":
+				for left, right := 0, len(next.order)-1; left < right; left, right = left+1, right-1 {
+					next.order[left], next.order[right] = next.order[right], next.order[left]
+				}
+				counts.reorders++
+			case "add":
+				if present(op.track) {
+					break
+				}
+				next.order = append([]int{op.track}, next.order...)
+				counts.adds++
+			case "remove":
+				for index, identity := range next.order {
+					if identity == op.track && len(next.order) > 1 {
+						next.order = append(next.order[:index], next.order[index+1:]...)
+						counts.removes++
+						break
+					}
+				}
+			case "shift":
+				next.order = append(next.order[1:], next.order[0])
+				next.gains[op.track] = op.value
+				counts.shifts++
+			}
+			if err := publish(next); err != nil {
+				return err
+			}
+			if err := activate(); err != nil {
+				return err
 			}
 		default:
 			return fmt.Errorf("unknown operation %q", op.kind)
@@ -311,43 +404,60 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation) error {
 				return fmt.Errorf("step %d %v: %w", step, op, err)
 			}
 		}
-		if op.kind == "commit" && message != "" {
-			// Complete the matching save/activation handoff before a later edit.
-			// The pending handoff on disconnect is covered separately above.
-			if err := p.Offer(previewLifecycleScore(t, client.value)); err != nil {
+		if op.kind == "commit" && message != "" && present(op.track) {
+			// Save and activate before a subsequent edit. Pending committed
+			// gestures on disconnect remain covered by the render scheduler.
+			next := playing
+			next.gains[op.track] = gesture.value
+			if err := publish(next); err != nil {
 				return err
 			}
-			model.offer, model.hasOffer = client.value, true
 			if err := activate(); err != nil {
 				return err
 			}
 		}
 		if _, err := p.Read(pcm[:]); err != nil {
-			return err
+			return fmt.Errorf("step %d %v: %w", step, op, err)
 		}
-		if committed, ok := p.CommittedValue(0, kernel.ParamMixGain); !ok || committed != model.committed {
-			return fmt.Errorf("step %d %v: committed %g/%v, model %g", step, op, committed, ok, model.committed)
+		frame := <-p.Meters()
+		if frame.TrackCount != uint8(len(playing.order)) {
+			return fmt.Errorf("step %d: meter topology has %d tracks, want %d", step, frame.TrackCount, len(playing.order))
 		}
-		value, active := p.OverrideValue(0, kernel.ParamMixGain)
-		if active != model.active || active && value != model.value {
-			return fmt.Errorf("step %d %v: override %g/%v, model %g/%v", step, op, value, active, model.value, model.active)
-		}
-		want := model.committed
-		if model.active {
-			owner := model.clients[model.owner]
-			if !owner.open || owner.committed {
-				return fmt.Errorf("step %d: uncommitted override has no open owner", step)
+		for identity := range previewTrackIDs {
+			if !present(identity) {
+				if _, ok := p.TrackIndex(previewTrackIDs[identity]); ok {
+					return fmt.Errorf("step %d: removed track %s still resolves", step, previewTrackIDs[identity])
+				}
 			}
-			want = model.value
 		}
-		peak := float64(0)
-		for frame := 2048 - 256; frame < 2048; frame++ {
-			sample := math.Float32frombits(binary.LittleEndian.Uint32(pcm[frame*8:]))
-			peak = max(peak, math.Abs(float64(sample)))
-		}
-		wantPeak := .125 * math.Pow(10, float64(want)/20)
-		if math.Abs(peak-wantPeak) > .002 {
-			return fmt.Errorf("step %d %v: audible peak %g, want %g (%g dB)", step, op, peak, wantPeak, want)
+		for index, identity := range playing.order {
+			name := previewTrackIDs[identity]
+			track, ok := p.TrackIndex(name)
+			if !ok || track != uint8(index) || frame.TrackIDs[index] != name {
+				return fmt.Errorf("step %d: %s index %d/%v, expected %d", step, name, track, ok, index)
+			}
+			committed := playing.gains[identity]
+			if got, ok := p.CommittedValue(track, kernel.ParamMixGain); !ok || got != committed {
+				return fmt.Errorf("step %d %v: %s committed %g/%v, want %g", step, op, name, got, ok, committed)
+			}
+			override := overrides[identity]
+			value, active := p.OverrideValue(track, kernel.ParamMixGain)
+			if active != override.active || active && value != override.value {
+				return fmt.Errorf("step %d %v: %s override %g/%v, model %g/%v", step, op, name, value, active, override.value, override.active)
+			}
+			want := committed
+			if active {
+				owner := clients[override.owner]
+				if !owner.open || owner.gestures[identity].committed {
+					return fmt.Errorf("step %d: %s override has no open uncommitted owner", step, name)
+				}
+				want = override.value
+			}
+			wantPeak := .125 * math.Pow(10, float64(want)/20)
+			if got := float64(frame.Tracks[index].Peak); math.Abs(got-wantPeak) > .002 {
+				return fmt.Errorf("step %d %v: %s audible peak %g, want %g (%g dB)", step, op, name, got, wantPeak, want)
+			}
+			counts.checks++
 		}
 	}
 	return nil
@@ -361,7 +471,7 @@ func minimizePreviewLifecycle(t *testing.T, operations []previewOperation) []pre
 		for i := range minimal {
 			candidate := append([]previewOperation(nil), minimal[:i]...)
 			candidate = append(candidate, minimal[i+1:]...)
-			if runPreviewLifecycle(t, candidate) != nil {
+			if runPreviewLifecycle(t, candidate, nil) != nil {
 				minimal, changed = candidate, true
 				break
 			}
@@ -371,17 +481,16 @@ func minimizePreviewLifecycle(t *testing.T, operations []previewOperation) []pre
 }
 
 func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
-	const seeds, steps = 2048, 24
-	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture"}
+	const seeds, steps = 2048, 36
+	kinds := [...]string{"set", "cancel", "commit", "close", "drop", "offer", "activate", "newer-gesture", "reorder", "add", "remove", "shift"}
 	values := [...]float32{-12, -9, -6, -3, 0}
+	var counts previewLifecycleCounts
 	for seed := int64(0); seed < seeds; seed++ {
 		random := rand.New(rand.NewSource(seed))
 		operations := make([]previewOperation, 0, steps+3)
 		lastGestureClient := -1
 		for step := 0; step < steps; step++ {
-			op := previewOperation{
-				kind: kinds[random.Intn(len(kinds))], client: random.Intn(3), value: values[random.Intn(len(values))],
-			}
+			op := previewOperation{kind: kinds[random.Intn(len(kinds))], client: random.Intn(3), track: random.Intn(4), value: values[random.Intn(len(values))]}
 			if op.kind == "newer-gesture" && lastGestureClient >= 0 {
 				op.client = (lastGestureClient + 1 + random.Intn(2)) % 3
 			}
@@ -393,10 +502,10 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 		for client := 0; client < 3; client++ {
 			operations = append(operations, previewOperation{kind: "close", client: client})
 		}
-		if err := runPreviewLifecycle(t, operations); err != nil {
+		if err := runPreviewLifecycle(t, operations, &counts); err != nil {
 			minimal := minimizePreviewLifecycle(t, operations)
 			t.Fatalf("seed %d: %v; minimized counterexample: %v", seed, err, minimal)
 		}
 	}
-	t.Logf("%d seeds, %d random operations, plus final closure of every client", seeds, seeds*steps)
+	t.Logf("%d seeds (0..%d), %d random operations plus final closure of every client; %d per-track lifecycle cases; sets %d, cancels %d, teardowns %d, activations %d, reorders %d, additions %d, removals %d, index shifts %d", seeds, seeds-1, seeds*steps, counts.checks, counts.sets, counts.cancels, counts.teardowns, counts.activations, counts.reorders, counts.adds, counts.removes, counts.shifts)
 }

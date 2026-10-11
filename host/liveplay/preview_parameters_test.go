@@ -203,7 +203,7 @@ func TestPreviewParameterVoicePairsAndBoundaries(t *testing.T) {
 					if _, err := p.Read(pcm[:]); err != nil {
 						t.Fatalf("accepted %s boundary %g faulted playback: %v", spec.Name, value, err)
 					}
-					if p.appliedVersions[0][spec.ID] != version || !p.current.Engine.Playing() {
+					if p.overrides.Load().tracks["bass"].state.appliedVersions[spec.ID] != version || !p.current.Engine.Playing() {
 						t.Fatalf("accepted %s boundary %g was not applied to a running engine", spec.Name, value)
 					}
 				}
@@ -373,7 +373,7 @@ func TestPreviewDrumValidationDoesNotAllocateOnTheRenderThread(t *testing.T) {
 				if reject {
 					// Simulate an incompatible snapshot arriving at activation.
 					// Public preview admission rejects this kernel boundary.
-					snapshots[i].values[0][kernel.ParamDrumSdTune].value = .7
+					snapshots[i].tracks["bass"].values[kernel.ParamDrumSdTune].value = .7
 				}
 			}
 			var output [blockFrames * 8]byte

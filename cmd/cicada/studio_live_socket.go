@@ -139,10 +139,6 @@ func (s *studio) handleLiveMessage(data []byte, previews livePreviewSession) err
 	if !ok || trackID == "" {
 		return fmt.Errorf("unknown preview entity %q", input.Entity)
 	}
-	track, ok := stream.TrackIndex(trackID)
-	if !ok {
-		return fmt.Errorf("unknown preview entity %q", input.Entity)
-	}
 	id, ok := kernel.FindParam(input.Param)
 	if !ok {
 		return fmt.Errorf("unknown preview parameter %q", input.Param)
@@ -152,12 +148,19 @@ func (s *studio) handleLiveMessage(data []byte, previews livePreviewSession) err
 		if input.Value == nil {
 			return fmt.Errorf("preview-set requires a value")
 		}
-		version, err := stream.SetPreview(track, id, *input.Value)
+		version, err := stream.SetTrackPreview(trackID, id, *input.Value)
 		if err != nil {
 			return err
 		}
 		previews[key] = livePreview{stream: stream, version: version}
 		return nil
+	}
+	// End a known gesture by its version even if its track was removed. The
+	// render thread has already retired it, and socket ownership can be dropped.
+	if _, owned := previews[key]; !owned {
+		if _, present := stream.TrackIndex(trackID); !present {
+			return fmt.Errorf("unknown preview entity %q", input.Entity)
+		}
 	}
 	if input.Commit {
 		if preview, ok := previews[key]; ok && preview.stream == stream {
