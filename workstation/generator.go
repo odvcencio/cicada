@@ -92,7 +92,7 @@ func (s *studioApp) generatePhrase(ctx *action.Context) error {
 	if err != nil {
 		return action.Validation(err.Error(), nil, ctx.FormData)
 	}
-	receipt, err := s.storeDraft(result.Notation, ctx.FormData["revision"], session.Token(ctx.Request), "phrase")
+	receipt, err := s.storeDraft(result.Notation, ctx.FormData["revision"], workspaceOwner(ctx.Request), "phrase")
 	if err != nil {
 		return err
 	}
@@ -130,7 +130,7 @@ func (s *studioApp) generator(ctx *server.Context, v workspace, csrf string) gos
 	controls = append(controls, field("Allow downbeat rest", gosx.El("input", attrs)), submit("", "", "Preview phrase"))
 	form := ui.Form(ui.FormProps{Action: "/__actions/generate", CSRF: csrf, Revision: v.Revision, ReturnTo: "/?panel=generator", Class: "action-form generator-form"}, controls...)
 	preview := gosx.Fragment()
-	if generated, ok := s.draft(store.String("phrase-preview"), session.Token(ctx.Request)); ok {
+	if generated, ok := s.draft(store.String("phrase-preview"), workspaceOwner(ctx.Request)); ok {
 		preview = gosx.Fragment(gosx.El("h3", gosx.Text("Generated score preview")), gosx.El("pre", gosx.Attrs(gosx.Attr("class", "history-diff")), gosx.Text(generated.Source)), s.mutationControls(v, csrf, values, store.String("phrase-locks"), generated.Source), s.form(workspace{Revision: generated.Revision}, csrf, "generator", "source", hidden("content", generated.Source), submit("", "", "Replace open score with this phrase")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Applying replaces the complete score. Undo restores the previous score.")))
 	}
 	return ui.Panel(ui.PanelProps{ID: "generator", Title: "Phrase generator", Description: "Deterministic acid phrases across eight scales. Preview before applying."}, form, preview)
@@ -157,7 +157,7 @@ func previewBar(source string) (seq.Pattern, error) {
 
 func (s *studioApp) mutatePhrase(ctx *action.Context) error {
 	store := session.Current(ctx.Request)
-	generated, ok := s.draft(store.String("phrase-preview"), session.Token(ctx.Request))
+	generated, ok := s.draft(store.String("phrase-preview"), workspaceOwner(ctx.Request))
 	if !ok {
 		return action.Validation("Generate a preview before mutating it.", nil, nil)
 	}
@@ -213,7 +213,7 @@ func (s *studioApp) mutatePhrase(ctx *action.Context) error {
 	if p, diagnostics := project.FromScore(score); p == nil {
 		return fmt.Errorf("variation is invalid: %v", diagnostics)
 	}
-	receipt, err := s.storeDraft(updated, generated.Revision, session.Token(ctx.Request), "phrase")
+	receipt, err := s.storeDraft(updated, generated.Revision, workspaceOwner(ctx.Request), "phrase")
 	if err != nil {
 		return err
 	}
