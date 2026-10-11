@@ -94,7 +94,7 @@ func replaceDeclaration(ctx *Context, intent Intent) error {
 	if len(after) != 1 || !declarationMatches(after[0].kind, in.Declaration) || after[0].name != in.Name {
 		return fmt.Errorf("replacement must contain one matching declaration")
 	}
-	updated, err := ReplaceSpan(ctx.Source, target.start, target.end, []byte(in.Text))
+	updated, err := ReplaceSpan(ctx.Source, ctx.Options.Path, Span{target.start, target.end, in.Text, ctx.Options.Path})
 	if err != nil {
 		return err
 	}

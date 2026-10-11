@@ -101,10 +101,10 @@ func sceneSettingSource(ctx *Context, sceneID, path string, raw json.RawMessage,
 			continue
 		}
 		if remove {
-			return ReplaceSpan(source, int(assignment.StartByte()), int(assignment.EndByte()), nil)
+			return ReplaceSpan(source, ctx.Options.Path, Span{int(assignment.StartByte()), int(assignment.EndByte()), "", ctx.Options.Path})
 		}
 		value := walker.Field(assignment, "value")
-		return ReplaceSpan(source, int(value.StartByte()), int(value.EndByte()), []byte(literal))
+		return ReplaceSpan(source, ctx.Options.Path, Span{int(value.StartByte()), int(value.EndByte()), literal, ctx.Options.Path})
 	}
 	if remove {
 		return nil, fmt.Errorf("scene %s has no point for %s", sceneID, path)
@@ -114,5 +114,5 @@ func sceneSettingSource(ctx *Context, sceneID, path string, raw json.RawMessage,
 		newline = "\r\n"
 	}
 	at := int(node.StartByte()) + bytes.IndexByte(source[node.StartByte():node.EndByte()], '{') + 1
-	return ReplaceSpan(source, at, at, []byte(newline+"  "+path+" = "+literal+newline))
+	return ReplaceSpan(source, ctx.Options.Path, Span{at, at, newline + "  " + path + " = " + literal + newline, ctx.Options.Path})
 }

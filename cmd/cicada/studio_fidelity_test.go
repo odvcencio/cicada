@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/notation"
 )
@@ -74,11 +75,11 @@ func assertRoute(t *testing.T, fixture []byte, route string, body studioEdit, wa
 
 func instrumentParameterFixture(t *testing.T) []byte {
 	t.Helper()
-	source, err := addPresetSource([]byte(presetEditScore), "warm-pad", "my-pad", "keys")
+	source, err := edits.Apply([]byte(presetEditScore), edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{&edits.AddPreset{Preset: "warm-pad", Instrument: "my-pad", Track: "keys"}}}, edits.Options{Compiler: &studioCompiler{path: studioTestPath(t, presetEditScore)}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	return source
+	return source.Source
 }
 
 func TestRouteParity_InstrumentSetParameter(t *testing.T) {

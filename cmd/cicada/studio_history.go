@@ -89,13 +89,23 @@ func newStudioHistory(source []byte) *studioHistory {
 	return &studioHistory{lastSource: bytes.Clone(source), lastRevision: studioRevision(source)}
 }
 
-func (h *studioHistory) expectRecordedTake(revision string) {
+// expectRecordedTake arms the playback handoff before source exchange. The
+// returned cancellation restores the prior handoff if the commit fails.
+func (h *studioHistory) expectRecordedTake(revision string) func() {
 	if revision == "" {
-		return
+		return nil
 	}
 	h.mu.Lock()
+	previous := h.pendingTakeRevision
 	h.pendingTakeRevision = revision
 	h.mu.Unlock()
+	return func() {
+		h.mu.Lock()
+		defer h.mu.Unlock()
+		if h.pendingTakeRevision == revision {
+			h.pendingTakeRevision = previous
+		}
+	}
 }
 
 func (h *studioHistory) consumeRecordedTake(revision string) bool {

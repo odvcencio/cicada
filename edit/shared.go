@@ -74,7 +74,11 @@ func resolveShared(ctx *Context, entity EntityID, policy string) ([]byte, error)
 	case "definition":
 		return ctx.Source, nil
 	case "detach":
-		return expandPatternUses(ctx, pattern, Offset(ctx.Source, at))
+		start, err := Offset(ctx.Source, ctx.Options.Path, at)
+		if err != nil {
+			return nil, err
+		}
+		return expandPatternUses(ctx, pattern, start)
 	default:
 		return nil, &SharedPhraseError{Pattern: pattern, Phrase: phrase, Step: index}
 	}
@@ -174,10 +178,10 @@ func expandPatternUses(ctx *Context, id string, useStart int) ([]byte, error) {
 				text = "| " + text
 			}
 			previousUse = false
-			edits = append(edits, Span{int(part.StartByte()), int(part.EndByte()), text})
+			edits = append(edits, Span{int(part.StartByte()), int(part.EndByte()), text, ctx.Options.Path})
 		}
 	}
-	return PatchSpans(source, edits)
+	return PatchSpans(source, ctx.Options.Path, edits)
 }
 
 // Patch chord pitches in their authored spans so transposition retains every
@@ -192,9 +196,9 @@ func transposedPhraseToken(token notation.StepToken, step *Step) (string, error)
 	}
 	patches := make([]Span, len(step.Notes))
 	for i, pitch := range token.ChordPitches {
-		patches[i] = Span{pitch.Start, pitch.End, sourcePitch(step.Notes[i])}
+		patches[i] = Span{pitch.Start, pitch.End, sourcePitch(step.Notes[i]), token.Position.File}
 	}
-	updated, err := PatchSpans([]byte(token.Text), patches)
+	updated, err := PatchSpans([]byte(token.Text), token.Position.File, patches)
 	return string(updated), err
 }
 

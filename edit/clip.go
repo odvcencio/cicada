@@ -104,7 +104,7 @@ func newAudioTrackSource(ctx *Context, name string) ([]byte, error) {
 	if at > 0 && source[at-1] != '\n' {
 		text = newline + text
 	}
-	return ReplaceSpan(source, at, at, []byte(text))
+	return ReplaceSpan(source, ctx.Options.Path, Span{at, at, text, ctx.Options.Path})
 }
 
 func clipSettingsSource(ctx *Context, id string, settings *SetClipSettings) ([]byte, error) {
@@ -156,7 +156,7 @@ func clipSettingsSource(ctx *Context, id string, settings *SetClipSettings) ([]b
 		name := walker.Text(walker.Field(param, "name"))
 		if text, ok := values[name]; ok {
 			value := walker.Field(param, "value")
-			edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), text})
+			edits = append(edits, Span{int(value.StartByte()), int(value.EndByte()), text, ctx.Options.Path})
 			delete(values, name)
 		}
 	}
@@ -168,7 +168,7 @@ func clipSettingsSource(ctx *Context, id string, settings *SetClipSettings) ([]b
 	}
 	if len(fields) > 0 {
 		at := int(node.StartByte()) + bytes.IndexByte(source[node.StartByte():node.EndByte()], '{') + 1
-		edits = append(edits, Span{at, at, " " + strings.Join(fields, " ") + " "})
+		edits = append(edits, Span{at, at, " " + strings.Join(fields, " ") + " ", ctx.Options.Path})
 	}
-	return PatchSpans(source, edits)
+	return PatchSpans(source, ctx.Options.Path, edits)
 }
