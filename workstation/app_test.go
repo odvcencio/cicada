@@ -172,7 +172,9 @@ func TestActionsRequireCSRFAndRejectForeignOrigin(t *testing.T) {
 func TestNativeInvalidLargeDraftSurvivesRedirect(t *testing.T) {
 	address, client, _ := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=code"))
-	draft := strings.Repeat("// preserved draft\n", 3000) + "invalid score\n"
+	// Native forms may exceed GoSX's default 1 MiB CSRF read limit while
+	// remaining within this app's 2 MiB score submission limit.
+	draft := strings.Repeat("// preserved draft\n", 70000) + "invalid score\n"
 	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "content": {draft}, "__gosx_return_to": {"/?panel=code"}}
 	response := post(t, client, address+"/__actions/source", form, false, address)
 	if response.StatusCode != 303 || response.Header.Get("Location") != "/?panel=code" {
