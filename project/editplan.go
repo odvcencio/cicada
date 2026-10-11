@@ -101,12 +101,22 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 	for _, export := range p.Exports {
 		plan.Names[export.ID] = true
 	}
+	values := make(map[string]float64)
+	for _, address := range ParamAddresses(p) {
+		if value, ok := address.Value.(float64); ok {
+			values[address.Address] = value
+		}
+	}
 	plan.ResolveParam = func(path string) (edit.Param, error) {
 		resolved, err := ResolveParameterPath(p, path)
 		if err != nil {
 			return edit.Param{}, err
 		}
-		return edit.Param{Path: path, Descriptor: resolved.Descriptor}, nil
+		param := edit.Param{Path: path, Descriptor: resolved.Descriptor}
+		if value, ok := values[path]; ok {
+			param.Value = &value
+		}
+		return param, nil
 	}
 	return plan
 }
