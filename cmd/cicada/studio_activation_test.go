@@ -2,19 +2,115 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
+	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 )
+
+func TestProposalAcceptanceActivatesWithOneHistoryEntry(t *testing.T) {
+	for _, unchanged := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unchanged-%v", unchanged), func(t *testing.T) {
+			source := "cicada 2\n" + studioScore
+			s, stream := activationStudio(t, source)
+			s.history = newStudioHistory([]byte(source))
+			s.transport.history = s.history
+			handler := s.domainRoutes()
+			want := float32(-3)
+			intents := []edits.Intent{
+				&edits.SetParam{Entity: "param:bass.level", Value: json.RawMessage(`-3`)},
+				&edits.SetParam{Entity: "param:bass.pan", Value: json.RawMessage(`0.25`)},
+			}
+			if unchanged {
+				want = -6
+				intents = []edits.Intent{&edits.ReplaceText{Source: source}}
+			}
+			if _, err := stream.SetTrackPreview("bass", kernel.ParamMixGain, want); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := stream.SetTrackPreview("drums", kernel.ParamMixGain, -3); err != nil {
+				t.Fatal(err)
+			}
+			before := noopFiles(t, filepath.Dir(s.path))
+			id := stageProposal(t, handler, source, "Live bass proposal", intents...)
+			if !unchanged && (len(s.transport.previewOps) != 2 || s.transport.previewOps[0].Track != 0 || s.transport.previewOps[0].Value != -3) {
+				t.Fatalf("proposal preview stub lost candidate operations: %+v", s.transport.previewOps)
+			}
+			if stream.LandedRevision() != 0 || len(studioHistoryEdits(t, handler)) != 0 {
+				t.Fatal("staging landed an edit or wrote history")
+			}
+			response := studioCall(t, handler, "/api/proposals/"+id+"/accept", map[string]any{})
+			var reply map[string]any
+			if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &reply) != nil {
+				t.Fatalf("accept: %d %s", response.Code, response.Body.String())
+			}
+			saved, err := os.ReadFile(s.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reply["source"] != string(saved) || reply["revision"] != studioRevision(saved) || reply["playingRevision"] != studioRevision(saved) {
+				t.Fatalf("accept lost canonical source/revision: %+v", reply)
+			}
+			if len(s.proposals) != 0 || len(s.transport.previewOps) != 0 {
+				t.Fatal("acceptance retained the proposal or its stub preview")
+			}
+			if stream.LandedRevision() != 0 {
+				t.Fatal("acceptance landed a patch on the control thread")
+			}
+			renderStudioPreview(t, stream, 256)
+			s.transport.poll()
+			if stream.LandedRevision() != 1 || s.transport.snapshot().Pending {
+				t.Fatal("accepted proposal did not activate without a replacement offer")
+			}
+			if value, ok := stream.CommittedValue(0, kernel.ParamMixGain); !ok || value != want {
+				t.Fatalf("accepted value %g/%v, want %g", value, ok, want)
+			}
+			if _, active := stream.OverrideValue(0, kernel.ParamMixGain); active {
+				t.Fatal("acceptance did not retire the matching live preview")
+			}
+			if value, active := stream.OverrideValue(1, kernel.ParamMixGain); !active || value != -3 {
+				t.Fatal("acceptance retired an unrelated live gesture")
+			}
+			history := studioHistoryEdits(t, handler)
+			if unchanged {
+				if reply["unchanged"] != true || string(saved) != source || len(history) != 0 {
+					t.Fatalf("no-op acceptance changed source/history: %+v %+v", reply, history)
+				}
+				if after := noopFiles(t, filepath.Dir(s.path)); !reflect.DeepEqual(before, after) {
+					t.Fatal("no-op acceptance wrote files")
+				}
+				return
+			}
+			records, skipped, err := editlog.ReadLog(editlog.Path(s.path))
+			if err != nil || skipped != 0 || len(history) != 1 || history[0].Label != "Live bass proposal" || len(records) != 1 || records[0].Label != "Live bass proposal" || records[0].Author != "tester" || records[0].Session != "proposal-session" || len(records[0].Intents) != 2 {
+				t.Fatalf("accepted history/log: %+v %+v, skipped %d, error %v", history, records, skipped, err)
+			}
+			response = studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(saved)})
+			if response.Code != http.StatusOK {
+				t.Fatal(response.Body.String())
+			}
+			renderStudioPreview(t, stream, 256)
+			if restored, err := os.ReadFile(s.path); err != nil || string(restored) != source {
+				t.Fatal("one undo did not restore the proposal source")
+			}
+			if value, ok := stream.CommittedValue(0, kernel.ParamMixGain); !ok || value != -6 || stream.LandedRevision() != 2 {
+				t.Fatalf("undo did not activate original gain: %g/%v, revision %d", value, ok, stream.LandedRevision())
+			}
+		})
+	}
+}
 
 func activationStudio(t *testing.T, source string) (*studio, *liveplay.Player) {
 	s, stream, _ := activationStudioEngine(t, source)
