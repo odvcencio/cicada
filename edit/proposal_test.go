@@ -102,3 +102,35 @@ func TestStagePreviewUsesFinalCandidateValues(t *testing.T) {
 		})
 	}
 }
+
+func TestStageOmitsSupersededParameterOwners(t *testing.T) {
+	source := "cicada 2\ntrack bass acid { level=-6dB }\ntrack drums drums {}\npattern p acid { c3 . }\npattern beat drums { bd: x... }\nscene main { bass=p drums=beat }\nsong { main }\n"
+	for _, removed := range []bool{false, true} {
+		t.Run(map[bool]string{false: "renamed", true: "removed"}[removed], func(t *testing.T) {
+			final := strings.ReplaceAll(source, "bass", "lead")
+			if removed {
+				final = strings.Replace(source, "track bass acid { level=-6dB }\n", "", 1)
+				final = strings.Replace(final, "bass=p ", "", 1)
+			}
+			proposal := edits.Proposal{Envelope: edits.Envelope{Version: 1, Intents: []edits.Intent{
+				&edits.SetParam{Entity: "param:bass.level", Value: json.RawMessage(`-3`)},
+				&edits.SetParam{Entity: "param:drums.pan", Value: json.RawMessage(`0.25`)},
+				&edits.ReplaceText{Source: final},
+			}}}
+			staged, err := edits.Stage([]byte(source), proposal, edits.Options{Compiler: m5Compiler{}})
+			track := 1
+			if removed {
+				track = 0
+			}
+			want := []edits.PreviewOp{{Kind: "setparam", Track: track, Param: "pan", Value: 0}}
+			if err != nil || string(staged.Result.Source) != final || !reflect.DeepEqual(staged.Ops, want) {
+				t.Fatalf("final candidate preview: %+v, %v; want %+v", staged, err, want)
+			}
+			// A later replacement cannot rescue an invalid application-time owner.
+			proposal.Envelope.Intents[0] = &edits.SetParam{Entity: "param:missing.level", Value: json.RawMessage(`-3`)}
+			if staged, err := edits.Stage([]byte(source), proposal, edits.Options{Compiler: m5Compiler{}}); err == nil || staged != nil {
+				t.Fatalf("invalid earlier intent accepted: %+v, %v", staged, err)
+			}
+		})
+	}
+}

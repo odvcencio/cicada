@@ -27,7 +27,7 @@ func Stage(source []byte, proposal Proposal, opts Options) (*Staged, error) {
 	if err != nil {
 		return nil, err
 	}
-	ops, err := PreviewOps(result.Plan, proposal.Envelope.Intents)
+	ops, err := candidatePreviewOps(result.Plan, proposal.Envelope.Intents)
 	if err != nil {
 		return nil, err
 	}

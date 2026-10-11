@@ -83,12 +83,9 @@ func TestGeneratedIntentBatchesMatchSequentialApplyAndCommit(t *testing.T) {
 					}
 					var sequential *edits.Result
 					for _, intent := range intents {
-						opts, err := s.editOptions()
+						opts, err := s.editOptions(state[path], nil)
 						if err != nil {
 							t.Fatal(err)
-						}
-						for _, source := range sources {
-							opts.Sources = append(opts.Sources, notation.SourceFile{Path: source.Path, Source: state[source.Path]})
 						}
 						sequential, err = edits.Apply(state[path], edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{intent}}, opts)
 						if err != nil {
@@ -104,11 +101,10 @@ func TestGeneratedIntentBatchesMatchSequentialApplyAndCommit(t *testing.T) {
 						write(state)
 					}
 					write(initial)
-					opts, err := s.editOptions()
+					opts, err := s.editOptions(entry, nil)
 					if err != nil {
 						t.Fatal(err)
 					}
-					opts.Sources = sources
 					env := edits.Envelope{Version: edits.EnvelopeVersion, Revision: edits.Revision(entry), Intents: intents}
 					batch, err := edits.Apply(entry, env, opts)
 					if err != nil {
@@ -158,7 +154,7 @@ func TestIntentBatchUsesStagedManifestEdition(t *testing.T) {
 				t.Fatal(err)
 			}
 			s := &studio{path: path}
-			opts, err := s.editOptions()
+			opts, err := s.editOptions(entry, nil)
 			if err != nil {
 				t.Fatal(err)
 			}

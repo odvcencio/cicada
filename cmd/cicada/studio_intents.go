@@ -122,7 +122,9 @@ func (s *studio) upgradeEdition(manifestPath string) func([]byte, map[string][]b
 	}
 }
 
-func (s *studio) editOptions() (edits.Options, error) {
+// editOptions supplies the complete project inputs for every intent route.
+// source is the current entry buffer; files holds acceptance-time candidates.
+func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Options, error) {
 	editionNumber, manifestPath, err := scoreEdition(s.path)
 	if err != nil {
 		return edits.Options{}, err
@@ -132,11 +134,34 @@ func (s *studio) editOptions() (edits.Options, error) {
 	if manifestPath == "" {
 		editionNumber = 0
 	}
-	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath)}
+	absolute, err := filepath.Abs(s.path)
+	if err != nil {
+		return edits.Options{}, err
+	}
+	overrides := make(map[string][]byte, len(files)+1)
+	for path, data := range files {
+		overrides[path] = data
+	}
+	overrides[absolute] = source
+	sources, err := project.ReadSources(s.path, overrides)
+	if err != nil {
+		return edits.Options{}, err
+	}
+	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath)}
 	if manifestPath != "" {
-		if opts.Manifest, err = os.ReadFile(manifestPath); err != nil {
+		var supplied bool
+		opts.Manifest, supplied = overrides[manifestPath]
+		if !supplied {
+			opts.Manifest, err = os.ReadFile(manifestPath)
+		}
+		if err != nil {
 			return edits.Options{}, err
 		}
+		manifest, err := edition.ParseProjectManifest(opts.Manifest)
+		if err != nil {
+			return edits.Options{}, err
+		}
+		opts.Edition = manifest.Edition
 	}
 	opts.ParseProject = func(source []byte, files map[string][]byte) (*notation.Score, []notation.Diagnostic, error) {
 		absolute, err := filepath.Abs(s.path)
@@ -199,7 +224,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving", "revision": studioRevision(current), "source": string(current)})
 		return
 	}
-	opts, err := s.editOptions()
+	opts, err := s.editOptions(current, nil)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -280,7 +305,7 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	opts, err := s.editOptions()
+	opts, err := s.editOptions(current, nil)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -359,6 +384,18 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
+	overrides := make(map[string][]byte, len(result.Files))
+	for _, file := range result.Files {
+		overrides[file.Path] = file.After
+	}
+	opts, err := s.editOptions(result.Source, overrides)
+	if err == nil {
+		_, err = opts.Compiler.Compile(result.Source, overrides)
+	}
+	if err != nil {
+		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		return
+	}
 	if s.history != nil {
 		bar, step := s.historyPosition()
 		s.history.observe(current, bar, step)
@@ -367,7 +404,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 	mutation := studioMutation{Source: result.Source, Files: files, Response: result.Response}
 	// Revalidate at acceptance, including project dependencies that may have
 	// changed since staging. The tail commits this candidate once.
-	outcome := s.commitMutationLocked(edit, current, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &proposal.Envelope})
+	outcome := s.commitMutationLocked(edit, current, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &proposal.Envelope, compiled: opts.Compiler.(*studioCompiler).compiled(result.Source, result.Files)})
 	if outcome.Status == http.StatusOK {
 		s.removeProposal(id)
 		if outcome.Written && s.previewProposal != "" {

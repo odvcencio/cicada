@@ -43,6 +43,22 @@ func PreviewOps(plan *Plan, intents []Intent) ([]PreviewOp, error) {
 	return ops, nil
 }
 
+// candidatePreviewOps runs after Apply has validated every intent. Parameters
+// that later intents removed or renamed cannot override the final candidate.
+// Direct PreviewOps calls retain their unknown-target errors.
+func candidatePreviewOps(plan *Plan, intents []Intent) ([]PreviewOp, error) {
+	current := make([]Intent, 0, len(intents))
+	for _, intent := range intents {
+		if in, ok := intent.(*SetParam); ok && plan != nil && plan.ResolveParam != nil {
+			if _, err := Resolve(plan, in.Entity); err != nil {
+				continue
+			}
+		}
+		current = append(current, intent)
+	}
+	return PreviewOps(plan, current)
+}
+
 // Preview describes numeric track parameters. Other parameter owners and
 // nonnumeric values remain in the source diff until the engine supports them.
 func (in *SetParam) Preview(plan *Plan, _ Intent) ([]PreviewOp, error) {
@@ -68,7 +84,10 @@ func (in *SetParam) Preview(plan *Plan, _ Intent) ([]PreviewOp, error) {
 		return nil, nil
 	}
 	value := param.Descriptor.Default
-	if in.Value != nil {
+	if param.Value != nil {
+		// The final compiled value can supersede the original literal.
+		value = *param.Value
+	} else if in.Value != nil {
 		literal, err := CanonicalMixerLiteral(param.Descriptor, in.Value)
 		if err != nil {
 			return nil, err
@@ -81,11 +100,6 @@ func (in *SetParam) Preview(plan *Plan, _ Intent) ([]PreviewOp, error) {
 	}
 	if param.Descriptor.Curve == "enum" || param.Descriptor.Curve == "toggle" {
 		return nil, nil
-	}
-	// Later intents can replace this write. Preview the final candidate's
-	// effective value, including compiled defaults after a source replacement.
-	if param.Value != nil {
-		value = *param.Value
 	}
 	return []PreviewOp{{Kind: in.Kind(), Track: track, Param: field, Value: value}}, nil
 }
