@@ -28,6 +28,13 @@ func compiledPreviewRestoreScore(t *testing.T, source string) liveplay.Score {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if strings.Contains(source, "bass.") {
+		plan, err := buildLivePlan(path, []byte(source), 48_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan.prepareScore(&score)
+	}
 	return score
 }
 
@@ -86,14 +93,17 @@ func previewRestoreSource(fixture previewRestoreFixture, descriptor paramdefs.De
 		source = "send reverb"
 	}
 	body := source + "=" + authoredPreviewRestoreValue(descriptor, value)
+	sceneSetting := ""
 	if fixture.kit && strings.HasPrefix(descriptor.ID, "drum.") {
-		body = "" // Built-in kit lanes do not accept track synthesis settings.
+		body = "" // Named-kit synthesis settings are authored on the scene.
+		sceneSetting = " bass." + descriptor.Path + "=" + authoredPreviewRestoreValue(descriptor, value)
 	}
 	if fixture.family == "guitar" {
 		body += " experimental=on"
 	}
 	pattern := strings.Replace(fixture.pattern, "steps=2 {", "{ step=1/64 gate=25% ", 1)
 	witness, scene := "", "bass=beat"
+	scene += sceneSetting
 	if descriptor.ID == "mix.solo" {
 		// Solo requires another sounding track to have an audible effect.
 		witness = "instrument witness { voice mono { out=sine(pitch)*env(gate,80ms) } }\ntrack other witness {}\npattern second notes { step=1/64 gate=25% g5 . }\n"
@@ -113,9 +123,6 @@ func TestPreviewCompiledParameterLifecycleMatrix(t *testing.T) {
 			}
 			pairs++
 			values := []float64{descriptor.Default, descriptor.Min, descriptor.Max}
-			if fixture.kit && strings.HasPrefix(descriptor.ID, "drum.") {
-				values = values[:1] // Effective prepared defaults; authored bounds use literal drums.
-			}
 			for boundary, value := range values {
 				for _, exit := range []string{"cancel", "socket-teardown"} {
 					t.Run(fmt.Sprintf("%s/%s/%d/%s", fixture.name, descriptor.ID, boundary, exit), func(t *testing.T) {
@@ -127,10 +134,19 @@ func TestPreviewCompiledParameterLifecycleMatrix(t *testing.T) {
 							t.Fatal(err)
 						}
 						defer p.Close()
+						if len(score.SceneParameters) > 0 {
+							renderStudioPreview(t, p, 256)
+						}
 						id, _ := kernel.FindParam(descriptor.ID)
 						committed, ok := p.CommittedValue(0, id)
 						if !ok {
 							t.Fatalf("compiled %s has no committed value", descriptor.ID)
+						}
+						if fixture.kit && strings.HasPrefix(descriptor.ID, "drum.") {
+							expected, err := project.ParameterFloat32Value(descriptor.Min, descriptor.Max, value)
+							if err != nil || committed != expected {
+								t.Fatalf("scene-authored %s committed %g, want %g: %v", descriptor.ID, committed, expected, err)
+							}
 						}
 						s := &studio{transport: &studioTransport{stream: p}}
 						session := make(livePreviewSession)

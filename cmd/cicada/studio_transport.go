@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,6 +36,10 @@ type studioTransport struct {
 	sampleRate        int
 	cancel            context.CancelFunc
 	last              [32]byte
+	livePlan          *livePlan
+	pendingPlan       *livePlan
+	arena             *liveplay.PatchArena
+	patchRevision     uint64
 	playing           bool
 	browserPlaying    bool
 	browserSampleRate int
@@ -220,10 +225,16 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 		}
 		if index >= 0 {
 			if prepared != nil && preparedHash != t.last {
-				if err := t.stream.Offer(*prepared); err != nil {
+				next := *prepared
+				plan := t.planAtFingerprint(preparedHash, sampleRate)
+				if plan != nil {
+					plan.prepareScore(&next)
+				}
+				if err := t.stream.Offer(next); err != nil {
 					return err
 				}
 				t.last, t.pending = preparedHash, true
+				t.pendingPlan = plan
 			}
 			requestID, err := t.stream.QueueSongEntry(index, scene)
 			if err != nil {
@@ -287,6 +298,12 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			return err
 		}
 	}
+	// Plans and scene settings must describe the same committed source as the
+	// initial score. Capture backing has its own filtered engine authority.
+	initialPlan := t.planAtFingerprint(fingerprint, sampleRate)
+	if initialPlan != nil {
+		initialPlan.prepareScore(&initial)
+	}
 	stream, err := liveplay.New(initial, sampleRate)
 	if err != nil {
 		return err
@@ -323,6 +340,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.stream, t.audio, t.sampleRate, t.last, t.cancel = stream, audio, sampleRate, fingerprint, cancel
+	t.livePlan, t.pendingPlan, t.arena, t.patchRevision = initialPlan, nil, liveplay.NewPatchArena(16), 0
 	t.playing, t.errText = true, ""
 	if index >= 0 {
 		t.pendingSong, t.pendingSongID = scene, requestID
@@ -334,6 +352,24 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	t.publishHealthLocked()
 	go t.watch(ctx, stream)
 	return nil
+}
+
+// Called with mu held. A hash mismatch leaves activation unavailable until
+// the watcher offers a complete plan; playback preparation keeps its behavior.
+func (t *studioTransport) planAtFingerprint(fingerprint [32]byte, rate int) *livePlan {
+	if t.audio != nil && t.audio.Armed() {
+		return nil
+	}
+	source, err := os.ReadFile(t.path)
+	if err != nil {
+		return nil
+	}
+	hash, err := playSourceHashBytes(t.path, source)
+	if err != nil || hash != fingerprint {
+		return nil
+	}
+	plan, _ := buildLivePlan(t.path, source, rate)
+	return plan
 }
 
 // publishHealthLocked publishes one health frame. Call it with t.mu held.
@@ -418,6 +454,7 @@ func (t *studioTransport) stopLocked() {
 		t.stream.Close()
 		t.stream = nil
 	}
+	t.livePlan, t.pendingPlan, t.arena = nil, nil, nil
 	// A discarded stream has no muted tracks; do not report them as stopped.
 	t.stoppedTracks = nil
 	t.activeSlots = nil
@@ -632,6 +669,17 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 		t.errText = event.Name
 	case "preview-error":
 		t.errText = fmt.Sprintf("Preview %s on track %s ended, but its saved value could not be restored", event.Name, event.Track)
+	case "patch-error":
+		t.livePlan = nil
+		t.last = [32]byte{} // Let poll reconstruct the committed score.
+		t.errText = event.Name
+	case "edit":
+		t.landed = event.Bar
+		if t.pendingPlan == nil || event.Revision == t.pendingPlan.revision {
+			t.livePlan, t.pendingPlan, t.pending = t.pendingPlan, nil, false
+		} else {
+			t.livePlan = nil // A newer offered revision has not landed yet.
+		}
 	default:
 		t.pending, t.landed = false, event.Bar
 	}
@@ -688,12 +736,13 @@ func (t *studioTransport) poll() {
 	if sampleRate <= 0 {
 		sampleRate = liveSampleRate
 	}
-	project, err := compileStudioSource(t.path, source)
+	plan, err := buildLivePlan(t.path, source, sampleRate)
 	var next liveplay.Score
 	if err == nil {
-		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
+		next, err = compileLiveProjectAtRate(t.path, plan.project, sampleRate)
 	}
 	if err == nil {
+		plan.prepareScore(&next)
 		err = stream.Offer(next)
 	}
 	if err != nil {
@@ -701,7 +750,12 @@ func (t *studioTransport) poll() {
 		return
 	}
 	t.mu.Lock()
+	if t.stream != stream {
+		t.mu.Unlock()
+		return
+	}
 	t.last = fingerprint
+	t.pendingPlan = plan
 	// Clear the transport error when a valid revision lands (UX review finding 2).
 	t.pending, t.errText = true, ""
 	position := stream.Position()
@@ -709,6 +763,59 @@ func (t *studioTransport) poll() {
 	if t.history != nil && !t.history.consumeRecordedTake(studioRevision(source)) {
 		t.history.record("queued", "Edit queued for the next bar", position.Bar, position.Step, "")
 	}
+}
+
+// activateLocked runs after a successful commit while pollMu still covers the
+// file exchange. An offered engine keeps authority until its render event; a
+// subsequent commit cannot patch against that engine before it starts playing.
+func (t *studioTransport) activateLocked(path string, source []byte, fingerprint [32]byte) {
+	t.mu.Lock()
+	rate := t.sampleRate
+	t.mu.Unlock()
+	if rate <= 0 {
+		rate = liveSampleRate
+	}
+	next, err := buildLivePlan(path, source, rate)
+	if err != nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stream == nil {
+		t.livePlan = next
+		return
+	}
+	if t.pending || t.audio != nil && t.audio.Armed() {
+		return
+	}
+	delta := planDiff(t.livePlan, next)
+	if delta.structural {
+		return
+	}
+	if t.arena == nil {
+		t.arena = liveplay.NewPatchArena(16)
+	}
+	batch := t.arena.Begin(t.patchRevision + 1)
+	if batch == nil {
+		return
+	}
+	for _, change := range delta.params {
+		if change.entity == "global" {
+			batch.SetParam(0xff, change.id, change.value)
+			continue
+		}
+		target, err := t.stream.ResolvePreviewTrack(strings.TrimPrefix(change.entity, "track:"))
+		if err != nil {
+			batch.Release()
+			return
+		}
+		batch.SetResolvedParam(target, change.id, change.value)
+	}
+	if err := t.stream.Patch(batch); err != nil {
+		return
+	}
+	t.patchRevision++
+	t.last, t.livePlan, t.errText = fingerprint, next, ""
 }
 
 func (t *studioTransport) setError(err error) {
