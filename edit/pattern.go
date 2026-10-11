@@ -3,6 +3,7 @@ package edit
 import (
 	"bytes"
 	"fmt"
+	"maps"
 	"regexp"
 	"strconv"
 	"strings"
@@ -174,7 +175,11 @@ func sourceContext(ctx *Context, source []byte) *Context {
 	if bytes.Equal(ctx.Source, source) {
 		return ctx
 	}
-	return &Context{Source: source, Options: ctx.Options, Envelope: ctx.Envelope}
+	working := *ctx
+	working.Source, working.plan = source, nil
+	working.files = append([]File(nil), ctx.files...)
+	working.fileIndex = maps.Clone(ctx.fileIndex)
+	return &working
 }
 
 func resolvePatternRange(ctx *Context, id, lane string, first, last int, policy string) ([]byte, error) {

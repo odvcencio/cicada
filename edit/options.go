@@ -48,10 +48,13 @@ type Options struct {
 	Now          func() time.Time
 	// ParseProject parses source the way the host parses a score on disk
 	// (assets, libraries, manifest edition). nil falls back to Sources and
-	// Edition. cmd/cicada injects parseScoreForPath.
-	ParseProject func(source []byte) (*notation.Score, []notation.Diagnostic, error)
+	// Edition. files supplies the cumulative auxiliary overrides, including
+	// the manifest, and the host must overlay them on its project inputs.
+	ParseProject func(source []byte, files map[string][]byte) (*notation.Score, []notation.Diagnostic, error)
 	// UpgradeEdition rewrites an edition-1 score (and its manifest, returned
 	// as a File) to edition 2. cmd/cicada implements it with migration and
 	// edition, which edit must not import (migration imports project).
-	UpgradeEdition func(source []byte) (upgraded []byte, files []File, err error)
+	// staged supplies the latest auxiliary bytes; the hook must use them
+	// before falling back to its original manifest.
+	UpgradeEdition func(source []byte, staged map[string][]byte) (upgraded []byte, files []File, err error)
 }

@@ -74,21 +74,14 @@ func publishRecorded(ctx *Context, intent Intent) error {
 	if in.ScenePath == "" || in.ScenePath == ctx.Options.Path {
 		updated, err = bindPatternSource(sourceContext(ctx, updated), scene, track, pattern)
 	} else {
-		found := false
-		for _, file := range ctx.Options.Sources {
-			if file.Path != in.ScenePath {
-				continue
-			}
-			found = true
-			var after []byte
-			after, err = bindRecordedScene(file.Source, file.Path, scene, track, pattern)
-			if err == nil {
-				ctx.AddFile(File{Path: file.Path, Before: bytes.Clone(file.Source), After: after})
-			}
-			break
-		}
+		before, found := ctx.FileSource(in.ScenePath)
 		if !found {
 			return fmt.Errorf("recorded scene source is unavailable")
+		}
+		var after []byte
+		after, err = bindRecordedScene(before, in.ScenePath, scene, track, pattern)
+		if err == nil {
+			ctx.AddFile(File{Path: in.ScenePath, Before: before, After: after})
 		}
 	}
 	if err != nil {

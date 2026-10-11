@@ -31,8 +31,8 @@ func (c multiFileCompiler) sources(source []byte, overrides map[string][]byte) [
 	return files
 }
 
-func (c multiFileCompiler) parse(source []byte) (*notation.Score, []notation.Diagnostic, error) {
-	score, ds := notation.ParseFiles(c.sources(source, nil), 2)
+func (c multiFileCompiler) parse(source []byte, files map[string][]byte) (*notation.Score, []notation.Diagnostic, error) {
+	score, ds := notation.ParseFiles(c.sources(source, files), 2)
 	return score, ds, nil
 }
 

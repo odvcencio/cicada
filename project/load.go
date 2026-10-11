@@ -37,7 +37,8 @@ type Sources struct {
 
 // ReadSources loads the closest explicit manifest, or the requested loose or
 // legacy single-file score. Overrides are indexed by absolute file path and
-// can include cicada.sum for validation before an editor commits new pins.
+// can include cicada.mod and cicada.sum for validation before an editor
+// commits manifest changes or new pins.
 func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
@@ -55,9 +56,12 @@ func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
 	paths := []string{absolute}
 	if manifestPath != "" {
 		set.Root = filepath.Dir(manifestPath)
-		data, err := os.ReadFile(manifestPath)
-		if err != nil {
-			return nil, err
+		data, ok := overrides[manifestPath]
+		if !ok {
+			data, err = os.ReadFile(manifestPath)
+			if err != nil {
+				return nil, err
+			}
 		}
 		set.Manifest, err = edition.ParseProjectManifest(data)
 		if err != nil {

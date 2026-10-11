@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	edits "m31labs.dev/cicada/edit"
@@ -77,8 +78,8 @@ func (c *studioCompiler) compiled(source []byte, files []edits.File) *project.Pr
 // upgradeEdition is the Options.UpgradeEdition hook: the edition-1 to 2
 // rewrite Studio's mixer route performs (migration.FixSource, notation.Format,
 // then a header or a manifest change), returning the manifest change as a file.
-func (s *studio) upgradeEdition(manifestPath string) func([]byte) ([]byte, []edits.File, error) {
-	return func(source []byte) ([]byte, []edits.File, error) {
+func (s *studio) upgradeEdition(manifestPath string) func([]byte, map[string][]byte) ([]byte, []edits.File, error) {
+	return func(source []byte, staged map[string][]byte) ([]byte, []edits.File, error) {
 		fixed, _, err := migration.FixSource(bytes.Clone(source))
 		if err != nil {
 			return nil, nil, err
@@ -97,9 +98,12 @@ func (s *studio) upgradeEdition(manifestPath string) func([]byte) ([]byte, []edi
 			}
 			return working, nil, nil
 		}
-		before, err := os.ReadFile(manifestPath)
-		if err != nil {
-			return nil, nil, err
+		before, ok := staged[manifestPath]
+		if !ok {
+			before, err = os.ReadFile(manifestPath)
+			if err != nil {
+				return nil, nil, err
+			}
 		}
 		after, changed, err := edition.UpgradeManifestEdition(before)
 		if err != nil {
@@ -129,8 +133,16 @@ func (s *studio) editOptions() (edits.Options, error) {
 			return edits.Options{}, err
 		}
 	}
-	opts.ParseProject = func(source []byte) (*notation.Score, []notation.Diagnostic, error) {
-		return parseScoreForPath(s.path, source)
+	opts.ParseProject = func(source []byte, files map[string][]byte) (*notation.Score, []notation.Diagnostic, error) {
+		absolute, err := filepath.Abs(s.path)
+		if err != nil {
+			return nil, nil, err
+		}
+		if files == nil {
+			files = make(map[string][]byte)
+		}
+		files[absolute] = source
+		return project.LoadScore(s.path, files)
 	}
 	return opts, nil
 }
