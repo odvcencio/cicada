@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"m31labs.dev/cicada/edition"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -47,16 +48,20 @@ func newProject(name string, writeFile func(string, []byte, os.FileMode) error) 
 	if !edition.ValidProjectName(name) {
 		return fmt.Errorf("project name must use letters, digits, hyphen, or underscore")
 	}
-	if err := os.Mkdir(name, 0755); err != nil {
+	dir, err := filetarget.Create(name)
+	if err != nil {
+		return err
+	}
+	if err := os.Mkdir(dir, 0755); err != nil {
 		return err
 	}
 	complete := false
 	defer func() {
 		if !complete {
-			_ = os.Remove(filepath.Join(name, "main.cicada"))
-			_ = os.Remove(filepath.Join(name, "cicada.mod"))
-			_ = os.Remove(filepath.Join(name, ".gitignore"))
-			_ = os.Remove(name)
+			_ = os.Remove(filepath.Join(dir, "main.cicada"))
+			_ = os.Remove(filepath.Join(dir, "cicada.mod"))
+			_ = os.Remove(filepath.Join(dir, ".gitignore"))
+			_ = os.Remove(dir)
 		}
 	}()
 	manifest := []byte("project " + name + "\ncicada 2\n")
@@ -70,13 +75,13 @@ func newProject(name string, writeFile func(string, []byte, os.FileMode) error) 
 		return err
 	}
 	gitignore := []byte(".cicada-studio-*\n*.revision\n.cicada/\ncicada.local\n")
-	if err := writeFile(filepath.Join(name, "cicada.mod"), manifest, 0644); err != nil {
+	if err := writeFile(filepath.Join(dir, "cicada.mod"), manifest, 0644); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(name, "main.cicada"), main, 0644); err != nil {
+	if err := writeFile(filepath.Join(dir, "main.cicada"), main, 0644); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(name, ".gitignore"), gitignore, 0644); err != nil {
+	if err := writeFile(filepath.Join(dir, ".gitignore"), gitignore, 0644); err != nil {
 		return err
 	}
 	complete = true

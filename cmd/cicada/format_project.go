@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"m31labs.dev/cicada/edition"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -32,6 +33,10 @@ func formatProjectCommand(check bool, stdout, stderr io.Writer) error {
 
 func projectRoot() (string, error) {
 	cwd, err := os.Getwd()
+	if err != nil {
+		return "", err
+	}
+	cwd, err = filetarget.Resolve(cwd)
 	if err != nil {
 		return "", err
 	}
@@ -75,7 +80,8 @@ func collectProjectFormatEdits(root string) ([]projectFormatEdit, error) {
 	}
 	var edits []projectFormatEdit
 	for _, path := range paths {
-		if _, err := projectFormatRecoveryPath(path); err != nil {
+		path, err := projectFormatRecoveryPath(path)
+		if err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 		source, err := os.ReadFile(path)
@@ -176,11 +182,7 @@ func writeProjectFormatEdit(edit projectFormatEdit) error {
 // Check recovery files even when the current source needs no format change.
 // A late write through a displaced handle can arrive after a prior run exits.
 func projectFormatRecoveryPath(path string) (string, error) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return "", err
-	}
-	absolute, err = filepath.EvalSymlinks(absolute)
+	absolute, err := filetarget.Resolve(path)
 	if err != nil {
 		return "", err
 	}

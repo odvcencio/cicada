@@ -229,8 +229,9 @@ func (s *studio) intents(w http.ResponseWriter, r *http.Request) {
 }
 
 // intentDiff includes auxiliary changes so a dry run shows the whole batch.
-func intentDiff(before []byte, result *edits.Result) string {
+func intentDiff(before []byte, result *edits.Result, name string) string {
 	diff := studioUnifiedDiff(before, result.Source)
+	diff = strings.Replace(diff, "--- a/score.cicada\n+++ b/score.cicada\n", "--- a/"+name+"\n+++ b/"+name+"\n", 1)
 	for _, file := range result.Files {
 		name := filepath.Base(file.Path)
 		fileDiff := studioUnifiedDiff(file.Before, file.After)
@@ -291,7 +292,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		return
 	}
 	if env.DryRun {
-		studioJSON(w, http.StatusOK, map[string]any{"diff": intentDiff(current, result), "revision": studioRevision(current), "valid": true, "dryRun": true})
+		studioJSON(w, http.StatusOK, map[string]any{"diff": intentDiff(current, result, "score.cicada"), "revision": studioRevision(current), "valid": true, "dryRun": true})
 		return
 	}
 	if finish != nil {

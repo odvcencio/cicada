@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	ed "m31labs.dev/cicada/edition"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/migration"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -43,6 +44,12 @@ func fixCommandWithHooks(args []string, writeScore func(string, []byte, os.FileM
 	if err != nil {
 		return err
 	}
+	if path != "" {
+		path, err = filetarget.Resolve(path)
+		if err != nil {
+			return err
+		}
+	}
 	root, currentEdition, manifest, err := fixProjectLocation(path)
 	if err != nil {
 		return err
@@ -71,11 +78,6 @@ func fixCommandWithHooks(args []string, writeScore func(string, []byte, os.FileM
 		return fmt.Errorf("no .cicada scores found in %s", root)
 	}
 	if path != "" {
-		absolute, err := filepath.Abs(path)
-		if err != nil {
-			return err
-		}
-		path = filepath.Clean(absolute)
 		found := false
 		for _, candidate := range paths {
 			if filepath.Clean(candidate) == path {
@@ -434,6 +436,10 @@ func removeEditionHeader(source []byte, edition int) ([]byte, bool) {
 }
 
 func writeFixedScore(path string, source []byte, mode os.FileMode) error {
+	path, err := filetarget.Write(path)
+	if err != nil {
+		return err
+	}
 	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-fix-*")
 	if err != nil {
 		return err

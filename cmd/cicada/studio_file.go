@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/internal/filetarget"
 )
 
 var errStudioSwapUnavailable = errors.New("atomic score exchange is unavailable on this filesystem; edit the score in your text editor")
@@ -22,6 +23,10 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 }
 
 func studioWriteTakeIfRevision(path string, updated []byte, mode os.FileMode, expected string, beforeSwap func(), checkpoint func(takejournal.Stage)) (bool, string, error) {
+	path, err := filetarget.Resolve(path)
+	if err != nil {
+		return false, "", err
+	}
 	dir, err := studioRecoveryDir(path)
 	if err != nil {
 		return false, "", err

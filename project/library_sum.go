@@ -7,6 +7,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+
+	"m31labs.dev/cicada/internal/filetarget"
 )
 
 // LockLibraryPins excludes concurrent pin writers until the returned release
@@ -39,7 +42,11 @@ func lockLibrarySum(root *os.Root) (func(), error) {
 // WriteLibraryUpdates holds the same lock as vendoring from reading pins
 // through atomic publication, so concurrent commands cannot lose updates.
 func (s *Sources) WriteLibraryUpdates(name string) ([]string, error) {
-	root, err := os.OpenRoot(s.Root)
+	directory, err := filetarget.Resolve(s.Root)
+	if err != nil {
+		return nil, err
+	}
+	root, err := os.OpenRoot(directory)
 	if err != nil {
 		return nil, err
 	}
@@ -49,7 +56,11 @@ func (s *Sources) WriteLibraryUpdates(name string) ([]string, error) {
 		return nil, err
 	}
 	defer unlock()
-	before, err := root.ReadFile("cicada.sum")
+	sumPath, err := librarySumWritePath(directory)
+	if err != nil {
+		return nil, err
+	}
+	before, err := root.ReadFile(sumPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -70,8 +81,24 @@ func (s *Sources) WriteLibraryUpdates(name string) ([]string, error) {
 	if err := writeVendorFile(root, stage, data); err != nil {
 		return nil, err
 	}
-	if err := root.Rename(stage, "cicada.sum"); err != nil {
+	if err := root.Rename(stage, sumPath); err != nil {
 		return nil, err
 	}
 	return changes, nil
+}
+
+// Keep publication within the opened project root after resolving pin links.
+func librarySumWritePath(directory string) (string, error) {
+	path, err := filetarget.Write(filepath.Join(directory, "cicada.sum"))
+	if err != nil {
+		return "", err
+	}
+	name, err := filepath.Rel(directory, path)
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsLocal(name) {
+		return "", fmt.Errorf("library pins resolve outside the project root")
+	}
+	return name, nil
 }

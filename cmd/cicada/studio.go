@@ -28,6 +28,7 @@ import (
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/audiobackend"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -203,11 +204,7 @@ func newStudio(path string) (*studio, error) {
 }
 
 func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
-	absolute, err := filepath.Abs(path)
-	if err != nil {
-		return nil, err
-	}
-	absolute, err = filepath.EvalSymlinks(absolute)
+	absolute, err := filetarget.Resolve(path)
 	if err != nil {
 		return nil, err
 	}

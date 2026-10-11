@@ -15,6 +15,7 @@ import (
 
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -23,15 +24,11 @@ import (
 // are copied and verified before the target score becomes visible. Existing
 // dependencies must match; a collision never replaces unrelated audio.
 func SaveAs(score, target string) error {
-	score, err := filepath.Abs(score)
+	score, err := filetarget.Resolve(score)
 	if err != nil {
 		return err
 	}
-	score, err = filepath.EvalSymlinks(score)
-	if err != nil {
-		return err
-	}
-	target, err = filepath.Abs(target)
+	target, err = filetarget.Create(target)
 	if err != nil {
 		return err
 	}

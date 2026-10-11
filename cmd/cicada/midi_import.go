@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/smf"
 )
@@ -61,6 +62,10 @@ func importMIDICommand(args []string) error {
 
 // Link the complete temporary file atomically, without replacing a destination.
 func writeImportedScore(path string, source []byte) error {
+	path, err := filetarget.Create(path)
+	if err != nil {
+		return err
+	}
 	temporary, err := os.CreateTemp(filepath.Dir(path), ".cicada-midi-import-*")
 	if err != nil {
 		return err

@@ -69,7 +69,7 @@ func TestApplyDiffWriteAndStudioParity(t *testing.T) {
 	path, intents, before := applyFixture(t)
 	files := noopFiles(t, filepath.Dir(path))
 	diff, err := captureApply(t, path, intents)
-	if err != nil || !strings.Contains(diff, "--- a/score.cicada\n+++ b/score.cicada\n@@") || !strings.Contains(diff, "swing = 55%") || !reflect.DeepEqual(files, noopFiles(t, filepath.Dir(path))) {
+	if err != nil || !strings.Contains(diff, "--- a/main.cicada\n+++ b/main.cicada\n@@") || !strings.Contains(diff, "swing = 55%") || !reflect.DeepEqual(files, noopFiles(t, filepath.Dir(path))) {
 		t.Fatalf("diff-only apply: %q %v", diff, err)
 	}
 	s, err := newStudio(path)
@@ -111,6 +111,51 @@ func TestApplyDiffWriteAndStudioParity(t *testing.T) {
 	wantError := "score changed; intents target revision " + env.Revision + ", file is at " + edits.Revision(want)
 	if err == nil || err.Error() != wantError || !reflect.DeepEqual(files, noopFiles(t, filepath.Dir(path))) {
 		t.Fatalf("stale revision: %v", err)
+	}
+}
+
+func TestApplyWritePreservesSymlinkTargets(t *testing.T) {
+	for _, kind := range []string{"absolute", "relative", "outside-project", "project-directory"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			path, intents, before := applyFixture(t)
+			link := filepath.Join(filepath.Dir(path), "linked.cicada")
+			target := path
+			if kind == "relative" {
+				target = filepath.Base(path)
+			}
+			if kind == "outside-project" {
+				link = filepath.Join(filepath.Dir(filepath.Dir(path)), "linked.cicada")
+			}
+			entry := link
+			if kind == "project-directory" {
+				link = filepath.Join(filepath.Dir(filepath.Dir(path)), "linked-project")
+				target = filepath.Dir(path)
+				entry = filepath.Join(link, filepath.Base(path))
+			}
+			if err := os.Symlink(target, link); err != nil {
+				t.Fatal(err)
+			}
+			after := append(bytes.Clone(before), []byte("// applied through link\n")...)
+			writeApplyEnvelope(t, intents, edits.Envelope{Version: 1, Revision: edits.Revision(before), Intents: []edits.Intent{&edits.ReplaceText{Source: string(after)}}})
+			diff, err := captureApply(t, entry, intents, "--write")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := os.Readlink(link); err != nil || got != target {
+				t.Errorf("link replaced: target=%q err=%v", got, err)
+			}
+			if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, after) {
+				t.Errorf("target not edited: %q %v", got, err)
+			}
+			if !strings.Contains(diff, "--- a/main.cicada\n+++ b/main.cicada\n") {
+				t.Errorf("diff does not name target: %q", diff)
+			}
+			records, _, err := editlog.ReadLog(editlog.Path(path))
+			if err != nil || len(records) != 1 || records[0].Revision != edits.Revision(after) {
+				t.Errorf("target log: %+v %v", records, err)
+			}
+		})
 	}
 }
 

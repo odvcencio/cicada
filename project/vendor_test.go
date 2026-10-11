@@ -175,6 +175,74 @@ func TestVendorAcceptsSameProjectDirectoryAlias(t *testing.T) {
 	}
 }
 
+func TestLibraryPinWritersPreserveSymlinkTargets(t *testing.T) {
+	for _, writer := range []string{"vendor", "update"} {
+		t.Run(writer, func(t *testing.T) {
+			root, user, sources := userVendorFixture(t)
+			path := filepath.Join(root, "cicada.sum")
+			target := filepath.Join(root, "pins.sum")
+			before, _ := os.ReadFile(path)
+			if err := os.Rename(path, target); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("pins.sum", path); err != nil {
+				t.Fatal(err)
+			}
+			var err error
+			if writer == "vendor" {
+				_, err = sources.VendorLibraries(root)
+			} else {
+				libraryWrite(t, user, "demo/tone/tone.cicada", "import \"demo/phrases\"\n"+libraryVoice+"// changed\n")
+				sources, err = ReadSources(filepath.Join(root, "main.cicada"), nil)
+				if err == nil {
+					_, err = sources.WriteLibraryUpdates("demo/tone")
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, err := os.Readlink(path); err != nil || got != "pins.sum" {
+				t.Errorf("pin link changed: %q %v", got, err)
+			}
+			if got, err := os.ReadFile(target); err != nil || bytes.Equal(got, before) {
+				t.Errorf("pin target not updated: %q %v", got, err)
+			}
+		})
+	}
+}
+
+func TestLibraryPinWritersRefuseEscapingLinks(t *testing.T) {
+	for _, writer := range []string{"vendor", "update"} {
+		t.Run(writer, func(t *testing.T) {
+			root, _, sources := userVendorFixture(t)
+			path := filepath.Join(root, "cicada.sum")
+			target := filepath.Join(t.TempDir(), "pins.sum")
+			before, _ := os.ReadFile(path)
+			if err := os.Rename(path, target); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(target, path); err != nil {
+				t.Fatal(err)
+			}
+			var err error
+			if writer == "vendor" {
+				_, err = sources.VendorLibraries(root)
+			} else {
+				_, err = sources.WriteLibraryUpdates("demo/tone")
+			}
+			if err == nil {
+				t.Error("pin writer escaped project root")
+			}
+			if got, err := os.Readlink(path); err != nil || got != target {
+				t.Errorf("pin link changed: %q %v", got, err)
+			}
+			if got, err := os.ReadFile(target); err != nil || !bytes.Equal(got, before) {
+				t.Errorf("outside target changed: %q %v", got, err)
+			}
+		})
+	}
+}
+
 func TestVendorRollbackPreservesConcurrentEdits(t *testing.T) {
 	for _, kind := range []string{"addition", "edit"} {
 		t.Run(kind, func(t *testing.T) {

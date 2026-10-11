@@ -14,6 +14,7 @@ import (
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -566,6 +567,11 @@ func mixerSendCapability(track notation.Track, target, kind string, score *notat
 }
 
 func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
+	path, err := filetarget.Write(file.Path)
+	if err != nil {
+		return err
+	}
+	file.Path = path
 	current, err := os.ReadFile(file.Path)
 	if os.IsNotExist(err) && file.Before == nil {
 		current, err = nil, nil

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/edition"
+	"m31labs.dev/cicada/internal/filetarget"
 )
 
 // NewLibrary creates a complete scaffold without replacing an existing path.
@@ -27,6 +28,11 @@ func NewLibrary(name, dir string) error {
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return err
 	}
+	dir, err = filetarget.Create(dir)
+	if err != nil {
+		return err
+	}
+	parent = filepath.Dir(dir)
 	stage, err := os.MkdirTemp(parent, ".cicada-new-library-")
 	if err != nil {
 		return err

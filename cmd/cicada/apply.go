@@ -12,6 +12,7 @@ import (
 
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/edit/editlog"
+	"m31labs.dev/cicada/internal/filetarget"
 )
 
 func applyCommand(args []string) error {
@@ -47,7 +48,7 @@ func applyCommandWithHooks(args []string, stdout io.Writer, beforeSwap func()) e
 	if len(paths) != 2 {
 		return fmt.Errorf("usage: cicada apply <score.cicada> <intents.json> [--write] [--author <name>] [--session <id>]")
 	}
-	path, err := filepath.Abs(paths[0])
+	path, err := filetarget.Resolve(paths[0])
 	if err != nil {
 		return err
 	}
@@ -86,7 +87,7 @@ func applyCommandWithHooks(args []string, stdout io.Writer, beforeSwap func()) e
 	if err != nil {
 		return err
 	}
-	if _, err := io.WriteString(stdout, intentDiff(before, result)); err != nil {
+	if _, err := io.WriteString(stdout, intentDiff(before, result, filepath.Base(path))); err != nil {
 		return err
 	}
 	if !write || env.DryRun {

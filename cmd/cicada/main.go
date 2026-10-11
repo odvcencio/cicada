@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/notation"
@@ -471,6 +472,10 @@ func simpleDiff(before, after []byte) string {
 }
 
 func writeAtomic(path string, data []byte) error {
+	path, err := filetarget.Resolve(path)
+	if err != nil {
+		return err
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		return err
