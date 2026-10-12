@@ -323,7 +323,7 @@ song { main*4 }
 
 **Syntax (EBNF):** `number` accepts a number with an optional unit suffix; `fraction` accepts a note division.
 
-**Meaning:** Frequency literals accept Hz or kHz; time literals accept ms or s; level literals accept dB. Percent literals express swing, gate, and unit values where specified. Fractions are used for tempo-synced delay divisions.
+**Meaning:** Frequency literals accept Hz or kHz; time literals accept ms or s; level literals accept dB. Percent literals express swing, gate, and unit values where specified. Fractions are used for tempo-synced delay divisions. A delay `time` accepts `1/32`, `1/32T`, `1/32.`, `1/16`, `1/16T`, `1/16.`, `3/16`, `1/8`, `1/8T`, `1/8.`, `1/4`, `1/4T`, `1/4.`, `3/8`, `1/2`, `1/2T`, and `1/2.`, or a free time of 1 ms to 2 s. `T` marks a triplet and a trailing `.` marks a dotted note, so `3/8` and `1/4.` are the same length, as are `3/16` and `1/8.`. The delay `pingpong` setting accepts `on` or `off`; `true` and `false` remain aliases.
 
 **Types and units:** The semantic layer stores frequency in Hz, time in milliseconds where required by source parameters, dB in decibels, ratios as unitless values, tempo in milli-BPM, and note divisions as named rhythmic values.
 

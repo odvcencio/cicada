@@ -89,3 +89,62 @@ func TestDelayTimeSourceSpellingsAndMissingReturn(t *testing.T) {
 		t.Fatalf("missing delay reference diagnostic: %+v", diagnostics)
 	}
 }
+
+func TestDelayPingPongAcceptsSwitchSpellings(t *testing.T) {
+	for spelling, want := range map[string]bool{"on": true, "true": true, "off": false, "false": false} {
+		source := "cicada 1\nfx echo delay { pingpong = " + spelling + " }\ntrack bass acid { send_a = 0.4 }\npattern riff acid steps=1 { 1 }\nscene main { bass=riff }\nsong { main }\n"
+		score, diagnostics := notation.Parse([]byte(source))
+		for _, diagnostic := range diagnostics {
+			if diagnostic.Severity == "error" {
+				t.Fatalf("pingpong %s: %+v", spelling, diagnostic)
+			}
+		}
+		p, extra := FromScore(score)
+		if p == nil {
+			t.Fatalf("pingpong %s did not compile: %+v", spelling, extra)
+		}
+		cfg, err := CompileEngine(p, 48_000, 128)
+		if err != nil {
+			t.Fatalf("pingpong %s: %v", spelling, err)
+		}
+		if cfg.DelayA == nil || cfg.DelayA.PingPong != want {
+			t.Fatalf("pingpong %s: got %+v", spelling, cfg.DelayA)
+		}
+	}
+}
+
+func TestDelayExtendedDivisions(t *testing.T) {
+	base := "cicada 1\nfx delay { time = 1/8T }\ntrack bass acid { send_a = 0.4 }\npattern riff acid steps=1 { 1 }\nscene main { bass=riff }\nsong { main }\n"
+	for _, spelling := range []string{"3/8", "1/4T", "1/2.", "1/2T", "1/32T", "1/32."} {
+		source := bytes.Replace([]byte(base), []byte("1/8T"), []byte(spelling), 1)
+		score, diagnostics := notation.Parse(source)
+		for _, diagnostic := range diagnostics {
+			if diagnostic.Severity == "error" {
+				t.Fatalf("time %s did not parse: %+v", spelling, diagnostic)
+			}
+		}
+		p, extra := FromScore(score)
+		if p == nil {
+			t.Fatalf("time %s did not compile: %+v", spelling, extra)
+		}
+		if _, err := CompileEngine(p, 48_000, 128); err != nil {
+			t.Fatalf("time %s: %v", spelling, err)
+		}
+	}
+	if got := delayDivisionMilliseconds("3/8", 120_000); got != 750 {
+		t.Fatalf("3/8 at 120 BPM = %v ms, want 750", got)
+	}
+	// 1/2. is three beats: 4.5 s at 40 BPM exceeds the four-second buffer.
+	if err := (fx.DelayParams{Division: mustDivision(t, "1/2."), Feedback: .35, DampHz: 6000, Width: 1, Mix: 1}).ValidateTempo(40_000); err == nil {
+		t.Fatal("1/2. at 40 BPM must not fit the buffer")
+	}
+}
+
+func mustDivision(t *testing.T, name string) fx.DelayDivision {
+	t.Helper()
+	d, err := fx.ParseDelayDivision(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}

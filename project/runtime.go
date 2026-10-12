@@ -484,9 +484,9 @@ func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved Resolved
 		}
 		if resolved.Descriptor.Curve == "toggle" {
 			switch value.Text {
-			case "false":
+			case "false", "off":
 				return 0, fx.FreeDelay, nil
-			case "true":
+			case "true", "on":
 				return 1, fx.FreeDelay, nil
 			}
 		}

@@ -106,7 +106,7 @@
     return ({dB:'decibels', Hz:'hertz', ms:'milliseconds', ratio:'ratio', semitone:'semitones', cent:'cents'})[unit] || '';
   }
   function delayDivisionMilliseconds(division, tempo) {
-    const beats = ({'1/32':0.125, '1/16':0.25, '1/16T':1 / 6, '1/16.':0.375, '1/8':0.5, '1/8T':1 / 3, '1/8.':0.75, '3/16':0.75, '1/4':1, '1/4.':1.5, '1/2':2})[division];
+    const beats = ({'1/32':0.125, '1/16':0.25, '1/16T':1 / 6, '1/16.':0.375, '1/8':0.5, '1/8T':1 / 3, '1/8.':0.75, '3/16':0.75, '1/4':1, '1/4.':1.5, '1/2':2, '3/8':1.5, '1/4T':2 / 3, '1/2.':3, '1/2T':4 / 3, '1/32T':1 / 12, '1/32.':0.1875})[division];
     return beats === undefined || !(tempo > 0) ? null : beats * 60000 / tempo;
   }
   function displayValue(value, descriptor) {
