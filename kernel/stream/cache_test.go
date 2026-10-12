@@ -2,6 +2,8 @@ package stream
 
 import (
 	"math"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -250,5 +252,39 @@ func TestAdmissionAndSharedPageOwnership(t *testing.T) {
 	rs[1].Stop()
 	if _, err := c.NewReader(1); err == nil {
 		t.Fatal("unbounded reader registration")
+	}
+}
+
+// Parallel render lanes pin the same shared page at once. A pin that loses a
+// race with another reader must still find the resident page; it must not be
+// reported as a missing frame.
+func TestConcurrentPinsOfOneResidentPageNeverMiss(t *testing.T) {
+	c, readers := newTestCache(t, 4, 1, 1<<20)
+	if err := readers[0].SeekFrame(0, 1); err != nil {
+		t.Fatal(err)
+	}
+	prime(c)
+	if !c.Ready(1, 0) {
+		t.Fatal("page 0 is not resident")
+	}
+	var misses atomic.Int64
+	var wg sync.WaitGroup
+	for lane := 0; lane < 8; lane++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200000; i++ {
+				p := c.acquire(1, 0)
+				if p == nil {
+					misses.Add(1)
+					continue
+				}
+				p.state.Add(^uint32(pin - 1))
+			}
+		}()
+	}
+	wg.Wait()
+	if n := misses.Load(); n != 0 {
+		t.Fatalf("resident page reported missing %d times under concurrent pins", n)
 	}
 }

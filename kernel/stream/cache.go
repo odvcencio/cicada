@@ -274,9 +274,14 @@ func (c *Cache) Ready(asset uint32, index int64) bool {
 func (c *Cache) acquire(asset uint32, index int64) *page {
 	for i := range c.pages {
 		p := &c.pages[i]
+		// A failed CAS means another reader pinned or released this slot, so
+		// retrying is lock-free and bounded by the concurrent readers. Giving
+		// up would report a resident, shared page as missing and drop audio.
 		state := p.state.Load()
-		// One CAS per slot: contention becomes a counted miss, never a spin.
-		if state < ready || !p.state.CompareAndSwap(state, state+pin) {
+		for state >= ready && !p.state.CompareAndSwap(state, state+pin) {
+			state = p.state.Load()
+		}
+		if state < ready {
 			continue
 		}
 		if p.asset == asset && p.index == index {
