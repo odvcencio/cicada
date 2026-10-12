@@ -158,9 +158,11 @@ func newNative(s scenario, cfg engine.Config) (*nativeSession, error) {
 	}
 	n := &nativeSession{engine: e, scenes: s.scenes, barFrames: int64(s.rate) * 2, queuedBar: 1}
 	if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		_ = e.Close()
 		return nil, fmt.Errorf("play rejected")
 	}
 	if s.scenes && !e.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff}) {
+		_ = e.Close()
 		return nil, fmt.Errorf("initial scene rejected")
 	}
 	return n, nil

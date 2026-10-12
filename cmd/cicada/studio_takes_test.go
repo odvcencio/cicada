@@ -99,6 +99,7 @@ func TestTakeCrashChild(t *testing.T) {
 func TestTakeCrashRecoveryEveryStage(t *testing.T) {
 	for _, stage := range []takejournal.Stage{takejournal.Begun, takejournal.Chunk, takejournal.WAVWritten, takejournal.Finalized, takejournal.BlobLinked, takejournal.Blob, takejournal.TakeLinked, takejournal.Published, takejournal.Prepared, takejournal.SourceStaged, takejournal.SourceSwapped, takejournal.Source, takejournal.Committed, takejournal.Conflict} {
 		t.Run(string(stage), func(t *testing.T) {
+			t.Parallel() // Each stage crashes its own child process in its own directory.
 			dir := t.TempDir()
 			cmd := exec.Command(os.Args[0], "-test.run=^TestTakeCrashChild$")
 			cmd.Env = append(os.Environ(), "CICADA_TAKE_CRASH_STAGE="+string(stage), "CICADA_TAKE_CRASH_DIR="+dir)

@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -20,6 +22,7 @@ import (
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/project"
 )
 
 type studioTransport struct {
@@ -39,6 +42,12 @@ type studioTransport struct {
 	sampleRate        int
 	cancel            context.CancelFunc
 	last              [32]byte
+	livePlan          *livePlan
+	offers            []studioOffer        // Published scores not yet reported landed, oldest first.
+	publications      uint64               // Last publication ID handed out; never reused.
+	prepareHook       func(liveplay.Score) // Test seam: runs after poll compiles a replacement, before it takes mu.
+	arena             *liveplay.PatchArena
+	patchRevision     uint64
 	playing           bool
 	browserPlaying    bool
 	browserSampleRate int
@@ -256,7 +265,10 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 	if t.stream != nil {
 		wasListening := t.listening != nil
 		if listening != nil {
-			if err := t.stream.Offer(*prepared); err != nil {
+			offered := *prepared
+			offered.Revision = t.recordOfferLocked(nil) // A listening range has no patchable plan.
+			if err := t.stream.Offer(offered); err != nil {
+				t.forgetOfferLocked(offered.Revision)
 				return err
 			}
 			preparedConsumed = true
@@ -284,11 +296,20 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 		}
 		if index >= 0 {
 			if prepared != nil && (preparedHash != t.last || wasListening) {
-				if err := t.stream.Offer(*prepared); err != nil {
+				next := *prepared
+				plan := t.planAtFingerprint(preparedHash, sampleRate)
+				if plan != nil && listening == nil && !wasListening {
+					plan.prepareScore(&next)
+				} else {
+					plan = nil
+				}
+				next.Revision = t.recordOfferLocked(plan)
+				if err := t.stream.Offer(next); err != nil {
+					t.forgetOfferLocked(next.Revision)
 					return err
 				}
 				preparedConsumed = true
-				t.last, t.pending = preparedHash, true
+				t.last = preparedHash
 			}
 			requestID, err := t.stream.QueueSongEntry(index, scene)
 			if err != nil {
@@ -352,6 +373,15 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 			return err
 		}
 	}
+	// Plans and scene settings must describe the same committed source as the
+	// initial score. Capture backing has its own filtered engine authority.
+	var initialPlan *livePlan
+	if listening == nil {
+		initialPlan = t.planAtFingerprint(fingerprint, sampleRate)
+	}
+	if initialPlan != nil {
+		initialPlan.prepareScore(&initial)
+	}
 	stream, err := liveplay.New(initial, sampleRate)
 	if err != nil {
 		if initial.Engine != nil {
@@ -400,6 +430,7 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.stream, t.audio, t.sampleRate, t.last, t.cancel = stream, audio, sampleRate, fingerprint, cancel
+	t.livePlan, t.offers, t.arena, t.patchRevision = initialPlan, nil, liveplay.NewPatchArena(16), 0
 	streamAdopted = true
 	t.playing, t.errText = true, ""
 	t.listening = listening
@@ -413,6 +444,90 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 	t.publishHealthLocked()
 	go t.watch(ctx, stream)
 	return nil
+}
+
+func (t *studioTransport) isPlayingFingerprint(fingerprint [32]byte) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.stream != nil && t.last == fingerprint
+}
+
+// studioOffer pairs a published score's unique publication token with the
+// plan compiled for it. The plan is nil when the offer has no complete plan.
+//
+// Identity rules. A publication ID is a transport-owned counter, so every Offer
+// has its own token even when its content repeats (A, B, A). The content
+// fingerprint is separate: it only tells poll whether the files changed. The
+// player keeps only the newest offer that has not started, so a landing event
+// names exactly one ledger entry; that entry and every older one are done.
+type studioOffer struct {
+	token string
+	plan  *livePlan
+}
+
+// maxStudioOffers bounds the ledger; the player keeps one pending score and a
+// 32-event buffer, so older offers cannot still report a landing.
+const maxStudioOffers = 64
+
+// studioPublicationToken renders a publication ID as the Score.Revision token.
+func studioPublicationToken(id uint64) string { return "p" + strconv.FormatUint(id, 10) }
+
+// recordOfferLocked allocates the next publication token and queues it before
+// the Offer call, so a landing event cannot arrive ahead of its ledger entry.
+// Called with mu held.
+func (t *studioTransport) recordOfferLocked(plan *livePlan) string {
+	t.publications++
+	token := studioPublicationToken(t.publications)
+	if len(t.offers) == maxStudioOffers {
+		t.offers = append(t.offers[:0], t.offers[1:]...)
+	}
+	t.offers = append(t.offers, studioOffer{token: token, plan: plan})
+	t.pending = true
+	return token
+}
+
+// forgetOfferLocked removes an offer the player rejected. Called with mu held.
+func (t *studioTransport) forgetOfferLocked(token string) {
+	for i, offer := range t.offers {
+		if offer.token == token {
+			t.offers = append(t.offers[:i], t.offers[i+1:]...)
+			break
+		}
+	}
+	t.pending = len(t.offers) > 0
+}
+
+// playbackFingerprint is the one place that hashes committed playback state:
+// the entry file at the transport's own path and every source it names. Poll,
+// activation after any commit (entry or secondary session, changed or no-op),
+// scene launches and the recording handoff all call it, so they cannot
+// disagree about what "unchanged" means. The caller holds pollMu.
+func (t *studioTransport) playbackFingerprint() ([]byte, [32]byte, error) {
+	var empty [32]byte
+	source, err := os.ReadFile(t.path)
+	if err != nil {
+		return nil, empty, err
+	}
+	fingerprint, err := playSourceHashBytes(t.path, source)
+	return source, fingerprint, err
+}
+
+// Called with mu held. A hash mismatch leaves activation unavailable until
+// the watcher offers a complete plan; playback preparation keeps its behavior.
+func (t *studioTransport) planAtFingerprint(fingerprint [32]byte, rate int) *livePlan {
+	if t.audio != nil && t.audio.Armed() {
+		return nil
+	}
+	source, err := os.ReadFile(t.path)
+	if err != nil {
+		return nil
+	}
+	hash, err := playSourceHashBytes(t.path, source)
+	if err != nil || hash != fingerprint {
+		return nil
+	}
+	plan, _ := buildLivePlan(t.path, source, rate)
+	return plan
 }
 
 // publishHealthLocked publishes one health frame. Call it with t.mu held.
@@ -498,6 +613,7 @@ func (t *studioTransport) stopLocked() {
 		t.stream.Close()
 		t.stream = nil
 	}
+	t.livePlan, t.offers, t.arena = nil, nil, nil
 	// A discarded stream has no muted tracks; do not report them as stopped.
 	t.stoppedTracks = nil
 	t.activeSlots = nil
@@ -718,6 +834,23 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 		t.errText = event.Name
 	case "preview-error":
 		t.errText = fmt.Sprintf("Preview %s on track %s ended, but its saved value could not be restored", event.Name, event.Track)
+	case "patch-error":
+		t.livePlan = nil
+		t.last = [32]byte{} // Let poll reconstruct the committed score.
+		t.errText = event.Name
+	case "edit":
+		t.landed = event.Bar
+		// An edit event names its offer by the playback fingerprint token. Only
+		// that offer's plan becomes the live plan, and offers still queued
+		// behind it keep the transport pending. An unknown token (an offer the
+		// player already superseded) says nothing about the playing engine.
+		for i, offer := range t.offers {
+			if offer.token == event.Revision {
+				t.livePlan, t.offers = offer.plan, t.offers[i+1:]
+				t.pending = len(t.offers) > 0
+				break
+			}
+		}
 	default:
 		t.pending, t.landed = false, event.Bar
 	}
@@ -750,12 +883,7 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 func (t *studioTransport) poll() {
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
-	source, err := os.ReadFile(t.path)
-	if err != nil {
-		t.setError(err)
-		return
-	}
-	fingerprint, err := playSourceHashBytes(t.path, source)
+	source, fingerprint, err := t.playbackFingerprint()
 	if err != nil {
 		t.setError(err)
 		return
@@ -763,6 +891,11 @@ func (t *studioTransport) poll() {
 	t.mu.Lock()
 	if fingerprint == t.last {
 		t.mu.Unlock()
+		// The files equal the playing score, so a take armed for other content
+		// can never be published. Drop its handoff.
+		if t.history != nil {
+			t.history.consumeRecordedTake("")
+		}
 		return
 	}
 	stream := t.stream
@@ -779,11 +912,21 @@ func (t *studioTransport) poll() {
 	if sampleRate <= 0 {
 		sampleRate = liveSampleRate
 	}
-	project, err := compileStudioSource(t.path, source)
+	// A listening range is not a patchable plan: only a plain score gets one.
+	var plan *livePlan
+	var project *project.Project
 	listeningTargetError := false
-	if err == nil && listening != nil {
-		project, listening, err = prepareStudioListening(project, *listening)
-		listeningTargetError = err != nil
+	if listening == nil {
+		plan, err = buildLivePlan(t.path, source, sampleRate)
+		if err == nil {
+			project = plan.project
+		}
+	} else {
+		project, err = compileStudioSource(t.path, source)
+		if err == nil {
+			project, listening, err = prepareStudioListening(project, *listening)
+			listeningTargetError = err != nil
+		}
 	}
 	var next liveplay.Score
 	if err == nil {
@@ -792,9 +935,6 @@ func (t *studioTransport) poll() {
 			r := listening.playbackRange()
 			next.Range = &r
 		}
-	}
-	if err == nil {
-		err = stream.Offer(next)
 	}
 	if err != nil {
 		if listeningTargetError {
@@ -805,16 +945,110 @@ func (t *studioTransport) poll() {
 		t.setError(err)
 		return
 	}
+	if plan != nil {
+		plan.prepareScore(&next)
+	}
+	if t.prepareHook != nil {
+		t.prepareHook(next)
+	}
 	t.mu.Lock()
+	if t.stream != stream {
+		t.mu.Unlock()
+		// Playback stopped or restarted while this replacement was prepared.
+		// Offer never saw it, so poll still owns the engine and its workers.
+		_ = next.Engine.Close()
+		return
+	}
+	next.Revision = t.recordOfferLocked(plan)
+	t.mu.Unlock()
+	if err := stream.Offer(next); err != nil {
+		t.mu.Lock()
+		t.forgetOfferLocked(next.Revision)
+		t.mu.Unlock()
+		t.setError(err)
+		return
+	}
+	t.mu.Lock()
+	if t.stream != stream {
+		t.mu.Unlock()
+		return
+	}
 	t.last = fingerprint
 	t.listening = listening
 	// Clear the transport error when a valid revision lands (UX review finding 2).
-	t.pending, t.errText = true, ""
+	t.errText = ""
 	position := stream.Position()
 	t.mu.Unlock()
-	if t.history != nil && !t.history.consumeRecordedTake(studioRevision(source)) {
+	if t.history != nil && !t.history.consumeRecordedTake(studioFingerprintKey(fingerprint)) {
 		t.history.record("queued", "Edit queued for the next bar", position.Bar, position.Step, "")
 	}
+}
+
+// activateLocked runs after a successful commit while pollMu still covers the
+// file exchange. An offered engine keeps authority until its render event; a
+// subsequent commit cannot patch against that engine before it starts playing.
+//
+// It reads the committed entry and its sources through playbackFingerprint, so
+// a secondary-file session activates against the same state poll hashes. It
+// returns that fingerprint and whether it could be computed.
+func (t *studioTransport) activateLocked() ([32]byte, bool) {
+	source, fingerprint, err := t.playbackFingerprint()
+	if err != nil {
+		return fingerprint, false
+	}
+	path := t.path
+	t.activatePlanLocked(path, source, fingerprint)
+	return fingerprint, true
+}
+
+func (t *studioTransport) activatePlanLocked(path string, source []byte, fingerprint [32]byte) {
+	t.mu.Lock()
+	rate := t.sampleRate
+	t.mu.Unlock()
+	if rate <= 0 {
+		rate = liveSampleRate
+	}
+	next, err := buildLivePlan(path, source, rate)
+	if err != nil {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.stream == nil {
+		t.livePlan = next
+		return
+	}
+	if t.pending || t.audio != nil && t.audio.Armed() {
+		return
+	}
+	delta := planDiff(t.livePlan, next)
+	if delta.structural {
+		return
+	}
+	if t.arena == nil {
+		t.arena = liveplay.NewPatchArena(16)
+	}
+	batch := t.arena.Begin(t.patchRevision + 1)
+	if batch == nil {
+		return
+	}
+	for _, change := range delta.params {
+		if change.entity == "global" {
+			batch.SetParam(0xff, change.id, change.value)
+			continue
+		}
+		target, err := t.stream.ResolvePreviewTrack(strings.TrimPrefix(change.entity, "track:"))
+		if err != nil {
+			batch.Release()
+			return
+		}
+		batch.SetResolvedParam(target, change.id, change.value)
+	}
+	if err := t.stream.Patch(batch); err != nil {
+		return
+	}
+	t.patchRevision++
+	t.last, t.livePlan, t.errText = fingerprint, next, ""
 }
 
 func (t *studioTransport) setError(err error) {
@@ -995,7 +1229,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": compileErr.Error()})
 				return
 			}
-			fingerprint, hashErr := playSourceHashBytes(s.path, current)
+			_, fingerprint, hashErr := s.transport.playbackFingerprint()
 			if hashErr != nil {
 				_ = prepared.Engine.Close()
 				studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": hashErr.Error()})

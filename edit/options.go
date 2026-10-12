@@ -37,7 +37,11 @@ const (
 type Options struct {
 	// ParamWriter pins SetParam to one writer. It belongs to the route that
 	// calls Apply, so it is not part of any intent's JSON.
-	ParamWriter  ParamWriter
+	ParamWriter ParamWriter
+	// MixerGuard, when set, runs before any mixer write, whether the route
+	// pinned the mixer writer or the generic surface resolved to it. A non-nil
+	// error refuses the whole envelope, so no earlier intent is committed.
+	MixerGuard   func() error
 	Compiler     Compiler
 	RenderCheck  RenderCheck
 	Path         string                // absolute path of the entry score

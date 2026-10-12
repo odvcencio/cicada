@@ -29,6 +29,7 @@ import (
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/host/takejournal"
 	"m31labs.dev/cicada/internal/audiobackend"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -207,14 +208,11 @@ func newStudio(path string) (*studio, error) {
 }
 
 func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
-	absolute, err := filepath.Abs(path)
+	target, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return nil, err
 	}
-	absolute, err = filepath.EvalSymlinks(absolute)
-	if err != nil {
-		return nil, err
-	}
+	absolute := target.Logical
 	s := &studio{path: absolute, sessionID: newStudioSessionID()}
 	opened := false
 	defer func() {
@@ -264,6 +262,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /api/capture", s.captureState)
 	mux.HandleFunc("POST /api/takes", s.takeCommand)
 	mux.HandleFunc("POST /api/source", s.replaceSource)
+	mux.HandleFunc("POST /api/intents", s.intents)
 	mux.HandleFunc("POST /api/proposals", s.stageProposal)
 	mux.HandleFunc("POST /api/proposals/{id}/accept", s.acceptProposal)
 	mux.HandleFunc("DELETE /api/proposals/{id}", s.discardProposal)
@@ -439,6 +438,7 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
+	recordedTake   bool // Set by the record route; arms the playback handoff after the commit.
 	historyFiles   []studioAuxiliaryFile
 	Hits           []int                    `json:"hits,omitempty"`
 	File           string                   `json:"file,omitempty"`

@@ -147,7 +147,7 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 	if err != nil {
 		return edits.Options{}, err
 	}
-	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath)}
+	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath), MixerGuard: s.mixerCaptureGuard}
 	if manifestPath != "" {
 		var supplied bool
 		opts.Manifest, supplied = overrides[manifestPath]
@@ -194,10 +194,63 @@ func auxiliaryFiles(files []edits.File) ([]studioAuxiliaryFile, error) {
 	return result, nil
 }
 
+var errMixerDuringCapture = errors.New("Finish the take before editing the mix.")
+
+// mixerCaptureGuard is the writer-level form of the /api/mixer refusal: edits
+// resolves the writer for each intent, so a batch that reaches the mixer
+// writer by any path is refused whole. The caller holds s.mu.
+func (s *studio) mixerCaptureGuard() error {
+	if s.captureID != "" {
+		return errMixerDuringCapture
+	}
+	return nil
+}
+
 // applyIntents is the intent-side twin of applyWithResult: the same prologue,
 // then edits.Apply, then the shared commit tail.
 func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, writer edits.ParamWriter, beforeSwap func()) {
 	s.applyPreparedIntents(w, edit, env, writer, nil, nil, beforeSwap)
+}
+
+func (s *studio) intents(w http.ResponseWriter, r *http.Request) {
+	if !studioSameOrigin(r) {
+		studioJSON(w, http.StatusForbidden, map[string]any{"error": "cross-origin edits are not allowed"})
+		return
+	}
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		studioJSON(w, http.StatusUnsupportedMediaType, map[string]any{"error": "expected JSON"})
+		return
+	}
+	var env edits.Envelope
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&env); err != nil {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})
+		return
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "expected one JSON request"})
+		return
+	}
+	if env.Revision == "" {
+		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "missing revision"})
+		return
+	}
+	s.applyIntents(w, studioEdit{Revision: env.Revision, Author: env.Author, Session: env.Session}, env, edits.ParamWriterAuto, nil)
+}
+
+// intentDiff includes auxiliary changes so a dry run shows the whole batch.
+func intentDiff(before []byte, result *edits.Result, name string) string {
+	diff := studioUnifiedDiff(before, result.Source)
+	diff = strings.Replace(diff, "--- a/score.cicada\n+++ b/score.cicada\n", "--- a/"+name+"\n+++ b/"+name+"\n", 1)
+	for _, file := range result.Files {
+		name := filepath.Base(file.Path)
+		fileDiff := studioUnifiedDiff(file.Before, file.After)
+		fileDiff = strings.Replace(fileDiff, "--- a/score.cicada\n+++ b/score.cicada\n", "--- a/"+name+"\n+++ b/"+name+"\n", 1)
+		diff += fileDiff
+	}
+	return diff
 }
 
 // applyPreparedIntents keeps host IO around the pure text edit. prepare may
@@ -207,7 +260,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if writer == edits.ParamWriterMixer && s.captureID != "" {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "Finish the take before editing the mix."})
+		studioJSON(w, http.StatusConflict, map[string]any{"error": errMixerDuringCapture.Error()})
 		return
 	}
 	if err := studioRecoveryConflict(s.path); err != nil {
@@ -225,7 +278,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	}
 	if studioRevision(current) != edit.Revision {
 		// The body also carries the canonical state for clients that queue edits.
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving", "revision": studioRevision(current), "source": string(current)})
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving", "revision": studioRevision(current), "source": string(current), "playingRevision": studioRevision(s.lastGoodSource)})
 		return
 	}
 	opts, err := s.editOptions(current, nil)
@@ -250,8 +303,16 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	}
 	compiler := opts.Compiler.(*studioCompiler)
 	result, err := edits.Apply(current, env, opts)
+	if errors.Is(err, errMixerDuringCapture) {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
+		return
+	}
+	if env.DryRun {
+		studioJSON(w, http.StatusOK, map[string]any{"diff": intentDiff(current, result, "score.cicada"), "revision": studioRevision(current), "valid": true, "dryRun": true})
 		return
 	}
 	if finish != nil {
@@ -270,12 +331,21 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	}
 	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
+	if outcome.Status == http.StatusConflict {
+		if latest, err := os.ReadFile(s.path); err == nil {
+			outcome.Response["revision"], outcome.Response["source"] = studioRevision(latest), string(latest)
+		}
+		outcome.Response["playingRevision"] = studioRevision(s.lastGoodSource)
+	}
 	studioJSON(w, outcome.Status, outcome.Response)
 }
 
 type stagedProposal struct {
 	proposal edits.Proposal
 	staged   *edits.Staged
+	// mixer records that a mixer writer ran while staging, so acceptance can
+	// apply the same capture guard to a proposal staged before the recording.
+	mixer bool
 }
 
 func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
@@ -314,7 +384,16 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
+	touchedMixer := false
+	opts.MixerGuard = func() error {
+		touchedMixer = true
+		return s.mixerCaptureGuard()
+	}
 	staged, err := edits.Stage(current, proposal, opts)
+	if errors.Is(err, errMixerDuringCapture) {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -329,7 +408,7 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 	if s.proposals == nil {
 		s.proposals = make(map[string]stagedProposal)
 	}
-	s.proposals[proposal.ID] = stagedProposal{proposal: proposal, staged: staged}
+	s.proposals[proposal.ID] = stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer}
 	s.previewProposal = proposal.ID
 	s.transport.applyPreview(staged.Ops)
 	studioJSON(w, http.StatusOK, map[string]any{"id": proposal.ID, "diff": staged.Diff, "ops": staged.Ops})
@@ -368,6 +447,12 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	proposal, result := staged.proposal, staged.staged.Result
+	if staged.mixer {
+		if err := s.mixerCaptureGuard(); err != nil {
+			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+			return
+		}
+	}
 	current, ok := s.proposalSource(w, proposal.Envelope.Revision)
 	if !ok {
 		return
