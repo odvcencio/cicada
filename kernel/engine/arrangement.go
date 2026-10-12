@@ -158,13 +158,10 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 }
 
 // applySceneTempo runs first: the scene's patterns and delay division use it.
+// The project compiler puts a scene's tempo ahead of its other settings.
 func (e *Engine) applySceneTempo(index uint16, snap bool) {
-	if int(index) < len(e.scenes) {
-		for _, setting := range e.scenes[index].Settings {
-			if setting.ID == kernel.ParamGlobalTempo {
-				e.applySceneSetting(setting, snap)
-			}
-		}
+	if settings := e.scenes[index].Settings; len(settings) != 0 && settings[0].ID == kernel.ParamGlobalTempo {
+		e.applySceneSetting(settings[0], snap)
 	}
 }
 
