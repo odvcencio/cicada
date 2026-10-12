@@ -96,7 +96,7 @@ func (s *studio) addVocalChain(w http.ResponseWriter, request studioEdit) {
 		set(comp+".makeup", "0dB")
 		chain = append(chain, hp, comp, deess)
 		set(request.Track+".insert", strings.Join(chain, " -> "))
-		opts, err := s.editOptions()
+		opts, err := s.editOptions(source, nil)
 		if err != nil {
 			return studioMutation{}, err
 		}

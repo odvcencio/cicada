@@ -14,7 +14,7 @@ type SharedPhraseError struct {
 }
 
 func (e *SharedPhraseError) Error() string {
-	return fmt.Sprintf("step %d of pattern %s comes from phrase %s; set shared to \"definition\" to edit the phrase or \"detach\" to edit this pattern only", e.Step+1, e.Pattern, e.Phrase)
+	return fmt.Sprintf("step %d of pattern %s comes from phrase %s; set shared to \"definition\" to edit the phrase, \"detach\" to detach this use, or \"pattern\" to detach every use", e.Step+1, e.Pattern, e.Phrase)
 }
 
 // RefusalError reports an intent that is refused rather than risk the music.

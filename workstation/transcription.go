@@ -50,7 +50,7 @@ func (s *studioApp) transcription(ctx *server.Context, v workspace, csrf string)
 			gosx.El("option", gosx.Attrs(gosx.Attr("value", "8")), gosx.Text("1/8")),
 			gosx.El("option", gosx.Attrs(gosx.Attr("value", "16"), gosx.BoolAttr("selected")), gosx.Text("1/16")))), submit("", "", "Transcribe melody"))
 	var preview gosx.Node = gosx.Fragment()
-	if d, ok := s.draft(session.Current(ctx.Request).String("transcription-preview"), session.Token(ctx.Request)); ok && d.Kind == "transcription" {
+	if d, ok := s.draft(session.Current(ctx.Request).String("transcription-preview"), workspaceOwner(ctx.Request)); ok && d.Kind == "transcription" {
 		var result transcription.Result
 		if json.Unmarshal([]byte(d.Source), &result) == nil {
 			confidence := 0.0
@@ -79,7 +79,7 @@ func (s *studioApp) transcription(ctx *server.Context, v workspace, csrf string)
 }
 
 func (s *studioApp) transcriptionAudio(w http.ResponseWriter, r *http.Request) {
-	d, ok := s.draft(session.Current(r).String("transcription-preview"), session.Token(r))
+	d, ok := s.draft(session.Current(r).String("transcription-preview"), workspaceOwner(r))
 	var result transcription.Result
 	if !ok || d.Kind != "transcription" || json.Unmarshal([]byte(d.Source), &result) != nil {
 		http.Error(w, "transcribe a recording to preview its score", http.StatusNotFound)
@@ -199,7 +199,7 @@ func (s *studioApp) transcribeMelody(ctx *action.Context) error {
 	if err != nil {
 		return err
 	}
-	id, err := s.storeDraft(string(data), ctx.FormData["revision"], session.Token(ctx.Request), "transcription")
+	id, err := s.storeDraft(string(data), ctx.FormData["revision"], workspaceOwner(ctx.Request), "transcription")
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (s *studioApp) applyTranscription(ctx *action.Context) error {
 	if err := actionValues(ctx); err != nil {
 		return err
 	}
-	d, ok := s.draft(session.Current(ctx.Request).String("transcription-preview"), session.Token(ctx.Request))
+	d, ok := s.draft(session.Current(ctx.Request).String("transcription-preview"), workspaceOwner(ctx.Request))
 	var result transcription.Result
 	if !ok || d.Kind != "transcription" || json.Unmarshal([]byte(d.Source), &result) != nil {
 		return action.Validation("The preview expired. Transcribe the recording again.", nil, nil)

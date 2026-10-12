@@ -15,6 +15,7 @@ import (
 
 	"github.com/coder/websocket"
 	"github.com/coder/websocket/wsjson"
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/internal/audiobackend"
@@ -31,6 +32,7 @@ type studioTransport struct {
 	preview           *liveplay.Player
 	previewTimer      *time.Timer
 	previewGeneration uint64
+	previewOps        []edits.PreviewOp
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions
 	lastInput         studioAudioSnapshot
@@ -714,6 +716,8 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 		t.errText = fmt.Sprintf("pattern %q is no longer on track %q in the playing score", event.Name, event.Track)
 	case "note-error":
 		t.errText = event.Name
+	case "preview-error":
+		t.errText = fmt.Sprintf("Preview %s on track %s ended, but its saved value could not be restored", event.Name, event.Track)
 	default:
 		t.pending, t.landed = false, event.Bar
 	}

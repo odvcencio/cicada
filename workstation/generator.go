@@ -5,6 +5,7 @@ import (
 	"math"
 	"strconv"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/phrase"
@@ -91,7 +92,7 @@ func (s *studioApp) generatePhrase(ctx *action.Context) error {
 	if err != nil {
 		return action.Validation(err.Error(), nil, ctx.FormData)
 	}
-	receipt, err := s.storeDraft(result.Notation, ctx.FormData["revision"], session.Token(ctx.Request), "phrase")
+	receipt, err := s.storeDraft(result.Notation, ctx.FormData["revision"], workspaceOwner(ctx.Request), "phrase")
 	if err != nil {
 		return err
 	}
@@ -129,7 +130,7 @@ func (s *studioApp) generator(ctx *server.Context, v workspace, csrf string) gos
 	controls = append(controls, field("Allow downbeat rest", gosx.El("input", attrs)), submit("", "", "Preview phrase"))
 	form := ui.Form(ui.FormProps{Action: "/__actions/generate", CSRF: csrf, Revision: v.Revision, ReturnTo: "/?panel=generator", Class: "action-form generator-form"}, controls...)
 	preview := gosx.Fragment()
-	if generated, ok := s.draft(store.String("phrase-preview"), session.Token(ctx.Request)); ok {
+	if generated, ok := s.draft(store.String("phrase-preview"), workspaceOwner(ctx.Request)); ok {
 		preview = gosx.Fragment(gosx.El("h3", gosx.Text("Generated score preview")), gosx.El("pre", gosx.Attrs(gosx.Attr("class", "history-diff")), gosx.Text(generated.Source)), s.mutationControls(v, csrf, values, store.String("phrase-locks"), generated.Source), s.form(workspace{Revision: generated.Revision}, csrf, "generator", "source", hidden("content", generated.Source), submit("", "", "Replace open score with this phrase")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Applying replaces the complete score. Undo restores the previous score.")))
 	}
 	return ui.Panel(ui.PanelProps{ID: "generator", Title: "Phrase generator", Description: "Deterministic acid phrases across eight scales. Preview before applying."}, form, preview)
@@ -156,7 +157,7 @@ func previewBar(source string) (seq.Pattern, error) {
 
 func (s *studioApp) mutatePhrase(ctx *action.Context) error {
 	store := session.Current(ctx.Request)
-	generated, ok := s.draft(store.String("phrase-preview"), session.Token(ctx.Request))
+	generated, ok := s.draft(store.String("phrase-preview"), workspaceOwner(ctx.Request))
 	if !ok {
 		return action.Validation("Generate a preview before mutating it.", nil, nil)
 	}
@@ -204,11 +205,15 @@ func (s *studioApp) mutatePhrase(ctx *action.Context) error {
 	if err != nil {
 		return action.Validation(err.Error(), nil, ctx.FormData)
 	}
-	updated, err := replacePreviewBar(generated.Source, result.Notation)
+	updated, err := edits.ReplacePreviewBar(generated.Source, result.Notation)
 	if err != nil {
 		return err
 	}
-	receipt, err := s.storeDraft(updated, generated.Revision, session.Token(ctx.Request), "phrase")
+	score, _ := notation.Parse([]byte(updated))
+	if p, diagnostics := project.FromScore(score); p == nil {
+		return fmt.Errorf("variation is invalid: %v", diagnostics)
+	}
+	receipt, err := s.storeDraft(updated, generated.Revision, workspaceOwner(ctx.Request), "phrase")
 	if err != nil {
 		return err
 	}
@@ -218,72 +223,6 @@ func (s *studioApp) mutatePhrase(ctx *action.Context) error {
 	ctx.FormData = nil
 	ctx.RedirectBackWithMessage("/?panel=generator", "Variation is ready. Locked steps were preserved; the open score has not changed.")
 	return nil
-}
-
-// Mutation returns a single bar. Replace only that generated declaration and
-// the seed, preserving the preview's header, other patterns, and arrangement.
-func replacePreviewBar(original, variation string) (string, error) {
-	type span struct {
-		start, end int
-		text, name string
-	}
-	read := func(source string) (map[string]span, error) {
-		document, err := notation.ParseDocument([]byte(source))
-		if err != nil {
-			return nil, err
-		}
-		found := map[string]span{}
-		for i := 0; i < document.Root.NamedChildCount(); i++ {
-			node := document.Root.NamedChild(i)
-			kind := document.Walker.Type(node)
-			if kind == "acid_pattern" || kind == "note_pattern" {
-				kind = "pattern"
-			}
-			if kind != "pattern" && kind != "seed_decl" {
-				continue
-			}
-			if _, exists := found[kind]; exists {
-				continue
-			}
-			found[kind] = span{int(node.StartByte()), int(node.EndByte()), document.Walker.Text(node), document.Walker.Text(document.Walker.Field(node, "name"))}
-		}
-		if _, ok := found["pattern"]; !ok {
-			return nil, fmt.Errorf("phrase preview has no acid bar")
-		}
-		return found, nil
-	}
-	before, err := read(original)
-	if err != nil {
-		return "", err
-	}
-	after, err := read(variation)
-	if err != nil {
-		return "", err
-	}
-	if before["pattern"].name != after["pattern"].name {
-		return "", fmt.Errorf("phrase preview pattern changed")
-	}
-	// Pattern declarations follow the seed. Apply replacements backwards so
-	// changed seed lengths cannot invalidate the original byte positions.
-	pattern := before["pattern"]
-	updated := original[:pattern.start] + after["pattern"].text + original[pattern.end:]
-	if seed, ok := before["seed_decl"]; ok {
-		newSeed, exists := after["seed_decl"]
-		if !exists || seed.end > pattern.start {
-			return "", fmt.Errorf("phrase preview seed is unavailable")
-		}
-		updated = updated[:seed.start] + newSeed.text + updated[seed.end:]
-	}
-	score, diagnostics := notation.Parse([]byte(updated))
-	for _, d := range diagnostics {
-		if d.Severity == "error" {
-			return "", fmt.Errorf("variation is invalid: %s", d.Message)
-		}
-	}
-	if p, diagnostics := project.FromScore(score); p == nil {
-		return "", fmt.Errorf("variation is invalid: %v", diagnostics)
-	}
-	return updated, nil
 }
 
 func (s *studioApp) mutationControls(v workspace, csrf string, values map[string]string, mask, source string) gosx.Node {

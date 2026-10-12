@@ -1,0 +1,12 @@
+[
+  {
+    "Original": "cicada 2\n\ntitle \"Generated phrase\"\n\ntempo 130\n\nkey c minor\n\nseed 4242\n\ntrack bass acid {}\n\npattern bass-a {\n  swing = 54%\n  gate = 55%\n  1^ . 1' 1 7,^ 1~ 5 . 3^ . 1' 3 . 4~ 5 .\n}\n\nscene a {\n  bass = bass-a\n}\n\nsong {\n  a\n}\n",
+    "Variation": "cicada 2\n\ntitle \"Generated phrase\"\n\ntempo 130\n\nkey c minor\n\nseed 4242\n\ntrack bass acid {}\n\npattern bass-a {\n  swing = 54%\n  gate = 55%\n  1^ . 1' 1 7, 1~ 5 . 3^ . 1' 3 . 4~ 5 .\n}\n\nscene a {\n  bass = bass-a\n}\n\nsong {\n  a\n}\n",
+    "Updated": "cicada 2\n\ntitle \"Generated phrase\"\n\ntempo 130\n\nkey c minor\n\nseed 4242\n\ntrack bass acid {}\n\npattern bass-a {\n  swing = 54%\n  gate = 55%\n  1^ . 1' 1 7, 1~ 5 . 3^ . 1' 3 . 4~ 5 .\n}\n\nscene a {\n  bass = bass-a\n}\n\nsong {\n  a\n}\n"
+  },
+  {
+    "Original": "cicada 2\n\ntitle \"Generated phrase\"\n\ntempo 130\n\nkey c minor\n\nseed 4242\n\ntrack bass acid {}\n\npattern bass-a {\n  swing = 54%\n  gate = 55%\n  1^ . 1' 1 7,^ 1~ 5 . 3^ . 1' 3 . 4~ 5 .\n}\n\npattern bass-b {\n  swing = 54%\n  gate = 55%\n  1^ . 1' 1~ 7,^ 1~ 5 . 3^ . 1'^ 1 . 4~ 5 .\n}\n\npattern bass-c {\n  swing = 54%\n  gate = 55%\n  1' . 1^ . 1' 1 7,^ 1~ 5 . 3^ . 4 3 . 4~\n}\n\nscene a {\n  bass = bass-a\n}\n\nscene b {\n  bass = bass-b\n}\n\nscene c {\n  bass = bass-c\n}\n\nsong {\n  a\n  b\n  a\n  c\n}\n",
+    "Variation": "cicada 2\n\ntitle \"Generated phrase\"\n\ntempo 130\n\nkey c minor\n\nseed 4242\n\ntrack bass acid {}\n\npattern bass-a {\n  swing = 54%\n  gate = 55%\n  1^ . 1' 1 7, 1~ 5 . 3^ . 1' 3 . 4~ 5 .\n}\n\nscene a {\n  bass = bass-a\n}\n\nsong {\n  a\n}\n",
+    "Updated": "cicada 2\n\ntitle \"Generated phrase\"\n\ntempo 130\n\nkey c minor\n\nseed 4242\n\ntrack bass acid {}\n\npattern bass-a {\n  swing = 54%\n  gate = 55%\n  1^ . 1' 1 7, 1~ 5 . 3^ . 1' 3 . 4~ 5 .\n}\n\npattern bass-b {\n  swing = 54%\n  gate = 55%\n  1^ . 1' 1~ 7,^ 1~ 5 . 3^ . 1'^ 1 . 4~ 5 .\n}\n\npattern bass-c {\n  swing = 54%\n  gate = 55%\n  1' . 1^ . 1' 1 7,^ 1~ 5 . 3^ . 4 3 . 4~\n}\n\nscene a {\n  bass = bass-a\n}\n\nscene b {\n  bass = bass-b\n}\n\nscene c {\n  bass = bass-c\n}\n\nsong {\n  a\n  b\n  a\n  c\n}\n"
+  }
+]

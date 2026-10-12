@@ -28,7 +28,7 @@ func (s *studioApp) liveAction(ctx *action.Context) error {
 	if e != nil || sequence == 0 || len(f["lease"]) < 8 || len(f["lease"]) > 96 {
 		return action.Validation("live mount lease and sequence are required", nil, nil)
 	}
-	identity := sha256.Sum256([]byte(session.Token(ctx.Request) + ":" + f["lease"]))
+	identity := sha256.Sum256([]byte(workspaceOwner(ctx.Request) + ":" + f["lease"]))
 	request := map[string]any{"owner": hex.EncodeToString(identity[:]), "sequence": sequence, "release": f["type"] == "release"}
 	p := map[string]any{"type": f["type"], "track": f["track"], "address": f["address"]}
 	switch f["type"] {
@@ -100,7 +100,7 @@ func (s *studioApp) previewNotes(ctx *action.Context) error {
 		return action.Validation(err.Error(), nil, nil)
 	}
 	data, _ := json.Marshal(takes)
-	key, err := s.storeDraft(string(data), ctx.FormData["revision"], session.Token(ctx.Request), "notes")
+	key, err := s.storeDraft(string(data), ctx.FormData["revision"], workspaceOwner(ctx.Request), "notes")
 	if err != nil {
 		return err
 	}
@@ -120,7 +120,7 @@ func (s *studioApp) commitNotes(ctx *action.Context) error {
 		ctx.RedirectBackWithMessage("/?panel=live", "Note take discarded.")
 		return nil
 	}
-	d, ok := s.draft(store.String("note-preview"), session.Token(ctx.Request))
+	d, ok := s.draft(store.String("note-preview"), workspaceOwner(ctx.Request))
 	if !ok || d.Kind != "notes" {
 		return action.Validation("No retained note take is available.", nil, nil)
 	}
@@ -225,7 +225,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	}
 	midi := gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), button("midi", "Enable MIDI"), field("Learn target", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-target", "")), options(targets))), field("MIDI launch timing", gosx.El("select", gosx.Attrs(gosx.Attr("data-live-quantize", "")), gosx.Fragment(quantize...))), button("learn", "Learn next input"), button("clear", "Clear mappings"))
 	var preview gosx.Node = gosx.Fragment()
-	if d, ok := s.draft(session.Current(ctx.Request).String("note-preview"), session.Token(ctx.Request)); ok && d.Kind == "notes" {
+	if d, ok := s.draft(session.Current(ctx.Request).String("note-preview"), workspaceOwner(ctx.Request)); ok && d.Kind == "notes" {
 		apply := submit("intent", "commit", "Commit notes to patterns")
 		if d.Revision != v.Revision {
 			apply = gosx.Fragment(gosx.El("p", gosx.Text("The score changed since this take. Review the notes and current target patterns before applying.")), submit("intent", "rebase", "Apply notes to current score"))

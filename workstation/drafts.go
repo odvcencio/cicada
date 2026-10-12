@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"net/http"
 	"time"
 
 	"m31labs.dev/gosx/action"
@@ -16,11 +17,17 @@ type draft struct {
 	Expires                 time.Time
 }
 
+// CSRF tokens are masked per response. Private drafts and live mount leases
+// use a separate, stable identity stored in the encrypted workspace session.
+func workspaceOwner(r *http.Request) string {
+	return session.Current(r).String("workspace-owner")
+}
+
 // Cookie sessions hold a small draft receipt, never an entire source document.
 // A rejected submission can contain up to 2 MiB. Retain its receipt across
 // navigation and reload; managed submissions also keep the existing editor.
 func (s *studioApp) preserveDraft(ctx *action.Context) map[string]string {
-	key, err := s.storeDraft(ctx.FormData["content"], ctx.FormData["revision"], session.Token(ctx.Request), "source")
+	key, err := s.storeDraft(ctx.FormData["content"], ctx.FormData["revision"], workspaceOwner(ctx.Request), "source")
 	if err != nil {
 		return nil
 	}

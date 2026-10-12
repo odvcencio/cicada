@@ -1,0 +1,1914 @@
+{
+  "automation/forbidden/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "bass.insert cannot be automated at a scene boundary"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/forbidden/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "bass.insert cannot be automated at a scene boundary"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/inherited edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ee28beafa2cc89a0022a6db248a5bb95eb18115ff2c4056d09082c74074296f2",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ee28beafa2cc89a0022a6db248a5bb95eb18115ff2c4056d09082c74074296f2",
+      "source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  bass.pan = 0.375\n bass = keep }\nsong { main hold main }\n",
+      "valid": true
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  bass.pan = 0.375\n bass = keep }\nsong { main hold main }\n",
+    "Labels": [
+      "Automation · hold / bass.pan set"
+    ]
+  },
+  "automation/inherited edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2466945fd798af290897bb32bf7362e5b60a817ac4848cf32f450b786abe475a",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2466945fd798af290897bb32bf7362e5b60a817ac4848cf32f450b786abe475a",
+      "source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  bass.pan = 0.375\r\n bass = keep }\r\nsong { main hold main }\r\n",
+      "valid": true
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  bass.pan = 0.375\r\n bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": [
+      "Automation · hold / bass.pan set"
+    ]
+  },
+  "automation/insert precision/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2f1cd3d851b3a2aab779e1c79e3afa551fc1436a4f75e56880a6fd19fd33c101",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2f1cd3d851b3a2aab779e1c79e3afa551fc1436a4f75e56880a6fd19fd33c101",
+      "source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  bass.level = -6.25dB\n bass = keep }\nsong { main hold main }\n",
+      "valid": true
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  bass.level = -6.25dB\n bass = keep }\nsong { main hold main }\n",
+    "Labels": [
+      "Automation · hold / bass.level set"
+    ]
+  },
+  "automation/insert precision/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "58f3d786d10c88a7621911a4bfac648204a50795c13d47be826fd189cab73167",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "58f3d786d10c88a7621911a4bfac648204a50795c13d47be826fd189cab73167",
+      "source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  bass.level = -6.25dB\r\n bass = keep }\r\nsong { main hold main }\r\n",
+      "valid": true
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  bass.level = -6.25dB\r\n bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": [
+      "Automation · hold / bass.level set"
+    ]
+  },
+  "automation/loose edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "33096ce0b6de91b1847e2f5376565e765f15b0ddd306438aad1d394877ab1172",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "33096ce0b6de91b1847e2f5376565e765f15b0ddd306438aad1d394877ab1172",
+      "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  bass.pan = 0.375\n bass = keep }\nsong { main hold main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  bass.pan = 0.375\n bass = keep }\nsong { main hold main }\n",
+    "Labels": [
+      "Automation · hold / bass.pan set"
+    ]
+  },
+  "automation/loose edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2943e07e4821fdcf9437bc2b2d11090f7c41721af3f7b921b50b113d58c1b188",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2943e07e4821fdcf9437bc2b2d11090f7c41721af3f7b921b50b113d58c1b188",
+      "source": "cicada 2\r\ntempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  bass.pan = 0.375\r\n bass = keep }\r\nsong { main hold main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  bass.pan = 0.375\r\n bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": [
+      "Automation · hold / bass.pan set"
+    ]
+  },
+  "automation/manifest edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "33096ce0b6de91b1847e2f5376565e765f15b0ddd306438aad1d394877ab1172",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "33096ce0b6de91b1847e2f5376565e765f15b0ddd306438aad1d394877ab1172",
+      "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  bass.pan = 0.375\n bass = keep }\nsong { main hold main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  bass.pan = 0.375\n bass = keep }\nsong { main hold main }\n",
+    "Labels": [
+      "Automation · hold / bass.pan set"
+    ]
+  },
+  "automation/manifest edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2943e07e4821fdcf9437bc2b2d11090f7c41721af3f7b921b50b113d58c1b188",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2943e07e4821fdcf9437bc2b2d11090f7c41721af3f7b921b50b113d58c1b188",
+      "source": "cicada 2\r\ntempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  bass.pan = 0.375\r\n bass = keep }\r\nsong { main hold main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  bass.pan = 0.375\r\n bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": [
+      "Automation · hold / bass.pan set"
+    ]
+  },
+  "automation/missing point/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "scene hold has no point for bass.pan"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/missing point/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "scene hold has no point for bass.pan"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/missing scene/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"missing\""
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/missing scene/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"missing\""
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/missing value/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pan must be numeric"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/missing value/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "pan must be numeric"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/out of range/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "value is outside 20..8000"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/out of range/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "value is outside 20..8000"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/remove/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "3393b17711f6f3d0ef442226d98e778ac058fe27a09151e9fc242b766dd21367",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "3393b17711f6f3d0ef442226d98e778ac058fe27a09151e9fc242b766dd21367",
+      "source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n   // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+      "valid": true
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n   // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": [
+      "Automation · main / bass.cutoff removed"
+    ]
+  },
+  "automation/remove/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d76561603fef5bd26013dd87c6953fd57d753f217e8ad8c3d15dde745ed8e120",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d76561603fef5bd26013dd87c6953fd57d753f217e8ad8c3d15dde745ed8e120",
+      "source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n   // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+      "valid": true
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n   // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": [
+      "Automation · main / bass.cutoff removed"
+    ]
+  },
+  "automation/set/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "1b8b6fb9f377796fac1d81288872d0e64f53be388105a1ab0944276fb9cc28b7",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "1b8b6fb9f377796fac1d81288872d0e64f53be388105a1ab0944276fb9cc28b7",
+      "source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 1250Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+      "valid": true
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 1250Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": [
+      "Automation · main / bass.cutoff set"
+    ]
+  },
+  "automation/set/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "28e6beb120f29a827b58788db649b58ac64da29d433c00743ae65eee8b5f7ddd",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "28e6beb120f29a827b58788db649b58ac64da29d433c00743ae65eee8b5f7ddd",
+      "source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 1250Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+      "valid": true
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 1250Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": [
+      "Automation · main / bass.cutoff set"
+    ]
+  },
+  "automation/tempo/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "tempo cannot be automated at a scene boundary"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/tempo/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "tempo cannot be automated at a scene boundary"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/unit mismatch/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "level requires dB"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/unit mismatch/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "level requires dB"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/unknown path/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown parameter path owner unknown"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/unknown path/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown parameter path owner unknown"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/unknown/\"\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "choose an automation operation"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/unknown/\"\\r\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "choose an automation operation"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "clip/bad fades/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a valid source region, fades no longer than the region, and gain −60 to +24 dB"
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/bad fades/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a valid source region, fades no longer than the region, and gain −60 to +24 dB"
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/bad name/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a lowercase audio track name in an edition-2 score"
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/bad name/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a lowercase audio track name in an edition-2 score"
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/bind missing scene/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"ghost\""
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/bind missing scene/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown declaration \"ghost\""
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/bind unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "545ef4b12ecc6fb8f92a515808443d8b7754006d8b888ef4f7d86d4234bd2b47",
+      "revision": "545ef4b12ecc6fb8f92a515808443d8b7754006d8b888ef4f7d86d4234bd2b47",
+      "source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/bind unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b125b176be8c06b2864cf19dde574cb12baf13faee2fc0b8e195ea185404ffda",
+      "revision": "b125b176be8c06b2864cf19dde574cb12baf13faee2fc0b8e195ea185404ffda",
+      "source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/bind/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "6c9cb546035480ea890ae6bd843bef271b497acf0bcfb334837515c5ecbe32fa",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "6c9cb546035480ea890ae6bd843bef271b497acf0bcfb334837515c5ecbe32fa",
+      "source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = off }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = off }\nsong { main }\n",
+    "Labels": [
+      "Audio clip · off assigned to main / vox"
+    ]
+  },
+  "clip/bind/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c9e0af21cba162cfc5b7faa50d1c39c3ca32c5c3ea988594cd7f523d36650d2b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c9e0af21cba162cfc5b7faa50d1c39c3ca32c5c3ea988594cd7f523d36650d2b",
+      "source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = off }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = off }\r\nsong { main }\r\n",
+    "Labels": [
+      "Audio clip · off assigned to main / vox"
+    ]
+  },
+  "clip/duplicate track/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "track vox already exists"
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/duplicate track/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "track vox already exists"
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/edition1/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "Audio tracks require edition 2. Use the Mixer upgrade option first."
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/edition1/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "Audio tracks require edition 2. Use the Mixer upgrade option first."
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/fades/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "49f03388e3767f894c8e67ff1fe561bcbe2ea569b94a9bc12f9238b2387fa141",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "49f03388e3767f894c8e67ff1fe561bcbe2ea569b94a9bc12f9238b2387fa141",
+      "source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { fade_in = 48frames fade_out = 96frames  start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { fade_in = 48frames fade_out = 96frames  start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": [
+      "Audio region edited · hit"
+    ]
+  },
+  "clip/fades/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "93e045faf994a35913239cf2d6e14e7a16a1750d89275c04084b19373fa6ecb7",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "93e045faf994a35913239cf2d6e14e7a16a1750d89275c04084b19373fa6ecb7",
+      "source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { fade_in = 48frames fade_out = 96frames  start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { fade_in = 48frames fade_out = 96frames  start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": [
+      "Audio region edited · hit"
+    ]
+  },
+  "clip/inherited edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "9c5280752ec89bac3996a34963b2ad27827d67e79d893450ba0614b41a4af895",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "9c5280752ec89bac3996a34963b2ad27827d67e79d893450ba0614b41a4af895",
+      "source": "asset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\ntrack vocal-b audio {}\n\nscene main { vox = hit }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "asset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\ntrack vocal-b audio {}\n\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": [
+      "Audio track added · vocal-b"
+    ]
+  },
+  "clip/inherited edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c4adf09ec414d3c2be66b1e23989496d2e295d4fb836adb2166d24c3c35abd55",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c4adf09ec414d3c2be66b1e23989496d2e295d4fb836adb2166d24c3c35abd55",
+      "source": "asset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\ntrack vocal-b audio {}\r\n\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "asset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\ntrack vocal-b audio {}\r\n\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": [
+      "Audio track added · vocal-b"
+    ]
+  },
+  "clip/loose edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "de00b8890356698fd714abc84d24023dc1dd14aab28ae61f5fb968dbcebbe59b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "de00b8890356698fd714abc84d24023dc1dd14aab28ae61f5fb968dbcebbe59b",
+      "source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\ntrack vocal-b audio {}\n\nscene main { vox = hit }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\ntrack vocal-b audio {}\n\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": [
+      "Audio track added · vocal-b"
+    ]
+  },
+  "clip/loose edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c76fd6c0b408b46358c6f7f405a139e732025e3f877aced7632ea9566b87c77c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c76fd6c0b408b46358c6f7f405a139e732025e3f877aced7632ea9566b87c77c",
+      "source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\ntrack vocal-b audio {}\r\n\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\ntrack vocal-b audio {}\r\n\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": [
+      "Audio track added · vocal-b"
+    ]
+  },
+  "clip/manifest edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "de00b8890356698fd714abc84d24023dc1dd14aab28ae61f5fb968dbcebbe59b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "de00b8890356698fd714abc84d24023dc1dd14aab28ae61f5fb968dbcebbe59b",
+      "source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\ntrack vocal-b audio {}\n\nscene main { vox = hit }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\ntrack vocal-b audio {}\n\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": [
+      "Audio track added · vocal-b"
+    ]
+  },
+  "clip/manifest edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c76fd6c0b408b46358c6f7f405a139e732025e3f877aced7632ea9566b87c77c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c76fd6c0b408b46358c6f7f405a139e732025e3f877aced7632ea9566b87c77c",
+      "source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\ntrack vocal-b audio {}\r\n\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\ntrack vocal-b audio {}\r\n\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": [
+      "Audio track added · vocal-b"
+    ]
+  },
+  "clip/missing clip/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown clip ghost"
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/missing clip/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "unknown clip ghost"
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/missing settings/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a valid source region, fades no longer than the region, and gain −60 to +24 dB"
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/missing settings/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a valid source region, fades no longer than the region, and gain −60 to +24 dB"
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/past asset/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "clip end exceeds the source asset"
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/past asset/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "clip end exceeds the source asset"
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/region/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "3efed527a55fe9bfd399aa858f8f41e560ee5df9ba5163700276c68168273ceb",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "3efed527a55fe9bfd399aa858f8f41e560ee5df9ba5163700276c68168273ceb",
+      "source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 960frames // original region\n end = 9600frames gain = -4dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 960frames // original region\n end = 9600frames gain = -4dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": [
+      "Audio region edited · hit"
+    ]
+  },
+  "clip/region/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "16ba66adc63205b3c94bd4601b4c1bb5e9d7ead80342eeaae49d2ec04e46f01d",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "16ba66adc63205b3c94bd4601b4c1bb5e9d7ead80342eeaae49d2ec04e46f01d",
+      "source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 960frames // original region\r\n end = 9600frames gain = -4dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 960frames // original region\r\n end = 9600frames gain = -4dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": [
+      "Audio region edited · hit"
+    ]
+  },
+  "clip/track/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "de00b8890356698fd714abc84d24023dc1dd14aab28ae61f5fb968dbcebbe59b",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "de00b8890356698fd714abc84d24023dc1dd14aab28ae61f5fb968dbcebbe59b",
+      "source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\ntrack vocal-b audio {}\n\nscene main { vox = hit }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\ntrack vocal-b audio {}\n\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": [
+      "Audio track added · vocal-b"
+    ]
+  },
+  "clip/track/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c76fd6c0b408b46358c6f7f405a139e732025e3f877aced7632ea9566b87c77c",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c76fd6c0b408b46358c6f7f405a139e732025e3f877aced7632ea9566b87c77c",
+      "source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\ntrack vocal-b audio {}\r\n\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\ntrack vocal-b audio {}\r\n\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": [
+      "Audio track added · vocal-b"
+    ]
+  },
+  "clip/unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "545ef4b12ecc6fb8f92a515808443d8b7754006d8b888ef4f7d86d4234bd2b47",
+      "revision": "545ef4b12ecc6fb8f92a515808443d8b7754006d8b888ef4f7d86d4234bd2b47",
+      "source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b125b176be8c06b2864cf19dde574cb12baf13faee2fc0b8e195ea185404ffda",
+      "revision": "b125b176be8c06b2864cf19dde574cb12baf13faee2fc0b8e195ea185404ffda",
+      "source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "clip/unknown/\"\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "unknown audio clip action"
+    },
+    "Source": "cicada 2\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\nclip hit take { start = 10ms // original region\n end = 100ms gain = -2.0dB } // keep clip comment\ntrack vox audio {}\nscene main { vox = hit }\nsong { main }\n",
+    "Labels": null
+  },
+  "clip/unknown/\"\\r\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "unknown audio clip action"
+    },
+    "Source": "cicada 2\r\nasset take \"take.wav\" { sha256 = \"ee50c7b2d9335203041d2dc44cacdcf20279fc2a8c037deae44e17b39f68f8e2\" format = wav frames = 48000 rate = 48000Hz channels = 1 }\r\nclip hit take { start = 10ms // original region\r\n end = 100ms gain = -2.0dB } // keep clip comment\r\ntrack vox audio {}\r\nscene main { vox = hit }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "files/invalid/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "2:1 CICADA-SYNTAX: syntax error near \"???\""
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "files/invalid/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "2:1 CICADA-SYNTAX: syntax error near \"???\""
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "files/part invalid/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "1:1 CICADA-SYNTAX: syntax error near \"pattern riff { nonsense }\""
+    },
+    "Source": "pattern riff { 1 . 5 . }\n",
+    "Labels": null
+  },
+  "files/part invalid/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "1:1 CICADA-SYNTAX: syntax error near \"pattern riff { nonsense }\""
+    },
+    "Source": "pattern riff { 1 . 5 . }\r\n",
+    "Labels": null
+  },
+  "files/part unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "842feb2d11ecc7cba21010ee64db6f3e756426ba1d75d6399c0eba9e691c57d5",
+      "revision": "842feb2d11ecc7cba21010ee64db6f3e756426ba1d75d6399c0eba9e691c57d5",
+      "source": "pattern riff { 1 . 5 . }\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "pattern riff { 1 . 5 . }\n",
+    "Labels": null
+  },
+  "files/part unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "eb0442b39cdc5df04d2d716c3013206c6773b9684230e1eb91e9fe27296de7a5",
+      "revision": "eb0442b39cdc5df04d2d716c3013206c6773b9684230e1eb91e9fe27296de7a5",
+      "source": "pattern riff { 1 . 5 . }\r\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "pattern riff { 1 . 5 . }\r\n",
+    "Labels": null
+  },
+  "files/part write/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "281459f7a9dd906cdec3fea926f80d6c42d1c738560a46cfd4373e000e394ca2",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "281459f7a9dd906cdec3fea926f80d6c42d1c738560a46cfd4373e000e394ca2",
+      "source": "pattern riff { 2 . 6 . }\n",
+      "valid": true
+    },
+    "Source": "pattern riff { 2 . 6 . }\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "files/part write/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "722b3f4edb0a698de92161e7c2b5d820917479bd9a675afbf76485a2ca2221ff",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "722b3f4edb0a698de92161e7c2b5d820917479bd9a675afbf76485a2ca2221ff",
+      "source": "pattern riff { 2 . 6 . }\r\n",
+      "valid": true
+    },
+    "Source": "pattern riff { 2 . 6 . }\r\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "files/unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "80b8bf31516818bad4f22254d9e2be17a4ff4be43676c779677a6ef20a3097f3",
+      "revision": "80b8bf31516818bad4f22254d9e2be17a4ff4be43676c779677a6ef20a3097f3",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "files/unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "33b2809fb09e75220cfa6544016a2539fd0257087a28ddc3d76f8ce823e553f8",
+      "revision": "33b2809fb09e75220cfa6544016a2539fd0257087a28ddc3d76f8ce823e553f8",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "files/unknown file/\"\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "file is not a project source"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "files/unknown file/\"\\r\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "file is not a project source"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "files/write/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "502d16fc555d6b8efcb13c7b67bfb9c6b8bad15a5d6bf0072661478a33eeebc3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "502d16fc555d6b8efcb13c7b67bfb9c6b8bad15a5d6bf0072661478a33eeebc3",
+      "source": "title \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "files/write/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4c4d84252566441fe7dc52a0099d936320410978f4e34fdab4d4db22f16e1c39",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4c4d84252566441fe7dc52a0099d936320410978f4e34fdab4d4db22f16e1c39",
+      "source": "title \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "project/blank title/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a title of 1–256 characters and tempo 20–300 BPM"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "project/blank title/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a title of 1–256 characters and tempo 20–300 BPM"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "project/defaults/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b353ec0bdf1d16efaa3a6e248538143dd8deece806fafb60ee51b5488de3c796",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b353ec0bdf1d16efaa3a6e248538143dd8deece806fafb60ee51b5488de3c796",
+      "source": "tempo 120\nkey a minor\ntitle \"New\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "tempo 120\nkey a minor\ntitle \"New\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/defaults/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "83b9e3bb96254c25e7085ef8ccd8a4e5d227b4fc50a0629d6ed7762491df6d6f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "83b9e3bb96254c25e7085ef8ccd8a4e5d227b4fc50a0629d6ed7762491df6d6f",
+      "source": "tempo 120\r\nkey a minor\r\ntitle \"New\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "tempo 120\r\nkey a minor\r\ntitle \"New\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/inherited edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "757ee5ee897d32aec172dbdd351d316580f6d1db061e6d7555f3a215ffd0af30",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "757ee5ee897d32aec172dbdd351d316580f6d1db061e6d7555f3a215ffd0af30",
+      "source": "// authored header\ntitle \"東京 \\\"Studio\\\"\"\nkey db minor\ntempo // tempo comment\n127.125\ntrack bass acid {}\npattern p { 1 . c#3 . }\nscene main { bass=p }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "// authored header\ntitle \"東京 \\\"Studio\\\"\"\nkey db minor\ntempo // tempo comment\n127.125\ntrack bass acid {}\npattern p { 1 . c#3 . }\nscene main { bass=p }\nsong { main }\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/inherited edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "9b3f563ad7495828471227141808f2f63490b08603db48bd5616c946988f55e8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "9b3f563ad7495828471227141808f2f63490b08603db48bd5616c946988f55e8",
+      "source": "// authored header\r\ntitle \"東京 \\\"Studio\\\"\"\r\nkey db minor\r\ntempo // tempo comment\r\n127.125\r\ntrack bass acid {}\r\npattern p { 1 . c#3 . }\r\nscene main { bass=p }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "// authored header\r\ntitle \"東京 \\\"Studio\\\"\"\r\nkey db minor\r\ntempo // tempo comment\r\n127.125\r\ntrack bass acid {}\r\npattern p { 1 . c#3 . }\r\nscene main { bass=p }\r\nsong { main }\r\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/key/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a supported key and scale"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "project/key/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a supported key and scale"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "project/long title/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a title of 1–256 characters and tempo 20–300 BPM"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "project/long title/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a title of 1–256 characters and tempo 20–300 BPM"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "project/loose edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "fdac8279db47ee085e5c9c91f20c0440c568c64ae39ad5fce334af75c205233f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "fdac8279db47ee085e5c9c91f20c0440c568c64ae39ad5fce334af75c205233f",
+      "source": "cicada 2\n// authored header\ntitle \"東京 \\\"Studio\\\"\"\nkey db minor\ntempo // tempo comment\n127.125\ntrack bass acid {}\npattern p { 1 . c#3 . }\nscene main { bass=p }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"東京 \\\"Studio\\\"\"\nkey db minor\ntempo // tempo comment\n127.125\ntrack bass acid {}\npattern p { 1 . c#3 . }\nscene main { bass=p }\nsong { main }\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/loose edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "363bc721cde5fe763814f31853babf59dfe76067c76a5da2bae75a3d915e60c0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "363bc721cde5fe763814f31853babf59dfe76067c76a5da2bae75a3d915e60c0",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"東京 \\\"Studio\\\"\"\r\nkey db minor\r\ntempo // tempo comment\r\n127.125\r\ntrack bass acid {}\r\npattern p { 1 . c#3 . }\r\nscene main { bass=p }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"東京 \\\"Studio\\\"\"\r\nkey db minor\r\ntempo // tempo comment\r\n127.125\r\ntrack bass acid {}\r\npattern p { 1 . c#3 . }\r\nscene main { bass=p }\r\nsong { main }\r\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/manifest edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "fdac8279db47ee085e5c9c91f20c0440c568c64ae39ad5fce334af75c205233f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "fdac8279db47ee085e5c9c91f20c0440c568c64ae39ad5fce334af75c205233f",
+      "source": "cicada 2\n// authored header\ntitle \"東京 \\\"Studio\\\"\"\nkey db minor\ntempo // tempo comment\n127.125\ntrack bass acid {}\npattern p { 1 . c#3 . }\nscene main { bass=p }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"東京 \\\"Studio\\\"\"\nkey db minor\ntempo // tempo comment\n127.125\ntrack bass acid {}\npattern p { 1 . c#3 . }\nscene main { bass=p }\nsong { main }\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/manifest edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "363bc721cde5fe763814f31853babf59dfe76067c76a5da2bae75a3d915e60c0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "363bc721cde5fe763814f31853babf59dfe76067c76a5da2bae75a3d915e60c0",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"東京 \\\"Studio\\\"\"\r\nkey db minor\r\ntempo // tempo comment\r\n127.125\r\ntrack bass acid {}\r\npattern p { 1 . c#3 . }\r\nscene main { bass=p }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"東京 \\\"Studio\\\"\"\r\nkey db minor\r\ntempo // tempo comment\r\n127.125\r\ntrack bass acid {}\r\npattern p { 1 . c#3 . }\r\nscene main { bass=p }\r\nsong { main }\r\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/missing/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a title of 1–256 characters and tempo 20–300 BPM"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "project/missing/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a title of 1–256 characters and tempo 20–300 BPM"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "project/retuning/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "5:13 CICADA-SCALE-DEGREE: scale pent has no degree 2"
+    },
+    "Source": "key a minor\ntrack bass acid {}\npattern p { 2 6 }\nscene main { bass=p }\nsong { main }\n",
+    "Labels": null
+  },
+  "project/retuning/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "5:13 CICADA-SCALE-DEGREE: scale pent has no degree 2"
+    },
+    "Source": "key a minor\r\ntrack bass acid {}\r\npattern p { 2 6 }\r\nscene main { bass=p }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "project/scale/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a supported key and scale"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "project/scale/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a supported key and scale"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "project/spelling and precision/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "fdac8279db47ee085e5c9c91f20c0440c568c64ae39ad5fce334af75c205233f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "fdac8279db47ee085e5c9c91f20c0440c568c64ae39ad5fce334af75c205233f",
+      "source": "cicada 2\n// authored header\ntitle \"東京 \\\"Studio\\\"\"\nkey db minor\ntempo // tempo comment\n127.125\ntrack bass acid {}\npattern p { 1 . c#3 . }\nscene main { bass=p }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\n// authored header\ntitle \"東京 \\\"Studio\\\"\"\nkey db minor\ntempo // tempo comment\n127.125\ntrack bass acid {}\npattern p { 1 . c#3 . }\nscene main { bass=p }\nsong { main }\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/spelling and precision/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "363bc721cde5fe763814f31853babf59dfe76067c76a5da2bae75a3d915e60c0",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "363bc721cde5fe763814f31853babf59dfe76067c76a5da2bae75a3d915e60c0",
+      "source": "cicada 2\r\n// authored header\r\ntitle \"東京 \\\"Studio\\\"\"\r\nkey db minor\r\ntempo // tempo comment\r\n127.125\r\ntrack bass acid {}\r\npattern p { 1 . c#3 . }\r\nscene main { bass=p }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\n// authored header\r\ntitle \"東京 \\\"Studio\\\"\"\r\nkey db minor\r\ntempo // tempo comment\r\n127.125\r\ntrack bass acid {}\r\npattern p { 1 . c#3 . }\r\nscene main { bass=p }\r\nsong { main }\r\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/tempo/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a title of 1–256 characters and tempo 20–300 BPM"
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "project/tempo/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose a title of 1–256 characters and tempo 20–300 BPM"
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "project/unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c25bd588684fa36194f05ead1561e7bef60acf8914ccda7bdb78a957c2a0f5ae",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c25bd588684fa36194f05ead1561e7bef60acf8914ccda7bdb78a957c2a0f5ae",
+      "source": "tempo 130\nkey a minor\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "tempo 130\nkey a minor\ntitle \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "project/unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4af2c9ad4564c1dd7da2aec697cad4c9968a8001e9650b49b87461ff39f28ba6",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4af2c9ad4564c1dd7da2aec697cad4c9968a8001e9650b49b87461ff39f28ba6",
+      "source": "tempo 130\r\nkey a minor\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "tempo 130\r\nkey a minor\r\ntitle \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Project title, tempo, and key changed"
+    ]
+  },
+  "song/append/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "cb1d9e4e2a3300f57716e1f74498bb52fbe788b3cebaead7ebb6a18c7bbd1203",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "cb1d9e4e2a3300f57716e1f74498bb52fbe788b3cebaead7ebb6a18c7bbd1203",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n  chorus*2\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n  chorus*2\n}\n",
+    "Labels": [
+      "Arrangement · chorus added for 2 bars"
+    ]
+  },
+  "song/append/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d757ac277d9b48660671d8126a1d9ddde5b00b5e64e9ccee52b13af1a72ff640",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d757ac277d9b48660671d8126a1d9ddde5b00b5e64e9ccee52b13af1a72ff640",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n  chorus*2\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n  chorus*2\r\n}\r\n",
+    "Labels": [
+      "Arrangement · chorus added for 2 bars"
+    ]
+  },
+  "song/bad bars/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song entry must last 1–999 bars"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/bad bars/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song entry must last 1–999 bars"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/bad index/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song entry is out of range"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/bad index/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song entry is out of range"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/bad scene/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose an existing scene"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/bad scene/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "choose an existing scene"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/bad target/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song destination is out of range"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/bad target/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song destination is out of range"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/bars explicit/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b0205f271169f58a3967d5f13e8d1a0a0efe43d7c8ae0c0ecf2022ab08992bd1",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b0205f271169f58a3967d5f13e8d1a0a0efe43d7c8ae0c0ecf2022ab08992bd1",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*4\n  chorus\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*4\n  chorus\n  dusk*3\n}\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/bars explicit/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2ee10ba68da964a877551c7deb361f899978df8296eadf906b3ff88ab980be53",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2ee10ba68da964a877551c7deb361f899978df8296eadf906b3ff88ab980be53",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*4\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*4\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/bars implicit/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "6e6d352cbaaa15d5673fc22bbe216995dd95374acb9682e582661d81dc28fc3f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "6e6d352cbaaa15d5673fc22bbe216995dd95374acb9682e582661d81dc28fc3f",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus*4\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus*4\n  dusk*3\n}\n",
+    "Labels": [
+      "Song block 2 set to 4 bars"
+    ]
+  },
+  "song/bars implicit/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "abb6423203aa22672a81fbf7370e7119e35e385984d7e9201d1d217eea78e968",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "abb6423203aa22672a81fbf7370e7119e35e385984d7e9201d1d217eea78e968",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus*4\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus*4\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Song block 2 set to 4 bars"
+    ]
+  },
+  "song/bars unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "87023cab4885d59926c154e653fe234449fde56e13fa63013ca981e577946e37",
+      "revision": "87023cab4885d59926c154e653fe234449fde56e13fa63013ca981e577946e37",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n}\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/bars unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c3e77314a9df0c4044787de955a641feb38345d67b13512248aeae6101d0415a",
+      "revision": "c3e77314a9df0c4044787de955a641feb38345d67b13512248aeae6101d0415a",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/comment append/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song comments need a source edit to preserve their attachment"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  // verse\n  dusk*2 // the hook\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/comment append/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song comments need a source edit to preserve their attachment"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  // verse\r\n  dusk*2 // the hook\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/comment bars/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "03a0e3e1d9d6072ddffd5fd73648978714b87ca92966d0ed8babbab72418601f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "03a0e3e1d9d6072ddffd5fd73648978714b87ca92966d0ed8babbab72418601f",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  // verse\n  dusk*4 // the hook\n  chorus\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  // verse\n  dusk*4 // the hook\n  chorus\n  dusk*3\n}\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/comment bars/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c8b164f2fa2977463f83ce54009a19b1211886ab22eeec03271751cd97ade1e1",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c8b164f2fa2977463f83ce54009a19b1211886ab22eeec03271751cd97ade1e1",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  // verse\r\n  dusk*4 // the hook\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  // verse\r\n  dusk*4 // the hook\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/comment delete/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song comments need a source edit to preserve their attachment"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  // verse\n  dusk*2 // the hook\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/comment delete/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song comments need a source edit to preserve their attachment"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  // verse\r\n  dusk*2 // the hook\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/comment duplicate/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song comments need a source edit to preserve their attachment"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  // verse\n  dusk*2 // the hook\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/comment duplicate/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song comments need a source edit to preserve their attachment"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  // verse\r\n  dusk*2 // the hook\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/comment move/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song comments need a source edit to preserve their attachment"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  // verse\n  dusk*2 // the hook\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/comment move/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "song comments need a source edit to preserve their attachment"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  // verse\r\n  dusk*2 // the hook\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/comment scene/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "898ee9ef5ae9509b624183f82e041904041673553bec9f9a2e3400717ae94991",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "898ee9ef5ae9509b624183f82e041904041673553bec9f9a2e3400717ae94991",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  // verse\n  chorus*2 // the hook\n  chorus\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  // verse\n  chorus*2 // the hook\n  chorus\n  dusk*3\n}\n",
+    "Labels": [
+      "Arrangement · block 1 · scene"
+    ]
+  },
+  "song/comment scene/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "0219d30b478a6bc47887416530bc4dacbddcbee96085840ef1bd473478e9f5ec",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "0219d30b478a6bc47887416530bc4dacbddcbee96085840ef1bd473478e9f5ec",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  // verse\r\n  chorus*2 // the hook\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  // verse\r\n  chorus*2 // the hook\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Arrangement · block 1 · scene"
+    ]
+  },
+  "song/delete last/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "keep at least one arrangement block"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk\n}\n",
+    "Labels": null
+  },
+  "song/delete last/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "keep at least one arrangement block"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk\r\n}\r\n",
+    "Labels": null
+  },
+  "song/delete/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "6745e4d13d998ea3eee444dc8fe79feb4809984ee25df23199bf035ae58514a1",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "6745e4d13d998ea3eee444dc8fe79feb4809984ee25df23199bf035ae58514a1",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  \n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  \n  dusk*3\n}\n",
+    "Labels": [
+      "Arrangement · block 2 · delete"
+    ]
+  },
+  "song/delete/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "3d1fc19ee2ccd0682b25e2867c37bcc7ccb8048127b9812c9c9e92a19076fd52",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "3d1fc19ee2ccd0682b25e2867c37bcc7ccb8048127b9812c9c9e92a19076fd52",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  \r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  \r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Arrangement · block 2 · delete"
+    ]
+  },
+  "song/duplicate/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d05269583d130b75bfe693667b855c3c18653843d5da9be2c2bcf22575073c61",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d05269583d130b75bfe693667b855c3c18653843d5da9be2c2bcf22575073c61",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  chorus\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  chorus\n  dusk*3\n}\n",
+    "Labels": [
+      "Arrangement · block 2 · duplicate"
+    ]
+  },
+  "song/duplicate/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "e74ddc16b9170cacf0af3a7fecfeee9d861e8d70dd1451fb3a44b773530611f3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "e74ddc16b9170cacf0af3a7fecfeee9d861e8d70dd1451fb3a44b773530611f3",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Arrangement · block 2 · duplicate"
+    ]
+  },
+  "song/inherited edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b0205f271169f58a3967d5f13e8d1a0a0efe43d7c8ae0c0ecf2022ab08992bd1",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b0205f271169f58a3967d5f13e8d1a0a0efe43d7c8ae0c0ecf2022ab08992bd1",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*4\n  chorus\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*4\n  chorus\n  dusk*3\n}\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/inherited edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "2ee10ba68da964a877551c7deb361f899978df8296eadf906b3ff88ab980be53",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "2ee10ba68da964a877551c7deb361f899978df8296eadf906b3ff88ab980be53",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*4\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*4\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/label/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "9deca6aceb562ebc437092ca5984072ae3e41d70efaebca613e1d3bd55506453",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "9deca6aceb562ebc437092ca5984072ae3e41d70efaebca613e1d3bd55506453",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  chorus\n  dusk*2\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  chorus\n  dusk*2\n  dusk*3\n}\n",
+    "Labels": [
+      "Authored song gesture"
+    ]
+  },
+  "song/label/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "27ba6fa0e930f8147702ce96ab67589786d137cbf0d8fed3b61a8978227718da",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "27ba6fa0e930f8147702ce96ab67589786d137cbf0d8fed3b61a8978227718da",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  chorus\r\n  dusk*2\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  chorus\r\n  dusk*2\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Authored song gesture"
+    ]
+  },
+  "song/loose edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "7524049d1c736f08f50a2099374751aad125941f1baf64ecfc5f2514b4fdfd55",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "7524049d1c736f08f50a2099374751aad125941f1baf64ecfc5f2514b4fdfd55",
+      "source": "cicada 2\ntitle \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*4\n  chorus\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntitle \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*4\n  chorus\n  dusk*3\n}\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/loose edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b37e07bc7e493e4faa00466afee3cfce2ab332b06dd85f260506552f13cbc8cc",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b37e07bc7e493e4faa00466afee3cfce2ab332b06dd85f260506552f13cbc8cc",
+      "source": "cicada 2\r\ntitle \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*4\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntitle \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*4\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/manifest edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "7524049d1c736f08f50a2099374751aad125941f1baf64ecfc5f2514b4fdfd55",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "7524049d1c736f08f50a2099374751aad125941f1baf64ecfc5f2514b4fdfd55",
+      "source": "cicada 2\ntitle \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*4\n  chorus\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntitle \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*4\n  chorus\n  dusk*3\n}\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/manifest edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b37e07bc7e493e4faa00466afee3cfce2ab332b06dd85f260506552f13cbc8cc",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b37e07bc7e493e4faa00466afee3cfce2ab332b06dd85f260506552f13cbc8cc",
+      "source": "cicada 2\r\ntitle \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*4\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntitle \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*4\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Song block 1 set to 4 bars"
+    ]
+  },
+  "song/move backward/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "a1955f33fa485a9631e46a303596f77b860938edcd5b9df2c4321dc635fbbae2",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "a1955f33fa485a9631e46a303596f77b860938edcd5b9df2c4321dc635fbbae2",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*3\n  dusk*2\n  chorus\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*3\n  dusk*2\n  chorus\n}\n",
+    "Labels": [
+      "Song block 3 moved to 1"
+    ]
+  },
+  "song/move backward/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "23555f881097419cd5e27958bbe4f7cd202d212cd1c674f7ef5b0cd06f3143b8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "23555f881097419cd5e27958bbe4f7cd202d212cd1c674f7ef5b0cd06f3143b8",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*3\r\n  dusk*2\r\n  chorus\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*3\r\n  dusk*2\r\n  chorus\r\n}\r\n",
+    "Labels": [
+      "Song block 3 moved to 1"
+    ]
+  },
+  "song/move forward/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "bb47584e282232f75cb605170040864e5b7684636be14c8efa150ab0a09872f8",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "bb47584e282232f75cb605170040864e5b7684636be14c8efa150ab0a09872f8",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  chorus\n  dusk*3\n  dusk*2\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  chorus\n  dusk*3\n  dusk*2\n}\n",
+    "Labels": [
+      "Song block 1 moved to 3"
+    ]
+  },
+  "song/move forward/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c68bd77ce6b31093dae4e8b5ffb34f3464640b71788e58259395aa88c2619c69",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "c68bd77ce6b31093dae4e8b5ffb34f3464640b71788e58259395aa88c2619c69",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  chorus\r\n  dusk*3\r\n  dusk*2\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  chorus\r\n  dusk*3\r\n  dusk*2\r\n}\r\n",
+    "Labels": [
+      "Song block 1 moved to 3"
+    ]
+  },
+  "song/move unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "87023cab4885d59926c154e653fe234449fde56e13fa63013ca981e577946e37",
+      "revision": "87023cab4885d59926c154e653fe234449fde56e13fa63013ca981e577946e37",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n}\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/move unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "c3e77314a9df0c4044787de955a641feb38345d67b13512248aeae6101d0415a",
+      "revision": "c3e77314a9df0c4044787de955a641feb38345d67b13512248aeae6101d0415a",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "song/multiplier spacing/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4b19c856c3647bdc0535965fef4ab22b1840e2e6375dada94392aae14fac5e38",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4b19c856c3647bdc0535965fef4ab22b1840e2e6375dada94392aae14fac5e38",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk * 7\n  chorus\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk * 7\n  chorus\n  dusk*3\n}\n",
+    "Labels": [
+      "Song block 1 set to 7 bars"
+    ]
+  },
+  "song/multiplier spacing/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "b43f85f3d15b9940b1f0f122ea2a50ab4c6a9a9a41e2da53329b8d50c9c9d2c3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "b43f85f3d15b9940b1f0f122ea2a50ab4c6a9a9a41e2da53329b8d50c9c9d2c3",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk * 7\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk * 7\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Song block 1 set to 7 bars"
+    ]
+  },
+  "song/scene/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "f1dd9ce5dc12875f545b50e26aeb73844a01a5594970958284d013ebd7dffa88",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "f1dd9ce5dc12875f545b50e26aeb73844a01a5594970958284d013ebd7dffa88",
+      "source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  chorus*2\n  chorus\n  dusk*3\n}\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  chorus*2\n  chorus\n  dusk*3\n}\n",
+    "Labels": [
+      "Arrangement · block 1 · scene"
+    ]
+  },
+  "song/scene/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "d82384ea3f3ea49d402faff7d67eaeb9a0f2de34f53cd2e244506048eb87ff06",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "d82384ea3f3ea49d402faff7d67eaeb9a0f2de34f53cd2e244506048eb87ff06",
+      "source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  chorus*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+      "valid": true
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  chorus*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": [
+      "Arrangement · block 1 · scene"
+    ]
+  },
+  "song/unknown/\"\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "unknown arrangement action"
+    },
+    "Source": "title \"Song lane\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\nscene dusk { bass=pulse }\nscene chorus { bass=pulse }\nsong {\n  dusk*2\n  chorus\n  dusk*3\n}\n",
+    "Labels": null
+  },
+  "song/unknown/\"\\r\\n\"": {
+    "Code": 400,
+    "Body": {
+      "error": "unknown arrangement action"
+    },
+    "Source": "title \"Song lane\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\nscene dusk { bass=pulse }\r\nscene chorus { bass=pulse }\r\nsong {\r\n  dusk*2\r\n  chorus\r\n  dusk*3\r\n}\r\n",
+    "Labels": null
+  },
+  "source/inherited edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "502d16fc555d6b8efcb13c7b67bfb9c6b8bad15a5d6bf0072661478a33eeebc3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "502d16fc555d6b8efcb13c7b67bfb9c6b8bad15a5d6bf0072661478a33eeebc3",
+      "source": "title \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "source/inherited edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4c4d84252566441fe7dc52a0099d936320410978f4e34fdab4d4db22f16e1c39",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4c4d84252566441fe7dc52a0099d936320410978f4e34fdab4d4db22f16e1c39",
+      "source": "title \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "source/invalid/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "2:1 CICADA-SYNTAX: syntax error near \"???\""
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "source/invalid/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "2:1 CICADA-SYNTAX: syntax error near \"???\""
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "source/loose edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "41727b4ae648b67ba6913f497f1e99040821d1e30f564769fa12ee1fe5767555",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "41727b4ae648b67ba6913f497f1e99040821d1e30f564769fa12ee1fe5767555",
+      "source": "cicada 2\ntitle \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntitle \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "source/loose edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ef96cc2a43368ccbcb3d90e19271ab78f644552d7b0284da78cdd2157e5076b3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ef96cc2a43368ccbcb3d90e19271ab78f644552d7b0284da78cdd2157e5076b3",
+      "source": "cicada 2\r\ntitle \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntitle \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "source/manifest edition2/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "41727b4ae648b67ba6913f497f1e99040821d1e30f564769fa12ee1fe5767555",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "41727b4ae648b67ba6913f497f1e99040821d1e30f564769fa12ee1fe5767555",
+      "source": "cicada 2\ntitle \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "cicada 2\ntitle \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "source/manifest edition2/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "ef96cc2a43368ccbcb3d90e19271ab78f644552d7b0284da78cdd2157e5076b3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "ef96cc2a43368ccbcb3d90e19271ab78f644552d7b0284da78cdd2157e5076b3",
+      "source": "cicada 2\r\ntitle \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "cicada 2\r\ntitle \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "source/unchanged/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "80b8bf31516818bad4f22254d9e2be17a4ff4be43676c779677a6ef20a3097f3",
+      "revision": "80b8bf31516818bad4f22254d9e2be17a4ff4be43676c779677a6ef20a3097f3",
+      "source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": null
+  },
+  "source/unchanged/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "33b2809fb09e75220cfa6544016a2539fd0257087a28ddc3d76f8ce823e553f8",
+      "revision": "33b2809fb09e75220cfa6544016a2539fd0257087a28ddc3d76f8ce823e553f8",
+      "source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "unchanged": true,
+      "valid": true
+    },
+    "Source": "title \"Studio\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": null
+  },
+  "source/write/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "502d16fc555d6b8efcb13c7b67bfb9c6b8bad15a5d6bf0072661478a33eeebc3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "502d16fc555d6b8efcb13c7b67bfb9c6b8bad15a5d6bf0072661478a33eeebc3",
+      "source": "title \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+      "valid": true
+    },
+    "Source": "title \"Saved\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n",
+    "Labels": [
+      "Source saved"
+    ]
+  },
+  "source/write/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4c4d84252566441fe7dc52a0099d936320410978f4e34fdab4d4db22f16e1c39",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4c4d84252566441fe7dc52a0099d936320410978f4e34fdab4d4db22f16e1c39",
+      "source": "title \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+      "valid": true
+    },
+    "Source": "title \"Saved\"\r\ntrack bass acid {}\r\ntrack drums drums {}\r\npattern pulse acid steps=4 { 1 . 5 . }\r\npattern beat drums steps=4 { bd: x... sd: .... }\r\nscene main { bass=pulse drums=beat }\r\nsong { main }\r\n",
+    "Labels": [
+      "Source saved"
+    ]
+  }
+}

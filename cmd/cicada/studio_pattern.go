@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -11,6 +12,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -39,45 +41,70 @@ type studioPatternRange struct {
 	Amount    int    `json:"amount"`
 }
 
+func studioStepEntity(edit studioEdit) edits.EntityID {
+	if edit.Lane != "" {
+		return edits.EntityID(fmt.Sprintf("step:%s/%s/%d", edit.Pattern, edit.Lane, edit.Step))
+	}
+	return edits.EntityID(fmt.Sprintf("step:%s/%d", edit.Pattern, edit.Step))
+}
+
 func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 	edit, ok := studioRequest(w, r)
 	if !ok {
 		return
 	}
+	entity := edits.EntityID("pattern:" + edit.Pattern)
+	env := edits.Envelope{}
+	var intent edits.Intent
 	switch edit.Action {
-	case "settings", "step", "duplicate", "bind", "toggle", "pitch", "range", "resize":
+	case "settings":
+		in := &edits.SetPatternSettings{Entity: entity}
+		if edit.Settings != nil {
+			in.Swing100, in.Gate, in.Transpose = edit.Settings.Swing100, edit.Settings.Gate, edit.Settings.Transpose
+		}
+		intent = in
+	case "step":
+		in := &edits.SetStep{Entity: studioStepEntity(edit), Shared: "pattern"}
+		if edit.NoteEdit != nil {
+			n := edit.NoteEdit
+			in.Mode, in.Pitch, in.Accent, in.Slide, in.Ratchet, in.Chance, in.Velocity = n.Mode, n.Pitch, n.Accent, n.Slide, n.Ratchet, n.Chance, n.Velocity
+		}
+		intent = in
+	case "duplicate":
+		intent = &edits.DuplicatePattern{Entity: entity, Name: edit.NewName}
+	case "range":
+		in := &edits.SetRange{Entity: entity, Lane: edit.Lane, First: -1, Shared: "pattern"}
+		if edit.Range != nil {
+			r := edit.Range
+			in.Operation, in.First, in.Last, in.Target, in.Amount = r.Operation, r.First, r.Last, r.Target, r.Amount
+		}
+		intent = in
+	case "resize":
+		intent = &edits.ResizePattern{Entity: entity, Length: edit.Length, Shared: "pattern"}
+	case "toggle":
+		intent = &edits.ToggleStep{Entity: studioStepEntity(edit), Shared: "pattern"}
+	case "pitch":
+		if edit.Pitch != nil {
+			intent = &edits.SetPitch{Entity: studioStepEntity(edit), Pitch: *edit.Pitch, Shared: "pattern"}
+		} else {
+			// Use the public decoder's required-pitch semantics. Expansion and
+			// validation still run before the old "choose a pitch" refusal.
+			raw, _ := json.Marshal(map[string]any{"version": 1, "intents": []any{map[string]any{"kind": "setpitch", "entity": studioStepEntity(edit), "shared": "pattern"}}})
+			if err := json.Unmarshal(raw, &env); err != nil {
+				studioJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+				return
+			}
+			intent = env.Intents[0]
+		}
+	case "bind":
+		intent = &edits.BindScene{Scene: edit.Scene, Track: edit.Track, Pattern: edit.Pattern}
 	default:
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown pattern action"})
 		return
 	}
-	s.apply(w, edit, s.sourceTransform(func(source []byte) ([]byte, error) {
-		switch edit.Action {
-		case "settings":
-			return patternSettingsSource(source, edit.Pattern, edit.Settings)
-		case "step":
-			return patternStepSource(source, edit.Pattern, edit.Lane, edit.Step, edit.NoteEdit)
-		case "duplicate":
-			return duplicatePatternSource(source, edit.Pattern, edit.NewName)
-		case "range":
-			return patternRangeSource(source, edit.Pattern, edit.Lane, edit.Range)
-		case "resize":
-			return resizePatternSource(source, edit.Pattern, edit.Length)
-		case "toggle", "pitch":
-			local, err := independentPatternSource(source, edit.Pattern)
-			if err != nil {
-				return nil, err
-			}
-			if edit.Action == "pitch" {
-				if edit.Pitch == nil {
-					return nil, fmt.Errorf("choose a pitch")
-				}
-				return pitchedSource(local, edit.Pattern, edit.Lane, edit.Step, *edit.Pitch)
-			}
-			return toggledSource(local, edit.Pattern, edit.Lane, edit.Step)
-		default:
-			return bindPatternSource(source, edit.Scene, edit.Track, edit.Pattern)
-		}
-	}))
+	env.Intents = []edits.Intent{intent}
+	edit.Label = studioEditLabel(edit)
+	s.applyIntents(w, edit, env, edits.ParamWriterAuto, nil)
 }
 
 type studioSpanEdit struct {

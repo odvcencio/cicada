@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"m31labs.dev/cicada/notation"
-	"m31labs.dev/cicada/phrase"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
@@ -45,44 +43,6 @@ func TestPhrasePreviewIsPrivateAndDoesNotWriteScore(t *testing.T) {
 	defer response.Body.Close()
 	if response.StatusCode != 422 || len(*edits) != 0 {
 		t.Fatalf("invalid preview status=%d edits=%d", response.StatusCode, len(*edits))
-	}
-}
-
-func TestMutationKeepsThePreviewArrangement(t *testing.T) {
-	p := phrase.DefaultParams()
-	p.Seed = 4242
-	p.Structure = phrase.ABAC
-	generated, err := phrase.Generate(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	variation, err := phrase.Mutate(p, generated.Bars[0], []phrase.Op{{Kind: phrase.ToggleAccent}}, 1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	updated, err := replacePreviewBar(generated.Notation, variation.Notation)
-	if err != nil {
-		t.Fatal(err)
-	}
-	before, _ := notation.Parse([]byte(generated.Notation))
-	after, _ := notation.Parse([]byte(updated))
-	if len(after.Song) != len(before.Song) || len(after.Patterns) != len(before.Patterns) || len(after.Scenes) != len(before.Scenes) {
-		t.Fatal("mutation dropped the arrangement")
-	}
-	if before.KeyRoot != after.KeyRoot || before.Scale != after.Scale || before.TempoMilli != after.TempoMilli || before.Title != after.Title {
-		t.Fatal("mutation changed the preview header")
-	}
-	for i := range before.Song {
-		if after.Song[i].Scene != before.Song[i].Scene {
-			t.Fatal("mutation changed scene order")
-		}
-	}
-	bar, err := previewBar(updated)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bar.Steps[0] != generated.Bars[0].Steps[0] {
-		t.Fatal("preview lost a locked step")
 	}
 }
 

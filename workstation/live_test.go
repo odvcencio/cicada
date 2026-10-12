@@ -97,6 +97,27 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	if note["note"] != float64(60) || note["on"] != true || command["owner"] == input["lease"] {
 		t.Fatalf("untyped or unscoped live request: %#v", command)
 	}
+	// New responses mask CSRF tokens independently. A held note and its
+	// release must retain the same service owner across requests and renders.
+	owner := command["owner"]
+	freshCSRF := tokenFromPage(t, getPage(t, client, app.URL+"/?panel=live"))
+	if freshCSRF == csrf {
+		t.Fatal("CSRF token was not masked per response")
+	}
+	input["sequence"], input["on"] = "2", "false"
+	if r := jsonPost("/__actions/live", input, freshCSRF); r.StatusCode != 200 {
+		t.Fatalf("note off: %d", r.StatusCode)
+	}
+	if off := <-commands; off["owner"] != owner {
+		t.Fatal("note off changed the live mount owner")
+	}
+	input["sequence"], input["type"] = "3", "release"
+	if r := jsonPost("/__actions/live", input, freshCSRF); r.StatusCode != 200 {
+		t.Fatalf("release: %d", r.StatusCode)
+	}
+	if release := <-commands; release["owner"] != owner || release["release"] != true {
+		t.Fatal("release did not target the live mount owner")
+	}
 	if r := jsonPost("/__actions/note-preview", map[string]string{"revision": "initial", "recordings": `[{"track":"bass","pattern":"pulse","notes":[{"tick":0,"endTick":120,"note":60,"velocity":100}]}]`}, csrf); r.StatusCode != 200 {
 		t.Fatalf("preview: %d", r.StatusCode)
 	}

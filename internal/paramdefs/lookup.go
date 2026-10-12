@@ -9,3 +9,14 @@ func Lookup(id string) (Descriptor, bool) {
 	}
 	return Descriptor{}, false
 }
+
+// HasVoice reports whether the registry descriptor applies to a voice family.
+// Compiler path resolution and live preview admission share this rule.
+func HasVoice(descriptor Descriptor, kind string) bool {
+	for _, voice := range descriptor.Voices {
+		if voice == kind {
+			return true
+		}
+	}
+	return false
+}

@@ -52,7 +52,12 @@ func TestNativeLastTrackLiveNotesOverridesAndMeters(t *testing.T) {
 	if last.TrackCount != 64 || last.TrackIDs[63] != "t63" || last.Tracks[63].Peak <= 0 || math.IsNaN(float64(last.Tracks[63].Peak)) {
 		t.Fatalf("last track meters: %+v", last)
 	}
-	if override := p.overrides.Load().values[63][kernel.ParamMixGain]; !override.active || override.trackID != "t63" {
+	identity := p.trackNames.Load().overrideTrack(63)
+	overrides := p.overrides.Load().tracks[identity]
+	if overrides == nil || identity.id != "t63" || identity.incarnation == 0 {
+		t.Fatalf("last track override identity lost: %+v", identity)
+	}
+	if override := overrides.values[kernel.ParamMixGain]; !override.active {
 		t.Fatalf("last track override lost: %+v", override)
 	}
 }

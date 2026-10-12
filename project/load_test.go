@@ -61,6 +61,25 @@ func TestMultiFileLoadResolvesBeforeExpansion(t *testing.T) {
 	}
 }
 
+func TestSourceLoaderUsesStagedManifest(t *testing.T) {
+	root := t.TempDir()
+	manifest := writeSource(t, root, "cicada.mod", "project score\ncicada 1\n")
+	entry := writeSource(t, root, "main.cicada", "track bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass=pulse }\nsong { main }\n")
+	part := writeSource(t, root, "part.cicada", "scene extra { bass=pulse }\n")
+	staged := []byte("project score\ncicada 2\nentry \"main.cicada\"\nsource \"part.cicada\"\n")
+	set, err := ReadSources(entry, map[string][]byte{manifest: staged})
+	if err != nil || set.Manifest.Edition != 2 || len(set.Files) != 2 || set.Files[1].Path != part {
+		t.Fatalf("loader ignored staged edition or source list: %+v %v", set, err)
+	}
+	score, ds := set.Parse()
+	if hasErrors(ds) || score.Version != 2 || len(score.Scenes) != 2 {
+		t.Fatalf("parse ignored staged manifest: %+v %+v", score, ds)
+	}
+	if got, err := os.ReadFile(manifest); err != nil || string(got) != "project score\ncicada 1\n" {
+		t.Fatal("loading staged manifest changed disk bytes")
+	}
+}
+
 func TestMultiFileDiagnosticsRetainBothLocations(t *testing.T) {
 	for _, declaration := range []string{
 		"pattern pulse { 1 . 5 . }", "track bass acid {}", "phrase motif { 1 . }", "scene verse { bass = pulse }", "fx room delay {}", "instrument glass { voice mono { out = sine(pitch) } }", "title \"Shared\"", "tempo 130", "key a minor", "seed 3", "song { verse }", "master {}", "bus music {}", "export delivery {}",

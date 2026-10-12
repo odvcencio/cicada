@@ -10,7 +10,7 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	golang.org/x/net v0.52.0
 	m31labs.dev/cicada v0.0.0-00010101000000-000000000000
-	m31labs.dev/gosx v0.57.5
+	m31labs.dev/gosx v0.57.11-0.20261010215726-f066763a70be
 	m31labs.dev/gosx/editor v0.19.11
 )
 
@@ -19,6 +19,7 @@ require (
 	github.com/chromedp/cdproto v0.0.0-20260321001828-e3e3800016bc // indirect
 	github.com/chromedp/chromedp v0.15.1 // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
+	github.com/evanw/esbuild v0.28.1 // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260214004413-d219187c3433 // indirect
 	github.com/gobwas/httphead v0.1.0 // indirect
@@ -44,7 +45,7 @@ require (
 	m31labs.dev/eos v0.1.4 // indirect
 	m31labs.dev/mll v0.1.0 // indirect
 	m31labs.dev/prism v0.1.3 // indirect
-	m31labs.dev/selena v0.5.2 // indirect
+	m31labs.dev/selena v0.5.3-0.20261009230029-91a4a8c05027 // indirect
 	m31labs.dev/turboquant v0.2.1 // indirect
 )
 
