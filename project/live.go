@@ -143,19 +143,25 @@ func LiveCommands(p *Project) []cmd.Command {
 		for i, threshold := range thresholds {
 			packed |= uint32(threshold) << (8 * i)
 		}
-		var masks [4]uint16
+		var masks [4]uint64
 		for i, track := range p.Tracks {
 			threshold, hasRule := byTrack[track.ID]
 			for level := range 4 {
 				if !hasRule || threshold == 0 || level > 0 && len(thresholds) > 0 && int(threshold) <= thresholds[min(level, len(thresholds))-1] {
-					masks[level] |= 1 << i
+					masks[level] |= uint64(1) << i
 				}
 			}
 		}
 		id := ids[layers.Macro]
-		commands = append(commands,
-			cmd.Command{Op: cmd.OpSetLayers, Track: 255, Index: id, Arg0: packed, Arg1: uint32(layers.ReleaseBars)},
-			cmd.Command{Op: cmd.OpSetLayerMasks, Track: 255, Index: id, Arg0: uint32(masks[0]) | uint32(masks[1])<<16, Arg1: uint32(masks[2]) | uint32(masks[3])<<16})
+		commands = append(commands, cmd.Command{Op: cmd.OpSetLayers, Track: 255, Index: id, Arg0: packed, Arg1: uint32(layers.ReleaseBars)})
+		// A command retains the portable four-by-sixteen-bit mask layout.
+		// Native projects add one indexed chunk per sixteen tracks.
+		for chunk := 0; chunk < (len(p.Tracks)+15)/16; chunk++ {
+			shift := uint(chunk * 16)
+			commands = append(commands, cmd.Command{Op: cmd.OpSetLayerMasks, Track: 255, Index: id | uint16(chunk)<<4,
+				Arg0: uint32(uint16(masks[0]>>shift)) | uint32(uint16(masks[1]>>shift))<<16,
+				Arg1: uint32(uint16(masks[2]>>shift)) | uint32(uint16(masks[3]>>shift))<<16})
+		}
 	}
 	if p.Live.PhraseBars != 0 {
 		commands = append(commands, cmd.Command{Op: cmd.OpSetPhraseBars, Track: 255, Arg0: uint32(p.Live.PhraseBars)})

@@ -3,6 +3,7 @@ package project
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -212,4 +214,30 @@ func TestLiveBlockIsOptional(t *testing.T) {
 		t.Fatal("no existing examples checked")
 	}
 	t.Logf("%d existing examples retain JSON and engine configuration without live commands", count)
+}
+
+func TestNativeLiveLayersRetainAllSixtyFourTracks(t *testing.T) {
+	if limits.MaxTracks < 64 {
+		t.Skip("native capacity")
+	}
+	p := &Project{Tracks: make([]Track, 64), Live: &Live{Macros: []LiveMacro{{Name: "intensity"}}, Layers: []LiveLayers{{Macro: "intensity", ReleaseBars: 1, Rules: []LiveLayer{{Track: "t63", Threshold: .5}}}}}}
+	for i := range p.Tracks {
+		p.Tracks[i].ID = fmt.Sprintf("t%d", i)
+	}
+	commands := LiveCommands(p)
+	if len(commands) != 6 {
+		t.Fatalf("wantmacro+thresholds+fourchunks,got%d", len(commands))
+	}
+	for chunk := 0; chunk < 4; chunk++ {
+		c := commands[chunk+2]
+		if c.Op != cmd.OpSetLayerMasks || c.Index != uint16(chunk<<4) || c.Arg1 != math.MaxUint32 {
+			t.Fatalf("chunk%d: %+v", chunk, c)
+		}
+		if err := c.Validate(64); err != nil {
+			t.Fatalf("chunk%d rejected: %v", chunk, err)
+		}
+	}
+	if got := commands[5].Arg0; got != 0xffff7fff {
+		t.Fatalf("last-track threshold vanished: %#x", got)
+	}
 }

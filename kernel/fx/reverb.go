@@ -95,6 +95,7 @@ type Reverb struct {
 	phase      float64
 	phaseStep  float64
 	fault      bool
+	excited    bool
 }
 
 func NewReverb(sampleRate int) (*Reverb, error) {
@@ -128,6 +129,12 @@ func NewReverb(sampleRate int) (*Reverb, error) {
 func (r *Reverb) Params() ReverbParams { return r.params }
 func (r *Reverb) Fault() bool          { return r.fault }
 func (r *Reverb) LatencyFrames() int   { return 0 }
+
+// Silent proves that all audio storage is zero after construction or Reset.
+// Once excited, the complete network continues rendering its tail; no level
+// threshold shortens it. Process also advances modulation and parameter ramps
+// on zero input, preserving the sound and timing of later notes.
+func (r *Reverb) Silent() bool { return !r.excited && !r.fault }
 
 func (r *Reverb) SetParams(p ReverbParams) error {
 	if err := p.Validate(); err != nil {
@@ -182,6 +189,7 @@ func (r *Reverb) Reset() {
 	r.oldPre, r.lengthFade, r.preFade = r.newPre, 1, 1
 	r.damp, r.highpass, r.mix = r.targetDamp, r.targetHP, r.targetMix
 	r.fault = false
+	r.excited = false
 }
 
 func (r *Reverb) preRead(channel int, frames float64, input float64) float64 {
@@ -221,6 +229,11 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 	r.damp += float64((r.targetDamp - r.damp) * r.smooth)
 	r.highpass += float64((r.targetHP - r.highpass) * r.smooth)
 	r.mix += float64((r.targetMix - r.mix) * r.smooth)
+	if left == 0 && right == 0 && !r.excited {
+		r.advanceSilent()
+		return 0, 0
+	}
+	r.excited = true
 	for channel := range input {
 		pre := r.preRead(channel, r.newPre, input[channel])
 		if r.preFade < 1 {
@@ -297,4 +310,41 @@ func (r *Reverb) Process(left, right float32) (float32, float32) {
 		return 0, 0
 	}
 	return float32(outL), float32(outR)
+}
+
+// advanceSilent performs the exact timeline operations of Process without
+// reading/filtering/mixing zero network samples. In particular the LFO uses
+// the same repeated additions rather than a block approximation.
+func (r *Reverb) advanceSilent() {
+	for channel := range r.input {
+		for stage := range r.input[channel] {
+			a := &r.input[channel][stage]
+			a.index++
+			if a.index == len(a.buffer) {
+				a.index = 0
+			}
+		}
+	}
+	r.preIndex++
+	if r.preIndex == len(r.predelay[0]) {
+		r.preIndex = 0
+	}
+	if r.preFade < 1 {
+		r.preFade = math.Min(1, r.preFade+r.fadeStep)
+	}
+	r.phase += r.phaseStep
+	if r.phase >= 2*math.Pi {
+		r.phase -= 2 * math.Pi
+	}
+	if r.lengthFade < 1 {
+		r.lengthFade = math.Min(1, r.lengthFade+r.fadeStep)
+	}
+	for line := range r.lines {
+		r.gain[line] += float64((r.targetGain[line] - r.gain[line]) * r.smooth)
+		l := &r.lines[line]
+		l.index++
+		if l.index == len(l.buffer) {
+			l.index = 0
+		}
+	}
 }

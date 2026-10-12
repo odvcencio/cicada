@@ -23,6 +23,7 @@ import (
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/engine"
 )
 
 func TestStudioTransportSocketAndIdleCommand(t *testing.T) {
@@ -338,7 +339,7 @@ func TestStudioAudioSocketRejectsInvalidParametersWithTypedErrors(t *testing.T) 
 		t.Fatal(err)
 	}
 	s.transport.publishMeter(liveplay.MeterFrame{
-		Tick: 1234, TrackCount: 1, TrackIDs: [16]string{"bass"}, Tracks: [16]liveplay.MeterValue{{Peak: .5, RMS: .25}},
+		Tick: 1234, TrackCount: 1, TrackIDs: [engine.MaxTracks]string{"bass"}, Tracks: [engine.MaxTracks]liveplay.MeterValue{{Peak: .5, RMS: .25}},
 		HasReturnA: true, ReturnA: liveplay.MeterValue{Peak: 0, RMS: .1},
 		Music: liveplay.MeterValue{Peak: .8, RMS: .4}, MasterPeak: .7, MasterRMS: .3, MasterPre: liveplay.MeterValue{Peak: .8},
 		CompGR: 2.5, LimiterGR: .25,

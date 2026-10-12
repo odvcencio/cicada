@@ -58,6 +58,27 @@ func TestAudioWASMAuthoredKitSampleParity(t *testing.T) {
 	compareWASMFixture(t, "authored-kit.cicada", 1)
 }
 
+func TestAudioWASMQualityHatRetriggerSampleParity(t *testing.T) {
+	// Each 125 ms hit overlaps the preceding 180 ms decay. Retriggering
+	// copies pulse phases, ADSR state and decimator history into an old voice.
+	const source = `cicada 2
+tempo 120
+seed 4242
+instrument hat {
+ voice mono {
+  let metal = (pulse(205.3Hz, 0.5) + pulse(304.4Hz, 0.5) + pulse(369.6Hz, 0.5) + pulse(522.7Hz, 0.5) + pulse(540Hz, 0.5) + pulse(800Hz, 0.5)) / 6
+  let bright = highpass(lowpass(metal, 11000Hz), 6500Hz)
+  out = bright * adsr(gate, 0.5ms, 180ms, 0, 20ms) * velocity * 2.8
+ }
+}
+kit test-kit { ch = hat }
+track hat test-kit { level = 0dB }
+pattern roll drums { ch: x7.x4x5x8.x4x5x7.x4x5x8.x4x5 }
+scene test { hat = roll }
+song { test }`
+	compareWASMSource(t, "quality-hat-retrigger", []byte(source), 1, true)
+}
+
 func TestAudioWASMLegacyThreeDrumTracksSampleParity(t *testing.T) {
 	compareWASMFixture(t, "../testdata/compat/three-drums.cicada", 1)
 }
@@ -67,7 +88,16 @@ func TestAudioWASMElevenLaneKitSampleParity(t *testing.T) {
 }
 
 func TestAudioWASMDriveInsertSampleParity(t *testing.T) {
-	compareWASMFixture(t, "fx/drive-insert.cicada", 1)
+	source, err := os.ReadFile(filepath.Join("..", "..", "examples", "fx", "drive-insert.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, shape := range []string{"soft", "diode", "hard", "fold"} {
+		t.Run(shape, func(t *testing.T) {
+			variant := strings.Replace(string(source), "shape = hard", "shape = "+shape, 1)
+			compareWASMSource(t, "drive-insert-"+shape, []byte(variant), 1, false)
+		})
+	}
 }
 
 func TestAudioWASMCustomVoiceSlideSampleParity(t *testing.T) {
@@ -358,7 +388,8 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 				allocationsBefore = call("gosx_audio_allocation_count")
 			}
 			var initialAllocations uint64
-			if fixture == "pluck.cicada" || fixture == "expression-graph" || fixture == "modeled-piano.cicada" || fixture == "fm-bell.cicada" {
+			checkAllocationBytes := fixture == "pluck.cicada" || fixture == "expression-graph" || fixture == "modeled-piano.cicada" || fixture == "fm-bell.cicada" || fixture == "quality-hat-retrigger" || strings.HasPrefix(fixture, "drive-insert-") || fixture == "fx/delay-send.cicada"
+			if checkAllocationBytes {
 				initialAllocations = call("gosx_audio_alloc_bytes")
 			}
 			pcm := sha256.New()
@@ -449,7 +480,7 @@ func compareWASMProject(t *testing.T, fixture string, p *project.Project, bars i
 			if fixture == "modeled-piano.cicada" && peakDifference != 0 {
 				t.Fatalf("modeled piano native/WASM PCM differs at sample %d channel %d by %.9g", peakSample, peakChannel, peakDifference)
 			}
-			if fixture == "pluck.cicada" || fixture == "expression-graph" || fixture == "modeled-piano.cicada" || fixture == "fm-bell.cicada" {
+			if checkAllocationBytes {
 				allocated := call("gosx_audio_alloc_bytes") - initialAllocations
 				if allocated != 0 {
 					t.Fatalf("WASM callback allocated %d bytes", allocated)

@@ -36,6 +36,8 @@ func (b tymbalBackend) Devices() ([]Device, bool, error) {
 			ID: device.ID, Name: device.Name, Inputs: device.Inputs, Outputs: device.Outputs,
 			SampleRates:  append([]int(nil), device.SampleRates...),
 			DefaultInput: device.Default&tymbal.Input != 0, DefaultOutput: device.Default&tymbal.Output != 0,
+			MinPeriod: device.MinPeriod, MaxPeriod: device.MaxPeriod,
+			DefaultPeriod: device.DefaultPeriod, FundamentalPeriod: device.FundamentalPeriod,
 		})
 	}
 	return devices, true, nil
@@ -120,9 +122,9 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 	}
 
 	callbackErr := &atomic.Pointer[audioError]{}
-	periods := []int{config.FramesPerPeriod}
-	if input != nil {
-		periods = []int{config.FramesPerPeriod, 128, 384, 480, 512, 960, 1024}
+	periods := tymbalPeriodCandidates(config.FramesPerPeriod, output, input)
+	if len(periods) == 0 {
+		return nil, fmt.Errorf("Tymbal input/output devices do not share a callback period between %d and 8192 frames", config.FramesPerPeriod)
 	}
 	var nativeStream *tymbal.Stream
 	var openErr error
@@ -139,7 +141,7 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 		if openErr == nil {
 			break
 		}
-		if input == nil || !errors.Is(openErr, tymbal.ErrFormat) {
+		if !errors.Is(openErr, tymbal.ErrFormat) {
 			break
 		}
 	}
@@ -163,6 +165,7 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 			Backend: Tymbal, Host: b.host.Name(), Device: output.Name, CaptureDevice: captureName, SampleRate: actual.SampleRate,
 			Channels: actual.OutChannels, CaptureChannels: actual.InChannels,
 			FramesPerPeriod: actual.Period, Latency: actual.LatencyOut, CaptureLatency: actual.LatencyIn,
+			Periods: actual.Periods, Priority: actual.Priority, HasDeadline: actual.HasDeadline,
 		},
 	}, nil
 }
@@ -366,7 +369,16 @@ func (s *tymbalStream) Close() error {
 	return s.stream.Close()
 }
 
-func (s *tymbalStream) Format() Format { return s.format }
+func (s *tymbalStream) Format() Format {
+	format := s.format
+	if s.stream != nil {
+		// Priority is granted when Start locks the audio OS thread, after Open.
+		// This accessor is control-side only; Actual takes the stream's mutex.
+		actual := s.stream.Actual()
+		format.Priority, format.HasDeadline = actual.Priority, actual.HasDeadline
+	}
+	return format
+}
 
 func (s *tymbalStream) Stats() Stats {
 	if s == nil || s.stream == nil {

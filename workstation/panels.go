@@ -27,7 +27,7 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 	case "collaboration":
 		return s.collaborationPanel(ctx)
 	case "session":
-		return gosx.Fragment(s.session(v, csrf), continuousAutomation(v.Project), s.automation(ctx, v, csrf))
+		return gosx.Fragment(s.vocals(ctx, v, csrf), s.session(v, csrf, ctx.Request.URL.Query().Get("placement")), s.continuousAutomation(ctx, v, csrf), s.automation(ctx, v, csrf))
 	case "patterns":
 		return s.patterns(ctx, v, csrf)
 	case "generator":
@@ -40,6 +40,8 @@ func (s *studioApp) panel(ctx *server.Context, v workspace, csrf, panel string) 
 		return s.audio(ctx, v, csrf)
 	case "takes":
 		return s.takes(ctx, v, csrf)
+	case "sampler":
+		return s.sampler(ctx, v, csrf)
 	case "history":
 		return s.history(ctx, v, csrf)
 	case "export":
@@ -118,11 +120,14 @@ func utf16Offsets(text string) []int {
 	return positions
 }
 
-func (s *studioApp) session(v workspace, csrf string) gosx.Node {
+func (s *studioApp) session(v workspace, csrf, selected string) gosx.Node {
 	if v.Project == nil {
 		return failure(fmt.Errorf("save a valid score to open the session"))
 	}
 	p := v.Project
+	if len(p.Scenes) == 0 {
+		return s.arrangement(v, csrf, selected)
+	}
 	var heads []gosx.Node
 	heads = append(heads, gosx.El("th", gosx.Text("Track")))
 	for _, scene := range p.Scenes {
@@ -145,7 +150,7 @@ func (s *studioApp) session(v workspace, csrf string) gosx.Node {
 		}
 		rows = append(rows, gosx.El("tr", gosx.Fragment(cells...)))
 	}
-	return gosx.Fragment(s.arrangement(v, csrf), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Scene launches are quantized to the next bar."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
+	return gosx.Fragment(s.arrangement(v, csrf, selected), ui.Panel(ui.PanelProps{ID: "session", Title: "Scene launch matrix", Description: "Scene launches are quantized to the next bar."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "grid-scroll")), gosx.El("table", gosx.Attrs(gosx.Attr("aria-label", "Scene launch matrix")), gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))))))
 }
 
 var drumOrder = []string{"bd", "sd", "ch", "oh", "cp", "rs", "lt", "mt", "ht", "cb", "cy"}
@@ -159,7 +164,7 @@ func textInput(name, value string) gosx.Node {
 func numberInput(name, value, min, max string) gosx.Node {
 	return gosx.El("input", gosx.Attrs(gosx.Attr("type", "number"), gosx.Attr("name", name), gosx.Attr("value", value), gosx.Attr("min", min), gosx.Attr("max", max), gosx.Attr("step", "any")))
 }
-func selectInput(name, value string, choices []string) gosx.Node {
+func selectInput(name, value string, choices []string, label ...string) gosx.Node {
 	var options []gosx.Node
 	for _, choice := range choices {
 		attrs := gosx.Attrs(gosx.Attr("value", choice))
@@ -168,7 +173,11 @@ func selectInput(name, value string, choices []string) gosx.Node {
 		}
 		options = append(options, gosx.El("option", attrs, gosx.Text(choice)))
 	}
-	return gosx.El("select", gosx.Attrs(gosx.Attr("name", name)), gosx.Fragment(options...))
+	attrs := gosx.Attrs(gosx.Attr("name", name))
+	if len(label) > 0 {
+		attrs = append(attrs, gosx.Attr("aria-label", label[0]))
+	}
+	return gosx.El("select", attrs, gosx.Fragment(options...))
 }
 
 func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.Node {
@@ -187,10 +196,21 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 		}
 		sort.Strings(keys)
 		for _, key := range keys {
+			if key == "insert" && strip.Fields[key].Supported {
+				fields = append(fields, s.effectChain(v, csrf, strip))
+				continue
+			}
 			fields = append(fields, s.mixerField(v, csrf, key, strip.Fields[key]))
 		}
 		for _, send := range strip.Sends {
 			fields = append(fields, s.mixerField(v, csrf, "send to "+send.To, send.mixerField))
+		}
+		if v.Project != nil {
+			for _, track := range v.Project.Tracks {
+				if track.ID == strip.ID && track.Kind == "audio" {
+					fields = append(fields, s.form(v, csrf, "mixer", "mixer", hidden("action", "vocal-chain"), hidden("track", strip.ID), submit("", "", "Add vocal chain")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("High-pass EQ, compression and de-essing, saved on this track. Adjust their controls below.")))
+				}
+			}
 		}
 		strips = append(strips, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip")), gosx.El("h3", gosx.Text(strip.Name)), gosx.Fragment(fields...)))
 	}
@@ -199,7 +219,7 @@ func (s *studioApp) mixer(ctx *server.Context, v workspace, csrf string) gosx.No
 		for _, f := range ret.Fields {
 			fields = append(fields, s.mixerField(v, csrf, f.Path, f))
 		}
-		strips = append(strips, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip")), gosx.El("h3", gosx.Text(ret.Name)), gosx.Fragment(fields...)))
+		strips = append(strips, gosx.El("section", gosx.Attrs(gosx.Attr("class", "strip"), gosx.Attr("id", "effect-"+ret.Name)), gosx.El("h3", gosx.Text(ret.Name)), gosx.Fragment(fields...)))
 	}
 	return ui.Panel(ui.PanelProps{ID: "mixer", Title: "Mixer", Description: "Track, bus, return, effect, and master parameters are saved to the score."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "strips")), gosx.Fragment(strips...)))
 }
@@ -253,40 +273,6 @@ func (s *studioApp) mixerField(v workspace, csrf, label string, f mixerField) go
 		fields = append(fields, gosx.El("label", gosx.Attrs(gosx.Attr("class", "upgrade-confirm")), gosx.El("input", gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", "confirmUpgrade"), gosx.BoolAttr("required"))), gosx.Text("Upgrade score to edition 2 for this change")))
 	}
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "mixer-control")), s.form(v, csrf, "mixer", "mixer", fields...))
-}
-
-func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.Node {
-	var state audioState
-	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/audio/config", nil, &state); err != nil {
-		return failure(err)
-	}
-	inputs := []gosx.Node{gosx.El("option", gosx.Attrs(gosx.Attr("value", "")), gosx.Text("System default"))}
-	outputs := append([]gosx.Node(nil), inputs...)
-	for _, device := range state.Inventory.Devices {
-		option := func(selected bool) gosx.Node {
-			a := gosx.Attrs(gosx.Attr("value", device.ID))
-			if selected {
-				a = append(a, gosx.BoolAttr("selected"))
-			}
-			return gosx.El("option", a, gosx.Text(device.Name))
-		}
-		if device.Inputs > 0 {
-			inputs = append(inputs, option(device.ID == state.Options.InputDevice))
-		}
-		if device.Outputs > 0 {
-			outputs = append(outputs, option(device.ID == state.Options.OutputDevice))
-		}
-	}
-	checkbox := func(name, label string, checked bool) gosx.Node {
-		a := gosx.Attrs(gosx.Attr("type", "checkbox"), gosx.Attr("name", name))
-		if checked {
-			a = append(a, gosx.BoolAttr("checked"))
-		}
-		return field(label, gosx.El("input", a))
-	}
-	button := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("disabled", state.Playing)), gosx.Text("Apply audio settings"))
-	form := s.form(v, csrf, "audio", "audio", field("Input", gosx.El("select", gosx.Attrs(gosx.Attr("name", "inputDevice")), gosx.Fragment(inputs...))), field("Output", gosx.El("select", gosx.Attrs(gosx.Attr("name", "outputDevice")), gosx.Fragment(outputs...))), checkbox("inputEnabled", "Enable input", state.Options.InputEnabled), checkbox("monitorMuted", "Mute monitoring", state.Options.MonitorMuted), field("Monitor gain", numberInput("monitorGain", strconv.FormatFloat(state.Options.MonitorGain, 'f', -1, 64), "0", "2")), field("Monitor mode", selectInput("monitorMode", state.Options.MonitorMode, []string{"stereo", "mono1", "mono2"})), button)
-	return ui.Panel(ui.PanelProps{ID: "audio", Title: "Audio devices", Description: state.Status}, gosx.El("p", gosx.Text(state.Inventory.BackendName+" · "+state.Inventory.Message)), form)
 }
 
 func (s *studioApp) history(ctx *server.Context, v workspace, csrf string) gosx.Node {

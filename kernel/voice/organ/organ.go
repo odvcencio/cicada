@@ -532,6 +532,23 @@ func (p *Instrument) NextStereo() (float32, float32) {
 	for i := range p.drawbar {
 		p.drawbar[i] += float32(p.drawbarAlpha * float32(p.drawbarTarget[i]-p.drawbar[i]))
 	}
+	if p.idleFrames > p.rate/4 {
+		// This is the instrument's existing idle condition, reached only
+		// after every key voice has stopped. Preserve free-running tonewheel
+		// phase and all control/steal decay; cached sine values are unnecessary
+		// until a key resumes. NoteOn resets idleFrames before the next sample,
+		// which rebuilds every value from its correctly advanced phase.
+		for i := range p.wheelPhase {
+			p.wheelPhase[i] += p.wheelStep[i]
+		}
+		p.percussion = float32(p.percussion * p.percussionDecay)
+		if p.percussion < .0000001 {
+			p.percussion = 0
+		}
+		p.stealTail = float32(p.stealTail * p.stealDecay)
+		p.idleFrames++
+		return 0, 0
+	}
 	for i := range p.wheelPhase {
 		p.wheelPhase[i] += p.wheelStep[i]
 		p.wheelValue[i] = float32(p.phaseSine(p.wheelPhase[i]) * p.wheelGain[i])

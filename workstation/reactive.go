@@ -163,6 +163,11 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 		location := fields["__cicada_location"]
 		// Pattern commands may intentionally select another step or variation.
 		// Generic form return targets must not erase the current deep selection.
+		if name == "audio" && fields["__gosx_return_to"] != "" {
+			if target, err := workspaceLocation(fields["__gosx_return_to"]); err == nil {
+				location = target
+			}
+		}
 		followPattern := fields["action"] == "step" || fields["action"] == "pitch" || fields["action"] == "toggle" || fields["action"] == "duplicate"
 		if name == "pattern" && followPattern && result.Redirect != "" {
 			location = result.Redirect

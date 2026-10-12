@@ -34,7 +34,7 @@ func Prepare(dir string, p *project.Project) ([]engine.StereoVoiceFactory, error
 			return sample.Region{}, fmt.Errorf("unknown sample asset %s", name)
 		}
 		bytes := asset.Frames * int64(asset.Channels) * 4
-		if asset.Frames > MaxFrames || bytes <= 0 || bytes > 64<<20-resident {
+		if asset.Frames > FrameLimit(asset) || bytes <= 0 || bytes > 64<<20-resident {
 			return sample.Region{}, fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget")
 		}
 		region, err := LoadRegion(dir, asset, 0, 0, 60, false)

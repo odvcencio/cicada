@@ -52,13 +52,14 @@ func Step(props StepProps, children ...gosx.Node) gosx.Node {
 }
 
 type TransportProps struct {
-	Playing bool
-	Bar     int64
-	Step    int64
-	Backend string
-	Error   string
+	Playing   bool
+	Bar       int64
+	Step      int64
+	Backend   string
+	Error     string
+	Listening string
 }
 
 func Position(props TransportProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "position"), gosx.Attr("data-gosx-live-src", "/api/transport"), gosx.Attr("data-gosx-live-interval", "1s")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "position-label")), gosx.Text("BAR "), gosx.El("b", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "bar")), gosx.Expr(props.Bar))), gosx.El("span", gosx.Attrs(gosx.Attr("class", "position-label")), gosx.Text("STEP "), gosx.El("b", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "step")), gosx.Expr(props.Step))), gosx.El("span", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-gosx-live-bind", "activeBackend")), gosx.Expr(props.Backend)), gosx.El("span", gosx.Attrs(gosx.Attr("class", "error"), gosx.Attr("data-gosx-live-bind", "error")), gosx.Expr(props.Error)))
+	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "position"), gosx.Attr("data-gosx-live-src", "/api/transport"), gosx.Attr("data-gosx-live-interval", "1s")), gosx.El("span", gosx.Attrs(gosx.Attr("class", "position-label")), gosx.Text("BAR "), gosx.El("b", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "bar")), gosx.Expr(props.Bar))), gosx.El("span", gosx.Attrs(gosx.Attr("class", "position-label")), gosx.Text("STEP "), gosx.El("b", gosx.Attrs(gosx.Attr("data-gosx-live-bind", "step")), gosx.Expr(props.Step))), gosx.El("span", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-gosx-live-bind", "activeBackend")), gosx.Expr(props.Backend)), gosx.El("span", gosx.Attrs(gosx.Attr("class", "error"), gosx.Attr("data-gosx-live-bind", "error")), gosx.Expr(props.Error)), gosx.El("span", gosx.Attrs(gosx.Attr("class", "listening-status"), gosx.Attr("aria-live", "polite"), gosx.Attr("data-gosx-live-bind", "listeningStatus")), gosx.Expr(props.Listening)))
 }

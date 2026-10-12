@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/limits"
 )
 
 const (
@@ -164,8 +165,8 @@ func DecodeCommands(data []byte, tracks uint8, dst []Command) (int, error) {
 // Validate checks the opcode, routing, reserved bytes, and structural bounds.
 // Parameter-specific ranges are checked by the host parameter registry.
 func (c Command) Validate(tracks uint8) error {
-	if tracks < 1 || tracks > 16 {
-		return Error("track count must be 1 to 16")
+	if tracks < 1 || tracks > limits.MaxTracks {
+		return Error("track count exceeds runtime capacity")
 	}
 	if c.Op < OpPlay || c.Op > OpSetListenerRotation {
 		return Error("unknown command opcode")
@@ -281,7 +282,7 @@ func (c Command) Validate(tracks uint8) error {
 			return Error("note expression is out of range")
 		}
 	case OpSetLayerMask:
-		if c.Arg0>>tracks != 0 {
+		if (uint64(c.Arg0)|uint64(c.Arg1)<<32)>>tracks != 0 || limits.MaxTracks <= 32 && c.Arg1 != 0 {
 			return Error("layer mask exceeds track count")
 		}
 	case OpSetLayers:
@@ -307,8 +308,13 @@ func (c Command) Validate(tracks uint8) error {
 			return Error("layer macro ID or release bars are out of range")
 		}
 	case OpSetLayerMasks:
-		maskLimit := uint32(1<<tracks) - 1
-		if c.Index >= 16 || uint32(uint16(c.Arg0))&^maskLimit != 0 || uint32(uint16(c.Arg0>>16))&^maskLimit != 0 ||
+		chunk := int(c.Index >> 4)
+		chunkTracks := min(16, int(tracks)-chunk*16)
+		maskLimit := uint32(0)
+		if chunkTracks > 0 {
+			maskLimit = uint32(1)<<chunkTracks - 1
+		}
+		if chunk >= (limits.MaxTracks+15)/16 || chunkTracks <= 0 || uint32(uint16(c.Arg0))&^maskLimit != 0 || uint32(uint16(c.Arg0>>16))&^maskLimit != 0 ||
 			uint32(uint16(c.Arg1))&^maskLimit != 0 || uint32(uint16(c.Arg1>>16))&^maskLimit != 0 {
 			return Error("layer mask table exceeds macro or track count")
 		}
@@ -399,7 +405,7 @@ func get64(src []byte) uint64 { return uint64(get32(src)) | uint64(get32(src[4:]
 // ChordStepCommand encodes an additive payload without changing any existing
 // command record. Hosts must negotiate chord capability before use.
 func ChordStepCommand(track, slot, index uint8, notes [4]uint8, count uint8) (Command, error) {
-	if track >= 16 || slot >= 16 || index >= 64 {
+	if track >= limits.MaxTracks || slot >= 16 || index >= 64 {
 		return Command{}, Error("chord command target is out of range")
 	}
 	if count < 2 || count > 4 {

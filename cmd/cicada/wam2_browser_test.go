@@ -22,11 +22,26 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
-func TestBrowserWAM2(t *testing.T) {
+func TestBrowserWAM2(t *testing.T)           { testBrowserWAM2(t, false) }
+func TestBrowserWAM2VocalChain(t *testing.T) { testBrowserWAM2(t, true) }
+func testBrowserWAM2(t *testing.T, vocalChain bool) {
 	root := filepath.Join("..", "..")
 	sdk := filepath.Join(root, "build", "wam2-sdk", "node_modules", "@webaudiomodules", "sdk")
+	scorePath := filepath.Join(root, "examples", "live-intensity.cicada")
+	if vocalChain {
+		source, err := os.ReadFile(scorePath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		source = bytes.Replace(source, []byte("track bass acid {"), []byte("track bass acid {\n insert=hp -> leveler -> deess"), 1)
+		source = append(source, []byte("\nfx hp eq { type=highpass frequency=80Hz }\nfx leveler comp { threshold=-18dB ratio=3 makeup=0dB }\nfx deess deesser {}\n")...)
+		scorePath = filepath.Join(t.TempDir(), "vocal-chain.cicada")
+		if err := os.WriteFile(scorePath, source, 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	output := filepath.Join(t.TempDir(), "plugin")
-	if err := wam2Command([]string{filepath.Join(root, "examples", "live-intensity.cicada"), "-o", output, "--kernel", filepath.Join(root, "build", "cicada-kernel.wasm"), "--sdk", sdk, "--midi-track", "bass"}, &bytes.Buffer{}); err != nil {
+	if err := wam2Command([]string{scorePath, "-o", output, "--kernel", filepath.Join(root, "build", "cicada-kernel.wasm"), "--sdk", sdk, "--midi-track", "bass"}, &bytes.Buffer{}); err != nil {
 		t.Fatal(err)
 	}
 	// Run the official SDK reference host with its audio-input connection
@@ -36,15 +51,15 @@ func TestBrowserWAM2(t *testing.T) {
 		t.Fatal(err)
 	}
 	refScript = bytes.ReplaceAll(refScript, []byte("mediaElementSource.connect(wamInstance.audioNode);"), []byte("globalThis.referenceWam = wamInstance;"))
-	source, err := os.ReadFile(filepath.Join(root, "examples", "live-intensity.cicada"))
+	source, err := os.ReadFile(scorePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	p, err := compileStudioSource(filepath.Join(root, "examples", "live-intensity.cicada"), source)
+	p, err := compileStudioSource(scorePath, source)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := schedule.Compile(p, filepath.Join(root, "examples"), 48000, 128)
+	cfg, err := schedule.CompileResident(p, filepath.Join(root, "examples"), 48000, 128)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +116,11 @@ func TestBrowserWAM2(t *testing.T) {
   return {referenceHost:true, parameterInfo:info};
 })()`)
 	t.Logf("reference host: %s", metadata)
-	chrome.screenshot("wam2-reference-host.png")
+	if vocalChain {
+		chrome.screenshot("wam2-vocal-chain-reference-host.png")
+	} else {
+		chrome.screenshot("wam2-reference-host.png")
+	}
 	chrome.navigate(server.URL + "/host.html")
 	chrome.waitFor(`!!globalThis.cicadaWam?.initialized`, 30*time.Second)
 	result := chrome.eval(`(async()=>{

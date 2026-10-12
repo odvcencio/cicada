@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -59,21 +60,28 @@ func newAudioTrackSource(source []byte, name string, edition int) ([]byte, error
 	if edition != 2 || !studioPatternName.MatchString(name) {
 		return nil, fmt.Errorf("choose a lowercase audio track name in an edition-2 score")
 	}
-	score, ds := notation.ParseEdition(source, edition)
-	if score == nil || hasDiagnosticErrors(ds) {
-		return nil, fmt.Errorf("score must validate before adding a track")
-	}
-	for _, track := range score.Tracks {
-		if track.Name == name {
-			return nil, fmt.Errorf("track %s already exists", name)
-		}
-	}
-	if len(score.Tracks) >= 16 {
-		return nil, fmt.Errorf("a project supports at most 16 tracks")
-	}
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {
 		return nil, err
+	}
+	if root.HasError() {
+		return nil, fmt.Errorf("fix score syntax before adding a track")
+	}
+	// Imported instruments are resolved by the enclosing project transaction.
+	// Inspect local declarations without trying to validate a loose-file score.
+	tracks := 0
+	for i := 0; i < root.NamedChildCount(); i++ {
+		node := root.NamedChild(i)
+		if walker.Type(node) != "track_decl" {
+			continue
+		}
+		tracks++
+		if walker.Text(walker.Field(node, "name")) == name {
+			return nil, fmt.Errorf("track %s already exists", name)
+		}
+	}
+	if tracks >= limits.MaxTracks {
+		return nil, fmt.Errorf("a project supports at most %d tracks", limits.MaxTracks)
 	}
 	at := len(source)
 	for i := 0; i < root.NamedChildCount(); i++ {
@@ -98,8 +106,11 @@ func clipSettingsSource(source []byte, id string, settings *studioClipSettings, 
 	if settings == nil || settings.Start < 0 || settings.End <= settings.Start || settings.FadeIn < 0 || settings.FadeOut < 0 || settings.FadeIn > settings.End-settings.Start || settings.FadeOut > settings.End-settings.Start || math.IsNaN(settings.GainDB) || math.IsInf(settings.GainDB, 0) || settings.GainDB < -60 || settings.GainDB > 24 {
 		return nil, fmt.Errorf("choose a valid source region, fades no longer than the region, and gain −60 to +24 dB")
 	}
-	score, ds := notation.ParseEdition(source, edition)
-	if score == nil || hasDiagnosticErrors(ds) {
+	score, _ := notation.ParseEdition(source, edition)
+	root, _, syntaxErr := notation.ParseTree(source)
+	// The transaction resolves imports and validates the complete project.
+	// Local clip bounds can still be inspected in an imported instrument score.
+	if score == nil || syntaxErr != nil || root.HasError() {
 		return nil, fmt.Errorf("score must validate before editing audio")
 	}
 	var original *notation.Clip

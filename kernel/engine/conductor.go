@@ -10,7 +10,7 @@ import (
 // setAuthoredLayerMask records a mask chosen by a command or a scene. The mask in
 // force is always the authored mask gated by the macro layer tables, so a timed
 // OpSetLayerMask cannot switch on a track that a macro layer excludes.
-func (e *Engine) setAuthoredLayerMask(mask uint32) {
+func (e *Engine) setAuthoredLayerMask(mask trackMask) {
 	e.layerAuthored = mask
 	e.composeLayerMask()
 }
@@ -27,8 +27,8 @@ func (e *Engine) composeLayerMask() {
 // macroLayerMask combines every configured macro layer table: a track sounds
 // only when every configured macro allows it. The bool is false when no macro
 // layer table is active, so authored layer masks stay in charge.
-func (e *Engine) macroLayerMask() (uint32, bool) {
-	mask, active := uint32(1)<<e.tracks-1, false
+func (e *Engine) macroLayerMask() (trackMask, bool) {
+	mask, active := trackMask(1)<<e.tracks-1, false
 	for id := range e.macroLayerEnabled {
 		if e.macroLayerEnabled[id] && e.macroLayerInitialized[id] {
 			mask &= e.macroLayerMasks[id][e.macroLayerLevel[id]]
@@ -102,7 +102,7 @@ func (e *Engine) processBarBoundary() {
 		mask := e.layerMask
 		for id, was := range changed {
 			if was {
-				e.emit(cmd.Message{Kind: cmd.LayerChanged, Track: uint8(id), A: uint16(e.macroLayerLevel[id]), B: mask, Tick: tick})
+				e.emit(cmd.Message{Kind: cmd.LayerChanged, Track: uint8(id), A: uint16(e.macroLayerLevel[id]), B: uint32(mask), Tick: tick})
 			}
 		}
 	}

@@ -1,0 +1,139 @@
+// Named placements restart motifs at their own origin, including the offbeat echo.
+// No audio assets, library pins, or research-only instruments are required.
+cicada 2
+
+title "Tidal Glass"
+
+tempo 80
+
+key d dorian
+
+seed 73023
+
+fx room reverb {
+  decay = 3s
+  mix = 0.35
+}
+
+fx echo delay {
+  time = 1/4
+  feedback = 0.32
+}
+
+instrument pluck {
+  voice mono {
+    let strike = noise() * env(gate, 1ms) * velocity
+    let string = comb(strike, 1 / pitch, 0.992, 0.55)
+    // A sine body keeps the motif audible beneath the pad after its strike.
+    let body = sine(pitch) * env(gate, 650ms) * velocity * 0.16
+    out = lowpass(string, 4800Hz) * env(gate, 1800ms) * 0.32 + body
+  }
+}
+
+instrument pad {
+  voice poly {
+    let amp = adsr(gate, 500ms, 900ms, 0.65, 1400ms)
+    let tone = (saw(pitch) + saw(pitch * 1.003)) * 0.5
+    out = svf(tone, 1000Hz, 0.12) * amp * velocity * 0.3
+  }
+}
+
+instrument sub {
+  voice mono {
+    out = sine(pitch) * adsr(gate, 30ms, 250ms, 0.7, 200ms) * velocity * 0.35
+  }
+}
+
+track near pluck {
+  level = -6dB
+  pan = -0.45
+  send echo = -18dB
+  send room = -9dB
+}
+
+track far pluck {
+  level = -11dB
+  pan = 0.45
+  send room = -7dB
+}
+
+track horizon pad {
+  level = -10dB
+  send room = -12dB
+}
+
+track low sub {
+  level = -15dB
+}
+
+pattern ripple {
+  step = 1/8t
+  gate = 80%
+  d4 . a4 . e5 . | f4 . e4 . a4 .
+  velocity: 94 . 68 . 80 . 86 . 62 . 74 .
+}
+
+pattern return {
+  step = 1/8t
+  gate = 80%
+  d4 . a4 . e5 . | g4 . b4 . a4 .
+}
+
+// Two bars per chord; Dorian B natural brightens the second half.
+pattern tide notes {
+  step = 1/2
+  gate = 95%
+  [d3 f3 a3 e4] - - - [g3 b3 d4 a4] - - -
+}
+
+pattern floor {
+  step = 1/2
+  gate = 90%
+  d2 - - - g2 - - -
+}
+
+// 24 bars / 72 seconds. The offbeat placement begins at bar 5, beat 2.
+arrange {
+  marker shore {
+    at = @1.1.1
+  }
+  marker current {
+    at = @5.1.1
+  }
+  marker open-water {
+    at = @9.1.1
+  }
+  marker return {
+    at = @17.1.1
+  }
+  marker ebb {
+    at = @21.1.1
+  }
+  place near-in near ripple {
+    at = @1.1.1 length = 8bars
+  }
+  place far-in far ripple {
+    at = @5.2.1 length = 4bars
+  }
+  place pad-in horizon tide {
+    at = @5.1.1 length = 12bars
+  }
+  place low-in low floor {
+    at = @9.1.1 length = 8bars
+  }
+  place near-open near return {
+    at = @9.1.1 length = 8bars
+  }
+  place far-open far return {
+    at = @13.2.1 length = 4bars
+  }
+  place near-home near ripple {
+    at = @17.1.1 length = 4bars
+  }
+  place pad-home horizon tide {
+    at = @17.1.1 length = 4bars
+  }
+  place far-home far ripple {
+    at = @21.1.1 length = 4bars
+  }
+}

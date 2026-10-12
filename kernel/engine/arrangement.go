@@ -34,7 +34,7 @@ type SceneSetting struct {
 // Scene has one optional action per track. An omitted binding keeps the
 // current slot; on the first scene that means the track stays off.
 type Scene struct {
-	Track    [16]SceneBinding
+	Track    [MaxTracks]SceneBinding
 	Settings []SceneSetting
 }
 
@@ -158,6 +158,7 @@ func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings 
 		switch binding.Mode {
 		case SceneKeep:
 		case SceneClip:
+			e.stopClips(track)
 			e.startClip(track, binding.Clip, -1, 0)
 		case SceneOff:
 			e.stopClips(track)

@@ -109,7 +109,7 @@ func (v *Voice) interpolate() (float64, float64) {
 	var left, right float64
 	// Explicit float64 conversions round products before addition, preventing
 	// native FMA contraction. Taps always accumulate in ascending source order.
-	if first >= plainStart && end <= plainEnd {
+	if !v.hasStream() && first >= plainStart && end <= plainEnd {
 		l := v.region.Left[first : first+bank.taps]
 		// Exact table phases need no row interpolation. This preserves the
 		// same tap order and rounding while reducing integer-ratio CPU cost.
@@ -193,6 +193,11 @@ func (v *Voice) frame(index int) (float32, float32) {
 	}
 	if index < r.Start || index >= r.End {
 		return 0, 0
+	}
+	if v.hasStream() {
+		left, right, ok := v.source.ReadFrame(int64(index))
+		v.sourceMissing = v.sourceMissing || !ok
+		return left, right
 	}
 	left := r.Left[index]
 	right := left

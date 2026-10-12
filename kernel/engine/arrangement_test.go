@@ -16,9 +16,9 @@ func TestSceneSettingSwitchCarryAndSeekState(t *testing.T) {
 		cfg.Tracks, cfg.MaxVoices = 1, 1
 		cfg.Track[0].Acid = acid.DefaultParams()
 		cfg.Scenes = []Scene{
-			{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 800}}},
-			{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}},
-			{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 1200}}},
+			{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 800}}},
+			{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 1}}},
+			{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 1200}}},
 		}
 		cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
 		return cfg
@@ -89,9 +89,9 @@ func TestSceneSettingSwitchCarryAndSeekState(t *testing.T) {
 func TestSongSceneLaunchKeepOffAndLiveOverride(t *testing.T) {
 	cfg := testConfig()
 	cfg.Scenes = []Scene{
-		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}, {Mode: SceneSlot, Slot: 0}}},
-		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}, {Mode: SceneOff}}},
-		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}, {Mode: SceneKeep}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}, {Mode: SceneSlot, Slot: 0}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}, {Mode: SceneOff}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 1}, {Mode: SceneKeep}}},
 	}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}}
 	e, err := New(cfg)
@@ -143,8 +143,8 @@ func TestManualSceneWinsAtSongBoundaryThenSongResumes(t *testing.T) {
 	cfg := testConfig()
 	cfg.Tracks, cfg.MaxVoices = 1, 1
 	cfg.Scenes = []Scene{
-		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}},
-		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 1}}},
 	}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}}
 	cfg.LoopSong = true
@@ -177,7 +177,7 @@ func TestManualSceneWinsAtSongBoundaryThenSongResumes(t *testing.T) {
 
 func TestManualPatternWinsOnlyItsTrackAtSongBoundary(t *testing.T) {
 	cfg := testConfig()
-	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}, {Mode: SceneSlot, Slot: 0}}}}
+	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}, {Mode: SceneSlot, Slot: 0}}}}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}}
 	cfg.LoopSong = true
 	e, err := New(cfg)
@@ -210,7 +210,7 @@ func TestManualPatternWinsOnlyItsTrackAtSongBoundary(t *testing.T) {
 func TestSeekThenPlayStartsContainingSongEntry(t *testing.T) {
 	cfg := testConfig()
 	cfg.Tracks, cfg.MaxVoices = 1, 1
-	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}}, {Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}}}
+	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}}, {Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 1}}}}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 2}, {Scene: 1, Bars: 2}}
 	cfg.LoopSong = true
 	e, err := New(cfg)
@@ -233,7 +233,7 @@ func TestInvalidArrangementRejected(t *testing.T) {
 	if _, err := New(cfg); err == nil {
 		t.Fatal("song with missing scene was accepted")
 	}
-	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 16}}}}
+	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 16}}}}
 	if _, err := New(cfg); err == nil {
 		t.Fatal("invalid slot binding was accepted")
 	}
@@ -248,7 +248,7 @@ func TestPatternEndSceneWaitsForDifferentTrackLengths(t *testing.T) {
 		cfg.Patterns[track].Slots[0] = seq.Pattern{Len: length, GatePercent: 55, Seed: cfg.Seed}
 		cfg.Patterns[track].Slots[1] = seq.Pattern{Len: 1, GatePercent: 55, Seed: cfg.Seed}
 	}
-	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}, {Mode: SceneSlot, Slot: 1}}}}
+	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 1}, {Mode: SceneSlot, Slot: 1}}}}
 	e, err := New(cfg)
 	if err != nil {
 		t.Fatal(err)
