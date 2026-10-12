@@ -5,6 +5,7 @@ import (
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/spatial"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"math"
 )
 
@@ -86,6 +87,7 @@ func (e *Engine) nextRawTrack(track int) (left, right float32, fault uint16) {
 		left, right = sample, sample
 	case VoicePiano:
 		left, right = v.piano.NextStereo()
+		left, right = left*keyboard.PianoLevelTrim, right*keyboard.PianoLevelTrim
 	case VoiceKeys:
 		if keysEnabled {
 			left, right = v.keys.NextStereo()

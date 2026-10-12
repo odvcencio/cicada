@@ -19,7 +19,7 @@ var Names = keyboard.Names
 
 type Parameter = keyboard.Parameter
 
-func init()                              { keyboard.Prepare = New }
+func init()                              { keyboard.Prepare = NewCalibrated }
 func ID(name string) uint8               { return keyboard.ID(name) }
 func Name(id uint8) string               { return keyboard.Name(id) }
 func Parameters(name string) []Parameter { return keyboard.Parameters(name) }
@@ -124,4 +124,71 @@ func New(rate int, s *keyboard.Spec) (keyboard.Voice, error) {
 		return nil, err
 	}
 	return voice, nil
+}
+
+// LevelTrimDB is the fixed calibration trim for each modeled patch, indexed by
+// patch ID minus one (the order of Names). It is applied once, at the voice
+// output, by NewCalibrated. It is separate from the user controls gain,
+// output, level and velocity, which keep their meaning. The values come from
+// measuring each examples/keys reference so that all 21 patches read
+// -24 LUFS integrated at 0 dB.
+var LevelTrimDB = [len(keyboard.Names)]float32{
+	1.95,  // tine_ep
+	2.96,  // tine_bell
+	5.14,  // tine_bark
+	3.84,  // tine_tremolo
+	5.01,  // reed_ep
+	7.75,  // reed_tremolo
+	-5.68, // clav
+	-0.55, // clav_muted
+	-5.62, // clav_hollow
+	4.04,  // tonewheel_organ
+	3.80,  // organ_jazz
+	4.80,  // organ_full
+	5.72,  // organ_soft
+	1.32,  // fm_ep
+	2.75,  // bell_keys
+	4.66,  // fm_bass
+	14.51, // brass_stab
+	9.69,  // soft_pad
+	15.05, // poly_keys
+	2.82,  // sync_lead
+	2.50,  // string_machine
+}
+
+// LevelTrimLinear returns the linear factor for a patch ID, or 1 for an
+// unknown ID.
+func LevelTrimLinear(patch uint8) float32 {
+	if patch < 1 || int(patch) > len(LevelTrimDB) {
+		return 1
+	}
+	return float32(math.Pow(10, float64(LevelTrimDB[patch-1])/20))
+}
+
+// calibrated scales the output of one voice by a fixed factor. Every other
+// method passes through to the wrapped voice.
+type calibrated struct {
+	keyboard.Voice
+	gain float32
+}
+
+func (c *calibrated) NextStereo() (float32, float32) {
+	l, r := c.Voice.NextStereo()
+	return l * c.gain, r * c.gain
+}
+
+// NewCalibrated builds the patch with New and applies its level trim. Native
+// playback, offline render and the keys WASM module all prepare voices here.
+// New stays untrimmed for tools that need the raw voice, such as the sample
+// pack builder.
+func NewCalibrated(rate int, s *keyboard.Spec) (keyboard.Voice, error) {
+	v, err := New(rate, s)
+	if err != nil {
+		return nil, err
+	}
+	gain := LevelTrimLinear(s.Patch)
+	if gain == 1 {
+		return v, nil
+	}
+	return &calibrated{Voice: v, gain: gain}, nil
 }
