@@ -45,16 +45,21 @@ func (visitor parameterVisitor) apply(setting SceneSetting, snap bool) {
 
 func (state *ParameterState) visit(visitor parameterVisitor) {
 	for track := range state {
-		for id, bits := range state[track] {
-			if bits>>32 == 0 {
-				continue
-			}
-			index := uint8(track)
-			if index == ParameterGlobalSlot {
-				index = 0xff
-			}
-			visitor.apply(SceneSetting{Track: index, ID: kernel.ParamID(id), Value: math.Float32frombits(uint32(bits))}, true)
+		state.visitSlot(track, visitor)
+	}
+}
+
+// visitSlot applies the saved values of one track (or the global slot).
+func (state *ParameterState) visitSlot(track int, visitor parameterVisitor) {
+	for id, bits := range state[track] {
+		if bits>>32 == 0 {
+			continue
 		}
+		index := uint8(track)
+		if index == ParameterGlobalSlot {
+			index = 0xff
+		}
+		visitor.apply(SceneSetting{Track: index, ID: kernel.ParamID(id), Value: math.Float32frombits(uint32(bits))}, true)
 	}
 }
 

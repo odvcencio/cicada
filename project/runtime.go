@@ -535,6 +535,11 @@ func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved Resolved
 			case "true", "on":
 				return 1, fx.FreeDelay, nil
 			}
+			for n, candidate := range resolved.Descriptor.Values {
+				if n < 2 && candidate == value.Text {
+					return float32(n), fx.FreeDelay, nil
+				}
+			}
 		}
 		if value.Text == "auto" && resolved.Descriptor.ID == "fx.comp.makeup" {
 			for _, effect := range p.Effects {

@@ -456,3 +456,26 @@ func TestStudioLibrarySavedPresetPreservesAudibleDefaultOverrides(t *testing.T) 
 		})
 	}
 }
+
+// The browser test's flow without a browser: insert an instrument on the lead
+// track, then save that track as the preset "bright", and undo and redo it
+// through the written source. Keyboard parameter families must not change it.
+func TestStudioLibraryInsertThenSavePresetFlow(t *testing.T) {
+	h, filename := libraryStudio(t)
+	r := studioCall(t, h, "/api/library/insert", studioEdit{Revision: studioRevision([]byte(studioLibraryScore)), Path: "std/synth", Item: "glassbass", Track: "lead"})
+	if r.Code != 200 {
+		t.Fatal(r.Body.String())
+	}
+	current, _ := os.ReadFile(filename)
+	if !bytes.Contains(current, []byte("track lead synth.glassbass")) {
+		t.Fatalf("insert: %s", current)
+	}
+	r = studioCall(t, h, "/api/library/save", studioEdit{Revision: studioRevision(current), Track: "lead", Name: "bright"})
+	if r.Code != 200 {
+		t.Fatalf("save: %d %s", r.Code, r.Body.String())
+	}
+	saved, _ := os.ReadFile(filename)
+	if !bytes.Contains(saved, []byte("preset bright")) {
+		t.Fatalf("saved source has no preset: %s", saved)
+	}
+}

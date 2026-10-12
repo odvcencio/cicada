@@ -1255,6 +1255,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				}
 				setting.Division = fx.DelayDivision(division)
 				if version != guitarImageVersion && setting.ID >= kernel.ParamGuitarBend {
+					if engine.IsKeysControl(setting.ID) {
+						return Error("keyboard controls require image version 15")
+					}
 					return Error("guitar controls require image version 15")
 				}
 				if err := validateSceneSetting(cfg, *setting); err != nil {
@@ -1488,6 +1491,9 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
 			return Error("guitar setting requires a guitar track")
 		}
+		if engine.IsKeysControl(setting.ID) && !engine.KeysControlFits(&cfg.Track[setting.Track], setting.ID) {
+			return Error("keyboard setting requires a keyboard track of its family")
+		}
 	} else if setting.Track != 0xff {
 		return Error("global scene parameter needs the global owner")
 	}
@@ -1508,6 +1514,9 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 	}
 	if !syncedDelay && spec.Curve == "toggle" && setting.Value != 0 && setting.Value != 1 {
 		return Error("scene toggle value is out of range")
+	}
+	if !syncedDelay && !off && kernel.IsInteger(setting.ID) && setting.Value != float32(int32(setting.Value)) {
+		return Error("scene whole-number value is not whole")
 	}
 	return nil
 }

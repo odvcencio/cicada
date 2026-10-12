@@ -2,7 +2,11 @@
 // All coefficients and storage are prepared before the audio owner starts.
 package ep
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/voice/keyboard"
+)
 
 const (
 	MinNote   = 21
@@ -101,6 +105,17 @@ type Instrument struct {
 	lfoC, lfoS, lfoQ, lfoP                    float32
 	stealL, stealR, stealDecay, lastL, lastR  float32
 	voiceLimit                                int
+	live                                      liveControls
+}
+
+// liveControls holds the smoothed values that SetControl can change. Until a
+// control moves, gliding stays false and the render path does no extra work.
+type liveControls struct {
+	gliding            bool
+	alpha              float32
+	trem, pan, rate    float32
+	tremT, panT, rateT float32
+	driveT, ampT       float32
 }
 
 func New(rate int, p Params) (*Instrument, error) {
@@ -119,6 +134,8 @@ func New(rate int, p Params) (*Instrument, error) {
 		return nil, Error("electric piano parameter outside range")
 	}
 	i := &Instrument{params: p, rate: rate, gap: float32(p.PickupDistance), offset: float32((p.PickupPosition - .5) * .75), drive: float32(1 + 5*p.Drive), amp: float32(p.Gain * .34), lfoP: 1}
+	i.live = liveControls{trem: float32(p.Tremolo), pan: float32(p.Pan), rate: float32(p.TremoloRate)}
+	i.live.tremT, i.live.panT, i.live.rateT, i.live.driveT, i.live.ampT = i.live.trem, i.live.pan, i.live.rate, i.drive, i.amp
 	fs := float64(rate * p.Oversample)
 	i.lowAlpha = float32(1 - math.Exp(-2*math.Pi*min(8500., float64(rate)*.2)/float64(rate)))
 	i.dcPole = float32(math.Exp(-2 * math.Pi * 18 / float64(rate)))
@@ -289,6 +306,9 @@ func saturate(x float32) float32 {
 }
 
 func (i *Instrument) NextStereo() (float32, float32) {
+	if i.live.gliding {
+		i.glide()
+	}
 	sum := float32(0)
 	for n := range i.voices {
 		v := &i.voices[n]
@@ -346,8 +366,8 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	norm := float32(1.5) - float32(.5*float32(float32(q*q)+float32(p*p)))
 	i.lfoQ = float32(q * norm)
 	i.lfoP = float32(p * norm)
-	trem := float32(1) - float32(float32(i.params.Tremolo)*float32(.5+.5*q))
-	pan := float32(float32(i.params.Pan) * float32(i.params.Tremolo) * q)
+	trem := float32(1) - float32(i.live.trem*float32(.5+.5*q))
+	pan := float32(i.live.pan * i.live.trem * q)
 	y = float32(dc*i.amp) * trem
 	l := float32(y*float32(1-pan)) + i.stealL
 	r := float32(y*float32(1+pan)) + i.stealR
@@ -368,5 +388,77 @@ func (i *Instrument) SetVoiceLimit(limit int) error {
 		i.voices[j] = voice{}
 	}
 	i.voiceLimit = limit
+	return nil
+}
+
+// Slots in the keyboard control table (project.Spec.Controls).
+const (
+	controlDrive       = 6
+	controlTremolo     = 7
+	controlTremoloRate = 8
+	controlAutoPan     = 9
+	controlGain        = 10
+)
+
+func (i *Instrument) setLFORate(hz float32) {
+	a := 2 * math.Pi * float64(hz) / float64(i.rate)
+	i.lfoC = float32(math.Cos(a))
+	i.lfoS = float32(math.Sin(a))
+}
+
+func (i *Instrument) glide() {
+	l := &i.live
+	done := keyboard.Approach(&i.drive, l.driveT, l.alpha)
+	done = keyboard.Approach(&i.amp, l.ampT, l.alpha) && done
+	done = keyboard.Approach(&l.trem, l.tremT, l.alpha) && done
+	done = keyboard.Approach(&l.pan, l.panT, l.alpha) && done
+	if l.rate != l.rateT {
+		done = keyboard.Approach(&l.rate, l.rateT, l.alpha) && done
+		i.setLFORate(l.rate)
+	}
+	l.gliding = !done
+}
+
+// SetControl changes drive, tremolo, tremolo rate, auto-pan or gain. A glide
+// of 1 applies the value at once. It allocates nothing.
+func (i *Instrument) SetControl(index int, value, glide float32) error {
+	if !keyboard.ValidGlide(glide) {
+		return Error("glide must be in (0,1]")
+	}
+	l := &i.live
+	switch index {
+	case controlDrive:
+		if !keyboard.InRange(value, 0, 1) {
+			return Error("electric piano drive must be 0..1")
+		}
+		l.driveT = float32(1 + 5*float64(value))
+	case controlTremolo:
+		if !keyboard.InRange(value, 0, 1) {
+			return Error("electric piano tremolo must be 0..1")
+		}
+		l.tremT = value
+	case controlTremoloRate:
+		if !keyboard.InRange(value, .1, 12) {
+			return Error("electric piano tremolo rate must be 0.1..12 Hz")
+		}
+		l.rateT = value
+	case controlAutoPan:
+		if !keyboard.InRange(value, 0, 1) {
+			return Error("electric piano auto-pan must be 0..1")
+		}
+		l.panT = value
+	case controlGain:
+		if !keyboard.InRange(value, 0, 2) {
+			return Error("electric piano gain must be 0..2")
+		}
+		l.ampT = float32(float64(value) * .34)
+	default:
+		return Error("electric piano has no such control")
+	}
+	l.alpha = glide
+	l.gliding = true
+	if glide == 1 {
+		i.glide()
+	}
 	return nil
 }
