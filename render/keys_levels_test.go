@@ -10,6 +10,7 @@ import (
 
 	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/kernel/loudness"
+	keyvoice "m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -26,6 +27,13 @@ func keysReferenceLUFS(t *testing.T, patch string) float64 {
 	if err != nil {
 		t.Fatal(err)
 	}
+	return referenceLUFS(t, patch, source, 4)
+}
+
+// referenceLUFS renders the first bars of a score (all bars when zero) and
+// returns its BS.1770 integrated loudness.
+func referenceLUFS(t *testing.T, patch string, source []byte, bars int) float64 {
+	t.Helper()
 	score, diagnostics := notation.Parse(source)
 	for _, d := range diagnostics {
 		if d.Severity == "error" {
@@ -34,7 +42,7 @@ func keysReferenceLUFS(t *testing.T, patch string) float64 {
 	}
 	var wav bytes.Buffer
 	dither := false
-	report, err := WAV(score, Options{SampleRate: 48000, Bits: 32, Bars: 4, Dither: &dither}, &wav)
+	report, err := WAV(score, Options{SampleRate: 48000, Bits: 32, Bars: bars, Dither: &dither}, &wav)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,5 +79,24 @@ func TestKeysReferenceLevels(t *testing.T) {
 				t.Fatalf("%s: %.2f LUFS, want %.1f +/- %.1f (trim %.2f dB; suggested trim %.2f dB)", name, got, keysLevelTarget, keysLevelTolerance, trim, float64(trim)+keysLevelTarget-got)
 			}
 		})
+	}
+}
+
+// TestPianoReferenceLevel checks the grand piano against the same -24 LUFS
+// target. The reference is examples/modeled-piano.cicada with its fader moved
+// from -6 dB to 0 dB, rendered over the whole 4-bar song.
+func TestPianoReferenceLevel(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("..", "examples", "modeled-piano.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(source, []byte("level = -6db")) {
+		t.Fatal("example no longer sets level = -6db")
+	}
+	source = bytes.Replace(source, []byte("level = -6db"), []byte("level = 0db"), 1)
+	got := referenceLUFS(t, "piano", source, 0)
+	t.Logf("METRIC PIANO trim_db=%.2f integrated_lufs=%.3f", keyvoice.PianoLevelTrimDB, got)
+	if math.Abs(got-keysLevelTarget) > keysLevelTolerance {
+		t.Fatalf("piano: %.2f LUFS, want %.1f +/- %.1f (trim %.2f dB; suggested trim %.2f dB)", got, keysLevelTarget, keysLevelTolerance, keyvoice.PianoLevelTrimDB, keyvoice.PianoLevelTrimDB+keysLevelTarget-got)
 	}
 }

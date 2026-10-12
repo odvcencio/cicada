@@ -995,6 +995,7 @@ func (e *Engine) Render(outL, outR []float32) {
 				left, right = sample, sample
 			case VoicePiano:
 				left, right = v.piano.NextStereo()
+				left, right = left*keyboard.PianoLevelTrim, right*keyboard.PianoLevelTrim
 			case VoiceKeys:
 				if keysEnabled {
 					left, right = v.keys.NextStereo()

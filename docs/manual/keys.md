@@ -75,8 +75,15 @@ playback, offline render and the keys WASM module apply the same trim.
 
 Scores written before this change play their keyboard parts at a different
 loudness: trims range from -5.7 dB (`clav`) to +15.1 dB (`poly_keys`). Re-check
-the balance of existing mixes. The grand piano (`piano`) is a separate voice
-and is not trimmed.
+the balance of existing mixes.
+
+The grand piano (`piano`) has its own fixed trim of +12.97 dB
+(`PianoLevelTrimDB` in `kernel/voice/keyboard`), applied at the voice output in
+the engine and in offline render. Its reference is `examples/modeled-piano.cicada`
+with the fader moved from -6 dB to 0 dB, rendered over its four bars; that
+measures -24 LUFS. `level`, velocity and `sustain` keep their meaning.
+`TestPianoReferenceLevel` in `render` checks it. Existing piano scores play
+about 13 dB louder than before.
 
 ## Tine and Reed EP controls
 

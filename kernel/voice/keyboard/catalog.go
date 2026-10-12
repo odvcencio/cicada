@@ -1,7 +1,10 @@
 // Package keyboard defines stable patch IDs and score parameters for the optional keys module.
 package keyboard
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 var Names = [...]string{"tine_ep", "tine_bell", "tine_bark", "tine_tremolo", "reed_ep", "reed_tremolo", "clav", "clav_muted", "clav_hollow", "tonewheel_organ", "organ_jazz", "organ_full", "organ_soft", "fm_ep", "bell_keys", "fm_bass", "brass_stab", "soft_pad", "poly_keys", "sync_lead", "string_machine"}
 
@@ -98,3 +101,11 @@ func Parameters(name string) []Parameter {
 	}
 	return p
 }
+
+// PianoLevelTrimDB is the fixed calibration trim for the grand piano voice,
+// applied at its output by the engine and by offline render. It is separate
+// from level, velocity and sustain.
+const PianoLevelTrimDB = 12.97
+
+// PianoLevelTrim is PianoLevelTrimDB as a linear factor.
+var PianoLevelTrim = float32(math.Pow(10, PianoLevelTrimDB/20))

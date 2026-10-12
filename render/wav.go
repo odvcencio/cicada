@@ -187,6 +187,17 @@ func (voice acidVoice) NoteOn(note, velocity uint8, accent, slide bool) {
 	voice.Voice.NoteOn(note, accent, slide, velocity)
 }
 
+// trimmedVoice applies a fixed calibration factor to one voice's output.
+type trimmedVoice struct {
+	keyvoice.Voice
+	gain float32
+}
+
+func (v trimmedVoice) NextStereo() (float32, float32) {
+	l, r := v.Voice.NextStereo()
+	return l * v.gain, r * v.gain
+}
+
 type pianoVoice struct {
 	Instrument keyvoice.Voice
 	notes      [4]uint8
@@ -976,6 +987,9 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 				voice, err = keyboard.NewCalibrated(sampleRate, &spec)
 			} else {
 				voice, err = piano.New(sampleRate)
+				if err == nil {
+					voice = trimmedVoice{voice, keyvoice.PianoLevelTrim}
+				}
 				if err == nil {
 					sustain, e := project.CompilePianoSustain(source)
 					if e != nil {
