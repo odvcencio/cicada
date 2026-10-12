@@ -146,6 +146,14 @@ func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
 }
 
 func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings bool) {
+	// Tempo first: the new scene's patterns and delay division both use it.
+	if int(index) < len(e.scenes) {
+		for _, setting := range e.scenes[index].Settings {
+			if setting.ID == kernel.ParamGlobalTempo {
+				e.applySceneSetting(setting, snapSettings)
+			}
+		}
+	}
 	e.launchSceneTracks(index, skipManualPatterns)
 	e.applySceneSettingsMode(index, snapSettings)
 }
@@ -233,6 +241,10 @@ func (e *Engine) applySceneSetting(setting SceneSetting, snap bool) {
 		}
 		return
 	}
+	if setting.ID == kernel.ParamGlobalTempo {
+		e.setSceneTempo(sceneTempoMilli(setting))
+		return
+	}
 	command := cmd.Command{Op: cmd.OpSetParam, Track: setting.Track, Index: uint16(setting.ID), Arg0: math.Float32bits(setting.Value)}
 	if snap {
 		e.setParamImmediate(command)
@@ -241,6 +253,21 @@ func (e *Engine) applySceneSetting(setting SceneSetting, snap bool) {
 	}
 	if e.faulted {
 		return
+	}
+}
+
+// setSceneTempo steps the tempo at the current tick. The delay follows at once,
+// so a division set by the same scene fades only once.
+func (e *Engine) setSceneTempo(bpmMilli int64) {
+	if bpmMilli == e.transport.BPMMilli() {
+		return
+	}
+	if e.transport.SetTempoNow(bpmMilli) != nil {
+		e.fault(FaultTempo)
+		return
+	}
+	if e.delayA != nil && e.delayA.SetTempo(bpmMilli) != nil {
+		e.fault(FaultDelayTempo)
 	}
 }
 
@@ -304,6 +331,9 @@ func (e *Engine) advanceSong() {
 			return
 		}
 		e.songIndex = 0
+		if e.sceneDefaults != nil {
+			e.setSceneTempo(e.bpmMilli) // a loop starts again at the score tempo
+		}
 	}
 	entry := e.schedule[e.songIndex]
 	e.songEndTick += entry.EndTick - entry.Tick

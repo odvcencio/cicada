@@ -123,10 +123,12 @@ func (e *Engine) nextClipStereo(track int) (float32, float32) {
 
 func (e *Engine) restoreSongClips(index int, cycleStart, tick int64) {
 	e.resetClips()
-	clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.transport.BPMMilli()}
-	sample := clock.SampleAtTick(tick)
+	sample := e.songSampleAtTick(tick)
 	startCycle := int64(0)
-	if e.loopSong {
+	if e.loopSong && len(e.tempoChain) != 0 {
+		startCycle = e.songCycleAtSample(sample-e.clipMaxFrames) * e.scheduleDuration
+	} else if e.loopSong {
+		clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.transport.BPMMilli()}
 		oldestTick := clock.TickAtSample(max(0, sample-e.clipMaxFrames))
 		startCycle = oldestTick / e.scheduleDuration * e.scheduleDuration
 	}
@@ -139,7 +141,7 @@ func (e *Engine) restoreSongClips(index int, cycleStart, tick int64) {
 		}
 		for i := 0; i <= last && !e.faulted; i++ {
 			event := e.schedule[i]
-			elapsed := sample - clock.SampleAtTick(event.Tick+cycle)
+			elapsed := sample - e.songSampleAtTick(event.Tick+cycle)
 			for track, binding := range e.scenes[event.Scene].Track {
 				if track >= e.tracks || e.voices[track].kind != VoiceAudio {
 					continue

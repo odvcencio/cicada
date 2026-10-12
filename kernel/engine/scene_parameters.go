@@ -75,6 +75,10 @@ func (e *Engine) restoreSceneDefaults() bool {
 	if base == nil {
 		return true
 	}
+	e.setSceneTempo(e.bpmMilli)
+	if e.faulted {
+		return false
+	}
 	e.layerAuthored, e.soloCount = base.layerMask, 0
 	e.composeLayerMask()
 	for i := 0; i < e.tracks; i++ {

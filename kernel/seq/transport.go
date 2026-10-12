@@ -54,6 +54,20 @@ func (t *Transport) SeekTick(tick int64) error {
 	return nil
 }
 
+// SetTempoNow changes the tempo at the current position. The clock anchors at
+// the present sample and tick, so every later tick maps with the new tempo and
+// earlier ticks keep the mapping they were played with. Scene tempo uses it,
+// because a scene launch is already on a bar boundary.
+func (t *Transport) SetTempoNow(bpmMilli int64) error {
+	if bpmMilli < minBPMMilli || bpmMilli > maxBPMMilli {
+		return Error("tempo must be 20 to 300 BPM")
+	}
+	t.clock.AnchorSample = t.sample
+	t.clock.AnchorTick = t.tick
+	t.clock.BPMMilli = bpmMilli
+	return nil
+}
+
 func (t *Transport) QueueTempo(bpmMilli int64) error {
 	if bpmMilli < minBPMMilli || bpmMilli > maxBPMMilli {
 		return Error("tempo must be 20 to 300 BPM")

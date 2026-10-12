@@ -1435,7 +1435,10 @@ func readGraphInto(r *reader, version uint16, capabilities uint16, program *grap
 
 func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error {
 	spec, ok := kernel.Param(setting.ID)
-	if !ok || !spec.Live {
+	// Scene tempo (ID 113) is the one scene setting that is not live. The scene
+	// settings record already stores an ID and a float, so the image layout and
+	// version are unchanged. Decoders from before scene tempo reject the ID.
+	if !ok || !spec.Live && setting.ID != kernel.ParamGlobalTempo {
 		return Error("scene parameter setting is not live")
 	}
 	if spec.Scope == "track" {

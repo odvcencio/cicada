@@ -221,6 +221,8 @@ type Engine struct {
 	liveEvents                   bool // set by any live-control op; keeps Bar and MacroReached off for hosts that never drain messages
 	lastBarTick                  int64
 	bpmMilli                     int64
+	tempoChain                   []seq.Clock
+	tempoCycleSamples            int64
 	voices                       [16]voiceSlot
 	transport                    seq.Transport
 	limiter                      *mix.Limiter
@@ -718,6 +720,17 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	if len(cfg.Scenes) > 1<<16 || len(cfg.Song) > 1<<16 {
 		return Error("arrangement exceeds the wire index range")
 	}
+	// A synced delay must fit its buffer at the slowest tempo the song reaches.
+	slowest := bpmMilli
+	for _, scene := range cfg.Scenes {
+		for _, setting := range scene.Settings {
+			if setting.ID == kernel.ParamGlobalTempo {
+				if milli := sceneTempoMilli(setting); milli >= 20_000 && milli <= 300_000 {
+					slowest = min(slowest, milli)
+				}
+			}
+		}
+	}
 	for _, scene := range cfg.Scenes {
 		for track, binding := range scene.Track {
 			if binding.Mode > SceneClip || track >= cfg.Tracks && binding.Mode != SceneKeep || binding.Mode == SceneSlot && binding.Slot >= 16 || binding.Mode == SceneClip && (int(binding.Clip) >= len(cfg.Clips) || cfg.Track[track].Kind != VoiceAudio) {
@@ -732,7 +745,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 		for _, setting := range scene.Settings {
 			address := parameterAddress{track: setting.Track, id: setting.ID}
 			spec, ok := kernel.Param(setting.ID)
-			if !ok || !spec.Live || seen[address] {
+			if !ok || !spec.Live && setting.ID != kernel.ParamGlobalTempo || seen[address] {
 				return Error("scene parameter setting is invalid")
 			}
 			seen[address] = true
@@ -743,7 +756,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 				}
 				params := e.delayA.Params()
 				params.Division, params.TimeMs = setting.Division, 0
-				if err := params.ValidateTempo(bpmMilli); err != nil {
+				if err := params.ValidateTempo(slowest); err != nil {
 					return err
 				}
 			}
@@ -783,7 +796,10 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 		return err
 	}
 	e.loopSong = cfg.LoopSong
-	return nil
+	if e.delayA != nil && e.delayA.Params().ValidateTempo(slowest) != nil {
+		return Error("delay division does not fit the slowest scene tempo")
+	}
+	return e.buildTempoChain()
 }
 
 func (e *Engine) Push(c cmd.Command) bool {
@@ -884,6 +900,9 @@ func (e *Engine) Reset() {
 		e.compMusic.Reset()
 	}
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
+	if e.delayA != nil {
+		_ = e.delayA.SetTempo(e.bpmMilli)
+	}
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0
 	e.automationIndex, e.automationTick = 0, -1
@@ -902,6 +921,22 @@ func (e *Engine) Reset() {
 	}
 	e.resetDirector()
 	e.faulted = false
+}
+
+// syncTempo moves the delay and the event schedule to a changed tempo. It
+// reports false after a fault.
+func (e *Engine) syncTempo(scheduled *int64) bool {
+	tempo := e.transport.BPMMilli()
+	if tempo == *scheduled {
+		return true
+	}
+	if e.delayA != nil && e.delayA.SetTempo(tempo) != nil {
+		e.fault(FaultDelayTempo)
+		return false
+	}
+	e.scheduleAll()
+	*scheduled = tempo
+	return !e.faulted
 }
 
 func (e *Engine) Render(outL, outR []float32) {
@@ -931,15 +966,10 @@ func (e *Engine) Render(outL, outR []float32) {
 	var blockPeak float32
 	for frame := range outL {
 		e.renderFrame = frame
-		if e.transport.BPMMilli() != scheduledTempo {
-			if e.delayA != nil && e.delayA.SetTempo(e.transport.BPMMilli()) != nil {
-				e.fault(FaultDelayTempo)
-				clear(outL[frame:])
-				clear(outR[frame:])
-				return
-			}
-			e.scheduleAll()
-			scheduledTempo = e.transport.BPMMilli()
+		if !e.syncTempo(&scheduledTempo) {
+			clear(outL[frame:])
+			clear(outR[frame:])
+			return
 		}
 		e.processPatternEvents(seq.NoteOff)
 		e.advanceSong()
@@ -950,6 +980,12 @@ func (e *Engine) Render(outL, outR []float32) {
 		}
 		e.applyPending()
 		if e.faulted {
+			clear(outL[frame:])
+			clear(outR[frame:])
+			return
+		}
+		// A scene launched in this frame may have stepped the tempo.
+		if !e.syncTempo(&scheduledTempo) {
 			clear(outL[frame:])
 			clear(outR[frame:])
 			return
