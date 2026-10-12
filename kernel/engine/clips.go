@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/sample"
 	"math"
 )
@@ -125,12 +124,8 @@ func (e *Engine) restoreSongClips(index int, cycleStart, tick int64) {
 	e.resetClips()
 	sample := e.songSampleAtTick(tick)
 	startCycle := int64(0)
-	if e.loopSong && len(e.tempoChain) != 0 {
-		startCycle = e.songCycleAtSample(sample-e.clipMaxFrames) * e.scheduleDuration
-	} else if e.loopSong {
-		clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.transport.BPMMilli()}
-		oldestTick := clock.TickAtSample(max(0, sample-e.clipMaxFrames))
-		startCycle = oldestTick / e.scheduleDuration * e.scheduleDuration
+	if e.loopSong {
+		startCycle = max(0, sample-e.clipMaxFrames) / e.tempoCycleSamples * e.scheduleDuration
 	}
 	// Replay starts and stops in source order. Clips can overlap scene entries
 	// and loop cycles; natural completion is checked before claiming a voice.

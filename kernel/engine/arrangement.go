@@ -137,8 +137,14 @@ func gcd(a, b int64) int64 {
 	return a
 }
 
+// launchScene is the manual path (a launch command or the director). While a
+// song carries scene tempos, the song owns the tempo: a manual launch changes
+// patterns and parameters but never the tempo, so the engine and the tempo
+// chain cannot disagree.
 func (e *Engine) launchScene(index uint16) {
+	e.manualLaunch = true
 	e.launchSceneMode(index, false, false)
+	e.manualLaunch = false
 }
 
 func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
@@ -146,16 +152,20 @@ func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
 }
 
 func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings bool) {
-	// Tempo first: the new scene's patterns and delay division both use it.
+	e.applySceneTempo(index, snapSettings)
+	e.launchSceneTracks(index, skipManualPatterns)
+	e.applySceneSettingsMode(index, snapSettings)
+}
+
+// applySceneTempo runs first: the scene's patterns and delay division use it.
+func (e *Engine) applySceneTempo(index uint16, snap bool) {
 	if int(index) < len(e.scenes) {
 		for _, setting := range e.scenes[index].Settings {
 			if setting.ID == kernel.ParamGlobalTempo {
-				e.applySceneSetting(setting, snapSettings)
+				e.applySceneSetting(setting, snap)
 			}
 		}
 	}
-	e.launchSceneTracks(index, skipManualPatterns)
-	e.applySceneSettingsMode(index, snapSettings)
 }
 
 func (e *Engine) launchSceneTracks(index uint16, skipManualPatterns bool) {
@@ -242,6 +252,9 @@ func (e *Engine) applySceneSetting(setting SceneSetting, snap bool) {
 		return
 	}
 	if setting.ID == kernel.ParamGlobalTempo {
+		if e.manualLaunch && len(e.tempoChain) != 0 {
+			return
+		}
 		e.setSceneTempo(sceneTempoMilli(setting))
 		return
 	}
@@ -262,10 +275,7 @@ func (e *Engine) setSceneTempo(bpmMilli int64) {
 	if bpmMilli == e.transport.BPMMilli() {
 		return
 	}
-	if e.transport.SetTempoNow(bpmMilli) != nil {
-		e.fault(FaultTempo)
-		return
-	}
+	e.transport.SetTempoNow(bpmMilli)
 	if e.delayA != nil && e.delayA.SetTempo(bpmMilli) != nil {
 		e.fault(FaultDelayTempo)
 	}
@@ -339,5 +349,7 @@ func (e *Engine) advanceSong() {
 	e.songEndTick += entry.EndTick - entry.Tick
 	if e.manualSceneTick != e.transport.Tick() {
 		e.launchSceneWithSkip(entry.Scene, true)
+	} else {
+		e.applySceneTempo(entry.Scene, false) // the manual scene wins the patterns, not the tempo
 	}
 }

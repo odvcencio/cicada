@@ -42,11 +42,10 @@ func (e *Engine) buildTempoChain() error {
 			chain = append(chain, clock)
 		}
 	}
-	if len(chain) == 1 {
-		return nil
-	}
-	e.tempoChain = chain
 	e.tempoCycleSamples = clock.SampleAtTick(e.scheduleDuration)
+	if len(chain) > 1 {
+		e.tempoChain = chain
+	}
 	return nil
 }
 
@@ -54,7 +53,7 @@ func (e *Engine) buildTempoChain() error {
 // that governs it. A looping song restarts at the score tempo each cycle. The
 // chain must not be empty.
 func (e *Engine) chainClock(tick int64) (cycle int64, clock seq.Clock, local int64) {
-	if e.loopSong && e.scheduleDuration > 0 {
+	if e.loopSong {
 		cycle = tick / e.scheduleDuration
 	}
 	local = tick - cycle*e.scheduleDuration
@@ -78,14 +77,6 @@ func (e *Engine) songSampleAtTick(tick int64) int64 {
 	return cycle*e.tempoCycleSamples + clock.SampleAtTick(local)
 }
 
-// songCycleAtSample is the loop cycle that holds a song sample.
-func (e *Engine) songCycleAtSample(sample int64) int64 {
-	if len(e.tempoChain) == 0 || e.tempoCycleSamples <= 0 {
-		return 0
-	}
-	return max(0, sample) / e.tempoCycleSamples
-}
-
 // TempoAtTick is the tempo, in thousandths of a BPM, that plays at a song tick
 // after a seek to it: the score tempo, changed by every scene tempo at or before
 // the tick. A looping song starts each pass at the score tempo.
@@ -101,7 +92,7 @@ func (e *Engine) TempoAtTick(tick int64) int64 {
 // return to the score tempo when a looping song wraps.
 func (e *Engine) nextTempoStep(after int64) (tick, bpmMilli int64, ok bool) {
 	var base int64
-	if e.loopSong && e.scheduleDuration > 0 && after > 0 {
+	if e.loopSong {
 		base = after / e.scheduleDuration * e.scheduleDuration
 	}
 	local := after - base
@@ -110,7 +101,7 @@ func (e *Engine) nextTempoStep(after int64) (tick, bpmMilli int64, ok bool) {
 			return base + step.AnchorTick, step.BPMMilli, true
 		}
 	}
-	if !e.loopSong || e.scheduleDuration <= 0 {
+	if !e.loopSong {
 		return 0, 0, false
 	}
 	bpmMilli = e.bpmMilli
@@ -125,7 +116,7 @@ func (e *Engine) nextTempoStep(after int64) (tick, bpmMilli int64, ok bool) {
 // own clock and never keep a copy of the tempo map. It follows the transport:
 // each tempo step re-anchors at the sample where its tick first plays.
 func (e *Engine) FramesBetweenTicks(from, to int64) int64 {
-	if from < 0 || to <= from {
+	if to <= from {
 		return 0
 	}
 	clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.TempoAtTick(from), AnchorTick: from}

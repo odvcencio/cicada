@@ -1,0 +1,123 @@
+//go:build wasm_integration
+
+package main
+
+import (
+	"context"
+	"math"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/tetratelabs/wazero"
+	"m31labs.dev/cicada/host/kernelimage"
+	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/engine"
+	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/project"
+)
+
+// A manual scene launch that lands on the exact song-boundary tick must leave
+// native and WASM in agreement: the same audio, the same tempo, and the same
+// bar placement from the tick_frames export.
+func TestSceneTempoManualLaunchOnBoundaryNativeWASMParity(t *testing.T) {
+	score, diagnostics, err := project.LoadScore(filepath.Join("..", "..", "examples", "scene-tempo.cicada"), nil)
+	if err != nil || len(diagnostics) != 0 {
+		t.Fatalf("score: %v %+v", err, diagnostics)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	const rate, block = 48_000, 128
+	cfg, err := project.CompileEngine(p, rate, block)
+	if err != nil {
+		t.Fatal(err)
+	}
+	image, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wasm, err := os.ReadFile(wasmModulePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+	module, err := r.Instantiate(ctx, wasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(name string, args ...uint64) uint64 {
+		t.Helper()
+		result, err := module.ExportedFunction(name).Call(ctx, args...)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(result) == 0 {
+			return 0
+		}
+		return result[0]
+	}
+	call("_initialize")
+	ptr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
+	if !module.Memory().Write(ptr, image) || call("gosx_audio_init", rate, block, 2) != 0 {
+		t.Fatal("WASM init failed")
+	}
+	native, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	push := func(c cmd.Command) {
+		t.Helper()
+		record, err := cmd.EncodeCommand(c, uint8(cfg.Tracks))
+		if err != nil || !module.Memory().Write(uint32(call("gosx_audio_cmd_ptr")), record[:]) || !native.Push(c) {
+			t.Fatalf("command %v: %v", c.Op, err)
+		}
+		call("gosx_audio_cmd_commit", 1)
+	}
+	push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	out := uint32(call("gosx_audio_out_ptr"))
+	var left, right [block]float32
+	// main*2 is 192000 frames. Launch the "slowest" scene (index 2, 84 BPM) on the
+	// bar line where the song starts "slower" (100 BPM), then play four more bars.
+	end := int(native.FramesBetweenTicks(0, 6*seq.TicksPerBar))
+	for at := 0; at < end; at += block {
+		if at == 150_016 {
+			push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 2, Arg0: 2})
+		}
+		native.Render(left[:], right[:])
+		call("gosx_audio_render", block)
+		for i := range block {
+			for channel, value := range [...]float32{left[i], right[i]} {
+				got, _ := module.Memory().ReadFloat32Le(out + uint32((channel*block+i)*4))
+				if math.Float32bits(got) != math.Float32bits(value) {
+					t.Fatalf("native/WASM differ at frame %d channel %d: %v / %v", at+i, channel, value, got)
+				}
+			}
+		}
+		var message cmd.Message
+		for native.Poll(&message) {
+			if message.Kind == cmd.Fault {
+				t.Fatalf("native fault %d", message.A)
+			}
+		}
+		call("gosx_audio_msg_drain")
+	}
+	if index, _ := native.CurrentScene(); index < 0 {
+		t.Fatal("no scene is active")
+	}
+	for bar := int64(1); bar <= 6; bar++ {
+		want := native.FramesBetweenTicks(0, bar*seq.TicksPerBar)
+		got := int64(math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(0), math.Float64bits(float64(bar*seq.TicksPerBar)))))
+		if got != want {
+			t.Fatalf("bar %d: WASM %d frames, native %d", bar, got, want)
+		}
+	}
+	// Frames per bar match what the transport did, not only what the map says.
+	tempo, _ := project.NewTempoMap(rate, int64(p.TempoMilli), project.SongTempoChanges(p))
+	if native.FramesBetweenTicks(0, 6*seq.TicksPerBar) != tempo.SampleAtTick(6*seq.TicksPerBar) {
+		t.Fatal("the tempo map and the export disagree")
+	}
+}

@@ -285,6 +285,7 @@ type Engine struct {
 	songIndex                    int
 	songEndTick                  int64
 	manualSceneTick              int64
+	manualLaunch                 bool
 	manualPatternTick            [16]int64
 }
 
@@ -725,9 +726,8 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	for _, scene := range cfg.Scenes {
 		for _, setting := range scene.Settings {
 			if setting.ID == kernel.ParamGlobalTempo {
-				if milli := sceneTempoMilli(setting); milli >= 20_000 && milli <= 300_000 {
-					slowest = min(slowest, milli)
-				}
+				// An out-of-range value fails the range check below.
+				slowest = min(slowest, sceneTempoMilli(setting))
 			}
 		}
 	}

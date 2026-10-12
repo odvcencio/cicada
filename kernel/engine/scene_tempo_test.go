@@ -381,3 +381,74 @@ func TestSceneTempoRenderSeekAndFramesAllocationFree(t *testing.T) {
 		t.Fatalf("crossing fault=%v allocations=%g", e.faulted, crossing)
 	}
 }
+
+// A manual launch that lands on the exact song-boundary tick wins the patterns
+// but never the tempo: the song owns it, so the engine, the tempo chain and the
+// bar-placement export agree.
+func TestSceneTempoManualLaunchOnTheBoundaryKeepsTheSongTempo(t *testing.T) {
+	pcm := make([]float32, 960_000)
+	for i := range pcm {
+		pcm[i] = float32(i%127) / 1024
+	}
+	cfg := clipScheduleConfig()
+	cfg.BPMMilli, cfg.Schedule = 120000, nil
+	cfg.Assets[0].Left = pcm
+	cfg.Clips = []ClipConfig{{EndFrame: int64(len(pcm))}}
+	cfg.Scenes = []Scene{
+		{Track: [16]SceneBinding{{Mode: SceneClip}}},
+		{Track: [16]SceneBinding{{Mode: SceneKeep}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}},
+		{Track: [16]SceneBinding{{Mode: SceneKeep}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 200}}},
+		{},
+	}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 3, Bars: 1}}
+	through, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	seeking, _ := New(cfg)
+	through.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	var l, r [128]float32
+	render := func(e *Engine, frames int64) {
+		for frames > 0 {
+			n := int(min(128, frames))
+			e.Render(l[:n], r[:n])
+			frames -= int64(n)
+		}
+	}
+	render(through, 90_000)
+	// Launch scene 2 (tempo 200) on the next bar: the tick where scene 1 starts.
+	if !through.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 2, Arg0: 2}) {
+		t.Fatal("launch rejected")
+	}
+	render(through, 6_000+256)
+	if index, _ := through.CurrentScene(); index != 2 {
+		t.Fatalf("the manual scene did not win the boundary: scene %d", index)
+	}
+	if through.transport.BPMMilli() != 60_000 {
+		t.Fatalf("a manual launch changed the tempo to %d", through.transport.BPMMilli())
+	}
+	// Frames per bar: the transport reaches bar 2 where the export says it does.
+	want := through.FramesBetweenTicks(0, 2*seq.TicksPerBar)
+	if want != 96_000+192_000 {
+		t.Fatalf("export gives %d frames to bar 2", want)
+	}
+	render(through, want+137*50-96_256)
+	if through.transport.Clock().AnchorSample != 96_000 || through.transport.BPMMilli() != 60_000 {
+		t.Fatalf("clock anchor %d tempo %d", through.transport.Clock().AnchorSample, through.transport.BPMMilli())
+	}
+	// 137 ticks into the song's bar 3 (scene 3 keeps the 60 BPM tempo).
+	seek := 2*seq.TicksPerBar + 137
+	seeking.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 2, Arg1: 137})
+	seeking.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	seeking.Render(l[:1], r[:1])
+	if through.transport.Tick() < seek || through.transport.Tick() > seek+1 {
+		t.Fatalf("through reached tick %d, want %d", through.transport.Tick(), seek)
+	}
+	if through.transport.BPMMilli() != seeking.transport.BPMMilli() {
+		t.Fatalf("tempo through=%d seeking=%d", through.transport.BPMMilli(), seeking.transport.BPMMilli())
+	}
+	// The clip keeps its recorded speed: elapsed samples through the tempo step.
+	if a, b := through.clipVoices[0].sourceFrame, seeking.clipVoices[0].sourceFrame; !through.clipVoices[0].active || math.Abs(a-b) > 150 {
+		t.Fatalf("clip position through=%g seeking=%g", a, b)
+	}
+}
