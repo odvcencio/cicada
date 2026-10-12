@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 
+	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
@@ -12,6 +13,7 @@ import (
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
+	keyvoice "m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/project"
 )
 
@@ -35,6 +37,7 @@ type sceneTrackParameters struct {
 	muted, solo, sourceOff                              bool
 	acid                                                acid.Params
 	drums                                               [drum.LaneCount]drum.Params
+	keysPatch                                           uint8
 }
 
 func hasSceneParameters(p *project.Project) bool {
@@ -77,6 +80,9 @@ func compileSceneParameters(p *project.Project, tracks []trackRuntime, sampleRat
 			muted: mixer.Mute, solo: mixer.Solo, sourceOff: mixer.Mute,
 		}
 		state.targetMix = state.mix
+		if keyboard.ID(p.Tracks[i].Kind) != 0 {
+			state.keysPatch = keyboard.ID(p.Tracks[i].Kind)
+		}
 		if voice, ok := track.voice.(acidVoice); ok {
 			state.acid = voice.Params()
 		}
@@ -170,6 +176,9 @@ func (p *sceneParameters) set(setting engine.SceneSetting) error {
 	track := &p.tracks[setting.Track]
 	state := track.parameters
 	off := spec.Off && math.IsInf(float64(value), -1)
+	if engine.IsKeysControl(setting.ID) {
+		return p.setKeys(track, state, setting)
+	}
 	switch setting.ID {
 	case kernel.ParamMixGain:
 		state.gainDB, state.sourceOff = value, off
@@ -250,6 +259,20 @@ func (p *sceneParameters) set(setting engine.SceneSetting) error {
 		return track.drums.SetParamsTarget(lane, params, float64(sceneSmoothingAlpha(setting.ID, p.sampleRate)))
 	}
 	return nil
+}
+
+// setKeys moves one modeled-keyboard control with the glide playback uses.
+func (p *sceneParameters) setKeys(track *trackRuntime, state *sceneTrackParameters, setting engine.SceneSetting) error {
+	voice, ok := track.voice.(*pianoVoice)
+	if !ok {
+		return fmt.Errorf("keyboard voice is missing")
+	}
+	controller, ok := voice.Instrument.(keyvoice.Controller)
+	slot, fits := engine.KeysControlSlot(state.keysPatch, setting.ID)
+	if !ok || !fits {
+		return fmt.Errorf("keyboard control does not apply to this track")
+	}
+	return controller.SetControl(slot, setting.Value, sceneSmoothingAlpha(setting.ID, p.sampleRate))
 }
 
 func sceneDrumControl(id kernel.ParamID) (drum.Lane, string, bool) {

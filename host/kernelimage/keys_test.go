@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/host/kernelimage"
+	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
@@ -185,5 +187,100 @@ func TestKeysAndExpressionCapabilitiesRemainIndependent(t *testing.T) {
 	keyPattern.Expression = new([64]seq.Expression)
 	if data, err := kernelimage.Encode(cfg); err == nil || data != nil {
 		t.Fatal("unsupported keys expression produced a playable image")
+	}
+}
+
+func keysControlImageConfig(patch uint8, id kernel.ParamID, value float32) engine.Config {
+	cfg := keysImageConfig()
+	cfg.Track[0].Keys.Patch = patch
+	cfg.Track[0].Keys.Controls = [128]float32{}
+	cfg.Track[0].Keys.Controls[127] = 8
+	cfg.Scenes = []engine.Scene{{Settings: []engine.SceneSetting{{Track: 0, ID: id, Value: value}}}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}}
+	return cfg
+}
+
+func TestKeysControlSceneSettingsRoundtripOnTheirFamily(t *testing.T) {
+	for _, c := range []struct {
+		patch uint8
+		id    kernel.ParamID
+		value float32
+	}{
+		{1, kernel.ParamKeysEpTremolo, .5},
+		{7, kernel.ParamKeysClavGain, 1.5},
+		{10, kernel.ParamKeysOrganDrawbar3, 5},
+		{14, kernel.ParamKeysFmGain, .001},
+		{17, kernel.ParamKeysAnalogOutput, -12},
+		{21, kernel.ParamKeysStringsOutput, 6},
+	} {
+		cfg := keysControlImageConfig(c.patch, c.id, c.value)
+		data, err := kernelimage.Encode(cfg)
+		if err != nil {
+			t.Fatalf("%s: %v", kernel.Params[c.id].Name, err)
+		}
+		decoded, err := kernelimage.Decode(data, 48000, 128)
+		if err != nil || !reflect.DeepEqual(cfg.Scenes, decoded.Scenes) {
+			t.Fatalf("%s did not roundtrip: %v", kernel.Params[c.id].Name, err)
+		}
+	}
+	cfg := keysControlImageConfig(1, kernel.ParamKeysEpTremolo, .5)
+	cfg.Automation = []cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamKeysEpTremolo), Arg0: math.Float32bits(.25)}}
+	data, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if decoded, err := kernelimage.Decode(data, 48000, 128); err != nil || !reflect.DeepEqual(cfg.Automation, decoded.Automation) {
+		t.Fatalf("keyboard automation did not roundtrip: %v", err)
+	}
+}
+
+func TestKeysControlSceneSettingNeedsAKeyboardOfItsFamily(t *testing.T) {
+	for _, c := range []struct {
+		name  string
+		patch uint8
+		id    kernel.ParamID
+	}{
+		{"clav control on an electric piano", 1, kernel.ParamKeysClavGain},
+		{"electric piano control on a clav", 7, kernel.ParamKeysEpTremolo},
+		{"organ control on strings", 21, kernel.ParamKeysOrganDrive},
+		{"control on a patch outside every family", 32, kernel.ParamKeysEpGain},
+	} {
+		if _, err := kernelimage.Encode(keysControlImageConfig(c.patch, c.id, .5)); err == nil || !strings.Contains(err.Error(), "keyboard") {
+			t.Errorf("%s: err = %v", c.name, err)
+		}
+	}
+	cfg := keysControlImageConfig(1, kernel.ParamKeysEpTremolo, .5)
+	cfg.Track[0] = engine.TrackConfig{Kind: engine.VoiceAcid}
+	if _, err := kernelimage.Encode(cfg); err == nil || !strings.Contains(err.Error(), "keyboard") {
+		t.Errorf("keyboard control on an acid track: err = %v", err)
+	}
+	cfg = keysControlImageConfig(1, kernel.ParamKeysEpTremolo, 1.5)
+	if _, err := kernelimage.Encode(cfg); err == nil {
+		t.Error("tremolo outside its range was encoded")
+	}
+}
+
+// A keyboard control in an image older than version 15 is a keyboard error,
+// not a guitar one, even though its ID follows the guitar controls.
+func TestKeysControlInOlderImageIsNotCalledAGuitarControl(t *testing.T) {
+	cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 8, BPMMilli: 120000}
+	cfg.Track[0] = engine.TrackConfig{Kind: engine.VoiceAcid}
+	cfg.Scenes = []engine.Scene{{Settings: []engine.SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 1000}}}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}}
+	data, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var record [7]byte
+	binary.LittleEndian.PutUint16(record[1:], uint16(kernel.ParamAcidCutoff))
+	binary.LittleEndian.PutUint32(record[3:], math.Float32bits(1000))
+	offset := bytes.Index(data, record[:])
+	if offset < 0 {
+		t.Fatal("scene setting not found in the image")
+	}
+	binary.LittleEndian.PutUint16(data[offset+1:], uint16(kernel.ParamKeysEpTremolo))
+	_, err = kernelimage.Decode(data, 48000, 128)
+	if err == nil || strings.Contains(err.Error(), "guitar") || !strings.Contains(err.Error(), "keyboard") {
+		t.Fatalf("older image with a keyboard control: err = %v", err)
 	}
 }
