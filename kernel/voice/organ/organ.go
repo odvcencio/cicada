@@ -2,7 +2,11 @@
 // One audio owner must serialize controls, note events, and rendering.
 package organ
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/voice/keyboard"
+)
 
 const (
 	MinNote    = 21
@@ -150,6 +154,8 @@ type Instrument struct {
 	inverseRate, hornDelay, hornSwing, drumDelay, drumSwing              float32
 	driveAmount, driveCompensation, dcPole, dcInL, dcInR, dcOutL, dcOutR float32
 	idleFrames                                                           int
+	driveT, mixT, gainT, glideAlpha, driveFade                           float32
+	gliding                                                              bool
 }
 
 func unit(value float32) bool { return value >= 0 && value <= 1 }
@@ -236,6 +242,7 @@ func New(rate int, params Params) (*Instrument, error) {
 	}
 	_ = p.SetDrawbars(params.Drawbars)
 	p.drawbar = p.drawbarTarget
+	p.driveT, p.mixT, p.gainT, p.driveFade = params.Drive, params.RotaryMix, params.Gain, 1
 	p.Reset()
 	return p, nil
 }
@@ -529,6 +536,9 @@ func (p *Instrument) rotary(input float32) (float32, float32) {
 // NextStereo returns one stereo frame. All multiplication boundaries use
 // float32 conversions to prevent native FMA contraction from changing PCM.
 func (p *Instrument) NextStereo() (float32, float32) {
+	if p.gliding {
+		p.glide()
+	}
 	for i := range p.drawbar {
 		p.drawbar[i] += float32(p.drawbarAlpha * float32(p.drawbarTarget[i]-p.drawbar[i]))
 	}
@@ -561,6 +571,7 @@ func (p *Instrument) NextStereo() (float32, float32) {
 	// A bounded odd rational transfer models preamp saturation without a
 	// per-frame transcendental. Low drive retains the additive registration.
 	if p.params.Drive > 0 {
+		dry := tone
 		x := float32(tone * p.driveAmount)
 		if x > 3 {
 			x = 3
@@ -571,10 +582,89 @@ func (p *Instrument) NextStereo() (float32, float32) {
 		square := float32(x * x)
 		saturated := float32(float32(x*float32(27+square)) / float32(27+float32(9*square)))
 		tone = float32(saturated * p.driveCompensation)
+		if p.driveFade < 1 {
+			tone = float32(dry + float32(p.driveFade*float32(tone-dry)))
+		}
 	}
 	l, r := p.rotary(tone)
 	yL := float32(l-p.dcInL) + float32(p.dcPole*p.dcOutL)
 	yR := float32(r-p.dcInR) + float32(p.dcPole*p.dcOutR)
 	p.dcInL, p.dcInR, p.dcOutL, p.dcOutR = l, r, yL, yR
 	return float32(yL * p.params.Gain), float32(yR * p.params.Gain)
+}
+
+// Slots in the keyboard control table.
+const (
+	controlDrawbar1   = 1
+	controlDrawbar9   = 9
+	controlDrive      = 17
+	controlRotaryMix  = 18
+	controlRotaryFast = 20
+	controlGain       = 21
+)
+
+// driveFadeScale sets the drive below which a glide fades the saturator.
+const driveFadeScale = 50.0
+
+func (p *Instrument) glide() {
+	done := keyboard.Approach(&p.params.Drive, p.driveT, p.glideAlpha)
+	p.driveAmount = 1 + float32(7*p.params.Drive)
+	p.driveCompensation = 1 / p.driveAmount
+	done = keyboard.Approach(&p.params.RotaryMix, p.mixT, p.glideAlpha) && done
+	done = keyboard.Approach(&p.params.Gain, p.gainT, p.glideAlpha) && done
+	// Drive zero bypasses the saturator, and even a tiny drive does not. While
+	// a glide passes through that region, fade the saturator in or out so the
+	// bypass does not switch with a step.
+	p.driveFade = 1
+	if !done && p.params.Drive < 1/driveFadeScale {
+		p.driveFade = p.params.Drive * driveFadeScale
+	}
+	p.gliding = !done
+}
+
+// SetControl changes drive, rotary mix, gain, one drawbar or the rotary speed.
+// Drive, rotary mix and gain glide; a glide of 1 applies them at once. Drawbars
+// and rotary speed use their own smoothed setters and ignore the glide. It
+// allocates nothing.
+func (p *Instrument) SetControl(index int, value, glide float32) error {
+	if !keyboard.ValidGlide(glide) {
+		return Error("glide must be in (0,1]")
+	}
+	switch {
+	case index >= controlDrawbar1 && index <= controlDrawbar9:
+		if !keyboard.InRange(value, 0, 8) || value != float32(int(value)) {
+			return Error("organ drawbar must be a whole number 0..8")
+		}
+		drawbars := p.params.Drawbars
+		drawbars[index-controlDrawbar1] = uint8(value)
+		return p.SetDrawbars(drawbars)
+	case index == controlRotaryFast:
+		if value != 0 && value != 1 {
+			return Error("organ rotary speed must be 0 or 1")
+		}
+		p.SetRotaryFast(value == 1)
+		return nil
+	case index == controlDrive:
+		if !keyboard.InRange(value, 0, 1) {
+			return Error("organ drive must be 0..1")
+		}
+		p.driveT = value
+	case index == controlRotaryMix:
+		if !keyboard.InRange(value, 0, 1) {
+			return Error("organ rotary mix must be 0..1")
+		}
+		p.mixT = value
+	case index == controlGain:
+		if !keyboard.InRange(value, 0, 2) {
+			return Error("organ gain must be 0..2")
+		}
+		p.gainT = value
+	default:
+		return Error("organ has no such control")
+	}
+	p.glideAlpha, p.gliding = glide, true
+	if glide == 1 {
+		p.glide()
+	}
+	return nil
 }

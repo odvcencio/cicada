@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
 )
@@ -169,8 +170,11 @@ func parameterVoiceKind(p *Project, kind string) string {
 			return "drums"
 		}
 	}
-	if isModeledPiano(p, kind) || isModeledKeys(p, kind) {
+	if isModeledPiano(p, kind) {
 		return "piano"
+	}
+	if isModeledKeys(p, kind) {
+		return keyboard.FamilyName(kind)
 	}
 	return "instrument"
 }

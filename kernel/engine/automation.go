@@ -15,6 +15,9 @@ func (e *Engine) loadAutomation(cfg *Config) error {
 		if int(c.Index) >= len(kernel.Params) || !kernel.Params[c.Index].Automatable || c.Op != cmd.OpSetParam || c.Tick < 0 || i > 0 && c.Tick < cfg.Automation[i-1].Tick || int(c.Track) >= cfg.Tracks && c.Track != 0xff || c.Validate(uint8(cfg.Tracks)) != nil {
 			return Error("invalid automation timeline")
 		}
+		if keysEnabled && isKeysControl(kernel.ParamID(c.Index)) && (c.Track == 0xff || !KeysControlFits(&cfg.Track[c.Track], kernel.ParamID(c.Index))) {
+			return Error("keyboard automation needs a keyboard track of its family")
+		}
 	}
 	e.automation = append([]cmd.Command(nil), cfg.Automation...)
 	e.automationTick = -1

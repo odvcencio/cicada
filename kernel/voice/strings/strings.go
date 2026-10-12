@@ -2,7 +2,11 @@
 // Shared integer phase generators preserve octave coherence between all notes.
 package strings
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/voice/keyboard"
+)
 
 const MaxVoices = 8
 
@@ -81,6 +85,8 @@ type Instrument struct {
 	voiceLimit                 int
 	clock                      uint64
 	sustain                    bool
+	gainT, glideAlpha          float32
+	gliding                    bool
 }
 
 func New(rate int, params Params) (*Instrument, error) {
@@ -115,6 +121,7 @@ func New(rate int, params Params) (*Instrument, error) {
 	i.lowpass = float32(1 - math.Exp(-2*math.Pi*params.Cutoff/sr))
 	i.highpass = float32(math.Exp(-2 * math.Pi * 65 / sr))
 	i.gain, i.ensemble = float32(.42*math.Pow(10, params.LevelDB/20)), float32(params.Ensemble)
+	i.gainT = i.gain
 	i.bbdAlpha = float32(1 - math.Exp(-2*math.Pi*6500/sr))
 	i.fastDepth = float32(sr * .00065)
 	for c := range i.slow {
@@ -255,6 +262,9 @@ func saw(phase, delta float32) float32 {
 }
 
 func (i *Instrument) NextStereo() (float32, float32) {
+	if i.gliding {
+		i.gliding = !keyboard.Approach(&i.gain, i.gainT, i.glideAlpha)
+	}
 	var mono float32
 	for n := range i.voices {
 		v := &i.voices[n]
@@ -322,4 +332,27 @@ func (i *Instrument) NextStereo() (float32, float32) {
 		right = float32(float32(mono*float32(1-float32(.6*i.ensemble))) + float32(i.ensemble*wetR))
 	}
 	return float32(left * i.gain), float32(right * i.gain)
+}
+
+// controlOutput is the keyboard control slot for the output level in dB.
+const controlOutput = 10
+
+// SetControl changes the output level (dB). A glide of 1 applies the value at
+// once. It allocates nothing.
+func (i *Instrument) SetControl(index int, value, glide float32) error {
+	if !keyboard.ValidGlide(glide) {
+		return Error("glide must be in (0,1]")
+	}
+	if index != controlOutput {
+		return Error("string machine has no such control")
+	}
+	if !keyboard.InRange(value, -60, 6) {
+		return Error("string machine output must be -60..6 dB")
+	}
+	i.gainT = float32(.42 * math.Pow(10, float64(value)/20))
+	i.glideAlpha, i.gliding = glide, true
+	if glide == 1 {
+		i.gliding = !keyboard.Approach(&i.gain, i.gainT, 1)
+	}
+	return nil
 }

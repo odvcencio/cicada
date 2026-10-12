@@ -414,8 +414,10 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 				family = "acid"
 			case engine.VoiceDrums:
 				family = "drums"
-			case engine.VoicePiano, engine.VoiceKeys:
+			case engine.VoicePiano:
 				family = "piano"
+			case engine.VoiceKeys:
+				family = score.Engine.TrackKeysFamily(index).String()
 			case engine.VoiceGuitar:
 				family = "guitar"
 			}

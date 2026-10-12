@@ -24,6 +24,7 @@ type sceneTrackParameters struct {
 	gainDB, pan, sendA, sendB float32
 	sourceOff                 bool
 	pianoSustain              float32
+	keysValues                [keysControlCount]float32
 	acid                      acid.Params
 	drums                     [drum.LaneCount]drum.Params
 	guitar                    guitar.Params
@@ -50,6 +51,7 @@ func (e *Engine) captureSceneDefaults() {
 		p.sendA, p.sendB, p.sourceOff = v.sendA, v.sendB, v.sourceOff
 		p.acid, p.drums = v.acidTarget, v.drumTargets
 		p.pianoSustain = v.pianoSustain
+		p.keysValues = v.keysValues
 		if v.guitar != nil {
 			p.guitar = v.guitar.Params()
 		}
@@ -93,7 +95,7 @@ func (e *Engine) restoreSceneDefaults() bool {
 		}
 		if keysEnabled && v.keys != nil {
 			v.pianoSustain = p.pianoSustain
-			if v.keys.SetSustain(p.pianoSustain) != nil {
+			if v.keys.SetSustain(p.pianoSustain) != nil || v.keysControl != nil && !e.restoreKeysControls(v, &p.keysValues) {
 				e.fault(FaultParam)
 				return false
 			}

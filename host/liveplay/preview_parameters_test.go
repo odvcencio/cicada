@@ -6,7 +6,6 @@ import (
 	"go/token"
 	"math"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -91,12 +90,16 @@ func (previewPreparedVoice) Reset()                              {}
 func (previewPreparedVoice) SelectSlot(uint8, int64, bool) error { return nil }
 func (previewPreparedVoice) Play() error                         { return nil }
 
+// previewKeysPatch names the modeled-keyboard patch the keyboard voice kind
+// uses. TestPreviewParameterVoicePairsAndBoundaries runs it once per family.
+var previewKeysPatch = hostkeys.Names[0]
+
 func previewParameterConfig(t *testing.T, kind engine.VoiceKind) engine.Config {
 	t.Helper()
 	program := graph.Program{Len: 2, Output: 1}
 	program.Nodes[0] = graph.Node{Op: graph.Constant, Value: 375}
 	program.Nodes[1] = graph.Node{Op: graph.Sine, A: 0}
-	keys, err := hostkeys.DefaultSpec(hostkeys.Names[0])
+	keys, err := hostkeys.DefaultSpec(previewKeysPatch)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,11 +133,27 @@ func previewParameterScore(t *testing.T, kind engine.VoiceKind) Score {
 }
 
 func TestPreviewParameterVoicePairsAndBoundaries(t *testing.T) {
-	voices := previewVoiceKinds(t)
+	var voices []previewVoiceKind
+	for _, voice := range previewVoiceKinds(t) {
+		if voice.kind != engine.VoiceKeys {
+			voices = append(voices, voice)
+		}
+	}
+	// One representative patch for every keyboard family: each family accepts
+	// only its own controls plus the controls all keyboards share.
+	keysPatches := map[string]string{}
+	for _, patch := range []string{"tine_ep", "reed_tremolo", "clav", "tonewheel_organ", "organ_full", "fm_ep", "bell_keys", "poly_keys", "sync_lead", "string_machine"} {
+		keysPatches["VoiceKeys/"+patch] = patch
+		voices = append(voices, previewVoiceKind{"VoiceKeys/" + patch, engine.VoiceKeys})
+	}
 	accepted, rejected := 0, 0
 	boundaryAccepted, boundaryRejected := 0, 0
 	for _, voice := range voices {
 		t.Run(voice.name, func(t *testing.T) {
+			if patch, ok := keysPatches[voice.name]; ok {
+				previewKeysPatch = patch
+				defer func() { previewKeysPatch = hostkeys.Names[0] }()
+			}
 			p, err := New(previewParameterScore(t, voice.kind), 48_000)
 			if err != nil {
 				t.Fatal(err)
@@ -142,9 +161,9 @@ func TestPreviewParameterVoicePairsAndBoundaries(t *testing.T) {
 			defer p.Close()
 			family := strings.ToLower(strings.TrimPrefix(voice.name, "Voice"))
 			if voice.kind == engine.VoiceKeys {
-				family = "piano" // The compiler resolves modeled keyboards to piano controls.
+				family = hostkeys.FamilyName(previewKeysPatch) // The compiler resolves each keyboard to its family.
 			}
-			if family != "acid" && family != "drums" && family != "guitar" && family != "piano" {
+			if family != "acid" && family != "drums" && family != "guitar" && family != "piano" && voice.kind != engine.VoiceKeys {
 				family = "instrument"
 			}
 			var pcm [blockFrames * 8]byte
@@ -153,7 +172,7 @@ func TestPreviewParameterVoicePairsAndBoundaries(t *testing.T) {
 				if !ok {
 					t.Fatalf("kernel parameter %s is absent from the registry", spec.Name)
 				}
-				want := spec.Live && spec.Scope == "track" && slices.Contains(descriptor.Voices, family)
+				want := spec.Live && spec.Scope == "track" && paramdefs.HasVoice(descriptor, family)
 				before := p.overrides.Load()
 				version, err := p.SetPreview(0, spec.ID, spec.Default)
 				if (err == nil) != want {

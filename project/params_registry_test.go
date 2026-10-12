@@ -139,6 +139,9 @@ func projectValidatorAccepts(descriptor paramdefs.Descriptor, number float64) bo
 	value := Value{Unit: unit, Number: &numberValue}
 	values := map[string]Value{descriptor.Source: value}
 	switch {
+	case strings.HasPrefix(descriptor.ID, "keys."):
+		_, err := KeysSpecFromValues(sceneRegistryKeysPatch(descriptor), values)
+		return err == nil
 	case strings.HasPrefix(descriptor.ID, "piano."):
 		_, err := PianoSustainFromValues(values)
 		return err == nil

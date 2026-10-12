@@ -53,3 +53,57 @@ type Voice interface {
 // Prepare is registered once by the native host or separately loaded keys
 // module. A nil factory is an explicit unsupported capability, never silence.
 var Prepare func(rate int, spec *Spec) (Voice, error)
+
+// Controller is implemented by voices whose registry controls scenes and
+// automation can change during playback. Index is a Spec.Controls slot. A
+// glide coefficient of 1 applies the value at once; any smaller coefficient is
+// the per-sample one-pole step toward it. Whole-number controls such as organ
+// drawbars ignore the glide because their setters smooth the change. Unknown
+// slots and out-of-range values return an error and change nothing.
+type Controller interface {
+	SetControl(index int, value, glide float32) error
+}
+
+// Family names the kinds of keyboard that share live controls.
+type Family uint8
+
+const (
+	NoFamily Family = iota
+	EP
+	Clav
+	Organ
+	FM
+	Analog
+	Strings
+)
+
+// FamilyOf maps a patch ID (1..21) to its family.
+func FamilyOf(patch uint8) Family {
+	switch {
+	case patch == 0:
+		return NoFamily
+	case patch <= 6:
+		return EP
+	case patch <= 9:
+		return Clav
+	case patch <= 13:
+		return Organ
+	case patch <= 16:
+		return FM
+	case patch <= 20:
+		return Analog
+	case patch == 21:
+		return Strings
+	}
+	return NoFamily
+}
+
+var familyNames = [...]string{"", "ep", "clav", "organ", "fm", "analog", "strings"}
+
+// String names the family as the parameter registry lists it in "voices".
+func (f Family) String() string {
+	if int(f) >= len(familyNames) {
+		return ""
+	}
+	return familyNames[f]
+}

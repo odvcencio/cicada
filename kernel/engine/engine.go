@@ -158,6 +158,9 @@ type voiceSlot struct {
 	noteActive                     bool
 	piano                          *piano.Instrument
 	keys                           keyboard.Voice
+	keysControl                    keyboard.Controller
+	keysFamily                     keyboard.Family
+	keysValues                     [keysControlCount]float32
 	pianoSustain                   float32
 	legacyPoly                     *graph.Poly
 	graphNote                      uint8
@@ -592,6 +595,7 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 				}
 				v.pianoSustain = spec.Keys.Controls[keyboard.SustainControl]
 				err = v.keys.SetSustain(v.pianoSustain)
+				v.initKeysControls(spec.Keys)
 			}
 		case VoiceGraphPoly:
 			voices += graph.PolyVoices
@@ -1634,6 +1638,10 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 			return
 		}
 		v := &e.voices[c.Track]
+		if keysEnabled && isKeysControl(kernel.ParamID(c.Index)) {
+			e.setKeysControl(v, kernel.ParamID(c.Index), value, immediate)
+			return
+		}
 		switch kernel.ParamID(c.Index) {
 		case kernel.ParamMixGain:
 			positioned := &e.spatial.tracks[c.Track]

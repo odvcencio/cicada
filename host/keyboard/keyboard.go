@@ -27,6 +27,19 @@ func Parameters(name string) []Parameter { return keyboard.Parameters(name) }
 // DefaultSpec returns the default controls for one keyboard patch name.
 func DefaultSpec(name string) (keyboard.Spec, error) { return keyboardpresets.DefaultSpec(name) }
 
+// FamilyName returns the parameter-registry voice family ("ep", "clav",
+// "organ", "fm", "analog" or "strings") of a keyboard patch name, or "".
+func FamilyName(name string) string { return keyboard.FamilyOf(keyboard.ID(name)).String() }
+
+var (
+	_ keyboard.Controller = (*ep.Instrument)(nil)
+	_ keyboard.Controller = (*clav.Instrument)(nil)
+	_ keyboard.Controller = (*organ.Instrument)(nil)
+	_ keyboard.Controller = (*fm.Instrument)(nil)
+	_ keyboard.Controller = (*polykeys.Instrument)(nil)
+	_ keyboard.Controller = (*strings.Instrument)(nil)
+)
+
 func Validate(s *keyboard.Spec) error {
 	if s == nil || Name(s.Patch) == "" {
 		return fmt.Errorf("unknown keyboard patch")

@@ -151,7 +151,31 @@ const (
 	ParamGuitarDrive         ParamID = 137
 	ParamGuitarExperimental  ParamID = 138
 	ParamGuitarOctave        ParamID = 139
-	ParamCount                       = 140
+	ParamKeysEpTremolo       ParamID = 140
+	ParamKeysEpTremoloRate   ParamID = 141
+	ParamKeysEpAutoPan       ParamID = 142
+	ParamKeysEpGain          ParamID = 143
+	ParamKeysEpDrive         ParamID = 144
+	ParamKeysClavGain        ParamID = 145
+	ParamKeysClavDrive       ParamID = 146
+	ParamKeysOrganGain       ParamID = 147
+	ParamKeysOrganDrive      ParamID = 148
+	ParamKeysOrganRotaryMix  ParamID = 149
+	ParamKeysOrganRotaryFast ParamID = 150
+	ParamKeysOrganDrawbar1   ParamID = 151
+	ParamKeysOrganDrawbar2   ParamID = 152
+	ParamKeysOrganDrawbar3   ParamID = 153
+	ParamKeysOrganDrawbar4   ParamID = 154
+	ParamKeysOrganDrawbar5   ParamID = 155
+	ParamKeysOrganDrawbar6   ParamID = 156
+	ParamKeysOrganDrawbar7   ParamID = 157
+	ParamKeysOrganDrawbar8   ParamID = 158
+	ParamKeysOrganDrawbar9   ParamID = 159
+	ParamKeysFmGain          ParamID = 160
+	ParamKeysAnalogDrive     ParamID = 161
+	ParamKeysAnalogOutput    ParamID = 162
+	ParamKeysStringsOutput   ParamID = 163
+	ParamCount                       = 164
 )
 
 var Params = [...]ParamSpec{
@@ -295,6 +319,30 @@ var Params = [...]ParamSpec{
 	{137, "guitar.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 8, true, true, false},
 	{138, "guitar.experimental", "experimental", "track", "experimental", "", "toggle", "source", 0, 1, 0, 1, 0, false, false, false},
 	{139, "guitar.octave", "octave", "track", "octave", "", "linear", "source", 0, 6, 2, 1, 0, false, false, false},
+	{140, "keys.ep.tremolo", "tremolo", "track", "tremolo", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
+	{141, "keys.ep.tremolo_rate", "tremolo_rate", "track", "tremolo_rate", "Hz", "linear", "source", 0.1, 12, 4.6, 0.1, 20, true, true, false},
+	{142, "keys.ep.auto_pan", "auto_pan", "track", "auto_pan", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
+	{143, "keys.ep.gain", "gain", "track", "gain", "ratio", "linear", "source", 0, 2, 0.7, 0.01, 20, true, true, false},
+	{144, "keys.ep.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
+	{145, "keys.clav.gain", "gain", "track", "gain", "ratio", "linear", "source", 0, 2, 0.7, 0.01, 20, true, true, false},
+	{146, "keys.clav.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
+	{147, "keys.organ.gain", "gain", "track", "gain", "ratio", "linear", "source", 0, 2, 0.8, 0.01, 20, true, true, false},
+	{148, "keys.organ.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0.18, 0.01, 20, true, true, false},
+	{149, "keys.organ.rotary_mix", "rotary_mix", "track", "rotary_mix", "ratio", "linear", "source", 0, 1, 0.8, 0.01, 20, true, true, false},
+	{150, "keys.organ.rotary_fast", "rotary_fast", "track", "rotary_fast", "", "toggle", "source", 0, 1, 0, 1, 0, true, false, false},
+	{151, "keys.organ.drawbar1", "drawbar1", "track", "drawbar1", "", "linear", "source", 0, 8, 7, 1, 0, true, false, false},
+	{152, "keys.organ.drawbar2", "drawbar2", "track", "drawbar2", "", "linear", "source", 0, 8, 4, 1, 0, true, false, false},
+	{153, "keys.organ.drawbar3", "drawbar3", "track", "drawbar3", "", "linear", "source", 0, 8, 8, 1, 0, true, false, false},
+	{154, "keys.organ.drawbar4", "drawbar4", "track", "drawbar4", "", "linear", "source", 0, 8, 6, 1, 0, true, false, false},
+	{155, "keys.organ.drawbar5", "drawbar5", "track", "drawbar5", "", "linear", "source", 0, 8, 1, 1, 0, true, false, false},
+	{156, "keys.organ.drawbar6", "drawbar6", "track", "drawbar6", "", "linear", "source", 0, 8, 2, 1, 0, true, false, false},
+	{157, "keys.organ.drawbar7", "drawbar7", "track", "drawbar7", "", "linear", "source", 0, 8, 0, 1, 0, true, false, false},
+	{158, "keys.organ.drawbar8", "drawbar8", "track", "drawbar8", "", "linear", "source", 0, 8, 1, 1, 0, true, false, false},
+	{159, "keys.organ.drawbar9", "drawbar9", "track", "drawbar9", "", "linear", "source", 0, 8, 1, 1, 0, true, false, false},
+	{160, "keys.fm.gain", "gain", "track", "gain", "ratio", "linear", "source", 0.001, 2, 1, 0.01, 20, true, true, false},
+	{161, "keys.analog.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
+	{162, "keys.analog.output", "output", "track", "output", "dB", "linear", "source", -60, 6, 0, 0.1, 20, true, true, false},
+	{163, "keys.strings.output", "output", "track", "output", "dB", "linear", "source", -60, 6, 0, 0.1, 20, true, true, false},
 }
 
 func Param(id ParamID) (ParamSpec, bool) {

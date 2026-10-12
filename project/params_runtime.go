@@ -3,9 +3,12 @@ package project
 import (
 	_ "embed"
 	"fmt"
+	"math"
 	"strings"
 
+	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/internal/paramdefs"
+	keyvoice "m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
 //go:embed params.json
@@ -29,11 +32,25 @@ func ParamAddresses(p *Project) []ParamAddress {
 	addresses := make([]ParamAddress, 0, len(p.Tracks)*8+len(p.Effects)*8)
 	for _, track := range p.Tracks {
 		kind := parameterVoiceKind(p, track.Kind)
+		var keysSpec *keyvoice.Spec
+		if isModeledKeys(p, track.Kind) {
+			if spec, err := KeysSpecFromValues(track.Kind, track.Params); err == nil {
+				keysSpec = &spec
+			}
+		}
 		for _, descriptor := range paramdefs.Registry {
 			if descriptor.Scope != "track" || !paramdefs.HasVoice(descriptor, kind) {
 				continue
 			}
 			value := trackParamValue(track, descriptor)
+			if keysSpec != nil && strings.HasPrefix(descriptor.ID, "keys.") {
+				// The patch supplies the value of a control the score leaves unset.
+				for _, parameter := range keyboard.Parameters(track.Kind) {
+					if parameter.Name == descriptor.Source {
+						value = math.Round(float64(keysSpec.Controls[parameter.Index])*1e6) / 1e6
+					}
+				}
+			}
 			addresses = append(addresses, ParamAddress{Address: track.ID + "." + descriptor.Path, Param: descriptor.ID, Track: track.ID, Value: value})
 		}
 	}

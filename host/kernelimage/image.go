@@ -1218,6 +1218,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				}
 				setting.Division = fx.DelayDivision(division)
 				if version != guitarImageVersion && setting.ID >= kernel.ParamGuitarBend {
+					if engine.IsKeysControl(setting.ID) {
+						return Error("keyboard controls require image version 15")
+					}
 					return Error("guitar controls require image version 15")
 				}
 				if err := validateSceneSetting(cfg, *setting); err != nil {
@@ -1441,6 +1444,9 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 		}
 		if setting.ID >= kernel.ParamGuitarBend && setting.ID <= kernel.ParamGuitarDrive && cfg.Track[setting.Track].Kind != engine.VoiceGuitar {
 			return Error("guitar setting requires a guitar track")
+		}
+		if engine.IsKeysControl(setting.ID) && !engine.KeysControlFits(&cfg.Track[setting.Track], setting.ID) {
+			return Error("keyboard setting requires a keyboard track of its family")
 		}
 	} else if setting.Track != 0xff {
 		return Error("global scene parameter needs the global owner")

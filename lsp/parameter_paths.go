@@ -9,6 +9,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -312,13 +313,13 @@ func matchingCompletion(names []string, prefix, detail string) []map[string]any 
 	return items
 }
 
+// descriptorHasVoice applies the compiler's voice rule to a track's declared
+// kind. A modeled keyboard patch such as tine_ep stands for its family.
 func descriptorHasVoice(descriptor paramdefs.Descriptor, kind string) bool {
-	for _, voice := range descriptor.Voices {
-		if voice == kind {
-			return true
-		}
+	if id := keyboard.ID(kind); id != 0 {
+		kind = keyboard.FamilyOf(id).String()
 	}
-	return false
+	return paramdefs.HasVoice(descriptor, kind)
 }
 
 func pathOwnerPrefix(path pathRegion, owner string) (int, int, bool) {

@@ -88,3 +88,97 @@ func TestScenePathValidationCodesAndAmbiguity(t *testing.T) {
 		})
 	}
 }
+
+// Each keyboard family resolves its own live controls plus the ones all
+// keyboards share. A path from another family fails with CICADA-PARAM in both
+// the scene check and the project resolver.
+func TestKeyboardFamiliesResolveTheirOwnControls(t *testing.T) {
+	families := []struct {
+		patch string
+		own   []string
+	}{
+		{"tine_ep", []string{"tremolo", "tremolo_rate", "auto_pan", "gain", "drive"}},
+		{"reed_tremolo", []string{"tremolo", "tremolo_rate", "auto_pan", "gain", "drive"}},
+		{"clav", []string{"gain", "drive"}},
+		{"tonewheel_organ", []string{"gain", "drive", "rotary_mix", "rotary_fast", "drawbar1", "drawbar5", "drawbar9"}},
+		{"fm_ep", []string{"gain"}},
+		{"poly_keys", []string{"drive", "output"}},
+		{"string_machine", []string{"output"}},
+	}
+	shared := []string{"sustain", "level", "pan"}
+	all := map[string]bool{}
+	for _, family := range families {
+		for _, name := range family.own {
+			all[name] = true
+		}
+	}
+	for _, family := range families {
+		source := "cicada 2\ntrack keys " + family.patch + " {}\npattern p notes { c4 }\nscene main { keys=p }\nsong { main }\n"
+		p := keysScore(t, source)
+		own := map[string]bool{}
+		for _, name := range family.own {
+			own[name] = true
+		}
+		for name := range all {
+			path := "keys." + name
+			_, err := ResolveParameterPath(p, path)
+			var pathErr *PathError
+			switch {
+			case own[name] && err != nil:
+				t.Errorf("%s: %s should resolve: %v", family.patch, path, err)
+			case !own[name] && (!errors.As(err, &pathErr) || pathErr.Code != "CICADA-PARAM"):
+				t.Errorf("%s: %s error = %v, want CICADA-PARAM", family.patch, path, err)
+			}
+			// The scene check in the notation package gives the same answer.
+			_, diagnostics := notation.Parse([]byte(strings.Replace(source, "scene main { keys=p }", "scene main { keys=p "+path+"="+validKeysSettingValue(name)+" }", 1)))
+			found := false
+			for _, diagnostic := range diagnostics {
+				found = found || diagnostic.Code == "CICADA-PARAM"
+			}
+			if own[name] == found {
+				t.Errorf("%s: scene setting %s: CICADA-PARAM reported=%v, want %v: %+v", family.patch, path, found, !own[name], diagnostics)
+			}
+		}
+		for _, name := range shared {
+			if _, err := ResolveParameterPath(p, "keys."+name); err != nil {
+				t.Errorf("%s: shared control %s should resolve: %v", family.patch, name, err)
+			}
+		}
+	}
+}
+
+func validKeysSettingValue(name string) string {
+	switch {
+	case strings.HasPrefix(name, "drawbar"):
+		return "4"
+	case name == "tremolo_rate":
+		return "5hz"
+	case name == "output":
+		return "-6db"
+	case name == "rotary_fast":
+		return "fast"
+	}
+	return "0.5"
+}
+
+func TestKeyboardControlsAreAutomatableExceptWholeNumbers(t *testing.T) {
+	p := keysScore(t, "cicada 2\ntrack keys tonewheel_organ {}\npattern p notes { c4 }\nscene main { keys=p }\nsong { main }\n")
+	for _, name := range []string{"gain", "drive", "rotary_mix"} {
+		if resolved, err := ResolveParameterPath(p, "keys."+name); err != nil || !resolved.Descriptor.Automatable {
+			t.Errorf("keys.%s should be automatable: %v", name, err)
+		}
+	}
+	for _, name := range []string{"rotary_fast", "drawbar1", "drawbar9"} {
+		resolved, err := ResolveParameterPath(p, "keys."+name)
+		if err != nil || resolved.Descriptor.Automatable || !resolved.Descriptor.Live {
+			t.Errorf("keys.%s should be a live scene setting that automation cannot move: %v", name, err)
+		}
+	}
+	score, diagnostics := notation.Parse([]byte("cicada 2\ntrack keys tonewheel_organ {}\npattern p notes { c4 }\nautomate keys.drawbar1 { @1.1.1 2 @2.1.1 6 }\nscene main { keys=p }\nsong { main*2 }\n"))
+	if !hasProjectErrors(diagnostics) {
+		_, diagnostics = FromScore(score)
+	}
+	if !hasProjectErrors(diagnostics) {
+		t.Fatal("automating a whole-number control was accepted")
+	}
+}

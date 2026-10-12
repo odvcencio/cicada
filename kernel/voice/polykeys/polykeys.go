@@ -2,7 +2,11 @@
 // and filters run at twice the host rate; chorus runs at the host rate.
 package polykeys
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/voice/keyboard"
+)
 
 const MaxVoices = 8
 
@@ -120,6 +124,8 @@ type Instrument struct {
 	chorus, chorusBase, chorusDepth float32
 	chorusInput, chorusOutput       float32
 	sustainPedal                    bool
+	driveT, gainT, glideAlpha       float32
+	gliding                         bool
 }
 
 func New(rate int, params Params) (*Instrument, error) {
@@ -140,6 +146,7 @@ func New(rate int, params Params) (*Instrument, error) {
 	i.sub, i.width, i.pwm = float32(.5*params.Sub*norm), float32(params.PulseWidth), float32(params.PWM)
 	i.pwmRate, i.sync = float32(params.PWMRate/sr), float32(params.Sync)
 	i.drive, i.gain, i.velocity = float32(1+4*params.Drive), float32(.4*math.Pow(10, params.LevelDB/20)), float32(params.Velocity)
+	i.driveT, i.gainT = i.drive, i.gain
 	i.resonanceFeedback = float32(3.8 * params.Resonance)
 	ceiling := math.Min(18000, sr*.2)
 	span := math.Log2(ceiling / 20)
@@ -403,6 +410,10 @@ func (i *Instrument) oscillator(v *voice, delta, width float32) float32 {
 }
 
 func (i *Instrument) NextStereo() (float32, float32) {
+	if i.gliding {
+		done := keyboard.Approach(&i.drive, i.driveT, i.glideAlpha)
+		i.gliding = !(keyboard.Approach(&i.gain, i.gainT, i.glideAlpha) && done)
+	}
 	i.pwmPhase = wrap(float32(i.pwmPhase + i.pwmRate))
 	width := float32(i.width + float32(i.pwm*i.sin(i.pwmPhase)))
 	if width < .08 {
@@ -489,4 +500,38 @@ func (i *Instrument) NextStereo() (float32, float32) {
 	i.dcOutput[1] = float32(float32(right-i.dcInput[1]) + float32(i.dcAlpha*i.dcOutput[1]))
 	i.dcInput[0], i.dcInput[1] = left, right
 	return i.dcOutput[0], i.dcOutput[1]
+}
+
+// Slots in the keyboard control table.
+const (
+	controlDrive  = 14
+	controlOutput = 21
+)
+
+// SetControl changes drive or the output level (dB). A glide of 1 applies the
+// value at once. It allocates nothing.
+func (i *Instrument) SetControl(index int, value, glide float32) error {
+	if !keyboard.ValidGlide(glide) {
+		return Error("glide must be in (0,1]")
+	}
+	switch index {
+	case controlDrive:
+		if !keyboard.InRange(value, 0, 1) {
+			return Error("poly keys drive must be 0..1")
+		}
+		i.driveT = float32(1 + 4*float64(value))
+	case controlOutput:
+		if !keyboard.InRange(value, -60, 6) {
+			return Error("poly keys output must be -60..6 dB")
+		}
+		i.gainT = float32(.4 * math.Pow(10, float64(value)/20))
+	default:
+		return Error("poly keys has no such control")
+	}
+	i.glideAlpha, i.gliding = glide, true
+	if glide == 1 {
+		done := keyboard.Approach(&i.drive, i.driveT, 1)
+		i.gliding = !(keyboard.Approach(&i.gain, i.gainT, 1) && done)
+	}
+	return nil
 }

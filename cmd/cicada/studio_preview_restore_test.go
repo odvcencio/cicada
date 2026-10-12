@@ -65,12 +65,17 @@ func previewRestoreFixtures() []previewRestoreFixture {
 		previewRestoreFixture{"kit-named-piano", "drums", "piano", "kit piano {" + bindings.String() + "}", pattern, true},
 	)
 	for _, name := range hostkeys.Names {
-		fixtures = append(fixtures, previewRestoreFixture{name, "piano", name, "", "pattern beat notes steps=2 { c4 . }", false})
+		// Each keyboard fixture runs under its family: the shared piano rows
+		// (sustain, mixer) plus that family's live controls.
+		fixtures = append(fixtures, previewRestoreFixture{name, hostkeys.FamilyName(name), name, "", "pattern beat notes steps=2 { c4 . }", false})
 	}
 	return fixtures
 }
 
 func authoredPreviewRestoreValue(descriptor paramdefs.Descriptor, value float64) string {
+	if descriptor.Curve == "toggle" && len(descriptor.Values) == 2 && descriptor.Values[0] == "slow" {
+		return descriptor.Values[int(value)] // Rotary speed is authored as slow or fast.
+	}
 	if descriptor.Curve == "toggle" {
 		if value == 0 {
 			return "off"
