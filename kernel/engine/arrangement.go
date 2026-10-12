@@ -305,6 +305,11 @@ func (e *Engine) advanceSong() {
 			return
 		}
 		e.songIndex = 0
+		// Restarting the loop is a fresh start for automated parameters: they
+		// return to their authored values before the lanes begin again.
+		if len(e.automation) != 0 && !e.restoreSceneDefaults() {
+			return
+		}
 	}
 	entry := e.schedule[e.songIndex]
 	e.songEndTick += entry.EndTick - entry.Tick

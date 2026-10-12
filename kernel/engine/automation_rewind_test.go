@@ -1,0 +1,163 @@
+package engine
+
+import (
+	"math"
+	"testing"
+
+	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
+)
+
+// Automation of non-keyboard parameters (mixer pan, acid cutoff) rewinds like
+// fresh playback after a seek to the start, a seek to the middle, a loop
+// restart and a replay after the song ended.
+func TestAutomationRewindsLikeFreshPlayback(t *testing.T) {
+	type lane struct {
+		name  string
+		track uint16
+		id    kernel.ParamID
+		value func(*Engine) float32
+		pts   []float32 // values at ticks 0 (or later), 600 and 1200
+	}
+	lanes := []lane{
+		{"mixer pan", 0, kernel.ParamMixPan, func(e *Engine) float32 { return e.voices[0].pan }, []float32{.5, .9, .1}},
+		{"acid cutoff", 0, kernel.ParamAcidCutoff, func(e *Engine) float32 { return float32(e.voices[0].acidTarget.Cutoff) }, []float32{900, 3000, 400}},
+	}
+	for _, l := range lanes {
+		for _, first := range []int64{0, 4} {
+			cfg := sourceChainConfig(t)
+			if cfg.Track[0].Kind != VoiceAcid && l.id == kernel.ParamAcidCutoff {
+				t.Skip("fixture track 0 is not acid")
+			}
+			cfg.LoopSong = false
+			for i, tick := range []int64{first, 600, 1200} {
+				cfg.Automation = append(cfg.Automation, cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(l.id), Arg0: math.Float32bits(l.pts[i]), Tick: tick})
+			}
+			fresh := func() *Engine {
+				e, err := New(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				e.meterRate = 0
+				return e
+			}
+			var left, right [128]float32
+			runTo := func(e *Engine, tick int64) {
+				for e.transport.Tick() < tick {
+					e.Render(left[:], right[:])
+				}
+			}
+			reference := fresh()
+			authored := l.value(reference)
+			// Reference values of an uninterrupted fresh playback.
+			reference.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+			reference.Render(left[:1], right[:1])
+			atStart := l.value(reference)
+			runTo(reference, 800)
+			atMiddle := l.value(reference)
+			runTo(reference, 1300)
+			atEnd := l.value(reference)
+			if atMiddle == atEnd || atMiddle == authored {
+				t.Fatalf("%s: weak fixture (%g %g %g)", l.name, authored, atMiddle, atEnd)
+			}
+			e := fresh()
+			e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+			runTo(e, 1300)
+			check := func(moment string, want float32) {
+				t.Helper()
+				if got := l.value(e); got != want {
+					t.Fatalf("%s first=%d %s: %g, fresh playback has %g", l.name, first, moment, got, want)
+				}
+			}
+			// Seek to the start.
+			e.Push(cmd.Command{Op: cmd.OpSeek, Track: 255})
+			e.Render(left[:1], right[:1])
+			want := authored
+			if first == 0 {
+				want = atStart
+			}
+			check("after a seek to the start", want)
+			runTo(e, 800)
+			check("replaying to the middle", atMiddle)
+			runTo(e, 1300)
+			check("replaying to the end", atEnd)
+			// Seek to the middle (tick 800 = bar 0, 800 ticks).
+			e.Push(cmd.Command{Op: cmd.OpSeek, Track: 255, Arg1: 800})
+			e.Render(left[:1], right[:1])
+			check("after a seek to the middle", atMiddle)
+			runTo(e, 1300)
+			check("replaying from the middle to the end", atEnd)
+		}
+	}
+}
+
+// A loop restart and a replay after the song ended begin automation like fresh
+// playback does: the lane's parameter returns to its authored value (or the
+// tick-0 point) and the lane runs again.
+func TestAutomationLoopRestartAndReplayAfterEnd(t *testing.T) {
+	for _, looped := range []bool{true, false} {
+		for _, first := range []int64{0, 4} {
+			cfg := sourceChainConfig(t)
+			cfg.LoopSong = looped
+			for i, tick := range []int64{first, 600, 1200} {
+				cfg.Automation = append(cfg.Automation, cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits([]float32{.5, .9, .1}[i]), Tick: tick})
+			}
+			e, err := New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			e.meterRate = 0
+			authored := e.voices[0].pan
+			want := authored
+			if first == 0 {
+				want = .5
+			}
+			var left, right [128]float32
+			e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+			e.Render(left[:1], right[:1])
+			if looped {
+				// Run past the end of the song and stop right after the wrap.
+				previous := e.transport.Tick()
+				for i := 0; i < 400000; i++ {
+					if previous%7680 < 7600 {
+						e.Render(left[:], right[:])
+					} else {
+						e.Render(left[:1], right[:1])
+					}
+					if e.transport.Tick()%7680 < previous%7680 {
+						break
+					}
+					previous = e.transport.Tick()
+				}
+				if e.transport.Tick()%7680 >= previous%7680 {
+					t.Fatal("the song never looped")
+				}
+				e.Render(left[:1], right[:1]) // The wrap itself lands on the next frame.
+			} else {
+				for i := 0; i < 100000 && e.transport.Playing(); i++ {
+					e.Render(left[:], right[:])
+				}
+				if e.transport.Playing() {
+					t.Fatal("the song never ended")
+				}
+				if e.voices[0].pan != .1 {
+					t.Fatalf("automation did not reach its end value: %g", e.voices[0].pan)
+				}
+				e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+				e.Render(left[:1], right[:1])
+			}
+			if got := e.voices[0].pan; got != want {
+				t.Fatalf("loop=%v first=%d: restart value %g, fresh playback has %g", looped, first, got, want)
+			}
+			for e.transport.Tick()%7680 < 800 && e.transport.Tick()%7680 >= 0 && (e.transport.Tick()%7680 < 800) {
+				e.Render(left[:], right[:])
+				if e.transport.Tick()%7680 >= 800 {
+					break
+				}
+			}
+			if got := e.voices[0].pan; got != .9 {
+				t.Fatalf("loop=%v first=%d: automation did not run again (%g at tick %d)", looped, first, got, e.transport.Tick())
+			}
+		}
+	}
+}
