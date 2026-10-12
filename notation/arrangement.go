@@ -201,7 +201,8 @@ func ValidateArrangement(s *Score) []Diagnostic {
 }
 
 // SetPlacementField changes one authored time literal and retains every other
-// byte, including comments and whitespace. Validation precedes publication.
+// byte, including comments and whitespace. It checks syntax only; callers
+// validate the result against the whole project.
 func SetPlacementField(source []byte, name, field, value string) ([]byte, error) {
 	if field != "at" && field != "length" {
 		return nil, fmt.Errorf("unknown placement field %q", field)
@@ -235,12 +236,11 @@ func SetPlacementField(source []byte, name, field, value string) ([]byte, error)
 				result = append(result, source[:start]...)
 				result = append(result, value...)
 				result = append(result, source[end:]...)
-				_, ds := Parse(result)
-				for _, d := range ds {
-					// A project manifest can supply the edition that a bare file lacks.
-					if d.Severity == "error" && d.Code != "CICADA-VERSION" {
-						return nil, fmt.Errorf("%s: %s", d.Code, d.Message)
-					}
+				// Check syntax only. References and edition rules depend on the
+				// whole project (peer files, manifest), so the host's project-aware
+				// compile validates the candidate.
+				if _, _, err := ParseTree(result); err != nil {
+					return nil, err
 				}
 				return result, nil
 			}
