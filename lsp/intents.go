@@ -18,10 +18,16 @@ import (
 )
 
 // newRenderCheck builds the render check for one score; tests replace it.
-var newRenderCheck = func(path string) edits.RenderCheck { return rendercheck.New(path) }
+var newRenderCheck = func(path string, overrides map[string][]byte) edits.RenderCheck {
+	return rendercheck.NewWith(path, overrides)
+}
 
 // lspCompiler compiles the working entry and auxiliary buffers without writes.
-type lspCompiler struct{ path string }
+// overrides is the snapshot of open editor buffers (absolute path -> bytes).
+type lspCompiler struct {
+	path      string
+	overrides map[string][]byte
+}
 
 func (c lspCompiler) Compile(source []byte, files map[string][]byte) (*edits.Plan, error) {
 	if !utf8.Valid(source) {
@@ -31,7 +37,10 @@ func (c lspCompiler) Compile(source []byte, files map[string][]byte) (*edits.Pla
 	if err != nil {
 		return nil, err
 	}
-	overrides := make(map[string][]byte, len(files)+1)
+	overrides := make(map[string][]byte, len(files)+len(c.overrides)+1)
+	for path, data := range c.overrides {
+		overrides[path] = data
+	}
 	for path, data := range files {
 		overrides[path] = data
 	}
@@ -79,6 +88,14 @@ type cachedCheck struct {
 	key        func(source []byte) (string, bool)
 	mu         sync.Mutex
 	byRevision map[string]hashResult
+}
+
+// bind points the check at the current snapshot; cached results stay valid
+// because their keys include the snapshot's contents.
+func (c *cachedCheck) bind(inner edits.RenderCheck, key func([]byte) (string, bool)) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.inner, c.key = inner, key
 }
 
 func (c *cachedCheck) Hash(source []byte) (string, error) {
@@ -150,15 +167,19 @@ func (s *server) intentOptions(path string, source []byte) (edits.Options, error
 	if manifestPath == "" {
 		projectEdition = 0
 	}
-	overrides := map[string][]byte{path: source}
-	sources, err := project.ReadSources(path, overrides)
+	buffers := s.openBuffers()
+	buffers[path] = source
+	sources, err := project.ReadSources(path, buffers)
 	if err != nil {
 		return edits.Options{}, err
 	}
-	opts := edits.Options{Compiler: lspCompiler{path: path}, RenderCheck: s.renderCheck(path), Path: path, Edition: projectEdition, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now}
+	opts := edits.Options{Compiler: lspCompiler{path: path, overrides: buffers}, RenderCheck: s.renderCheck(path, buffers), Path: path, Edition: projectEdition, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now}
 	if manifestPath != "" {
-		if opts.Manifest, err = os.ReadFile(manifestPath); err != nil {
-			return edits.Options{}, err
+		var supplied bool
+		if opts.Manifest, supplied = buffers[manifestPath]; !supplied {
+			if opts.Manifest, err = os.ReadFile(manifestPath); err != nil {
+				return edits.Options{}, err
+			}
 		}
 		manifest, err := edition.ParseProjectManifest(opts.Manifest)
 		if err != nil {
@@ -167,7 +188,10 @@ func (s *server) intentOptions(path string, source []byte) (edits.Options, error
 		opts.Edition = manifest.Edition
 	}
 	opts.ParseProject = func(source []byte, files map[string][]byte) (*notation.Score, []notation.Diagnostic, error) {
-		merged := make(map[string][]byte, len(files)+1)
+		merged := make(map[string][]byte, len(files)+len(buffers)+1)
+		for name, data := range buffers {
+			merged[name] = data
+		}
 		for name, data := range files {
 			merged[name] = data
 		}
@@ -177,17 +201,39 @@ func (s *server) intentOptions(path string, source []byte) (edits.Options, error
 	return opts, nil
 }
 
-// renderCheck returns the per-score cached check, so renders are shared by
-// every code-action request at one revision.
-func (s *server) renderCheck(path string) *cachedCheck {
+// openBuffers snapshots every open document (absolute path -> bytes), so
+// parsing, compiling, rendering and the cache key all see the same project the
+// user is editing.
+func (s *server) openBuffers() map[string][]byte {
+	buffers := make(map[string][]byte, len(s.documents))
+	for uri, data := range s.documents {
+		if path, ok := scorePathFromURI(uri); ok {
+			if absolute, err := filepath.Abs(path); err == nil {
+				buffers[absolute] = data
+			}
+		}
+	}
+	for uri, context := range s.libraryContexts {
+		if data, ok := s.documents[uri]; ok {
+			buffers[context.source] = data
+		}
+	}
+	return buffers
+}
+
+// renderCheck returns the per-score cached check bound to a buffer snapshot.
+// Results are shared by every request whose full input identity (including
+// those buffers) is the same.
+func (s *server) renderCheck(path string, buffers map[string][]byte) *cachedCheck {
 	if s.checks == nil {
 		s.checks = make(map[string]*cachedCheck)
 	}
 	check := s.checks[path]
 	if check == nil {
-		check = &cachedCheck{inner: newRenderCheck(path), key: func(source []byte) (string, bool) { return rendercheck.Identity(path, source) }}
+		check = &cachedCheck{}
 		s.checks[path] = check
 	}
+	check.bind(newRenderCheck(path, buffers), func(source []byte) (string, bool) { return rendercheck.Identity(path, source, buffers) })
 	return check
 }
 
@@ -232,12 +278,14 @@ func (s *server) snapActions(uri, path string, source []byte, params codeActionP
 	if len(lines) == 0 {
 		return nil
 	}
-	score, _, err := project.LoadScore(path, map[string][]byte{path: source})
-	if err != nil || score == nil || score.Arrange == nil {
-		return nil
-	}
 	opts, err := s.intentOptions(path, source)
 	if err != nil {
+		return nil
+	}
+	buffers := s.openBuffers()
+	buffers[path] = source
+	score, _, err := project.LoadScore(path, buffers)
+	if err != nil || score == nil || score.Arrange == nil {
 		return nil
 	}
 	var actions []any

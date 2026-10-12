@@ -128,11 +128,11 @@ func TestIdentityTracksEveryRenderInput(t *testing.T) {
 	path := writeProject(t, files)
 	dir := filepath.Dir(path)
 	entry := []byte(peerMain)
-	base, ok := Identity(path, entry)
+	base, ok := Identity(path, entry, nil)
 	if !ok {
 		t.Fatal("identity unavailable for a plain project")
 	}
-	if again, _ := Identity(path, entry); again != base {
+	if again, _ := Identity(path, entry, nil); again != base {
 		t.Fatal("identity is not stable for unchanged inputs")
 	}
 	change := func(name, data string, mtime time.Time) {
@@ -149,13 +149,13 @@ func TestIdentityTracksEveryRenderInput(t *testing.T) {
 	current := base
 	expectNew := func(what string) {
 		t.Helper()
-		got, ok := Identity(path, entry)
+		got, ok := Identity(path, entry, nil)
 		if !ok || got == current {
 			t.Fatalf("%s did not change the identity (ok=%v)", what, ok)
 		}
 		current = got
 	}
-	if got, _ := Identity(path, []byte(peerMain+"\n")); got == base {
+	if got, _ := Identity(path, []byte(peerMain+"\n"), nil); got == base {
 		t.Fatal("entry source did not change the identity")
 	}
 	change("patterns.cicada", peerPatterns("X... .... .... ....")+asset+"// edited\n", time.Time{})
@@ -172,7 +172,7 @@ func TestIdentityTracksEveryRenderInput(t *testing.T) {
 	if err := os.Remove(filepath.Join(dir, "hit.wav")); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := Identity(path, entry); ok {
+	if _, ok := Identity(path, entry, nil); ok {
 		t.Fatal("identity reported for a missing asset")
 	}
 }
@@ -188,5 +188,26 @@ func TestCachedSkipsTheCacheWhenInputsCannotBeIdentified(t *testing.T) {
 	}
 	if counted.calls != 3 {
 		t.Fatalf("inner called %d times, want 3 uncached calls", counted.calls)
+	}
+}
+
+// An unsaved editor buffer replaces the file on disk for both the key and the render.
+func TestIdentityAndRenderSeeUnsavedBuffers(t *testing.T) {
+	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(".... .... .... ....")})
+	part := filepath.Join(filepath.Dir(path), "patterns.cicada")
+	entry := []byte(peerMain)
+	disk, ok := Identity(path, entry, nil)
+	buffer, ok2 := Identity(path, entry, map[string][]byte{part: []byte(peerPatterns("X... .... .... ...."))})
+	same, ok3 := Identity(path, entry, map[string][]byte{part: []byte(peerPatterns(".... .... .... ...."))})
+	if !ok || !ok2 || !ok3 || disk == buffer || disk != same {
+		t.Fatalf("identity: disk=%s buffer=%s same=%s", disk, buffer, same)
+	}
+	silent, err := New(path).Hash(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	audible, err := NewWith(path, map[string][]byte{part: []byte(peerPatterns("X... .... .... ...."))}).Hash(entry)
+	if err != nil || audible == silent {
+		t.Fatalf("buffer not rendered: %v", err)
 	}
 }

@@ -19,20 +19,36 @@ import (
 	"m31labs.dev/cicada/render"
 )
 
-type check struct{ path string }
+type check struct {
+	path      string
+	overrides map[string][]byte
+}
 
 // New returns a render check for the entry score at path. Hash substitutes the
 // supplied bytes for the entry file, so the project manifest and libraries
-// apply as they do when the score is on disk. Callers cache by revision.
-func New(path string) edits.RenderCheck {
+// apply as they do when the score is on disk. Callers cache with Cached.
+func New(path string) edits.RenderCheck { return NewWith(path, nil) }
+
+// NewWith is New with a snapshot of unsaved buffers (absolute path -> bytes)
+// that replace project files, the manifest and cicada.sum while rendering.
+func NewWith(path string, overrides map[string][]byte) edits.RenderCheck {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	return check{path: path}
+	return check{path: path, overrides: overrides}
+}
+
+func merged(overrides map[string][]byte, path string, source []byte) map[string][]byte {
+	all := make(map[string][]byte, len(overrides)+1)
+	for name, data := range overrides {
+		all[name] = data
+	}
+	all[path] = source
+	return all
 }
 
 func (c check) Hash(source []byte) (string, error) {
-	score, ds, err := project.LoadScore(c.path, map[string][]byte{c.path: source})
+	score, ds, err := project.LoadScore(c.path, merged(c.overrides, c.path, source))
 	if err != nil {
 		return "", err
 	}
@@ -78,7 +94,7 @@ func Cached(path string, inner edits.RenderCheck) edits.RenderCheck {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	return CachedBy(func(source []byte) (string, bool) { return Identity(path, source) }, inner)
+	return CachedBy(func(source []byte) (string, bool) { return Identity(path, source, nil) }, inner)
 }
 
 // CachedBy is Cached with a caller-supplied key. A key function that returns
@@ -108,19 +124,20 @@ func (c *cached) Hash(source []byte) (string, error) {
 const identityFileLimit = 5000
 
 // Identity digests every input a render of source at path reads: all project
-// source files with the entry replaced by source, the manifest and cicada.sum,
+// source files with the entry replaced by source and any unsaved buffers in
+// overrides (absolute path -> bytes) applied, the manifest and cicada.sum,
 // library sources and their assets, each declared asset (path, size and
 // modification time) and each sampler pack directory. The bool is false when
 // the set cannot be enumerated reliably (unreadable manifest, missing asset,
 // oversized pack tree); callers must then not cache. Content of assets and
 // packs is pinned by hashes in the source, so size and modification time only
 // guard against a file replaced behind a still-valid declaration.
-func Identity(path string, source []byte) (string, bool) {
+func Identity(path string, source []byte, overrides map[string][]byte) (string, bool) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", false
 	}
-	sources, err := project.ReadSources(abs, map[string][]byte{abs: source})
+	sources, err := project.ReadSources(abs, merged(overrides, abs, source))
 	if err != nil {
 		return "", false
 	}
@@ -138,13 +155,19 @@ func Identity(path string, source []byte) (string, bool) {
 		put("file", []byte(file.Path), []byte(file.Library), file.Source)
 	}
 	if sources.ManifestPath != "" {
-		data, err := os.ReadFile(sources.ManifestPath)
-		if err != nil {
-			return "", false
+		data, ok := overrides[sources.ManifestPath]
+		if !ok {
+			var err error
+			if data, err = os.ReadFile(sources.ManifestPath); err != nil {
+				return "", false
+			}
 		}
 		put("manifest", []byte(sources.ManifestPath), data)
 	}
-	if sum, err := os.ReadFile(filepath.Join(sources.Root, "cicada.sum")); err == nil {
+	sumPath := filepath.Join(sources.Root, "cicada.sum")
+	if sum, ok := overrides[sumPath]; ok {
+		put("sum", sum)
+	} else if sum, err := os.ReadFile(sumPath); err == nil {
 		put("sum", sum)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return "", false

@@ -147,10 +147,19 @@ func TestMinimalTextEditRoundTripsAndUsesUTF16Ranges(t *testing.T) {
 // and returns the action lists in request order.
 func actionFrames(t *testing.T, path, source string, requests ...map[string]any) [][]map[string]json.RawMessage {
 	t.Helper()
+	return actionFramesDocs(t, path, map[string]string{path: source}, requests...)
+}
+
+// actionFramesDocs opens every document in docs (path -> text) and sends the
+// requests to the one at path.
+func actionFramesDocs(t *testing.T, path string, docs map[string]string, requests ...map[string]any) [][]map[string]json.RawMessage {
+	t.Helper()
 	uri := fileURI(path)
 	var input bytes.Buffer
 	input.Write(rpc(t, 1, "initialize", map[string]any{"capabilities": map[string]any{"workspace": map[string]any{"workspaceEdit": map[string]any{"documentChanges": true}}}}))
-	input.Write(rpc(t, 0, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 3, "text": source}}))
+	for name, text := range docs {
+		input.Write(rpc(t, 0, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": fileURI(name), "version": 3, "text": text}}))
+	}
 	for i, request := range requests {
 		request["textDocument"] = map[string]any{"uri": uri}
 		input.Write(rpc(t, 2+i, "textDocument/codeAction", request))
@@ -267,7 +276,7 @@ const lspSongScore = "title \"Song\"\ntrack bass acid {}\npattern hits { c3 . c4
 func withRenderCheck(t *testing.T, fake edits.RenderCheck) {
 	t.Helper()
 	previous := newRenderCheck
-	newRenderCheck = func(string) edits.RenderCheck { return fake }
+	newRenderCheck = func(string, map[string][]byte) edits.RenderCheck { return fake }
 	t.Cleanup(func() { newRenderCheck = previous })
 }
 
@@ -345,7 +354,7 @@ func TestRenderCacheMissesAfterAPeerFileChanges(t *testing.T) {
 	fake := &fakeRender{}
 	withRenderCheck(t, fake)
 	s := &server{}
-	check := s.renderCheck(path)
+	check := s.renderCheck(path, nil)
 	for range 2 {
 		if _, err := check.Hash([]byte(entry)); err != nil {
 			t.Fatal(err)
@@ -359,5 +368,60 @@ func TestRenderCacheMissesAfterAPeerFileChanges(t *testing.T) {
 	}
 	if _, err := check.Hash([]byte(entry)); err != nil || fake.calls != 2 {
 		t.Fatalf("peer edit: err=%v renders=%d, want 2", err, fake.calls)
+	}
+}
+
+func peerDrums(lane string) string {
+	return "track drums drums {}\npattern beat drums {\n  bd: " + lane + "\n}\npattern fill drums {\n  sd: " + lane + "\n}\n"
+}
+
+// The decision follows the open buffers, not the saved files: conversion is
+// offered only when the project as edited renders the same as its conversion.
+func TestSongConversionFollowsUnsavedPeerBuffers(t *testing.T) {
+	const silent, audible = ".... .... .... ....", "X... .... X... ...."
+	entry := "scene a { drums = beat }\nscene b { drums = fill }\nsong { a*2 b*2 }\n"
+	for _, c := range []struct {
+		name, disk, buffer string
+		offered            bool
+	}{
+		{"audible unsaved peer over silent disk", silent, audible, false},
+		{"silent unsaved peer over audible disk", audible, silent, true},
+		{"peer saved to match: audible", audible, audible, false},
+		{"peer saved to match: silent", silent, silent, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			path := writePeerProject(t, entry, peerDrums(c.disk))
+			part := filepath.Join(filepath.Dir(path), "part.cicada")
+			request := map[string]any{"range": region{Start: position{Line: 2}, End: position{Line: 2}}, "context": map[string]any{"diagnostics": []any{}, "only": []string{"refactor"}}}
+			replies := actionFramesDocs(t, path, map[string]string{path: entry, part: peerDrums(c.buffer)}, request)
+			if offered := len(replies[0]) == 1; offered != c.offered {
+				t.Fatalf("offered=%v, want %v: %v", offered, c.offered, replies[0])
+			}
+		})
+	}
+}
+
+func TestRenderCacheKeyFollowsOpenPeerBuffers(t *testing.T) {
+	entry := "scene a { drums = beat }\nsong { a*1 }\n"
+	path := writePeerProject(t, entry, peerDrums("X... .... .... ...."))
+	part := filepath.Join(filepath.Dir(path), "part.cicada")
+	fake := &fakeRender{}
+	withRenderCheck(t, fake)
+	s := &server{}
+	hash := func(buffer string) {
+		t.Helper()
+		buffers := map[string][]byte{path: []byte(entry), part: []byte(buffer)}
+		if _, err := s.renderCheck(path, buffers).Hash([]byte(entry)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	hash(peerDrums("X... .... .... ...."))
+	hash(peerDrums("X... .... .... ...."))
+	if fake.calls != 1 {
+		t.Fatalf("same buffers rendered %d times, want 1", fake.calls)
+	}
+	hash(peerDrums(".... .... .... ...."))
+	if fake.calls != 2 {
+		t.Fatalf("changed open peer buffer rendered %d times in total, want 2", fake.calls)
 	}
 }
