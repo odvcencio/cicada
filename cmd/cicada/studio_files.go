@@ -125,7 +125,7 @@ func (s *studio) editFile(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, 500, map[string]any{"error": readErr.Error()})
 				return
 			}
-			target = &studio{path: path, sessionID: newStudioSessionID(), transport: s.transport, history: newStudioHistory(source), renderCheck: rendercheck.Cached(rendercheck.New(path))}
+			target = &studio{path: path, sessionID: newStudioSessionID(), transport: s.transport, history: newStudioHistory(source), renderCheck: rendercheck.Cached(path, rendercheck.New(path))}
 			s.fileSessions[path] = target
 		}
 	}

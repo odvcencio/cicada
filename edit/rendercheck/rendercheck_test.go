@@ -1,6 +1,7 @@
 package rendercheck
 
 import (
+	edits "m31labs.dev/cicada/edit"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -162,7 +163,7 @@ func (c *countingCheck) Hash(source []byte) (string, error) {
 
 func TestCachedRendersEachRevisionOnce(t *testing.T) {
 	inner := &countingCheck{}
-	check := Cached(inner)
+	check := CachedBy(func(source []byte) (string, bool) { return edits.Revision(source), true }, inner)
 	for _, source := range []string{"a", "b", "a", "b", "a"} {
 		if got, err := check.Hash([]byte(source)); err != nil || got != source {
 			t.Fatalf("%s: %q, %v", source, got, err)

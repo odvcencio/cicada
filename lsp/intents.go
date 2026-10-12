@@ -73,7 +73,10 @@ const cachedCheckLimit = 64
 
 // cachedCheck retains render results for the lifetime of one check instance.
 type cachedCheck struct {
-	inner      edits.RenderCheck
+	inner edits.RenderCheck
+	// key names the full render input identity; nil keys by the entry source
+	// alone, and a false result skips the cache for that call.
+	key        func(source []byte) (string, bool)
 	mu         sync.Mutex
 	byRevision map[string]hashResult
 }
@@ -85,6 +88,12 @@ func (c *cachedCheck) Hash(source []byte) (string, error) {
 		return "", edits.ErrNoRenderCheck
 	}
 	revision := edits.Revision(source)
+	if c.key != nil {
+		var ok bool
+		if revision, ok = c.key(source); !ok {
+			return c.inner.Hash(source)
+		}
+	}
 	if result, ok := c.byRevision[revision]; ok {
 		return result.hash, result.err
 	}
@@ -176,7 +185,7 @@ func (s *server) renderCheck(path string) *cachedCheck {
 	}
 	check := s.checks[path]
 	if check == nil {
-		check = &cachedCheck{inner: newRenderCheck(path)}
+		check = &cachedCheck{inner: newRenderCheck(path), key: func(source []byte) (string, bool) { return rendercheck.Identity(path, source) }}
 		s.checks[path] = check
 	}
 	return check

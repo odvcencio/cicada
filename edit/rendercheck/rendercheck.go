@@ -6,11 +6,15 @@ package rendercheck
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/cicada/render"
 )
@@ -59,28 +63,163 @@ type cachedResult struct {
 
 type cached struct {
 	inner edits.RenderCheck
+	key   func(source []byte) (string, bool)
 	mu    sync.Mutex
 	by    map[string]cachedResult
 }
 
-// Cached remembers results by source revision, so a long-lived host renders
-// each distinct source once. It keeps at most 32 results and starts over when
-// the limit is reached. Errors are cached too: the same bytes fail the same way.
-func Cached(inner edits.RenderCheck) edits.RenderCheck {
-	return &cached{inner: inner}
+// Cached remembers results by the full render input identity of the score at
+// path (see Identity), so a long-lived host renders each distinct input set
+// once and a change to a peer source, library, manifest or asset is never
+// served from an older approval. When the inputs cannot be identified it does
+// not cache. It keeps at most 32 results and starts over at the limit. Errors
+// are cached too: the same inputs fail the same way.
+func Cached(path string, inner edits.RenderCheck) edits.RenderCheck {
+	if abs, err := filepath.Abs(path); err == nil {
+		path = abs
+	}
+	return CachedBy(func(source []byte) (string, bool) { return Identity(path, source) }, inner)
+}
+
+// CachedBy is Cached with a caller-supplied key. A key function that returns
+// false disables caching for that call.
+func CachedBy(key func(source []byte) (string, bool), inner edits.RenderCheck) edits.RenderCheck {
+	return &cached{inner: inner, key: key}
 }
 
 func (c *cached) Hash(source []byte) (string, error) {
-	revision := edits.Revision(source)
+	key, ok := c.key(source)
+	if !ok {
+		return c.inner.Hash(source)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if result, ok := c.by[revision]; ok {
+	if result, ok := c.by[key]; ok {
 		return result.hash, result.err
 	}
 	hash, err := c.inner.Hash(source)
 	if c.by == nil || len(c.by) >= cachedLimit {
 		c.by = make(map[string]cachedResult)
 	}
-	c.by[revision] = cachedResult{hash, err}
+	c.by[key] = cachedResult{hash, err}
 	return hash, err
+}
+
+const identityFileLimit = 5000
+
+// Identity digests every input a render of source at path reads: all project
+// source files with the entry replaced by source, the manifest and cicada.sum,
+// library sources and their assets, each declared asset (path, size and
+// modification time) and each sampler pack directory. The bool is false when
+// the set cannot be enumerated reliably (unreadable manifest, missing asset,
+// oversized pack tree); callers must then not cache. Content of assets and
+// packs is pinned by hashes in the source, so size and modification time only
+// guard against a file replaced behind a still-valid declaration.
+func Identity(path string, source []byte) (string, bool) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", false
+	}
+	sources, err := project.ReadSources(abs, map[string][]byte{abs: source})
+	if err != nil {
+		return "", false
+	}
+	h := sha256.New()
+	put := func(tag string, parts ...[]byte) {
+		h.Write([]byte(tag))
+		for _, part := range parts {
+			fmt.Fprintf(h, ":%d:", len(part))
+			h.Write(part)
+		}
+		h.Write([]byte{'\n'})
+	}
+	put("entry", []byte(abs))
+	for _, file := range sources.Files {
+		put("file", []byte(file.Path), []byte(file.Library), file.Source)
+	}
+	if sources.ManifestPath != "" {
+		data, err := os.ReadFile(sources.ManifestPath)
+		if err != nil {
+			return "", false
+		}
+		put("manifest", []byte(sources.ManifestPath), data)
+	}
+	if sum, err := os.ReadFile(filepath.Join(sources.Root, "cicada.sum")); err == nil {
+		put("sum", sum)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", false
+	}
+	stat := func(tag, name string) bool {
+		info, err := os.Stat(name)
+		if err != nil {
+			return false
+		}
+		put(tag, []byte(name), []byte(fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())))
+		return true
+	}
+	libraries := append([]string(nil), sources.LibraryOrder...)
+	sort.Strings(libraries)
+	for _, name := range libraries {
+		library := sources.Libraries[name]
+		if library == nil {
+			return "", false
+		}
+		put("library", []byte(name), []byte(fmt.Sprintf("%+v", library.LibraryPin)), []byte(library.Root), library.ManifestSource)
+		for _, file := range library.Files {
+			put("libfile", []byte(file.Path), file.Source)
+		}
+		for _, asset := range library.Assets {
+			if !stat("libasset", filepath.Join(library.Root, filepath.FromSlash(asset))) {
+				return "", false
+			}
+		}
+	}
+	var score *notation.Score
+	if sources.ManifestPath == "" && len(sources.Libraries) == 0 {
+		score, _ = notation.ParseSource(sources.Files[0])
+	} else {
+		editionNumber := sources.Manifest.Edition
+		if editionNumber == 0 {
+			editionNumber = notation.SourceEdition(sources.Files[0])
+		}
+		score, _ = notation.ParseFiles(sources.Files, editionNumber)
+	}
+	if score == nil {
+		return "", false
+	}
+	for _, asset := range score.Assets {
+		root := asset.Root
+		if root == "" {
+			root = sources.Root
+		}
+		if !notation.ValidAssetPath(asset.Path) || !stat("asset", filepath.Join(root, filepath.FromSlash(asset.Path))) {
+			return "", false
+		}
+	}
+	dir := filepath.Dir(abs)
+	for _, sampler := range score.Samplers {
+		if sampler.Pack == "" {
+			continue
+		}
+		manifest := filepath.Join(dir, filepath.FromSlash(sampler.Pack))
+		count := 0
+		walk := func(name string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if count++; count > identityFileLimit {
+				return errors.New("pack tree too large")
+			}
+			info, err := entry.Info()
+			if err != nil {
+				return err
+			}
+			put("pack", []byte(name), []byte(fmt.Sprintf("%d:%d", info.Size(), info.ModTime().UnixNano())))
+			return nil
+		}
+		if filepath.WalkDir(filepath.Dir(manifest), walk) != nil {
+			return "", false
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil)), true
 }

@@ -214,7 +214,7 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 		return nil, err
 	}
 	absolute := target.Logical
-	s := &studio{path: absolute, sessionID: newStudioSessionID(), renderCheck: rendercheck.Cached(rendercheck.New(absolute))}
+	s := &studio{path: absolute, sessionID: newStudioSessionID(), renderCheck: rendercheck.Cached(absolute, rendercheck.New(absolute))}
 	opened := false
 	defer func() {
 		if !opened && s.takes != nil {

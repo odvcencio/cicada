@@ -313,3 +313,51 @@ func TestCodeActionHidesSongConversionWhenTheCheckFailsOrIsMissing(t *testing.T)
 		})
 	}
 }
+
+func writePeerProject(t *testing.T, entry, part string) string {
+	t.Helper()
+	dir := t.TempDir()
+	for name, data := range map[string]string{"cicada.mod": "project peers\ncicada 2\nentry \"main.cicada\"\nsource \"part.cicada\"\n", "main.cicada": entry, "part.cicada": part} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return filepath.Join(dir, "main.cicada")
+}
+
+func TestCodeActionSnapsPlacementWhoseDefinitionsLiveInAPeerFile(t *testing.T) {
+	entry := "arrange {\n  place a bass hits { at = 100ticks length = 1bar }\n}\n"
+	path := writePeerProject(t, entry, "track bass acid {}\npattern hits { c3 . c4 . }\n")
+	diagnostic := map[string]any{"range": region{Start: position{Line: 1}, End: position{Line: 1, Character: 1}}, "code": "CICADA-ARRANGEMENT", "message": "step pattern placement must start on a step"}
+	replies := actionFrames(t, path, entry, map[string]any{"range": region{Start: position{Line: 1}, End: position{Line: 1}}, "context": map[string]any{"diagnostics": []any{diagnostic}}})
+	if len(replies[0]) != 1 {
+		t.Fatalf("%d actions", len(replies[0]))
+	}
+	_, applied, _ := appliedEdit(t, replies[0][0], entry)
+	if want := strings.Replace(entry, "100ticks", "@1.1.1", 1); applied != want {
+		t.Fatalf("applied:\n%s", applied)
+	}
+}
+
+func TestRenderCacheMissesAfterAPeerFileChanges(t *testing.T) {
+	entry := "scene a { bass = hits }\nsong { a*1 }\n"
+	path := writePeerProject(t, entry, "track bass acid {}\npattern hits { c3 . c4 . }\n")
+	fake := &fakeRender{}
+	withRenderCheck(t, fake)
+	s := &server{}
+	check := s.renderCheck(path)
+	for range 2 {
+		if _, err := check.Hash([]byte(entry)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if fake.calls != 1 {
+		t.Fatalf("unchanged inputs rendered %d times, want 1", fake.calls)
+	}
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "part.cicada"), []byte("track bass acid {}\npattern hits { c3 . c4 c3 }\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := check.Hash([]byte(entry)); err != nil || fake.calls != 2 {
+		t.Fatalf("peer edit: err=%v renders=%d, want 2", err, fake.calls)
+	}
+}

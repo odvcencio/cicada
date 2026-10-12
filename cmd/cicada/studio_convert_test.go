@@ -34,7 +34,7 @@ func TestStudioConvertDryRunRefusalNamesCauseAndCachesRender(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	s, handler, path := proposalFixture(t, convertDrumSongScore)
 	counter := &countingRender{inner: rendercheck.New(path)}
-	s.renderCheck = rendercheck.Cached(counter)
+	s.renderCheck = rendercheck.Cached(path, counter)
 	for call := 1; call <= 2; call++ {
 		r := studioCall(t, handler, "/api/intents", convertEnvelope(convertDrumSongScore, true))
 		var reply struct {
