@@ -94,3 +94,21 @@ func TestSplitProbabilisticPlacementIsRefusedByTheRealRender(t *testing.T) {
 		t.Fatal("a refused split changed the score")
 	}
 }
+
+// After the placement handoff (#207) a plain drums split renders like one run.
+func TestSplitDrumsPlacementPassesTheRealRender(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.cicada")
+	source := "cicada 2\ntrack drums drums {}\npattern beat drums {\n  bd: X... .... X... ....\n  sd: .... X... .... X...\n}\narrange {\n  place run drums beat { at = @1.1.1 length = 4bars }\n}\n"
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "intents.json")
+	writeApplyEnvelope(t, file, edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.SplitClip{Entity: "placement:run", AtTick: 7680}}})
+	if err := applyCommandWithHooks([]string{path, file, "--write"}, io.Discard, nil); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := os.ReadFile(path); !strings.Contains(string(got), "place run-2 drums beat") {
+		t.Fatalf("not split:\n%s", got)
+	}
+}

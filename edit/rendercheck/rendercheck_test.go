@@ -42,11 +42,10 @@ func hashes(t *testing.T, a, b string) (string, string) {
 //     whose bars are a whole number of pattern lengths renders like the matching
 //     placement, and a pattern that does not fit the entry length restarts out of
 //     phase at the next entry.
-//   - A drums placement boundary is audible even when the next placement binds
-//     the same pattern: two adjacent drum placements render differently from
-//     one placement (or one song run) covering the same bars. Acid placements do
-//     not show this. A converter therefore cannot split a drum run at a scene
-//     boundary and keep the render, and the check refuses those conversions.
+//   - Adjacent placements on one track hand off without releasing held notes
+//     or tails (#207), so split drums and acid placements render like one run.
+//     Step patterns, including chance passes, still restart at each placement
+//     origin.
 
 const templateScenes = "scene main { bass = pulse drums = beat }\nscene break { bass = pulse drums = beat }\n"
 
@@ -79,18 +78,18 @@ func TestRenderCheckTemplateSongEqualsMergedArrange(t *testing.T) {
 	}
 }
 
-// Case 1 as the plan hand-wrote it (one placement per scene entry and track)
-// documents an ENGINE GAP, not a rule to keep: adjacent drums placements render
-// differently from one run covering the same bars, with the difference starting
-// at the placement boundary. Acid placements are unaffected. When the engine is
-// fixed this test fails on purpose; then flip the assertion to equal and drop
-// the drums-specific SplitClip render check.
-func TestRenderCheckSplitDrumPlacementsDifferFromSongEngineGap(t *testing.T) {
+// Case 1 as the plan hand-wrote it (one placement per scene entry and track).
+// Before the placement handoff (#207) adjacent drums placements rendered
+// differently from one run; adjacent placements on a track now hand off
+// without releasing held notes or tails, so the split arrange matches the
+// song. Step patterns with chance steps still restart at each placement
+// origin (see the chance tests in cmd/cicada).
+func TestRenderCheckSplitDrumPlacementsMatchSong(t *testing.T) {
 	song := head + body + templateScenes + "song { main*4 break*4 }\n"
 	split := templateArrange("  place main-1-bass bass pulse { at = @1.1.1 length = 4bars }\n  place main-1-drums drums beat { at = @1.1.1 length = 4bars }\n" +
 		"  place break-2-bass bass pulse { at = @5.1.1 length = 4bars }\n  place break-2-drums drums beat { at = @5.1.1 length = 4bars }\n")
-	if h := templateHashes(t, song, split); h[0] == h[1] {
-		t.Fatal("split drum placements now render like the song: the engine gap is fixed; flip this test")
+	if h := templateHashes(t, song, split); h[0] != h[1] {
+		t.Fatal("split placements render differently from the song")
 	}
 }
 

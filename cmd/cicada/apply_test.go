@@ -235,7 +235,7 @@ func TestApplyAuxiliaryUpgradeDryRunAndWrite(t *testing.T) {
 	}
 }
 
-func TestApplyConvertSongConvertsTemplateAndRefusesDrumBoundary(t *testing.T) {
+func TestApplyConvertSongConvertsTemplateAndRefusesRestartingChanceSteps(t *testing.T) {
 	path, intents, template := applyFixture(t)
 	writeApplyEnvelope(t, intents, edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}})
 	out, err := captureApply(t, path, intents, "--write")
@@ -249,15 +249,15 @@ func TestApplyConvertSongConvertsTemplateAndRefusesDrumBoundary(t *testing.T) {
 	if string(converted) != want {
 		t.Fatalf("converted:\n%s\nwant:\n%s", converted, want)
 	}
-	// A different drum pattern in the second scene needs a second placement, which the engine renders differently today.
-	if err := os.WriteFile(path, []byte(strings.Replace(string(template), "scene break {\n  bass = pulse\n  drums = beat\n}", "scene break {\n  bass = pulse\n  drums = fill\n}", 1)+"\npattern fill drums {\n  sd: X... .... X... ....\n}\n"), 0600); err != nil {
+	// A different pattern with chance steps in the second scene needs a second placement, and chance passes restart at a placement origin.
+	if err := os.WriteFile(path, []byte(strings.Replace(string(template), "scene break {\n  bass = pulse\n  drums = beat\n}", "scene break {\n  bass = lively\n  drums = beat\n}", 1)+"\npattern lively acid {\n  1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50\n}\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	before, _ := os.ReadFile(path)
 	_, err = captureApply(t, path, intents, "--write")
 	var refusal *edits.RefusalError
-	if !errors.As(err, &refusal) || refusal.Cause != "drums track drums starts a new placement at bar 5, which renders differently from the song" {
-		t.Fatalf("drum boundary: %v", err)
+	if !errors.As(err, &refusal) || refusal.Cause != "pattern lively has chance steps that restart at bar 5" {
+		t.Fatalf("chance boundary: %v", err)
 	}
 	if after, _ := os.ReadFile(path); !bytes.Equal(after, before) {
 		t.Fatal("a refused conversion changed the score")

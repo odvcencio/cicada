@@ -305,7 +305,7 @@ func TestMoveClipRepairsAScoreThatDoesNotCompile(t *testing.T) {
 	}
 }
 
-func TestSplitClipOnDrumsRunsRenderCheck(t *testing.T) {
+func TestSplitClipOnDrumsIsRenderChecked(t *testing.T) {
 	source := []byte("cicada 2\ntrack drums drums {}\npattern beat drums {\n  bd: X... .... X... ....\n}\narrange {\n  place run drums beat { at = @1.1.1 length = 4bars }\n}\n")
 	raw := `{"kind":"splitclip","entity":"placement:run","attick":7680}`
 	if _, err := applyArrange(source, raw, Options{}); !errors.Is(err, ErrNoRenderCheck) {
@@ -313,7 +313,7 @@ func TestSplitClipOnDrumsRunsRenderCheck(t *testing.T) {
 	}
 	var refusal *RefusalError
 	differing := &fakeCheck{hashes: map[string]string{"run-2": "cut"}}
-	if _, err := applyArrange(source, raw, Options{RenderCheck: differing}); !errors.As(err, &refusal) || refusal.Cause != "splitting beat at bar 3 restarts the drum placement" {
+	if _, err := applyArrange(source, raw, Options{RenderCheck: differing}); !errors.As(err, &refusal) || refusal.Cause != "splitting beat at bar 3 changes the render" {
 		t.Fatalf("differing: %v", err)
 	}
 	if got, err := applyArrange(source, raw, Options{RenderCheck: &fakeCheck{}}); err != nil || !bytes.Contains(got.Source, []byte("place run-2 drums beat")) {

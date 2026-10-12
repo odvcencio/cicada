@@ -371,15 +371,15 @@ func TestRenderCacheMissesAfterAPeerFileChanges(t *testing.T) {
 	}
 }
 
-func peerDrums(lane string) string {
-	return "track drums drums {}\npattern beat drums {\n  bd: " + lane + "\n}\npattern fill drums {\n  sd: " + lane + "\n}\n"
+func peerDrums(steps string) string {
+	return "track bass acid {}\npattern beat acid {\n  " + steps + "\n}\npattern fill acid {\n  " + steps + "\n}\n"
 }
 
 // The decision follows the open buffers, not the saved files: conversion is
 // offered only when the project as edited renders the same as its conversion.
 func TestSongConversionFollowsUnsavedPeerBuffers(t *testing.T) {
-	const silent, audible = ".... .... .... ....", "X... .... X... ...."
-	entry := "scene a { drums = beat }\nscene b { drums = fill }\nsong { a*2 b*2 }\n"
+	const silent, audible = "1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 .", "1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50"
+	entry := "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
 	for _, c := range []struct {
 		name, disk, buffer string
 		offered            bool
@@ -402,8 +402,8 @@ func TestSongConversionFollowsUnsavedPeerBuffers(t *testing.T) {
 }
 
 func TestRenderCacheKeyFollowsOpenPeerBuffers(t *testing.T) {
-	entry := "scene a { drums = beat }\nsong { a*1 }\n"
-	path := writePeerProject(t, entry, peerDrums("X... .... .... ...."))
+	entry := "scene a { bass = beat }\nsong { a*1 }\n"
+	path := writePeerProject(t, entry, peerDrums("1?50 . 5?50 1?50"))
 	part := filepath.Join(filepath.Dir(path), "part.cicada")
 	fake := &fakeRender{}
 	withRenderCheck(t, fake)
@@ -415,12 +415,12 @@ func TestRenderCacheKeyFollowsOpenPeerBuffers(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	hash(peerDrums("X... .... .... ...."))
-	hash(peerDrums("X... .... .... ...."))
+	hash(peerDrums("1?50 . 5?50 1?50"))
+	hash(peerDrums("1?50 . 5?50 1?50"))
 	if fake.calls != 1 {
 		t.Fatalf("same buffers rendered %d times, want 1", fake.calls)
 	}
-	hash(peerDrums(".... .... .... ...."))
+	hash(peerDrums("1 . 5 ."))
 	if fake.calls != 2 {
 		t.Fatalf("changed open peer buffer rendered %d times in total, want 2", fake.calls)
 	}

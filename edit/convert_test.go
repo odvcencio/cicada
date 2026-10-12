@@ -138,9 +138,14 @@ func TestConvertSongToArrangeNamesPhaseCause(t *testing.T) {
 	if _, err := convertScore(t, source, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "pattern two (2 bars) would restart out of phase at bar 4" {
 		t.Fatalf("phase: %v", err)
 	}
-	// In phase, the same placements name a drums cause only for drum patterns.
+	// Pass-restarting chance steps are named when the next pattern has them.
+	chance := "title \"t\"\ntrack bass acid {}\npattern first acid {\n  c3?50 . c4?50 c3?50\n}\npattern second acid {\n  c3?50 . c4?50 c3?50\n}\nscene a { bass = first }\nscene b { bass = second }\nsong { a*2 b*2 }\n"
+	if _, err := convertScore(t, chance, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "pattern second has chance steps that restart at bar 3" {
+		t.Fatalf("chance: %v", err)
+	}
+	// Drum placements no longer restart audibly, so no drums cause is named.
 	drums := "title \"t\"\ntrack drums drums {}\npattern beat drums {\n  bd: X... .... X... ....\n}\npattern fill drums {\n  sd: X... .... X... ....\n}\nscene a { drums = beat }\nscene b { drums = fill }\nsong { a*2 b*2 }\n"
-	if _, err := convertScore(t, drums, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "drums track drums starts a new placement at bar 3, which renders differently from the song" {
+	if _, err := convertScore(t, drums, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "the converted score renders differently" {
 		t.Fatalf("drums: %v", err)
 	}
 }

@@ -110,8 +110,8 @@ with an `entity` such as `placement:intro`, plus `attick` or `lengthticks` where
 they need a time. `convertsongtoarrange` replaces a `song` block with an
 `arrange` block, but only after a deterministic render shows the same audio; it
 refuses otherwise and names the cause when it can (for example scene settings,
-a pattern that would restart out of phase, or a drums track that starts a new
-placement). A dry run of that intent answers `convertible: true` with the diff,
+a pattern that would restart out of phase, or chance steps that restart at a
+new placement). A dry run of that intent answers `convertible: true` with the diff,
 or `convertible: false` with a `cause`. A revision conflict returns
 HTTP 409 with `error`, `revision`, `source`, and `playingRevision`.
 

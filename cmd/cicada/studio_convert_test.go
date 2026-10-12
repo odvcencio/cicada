@@ -24,7 +24,7 @@ func (c *countingRender) Hash(source []byte) (string, error) {
 
 const convertSongScore = "title \"Convert\"\ntempo 130\n\ntrack bass acid {}\n\npattern pulse acid {\n  1 . . . 5 . . . 1 . . . 7 . . .\n}\n\nscene main { bass = pulse }\nscene break { bass = pulse }\n\nsong { main*2 break*2 }\n"
 
-const convertDrumSongScore = "title \"Convert\"\ntempo 130\n\ntrack drums drums {}\n\npattern beat drums {\n  bd: X... .... X... ....\n}\n\npattern fill drums {\n  sd: X... .... X... ....\n}\n\nscene main { drums = beat }\nscene break { drums = fill }\n\nsong { main*2 break*2 }\n"
+const convertChanceSongScore = "title \"Convert\"\ntempo 130\n\ntrack bass acid {}\n\npattern first acid {\n  c3?50 . c4?50 c3?50\n}\n\npattern second acid {\n  c3?50 . c4?50 c3?50\n}\n\nscene main { bass = first }\nscene break { bass = second }\n\nsong { main*2 break*2 }\n"
 
 func convertEnvelope(source string, dryRun bool) edits.Envelope {
 	return edits.Envelope{Version: 1, Revision: studioRevision([]byte(source)), Author: "tester", Session: "convert-test", DryRun: dryRun, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
@@ -32,18 +32,18 @@ func convertEnvelope(source string, dryRun bool) edits.Envelope {
 
 func TestStudioConvertDryRunRefusalNamesCauseAndCachesRender(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
-	s, handler, path := proposalFixture(t, convertDrumSongScore)
+	s, handler, path := proposalFixture(t, convertChanceSongScore)
 	counter := &countingRender{inner: rendercheck.New(path)}
 	s.renderCheck = rendercheck.Cached(path, counter)
 	for call := 1; call <= 2; call++ {
-		r := studioCall(t, handler, "/api/intents", convertEnvelope(convertDrumSongScore, true))
+		r := studioCall(t, handler, "/api/intents", convertEnvelope(convertChanceSongScore, true))
 		var reply struct {
 			Convertible *bool
 			Cause       string
 			DryRun      bool
 		}
 		if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &reply) != nil || reply.Convertible == nil || *reply.Convertible || !reply.DryRun ||
-			reply.Cause != "drums track drums starts a new placement at bar 3, which renders differently from the song" {
+			reply.Cause != "pattern second has chance steps that restart at bar 3" {
 			t.Fatalf("call %d: %d %s", call, r.Code, r.Body.String())
 		}
 		// The first call renders the song and its conversion once each; the
@@ -52,12 +52,12 @@ func TestStudioConvertDryRunRefusalNamesCauseAndCachesRender(t *testing.T) {
 			t.Fatalf("call %d: %d renders, want 2", call, got)
 		}
 	}
-	if got, _ := os.ReadFile(path); string(got) != convertDrumSongScore || len(studioHistoryEdits(t, handler)) != 0 {
+	if got, _ := os.ReadFile(path); string(got) != convertChanceSongScore || len(studioHistoryEdits(t, handler)) != 0 {
 		t.Fatal("a refused dry run changed the score or history")
 	}
 	// Without a dry run the refusal is an error and the score stays.
-	r := studioCall(t, handler, "/api/intents", convertEnvelope(convertDrumSongScore, false))
-	if r.Code != 422 || !strings.Contains(r.Body.String(), "starts a new placement at bar 3") {
+	r := studioCall(t, handler, "/api/intents", convertEnvelope(convertChanceSongScore, false))
+	if r.Code != 422 || !strings.Contains(r.Body.String(), "pattern second has chance steps that restart at bar 3") {
 		t.Fatalf("committed refusal: %d %s", r.Code, r.Body.String())
 	}
 }

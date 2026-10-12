@@ -193,7 +193,7 @@ func convertCause(ctx *Context, placements []convertedPlacement) string {
 	for _, pattern := range plan.Patterns {
 		patterns[pattern.ID] = pattern
 	}
-	var drums string
+	var chance string
 	for i, p := range placements {
 		var next *convertedPlacement
 		for j := i + 1; j < len(placements); j++ {
@@ -209,12 +209,12 @@ func convertCause(ctx *Context, placements []convertedPlacement) string {
 		if unit := pattern.LengthTicks(); unit > 0 && p.length%unit != 0 {
 			return fmt.Sprintf("pattern %s (%s) would restart out of phase at bar %d", pattern.ID, describeBars(unit), next.at/seq.TicksPerBar+1)
 		}
-		if pattern.Kind == "drums" && drums == "" {
-			drums = fmt.Sprintf("drums track %s starts a new placement at bar %d, which renders differently from the song", p.track, next.at/seq.TicksPerBar+1)
+		if restarted := patterns[next.content]; hasChance(restarted) && chance == "" {
+			chance = fmt.Sprintf("pattern %s has chance steps that restart at bar %d", restarted.ID, next.at/seq.TicksPerBar+1)
 		}
 	}
-	if drums != "" {
-		return drums
+	if chance != "" {
+		return chance
 	}
 	return "the converted score renders differently"
 }
@@ -227,4 +227,20 @@ func describeBars(ticks int64) string {
 		return fmt.Sprintf("%d bars", ticks/seq.TicksPerBar)
 	}
 	return fmt.Sprintf("%d ticks", ticks)
+}
+
+// hasChance reports a step that plays with a probability below 100: chance
+// passes restart at each placement origin, so a placement boundary can change
+// which steps play.
+func hasChance(pattern Pattern) bool {
+	steps := pattern.Data
+	for _, lane := range pattern.Lanes {
+		steps = append(append([]*Step(nil), steps...), lane...)
+	}
+	for _, step := range steps {
+		if step != nil && step.Probability > 0 && step.Probability < 100 {
+			return true
+		}
+	}
+	return false
 }

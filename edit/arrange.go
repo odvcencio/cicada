@@ -234,8 +234,7 @@ func splitClip(ctx *Context, in *SplitClip) ([]byte, string, error) {
 	}
 	bar := in.AtTick/3840 + 1
 	// Whether a cut is audible depends on engine state that restarts at a
-	// placement boundary (slides, chance iteration, drum voices, and whatever
-	// else the engine adds), so no feature list can decide it. Always ask the
+	// placement boundary (slides, chance passes, and whatever else the engine adds), so no feature list can decide it. Always ask the
 	// render; the checks below only word the refusal.
 	check, err := renderCheckFor(ctx)
 	if err != nil {
@@ -271,17 +270,11 @@ func splitCause(plan *Plan, placement Placement, pattern *Pattern, bar int64) st
 		chance = chance || step != nil && step.Probability > 0 && step.Probability < 100
 	}
 	slides := len(pattern.Data) > 0 && pattern.Data[len(pattern.Data)-1] != nil && pattern.Data[len(pattern.Data)-1].Slide
-	drums := pattern.Kind == "drums"
-	for _, track := range plan.Tracks {
-		drums = drums || track.ID == placement.Track && track.Kind == "drums"
-	}
 	switch {
 	case slides:
 		return fmt.Sprintf("splitting %s at bar %d cuts a slide", pattern.ID, bar)
 	case chance:
 		return fmt.Sprintf("splitting %s at bar %d restarts its chance steps", pattern.ID, bar)
-	case drums:
-		return fmt.Sprintf("splitting %s at bar %d restarts the drum placement", pattern.ID, bar)
 	}
 	return fmt.Sprintf("splitting %s at bar %d changes the render", pattern.ID, bar)
 }

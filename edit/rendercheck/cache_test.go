@@ -70,10 +70,14 @@ func writeProject(t *testing.T, files map[string]string) string {
 }
 
 const peerManifest = "project peers\ncicada 2\nentry \"main.cicada\"\nsource \"patterns.cicada\"\n"
-const peerMain = "scene a { drums = beat }\nscene b { drums = fill }\nsong { a*2 b*2 }\n"
+const peerMain = "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
 
-func peerPatterns(lane string) string {
-	return "track drums drums {}\npattern beat drums {\n  bd: " + lane + "\n}\npattern fill drums {\n  sd: " + lane + "\n}\n"
+// plainSteps converts cleanly; chanceSteps restart their passes at each placement origin, so splitting them changes the render.
+const plainSteps = "1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 ."
+const chanceSteps = "1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50"
+
+func peerPatterns(steps string) string {
+	return "track bass acid {}\npattern beat acid {\n  " + steps + "\n}\npattern fill acid {\n  " + steps + "\n}\n"
 }
 
 func convert(t *testing.T, path string, check edits.RenderCheck) error {
@@ -100,11 +104,11 @@ func convert(t *testing.T, path string, check edits.RenderCheck) error {
 // A conversion approved against silent peer patterns must not be reused after
 // only the peer file changes: the entry bytes (and its revision) stay the same.
 func TestCachedApprovalDoesNotSurvivePeerFileEdit(t *testing.T) {
-	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(".... .... .... ....")})
+	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(plainSteps)})
 	counted := &countedCheck{inner: New(path)}
 	check := Cached(path, counted)
 	if err := convert(t, path, check); err != nil {
-		t.Fatalf("silent patterns: %v", err)
+		t.Fatalf("plain patterns: %v", err)
 	}
 	renders := counted.calls.Load()
 	if renders != 2 {
@@ -114,8 +118,8 @@ func TestCachedApprovalDoesNotSurvivePeerFileEdit(t *testing.T) {
 	if err := convert(t, path, check); err != nil || counted.calls.Load() != renders {
 		t.Fatalf("unchanged inputs: err=%v renders=%d, want %d", err, counted.calls.Load(), renders)
 	}
-	// Only the peer file changes: both patterns become audible.
-	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "patterns.cicada"), []byte(peerPatterns("X... .... X... ....")), 0o600); err != nil {
+	// Only the peer file changes: both patterns gain chance steps.
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "patterns.cicada"), []byte(peerPatterns(chanceSteps)), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	err := convert(t, path, check)
@@ -129,7 +133,7 @@ func TestCachedApprovalDoesNotSurvivePeerFileEdit(t *testing.T) {
 
 func TestIdentityTracksEveryRenderInput(t *testing.T) {
 	const asset = "asset wave \"hit.wav\" { sha256=\"" + "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" + "\" format=wav frames=480 rate=48000Hz channels=1 }\n"
-	files := map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns("X... .... .... ....") + asset, "hit.wav": "one"}
+	files := map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(chanceSteps) + asset, "hit.wav": "one"}
 	path := writeProject(t, files)
 	dir := filepath.Dir(path)
 	entry := []byte(peerMain)
@@ -163,7 +167,7 @@ func TestIdentityTracksEveryRenderInput(t *testing.T) {
 	if got, _ := Identity(path, []byte(peerMain+"\n"), nil); got == base {
 		t.Fatal("entry source did not change the identity")
 	}
-	change("patterns.cicada", peerPatterns("X... .... .... ....")+asset+"// edited\n", time.Time{})
+	change("patterns.cicada", peerPatterns(chanceSteps)+asset+"// edited\n", time.Time{})
 	expectNew("peer source")
 	change("hit.wav", "two!", time.Time{})
 	expectNew("asset size")
@@ -198,12 +202,12 @@ func TestCachedSkipsTheCacheWhenInputsCannotBeIdentified(t *testing.T) {
 
 // An unsaved editor buffer replaces the file on disk for both the key and the render.
 func TestIdentityAndRenderSeeUnsavedBuffers(t *testing.T) {
-	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(".... .... .... ....")})
+	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(plainSteps)})
 	part := filepath.Join(filepath.Dir(path), "patterns.cicada")
 	entry := []byte(peerMain)
 	disk, ok := Identity(path, entry, nil)
-	buffer, ok2 := Identity(path, entry, map[string][]byte{part: []byte(peerPatterns("X... .... .... ...."))})
-	same, ok3 := Identity(path, entry, map[string][]byte{part: []byte(peerPatterns(".... .... .... ...."))})
+	buffer, ok2 := Identity(path, entry, map[string][]byte{part: []byte(peerPatterns(chanceSteps))})
+	same, ok3 := Identity(path, entry, map[string][]byte{part: []byte(peerPatterns(plainSteps))})
 	if !ok || !ok2 || !ok3 || disk == buffer || disk != same {
 		t.Fatalf("identity: disk=%s buffer=%s same=%s", disk, buffer, same)
 	}
@@ -211,7 +215,7 @@ func TestIdentityAndRenderSeeUnsavedBuffers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	audible, err := NewWith(path, map[string][]byte{part: []byte(peerPatterns("X... .... .... ...."))}).Hash(entry)
+	audible, err := NewWith(path, map[string][]byte{part: []byte(peerPatterns(chanceSteps))}).Hash(entry)
 	if err != nil || audible == silent {
 		t.Fatalf("buffer not rendered: %v", err)
 	}
@@ -220,11 +224,11 @@ func TestIdentityAndRenderSeeUnsavedBuffers(t *testing.T) {
 // Files staged by an edit batch (an upgraded cicada.mod, a changed peer) are
 // part of the key and of the render.
 func TestStagedFilesChangeTheKeyAndTheRender(t *testing.T) {
-	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(".... .... .... ....")})
+	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(plainSteps)})
 	dir := filepath.Dir(path)
 	entry := []byte(peerMain)
 	part := filepath.Join(dir, "patterns.cicada")
-	staged := map[string][]byte{part: []byte(peerPatterns("X... .... .... ...."))}
+	staged := map[string][]byte{part: []byte(peerPatterns(chanceSteps))}
 	disk, _ := Identity(path, entry, nil)
 	withStaged, ok := Identity(path, entry, staged)
 	manifestStaged, ok2 := Identity(path, entry, map[string][]byte{filepath.Join(dir, "cicada.mod"): []byte(peerManifest + "\n")})
