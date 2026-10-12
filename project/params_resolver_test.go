@@ -182,3 +182,36 @@ func TestKeyboardControlsAreAutomatableExceptWholeNumbers(t *testing.T) {
 		t.Fatal("automating a whole-number control was accepted")
 	}
 }
+
+// A declaration named like a keyboard patch replaces the patch, so keyboard
+// controls are unknown settings in the scene check and in the project resolver
+// (and the language server's completion agrees: see lsp).
+func TestOverridingDeclarationRemovesKeyboardControls(t *testing.T) {
+	const declaration = "instrument tine_ep { voice mono { out = sine(pitch) * env(gate, 120ms); } }\n"
+	const body = "track keys tine_ep {}\npattern p notes { c4 }\nscene main { keys=p SETTING }\nsong { main }\n"
+	score, diagnostics := notation.Parse([]byte(declaration + strings.Replace(body, "SETTING", "keys.pan=0.25", 1)))
+	if score == nil || hasProjectErrors(diagnostics) {
+		t.Fatalf("parse: %+v", diagnostics)
+	}
+	p, diagnostics := FromScore(score)
+	if p == nil || hasProjectErrors(diagnostics) {
+		t.Fatalf("compile: %+v", diagnostics)
+	}
+	if _, err := ResolveParameterPath(p, "keys.pan"); err != nil {
+		t.Errorf("mixer control should resolve: %v", err)
+	}
+	for _, path := range []string{"keys.tremolo", "keys.sustain"} {
+		var pathErr *PathError
+		if _, err := ResolveParameterPath(p, path); !errors.As(err, &pathErr) || pathErr.Code != "CICADA-PARAM" {
+			t.Errorf("%s resolved for an overridden patch: %v", path, err)
+		}
+	}
+	_, diagnostics = notation.Parse([]byte(declaration + strings.Replace(body, "SETTING", "keys.tremolo=0.5", 1)))
+	found := false
+	for _, d := range diagnostics {
+		found = found || d.Code == "CICADA-PARAM"
+	}
+	if !found {
+		t.Errorf("notation accepted keys.tremolo on an overridden patch: %+v", diagnostics)
+	}
+}

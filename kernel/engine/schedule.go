@@ -154,7 +154,7 @@ func (e *Engine) startPlacementSchedule() {
 		e.patterns[track].eventIndex = 0
 		e.placementID[track] = 0
 	}
-	if !e.restoreSceneDefaults() { // The same authored-state restore as a song start.
+	if !e.restoreAuthoredAndCommitted() { // The same restore as a song start.
 		return
 	}
 	localTick := tick - e.cycleStart
@@ -194,7 +194,7 @@ func (e *Engine) advancePlacementSchedule() {
 				return
 			}
 			e.cycleStart += e.scheduleDuration
-			if len(e.automation) != 0 && !e.restoreSceneDefaults() { // As a song loop does.
+			if len(e.automation) != 0 && !e.restoreAuthoredAndCommitted() { // As a song loop does.
 				return
 			}
 			e.songIndex = -1

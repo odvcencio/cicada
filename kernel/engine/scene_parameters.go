@@ -75,6 +75,19 @@ func (e *Engine) captureSceneDefaults() {
 	}
 }
 
+// restoreAuthoredAndCommitted returns every parameter to the state a fresh start
+// has before the scene and the automation run: the authored defaults, then the
+// committed edits in the saved parameter state (the values seek reconstruction
+// replays). Loop wraps and arrange starts use it, so a restart never drops a
+// committed edit.
+func (e *Engine) restoreAuthoredAndCommitted() bool {
+	if !e.restoreSceneDefaults() {
+		return false
+	}
+	e.savedParameters.visit(parameterVisitor{engine: e})
+	return !e.faulted
+}
+
 func (e *Engine) restoreSceneDefaults() bool {
 	base := e.sceneDefaults
 	if base == nil {

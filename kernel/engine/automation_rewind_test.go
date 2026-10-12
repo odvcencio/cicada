@@ -6,6 +6,7 @@ import (
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 // Automation of non-keyboard parameters (mixer pan, acid cutoff) rewinds like
@@ -234,6 +235,109 @@ func TestSceneLaunchAndDirectorDoNotRewindAutomation(t *testing.T) {
 		}
 		if e.voices[0].pan != .1 {
 			t.Fatalf("%s: the lane stopped after a launch (%g)", scheduleKindName(placement), e.voices[0].pan)
+		}
+	}
+}
+
+// Committed parameter edits (the engine's saved parameter state, which Studio's
+// live edits write) must hold after every restart, with or without an
+// unrelated automation lane: authored defaults, then committed edits, then the
+// scene, then automation.
+func TestCommittedEditsSurviveRestarts(t *testing.T) {
+	type target struct {
+		name   string
+		build  func(t *testing.T, placement bool) Config
+		id     kernel.ParamID
+		value  float32
+		read   func(e *Engine) float32
+		unrel  kernel.ParamID // an unrelated automation lane
+		unrelV float32
+	}
+	keysBuild := func(t *testing.T, placement bool) Config {
+		installControlKeys(t, 1)
+		cfg := controlKeysConfig(1)
+		if placement {
+			cfg.Patterns = []PatternBank{{}}
+			cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 50}
+			cfg.Schedule = []ScheduleEvent{
+				{Kind: SchedulePattern, Track: 0, Index: 0, Tick: 0, EndTick: 7680, ID: 1},
+				{Kind: SchedulePatternEnd, Track: 0, Tick: 7680, EndTick: 7680, ID: 1},
+			}
+		} else {
+			cfg.Scenes = []Scene{{}}
+			cfg.Song = []SongEntry{{Scene: 0, Bars: 2}}
+		}
+		return cfg
+	}
+	mixBuild := func(t *testing.T, placement bool) Config { return rewindConfig(t, placement) }
+	targets := []target{
+		{"mixer gain", mixBuild, kernel.ParamMixGain, -9, func(e *Engine) float32 { return e.voices[0].gainDB }, kernel.ParamMixPan, .5},
+		{"acid cutoff", mixBuild, kernel.ParamAcidCutoff, 1234, func(e *Engine) float32 { return float32(e.voices[0].acidTarget.Cutoff) }, kernel.ParamMixPan, .5},
+		{"keyboard gain", keysBuild, kernel.ParamKeysEpGain, .2, func(e *Engine) float32 { return e.voices[0].keys.(*controlKeys).values[10] }, kernel.ParamKeysEpDrive, .5},
+	}
+	for _, tg := range targets {
+		for _, placement := range []bool{false, true} {
+			for _, restart := range []string{"loop", "seek", "replay"} {
+				for _, lane := range []bool{false, true} {
+					name := tg.name + "/" + scheduleKindName(placement) + "/" + restart
+					if lane {
+						name += "/with an unrelated lane"
+					}
+					t.Run(name, func(t *testing.T) {
+						cfg := tg.build(t, placement)
+						cfg.LoopSong = restart == "loop"
+						if lane {
+							cfg.Automation = []cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(tg.unrel), Arg0: math.Float32bits(tg.unrelV), Tick: 600}}
+						}
+						e, err := New(cfg)
+						if err != nil {
+							t.Fatal(err)
+						}
+						e.meterRate = 0
+						var left, right [128]float32
+						e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+						for i := 0; i < 20; i++ {
+							e.Render(left[:], right[:])
+						}
+						if !e.PushCommittedBatch([]cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(tg.id), Arg0: math.Float32bits(tg.value)}}) {
+							t.Fatal("committed edit refused")
+						}
+						e.Render(left[:], right[:])
+						if got := tg.read(e); got != tg.value {
+							t.Fatalf("committed value not applied: %g", got)
+						}
+						if restart == "loop" {
+							// Two bars last 192000 frames; the wrap lands on the next block.
+							for frames := 21 * 128; frames < 192000; frames += 128 {
+								e.Render(left[:], right[:])
+							}
+						} else if restart == "replay" {
+							for i := 0; i < 5000 && e.Playing(); i++ {
+								e.Render(left[:], right[:])
+							}
+							if e.Playing() {
+								t.Fatal("the song never ended")
+							}
+							e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+						} else {
+							for i := 0; i < 400; i++ {
+								e.Render(left[:], right[:])
+							}
+							e.Push(cmd.Command{Op: cmd.OpSeek, Track: 255})
+						}
+						e.Render(left[:], right[:])
+						if got := tg.read(e); got != tg.value {
+							t.Fatalf("after the %s the committed value is %g, want %g", restart, got, tg.value)
+						}
+						var message cmd.Message
+						for e.Poll(&message) {
+							if message.Kind == cmd.Fault {
+								t.Fatalf("fault %d", message.A)
+							}
+						}
+					})
+				}
+			}
 		}
 	}
 }
