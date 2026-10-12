@@ -1016,3 +1016,19 @@ func TestEditsSwapOnTheBarAfterASceneTempoChange(t *testing.T) {
 		t.Fatalf("tempo after the swap = %d", got)
 	}
 }
+
+// Bar boundaries that step the tempo keep the native callback allocation free.
+func TestSceneTempoNativeCallbackAllocationFree(t *testing.T) {
+	p, err := New(tempoSongScore(t, "alloc"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	var output [blockFrames * 8]byte
+	var readErr error
+	// Run past the first bar, which ends at 96000 frames.
+	allocations := testing.AllocsPerRun(96_000/blockFrames+200, func() { _, readErr = p.Read(output[:]) })
+	if readErr != nil || allocations != 0 || p.BPMMilli() != 60_000 {
+		t.Fatalf("allocations=%g err=%v tempo=%d", allocations, readErr, p.BPMMilli())
+	}
+}
