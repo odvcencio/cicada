@@ -108,14 +108,21 @@ func (h *studioHistory) expectRecordedTake(revision string) func() {
 	}
 }
 
-func (h *studioHistory) consumeRecordedTake(revision string) bool {
+// consumeRecordedTake settles the recording handoff for one publication.
+//
+// Rule: the handoff is keyed by playback content and covers only the next
+// publication poll makes after the take. If that publication has the take's
+// content, it is the take's own offer and is not logged as queued. If it has
+// other content (a later edit or a revert, as in take T then revert to A), the
+// take's offer was never published, so the handoff is dropped and the
+// publication is logged. Either way the handoff cannot outlive one
+// publication, so content that later returns to T is logged normally.
+func (h *studioHistory) consumeRecordedTake(key string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if revision == "" || h.pendingTakeRevision != revision {
-		return false
-	}
+	armed := h.pendingTakeRevision
 	h.pendingTakeRevision = ""
-	return true
+	return key != "" && armed == key
 }
 
 // record keeps transport activity in its own bounded ring. It never changes
@@ -561,6 +568,13 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		return fail(http.StatusConflict, map[string]any{"error": "score changed during validation; reload before saving"})
 	}
 	if bytes.Equal(current, updated) && len(mutation.Files) == 0 {
+		if s.transport != nil {
+			func() {
+				s.transport.pollMu.Lock()
+				defer s.transport.pollMu.Unlock()
+				s.transport.activateLocked()
+			}()
+		}
 		s.lastGoodSource, s.lastGoodProject = bytes.Clone(current), p
 		response := map[string]any{"revision": studioRevision(current), "valid": true, "source": string(current), "unchanged": true}
 		for key, value := range mutation.Response {
@@ -569,6 +583,12 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		response["source"], response["revision"] = string(current), studioRevision(current)
 		response["playingRevision"] = studioRevision(s.lastGoodSource)
 		return commitOutcome{Status: http.StatusOK, Response: response}
+	}
+	// Keep the watcher outside the entire exchange, auxiliary write/rollback
+	// and activation. All mutation routes use this shared commit tail.
+	if s.transport != nil {
+		s.transport.pollMu.Lock()
+		defer s.transport.pollMu.Unlock()
 	}
 	info, err := os.Stat(s.path)
 	committed, preserved := false, ""
@@ -599,6 +619,16 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		return fail(http.StatusConflict, map[string]any{"error": message})
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
+	if s.transport != nil {
+		if fingerprint, ok := s.transport.activateLocked(); ok {
+			// The write has landed and pollMu is held, so poll cannot see this
+			// content before the handoff is armed. A patch already made the
+			// content current, so no offer will follow it.
+			if edit.recordedTake && s.history != nil && !s.transport.isPlayingFingerprint(fingerprint) {
+				s.history.expectRecordedTake(studioFingerprintKey(fingerprint))
+			}
+		}
+	}
 	if mutation.HistoryDetail != "" {
 		edit.Label = mutation.HistoryDetail
 	}

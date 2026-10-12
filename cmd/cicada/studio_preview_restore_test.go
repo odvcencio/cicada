@@ -5,6 +5,7 @@ import (
 	"math"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	hostkeys "m31labs.dev/cicada/host/keyboard"
@@ -27,6 +28,13 @@ func compiledPreviewRestoreScore(t *testing.T, source string) liveplay.Score {
 	score, err := compileLiveScoreAtRate(path, 48_000)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if strings.Contains(source, "bass.") {
+		plan, err := buildLivePlan(path, []byte(source), 48_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		plan.prepareScore(&score)
 	}
 	return score
 }
@@ -86,14 +94,17 @@ func previewRestoreSource(fixture previewRestoreFixture, descriptor paramdefs.De
 		source = "send reverb"
 	}
 	body := source + "=" + authoredPreviewRestoreValue(descriptor, value)
+	sceneSetting := ""
 	if fixture.kit && strings.HasPrefix(descriptor.ID, "drum.") {
-		body = "" // Built-in kit lanes do not accept track synthesis settings.
+		body = "" // Named-kit synthesis settings are authored on the scene.
+		sceneSetting = " bass." + descriptor.Path + "=" + authoredPreviewRestoreValue(descriptor, value)
 	}
 	if fixture.family == "guitar" {
 		body += " experimental=on"
 	}
 	pattern := strings.Replace(fixture.pattern, "steps=2 {", "{ step=1/64 gate=25% ", 1)
 	witness, scene := "", "bass=beat"
+	scene += sceneSetting
 	if descriptor.ID == "mix.solo" {
 		// Solo requires another sounding track to have an audible effect.
 		witness = "instrument witness { voice mono { out=sine(pitch)*env(gate,80ms) } }\ntrack other witness {}\npattern second notes { step=1/64 gate=25% g5 . }\n"
@@ -103,78 +114,91 @@ func previewRestoreSource(fixture previewRestoreFixture, descriptor paramdefs.De
 }
 
 func TestPreviewCompiledParameterLifecycleMatrix(t *testing.T) {
-	pairs, cases := 0, 0
+	pairs := 0
+	var cases atomic.Int64
 	families := make(map[string]bool)
-	for _, fixture := range previewRestoreFixtures() {
-		families[fixture.family] = true
-		for _, descriptor := range paramdefs.Registry {
-			if descriptor.Scope != "track" || !descriptor.Live || !paramdefs.HasVoice(descriptor, fixture.family) {
-				continue
-			}
-			pairs++
-			values := []float64{descriptor.Default, descriptor.Min, descriptor.Max}
-			if fixture.kit && strings.HasPrefix(descriptor.ID, "drum.") {
-				values = values[:1] // Effective prepared defaults; authored bounds use literal drums.
-			}
-			for boundary, value := range values {
-				for _, exit := range []string{"cancel", "socket-teardown"} {
-					t.Run(fmt.Sprintf("%s/%s/%d/%s", fixture.name, descriptor.ID, boundary, exit), func(t *testing.T) {
-						source := previewRestoreSource(fixture, descriptor, value)
-						score := compiledPreviewRestoreScore(t, source)
-						baseline := compiledPreviewRestoreScore(t, source)
-						p, err := liveplay.New(score, 48_000)
-						if err != nil {
-							t.Fatal(err)
-						}
-						defer p.Close()
-						id, _ := kernel.FindParam(descriptor.ID)
-						committed, ok := p.CommittedValue(0, id)
-						if !ok {
-							t.Fatalf("compiled %s has no committed value", descriptor.ID)
-						}
-						s := &studio{transport: &studioTransport{stream: p}}
-						session := make(livePreviewSession)
-						spec := kernel.Params[id]
-						gesture := spec.Default
-						if gesture == committed {
-							gesture, err = project.ParameterFloat32Value(descriptor.Min, descriptor.Max, descriptor.Max)
+	// The group subtest returns only after its parallel cases finish, so the
+	// totals below are complete. Cases share no state: each compiles its own
+	// score and owns its player and engines.
+	t.Run("matrix", func(t *testing.T) {
+		for _, fixture := range previewRestoreFixtures() {
+			families[fixture.family] = true
+			for _, descriptor := range paramdefs.Registry {
+				if descriptor.Scope != "track" || !descriptor.Live || !paramdefs.HasVoice(descriptor, fixture.family) {
+					continue
+				}
+				pairs++
+				values := []float64{descriptor.Default, descriptor.Min, descriptor.Max}
+				for boundary, value := range values {
+					for _, exit := range []string{"cancel", "socket-teardown"} {
+						t.Run(fmt.Sprintf("%s/%s/%d/%s", fixture.name, descriptor.ID, boundary, exit), func(t *testing.T) {
+							t.Parallel()
+							source := previewRestoreSource(fixture, descriptor, value)
+							score := compiledPreviewRestoreScore(t, source)
+							baseline := compiledPreviewRestoreScore(t, source)
+							p, err := liveplay.New(score, 48_000)
 							if err != nil {
 								t.Fatal(err)
 							}
-						}
-						message := fmt.Sprintf(`{"type":"preview-set","entity":"track:bass","param":%q,"value":%g}`, descriptor.ID, gesture)
-						if err := s.handleLiveMessage([]byte(message), session); err != nil {
-							t.Fatal(err)
-						}
-						renderStudioPreview(t, p, 256)
-						if !score.Engine.Playing() {
-							t.Fatal("preview stopped playback")
-						}
-						if exit == "cancel" {
-							message = fmt.Sprintf(`{"type":"preview-end","entity":"track:bass","param":%q,"commit":false}`, descriptor.ID)
+							defer p.Close()
+							if len(score.SceneParameters) > 0 {
+								renderStudioPreview(t, p, 256)
+							}
+							id, _ := kernel.FindParam(descriptor.ID)
+							committed, ok := p.CommittedValue(0, id)
+							if !ok {
+								t.Fatalf("compiled %s has no committed value", descriptor.ID)
+							}
+							if fixture.kit && strings.HasPrefix(descriptor.ID, "drum.") {
+								expected, err := project.ParameterFloat32Value(descriptor.Min, descriptor.Max, value)
+								if err != nil || committed != expected {
+									t.Fatalf("scene-authored %s committed %g, want %g: %v", descriptor.ID, committed, expected, err)
+								}
+							}
+							s := &studio{transport: &studioTransport{stream: p}}
+							session := make(livePreviewSession)
+							spec := kernel.Params[id]
+							gesture := spec.Default
+							if gesture == committed {
+								gesture, err = project.ParameterFloat32Value(descriptor.Min, descriptor.Max, descriptor.Max)
+								if err != nil {
+									t.Fatal(err)
+								}
+							}
+							message := fmt.Sprintf(`{"type":"preview-set","entity":"track:bass","param":%q,"value":%g}`, descriptor.ID, gesture)
 							if err := s.handleLiveMessage([]byte(message), session); err != nil {
 								t.Fatal(err)
 							}
-						} else {
-							session.close()
-						}
-						renderStudioPreview(t, p, 256)
-						if _, active := p.OverrideValue(0, id); active || !score.Engine.Playing() {
-							t.Fatal("restore left an override active or stopped playback")
-						}
-						for len(p.Events()) > 0 {
-							if event := <-p.Events(); event.Kind == "preview-error" {
-								t.Fatalf("restoration unavailable: %+v", event)
+							renderStudioPreview(t, p, 256)
+							if !score.Engine.Playing() {
+								t.Fatal("preview stopped playback")
 							}
-						}
-						p.Close()
-						assertPreviewRestoreAudio(t, score.Engine, baseline.Engine, id, committed)
-						cases++
-					})
+							if exit == "cancel" {
+								message = fmt.Sprintf(`{"type":"preview-end","entity":"track:bass","param":%q,"commit":false}`, descriptor.ID)
+								if err := s.handleLiveMessage([]byte(message), session); err != nil {
+									t.Fatal(err)
+								}
+							} else {
+								session.close()
+							}
+							renderStudioPreview(t, p, 256)
+							if _, active := p.OverrideValue(0, id); active || !score.Engine.Playing() {
+								t.Fatal("restore left an override active or stopped playback")
+							}
+							for len(p.Events()) > 0 {
+								if event := <-p.Events(); event.Kind == "preview-error" {
+									t.Fatalf("restoration unavailable: %+v", event)
+								}
+							}
+							p.Close()
+							assertPreviewRestoreAudio(t, score.Engine, baseline.Engine, id, committed)
+							cases.Add(1)
+						})
+					}
 				}
 			}
 		}
-	}
+	})
 	for _, descriptor := range paramdefs.Registry {
 		if descriptor.Live && descriptor.Scope == "track" {
 			for _, family := range descriptor.Voices {
@@ -184,7 +208,7 @@ func TestPreviewCompiledParameterLifecycleMatrix(t *testing.T) {
 			}
 		}
 	}
-	t.Logf("%d compiled fixture/parameter pairs; %d complete preview/restore audio cases across %d fixtures", pairs, cases, len(previewRestoreFixtures()))
+	t.Logf("%d compiled fixture/parameter pairs; %d complete preview/restore audio cases across %d fixtures", pairs, cases.Load(), len(previewRestoreFixtures()))
 }
 
 func assertPreviewRestoreAudio(t *testing.T, restored, baseline *engine.Engine, id kernel.ParamID, committed float32) {

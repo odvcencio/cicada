@@ -439,6 +439,7 @@ func (s *studio) state(w http.ResponseWriter, r *http.Request) {
 }
 
 type studioEdit struct {
+	recordedTake   bool // Set by the record route; arms the playback handoff after the commit.
 	historyFiles   []studioAuxiliaryFile
 	Hits           []int                    `json:"hits,omitempty"`
 	File           string                   `json:"file,omitempty"`

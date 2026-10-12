@@ -32,19 +32,22 @@ var liveNoteNames = func() [128]string {
 }()
 
 type Score struct {
-	Engine     *engine.Engine
-	SampleRate int
-	BPMMilli   int64
-	Name       string
-	SceneIDs   []string     // engine scene indices in source order
-	Tracks     []TrackSlots // engine track and slot indices in source order
-	Song       []SongEntry  // song entries with one-based start bars
-	Parameters []ParameterValue
-	HasReturnA bool
-	HasReturnB bool
-	HasSFX     bool
-	Range      *PlaybackRange // optional listening range prepared with a score edit
-	trackNames *trackNameSnapshot
+	Engine          *engine.Engine
+	SampleRate      int
+	BPMMilli        int64
+	Name            string
+	Revision        string             // Committed source revision supplied by Studio.
+	SceneParameters [][]ParameterValue // Ordered committed settings at scene launch.
+	SceneIDs        []string           // engine scene indices in source order
+	Tracks          []TrackSlots       // engine track and slot indices in source order
+	Song            []SongEntry        // song entries with one-based start bars
+	Parameters      []ParameterValue
+	HasReturnA      bool
+	HasReturnB      bool
+	HasSFX          bool
+	Range           *PlaybackRange // optional listening range prepared with a score edit
+	trackNames      *trackNameSnapshot
+	publication     uint64 // Assigned by Offer, ordered with patch publications.
 }
 
 type trackNameSnapshot struct {
@@ -53,7 +56,8 @@ type trackNameSnapshot struct {
 	kinds         [engine.MaxTracks]string
 	poly          [engine.MaxTracks]bool
 	count         uint8
-	parameters    []ParameterValue
+	committed     [engine.MaxTracks + 1][kernel.ParamCount]atomic.Uint64 // Render writes; controls read.
+	defaults      engine.ParameterState                                  // Render-owned saved values, separate from scene values.
 	previewParams [engine.MaxTracks][kernel.ParamCount]bool
 	previewValues [engine.MaxTracks]engine.PreviewParamValidator
 }
@@ -170,10 +174,11 @@ type slotLaunch struct {
 }
 
 type Event struct {
-	Bar   int64 // one-based bar that has just begun
-	Name  string
-	Kind  string // edit, scene, scene-error, preview-error, or a live input event
-	Track string // set for one-track slot events
+	Revision string
+	Bar      int64 // one-based bar that has just begun
+	Name     string
+	Kind     string // edit, scene, scene-error, preview-error, or a live input event
+	Track    string // set for one-track slot events
 }
 
 type SlotRequest struct {
@@ -214,6 +219,16 @@ type Player struct {
 	fadeTotal               int
 	fadeRemaining           int
 	offers                  chan Score
+	patches                 chan *Patch
+	deferredPatch           *Patch // Render-owned head batch carried to the next block.
+	reconstructed           engine.ParameterState
+	blockParameters         engine.ParameterState
+	initialParameters       bool
+	transportQueued         bool       // OpSeek/OpPlay queued for the block about to render; render-owned.
+	publicationMu           sync.Mutex // Orders patches/offers with Close, never Read.
+	publication             uint64
+	offerPublication        atomic.Uint64
+	landedRevision          atomic.Uint64
 	launches                atomic.Pointer[sceneLaunch]
 	launchSequence          atomic.Uint64
 	starts                  chan StartRequest
@@ -312,8 +327,10 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 		nextBarSample: clock.SampleAtTick(seq.TicksPerBar),
 		offers:        make(chan Score, 1), starts: make(chan StartRequest, 1), events: make(chan Event, 32),
 		meters: make(chan MeterFrame, 1), loudness: masterLoudness,
-		overrideClears: make(chan overrideClear, 64),
-		closed:         make(chan struct{}),
+		overrideClears:    make(chan overrideClear, 64),
+		patches:           make(chan *Patch, 32),
+		closed:            make(chan struct{}),
+		initialParameters: true, transportQueued: true,
 	}
 	p.retirement = newEngineRetirement(nil)
 	p.retirement.register(initial.Engine)
@@ -354,7 +371,23 @@ func (p *Player) Loudness() LoudnessSnapshot {
 // Close permanently ends rendering, releases cancellation producers and stops
 // the meter worker. Call it after the audio device has stopped reading this player.
 func (p *Player) Close() {
-	p.closedOnce.Do(func() { close(p.closed) })
+	p.closedOnce.Do(func() {
+		p.publicationMu.Lock()
+		defer p.publicationMu.Unlock()
+		close(p.closed)
+		if p.deferredPatch != nil {
+			p.deferredPatch.recycle()
+			p.deferredPatch = nil
+		}
+		for {
+			select {
+			case patch := <-p.patches:
+				patch.recycle()
+			default:
+				return
+			}
+		}
+	})
 	p.offerMu.Lock()
 	defer p.offerMu.Unlock()
 	if p.admissionClosed {
@@ -450,6 +483,17 @@ func (p *Player) Offer(score Score) error {
 	if !p.retirement.register(score.Engine) {
 		return errRetirementBusy
 	}
+	// Patch publications and replacements share this order; Close excludes both.
+	p.publicationMu.Lock()
+	defer p.publicationMu.Unlock()
+	select {
+	case <-p.closed:
+		return cmd.Error("player is closed")
+	default:
+	}
+	p.publication++
+	score.publication = p.publication
+	p.offerPublication.Store(score.publication)
 	for {
 		select {
 		case p.offers <- score:
@@ -472,9 +516,10 @@ func (p *Player) Events() <-chan Event { return p.events }
 func (p *Player) Meters() <-chan MeterFrame { return p.meters }
 
 func makeTrackNames(score Score) *trackNameSnapshot {
-	snapshot := &trackNameSnapshot{
-		count:      uint8(min(len(score.Tracks), engine.MaxTracks)),
-		parameters: append([]ParameterValue(nil), score.Parameters...),
+	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), engine.MaxTracks))}
+	for _, parameter := range score.Parameters {
+		snapshot.storeCommitted(parameter.Track, parameter.ID, parameter.Value)
+		snapshot.defaults.Set(parameter.Track, parameter.ID, parameter.Value)
 	}
 	for index := 0; index < int(snapshot.count); index++ {
 		snapshot.ids[index] = score.Tracks[index].ID
@@ -569,12 +614,30 @@ func (p *Player) CommittedValue(track uint8, id kernel.ParamID) (float32, bool) 
 	if snapshot == nil {
 		return 0, false
 	}
-	for _, parameter := range snapshot.parameters {
-		if parameter.Track == track && parameter.ID == id {
-			return parameter.Value, true
-		}
+	return snapshot.committedValue(track, id)
+}
+
+func (snapshot *trackNameSnapshot) storeCommitted(track uint8, id kernel.ParamID, value float32) {
+	if track == 0xff {
+		track = engine.ParameterGlobalSlot
 	}
-	return 0, false
+	if track <= engine.ParameterGlobalSlot && id < kernel.ParamCount {
+		snapshot.committed[track][id].Store(1<<32 | uint64(math.Float32bits(value)))
+	}
+}
+
+func (snapshot *trackNameSnapshot) committedValue(track uint8, id kernel.ParamID) (float32, bool) {
+	if snapshot == nil || id >= kernel.ParamCount {
+		return 0, false
+	}
+	if track == 0xff {
+		track = engine.ParameterGlobalSlot
+	}
+	if track > engine.ParameterGlobalSlot {
+		return 0, false
+	}
+	bits := snapshot.committed[track][id].Load()
+	return math.Float32frombits(uint32(bits)), bits>>32 != 0
 }
 
 // OverrideValue returns the latest override that the render thread has not
@@ -1016,7 +1079,7 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 				continue
 			}
 			if cancelled {
-				value, ok := parameterValue(score.Parameters, track, kernel.ParamID(id))
+				value, ok := score.trackNames.committedValue(track, kernel.ParamID(id))
 				var validator *engine.PreviewParamValidator
 				if track != 0xff {
 					validator = &score.trackNames.previewValues[track]
@@ -1033,7 +1096,7 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 				}
 				continue
 			}
-			if newEngine && parameterMatches(score.Parameters, track, kernel.ParamID(id), override.value) {
+			if value, ok := score.trackNames.committedValue(track, kernel.ParamID(id)); newEngine && ok && math.Float32bits(value) == math.Float32bits(override.value) {
 				state.retire(kernel.ParamID(id), override.version)
 				continue
 			}
@@ -1435,6 +1498,8 @@ func (p *Player) beginRequestedSong() {
 				p.retireEngine(p.previous)
 			}
 			p.previous = p.current.Engine
+			p.discardSupersededPatches(next.publication)
+			p.rebuildCommitted(next, int64(start-1)*seq.TicksPerBar)
 			p.applyOverrides(next.Engine, next, true)
 			p.heldNotes = [128]noteInput{}
 			p.heldOrder = [128]uint64{}
@@ -1444,7 +1509,7 @@ func (p *Player) beginRequestedSong() {
 			p.trackNames.Store(next.trackNames)
 			p.resetMeters()
 			p.fadeTotal, p.fadeRemaining = p.rate/200, p.rate/200
-			p.emit(Event{Bar: int64(start), Name: next.Name, Kind: "edit"})
+			p.emit(Event{Bar: int64(start), Name: next.Name, Kind: "edit", Revision: next.Revision})
 			p.jumpFadeRemaining = 0
 		} else {
 			p.jumpFadeRemaining = p.rate / 200
@@ -1454,6 +1519,9 @@ func (p *Player) beginRequestedSong() {
 			p.fault = fmt.Errorf("live engine rejected song start at bar %d", start)
 			return
 		}
+		p.rebuildCommitted(p.current, int64(start-1)*seq.TicksPerBar)
+		p.transportQueued = true
+		p.initialParameters = false
 		p.bar = int64(start) - 1
 		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.BPMMilli, AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
 		p.tempoMilli.Store(selected.BPMMilli)
@@ -1468,6 +1536,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 	if p.finishPlaybackRange() {
 		return
 	}
+	clear(p.blockParameters[:])
 	if p.sample == p.nextBarSample {
 		p.bar++
 		swapped := false
@@ -1482,6 +1551,9 @@ func (p *Player) renderBlock(requestedFrames int) {
 				p.retireEngine(p.previous)
 			}
 			p.previous = p.current.Engine
+			p.discardSupersededPatches(next.publication)
+			p.rebuildCommitted(next, p.bar*seq.TicksPerBar)
+			p.transportQueued = true
 			p.applyOverrides(next.Engine, next, true)
 			p.fadeTotal = p.rate / 200 // five milliseconds
 			p.fadeRemaining = p.fadeTotal
@@ -1505,7 +1577,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 				p.seekListeningRange(r.StartTick)
 			}
 			select {
-			case p.events <- Event{Bar: p.bar + 1, Name: next.Name, Kind: "edit"}:
+			case p.events <- Event{Bar: p.bar + 1, Name: next.Name, Kind: "edit", Revision: next.Revision}:
 			default:
 			}
 		default:
@@ -1525,15 +1597,22 @@ func (p *Player) renderBlock(requestedFrames int) {
 	}
 	tick := p.clock.TickAtSample(p.sample)
 	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
+	if p.initialParameters {
+		p.rebuildCommitted(p.current, tick)
+		p.initialParameters = false
+	}
+	p.drainPatches()
 	p.queueLiveNotes()
 	if p.fault != nil {
 		return
 	}
 	p.queueSceneLaunch(frames)
 	p.queueSlotLaunches(frames)
+	p.notePendingScenes(tick)
 	p.applyOverrides(p.current.Engine, p.current, false)
 	p.current.Engine.Render(p.left[:frames], p.right[:frames])
 	if index, sequence := p.current.Engine.CurrentScene(); index >= 0 && index < len(p.current.SceneIDs) && (p.sceneEngine != p.current.Engine || p.sceneSequence != sequence) {
+		p.noteSceneCommitted(index, tick)
 		firstScene := p.sceneEngine == nil
 		p.sceneEngine, p.sceneSequence = p.current.Engine, sequence
 		p.scene.Store(&p.current.SceneIDs[index])
@@ -1543,6 +1622,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 			p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: p.current.SceneIDs[index], Kind: "song-scene"})
 		}
 	}
+	p.transportQueued = false
 	var message cmd.Message
 	for p.current.Engine.Poll(&message) {
 		if message.Kind == cmd.Fault {
