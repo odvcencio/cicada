@@ -20,10 +20,10 @@ func TestCreationPathsResolveExistingAncestors(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			path := filepath.Join(parent, "missing", "nested", "score.cicada")
 			want := filepath.Join(physical, "missing", "nested", "score.cicada")
-			for _, resolve := range []func(string) (string, error){Create, Write} {
+			for _, resolve := range []func(string) (Target, error){Create, Write} {
 				got, err := resolve(path)
-				if err != nil || got != want {
-					t.Errorf("creation target: %q %v; want %q", got, err, want)
+				if err != nil || got.Logical != path || got.Physical != want {
+					t.Errorf("creation target: %+v %v; want logical %q physical %q", got, err, path, want)
 				}
 			}
 			if _, err := Resolve(path, Existing); !os.IsNotExist(err) {
@@ -31,6 +31,26 @@ func TestCreationPathsResolveExistingAncestors(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(physical, "missing")); !os.IsNotExist(err) {
 				t.Errorf("resolution created directories: %v", err)
+			}
+		})
+	}
+}
+
+func TestExistingTargetKeepsLogicalIdentity(t *testing.T) {
+	root := t.TempDir()
+	physical := filepath.Join(root, "target.cicada")
+	if err := os.WriteFile(physical, []byte("score"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for name, destination := range map[string]string{"absolute": physical, "relative": filepath.Base(physical)} {
+		t.Run(name, func(t *testing.T) {
+			logical := filepath.Join(root, name+".cicada")
+			if err := os.Symlink(destination, logical); err != nil {
+				t.Fatal(err)
+			}
+			got, err := Resolve(logical, Existing)
+			if err != nil || got.Logical != logical || got.Physical != physical {
+				t.Fatalf("target: %+v %v; want logical %q physical %q", got, err, logical, physical)
 			}
 		})
 	}

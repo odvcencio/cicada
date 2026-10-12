@@ -119,6 +119,12 @@ func TestApplyWritePreservesSymlinkTargets(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 			path, intents, before := applyFixture(t)
+			// An alias outside the project is a loose score, so its authored
+			// edition must be sufficient without the target's manifest.
+			before = append([]byte("cicada 2\n\n"), before...)
+			if err := os.WriteFile(path, before, 0644); err != nil {
+				t.Fatal(err)
+			}
 			link := filepath.Join(filepath.Dir(path), "linked.cicada")
 			target := path
 			if kind == "relative" {
@@ -148,10 +154,10 @@ func TestApplyWritePreservesSymlinkTargets(t *testing.T) {
 			if got, err := os.ReadFile(path); err != nil || !bytes.Equal(got, after) {
 				t.Errorf("target not edited: %q %v", got, err)
 			}
-			if !strings.Contains(diff, "--- a/main.cicada\n+++ b/main.cicada\n") {
-				t.Errorf("diff does not name target: %q", diff)
+			if !strings.Contains(diff, "--- a/"+filepath.Base(entry)+"\n+++ b/"+filepath.Base(entry)+"\n") {
+				t.Errorf("diff does not name declared score: %q", diff)
 			}
-			records, _, err := editlog.ReadLog(editlog.Path(path))
+			records, _, err := editlog.ReadLog(editlog.Path(entry))
 			if err != nil || len(records) != 1 || records[0].Revision != edits.Revision(after) {
 				t.Errorf("target log: %+v %v", records, err)
 			}

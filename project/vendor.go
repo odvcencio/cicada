@@ -27,10 +27,11 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 	if len(s.Libraries) == 0 {
 		return nil, nil
 	}
-	target, err = filetarget.Resolve(target, filetarget.Existing)
+	resolved, err := filetarget.Resolve(target, filetarget.Existing)
 	if err != nil {
 		return nil, err
 	}
+	target = resolved.Physical
 	dst, err := os.OpenRoot(target)
 	if err != nil {
 		return nil, err

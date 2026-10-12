@@ -23,10 +23,11 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 }
 
 func studioWriteTakeIfRevision(path string, updated []byte, mode os.FileMode, expected string, beforeSwap func(), checkpoint func(takejournal.Stage)) (bool, string, error) {
-	path, err := filetarget.Resolve(path, filetarget.Existing)
+	target, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return false, "", err
 	}
+	path = target.Physical
 	dir, err := studioRecoveryDir(path)
 	if err != nil {
 		return false, "", err
@@ -132,6 +133,11 @@ func studioKeepRecovery(path, revision string) error {
 }
 
 func studioRecoveryConflict(path string) error {
+	target, err := filetarget.Resolve(path, filetarget.Existing)
+	if err != nil {
+		return err
+	}
+	path = target.Physical
 	// ReadDir avoids treating metacharacters in the score's directory as glob syntax.
 	dir, err := studioRecoveryDir(path)
 	if err != nil {
@@ -161,6 +167,11 @@ func studioRecoveryConflict(path string) error {
 // Keep linked displaced inodes in app data: late writes through an external
 // editor's open handle remain detectable without littering the project.
 func studioRecoveryDir(path string) (string, error) {
+	target, err := filetarget.Write(path)
+	if err != nil {
+		return "", err
+	}
+	path = target.Physical
 	base, err := os.UserConfigDir()
 	if err != nil {
 		return "", err

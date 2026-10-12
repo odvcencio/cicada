@@ -150,10 +150,11 @@ func loadProject(path string) (*project.Project, error) {
 }
 
 func writeNewAtomic(path string, data []byte) error {
-	path, err := filetarget.Write(path)
+	target, err := filetarget.Write(path)
 	if err != nil {
 		return err
 	}
+	path = target.Physical
 	mode := os.FileMode(0644)
 	if info, err := os.Stat(path); err == nil {
 		mode = info.Mode().Perm()

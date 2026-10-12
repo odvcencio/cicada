@@ -204,10 +204,11 @@ func newStudio(path string) (*studio, error) {
 }
 
 func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
-	absolute, err := filetarget.Resolve(path, filetarget.Existing)
+	target, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return nil, err
 	}
+	absolute := target.Logical
 	s := &studio{path: absolute, sessionID: newStudioSessionID()}
 	opened := false
 	defer func() {

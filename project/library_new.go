@@ -28,10 +28,11 @@ func NewLibrary(name, dir string) error {
 	if err := os.MkdirAll(parent, 0755); err != nil {
 		return err
 	}
-	dir, err = filetarget.Create(dir)
+	target, err := filetarget.Create(dir)
 	if err != nil {
 		return err
 	}
+	dir = target.Physical
 	parent = filepath.Dir(dir)
 	stage, err := os.MkdirTemp(parent, ".cicada-new-library-")
 	if err != nil {

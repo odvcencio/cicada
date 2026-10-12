@@ -11,6 +11,7 @@ import (
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/internal/filetarget"
 )
 
 var errTakeRevision = errors.New("score changed during recording; take retained; reload and recover it against the current revision")
@@ -312,16 +313,20 @@ func takeRoot(score string) string { dir, _ := takejournal.ProjectRoot(score); r
 // Only bytes identified by this prepared transaction gain a receipt; a later
 // external write still differs from that receipt and triggers the existing guard.
 func (s *studio) recoverTakeReceipts(t takejournal.Take) error {
-	dir, err := studioRecoveryDir(s.path)
+	target, err := filetarget.Resolve(s.path, filetarget.Existing)
 	if err != nil {
 		return err
 	}
-	for _, dir := range []string{dir, filepath.Dir(s.path)} {
+	dir, err := studioRecoveryDir(target.Physical)
+	if err != nil {
+		return err
+	}
+	for _, dir := range []string{dir, filepath.Dir(target.Physical)} {
 		entries, err := os.ReadDir(dir)
 		if err != nil {
 			return err
 		}
-		prefix := strings.TrimSuffix(studioRecoveryPattern(s.path), "*")
+		prefix := strings.TrimSuffix(studioRecoveryPattern(target.Physical), "*")
 		for _, entry := range entries {
 			if !strings.HasPrefix(entry.Name(), prefix) || strings.HasSuffix(entry.Name(), ".revision") {
 				continue

@@ -66,10 +66,11 @@ func transcribeCommand(args []string, output, diagnostics io.Writer) error {
 	if *destination == "" {
 		_, err = io.WriteString(output, result.Source)
 	} else {
-		path, resolveErr := filetarget.Create(*destination)
+		target, resolveErr := filetarget.Create(*destination)
 		if resolveErr != nil {
 			return resolveErr
 		}
+		path := target.Physical
 		var file *os.File
 		file, err = os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
 		if err == nil {

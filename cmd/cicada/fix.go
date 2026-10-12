@@ -45,10 +45,11 @@ func fixCommandWithHooks(args []string, writeScore func(string, []byte, os.FileM
 		return err
 	}
 	if path != "" {
-		path, err = filetarget.Resolve(path, filetarget.Existing)
+		target, err := filetarget.Resolve(path, filetarget.Existing)
 		if err != nil {
 			return err
 		}
+		path = target.Logical
 	}
 	root, currentEdition, manifest, err := fixProjectLocation(path)
 	if err != nil {
@@ -436,10 +437,11 @@ func removeEditionHeader(source []byte, edition int) ([]byte, bool) {
 }
 
 func writeFixedScore(path string, source []byte, mode os.FileMode) error {
-	path, err := filetarget.Write(path)
+	target, err := filetarget.Write(path)
 	if err != nil {
 		return err
 	}
+	path = target.Physical
 	file, err := os.CreateTemp(filepath.Dir(path), ".cicada-fix-*")
 	if err != nil {
 		return err
@@ -549,7 +551,11 @@ func fixMultiFile(root string, manifest ed.Manifest, beforeManifest []byte, path
 		}
 	}
 	for _, path := range paths {
-		dir := filepath.Dir(path)
+		target, err := filetarget.Resolve(path, filetarget.Existing)
+		if err != nil {
+			return err
+		}
+		dir := filepath.Dir(target.Physical)
 		if !probed[dir] {
 			if err := fixCheckExchange(dir); err != nil {
 				return err

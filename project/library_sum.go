@@ -42,10 +42,11 @@ func lockLibrarySum(root *os.Root) (func(), error) {
 // WriteLibraryUpdates holds the same lock as vendoring from reading pins
 // through atomic publication, so concurrent commands cannot lose updates.
 func (s *Sources) WriteLibraryUpdates(name string) ([]string, error) {
-	directory, err := filetarget.Resolve(s.Root, filetarget.Existing)
+	target, err := filetarget.Resolve(s.Root, filetarget.Existing)
 	if err != nil {
 		return nil, err
 	}
+	directory := target.Physical
 	root, err := os.OpenRoot(directory)
 	if err != nil {
 		return nil, err
@@ -89,11 +90,15 @@ func (s *Sources) WriteLibraryUpdates(name string) ([]string, error) {
 
 // Keep publication within the opened project root after resolving pin links.
 func librarySumWritePath(directory string) (string, error) {
-	path, err := filetarget.Write(filepath.Join(directory, "cicada.sum"))
+	target, err := filetarget.Write(filepath.Join(directory, "cicada.sum"))
 	if err != nil {
 		return "", err
 	}
-	name, err := filepath.Rel(directory, path)
+	root, err := filetarget.Resolve(directory, filetarget.Existing)
+	if err != nil {
+		return "", err
+	}
+	name, err := filepath.Rel(root.Physical, target.Physical)
 	if err != nil {
 		return "", err
 	}

@@ -76,34 +76,31 @@ func TestScoreWritersRefuseDanglingLinks(t *testing.T) {
 	}
 }
 
-func TestFixSymlinkDiscoversTargetProject(t *testing.T) {
+func TestFixSymlinkKeepsDeclaredProject(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "main.cicada")
+	path := filepath.Join(dir, "entry.target")
 	before := []byte("track bass acid {}\npattern p notes steps=1 { c }\nscene main { bass=p }\nsong { main }\n")
 	manifest := filepath.Join(dir, "cicada.mod")
-	for file, data := range map[string][]byte{path: before, manifest: []byte("project target\ncicada 1\n")} {
+	for file, data := range map[string][]byte{path: before, manifest: []byte("project target\ncicada 1\nentry \"alias.cicada\"\n")} {
 		if err := os.WriteFile(file, data, 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	link := filepath.Join(t.TempDir(), "alias.cicada")
-	if err := os.Symlink(path, link); err != nil {
+	link := filepath.Join(dir, "alias.cicada")
+	if err := os.Symlink(filepath.Base(path), link); err != nil {
 		t.Fatal(err)
 	}
 	if err := fixCommand([]string{link}); err != nil {
 		t.Fatal(err)
 	}
-	if got, err := os.Readlink(link); err != nil || got != path {
+	if got, err := os.Readlink(link); err != nil || got != filepath.Base(path) {
 		t.Errorf("link changed: %q %v", got, err)
 	}
-	if got, _ := os.ReadFile(manifest); string(got) != "project target\ncicada 2\n" {
+	if got, _ := os.ReadFile(manifest); string(got) != "project target\ncicada 2\nentry \"alias.cicada\"\n" {
 		t.Errorf("target manifest not upgraded: %q", got)
 	}
 	if got, _ := os.ReadFile(path); bytes.Equal(got, before) {
 		t.Error("target score not migrated")
-	}
-	if _, err := os.Stat(filepath.Join(filepath.Dir(link), "cicada.mod")); !os.IsNotExist(err) {
-		t.Errorf("manifest written beside alias: %v", err)
 	}
 }
 

@@ -48,10 +48,11 @@ func applyCommandWithHooks(args []string, stdout io.Writer, beforeSwap func()) e
 	if len(paths) != 2 {
 		return fmt.Errorf("usage: cicada apply <score.cicada> <intents.json> [--write] [--author <name>] [--session <id>]")
 	}
-	path, err := filetarget.Resolve(paths[0], filetarget.Existing)
+	target, err := filetarget.Resolve(paths[0], filetarget.Existing)
 	if err != nil {
 		return err
 	}
+	path := target.Logical
 	data, err := os.ReadFile(paths[1])
 	if err != nil {
 		return err

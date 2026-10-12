@@ -48,10 +48,11 @@ func newProject(name string, writeFile func(string, []byte, os.FileMode) error) 
 	if !edition.ValidProjectName(name) {
 		return fmt.Errorf("project name must use letters, digits, hyphen, or underscore")
 	}
-	dir, err := filetarget.Create(name)
+	target, err := filetarget.Create(name)
 	if err != nil {
 		return err
 	}
+	dir := target.Physical
 	if err := os.Mkdir(dir, 0755); err != nil {
 		return err
 	}

@@ -62,10 +62,11 @@ func importMIDICommand(args []string) error {
 
 // Link the complete temporary file atomically, without replacing a destination.
 func writeImportedScore(path string, source []byte) error {
-	path, err := filetarget.Create(path)
+	target, err := filetarget.Create(path)
 	if err != nil {
 		return err
 	}
+	path = target.Physical
 	temporary, err := os.CreateTemp(filepath.Dir(path), ".cicada-midi-import-*")
 	if err != nil {
 		return err
