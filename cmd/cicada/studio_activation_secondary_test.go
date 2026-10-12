@@ -1,7 +1,9 @@
 package main
 
 import (
+	"fmt"
 	"math/rand"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,11 +19,15 @@ const secondaryPart = "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {
 // file never changes, so only a fingerprint over every source can tell two
 // edits to the part file apart.
 func secondaryStudio(t *testing.T) (*studio, *liveplay.Player, string) {
+	return secondaryStudioFiles(t, "cicada 2\n", secondaryPart)
+}
+
+func secondaryStudioFiles(t *testing.T, entryText, part string) (*studio, *liveplay.Player, string) {
 	t.Helper()
 	dir := t.TempDir()
-	entry := []byte("cicada 2\n")
+	entry := []byte(entryText)
 	for name, text := range map[string]string{
-		"main.cicada": string(entry), "part.cicada": secondaryPart,
+		"main.cicada": string(entry), "part.cicada": part,
 		"cicada.mod": "project secondary\ncicada 2\nentry \"main.cicada\"\nsource \"part.cicada\"\n",
 	} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte(text), 0600); err != nil {
@@ -186,5 +192,103 @@ func TestSecondarySourceOfferLedgerGeneratedLifecycle(t *testing.T) {
 				t.Fatalf("seed %d step %d: ledger %d, reference %d", seed, step, len(tr.offers), len(outstanding))
 			}
 		}
+	}
+}
+
+// recordingStudio keeps the recordable pattern in the entry file and the rest
+// of the song in part.cicada.
+func recordingStudio(t *testing.T) (*studio, *liveplay.Player, string) {
+	return secondaryStudioFiles(t, "cicada 2\n"+studioScore, "track pad acid {}\npattern padline acid steps=4 { 1 . . . }\n")
+}
+
+func recordPartTake(t *testing.T, s *studio) {
+	t.Helper()
+	entry, err := os.ReadFile(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := studioCall(t, s.routes(), "/api/record", studioEdit{Revision: studioRevision(entry), Track: "bass", Pattern: "pulse", Take: []studioTakeNote{{Tick: 0, EndTick: 100, Note: 60, Velocity: 90}}})
+	if response.Code != http.StatusOK {
+		t.Fatalf("record: %d %s", response.Code, response.Body.String())
+	}
+}
+
+func queuedLines(s *studio) int {
+	n := 0
+	for _, event := range s.history.snapshot() {
+		if event.Kind == "queued" {
+			n++
+		}
+	}
+	return n
+}
+
+// A take recorded into part.cicada leaves the entry file unchanged. The take's
+// own offer is not logged as queued; a later edit to the same file is.
+func TestRecordedTakeHandoffIsKeyedByPlaybackFingerprint(t *testing.T) {
+	t.Run("normal path consumes once", func(t *testing.T) {
+		s, _, dir := recordingStudio(t)
+		s.history = newStudioHistory(s.lastGoodSource)
+		s.transport.history = s.history
+		recordPartTake(t, s)
+		s.transport.poll()
+		if !s.transport.snapshot().Pending || queuedLines(s) != 0 {
+			t.Fatalf("take offer: pending %v, queued lines %d", s.transport.snapshot().Pending, queuedLines(s))
+		}
+		writePart(t, dir, "1 . . .", "1 . 3 .")
+		s.transport.poll()
+		if queuedLines(s) != 1 {
+			t.Fatalf("a later part edit logged %d queued lines, want 1", queuedLines(s))
+		}
+	})
+	t.Run("secondary edit before the take is polled", func(t *testing.T) {
+		s, _, dir := recordingStudio(t)
+		s.history = newStudioHistory(s.lastGoodSource)
+		s.transport.history = s.history
+		recordPartTake(t, s)
+		writePart(t, dir, "1 . . .", "1 . 5 .")
+		s.transport.poll()
+		if queuedLines(s) != 1 {
+			t.Fatalf("secondary edit consumed the take's handoff: %d queued lines", queuedLines(s))
+		}
+	})
+}
+
+// More than maxStudioOffers offers without a landing event drop the oldest
+// entries. Pending stays true while any offer remains, and a late event for a
+// dropped token changes nothing: the player already replaced that offer, and
+// the newest offer's own event sets the live plan.
+func TestSecondarySourceOfferLedgerOverflowDropsOldest(t *testing.T) {
+	s, _, dir := secondaryStudio(t)
+	tr := s.transport
+	const total = maxStudioOffers + 6
+	var fingerprints [][32]byte
+	current := "Studio"
+	for i := 0; i < total; i++ {
+		next := fmt.Sprintf("Studio %d", i)
+		writePart(t, dir, current, next)
+		current = next
+		tr.poll()
+		fingerprints = append(fingerprints, tr.last)
+	}
+	if len(tr.offers) != maxStudioOffers || !tr.snapshot().Pending {
+		t.Fatalf("ledger %d (cap %d), pending %v", len(tr.offers), maxStudioOffers, tr.snapshot().Pending)
+	}
+	if tr.offers[0].token != offerRevision(fingerprints[total-maxStudioOffers]) {
+		t.Fatal("overflow did not drop the oldest offers first")
+	}
+	plan := tr.livePlan
+	tr.markLanded(liveplay.Event{Kind: "edit", Bar: 2, Revision: offerRevision(fingerprints[0])})
+	if len(tr.offers) != maxStudioOffers || !tr.snapshot().Pending || tr.livePlan != plan {
+		t.Fatal("an event for a dropped offer changed the transport")
+	}
+	oldest := tr.offers[0].plan
+	tr.markLanded(liveplay.Event{Kind: "edit", Bar: 2, Revision: offerRevision(fingerprints[total-maxStudioOffers])})
+	if len(tr.offers) != maxStudioOffers-1 || !tr.snapshot().Pending || tr.livePlan != oldest {
+		t.Fatal("the oldest retained offer did not land alone")
+	}
+	tr.markLanded(liveplay.Event{Kind: "edit", Bar: 2, Revision: offerRevision(fingerprints[total-1])})
+	if len(tr.offers) != 0 || tr.snapshot().Pending || tr.livePlan == nil {
+		t.Fatal("the newest offer did not finish the queue")
 	}
 }

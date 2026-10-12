@@ -357,6 +357,12 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	return nil
 }
 
+func (t *studioTransport) isPlayingFingerprint(fingerprint [32]byte) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.stream != nil && t.last == fingerprint
+}
+
 // studioOffer pairs an offered score's playback token with the plan compiled
 // for it. The plan is nil when the offer has no complete plan.
 type studioOffer struct {
@@ -789,7 +795,7 @@ func (t *studioTransport) poll() {
 	t.pending, t.errText = true, ""
 	position := stream.Position()
 	t.mu.Unlock()
-	if t.history != nil && !t.history.consumeRecordedTake(studioRevision(source)) {
+	if t.history != nil && !t.history.consumeRecordedTake(studioOfferToken(fingerprint)) {
 		t.history.record("queued", "Edit queued for the next bar", position.Bar, position.Step, "")
 	}
 }

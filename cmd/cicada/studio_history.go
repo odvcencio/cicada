@@ -617,6 +617,12 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	if s.transport != nil {
 		if fingerprint, err := playSourceHashBytes(s.path, updated); err == nil {
 			s.transport.activateLocked(s.path, updated, fingerprint)
+			// The write has landed and pollMu is held, so poll cannot see this
+			// content before the handoff is armed. A patch already made the
+			// content current, so no offer will follow it.
+			if edit.recordedTake && s.history != nil && !s.transport.isPlayingFingerprint(fingerprint) {
+				s.history.expectRecordedTake(studioOfferToken(fingerprint))
+			}
 		}
 	}
 	if mutation.HistoryDetail != "" {
