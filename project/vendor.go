@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	"m31labs.dev/cicada/internal/filetarget"
 )
 
 // VendorLibraries installs every imported non-standard library in target/lib.
@@ -25,6 +27,11 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 	if len(s.Libraries) == 0 {
 		return nil, nil
 	}
+	resolved, err := filetarget.Resolve(target, filetarget.Existing)
+	if err != nil {
+		return nil, err
+	}
+	target = resolved.Physical
 	dst, err := os.OpenRoot(target)
 	if err != nil {
 		return nil, err
@@ -44,13 +51,17 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 		return nil, err
 	}
 	defer unlock()
+	sumPath, err := librarySumWritePath(target)
+	if err != nil {
+		return nil, err
+	}
 	if ds := s.verifyLibraries(); len(ds) != 0 {
 		return nil, &SourceError{Diagnostic: ds[0]}
 	}
 	if rename == nil {
 		rename = dst.Rename
 	}
-	oldSum, err := dst.ReadFile("cicada.sum")
+	oldSum, err := dst.ReadFile(sumPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -167,7 +178,7 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 			return nil, err
 		}
 	}
-	latest, err := dst.ReadFile("cicada.sum")
+	latest, err := dst.ReadFile(sumPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -175,7 +186,7 @@ func (s *Sources) vendorLibraries(target string, rename func(string, string) err
 		return nil, fmt.Errorf("library pins changed during vendoring; retry")
 	}
 	if !bytes.Equal(oldSum, newSum) {
-		if err := rename(filepath.Join(stage, "cicada.sum"), "cicada.sum"); err != nil {
+		if err := rename(filepath.Join(stage, "cicada.sum"), sumPath); err != nil {
 			return nil, err
 		}
 	}

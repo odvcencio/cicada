@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/notation"
@@ -97,6 +98,13 @@ func main() {
 	}
 	if len(os.Args) > 1 && os.Args[1] == "fix" {
 		if err := fixCommand(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) > 1 && os.Args[1] == "apply" {
+		if err := applyCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
@@ -464,6 +472,11 @@ func simpleDiff(before, after []byte) string {
 }
 
 func writeAtomic(path string, data []byte) error {
+	target, err := filetarget.Resolve(path, filetarget.Existing)
+	if err != nil {
+		return err
+	}
+	path = target.Physical
 	info, err := os.Stat(path)
 	if err != nil {
 		return err

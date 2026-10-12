@@ -14,6 +14,7 @@ import (
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -580,7 +581,12 @@ func mixerSendCapability(track notation.Track, target, kind string, score *notat
 }
 
 func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
-	current, err := os.ReadFile(file.Path)
+	target, err := filetarget.Write(file.Path)
+	if err != nil {
+		return err
+	}
+	path := target.Physical
+	current, err := os.ReadFile(path)
 	if os.IsNotExist(err) && file.Before == nil {
 		current, err = nil, nil
 	}
@@ -591,7 +597,7 @@ func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 		return fmt.Errorf("%s changed during source edit", filepath.Base(file.Path))
 	}
 	if file.Before != nil {
-		committed, _, err := studioWriteIfRevision(file.Path, file.After, file.Mode, studioRevision(file.Before), nil)
+		committed, _, err := studioWriteIfRevision(path, file.After, file.Mode, studioRevision(file.Before), nil)
 		if err != nil {
 			return err
 		}
@@ -600,7 +606,7 @@ func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 		}
 		return nil
 	}
-	dir, err := studioRecoveryDir(file.Path)
+	dir, err := studioRecoveryDir(path)
 	if err != nil {
 		return err
 	}
@@ -625,14 +631,14 @@ func studioWriteAuxiliaryFile(file studioAuxiliaryFile) error {
 	if err := stage.Close(); err != nil {
 		return err
 	}
-	latest, err := os.ReadFile(file.Path)
+	latest, err := os.ReadFile(path)
 	if os.IsNotExist(err) && file.Before == nil {
 		latest, err = nil, nil
 	}
 	if err != nil || !bytes.Equal(latest, file.Before) {
 		return fmt.Errorf("%s changed during source edit", filepath.Base(file.Path))
 	}
-	return os.Rename(stagePath, file.Path)
+	return os.Rename(stagePath, path)
 }
 
 func studioWriteAuxiliaryFiles(files []studioAuxiliaryFile) error {

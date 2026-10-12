@@ -1,6 +1,7 @@
 package edit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 )
@@ -36,7 +37,9 @@ func (e Envelope) MarshalJSON() ([]byte, error) {
 
 func (e *Envelope) UnmarshalJSON(data []byte) error {
 	var wire envelopeWire
-	if err := json.Unmarshal(data, &wire); err != nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&wire); err != nil {
 		return err
 	}
 	if wire.Version != EnvelopeVersion {
