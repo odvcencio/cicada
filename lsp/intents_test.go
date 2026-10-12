@@ -425,3 +425,20 @@ func TestRenderCacheKeyFollowsOpenPeerBuffers(t *testing.T) {
 		t.Fatalf("changed open peer buffer rendered %d times in total, want 2", fake.calls)
 	}
 }
+
+func TestRenderCacheKeyFollowsFilesStagedByABatch(t *testing.T) {
+	entry := "scene a { bass = hits }\nsong { a*1 }\n"
+	path := writePeerProject(t, entry, "track bass acid {}\npattern hits { c3 . c4 . }\n")
+	manifest := filepath.Join(filepath.Dir(path), "cicada.mod")
+	fake := &fakeRender{}
+	withRenderCheck(t, fake)
+	check := (&server{}).renderCheck(path, nil)
+	for _, staged := range []string{"project peers\ncicada 2\nentry \"main.cicada\"\nsource \"part.cicada\"\n", "project peers\ncicada 2\nentry \"main.cicada\"\nsource \"part.cicada\"\n", "project other\ncicada 2\nentry \"main.cicada\"\nsource \"part.cicada\"\n"} {
+		if _, err := check.HashWith([]byte(entry), map[string][]byte{manifest: []byte(staged)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if fake.calls != 2 {
+		t.Fatalf("renders=%d, want 2 (a repeated staged state hits, a changed one misses)", fake.calls)
+	}
+}

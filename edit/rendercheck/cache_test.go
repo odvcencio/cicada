@@ -48,6 +48,11 @@ type countedCheck struct {
 	calls atomic.Int32
 }
 
+func (c *countedCheck) HashWith(source []byte, files map[string][]byte) (string, error) {
+	c.calls.Add(1)
+	return c.inner.(edits.StagedRenderCheck).HashWith(source, files)
+}
+
 func (c *countedCheck) Hash(source []byte) (string, error) {
 	c.calls.Add(1)
 	return c.inner.Hash(source)
@@ -209,5 +214,36 @@ func TestIdentityAndRenderSeeUnsavedBuffers(t *testing.T) {
 	audible, err := NewWith(path, map[string][]byte{part: []byte(peerPatterns("X... .... .... ...."))}).Hash(entry)
 	if err != nil || audible == silent {
 		t.Fatalf("buffer not rendered: %v", err)
+	}
+}
+
+// Files staged by an edit batch (an upgraded cicada.mod, a changed peer) are
+// part of the key and of the render.
+func TestStagedFilesChangeTheKeyAndTheRender(t *testing.T) {
+	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(".... .... .... ....")})
+	dir := filepath.Dir(path)
+	entry := []byte(peerMain)
+	part := filepath.Join(dir, "patterns.cicada")
+	staged := map[string][]byte{part: []byte(peerPatterns("X... .... .... ...."))}
+	disk, _ := Identity(path, entry, nil)
+	withStaged, ok := Identity(path, entry, staged)
+	manifestStaged, ok2 := Identity(path, entry, map[string][]byte{filepath.Join(dir, "cicada.mod"): []byte(peerManifest + "\n")})
+	if !ok || !ok2 || withStaged == disk || manifestStaged == disk {
+		t.Fatalf("staged files did not change the key: %v %v", ok, ok2)
+	}
+	counted := &countedCheck{inner: New(path)}
+	check := Cached(path, counted)
+	hashes := map[string]string{}
+	for name, files := range map[string]map[string][]byte{"disk": nil, "staged": staged} {
+		for range 2 {
+			h, err := check.HashWith(entry, files)
+			if err != nil {
+				t.Fatal(err)
+			}
+			hashes[name] = h
+		}
+	}
+	if counted.calls.Load() != 2 || hashes["disk"] == hashes["staged"] {
+		t.Fatalf("renders=%d, disk=%s staged=%s", counted.calls.Load(), hashes["disk"], hashes["staged"])
 	}
 }

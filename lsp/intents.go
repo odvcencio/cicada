@@ -85,36 +85,46 @@ type cachedCheck struct {
 	inner edits.RenderCheck
 	// key names the full render input identity; nil keys by the entry source
 	// alone, and a false result skips the cache for that call.
-	key        func(source []byte) (string, bool)
+	key        func(source []byte, files map[string][]byte) (string, bool)
 	mu         sync.Mutex
 	byRevision map[string]hashResult
 }
 
 // bind points the check at the current snapshot; cached results stay valid
 // because their keys include the snapshot's contents.
-func (c *cachedCheck) bind(inner edits.RenderCheck, key func([]byte) (string, bool)) {
+func (c *cachedCheck) bind(inner edits.RenderCheck, key func([]byte, map[string][]byte) (string, bool)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.inner, c.key = inner, key
 }
 
-func (c *cachedCheck) Hash(source []byte) (string, error) {
+func (c *cachedCheck) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
+
+// HashWith renders against the files an edit batch has staged; they are part
+// of the cache key.
+func (c *cachedCheck) HashWith(source []byte, files map[string][]byte) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.inner == nil {
 		return "", edits.ErrNoRenderCheck
 	}
+	render := func() (string, error) {
+		if staged, ok := c.inner.(edits.StagedRenderCheck); ok {
+			return staged.HashWith(source, files)
+		}
+		return c.inner.Hash(source)
+	}
 	revision := edits.Revision(source)
 	if c.key != nil {
 		var ok bool
-		if revision, ok = c.key(source); !ok {
-			return c.inner.Hash(source)
+		if revision, ok = c.key(source, files); !ok {
+			return render()
 		}
 	}
 	if result, ok := c.byRevision[revision]; ok {
 		return result.hash, result.err
 	}
-	hash, err := c.inner.Hash(source)
+	hash, err := render()
 	if c.byRevision == nil || len(c.byRevision) >= cachedCheckLimit {
 		c.byRevision = make(map[string]hashResult)
 	}
@@ -233,7 +243,16 @@ func (s *server) renderCheck(path string, buffers map[string][]byte) *cachedChec
 		check = &cachedCheck{}
 		s.checks[path] = check
 	}
-	check.bind(newRenderCheck(path, buffers), func(source []byte) (string, bool) { return rendercheck.Identity(path, source, buffers) })
+	check.bind(newRenderCheck(path, buffers), func(source []byte, files map[string][]byte) (string, bool) {
+		all := make(map[string][]byte, len(buffers)+len(files))
+		for name, data := range buffers {
+			all[name] = data
+		}
+		for name, data := range files {
+			all[name] = data
+		}
+		return rendercheck.Identity(path, source, all)
+	})
 	return check
 }
 

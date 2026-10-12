@@ -20,6 +20,15 @@ type RenderCheck interface {
 	Hash(source []byte) (string, error)
 }
 
+// StagedRenderCheck is a RenderCheck that can render the state a batch would
+// commit: files holds the cumulative auxiliary files staged by earlier intents
+// (path -> bytes, for example an upgraded cicada.mod). Hosts' checks implement
+// it so a render never reads a superseded file from disk.
+type StagedRenderCheck interface {
+	RenderCheck
+	HashWith(source []byte, files map[string][]byte) (string, error)
+}
+
 var ErrNoRenderCheck = errors.New("render check unavailable; the conversion is refused rather than risk changing the music")
 
 var ErrNoUpgrade = errors.New("edition upgrade unavailable")

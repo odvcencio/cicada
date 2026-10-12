@@ -286,11 +286,26 @@ func splitCause(plan *Plan, placement Placement, pattern *Pattern, bar int64) st
 	return fmt.Sprintf("splitting %s at bar %d changes the render", pattern.ID, bar)
 }
 
+// batchCheck renders candidate sources against the batch's staged state.
+type batchCheck struct {
+	check RenderCheck
+	files map[string][]byte
+}
+
+func (b batchCheck) Hash(source []byte) (string, error) {
+	if staged, ok := b.check.(StagedRenderCheck); ok {
+		return staged.HashWith(source, b.files)
+	}
+	return b.check.Hash(source)
+}
+
+// renderCheckFor returns the configured check bound to every file this batch
+// has staged so far, so both renders see exactly what the batch would commit.
 func renderCheckFor(ctx *Context) (RenderCheck, error) {
 	if ctx.Options.RenderCheck == nil {
 		return nil, ErrNoRenderCheck
 	}
-	return ctx.Options.RenderCheck, nil
+	return batchCheck{check: ctx.Options.RenderCheck, files: ctx.fileOverrides()}, nil
 }
 
 func splitSource(ctx *Context, plan *Plan, placement Placement, atTick int64) ([]byte, error) {

@@ -38,6 +38,21 @@ func NewWith(path string, overrides map[string][]byte) edits.RenderCheck {
 	return check{path: path, overrides: overrides}
 }
 
+// layer returns base with staged files laid over it.
+func layer(base, staged map[string][]byte) map[string][]byte {
+	if len(staged) == 0 {
+		return base
+	}
+	all := make(map[string][]byte, len(base)+len(staged))
+	for name, data := range base {
+		all[name] = data
+	}
+	for name, data := range staged {
+		all[name] = data
+	}
+	return all
+}
+
 func merged(overrides map[string][]byte, path string, source []byte) map[string][]byte {
 	all := make(map[string][]byte, len(overrides)+1)
 	for name, data := range overrides {
@@ -47,8 +62,12 @@ func merged(overrides map[string][]byte, path string, source []byte) map[string]
 	return all
 }
 
-func (c check) Hash(source []byte) (string, error) {
-	score, ds, err := project.LoadScore(c.path, merged(c.overrides, c.path, source))
+func (c check) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
+
+// HashWith renders source with the batch's staged files laid over the
+// buffers; staged files win.
+func (c check) HashWith(source []byte, files map[string][]byte) (string, error) {
+	score, ds, err := project.LoadScore(c.path, merged(layer(c.overrides, files), c.path, source))
 	if err != nil {
 		return "", err
 	}
@@ -79,41 +98,51 @@ type cachedResult struct {
 
 type cached struct {
 	inner edits.RenderCheck
-	key   func(source []byte) (string, bool)
+	key   func(source []byte, files map[string][]byte) (string, bool)
 	mu    sync.Mutex
 	by    map[string]cachedResult
 }
 
 // Cached remembers results by the full render input identity of the score at
-// path (see Identity), so a long-lived host renders each distinct input set
+// path (see Identity, which also covers the files a batch has staged), so a long-lived host renders each distinct input set
 // once and a change to a peer source, library, manifest or asset is never
 // served from an older approval. When the inputs cannot be identified it does
 // not cache. It keeps at most 32 results and starts over at the limit. Errors
 // are cached too: the same inputs fail the same way.
-func Cached(path string, inner edits.RenderCheck) edits.RenderCheck {
+func Cached(path string, inner edits.RenderCheck) edits.StagedRenderCheck {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
-	return CachedBy(func(source []byte) (string, bool) { return Identity(path, source, nil) }, inner)
+	return CachedBy(func(source []byte, files map[string][]byte) (string, bool) { return Identity(path, source, files) }, inner)
 }
 
 // CachedBy is Cached with a caller-supplied key. A key function that returns
 // false disables caching for that call.
-func CachedBy(key func(source []byte) (string, bool), inner edits.RenderCheck) edits.RenderCheck {
+func CachedBy(key func(source []byte, files map[string][]byte) (string, bool), inner edits.RenderCheck) edits.StagedRenderCheck {
 	return &cached{inner: inner, key: key}
 }
 
-func (c *cached) Hash(source []byte) (string, error) {
-	key, ok := c.key(source)
-	if !ok {
+func (c *cached) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
+
+// HashWith keys on the staged files too, so a changed auxiliary file in a
+// batch is never answered from an older render.
+func (c *cached) HashWith(source []byte, files map[string][]byte) (string, error) {
+	render := func() (string, error) {
+		if staged, ok := c.inner.(edits.StagedRenderCheck); ok {
+			return staged.HashWith(source, files)
+		}
 		return c.inner.Hash(source)
+	}
+	key, ok := c.key(source, files)
+	if !ok {
+		return render()
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if result, ok := c.by[key]; ok {
 		return result.hash, result.err
 	}
-	hash, err := c.inner.Hash(source)
+	hash, err := render()
 	if c.by == nil || len(c.by) >= cachedLimit {
 		c.by = make(map[string]cachedResult)
 	}
