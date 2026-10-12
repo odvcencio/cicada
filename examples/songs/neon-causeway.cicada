@@ -1,0 +1,172 @@
+// A complete acid arrangement: introduce, develop, remove, then return the hook.
+// The bass cutoff belongs to the absolute song lane; scenes choose the notes.
+cicada 2
+
+title "Neon Causeway"
+
+tempo 126
+
+key a minor
+
+seed 73021
+
+fx echo delay {
+  time = 1/8
+  feedback = 0.28
+}
+
+fx room reverb {
+  decay = 1.6s
+  mix = 0.22
+}
+
+instrument glass {
+  voice mono {
+    let strike = env(gate, 420ms)
+    out = pm(pitch, sine(pitch * 2), strike * 2) * strike * velocity * 0.28
+  }
+}
+
+track bass acid {
+  level = -10dB
+  send echo = -20dB
+  cutoff = 360Hz
+  reso = 0.62
+  envmod = 0.55
+  decay = 260ms
+  accent = 0.72
+  drive = 0.16
+}
+
+track kit drums {
+  level = -8dB
+  bd_tune = 52Hz
+  bd_decay = 240ms
+  sd_decay = 120ms
+  ch_decay = 35ms
+}
+
+track hook glass {
+  level = -13dB
+  pan = 0.25
+  send echo = -12dB
+  send room = -15dB
+}
+
+phrase question {
+  1^ . 1~ 5 . 3 1 .
+}
+
+phrase answer {
+  1^ . 7,~ 1 . 5^ 3 .
+}
+
+pattern bass-a {
+  swing = 54%
+  gate = 58%
+  use question
+  use answer
+}
+
+pattern bass-b {
+  swing = 54%
+  gate = 62%
+  use question 1'~ 5 . 3^ 1 . 7, 1
+}
+
+pattern bass-space {
+  gate = 80%
+  1 - - . . . 5, . 1 - - . . . . .
+}
+
+pattern hook-a {
+  step = 1/8
+  gate = 68%
+  e4 . a4 g4 e4 . c4 . | e4 . a4 b4 c5 b4 a4 .
+  velocity: 96 . 110 88 100 . 82 . 96 . 114 92 110 84 96 .
+}
+
+pattern hook-b {
+  step = 1/8
+  gate = 72%
+  e4 . a4 g4 e4 . c4 e4 | g4 a4 c5 b4 a4 . e4 .
+}
+
+pattern kick drums {
+  bd: X... x... X... x...
+}
+
+pattern groove drums {
+  swing = 54%
+  bd: X... x... X... x..x
+  sd: .... X... .... X...
+  ch: x5.x3. x5.x3. x5.x3. x5.x3.
+  oh: .... ..x4. .... ..x4.
+}
+
+pattern fill drums {
+  bd: X... x... X... x...
+  sd: .... X... .... x4x5x7X
+  ch: x5.x3. x5.x3. x5.x3. xxxx
+}
+
+// Explicitly silence tracks at each entry point so launching a scene is useful.
+scene intro {
+  bass = bass-space
+  kit = kick
+  hook = off
+}
+
+scene verse {
+  bass = bass-a
+  kit = groove
+  hook = off
+}
+
+scene lift {
+  bass = bass-b
+  kit = fill
+  hook = hook-a
+}
+
+scene chorus {
+  bass = bass-b
+  kit = groove
+  hook = hook-b
+}
+
+scene break {
+  bass = bass-space
+  kit = off
+  hook = hook-a
+}
+
+scene outro {
+  bass = bass-space
+  kit = kick
+  hook = off
+}
+
+automate bass.cutoff {
+  @1.1.1 360Hz @5.1.1 720Hz smooth @13.1.1 720Hz @17.1.1 2200Hz smooth @25.1.1 420Hz step @29.1.1 1800Hz smooth @37.1.1 420Hz smooth @41.1.1 260Hz smooth
+}
+
+// Master level is static; fade the post-fader track feeds instead.
+automate bass.level {
+  @1.1.1 -10dB @39.1.1 -10dB @41.1.1 -48dB smooth
+}
+
+automate kit.level {
+  @1.1.1 -8dB @39.1.1 -8dB @41.1.1 -48dB smooth
+}
+
+// 40 bars, about 76 seconds before the effect tail.
+song {
+  intro*4
+  verse*8
+  lift*4
+  chorus*8
+  break*4
+  chorus*8
+  outro*4
+}

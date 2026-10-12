@@ -57,3 +57,32 @@ make engine-metrics ENGINE_METRICS_ARGS='-filter kind=graph,tracks=16 -offline=f
 `-filter` requires every comma-separated substring to occur in the scenario
 key. Use `tracks=1 ` with a trailing space to select one track without also
 matching 16. Use `-bars` for offline duration and `-warmup` for native warmup.
+
+## Native parallel and idle DSP checks
+
+`BenchmarkNativeFullRender` compares one and four render lanes at 16, 32 and
+64 tracks, with 64-, 128- and 256-frame buffers at 48 kHz. Every track has a
+sustained acid synth and the same oversampled drive. Mixer, limiter and
+per-sample smoothers remain enabled. Construction is outside the timed loop;
+render faults fail the benchmark. Run it without competing builds:
+
+```sh
+go test ./kernel/engine -run '^$' -bench '^BenchmarkNativeFullRender$' -benchmem
+CICADA_PARALLEL_TIMING=1 go test ./kernel/engine -run '^TestParallelCallbackTimingSample$' -count=1 -v
+```
+
+The benchmark reports averages and allocations. The optional timing check
+reports 600 observed callback samples per case, their p50/p99, maximum,
+allocation count and count above the buffer duration. It does not establish
+callback tail latency or physical recording latency. Automatic native
+parallelism starts at 32 tracks; sample-accurate event boundaries can select
+a short serial segment. Browser kernels retain serial rendering and their
+existing resource budget. Windows workers request MMCSS Pro Audio; other
+hosts remain subject to ordinary scheduler delays.
+
+Idle fast paths skip work only when silence is proven. Drive waits for its FIR
+history to clear; active delay/reverb tails still render fully. Empty piano
+soundboards skip their expensive resonators while controls advance. Organ
+oscillator phases advance during idle intervals. PCM/state regressions cover
+automation, silence and retriggering at 44.1, 48 and 96 kHz. No threshold
+cuts a quiet musical tail or changes oversampling quality.
