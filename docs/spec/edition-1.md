@@ -473,7 +473,9 @@ song { main }
 
 **Defaults:** The tempo starts at the score's `tempo`. It carries through later scenes until a scene sets it again. Restarting the song, seeking to the first bar, and each pass of a looped song return to the score tempo. Seeking into a later bar plays at the tempo that bar would have had when played through from the start.
 
-**Errors:** A value outside 20 to 300 reports `CICADA-UNIT`. A synced delay division must fit the four-second buffer at the slowest tempo the song reaches, the score tempo or any scene tempo; otherwise the score reports `CICADA-PARAM`.
+**Errors:** A value outside 20 to 300 reports `CICADA-UNIT`. A synced delay division must fit the four-second buffer at the slowest tempo the song reaches, the score tempo or any scene tempo; otherwise the score reports `CICADA-PARAM`. A `tempo` setting in a score with an `arrange` block reports `CICADA-UNSUPPORTED` and names the scene, because arrangements place content by tick and have no scene boundaries.
+
+**Live launches:** While a song carries scene tempos, the song owns the tempo. A scene launched by hand or by the director changes patterns and parameters but not the tempo, so playback, seeking and bar placement always agree. A song with no scene tempo lets a launched scene set it.
 
 **Limitations:** There is no tempo automation, ramp, or per-scene transpose. Audio clips are not time-stretched: a clip plays at its recorded speed and ends where its source ends, whatever the tempo. Count-in and recorded takes assume one tempo, and capture across a tempo step is not supported. A MIDI file import accepts one tempo.
 

@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/kernel/cmd"
@@ -213,5 +214,105 @@ func TestSceneTempoOfflineMatchesKernelTiming(t *testing.T) {
 	// Window of 20 ms; the limiter's latency shifts the offline file by a few ms.
 	if c := correlation(envelope(offline, 960), envelope(native, 960)); c < .9 {
 		t.Fatalf("offline and kernel energy envelopes correlate at %.3f", c)
+	}
+}
+
+// One note starts on the first step and is held for 21 steps, so it ends five
+// steps into the slower second bar; 27 rests fill the 48 steps of three bars.
+var heldAcross = "tempo 120\ntrack bass acid {}\npattern held acid steps=48 { 1" + strings.Repeat(" -", 20) + strings.Repeat(" .", 27) + " }\nscene a { bass = held }\nscene b { bass = keep%s }\nsong { a b*2 }\n"
+
+func renderBoth(t *testing.T, source string, rate int, bars int) (driftAudio, driftAudio) {
+	t.Helper()
+	score, diagnostics := notation.Parse([]byte(source))
+	for _, d := range diagnostics {
+		if d.Severity == "error" {
+			t.Fatal(d)
+		}
+	}
+	p, ds := project.FromScore(score)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	cfg, err := project.CompileEngine(p, rate, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noDither := false
+	var wav bytes.Buffer
+	if _, err := WAV(score, Options{SampleRate: rate, Bits: 32, Bars: bars, TailSec: 1, Dither: &noDither}, &wav); err != nil {
+		t.Fatal(err)
+	}
+	data := wav.Bytes()
+	n := int(binary.LittleEndian.Uint32(data[40:44])) / 8
+	offline := driftAudio{make([]float32, n), make([]float32, n)}
+	for i := range offline.left {
+		offline.left[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[44+i*8:]))
+		offline.right[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[48+i*8:]))
+	}
+	tempo, err := project.NewTempoMap(rate, int64(p.TempoMilli), project.SongTempoChanges(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	end := int(tempo.SampleAtTick(int64(bars) * seq.TicksPerBar))
+	latency := driftLatency(t, cfg)
+	total := n + latency
+	player, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	player.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	native := driftAudio{make([]float32, total), make([]float32, total)}
+	for at := 0; at < total; {
+		if at == end {
+			player.Push(cmd.Command{Op: cmd.OpStop, Track: 0xff})
+		}
+		frames := min(128, total-at)
+		if at < end {
+			frames = min(frames, end-at)
+		}
+		player.Render(native.left[at:at+frames], native.right[at:at+frames])
+		var message cmd.Message
+		for player.Poll(&message) {
+			if message.Kind == cmd.Fault {
+				t.Fatalf("engine fault %d", message.A)
+			}
+		}
+		at += frames
+	}
+	return offline, driftAudio{native.left[latency:], native.right[latency:]}
+}
+
+// A note held across a tempo step must end on the same sample in the offline
+// render and in the kernel, at both common sample rates.
+func TestSceneTempoHeldNoteMatchesKernelSampleForSample(t *testing.T) {
+	for _, rate := range []int{44100, 48000} {
+		offline, native := renderBoth(t, strings.Replace(heldAcross, "%s", " tempo = 60", 1), rate, 3)
+		peak, _ := driftDelta(t, offline, native)
+		var signal float64
+		for _, v := range offline.left {
+			signal = math.Max(signal, math.Abs(float64(v)))
+		}
+		if signal < .005 || peak != 0 {
+			t.Fatalf("rate %d: signal peak %.4f, offline minus kernel peak %.9f", rate, signal, peak)
+		}
+		// The step moves the release: the same score without it sounds different.
+		flat, _ := renderBoth(t, strings.Replace(heldAcross, "%s", "", 1), rate, 3)
+		n := min(len(flat.left), len(offline.left))
+		if p, _ := driftDelta(t, driftAudio{flat.left[:n], flat.right[:n]}, driftAudio{offline.left[:n], offline.right[:n]}); p == 0 {
+			t.Fatalf("rate %d: the tempo step did not change the render", rate)
+		}
+	}
+}
+
+// A slide into the next scene's pattern releases the old note after the bar
+// line, so the release is placed with the new tempo.
+func TestSceneTempoSlideIntoNextSceneMatchesKernelSampleForSample(t *testing.T) {
+	source := "tempo 120\ntrack bass acid {}\npattern p1 acid steps=16 { " + strings.Repeat(". ", 15) + "1~ }\npattern p2 acid steps=16 { 5 " + strings.Repeat(". ", 15) + "}\nscene a { bass = p1 }\nscene b { bass = p2 tempo = 60 }\nsong { a b }\n"
+	for _, rate := range []int{44100, 48000} {
+		offline, native := renderBoth(t, source, rate, 2)
+		peak, _ := driftDelta(t, offline, native)
+		if peak != 0 {
+			t.Fatalf("rate %d: offline minus kernel peak %.9f", rate, peak)
+		}
 	}
 }

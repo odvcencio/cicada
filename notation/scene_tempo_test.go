@@ -77,3 +77,17 @@ func TestSceneTempoFormatRoundTrip(t *testing.T) {
 		t.Fatalf("not idempotent: %v\n%s", err, twice)
 	}
 }
+
+func TestSceneTempoIsRejectedUnderArrange(t *testing.T) {
+	src := "cicada 2\ntempo 120\ntrack bass acid {}\npattern riff acid steps=4 { 1 . 5 . }\nscene main {\n  bass = riff\n  tempo = 84\n}\narrange {\n  place intro bass riff {\n    at = @1.1.1\n    length = 1bar\n  }\n}\n"
+	_, diagnostics := Parse([]byte(src))
+	var found bool
+	for _, d := range diagnostics {
+		if d.Code == "CICADA-UNSUPPORTED" && strings.Contains(d.Message, "scene main") && strings.Contains(d.Message, "tempo") && d.Position.Line == 7 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("want CICADA-UNSUPPORTED naming scene main at line 7, got %+v", diagnostics)
+	}
+}

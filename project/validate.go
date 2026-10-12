@@ -675,6 +675,9 @@ func ValidateProject(p *Project) error {
 			if err != nil {
 				return err
 			}
+			if setting.Path == SceneTempoPath && p.Arrange != nil {
+				return fmt.Errorf("CICADA-UNSUPPORTED: scene %s sets tempo, which a project with an arrange block does not apply", scene.ID)
+			}
 			if !resolved.Descriptor.Live && !notation.SceneTempoPath(resolved.Descriptor.ID) {
 				return fmt.Errorf("CICADA-UNSUPPORTED: scene setting %s is not live", setting.Path)
 			}

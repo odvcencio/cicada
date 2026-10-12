@@ -1,6 +1,7 @@
 package project
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -81,5 +82,27 @@ func TestSyncedDelayMustFitTheSlowestSceneTempo(t *testing.T) {
 		t.Fatal(ds)
 	} else if _, err := CompileEngine(p, 48_000, 128); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestProjectSceneTempoIsRejectedUnderArrange(t *testing.T) {
+	files, err := filepath.Glob(filepath.Join("..", "examples", "arrangement", "*.cicada"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("arrangement example: %v", err)
+	}
+	score, ds, err := LoadScore(files[0], nil)
+	if err != nil || score == nil {
+		t.Fatalf("%v %+v", err, ds)
+	}
+	p, ds := FromScore(score)
+	if p == nil || p.Arrange == nil {
+		t.Fatalf("arrangement project: %+v", ds)
+	}
+	tempo := 84.0
+	p.Scenes = []Scene{{ID: "side", Bindings: map[string]string{}}}
+	p.Scenes[0].Settings = append(p.Scenes[0].Settings, SceneSetting{Path: "tempo", Value: SceneValue{Unit: "unit", Number: &tempo}})
+	err = ValidateProject(p)
+	if err == nil || !strings.Contains(err.Error(), "CICADA-UNSUPPORTED: scene "+p.Scenes[0].ID+" sets tempo") {
+		t.Fatalf("got %v", err)
 	}
 }

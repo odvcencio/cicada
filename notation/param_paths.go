@@ -37,6 +37,10 @@ func validateSceneSettings(score *Score, add func(string, string, string, Positi
 				add(code, message, "error", setting.Position)
 				continue
 			}
+			if setting.Path == "tempo" && score.Arrange != nil {
+				add("CICADA-UNSUPPORTED", "scene "+scene.Name+" sets tempo, which a score with an arrange block does not apply; remove the setting or use a song block", "error", setting.Position)
+				continue
+			}
 			if !descriptor.Live && !SceneTempoPath(descriptor.ID) {
 				add("CICADA-UNSUPPORTED", "scene setting "+setting.Path+" is not live", "error", setting.Position)
 				continue
