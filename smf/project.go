@@ -57,6 +57,14 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 			{Type: 0x59, Data: []byte{byte(keySharps), keyMinor}},
 		},
 	}
+	// A scene that sets a tempo adds one tempo event at its first bar.
+	for _, change := range project.SongTempoChanges(p) {
+		if change.Bar >= bars {
+			break
+		}
+		micros := uint32((60_000_000_000 + int64(change.BPMMilli)/2) / int64(change.BPMMilli))
+		file.Tracks[0].Meta = append(file.Tracks[0].Meta, MetaEvent{Tick: int64(change.Bar) * seq.TicksPerBar, Type: 0x51, Data: []byte{byte(micros >> 16), byte(micros >> 8), byte(micros)}})
+	}
 	channels := make([]uint8, len(p.Tracks))
 	nextChannel := uint8(0)
 	for i, track := range p.Tracks {

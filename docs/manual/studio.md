@@ -61,7 +61,7 @@ smoothing. **●** marks an explicit point; **↳** carries the previous value.
 Removing a point keeps that inherited value; add the score's default value
 explicitly to reset it. Repeated uses of a scene share its points. Playback,
 seek reconstruction, WAV exports, and stems use the same scene settings.
-Edits preserve surrounding source comments and support Undo. These lanes
+The scene tempo (`tempo`) can be added, changed, and removed the same way; it steps at the scene boundary and the arrangement length is the sum of the steps. Edits preserve surrounding source comments and support Undo. These lanes
 place points at scene boundaries. Continuous curves and recording control movement are not supported.
 
 ![GoSX scene automation with explicit points and inherited levels.](screenshots/studio-automation-1440.png)
