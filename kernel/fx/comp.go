@@ -145,7 +145,7 @@ func (c *Compressor) process(left, right, detectL, detectR float32, external boo
 	}
 	l, r := float64(left), float64(right)
 	dl, dr := float64(detectL), float64(detectR)
-	if !finite(l) || !finite(r) || !finite(dl) || !finite(dr) {
+	if !compressorFinite(l) || !compressorFinite(r) || !compressorFinite(dl) || !compressorFinite(dr) {
 		c.fault = true
 		return 0, 0
 	}
@@ -211,14 +211,27 @@ func (c *Compressor) process(left, right, detectL, detectR float32, external boo
 	c.reduction += (target - c.reduction) * coefficient
 	c.makeup += (c.targetMakeup - c.makeup) * c.smooth
 	c.mix += (c.targetMix - c.mix) * c.smooth
+	// The detector, gain reduction and automation have advanced above. With
+	// zero audio the output is exactly zero for any finite gain; avoid the
+	// exponentiation without freezing an external sidechain or release.
+	if left == 0 && right == 0 {
+		return 0, 0
+	}
 	gain := fastmath.Exp2((c.makeup - c.reduction) * (math.Log2E * math.Ln10 / 20))
 	outL := l*(1-c.mix) + l*gain*c.mix
 	outR := r*(1-c.mix) + r*gain*c.mix
-	if !finite(outL) || !finite(outR) || math.Abs(outL) > math.MaxFloat32 || math.Abs(outR) > math.MaxFloat32 {
+	if !compressorFinite(outL) || !compressorFinite(outR) || math.Abs(outL) > math.MaxFloat32 || math.Abs(outR) > math.MaxFloat32 {
 		c.fault = true
 		return 0, 0
 	}
 	return float32(outL), float32(outR)
+}
+
+// An all-ones IEEE 754 exponent denotes exactly infinity or NaN. The integer
+// test retains signed zeros and every finite normal/subnormal value while
+// avoiding multiple floating comparisons in each linked detector/output check.
+func compressorFinite(value float64) bool {
+	return math.Float64bits(value)&0x7ff0000000000000 != 0x7ff0000000000000
 }
 
 func (c *Compressor) Process(left, right float32) (float32, float32) {

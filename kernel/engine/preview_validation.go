@@ -31,8 +31,8 @@ func (e *Engine) PreviewParamValidator(track int) PreviewParamValidator {
 // PrepareParamValidators prepares detached command validation before playback.
 // It uses the same kit preparation as Engine, including remapped recipes.
 // Callers retain the result, not the temporary kits or any playing engine.
-func PrepareParamValidators(cfg *Config) ([16]PreviewParamValidator, error) {
-	var validators [16]PreviewParamValidator
+func PrepareParamValidators(cfg *Config) ([MaxTracks]PreviewParamValidator, error) {
+	var validators [MaxTracks]PreviewParamValidator
 	if cfg == nil || cfg.Tracks < 1 || cfg.Tracks > len(validators) {
 		return validators, Error("parameter validation track count is out of range")
 	}

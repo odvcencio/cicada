@@ -40,10 +40,74 @@ func TestParseExplainLocationCountsFromOne(t *testing.T) {
 	if err != nil || got != (explainLocation{bar: 2, beat: 3, step: 4}) {
 		t.Fatalf("location parse: %+v, %v", got, err)
 	}
-	for _, value := range []string{"2", "@0", "@1.0", "@1.2.3.4"} {
+	for _, value := range []string{"2", "@0", "@1.0", "@1.5", "@1.2.5", "@1.2.3.4", "@2147483648"} {
 		if _, err := parseExplainLocation(value); err == nil {
 			t.Errorf("accepted invalid location %q", value)
 		}
+	}
+}
+
+func TestExplainParameterEvaluatesSongAutomation(t *testing.T) {
+	source := `cicada 2
+track bass acid { cutoff = 700Hz }
+pattern pulse { 1 . }
+scene first { bass = pulse bass.cutoff = 800Hz }
+scene second { bass.cutoff = 900Hz }
+automate bass.cutoff {
+  @1.2.1 400Hz
+  @1.4.1 1600Hz smooth
+  @2.1.1 1200Hz step
+}
+song { first second*2 }
+`
+	path := filepath.Join(t.TempDir(), "main.cicada")
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		location, value, scene string
+		automated              bool
+	}{
+		{"@1.1.1", "800Hz", "scene first (entered bar 1): 800Hz", false},
+		{"@1.2.1", "400Hz", "scene first (entered bar 1): 800Hz", true},
+		{"@1.3.1", "800Hz", "scene first (entered bar 1): 800Hz", true},
+		{"@1.4.1", "1600Hz", "scene first (entered bar 1): 800Hz", true},
+		{"@2", "1200Hz", "scene second (entered bar 2): 900Hz", true},
+		{"@3.4.4", "1200Hz", "scene second (entered bar 2): 900Hz", true},
+	} {
+		t.Run(test.location, func(t *testing.T) {
+			var output strings.Builder
+			if err := explainParameter(path, "bass.cutoff", test.location, &output); err != nil {
+				t.Fatal(err)
+			}
+			text := output.String()
+			if !strings.Contains(text, test.scene) || !strings.Contains(text, "computed: "+test.value) || strings.Contains(text, "automation at ") != test.automated {
+				t.Fatalf("unexpected explanation:\n%s", text)
+			}
+		})
+	}
+}
+
+func TestExplainParameterSupportsNamedPlacements(t *testing.T) {
+	source := `cicada 2
+track bass acid { cutoff = 700Hz }
+pattern pulse { 1 . }
+scene live { bass = pulse bass.cutoff = 900Hz }
+arrange { place entry bass pulse { at = @2.1.1 length = 1/4 } }
+`
+	path := filepath.Join(t.TempDir(), "main.cicada")
+	if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+		t.Fatal(err)
+	}
+	var output strings.Builder
+	if err := explainParameter(path, "bass.cutoff", "@2", &output); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "computed: 700Hz") || strings.Contains(output.String(), "scene live") {
+		t.Fatalf("live scene affected arrangement: %s", output.String())
+	}
+	if err := explainParameter(path, "bass.cutoff", "@3", &output); err == nil || !strings.Contains(err.Error(), "outside the arrangement") {
+		t.Fatalf("out-of-range inspection: %v", err)
 	}
 }
 

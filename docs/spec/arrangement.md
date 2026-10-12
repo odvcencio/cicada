@@ -27,16 +27,24 @@ Project JSON preserves integer `at_tick` and `length_ticks` values under
 all other source bytes. A move followed by its inverse restores the exact
 original source, including comments and authored units.
 
+Studio's Session timeline moves and resizes placements and offers exact time,
+track, and content fields, plus copy/add/remove and marker controls. These
+commands patch CST fields atomically, compile the complete project, check the
+source revision, and enter the shared Undo history. Rejected overlaps and
+inexact divisions never publish a partial edit. See [Studio](../manual/studio.md#transport-and-session).
+
 Compilation produces immutable start/release events in absolute ticks. Releases
 precede starts at the same tick; placement identities prevent an old release
 from stopping another instance. Preparation validates voice capacity and copies
 event data outside rendering. Seeking reconstructs active placements and clip
 source positions without rendering skipped frames.
 
-Native playback, WASM images, WAV, and stems consume this schedule. WAV and
-stems retain the existing whole-bar export convention: a partial final bar is
-included, followed by the requested effect tail. Placement boundaries remain
-exact within that span. Export removes engine output latency.
+Native playback, WASM images, WAV, stems, and MIDI note export consume this
+schedule. WAV, stems, and MIDI retain the existing whole-bar export convention:
+a partial final bar is included. Placement boundaries remain exact within that
+span. Audio export removes engine output latency and adds
+the requested effect tail. MIDI bounds note-offs at each placement end and
+preserves arrangement markers as MIDI marker events.
 
 Unified kernel image version 15 carries placements, prepared planar audio and
 explicit graph chord fields. The two incompatible development-v14 dialects are

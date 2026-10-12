@@ -35,15 +35,15 @@ func DelayParamsFromValues(values map[string]Value) (fx.DelayParams, error) {
 			params.DampHz = *value.Number
 		case "pingpong":
 			if value.Unit != "enum" || value.Number != nil {
-				return params, fmt.Errorf("delay pingpong requires true or false")
+				return params, fmt.Errorf("delay pingpong requires on, off, true, or false")
 			}
 			switch value.Text {
-			case "true":
+			case "on", "true":
 				params.PingPong = true
-			case "false":
+			case "off", "false":
 				params.PingPong = false
 			default:
-				return params, fmt.Errorf("delay pingpong requires true or false")
+				return params, fmt.Errorf("delay pingpong requires on, off, true, or false")
 			}
 		case "width":
 			if value.Unit != "unit" || value.Number == nil {

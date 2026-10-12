@@ -1,7 +1,9 @@
 package fx
 
 import (
+	"fmt"
 	"math"
+	"math/cmplx"
 	"testing"
 )
 
@@ -121,35 +123,43 @@ func TestDriveShapeSwitchAndFault(t *testing.T) {
 	}
 }
 
-func TestHardDriveOversamplingRejectsAlias(t *testing.T) {
+func TestDriveOversamplingRejectsAlias(t *testing.T) {
 	const rate = 48_000
 	const start, count = 1_000, 4_800
-	drive, _ := NewDrive(rate)
-	if err := drive.SetParams(DriveParams{Shape: Hard, GainDB: 18, ToneHz: 20_000, Mix: 1}); err != nil {
-		t.Fatal(err)
-	}
-	drive.Reset()
-	pre, post := math.Pow(10, 18.0/20), drive.post[Hard]
-	var actualReal, actualImag, naiveReal, naiveImag float64
-	for frame := 0; frame < start+count; frame++ {
-		input := .251188643150958 * math.Sin(2*math.Pi*9_000*float64(frame)/rate)
-		output, _ := drive.Process(float32(input), 0)
-		if frame < start {
-			continue
-		}
-		// The fifth harmonic of a 9 kHz clipped sine aliases to 3 kHz
-		// at 48 kHz. Compare it with clipping directly at the base rate.
-		angle := 2 * math.Pi * 3_000 * float64(frame) / rate
-		naive := math.Max(-1, math.Min(1, input*pre)) * post
-		actualReal += float64(output) * math.Cos(angle)
-		actualImag += float64(output) * math.Sin(angle)
-		naiveReal += naive * math.Cos(angle)
-		naiveImag += naive * math.Sin(angle)
-	}
-	actual := math.Hypot(actualReal, actualImag)
-	naive := math.Hypot(naiveReal, naiveImag)
-	if actual >= naive*.1 {
-		t.Fatalf("3 kHz alias %.5g, naive clip %.5g: less than 20 dB rejection", actual, naive)
+	for _, shape := range []DriveShape{Soft, Hard, Fold, Diode} {
+		t.Run(fmt.Sprint(shape), func(t *testing.T) {
+			drive, _ := NewDrive(rate)
+			if err := drive.SetParams(DriveParams{Shape: shape, GainDB: 18, ToneHz: 20_000, Mix: 1}); err != nil {
+				t.Fatal(err)
+			}
+			drive.Reset()
+			pre, post := math.Pow(10, 18.0/20), drive.post[shape]
+			var actualAlias, naiveAlias, actualTone, naiveTone complex128
+			for frame := 0; frame < start+count; frame++ {
+				input := .251188643150958 * math.Sin(2*math.Pi*9_000*float64(frame)/rate)
+				output, _ := drive.Process(float32(input), 0)
+				if frame < start {
+					continue
+				}
+				// The fifth harmonic of 9 kHz folds to 3 kHz at 48 kHz.
+				// Normalize each result by its fundamental: turning down the
+				// effect or its tone filter cannot masquerade as alias rejection.
+				alias := cmplx.Rect(1, -2*math.Pi*3_000*float64(frame)/rate)
+				tone := cmplx.Rect(1, -2*math.Pi*9_000*float64(frame)/rate)
+				naive := shapeSample(shape, input*pre) * post
+				actualAlias += complex(float64(output), 0) * alias
+				naiveAlias += complex(naive, 0) * alias
+				actualTone += complex(float64(output), 0) * tone
+				naiveTone += complex(naive, 0) * tone
+			}
+			actual := cmplx.Abs(actualAlias) / cmplx.Abs(actualTone)
+			naive := cmplx.Abs(naiveAlias) / cmplx.Abs(naiveTone)
+			rejection := 20 * math.Log10(naive/actual)
+			t.Logf("shape %d: fundamental-matched 3kHz alias %.2fdBc; rejection versus base-rate %.2fdB", shape, 20*math.Log10(actual), rejection)
+			if rejection < 20 {
+				t.Fatalf("alias rejection %.2fdB, want at least 20dB", rejection)
+			}
+		})
 	}
 }
 

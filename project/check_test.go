@@ -36,10 +36,10 @@ song { main }
 }
 
 func TestSourceAndProjectAgreeAtVoiceCeiling(t *testing.T) {
-	for _, acidTracks := range []int{10, 11} {
+	for _, acidTracks := range []int{3, 4} {
 		var source strings.Builder
 		source.WriteString("cicada 1\n")
-		for i := 0; i < 2; i++ {
+		for i := 0; i < 23; i++ {
 			fmt.Fprintf(&source, "track d%d drums {}\n", i)
 		}
 		for i := 0; i < acidTracks; i++ {
@@ -47,7 +47,7 @@ func TestSourceAndProjectAgreeAtVoiceCeiling(t *testing.T) {
 		}
 		source.WriteString("pattern beat drums steps=1 { bd: x; sd: x; ch: x; oh: x; cp: x; rs: x; lt: x; mt: x; ht: x; cb: x; cy: x; }\n")
 		source.WriteString("pattern note acid steps=1 { 1 }\nscene all {")
-		for i := 0; i < 2; i++ {
+		for i := 0; i < 23; i++ {
 			fmt.Fprintf(&source, " d%d=beat", i)
 		}
 		for i := 0; i < acidTracks; i++ {
@@ -59,17 +59,17 @@ func TestSourceAndProjectAgreeAtVoiceCeiling(t *testing.T) {
 			t.Fatalf("%d acid tracks parse: %+v", acidTracks, diagnostics)
 		}
 		p, diagnostics := FromScore(score)
-		if acidTracks == 11 {
+		if acidTracks == 4 {
 			if p != nil || len(diagnostics) != 1 || diagnostics[0].Code != "CICADA-LIMIT" || diagnostics[0].Position.Line == 0 {
-				t.Fatalf("33 voices were not rejected at the song entry: %+v", diagnostics)
+				t.Fatalf("257 voices were not rejected at the song entry: %+v", diagnostics)
 			}
 			continue
 		}
 		if p == nil || len(diagnostics) != 0 {
-			t.Fatalf("32 voices were rejected: %+v", diagnostics)
+			t.Fatalf("256 voices were rejected: %+v", diagnostics)
 		}
 		if _, err := CompileEngine(p, 48_000, 128); err != nil {
-			t.Fatalf("32-voice project could not load: %v", err)
+			t.Fatalf("256-voice project could not load: %v", err)
 		}
 	}
 }

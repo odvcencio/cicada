@@ -86,19 +86,22 @@ func TestSyntheticWASMParity(t *testing.T) {
 			push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
 			if s.scenes {
 				push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff})
+				push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Tick: seq.TicksPerBar})
 			}
 			out := uint32(call("gosx_audio_out_ptr"))
 			messages := uint32(call("gosx_audio_msg_ptr"))
 			var memory uint32
 			var difference float64
-			queuedBar := 1
-			for position := 0; position < len(pcmL)+latency; position += s.block {
-				if s.scenes && position >= (queuedBar-1)*s.rate*2 {
-					push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: uint16(queuedBar % 2), Tick: int64(queuedBar) * seq.TicksPerBar})
-					queuedBar++
+			for position := 0; position < len(pcmL)+latency; {
+				if position == len(pcmL) {
+					push(cmd.Command{Op: cmd.OpStop, Track: 0xff})
 				}
-				call("gosx_audio_render", uint64(s.block))
-				for i := 0; i < s.block; i++ {
+				frames := min(s.block, len(pcmL)+latency-position)
+				if position < len(pcmL) {
+					frames = min(frames, len(pcmL)-position)
+				}
+				call("gosx_audio_render", uint64(frames))
+				for i := 0; i < frames; i++ {
 					frame := position + i - latency
 					if frame < 0 || frame >= len(pcmL) {
 						continue
@@ -124,6 +127,7 @@ func TestSyntheticWASMParity(t *testing.T) {
 				if position == s.block*10 {
 					memory = module.Memory().Size()
 				}
+				position += frames
 			}
 			if difference > 1e-6 || module.Memory().Size() != memory {
 				t.Fatalf("WASM/offline difference %g; memory %d -> %d", difference, memory, module.Memory().Size())

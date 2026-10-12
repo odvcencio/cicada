@@ -57,8 +57,12 @@ together.
 
 - [Writing music](writing-music.md) — build a score from tracks, patterns,
   pitches, drum rows, scenes, and songs.
+- [Composing a complete song](composing-songs.md) — develop a loop into a form,
+  voice chords, align grids, shape transitions, and study three demo songs.
 - [Studio](studio.md) — edit source and grids, launch scenes, arrange the song,
   and inspect edit history.
+- [Pad sampler](sampler.md) — chop samples, play sixteen pads, apply effects,
+  record performances, and resample them into Session.
 - [Editors and notation tools](editors.md) — use the LSP, VS Code extension,
   formatter, quick fixes, highlighting, and symbol lookup.
 - [Managing libraries](libraries.md) — create, inspect, pin, and vendor reusable

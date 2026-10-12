@@ -137,7 +137,7 @@ func TestTrackAndPatternLengthBoundaries(t *testing.T) {
 
 	var source strings.Builder
 	source.WriteString("cicada 1\n")
-	for track := 0; track < 17; track++ {
+	for track := 0; track < 65; track++ {
 		fmt.Fprintf(&source, "track t%d acid {}\n", track)
 	}
 	source.WriteString("pattern p acid steps=1 { 1 }\nscene s { t0=p }\nsong { s }\n")
@@ -147,5 +147,5 @@ func TestTrackAndPatternLengthBoundaries(t *testing.T) {
 			return
 		}
 	}
-	t.Fatalf("17-track score accepted: %+v", diagnostics)
+	t.Fatalf("65-track score accepted: %+v", diagnostics)
 }

@@ -1,0 +1,28 @@
+cicada 1
+track d0 drums {}
+track d1 drums {}
+track d2 drums {}
+track d3 drums {}
+track d4 drums {}
+track d5 drums {}
+track d6 drums {}
+track d7 drums {}
+track d8 drums {}
+track d9 drums {}
+track d10 drums {}
+track d11 drums {}
+track d12 drums {}
+track d13 drums {}
+track d14 drums {}
+track d15 drums {}
+track d16 drums {}
+track d17 drums {}
+track d18 drums {}
+track d19 drums {}
+track d20 drums {}
+track d21 drums {}
+track d22 drums {}
+track d23 drums {}
+pattern beat drums steps=1 { bd: x; sd: x; ch: x; oh: x; cp: x; rs: x; lt: x; mt: x; ht: x; cb: x; cy: x; }
+scene all { d0=beat d1=beat d2=beat d3=beat d4=beat d5=beat d6=beat d7=beat d8=beat d9=beat d10=beat d11=beat d12=beat d13=beat d14=beat d15=beat d16=beat d17=beat d18=beat d19=beat d20=beat d21=beat d22=beat d23=beat }
+song { all }

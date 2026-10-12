@@ -1,9 +1,11 @@
 package wam2
 
 import (
+	"bytes"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/host/kernelimage"
@@ -101,5 +103,66 @@ func TestWAM2Export(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(output, name)); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+func TestWAM2TrackEffectsAutomaticallySelectVocalModule(t *testing.T) {
+	const source = `cicada 2
+fx cleanup eq { type = highpass frequency = 80Hz }
+fx leveler comp { makeup = 0dB }
+fx sibilance deesser {}
+track bass acid { insert = cleanup -> leveler -> sibilance }
+pattern pulse acid { 1 . 5 . }
+scene main { bass = pulse }
+song { main }
+`
+	score, ds := notation.Parse([]byte(source))
+	p, ds := project.FromScore(score)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	dir := t.TempDir()
+	sdk := filepath.Join(dir, "sdk")
+	for _, name := range []string{"dist/index.js", "src/RingBuffer_LICENSE.txt"} {
+		path := filepath.Join(sdk, name)
+		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("fixture"), 0644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	core := filepath.Join(dir, "cicada-kernel.wasm")
+	vocal := filepath.Join(dir, "cicada-vocals.wasm")
+	head := []byte("\x00asm\x01\x00\x00\x00")
+	if err := os.WriteFile(core, append(head, []byte("core")...), 0644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "plugin")
+	o := Options{KernelPath: core, SDKPath: sdk, MIDITrack: "bass"}
+	if err := Export(p, ".", out, o); err == nil || !strings.Contains(err.Error(), "build-vocals-wasm") {
+		t.Fatalf("missing vocal dependency %v", err)
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Fatal("published incomplete plugin")
+	}
+	content := append(head, []byte("vocal")...)
+	if err := os.WriteFile(vocal, content, 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Export(p, ".", out, o); err != nil {
+		t.Fatal(err)
+	}
+	delivered, err := os.ReadFile(filepath.Join(out, "kernel.wasm"))
+	if err != nil || !bytes.Equal(delivered, content) {
+		t.Fatal("packaged core instead of required vocal module")
+	}
+	image, err := os.ReadFile(filepath.Join(out, "score-48000.bin"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := kernelimage.Decode(image, 48000, 128)
+	if err != nil || len(cfg.Track[0].InsertChain) != 3 {
+		t.Fatalf("chain image omitted %v", err)
 	}
 }

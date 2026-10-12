@@ -6,9 +6,16 @@ type CaptureState struct {
 	Active  string           `json:"activeCapture"`
 	Rate    int              `json:"sampleRate"`
 	Capture *CaptureSnapshot `json:"capture"`
+	Input   InputMeterState  `json:"input"`
+	Loop    *struct {
+		Passes  int      `json:"passes"`
+		Pass    int      `json:"pass"`
+		TakeIDs []string `json:"takeIds"`
+	} `json:"loopRecording"`
 }
 type CaptureSnapshot struct {
 	Recording       bool   `json:"recording"`
+	Completed       bool   `json:"completed"`
 	RemainingFrames int64  `json:"countInRemainingFrames"`
 	WrittenFrames   uint64 `json:"writtenFrames"`
 	Incomplete      bool   `json:"incomplete"`

@@ -1,0 +1,27 @@
+{
+  "files": {
+    "build/cicada": "f2701f1bf79ed3b4296dd0248a3fa9f7d6bbe51bf2c5057afcca1358cc49fe04",
+    "build/cicada-workstation": "d6e473686a65d6b63b0c949d7d172c108a1c0c25ab07270f92d7941d367551d8",
+    "build/workstation/build.json": "60a3b2e71de28f2171019da52ec0a2c7a7447594c69d43881cbb0c01635c3166",
+    "workstation/ui/engine_asset.go": "e47cd9b72ec82231fa4a546dca6605df3305580fe5c9087c28c8e1461aef018b",
+    "workstation/engine/main_js.go": "55ee6ee2bd75f196bd67de9ea923c1303f994033fd2979a2c04fc5f20b8a40ff",
+    "workstation/go.mod": "b0614263af2e39c6f5c792c9e8c4c19fcc93a3da2462de44683e3502e4bd7553"
+  },
+  "viewports": [
+    {
+      "width": 1440,
+      "height": 1100
+    },
+    {
+      "width": 390,
+      "height": 844
+    }
+  ],
+  "audio": "Native Null; no physical input/output opened",
+  "tests": [
+    "performance.test.cjs",
+    "meter-performance.test.cjs",
+    "producer-workflow.test.cjs"
+  ],
+  "fixture": "Private64-track source and three retained simulated vocal takes"
+}

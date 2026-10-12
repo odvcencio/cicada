@@ -301,7 +301,7 @@ func TestUnifiedFeatureShapesRoundTrip(t *testing.T) {
 	p.Len = 1
 	p.GatePercent = 55
 	p.Steps[0], _ = seq.PackStep(seq.Step{Note: 60, Gate: true, Velocity: 100, Ratchet: 1, Probability: 100})
-	sampler.Scenes = []engine.Scene{{Track: [16]engine.SceneBinding{{Mode: engine.SceneSlot}}}}
+	sampler.Scenes = []engine.Scene{{Track: [engine.MaxTracks]engine.SceneBinding{{Mode: engine.SceneSlot}}}}
 	sampler.Song = []engine.SongEntry{{Bars: 1}}
 	empty := chordConfig(t)
 	empty.Patterns = []engine.PatternBank{{}}

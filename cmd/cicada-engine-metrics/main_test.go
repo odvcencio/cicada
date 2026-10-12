@@ -6,8 +6,10 @@ import (
 	"math"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/mix"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/render"
 )
 
@@ -111,20 +113,39 @@ func offlineReference(t *testing.T, s scenario) ([]float32, []float32, int) {
 		pcmL[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[i*8:]))
 		pcmR[i] = math.Float32frombits(binary.LittleEndian.Uint32(data[i*8+4:]))
 	}
+	// Compare the same finite programme. The timed harness deliberately keeps
+	// looping and queues scene launches ahead; the reference must exclude the
+	// next phrase while draining linear-phase drive and limiter latency.
+	n.scenes = false
+	if s.scenes && !n.engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Tick: seq.TicksPerBar}) {
+		t.Fatal("reference scene launch rejected")
+	}
 	var left, right [256]float32
 	var difference float64
-	for position := 0; position < frames+latency; position += s.block {
-		n.Render(left[:s.block], right[:s.block])
-		for i := 0; i < s.block; i++ {
+	var differenceFrame int
+	for position := 0; position < frames+latency; {
+		if position == frames && !n.engine.Push(cmd.Command{Op: cmd.OpStop, Track: 0xff}) {
+			t.Fatal("reference stop rejected")
+		}
+		count := min(s.block, frames+latency-position)
+		if position < frames {
+			count = min(count, frames-position)
+		}
+		n.Render(left[:count], right[:count])
+		for i := 0; i < count; i++ {
 			frame := position + i - latency
 			if frame < 0 || frame >= frames {
 				continue
 			}
-			difference = max(difference, math.Abs(float64(left[i])-float64(pcmL[frame])), math.Abs(float64(right[i])-float64(pcmR[frame])))
+			delta := max(math.Abs(float64(left[i])-float64(pcmL[frame])), math.Abs(float64(right[i])-float64(pcmR[frame])))
+			if delta > difference {
+				difference, differenceFrame = delta, frame
+			}
 		}
+		position += count
 	}
 	if n.fault || math.IsNaN(difference) || difference > 1e-6 {
-		t.Fatalf("native/offline difference %g, fault=%t", difference, n.fault)
+		t.Fatalf("native/offline difference %g at frame %d/%d, fault=%t", difference, differenceFrame, frames, n.fault)
 	}
 	return pcmL, pcmR, latency
 }

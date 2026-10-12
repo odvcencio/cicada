@@ -187,6 +187,17 @@ func (voice acidVoice) NoteOn(note, velocity uint8, accent, slide bool) {
 	voice.Voice.NoteOn(note, accent, slide, velocity)
 }
 
+// trimmedVoice applies a fixed calibration factor to one voice's output.
+type trimmedVoice struct {
+	keyvoice.Voice
+	gain float32
+}
+
+func (v trimmedVoice) NextStereo() (float32, float32) {
+	l, r := v.Voice.NextStereo()
+	return l * v.gain, r * v.gain
+}
+
 type pianoVoice struct {
 	Instrument keyvoice.Voice
 	notes      [4]uint8
@@ -253,6 +264,42 @@ func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, st
 	return renderWAV(score, opts, writer, stemsDir, gain)
 }
 
+func hasAudioClipTrack(score *notation.Score) bool {
+	for _, track := range score.Tracks {
+		if track.Kind == "audio" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasSerialTrackEffects(score *notation.Score) bool {
+	for _, track := range score.Tracks {
+		mixer, err := project.CompileMixerParams(track)
+		if err != nil {
+			return true
+		}
+		if len(mixer.Inserts) > 1 {
+			return true
+		}
+		if len(mixer.Inserts) == 1 {
+			for _, effect := range score.Effects {
+				if effect.Name != mixer.Inserts[0] {
+					continue
+				}
+				kind := effect.Kind
+				if kind == "" {
+					kind = effect.Name
+				}
+				if kind == "eq" || kind == "comp" || kind == "deesser" {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func hasResidentSampler(score *notation.Score) bool {
 	for _, sampler := range score.Samplers {
 		if sampler.Asset != "" {
@@ -269,7 +316,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if opts.AssetDir == "" {
 		opts.AssetDir = opts.AssetRoot
 	}
-	if score != nil && (score.Arrange != nil || hasPackSampler(score) && !opts.SamplerBaseline) {
+	if score != nil && (score.Arrange != nil || hasAudioClipTrack(score) || hasSerialTrackEffects(score) || hasPackSampler(score) && !opts.SamplerBaseline) {
 		return renderScheduleWAV(score, opts, writer, stemsDir, outputGain)
 	}
 	var report Report
@@ -793,6 +840,9 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 					if pattern.Kind != "notes" {
 						continue
 					}
+					if !patternBoundToTrack(score, pattern.Name, source.Name) {
+						continue
+					}
 					compiled, err := project.CompilePattern(score, pattern, source)
 					if err != nil {
 						return nil, err
@@ -973,9 +1023,12 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 				if e != nil {
 					return nil, e
 				}
-				voice, err = keyboard.New(sampleRate, &spec)
+				voice, err = keyboard.NewCalibrated(sampleRate, &spec)
 			} else {
 				voice, err = piano.New(sampleRate)
+				if err == nil {
+					voice = trimmedVoice{voice, keyvoice.PianoLevelTrim}
+				}
 				if err == nil {
 					sustain, e := project.CompilePianoSustain(source)
 					if e != nil {

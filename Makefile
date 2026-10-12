@@ -1,11 +1,11 @@
 .PHONY: test-director build-worklets test grammar test-kernel test-golden test-alloc test-timing grammar-check probe-wasm build build-kernel-wasm build-loudness-wasm test-kernel-wasm test-parity test-loudness build-phrase-wasm test-phrase-wasm test-midi-virtual test-wasm test-browser test-browser-soak budget-size budget-browser release-cpu-report engine-metrics test-chord-wasm test-worklet-negotiation
-.PHONY: build-keys-wasm test-keys-wasm
+.PHONY: build-keys-wasm test-keys-wasm build-vocals-wasm
 
 export GOWORK := off
 
 # The official SDK stays in build output and is copied into exported plugins.
 .PHONY: build-wam2 test-wam2
-build-wam2: build-kernel-wasm
+build-wam2: build-kernel-wasm build-vocals-wasm
 	npm install --prefix build/wam2-sdk --ignore-scripts --no-package-lock --no-save @webaudiomodules/sdk@0.0.12
 
 test-wam2: build-wam2
@@ -94,6 +94,10 @@ test-collaboration:
 test-studio-continuity:
 	node --test workstation/browser/continuity.test.cjs
 
+.PHONY: test-studio-placements
+test-studio-placements:
+	node --test workstation/browser/placements.test.cjs
+
 .PHONY: test-studio-collaboration
 test-studio-collaboration:
 	node --test workstation/browser/collaboration.test.cjs
@@ -137,6 +141,16 @@ build-kernel-wasm:
 	}
 	go run ./cmd/cicada-wasm-size build/cicada-kernel.wasm
 
+# Optional full track-processing core. Automatically selected by project images;
+# its added bytes are reported separately from the default kernel budget.
+build-vocals-wasm:
+	mkdir -p build
+	@timeout --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
+		tinygo build -tags trackfx -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-vocals.wasm ./cmd/cicada-kernel-wasm && \
+		"$$(tinygo env TINYGOROOT)/bin/wasm-opt" -Oz build/cicada-vocals.wasm -o build/cicada-vocals.optimized.wasm && \
+		mv build/cicada-vocals.optimized.wasm build/cicada-vocals.wasm'
+	go run ./cmd/cicada-wasm-size --report-only build/cicada-vocals.wasm
+
 build-loudness-wasm:
 	mkdir -p build
 	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -target=wasm-unknown -opt=2 -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-loudness.wasm ./cmd/cicada-loudness-wasm
@@ -144,7 +158,10 @@ build-loudness-wasm:
 # Optional keyboard module; same ABI and AudioWorklet, loaded only for keys.
 build-keys-wasm:
 	mkdir -p build
-	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags keys -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
+	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags 'keys trackfx' -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
+	"$$(tinygo env TINYGOROOT)/bin/wasm-opt" -Oz build/cicada-keys.wasm -o build/cicada-keys.optimized.wasm
+	mv build/cicada-keys.optimized.wasm build/cicada-keys.wasm
+	go run ./cmd/cicada-wasm-size --report-only build/cicada-keys.wasm
 	wc -c build/cicada-keys.wasm
 	test $$(wc -c < build/cicada-keys.wasm) -le 524288
 
@@ -152,7 +169,7 @@ test-keys-wasm: build-kernel-wasm build-keys-wasm
 	CICADA_KEYS_CORE_WASM=$(CURDIR)/build/cicada-kernel.wasm GOWORK=off go test -p=2 -tags keys_wasm ./host/kernelimage -run '^TestKeysCoreWASM' -count=1 -v
 	CICADA_WASM_PATH=$(CURDIR)/build/cicada-keys.wasm GOWORK=off go test -p=2 -timeout=20m -tags 'wasm_integration keys' ./cmd/cicada-kernel-wasm -run '^TestAudioWASMKeys' -count=1 -v
 
-test-kernel-wasm: build-kernel-wasm build-loudness-wasm
+test-kernel-wasm: build-kernel-wasm build-vocals-wasm build-loudness-wasm
 	CICADA_CHORD_WASM_PATH=$(CURDIR)/build/cicada-kernel.wasm go test -timeout=3m -tags chord_wasm ./cmd/cicada-kernel-wasm -count=1
 	go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1
 	go test -timeout=3m -tags stream_wasm ./kernel/stream -run '^TestStreamNativeWASMParity$$' -count=1 -v
@@ -168,7 +185,7 @@ test-parity: build-kernel-wasm
 test-loudness: build-loudness-wasm
 	GOWORK=off go test ./kernel/loudness -count=1 -v
 
-test-wasm: build-kernel-wasm test-chord-wasm
+test-wasm: build-kernel-wasm build-vocals-wasm test-chord-wasm
 	bash -o pipefail -c "GOWORK=off nice -n 10 go test -timeout=20m -tags wasm_integration ./cmd/cicada-kernel-wasm -run '^TestAudioWASM' -count=1 -v | tee build/test-wasm.log"
 
 # Required unified image and opcode negotiation gates use the freshly built reactor.

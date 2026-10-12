@@ -317,11 +317,19 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 		applyPatches := func() bool {
 			applied := false
 			consumed, commands := 0, 0
+			// A block applies up to 128 commands, less what the engine queue must
+			// keep for launches, transport, notes (renderCommandReserve), queued
+			// cancellations, and an active preview with its pending reapply.
+			spare := engine.CommandCapacity - renderCommandReserve - len(model.queue)
+			if activeGesture() != 0 {
+				spare -= 2
+			}
+			patchBudget := min(2*patchCapacity, spare)
 			for _, patch := range model.patches {
 				if model.hasOffer && patch.publication > model.offerPublication {
 					break
 				}
-				if commands+patch.commands > 128 {
+				if commands+patch.commands > patchBudget {
 					break
 				}
 				commands += patch.commands

@@ -491,8 +491,8 @@ func TestAudioWASMArrangement(t *testing.T) {
 	call("gosx_audio_cmd_commit", uint64(len(batch)))
 	nativeConfig := engine.Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 1,
 		Scenes: []engine.Scene{
-			{Track: [16]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 0}}},
-			{Track: [16]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 1}}},
+			{Track: [engine.MaxTracks]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 0}}},
+			{Track: [engine.MaxTracks]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 1}}},
 		},
 		Song: []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}},
 	}

@@ -7,8 +7,10 @@ import (
 	"math"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/workstation/control"
 	"m31labs.dev/gosx/action"
 	"m31labs.dev/gosx/session"
 )
@@ -63,6 +65,19 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 		}
 		// Explicit redirect gives native and enhanced forms the same refreshed
 		// projection. Never put full score text into a cookie-backed flash.
+		if path == "/api/takes" && ctx.FormData["timeline"] == "on" && ctx.FormData["takeId"] != "" {
+			// Keep an auditioned phrase selected when the refreshed projection
+			// arrives, so Hear in song -> Use this range uses the same interval.
+			session.Current(ctx.Request).Set("vocal-range", map[string]string{"takeId": ctx.FormData["takeId"], "start": ctx.FormData["recordStart"], "end": ctx.FormData["recordEnd"]})
+			if command := ctx.FormData["action"]; command == "listen" || command == "listen-loop" {
+				session.Current(ctx.Request).Set("vocal-audition", map[string]string{"revision": ctx.FormData["revision"], "takeId": ctx.FormData["takeId"], "start": ctx.FormData["recordStart"], "end": ctx.FormData["recordEnd"], "gainDB": ctx.FormData["gainDB"], "auditionMode": ctx.FormData["auditionMode"], "offsetMS": ctx.FormData["offsetMS"], "fadeMS": ctx.FormData["fadeMS"], "crossfadeMS": ctx.FormData["crossfadeMS"]})
+			} else {
+				session.Current(ctx.Request).Delete("vocal-audition")
+			}
+		}
+		if path == "/api/undo" || path == "/api/redo" || path == "/api/source" {
+			session.Current(ctx.Request).Delete("vocal-audition")
+		}
 		ctx.FormData = nil
 		if path == "/api/source" || path == "/api/files" {
 			session.Current(ctx.Request).Delete("score-draft")
@@ -192,6 +207,17 @@ func (s *studioApp) actions() map[string]action.Handler {
 			return map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"], "newName": f["newName"], "track": f["track"], "value": f["value"]}, nil
 		}),
 		"automation": s.mutation("/api/automation", func(f map[string]string) (any, error) {
+			if f["action"] == "automation-point-set" || f["action"] == "automation-point-remove" {
+				curve := 0.0
+				if f["shape"] == "curve" {
+					var err error
+					curve, err = finiteNumber(f, "curve")
+					if err != nil || curve < -8 || curve > 8 {
+						return nil, fmt.Errorf("curve tension must be −8 to +8")
+					}
+				}
+				return map[string]any{"revision": f["revision"], "action": f["action"], "path": f["path"], "value": map[string]any{"oldAt": f["oldAt"], "at": f["at"], "value": f["value"], "shape": f["shape"], "curve": curve}}, nil
+			}
 			return map[string]any{"revision": f["revision"], "action": f["action"], "scene": f["scene"], "path": f["path"], "value": f["value"]}, nil
 		}),
 		"clip": s.mutation("/api/clip", func(f map[string]string) (any, error) {
@@ -222,6 +248,7 @@ func (s *studioApp) actions() map[string]action.Handler {
 			return map[string]any{"revision": f["revision"], "metadata": map[string]any{"title": f["title"], "tempoMilli": int(math.Round(tempo * 1000)), "root": f["root"], "scale": f["scale"]}}, nil
 		}),
 		"pattern":        s.patternAction,
+		"sampler":        s.samplerAction,
 		"live":           s.liveAction,
 		"launch":         s.launchAction,
 		"note-preview":   s.previewNotes,
@@ -253,6 +280,18 @@ func (s *studioApp) actions() map[string]action.Handler {
 		}),
 		"transport": s.mutation("/api/transport", func(f map[string]string) (any, error) {
 			p := edit(f)
+			for _, name := range []string{"placement", "section", "start", "end", "mode"} {
+				if f[name] != "" {
+					p[name] = f[name]
+				}
+			}
+			if f["loop"] != "" {
+				value, err := strconv.ParseBool(f["loop"])
+				if err != nil {
+					return nil, fmt.Errorf("loop must be true or false")
+				}
+				p["loop"] = value
+			}
 			p["action"] = f["action"]
 			p["scene"] = f["scene"]
 			p["track"] = f["track"]
@@ -288,8 +327,55 @@ func (s *studioApp) actions() map[string]action.Handler {
 			}
 			return p, nil
 		}),
+		"arrange": s.mutation("/api/arrange", func(f map[string]string) (any, error) {
+			return map[string]any{
+				"revision": f["revision"], "action": f["action"], "name": f["name"], "newName": f["newName"],
+				"placement": map[string]string{"at": f["at"], "length": f["length"], "track": f["track"], "content": f["content"]},
+			}, nil
+		}),
 		"mixer": s.mutation("/api/mixer", func(f map[string]string) (any, error) {
 			p := edit(f)
+			if f["action"] == "vocal-chain" {
+				p["action"], p["track"], p["confirmUpgrade"] = "vocal-chain", f["track"], f["confirmUpgrade"] == "on"
+				return p, nil
+			}
+			if f["action"] == "chain-edit" {
+				parts := strings.Fields(f["chain"])
+				index, err := integer(f, "index")
+				if err != nil {
+					return nil, err
+				}
+				switch f["operation"] {
+				case "up":
+					if index <= 0 || index >= len(parts) {
+						return nil, fmt.Errorf("choose a stage after the first")
+					}
+					parts[index-1], parts[index] = parts[index], parts[index-1]
+				case "down":
+					if index < 0 || index >= len(parts)-1 {
+						return nil, fmt.Errorf("choose a stage before the last")
+					}
+					parts[index+1], parts[index] = parts[index], parts[index+1]
+				case "remove":
+					if index < 0 || index >= len(parts) {
+						return nil, fmt.Errorf("choose an effect stage")
+					}
+					parts = append(parts[:index], parts[index+1:]...)
+				case "add":
+					if f["effect"] == "" {
+						return nil, fmt.Errorf("choose an effect")
+					}
+					parts = append(parts, f["effect"])
+				default:
+					return nil, fmt.Errorf("choose an effect chain operation")
+				}
+				value := strings.Join(parts, " -> ")
+				if value == "" {
+					value = "none"
+				}
+				p["path"], p["value"] = f["track"]+".insert", value
+				return p, nil
+			}
 			p["confirmUpgrade"] = f["confirmUpgrade"] == "on"
 			p["path"] = f["path"]
 			var value any
@@ -318,6 +404,43 @@ func (s *studioApp) actions() map[string]action.Handler {
 			p["track"] = f["track"]
 			p["scene"] = f["scene"]
 			p["takeId"] = f["takeId"]
+			if f["timeline"] == "on" {
+				settings := map[string]any{"start": f["recordStart"], "end": f["recordEnd"]}
+				if f["passes"] != "" {
+					n, err := integer(f, "passes")
+					if err != nil || n < 1 || n > 8 {
+						return nil, fmt.Errorf("choose 1 to 8 recording passes")
+					}
+					settings["passes"] = n
+				}
+				for _, name := range []string{"offsetMS", "fadeMS", "crossfadeMS"} {
+					if f[name] != "" {
+						n, err := finiteNumber(f, name)
+						lo, hi := 0., 100.
+						if name == "offsetMS" {
+							lo, hi = -500, 500
+						}
+						if err != nil || n < lo || n > hi {
+							return nil, fmt.Errorf("%s must be %g to %g ms", name, lo, hi)
+						}
+						settings[name] = n
+					}
+				}
+				if f["gainDB"] != "" {
+					gain, err := finiteNumber(f, "gainDB")
+					if err != nil || !control.ValidVocalGain(gain) {
+						return nil, fmt.Errorf("phrase gain must be −24 to +18 dB")
+					}
+					settings["gainDB"] = gain
+				}
+				if mode := f["auditionMode"]; mode != "" {
+					if mode != "solo" && mode != "context" {
+						return nil, fmt.Errorf("choose Song or Vocal only for auditioning")
+					}
+					settings["auditionMode"] = mode
+				}
+				p["recording"] = settings
+			}
 			return p, nil
 		}),
 		"undo": s.fileHistory("undo"),
@@ -330,11 +453,32 @@ func (s *studioApp) actions() map[string]action.Handler {
 			return s.mutation(fmt.Sprintf("/api/history/%d/revert", id), func(f map[string]string) (any, error) { return edit(f), nil })(ctx)
 		},
 		"audio": s.mutation("/api/audio/config", func(f map[string]string) (any, error) {
+			period := 256
+			if f["periodFrames"] != "" {
+				var err error
+				period, err = integer(f, "periodFrames")
+				if err != nil {
+					return nil, fmt.Errorf("choose an audio buffer in frames")
+				}
+			}
+			switch period {
+			case 64, 128, 256, 512, 1024:
+			default:
+				return nil, fmt.Errorf("choose a 64, 128, 256, 512, or 1024-frame audio buffer")
+			}
 			gain, e := finiteNumber(f, "monitorGain")
 			if e != nil {
 				return nil, fmt.Errorf("monitor gain must be a number")
 			}
-			return audioOptions{InputDevice: f["inputDevice"], OutputDevice: f["outputDevice"], InputEnabled: f["inputEnabled"] == "on", MonitorMuted: f["monitorMuted"] == "on", MonitorGain: gain, MonitorMode: f["monitorMode"]}, nil
+			offset := 0.
+			if f["recordingOffsetMS"] != "" {
+				var err error
+				offset, err = finiteNumber(f, "recordingOffsetMS")
+				if err != nil || offset < -500 || offset > 500 {
+					return nil, fmt.Errorf("recording timing correction must be −500 to +500 ms")
+				}
+			}
+			return audioOptions{InputDevice: f["inputDevice"], OutputDevice: f["outputDevice"], InputEnabled: f["inputEnabled"] == "on", MonitorMuted: f["monitorMuted"] == "on", MonitorGain: gain, MonitorMode: f["monitorMode"], RecordingOffsetMS: offset, PeriodFrames: period}, nil
 		}),
 		"export": s.mutation("/api/export", func(f map[string]string) (any, error) {
 			p := map[string]any{"revision": f["revision"]}

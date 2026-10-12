@@ -1,0 +1,57 @@
+{
+  "checks": [
+    "finite recording pass choices1–8 are available without opening the microphone",
+    "timing nudges preserve the selected interval; gain/advance/fades preview without source edits",
+    "phrase timing and transitions commit with independent neighbor mappings and survive Undo/Redo",
+    "recording timing correction applies through Audio and returns to Session with microphone off",
+    "vocal chain creation is idempotent; insert order and removal are explicit and undoable",
+    "a phrase can be auditioned and recomped after adding its vocal effects; effects and source Undo remain intact",
+    "drawn and button-created points stay drafts until saved; repeated keyboard moves replace one point; curve shape/deletion support Undo",
+    "phone phrase controls recall saved edits; real touch moves and saves a curve point without duplicating it or overflowing"
+  ],
+  "errors": [],
+  "beforeHashes": [
+    {
+      "id": "take-576b502ee8fdfb7ad978d13a",
+      "hash": "9ee011609e0847dffd9b9a409de42466c0e13aec5e5c2073635353ffc88370b3",
+      "frames": 768000
+    },
+    {
+      "id": "take-9ea58a3c73d657d40b7b7486",
+      "hash": "cb5ace65ba3922a011c066e525ed4a932ad1d7cc91a716bc56a0a9ed09a88c82",
+      "frames": 384000
+    },
+    {
+      "id": "take-fa6903f9db855ae0058e3765",
+      "hash": "1ca5d71c127fb759c315cfa31d9505d417cd295d34ab2e22b23f9ec916dbe6bf",
+      "frames": 768000
+    }
+  ],
+  "afterHashes": [
+    {
+      "id": "take-576b502ee8fdfb7ad978d13a",
+      "hash": "9ee011609e0847dffd9b9a409de42466c0e13aec5e5c2073635353ffc88370b3",
+      "frames": 768000
+    },
+    {
+      "id": "take-9ea58a3c73d657d40b7b7486",
+      "hash": "cb5ace65ba3922a011c066e525ed4a932ad1d7cc91a716bc56a0a9ed09a88c82",
+      "frames": 384000
+    },
+    {
+      "id": "take-fa6903f9db855ae0058e3765",
+      "hash": "1ca5d71c127fb759c315cfa31d9505d417cd295d34ab2e22b23f9ec916dbe6bf",
+      "frames": 768000
+    }
+  ],
+  "microphoneActivated": false,
+  "silentOutput": true,
+  "desktop": [
+    1440,
+    1100
+  ],
+  "phone": [
+    390,
+    844
+  ]
+}

@@ -22,7 +22,7 @@ type probabilityIdentity struct {
 	slot  uint8
 }
 
-// FromProject compiles the first pass of a song into type 1 MIDI. The
+// FromProject compiles the first pass of an arrangement into type 1 MIDI. The
 // probability hash always uses iteration zero, as specified for interchange.
 func FromProject(p *project.Project, bars int) (File, error) {
 	return fromProject(p, bars, nil)
@@ -37,6 +37,13 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	totalBars := 0
 	for _, entry := range cfg.Song {
 		totalBars += int(entry.Bars)
+	}
+	if p.Arrange != nil {
+		var end int64
+		for _, event := range cfg.Schedule {
+			end = max(end, event.EndTick)
+		}
+		totalBars = int((end + seq.TicksPerBar - 1) / seq.TicksPerBar)
 	}
 	if bars == 0 {
 		bars = totalBars
@@ -74,15 +81,19 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 		}
 		file.Tracks[i+1] = TrackChunk{Name: track.ID, EndTick: endTick}
 	}
-	var slots [16]int
+	if p.Arrange != nil {
+		appendPlacements(&file, p, &cfg, channels, endTick)
+		return file, nil
+	}
+	var slots [engine.MaxTracks]int
 	for i := range slots {
 		slots[i] = -1
 	}
-	var chained [16]bool
+	var chained [engine.MaxTracks]bool
 	for ti := range p.Tracks {
 		chained[ti] = len(cfg.Patterns[ti].Chain) > 0
 	}
-	var held [16][drum.LaneCount]heldNote
+	var held [engine.MaxTracks][drum.LaneCount]heldNote
 	bar := 0
 	for _, entry := range cfg.Song {
 		scene := cfg.Scenes[entry.Scene]
@@ -195,6 +206,10 @@ func FromPattern(p *project.Project, patternID string) (File, error) {
 		return File{}, fmt.Errorf("pattern %s has no compatible track", patternID)
 	}
 	clone := *p
+	// A selected pattern is an independent loop. Its source arrangement and
+	// song-time lanes do not belong to that loop or its reduced track list.
+	clone.Arrange = nil
+	clone.Automation = nil
 	track := p.Tracks[selected]
 	track.Chain = nil
 	track.Slots = [16]*string{}

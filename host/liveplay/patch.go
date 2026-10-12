@@ -15,7 +15,7 @@ const patchCapacity = 64
 // Leave room for the largest note batch, all slot/scene launches, transport,
 // and currently active overrides. Limit work even when the kernel is empty.
 const patchBlockBudget = 2 * patchCapacity
-const renderCommandReserve = 256 + 16 + 1 + 2
+const renderCommandReserve = 256 + engine.MaxTracks + 1 + 2
 
 // PatchArena owns reusable batches. A successful Patch transfers ownership to
 // Read; rejected batches return immediately. Builders must stop after transfer.
@@ -92,7 +92,7 @@ func (patch *Patch) append(c cmd.Command, target PreviewTarget) {
 		patch.err = cmd.Error("patch command capacity exceeded")
 		return
 	}
-	if err := c.Validate(16); err != nil {
+	if err := c.Validate(engine.MaxTracks); err != nil {
 		patch.err = err
 		return
 	}
@@ -363,6 +363,7 @@ func (p *Player) rebuildCommitted(score Score, tick int64) {
 	if snapshot := p.overrides.Load(); snapshot != nil {
 		for _, overrides := range snapshot.tracks {
 			clear(overrides.state.appliedVersions[:])
+			p.appliedOverrideSnapshot = nil // Reapply: the committed base moved under the cache.
 		}
 	}
 }
@@ -374,6 +375,7 @@ func (p *Player) recordCommitted(track uint8, id kernel.ParamID, value float32) 
 	if snapshot := p.overrides.Load(); snapshot != nil {
 		if overrides := snapshot.tracks[names.overrideTrack(track)]; overrides != nil {
 			overrides.state.appliedVersions[id] = 0 // Reapply any different active gesture.
+			p.appliedOverrideSnapshot = nil         // applyOverrides caches by snapshot; invalidate it.
 		}
 	}
 }
@@ -399,7 +401,7 @@ func (p *Player) noteSceneCommitted(index int, blockTick int64) {
 		}
 		track := parameter.Track
 		if track == 0xff {
-			track = 16
+			track = engine.ParameterGlobalSlot
 		}
 		if p.current.Engine.CurrentSceneTick() <= blockTick && p.blockParameters[track][parameter.ID]>>32 != 0 &&
 			(p.transportQueued || p.reconstructed[track][parameter.ID]>>32 != 0) {
@@ -421,7 +423,7 @@ func (p *Player) notePendingScenes(tick int64) {
 	p.reconstructed.Visit(func(setting engine.SceneSetting, _ bool) {
 		track := setting.Track
 		if track == 0xff {
-			track = 16
+			track = engine.ParameterGlobalSlot
 		}
 		if p.blockParameters[track][setting.ID]>>32 == 0 {
 			p.recordCommitted(setting.Track, setting.ID, setting.Value)

@@ -16,6 +16,10 @@ const brotliLimit = 120 * 1024
 const processorLimit = 5 * 1024
 
 func main() {
+	reportOnly := len(os.Args) > 1 && os.Args[1] == "--report-only"
+	if reportOnly {
+		os.Args = append(os.Args[:1], os.Args[2:]...)
+	}
 	if len(os.Args) != 2 && len(os.Args) != 3 {
 		fmt.Fprintln(os.Stderr, "usage: cicada-wasm-size <kernel.wasm> [processor.js]")
 		os.Exit(2)
@@ -32,8 +36,12 @@ func main() {
 	if err := writer.Close(); err != nil {
 		fail(err)
 	}
-	fmt.Printf("kernel WASM: raw=%d/%d bytes, Brotli=%d/%d bytes\n", len(data), rawLimit, compressed.Len(), brotliLimit)
-	if len(data) > rawLimit || compressed.Len() > brotliLimit {
+	if reportOnly {
+		fmt.Printf("optional audio WASM: raw=%d bytes, Brotli=%d bytes (reported separately)\n", len(data), compressed.Len())
+	} else {
+		fmt.Printf("kernel WASM: raw=%d/%d bytes, Brotli=%d/%d bytes\n", len(data), rawLimit, compressed.Len(), brotliLimit)
+	}
+	if !reportOnly && (len(data) > rawLimit || compressed.Len() > brotliLimit) {
 		fail(fmt.Errorf("kernel WASM exceeds the size budget"))
 	}
 	if len(os.Args) == 3 {
@@ -48,7 +56,11 @@ func main() {
 		fmt.Println("PASS budget-size")
 		return
 	}
-	fmt.Println("PASS build-kernel-wasm")
+	if reportOnly {
+		fmt.Println("REPORT optional audio module; default core budget unchanged")
+	} else {
+		fmt.Println("PASS build-kernel-wasm")
+	}
 }
 
 func fail(err error) {

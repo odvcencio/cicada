@@ -80,6 +80,8 @@ type workspaceUI struct {
 	drafts      map[string]workspaceDraft
 	scrolls     []workspaceScroll
 	editors     map[string]workspaceEditorBaseline
+	drag        *placementDrag
+	dragClick   bool
 	// The newest project revision this tab has rendered. Only a different
 	// revision on disk is another editor's change worth refreshing for.
 	projectRevision atomic.Value
@@ -172,6 +174,19 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(document, "click", u.click)
 	u.listen(document, "dblclick", u.doubleClick)
 	u.listen(document, "keydown", u.keyDown)
+	u.listen(document, "pointerdown", u.placementPointerDown)
+	u.listen(document, "pointermove", u.placementPointerMove)
+	u.listen(document, "pointerup", u.placementPointerUp)
+	u.listen(document, "pointercancel", u.placementPointerCancel)
+	u.listen(document, "lostpointercapture", u.placementPointerCancel)
+	// Managed navigation retains this engine but reconciles the workspace's
+	// server-authored attributes. Restore its readiness marker after that
+	// reconciliation so enhanced controls keep working on revisited panels.
+	u.listen(document, "gosx:navigate", func(js.Value) {
+		if root.Get("isConnected").Bool() {
+			root.Call("setAttribute", "data-workspace-reactive", "ready")
+		}
+	})
 	u.scrolls = workspaceScrolls(root.Get("firstElementChild"))
 	u.listen(document, "scroll", u.scrolled)
 	u.revealInitialNote()
@@ -179,6 +194,8 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	confirmedWorkspaceRevision.Set(props.Revision)
 	go u.run()
 	go u.watchFiles()
+	go u.watchAudioControls()
+	go u.watchCapture()
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
@@ -243,7 +260,8 @@ func workspaceNative(node js.Value) bool {
 
 func workspaceEngineOwned(node js.Value) bool {
 	owner := node.Call("closest", "[data-gosx-engine], [data-gosx-island], [data-gosx-runtime-surface]")
-	return workspacePresent(owner) && workspaceAttr(owner, "data-gosx-engine") != "CicadaTakes"
+	name := workspaceAttr(owner, "data-gosx-engine")
+	return workspacePresent(owner) && name != "CicadaTakes" && name != "CicadaVocalLanes" && name != "CicadaAutomationCurve"
 }
 
 func workspaceLocation() string {
@@ -358,6 +376,11 @@ func (u *workspaceUI) click(event js.Value) {
 	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction {
 		return
 	}
+	if u.dragClick && workspacePresent(target.Call("closest", "[data-placement-block]")) {
+		u.dragClick = false
+		workspaceStop(event)
+		return
+	}
 	modified := event.Get("altKey").Bool() || event.Get("ctrlKey").Bool() || event.Get("metaKey").Bool() || event.Get("shiftKey").Bool()
 	if button := target.Call("closest", "[data-workspace-tool]"); workspacePresent(button) && !modified {
 		workspaceStop(event)
@@ -376,7 +399,7 @@ func (u *workspaceUI) click(event js.Value) {
 	if modified {
 		return
 	}
-	if workspacePresent(target.Call("closest", "[data-workspace-retry]")) {
+	if workspacePresent(target.Call("closest", "[data-workspace-retry], [data-workspace-refresh]")) {
 		event.Call("preventDefault")
 		event.Call("stopImmediatePropagation")
 		u.queue(workspaceJob{method: http.MethodGet, current: true, form: js.Undefined(), refresh: true})
@@ -530,6 +553,9 @@ func (u *workspaceUI) editValues() map[string]string {
 func (u *workspaceUI) keyDown(event js.Value) {
 	target := event.Get("target")
 	if !u.owned(target) || target.Get("closest").Type() != js.TypeFunction || workspaceNative(target) || workspaceEngineOwned(target) {
+		return
+	}
+	if u.placementKeyDown(event) {
 		return
 	}
 	key := event.Get("key").String()
@@ -1074,7 +1100,7 @@ func workspaceHTMLIdentity(node *html.Node) string {
 				}
 			}
 		})
-		for _, name := range []string{"action", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index"} {
+		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad", "takeId", "timeline"} {
 			if value, exists := fields[name]; exists {
 				key += "/" + name + ":" + value
 			}
@@ -1237,13 +1263,26 @@ func workspaceHTMLOpaque(node *html.Node) (bool, string) {
 	island, hasIsland := workspaceHTMLAttr(node, "data-gosx-island")
 	surface, hasSurface := workspaceHTMLAttr(node, "data-gosx-runtime-surface")
 	_, hasEngine := workspaceHTMLAttr(node, "data-gosx-engine")
-	opaque := (hasEngine || hasIsland || hasSurface || node.Data == "canvas" || node.Data == "audio" || node.Data == "video" || node.Data == "iframe") && engine != "CicadaTakes"
+	opaque := (hasEngine || hasIsland || hasSurface || node.Data == "canvas" || node.Data == "audio" || node.Data == "video" || node.Data == "iframe") && engine != "CicadaTakes" && engine != "CicadaVocalLanes" && engine != "CicadaAutomationCurve"
 	return opaque, engine + "/" + island + "/" + surface
 }
 
 func workspaceHTMLPreserve(current, next *html.Node) {
 	if current.Type != html.ElementNode || next.Type != html.ElementNode || current.Data != next.Data {
 		return
+	}
+	// Peak paths belong to immutable takes. Keep the loaded SVG geometry while
+	// its canonical placement/width and surrounding comp choices can update.
+	if wave, ok := workspaceHTMLAttr(current, "data-vocal-wave-svg"); ok {
+		if nextWave, _ := workspaceHTMLAttr(next, "data-vocal-wave-svg"); wave == nextWave {
+			for next.FirstChild != nil {
+				next.RemoveChild(next.FirstChild)
+			}
+			for child := current.FirstChild; child != nil; child = child.NextSibling {
+				next.AppendChild(workspaceHTMLClone(child))
+			}
+			return
+		}
 	}
 	// The native SSR toolbar is hidden until its engine mounts. Reintroducing
 	// that fallback state during each canonical patch briefly shrinks the page
@@ -1374,6 +1413,15 @@ func workspaceHTMLTree(root *html.Node) *vm.ResolvedTree {
 }
 
 func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (err error) {
+	// Returning from Audio introduces the Session's input/audio surfaces.
+	// A document navigation mounts that panel's complete GoSX engine graph.
+	currentURL, _ := url.Parse(workspaceLocation())
+	nextURL, safe := workspaceURL(projection.Location)
+	if job.target == "/__actions/audio" && safe && currentURL.Query().Get("panel") != nextURL.Query().Get("panel") {
+		js.Global().Get("location").Call("assign", nextURL.RequestURI())
+		return nil
+	}
+
 	started := time.Now()
 	measurements := map[string]float64{}
 	phase := func(name string) {
@@ -1538,6 +1586,9 @@ func (u *workspaceUI) apply(projection workspaceProjection, job workspaceJob) (e
 		}
 	}
 	phase("finish")
+	// Canonical take lanes can gain new passes or comp regions while retaining
+	// their delegated pointer controls and already loaded waveform geometry.
+	document.Call("dispatchEvent", js.Global().Get("Event").New("cicada:workspace-updated"))
 	if location, _ := url.Parse(workspaceLocation()); location.Query().Get("__workspace_profile") == "1" || workspaceAttr(u.root, "data-workspace-profile") == "true" {
 		measurements["nodes"] = float64(len(nextTree.Nodes))
 		measurements["ops"] = float64(len(ops))
@@ -1692,7 +1743,7 @@ func workspaceIdentity(node js.Value) string {
 		// A step inspector is a different semantic form when its hidden step,
 		// lane or pattern changes, even when its visual container keeps an ID.
 		key += "/form:" + workspaceAttr(node, "action")
-		for _, name := range []string{"action", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index"} {
+		for _, name := range []string{"action", "name", "pattern", "lane", "step", "track", "scene", "slot", "newName", "path", "index", "placement", "mode", "loop", "entry", "pad"} {
 			field := node.Call("querySelector", "input[type=hidden][name="+name+"]")
 			if workspacePresent(field) {
 				key += "/" + name + ":" + workspaceString(field, "value")

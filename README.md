@@ -64,6 +64,8 @@ by default. `CICADA_AUDIO` selects a backend when `--audio` is omitted.
 - [Examples](examples/) — complete Cicada scores, including
   [first acid](examples/first-acid.cicada) and
   [circuit kit](examples/circuit-kit.cicada).
+- [Demo songs](examples/songs/README.md) — three complete arrangements with
+  composition notes, editing exercises, and full render commands.
 
 Run `cicada help` for the command list or `cicada help COMMAND` for usage and
 flags.

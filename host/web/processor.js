@@ -20,7 +20,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     const release = target => { if (target) instances[target.s] = null; };
     const create = async image => {
       const bytes = new Uint8Array(image), header = new DataView(image);
-      if (bytes.length < 32 || header.getUint32(0) !== 0x43494331) invalid('Invalid CIC1 image header');
+      if (bytes.length < 32 || header.getUint32(0) !== 0x43494331) invalid('Invalid CIC1 header');
       const version = bytes[4] | bytes[5] << 8;
       if (version === 14) invalid('Ambiguous image14; recompile');
       if (version < 8 || version > 15) invalid(`Unsupported image version ${version}`);
@@ -41,7 +41,7 @@ class CicadaKernel extends AudioWorkletProcessor {
         for (const name in exports) x[name.replace('gosx_audio_', '')] = exports[name];
         if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability export');
         const capability = x.capabilities ? x.capabilities() : 0;
-        if (capability !== (capability >>> 0) || (capability & ~0x3e7ff)) invalid('Invalid capabilities');
+        if (capability !== (capability >>> 0) || (capability & ~0x3efff)) invalid('Invalid capabilities');
         if (version === 15 && !(capability & CapabilityUnifiedImage)) invalid('image15 needs CapabilityUnifiedImage');
         if (bank) {
           const bankPtr = x.bank_alloc(bank.byteLength);

@@ -87,9 +87,39 @@ func checkChordWASMParity(t *testing.T, upload bool) {
  scene chorus { keys=b }
  scene stop { keys=off }
  song { verse chorus stop }`
+	checkChordWASMSourceParity(t, upload, source, false)
+}
+
+func TestChordWASMAuthoredReleaseParity(t *testing.T) {
+	const source = `cicada 2
+tempo 120 key d minor seed 7
+instrument piano {
+ voice poly {
+  out = svf(pulse(pitch, 0.4), 2400Hz, 0.2) * adsr(gate, 5ms, 80ms, 0.7, 850ms) * velocity * 0.08
+ }
+}
+track keys piano {}
+pattern a notes { [d4 f4 a4 c5] - - - . . . . . . . . . . . . }
+scene verse { keys=a }
+scene stop { keys=off }
+song { verse stop }`
+	for _, upload := range []bool{false, true} {
+		name := "full-image"
+		if upload {
+			name = "command-upload"
+		}
+		t.Run(name, func(t *testing.T) { checkChordWASMSourceParity(t, upload, source, true) })
+	}
+}
+
+func checkChordWASMSourceParity(t *testing.T, upload bool, source string, checkRelease bool) {
+	t.Helper()
 	score, ds := notation.Parse([]byte(source))
+	if len(ds) != 0 {
+		t.Fatalf("parse: %+v", ds)
+	}
 	p, ds := project.FromScore(score)
-	if p == nil {
+	if p == nil || len(ds) != 0 {
 		t.Fatalf("source %+v", ds)
 	}
 	cfg, err := project.CompileEngine(p, 48000, 128)
@@ -136,7 +166,7 @@ func checkChordWASMParity(t *testing.T, upload bool) {
 		return 0
 	}
 	call("_initialize")
-	if got, want := uint32(call("gosx_audio_capabilities")), kernelimage.CapabilityChords|kernelimage.CapabilityUnifiedImage|kernelimage.CapabilitySpatial|uint32(kernelimage.SupportedCapabilities); got != want {
+	if got, want := uint32(call("gosx_audio_capabilities")), kernelimage.CapabilityChords|kernelimage.CapabilityUnifiedImage|kernelimage.CapabilitySpatial|uint32(kernelimage.SupportedCapabilities&^kernelimage.TrackEffectsCapability); got != want {
 		t.Fatalf("capabilities = %#x, want %#x", got, want)
 	}
 	ptr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
@@ -183,6 +213,8 @@ func checkChordWASMParity(t *testing.T, upload bool) {
 	messagePtr := uint32(call("gosx_audio_msg_ptr"))
 	var left, right [128]float32
 	var maxDelta float64
+	var releaseEnergy, stoppedEnergy float64
+	allocationsBefore := call("gosx_audio_allocation_count")
 	for at := 0; at < 288000; at += 128 {
 		native.Render(left[:], right[:])
 		call("gosx_audio_render", 128)
@@ -200,6 +232,14 @@ func checkChordWASMParity(t *testing.T, upload bool) {
 				if math.IsNaN(delta) || delta > 1e-6 {
 					t.Fatalf("native/WASM frame%d channel%d delta%g", at+i, channel, delta)
 				}
+				// The chord gate ends at 0.5 seconds. This window starts well
+				// after the former fixed 30 ms fade and contains no new onset.
+				if checkRelease && at+i >= 28800 && at+i < 48000 {
+					releaseEnergy += float64(got) * float64(got)
+				}
+				if checkRelease && at+i >= 144000 {
+					stoppedEnergy += float64(got) * float64(got)
+				}
 			}
 		}
 		count := int(call("gosx_audio_msg_drain"))
@@ -216,6 +256,18 @@ func checkChordWASMParity(t *testing.T, upload bool) {
 				t.Fatalf("native fault %+v", m)
 			}
 		}
+	}
+	if checkRelease {
+		if rms := math.Sqrt(releaseEnergy / (19200 * 2)); rms < 1e-4 {
+			t.Fatalf("authored 850 ms chord release was truncated: 0.6–1.0 s RMS=%g", rms)
+		}
+		if stoppedEnergy != 0 {
+			t.Fatalf("released chord did not become silent after scene stop: energy=%g", stoppedEnergy)
+		}
+		if allocationsAfter := call("gosx_audio_allocation_count"); allocationsAfter != allocationsBefore {
+			t.Fatalf("authored chord rendering allocated %d times", allocationsAfter-allocationsBefore)
+		}
+		t.Logf("authored chord release RMS=%g; silent after stop; no render allocations", math.Sqrt(releaseEnergy/(19200*2)))
 	}
 	t.Logf("full chord/chance/tie/scene/stop native-WASM parity: max sample delta%g", maxDelta)
 	legacy, _ := cmd.EncodeCommand(cmd.Command{Op: cmd.OpNoteOn, Track: 0, Arg0: 60 | 100<<8}, 1)
@@ -298,7 +350,7 @@ func TestChordWASMImageVersionNegotiation(t *testing.T) {
 				return result[0]
 			}
 			call("_initialize")
-			if got, want := uint32(call("gosx_audio_capabilities")), kernelimage.CapabilityChords|kernelimage.CapabilityUnifiedImage|kernelimage.CapabilitySpatial|uint32(kernelimage.SupportedCapabilities); got != want {
+			if got, want := uint32(call("gosx_audio_capabilities")), kernelimage.CapabilityChords|kernelimage.CapabilityUnifiedImage|kernelimage.CapabilitySpatial|uint32(kernelimage.SupportedCapabilities&^kernelimage.TrackEffectsCapability); got != want {
 				t.Fatalf("capabilities = %#x, want %#x", got, want)
 			}
 			ptr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))

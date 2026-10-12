@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
 )
 
@@ -18,8 +19,8 @@ type telemetryState struct {
 	tick       atomic.Int64
 	playing    atomic.Bool
 	trackCount atomic.Uint32
-	tracks     [16][2]atomic.Uint32 // peak, RMS as float32 bits
-	written    atomic.Bool          // set once the render thread has stored a position
+	tracks     [engine.MaxTracks][2]atomic.Uint32 // peak, RMS as float32 bits
+	written    atomic.Bool                        // set once the render thread has stored a position
 }
 
 func (t *telemetryState) storeTransport(sample, tick int64, playing bool) {

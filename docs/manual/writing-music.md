@@ -134,8 +134,9 @@ A track chooses a sound source: the built-in `acid` or `drums` voice, a
 declared mono or poly instrument, or an authored drum kit. A pattern describes steps
 for that source. The scene connects a pattern to a track by name.
 
-The current grid uses sixteenth-note steps. A 16-step pattern fills one bar;
-patterns may contain 1–64 steps and repeat while their scene plays. `.` is a
+The default grid uses sixteenth-note steps. A 16-step pattern fills one bar;
+`step = 1/8`, `step = 1/4`, or an exact triplet division changes its resolution.
+Patterns may contain 1–64 expanded steps and repeat while their scene plays. `.` is a
 rest. `|` groups cells for your eyes and does not add a step.
 
 The supported key scales are `minor`, `major`, `dorian`, `phrygian`,
@@ -260,14 +261,26 @@ scene main { lead = lead-a }
 song { main*4 }
 ```
 
-Graphs have at most 128 nodes and 32 stateful nodes. `voice poly` provides eight
-independent notes and release tails. In Studio, **Instruments** offers Warm pad,
+Graphs have at most 128 nodes and 32 stateful nodes. Scalar `voice poly` patterns
+provide eight independent notes and release tails; chord patterns share four
+slots. Authored `adsr` releases continue after note-off, until they finish or
+a new note needs the slot. In Studio, **Instruments** offers Warm pad,
 Wide strings, Poly brass, Silk pluck, Round bass, and Soft bell. Adding a patch
 saves its editable graph and a new track together. Use `adsr` for sustained
 amplitude and filter envelopes, `pulse` for variable-width oscillation, and
 `svf` for resonant lowpass filtering. The mixer provides stereo positioning,
-delay, and reverb. Play chords from **Live** using the keyboard or MIDI; the
-current notes grid and saved note takes hold one pitch per step.
+delay, and reverb. Polyphonic note patterns support two to four pitches in
+brackets, such as `[c4 e4 g4]`, with shared articulation and ties. Studio's grid
+can edit those chord pitches. Live note-take commits currently support single
+notes; author chords in the grid or source instead. See
+[Composing a complete song](composing-songs.md) for chord voicing and mixed grids.
+
+Envelope time affects body as much as attack. `env(gate, 200ms)` is a
+percussive decay that reaches about −40 dB in 200 ms while the gate is held;
+note-off shortens its decay. Built-in drum `decay = 200ms` uses an exponential
+time constant and reaches about −8.7 dB in that interval. Use `adsr` for
+sustained keys and pads, and compare decay slopes when moving a drum recipe
+between an authored graph and a built-in drum.
 
 Use `comb(noise() * env(gate, 1ms), 1 / pitch, 0.995, 0.5)` for a plucked
 string: a short noise burst excites a damped feedback loop. `1 / pitch` is
@@ -319,9 +332,10 @@ share the folder, `fix` lists them and refuses the single-file change; run
 commands check that the score parses and compiles. The specification lists every
 [edition-1 spelling migration](../spec/semantic-model.md#cicada-fix-and-migrations).
 
-The public [`examples/`](../../examples/) directory has 55 scores, from
-first-acid grooves to custom instruments and effect routing. Use them as
-complete, runnable starting points.
+The public [`examples/`](../../examples/) directory includes grooves, keyboard
+patches, custom instruments, and effect routing. The
+[demo songs](../../examples/songs/README.md) develop those pieces into complete
+forms with composition notes and editing exercises.
 
 ## Audio assets and samplers
 
@@ -378,6 +392,7 @@ Cicada embeds four MIT-licensed source libraries in its host binary. Use
 | --- | --- | --- |
 | `std/synth` | `glassbass`, `nightbass`, `tymbal`, `subline`, `glass` graph instruments | [Standard synth](../../examples/std-synth/main.cicada) |
 | `std/drums` | `kick`, `circuit-kick`, `snare`, `hat`; authored `steel` and `circuit` kits | [Standard drums](../../examples/std-drums/main.cicada) |
+| `std/drum-machines` | `eight-oh-eight`, `nine-oh-nine`; original circuit-inspired drum kits | [Classic Drum Study](../../examples/drum-machines/main.cicada) |
 | `std/fx` | `drive`, `delay`, `reverb`, `comp` defaults for inserts, sends, and bus compression | [Standard effects](../../examples/std-fx/main.cicada) |
 | `std/presets` | `acid-squelch`, `acid-round`, `acid-bite`; built-in drum-kit `kit-tight`, `kit-roomy`, `kit-lofi` presets | [Standard presets](../../examples/std-presets/main.cicada) |
 
@@ -409,6 +424,29 @@ track bass acid {
 }
 bus music { insert = fx.comp }
 ```
+
+For delay and reverb sends, use `mix = 1` on the effect and set the wet amount
+with the track's `send` level. The `std/fx` returns already use this setting.
+A lower effect `mix` adds a dry copy through the return while reducing the
+delayed or reverberated sound; it can make a send seem quieter and narrower.
+For an insert, use `mix` to blend the processed signal with its dry input.
+
+Delay `pingpong = true` folds the **wet input** to mono using the average of
+left and right. Its first echo starts on the left after `time`, the next echo
+crosses to the right, and later echoes continue alternating. The first echo
+keeps the per-channel peak of a centered source; its energy is now on one side,
+so this is not a loudness-compensated stereo return. Adjust the send level to
+taste. Stereo sources are folded down too: opposite-polarity, side-only audio
+cancels in that wet input. Use `pingpong = false` for independent stereo echoes
+that preserve the input channels. The dry signal keeps its original stereo
+image in either mode. `width = 0` centers the wet echoes, while `width = 1`
+retains the full left/right movement. Changing ping-pong mode fades its input
+and feedback routing rather than replacing an active tail abruptly.
+
+All four Drive shapes (`soft`, `hard`, `fold`, and `diode`) use 2× oversampling
+to reduce distortion harmonics folding back into the audible range. This also
+applies to soft saturation; a low tone setting alone cannot remove distortion
+that has already folded into lower frequencies.
 
 For an acid sound and a short-decay built-in drum kit:
 
