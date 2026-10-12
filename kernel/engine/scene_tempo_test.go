@@ -343,3 +343,41 @@ func TestSceneTempoFramesBetweenTicksMatchesTheTransport(t *testing.T) {
 		}
 	}
 }
+
+// Stepping the tempo at a scene boundary, seeking into a slow scene, and
+// asking for bar placement all stay off the heap.
+func TestSceneTempoRenderSeekAndFramesAllocationFree(t *testing.T) {
+	cfg := sceneTempoConfig()
+	cfg.LoopSong = true
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.meterRate = 0
+	var left, right [128]float32
+	allocs := testing.AllocsPerRun(50, func() {
+		e.apply(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 2})
+		for range 3 {
+			e.Render(left[:], right[:])
+		}
+		e.apply(cmd.Command{Op: cmd.OpSeek, Track: 0xff})
+		e.Render(left[:], right[:])
+		_ = e.FramesBetweenTicks(0, 8*seq.TicksPerBar) + e.TempoAtTick(5*seq.TicksPerBar)
+	})
+	if e.faulted || allocs != 0 {
+		t.Fatalf("fault=%v allocations=%g", e.faulted, allocs)
+	}
+	// A render that crosses the 120 to 60 BPM step and the loop wrap.
+	if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+		t.Fatal("play rejected")
+	}
+	e.Render(left[:1], right[:1])
+	crossing := testing.AllocsPerRun(1, func() {
+		for range 6000 {
+			e.Render(left[:], right[:])
+		}
+	})
+	if e.faulted || crossing != 0 {
+		t.Fatalf("crossing fault=%v allocations=%g", e.faulted, crossing)
+	}
+}
