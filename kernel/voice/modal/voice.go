@@ -173,6 +173,9 @@ func (v *Voice) ActiveVoices() int {
 	return count
 }
 
+// Idle includes the bounded tail left by stealing a ringing strike.
+func (v *Voice) Idle() bool { return v.stealLeft == 0 && v.ActiveVoices() == 0 }
+
 func (v *Voice) pitch(note uint8) float64 {
 	if v.profile == Shaker {
 		// A shaker's vessel colour changes slowly with the authored pitch;

@@ -85,7 +85,11 @@ func (s *studio) commitTake(id, expected string, candidate []byte) error {
 		return err
 	}
 	if candidate == nil {
-		candidate, err = takejournal.SelectSource(current, t)
+		if t.Timeline != nil {
+			candidate, err = s.vocalTakeSource(current, t, nil)
+		} else {
+			candidate, err = takejournal.SelectSource(current, t)
+		}
 		if err != nil {
 			return err
 		}
@@ -144,7 +148,9 @@ func (s *studio) takeState(w http.ResponseWriter, r *http.Request) {
 		current := s.captureRecorder.Snapshot()
 		snapshot = &current
 	}
-	studioJSON(w, http.StatusOK, map[string]any{"takes": takes, "activeCapture": s.captureID, "capture": snapshot})
+	source, _ := os.ReadFile(s.path)
+	comps, _ := vocalComps(source)
+	studioJSON(w, http.StatusOK, map[string]any{"takes": takes, "activeCapture": s.captureID, "capture": snapshot, "comps": comps, "loopRecording": s.vocalLoop.snapshot()})
 }
 
 // Capture polling does not serialize retained source candidates or asset paths.
@@ -160,7 +166,7 @@ func (s *studio) captureState(w http.ResponseWriter, r *http.Request) {
 			rate = take.Rate
 		}
 	}
-	studioJSON(w, http.StatusOK, map[string]any{"activeCapture": s.captureID, "sampleRate": rate, "capture": snapshot})
+	studioJSON(w, http.StatusOK, map[string]any{"activeCapture": s.captureID, "sampleRate": rate, "capture": snapshot, "input": s.transport.inputMeter(), "loopRecording": s.vocalLoop.snapshot()})
 }
 
 func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
@@ -203,7 +209,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			fail(err)
 		}
 		return
-	case "arm":
+	case "arm", "record":
 		if s.captureID != "" {
 			fail(errors.New("finish the current take before arming another"))
 			return
@@ -217,18 +223,55 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			fail(errTakeRevision)
 			return
 		}
+		var timeline *takejournal.Timeline
+		if edit.Recording != nil {
+			p, e := compileStudioSource(s.path, source)
+			if e != nil {
+				fail(e)
+				return
+			}
+			timeline, err = recordingTimeline(p, edit.Recording)
+			if err != nil {
+				fail(err)
+				return
+			}
+			found := false
+			for _, track := range p.Tracks {
+				if track.ID == edit.Track && track.Kind == "audio" {
+					found = true
+				}
+			}
+			if !found {
+				fail(errors.New("add or choose an audio track for your vocal"))
+				return
+			}
+			edit.Scene = "session"
+			if edit.Recording.Passes > 1 {
+				// Loop passes use one initial count-in, then repeat only the
+				// requested range, without another pre-roll each cycle.
+				timeline.PlaybackStartTick = timeline.StartTick
+			}
+		}
 		rate, channels, err := s.transport.prepareTakeInput()
 		if err != nil {
 			fail(err)
 			return
 		}
-		id, err := s.takes.Begin(edit.Track, edit.Scene, edit.Revision, rate, channels)
+		id, err := s.takes.BeginTimeline(edit.Track, edit.Scene, edit.Revision, rate, channels, timeline)
 		if err != nil {
 			fail(err)
 			return
 		}
 		responseTake = id
-		recorder, err := capture.NewRecorder(64, 8192, channels, s.takes.Writer(id))
+		writer := s.takes.Writer(id)
+		var loop *vocalLoopCapture
+		if timeline != nil && edit.Recording.Passes > 1 {
+			take, _ := s.takes.Get(id)
+			loop = newVocalLoopCapture(s.takes, take, edit.Recording.Passes)
+			writer = loop.write
+		}
+		slots, periodFrames := s.transport.takeCaptureBufferShape(rate)
+		recorder, err := capture.NewRecorder(slots, periodFrames, channels, writer)
 		if err != nil {
 			fail(err)
 			return
@@ -238,41 +281,40 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			fail(err)
 			return
 		}
-		s.captureID, s.captureRecorder = id, recorder
+		s.captureID, s.captureRecorder, s.vocalLoop = id, recorder, loop
+		if edit.Action == "record" {
+			if err := s.startAudioTake(); err != nil {
+				fail(err)
+				return
+			}
+		}
 	case "start":
 		if s.captureID == "" {
 			fail(errors.New("arm a take first"))
 			return
 		}
-		if err := s.transport.startCapture(capture.Calibration{}); err != nil {
+		if err := s.startAudioTake(); err != nil {
 			fail(err)
 			return
 		}
 	case "stop":
 		if s.captureID == "" {
-			fail(errors.New("no active audio take"))
-			return
+			// The exact punch boundary can finish just before this click.
+			break
 		}
-		s.transport.stop()
-		drainErr := s.transport.disarmCapture()
-		snapshot := s.captureRecorder.Snapshot()
 		id := s.captureID
-		s.captureID = ""
-		s.captureRecorder = nil
-		if err := s.finalizeCaptureTake(id, snapshot, drainErr); err != nil {
+		loop := s.vocalLoop
+		err := s.finishVocalCapture(id)
+		if loop != nil {
+			loop.mu.Lock()
+			responseTake = loop.ids[loop.index]
+			loop.mu.Unlock()
+		}
+		if err != nil {
 			fail(err)
 			return
 		}
-		if err := s.takes.Publish(id); err != nil {
-			fail(err)
-			return
-		}
-		t, _ := s.takes.Get(id)
-		if err := s.commitTake(id, t.Expected, nil); err != nil {
-			fail(err)
-			return
-		}
-	case "recover", "select":
+	case "recover", "select", "comp", "listen", "listen-loop":
 		responseTake = edit.TakeID
 		if s.captureID != "" {
 			fail(errors.New("stop capture before selecting a take"))
@@ -291,12 +333,41 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			fail(errors.New("take has no durable PCM"))
 			return
 		}
-		if err = s.commitTake(edit.TakeID, edit.Revision, nil); err != nil {
+		var candidate []byte
+		if t.Timeline == nil && (edit.Action == "comp" || edit.Action == "listen" || edit.Action == "listen-loop") {
+			fail(errors.New("choose a Session arrangement take for phrase comping"))
+			return
+		}
+		if t.Timeline != nil {
+			source, e := os.ReadFile(s.path)
+			if e != nil {
+				fail(e)
+				return
+			}
+			if studioRevision(source) != edit.Revision {
+				fail(errTakeRevision)
+				return
+			}
+			candidate, err = s.vocalTakeSource(source, t, edit.Recording)
+			if err != nil {
+				fail(err)
+				return
+			}
+			if edit.Action == "listen" || edit.Action == "listen-loop" {
+				if err = s.listenVocalTake(candidate, source, t, edit.Recording, edit.Action == "listen-loop"); err != nil {
+					fail(err)
+					return
+				}
+				studioJSON(w, http.StatusOK, map[string]any{"activeCapture": "", "take": t.ID})
+				return
+			}
+		}
+		if err = s.commitTake(edit.TakeID, edit.Revision, candidate); err != nil {
 			fail(err)
 			return
 		}
 	default:
-		fail(errors.New("take action must be arm, start, stop, recover, select, import or audition"))
+		fail(errors.New("take action must be arm, record, start, stop, recover, select, comp, listen, listen-loop, import or audition"))
 		return
 	}
 	source, err := os.ReadFile(s.path)
@@ -354,28 +425,35 @@ func (s *studio) recoverTakeReceipts(t takejournal.Take) error {
 // shutdown drains the device writer and preserves a short final batch even
 // when the application closes before the explicit Stop command.
 func (s *studio) shutdown() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	s.transport.close()
 	if s.takes == nil {
 		return nil
 	}
 	defer s.takes.Close()
 	if s.captureRecorder != nil && s.captureID != "" {
-		drainErr := s.captureRecorder.Close()
-		snapshot := s.captureRecorder.Snapshot()
-		if err := s.finalizeCaptureTake(s.captureID, snapshot, drainErr); err != nil {
+		if s.vocalLoop != nil {
+			return s.finishVocalCapture(s.captureID)
+		}
+		id, recorder := s.captureID, s.captureRecorder
+		s.captureID, s.captureRecorder = "", nil
+		drainErr := recorder.Close()
+		snapshot := recorder.Snapshot()
+		if err := s.finalizeCaptureTake(id, snapshot, drainErr); err != nil {
 			return err
 		}
-		if err := s.takes.Publish(s.captureID); err != nil {
+		if err := s.takes.Publish(id); err != nil {
 			return err
 		}
 		if s.captureInstrument {
 			return nil
 		}
-		t, err := s.takes.Get(s.captureID)
+		t, err := s.takes.Get(id)
 		if err != nil {
 			return err
 		}
-		return s.commitTake(s.captureID, t.Expected, nil)
+		return s.commitTake(id, t.Expected, nil)
 	}
 	return nil
 }

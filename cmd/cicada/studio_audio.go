@@ -511,7 +511,7 @@ func (s *studio) kernelImage(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, 422, map[string]any{"error": err.Error()})
 		return
 	}
-	cfg, err := schedule.Compile(p, root, rate, 128)
+	cfg, err := schedule.CompileResident(p, root, rate, 128)
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 		return
@@ -531,6 +531,9 @@ func (s *studio) kernelImage(w http.ResponseWriter, r *http.Request) {
 
 func (s *studio) kernelWASM(w http.ResponseWriter, r *http.Request) {
 	locate := locateKernelWASM
+	if r.URL.Query().Get("vocals") == "1" {
+		locate = locateVocalsWASM
+	}
 	if r.URL.Query().Get("keys") == "1" {
 		locate = locateKeysWASM
 	}
@@ -551,6 +554,10 @@ func (s *studio) kernelWASM(w http.ResponseWriter, r *http.Request) {
 
 func locateKernelWASM() (string, error) {
 	return locateAudioWASM("CICADA_KERNEL_WASM", "cicada-kernel.wasm", "build-kernel-wasm")
+}
+
+func locateVocalsWASM() (string, error) {
+	return locateAudioWASM("CICADA_VOCALS_WASM", "cicada-vocals.wasm", "build-vocals-wasm")
 }
 
 func locateKeysWASM() (string, error) {

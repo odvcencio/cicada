@@ -4,6 +4,7 @@ package wam2
 import (
 	"crypto/sha256"
 	"embed"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -23,9 +24,11 @@ import (
 var assets embed.FS
 
 type Options struct {
-	KernelPath string
-	SDKPath    string
-	MIDITrack  string
+	KernelPath       string
+	VocalsKernelPath string
+	KeysKernelPath   string
+	SDKPath          string
+	MIDITrack        string
 }
 
 type macro struct {
@@ -62,13 +65,6 @@ func Export(p *project.Project, root, output string, o Options) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	kernel, err := os.ReadFile(o.KernelPath)
-	if err != nil {
-		return fmt.Errorf("read kernel (run make build-wam2): %w", err)
-	}
-	if len(kernel) < 8 || string(kernel[:8]) != "\x00asm\x01\x00\x00\x00" {
-		return fmt.Errorf("kernel must be a WebAssembly module")
-	}
 	sdk, err := os.ReadFile(filepath.Join(o.SDKPath, "dist", "index.js"))
 	if err != nil {
 		return fmt.Errorf("read WAM SDK (run make build-wam2): %w", err)
@@ -77,7 +73,7 @@ func Export(p *project.Project, root, output string, o Options) error {
 	if err != nil {
 		return err
 	}
-	files := map[string][]byte{"kernel.wasm": kernel, "sdk.js": sdk, "RingBuffer_LICENSE.txt": license}
+	files := map[string][]byte{"sdk.js": sdk, "RingBuffer_LICENSE.txt": license}
 	m := manifest{Version: 1, Macros: []macro{}, Images: map[string]string{}, Setup: map[string][]byte{}, MIDITrack: -1, Tempo: float64(p.TempoMilli) / 1000}
 	for _, note := range drum.MIDINotes {
 		m.DrumNotes = append(m.DrumNotes, int(note))
@@ -89,7 +85,7 @@ func Export(p *project.Project, root, output string, o Options) error {
 	}
 	hash := sha256.New()
 	for _, rate := range []int{44100, 48000, 96000} {
-		cfg, err := schedule.Compile(p, root, rate, 128)
+		cfg, err := schedule.CompileResident(p, root, rate, 128)
 		if err != nil {
 			return err
 		}
@@ -115,6 +111,23 @@ func Export(p *project.Project, root, output string, o Options) error {
 		image, err := kernelimage.Encode(cfg)
 		if err != nil {
 			return err
+		}
+		if _, selected := files["kernel.wasm"]; !selected {
+			path, target := o.KernelPath, "build-kernel-wasm"
+			required := binary.LittleEndian.Uint16(image[30:32])
+			if required&kernelimage.KeysCapability != 0 {
+				path, target = optionalKernelPath(o.KernelPath, o.KeysKernelPath, "cicada-keys.wasm"), "build-keys-wasm"
+			} else if required&kernelimage.TrackEffectsCapability != 0 {
+				path, target = optionalKernelPath(o.KernelPath, o.VocalsKernelPath, "cicada-vocals.wasm"), "build-vocals-wasm"
+			}
+			kernel, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("read required audio kernel (run make %s): %w", target, err)
+			}
+			if len(kernel) < 8 || string(kernel[:8]) != "\x00asm\x01\x00\x00\x00" {
+				return fmt.Errorf("kernel must be a WebAssembly module")
+			}
+			files["kernel.wasm"] = kernel
 		}
 		key := strconv.Itoa(rate)
 		name := "score-" + key + ".bin"
@@ -170,4 +183,14 @@ func Export(p *project.Project, root, output string, o Options) error {
 		}
 	}
 	return os.Rename(temp, output)
+}
+
+func optionalKernelPath(core, explicit, name string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if filepath.Base(core) == name {
+		return core
+	}
+	return filepath.Join(filepath.Dir(core), name)
 }

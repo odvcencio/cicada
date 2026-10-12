@@ -9,7 +9,7 @@ import (
 )
 
 func TestPreparedMasterProcessorBypassAndAllocationFree(t *testing.T) {
-	cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120000, Track: [16]engine.TrackConfig{{Kind: engine.VoiceAcid}}}
+	cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 1, BPMMilli: 120000, Track: [engine.MaxTracks]engine.TrackConfig{{Kind: engine.VoiceAcid}}}
 	dry, err := engine.New(cfg)
 	if err != nil {
 		t.Fatal(err)

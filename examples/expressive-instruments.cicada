@@ -1,4 +1,4 @@
-// Play eight-note chords from Studio Live; the notes grid sequences one pitch per step.
+// Play eight-note chords from Studio Live; authored poly notes patterns support 2–4-pitch chords.
 // Synth graphs are authored Go DSP; Studio uses GoSX and the native audio host uses Tymbal.
 cicada 2
 

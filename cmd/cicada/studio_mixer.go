@@ -115,6 +115,10 @@ func (s *studio) editMixer(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	if edit.Action == "vocal-chain" {
+		s.addVocalChain(w, edit)
+		return
+	}
 	if edit.Path == "" || len(edit.Value) == 0 {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": "mixer path and value are required"})
 		return
@@ -328,6 +332,14 @@ func buildStudioMixerView(path string, source []byte) (studioMixerView, error) {
 			if !found {
 				continue
 			}
+			if project.TrackHasInsert(semantic, effect.Name) {
+				if descriptor.ID == "fx.comp.sidechain" {
+					continue
+				}
+				if _, resolveErr := project.ResolveParameterPath(semantic, address.Address); resolveErr != nil {
+					descriptor.Live, descriptor.Automatable = false, false
+				}
+			}
 			field := strings.TrimPrefix(address.Address, effect.Name+".")
 			fieldPath := effect.Name + "." + field
 			strip.Fields = append(strip.Fields, mixerField{
@@ -528,24 +540,26 @@ func mixerFieldCapability(kind, owner, field, sourceValue string, score *notatio
 
 func mixerInsertCapability(kind, owner string, names []string, score *notation.Score) (bool, string) {
 	unsupported := func(reason string) (bool, string) { return false, "CICADA-UNSUPPORTED: " + reason }
-	if len(names) > 1 {
+	if kind == "track" && len(names) > 8 {
+		return unsupported("track insert chain exceeds eight stages")
+	}
+	if kind != "track" && len(names) > 1 {
 		return unsupported(kind + " insert chain is not implemented")
 	}
-	if len(names) == 0 {
-		return true, ""
-	}
-	effect := findNotationEffect(score, names[0])
-	if effect == nil {
-		return unsupported("insert references undeclared effect " + names[0])
-	}
-	if kind == "track" && effect.Kind != "drive" {
-		return unsupported(effect.Kind + " as a track insert is not implemented")
-	}
-	if kind == "bus" && (owner != "music" || effect.Kind != "comp") {
-		return unsupported("music bus insert must be a compressor")
-	}
-	if kind == "master" {
-		return unsupported("master inserts are not implemented")
+	for _, name := range names {
+		effect := findNotationEffect(score, name)
+		if effect == nil {
+			return unsupported("insert references undeclared effect " + name)
+		}
+		if kind == "track" && effect.Kind != "drive" && effect.Kind != "eq" && effect.Kind != "comp" && effect.Kind != "deesser" {
+			return unsupported(effect.Kind + " as a track insert is not implemented")
+		}
+		if kind == "bus" && (owner != "music" || effect.Kind != "comp") {
+			return unsupported("music bus insert must be a compressor")
+		}
+		if kind == "master" {
+			return unsupported("master inserts are not implemented")
+		}
 	}
 	return true, ""
 }

@@ -45,6 +45,61 @@ func TestAllPatchesPrepareAndRenderWithoutAllocating(t *testing.T) {
 	}
 }
 
+func TestCalibratedPatchesRenderWithoutAllocating(t *testing.T) {
+	for _, name := range Names {
+		t.Run(name, func(t *testing.T) {
+			s, err := DefaultSpec(name)
+			if err != nil {
+				t.Fatalf("patch lookup: %v", err)
+			}
+			raw, err := New(48000, &s)
+			if err != nil {
+				t.Fatalf("prepare raw: %v", err)
+			}
+			v, err := NewCalibrated(48000, &s)
+			if err != nil {
+				t.Fatalf("prepare calibrated: %v", err)
+			}
+			gain := LevelTrimLinear(s.Patch)
+			play := func(voice interface {
+				Reset()
+				NoteOn(uint8, uint8) error
+				AllNotesOff()
+				NextStereo() (float32, float32)
+			}, out []float32) error {
+				voice.Reset()
+				for _, note := range [4]uint8{48, 60, 64, 67} {
+					if err := voice.NoteOn(note, 102); err != nil {
+						return err
+					}
+				}
+				for frame := 0; frame < len(out)/2; frame++ {
+					if frame == len(out)/4 {
+						voice.AllNotesOff()
+					}
+					out[2*frame], out[2*frame+1] = voice.NextStereo()
+				}
+				return nil
+			}
+			want := make([]float32, 8192)
+			got := make([]float32, 8192)
+			if err := play(raw, want); err != nil {
+				t.Fatalf("raw note: %v", err)
+			}
+			var noteErr error
+			allocs := testing.AllocsPerRun(5, func() { noteErr = play(v, got) })
+			if noteErr != nil || allocs != 0 {
+				t.Fatalf("err=%v allocations=%g", noteErr, allocs)
+			}
+			for i := range want {
+				if got[i] != want[i]*gain {
+					t.Fatalf("sample %d = %g, want raw %g x trim %g", i, got[i], want[i], gain)
+				}
+			}
+		})
+	}
+}
+
 func TestCompoundValidationAndFloat32Boundaries(t *testing.T) {
 	for _, name := range []string{"tine_ep", "clav", "soft_pad", "string_machine", "fm_ep"} {
 		s, _ := DefaultSpec(name)

@@ -17,6 +17,10 @@ type Reader struct {
 	lastL, lastR, heldL, heldR        float32
 	misses, missingFrames, recoveries atomic.Uint64
 	lookups                           atomic.Uint64
+	missedPages                       [16]int64
+	missedCount                       int
+	blockGuard                        bool
+	readySequence                     atomic.Uint64
 }
 
 type ReaderStats struct{ Misses, MissingFrames, Recoveries, PageLookups uint64 }
@@ -25,6 +29,85 @@ func (r *Reader) Stats() ReaderStats {
 	return ReaderStats{r.misses.Load(), r.missingFrames.Load(), r.recoveries.Load(), r.lookups.Load()}
 }
 func (r *Reader) Position() int64 { return r.position }
+
+// SetAsset reuses an admitted reader for another immutable cache asset. This
+// bounded lookup belongs to the audio owner and performs no storage work.
+func (r *Reader) SetAsset(id uint32) error {
+	if r.asset.ID == id {
+		return nil
+	}
+	for _, asset := range r.cache.assets {
+		if asset.ID == id {
+			r.Stop()
+			r.asset = asset
+			return nil
+		}
+	}
+	return Error("unknown streamed asset ID")
+}
+
+// BeginBlock bounds retries for missing pages to once per source page in a
+// callback, including callers using the sample-rate converter.
+// SetOutputRate makes SRC underrun/recovery fades last2ms in output frames.
+// Unity-rate Reader.Render retains the asset rate selected at construction.
+func (r *Reader) SetOutputRate(rate int) { r.fadeFrames = max(1, rate/500) }
+
+// ResetOutput starts a new clip without carrying an earlier starvation fade.
+func (r *Reader) ResetOutput() {
+	r.missing, r.underrun, r.fade, r.recovery = false, false, 0, 0
+	r.lastL, r.lastR = 0, 0
+}
+func (r *Reader) BeginBlock() { r.missedCount, r.blockGuard = 0, true }
+
+// AdvanceFrame publishes a source cursor without seeking or releasing its
+// pinned guard. The SRC calls it once per output sample rather than per tap.
+func (r *Reader) AdvanceFrame(frame int64) {
+	r.position = frame
+	if frame >= 0 && frame < r.asset.Frames && r.intent.current.Load() != frame/PageFrames {
+		r.announce(frame)
+	}
+}
+
+// FilterOutput provides the same bounded underrun/recovery declicking for SRC
+// callers as Render. MissingFrames counts output frames, never FIR taps.
+func (r *Reader) FilterOutput(l, rr float32, ok, inRange bool) (float32, float32) {
+	if !ok {
+		if inRange && !r.underrun {
+			r.misses.Add(1)
+			r.underrun = true
+		}
+		if !r.missing {
+			r.missing, r.fade, r.recovery = true, r.fadeFrames, 0
+			r.heldL, r.heldR = r.lastL, r.lastR
+		}
+		if inRange {
+			r.missingFrames.Add(1)
+		}
+		if r.fade > 0 {
+			gain := float32(r.fade-1) / float32(r.fadeFrames)
+			l, rr = r.heldL*gain, r.heldR*gain
+			r.fade--
+		} else {
+			l, rr = 0, 0
+		}
+	} else {
+		if r.underrun {
+			r.recoveries.Add(1)
+			r.underrun = false
+		}
+		if r.missing {
+			r.missing, r.recovery = false, r.fadeFrames
+			r.heldL, r.heldR = r.lastL, r.lastR
+		}
+		if r.recovery > 0 {
+			gain := float32(r.fadeFrames-r.recovery+1) / float32(r.fadeFrames)
+			l, rr = r.heldL*(1-gain)+l*gain, r.heldR*(1-gain)+rr*gain
+			r.recovery--
+		}
+	}
+	r.lastL, r.lastR = l, rr
+	return l, rr
+}
 
 func (r *Reader) release() {
 	if r.page != nil {
@@ -56,6 +139,7 @@ func (r *Reader) SeekFrame(frame int64, direction int) error {
 	}
 	r.release()
 	r.position, r.direction, r.ended = frame, direction, false
+	r.missedCount = 0
 	if frame == r.asset.Frames {
 		r.Stop()
 		r.position = frame
@@ -63,6 +147,15 @@ func (r *Reader) SeekFrame(frame int64, direction int) error {
 	}
 	r.announce(frame)
 	return nil
+}
+
+// PrefetchFrame preserves a stable ready window when only a host's lookahead
+// is repeated. It replaces demand only when the source cursor changes.
+func (r *Reader) PrefetchFrame(frame int64) error {
+	if !r.ended && r.position == frame && r.direction == 1 {
+		return nil
+	}
+	return r.SeekFrame(frame, 1)
 }
 
 // Stop retires demand and releases the pin; it does not wait for the worker.
@@ -79,6 +172,10 @@ func (r *Reader) Stop() {
 // WindowReady checks publication without reading PCM. Offline hosts may wait
 // here outside rendering, using a deadline and worker errors.
 func (r *Reader) WindowReady() bool {
+	sequence := r.intent.sequence.Load()
+	if sequence != 0 && sequence&1 == 0 && r.readySequence.Load() == sequence {
+		return true
+	}
 	w, ok := r.intent.snapshot()
 	if !ok {
 		return false
@@ -89,6 +186,9 @@ func (r *Reader) WindowReady() bool {
 			return false
 		}
 		p.state.Add(^uint32(pin - 1))
+	}
+	if r.intent.sequence.Load() == sequence {
+		r.readySequence.Store(sequence)
 	}
 	return true
 }
@@ -113,9 +213,20 @@ func (r *Reader) ReadFrame(frame int64) (float32, float32, bool) {
 		}
 	}
 	r.release()
+	if r.blockGuard {
+		for _, page := range r.missedPages[:r.missedCount] {
+			if page == frame/PageFrames {
+				return 0, 0, false
+			}
+		}
+	}
 	r.lookups.Add(1)
 	r.page = r.cache.acquire(r.asset.ID, frame/PageFrames)
 	if r.page == nil {
+		if r.blockGuard && r.missedCount < len(r.missedPages) {
+			r.missedPages[r.missedCount] = frame / PageFrames
+			r.missedCount++
+		}
 		return 0, 0, false
 	}
 	offset := frame - r.page.index*PageFrames + GuardFrames

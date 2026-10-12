@@ -9,7 +9,7 @@ import (
 )
 
 type WAVHeader struct {
-	RateHz, Channels, BitDepth int
+	RateHz, Channels, BitDepth int // BitDepth is the sample container width.
 	Frames                     int64
 	DataOffset                 int64  // first PCM byte, validated against RIFF size
 	Encoding                   string // pcm or float
@@ -83,6 +83,43 @@ func ReadWAVHeader(r io.ReadSeeker) (WAVHeader, error) {
 			h.RateHz = int(binary.LittleEndian.Uint32(format[4:8]))
 			alignment = int(binary.LittleEndian.Uint16(format[12:14]))
 			h.BitDepth = int(binary.LittleEndian.Uint16(format[14:]))
+			if code == 0xfffe {
+				// WAVEFORMATEXTENSIBLE adds cbSize, valid bits, a channel mask,
+				// and a full subtype GUID. Read only this fixed-size extension;
+				// any further format bytes remain bounded by the RIFF chunk.
+				if length < 40 {
+					return invalid("short extensible fmt chunk")
+				}
+				var extension [24]byte
+				if _, err = io.ReadFull(r, extension[:]); err != nil {
+					return invalid("truncated extensible fmt chunk")
+				}
+				extra := int64(binary.LittleEndian.Uint16(extension[:2]))
+				if extra < 22 || extra > length-18 {
+					return invalid("inconsistent extensible fmt size")
+				}
+				validBits := int(binary.LittleEndian.Uint16(extension[2:4]))
+				if validBits < 1 || validBits > h.BitDepth {
+					return invalid("invalid extensible valid-bit count")
+				}
+				mask := binary.LittleEndian.Uint32(extension[4:8])
+				if mask != 0 && !(h.Channels == 1 && mask == 4) && !(h.Channels == 2 && mask == 3) {
+					return invalid("unsupported extensible channel layout")
+				}
+				switch [16]byte(extension[8:]) {
+				case [16]byte{1, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71}:
+					// PCM with fewer valid bits is left-aligned, so decoding
+					// the full signed container preserves its amplitude.
+					code = 1
+				case [16]byte{3, 0, 0, 0, 0, 0, 0x10, 0, 0x80, 0, 0, 0xaa, 0, 0x38, 0x9b, 0x71}:
+					if validBits != 32 {
+						return invalid("float extensible valid-bit count must be 32")
+					}
+					code = 3
+				default:
+					return invalid("unsupported extensible subtype GUID")
+				}
+			}
 			if code == 1 && (h.BitDepth == 16 || h.BitDepth == 24 || h.BitDepth == 32) {
 				h.Encoding = "pcm"
 			} else if code == 3 && h.BitDepth == 32 {

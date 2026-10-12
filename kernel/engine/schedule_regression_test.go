@@ -55,7 +55,7 @@ func TestSongRestartAtFullClipCapacity(t *testing.T) {
 		t.Run(strconv.Itoa(block), func(t *testing.T) {
 			cfg := clipScheduleConfig()
 			cfg.MaxBlock, cfg.MaxVoices, cfg.BPMMilli, cfg.Schedule = block, 1, 300000, nil
-			cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneClip}}}}
+			cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}}}
 			cfg.Song = []SongEntry{{Bars: 1}}
 			e, err := New(cfg)
 			if err != nil {
@@ -107,7 +107,7 @@ func TestClipLoopGapAndSongRestartAllocationFree(t *testing.T) {
 				cfg.Schedule = []ScheduleEvent{{Tick: 240, EndTick: 960, Kind: ScheduleClip, ID: 1}, {Tick: 960, EndTick: 960, Kind: ScheduleClipEnd, ID: 1}}
 			} else {
 				cfg.Schedule = nil
-				cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneClip}}}}
+				cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}}}
 				cfg.Song = []SongEntry{{Bars: 1}}
 			}
 			e, err := New(cfg)
@@ -178,8 +178,8 @@ func TestPlacementLoopKeepsExactTickOrigin(t *testing.T) {
 	}
 }
 
-func TestSceneClipSeekMatchesOverlappingPlayback(t *testing.T) {
-	for _, scenario := range []string{"overlap", "expired", "off", "previous-cycle"} {
+func TestSceneClipSeekMatchesRetriggeredPlayback(t *testing.T) {
+	for _, scenario := range []string{"retrigger", "expired", "off", "previous-cycle"} {
 		t.Run(scenario, func(t *testing.T) {
 			cfg := clipScheduleConfig()
 			cfg.BPMMilli, cfg.Schedule = 120000, nil
@@ -189,7 +189,7 @@ func TestSceneClipSeekMatchesOverlappingPlayback(t *testing.T) {
 			}
 			cfg.Assets[0].Left = pcm
 			cfg.Clips = []ClipConfig{{EndFrame: int64(len(pcm)), FadeOutFrames: 48000}, {EndFrame: 48000}}
-			cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneClip}}}, {Track: [16]SceneBinding{{Mode: SceneClip}}}, {}}
+			cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}}, {Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}}, {}}
 			cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
 			seek := int64(2*seq.TicksPerBar + 137)
 			switch scenario {
@@ -234,6 +234,27 @@ func TestSceneClipSeekMatchesOverlappingPlayback(t *testing.T) {
 					t.Fatal(message)
 				}
 			}
+			active, wantActive := 0, 1
+			if scenario == "off" || scenario == "expired" {
+				wantActive = 0
+			}
+			lastStart := seq.TicksPerBar
+			if scenario == "previous-cycle" {
+				lastStart += 3 * seq.TicksPerBar
+			}
+			for _, voice := range seeking.clipVoices {
+				if !voice.active {
+					continue
+				}
+				active++
+				wantFrame := clock.SampleAtTick(seek) - clock.SampleAtTick(lastStart) + int64(len(got))
+				if voice.sourceFrame != float64(wantFrame) {
+					t.Fatalf("seek kept a superseded scene clip at source frame %g, want %d", voice.sourceFrame, wantFrame)
+				}
+			}
+			if active != wantActive {
+				t.Fatalf("reconstructed scene has %d clips, want %d", active, wantActive)
+			}
 			for i := range want {
 				if want[i].Tracks[0] != got[i].Tracks[0] {
 					t.Fatalf("frame %d uninterrupted=%+v sought=%+v", i, want[i].Tracks[0], got[i].Tracks[0])
@@ -251,7 +272,7 @@ func TestPlacementLoopAndSceneClipSeekAllocationFree(t *testing.T) {
 			cfg.Schedule = nil
 			cfg.Assets[0].Left = make([]float32, 480000)
 			cfg.Clips[0].EndFrame = 480000
-			cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneClip}}}, {Track: [16]SceneBinding{{Mode: SceneClip}}}, {}}
+			cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}}, {Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}}, {}}
 			cfg.Song = []SongEntry{{Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
 		} else {
 			cfg.Track[0].Kind = VoiceAcid
@@ -287,8 +308,16 @@ func TestPlacementLoopAndSceneClipSeekAllocationFree(t *testing.T) {
 					active++
 				}
 			}
-			if active != 3 {
-				t.Fatalf("seek allocation test restored %d clips, want 3", active)
+			// The second scene explicitly retriggers this track in each loop.
+			// Seek must restore that latest assignment rather than layering the
+			// earlier assignments from this and preceding song cycles.
+			if active != 1 {
+				t.Fatalf("seek allocation test restored %d clips, want 1", active)
+			}
+			clock, _ := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
+			wantFrame := clock.SampleAtTick(5*seq.TicksPerBar+137) - clock.SampleAtTick(4*seq.TicksPerBar) + int64(len(left))
+			if e.clipVoices[0].sourceFrame != float64(wantFrame) {
+				t.Fatalf("seek restored superseded source position %g, want %d", e.clipVoices[0].sourceFrame, wantFrame)
 			}
 		}
 	}

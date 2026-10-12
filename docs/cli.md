@@ -29,3 +29,22 @@ retained takes, history, and imported libraries. It automatically vendors user
 and project libraries and writes target pins before publishing the score.
 Dependencies with different content and existing target scores are refused.
 Studio Save As uses the same operation. Bundle is not available in this build.
+
+## Inspect a musical moment
+
+`cicada explain SCORE PATH @bar[.beat[.step]]` reports the parameter's default,
+preset and track overrides, inherited scene setting, and active song automation.
+The computed value includes the automation lane once it reaches its first point;
+the lane holds its last value and takes precedence over later scene settings.
+Positions use 4/4: bars start at 1, and beat and sixteenth values are 1–4.
+
+```sh
+cicada explain examples/songs/neon-causeway.cicada bass.cutoff @15
+cicada explain examples/songs/neon-causeway.cicada bass.cutoff @17
+```
+
+The first command inspects the build; the second reaches its 2200 Hz target.
+Reported automation values are float32 control targets; audio smoothing can lag
+the target. Named-placement arrangements support parameter inspection within
+their whole-bar export span; their live scene definitions do not contribute
+settings to the arrangement.

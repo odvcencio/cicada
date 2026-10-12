@@ -247,6 +247,10 @@ func intentDiff(before []byte, result *edits.Result, name string) string {
 func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, writer edits.ParamWriter, prepare func([]byte, *edits.Options) (edits.Envelope, error), finish func(*edits.Result) error, beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if writer == edits.ParamWriterMixer && s.captureID != "" {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "Finish the take before editing the mix."})
+		return
+	}
 	if err := studioRecoveryConflict(s.path); err != nil {
 		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 		return
