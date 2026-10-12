@@ -81,7 +81,14 @@ func (p *Player) seekListeningRange(tick int64) {
 	// restart as well as at ordinary bar boundaries.
 	select {
 	case next := <-p.offers:
+		if next.Range != nil {
+			tick = next.Range.StartTick
+		}
 		p.retireEngine(p.current.Engine)
+		p.discardSupersededPatches(next.publication)
+		// Same order as a song-entry seek: rebuild the replacement's committed
+		// values at the restart tick before its previews are reapplied.
+		p.rebuildCommitted(next, tick)
 		p.applyOverrides(next.Engine, next, true)
 		p.current = next
 		p.streamEngine.Store(next.Engine)
@@ -90,9 +97,8 @@ func (p *Player) seekListeningRange(tick int64) {
 		p.resetMeters()
 		if next.Range != nil {
 			p.setPlaybackRange(next.Range)
-			tick = next.Range.StartTick
 		}
-		p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: next.Name, Kind: "edit"})
+		p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: next.Name, Kind: "edit", Revision: next.Revision})
 	default:
 	}
 	p.heldNotes, p.heldOrder = [128]noteInput{}, [128]uint64{}
@@ -101,6 +107,12 @@ func (p *Player) seekListeningRange(tick int64) {
 		p.fault = fmt.Errorf("live engine rejected listening start at tick %d", tick)
 		return
 	}
+	// The seek reconstructs saved defaults and scene settings in the engine.
+	// Mirror it in the committed snapshot, drop the override cache, and let
+	// the reconstruction precede any patch drained in the next block.
+	p.rebuildCommitted(p.current, tick)
+	p.transportQueued = true
+	p.initialParameters = false
 	p.bar = tick / seq.TicksPerBar
 	p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: p.current.BPMMilli, AnchorSample: p.sample, AnchorTick: tick}
 	p.tempoMilli.Store(p.current.BPMMilli)

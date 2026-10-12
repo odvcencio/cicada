@@ -29,6 +29,7 @@ func TestGeneratedIntentBatchesMatchSequentialApplyAndCommit(t *testing.T) {
 		for auxiliaries := 1; auxiliaries <= 2; auxiliaries++ {
 			for seed := int64(0); seed < 4; seed++ {
 				t.Run(fmt.Sprintf("length=%d/files=%d/seed=%d", length, auxiliaries, seed), func(t *testing.T) {
+					t.Parallel() // Each case owns its temporary project and studios.
 					newline := "\n"
 					if seed%2 != 0 {
 						newline = "\r\n"

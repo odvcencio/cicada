@@ -43,8 +43,9 @@ type studioTransport struct {
 	cancel            context.CancelFunc
 	last              [32]byte
 	livePlan          *livePlan
-	offers            []studioOffer // Published scores not yet reported landed, oldest first.
-	publications      uint64        // Last publication ID handed out; never reused.
+	offers            []studioOffer        // Published scores not yet reported landed, oldest first.
+	publications      uint64               // Last publication ID handed out; never reused.
+	prepareHook       func(liveplay.Score) // Test seam: runs after poll compiles a replacement, before it takes mu.
 	arena             *liveplay.PatchArena
 	patchRevision     uint64
 	playing           bool
@@ -947,9 +948,15 @@ func (t *studioTransport) poll() {
 	if plan != nil {
 		plan.prepareScore(&next)
 	}
+	if t.prepareHook != nil {
+		t.prepareHook(next)
+	}
 	t.mu.Lock()
 	if t.stream != stream {
 		t.mu.Unlock()
+		// Playback stopped or restarted while this replacement was prepared.
+		// Offer never saw it, so poll still owns the engine and its workers.
+		_ = next.Engine.Close()
 		return
 	}
 	next.Revision = t.recordOfferLocked(plan)
