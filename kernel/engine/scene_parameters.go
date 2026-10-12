@@ -14,6 +14,7 @@ import (
 type sceneParameterState struct {
 	tracks     [MaxTracks]sceneTrackParameters
 	layerMask  trackMask
+	soloCount  int
 	delay      fx.DelayParams
 	reverb     fx.ReverbParams
 	compressor fx.CompParams
@@ -23,6 +24,9 @@ type sceneTrackParameters struct {
 	mix                       mix.Track
 	gainDB, pan, sendA, sendB float32
 	sourceOff                 bool
+	muted, soloed             bool
+	muteGain, muteTarget      float32
+	spatialGain, spatialTrack float32 // The positioned-track gain and its target.
 	pianoSustain              float32
 	keysValues                [keysControlCount]float32
 	acid                      acid.Params
@@ -49,11 +53,14 @@ func (e *Engine) captureSceneDefaults() {
 	if e.sceneDefaults == nil {
 		return
 	}
+	e.sceneDefaults.soloCount = e.soloCount
 	for i := 0; i < e.tracks; i++ {
 		v := &e.voices[i]
 		p := &e.sceneDefaults.tracks[i]
 		p.mix, p.gainDB, p.pan = v.mix, v.gainDB, v.pan
 		p.sendA, p.sendB, p.sourceOff = v.sendA, v.sendB, v.sourceOff
+		p.muted, p.soloed, p.muteGain, p.muteTarget = v.muted, v.soloed, v.muteGain, v.muteTarget
+		p.spatialGain, p.spatialTrack = e.spatial.tracks[i].gain, e.spatial.tracks[i].target
 		p.acid, p.drums = v.acidTarget, v.drumTargets
 		p.pianoSustain = v.pianoSustain
 		p.keysValues = v.keysValues
@@ -93,7 +100,7 @@ func (e *Engine) restoreSceneDefaults() bool {
 	if base == nil {
 		return true
 	}
-	e.layerAuthored, e.soloCount = base.layerMask, 0
+	e.layerAuthored, e.soloCount = base.layerMask, base.soloCount
 	e.composeLayerMask()
 	for i := 0; i < e.tracks; i++ {
 		v, p := &e.voices[i], &base.tracks[i]
@@ -101,8 +108,9 @@ func (e *Engine) restoreSceneDefaults() bool {
 		v.gainDB, v.pan, v.sourceOff = p.gainDB, p.pan, p.sourceOff
 		v.sendA, v.targetSendA = p.sendA, p.sendA
 		v.sendB, v.targetSendB = p.sendB, p.sendB
-		v.muted, v.soloed = false, false
-		v.muteGain, v.muteTarget = 1, 1
+		v.muted, v.soloed = p.muted, p.soloed
+		v.muteGain, v.muteTarget = p.muteGain, p.muteTarget
+		e.spatial.tracks[i].gain, e.spatial.tracks[i].target = p.spatialGain, p.spatialTrack
 		v.acidTarget, v.drumTargets = p.acid, p.drums
 		if v.piano != nil {
 			v.pianoSustain = p.pianoSustain
