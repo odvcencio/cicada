@@ -203,6 +203,26 @@ func (e *Engine) advancePlacementSchedule() {
 		e.setNextScheduleTick()
 	}
 }
+// patternHandoff reports whether another pattern placement takes over the
+// track at the release tick, so notes and tails carry across like a scene
+// change. A release followed by a gap still releases. The last release of a
+// looping schedule hands off to a start at tick 0 of the next cycle.
+func (e *Engine) patternHandoff(v ScheduleEvent) bool {
+	for i := e.songIndex + 1; i < len(e.schedule) && e.schedule[i].Tick == v.Tick; i++ {
+		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track {
+			return true
+		}
+	}
+	if !e.loopSong || v.Tick != e.scheduleDuration {
+		return false
+	}
+	for i := 0; i < len(e.schedule) && e.schedule[i].Tick == 0; i++ {
+		if next := e.schedule[i]; next.Kind == SchedulePattern && next.Track == v.Track {
+			return true
+		}
+	}
+	return false
+}
 func (e *Engine) applyScheduleEvent(v ScheduleEvent, tick int64) {
 	track := int(v.Track)
 	switch v.Kind {
@@ -212,7 +232,7 @@ func (e *Engine) applyScheduleEvent(v ScheduleEvent, tick int64) {
 		e.patterns[track].startTick = v.Tick + e.cycleStart
 		e.scheduleTrack(track)
 	case SchedulePatternEnd:
-		if e.placementID[track] != v.ID {
+		if e.placementID[track] != v.ID || e.patternHandoff(v) {
 			return
 		}
 		e.noteOff(track, 0xffff)
