@@ -32,7 +32,7 @@ test:
 	go test ./... -count=1
 	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs
 	node host/web/chord_capability_test.cjs
-	node --test host/web/render-quantum.test.cjs
+	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
 
 .PHONY: test-audio-ideation test-editor-transcription test-record-worklet
 

@@ -37,7 +37,7 @@ async function setup(asset, capture, version, capability, options = {}) {
         gosx_audio_bank_image_len() { return 16; }, gosx_audio_cmd_cap() { return 512; },
         gosx_audio_cmd_ptr() { return 8192; }, gosx_audio_msg_ptr() { return 32768; },
         gosx_audio_out_ptr() { return 49152; }, gosx_audio_cmd_commit() { counts.commits++; },
-        gosx_audio_msg_drain() { return 0; }, gosx_audio_render() { counts.renders++; exports.renders++; }, renders: 0
+        gosx_audio_msg_drain() { return 0; }, gosx_audio_tick_frames: (from, to) => Math.ceil((to - from) * 60000 * 48000 / (120000 * 960)), gosx_audio_render() { counts.renders++; exports.renders++; }, renders: 0
       };
       if (capability !== null) exports.gosx_audio_capabilities = () => capability;
       if (options.malformedExport) exports.gosx_audio_capabilities = 3;

@@ -179,10 +179,8 @@ class CicadaKernel extends AudioWorkletProcessor {
       if (starts) { playing = true; post({ t: 's', p: true }); }
       if (stops) { if (CICADA_CAPTURE && capture && capture.recording) capture.stopping = true; playing = false; post(stoppedMessage); }
     };
-    const sampleAtTick = (tick) => {
-      const delta = tick - anchorTick;
-      return anchorSample + Math.ceil(delta * 60000 * rate / (bpm * 960));
-    };
+    // The kernel owns the tempo map, so a scene tempo moves the bar boundary.
+    const sampleAtTick = tick => anchorSample + active.x.tick_frames(anchorTick, tick);
     const swapAtBoundary = (tick) => {
       if (!pending || pending === true) { nextBarTick += 3840; return; }
       const next = pending;

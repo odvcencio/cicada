@@ -274,6 +274,7 @@ func New(initial Score, rate int) (*Player, error) {
 	if err != nil {
 		return nil, err
 	}
+	clock.BPMMilli = initial.Engine.TempoAtTick(0)
 	masterLoudness, err := newLiveLoudness(rate)
 	if err != nil {
 		return nil, err
@@ -298,7 +299,7 @@ func New(initial Score, rate int) (*Player, error) {
 	p.assignTrackIncarnations(initial.trackNames)
 	p.trackNames.Store(initial.trackNames)
 	p.position.Store(1<<8 | 1)
-	p.tempoMilli.Store(initial.BPMMilli)
+	p.tempoMilli.Store(clock.BPMMilli)
 	if len(initial.Song) != 0 {
 		p.scene.Store(&p.current.Song[0].Scene)
 	} else if len(initial.SceneIDs) != 0 {
@@ -1359,8 +1360,8 @@ func (p *Player) beginRequestedSong() {
 		p.rebuildCommitted(p.current, int64(start-1)*seq.TicksPerBar)
 		p.initialParameters = false
 		p.bar = int64(start) - 1
-		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.BPMMilli, AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
-		p.tempoMilli.Store(selected.BPMMilli)
+		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.Engine.TempoAtTick(p.bar * seq.TicksPerBar), AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
+		p.tempoMilli.Store(p.clock.BPMMilli)
 		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 		p.position.Store(uint64(start)<<8 | 1)
 		p.emit(Event{Bar: int64(start), Name: request.Scene, Kind: "song"})
@@ -1393,10 +1394,10 @@ func (p *Player) renderBlock() {
 			p.resetMeters()
 			swapped = true
 			p.clock = seq.Clock{
-				SampleRate: int64(p.rate), BPMMilli: next.BPMMilli,
+				SampleRate: int64(p.rate), BPMMilli: next.Engine.TempoAtTick(p.bar * seq.TicksPerBar),
 				AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar,
 			}
-			p.tempoMilli.Store(next.BPMMilli)
+			p.tempoMilli.Store(p.clock.BPMMilli)
 			select {
 			case p.events <- Event{Bar: p.bar + 1, Name: next.Name, Kind: "edit", Revision: next.Revision}:
 			default:
@@ -1405,6 +1406,14 @@ func (p *Player) renderBlock() {
 		}
 		if swapped {
 			p.requeuePendingLaunches()
+		}
+		// A scene that sets a tempo steps it on this bar. Re-anchor the way the
+		// kernel transport does, at the sample where the bar begins.
+		if tempo := p.current.Engine.TempoAtTick(p.bar * seq.TicksPerBar); tempo != p.clock.BPMMilli {
+			if clock, err := p.clock.Reanchor(p.bar*seq.TicksPerBar, tempo); err == nil {
+				p.clock = clock
+				p.tempoMilli.Store(tempo)
+			}
 		}
 		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 	}

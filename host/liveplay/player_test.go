@@ -947,3 +947,72 @@ func TestGMDrumLaneEditParity(t *testing.T) {
 		}
 	}
 }
+
+// tempoSongScore plays one bar at 120 BPM, then scene "slow" sets 60 BPM for two bars.
+func tempoSongScore(t *testing.T, name string) Score {
+	t.Helper()
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000}
+	cfg.Track[0].Kind = engine.VoiceAcid
+	cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 2}}
+	cfg.LoopSong = true
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name}
+}
+
+func TestEditsSwapOnTheBarAfterASceneTempoChange(t *testing.T) {
+	p, err := New(tempoSongScore(t, "first"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.BPMMilli(); got != 120_000 {
+		t.Fatalf("tempo before the change = %d", got)
+	}
+	// Bar 1 is 96000 frames at 120 BPM. Bar 2 is 192000 frames at 60 BPM.
+	if _, err := io.CopyN(io.Discard, p, (96_000+1)*8); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.BPMMilli(); got != 60_000 {
+		t.Fatalf("tempo in bar 2 = %d, want 60000", got)
+	}
+	if err := p.Offer(tempoSongScore(t, "edit")); err != nil {
+		t.Fatal(err)
+	}
+	// The next boundary is 192000 frames after the start of bar 2, not 96000.
+	if _, err := io.CopyN(io.Discard, p, (192_000-2)*8); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("edit landed before the slow bar ended: %+v", event)
+	default:
+	}
+	var frame [8]byte
+	if _, err := io.ReadFull(p, frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("edit landed one frame early: %+v", event)
+	default:
+	}
+	if _, err := io.ReadFull(p, frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" && event.Name == "edit" && event.Bar == 3 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("edit did not land at the bar after the slow bar")
+	}
+	// The new engine seeks to bar 3 (index 2), which is still 60 BPM.
+	if got := p.BPMMilli(); got != 60_000 {
+		t.Fatalf("tempo after the swap = %d", got)
+	}
+}
