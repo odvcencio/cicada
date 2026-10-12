@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 )
@@ -104,5 +105,30 @@ func TestProjectSceneTempoIsRejectedUnderArrange(t *testing.T) {
 	err = ValidateProject(p)
 	if err == nil || !strings.Contains(err.Error(), "CICADA-UNSUPPORTED: scene "+p.Scenes[0].ID+" sets tempo") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// The kernel expects a scene's tempo ahead of its other settings, whatever the
+// order the author wrote them in.
+func TestCompiledSceneTempoComesFirst(t *testing.T) {
+	src := strings.Replace(tempoSteps, "scene b { bass = riff tempo = 60 }", "scene b { bass = riff delay.time = 1/4 bass.cutoff = 900Hz tempo = 60 }", 1)
+	p, ds := tempoProject(t, src)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	for _, scene := range p.Scenes {
+		settings, err := CompileSceneSettings(p, scene)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i, setting := range settings {
+			if setting.ID == kernel.ParamGlobalTempo && i != 0 {
+				t.Fatalf("scene %s emits tempo at position %d", scene.ID, i)
+			}
+		}
+	}
+	b := p.Scenes[1]
+	if settings, _ := CompileSceneSettings(p, b); len(settings) != 3 || settings[0].ID != kernel.ParamGlobalTempo {
+		t.Fatalf("scene b settings: %+v", settings)
 	}
 }

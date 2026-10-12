@@ -177,34 +177,26 @@ func TestSceneTempoLoopWrapRestoresScoreTempo(t *testing.T) {
 }
 
 func TestSceneTempoAndDelayDivisionFadeOnce(t *testing.T) {
-	build := func(tempoFirst bool) Config {
-		cfg := sceneTempoConfig()
-		delay := fx.DefaultDelayParams()
-		delay.Mix = .5
-		cfg.DelayA = &delay
-		cfg.Track[0].SendA = .8
-		tempo := SceneSetting{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}
-		division := SceneSetting{Track: 0xff, ID: kernel.ParamFxDelayTime, Division: fx.Eighth}
-		cfg.Scenes[1].Settings = []SceneSetting{tempo, division}
-		if !tempoFirst {
-			cfg.Scenes[1].Settings = []SceneSetting{division, tempo}
-		}
-		return cfg
-	}
-	frames := 96_000 + 192_000
-	_, a := renderSceneTempo(t, build(true), 128, frames, nil)
-	_, b := renderSceneTempo(t, build(false), 128, frames, nil)
-	for i := range a.left {
-		if a.left[i] != b.left[i] || a.right[i] != b.right[i] {
-			t.Fatalf("setting order changed the delay at frame %d", i)
-		}
-	}
+	cfg := sceneTempoConfig()
+	delay := fx.DefaultDelayParams()
+	delay.Mix = .5
+	cfg.DelayA = &delay
+	cfg.Track[0].SendA = .8
+	tempo := SceneSetting{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}
+	division := SceneSetting{Track: 0xff, ID: kernel.ParamFxDelayTime, Division: fx.Eighth}
+	cfg.Scenes[1].Settings = []SceneSetting{tempo, division}
+	_, run := renderSceneTempo(t, cfg, 128, 96_000+192_000, nil)
 	var energy float64
-	for _, v := range a.left[96_000:] {
+	for _, v := range run.left[96_000:] {
 		energy += float64(v * v)
 	}
 	if energy == 0 {
 		t.Fatal("silent")
+	}
+	// The tempo must come first so the delay fades once; any other order is rejected.
+	cfg.Scenes[1].Settings = []SceneSetting{division, tempo}
+	if _, err := New(cfg); err == nil {
+		t.Fatal("a scene tempo after another setting was accepted")
 	}
 }
 

@@ -772,10 +772,12 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 			id    kernel.ParamID
 		}
 		seen := make(map[parameterAddress]bool, len(scene.Settings))
-		for _, setting := range scene.Settings {
+		for position, setting := range scene.Settings {
 			address := parameterAddress{track: setting.Track, id: setting.ID}
 			spec, ok := kernel.Param(setting.ID)
-			if !ok || !spec.Live && setting.ID != kernel.ParamGlobalTempo || seen[address] {
+			// A scene's tempo comes first: launching it applies the tempo before
+			// the patterns and delay division that use it.
+			if !ok || !spec.Live && setting.ID != kernel.ParamGlobalTempo || seen[address] || setting.ID == kernel.ParamGlobalTempo && position != 0 {
 				return Error("scene parameter setting is invalid")
 			}
 			seen[address] = true

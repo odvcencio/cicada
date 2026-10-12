@@ -86,3 +86,37 @@ func TestSceneTempoOutOfRangeIsRejected(t *testing.T) {
 		}
 	}
 }
+
+func TestSceneTempoMustBeTheFirstSceneSetting(t *testing.T) {
+	cfg := sceneTempoImageConfig(t, "84")
+	cfg.Scenes = append([]engine.Scene(nil), cfg.Scenes...)
+	cfg.Scenes[1].Settings = []engine.SceneSetting{
+		{Track: 0, ID: kernel.ParamMixGain, Value: -3},
+		{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 84},
+	}
+	if _, err := kernelimage.Encode(cfg); err == nil {
+		t.Fatal("encode accepted a scene tempo that is not first")
+	}
+	// An image whose settings were swapped after encoding is rejected on load.
+	cfg.Scenes[1].Settings[0], cfg.Scenes[1].Settings[1] = cfg.Scenes[1].Settings[1], cfg.Scenes[1].Settings[0]
+	encoded, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tempo, gain bytes.Buffer
+	tempo.WriteByte(0xff)
+	binary.Write(&tempo, binary.LittleEndian, uint16(kernel.ParamGlobalTempo))
+	binary.Write(&tempo, binary.LittleEndian, math.Float32bits(84))
+	tempo.WriteByte(0)
+	gain.WriteByte(0)
+	binary.Write(&gain, binary.LittleEndian, uint16(kernel.ParamMixGain))
+	binary.Write(&gain, binary.LittleEndian, math.Float32bits(float32(-3)))
+	gain.WriteByte(0)
+	swapped := bytes.Replace(encoded, append(tempo.Bytes(), gain.Bytes()...), append(gain.Bytes(), tempo.Bytes()...), 1)
+	if bytes.Equal(swapped, encoded) {
+		t.Fatal("could not swap the settings")
+	}
+	if _, err := kernelimage.Decode(swapped, 48_000, 128); err == nil {
+		t.Fatal("decode accepted a scene tempo that is not first")
+	}
+}

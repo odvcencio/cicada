@@ -69,21 +69,13 @@ func GenerateKernel() ([]byte, error) {
 	fmt.Fprintln(&b, "package kernel")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "type ParamID uint16")
-	fmt.Fprintln(&b, "type ParamSpec struct { ID ParamID; Name, Path, Scope, Source, Unit, Curve, Persist string; Min, Max, Default, DisplayStep float32; SmoothingMS float32; Live, Automatable, Off bool }")
 	fmt.Fprintln(&b, "const (")
 	for i, d := range Registry {
 		fmt.Fprintf(&b, "\tParam%s ParamID = %d\n", GoName(d.ID), i)
 	}
 	fmt.Fprintf(&b, "\tParamCount = %d\n", len(Registry))
 	fmt.Fprintln(&b, ")")
-	split := keysSplit()
-	fmt.Fprintln(&b, "// paramsBase holds every row before the modeled-keyboard controls.")
-	fmt.Fprintln(&b, "var paramsBase = [...]ParamSpec{")
-	writeRows(&b, 0, split)
-	fmt.Fprintln(&b, "}")
-	fmt.Fprintf(&b, "const paramsBaseCount = %d\n", split)
 	fmt.Fprintln(&b, "func Param(id ParamID) (ParamSpec, bool) { if int(id) >= len(Params) { return ParamSpec{}, false }; return Params[id], true }")
-	fmt.Fprintln(&b, "func FindParam(name string) (ParamID, bool) { for i := range Params { if Params[i].Name == name { return ParamID(i), true } }; return 0, false }")
 	formatted, err := format.Source(b.Bytes())
 	if err != nil {
 		return nil, fmt.Errorf("format generated parameter table: %w", err)
@@ -131,6 +123,15 @@ func GenerateKernelKeys() ([]byte, error) {
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "package kernel")
 	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "type ParamSpec struct { ID ParamID; Name, Path, Scope, Source, Unit, Curve, Persist string; Min, Max, Default, DisplayStep float32; SmoothingMS float32; Live, Automatable, Off bool }")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "// paramsBase holds every row before the modeled-keyboard controls.")
+	fmt.Fprintln(&b, "var paramsBase = [...]ParamSpec{")
+	writeRows(&b, 0, keysSplit())
+	fmt.Fprintln(&b, "}")
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "func FindParam(name string) (ParamID, bool) { for i := range Params { if Params[i].Name == name { return ParamID(i), true } }; return 0, false }")
+	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "var paramsKeys = [...]ParamSpec{")
 	writeRows(&b, keysSplit(), len(Registry))
 	fmt.Fprintln(&b, "}")
@@ -149,8 +150,19 @@ func GenerateKernelCore() ([]byte, error) {
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "package kernel")
 	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "// ParamSpec is the core kernel's view of a registry row. The names, paths,")
+	fmt.Fprintln(&b, "// sources, units and persistence words are host metadata that the core")
+	fmt.Fprintln(&b, "// never reads, so they are left out of the module.")
+	fmt.Fprintln(&b, "type ParamSpec struct { ID ParamID; Scope, Curve string; Min, Max, Default, DisplayStep float32; SmoothingMS float32; Live, Automatable, Off bool }")
+	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "// Params lists the rows the core kernel knows. IDs from the first")
 	fmt.Fprintln(&b, "// modeled-keyboard row up are rejected as unknown parameters.")
-	fmt.Fprintln(&b, "var Params = paramsBase[:]")
+	fmt.Fprintln(&b, "var Params = [...]ParamSpec{")
+	for i := 0; i < keysSplit(); i++ {
+		d := Registry[i]
+		fmt.Fprintf(&b, "\t{%d, %q, %q, %s, %s, %s, %s, %s, %t, %t, %t},\n", i, d.Scope, d.Curve,
+			floatLiteral(d.Min), floatLiteral(d.Max), floatLiteral(d.Default), floatLiteral(d.DisplayStep), floatLiteral(d.SmoothingMS), d.Live, d.Automatable, d.Off)
+	}
+	fmt.Fprintln(&b, "}")
 	return format.Source(b.Bytes())
 }

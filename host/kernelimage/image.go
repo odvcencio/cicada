@@ -611,6 +611,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			return nil, Error("scene parameter setting count exceeds the image limit")
 		}
 		for i, setting := range scene.Settings {
+			if setting.ID == kernel.ParamGlobalTempo && i != 0 {
+				return nil, Error("scene tempo must be the first scene setting")
+			}
 			if err := validateSceneSetting(&cfg, setting); err != nil {
 				return nil, err
 			}
@@ -1259,6 +1262,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 						return Error("keyboard controls require image version 15")
 					}
 					return Error("guitar controls require image version 15")
+				}
+				if setting.ID == kernel.ParamGlobalTempo && i != 0 {
+					return Error("scene tempo must be the first scene setting")
 				}
 				if err := validateSceneSetting(cfg, *setting); err != nil {
 					return err
