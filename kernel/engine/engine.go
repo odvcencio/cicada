@@ -258,6 +258,7 @@ type Engine struct {
 	automation                   []cmd.Command
 	automationIndex              int
 	automationTick               int64
+	automationLanes              []automationLane // Distinct parameters the timeline moves.
 	automationCycle              int64
 	layerMask                    trackMask // effective: layerAuthored gated by the macro layer tables
 	layerAuthored                trackMask // set by scenes, OpSetLayerMask and source-off; never by macros

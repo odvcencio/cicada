@@ -194,7 +194,7 @@ func (e *Engine) advancePlacementSchedule() {
 				return
 			}
 			e.cycleStart += e.scheduleDuration
-			if len(e.automation) != 0 && !e.restoreAuthoredAndCommitted() { // As a song loop does.
+			if len(e.automation) != 0 && !e.restartAutomationLanes() { // As a song loop does.
 				return
 			}
 			e.songIndex = -1

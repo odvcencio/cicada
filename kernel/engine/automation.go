@@ -20,6 +20,16 @@ func (e *Engine) loadAutomation(cfg *Config) error {
 		}
 	}
 	e.automation = append([]cmd.Command(nil), cfg.Automation...)
+	e.automationLanes = e.automationLanes[:0]
+	for _, c := range e.automation {
+		known := false
+		for _, lane := range e.automationLanes {
+			known = known || lane.track == c.Track && lane.id == kernel.ParamID(c.Index)
+		}
+		if !known {
+			e.automationLanes = append(e.automationLanes, automationLane{c.Track, kernel.ParamID(c.Index)})
+		}
+	}
 	e.automationTick = -1
 	e.automationCycle = e.scheduleDuration
 	return nil

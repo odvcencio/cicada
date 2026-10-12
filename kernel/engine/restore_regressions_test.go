@@ -135,3 +135,91 @@ func TestAutomationRestartRestoresPositionedGain(t *testing.T) {
 		}
 	}
 }
+
+// The engine's own loop wrap tells the host nothing, so it may change only the
+// parameters the automation timeline moves: committed edits, previews, solo and
+// mute fades and every unrelated parameter must come through untouched, while
+// the automated parameter returns to the value it has before the first point.
+func TestLoopWrapChangesOnlyAutomationLanes(t *testing.T) {
+	for _, placement := range []bool{false, true} {
+		for _, lane := range []struct {
+			name      string
+			first     int64
+			want      float32 // pan after the wrap
+			committed bool
+		}{
+			{"first point at zero", 0, .5, false},
+			{"first point after zero", 600, 0, false},
+			{"committed value of the automated parameter", 600, .3, true},
+		} {
+			t.Run(scheduleKindName(placement)+"/"+lane.name, func(t *testing.T) {
+				cfg := restoreBase(t)
+				cfg.Track[3].Solo = true // Piano soloed: track 0 stays excluded.
+				cfg.LoopSong = true
+				restoreScheduled(&cfg, placement)
+				cfg.Automation = []cmd.Command{
+					{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.5), Tick: lane.first},
+					{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.9), Tick: 1200},
+				}
+				e, err := New(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				e.meterRate = 0
+				var l, r [128]float32
+				e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+				for i := 0; i < 10; i++ {
+					e.Render(l[:], r[:])
+				}
+				if lane.committed && !e.PushCommittedBatch([]cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.3)}}) {
+					t.Fatal("committed edit refused")
+				}
+				// A committed edit and a preview on parameters with no lane.
+				if !e.PushCommittedBatch([]cmd.Command{{Op: cmd.OpSetParam, Track: 4, Index: uint16(kernel.ParamKeysEpGain), Arg0: math.Float32bits(.2)}}) ||
+					!e.Push(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamAcidCutoff), Arg0: math.Float32bits(777)}) ||
+					!e.Push(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixSendA), Arg0: math.Float32bits(.4)}) {
+					t.Fatal("setup refused")
+				}
+				// Run well past the mute fade of the excluded track and past the lane.
+				for frames := 1280; frames < 76_800-128; frames += 128 {
+					e.Render(l[:], r[:])
+				}
+				if e.voices[0].muteGain != 0 {
+					t.Fatalf("excluded track not faded out before the wrap: %g", e.voices[0].muteGain)
+				}
+				if e.voices[0].pan == lane.want {
+					t.Fatalf("the lane never moved the pan before the wrap")
+				}
+				// Step through the wrap one frame at a time and check each one.
+				sendA := e.voices[0].targetSendA
+				for i := 0; i < 400; i++ {
+					e.Render(l[:1], r[:1])
+					if e.voices[0].muteGain != 0 {
+						t.Fatalf("frame %d: the excluded track's mute gain became %g", i, e.voices[0].muteGain)
+					}
+					if e.voices[0].targetSendA != sendA {
+						t.Fatalf("frame %d: an unrelated send changed to %g", i, e.voices[0].targetSendA)
+					}
+				}
+				if e.voices[0].acidTarget.Cutoff != 777 {
+					t.Fatalf("the preview on the cutoff was reset to %g", e.voices[0].acidTarget.Cutoff)
+				}
+				if e.voices[4].keys.(*controlKeys).values[10] != .2 {
+					t.Fatalf("the committed keyboard gain was reset to %g", e.voices[4].keys.(*controlKeys).values[10])
+				}
+				if e.soloCount != 1 || !e.voices[3].soloed {
+					t.Fatal("the authored solo was changed")
+				}
+				if e.voices[0].pan != lane.want {
+					t.Fatalf("the automated pan is %g after the wrap, want %g", e.voices[0].pan, lane.want)
+				}
+				var message cmd.Message
+				for e.Poll(&message) {
+					if message.Kind == cmd.Fault {
+						t.Fatalf("fault %d", message.A)
+					}
+				}
+			})
+		}
+	}
+}
