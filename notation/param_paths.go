@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
 // validateSceneSettings resolves the edition-1 path namespace and rejects any
@@ -114,7 +115,7 @@ func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, strin
 		setting := strings.Join(parts[1:], ".")
 		kind := notationParameterVoiceKind(score, track.Kind)
 		for _, descriptor := range paramdefs.Registry {
-			if descriptor.Scope != "track" || descriptor.Path != setting || !contains(descriptor.Voices, kind) {
+			if descriptor.Scope != "track" || descriptor.Path != setting || !paramdefs.HasVoice(descriptor, kind) {
 				continue
 			}
 			return descriptor, "track", owner, "", ""
@@ -160,8 +161,11 @@ func notationParameterVoiceKind(score *Score, kind string) string {
 			return "drums"
 		}
 	}
-	if notationModeledPiano(score, kind) || notationModeledKeys(score, kind) {
+	if notationModeledPiano(score, kind) {
 		return "piano"
+	}
+	if notationModeledKeys(score, kind) {
+		return keyboard.FamilyOf(keyboard.ID(kind)).String()
 	}
 	return "instrument"
 }
@@ -219,6 +223,9 @@ func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {
 	}
 	if math.IsNaN(value) || math.IsInf(value, 0) || value < descriptor.Min || value > descriptor.Max {
 		return fmt.Errorf("%s is outside the range %s", source, sceneValueRange(descriptor))
+	}
+	if descriptor.Type == "integer" && value != math.Trunc(value) {
+		return fmt.Errorf("%s must be a whole number", source)
 	}
 	return nil
 }

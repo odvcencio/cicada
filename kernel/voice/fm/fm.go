@@ -2,7 +2,11 @@
 // One audio owner must serialize its note, pedal and render calls.
 package fm
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/voice/keyboard"
+)
 
 const (
 	MinNote   = 21
@@ -153,6 +157,8 @@ type Instrument struct {
 	serial                  uint64
 	tailL, tailR, tailDecay float32
 	tailFrames, stealFrames int
+	gainT, glideAlpha       float32
+	gliding                 bool
 }
 
 // SetVoiceLimit selects one to eight note slots. Configure it before playback;
@@ -213,7 +219,7 @@ func New(sampleRate int, params Params) (*Instrument, error) {
 	if err := validate(params); err != nil {
 		return nil, err
 	}
-	f := &Instrument{rate: sampleRate, voiceLimit: MaxVoices, gain: params.Gain, stealFrames: sampleRate / 100}
+	f := &Instrument{rate: sampleRate, voiceLimit: MaxVoices, gain: params.Gain, gainT: params.Gain, stealFrames: sampleRate / 100}
 	f.tailDecay = float32(math.Exp(-8 / float64(f.stealFrames)))
 	for i := range f.sine {
 		f.sine[i] = float32(math.Sin(2 * math.Pi * float64(i) / tableSize))
@@ -472,6 +478,9 @@ func (f *Instrument) nextInternal() (float32, float32) {
 // NextStereo renders one output frame. The network runs at twice the requested
 // rate; the shared FIR removes ultrasonic sidebands before downsampling.
 func (f *Instrument) NextStereo() (float32, float32) {
+	if f.gliding {
+		f.gliding = !keyboard.Approach(&f.gain, f.gainT, f.glideAlpha)
+	}
 	for range 2 {
 		left, right := f.nextInternal()
 		f.historyL[f.historyIndex], f.historyR[f.historyIndex] = left, right
@@ -484,4 +493,27 @@ func (f *Instrument) NextStereo() (float32, float32) {
 		right += float32(float32(f.historyR[a]+f.historyR[b]) * coefficient)
 	}
 	return float32(left * f.gain), float32(right * f.gain)
+}
+
+// controlGain is the keyboard control slot for overall gain.
+const controlGain = 1
+
+// SetControl changes the overall gain. A glide of 1 applies the value at once.
+// It allocates nothing.
+func (f *Instrument) SetControl(index int, value, glide float32) error {
+	if !keyboard.ValidGlide(glide) {
+		return Error("glide must be in (0,1]")
+	}
+	if index != controlGain {
+		return Error("FM keys have no such control")
+	}
+	if !keyboard.InRange(value, .001, 2) {
+		return Error("FM gain must be 0.001..2")
+	}
+	f.gainT = value
+	f.glideAlpha, f.gliding = glide, true
+	if glide == 1 {
+		f.gliding = !keyboard.Approach(&f.gain, f.gainT, 1)
+	}
+	return nil
 }

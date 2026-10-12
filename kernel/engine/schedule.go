@@ -154,6 +154,9 @@ func (e *Engine) startPlacementSchedule() {
 		e.patterns[track].eventIndex = 0
 		e.placementID[track] = 0
 	}
+	if !e.restoreAuthoredAndCommitted() { // The same restore as a song start.
+		return
+	}
 	localTick := tick - e.cycleStart
 	lo, hi := 0, len(e.schedule)
 	for lo < hi {
@@ -191,6 +194,9 @@ func (e *Engine) advancePlacementSchedule() {
 				return
 			}
 			e.cycleStart += e.scheduleDuration
+			if len(e.automation) != 0 && !e.restartAutomationLanes() { // As a song loop does.
+				return
+			}
 			e.songIndex = -1
 			e.setNextScheduleTick()
 			continue

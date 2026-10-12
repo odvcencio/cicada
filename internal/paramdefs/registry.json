@@ -2939,5 +2939,489 @@
     "live": false,
     "automatable": false,
     "persist": "source"
+  },
+  {
+    "id": "keys.ep.tremolo",
+    "path": "tremolo",
+    "scope": "track",
+    "voices": [
+      "ep"
+    ],
+    "source": "tremolo",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.ep.tremolo_rate",
+    "path": "tremolo_rate",
+    "scope": "track",
+    "voices": [
+      "ep"
+    ],
+    "source": "tremolo_rate",
+    "unit": "Hz",
+    "min": 0.1,
+    "max": 12,
+    "default": 4.6,
+    "curve": "linear",
+    "display_step": 0.1,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.ep.auto_pan",
+    "path": "auto_pan",
+    "scope": "track",
+    "voices": [
+      "ep"
+    ],
+    "source": "auto_pan",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.ep.gain",
+    "path": "gain",
+    "scope": "track",
+    "voices": [
+      "ep"
+    ],
+    "source": "gain",
+    "unit": "ratio",
+    "min": 0,
+    "max": 2,
+    "default": 0.7,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.ep.drive",
+    "path": "drive",
+    "scope": "track",
+    "voices": [
+      "ep"
+    ],
+    "source": "drive",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.clav.gain",
+    "path": "gain",
+    "scope": "track",
+    "voices": [
+      "clav"
+    ],
+    "source": "gain",
+    "unit": "ratio",
+    "min": 0,
+    "max": 2,
+    "default": 0.7,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.clav.drive",
+    "path": "drive",
+    "scope": "track",
+    "voices": [
+      "clav"
+    ],
+    "source": "drive",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.organ.gain",
+    "path": "gain",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "gain",
+    "unit": "ratio",
+    "min": 0,
+    "max": 2,
+    "default": 0.8,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.organ.drive",
+    "path": "drive",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drive",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0.18,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.organ.rotary_mix",
+    "path": "rotary_mix",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "rotary_mix",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0.8,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.organ.rotary_fast",
+    "path": "rotary_fast",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "rotary_fast",
+    "unit": "",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "toggle",
+    "display_step": 1,
+    "smoothing_ms": 1,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "values": [
+      "slow",
+      "fast"
+    ],
+    "type": "boolean"
+  },
+  {
+    "id": "keys.organ.drawbar1",
+    "path": "drawbar1",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drawbar1",
+    "unit": "",
+    "min": 0,
+    "max": 8,
+    "default": 7,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 4,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
+  },
+  {
+    "id": "keys.organ.drawbar2",
+    "path": "drawbar2",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drawbar2",
+    "unit": "",
+    "min": 0,
+    "max": 8,
+    "default": 4,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 4,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
+  },
+  {
+    "id": "keys.organ.drawbar3",
+    "path": "drawbar3",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drawbar3",
+    "unit": "",
+    "min": 0,
+    "max": 8,
+    "default": 8,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 4,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
+  },
+  {
+    "id": "keys.organ.drawbar4",
+    "path": "drawbar4",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drawbar4",
+    "unit": "",
+    "min": 0,
+    "max": 8,
+    "default": 6,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 4,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
+  },
+  {
+    "id": "keys.organ.drawbar5",
+    "path": "drawbar5",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drawbar5",
+    "unit": "",
+    "min": 0,
+    "max": 8,
+    "default": 1,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 4,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
+  },
+  {
+    "id": "keys.organ.drawbar6",
+    "path": "drawbar6",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drawbar6",
+    "unit": "",
+    "min": 0,
+    "max": 8,
+    "default": 2,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 4,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
+  },
+  {
+    "id": "keys.organ.drawbar7",
+    "path": "drawbar7",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drawbar7",
+    "unit": "",
+    "min": 0,
+    "max": 8,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 4,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
+  },
+  {
+    "id": "keys.organ.drawbar8",
+    "path": "drawbar8",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drawbar8",
+    "unit": "",
+    "min": 0,
+    "max": 8,
+    "default": 1,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 4,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
+  },
+  {
+    "id": "keys.organ.drawbar9",
+    "path": "drawbar9",
+    "scope": "track",
+    "voices": [
+      "organ"
+    ],
+    "source": "drawbar9",
+    "unit": "",
+    "min": 0,
+    "max": 8,
+    "default": 1,
+    "curve": "linear",
+    "display_step": 1,
+    "smoothing_ms": 4,
+    "live": true,
+    "automatable": false,
+    "persist": "source",
+    "type": "integer"
+  },
+  {
+    "id": "keys.fm.gain",
+    "path": "gain",
+    "scope": "track",
+    "voices": [
+      "fm"
+    ],
+    "source": "gain",
+    "unit": "ratio",
+    "min": 0.001,
+    "max": 2,
+    "default": 1,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.analog.drive",
+    "path": "drive",
+    "scope": "track",
+    "voices": [
+      "analog"
+    ],
+    "source": "drive",
+    "unit": "ratio",
+    "min": 0,
+    "max": 1,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.01,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.analog.output",
+    "path": "output",
+    "scope": "track",
+    "voices": [
+      "analog"
+    ],
+    "source": "output",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.1,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
+  },
+  {
+    "id": "keys.strings.output",
+    "path": "output",
+    "scope": "track",
+    "voices": [
+      "strings"
+    ],
+    "source": "output",
+    "unit": "dB",
+    "min": -60,
+    "max": 6,
+    "default": 0,
+    "curve": "linear",
+    "display_step": 0.1,
+    "smoothing_ms": 20,
+    "live": true,
+    "automatable": true,
+    "persist": "source",
+    "type": "number"
   }
 ]

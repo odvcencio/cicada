@@ -9,6 +9,7 @@ import (
 
 	gts "github.com/odvcencio/gotreesitter"
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -162,6 +163,14 @@ func parameterPathCompletion(source []byte, at position) []map[string]any {
 	trackKind, effectKind, scope := "", "", ""
 	if match := regexp.MustCompile(`(?m)^\s*track\s+` + regexp.QuoteMeta(owner) + `\s+([a-z_][a-z0-9_-]*)\s*\{`).FindSubmatch(source); len(match) == 2 {
 		trackKind, scope = string(match[1]), "track"
+		// A declared instrument, sampler or kit with the track's kind name wins
+		// over a built-in patch of that name, as in the compiler.
+		if declared := regexp.MustCompile(`(?m)^\s*(instrument|sampler|kit)\s+` + regexp.QuoteMeta(trackKind) + `\b`).FindSubmatch(source); len(declared) == 2 {
+			trackKind = "instrument"
+			if string(declared[1]) == "kit" {
+				trackKind = "drums"
+			}
+		}
 	}
 	if match := regexp.MustCompile(`(?m)^\s*fx\s+` + regexp.QuoteMeta(owner) + `(?:\s+([a-z_][a-z0-9_-]*))?\s*\{`).FindSubmatch(source); len(match) > 0 {
 		effectKind = owner
@@ -312,13 +321,13 @@ func matchingCompletion(names []string, prefix, detail string) []map[string]any 
 	return items
 }
 
+// descriptorHasVoice applies the compiler's voice rule to a track's declared
+// kind. A modeled keyboard patch such as tine_ep stands for its family.
 func descriptorHasVoice(descriptor paramdefs.Descriptor, kind string) bool {
-	for _, voice := range descriptor.Voices {
-		if voice == kind {
-			return true
-		}
+	if id := keyboard.ID(kind); id != 0 {
+		kind = keyboard.FamilyOf(id).String()
 	}
-	return false
+	return paramdefs.HasVoice(descriptor, kind)
 }
 
 func pathOwnerPrefix(path pathRegion, owner string) (int, int, bool) {

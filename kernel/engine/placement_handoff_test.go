@@ -1,8 +1,10 @@
 package engine
 
 import (
+	"math"
 	"testing"
 
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/seq"
 )
@@ -65,5 +67,59 @@ func TestPlacementLoopWrapHandsOffLikeSongLoop(t *testing.T) {
 		}
 		for b.Poll(&message) {
 		}
+	}
+}
+
+// A looping arrangement that hands off at the wrap keeps its notes and tails
+// when a lane also restarts there: the output matches the same arrangement
+// without the lane, and the lane's parameter returns to its authored value.
+func TestPlacementLoopHandoffKeepsTailsAndRestartsLanes(t *testing.T) {
+	bar := int64(seq.TicksPerBar)
+	build := func(lane bool) Config {
+		cfg := handoffLoopConfig(t)
+		cfg.Tracks = 2
+		cfg.Track[1].Kind = VoiceAcid // A silent track the lane moves, so the audio stays comparable.
+		cfg.Patterns = append(cfg.Patterns, PatternBank{})
+		cfg.Schedule = []ScheduleEvent{
+			{Kind: SchedulePattern, Tick: 0, EndTick: bar, ID: 1},
+			{Kind: SchedulePatternEnd, Tick: bar, EndTick: bar, ID: 1},
+			{Kind: SchedulePattern, Tick: bar, EndTick: 2 * bar, ID: 2},
+			{Kind: SchedulePatternEnd, Tick: 2 * bar, EndTick: 2 * bar, ID: 2},
+		}
+		cfg.MaxVoices = 2
+		if lane {
+			cfg.Automation = []cmd.Command{{Op: cmd.OpSetParam, Track: 1, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.5), Tick: 600}}
+		}
+		return cfg
+	}
+	plain, err := New(build(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	laned, err := New(build(true))
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	laned.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	var al, ar, bl, br [128]float32
+	cycle := 2 * int(bar) * 48000 / (960 * 2) // Frames in two bars at 120 BPM.
+	movedBeforeWrap, restartedAfterWrap := false, false
+	for block := 0; block < 2*cycle/128+40; block++ {
+		plain.Render(al[:], ar[:])
+		laned.Render(bl[:], br[:])
+		if al != bl || ar != br {
+			t.Fatalf("block %d: the lane changed the output, so a tail or note was lost at the wrap", block)
+		}
+		frames := (block + 1) * 128
+		if frames > cycle-2000 && frames < cycle && laned.voices[1].pan == .5 {
+			movedBeforeWrap = true
+		}
+		if frames > cycle+128 && frames < cycle+3000 && laned.voices[1].pan == 0 {
+			restartedAfterWrap = true
+		}
+	}
+	if !movedBeforeWrap || !restartedAfterWrap {
+		t.Fatalf("lane pan moved before the wrap %v, returned to authored after it %v", movedBeforeWrap, restartedAfterWrap)
 	}
 }

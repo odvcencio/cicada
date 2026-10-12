@@ -2,7 +2,11 @@
 // contact, damping yarn and two spatial electromagnetic pickups.
 package clav
 
-import "math"
+import (
+	"math"
+
+	"m31labs.dev/cicada/kernel/voice/keyboard"
+)
 
 const (
 	MinNote   = 21
@@ -71,6 +75,8 @@ type Instrument struct {
 	serial                                                               uint32
 	dcPole, dcIn, dcOut, lowAlpha, low, clickR, drive, gain, tail, tailR float32
 	voiceLimit                                                           int
+	driveT, gainT, glideAlpha                                            float32
+	gliding                                                              bool
 }
 
 func New(rate int, p Params) (*Instrument, error) {
@@ -114,6 +120,7 @@ func New(rate int, p Params) (*Instrument, error) {
 		}
 	}
 	i.voiceLimit = MaxVoices
+	i.driveT, i.gainT = i.drive, i.gain
 	return i, nil
 }
 func (i *Instrument) NoteOn(note, velocity uint8) error {
@@ -199,6 +206,10 @@ func sat(x float32) float32 {
 	return float32(x*float32(27+x2)) / float32(27+float32(9*x2))
 }
 func (i *Instrument) NextStereo() (float32, float32) {
+	if i.gliding {
+		done := keyboard.Approach(&i.drive, i.driveT, i.glideAlpha)
+		i.gliding = !(keyboard.Approach(&i.gain, i.gainT, i.glideAlpha) && done)
+	}
 	sum := float32(0)
 	for j := range i.voices {
 		v := &i.voices[j]
@@ -266,5 +277,39 @@ func (i *Instrument) SetVoiceLimit(limit int) error {
 		i.voices[j] = voice{}
 	}
 	i.voiceLimit = limit
+	return nil
+}
+
+// Slots in the keyboard control table.
+const (
+	controlDrive = 5
+	controlGain  = 6
+)
+
+// SetControl changes drive or gain. A glide of 1 applies the value at once.
+// It allocates nothing.
+func (i *Instrument) SetControl(index int, value, glide float32) error {
+	if !keyboard.ValidGlide(glide) {
+		return Error("glide must be in (0,1]")
+	}
+	switch index {
+	case controlDrive:
+		if !keyboard.InRange(value, 0, 1) {
+			return Error("clav drive must be 0..1")
+		}
+		i.driveT = float32(1 + 4*float64(value))
+	case controlGain:
+		if !keyboard.InRange(value, 0, 2) {
+			return Error("clav gain must be 0..2")
+		}
+		i.gainT = float32(.55 * float64(value))
+	default:
+		return Error("clav has no such control")
+	}
+	i.glideAlpha, i.gliding = glide, true
+	if glide == 1 {
+		done := keyboard.Approach(&i.drive, i.driveT, 1)
+		i.gliding = !(keyboard.Approach(&i.gain, i.gainT, 1) && done)
+	}
 	return nil
 }
