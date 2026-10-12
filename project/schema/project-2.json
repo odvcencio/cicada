@@ -977,6 +977,8 @@
                 },
                 "text": {
                   "enum": [
+                    "on",
+                    "off",
                     "true",
                     "false"
                   ]

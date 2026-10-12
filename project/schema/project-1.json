@@ -237,7 +237,7 @@
             "damp": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
               "properties": {"unit": {"const": "hz"}, "number": {"type": "number", "minimum": 1000, "maximum": 16000}}},
             "pingpong": {"type": "object", "additionalProperties": false, "required": ["unit", "text"],
-              "properties": {"unit": {"const": "enum"}, "text": {"enum": ["true", "false"]}}},
+              "properties": {"unit": {"const": "enum"}, "text": {"enum": ["on", "off", "true", "false"]}}},
             "width": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
               "properties": {"unit": {"const": "unit"}, "number": {"type": "number", "minimum": 0, "maximum": 1}}},
             "mix": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
