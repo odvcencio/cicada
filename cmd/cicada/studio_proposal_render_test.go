@@ -449,3 +449,16 @@ func TestNewlyDiscoveredManifestIsRefusedByTheCommitTail(t *testing.T) {
 		t.Fatal("a refused request wrote")
 	}
 }
+
+// A dry run says a conversion is safe, so it is held to the same freshness.
+func TestStaleDryRunIsNotReportedConvertible(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+	t.Cleanup(func() { rendercheck.AfterSnapshot = nil })
+	rendercheck.AfterSnapshot = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600) }
+	env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), DryRun: true, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
+	r := studioCall(t, p.handler, "/api/intents", env)
+	if r.Code != 200 || !strings.Contains(r.Body.String(), `"convertible":false`) || strings.Contains(r.Body.String(), `"convertible":true`) {
+		t.Fatalf("%d %s", r.Code, r.Body.String())
+	}
+}

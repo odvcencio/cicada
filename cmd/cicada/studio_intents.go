@@ -316,6 +316,17 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
+	if env.DryRun && result.RenderChecked {
+		// A dry run reports that the change is safe, so it needs the same freshness.
+		if err := s.verifyRenderIdentity(true, result.RenderIdentity, result.RenderRecheck); err != nil {
+			if envelopeConverts(env) {
+				studioJSON(w, http.StatusOK, map[string]any{"convertible": false, "cause": err.Error(), "revision": studioRevision(current), "dryRun": true})
+			} else {
+				studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "revision": studioRevision(current), "source": string(current)})
+			}
+			return
+		}
+	}
 	if env.DryRun {
 		response := map[string]any{"diff": intentDiff(current, result, "score.cicada"), "revision": studioRevision(current), "valid": true, "dryRun": true}
 		if envelopeConverts(env) {

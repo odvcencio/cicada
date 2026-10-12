@@ -466,3 +466,26 @@ func TestPeerRewrittenAndRestoredDuringTheRenderOffersNoConversionInTheLSP(t *te
 		t.Fatalf("offered a conversion that a fresh comparison refuses: %v %v", replies[0], replies[1])
 	}
 }
+
+// An approval is only good while the project still matches the snapshot that was
+// rendered. A peer changed to chance steps after the snapshot and left changed
+// makes the conversion stale, so no action is returned.
+func TestStaleConversionIsNotOfferedByTheLSP(t *testing.T) {
+	entry := "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
+	path := writePeerProject(t, entry, peerDrums("1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 ."))
+	peer := filepath.Join(filepath.Dir(path), "part.cicada")
+	request := func() map[string]any {
+		return map[string]any{"range": region{Start: position{Line: 2}, End: position{Line: 2}}, "context": map[string]any{"diagnostics": []any{}, "only": []string{"refactor"}}}
+	}
+	// Baseline: the project as saved is convertible.
+	if replies := actionFrames(t, path, entry, request()); len(replies[0]) != 1 {
+		t.Fatalf("baseline: %v", replies[0])
+	}
+	t.Cleanup(func() { rendercheck.AfterSnapshot = nil })
+	rendercheck.AfterSnapshot = func() {
+		_ = os.WriteFile(peer, []byte(peerDrums("1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50")), 0o600)
+	}
+	if replies := actionFrames(t, path, entry, request()); len(replies[0]) != 0 {
+		t.Fatalf("stale conversion offered: %v", replies[0])
+	}
+}

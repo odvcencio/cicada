@@ -435,6 +435,16 @@ func (s *server) convertAction(uri, path string, source []byte, params codeActio
 	if err != nil || result.Unchanged {
 		return nil
 	}
+	// The renders compared a snapshot. The edit is only offered while the
+	// project still matches it; otherwise the approval is stale.
+	if result.RenderChecked {
+		if result.RenderRecheck == nil || result.RenderIdentity == "" {
+			return nil
+		}
+		if identity, ok := result.RenderRecheck(); !ok || identity != result.RenderIdentity {
+			return nil
+		}
+	}
 	return s.intentAction(uri, "Convert song to arrange", "refactor", source, result.Source)
 }
 
