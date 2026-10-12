@@ -95,9 +95,6 @@ func applyCommandWithHooks(args []string, stdout io.Writer, beforeSwap func()) e
 	if !write || env.DryRun {
 		return nil
 	}
-	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, result.RenderRecheck); err != nil {
-		return err
-	}
 	files, err := auxiliaryFiles(result.Files)
 	if err != nil {
 		return err
@@ -118,7 +115,9 @@ func applyCommandWithHooks(args []string, stdout io.Writer, beforeSwap func()) e
 	if err != nil {
 		return err
 	}
-	if err := writeFixedRevision(path, before, result.Source, info.Mode().Perm(), beforeSwap); err != nil {
+	if err := writeFixedRevisionChecked(path, before, result.Source, info.Mode().Perm(), beforeSwap, func() error {
+		return s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, result.RenderRecheck)
+	}); err != nil {
 		return err
 	}
 	if err := studioWriteAuxiliaryFiles(changedFiles); err != nil {

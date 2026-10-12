@@ -314,3 +314,61 @@ func TestComparisonRefusesWhenAnAssetIsRewrittenDuringTheRender(t *testing.T) {
 		t.Fatalf("asset rewritten during the render: %v", err)
 	}
 }
+
+// The snapshot pins the resolved project. A manifest that appears on disk
+// during or before a comparison cannot change which project the renders load.
+func TestComparisonPinsTheResolvedProject(t *testing.T) {
+	looseMain := peerPatterns(plainSteps) + peerMain
+	path := writeProject(t, map[string]string{"main.cicada": looseMain})
+	dir := filepath.Dir(path)
+	manifest := filepath.Join(dir, "cicada.mod")
+	before := []byte(looseMain)
+	after := []byte("cicada 2\n" + peerPatterns(plainSteps) + "scene a { bass = beat }\nscene b { bass = fill }\narrange {\n  place a-1-bass bass beat {\n    at = @1.1.1 length = 2bars\n  }\n  place b-3-bass bass fill {\n    at = @3.1.1 length = 2bars\n  }\n}\n")
+	counted := &countedSnapshot{SnapshotRenderCheck: New(path).(edits.SnapshotRenderCheck)}
+	check := Cached(path, counted)
+	same, identity, err := check.Compare(before, after, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { AfterSnapshot, AfterRender = nil, nil })
+	// Introduced during the comparison and removed before it ends.
+	AfterSnapshot = func() { _ = os.WriteFile(manifest, []byte("project nested\ncicada 1\n"), 0o600) }
+	AfterRender = func() { _ = os.Remove(manifest) }
+	counted.calls = 0
+	again, againIdentity, err := New(path).(edits.SnapshotRenderCheck).Compare(before, after, nil)
+	AfterSnapshot, AfterRender = nil, nil
+	if err != nil || again != same || againIdentity != identity {
+		t.Fatalf("a manifest introduced mid-comparison changed the result: same=%v/%v identity match=%v err=%v", again, same, againIdentity == identity, err)
+	}
+	// Present before the next comparison: the resolved project differs, so the
+	// recorded identity no longer matches and the cache cannot approve it.
+	if err := os.WriteFile(manifest, []byte("project nested\ncicada 1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if current, ok := check.PairIdentity(before, after, nil); ok && current == identity {
+		t.Fatal("a newly discovered manifest left the pair identity unchanged")
+	}
+	cachedBefore := counted.calls
+	_, _, _ = check.Compare(before, after, nil)
+	if counted.calls != cachedBefore+1 {
+		t.Fatalf("the cache answered for a different resolved project (%d renders)", counted.calls-cachedBefore)
+	}
+	// Removed again: the original approval is valid and served from the cache.
+	if err := os.Remove(manifest); err != nil {
+		t.Fatal(err)
+	}
+	cachedBefore = counted.calls
+	if got, gotIdentity, err := check.Compare(before, after, nil); err != nil || got != same || gotIdentity != identity || counted.calls != cachedBefore {
+		t.Fatalf("restored project: same=%v err=%v renders=%d", got, err, counted.calls-cachedBefore)
+	}
+}
+
+type countedSnapshot struct {
+	edits.SnapshotRenderCheck
+	calls int
+}
+
+func (c *countedSnapshot) Compare(before, after []byte, files map[string][]byte) (bool, string, error) {
+	c.calls++
+	return c.SnapshotRenderCheck.Compare(before, after, files)
+}

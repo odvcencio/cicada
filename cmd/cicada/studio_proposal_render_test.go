@@ -3,7 +3,9 @@ package main
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -345,5 +347,105 @@ func TestRenderIdentityCoversDependenciesIntroducedByTheBatch(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(path); string(got) != original || len(studioHistoryEdits(t, handler)) != 0 {
 		t.Fatal("the commit tail wrote a score that cannot render")
+	}
+}
+
+func dirNames(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, entry := range entries {
+		names = append(names, entry.Name())
+	}
+	return names
+}
+
+// The approval can expire while the replacement file is being staged. A peer
+// change at the publication boundary, after the temporary file is written and
+// just before the exchange, must abort the write and leave nothing behind.
+func TestPublicationBoundaryVetoesAStaleRenderApproval(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	const cause = "the project changed during the render check; try again"
+	boundary := func(t *testing.T, peer string) {
+		t.Cleanup(func() { studioPublishSeam = nil })
+		studioPublishSeam = func() { _ = os.WriteFile(peer, []byte(proposalSongPeer(proposalChance)), 0o600) }
+	}
+	t.Run("direct", func(t *testing.T) {
+		p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+		boundary(t, p.peer)
+		names := dirNames(t, filepath.Dir(p.path))
+		env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
+		if r := studioCall(t, p.handler, "/api/intents", env); r.Code != 409 || !strings.Contains(r.Body.String(), cause) {
+			t.Fatalf("%d %s", r.Code, r.Body.String())
+		}
+		if got, _ := os.ReadFile(p.path); string(got) != proposalSongMain || len(studioHistoryEdits(t, p.handler)) != 0 {
+			t.Fatal("the vetoed write left a trace")
+		}
+		if after := dirNames(t, filepath.Dir(p.path)); strings.Join(after, ",") != strings.Join(names, ",") {
+			t.Fatalf("staged files left behind: %v -> %v", names, after)
+		}
+	})
+	t.Run("proposal acceptance", func(t *testing.T) {
+		p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+		id := p.stage(t, proposalSongMain, &edits.ConvertSongToArrange{})
+		boundary(t, p.peer)
+		names := dirNames(t, filepath.Dir(p.path))
+		if r := studioCall(t, p.handler, "/api/proposals/"+id+"/accept", map[string]any{}); r.Code != 409 || !strings.Contains(r.Body.String(), cause) {
+			t.Fatalf("%d %s", r.Code, r.Body.String())
+		}
+		if got, _ := os.ReadFile(p.path); string(got) != proposalSongMain || len(studioHistoryEdits(t, p.handler)) != 0 {
+			t.Fatal("the vetoed write left a trace")
+		}
+		if after := dirNames(t, filepath.Dir(p.path)); strings.Join(after, ",") != strings.Join(names, ",") {
+			t.Fatalf("staged files left behind: %v -> %v", names, after)
+		}
+	})
+	t.Run("cicada apply", func(t *testing.T) {
+		p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+		file := filepath.Join(t.TempDir(), "intents.json")
+		writeApplyEnvelope(t, file, edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}})
+		boundary(t, p.peer)
+		names := dirNames(t, filepath.Dir(p.path))
+		err := applyCommandWithHooks([]string{p.path, file, "--write"}, io.Discard, nil)
+		if !errors.Is(err, edits.ErrProjectChanged) {
+			t.Fatalf("got %v", err)
+		}
+		if got, _ := os.ReadFile(p.path); string(got) != proposalSongMain {
+			t.Fatal("the vetoed write changed the score")
+		}
+		if after := dirNames(t, filepath.Dir(p.path)); strings.Join(after, ",") != strings.Join(names, ",") {
+			t.Fatalf("staged files left behind: %v -> %v", names, after)
+		}
+	})
+}
+
+// A manifest discovered on disk after the renders changes the resolved project.
+// The identity includes the resolution, so the commit tail refuses.
+func TestNewlyDiscoveredManifestIsRefusedByTheCommitTail(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.cicada")
+	loose := "title \"t\"\ntempo 130\ntrack bass acid {}\npattern hits { c3 . c4 . }\nscene a { bass = hits }\nscene b { bass = hits }\nsong { a*2 b*2 }\n"
+	if err := os.WriteFile(path, []byte(loose), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.shutdown() })
+	manifest := filepath.Join(dir, "cicada.mod")
+	t.Cleanup(func() { rendercheck.AfterSnapshot = nil })
+	rendercheck.AfterSnapshot = func() { _ = os.WriteFile(manifest, []byte("project late\ncicada 2\n"), 0o600) }
+	env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(loose)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
+	r := studioCall(t, s.domainRoutes(), "/api/intents", env)
+	if r.Code != 409 || !strings.Contains(r.Body.String(), "the project changed during the render check; try again") {
+		t.Fatalf("%d %s", r.Code, r.Body.String())
+	}
+	if got, _ := os.ReadFile(path); string(got) != loose {
+		t.Fatal("a refused request wrote")
 	}
 }

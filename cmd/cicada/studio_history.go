@@ -590,15 +590,23 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		s.transport.pollMu.Lock()
 		defer s.transport.pollMu.Unlock()
 	}
-	if err := s.verifyRenderIdentity(mutation.RenderChecked, mutation.RenderIdentity, mutation.RenderRecheck); err != nil {
-		return fail(http.StatusConflict, map[string]any{"error": err.Error(), "revision": studioRevision(current), "source": string(current)})
-	}
 	info, err := os.Stat(s.path)
 	committed, preserved := false, ""
 	if err == nil {
-		committed, preserved, err = studioWriteTakeIfRevision(s.path, updated, info.Mode().Perm(), edit.Revision, beforeSwap, hook.checkpoint)
+		var veto func() error
+		if mutation.RenderChecked {
+			// The approval can expire while the replacement is being staged, so
+			// the publication step rechecks it immediately before the exchange.
+			veto = func() error {
+				return s.verifyRenderIdentity(mutation.RenderChecked, mutation.RenderIdentity, mutation.RenderRecheck)
+			}
+		}
+		committed, preserved, err = studioPublish(s.path, updated, info.Mode().Perm(), edit.Revision, beforeSwap, hook.checkpoint, veto)
 	}
 	if err != nil {
+		if errors.Is(err, edits.ErrProjectChanged) {
+			return fail(http.StatusConflict, map[string]any{"error": err.Error(), "revision": studioRevision(current), "source": string(current)})
+		}
 		if errors.Is(err, errStudioSwapUnavailable) {
 			return fail(http.StatusConflict, map[string]any{"error": err.Error()})
 		}

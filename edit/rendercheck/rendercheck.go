@@ -72,7 +72,21 @@ func (c check) HashWith(source []byte, files map[string][]byte) (string, error) 
 
 // renderFrom renders the project that overrides describe.
 func (c check) renderFrom(overrides map[string][]byte) (string, error) {
-	score, ds, err := project.LoadScore(c.path, overrides)
+	return c.renderPinned(overrides, nil)
+}
+
+// renderPinned renders with the manifest resolution fixed when pin is set.
+func (c check) renderPinned(overrides map[string][]byte, pin *project.Resolution) (string, error) {
+	var (
+		score *notation.Score
+		ds    []notation.Diagnostic
+		err   error
+	)
+	if pin != nil {
+		score, ds, err = project.LoadScorePinned(c.path, overrides, *pin)
+	} else {
+		score, ds, err = project.LoadScore(c.path, overrides)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -238,6 +252,7 @@ var AfterRender func()
 // Renders load them as overrides, so no source file is read from disk again.
 type snapshot struct {
 	files    map[string][]byte
+	resolved project.Resolution // the manifest that governed the snapshot; renders do not rediscover it
 	identity string
 	// assets restats the declared assets and sampler packs, which still load
 	// from disk. It returns false when they cannot be enumerated.
@@ -292,7 +307,8 @@ func take(path string, source []byte, overrides map[string][]byte) (*snapshot, b
 			return nil, false
 		}
 	}
-	sources, err := project.ReadSources(abs, files)
+	resolved := project.Resolution{ManifestPath: first.ManifestPath}
+	sources, err := project.ReadSourcesPinned(abs, files, resolved)
 	if err != nil {
 		return nil, false
 	}
@@ -309,6 +325,11 @@ func take(path string, source []byte, overrides map[string][]byte) (*snapshot, b
 		h.Write([]byte{'\n'})
 	}
 	put("entry", []byte(abs))
+	// The resolved project: its manifest (or none), root and source graph.
+	put("resolution", []byte(sources.ManifestPath), []byte(sources.Root))
+	for _, file := range sources.Files {
+		put("graph", []byte(file.Path))
+	}
 	for _, file := range sources.Files {
 		put("file", []byte(file.Path), []byte(file.Library), file.Source)
 	}
@@ -402,7 +423,7 @@ func take(path string, source []byte, overrides map[string][]byte) (*snapshot, b
 		return nil, false
 	}
 	put("assets", []byte(assetID))
-	return &snapshot{files: files, identity: hex.EncodeToString(h.Sum(nil)), assets: assets, assetID: assetID}, true
+	return &snapshot{files: files, resolved: resolved, identity: hex.EncodeToString(h.Sum(nil)), assets: assets, assetID: assetID}, true
 }
 
 func hashOf(data []byte) string {
@@ -437,7 +458,7 @@ func (c check) Compare(before, after []byte, files map[string][]byte) (bool, str
 		AfterSnapshot()
 	}
 	render := func(entry []byte) (string, error) {
-		return c.renderFrom(merged(snap.files, c.path, entry))
+		return c.renderPinned(merged(snap.files, c.path, entry), &snap.resolved)
 	}
 	a, err := render(before)
 	if err != nil {
