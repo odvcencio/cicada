@@ -1410,7 +1410,7 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 		e.fault(FaultParam)
 		return
 	}
-	if spec.Curve == "toggle" && value != 0 && value != 1 || spec.Integer && value != float32(int32(value)) {
+	if spec.Curve == "toggle" && value != 0 && value != 1 || keysEnabled && kernel.IsInteger(kernel.ParamID(c.Index)) && value != float32(int32(value)) {
 		e.fault(FaultParam)
 		return
 	}

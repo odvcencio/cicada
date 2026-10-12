@@ -73,7 +73,7 @@ func (v *PreviewParamValidator) Validate(id kernel.ParamID, value float32) error
 	if spec.Curve == "toggle" && value != 0 && value != 1 {
 		return Error("toggle parameter must be zero or one")
 	}
-	if spec.Integer && value != float32(int32(value)) {
+	if kernel.IsInteger(id) && value != float32(int32(value)) {
 		return Error("parameter must be a whole number")
 	}
 	lane, control, ok := drumParamControl(id)

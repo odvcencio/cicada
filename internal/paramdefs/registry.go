@@ -69,7 +69,7 @@ func GenerateKernel() ([]byte, error) {
 	fmt.Fprintln(&b, "package kernel")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "type ParamID uint16")
-	fmt.Fprintln(&b, "type ParamSpec struct { ID ParamID; Name, Path, Scope, Source, Unit, Curve, Persist string; Min, Max, Default, DisplayStep float32; SmoothingMS float32; Live, Automatable, Off, Integer bool }")
+	fmt.Fprintln(&b, "type ParamSpec struct { ID ParamID; Name, Path, Scope, Source, Unit, Curve, Persist string; Min, Max, Default, DisplayStep float32; SmoothingMS float32; Live, Automatable, Off bool }")
 	fmt.Fprintln(&b, "const (")
 	for i, d := range Registry {
 		fmt.Fprintf(&b, "\tParam%s ParamID = %d\n", GoName(d.ID), i)
@@ -82,6 +82,22 @@ func GenerateKernel() ([]byte, error) {
 	writeRows(&b, 0, split)
 	fmt.Fprintln(&b, "}")
 	fmt.Fprintf(&b, "const paramsBaseCount = %d\n", split)
+	fmt.Fprintln(&b, "// IsInteger reports whether a live parameter takes whole numbers only.")
+	fmt.Fprintln(&b, "func IsInteger(id ParamID) bool {")
+	fmt.Fprint(&b, "return false")
+	for i := 0; i < len(Registry); i++ {
+		if !Registry[i].Live || Registry[i].Type != "integer" {
+			continue
+		}
+		j := i
+		for j+1 < len(Registry) && Registry[j+1].Live && Registry[j+1].Type == "integer" {
+			j++
+		}
+		fmt.Fprintf(&b, " || id >= Param%s && id <= Param%s", GoName(Registry[i].ID), GoName(Registry[j].ID))
+		i = j
+	}
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "}")
 	fmt.Fprintln(&b, "func Param(id ParamID) (ParamSpec, bool) { if int(id) >= len(Params) { return ParamSpec{}, false }; return Params[id], true }")
 	fmt.Fprintln(&b, "func FindParam(name string) (ParamID, bool) { for i := range Params { if Params[i].Name == name { return ParamID(i), true } }; return 0, false }")
 	formatted, err := format.Source(b.Bytes())
@@ -115,10 +131,10 @@ func keysSplit() int {
 func writeRows(b *bytes.Buffer, from, to int) {
 	for i := from; i < to; i++ {
 		d := Registry[i]
-		fmt.Fprintf(b, "\t{%d, %q, %q, %q, %q, %q, %q, %q, %s, %s, %s, %s, %s, %t, %t, %t, %t},\n",
+		fmt.Fprintf(b, "\t{%d, %q, %q, %q, %q, %q, %q, %q, %s, %s, %s, %s, %s, %t, %t, %t},\n",
 			i, d.ID, d.Path, d.Scope, d.Source, d.Unit, d.Curve, d.Persist,
 			floatLiteral(d.Min), floatLiteral(d.Max), floatLiteral(d.Default), floatLiteral(d.DisplayStep), floatLiteral(d.SmoothingMS),
-			d.Live, d.Automatable, d.Off, d.Type == "integer")
+			d.Live, d.Automatable, d.Off)
 	}
 }
 
