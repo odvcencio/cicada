@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -40,7 +41,12 @@ func (c arrangeCompiler) Compile(source []byte, files map[string][]byte) (*Plan,
 			out.Steps = uint8(len(pattern.Lanes[0].Hits))
 		}
 		for _, token := range pattern.Steps {
-			out.Data = append(out.Data, &Step{Slide: strings.HasSuffix(token.Text, "~")})
+			step := &Step{Slide: strings.HasSuffix(token.Text, "~"), Probability: 100}
+			if _, chance, found := strings.Cut(token.Text, "?"); found {
+				value, _ := strconv.Atoi(strings.TrimSuffix(chance, "~"))
+				step.Probability = uint8(value)
+			}
+			out.Data = append(out.Data, step)
 		}
 		plan.Patterns = append(plan.Patterns, out)
 		plan.Names[pattern.Name] = true
@@ -161,7 +167,7 @@ func (f *fakeCheck) Hash(source []byte) (string, error) {
 
 func TestSplitClipAtPatternBoundary(t *testing.T) {
 	source := namedScore(t)
-	got, err := applyArrange(source, `{"kind":"splitclip","entity":"placement:return","attick":11520}`, Options{})
+	got, err := applyArrange(source, `{"kind":"splitclip","entity":"placement:return","attick":11520}`, Options{RenderCheck: &fakeCheck{}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -172,16 +178,16 @@ func TestSplitClipAtPatternBoundary(t *testing.T) {
 	}
 	// A split on a pattern-length boundary that is not on a bar still works:
 	// pulse is 960 ticks, so beat 2 of bar 3 is a boundary.
-	if _, err := applyArrange(source, `{"kind":"splitclip","entity":"placement:return","attick":8640}`, Options{}); err != nil {
+	if _, err := applyArrange(source, `{"kind":"splitclip","entity":"placement:return","attick":8640}`, Options{RenderCheck: &fakeCheck{}}); err != nil {
 		t.Fatal(err)
 	}
 	var refusal *RefusalError
-	_, err = applyArrange(source, `{"kind":"splitclip","entity":"placement:return","attick":8180}`, Options{})
+	_, err = applyArrange(source, `{"kind":"splitclip","entity":"placement:return","attick":8180}`, Options{RenderCheck: &fakeCheck{}})
 	if !errors.As(err, &refusal) || refusal.Cause != "split point is not on a pattern-length boundary (pulse is 960 ticks)" {
 		t.Fatalf("off boundary: %v", err)
 	}
 	for _, tick := range []string{"7680", "15360", "0"} {
-		if _, err := applyArrange(source, `{"kind":"splitclip","entity":"placement:return","attick":`+tick+`}`, Options{}); !errors.As(err, &refusal) || refusal.Cause != "split point is outside the placement" {
+		if _, err := applyArrange(source, `{"kind":"splitclip","entity":"placement:return","attick":`+tick+`}`, Options{RenderCheck: &fakeCheck{}}); !errors.As(err, &refusal) || refusal.Cause != "split point is outside the placement" {
 			t.Fatalf("outside %s: %v", tick, err)
 		}
 	}
@@ -202,10 +208,17 @@ func TestSplitClipSlideRunsRenderCheck(t *testing.T) {
 	if got, err := applyArrange(source, raw, Options{RenderCheck: &fakeCheck{}}); err != nil || !bytes.Contains(got.Source, []byte("place return-2 bass glide")) {
 		t.Fatalf("equal: %v", err)
 	}
-	// Without a slide the check is not consulted.
-	plain := &fakeCheck{hashes: map[string]string{"return-2": "cut"}}
-	if _, err := applyArrange(namedScore(t), raw, Options{RenderCheck: plain}); err != nil || plain.calls != 0 {
-		t.Fatalf("plain: %v calls=%d", err, plain.calls)
+	// A plain pattern is checked too: equal hashes split, differing hashes refuse with the general cause.
+	plain := &fakeCheck{}
+	if _, err := applyArrange(namedScore(t), raw, Options{RenderCheck: plain}); err != nil || plain.calls != 2 {
+		t.Fatalf("plain equal: %v calls=%d", err, plain.calls)
+	}
+	if _, err := applyArrange(namedScore(t), raw, Options{}); !errors.Is(err, ErrNoRenderCheck) {
+		t.Fatalf("plain without a check: %v", err)
+	}
+	cut := &fakeCheck{hashes: map[string]string{"return-2": "cut"}}
+	if _, err := applyArrange(namedScore(t), raw, Options{RenderCheck: cut}); !errors.As(err, &refusal) || refusal.Cause != "splitting pulse at bar 4 changes the render" {
+		t.Fatalf("plain differing: %v", err)
 	}
 }
 
@@ -300,10 +313,25 @@ func TestSplitClipOnDrumsRunsRenderCheck(t *testing.T) {
 	}
 	var refusal *RefusalError
 	differing := &fakeCheck{hashes: map[string]string{"run-2": "cut"}}
-	if _, err := applyArrange(source, raw, Options{RenderCheck: differing}); !errors.As(err, &refusal) || refusal.Cause != "splitting beat at bar 3 changes the render" {
+	if _, err := applyArrange(source, raw, Options{RenderCheck: differing}); !errors.As(err, &refusal) || refusal.Cause != "splitting beat at bar 3 restarts the drum placement" {
 		t.Fatalf("differing: %v", err)
 	}
 	if got, err := applyArrange(source, raw, Options{RenderCheck: &fakeCheck{}}); err != nil || !bytes.Contains(got.Source, []byte("place run-2 drums beat")) {
 		t.Fatalf("equal: %v", err)
+	}
+}
+
+// The review's repro: a probabilistic pattern restarts its chance iteration in
+// the second placement, which changes the render without any slide or drum.
+func TestSplitClipOnChancePatternRefusesWhenTheRenderChanges(t *testing.T) {
+	source := []byte("cicada 2\ntrack bass acid {}\npattern chance { c3?50 . c4?50 c3?50 }\narrange {\n  place run bass chance { at = @1.1.1 length = 4bars }\n}\n")
+	raw := `{"kind":"splitclip","entity":"placement:run","attick":7680}`
+	if _, err := applyArrange(source, raw, Options{}); !errors.Is(err, ErrNoRenderCheck) {
+		t.Fatalf("nil check: %v", err)
+	}
+	var refusal *RefusalError
+	differing := &fakeCheck{hashes: map[string]string{"run-2": "cut"}}
+	if _, err := applyArrange(source, raw, Options{RenderCheck: differing}); !errors.As(err, &refusal) || refusal.Cause != "splitting chance at bar 3 restarts its chance steps" {
+		t.Fatalf("differing: %v", err)
 	}
 }

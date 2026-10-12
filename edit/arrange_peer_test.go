@@ -27,7 +27,7 @@ func applyPeer(t *testing.T, raw string) (*edits.Result, error) {
 	if err := json.Unmarshal([]byte(`{"version":1,"intents":[`+raw+`]}`), &env); err != nil {
 		t.Fatal(err)
 	}
-	return edits.Apply([]byte(peerEntry), env, edits.Options{Compiler: compiler, Path: "main.cicada", Edition: 2, Sources: files, ParseProject: compiler.parse})
+	return edits.Apply([]byte(peerEntry), env, edits.Options{Compiler: compiler, Path: "main.cicada", Edition: 2, Sources: files, ParseProject: compiler.parse, RenderCheck: sameRender{}})
 }
 
 func TestArrangeIntentsWorkWithCompanionDefinitionsInPeerFile(t *testing.T) {

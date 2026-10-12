@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -69,5 +70,27 @@ func TestArrangeIntentsWithPeerFileDefinitionsThroughStudioAndApply(t *testing.T
 				t.Fatalf("got:\n%s\nwant:\n%s", got, want)
 			}
 		})
+	}
+}
+
+// The review repro, rendered for real: splitting a four-bar probabilistic
+// placement restarts the chance iteration and changes the audio, so the split
+// is refused and the score is unchanged.
+func TestSplitProbabilisticPlacementIsRefusedByTheRealRender(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.cicada")
+	source := "cicada 2\ntrack bass acid {}\npattern chance { c3?50 . c4?50 c3?50 }\narrange {\n  place run bass chance { at = @1.1.1 length = 4bars }\n}\n"
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(dir, "intents.json")
+	writeApplyEnvelope(t, file, edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.SplitClip{Entity: "placement:run", AtTick: 7680}}})
+	err := applyCommandWithHooks([]string{path, file, "--write"}, io.Discard, nil)
+	var refusal *edits.RefusalError
+	if !errors.As(err, &refusal) || refusal.Cause != "splitting chance at bar 3 restarts its chance steps" {
+		t.Fatalf("got %v", err)
+	}
+	if got, _ := os.ReadFile(path); string(got) != source {
+		t.Fatal("a refused split changed the score")
 	}
 }

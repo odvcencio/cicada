@@ -233,41 +233,57 @@ func splitClip(ctx *Context, in *SplitClip) ([]byte, string, error) {
 		return nil, "", &RefusalError{Intent: "SplitClip", Cause: fmt.Sprintf("split point is not on a pattern-length boundary (%s is %d ticks)", pattern.ID, unit)}
 	}
 	bar := in.AtTick/3840 + 1
+	// Whether a cut is audible depends on engine state that restarts at a
+	// placement boundary (slides, chance iteration, drum voices, and whatever
+	// else the engine adds), so no feature list can decide it. Always ask the
+	// render; the checks below only word the refusal.
+	check, err := renderCheckFor(ctx)
+	if err != nil {
+		return nil, "", err
+	}
+	cut, err := splitSource(ctx, plan, placement, in.AtTick)
+	if err != nil {
+		return nil, "", err
+	}
+	before, err := check.Hash(ctx.Source)
+	if err != nil {
+		return nil, "", err
+	}
+	after, err := check.Hash(cut)
+	if err != nil {
+		return nil, "", err
+	}
+	if before != after {
+		return nil, "", &RefusalError{Intent: "SplitClip", Cause: splitCause(plan, placement, pattern, bar)}
+	}
+	return cut, fmt.Sprintf("Clip %s split at %s", placement.ID, FormatPosition(in.AtTick)), nil
+}
+
+// splitCause names why a split rendered differently when the pattern shows a
+// known reason, and otherwise falls back to the general wording.
+func splitCause(plan *Plan, placement Placement, pattern *Pattern, bar int64) string {
+	steps := pattern.Data
+	for _, lane := range pattern.Lanes {
+		steps = append(append([]*Step(nil), steps...), lane...)
+	}
+	chance := false
+	for _, step := range steps {
+		chance = chance || step != nil && step.Probability > 0 && step.Probability < 100
+	}
 	slides := len(pattern.Data) > 0 && pattern.Data[len(pattern.Data)-1] != nil && pattern.Data[len(pattern.Data)-1].Slide
 	drums := pattern.Kind == "drums"
 	for _, track := range plan.Tracks {
 		drums = drums || track.ID == placement.Track && track.Kind == "drums"
 	}
-	if slides || drums {
-		// A final slide leans on the next cycle's first note, and drum
-		// placements restart audibly at a boundary; only the render can say
-		// whether the cut is audible.
-		check, err := renderCheckFor(ctx)
-		if err != nil {
-			return nil, "", err
-		}
-		cut, err := splitSource(ctx, plan, placement, in.AtTick)
-		if err != nil {
-			return nil, "", err
-		}
-		before, err := check.Hash(ctx.Source)
-		if err != nil {
-			return nil, "", err
-		}
-		after, err := check.Hash(cut)
-		if err != nil {
-			return nil, "", err
-		}
-		if before != after {
-			if !slides {
-				return nil, "", &RefusalError{Intent: "SplitClip", Cause: fmt.Sprintf("splitting %s at bar %d changes the render", pattern.ID, bar)}
-			}
-			return nil, "", &RefusalError{Intent: "SplitClip", Cause: fmt.Sprintf("splitting %s at bar %d cuts a slide", pattern.ID, bar)}
-		}
-		return cut, fmt.Sprintf("Clip %s split at %s", placement.ID, FormatPosition(in.AtTick)), nil
+	switch {
+	case slides:
+		return fmt.Sprintf("splitting %s at bar %d cuts a slide", pattern.ID, bar)
+	case chance:
+		return fmt.Sprintf("splitting %s at bar %d restarts its chance steps", pattern.ID, bar)
+	case drums:
+		return fmt.Sprintf("splitting %s at bar %d restarts the drum placement", pattern.ID, bar)
 	}
-	cut, err := splitSource(ctx, plan, placement, in.AtTick)
-	return cut, fmt.Sprintf("Clip %s split at %s", placement.ID, FormatPosition(in.AtTick)), err
+	return fmt.Sprintf("splitting %s at bar %d changes the render", pattern.ID, bar)
 }
 
 func renderCheckFor(ctx *Context) (RenderCheck, error) {
@@ -307,6 +323,8 @@ func splitSource(ctx *Context, plan *Plan, placement Placement, atTick int64) ([
 	return PatchSpans(source, ctx.Options.Path, []Span{*lengthSpan, {at, at, nl + indent + copyText, ctx.Options.Path}})
 }
 
+// duplicateClip adds sound by design (a second copy plays after the first), so
+// it needs no render check: the music is meant to change.
 func duplicateClip(ctx *Context, in *DuplicateClip) ([]byte, string, error) {
 	placement, err := resolvePlacement(ctx, in.Entity)
 	if err != nil {
@@ -329,6 +347,8 @@ func duplicateClip(ctx *Context, in *DuplicateClip) ([]byte, string, error) {
 	return updated, fmt.Sprintf("Clip %s duplicated as %s", placement.ID, name), err
 }
 
+// deleteClip removes sound by design, so it needs no render check: the music is
+// meant to change.
 func deleteClip(ctx *Context, in *DeleteClip) ([]byte, string, error) {
 	placement, err := resolvePlacement(ctx, in.Entity)
 	if err != nil {
