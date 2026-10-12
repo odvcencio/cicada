@@ -151,7 +151,18 @@ const (
 	ParamGuitarDrive         ParamID = 137
 	ParamGuitarExperimental  ParamID = 138
 	ParamGuitarOctave        ParamID = 139
-	ParamCount                       = 140
+	ParamFxEqType            ParamID = 140
+	ParamFxEqFrequency       ParamID = 141
+	ParamFxEqQ               ParamID = 142
+	ParamFxEqGain            ParamID = 143
+	ParamFxDeesserFrequency  ParamID = 144
+	ParamFxDeesserThreshold  ParamID = 145
+	ParamFxDeesserRatio      ParamID = 146
+	ParamFxDeesserRange      ParamID = 147
+	ParamFxDeesserAttack     ParamID = 148
+	ParamFxDeesserRelease    ParamID = 149
+	ParamFxDeesserMix        ParamID = 150
+	ParamCount                       = 151
 )
 
 var Params = [...]ParamSpec{
@@ -295,6 +306,17 @@ var Params = [...]ParamSpec{
 	{137, "guitar.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 8, true, true, false},
 	{138, "guitar.experimental", "experimental", "track", "experimental", "", "toggle", "source", 0, 1, 0, 1, 0, false, false, false},
 	{139, "guitar.octave", "octave", "track", "octave", "", "linear", "source", 0, 6, 2, 1, 0, false, false, false},
+	{140, "fx.eq.type", "eq.type", "global", "type", "", "enum", "source", 0, 4, 0, 0.1, 0, false, false, false},
+	{141, "fx.eq.frequency", "eq.frequency", "global", "frequency", "Hz", "log", "source", 10, 19845, 1000, 1, 0, false, false, false},
+	{142, "fx.eq.q", "eq.q", "global", "q", "ratio", "linear", "source", 0.1, 20, 1, 0.01, 0, false, false, false},
+	{143, "fx.eq.gain", "eq.gain", "global", "gain", "dB", "linear", "source", -24, 24, 0, 0.1, 0, false, false, false},
+	{144, "fx.deesser.frequency", "deesser.frequency", "global", "frequency", "Hz", "log", "source", 2000, 12000, 6000, 1, 0, false, false, false},
+	{145, "fx.deesser.threshold", "deesser.threshold", "global", "threshold", "dB", "linear", "source", -60, 0, -24, 0.1, 0, false, false, false},
+	{146, "fx.deesser.ratio", "deesser.ratio", "global", "ratio", "ratio", "linear", "source", 1, 20, 4, 0.01, 0, false, false, false},
+	{147, "fx.deesser.range", "deesser.range", "global", "range", "dB", "linear", "source", 0, 24, 9, 0.1, 0, false, false, false},
+	{148, "fx.deesser.attack", "deesser.attack", "global", "attack", "ms", "log", "source", 0.1, 20, 1, 0.1, 0, false, false, false},
+	{149, "fx.deesser.release", "deesser.release", "global", "release", "ms", "log", "source", 10, 500, 80, 1, 0, false, false, false},
+	{150, "fx.deesser.mix", "deesser.mix", "global", "mix", "ratio", "linear", "source", 0, 1, 1, 0.01, 0, false, false, false},
 }
 
 func Param(id ParamID) (ParamSpec, bool) {

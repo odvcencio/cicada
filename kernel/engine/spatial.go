@@ -15,7 +15,7 @@ type spatialTrack struct {
 }
 
 type spatialState struct {
-	tracks     [16]spatialTrack
+	tracks     [MaxTracks]spatialTrack
 	listener   spatial.Vec3
 	rotation   spatial.Rotation
 	music, sfx spatial.Decoder

@@ -1,0 +1,155 @@
+// Four-bar harmony, a two-bar drum groove, and a melodic question/answer.
+// Letter pitches keep these extended chord voicings independent of the key.
+cicada 2
+
+title "Lanterns After Rain"
+
+tempo 104
+
+key d minor
+
+seed 73022
+
+fx room reverb {
+  decay = 1.8s
+  mix = 0.25
+}
+
+instrument round {
+  voice mono {
+    let amp = adsr(gate, 5ms, 180ms, 0.65, 90ms)
+    out = lowpass(sine(pitch) * 0.65 + saw(pitch) * 0.15, 620Hz) * amp * velocity * 0.5
+  }
+}
+
+instrument bell {
+  voice mono {
+    let amp = env(gate, 550ms)
+    out = pm(pitch, sine(pitch * 3), amp * 1.4) * amp * velocity * 0.2
+  }
+}
+
+track keys tine_ep {
+  level = -4dB
+  send room = -14dB
+  voices = 4
+  release = 160ms
+}
+
+track bass round {
+  level = -7dB
+}
+
+track lead bell {
+  level = -10dB
+  pan = -0.18
+  send room = -10dB
+}
+
+track kit drums {
+  level = -13dB
+  bd_decay = 180ms
+  sd_decay = 100ms
+  ch_decay = 28ms
+}
+
+// Dm9 -> Gm9 -> Bbmaj7 -> C9. Each group of four cells lasts one bar.
+pattern comp-a notes {
+  step = 1/4
+  gate = 78%
+  [d3 f3 a3 e4] - . [d3 f3 a3 c4] [g3 bb3 d4 f4] - . [g3 bb3 d4 a4] [bb3 d4 f4 a4] - . [bb3 c4 f4 a4] [c3 e3 g3 d4] - [c3 e3 bb3 d4] .
+  velocity: 84 . . 68 88 . . 72 82 . . 66 90 . 76 .
+}
+
+// A7 in the final bar adds C#, pulling the following D minor back into focus.
+pattern comp-b notes {
+  step = 1/4
+  gate = 84%
+  [d3 f3 a3 e4] - [f3 a3 c4 e4] . [g3 bb3 d4 a4] - [bb3 d4 f4 a4] . [bb3 d4 f4 a4] - [c3 e3 g3 d4] . [a2 c#3 e3 g3] - [a2 c#3 e3 bb3] .
+  velocity: 96 . 78 . 98 . 80 . 92 . 82 . 100 . 86 .
+}
+
+pattern roots {
+  step = 1/4
+  gate = 76%
+  d2 . a2 c3 | g2 . d3 f2 | bb1 . f2 a2 | c2 . g2 a1
+}
+
+pattern roots-b {
+  step = 1/4
+  gate = 82%
+  d2 . a2 c3 | g2 . d3 f2 | bb1 . f2 c2 | a1 . e2 c#2
+}
+
+pattern melody {
+  step = 1/8
+  gate = 68%
+  . a4 c5 d5 e5 . d5 c5 | a4 . g4 f4 e4 . . . . f4 a4 c5 d5 . c5 a4 | g4 e4 d4 . c#4 e4 a4 .
+  velocity: 80 86 94 106 98 . 88 78 90 . 82 76 70 . . . . 80 90 102 94 . 84 76 92 82 72 . 78 90 100 .
+}
+
+pattern pocket drums {
+  swing = 58%
+  bd: X... .... x5... .... X... ..x3. x5... ....
+  sd: .... x6... .... x6... .... x6... ..x2. x6...
+  ch: x4.x2. x5.x2. x4.x2. x5.x3. x4.x2. x5.x2. x4.x2. x5.x3.
+  rs: .... .... ..x2. .... .... .... ..x3. ....
+}
+
+pattern brush drums {
+  ch: x3... .... x3... ....
+  rs: .... x3... .... x4...
+}
+
+scene opening {
+  keys = comp-a
+  bass = off
+  lead = off
+  kit = brush
+}
+
+scene verse {
+  keys = comp-a
+  bass = roots
+  lead = off
+  kit = pocket
+}
+
+scene answer {
+  keys = comp-b
+  bass = roots-b
+  lead = melody
+  kit = pocket
+}
+
+scene bridge {
+  keys = comp-b
+  bass = off
+  lead = melody
+  kit = brush
+}
+
+scene closing {
+  keys = comp-a
+  bass = off
+  lead = off
+  kit = brush
+}
+
+automate keys.level {
+  @1.1.1 -4dB @37.1.1 -4dB @41.1.1 -48dB smooth
+}
+
+automate kit.level {
+  @1.1.1 -13dB @37.1.1 -13dB @41.1.1 -48dB smooth
+}
+
+// 40 bars, about 92 seconds. Every section aligns with the four-bar harmony.
+song {
+  opening*4
+  verse*8
+  answer*8
+  bridge*4
+  answer*12
+  closing*4
+}

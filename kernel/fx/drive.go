@@ -57,25 +57,28 @@ type stereo struct{ left, right float64 }
 // DriveLatencyFrames is the delay from the two FIR filters at 2x sample rate.
 const DriveLatencyFrames = (halfband.Taps - 1) / 2
 
-// Drive uses fixed storage, including the dry delay and both oversampled
+// Drive uses fixed storage, including the dry delay and four oversampled
 // paths. All four shapes stay warm so changing shape can crossfade cleanly.
 type Drive struct {
-	sampleRate                      float64
-	params                          DriveParams
-	table                           [driveShapes][33]float64
-	pre, targetPre                  float64
-	post, targetPost                [driveShapes]float64
-	tone, targetTone                float64
-	mix, targetMix                  float64
-	weights, targetWeights          [driveShapes]float64
-	smooth                          float64
-	upLeft, upRight                 halfband.FIR
-	hardLeft, hardRight             halfband.FIR
-	foldLeft, foldRight             halfband.FIR
-	dryDelay, softDelay, diodeDelay [DriveLatencyFrames]stereo
-	position                        int
-	toneState                       [driveShapes]stereo
-	fault                           bool
+	sampleRate             float64
+	params                 DriveParams
+	table                  [driveShapes][33]float64
+	pre, targetPre         float64
+	post, targetPost       [driveShapes]float64
+	tone, targetTone       float64
+	mix, targetMix         float64
+	weights, targetWeights [driveShapes]float64
+	smooth                 float64
+	upLeft, upRight        halfband.FIR
+	softLeft, softRight    halfband.FIR
+	hardLeft, hardRight    halfband.FIR
+	foldLeft, foldRight    halfband.FIR
+	diodeLeft, diodeRight  halfband.FIR
+	dryDelay               [DriveLatencyFrames]stereo
+	position               int
+	toneState              [driveShapes]stereo
+	fault                  bool
+	zeroFrames             int
 }
 
 func NewDrive(sampleRate int) (*Drive, error) {
@@ -85,8 +88,10 @@ func NewDrive(sampleRate int) (*Drive, error) {
 	d := &Drive{
 		sampleRate: float64(sampleRate), smooth: 1 - math.Exp(-1/(.005*float64(sampleRate))),
 		upLeft: halfband.New(), upRight: halfband.New(),
+		softLeft: halfband.New(), softRight: halfband.New(),
 		hardLeft: halfband.New(), hardRight: halfband.New(),
 		foldLeft: halfband.New(), foldRight: halfband.New(),
+		diodeLeft: halfband.New(), diodeRight: halfband.New(),
 	}
 	d.buildTables()
 	if err := d.SetParams(DefaultDriveParams()); err != nil {
@@ -99,6 +104,13 @@ func NewDrive(sampleRate int) (*Drive, error) {
 func (d *Drive) Params() DriveParams { return d.params }
 func (d *Drive) Fault() bool         { return d.fault }
 func (d *Drive) LatencyFrames() int  { return DriveLatencyFrames }
+
+// Silent reports an exact zero signal state after the finite FIR histories
+// drain and every tone state is zero. Process must still run to advance
+// automated parameter smoothing; silent output alone cannot prove this state.
+func (d *Drive) Silent() bool {
+	return !d.fault && d.zeroFrames >= halfband.Taps && d.toneState == [driveShapes]stereo{}
+}
 
 func (d *Drive) SetParams(p DriveParams) error {
 	if err := p.Validate(); err != nil {
@@ -125,15 +137,18 @@ func (d *Drive) SetParams(p DriveParams) error {
 func (d *Drive) Reset() {
 	d.upLeft.Reset()
 	d.upRight.Reset()
+	d.softLeft.Reset()
+	d.softRight.Reset()
 	d.hardLeft.Reset()
 	d.hardRight.Reset()
 	d.foldLeft.Reset()
 	d.foldRight.Reset()
+	d.diodeLeft.Reset()
+	d.diodeRight.Reset()
 	d.dryDelay = [DriveLatencyFrames]stereo{}
-	d.softDelay = [DriveLatencyFrames]stereo{}
-	d.diodeDelay = [DriveLatencyFrames]stereo{}
 	d.toneState = [driveShapes]stereo{}
 	d.position, d.fault = 0, false
+	d.zeroFrames = halfband.Taps
 	d.pre, d.post, d.tone, d.mix, d.weights = d.targetPre, d.targetPost, d.targetTone, d.targetMix, d.targetWeights
 }
 
@@ -188,19 +203,55 @@ func (d *Drive) Process(left, right float32) (float32, float32) {
 		d.post[shape] += float64((d.targetPost[shape] - d.post[shape]) * d.smooth)
 		d.weights[shape] += float64((d.targetWeights[shape] - d.weights[shape]) * d.smooth)
 	}
+	if left == 0 && right == 0 && d.zeroFrames >= halfband.Taps {
+		// Each 43-tap filter retains at most 42 oversampled samples. The
+		// cascaded up/down pair is therefore empty after 43 base-rate zeros;
+		// this also exceeds the 21-frame dry delay. This is a finite-history
+		// proof, independent of amplitude and of the active nonlinear shape.
+		// Every FIR state and the dry delay is exactly zero. Empty FIR rings may keep
+		// their cursor: their coefficients depend on relative age, so the next
+		// nonzero input renders identically at any cursor. Keep the explicit dry
+		// delay timeline moving, and keep all shape/parameter ramps above warm.
+		d.position++
+		if d.position == DriveLatencyFrames {
+			d.position = 0
+		}
+		var wet stereo
+		for shape := range d.toneState {
+			state := &d.toneState[shape]
+			state.left += float64((0 - state.left) * d.tone)
+			state.right += float64((0 - state.right) * d.tone)
+			wet.left += float64(state.left * d.weights[shape])
+			wet.right += float64(state.right * d.weights[shape])
+		}
+		// Tone tails keep their exact per-sample decay; no threshold gates them.
+		return float32(wet.left * d.mix), float32(wet.right * d.mix)
+	}
+	if left == 0 && right == 0 {
+		d.zeroFrames++
+	} else {
+		d.zeroFrames = 0
+	}
 	index := d.position
 	dry := d.dryDelay[index]
 	d.dryDelay[index] = x
-	soft := d.softDelay[index]
-	d.softDelay[index] = stereo{shapeSample(Soft, x.left*d.pre) * d.post[Soft], shapeSample(Soft, x.right*d.pre) * d.post[Soft]}
-	diode := d.diodeDelay[index]
-	d.diodeDelay[index] = stereo{shapeSample(Diode, x.left*d.pre) * d.post[Diode], shapeSample(Diode, x.right*d.pre) * d.post[Diode]}
 	d.position++
 	if d.position == DriveLatencyFrames {
 		d.position = 0
 	}
 	firstL, secondL := d.upLeft.Upsample(x.left)
 	firstR, secondR := d.upRight.Upsample(x.right)
+	// Every nonlinear shape needs bandlimiting. Soft saturation still creates
+	// harmonics above Nyquist; a base-rate tone filter cannot remove them once
+	// they have folded into the audible band. Keep every path warm for switches.
+	soft := stereo{
+		d.softLeft.Downsample(shapeSample(Soft, firstL*d.pre), shapeSample(Soft, secondL*d.pre)) * d.post[Soft],
+		d.softRight.Downsample(shapeSample(Soft, firstR*d.pre), shapeSample(Soft, secondR*d.pre)) * d.post[Soft],
+	}
+	diode := stereo{
+		d.diodeLeft.Downsample(shapeSample(Diode, firstL*d.pre), shapeSample(Diode, secondL*d.pre)) * d.post[Diode],
+		d.diodeRight.Downsample(shapeSample(Diode, firstR*d.pre), shapeSample(Diode, secondR*d.pre)) * d.post[Diode],
+	}
 	hard := stereo{
 		d.hardLeft.Downsample(shapeSample(Hard, firstL*d.pre), shapeSample(Hard, secondL*d.pre)) * d.post[Hard],
 		d.hardRight.Downsample(shapeSample(Hard, firstR*d.pre), shapeSample(Hard, secondR*d.pre)) * d.post[Hard],

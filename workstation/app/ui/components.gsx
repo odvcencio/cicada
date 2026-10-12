@@ -59,7 +59,7 @@ component Step(props: StepProps) {
 		data-pattern={props.Pattern} data-lane={props.Lane}>{props.Text}</button>
 }
 
-type TransportProps struct { Playing bool; Bar int64; Step int64; Backend string; Error string }
+type TransportProps struct { Playing bool; Bar int64; Step int64; Backend string; Error string; Listening string }
 
 component Position(props: TransportProps) {
 	return <div class="position" data-gosx-live-src="/api/transport" data-gosx-live-interval="1s">
@@ -67,5 +67,6 @@ component Position(props: TransportProps) {
 		<span class="position-label">STEP <b data-gosx-live-bind="step">{props.Step}</b></span>
 		<span class="muted" data-gosx-live-bind="activeBackend">{props.Backend}</span>
 		<span class="error" data-gosx-live-bind="error">{props.Error}</span>
+		<span class="listening-status" aria-live="polite" data-gosx-live-bind="listeningStatus">{props.Listening}</span>
 	</div>
 }

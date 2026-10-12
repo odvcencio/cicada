@@ -61,7 +61,7 @@ func TestPendingLaunchesCanBeReadDuringAudioAndControlChanges(t *testing.T) {
 	}
 	p.CancelScene()
 	p.CancelPatterns()
-	if p.PendingScene() != "" || p.PendingPatterns() != ([16]SlotRequest{}) {
+	if p.PendingScene() != "" || p.PendingPatterns() != ([engine.MaxTracks]SlotRequest{}) {
 		t.Fatal("cancelled launches remain in the queue")
 	}
 }
@@ -143,7 +143,7 @@ func TestQueueSceneLaunchDoesNotAllocate(t *testing.T) {
 	allocs := testing.AllocsPerRun(20, func() {
 		p.launches.Store(requests[i])
 		i++
-		p.queueSceneLaunch()
+		p.queueSceneLaunch(blockFrames)
 	})
 	if allocs != 0 {
 		t.Fatalf("queueSceneLaunch allocated %.1f times per launch, want 0", allocs)

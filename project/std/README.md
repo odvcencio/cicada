@@ -17,6 +17,7 @@ its own `cicada.mod`, source edition 2, license `MIT`, and author `Cicada projec
 | --- | --- | --- |
 | `std/synth` | `glassbass`, `nightbass`, `tymbal`, `subline`, `glass` instruments | `examples/glassbass.cicada`, `examples/cicada-chorus.cicada`, `examples/circuit-kit.cicada`, `examples/multifile/parts/voices.cicada` |
 | `std/drums` | `kick`, `circuit-kick`, `snare`, `hat` instruments; `steel`, `circuit` kits | `examples/authored-kit.cicada`, `examples/circuit-kit.cicada` |
+| `std/drum-machines` | `eight-oh-eight`, `nine-oh-nine` circuit-inspired kits | [Classic Drum Study](../../examples/drum-machines/main.cicada), [sound design and limits](drum-machines/README.md) |
 | `std/fx` | `drive`, `delay`, `reverb`, `comp` effects | `examples/fx-bus.cicada`, `examples/fx/compressor-bus.cicada` |
 | `std/keys` | 21 original native keyboard presets: electric pianos, Clav, tonewheel organ, FM, analog poly keys, ensemble strings | [Keyboard patches](keys/README.md) |
 | `std/presets` | `acid-squelch`, `acid-round`, `acid-bite`; `kit-tight`, `kit-roomy`, `kit-lofi` | Acid voice and built-in drum kit parameter values |

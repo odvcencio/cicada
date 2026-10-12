@@ -11,7 +11,7 @@ import (
 
 func TestModalCapabilityRoundTripAndRejection(t *testing.T) {
 	for profile := modal.Profile(0); profile < modal.ProfileCount; profile++ {
-		cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120000, Track: [16]engine.TrackConfig{{Kind: engine.VoiceModal, Modal: profile}}}
+		cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120000, Track: [engine.MaxTracks]engine.TrackConfig{{Kind: engine.VoiceModal, Modal: profile}}}
 		image, err := kernelimage.Encode(cfg)
 		if err != nil {
 			t.Fatal(err)

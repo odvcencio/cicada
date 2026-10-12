@@ -22,11 +22,34 @@ const (
 	Quarter
 	QuarterDotted
 	Half
+	ThreeEighths
+	QuarterTriplet
+	HalfDotted
+	HalfTriplet
+	ThirtySecondTriplet
+	ThirtySecondDotted
 	lastDelayDivision
 )
 
 var delayDivisionNames = [...]string{
 	"free", "1/32", "1/16", "1/16T", "1/16.", "1/8", "1/8T", "1/8.", "3/16", "1/4", "1/4.", "1/2",
+	"3/8", "1/4T", "1/2.", "1/2T", "1/32T", "1/32.",
+}
+
+// delayBeats is the length of each division in quarter-note beats, indexed
+// by DelayDivision.
+var delayBeats = [...]float64{
+	0, .125, .25, 1.0 / 6, .375, .5, 1.0 / 3, .75, .75, 1, 1.5, 2,
+	1.5, 2.0 / 3, 3, 4.0 / 3, 1.0 / 12, .1875,
+}
+
+// Beats returns the division length in quarter-note beats, or 0 for FreeDelay
+// and invalid values.
+func (division DelayDivision) Beats() float64 {
+	if division >= lastDelayDivision {
+		return 0
+	}
+	return delayBeats[division]
 }
 
 func ParseDelayDivision(name string) (DelayDivision, error) {
@@ -50,7 +73,7 @@ type DelayParams struct {
 	TimeMs   float64
 	Feedback float64
 	DampHz   float64
-	PingPong bool
+	PingPong bool // Mono wet input into the left line, then alternating feedback.
 	Width    float64
 	Mix      float64
 }
@@ -85,8 +108,7 @@ func (p DelayParams) ValidateTempo(bpmMilli int64) error {
 	}
 	seconds := p.TimeMs / 1000
 	if p.Division != FreeDelay {
-		beats := [...]float64{0, .125, .25, 1.0 / 6, .375, .5, 1.0 / 3, .75, .75, 1, 1.5, 2}
-		seconds = beats[p.Division] * 60_000 / float64(bpmMilli)
+		seconds = p.Division.Beats() * 60_000 / float64(bpmMilli)
 	}
 	if seconds < .001 || seconds > 4 {
 		return Error("delay time exceeds the 4-second buffer or 1 ms minimum")
@@ -109,6 +131,7 @@ type Delay struct {
 	smooth                   float64
 	feedbackState            stereo
 	fault                    bool
+	excited                  bool
 }
 
 func NewDelay(sampleRate int, bpmMilli int64) (*Delay, error) {
@@ -131,6 +154,11 @@ func NewDelay(sampleRate int, bpmMilli int64) (*Delay, error) {
 func (d *Delay) Params() DelayParams { return d.params }
 func (d *Delay) Fault() bool         { return d.fault }
 func (d *Delay) LatencyFrames() int  { return 0 }
+
+// Silent proves that no audio has entered the delay since Reset. Feedback and
+// damping tails are never discarded based on their size. Continue calling
+// Process during silence so time crossfades and parameter ramps advance.
+func (d *Delay) Silent() bool { return !d.excited && !d.fault }
 
 // SetTempo changes a synced time by fading between two stationary read heads.
 // Free times stay in milliseconds when the song tempo changes.
@@ -179,8 +207,7 @@ func (d *Delay) timeFrames(p DelayParams, bpmMilli float64) (float64, error) {
 	if p.Division == FreeDelay {
 		frames = p.TimeMs * d.sampleRate / 1000
 	} else {
-		beats := [...]float64{0, .125, .25, 1.0 / 6, .375, .5, 1.0 / 3, .75, .75, 1, 1.5, 2}
-		frames = beats[p.Division] * 60_000 * d.sampleRate / bpmMilli
+		frames = p.Division.Beats() * 60_000 * d.sampleRate / bpmMilli
 	}
 	if frames < d.sampleRate/1000 || frames > 4*d.sampleRate {
 		return 0, Error("delay time exceeds the 4-second buffer or 1 ms minimum")
@@ -201,6 +228,7 @@ func (d *Delay) Reset() {
 	d.position = 0
 	d.feedbackState = stereo{}
 	d.fault = false
+	d.excited = false
 	d.oldFrames, d.fade = d.newFrames, 1
 	d.feedback, d.damp, d.ping, d.width, d.mix = d.targetFeedback, d.targetDamp, d.targetPing, d.targetWidth, d.targetMix
 }
@@ -234,6 +262,18 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	d.ping += float64((d.targetPing - d.ping) * d.smooth)
 	d.width += float64((d.targetWidth - d.width) * d.smooth)
 	d.mix += float64((d.targetMix - d.mix) * d.smooth)
+	if left == 0 && right == 0 && !d.excited {
+		// Both read heads and the feedback filter contain exact zeros.
+		if d.fade < 1 {
+			d.fade = math.Min(1, d.fade+d.fadeStep)
+		}
+		d.position++
+		if d.position == len(d.buffer) {
+			d.position = 0
+		}
+		return 0, 0
+	}
+	d.excited = true
 	wet := d.read(d.newFrames)
 	if d.fade < 1 {
 		old := d.read(d.oldFrames)
@@ -248,9 +288,17 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	feedbackR := float64(wet.right*(1-d.ping)) + float64(wet.left*d.ping)
 	d.feedbackState.left += float64((feedbackL - d.feedbackState.left) * d.damp)
 	d.feedbackState.right += float64((feedbackR - d.feedbackState.right) * d.damp)
+	// Ping-pong folds only the wet input to mono. Swapping feedback alone
+	// leaves centered sources identical in both channels forever. Average
+	// L/R rather than summing so a centered source keeps its first-echo peak.
+	// The existing smoothed mode coefficient also fades the input routing;
+	// stereo delay and the dry path keep their original channel separation.
+	mono := (x.left + x.right) * .5
+	inputL := x.left + float64((mono-x.left)*d.ping)
+	inputR := x.right * (1 - d.ping)
 	d.buffer[d.position] = stereo{
-		x.left + fastmath.Tanh(d.feedbackState.left*d.feedback),
-		x.right + fastmath.Tanh(d.feedbackState.right*d.feedback),
+		inputL + fastmath.Tanh(d.feedbackState.left*d.feedback),
+		inputR + fastmath.Tanh(d.feedbackState.right*d.feedback),
 	}
 	d.position++
 	if d.position == len(d.buffer) {

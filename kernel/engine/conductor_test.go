@@ -55,7 +55,7 @@ func conductorAt(t *testing.T, e *Engine, tick int64, value float32) (uint32, []
 	for e.Poll(&message) {
 		messages = append(messages, message)
 	}
-	return e.layerMask, messages
+	return uint32(e.layerMask), messages
 }
 
 func TestConductorAttackReleaseAndThresholdChatter(t *testing.T) {
@@ -281,7 +281,7 @@ func TestSeekReappliesMacroLayerMask(t *testing.T) {
 	cfg.Tracks, cfg.MaxVoices = 1, 1
 	cfg.Track[0].Acid = acid.DefaultParams()
 	// Scene settings make the engine keep scene defaults, which a seek restores.
-	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 800}}}, {Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}}}
+	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0, ID: kernel.ParamAcidCutoff, Value: 800}}}, {Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 1}}}}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 2}, {Scene: 1, Bars: 2}}
 	cfg.LoopSong = true
 	e, err := New(cfg)

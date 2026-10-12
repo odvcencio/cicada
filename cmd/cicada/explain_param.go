@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -86,6 +87,20 @@ func explainParameter(scorePath, path, location string, output io.Writer) error 
 		computedText = explainProjectValue(active.value, resolved.Descriptor)
 		fmt.Fprintf(output, "scene %s (entered bar %d): %s\n", active.scene, active.bar, explainProjectValue(active.value, resolved.Descriptor))
 	}
+	// Song lanes override scene settings, including held values after their last
+	// point. Use the playback evaluator so log curves and incoming shapes agree.
+	tick, err := notation.PositionTick(fmt.Sprintf("@%d.%d.%d", loc.bar, loc.beat, loc.step))
+	if err != nil {
+		return err
+	}
+	for _, lane := range compiled.Automation {
+		if lane.Path == lookup {
+			if target, ok := project.AutomationValue(compiled, lane, tick); ok {
+				computedText = explainValue(float32(target), resolved.Descriptor)
+				fmt.Fprintf(output, "automation at %s: %s\n", notation.TickPosition(tick), computedText)
+			}
+		}
+	}
 	fmt.Fprintf(output, "computed: %s\n", computedText)
 	return nil
 }
@@ -100,11 +115,11 @@ func parseExplainLocation(value string) (explainLocation, error) {
 	}
 	values := []int{1, 1, 1}
 	for i, part := range parts {
-		number, err := strconv.Atoi(part)
-		if err != nil || number < 1 {
-			return explainLocation{}, fmt.Errorf("location bars, beats, and steps start at 1")
+		number, err := strconv.ParseInt(part, 10, 32)
+		if err != nil || number < 1 || i > 0 && number > 4 {
+			return explainLocation{}, fmt.Errorf("location needs bar >= 1, beat 1..4 and step 1..4")
 		}
-		values[i] = number
+		values[i] = int(number)
 	}
 	return explainLocation{bar: values[0], beat: values[1], step: values[2]}, nil
 }
@@ -117,6 +132,19 @@ type sceneExplainValue struct {
 }
 
 func sceneValueAtBar(p *project.Project, path string, targetBar int) (sceneExplainValue, error) {
+	if p.Arrange != nil {
+		var end int64
+		for _, placement := range p.Arrange.Placements {
+			end = max(end, placement.AtTick+placement.LengthTicks)
+		}
+		bars := (end + seq.TicksPerBar - 1) / seq.TicksPerBar
+		if targetBar < 1 || int64(targetBar) > bars {
+			return sceneExplainValue{}, fmt.Errorf("bar %d is outside the arrangement (which spans %d bars)", targetBar, bars)
+		}
+		// Scenes remain available for live launches but do not set the parameters
+		// of a named-placement arrangement.
+		return sceneExplainValue{}, nil
+	}
 	bar := 1
 	var active sceneExplainValue
 	foundTarget := false
@@ -206,11 +234,13 @@ func explainValue(value any, descriptor paramdefs.Descriptor) string {
 		return "off"
 	}
 	var number float64
+	bits := 64
 	switch typed := value.(type) {
 	case float64:
 		number = typed
 	case float32:
 		number = float64(typed)
+		bits = 32
 	case int:
 		number = float64(typed)
 	case string:
@@ -218,7 +248,7 @@ func explainValue(value any, descriptor paramdefs.Descriptor) string {
 	default:
 		return fmt.Sprint(value)
 	}
-	formatted := strconv.FormatFloat(number, 'f', -1, 64)
+	formatted := strconv.FormatFloat(number, 'f', -1, bits)
 	unit := descriptor.Unit
 	if unit == "unit" || unit == "ratio" || unit == "semitone" || unit == "cent" {
 		unit = ""

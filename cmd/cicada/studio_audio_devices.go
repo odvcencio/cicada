@@ -10,58 +10,77 @@ import (
 )
 
 type studioAudioOptions struct {
-	InputDevice  string  `json:"inputDevice"`
-	OutputDevice string  `json:"outputDevice"`
-	InputEnabled bool    `json:"inputEnabled"`
-	MonitorMuted bool    `json:"monitorMuted"`
-	MonitorGain  float32 `json:"monitorGain"`
-	MonitorMode  string  `json:"monitorMode"`
+	InputDevice       string  `json:"inputDevice"`
+	OutputDevice      string  `json:"outputDevice"`
+	InputEnabled      bool    `json:"inputEnabled"`
+	MonitorMuted      bool    `json:"monitorMuted"`
+	MonitorGain       float32 `json:"monitorGain"`
+	MonitorMode       string  `json:"monitorMode"`
+	RecordingOffsetMS float64 `json:"recordingOffsetMS"`
+	PeriodFrames      int     `json:"periodFrames"`
 }
 
 type studioAudioDeviceInfo struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Inputs        int    `json:"inputs"`
-	Outputs       int    `json:"outputs"`
-	SampleRate    int    `json:"sampleRate"`
-	DefaultInput  bool   `json:"defaultInput"`
-	DefaultOutput bool   `json:"defaultOutput"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Inputs            int    `json:"inputs"`
+	Outputs           int    `json:"outputs"`
+	SampleRate        int    `json:"sampleRate"`
+	DefaultInput      bool   `json:"defaultInput"`
+	DefaultOutput     bool   `json:"defaultOutput"`
+	MinPeriod         int    `json:"minPeriod,omitempty"`
+	MaxPeriod         int    `json:"maxPeriod,omitempty"`
+	DefaultPeriod     int    `json:"defaultPeriod,omitempty"`
+	FundamentalPeriod int    `json:"fundamentalPeriod,omitempty"`
 }
 
 type studioAudioInventory struct {
-	Supported   bool                    `json:"supported"`
-	Backend     string                  `json:"backend"`
-	BackendName string                  `json:"backendName"`
-	Host        string                  `json:"host,omitempty"`
-	Message     string                  `json:"message,omitempty"`
-	Devices     []studioAudioDeviceInfo `json:"devices"`
+	Supported     bool                    `json:"supported"`
+	Backend       string                  `json:"backend"`
+	BackendName   string                  `json:"backendName"`
+	Host          string                  `json:"host,omitempty"`
+	Message       string                  `json:"message,omitempty"`
+	Devices       []studioAudioDeviceInfo `json:"devices"`
+	BufferChoices []int                   `json:"bufferChoices"`
 }
 
 type studioAudioSnapshot struct {
-	Backend            string            `json:"backend"`
-	BackendName        string            `json:"backendName"`
-	Host               string            `json:"host,omitempty"`
-	InputName          string            `json:"inputName,omitempty"`
-	OutputName         string            `json:"outputName,omitempty"`
-	InputChannels      int               `json:"inputChannels"`
-	OutputChannels     int               `json:"outputChannels"`
-	SampleRate         int               `json:"sampleRate"`
-	PeriodFrames       int               `json:"periodFrames"`
-	InputLatencyMS     float64           `json:"inputLatencyMs"`
-	OutputLatencyMS    float64           `json:"outputLatencyMs"`
-	InputLatencyKnown  bool              `json:"inputLatencyKnown"`
-	OutputLatencyKnown bool              `json:"outputLatencyKnown"`
-	InputPeakL         float32           `json:"inputPeakL"`
-	InputPeakR         float32           `json:"inputPeakR"`
-	OutputPeakL        float32           `json:"outputPeakL"`
-	OutputPeakR        float32           `json:"outputPeakR"`
-	Dropouts           uint64            `json:"dropouts"`
-	Late               uint64            `json:"late"`
-	Callbacks          uint64            `json:"callbacks"`
-	CallbackMaxUS      float64           `json:"callbackMaxUs"`
-	Error              string            `json:"error,omitempty"`
-	Armed              bool              `json:"armed"`
-	Capture            *capture.Snapshot `json:"capture,omitempty"`
+	Backend                string            `json:"backend"`
+	BackendName            string            `json:"backendName"`
+	Host                   string            `json:"host,omitempty"`
+	InputName              string            `json:"inputName,omitempty"`
+	OutputName             string            `json:"outputName,omitempty"`
+	InputChannels          int               `json:"inputChannels"`
+	OutputChannels         int               `json:"outputChannels"`
+	SampleRate             int               `json:"sampleRate"`
+	PeriodFrames           int               `json:"periodFrames"`
+	InputLatencyMS         float64           `json:"inputLatencyMs"`
+	OutputLatencyMS        float64           `json:"outputLatencyMs"`
+	InputLatencyKnown      bool              `json:"inputLatencyKnown"`
+	OutputLatencyKnown     bool              `json:"outputLatencyKnown"`
+	InputPeakL             float32           `json:"inputPeakL"`
+	InputPeakR             float32           `json:"inputPeakR"`
+	InputHeldL             float32           `json:"inputHeldL"`
+	InputHeldR             float32           `json:"inputHeldR"`
+	InputSession           uint64            `json:"inputSession"`
+	OutputPeakL            float32           `json:"outputPeakL"`
+	OutputPeakR            float32           `json:"outputPeakR"`
+	Dropouts               uint64            `json:"dropouts"`
+	Late                   uint64            `json:"late"`
+	Callbacks              uint64            `json:"callbacks"`
+	CallbackMaxUS          float64           `json:"callbackMaxUs"`
+	RequestedPeriodFrames  int               `json:"requestedPeriodFrames"`
+	PeriodMS               float64           `json:"periodMs"`
+	DevicePeriods          int               `json:"devicePeriods"`
+	ReportedRoundTripMS    float64           `json:"reportedRoundTripMs"`
+	ReportedRoundTripKnown bool              `json:"reportedRoundTripKnown"`
+	AudioPriority          string            `json:"audioPriority,omitempty"`
+	DeadlineKnown          bool              `json:"deadlineKnown"`
+	CallbackBudgetPercent  float64           `json:"callbackBudgetPercent"`
+	Warning                string            `json:"warning,omitempty"`
+	Error                  string            `json:"error,omitempty"`
+	Armed                  bool              `json:"armed"`
+	Capture                *capture.Snapshot `json:"capture,omitempty"`
 }
 
 type studioAudioState struct {
@@ -70,6 +89,31 @@ type studioAudioState struct {
 	Runtime   studioAudioSnapshot  `json:"runtime"`
 	Playing   bool                 `json:"playing"`
 	Status    string               `json:"status"`
+}
+
+// The active panel refreshes these reports without rediscovering endpoints.
+// Polling this projection never opens, arms or reconfigures an audio device.
+type studioAudioRuntimeState struct {
+	Options studioAudioOptions  `json:"options"`
+	Runtime studioAudioSnapshot `json:"runtime"`
+	Playing bool                `json:"playing"`
+}
+
+func (t *studioTransport) audioRuntimeState() studioAudioRuntimeState {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	options := t.audioOptions
+	if options == (studioAudioOptions{}) {
+		options = defaultStudioAudioOptions()
+	}
+	state := studioAudioRuntimeState{Options: normalizeStudioAudioOptions(options), Playing: t.playing}
+	if t.audio != nil {
+		state.Runtime = t.audio.Snapshot()
+	}
+	if state.Runtime.Error == "" {
+		state.Runtime.Error = t.errText
+	}
+	return state
 }
 
 func (t *studioTransport) ensureSampleRate() (int, error) {
@@ -221,12 +265,16 @@ func (t *studioTransport) configureAudio(options studioAudioOptions) error {
 	defer t.pollMu.Unlock()
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	routeChanged := options.InputEnabled != t.audioOptions.InputEnabled || options.InputDevice != t.audioOptions.InputDevice || options.OutputDevice != t.audioOptions.OutputDevice
+	previousOptions := normalizeStudioAudioOptions(t.audioOptions)
+	routeChanged := options.InputEnabled != previousOptions.InputEnabled || options.InputDevice != previousOptions.InputDevice || options.OutputDevice != previousOptions.OutputDevice || options.PeriodFrames != previousOptions.PeriodFrames
 	if t.playing && routeChanged {
 		return fmt.Errorf("stop playback before changing audio devices")
 	}
 	if t.audio != nil && t.audio.Armed() && routeChanged {
 		return fmt.Errorf("disarm capture before changing audio devices")
+	}
+	if t.audio != nil && t.audio.Armed() && options.RecordingOffsetMS != t.audioOptions.RecordingOffsetMS {
+		return fmt.Errorf("finish the take before changing recording timing correction")
 	}
 	t.audioOptions = options
 	if t.audio != nil {
@@ -237,6 +285,7 @@ func (t *studioTransport) configureAudio(options studioAudioOptions) error {
 	}
 	if t.audio != nil {
 		t.audio.Pause()
+		t.lastInput = t.audio.Snapshot()
 		if err := t.audio.Close(); err != nil {
 			t.audio = nil
 			return err
@@ -288,6 +337,9 @@ func normalizeStudioAudioOptions(options studioAudioOptions) studioAudioOptions 
 	if options.MonitorMode == "" {
 		options.MonitorMode = "stereo"
 	}
+	if options.PeriodFrames == 0 {
+		options.PeriodFrames = liveBlockFrames
+	}
 	return options
 }
 
@@ -296,6 +348,14 @@ func studioMonitorOptions(options studioAudioOptions) studioAudioMonitor {
 }
 
 func validateStudioAudioOptions(options studioAudioOptions) error {
+	switch options.PeriodFrames {
+	case 0, 64, 128, 256, 512, 1024:
+	default:
+		return fmt.Errorf("audio buffer must be 64, 128, 256, 512, or 1024 frames")
+	}
+	if math.IsNaN(options.RecordingOffsetMS) || math.IsInf(options.RecordingOffsetMS, 0) || options.RecordingOffsetMS < -500 || options.RecordingOffsetMS > 500 {
+		return fmt.Errorf("recording timing correction must be finite and between -500 and +500 ms")
+	}
 	if math.IsNaN(float64(options.MonitorGain)) || math.IsInf(float64(options.MonitorGain), 0) || options.MonitorGain < 0 || options.MonitorGain > 2 {
 		return fmt.Errorf("input monitor gain must be between 0 and 2")
 	}
@@ -394,9 +454,17 @@ func mixStudioAudio(pcm []byte, input, output [][]float32, monitor studioAudioMo
 			output[0][frame] = clampStudioAudioSample(left)
 			output[1][frame] = clampStudioAudioSample(right)
 		}
-		if monitor.Muted || monitor.Gain == 0 || len(input) == 0 {
-			continue
-		}
+	}
+	mixStudioMonitor(input, output, monitor)
+}
+
+// Software monitoring is a direct, period-sized path. Its gain and clipping
+// affect only listening; capture already retained the unmodified input.
+func mixStudioMonitor(input, output [][]float32, monitor studioAudioMonitor) {
+	if len(output) == 0 || monitor.Muted || monitor.Gain == 0 || len(input) == 0 {
+		return
+	}
+	for frame := range output[0] {
 		var inLeft, inRight float32
 		switch monitor.Mode {
 		case "mono1":

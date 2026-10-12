@@ -7,6 +7,7 @@
     const version = bytes[4] | bytes[5] << 8;
     if (version === 14) throw new Error('Ambiguous development image14; recompile source for unified image15');
     if (![8, 9, 10, 11, 12, 13, 15].includes(version)) throw new Error(`Unsupported image version ${version}`);
+    if (version>=13 && capabilities!==undefined && (new DataView(image).getUint16(30,true)&2048) && !(capabilities&2048)) throw new Error("Track inserts require the vocal audio module; update the audio kernel");
     if (version === 15 && capabilities !== undefined && !(capabilities & CapabilityUnifiedImage)) throw new Error('Unified image15 requires CapabilityUnifiedImage (bit16); update the audio kernel');
     return new DataView(image).getUint32(12, true);
   };
@@ -138,12 +139,13 @@
       imageInfo(image);
       // Image versions 13 and 15 carry required capabilities at byte offset 30.
       const view = new DataView(image);
-      return view.getUint16(4, true) >= 13 && view.getUint16(30, true) & 512 ? 'keys' : 'core';
+      const required = view.getUint16(4,true)>=13 ? view.getUint16(30,true) : 0;
+      return required & 512 ? 'keys' : required & 2048 ? 'vocals' : 'core';
     }
 
     loadModule(kind) {
       if (!this.modulePromises.has(kind)) {
-        const pending = fetch(`/api/kernel.wasm${kind === 'keys' ? '?keys=1' : ''}`, { cache: 'no-store' }).then(async response => {
+        const pending = fetch(`/api/kernel.wasm${kind === 'core' ? '' : `?${kind}=1`}`, { cache: 'no-store' }).then(async response => {
           if (!response.ok) throw new Error((await response.text()) || 'Cannot load the audio kernel');
           return WebAssembly.compile(await response.arrayBuffer());
         }).catch(error => {

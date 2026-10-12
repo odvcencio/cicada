@@ -1,6 +1,7 @@
 package project
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -69,13 +70,14 @@ func TestPianoRejectsOutOfRangeNotesAndParameters(t *testing.T) {
 		}
 	}
 	var tracks, bindings strings.Builder
-	for _, name := range []string{"a", "b", "c", "d", "e"} {
+	for i := 0; i < 33; i++ {
+		name := fmt.Sprintf("p%d", i)
 		tracks.WriteString("track " + name + " piano {}\n")
 		bindings.WriteString(name + "=p ")
 	}
 	score, _ := notation.Parse([]byte(tracks.String() + "pattern p notes { c4 }\nscene s { " + bindings.String() + "}\nsong { s }"))
 	if p, _ := FromScore(score); p != nil {
-		t.Fatal("five eight-voice pianos exceeded the 32-voice budget")
+		t.Fatal("thirty-three eight-voice pianos exceeded the 256-voice budget")
 	}
 }
 

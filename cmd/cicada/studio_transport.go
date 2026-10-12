@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -34,6 +35,7 @@ type studioTransport struct {
 	previewOps        []edits.PreviewOp
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions
+	lastInput         studioAudioSnapshot
 	sampleRate        int
 	cancel            context.CancelFunc
 	last              [32]byte
@@ -55,6 +57,7 @@ type studioTransport struct {
 	meterSequence     atomic.Uint64
 	telemetry         *liveplay.Publisher
 	pendingCapture    *capture.Calibration
+	listening         *studioListening
 }
 
 type studioMeterSnapshot struct {
@@ -71,25 +74,36 @@ type snapshotFrames struct {
 }
 
 type transportSnapshot struct {
-	Frames              *snapshotFrames   `json:"frames,omitempty"`
-	Type                string            `json:"type"`
-	Sequence            uint64            `json:"sequence"`
-	ActiveBackend       string            `json:"activeBackend"`
-	BrowserPlaying      bool              `json:"browserPlaying,omitempty"`
-	Playing             bool              `json:"playing"`
-	Bar                 int64             `json:"bar"`
-	Step                int64             `json:"step"`
-	Pending             bool              `json:"pending"`
-	PendingScene        string            `json:"pendingScene,omitempty"`
-	PendingSong         string            `json:"pendingSong,omitempty"`
-	PendingSlots        map[string]string `json:"pendingSlots,omitempty"`
-	PendingSlotQuantize map[string]uint32 `json:"pendingSlotQuantize,omitempty"`
-	PendingQuantize     uint32            `json:"pendingQuantize,omitempty"`
-	StoppedTracks       []string          `json:"stoppedTracks,omitempty"`
-	ActiveSlots         map[string]string `json:"activeSlots,omitempty"`
-	Scene               string            `json:"scene,omitempty"`
-	Landed              int64             `json:"landedBar,omitempty"`
-	Error               string            `json:"error"`
+	Frames              *snapshotFrames     `json:"frames,omitempty"`
+	Type                string              `json:"type"`
+	Sequence            uint64              `json:"sequence"`
+	ActiveBackend       string              `json:"activeBackend"`
+	BrowserPlaying      bool                `json:"browserPlaying,omitempty"`
+	Playing             bool                `json:"playing"`
+	Bar                 int64               `json:"bar"`
+	Step                int64               `json:"step"`
+	Pending             bool                `json:"pending"`
+	PendingScene        string              `json:"pendingScene,omitempty"`
+	PendingSong         string              `json:"pendingSong,omitempty"`
+	PendingSlots        map[string]string   `json:"pendingSlots,omitempty"`
+	PendingSlotQuantize map[string]uint32   `json:"pendingSlotQuantize,omitempty"`
+	PendingQuantize     uint32              `json:"pendingQuantize,omitempty"`
+	StoppedTracks       []string            `json:"stoppedTracks,omitempty"`
+	ActiveSlots         map[string]string   `json:"activeSlots,omitempty"`
+	Scene               string              `json:"scene,omitempty"`
+	Landed              int64               `json:"landedBar,omitempty"`
+	Error               string              `json:"error"`
+	Listening           *studioListening    `json:"listening,omitempty"`
+	ListeningStatus     string              `json:"listeningStatus"`
+	Streaming           *studioStreamHealth `json:"streaming,omitempty"`
+}
+
+type studioStreamHealth struct {
+	ArenaBytes    int64  `json:"arenaBytes"`
+	MissingFrames uint64 `json:"missingFrames"`
+	ReadErrors    uint64 `json:"readErrors"`
+	Recoveries    uint64 `json:"recoveries"`
+	Error         string `json:"error,omitempty"`
 }
 
 func newStudioTransport(path string) *studioTransport {
@@ -126,6 +140,26 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		}
 	}
 	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
+	if t.stream != nil {
+		stats := t.stream.StreamStats()
+		if stats.ArenaBytes > 0 {
+			state.Streaming = &studioStreamHealth{ArenaBytes: stats.ArenaBytes, MissingFrames: stats.MissingFrames, ReadErrors: stats.ReadErrors, Recoveries: stats.Recoveries}
+			if err := t.stream.StreamError(); err != nil {
+				state.Streaming.Error = err.Error()
+			}
+		}
+	}
+	state.ListeningStatus = "Full song"
+	if t.listening != nil && t.stream != nil {
+		listening := *t.listening
+		if r := t.stream.PlaybackRange(); r != nil {
+			listening.StartTick, listening.EndTick, listening.Loop = r.StartTick, r.EndTick, r.Loop
+		}
+		listening.Completed, listening.Cycles = t.stream.RangeFinished(), t.stream.RangeCycles()
+		state.Listening = &listening
+		state.Playing = t.playing && !listening.Completed
+		state.ListeningStatus = listening.label()
+	}
 	if t.browserPlaying && t.browserSampleRate > 0 {
 		state.ActiveBackend = fmt.Sprintf("browser · AudioWorklet · %s", studioAudioRateLabel(t.browserSampleRate))
 		state.BrowserPlaying = true
@@ -200,6 +234,16 @@ func studioAudioRateLabel(sampleRate int) string {
 }
 
 func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte) error {
+	return t.startPrepared(index, scene, prepared, preparedHash, nil)
+}
+
+func (t *studioTransport) startPrepared(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte, listening *studioListening) error {
+	preparedConsumed := false
+	defer func() {
+		if prepared != nil && !preparedConsumed && prepared.Engine != nil {
+			_ = prepared.Engine.Close()
+		}
+	}()
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
 	sampleRate, err := t.ensureSampleRate()
@@ -210,6 +254,24 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	defer t.mu.Unlock()
 	t.stopPreviewLocked()
 	if t.stream != nil {
+		wasListening := t.listening != nil
+		if listening != nil {
+			if err := t.stream.Offer(*prepared); err != nil {
+				return err
+			}
+			preparedConsumed = true
+			if err := t.stream.PlayRange(listening.playbackRange()); err != nil {
+				return err
+			}
+			t.listening, t.last, t.pending = listening, preparedHash, true
+		} else if index >= 0 {
+			t.stream.ClearRange()
+			t.listening = nil
+		} else if t.listening != nil && t.stream.RangeFinished() {
+			if err := t.stream.PlayRange(t.listening.playbackRange()); err != nil {
+				return err
+			}
+		}
 		audioFailed := false
 		if t.audio != nil {
 			if err := t.audio.Err(); err != nil {
@@ -221,10 +283,11 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			}
 		}
 		if index >= 0 {
-			if prepared != nil && preparedHash != t.last {
+			if prepared != nil && (preparedHash != t.last || wasListening) {
 				if err := t.stream.Offer(*prepared); err != nil {
 					return err
 				}
+				preparedConsumed = true
 				t.last, t.pending = preparedHash, true
 			}
 			requestID, err := t.stream.QueueSongEntry(index, scene)
@@ -291,7 +354,22 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	}
 	stream, err := liveplay.New(initial, sampleRate)
 	if err != nil {
+		if initial.Engine != nil {
+			_ = initial.Engine.Close()
+		}
 		return err
+	}
+	preparedConsumed = true
+	streamAdopted := false
+	defer func() {
+		if !streamAdopted {
+			stream.Close()
+		}
+	}()
+	if listening != nil {
+		if err := stream.PlayRange(listening.playbackRange()); err != nil {
+			return err
+		}
 	}
 	var requestID uint64
 	if index >= 0 {
@@ -306,26 +384,25 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	} else {
 		audio, err = openStudioAudio(stream, t.audioOptions, t.selectedAudioBackend(), sampleRate)
 		if err != nil {
-			stream.Close()
 			return err
 		}
 	}
 	audio.SetMonitor(studioMonitorOptions(t.audioOptions))
 	if audio != nil {
 		if err := t.prepareCaptureLocked(audio, initial.BPMMilli); err != nil {
-			stream.Close()
 			return err
 		}
 		if err := audio.Play(); err != nil {
 			audio.Pause()
 			_ = audio.Close()
-			stream.Close()
 			return err
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.stream, t.audio, t.sampleRate, t.last, t.cancel = stream, audio, sampleRate, fingerprint, cancel
+	streamAdopted = true
 	t.playing, t.errText = true, ""
+	t.listening = listening
 	if index >= 0 {
 		t.pendingSong, t.pendingSongID = scene, requestID
 	} else {
@@ -362,6 +439,7 @@ func (t *studioTransport) pauseLocked() {
 	if t.audio != nil {
 		audio := t.audio
 		audio.Pause()
+		t.lastInput = audio.Snapshot()
 		// Release duplex hosts after Pause so they no longer hold the input endpoint.
 		if audio.StopClosesDevice() {
 			if err := audio.Close(); err != nil {
@@ -426,6 +504,7 @@ func (t *studioTransport) stopLocked() {
 	t.scene = ""
 	t.pending = false
 	t.landed = 0
+	t.listening = nil
 }
 
 // returnToStart moves to bar 1. A playing transport keeps playing from the
@@ -571,6 +650,11 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 		case <-ticker.C:
 			t.poll()
 		case <-telemetryTicker.C:
+			t.mu.Lock()
+			if t.stream == stream && t.playing && stream.RangeFinished() && !t.captureRunningLocked() {
+				t.pauseLocked()
+			}
+			t.mu.Unlock()
 			stream.PublishTelemetry()
 		case <-healthFrames.C:
 			t.mu.Lock()
@@ -683,6 +767,11 @@ func (t *studioTransport) poll() {
 	}
 	stream := t.stream
 	sampleRate := t.sampleRate
+	var listening *studioListening
+	if t.listening != nil {
+		copy := *t.listening
+		listening = &copy
+	}
 	t.mu.Unlock()
 	if stream == nil {
 		return
@@ -691,19 +780,34 @@ func (t *studioTransport) poll() {
 		sampleRate = liveSampleRate
 	}
 	project, err := compileStudioSource(t.path, source)
+	listeningTargetError := false
+	if err == nil && listening != nil {
+		project, listening, err = prepareStudioListening(project, *listening)
+		listeningTargetError = err != nil
+	}
 	var next liveplay.Score
 	if err == nil {
 		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
+		if err == nil && listening != nil {
+			r := listening.playbackRange()
+			next.Range = &r
+		}
 	}
 	if err == nil {
 		err = stream.Offer(next)
 	}
 	if err != nil {
+		if listeningTargetError {
+			t.mu.Lock()
+			t.stopLocked()
+			t.mu.Unlock()
+		}
 		t.setError(err)
 		return
 	}
 	t.mu.Lock()
 	t.last = fingerprint
+	t.listening = listening
 	// Clear the transport error when a valid revision lands (UX review finding 2).
 	t.pending, t.errText = true, ""
 	position := stream.Position()
@@ -733,25 +837,41 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusForbidden, map[string]string{"error": "cross-origin transport commands are not allowed"})
 		return
 	}
-	var input struct {
-		Action   string `json:"action"`
-		Scene    string `json:"scene"`
-		Revision string `json:"revision"`
-		Track    string `json:"track"`
-		Pattern  string `json:"pattern"`
-		Entry    int    `json:"entry"`
-		Quantize uint32 `json:"quantize"`
-	}
+	var input studioTransportInput
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&input); err != nil {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	s.mu.Lock()
-	instrumentCapture := s.captureInstrument
-	s.mu.Unlock()
-	if instrumentCapture {
+	defer s.mu.Unlock()
+	if s.captureInstrument {
 		studioJSON(w, http.StatusConflict, map[string]string{"error": "stop instrument recording before changing transport"})
 		return
+	}
+	if s.captureID != "" && s.captureRecorder != nil {
+		capture := s.captureRecorder.Snapshot()
+		// An armed device may still play and pause while preparing a take.
+		// Once capture begins, its input clock must keep the original backing
+		// and range until the take drains. Stop is also Finish take so the
+		// ordinary transport cannot strand a recorder with playback halted.
+		if capture.Recording || capture.Completed {
+			if input.Action != "stop" {
+				studioJSON(w, http.StatusConflict, map[string]string{"error": "finish the take before changing playback; Stop saves the current take"})
+				return
+			}
+			id := s.captureID
+			if err := s.finishVocalCapture(id); err != nil {
+				s.transport.setError(err)
+				status := http.StatusUnprocessableEntity
+				if errors.Is(err, errTakeRevision) {
+					status = http.StatusConflict
+				}
+				studioJSON(w, status, map[string]any{"error": err.Error(), "retained": true, "take": id})
+				return
+			}
+			studioJSON(w, http.StatusOK, s.transport.snapshot())
+			return
+		}
 	}
 	quantize := cmd.Quantize(input.Quantize)
 	if input.Action == "launch" || input.Action == "slot" {
@@ -774,6 +894,18 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		s.transport.pause()
 	case "stop":
 		s.transport.stop()
+	case "fullSong":
+		s.transport.stop()
+		if err := s.transport.start(); err != nil {
+			s.transport.setError(err)
+			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
+	case "loop", "loopSection", "audition":
+		if status, err := s.startListeningLocked(input); err != nil {
+			studioJSON(w, status, map[string]string{"error": err.Error()})
+			return
+		}
 	case "home":
 		if err := s.transport.returnToStart(); err != nil {
 			s.transport.setError(err)
@@ -786,7 +918,6 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "launch", "slot", "playFrom":
-		s.mu.Lock()
 		current, err := os.ReadFile(s.path)
 		if err == nil {
 			if p, parseErr := compileStudioSource(s.path, current); parseErr == nil {
@@ -794,17 +925,14 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err != nil || s.lastGoodProject == nil {
-			s.mu.Unlock()
 			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "score is unavailable"})
 			return
 		}
 		if input.Revision == "" || input.Revision != studioRevision(s.lastGoodSource) {
-			s.mu.Unlock()
 			studioJSON(w, http.StatusConflict, map[string]string{"error": "score changed on disk; reload before launching a scene"})
 			return
 		}
 		project := s.lastGoodProject
-		s.mu.Unlock()
 		s.transport.mu.Lock()
 		hasStream := s.transport.stream != nil
 		s.transport.mu.Unlock()
@@ -869,6 +997,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			}
 			fingerprint, hashErr := playSourceHashBytes(s.path, current)
 			if hashErr != nil {
+				_ = prepared.Engine.Close()
 				studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": hashErr.Error()})
 				return
 			}
@@ -880,7 +1009,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be play, stop, trackStop, launch, slot, or playFrom"})
+		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown transport action"})
 		return
 	}
 	studioJSON(w, http.StatusOK, s.transport.snapshot())

@@ -10,22 +10,29 @@ import (
 
 func TestStudioKernelEndpointSelectsOptionalKeysModule(t *testing.T) {
 	directory := t.TempDir()
-	core, keys := filepath.Join(directory, "core.wasm"), filepath.Join(directory, "keys.wasm")
-	for path, data := range map[string]string{core: "core-module", keys: "keys-module"} {
+	core, keys, vocals := filepath.Join(directory, "core.wasm"), filepath.Join(directory, "keys.wasm"), filepath.Join(directory, "vocals.wasm")
+	for path, data := range map[string]string{core: "core-module", keys: "keys-module", vocals: "vocals-module"} {
 		if err := os.WriteFile(path, []byte(data), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
 	t.Setenv("CICADA_KERNEL_WASM", core)
 	t.Setenv("CICADA_KEYS_WASM", keys)
+	t.Setenv("CICADA_VOCALS_WASM", vocals)
 	for _, tc := range []struct{ url, data string }{
-		{"/api/kernel.wasm", "core-module"}, {"/api/kernel.wasm?keys=0", "core-module"}, {"/api/kernel.wasm?keys=1", "keys-module"},
+		{"/api/kernel.wasm", "core-module"}, {"/api/kernel.wasm?keys=0", "core-module"}, {"/api/kernel.wasm?keys=1", "keys-module"}, {"/api/kernel.wasm?vocals=1", "vocals-module"}, {"/api/kernel.wasm?vocals=1&keys=1", "keys-module"},
 	} {
 		response := httptest.NewRecorder()
 		new(studio).kernelWASM(response, httptest.NewRequest("GET", tc.url, nil))
 		if response.Code != 200 || response.Body.String() != tc.data || response.Header().Get("Content-Type") != "application/wasm" || response.Header().Get("Cache-Control") != "no-store" {
 			t.Fatalf("url=%s response=%d data=%q headers=%v", tc.url, response.Code, response.Body.String(), response.Header())
 		}
+	}
+	t.Setenv("CICADA_VOCALS_WASM", filepath.Join(directory, "missing-vocals.wasm"))
+	vocalResponse := httptest.NewRecorder()
+	new(studio).kernelWASM(vocalResponse, httptest.NewRequest("GET", "/api/kernel.wasm?vocals=1", nil))
+	if vocalResponse.Code != 503 || !strings.Contains(vocalResponse.Body.String(), "CICADA_VOCALS_WASM") {
+		t.Fatal("missing vocal module silently fell back to core")
 	}
 	t.Setenv("CICADA_KEYS_WASM", filepath.Join(directory, "missing.wasm"))
 	response := httptest.NewRecorder()

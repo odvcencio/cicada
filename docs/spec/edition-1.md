@@ -159,11 +159,11 @@ song { main*8 }
 
 **Defaults:** Home octave is 2. A parameter's unit may be inferred from its default literal. Choose `voice mono` or `voice poly`. A track may override home octave from 0–6 unless its instrument declares a synthesis parameter named `octave`; in that case the track value sets the synthesis parameter and the instrument's home octave remains in effect.
 
-**Errors:** Duplicate or reserved names report `CICADA-DUPLICATE`; unknown symbols report `CICADA-REFERENCE`; incompatible types or units report `CICADA-UNIT`. Graphs above 128 nodes or 32 stateful nodes report `CICADA-LIMIT`. Every poly track reserves eight voices within the 32-voice project limit, including release tails.
+**Errors:** Duplicate or reserved names report `CICADA-DUPLICATE`; unknown symbols report `CICADA-REFERENCE`; incompatible types or units report `CICADA-UNIT`. Graphs above 128 nodes or 32 stateful nodes report `CICADA-LIMIT`. Every poly track reserves eight voices within the native 256-voice project limit (32 voices for browser/WAM images), including release tails.
 
 Graphs containing `adsr`, `pulse`, or `svf` run at twice the output sample rate and use FIR decimation. Their saw and pulse oscillators use harmonic-limited tables selected at the output sample rate; oscillators at or above 49% of that rate are silent so high additive partials cannot create unrelated pitches. Pulse output has zero DC offset. `svf` is a trapezoidal-integrator lowpass based on [Andrew Simper's linear SVF derivation](https://cytomic.com/files/dsp/SvfLinearTrapOptimised2.pdf). Cutoff clamps to 20 Hz through 45% of the output sample rate, resonance to 0–1, and pulse width to 0.02–0.98. ADSR segments clamp to 0–30 seconds, sustain to 0–1, and release begins at the envelope's current level. Existing graphs without these primitives keep their original rendering behavior.
 
-Poly notes have independent envelopes. When all eight voices are occupied, allocation prefers the quietest released voice, then the oldest held voice, with a 2 ms transition. Repeated pitches release their oldest held instance first. Output gain is fixed by the authored graph; it does not change with note count. Graph output is mono, with stereo positioning and effects supplied by the mixer. Live keyboard/MIDI supports chords; notes patterns currently store one pitch per step.
+Poly notes have independent envelopes. When all eight voices are occupied, allocation prefers the quietest released voice, then the oldest held voice, with a 2 ms transition. Repeated pitches release their oldest held instance first. Output gain is fixed by the authored graph; it does not change with note count. Graph output is mono, with stereo positioning and effects supplied by the mixer. Opt-in polyphonic graph tracks also support authored 2–4-pitch chords in `notes` patterns; see [graph chords](../experimental-polyphony.md) for their separate allocation and input limits. Live note-take commit currently stores one pitch per step.
 
 **Example:**
 
@@ -323,7 +323,7 @@ song { main*4 }
 
 **Syntax (EBNF):** `number` accepts a number with an optional unit suffix; `fraction` accepts a note division.
 
-**Meaning:** Frequency literals accept Hz or kHz; time literals accept ms or s; level literals accept dB. Percent literals express swing, gate, and unit values where specified. Fractions are used for tempo-synced delay divisions.
+**Meaning:** Frequency literals accept Hz or kHz; time literals accept ms or s; level literals accept dB. Percent literals express swing, gate, and unit values where specified. Fractions are used for tempo-synced delay divisions. A delay `time` accepts `1/32`, `1/32T`, `1/32.`, `1/16`, `1/16T`, `1/16.`, `3/16`, `1/8`, `1/8T`, `1/8.`, `1/4`, `1/4T`, `1/4.`, `3/8`, `1/2`, `1/2T`, and `1/2.`, or a free time of 1 ms to 2 s. `T` marks a triplet and a trailing `.` marks a dotted note, so `3/8` and `1/4.` are the same length, as are `3/16` and `1/8.`. The delay `pingpong` setting accepts `on` or `off`; `true` and `false` remain aliases.
 
 **Types and units:** The semantic layer stores frequency in Hz, time in milliseconds where required by source parameters, dB in decibels, ratios as unitless values, tempo in milli-BPM, and note divisions as named rhythmic values.
 
@@ -527,13 +527,13 @@ cicada gen --seed 4242 --key a --scale minor --trace -o generated.cicada
 
 **Syntax (EBNF):** `fx <name> <kind> { settings }` declares an effect instance. The edition-1 shorthand `fx <kind> { settings }` keeps the kind as its name. Effect names share the namespace with tracks and buses.
 
-**Meaning:** A track insert can use one drive instance. Any number of drive instances may be declared, but delay and reverb each support one instance. A named send to a delay or reverb creates that effect return and feeds the music bus. A compressor runs only when inserted on the music bus; its `sidechain` setting keeps its existing behavior. The built-in master limiter always stays last.
+**Meaning:** A track insert accepts an ordered chain of up to eight distinct effect names: drive, EQ, compression, and de-essing. Each track owns independent processor state even when tracks reference the same declaration. Delay and reverb each support one return instance. A named send to a delay or reverb creates that effect return and feeds the music bus. A compressor can run on a track, the music bus, or master. Track and master compressors detect their own input; external `sidechain` remains available on the music bus. The built-in master limiter always stays last.
 
 **Types and units:** Effect parameters keep their registered types, ranges, and defaults. Send routing is described under [Track mixer settings](#track-mixer-settings).
 
 **Defaults:** Unspecified effect settings use the existing parameter registry defaults. A one-name declaration uses that same name as its effect ID and kind.
 
-**Errors:** More than one delay or reverb, a compressor outside the music bus, a compressor track insert, or an insert chain with more than one item reports `CICADA-UNSUPPORTED` naming the construct. Unknown names report `CICADA-REFERENCE`; an unknown effect kind reports `CICADA-UNSUPPORTED`.
+**Errors:** More than one delay or reverb return, unsupported insert kinds, and track compressor external sidechains report `CICADA-UNSUPPORTED`. More than eight track stages reports `CICADA-LIMIT`; repeating an effect name in one chain reports `CICADA-DUPLICATE`. Unknown names report `CICADA-REFERENCE`; an unknown effect kind reports `CICADA-UNSUPPORTED`.
 
 **Example:** Named effects route through the current delay, reverb, drive, and music compressor processors:
 
@@ -590,7 +590,7 @@ song { main }
 
 ## Track mixer settings
 
-**Syntax (EBNF):** Track blocks accept `level`, `pan`, `mute`, `solo`, `insert`, `send <effect> = <level> [pre]`, and `out`. Inserts use `a -> b` notation; P2a runs at most one insert.
+**Syntax (EBNF):** Track blocks accept `level`, `pan`, `mute`, `solo`, `insert`, `send <effect> = <level> [pre]`, and `out`. Inserts use `a -> b` notation and run up to eight stages in order before the fader and both send taps.
 
 **Meaning:** `level = off` is a synonym for `mute = on` and keeps the stored level. `solo = on` uses the engine solo state and emits `CICADA-SOLO` during render and check. `send` names a declared delay or reverb effect. `pre` selects a pre-fader tap for that send alone; without it, the send is post-fader. `out = sfx` selects the SFX bus; the default is music.
 
@@ -598,7 +598,7 @@ song { main }
 
 **Defaults:** Track level is -6 dB, pan is centered, mute and solo are off, there is no insert, sends are zero, sends are post-fader, and output is music.
 
-**Errors:** Sends to buses, sends to unsupported effect kinds, more than one insert, and compressor track inserts report `CICADA-UNSUPPORTED`. Unknown send targets report `CICADA-REFERENCE`. Invalid ranges report `CICADA-PARAM`.
+**Errors:** Sends to buses or unsupported effect kinds report `CICADA-UNSUPPORTED`. More than eight track insert stages reports `CICADA-LIMIT`; duplicate stages report `CICADA-DUPLICATE`. Unknown send targets report `CICADA-REFERENCE`. Invalid ranges report `CICADA-PARAM`.
 
 **Example:** The sends have separate taps and can use either linear gain or dB:
 
@@ -620,7 +620,7 @@ scene main { bass = pulse }
 song { main }
 ```
 
-```cicada-invalid CICADA-UNSUPPORTED
+```cicada
 cicada 2
 fx grit drive {}
 fx second drive {}
