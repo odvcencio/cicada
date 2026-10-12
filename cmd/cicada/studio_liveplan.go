@@ -33,10 +33,10 @@ type livePlan struct {
 	tempoMilli     int64
 }
 
-// studioOfferToken names an offered score by the playback fingerprint, which
-// covers the entry, every explicit source file and the manifest. The entry
-// revision alone cannot tell two edits to a secondary file apart.
-func studioOfferToken(fingerprint [32]byte) string { return hex.EncodeToString(fingerprint[:]) }
+// studioFingerprintKey names playback content (entry, every source file and
+// cicada.mod). It detects change and keys the recording handoff; it is not an
+// offer identity, because the same content can be published more than once.
+func studioFingerprintKey(fingerprint [32]byte) string { return hex.EncodeToString(fingerprint[:]) }
 
 func (plan *livePlan) prepareScore(score *liveplay.Score) {
 	score.SceneParameters = make([][]liveplay.ParameterValue, len(plan.cfg.Scenes))

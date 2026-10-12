@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -39,7 +40,8 @@ type studioTransport struct {
 	cancel            context.CancelFunc
 	last              [32]byte
 	livePlan          *livePlan
-	offers            []studioOffer // Offered scores not yet reported landed, oldest first.
+	offers            []studioOffer // Published scores not yet reported landed, oldest first.
+	publications      uint64        // Last publication ID handed out; never reused.
 	arena             *liveplay.PatchArena
 	patchRevision     uint64
 	playing           bool
@@ -232,12 +234,12 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 				if plan != nil {
 					plan.prepareScore(&next)
 				}
-				next.Revision = studioOfferToken(preparedHash)
+				next.Revision = t.recordOfferLocked(plan)
 				if err := t.stream.Offer(next); err != nil {
+					t.forgetOfferLocked(next.Revision)
 					return err
 				}
-				t.last, t.pending = preparedHash, true
-				t.recordOfferLocked(preparedHash, plan)
+				t.last = preparedHash
 			}
 			requestID, err := t.stream.QueueSongEntry(index, scene)
 			if err != nil {
@@ -363,8 +365,14 @@ func (t *studioTransport) isPlayingFingerprint(fingerprint [32]byte) bool {
 	return t.stream != nil && t.last == fingerprint
 }
 
-// studioOffer pairs an offered score's playback token with the plan compiled
-// for it. The plan is nil when the offer has no complete plan.
+// studioOffer pairs a published score's unique publication token with the
+// plan compiled for it. The plan is nil when the offer has no complete plan.
+//
+// Identity rules. A publication ID is a transport-owned counter, so every Offer
+// has its own token even when its content repeats (A, B, A). The content
+// fingerprint is separate: it only tells poll whether the files changed. The
+// player keeps only the newest offer that has not started, so a landing event
+// names exactly one ledger entry; that entry and every older one are done.
 type studioOffer struct {
 	token string
 	plan  *livePlan
@@ -374,12 +382,47 @@ type studioOffer struct {
 // 32-event buffer, so older offers cannot still report a landing.
 const maxStudioOffers = 64
 
+// studioPublicationToken renders a publication ID as the Score.Revision token.
+func studioPublicationToken(id uint64) string { return "p" + strconv.FormatUint(id, 10) }
+
+// recordOfferLocked allocates the next publication token and queues it before
+// the Offer call, so a landing event cannot arrive ahead of its ledger entry.
 // Called with mu held.
-func (t *studioTransport) recordOfferLocked(fingerprint [32]byte, plan *livePlan) {
+func (t *studioTransport) recordOfferLocked(plan *livePlan) string {
+	t.publications++
+	token := studioPublicationToken(t.publications)
 	if len(t.offers) == maxStudioOffers {
 		t.offers = append(t.offers[:0], t.offers[1:]...)
 	}
-	t.offers = append(t.offers, studioOffer{token: studioOfferToken(fingerprint), plan: plan})
+	t.offers = append(t.offers, studioOffer{token: token, plan: plan})
+	t.pending = true
+	return token
+}
+
+// forgetOfferLocked removes an offer the player rejected. Called with mu held.
+func (t *studioTransport) forgetOfferLocked(token string) {
+	for i, offer := range t.offers {
+		if offer.token == token {
+			t.offers = append(t.offers[:i], t.offers[i+1:]...)
+			break
+		}
+	}
+	t.pending = len(t.offers) > 0
+}
+
+// playbackFingerprint is the one place that hashes committed playback state:
+// the entry file at the transport's own path and every source it names. Poll,
+// activation after any commit (entry or secondary session, changed or no-op),
+// scene launches and the recording handoff all call it, so they cannot
+// disagree about what "unchanged" means. The caller holds pollMu.
+func (t *studioTransport) playbackFingerprint() ([]byte, [32]byte, error) {
+	var empty [32]byte
+	source, err := os.ReadFile(t.path)
+	if err != nil {
+		return nil, empty, err
+	}
+	fingerprint, err := playSourceHashBytes(t.path, source)
+	return source, fingerprint, err
 }
 
 // Called with mu held. A hash mismatch leaves activation unavailable until
@@ -746,12 +789,7 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 func (t *studioTransport) poll() {
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
-	source, err := os.ReadFile(t.path)
-	if err != nil {
-		t.setError(err)
-		return
-	}
-	fingerprint, err := playSourceHashBytes(t.path, source)
+	source, fingerprint, err := t.playbackFingerprint()
 	if err != nil {
 		t.setError(err)
 		return
@@ -759,6 +797,11 @@ func (t *studioTransport) poll() {
 	t.mu.Lock()
 	if fingerprint == t.last {
 		t.mu.Unlock()
+		// The files equal the playing score, so a take armed for other content
+		// can never be published. Drop its handoff.
+		if t.history != nil {
+			t.history.consumeRecordedTake("")
+		}
 		return
 	}
 	stream := t.stream
@@ -775,12 +818,22 @@ func (t *studioTransport) poll() {
 	if err == nil {
 		next, err = compileLiveProjectAtRate(t.path, plan.project, sampleRate)
 	}
-	if err == nil {
-		plan.prepareScore(&next)
-		next.Revision = studioOfferToken(fingerprint)
-		err = stream.Offer(next)
-	}
 	if err != nil {
+		t.setError(err)
+		return
+	}
+	plan.prepareScore(&next)
+	t.mu.Lock()
+	if t.stream != stream {
+		t.mu.Unlock()
+		return
+	}
+	next.Revision = t.recordOfferLocked(plan)
+	t.mu.Unlock()
+	if err := stream.Offer(next); err != nil {
+		t.mu.Lock()
+		t.forgetOfferLocked(next.Revision)
+		t.mu.Unlock()
 		t.setError(err)
 		return
 	}
@@ -790,12 +843,11 @@ func (t *studioTransport) poll() {
 		return
 	}
 	t.last = fingerprint
-	t.recordOfferLocked(fingerprint, plan)
 	// Clear the transport error when a valid revision lands (UX review finding 2).
-	t.pending, t.errText = true, ""
+	t.errText = ""
 	position := stream.Position()
 	t.mu.Unlock()
-	if t.history != nil && !t.history.consumeRecordedTake(studioOfferToken(fingerprint)) {
+	if t.history != nil && !t.history.consumeRecordedTake(studioFingerprintKey(fingerprint)) {
 		t.history.record("queued", "Edit queued for the next bar", position.Bar, position.Step, "")
 	}
 }
@@ -803,7 +855,21 @@ func (t *studioTransport) poll() {
 // activateLocked runs after a successful commit while pollMu still covers the
 // file exchange. An offered engine keeps authority until its render event; a
 // subsequent commit cannot patch against that engine before it starts playing.
-func (t *studioTransport) activateLocked(path string, source []byte, fingerprint [32]byte) {
+//
+// It reads the committed entry and its sources through playbackFingerprint, so
+// a secondary-file session activates against the same state poll hashes. It
+// returns that fingerprint and whether it could be computed.
+func (t *studioTransport) activateLocked() ([32]byte, bool) {
+	source, fingerprint, err := t.playbackFingerprint()
+	if err != nil {
+		return fingerprint, false
+	}
+	path := t.path
+	t.activatePlanLocked(path, source, fingerprint)
+	return fingerprint, true
+}
+
+func (t *studioTransport) activatePlanLocked(path string, source []byte, fingerprint [32]byte) {
 	t.mu.Lock()
 	rate := t.sampleRate
 	t.mu.Unlock()
@@ -1007,7 +1073,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": compileErr.Error()})
 				return
 			}
-			fingerprint, hashErr := playSourceHashBytes(s.path, current)
+			_, fingerprint, hashErr := s.transport.playbackFingerprint()
 			if hashErr != nil {
 				studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": hashErr.Error()})
 				return
