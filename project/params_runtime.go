@@ -8,8 +8,8 @@ import (
 
 	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/internal/paramdefs"
-	keyvoice "m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/kernel/fx"
+	keyvoice "m31labs.dev/cicada/kernel/voice/keyboard"
 )
 
 //go:embed params.json
