@@ -61,6 +61,23 @@ and [the reference report](keys-reference-measurements.md). Unknown reference
 registrations and velocities limit exact comparisons; listening is needed to
 assess the sound.
 
+## Levels
+
+Every modeled keyboard patch has one fixed calibration trim, so the same music
+at the same fader comes out at about the same loudness. The reference for each
+patch is its `examples/keys/<patch>.cicada` file at `level = 0dB`; its first
+four bars measure -24 LUFS integrated (BS.1770, plus or minus 0.5 LU). The trim
+sits at the voice output, in `LevelTrimDB` in `host/keyboard`. It is separate
+from `gain`, `output`, `level` and velocity, which keep their meaning and
+defaults: a score with `output = 6dB` gets the trim plus its 6 dB. Native
+playback, offline render and the keys WASM module apply the same trim.
+`TestKeysReferenceLevels` in `render` measures all 21 patches.
+
+Scores written before this change play their keyboard parts at a different
+loudness: trims range from -5.7 dB (`clav`) to +15.1 dB (`poly_keys`). Re-check
+the balance of existing mixes. The grand piano (`piano`) is a separate voice
+and is not trimmed.
+
 ## Tine and Reed EP controls
 
 | Parameter | Range | Unit | Effect when increased |

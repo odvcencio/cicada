@@ -973,7 +973,7 @@ func compileTracksAll(score *notation.Score, semantic *project.Project, sampleRa
 				if e != nil {
 					return nil, e
 				}
-				voice, err = keyboard.New(sampleRate, &spec)
+				voice, err = keyboard.NewCalibrated(sampleRate, &spec)
 			} else {
 				voice, err = piano.New(sampleRate)
 				if err == nil {
