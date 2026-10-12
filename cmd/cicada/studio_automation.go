@@ -51,7 +51,10 @@ func sceneAutomationSource(source []byte, sceneID, path string, raw json.RawMess
 	if err != nil {
 		return nil, err
 	}
-	if !strings.Contains(path, ".") || !resolved.Descriptor.Live || !remove && !resolved.Descriptor.Automatable {
+	// The scene tempo is the one bare path a scene may set. It is not live and
+	// not automatable: it steps at the scene boundary.
+	tempo := path == "tempo" && resolved.Descriptor.ID == "global.tempo"
+	if !tempo && (!strings.Contains(path, ".") || !resolved.Descriptor.Live || !remove && !resolved.Descriptor.Automatable) {
 		return nil, fmt.Errorf("%s cannot be automated at a scene boundary", path)
 	}
 	node, walker, err := studioDeclaration(source, []string{"scene_decl"}, sceneID)
@@ -71,7 +74,7 @@ func sceneAutomationSource(source []byte, sceneID, path string, raw json.RawMess
 	}
 	for i := 0; i < node.NamedChildCount(); i++ {
 		assignment := node.NamedChild(i)
-		if walker.Type(assignment) != "scene_assignment" || walker.Text(walker.Field(assignment, "target")) != path {
+		if walker.Type(assignment) != "scene_assignment" || walker.Text(walker.Field(assignment, "target")) != path || tempo && !notation.SceneAssignmentIsSetting(path, walker.Text(walker.Field(assignment, "value"))) {
 			continue
 		}
 		if remove {

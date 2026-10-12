@@ -634,7 +634,7 @@ func parseScene(w *loweringWalker, n *gts.Node) Scene {
 		if w.Type(c) == "scene_assignment" {
 			target := w.Text(w.Field(c, "target"))
 			value := w.Field(c, "value")
-			if strings.Contains(target, ".") {
+			if SceneAssignmentIsSetting(target, w.Text(value)) {
 				s.Settings = append(s.Settings, SceneSetting{
 					Path: w.parameterPath(target, w.position(c)), Value: w.Text(value), Position: w.position(c), ValuePosition: w.position(value),
 				})
@@ -644,6 +644,16 @@ func parseScene(w *loweringWalker, n *gts.Node) Scene {
 		}
 	}
 	return s
+}
+
+// SceneAssignmentIsSetting tells a scene setting from a track binding. A dotted
+// target is a parameter path. The bare target "tempo" with a numeric value is
+// the scene tempo; with a name it is a binding for a track called tempo.
+func SceneAssignmentIsSetting(target, value string) bool {
+	if strings.Contains(target, ".") {
+		return true
+	}
+	return target == "tempo" && value != "" && value[0] >= '0' && value[0] <= '9'
 }
 
 func parseSongEntry(w *loweringWalker, n *gts.Node) SongEntry {

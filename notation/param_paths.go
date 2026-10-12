@@ -37,7 +37,7 @@ func validateSceneSettings(score *Score, add func(string, string, string, Positi
 				add(code, message, "error", setting.Position)
 				continue
 			}
-			if !descriptor.Live {
+			if !descriptor.Live && !SceneTempoPath(descriptor.ID) {
 				add("CICADA-UNSUPPORTED", "scene setting "+setting.Path+" is not live", "error", setting.Position)
 				continue
 			}
@@ -46,6 +46,27 @@ func validateSceneSettings(score *Score, add func(string, string, string, Positi
 			}
 		}
 	}
+}
+
+// SceneTempoPath reports whether a registry ID is the one non-live setting a
+// scene may carry: global.tempo, applied as a step change at the scene boundary.
+func SceneTempoPath(id string) bool { return id == "global.tempo" }
+
+// SceneTempoMilli reads the tempo a scene sets, in thousandths of a BPM. It
+// reports false when the scene sets none or the value is not a plain number
+// from 20 to 300.
+func SceneTempoMilli(scene Scene) (int64, bool) {
+	for _, setting := range scene.Settings {
+		if setting.Path != "tempo" {
+			continue
+		}
+		value, err := strconv.ParseFloat(setting.Value, 64)
+		if err != nil || value < 20 || value > 300 {
+			return 0, false
+		}
+		return int64(math.Round(value * 1000)), true
+	}
+	return 0, false
 }
 
 func resolveNotationPath(score *Score, path string) (paramdefs.Descriptor, string, string, string, string) {
@@ -189,7 +210,7 @@ func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {
 		return sceneValueMismatch(descriptor, source)
 	}
 	want := strings.ToLower(descriptor.Unit)
-	if want == "ratio" || want == "" || want == "semitone" || want == "cent" {
+	if want == "bpm" || want == "ratio" || want == "" || want == "semitone" || want == "cent" {
 		want = "unit"
 	}
 	if unit != want {

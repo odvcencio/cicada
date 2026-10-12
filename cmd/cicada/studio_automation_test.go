@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"m31labs.dev/cicada/project"
 )
 
 const automationScore = "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n"
@@ -43,7 +45,10 @@ func TestSceneAutomationPreservesSourceAndValidatesCatalogValues(t *testing.T) {
 		{"main", "bass.cutoff", `"oops\ntrack intruder acid {}"`},
 		{"main", "bass.level", `"2Hz"`},
 		{"main", "bass.insert", `"none"`},
-		{"main", "tempo", `140`},
+		{"main", "tempo", `19`},
+		{"main", "tempo", `301`},
+		{"main", "tempo", `"84Hz"`},
+		{"main", "global.tempo", `84`},
 		{"main", "unknown.pan", `0`},
 		{"missing", "bass.pan", `0`},
 	} {
@@ -84,5 +89,62 @@ func TestSceneAutomationAtomicWriteConflictAndUndo(t *testing.T) {
 	restored, _ := os.ReadFile(path)
 	if undo.Code != 200 || !bytes.Equal(source, restored) {
 		t.Fatal("automation Undo lost the exact source")
+	}
+}
+
+// A scene sets, changes, and removes its tempo through the edit service, and
+// each step undoes to the exact earlier bytes.
+func TestSceneTempoIsAuthoredThroughTheEditService(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	source := []byte(automationScore)
+	if err := os.WriteFile(path, source, 0600); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := studioHandler(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func() []byte { data, _ := os.ReadFile(path); return data }
+	step := func(action, scene, value string, want int) []byte {
+		t.Helper()
+		before := read()
+		edit := studioEdit{Revision: studioRevision(before), Action: action, Scene: scene, Path: "tempo"}
+		if value != "" {
+			edit.Value = json.RawMessage(value)
+		}
+		if response := studioCall(t, handler, "/api/automation", edit); response.Code != want {
+			t.Fatalf("%s %s %s: %d %s", action, scene, value, response.Code, response.Body.String())
+		}
+		return before
+	}
+	step("automation-set", "hold", "84", 200)
+	if !bytes.Contains(read(), []byte("scene hold {\n  tempo = 84\n bass = keep }")) {
+		t.Fatalf("tempo was not added to the scene: %s", read())
+	}
+	p := patternProject(t, read())
+	if milli, ok := project.SceneTempoMilli(p.Scenes[1]); !ok || milli != 84_000 {
+		t.Fatalf("scene tempo = %d, %v", milli, ok)
+	}
+	afterAdd := read()
+	step("automation-set", "hold", "66.5", 200)
+	if !bytes.Contains(read(), []byte("tempo = 66.5")) || bytes.Contains(read(), []byte("tempo = 84")) {
+		t.Fatalf("tempo was not changed in place: %s", read())
+	}
+	afterChange := read()
+	step("automation-remove", "hold", "", 200)
+	if bytes.Contains(read(), []byte("tempo =")) || !bytes.Contains(read(), []byte("bass = keep")) {
+		t.Fatalf("tempo was not removed: %s", read())
+	}
+	step("automation-set", "hold", "301", 422)
+	step("automation-remove", "hold", "", 422)
+	for _, want := range [][]byte{afterChange, afterAdd, source} {
+		// Undo needs the revision of the bytes it reverses.
+		undo := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(read())})
+		if undo.Code != 200 {
+			t.Fatalf("undo: %d %s", undo.Code, undo.Body.String())
+		}
+		if got := read(); !bytes.Equal(got, want) {
+			t.Fatalf("undo restored %q, want %q", got, want)
+		}
 	}
 }
