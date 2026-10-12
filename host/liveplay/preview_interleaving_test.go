@@ -128,6 +128,7 @@ type previewRenderClient struct {
 type previewRenderCounts struct {
 	operations, checks, structuralOffers, supersededPatches int
 	additions, removals                                     int
+	automaticBoundaries, automaticPatched                   int
 }
 
 type previewRenderReference struct {
@@ -151,6 +152,9 @@ type previewRenderReference struct {
 	seek                          int
 	scene                         int
 	launch                        bool
+	// blocks is the index of the next render block within the song entry's
+	// first bar, or -1 when a seek or launch makes the position unmodelled.
+	blocks int
 }
 
 type previewRenderPatch struct {
@@ -235,7 +239,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 		if err != nil {
 			t.Fatal(err)
 		}
-		model := previewRenderReference{tracks: 16, offerTracks: 16, committed: -6, defaults: -6, values: make(map[int]float32), retired: make(map[int]bool)}
+		model := previewRenderReference{tracks: 16, offerTracks: 16, committed: -6, defaults: -6, blocks: 0, values: make(map[int]float32), retired: make(map[int]bool)}
 		for track := range model.otherDefaults {
 			model.otherDefaults[track], model.otherCommitted[track] = -6, -6
 		}
@@ -364,6 +368,17 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 					}
 				}
 				model.start = false
+				model.blocks = -1
+				if model.seek == 0 {
+					model.blocks = 0
+				}
+			}
+			// The song enters scene 1 on the first frame of bar 2, after the
+			// render thread has drained commands. A patch that lands in this
+			// block runs first, so the scene value wins.
+			automatic := model.blocks == previewBarBlocks && model.scene == 0 && !boundary.activates
+			if model.blocks >= 0 {
+				model.blocks++
 			}
 			launched := model.launch && !boundary.activates
 			boundary.sceneChanged = launched && len(model.patches) == 0
@@ -388,6 +403,16 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				patched := applyPatches()
 				captured.sceneChanged = launched && !patched
 				if launched && model.committed == -9 {
+					if gesture := activeGesture(); gesture != 0 && model.values[gesture] == -9 {
+						model.retired[gesture] = true
+					}
+				}
+				if automatic {
+					counts.automaticBoundaries++
+					if patched {
+						counts.automaticPatched++
+					}
+					captured.sceneChanged, model.scene, model.committed = true, 1, -9
 					if gesture := activeGesture(); gesture != 0 && model.values[gesture] == -9 {
 						model.retired[gesture] = true
 					}
@@ -703,6 +728,24 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				}
 			case "settle":
 				failure = settle()
+			case "approach", "approach-boundary":
+				// Render real blocks until the next one is the last block of bar
+				// one (approach) or the first block of bar two (approach-boundary).
+				for boundary != nil && failure == nil {
+					failure = drain()
+				}
+				if failure == nil && (model.paused || model.blocks < 0 || model.scene != 0 || model.hasOffer || model.start) {
+					failure = fmt.Errorf("automatic boundary is unmodelled: blocks %d scene %d", model.blocks, model.scene)
+				}
+				target := previewBarBlocks - 1
+				if op.kind == "approach-boundary" {
+					target = previewBarBlocks
+				}
+				for failure == nil && model.blocks < target {
+					if begin(); failure == nil && boundary != nil {
+						failure = drain()
+					}
+				}
 			default:
 				failure = fmt.Errorf("unknown operation %q", op.kind)
 			}
@@ -773,14 +816,38 @@ func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 			previewRenderOperation{kind: "render-begin"}, previewRenderOperation{kind: "render-drain-N"},
 			previewRenderOperation{kind: secondKind, value: values[(seed+4)%5]}, previewRenderOperation{kind: "activate"},
 			previewRenderOperation{kind: "settle"}, previewRenderOperation{kind: "seek-forward"}, previewRenderOperation{kind: "settle"},
-			previewRenderOperation{kind: "seek-backward"}, previewRenderOperation{kind: "settle"}, previewRenderOperation{kind: "Close"})
+			previewRenderOperation{kind: "seek-backward"}, previewRenderOperation{kind: "settle"})
+		// A 1-in-16 sample also crosses the automatic bar-two boundary with a
+		// patch before it, in it, or after it, and with or without a preview.
+		if seed%16 == 0 {
+			variant := (seed / 16) % 3
+			if (seed/48)%2 == 0 {
+				operations = append(operations, previewRenderOperation{kind: "set", client: 0, value: values[(seed/96)%5]})
+			}
+			patch := previewRenderOperation{kind: "patch", value: values[(seed+2)%5]}
+			switch variant {
+			case 0:
+				operations = append(operations, previewRenderOperation{kind: "approach"}, patch, previewRenderOperation{kind: "settle"})
+			case 1:
+				operations = append(operations, previewRenderOperation{kind: "approach-boundary"}, patch, previewRenderOperation{kind: "settle"})
+			default:
+				operations = append(operations, previewRenderOperation{kind: "approach-boundary"},
+					previewRenderOperation{kind: "render-begin"}, previewRenderOperation{kind: "render-drain-N"}, patch, previewRenderOperation{kind: "settle"})
+			}
+			operations = append(operations, previewRenderOperation{kind: "cancel", client: 0}, previewRenderOperation{kind: "settle"})
+		}
+		operations = append(operations, previewRenderOperation{kind: "Close"})
 		if err := runPreviewRenderLifecycle(t, operations, &counts); err != nil {
 			t.Fatalf("seed %d: %v; minimized counterexample: %v", seed, err, minimizePreviewRenderLifecycle(t, operations))
 		}
 	}
+	if counts.automaticBoundaries == 0 || counts.automaticPatched == 0 {
+		t.Fatalf("no automatic boundary crossed with a patch: %d boundaries, %d patched", counts.automaticBoundaries, counts.automaticPatched)
+	}
 	if counts.additions == 0 || counts.removals == 0 {
 		t.Fatal("publication schedules did not add and remove tracks")
 	}
+	t.Logf("automatic boundaries %d, with a same-block patch %d", counts.automaticBoundaries, counts.automaticPatched)
 	t.Logf("landed additions %d, removals %d", counts.additions, counts.removals)
 	t.Logf("executed operations %d, parameter/default checks %d, structural offers %d, superseded batches %d", counts.operations, counts.checks, counts.structuralOffers, counts.supersededPatches)
 	t.Logf("%d seeds, %d random operations with controlled snapshot/drain boundaries, pause/resume and shutdown", seeds, seeds*steps)

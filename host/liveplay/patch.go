@@ -387,15 +387,20 @@ func (p *Player) noteSceneCommitted(index int, blockTick int64) {
 		if track == 0xff {
 			track = 16
 		}
-		// A same-tick patch follows scene launch in the kernel command order.
-		// A later transition within this block supersedes the patch instead.
-		if p.current.Engine.CurrentSceneTick() <= blockTick && p.blockParameters[track][parameter.ID]>>32 != 0 {
+		// Only a queued launch drained with the patch runs before it: the
+		// kernel orders launches ahead of parameter changes. An automatic
+		// song transition runs after command draining, and a later transition
+		// within this block follows the patch too; both supersede it.
+		if p.current.Engine.CurrentSceneTick() <= blockTick && p.blockParameters[track][parameter.ID]>>32 != 0 &&
+			p.reconstructed[track][parameter.ID]>>32 != 0 {
 			return
 		}
 		p.recordCommitted(parameter.Track, parameter.ID, parameter.Value)
 	})
 }
 
+// notePendingScenes leaves the values of launches queued ahead of this block's
+// patches in p.reconstructed. noteSceneCommitted reads them after Render.
 func (p *Player) notePendingScenes(tick int64) {
 	clear(p.reconstructed[:])
 	p.current.Engine.VisitPendingSceneParameters(tick, func(setting engine.SceneSetting, _ bool) {
