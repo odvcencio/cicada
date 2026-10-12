@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/edit/rendercheck"
 )
 
 func TestLSPCompilerReturnsNamedPlacementPlan(t *testing.T) {
@@ -440,5 +441,56 @@ func TestRenderCacheKeyFollowsFilesStagedByABatch(t *testing.T) {
 	}
 	if fake.calls != 2 {
 		t.Fatalf("renders=%d, want 2 (a repeated staged state hits, a changed one misses)", fake.calls)
+	}
+}
+
+// flipRender changes the project right before its first render reads it.
+type flipRender struct {
+	edits.StagedRenderCheck
+	renders *int
+	before  func()
+}
+
+func (f flipRender) HashWith(source []byte, files map[string][]byte) (string, error) {
+	if *f.renders++; *f.renders == 1 && f.before != nil {
+		f.before()
+	}
+	return f.StagedRenderCheck.HashWith(source, files)
+}
+
+func (f flipRender) Hash(source []byte) (string, error) { return f.HashWith(source, nil) }
+
+// A render whose inputs changed under it is discarded, not cached. After the
+// project is restored the next request renders again; the real render shows
+// the conversion changes the audio, so no action is offered either time.
+func TestRejectedComparisonLeavesNoCachedApprovalInTheLSP(t *testing.T) {
+	const chance = "1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50"
+	entry := "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
+	path := writePeerProject(t, entry, peerDrums(chance))
+	peer := filepath.Join(filepath.Dir(path), "part.cicada")
+	renders, factories := 0, 0
+	previous := newRenderCheck
+	newRenderCheck = func(path string, buffers map[string][]byte) edits.RenderCheck {
+		real := rendercheck.NewWith(path, buffers).(edits.StagedRenderCheck)
+		factories++
+		if factories == 1 {
+			return flipRender{StagedRenderCheck: real, renders: &renders, before: func() {
+				_ = os.WriteFile(peer, []byte(peerDrums("1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 .")), 0o600)
+			}}
+		}
+		// The second request starts from the restored project.
+		_ = os.WriteFile(peer, []byte(peerDrums(chance)), 0o600)
+		return flipRender{StagedRenderCheck: real, renders: &renders}
+	}
+	t.Cleanup(func() { newRenderCheck = previous })
+	request := func() map[string]any {
+		return map[string]any{"range": region{Start: position{Line: 2}, End: position{Line: 2}}, "context": map[string]any{"diagnostics": []any{}, "only": []string{"refactor"}}}
+	}
+	replies := actionFrames(t, path, entry, request(), request())
+	if len(replies[0]) != 0 || len(replies[1]) != 0 {
+		t.Fatalf("offered after a rejected comparison: %v %v", replies[0], replies[1])
+	}
+	if renders < 3 {
+		t.Fatalf("the second request did not render again (%d renders)", renders)
 	}
 }

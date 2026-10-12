@@ -100,14 +100,14 @@ func (c *cachedCheck) bind(inner edits.RenderCheck, key func([]byte, map[string]
 }
 
 // InputIdentity names the project inputs (including open buffers) a render reads.
-func (c *cachedCheck) InputIdentity(source []byte) (string, bool) {
+func (c *cachedCheck) InputIdentity(source []byte, files map[string][]byte) (string, bool) {
 	c.mu.Lock()
 	key := c.key
 	c.mu.Unlock()
 	if key == nil {
 		return "", true
 	}
-	return key(source, nil)
+	return key(source, files)
 }
 
 func (c *cachedCheck) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
@@ -128,15 +128,24 @@ func (c *cachedCheck) HashWith(source []byte, files map[string][]byte) (string, 
 	}
 	revision := edits.Revision(source)
 	if c.key != nil {
+		// The key names exactly the inputs this render reads (entry, open
+		// buffers, staged files and their dependencies). Take it before and
+		// after the render and keep the result only if both are available and
+		// equal.
 		var ok bool
 		if revision, ok = c.key(source, files); !ok {
-			return render()
+			return "", edits.ErrProjectChanged
 		}
 	}
 	if result, ok := c.byRevision[revision]; ok {
 		return result.hash, result.err
 	}
 	hash, err := render()
+	if c.key != nil {
+		if after, ok := c.key(source, files); !ok || after != revision {
+			return "", edits.ErrProjectChanged
+		}
+	}
 	if c.byRevision == nil || len(c.byRevision) >= cachedCheckLimit {
 		c.byRevision = make(map[string]hashResult)
 	}

@@ -1,6 +1,7 @@
 package rendercheck
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -186,68 +187,52 @@ func TestIdentityTracksEveryRenderInput(t *testing.T) {
 	}
 }
 
-func TestCachedSkipsTheCacheWhenInputsCannotBeIdentified(t *testing.T) {
+func TestCachedRefusesWhenInputsCannotBeIdentified(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "main.cicada") // no such score and an invalid source
 	counted := &countingCheck{}
 	check := Cached(path, counted)
 	for range 3 {
-		if _, err := check.Hash([]byte("not a score")); err != nil {
-			t.Fatal(err)
+		if _, err := check.Hash([]byte("not a score")); !errors.Is(err, edits.ErrProjectChanged) {
+			t.Fatalf("got %v", err)
 		}
 	}
-	if counted.calls != 3 {
-		t.Fatalf("inner called %d times, want 3 uncached calls", counted.calls)
+	if counted.calls != 0 {
+		t.Fatalf("rendered %d times without a usable key", counted.calls)
 	}
 }
 
-// An unsaved editor buffer replaces the file on disk for both the key and the render.
-func TestIdentityAndRenderSeeUnsavedBuffers(t *testing.T) {
-	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(plainSteps)})
-	part := filepath.Join(filepath.Dir(path), "patterns.cicada")
-	entry := []byte(peerMain)
-	disk, ok := Identity(path, entry, nil)
-	buffer, ok2 := Identity(path, entry, map[string][]byte{part: []byte(peerPatterns(chanceSteps))})
-	same, ok3 := Identity(path, entry, map[string][]byte{part: []byte(peerPatterns(plainSteps))})
-	if !ok || !ok2 || !ok3 || disk == buffer || disk != same {
-		t.Fatalf("identity: disk=%s buffer=%s same=%s", disk, buffer, same)
+// mutatingInner changes the project right before its first render reads it.
+type mutatingInner struct {
+	edits.StagedRenderCheck
+	calls  int
+	before func()
+}
+
+func (m *mutatingInner) HashWith(source []byte, files map[string][]byte) (string, error) {
+	if m.calls++; m.calls == 1 && m.before != nil {
+		m.before()
 	}
-	silent, err := New(path).Hash(entry)
-	if err != nil {
+	return m.StagedRenderCheck.HashWith(source, files)
+}
+
+// A render that read different inputs than its key describes must not be remembered.
+func TestCachedDiscardsAResultWhoseInputsChangedDuringTheRender(t *testing.T) {
+	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(chanceSteps)})
+	peer := filepath.Join(filepath.Dir(path), "patterns.cicada")
+	entry := []byte(peerMain)
+	inner := &mutatingInner{StagedRenderCheck: New(path).(edits.StagedRenderCheck)}
+	inner.before = func() { _ = os.WriteFile(peer, []byte(peerPatterns(plainSteps)), 0o600) }
+	check := Cached(path, inner)
+	if _, err := check.Hash(entry); !errors.Is(err, edits.ErrProjectChanged) {
+		t.Fatalf("changed during the render: %v", err)
+	}
+	// The project is restored. The retry must render again instead of finding
+	// an approval left by the rejected attempt.
+	if err := os.WriteFile(peer, []byte(peerPatterns(chanceSteps)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	audible, err := NewWith(path, map[string][]byte{part: []byte(peerPatterns(chanceSteps))}).Hash(entry)
-	if err != nil || audible == silent {
-		t.Fatalf("buffer not rendered: %v", err)
-	}
-}
-
-// Files staged by an edit batch (an upgraded cicada.mod, a changed peer) are
-// part of the key and of the render.
-func TestStagedFilesChangeTheKeyAndTheRender(t *testing.T) {
-	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(plainSteps)})
-	dir := filepath.Dir(path)
-	entry := []byte(peerMain)
-	part := filepath.Join(dir, "patterns.cicada")
-	staged := map[string][]byte{part: []byte(peerPatterns(chanceSteps))}
-	disk, _ := Identity(path, entry, nil)
-	withStaged, ok := Identity(path, entry, staged)
-	manifestStaged, ok2 := Identity(path, entry, map[string][]byte{filepath.Join(dir, "cicada.mod"): []byte(peerManifest + "\n")})
-	if !ok || !ok2 || withStaged == disk || manifestStaged == disk {
-		t.Fatalf("staged files did not change the key: %v %v", ok, ok2)
-	}
-	counted := &countedCheck{inner: New(path)}
-	check := Cached(path, counted)
-	hashes := map[string]string{}
-	for name, files := range map[string]map[string][]byte{"disk": nil, "staged": staged} {
-		for range 2 {
-			h, err := check.HashWith(entry, files)
-			if err != nil {
-				t.Fatal(err)
-			}
-			hashes[name] = h
-		}
-	}
-	if counted.calls.Load() != 2 || hashes["disk"] == hashes["staged"] {
-		t.Fatalf("renders=%d, disk=%s staged=%s", counted.calls.Load(), hashes["disk"], hashes["staged"])
+	rendersBefore := inner.calls
+	if _, err := check.Hash(entry); err != nil || inner.calls != rendersBefore+1 {
+		t.Fatalf("retry: err=%v renders=%d, want %d", err, inner.calls, rendersBefore+1)
 	}
 }

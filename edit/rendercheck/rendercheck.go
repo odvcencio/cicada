@@ -54,8 +54,8 @@ func layer(base, staged map[string][]byte) map[string][]byte {
 }
 
 // InputIdentity names the project inputs a render of source reads.
-func (c check) InputIdentity(source []byte) (string, bool) {
-	return Identity(c.path, source, c.overrides)
+func (c check) InputIdentity(source []byte, files map[string][]byte) (string, bool) {
+	return Identity(c.path, source, layer(c.overrides, files))
 }
 
 func merged(overrides map[string][]byte, path string, source []byte) map[string][]byte {
@@ -128,7 +128,9 @@ func CachedBy(key func(source []byte, files map[string][]byte) (string, bool), i
 }
 
 // InputIdentity names the project inputs a render of source reads.
-func (c *cached) InputIdentity(source []byte) (string, bool) { return c.key(source, nil) }
+func (c *cached) InputIdentity(source []byte, files map[string][]byte) (string, bool) {
+	return c.key(source, files)
+}
 
 func (c *cached) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
 
@@ -141,16 +143,26 @@ func (c *cached) HashWith(source []byte, files map[string][]byte) (string, error
 		}
 		return c.inner.Hash(source)
 	}
+	// The key names exactly the inputs this render reads. It is taken before
+	// and after the render; a result is kept only if both are available and
+	// equal, because otherwise the renderer may have read different inputs than
+	// the key describes.
 	key, ok := c.key(source, files)
 	if !ok {
-		return render()
+		return "", edits.ErrProjectChanged
+	}
+	c.mu.Lock()
+	if result, hit := c.by[key]; hit {
+		c.mu.Unlock()
+		return result.hash, result.err
+	}
+	c.mu.Unlock()
+	hash, err := render()
+	if after, ok := c.key(source, files); !ok || after != key {
+		return "", edits.ErrProjectChanged
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if result, ok := c.by[key]; ok {
-		return result.hash, result.err
-	}
-	hash, err := render()
 	if c.by == nil || len(c.by) >= cachedLimit {
 		c.by = make(map[string]cachedResult)
 	}

@@ -341,13 +341,15 @@ type identifiedCheck struct {
 	fakeCheck
 	identities []string // returned in order, the last one repeating
 	asked      int
+	sources    []string // every source an identity was asked for
 }
 
 func (f *identifiedCheck) HashWith(source []byte, _ map[string][]byte) (string, error) {
 	return f.Hash(source)
 }
 
-func (f *identifiedCheck) InputIdentity([]byte) (string, bool) {
+func (f *identifiedCheck) InputIdentity(source []byte, _ map[string][]byte) (string, bool) {
+	f.sources = append(f.sources, string(source))
 	identity := f.identities[min(f.asked, len(f.identities)-1)]
 	f.asked++
 	return identity, identity != ""
@@ -370,7 +372,7 @@ func TestRenderComparisonRefusesWhenTheProjectChangesBetweenRenders(t *testing.T
 			}
 			stable := &identifiedCheck{identities: []string{"verified"}}
 			got, err := applyArrange(c.source, c.kind, Options{RenderCheck: stable})
-			if err != nil || got.RenderIdentity != "verified" || !got.RenderChecked {
+			if err != nil || got.RenderIdentity != "verified|verified" || !got.RenderChecked {
 				t.Fatalf("stable: %v identity=%q", err, got.RenderIdentity)
 			}
 		})
@@ -414,5 +416,34 @@ func TestGeneratedPlacementNamesStayWithinTheIdentifierLimit(t *testing.T) {
 				t.Fatalf("name %q (%d)", name, len(name))
 			}
 		}
+	}
+}
+
+// The identity names what was rendered: the working source after earlier
+// intents, not the entry Apply was called with.
+func TestRenderIdentityIsTakenFromTheWorkingSource(t *testing.T) {
+	original := "title \"original\"\ntrack bass acid {}\npattern hits { c3 . c4 . }\nscene a { bass = hits }\nsong { a*2 }\n"
+	working := strings.Replace(original, "original", "working", 1)
+	check := &identifiedCheck{identities: []string{"stable"}}
+	raw := `{"version":1,"intents":[{"kind":"replacetext","source":` + strconv.Quote(working) + `},{"kind":"convertsongtoarrange"}]}`
+	var env Envelope
+	if err := json.Unmarshal([]byte(raw), &env); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Apply([]byte(original), env, Options{Compiler: arrangeCompiler{}, RenderCheck: check})
+	if err != nil || got.RenderIdentity == "" || got.RenderRecheck == nil {
+		t.Fatalf("apply: %v", err)
+	}
+	if len(check.sources) == 0 {
+		t.Fatal("no identity was taken")
+	}
+	for _, source := range check.sources {
+		if strings.Contains(source, "original") {
+			t.Fatalf("identity taken from the original entry:\n%s", source)
+		}
+	}
+	before := len(check.sources)
+	if _, ok := got.RenderRecheck(); !ok || len(check.sources) == before || strings.Contains(check.sources[len(check.sources)-1], "original") {
+		t.Fatal("the recheck did not use the working source")
 	}
 }

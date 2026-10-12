@@ -1,7 +1,9 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -9,6 +11,8 @@ import (
 	"testing"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/edit/rendercheck"
+	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/project"
 )
 
@@ -148,12 +152,17 @@ func TestRenderCheckedProposalIsRefusedWhenTheIntentNoLongerHolds(t *testing.T) 
 type changeAfterRenders struct {
 	edits.IdentifiedRenderCheck
 	calls  int
+	at     int // the call after which mutate runs; 2 when zero
 	mutate func()
 }
 
 func (c *changeAfterRenders) HashWith(source []byte, files map[string][]byte) (string, error) {
 	hash, err := c.IdentifiedRenderCheck.HashWith(source, files)
-	if c.calls++; c.calls == 2 {
+	at := c.at
+	if at == 0 {
+		at = 2
+	}
+	if c.calls++; c.calls == at {
 		c.mutate()
 	}
 	return hash, err
@@ -215,13 +224,13 @@ func TestRenderIdentityIsRecheckedBeforeTheCommit(t *testing.T) {
 	if err != nil || result.RenderIdentity == "" || !result.RenderChecked {
 		t.Fatalf("apply: %v identity=%q", err, result.RenderIdentity)
 	}
-	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, []byte(proposalSongMain)); err != nil {
+	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, result.RenderRecheck); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, []byte(proposalSongMain)); err == nil || !strings.Contains(err.Error(), "changed during the render check") {
+	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, result.RenderRecheck); err == nil || !strings.Contains(err.Error(), "changed during the render check") {
 		t.Fatalf("recheck: %v", err)
 	}
 }
@@ -275,7 +284,7 @@ func TestCommitTailRefusesStaleOrMissingRenderIdentity(t *testing.T) {
 	commit := func(identity string) commitOutcome {
 		s.mu.Lock()
 		defer s.mu.Unlock()
-		mutation := studioMutation{Source: result.Source, RenderChecked: true, RenderIdentity: identity}
+		mutation := studioMutation{Source: result.Source, RenderChecked: true, RenderIdentity: identity, RenderRecheck: result.RenderRecheck}
 		return s.commitMutationLocked(studioEdit{Revision: studioRevision([]byte(proposalSongMain))}, []byte(proposalSongMain), mutation, nil, studioHistoryWriteNew, 0, commitHook{})
 	}
 	if outcome := commit(""); outcome.Status != 409 {
@@ -289,5 +298,103 @@ func TestCommitTailRefusesStaleOrMissingRenderIdentity(t *testing.T) {
 	}
 	if outcome := commit(result.RenderIdentity); outcome.Status != 200 {
 		t.Fatalf("verified identity: %d %v", outcome.Status, outcome.Response)
+	}
+}
+
+// flipBeforeRender changes the project right before its first render reads it.
+type flipBeforeRender struct {
+	edits.StagedRenderCheck
+	renders int
+	before  func()
+}
+
+func (f *flipBeforeRender) HashWith(source []byte, files map[string][]byte) (string, error) {
+	if f.renders++; f.renders == 1 {
+		f.before()
+	}
+	return f.StagedRenderCheck.HashWith(source, files)
+}
+
+// A render that read different inputs than the cache key describes is discarded.
+// After the project is restored a retry must render again, and a real render
+// shows the conversion changes the audio, so it is refused.
+func TestRejectedComparisonLeavesNoCachedApproval(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	for _, route := range []string{"/api/intents", "/api/proposals"} {
+		t.Run(route, func(t *testing.T) {
+			p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalChance))
+			s, err := newStudio(p.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = s.shutdown() })
+			inner := &flipBeforeRender{StagedRenderCheck: rendercheck.New(p.path).(edits.StagedRenderCheck)}
+			inner.before = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalPlain)), 0o600) }
+			restore := func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600) }
+			s.renderCheck = &changeAfterRenders{IdentifiedRenderCheck: rendercheck.Cached(p.path, inner), at: 1, mutate: restore}
+			env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
+			var body any = env
+			if route == "/api/proposals" {
+				body = edits.Proposal{Envelope: env}
+			}
+			handler := s.domainRoutes()
+			r := studioCall(t, handler, route, body)
+			if r.Code != 422 || !strings.Contains(r.Body.String(), "the project changed during the render check; try again") {
+				t.Fatalf("first attempt: %d %s", r.Code, r.Body.String())
+			}
+			rendersAfterFirst := inner.renders
+			r = studioCall(t, handler, route, body)
+			if r.Code != 422 || !strings.Contains(r.Body.String(), "chance steps") || inner.renders <= rendersAfterFirst {
+				t.Fatalf("retry: %d %s (renders %d -> %d)", r.Code, r.Body.String(), rendersAfterFirst, inner.renders)
+			}
+			if got, _ := os.ReadFile(p.path); string(got) != proposalSongMain || len(studioHistoryEdits(t, handler)) != 0 {
+				t.Fatal("a refused request wrote")
+			}
+		})
+	}
+}
+
+// V6: an earlier intent in the batch (ReplaceText) introduces a sampler. The
+// verified identity describes that working score, so removing the sample after
+// acceptance compiles is caught by the commit tail.
+func TestRenderIdentityCoversDependenciesIntroducedByTheBatch(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.cicada")
+	original := "cicada 2\ntrack bass acid {}\npattern melody { c3 . c4 . }\nscene a { bass = melody }\nscene b { bass = melody }\nsong { a*2 b*2 }\n"
+	wav := testwav.Bytes(48000, 1, 16, 480, 1)
+	sample := filepath.Join(dir, "wave.wav")
+	for name, data := range map[string][]byte{"main.cicada": []byte(original), "wave.wav": wav} {
+		if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	working := fmt.Sprintf("cicada 2\nasset wave \"wave.wav\" { sha256=\"%x\" format=wav frames=480 rate=48000Hz channels=1 }\nsampler hit { asset=wave root=c3 mode=oneshot voices=8 }\ntrack lead hit {}\npattern melody { c3 . c3 . }\nscene a { lead = melody }\nscene b { lead = melody }\nsong { a*2 b*2 }\n", sha256.Sum256(wav))
+	s, err := newStudio(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.shutdown() })
+	handler := s.domainRoutes()
+	proposal := edits.Proposal{Envelope: edits.Envelope{Version: 1, Revision: studioRevision([]byte(original)), Intents: []edits.Intent{&edits.ReplaceText{Source: working}, &edits.ConvertSongToArrange{}}}}
+	r := studioCall(t, handler, "/api/proposals", proposal)
+	var staged struct{ ID string }
+	if r.Code != 200 || json.Unmarshal(r.Body.Bytes(), &staged) != nil || staged.ID == "" {
+		t.Fatalf("stage: %d %s", r.Code, r.Body.String())
+	}
+	previous := studioCompile
+	t.Cleanup(func() { studioCompile = previous })
+	studioCompile = func(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
+		compiled, err := previous(path, source, overrides)
+		_ = os.Remove(sample)
+		return compiled, err
+	}
+	r = studioCall(t, handler, "/api/proposals/"+staged.ID+"/accept", map[string]any{})
+	studioCompile = previous
+	if r.Code != 409 || !strings.Contains(r.Body.String(), "the project changed during the render check; try again") {
+		t.Fatalf("accept: %d %s", r.Code, r.Body.String())
+	}
+	if got, _ := os.ReadFile(path); string(got) != original || len(studioHistoryEdits(t, handler)) != 0 {
+		t.Fatal("the commit tail wrote a score that cannot render")
 	}
 }

@@ -2,6 +2,7 @@ package edit
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strconv"
 	"unicode/utf8"
@@ -307,38 +308,49 @@ func (b batchCheck) Hash(source []byte) (string, error) {
 	return b.check.Hash(source)
 }
 
-// causeProjectChanged is the refusal when project inputs changed while a render
-// comparison ran, so neither render can be trusted.
-const causeProjectChanged = "the project changed during the render check; try again"
-
 // compareRenders hashes before and after through the batch-bound check and
 // reports whether they match. When the check identifies its inputs, the
 // identity is taken before the first render and confirmed after the second;
 // a difference (or an identity that cannot be computed) refuses.
 func (c *Context) compareRenders(intent string, check RenderCheck, before, after []byte) (bool, error) {
+	changed := &RefusalError{Intent: intent, Cause: ErrProjectChanged.Error()}
 	guard, guarded := c.Options.RenderCheck.(IdentifiedRenderCheck)
+	files := c.fileOverrides()
+	// The identity covers both renders' sources with the files staged so far,
+	// so dependencies an earlier intent introduced are included.
+	recheck := func() (string, bool) {
+		a, ok := guard.InputIdentity(before, files)
+		if !ok {
+			return "", false
+		}
+		b, ok := guard.InputIdentity(after, files)
+		return a + "|" + b, ok
+	}
 	var first string
 	if guarded {
 		var ok bool
-		if first, ok = guard.InputIdentity(c.original); !ok {
-			return false, &RefusalError{Intent: intent, Cause: causeProjectChanged}
+		if first, ok = recheck(); !ok {
+			return false, changed
 		}
 	}
 	a, err := check.Hash(before)
-	if err != nil {
-		return false, err
-	}
-	b, err := check.Hash(after)
-	if err != nil {
-		return false, err
-	}
-	if guarded {
-		if last, ok := guard.InputIdentity(c.original); !ok || last != first || c.identity != "" && c.identity != first {
-			return false, &RefusalError{Intent: intent, Cause: causeProjectChanged}
+	if err == nil {
+		var b string
+		if b, err = check.Hash(after); err == nil {
+			if guarded {
+				if last, ok := recheck(); !ok || last != first {
+					return false, changed
+				}
+				c.identities = append(c.identities, first)
+				c.rechecks = append(c.rechecks, recheck)
+			}
+			return a == b, nil
 		}
-		c.identity = first
 	}
-	return a == b, nil
+	if errors.Is(err, ErrProjectChanged) {
+		return false, changed
+	}
+	return false, err
 }
 
 // renderCheckFor returns the configured check bound to every file this batch

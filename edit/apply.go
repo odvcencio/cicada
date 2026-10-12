@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 
 	"m31labs.dev/cicada/notation"
 )
@@ -18,10 +19,14 @@ type Result struct {
 	// RenderChecked reports that an intent consulted the render check, so the
 	// result depends on rendered audio and not only on source text.
 	RenderChecked bool
-	// RenderIdentity is the input identity taken before the first render and
-	// confirmed after the last; empty when the check does not identify inputs.
-	// Hosts compare it again right before committing.
+	// RenderIdentity is the identity of exactly the inputs the renders used
+	// (the working source at that point in the batch, the files staged so far
+	// and what they reference), taken before the first render and confirmed
+	// after the last; empty when the check does not identify inputs.
+	// RenderRecheck recomputes it from the same sources and staged files so a
+	// host can compare it again right before committing.
 	RenderIdentity string
+	RenderRecheck  func() (identity string, ok bool)
 }
 
 // File is an auxiliary source the commit writes atomically with the score.
@@ -43,17 +48,17 @@ func Handle(kind string, handler Handler) {
 }
 
 type Context struct {
-	Source    []byte // working source; handlers replace it
-	Options   Options
-	Envelope  Envelope
-	plan      *Plan
-	files     []File
-	fileIndex map[string]int
-	label     string
-	rendered  bool
-	original  []byte // the source Apply was called with
-	identity  string // input identity verified around the render comparisons
-	response  map[string]any
+	Source     []byte // working source; handlers replace it
+	Options    Options
+	Envelope   Envelope
+	plan       *Plan
+	files      []File
+	fileIndex  map[string]int
+	label      string
+	rendered   bool
+	identities []string                // verified identity of each render comparison
+	rechecks   []func() (string, bool) // recompute each identity from the same inputs
+	response   map[string]any
 }
 
 // Parse parses the working source standalone, as today's writers do.
@@ -172,7 +177,7 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 	if env.Revision != "" && env.Revision != Revision(source) {
 		return nil, &ConflictError{Expected: env.Revision, Actual: Revision(source)}
 	}
-	ctx := &Context{Source: bytes.Clone(source), Options: opts, Envelope: env, original: bytes.Clone(source)}
+	ctx := &Context{Source: bytes.Clone(source), Options: opts, Envelope: env}
 	for _, intent := range env.Intents {
 		handler := handlers[intent.Kind()]
 		if handler == nil {
@@ -189,7 +194,22 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered, RenderIdentity: ctx.identity}
+	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered}
+	if len(ctx.rechecks) > 0 {
+		result.RenderIdentity = strings.Join(ctx.identities, "\n")
+		rechecks := ctx.rechecks
+		result.RenderRecheck = func() (string, bool) {
+			parts := make([]string, 0, len(rechecks))
+			for _, recheck := range rechecks {
+				identity, ok := recheck()
+				if !ok {
+					return "", false
+				}
+				parts = append(parts, identity)
+			}
+			return strings.Join(parts, "\n"), true
+		}
+	}
 	result.Unchanged = bytes.Equal(ctx.Source, source) && len(ctx.files) == 0
 	return result, nil
 }

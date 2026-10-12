@@ -29,14 +29,20 @@ type StagedRenderCheck interface {
 	HashWith(source []byte, files map[string][]byte) (string, error)
 }
 
-// IdentifiedRenderCheck can name the project inputs a render reads (see
-// rendercheck.Identity). A comparison takes the identity before its first
-// render and after its second and refuses if the project changed in between.
+// IdentifiedRenderCheck can name the project inputs a render of source reads
+// (see rendercheck.Identity), given the files the batch has staged. A
+// comparison takes the identity of exactly what it renders before the first
+// render and after the second, and refuses if the project changed in between.
 // ok is false when the inputs cannot be identified.
 type IdentifiedRenderCheck interface {
 	StagedRenderCheck
-	InputIdentity(source []byte) (identity string, ok bool)
+	InputIdentity(source []byte, files map[string][]byte) (identity string, ok bool)
 }
+
+// ErrProjectChanged is returned by a render check, and becomes a refusal, when
+// project inputs changed (or cannot be identified) while a render ran, so the
+// result must not be used or remembered.
+var ErrProjectChanged = errors.New("the project changed during the render check; try again")
 
 var ErrNoRenderCheck = errors.New("render check unavailable; the conversion is refused rather than risk changing the music")
 

@@ -603,6 +603,9 @@ type studioMutation struct {
 	// before the write, and refuses if it changed or is unavailable.
 	RenderChecked  bool
 	RenderIdentity string
+	// RenderRecheck recomputes the identity from the same working sources and
+	// staged files the renders used.
+	RenderRecheck func() (string, bool)
 }
 
 type studioAuxiliaryFile struct {

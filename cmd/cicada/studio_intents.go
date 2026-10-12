@@ -14,7 +14,6 @@ import (
 	"time"
 
 	edits "m31labs.dev/cicada/edit"
-	"m31labs.dev/cicada/edit/rendercheck"
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/migration"
 	"m31labs.dev/cicada/notation"
@@ -339,7 +338,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files, RenderChecked: result.RenderChecked, RenderIdentity: result.RenderIdentity}
+	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files, RenderChecked: result.RenderChecked, RenderIdentity: result.RenderIdentity, RenderRecheck: result.RenderRecheck}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
 	if outcome.Status == http.StatusConflict {
 		if latest, err := os.ReadFile(s.path); err == nil {
@@ -356,7 +355,7 @@ type stagedProposal struct {
 	// mixer records that a mixer writer ran while staging, so acceptance can
 	// apply the same capture guard to a proposal staged before the recording.
 	mixer bool
-	// renderIdentity is rendercheck.Identity of the inputs at staging, recorded
+	// renderIdentity is the render identity verified at staging, recorded
 	// when an intent consulted the render check. Empty with rendered set means
 	// the inputs could not be identified, so acceptance always reapplies.
 	rendered       bool
@@ -489,9 +488,9 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 	// A render-checked candidate is only as good as the inputs its render saw.
 	// If any changed since staging (peers, manifests, assets), run the intents
 	// again, including their render checks, and accept only the same candidate.
-	verified := staged.renderIdentity
+	verified, recheck := staged.renderIdentity, result.RenderRecheck
 	if staged.rendered {
-		if identity, ok := rendercheck.Identity(s.path, current, nil); !ok || identity != staged.renderIdentity {
+		if identity, ok := currentRenderIdentity(result); !ok || identity != staged.renderIdentity {
 			again, status, err := s.restageForAccept(current, proposal)
 			if err != nil {
 				studioJSON(w, status, map[string]any{"error": err.Error()})
@@ -501,7 +500,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, http.StatusConflict, map[string]any{"error": "project inputs changed since staging and the proposal now produces a different result; stage the proposal again", "revision": studioRevision(current), "source": string(current)})
 				return
 			}
-			verified = again.Result.RenderIdentity
+			verified, recheck = again.Result.RenderIdentity, again.Result.RenderRecheck
 		}
 	}
 	files, err := auxiliaryFiles(result.Files)
@@ -526,7 +525,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 		s.history.observe(current, bar, step)
 	}
 	edit := studioEdit{Revision: proposal.Envelope.Revision, Label: proposal.Label, Author: proposal.Envelope.Author, Session: proposal.Envelope.Session}
-	mutation := studioMutation{Source: result.Source, Files: files, Response: result.Response, RenderChecked: staged.rendered, RenderIdentity: verified}
+	mutation := studioMutation{Source: result.Source, Files: files, Response: result.Response, RenderChecked: staged.rendered, RenderIdentity: verified, RenderRecheck: recheck}
 	// Revalidate at acceptance, including project dependencies that may have
 	// changed since staging. The tail commits this candidate once.
 	outcome := s.commitMutationLocked(edit, current, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &proposal.Envelope, compiled: opts.Compiler.(*studioCompiler).compiled(result.Source, result.Files)})
@@ -633,16 +632,28 @@ func sameCandidate(a, b *edits.Result) bool {
 }
 
 // verifyRenderIdentity compares the identity verified around a mutation's
-// renders with the project right now. It is the one comparison: the commit tail
+// renders with the project right now, recomputed from the same working sources
+// and staged files the renders used. It is the one comparison: the commit tail
 // runs it under the commit lock before writing, and cicada apply, which writes
 // through its own exchange, runs it just before that. A mutation that was
 // render-checked but has no verified identity is refused.
-func (s *studio) verifyRenderIdentity(checked bool, verified string, current []byte) error {
+func (s *studio) verifyRenderIdentity(checked bool, verified string, recheck func() (string, bool)) error {
 	if !checked {
 		return nil
 	}
-	if identity, ok := rendercheck.Identity(s.path, current, nil); !ok || verified == "" || identity != verified {
-		return errors.New("the project changed during the render check; try again")
+	if recheck == nil || verified == "" {
+		return edits.ErrProjectChanged
+	}
+	if identity, ok := recheck(); !ok || identity != verified {
+		return edits.ErrProjectChanged
 	}
 	return nil
+}
+
+// currentRenderIdentity recomputes a result's render identity now.
+func currentRenderIdentity(result *edits.Result) (string, bool) {
+	if result.RenderRecheck == nil {
+		return "", false
+	}
+	return result.RenderRecheck()
 }
