@@ -22,11 +22,34 @@ const (
 	Quarter
 	QuarterDotted
 	Half
+	ThreeEighths
+	QuarterTriplet
+	HalfDotted
+	HalfTriplet
+	ThirtySecondTriplet
+	ThirtySecondDotted
 	lastDelayDivision
 )
 
 var delayDivisionNames = [...]string{
 	"free", "1/32", "1/16", "1/16T", "1/16.", "1/8", "1/8T", "1/8.", "3/16", "1/4", "1/4.", "1/2",
+	"3/8", "1/4T", "1/2.", "1/2T", "1/32T", "1/32.",
+}
+
+// delayBeats is the length of each division in quarter-note beats, indexed
+// by DelayDivision.
+var delayBeats = [...]float64{
+	0, .125, .25, 1.0 / 6, .375, .5, 1.0 / 3, .75, .75, 1, 1.5, 2,
+	1.5, 2.0 / 3, 3, 4.0 / 3, 1.0 / 12, .1875,
+}
+
+// Beats returns the division length in quarter-note beats, or 0 for FreeDelay
+// and invalid values.
+func (division DelayDivision) Beats() float64 {
+	if division >= lastDelayDivision {
+		return 0
+	}
+	return delayBeats[division]
 }
 
 func ParseDelayDivision(name string) (DelayDivision, error) {
@@ -85,8 +108,7 @@ func (p DelayParams) ValidateTempo(bpmMilli int64) error {
 	}
 	seconds := p.TimeMs / 1000
 	if p.Division != FreeDelay {
-		beats := [...]float64{0, .125, .25, 1.0 / 6, .375, .5, 1.0 / 3, .75, .75, 1, 1.5, 2}
-		seconds = beats[p.Division] * 60_000 / float64(bpmMilli)
+		seconds = p.Division.Beats() * 60_000 / float64(bpmMilli)
 	}
 	if seconds < .001 || seconds > 4 {
 		return Error("delay time exceeds the 4-second buffer or 1 ms minimum")
@@ -185,8 +207,7 @@ func (d *Delay) timeFrames(p DelayParams, bpmMilli float64) (float64, error) {
 	if p.Division == FreeDelay {
 		frames = p.TimeMs * d.sampleRate / 1000
 	} else {
-		beats := [...]float64{0, .125, .25, 1.0 / 6, .375, .5, 1.0 / 3, .75, .75, 1, 1.5, 2}
-		frames = beats[p.Division] * 60_000 * d.sampleRate / bpmMilli
+		frames = p.Division.Beats() * 60_000 * d.sampleRate / bpmMilli
 	}
 	if frames < d.sampleRate/1000 || frames > 4*d.sampleRate {
 		return 0, Error("delay time exceeds the 4-second buffer or 1 ms minimum")

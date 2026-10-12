@@ -157,8 +157,26 @@ func AutomationValue(p *Project, lane AutomationLane, tick int64) (float64, bool
 	return x + (y-x)*t, true
 }
 
-// CompileAutomation prepares controls every four ticks (at most 2.1 ms at
-// 120 BPM). Existing parameter smoothing connects those targets continuously.
+const (
+	// automationGridTicks is the finest control spacing: four ticks, at most
+	// 2.1 ms at 120 BPM.
+	automationGridTicks = 4
+	// automationResolution divides a parameter's range (its log range for log
+	// curves) into the smallest change that earns a new control.
+	automationResolution = 4096
+	// automationMaxGapTicks bounds the time between controls of a moving
+	// segment (a sixteenth note at 960 PPQ is 240 ticks).
+	automationMaxGapTicks = 240
+	// automationMaxControls is the limit of the kernel image control count,
+	// which is stored as a 16-bit value.
+	automationMaxControls = 65535
+)
+
+// CompileAutomation prepares controls on a four-tick grid. A moving segment
+// emits a control only when the value has moved by one resolution step since
+// the last control, or after a bounded gap, and always at its endpoints, so a
+// fast segment keeps four-tick spacing and a long slow one uses far fewer
+// controls. Existing parameter smoothing connects those targets continuously.
 func CompileAutomation(p *Project) ([]cmd.Command, error) {
 	var controls []cmd.Command
 	for _, lane := range p.Automation {
@@ -167,6 +185,14 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 			return nil, err
 		}
 		last := uint32(0)
+		measure := func(v float64) float64 { return v }
+		step := (resolved.Descriptor.Max - resolved.Descriptor.Min) / automationResolution
+		if resolved.Descriptor.Curve == "log" && resolved.Descriptor.Min > 0 {
+			measure = math.Log
+			step = (math.Log(resolved.Descriptor.Max) - math.Log(resolved.Descriptor.Min)) / automationResolution
+		}
+		var lastMeasure float64
+		var lastTick int64
 		emit := func(tick int64) error {
 			value, _ := AutomationValue(p, lane, tick)
 			compiled, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, value)
@@ -178,10 +204,10 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 				return nil
 			}
 			controls = append(controls, cmd.Command{Op: cmd.OpSetParam, Track: resolved.Track, Index: uint16(resolved.ID), Arg0: bits, Tick: tick})
-			if len(controls) > 65535 {
-				return fmt.Errorf("CICADA-LIMIT: automation exceeds 65535 prepared controls")
+			if len(controls) > automationMaxControls {
+				return fmt.Errorf("CICADA-LIMIT: automation exceeds %d prepared controls", automationMaxControls)
 			}
-			last = bits
+			last, lastMeasure, lastTick = bits, measure(float64(compiled)), tick
 			return nil
 		}
 		if err := emit(lane.Points[0].Tick); err != nil {
@@ -195,13 +221,17 @@ func CompileAutomation(p *Project) ([]cmd.Command, error) {
 				}
 				continue
 			}
-			if (b.Tick-a.Tick)/4 > int64(65535-len(controls)) {
-				return nil, fmt.Errorf("CICADA-LIMIT: automation exceeds 65535 prepared controls")
-			}
-			for tick := a.Tick + 4; tick <= b.Tick; tick += 4 {
+			for tick := a.Tick + automationGridTicks; tick < b.Tick; tick += automationGridTicks {
+				value, _ := AutomationValue(p, lane, tick)
+				if math.Abs(measure(value)-lastMeasure) < step && tick-lastTick < automationMaxGapTicks {
+					continue
+				}
 				if err := emit(tick); err != nil {
 					return nil, err
 				}
+			}
+			if err := emit(b.Tick); err != nil {
+				return nil, err
 			}
 		}
 

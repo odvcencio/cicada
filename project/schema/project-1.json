@@ -228,7 +228,7 @@
           "properties": {
             "time": {"oneOf": [
               {"type": "object", "additionalProperties": false, "required": ["unit", "text"],
-                "properties": {"unit": {"const": "enum"}, "text": {"enum": ["1/32", "1/16", "1/16T", "1/16.", "1/8", "1/8T", "1/8.", "3/16", "1/4", "1/4.", "1/2"]}}},
+                "properties": {"unit": {"const": "enum"}, "text": {"enum": ["1/32", "1/16", "1/16T", "1/16.", "1/8", "1/8T", "1/8.", "3/16", "1/4", "1/4.", "1/2", "3/8", "1/4T", "1/2.", "1/2T", "1/32T", "1/32."]}}},
               {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
                 "properties": {"unit": {"const": "ms"}, "number": {"type": "number", "minimum": 1, "maximum": 2000}}}
             ]},
@@ -237,7 +237,7 @@
             "damp": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
               "properties": {"unit": {"const": "hz"}, "number": {"type": "number", "minimum": 1000, "maximum": 16000}}},
             "pingpong": {"type": "object", "additionalProperties": false, "required": ["unit", "text"],
-              "properties": {"unit": {"const": "enum"}, "text": {"enum": ["true", "false"]}}},
+              "properties": {"unit": {"const": "enum"}, "text": {"enum": ["on", "off", "true", "false"]}}},
             "width": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
               "properties": {"unit": {"const": "unit"}, "number": {"type": "number", "minimum": 0, "maximum": 1}}},
             "mix": {"type": "object", "additionalProperties": false, "required": ["unit", "number"],
