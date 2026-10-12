@@ -104,19 +104,23 @@ func (e *Engine) setKeysControl(v *voiceSlot, id kernel.ParamID, value float32, 
 		return
 	}
 	v.keysValues[id-keysControlFirst] = value
+	v.keysChanged |= 1 << (id - keysControlFirst)
 }
 
-// restoreKeysControls returns every changed control to its saved value. The
-// caller reports the fault.
+// restoreKeysControls returns every control commanded since load to its saved
+// value at once. It goes by the change record, not by comparing values: a
+// control can already hold the saved target while its voice still glides
+// toward it. The caller reports the fault.
 func (*Engine) restoreKeysControls(v *voiceSlot, saved *[keysControlCount]float32) bool {
 	for n := range keysControls {
-		if keysControls[n].family != v.keysFamily || v.keysValues[n] == saved[n] {
+		if v.keysChanged&(1<<n) == 0 || keysControls[n].family != v.keysFamily {
 			continue
 		}
 		if v.keysControl.SetControl(int(keysControls[n].slot), saved[n], 1) != nil {
 			return false
 		}
 		v.keysValues[n] = saved[n]
+		v.keysChanged &^= 1 << n
 	}
 	return true
 }

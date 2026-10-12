@@ -69,7 +69,7 @@ func GenerateKernel() ([]byte, error) {
 	fmt.Fprintln(&b, "package kernel")
 	fmt.Fprintln(&b)
 	fmt.Fprintln(&b, "type ParamID uint16")
-	fmt.Fprintln(&b, "type ParamSpec struct { ID ParamID; Name, Path, Scope, Source, Unit, Curve, Persist string; Min, Max, Default, DisplayStep float32; SmoothingMS float32; Live, Automatable, Off bool }")
+	fmt.Fprintln(&b, "type ParamSpec struct { ID ParamID; Name, Path, Scope, Source, Unit, Curve, Persist string; Min, Max, Default, DisplayStep float32; SmoothingMS float32; Live, Automatable, Off, Integer bool }")
 	fmt.Fprintln(&b, "const (")
 	for i, d := range Registry {
 		fmt.Fprintf(&b, "\tParam%s ParamID = %d\n", GoName(d.ID), i)
@@ -115,10 +115,10 @@ func keysSplit() int {
 func writeRows(b *bytes.Buffer, from, to int) {
 	for i := from; i < to; i++ {
 		d := Registry[i]
-		fmt.Fprintf(b, "\t{%d, %q, %q, %q, %q, %q, %q, %q, %s, %s, %s, %s, %s, %t, %t, %t},\n",
+		fmt.Fprintf(b, "\t{%d, %q, %q, %q, %q, %q, %q, %q, %s, %s, %s, %s, %s, %t, %t, %t, %t},\n",
 			i, d.ID, d.Path, d.Scope, d.Source, d.Unit, d.Curve, d.Persist,
 			floatLiteral(d.Min), floatLiteral(d.Max), floatLiteral(d.Default), floatLiteral(d.DisplayStep), floatLiteral(d.SmoothingMS),
-			d.Live, d.Automatable, d.Off)
+			d.Live, d.Automatable, d.Off, d.Type == "integer")
 	}
 }
 

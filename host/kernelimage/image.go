@@ -1515,6 +1515,9 @@ func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error
 	if !syncedDelay && spec.Curve == "toggle" && setting.Value != 0 && setting.Value != 1 {
 		return Error("scene toggle value is out of range")
 	}
+	if !syncedDelay && !off && spec.Integer && setting.Value != float32(int32(setting.Value)) {
+		return Error("scene whole-number value is not whole")
+	}
 	return nil
 }
 

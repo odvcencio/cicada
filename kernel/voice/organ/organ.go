@@ -154,7 +154,7 @@ type Instrument struct {
 	inverseRate, hornDelay, hornSwing, drumDelay, drumSwing              float32
 	driveAmount, driveCompensation, dcPole, dcInL, dcInR, dcOutL, dcOutR float32
 	idleFrames                                                           int
-	driveT, mixT, gainT, glideAlpha, driveFade                           float32
+	driveT, mixT, gainT, glideAlpha, driveFade, driveFadeT               float32
 	gliding                                                              bool
 }
 
@@ -242,7 +242,10 @@ func New(rate int, params Params) (*Instrument, error) {
 	}
 	_ = p.SetDrawbars(params.Drawbars)
 	p.drawbar = p.drawbarTarget
-	p.driveT, p.mixT, p.gainT, p.driveFade = params.Drive, params.RotaryMix, params.Gain, 1
+	p.driveT, p.mixT, p.gainT = params.Drive, params.RotaryMix, params.Gain
+	if params.Drive > 0 {
+		p.driveFade, p.driveFadeT = 1, 1
+	}
 	p.Reset()
 	return p, nil
 }
@@ -587,7 +590,7 @@ func (p *Instrument) NextStereo() (float32, float32) {
 	tone = p.scanner(tone)
 	// A bounded odd rational transfer models preamp saturation without a
 	// per-frame transcendental. Low drive retains the additive registration.
-	if p.params.Drive > 0 {
+	if p.params.Drive > 0 || p.driveFade > 0 {
 		dry := tone
 		x := float32(tone * p.driveAmount)
 		if x > 3 {
@@ -620,22 +623,17 @@ const (
 	controlGain       = 21
 )
 
-// driveFadeScale sets the drive below which a glide fades the saturator.
-const driveFadeScale = 50.0
-
 func (p *Instrument) glide() {
 	done := keyboard.Approach(&p.params.Drive, p.driveT, p.glideAlpha)
 	p.driveAmount = 1 + float32(7*p.params.Drive)
 	p.driveCompensation = 1 / p.driveAmount
+	// Drive zero bypasses the saturator, but any positive drive does not.
+	// driveFade blends the saturator in or out with its own glide, started only
+	// by a drive change, so the bypass never switches with a step. Gain and
+	// rotary-mix changes never touch it.
+	done = keyboard.Approach(&p.driveFade, p.driveFadeT, p.glideAlpha) && done
 	done = keyboard.Approach(&p.params.RotaryMix, p.mixT, p.glideAlpha) && done
 	done = keyboard.Approach(&p.params.Gain, p.gainT, p.glideAlpha) && done
-	// Drive zero bypasses the saturator, and even a tiny drive does not. While
-	// a glide passes through that region, fade the saturator in or out so the
-	// bypass does not switch with a step.
-	p.driveFade = 1
-	if !done && p.params.Drive < 1/driveFadeScale {
-		p.driveFade = p.params.Drive * driveFadeScale
-	}
 	p.gliding = !done
 }
 
@@ -666,6 +664,10 @@ func (p *Instrument) SetControl(index int, value, glide float32) error {
 			return Error("organ drive must be 0..1")
 		}
 		p.driveT = value
+		p.driveFadeT = 0
+		if value > 0 {
+			p.driveFadeT = 1
+		}
 	case index == controlRotaryMix:
 		if !keyboard.InRange(value, 0, 1) {
 			return Error("organ rotary mix must be 0..1")

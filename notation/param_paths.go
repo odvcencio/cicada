@@ -224,6 +224,9 @@ func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {
 	if math.IsNaN(value) || math.IsInf(value, 0) || value < descriptor.Min || value > descriptor.Max {
 		return fmt.Errorf("%s is outside the range %s", source, sceneValueRange(descriptor))
 	}
+	if descriptor.Type == "integer" && value != math.Trunc(value) {
+		return fmt.Errorf("%s must be a whole number", source)
+	}
 	return nil
 }
 
