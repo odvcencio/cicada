@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 	"reflect"
@@ -32,8 +33,12 @@ type livePlan struct {
 	tempoMilli     int64
 }
 
+// studioOfferToken names an offered score by the playback fingerprint, which
+// covers the entry, every explicit source file and the manifest. The entry
+// revision alone cannot tell two edits to a secondary file apart.
+func studioOfferToken(fingerprint [32]byte) string { return hex.EncodeToString(fingerprint[:]) }
+
 func (plan *livePlan) prepareScore(score *liveplay.Score) {
-	score.Revision = plan.revision
 	score.SceneParameters = make([][]liveplay.ParameterValue, len(plan.cfg.Scenes))
 	for i, scene := range plan.cfg.Scenes {
 		for _, setting := range scene.Settings {

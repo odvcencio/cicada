@@ -39,7 +39,7 @@ type studioTransport struct {
 	cancel            context.CancelFunc
 	last              [32]byte
 	livePlan          *livePlan
-	pendingPlan       *livePlan
+	offers            []studioOffer // Offered scores not yet reported landed, oldest first.
 	arena             *liveplay.PatchArena
 	patchRevision     uint64
 	playing           bool
@@ -232,11 +232,12 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 				if plan != nil {
 					plan.prepareScore(&next)
 				}
+				next.Revision = studioOfferToken(preparedHash)
 				if err := t.stream.Offer(next); err != nil {
 					return err
 				}
 				t.last, t.pending = preparedHash, true
-				t.pendingPlan = plan
+				t.recordOfferLocked(preparedHash, plan)
 			}
 			requestID, err := t.stream.QueueSongEntry(index, scene)
 			if err != nil {
@@ -342,7 +343,7 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.stream, t.audio, t.sampleRate, t.last, t.cancel = stream, audio, sampleRate, fingerprint, cancel
-	t.livePlan, t.pendingPlan, t.arena, t.patchRevision = initialPlan, nil, liveplay.NewPatchArena(16), 0
+	t.livePlan, t.offers, t.arena, t.patchRevision = initialPlan, nil, liveplay.NewPatchArena(16), 0
 	t.playing, t.errText = true, ""
 	if index >= 0 {
 		t.pendingSong, t.pendingSongID = scene, requestID
@@ -354,6 +355,25 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	t.publishHealthLocked()
 	go t.watch(ctx, stream)
 	return nil
+}
+
+// studioOffer pairs an offered score's playback token with the plan compiled
+// for it. The plan is nil when the offer has no complete plan.
+type studioOffer struct {
+	token string
+	plan  *livePlan
+}
+
+// maxStudioOffers bounds the ledger; the player keeps one pending score and a
+// 32-event buffer, so older offers cannot still report a landing.
+const maxStudioOffers = 64
+
+// Called with mu held.
+func (t *studioTransport) recordOfferLocked(fingerprint [32]byte, plan *livePlan) {
+	if len(t.offers) == maxStudioOffers {
+		t.offers = append(t.offers[:0], t.offers[1:]...)
+	}
+	t.offers = append(t.offers, studioOffer{token: studioOfferToken(fingerprint), plan: plan})
 }
 
 // Called with mu held. A hash mismatch leaves activation unavailable until
@@ -456,7 +476,7 @@ func (t *studioTransport) stopLocked() {
 		t.stream.Close()
 		t.stream = nil
 	}
-	t.livePlan, t.pendingPlan, t.arena = nil, nil, nil
+	t.livePlan, t.offers, t.arena = nil, nil, nil
 	// A discarded stream has no muted tracks; do not report them as stopped.
 	t.stoppedTracks = nil
 	t.activeSlots = nil
@@ -677,10 +697,16 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 		t.errText = event.Name
 	case "edit":
 		t.landed = event.Bar
-		if t.pendingPlan == nil || event.Revision == t.pendingPlan.revision {
-			t.livePlan, t.pendingPlan, t.pending = t.pendingPlan, nil, false
-		} else {
-			t.livePlan = nil // A newer offered revision has not landed yet.
+		// An edit event names its offer by the playback fingerprint token. Only
+		// that offer's plan becomes the live plan, and offers still queued
+		// behind it keep the transport pending. An unknown token (an offer the
+		// player already superseded) says nothing about the playing engine.
+		for i, offer := range t.offers {
+			if offer.token == event.Revision {
+				t.livePlan, t.offers = offer.plan, t.offers[i+1:]
+				t.pending = len(t.offers) > 0
+				break
+			}
 		}
 	default:
 		t.pending, t.landed = false, event.Bar
@@ -745,6 +771,7 @@ func (t *studioTransport) poll() {
 	}
 	if err == nil {
 		plan.prepareScore(&next)
+		next.Revision = studioOfferToken(fingerprint)
 		err = stream.Offer(next)
 	}
 	if err != nil {
@@ -757,7 +784,7 @@ func (t *studioTransport) poll() {
 		return
 	}
 	t.last = fingerprint
-	t.pendingPlan = plan
+	t.recordOfferLocked(fingerprint, plan)
 	// Clear the transport error when a valid revision lands (UX review finding 2).
 	t.pending, t.errText = true, ""
 	position := stream.Position()
