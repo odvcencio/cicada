@@ -8,6 +8,7 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/mix"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/spatial"
@@ -88,6 +89,7 @@ type TrackConfig struct {
 	Mute         bool
 	Solo         bool
 	InsertDrive  *fx.DriveParams
+	InsertChain  []TrackEffectConfig `json:",omitempty"`
 	SendA        float64
 	SendB        float64
 	SendPre      bool
@@ -97,7 +99,11 @@ type TrackConfig struct {
 }
 
 // SFXSidechain selects the post-fader SFX bus as the music compressor detector.
-const SFXSidechain = 17
+const (
+	MaxTracks    = limits.MaxTracks
+	MaxVoices    = limits.MaxVoices
+	SFXSidechain = MaxTracks + 1
+)
 
 // PatternBank is immutable project data copied into the engine by New.
 // Drum slots hold an independent pattern for each synthesized lane.
@@ -114,15 +120,16 @@ type Config struct {
 	MaxVoices  int
 	BPMMilli   int64
 	Seed       uint32
-	Track      [16]TrackConfig
+	Track      [MaxTracks]TrackConfig
 	Patterns   []PatternBank
 	Scenes     []Scene
 	Song       []SongEntry
 
-	Automation []cmd.Command   `json:",omitempty"`
-	Schedule   []ScheduleEvent `json:",omitempty"`
-	Assets     []AudioAsset    `json:",omitempty"`
-	Clips      []ClipConfig    `json:",omitempty"`
+	Automation []cmd.Command    `json:",omitempty"`
+	Schedule   []ScheduleEvent  `json:",omitempty"`
+	Assets     []AudioAsset     `json:",omitempty"`
+	Streaming  StreamingFactory `json:"-"`
+	Clips      []ClipConfig     `json:",omitempty"`
 	LoopSong   bool
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
@@ -174,6 +181,7 @@ type voiceSlot struct {
 	muteGain, muteTarget, muteStep float32
 	gainDB, pan                    float32
 	insert                         *fx.Drive
+	chain                          *trackEffectChain
 	align                          *mix.Delay
 	sendA                          float32
 	sendB                          float32
@@ -196,6 +204,9 @@ type meterAccum struct {
 // Engine has fixed command and message rings. The host owns cross-thread
 // communication and calls Push only on the render thread.
 type Engine struct {
+	streamClosed                 bool
+	rawPlaying                   bool
+	parallel                     *parallelState
 	spatial                      spatialState
 	sampleRate, maxBlock, tracks int
 	paramAlpha                   [kernel.ParamCount]float32
@@ -208,17 +219,17 @@ type Engine struct {
 	macroLayerThresholds         [16][4]uint8
 	macroLayerThresholdCount     [16]uint8
 	macroLayerInitialized        [16]bool
-	macroLayerMasks              [16][4]uint32
+	macroLayerMasks              [16][4]trackMask
 	macroLayerRelease            [16]uint8
 	macroLayerLevel              [16]uint8
 	macroLayerQuiet              [16]uint8
-	director                     [16]directorTrack
+	director                     [MaxTracks]directorTrack
 	sceneFadeFrames              uint32
 	phraseBars                   uint32
 	liveEvents                   bool // set by any live-control op; keeps Bar and MacroReached off for hosts that never drain messages
 	lastBarTick                  int64
 	bpmMilli                     int64
-	voices                       [16]voiceSlot
+	voices                       [MaxTracks]voiceSlot
 	transport                    seq.Transport
 	limiter                      *mix.Limiter
 	delayA                       *fx.Delay
@@ -244,11 +255,11 @@ type Engine struct {
 	automationIndex              int
 	automationTick               int64
 	automationCycle              int64
-	layerMask                    uint32 // effective: layerAuthored gated by the macro layer tables
-	layerAuthored                uint32 // set by scenes, OpSetLayerMask and source-off; never by macros
+	layerMask                    trackMask // effective: layerAuthored gated by the macro layer tables
+	layerAuthored                trackMask // set by scenes, OpSetLayerMask and source-off; never by macros
 	meterRate, meterBlock        uint32
 	meterFrames                  uint32
-	trackMeter                   [16]meterAccum
+	trackMeter                   [MaxTracks]meterAccum
 	returnAMeter, returnBMeter   meterAccum
 	musicMeter, sfxMeter         meterAccum
 	preMasterMeter, masterMeter  meterAccum
@@ -257,7 +268,8 @@ type Engine struct {
 	soloCount                    int
 	playheadFrames               int
 	faulted                      bool
-	patterns                     [16]patternTrack
+	patterns                     [MaxTracks]patternTrack
+	patternEdit                  seq.Pattern // reused by serialized callback edits; avoids a TinyGo heap temporary
 	eventScratch                 [128]seq.Event
 	renderFrame, renderFrames    int
 	sceneDefaults                *sceneParameterState
@@ -268,17 +280,21 @@ type Engine struct {
 	scheduleIntervals            []scheduleInterval
 	scheduleDuration, cycleStart int64
 	placementSchedule            bool
-	placementID                  [16]uint32
+	placementID                  [MaxTracks]uint32
 	clipLimit                    int
 	clipTemplates                []sample.Voice
+	clipAssets                   []AudioAsset
+	streaming                    StreamingRuntime
+	streamPrefetchCount          int
 	clipSpecs                    []ClipConfig
 	clipMaxFrames                int64
-	clipVoices                   [32]clipPlayback
+	clipVoices                   [MaxVoices]clipPlayback
+	clipSlots                    [MaxTracks]clipSlotMask
 	loopSong, songMode           bool
 	songIndex                    int
 	songEndTick                  int64
 	manualSceneTick              int64
-	manualPatternTick            [16]int64
+	manualPatternTick            [MaxTracks]int64
 }
 
 // TrackCount reports the immutable track count established by New.
@@ -323,7 +339,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	if cfg == nil {
 		return nil, Error("engine configuration is out of range")
 	}
-	if cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 || cfg.Tracks < 1 || cfg.Tracks > 16 || cfg.MaxVoices < 1 || cfg.MaxVoices > 32 {
+	if cfg.MaxBlock < 1 || cfg.MaxBlock > 4096 || cfg.Tracks < 1 || cfg.Tracks > MaxTracks || cfg.MaxVoices < 1 || cfg.MaxVoices > MaxVoices {
 		return nil, Error("engine configuration is out of range")
 	}
 	if math.IsNaN(cfg.MasterGainDB) || math.IsInf(cfg.MasterGainDB, 0) || cfg.MasterGainDB < -120 || cfg.MasterGainDB > 24 {
@@ -382,6 +398,9 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 		return nil, err
 	}
 	e.captureSceneDefaults()
+	if err := e.initStreaming(cfg); err != nil {
+		return nil, err
+	}
 	return e, nil
 }
 
@@ -437,11 +456,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 	}
 	var err error
 	voices := 0
-	hasDrive := false
+	maxInsertLatency := 0
 	for i := 0; i < cfg.Tracks; i++ {
-		if cfg.Track[i].InsertDrive != nil {
-			hasDrive = true
-		}
+		maxInsertLatency = max(maxInsertLatency, trackInsertLatency(&cfg.Track[i]))
 	}
 	for i := 0; i < cfg.Tracks; i++ {
 		e.patterns[i].active = -1
@@ -491,6 +508,18 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 		if spec.BusSFX {
 			e.hasSFX = true
 		}
+		if spec.InsertDrive != nil && len(spec.InsertChain) > 0 {
+			return 0, Error("legacy drive and insert chain cannot be combined")
+		}
+		if len(spec.InsertChain) > 0 {
+			if spec.Kind == VoiceOff {
+				return 0, Error("silent track cannot have inserts")
+			}
+			v.chain, err = newTrackEffectChain(cfg.SampleRate, spec.InsertChain)
+			if err != nil {
+				return 0, err
+			}
+		}
 		if spec.InsertDrive != nil {
 			if spec.Kind == VoiceOff {
 				return 0, Error("silent track cannot have a drive insert")
@@ -503,8 +532,9 @@ func (e *Engine) initTrackVoices(cfg *Config) (int, error) {
 				return 0, err
 			}
 			v.insert.Reset()
-		} else if hasDrive {
-			v.align, err = mix.NewDelay(fx.DriveLatencyFrames)
+		}
+		if alignFrames := maxInsertLatency - trackInsertLatency(spec); alignFrames > 0 {
+			v.align, err = mix.NewDelay(alignFrames)
 			if err != nil {
 				return 0, err
 			}
@@ -827,6 +857,10 @@ func (e *Engine) Poll(m *cmd.Message) bool {
 }
 
 func (e *Engine) Reset() {
+	// Faulted/retired native jobs keep ownership until host teardown.
+	if e.parallelRetired() {
+		return
+	}
 	for i := 0; i < e.tracks; i++ {
 		e.resetVoice(i)
 		e.patterns[i].active = -1
@@ -861,7 +895,7 @@ func (e *Engine) Reset() {
 	e.macroLayerEnabled = [16]bool{}
 	e.playheadFrames = e.sampleRate / 60
 	e.renderFrame, e.renderFrames = 0, 0
-	e.layerMask, e.layerAuthored = (1<<e.tracks)-1, (1<<e.tracks)-1
+	e.layerMask, e.layerAuthored = trackMask(1)<<e.tracks-1, trackMask(1)<<e.tracks-1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
 	e.resetClips()
 	e.manualSceneTick = -1
@@ -887,6 +921,7 @@ func (e *Engine) Render(outL, outR []float32) {
 		return
 	}
 	e.drainCommands()
+	e.prepareStreamWindows(len(outL))
 	if e.faulted {
 		return
 	}
@@ -898,296 +933,36 @@ func (e *Engine) Render(outL, outR []float32) {
 	}
 	scheduledTempo := e.transport.BPMMilli()
 	var blockPeak float32
-	for frame := range outL {
-		e.renderFrame = frame
-		if e.transport.BPMMilli() != scheduledTempo {
-			if e.delayA != nil && e.delayA.SetTempo(e.transport.BPMMilli()) != nil {
-				e.fault(FaultDelayTempo)
-				clear(outL[frame:])
-				clear(outR[frame:])
-				return
-			}
-			e.scheduleAll()
-			scheduledTempo = e.transport.BPMMilli()
-		}
-		e.processPatternEvents(seq.NoteOff)
-		e.advanceSong()
-		if e.faulted {
-			clear(outL[frame:])
-			clear(outR[frame:])
+	for frame := 0; frame < len(outL); {
+		if !e.prepareRenderFrame(frame, &scheduledTempo, outL, outR) {
 			return
 		}
-		e.applyPending()
-		if e.faulted {
-			clear(outL[frame:])
-			clear(outR[frame:])
-			return
-		}
-		e.advanceAutomation()
-		e.advanceDirector()
-		e.processBarBoundary()
-		if e.faulted {
-			clear(outL[frame:])
-			clear(outR[frame:])
-			return
-		}
-		e.processPatternEvents(seq.NoteOn)
-		e.processPatternEvents(seq.NoteExpression)
-		if e.faulted {
-			clear(outL[frame:])
-			clear(outR[frame:])
-			return
-		}
-		var dry mix.Dry
-		var buses spatial.Frame
-		var sendAL, sendAR, sendBL, sendBR, sideL, sideR float32
-		for track := 0; track < e.tracks; track++ {
-			v := &e.voices[track]
-			positioned := &e.spatial.tracks[track]
-			if positioned.enabled {
-				positioned.gain += float32((positioned.target - positioned.gain) * v.mixSmooth)
-			}
-			v.mix.Left += float32((v.targetMix.Left - v.mix.Left) * v.mixSmooth)
-			v.mix.Right += float32((v.targetMix.Right - v.mix.Right) * v.mixSmooth)
-			v.sendA += float32((v.targetSendA - v.sendA) * v.sendSmooth)
-			v.sendB += float32((v.targetSendB - v.sendB) * v.sendSmooth)
-			if v.muteGain < v.muteTarget {
-				v.muteGain = min(v.muteTarget, v.muteGain+v.muteStep)
-			} else if v.muteGain > v.muteTarget {
-				v.muteGain = max(v.muteTarget, v.muteGain-v.muteStep)
-			}
-			var left, right float32
-			switch v.kind {
-			case VoiceAcid:
-				sample := v.acid.Next()
-				if v.acid.Fault() {
-					e.fault(FaultAcidVoice)
-					clear(outL[frame:])
-					clear(outR[frame:])
-					return
-				}
-				left, right = sample, sample
-			case VoiceDrums:
-				left, right = v.drums.NextStereo()
-				if v.drums.Fault() {
-					e.fault(FaultDrumVoice)
-					clear(outL[frame:])
-					clear(outR[frame:])
-					return
-				}
-			case VoiceGuitar:
-				sample := v.guitar.Next()
-				left, right = sample, sample
-			case VoiceModal:
-				sample := v.modal.Next()
-				left, right = sample, sample
-			case VoiceSample:
-				left, right = v.sampler.NextStereo()
-			case VoiceAudio:
-				left, right = e.nextClipStereo(track)
-			case VoiceGraph:
-				var sample float32
-				if v.poly != nil {
-					sample = v.poly.Next()
-				} else {
-					sample = v.graph.Next()
-				}
-				left, right = sample, sample
-			case VoicePiano:
-				left, right = v.piano.NextStereo()
-			case VoiceKeys:
-				if keysEnabled {
-					left, right = v.keys.NextStereo()
-				}
-			case VoiceGraphPoly:
-				left, right = v.legacyPoly.NextStereo()
-			case VoicePrepared:
-				left, right = v.prepared.NextStereo()
-			}
-			if v.insert != nil {
-				left, right = v.insert.Process(left, right)
-				if v.insert.Fault() {
-					e.fault(FaultDriveInsert)
-					clear(outL[frame:])
-					clear(outR[frame:])
-					return
-				}
-			} else if v.align != nil {
-				left, right = v.align.Process(left, right)
-			}
-			left *= e.director[track].gain
-			right *= e.director[track].gain
-			var trackL, trackR float32
-			if e.layerMask&(1<<track) != 0 && v.kind != VoiceOff {
-				trackL, trackR = left*(v.mix.Left*v.muteGain), right*(v.mix.Right*v.muteGain)
-				if v.sendA > 0 && v.muteGain > 0 && !v.sourceOff {
-					if v.sendAPre {
-						sendAL += float32(left * v.sendA * v.muteGain)
-						sendAR += float32(right * v.sendA * v.muteGain)
-					} else {
-						sendAL += float32(left * v.mix.Left * v.muteGain * v.sendA)
-						sendAR += float32(right * v.mix.Right * v.muteGain * v.sendA)
-					}
-				}
-				if v.sendB > 0 && v.muteGain > 0 && !v.sourceOff {
-					if v.sendBPre {
-						sendBL += float32(left * v.sendB * v.muteGain)
-						sendBR += float32(right * v.sendB * v.muteGain)
-					} else {
-						sendBL += float32(left * v.mix.Left * v.muteGain * v.sendB)
-						sendBR += float32(right * v.mix.Right * v.muteGain * v.sendB)
-					}
-				}
-				tap := mix.Track{Left: v.mix.Left * v.muteGain, Right: v.mix.Right * v.muteGain}
-				if positioned.enabled {
-					mono := float32((left+right)*.5) * float32(positioned.gain*v.muteGain)
-					if v.sourceOff {
-						mono = 0
-					}
-					trackL, trackR = mono, mono
-					if v.busSFX {
-						buses.SFX.Add(mono, positioned.coefficients)
-					} else {
-						buses.Music.Add(mono, positioned.coefficients)
-					}
-				} else if v.busSFX {
-					dry.AddSFX(left, right, tap)
-				} else {
-					dry.Add(left, right, tap)
-				}
-				if e.compSidechainTrack == track+1 {
-					sideL, sideR = trackL, trackR
-				}
-			}
-			if e.taps != nil {
-				e.taps[frame].Tracks[track] = Stereo{trackL, trackR}
-			}
-			accumulateMeter(&e.trackMeter[track], trackL, trackR)
-		}
-		if e.delayA != nil {
-			returnL, returnR := e.delayA.Process(sendAL, sendAR)
-			if e.delayA.Fault() {
-				e.fault(FaultDelay)
-				clear(outL[frame:])
-				clear(outR[frame:])
-				return
-			}
-			if e.taps != nil {
-				e.taps[frame].ReturnA = Stereo{returnL, returnR}
-			}
-			accumulateMeter(&e.returnAMeter, returnL, returnR)
-			dry.AddReturn(returnL, returnR)
-		}
-		if e.reverbB != nil {
-			returnL, returnR := e.reverbB.Process(sendBL, sendBR)
-			if e.reverbB.Fault() {
-				e.fault(FaultReverb)
-				clear(outL[frame:])
-				clear(outR[frame:])
-				return
-			}
-			if e.taps != nil {
-				e.taps[frame].ReturnB = Stereo{returnL, returnR}
-			}
-			accumulateMeter(&e.returnBMeter, returnL, returnR)
-			dry.AddReturn(returnL, returnR)
-		}
-		if e.spatial.active {
-			buses.Music = e.spatial.rotation.Apply(buses.Music)
-			buses.SFX = e.spatial.rotation.Apply(buses.SFX)
-			spatialL, spatialR := e.spatial.music.Process(buses.Music)
-			dry.AddReturn(spatialL, spatialR)
-			spatialL, spatialR = e.spatial.sfx.Process(buses.SFX)
-			dry.SFXLeft += spatialL
-			dry.SFXRight += spatialR
-		}
-		if e.spatial.taps != nil {
-			e.spatial.taps[frame] = buses
-		}
-		left, right := dry.Music()
-		sfxL, sfxR := dry.SFX()
-		if e.taps != nil {
-			e.taps[frame].Music = Stereo{left, right}
-			e.taps[frame].SFX = Stereo{sfxL, sfxR}
-		}
-		accumulateMeter(&e.sfxMeter, sfxL, sfxR)
-		if e.sfxBusMute || e.musicBusSolo && !e.sfxBusSolo {
-			sfxL, sfxR = 0, 0
-		}
-		if e.compMusic != nil {
-			if e.compSidechainTrack == 0 {
-				left, right = e.compMusic.Process(left, right)
-			} else if e.compSidechainTrack == SFXSidechain {
-				left, right = e.compMusic.ProcessSidechain(left, right, sfxL, sfxR)
-			} else {
-				left, right = e.compMusic.ProcessSidechain(left, right, sideL, sideR)
-			}
-			if e.compMusic.Fault() {
-				e.fault(FaultCompressor)
-				clear(outL[frame:])
-				clear(outR[frame:])
-				return
-			}
-			e.compGR = max(e.compGR, float32(e.compMusic.GainReductionDB()))
-		}
-		accumulateMeter(&e.musicMeter, left, right)
-		if e.musicBusMute || e.sfxBusSolo && !e.musicBusSolo {
-			left, right = 0, 0
-		}
-		left, right = left+sfxL, right+sfxR
-		if e.masterMute {
-			left, right = 0, 0
-		}
-		left += e.masterBiasL
-		right += e.masterBiasR
-		if e.masterGain != 1 {
-			left *= e.masterGain
-			right *= e.masterGain
-		}
-		if e.taps != nil {
-			e.taps[frame].PreMaster = Stereo{left, right}
-		}
-		if e.masterProcessor != nil {
-			left, right = e.masterProcessor.Process(left, right)
-			if e.masterProcessor.Fault() {
-				e.fault(FaultMasterProcessor)
+		count := 1
+		if e.parallelAvailable() {
+			count = e.parallelSegmentFrames(len(outL) - frame)
+			faultFrame, fault := e.parallelPrepareSegment(frame, count)
+			if fault != 0 && faultFrame == frame {
+				e.fault(fault)
 				clear(outL[frame:])
 				clear(outR[frame:])
 				return
 			}
 		}
-		accumulateMeter(&e.preMasterMeter, left, right)
-		outL[frame], outR[frame], _ = e.limiter.Process(left, right)
-		if e.limiter.Fault() {
-			e.fault(FaultLimiter)
-			clear(outL[frame:])
-			clear(outR[frame:])
-			return
-		}
-		if e.taps != nil {
-			e.taps[frame].LimiterReductionDB = e.limiter.GainReductionDB()
-		}
-		e.limiterGR = max(e.limiterGR, float32(e.limiter.GainReductionDB()))
-		accumulateMeter(&e.masterMeter, outL[frame], outR[frame])
-		blockPeak = max(blockPeak, float32(math.Max(math.Abs(float64(outL[frame])), math.Abs(float64(outR[frame])))))
-		e.advanceMacroRamps()
-		e.transport.Advance(1)
-		if e.transport.Playing() {
-			e.playheadFrames--
-			if e.playheadFrames <= 0 {
-				e.emit(cmd.Message{Kind: cmd.Playhead, Track: 0xff, Tick: e.transport.Tick()})
-				e.playheadFrames = e.sampleRate / 60
+		for offset := 0; offset < count; offset++ {
+			if offset > 0 && !e.prepareRenderFrame(frame, &scheduledTempo, outL, outR) {
+				return
 			}
-		} else {
-			e.playheadFrames = e.sampleRate / 60
+			peak, ok := e.renderMixedFrame(frame, outL, outR)
+			if !ok {
+				return
+			}
+			blockPeak = max(blockPeak, peak)
+			e.advanceRenderFrame()
+			frame++
 		}
+		e.parallelEndSegment()
 	}
-	e.renderFrames = 0
-	e.meterFrames += uint32(len(outL))
-	e.meterBlock++
-	if e.meterRate != 0 && e.meterBlock%e.meterRate == 0 {
-		e.emitMeters(blockPeak)
-	}
+	e.finishRender(len(outL), blockPeak)
 }
 
 func accumulateMeter(m *meterAccum, left, right float32) {
@@ -1447,8 +1222,13 @@ func (e *Engine) apply(c cmd.Command) {
 		}
 		e.macroLayerLevel[id], e.macroLayerQuiet[id] = 0, 0
 	case cmd.OpSetLayerMasks:
-		id := int(c.Index)
-		e.macroLayerMasks[id] = [4]uint32{uint32(uint16(c.Arg0)), uint32(uint16(c.Arg0 >> 16)), uint32(uint16(c.Arg1)), uint32(uint16(c.Arg1 >> 16))}
+		id := int(c.Index & 15)
+		shift := uint(c.Index>>4) * 16
+		part := [4]trackMask{trackMask(uint16(c.Arg0)), trackMask(uint16(c.Arg0 >> 16)), trackMask(uint16(c.Arg1)), trackMask(uint16(c.Arg1 >> 16))}
+		mask := trackMask(0xffff) << shift
+		for i := range part {
+			e.macroLayerMasks[id][i] = e.macroLayerMasks[id][i]&^mask | part[i]<<shift
+		}
 		e.macroLayerInitialized[id] = false
 	case cmd.OpSetPhraseBars:
 		e.liveEvents = true
@@ -1573,7 +1353,7 @@ func (e *Engine) apply(c cmd.Command) {
 	case cmd.OpLaunchScene:
 		e.applySceneCommand(c)
 	case cmd.OpSetLayerMask:
-		e.setAuthoredLayerMask(c.Arg0)
+		e.setAuthoredLayerMask(trackMask(c.Arg0) | trackMask(c.Arg1)<<32)
 	case cmd.OpMeterRate:
 		e.meterRate = c.Arg0
 	default:
@@ -2026,6 +1806,9 @@ func (e *Engine) noteOff(track int, lane uint16) {
 func (e *Engine) resetVoice(track int) {
 	v := &e.voices[track]
 	v.noteActive = false
+	if v.chain != nil {
+		v.chain.Reset()
+	}
 	if v.insert != nil {
 		v.insert.Reset()
 	}
@@ -2103,8 +1886,11 @@ func (e *Engine) emit(message cmd.Message) {
 			}
 			e.faulted = true
 			e.transport.Stop()
-			for track := 0; track < e.tracks; track++ {
-				e.resetVoice(track)
+			// A failed native worker may still own its source and inserts.
+			if e.parallelQuiescent() {
+				for track := 0; track < e.tracks; track++ {
+					e.resetVoice(track)
+				}
 			}
 			e.limiter.Reset()
 			if e.delayA != nil {
@@ -2130,8 +1916,12 @@ func (e *Engine) fault(code uint16) {
 	e.faulted = true
 	e.renderFrames = 0
 	e.transport.Stop()
-	for i := 0; i < e.tracks; i++ {
-		e.resetVoice(i)
+	// Timeout/panic recovery must not reset a source still owned by a worker.
+	// Retired jobs retain ownership until host Close joins them.
+	if e.parallelQuiescent() {
+		for i := 0; i < e.tracks; i++ {
+			e.resetVoice(i)
+		}
 	}
 	e.limiter.Reset()
 	if e.delayA != nil {

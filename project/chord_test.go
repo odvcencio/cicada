@@ -3,6 +3,7 @@ package project
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/notation"
 	"reflect"
@@ -159,22 +160,22 @@ func TestChordRejectsMalformedModesPitchesAndModifiers(t *testing.T) {
 }
 
 func TestPolyphonyCountsAgainstGlobalVoiceBudget(t *testing.T) {
-	for _, n := range []int{8, 9} {
+	for _, n := range []int{64, 65} {
 		source := "instrument tone { voice poly { out=sine(pitch)*env(gate,100ms) } }\npattern p notes { [d4 f4] }\n"
 		bindings := ""
 		for i := 0; i < n; i++ {
-			id := string(rune('a' + i))
+			id := fmt.Sprintf("t%d", i)
 			source += "track " + id + " tone {}\n"
 			bindings += id + "=p "
 		}
 		source += "scene main { " + bindings + " } song { main }"
 		score, _ := notation.Parse([]byte(source))
 		p, ds := FromScore(score)
-		if n == 8 && p == nil {
-			t.Fatalf("32 voices rejected: %+v", ds)
+		if n == 64 && p == nil {
+			t.Fatalf("256 voices rejected: %+v", ds)
 		}
-		if n == 9 && p != nil {
-			t.Fatal("36 voices accepted")
+		if n == 65 && p != nil {
+			t.Fatal("260 voices accepted")
 		}
 	}
 }

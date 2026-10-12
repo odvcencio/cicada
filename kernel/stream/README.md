@@ -61,6 +61,39 @@ initial retry delay that doubles to a 1 s cap. Deferred failures cannot monopoli
 current-page priority or starve other readers' prefetch. Successful publication
 clears only that page's error; retired demand is reclaimed before records are
 reused. Retry/error records never exceed the admitted arena's page count.
-This package provides a streamed reader. Hosts handle arrangement scheduling
-and browser worker page transfer. Changing the core worklet or legacy engine is not
-required to use the native page source.
+Native playback and offline WAV/stems now connect this cache through
+`host/schedule.Compile` and `host/sampleasset.StreamPlan`. Clip-only assets above
+1 MiB are paged; short clips and all sampler assets keep their resident path.
+The sampler PCM budget remains 64 MiB. A streaming configuration holds verified
+metadata without files or workers; `engine.New` opens its private runtime only
+after engine validation succeeds. Each engine admits at most 32 clip readers
+and 32 upcoming-start readers. At 48 kHz the stereo page arena is 14.25 MiB,
+independent of song length or the combined size of full-length vocal takes.
+
+The sample voice uses the resident path's prepared sinc banks, absolute source
+coordinates, clip gains and fades for streamed SRC. Reader misses count output
+frames rather than FIR taps, with a fixed per-callback missing-page table.
+Missing output fades and recovery last 2 ms at the output rate. Arrangement
+placements can overlap; explicit scene clip assignments retrigger their track,
+while `keep` carries its current clip into the next scene.
+
+Offline callers use `engine.PrepareRender(ctx, frames)` before every block and
+render exactly its returned length. It primes current clips and upcoming
+starts, shortening the block if its bounded prefetch table cannot cover all
+starts. WAV, stems and placement resampling fail on page errors or any missed
+output frames, so an unavailable page cannot become a successful silent export.
+Native start and score offers prime outside the audio callback; live playback
+continues with measured declicked misses if storage later falls behind.
+
+`Engine.Retire` atomically requests teardown from the audio owner without I/O,
+locks or allocation. The existing monitor goroutine cancels reads and closes
+that runtime's private, concurrency-safe WAV handles; both worker goroutines
+finish before `Engine.Close` returns from host teardown. Live score replacement
+retires the old runtime after its crossfade, and discarded/error plans close
+without being published. `StreamStats` reports arena size, page operations,
+underrun episodes, missing output frames, recoveries and bounded page lookups.
+
+Portable browser/kernel images continue using `schedule.CompileResident` and
+its 64 MiB limit. Native streaming factories are rejected by image encoding;
+TinyGo compiles only the resident clip/SRC branch. Browser worker-to-worklet page
+transfer remains separate work.

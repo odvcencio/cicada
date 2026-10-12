@@ -7,7 +7,7 @@ type Stereo struct{ Left, Right float32 }
 // TapFrame records post-fader tracks, returns, buses before compression and
 // master processing, and pre-limiter master samples. The host owns storage.
 type TapFrame struct {
-	Tracks                                  [16]Stereo
+	Tracks                                  [MaxTracks]Stereo
 	ReturnA, ReturnB, Music, SFX, PreMaster Stereo
 	LimiterReductionDB                      float64
 }
@@ -26,14 +26,21 @@ func (e *Engine) RenderWithTaps(left, right []float32, taps []TapFrame) {
 }
 
 func (e *Engine) LatencyFrames() int {
-	return e.limiter.LatencyFrames() + e.TrackLatencyFrames()
+	return e.limiter.LatencyFrames() + e.TrackLatencyFrames() + e.MasterProcessorLatencyFrames()
 }
 
 func (e *Engine) TrackLatencyFrames() int {
+	frames := 0
 	for i := 0; i < e.tracks; i++ {
-		if e.voices[i].insert != nil {
-			return fx.DriveLatencyFrames
+		v := &e.voices[i]
+		n := 0
+		if v.insert != nil {
+			n = fx.DriveLatencyFrames
 		}
+		if v.chain != nil {
+			n += v.chain.latency
+		}
+		frames = max(frames, n)
 	}
-	return 0
+	return frames
 }

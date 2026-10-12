@@ -3,8 +3,9 @@
 Cicada has 21 original keyboard patches. Their modeled versions retain
 velocity, sustain and release behavior. All prepare coefficients before audio
 starts, allocate nothing during playback and support MIDI 21–108 at 44.1,
-48, 96 and 192 kHz. `voices` reserves 1–8 notes per track within the unchanged
-32-voice project budget.
+48, 96 and 192 kHz. `voices` reserves 1–8 notes per track within the native
+256-voice project budget. Browser and WAM images support up to 32 voices
+across 16 tracks; native playback supports up to 64 tracks.
 
 | Family | Score instrument names |
 | --- | --- |

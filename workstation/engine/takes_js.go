@@ -3,23 +3,19 @@
 package main
 
 import (
-	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"sync/atomic"
 	"syscall/js"
-	"time"
 
-	"m31labs.dev/cicada/workstation/control"
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 	"m31labs.dev/gosx/signal"
 )
 
 func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 	var props struct {
-		HasAudioTracks bool `json:"hasAudioTracks"`
+		HasAudioTracks bool   `json:"hasAudioTracks"`
+		Active         string `json:"active"`
+		Timeline       bool   `json:"timeline"`
 	}
 	if err := host.DecodeProps(&props); err != nil {
 		return nil, err
@@ -28,7 +24,6 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 	if root.IsNull() {
 		return nil, fmt.Errorf("take panel is missing")
 	}
-	ctx, cancel := context.WithCancel(context.Background())
 	var closed atomic.Bool
 	status := signal.New("Refreshing native capture…")
 	watch := signal.Watch(func() {
@@ -36,6 +31,27 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 			root.Call("querySelector", "[data-capture-status]").Set("textContent", status.Get())
 		}
 	})
+	fullSong := js.FuncOf(func(_ js.Value, args []js.Value) any {
+		if closed.Load() || len(args) == 0 {
+			return nil
+		}
+		target := args[0].Get("target")
+		if target.Get("closest").Type() != js.TypeFunction {
+			return nil
+		}
+		button := target.Call("closest", "[data-capture-full-song]")
+		if !workspacePresent(button) || button.Get("disabled").Bool() {
+			return nil
+		}
+		form := button.Call("closest", "form")
+		for name, value := range map[string]string{"recordStart": "@1.1.1", "recordEnd": workspaceAttr(button, "data-capture-full-song")} {
+			input := form.Call("querySelector", "[name="+name+"]")
+			input.Set("value", value)
+			input.Call("dispatchEvent", js.Global().Get("Event").New("input", map[string]any{"bubbles": true}))
+		}
+		return nil
+	})
+	root.Call("addEventListener", "click", fullSong)
 	audio := root.Call("querySelector", "audio")
 	var audioError js.Func
 	if !audio.IsNull() {
@@ -47,85 +63,95 @@ func mountTakes(host enginewasm.Context) (enginewasm.Handle, error) {
 		})
 		audio.Call("addEventListener", "error", audioError)
 	}
-	go func() {
-		ticker := time.NewTicker(300 * time.Millisecond)
-		defer ticker.Stop()
-		client := &http.Client{Timeout: 2 * time.Second}
-		for {
-			request, err := http.NewRequestWithContext(ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/capture", nil)
-			if err != nil {
-				return
-			}
-			response, err := client.Do(request)
-			if ctx.Err() != nil {
-				if response != nil {
-					response.Body.Close()
-				}
-				return
-			}
-			var state control.CaptureState
-			if err == nil {
-				err = json.NewDecoder(io.LimitReader(response.Body, 16<<10)).Decode(&state)
-				response.Body.Close()
-				if response.StatusCode != 200 {
-					err = fmt.Errorf("capture service unavailable")
-				}
-			}
-			if err != nil {
-				status.Set("Capture status is unavailable. Reload before recording.")
-			} else if !closed.Load() {
-				active, recording := state.Active != "", state.Capture != nil && state.Capture.Recording
-				buttons := root.Call("querySelectorAll", "[data-capture-control]")
-				for i := 0; i < buttons.Length(); i++ {
-					b := buttons.Index(i)
-					disabled := false
-					switch b.Call("getAttribute", "data-capture-control").String() {
-					case "arm":
-						disabled = active || !props.HasAudioTracks
-					case "start":
-						disabled = !active || recording
-					case "stop":
-						disabled = !active
-					default:
-						disabled = active
-					}
-					b.Set("disabled", disabled)
-				}
-				text := "No active capture. Enable input in Audio, then arm an audio track."
-				if active {
-					text = "Armed take " + state.Active + ". Press Record for the one-bar count-in."
-				}
-				if recording {
-					c := state.Capture
-					text = fmt.Sprintf("Recording %s · %d frames saved", state.Active, c.WrittenFrames)
-					if state.Rate > 0 {
-						text = fmt.Sprintf("Recording %s · %.1f seconds saved", state.Active, float64(c.WrittenFrames)/float64(state.Rate))
-					}
-					if c.RemainingFrames > 0 && state.Rate > 0 {
-						text = fmt.Sprintf("Count-in · %.1f seconds", float64(c.RemainingFrames)/float64(state.Rate))
-					}
-				}
-				if state.Capture != nil && state.Capture.Incomplete {
-					text += " · incomplete input; the durable take will be retained"
-				}
-				if state.Capture != nil && state.Capture.Error != "" {
-					text += " · " + state.Capture.Error
-				}
-				status.Set(text)
-			}
-			select {
-			case <-ctx.Done():
-				return
-			case <-ticker.C:
-			}
+	lastActive := props.Active
+	captureWatch := signal.Watch(func() {
+		update := nativeCapture.Get()
+		if !update.Ready || closed.Load() {
+			return
 		}
-	}()
+		state := update.State
+		if update.Error {
+			renderInputMeter(root, update)
+			status.Set("Capture status is unavailable. Reload before recording.")
+		} else if !closed.Load() {
+			active, recording := state.Active != "", state.Capture != nil && state.Capture.Recording
+			root.Call("setAttribute", "data-capture-active", fmt.Sprint(active))
+			if lastActive != "" && state.Active == "" {
+				workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })
+			}
+			lastActive = state.Active
+			buttons := root.Call("querySelectorAll", "[data-capture-control]")
+			for i := 0; i < buttons.Length(); i++ {
+				b := buttons.Index(i)
+				disabled := false
+				switch b.Call("getAttribute", "data-capture-control").String() {
+				case "arm", "record":
+					hasTracks := props.HasAudioTracks
+					if track := root.Call("querySelector", "select[name=track]"); workspacePresent(track) {
+						hasTracks = track.Get("options").Length() > 0
+					}
+					disabled = active || !hasTracks
+				case "start":
+					disabled = !active || recording
+				case "stop":
+					disabled = !active
+				default:
+					disabled = active
+				}
+				b.Set("disabled", disabled)
+			}
+			text := "No active capture. Enable input in Audio, then arm an audio track."
+			if props.Timeline {
+				if node := root.Call("querySelector", "[data-capture-idle]"); workspacePresent(node) {
+					text = workspaceAttr(node, "data-capture-idle")
+				} else {
+					text = "Choose your microphone in Recording setup before recording."
+				}
+			}
+			if active {
+				text = "Armed take " + state.Active + ". Press Record for the one-bar count-in."
+			}
+			if recording {
+				c := state.Capture
+				text = fmt.Sprintf("Recording %s · %d frames saved", state.Active, c.WrittenFrames)
+				if state.Rate > 0 {
+					text = fmt.Sprintf("Recording %s · %.1f seconds saved", state.Active, float64(c.WrittenFrames)/float64(state.Rate))
+				}
+				if c.RemainingFrames > 0 && state.Rate > 0 {
+					text = fmt.Sprintf("Count-in · %.1f seconds", float64(c.RemainingFrames)/float64(state.Rate))
+				}
+			}
+			if state.Capture != nil && state.Capture.Completed {
+				text = "Saving take and updating your vocal…"
+			}
+			if state.Loop != nil && active {
+				text = fmt.Sprintf("Pass %d of %d · %s", state.Loop.Pass, state.Loop.Passes, text)
+			}
+			if state.Capture != nil && state.Capture.Incomplete {
+				text += " · incomplete input; the durable take will be retained"
+			}
+			if state.Capture != nil && state.Capture.Error != "" {
+				text += " · " + state.Capture.Error
+			}
+			if button := root.Call("querySelector", "[data-capture-full-song]"); workspacePresent(button) {
+				button.Set("disabled", active)
+			}
+			renderInputMeter(root, update)
+			fields := root.Call("querySelectorAll", ".vocal-record select, .vocal-record input:not([type=hidden]), [data-vocal-level-control]")
+			for i := 0; i < fields.Length(); i++ {
+				fields.Index(i).Set("disabled", active)
+			}
+			status.Set(text)
+		}
+	})
 	return enginewasm.HandleFunc(func() {
 		if closed.Swap(true) {
 			return
 		}
-		cancel()
+		captureWatch.Dispose()
 		watch.Dispose()
+		root.Call("removeEventListener", "click", fullSong)
+		fullSong.Release()
 		if !audio.IsNull() {
 			audio.Call("removeEventListener", "error", audioError)
 			audioError.Release()

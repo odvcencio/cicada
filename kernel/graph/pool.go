@@ -25,6 +25,7 @@ type poolSlot struct {
 	release          int
 	last, tail, peak float32
 	tailLeft         int
+	quietFrames      int
 }
 
 // Pool sums four graph slots in ascending order. Allocation picks the lowest
@@ -34,6 +35,9 @@ type Pool struct {
 	slots                     [MaxPolyphony]poolSlot
 	serial                    uint64
 	releaseFrames, tailFrames int
+	authoredRelease           bool
+	releaseLimitFrames        int
+	releaseQuietFrames        int
 }
 
 func NewPool(program Program, sampleRate int) (*Pool, error) {
@@ -42,7 +46,26 @@ func NewPool(program Program, sampleRate int) (*Pool, error) {
 
 // NewPoolFromProgram prepares the fixed voice pool from an immutable program.
 func NewPoolFromProgram(program *Program, sampleRate int) (*Pool, error) {
+	if program == nil {
+		return nil, Error("nil graph program")
+	}
+	if err := ValidateProgram(program, sampleRate); err != nil {
+		return nil, err
+	}
 	p := &Pool{releaseFrames: sampleRate * 30 / 1000, tailFrames: sampleRate * 5 / 1000}
+	for _, node := range program.Nodes[:program.Len] {
+		p.authoredRelease = p.authoredRelease || node.Op == ADSR
+	}
+	// ADSR stages are bounded to 30 seconds. Allow the decimator/filter tail
+	// to settle; malformed gates still cannot keep a released slot forever.
+	p.releaseQuietFrames = delaySamples(program)
+	if usesQuality(program) {
+		p.releaseQuietFrames = (p.releaseQuietFrames + 1) / 2
+	}
+	// A silent gap can precede a later delayed impulse. Wait longer than the
+	// sum of all bounded rings, including serial delays and comb feedback.
+	p.releaseQuietFrames += 64
+	p.releaseLimitFrames = sampleRate*30 + p.releaseFrames + p.releaseQuietFrames
 	for i := range p.slots {
 		v, err := NewVoiceFromProgram(program, sampleRate)
 		if err != nil {
@@ -114,6 +137,7 @@ func (p *Pool) NoteOn(notes [4]uint8, count, velocity uint8, slide bool, cohort 
 		s.voice.NoteOn(notes[n], velocity, carried)
 		p.serial++
 		s.id, s.cohort, s.gated, s.release = p.serial, cohort, true, 0
+		s.quietFrames = 0
 		handles[n] = Handle{Slot: uint8(slot), ID: s.id}
 	}
 	return handles, nil
@@ -130,6 +154,9 @@ func (p *Pool) NoteOff(handle Handle) bool {
 	s.voice.NoteOff()
 	s.gated = false
 	s.release = p.releaseFrames
+	if p.authoredRelease {
+		s.release = p.releaseLimitFrames
+	}
 	return true
 }
 
@@ -200,7 +227,26 @@ func (p *Pool) Next() float32 {
 				s.peak = level
 			}
 			if !s.gated {
-				y *= float32(s.release) / float32(p.releaseFrames)
+				if p.authoredRelease {
+					// Only scan envelope nodes when the output could be silent.
+					// Audible tails need no extra traversal of the graph.
+					quiet := y > -1e-7 && y < 1e-7
+					if quiet {
+						level, _ := s.voice.envelopeLevel()
+						quiet = level < 1e-7
+					}
+					if quiet {
+						s.quietFrames++
+					} else {
+						s.quietFrames = 0
+					}
+					if s.quietFrames >= p.releaseQuietFrames {
+						s.release = 1
+					}
+				}
+				if !p.authoredRelease || s.release <= p.releaseFrames {
+					y *= float32(s.release) / float32(p.releaseFrames)
+				}
 				s.release--
 				if s.release == 0 {
 					s.voice.resetDeterministic()
@@ -224,13 +270,33 @@ func (v *Voice) resetDeterministic() {
 	}
 }
 
-// Peak times remaining release fraction is stable through oscillator zero
-// crossings. Include the one bounded declick tail when ranking releases.
+// Idle includes released voices and all steal/declick tails. It is safe to
+// omit Next calls only in this state; individual zero output samples are not
+// evidence that authored envelopes or delayed graph audio have ended.
+func (p *Pool) Idle() bool {
+	for i := range p.slots {
+		s := &p.slots[i]
+		// Next clears last on the first fully inactive sample. Keep that
+		// cleanup sample: a later steal uses last to seed its declick tail.
+		if s.gated || s.release > 0 || s.tailLeft > 0 || s.last != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+// Envelope/peak levels remain stable through oscillator zero crossings.
+// Include the one bounded declick tail when ranking released voices.
 func (p *Pool) quietness(slot int) float64 {
 	s := &p.slots[slot]
 	tail := float64(s.tail)
 	if tail < 0 {
 		tail = -tail
 	}
-	return float64(s.peak)*float64(s.release)/float64(p.releaseFrames) + tail*float64(s.tailLeft)/float64(p.tailFrames)
+	level := float64(s.peak) * float64(s.release) / float64(p.releaseFrames)
+	if p.authoredRelease {
+		envelope, _ := s.voice.envelopeLevel()
+		level = float64(s.peak) * float64(envelope)
+	}
+	return level + tail*float64(s.tailLeft)/float64(p.tailFrames)
 }

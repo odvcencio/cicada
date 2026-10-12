@@ -63,7 +63,22 @@ type Take struct {
 	After      string                 `json:"after,omitempty"`
 	Candidate  []byte                 `json:"candidate,omitempty"`
 	FirstBlock *capture.RecordedBlock `json:"firstBlock,omitempty"`
+	Timeline   *Timeline              `json:"timeline,omitempty"`
 }
+
+// Timeline pins the musical origin and tempo of an arrangement recording.
+// Raw PCM includes count-in/pre-roll; StartTick/EndTick define the usable punch.
+type Timeline struct {
+	StartTick         int64 `json:"startTick"`
+	EndTick           int64 `json:"endTick"`
+	PlaybackStartTick int64 `json:"playbackStartTick"`
+	TempoMilli        int64 `json:"tempoMilli"`
+}
+
+func (v Timeline) Valid() bool {
+	return v.StartTick >= 0 && v.EndTick > v.StartTick && v.PlaybackStartTick >= 0 && v.PlaybackStartTick <= v.StartTick && v.TempoMilli >= 20000 && v.TempoMilli <= 300000 && v.EndTick <= 1<<40
+}
+
 type event struct {
 	Stage      Stage                  `json:"stage"`
 	Take       *Take                  `json:"take,omitempty"`
@@ -174,6 +189,9 @@ func (s *Store) loadJournals() error {
 		}
 		if name != t.ID+".jsonl" || !validID(t.ID) || !validID(t.Track) || !validID(t.Scene) || t.Rate < 8000 || t.Rate > 384000 || t.Channels < 1 || t.Channels > 2 {
 			return errors.New("invalid take journal identity or format")
+		}
+		if t.Timeline != nil && !t.Timeline.Valid() {
+			return errors.New("invalid take timeline")
 		}
 		takes[t.ID] = t
 	}
@@ -371,16 +389,27 @@ func decode(reader io.Reader) (*Take, int64, error) {
 	}
 }
 func (s *Store) Begin(track, scene, expected string, rate, channels int) (string, error) {
+	return s.BeginTimeline(track, scene, expected, rate, channels, nil)
+}
+
+func (s *Store) BeginTimeline(track, scene, expected string, rate, channels int, timeline *Timeline) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if !validID(track) || !validID(scene) || len(expected) != 64 || rate < 8000 || rate > 384000 || channels < 1 || channels > 2 {
 		return "", errors.New("invalid take target, revision or format")
+	}
+	if timeline != nil && !timeline.Valid() {
+		return "", errors.New("invalid take timeline")
 	}
 	var id [12]byte
 	if _, err := rand.Read(id[:]); err != nil {
 		return "", err
 	}
 	t := &Take{ID: "take-" + hex.EncodeToString(id[:]), Track: track, Scene: scene, Expected: expected, Rate: rate, Channels: channels, Created: time.Now().UTC()}
+	if timeline != nil {
+		v := *timeline
+		t.Timeline = &v
+	}
 	f, err := s.root.OpenFile(s.rawPath(t.ID), os.O_CREATE|os.O_EXCL|os.O_RDWR, 0600)
 	if err != nil {
 		return "", err
@@ -398,6 +427,10 @@ func (s *Store) Begin(track, scene, expected string, rate, channels int) (string
 }
 func clone(t *Take) Take {
 	v := *t
+	if t.Timeline != nil {
+		timeline := *t.Timeline
+		v.Timeline = &timeline
+	}
 	if t.FirstBlock != nil {
 		b := *t.FirstBlock
 		v.FirstBlock = &b

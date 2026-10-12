@@ -32,7 +32,7 @@ func TestLiveSocketPreviewRejectsUnsupportedVoiceWithoutFault(t *testing.T) {
 		t.Run(input.name, func(t *testing.T) {
 			score := studioPreviewScore(t, -6)
 			if input.kind != engine.VoiceGraph {
-				created, err := engine.New(engine.Config{SampleRate: 48_000, MaxBlock: 256, Tracks: 1, MaxVoices: 32, BPMMilli: 120_000, Track: [16]engine.TrackConfig{{Kind: input.kind}}})
+				created, err := engine.New(engine.Config{SampleRate: 48_000, MaxBlock: 256, Tracks: 1, MaxVoices: 32, BPMMilli: 120_000, Track: [engine.MaxTracks]engine.TrackConfig{{Kind: input.kind}}})
 				if err != nil {
 					t.Fatal(err)
 				}

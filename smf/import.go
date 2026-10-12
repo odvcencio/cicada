@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/notation"
@@ -150,8 +151,8 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 			}
 		}
 		if selected < 0 {
-			if len(lanes) == 16 {
-				return fail("polyphony needs more than 16 score tracks")
+			if len(lanes) == limits.MaxTracks {
+				return fail(fmt.Sprintf("polyphony needs more than %d score tracks", limits.MaxTracks))
 			}
 			selected = len(lanes)
 			lanes = append(lanes, importLane{drum: name})

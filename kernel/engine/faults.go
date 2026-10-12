@@ -29,6 +29,10 @@ package engine
 // number, that no code reuses a retired number, and that engine code passes
 // these names, not number literals, to fault.
 const (
+	// FaultTrackInsert: a serial track processor reported invalid audio.
+	FaultTrackInsert uint16 = 46
+	// FaultParallelWorker reports a retired, stalled, or failed native DSP worker.
+	FaultParallelWorker uint16 = 47
 	// FaultRenderBlock: a render call got slices that are empty, differ in
 	// length, or exceed the largest block.
 	FaultRenderBlock uint16 = 1

@@ -73,7 +73,7 @@ type DelayParams struct {
 	TimeMs   float64
 	Feedback float64
 	DampHz   float64
-	PingPong bool
+	PingPong bool // Mono wet input into the left line, then alternating feedback.
 	Width    float64
 	Mix      float64
 }
@@ -131,6 +131,7 @@ type Delay struct {
 	smooth                   float64
 	feedbackState            stereo
 	fault                    bool
+	excited                  bool
 }
 
 func NewDelay(sampleRate int, bpmMilli int64) (*Delay, error) {
@@ -153,6 +154,11 @@ func NewDelay(sampleRate int, bpmMilli int64) (*Delay, error) {
 func (d *Delay) Params() DelayParams { return d.params }
 func (d *Delay) Fault() bool         { return d.fault }
 func (d *Delay) LatencyFrames() int  { return 0 }
+
+// Silent proves that no audio has entered the delay since Reset. Feedback and
+// damping tails are never discarded based on their size. Continue calling
+// Process during silence so time crossfades and parameter ramps advance.
+func (d *Delay) Silent() bool { return !d.excited && !d.fault }
 
 // SetTempo changes a synced time by fading between two stationary read heads.
 // Free times stay in milliseconds when the song tempo changes.
@@ -222,6 +228,7 @@ func (d *Delay) Reset() {
 	d.position = 0
 	d.feedbackState = stereo{}
 	d.fault = false
+	d.excited = false
 	d.oldFrames, d.fade = d.newFrames, 1
 	d.feedback, d.damp, d.ping, d.width, d.mix = d.targetFeedback, d.targetDamp, d.targetPing, d.targetWidth, d.targetMix
 }
@@ -255,6 +262,18 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	d.ping += float64((d.targetPing - d.ping) * d.smooth)
 	d.width += float64((d.targetWidth - d.width) * d.smooth)
 	d.mix += float64((d.targetMix - d.mix) * d.smooth)
+	if left == 0 && right == 0 && !d.excited {
+		// Both read heads and the feedback filter contain exact zeros.
+		if d.fade < 1 {
+			d.fade = math.Min(1, d.fade+d.fadeStep)
+		}
+		d.position++
+		if d.position == len(d.buffer) {
+			d.position = 0
+		}
+		return 0, 0
+	}
+	d.excited = true
 	wet := d.read(d.newFrames)
 	if d.fade < 1 {
 		old := d.read(d.oldFrames)
@@ -269,9 +288,17 @@ func (d *Delay) Process(left, right float32) (float32, float32) {
 	feedbackR := float64(wet.right*(1-d.ping)) + float64(wet.left*d.ping)
 	d.feedbackState.left += float64((feedbackL - d.feedbackState.left) * d.damp)
 	d.feedbackState.right += float64((feedbackR - d.feedbackState.right) * d.damp)
+	// Ping-pong folds only the wet input to mono. Swapping feedback alone
+	// leaves centered sources identical in both channels forever. Average
+	// L/R rather than summing so a centered source keeps its first-echo peak.
+	// The existing smoothed mode coefficient also fades the input routing;
+	// stereo delay and the dry path keep their original channel separation.
+	mono := (x.left + x.right) * .5
+	inputL := x.left + float64((mono-x.left)*d.ping)
+	inputR := x.right * (1 - d.ping)
 	d.buffer[d.position] = stereo{
-		x.left + fastmath.Tanh(d.feedbackState.left*d.feedback),
-		x.right + fastmath.Tanh(d.feedbackState.right*d.feedback),
+		inputL + fastmath.Tanh(d.feedbackState.left*d.feedback),
+		inputR + fastmath.Tanh(d.feedbackState.right*d.feedback),
 	}
 	d.position++
 	if d.position == len(d.buffer) {

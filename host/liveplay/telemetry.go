@@ -3,6 +3,7 @@ package liveplay
 import (
 	"encoding/binary"
 	"fmt"
+	"m31labs.dev/cicada/kernel/limits"
 	"math"
 	"sync"
 )
@@ -21,7 +22,8 @@ const (
 
 const (
 	TransportFrameSize = 64
-	MetersFrameSize    = 2 + 1 + 16*16 + 12
+	MetersFrameSize    = 2 + 1 + limits.PortableMaxTracks*16 + 12
+	MaxMetersFrameSize = 2 + 1 + limits.NativeMaxTracks*16 + 12
 	HealthFrameSize    = 18
 )
 
@@ -46,10 +48,12 @@ type TrackMeter struct{ PeakL, PeakR, RMSL, RMSR float32 }
 // MasterMeter holds master loudness readings.
 type MasterMeter struct{ MomentaryLUFS, ShortTermLUFS, TruePeakDBTP float32 }
 
-// MetersFrame carries up to 16 track meters and the master meter.
+// MetersFrame carries the native track meters and the master meter.
+// Sessions of sixteen tracks or fewer retain the version-1 wire layout; larger
+// native sessions use version 2 with sixty-four meter slots.
 type MetersFrame struct {
 	TrackCount uint8
-	Tracks     [16]TrackMeter
+	Tracks     [limits.NativeMaxTracks]TrackMeter
 	Master     MasterMeter
 }
 
@@ -125,39 +129,51 @@ func DecodeTransportFrame(src []byte) (TransportFrame, error) {
 
 // Encode writes the frame into dst and returns its size, or 0 if dst is short.
 func (f MetersFrame) Encode(dst []byte) int {
-	if len(dst) < MetersFrameSize {
+	capacity, version := limits.PortableMaxTracks, byte(FrameVersion)
+	if f.TrackCount > limits.PortableMaxTracks {
+		capacity, version = limits.NativeMaxTracks, 2
+	}
+	size := 2 + 1 + capacity*16 + 12
+	if int(f.TrackCount) > limits.NativeMaxTracks || len(dst) < size {
 		return 0
 	}
-	header(dst, FrameMeters)
-	dst[2] = f.TrackCount
-	for i, t := range f.Tracks {
+	dst[0], dst[1], dst[2] = version, byte(FrameMeters), f.TrackCount
+	for i := 0; i < capacity; i++ {
+		t := f.Tracks[i]
 		o := 3 + i*16
 		putF32(dst[o:], t.PeakL)
 		putF32(dst[o+4:], t.PeakR)
 		putF32(dst[o+8:], t.RMSL)
 		putF32(dst[o+12:], t.RMSR)
 	}
-	o := 3 + 16*16
+	o := 3 + capacity*16
 	putF32(dst[o:], f.Master.MomentaryLUFS)
 	putF32(dst[o+4:], f.Master.ShortTermLUFS)
 	putF32(dst[o+8:], f.Master.TruePeakDBTP)
-	return MetersFrameSize
+	return size
 }
 
-// DecodeMetersFrame parses a meters frame.
+// DecodeMetersFrame parses a legacy or expanded native meters frame.
 func DecodeMetersFrame(src []byte) (MetersFrame, error) {
-	if err := checkHeader(src, FrameMeters, MetersFrameSize); err != nil {
-		return MetersFrame{}, err
+	if len(src) < 3 {
+		return MetersFrame{}, fmt.Errorf("short telemetry meters frame")
 	}
-	if src[2] > 16 {
-		return MetersFrame{}, fmt.Errorf("telemetry meters frame has %d tracks, max 16", src[2])
+	capacity := limits.PortableMaxTracks
+	if src[0] == 2 {
+		capacity = limits.NativeMaxTracks
+	} else if src[0] != FrameVersion {
+		return MetersFrame{}, fmt.Errorf("unknown telemetry meters version %d", src[0])
+	}
+	size := 2 + 1 + capacity*16 + 12
+	if src[1] != byte(FrameMeters) || len(src) < size || int(src[2]) > capacity {
+		return MetersFrame{}, fmt.Errorf("invalid telemetry meters frame for %d tracks", src[2])
 	}
 	f := MetersFrame{TrackCount: src[2]}
-	for i := range f.Tracks {
+	for i := 0; i < capacity; i++ {
 		o := 3 + i*16
 		f.Tracks[i] = TrackMeter{PeakL: getF32(src[o:]), PeakR: getF32(src[o+4:]), RMSL: getF32(src[o+8:]), RMSR: getF32(src[o+12:])}
 	}
-	o := 3 + 16*16
+	o := 3 + capacity*16
 	f.Master = MasterMeter{MomentaryLUFS: getF32(src[o:]), ShortTermLUFS: getF32(src[o+4:]), TruePeakDBTP: getF32(src[o+8:])}
 	return f, nil
 }
@@ -237,9 +253,10 @@ func (p *Publisher) PublishTransport(f TransportFrame) {
 
 // PublishMeters stores and announces a meters frame.
 func (p *Publisher) PublishMeters(f MetersFrame) {
-	b := make([]byte, MetersFrameSize)
-	f.Encode(b)
-	p.publish(FrameMeters, b)
+	b := make([]byte, MaxMetersFrameSize)
+	if size := f.Encode(b); size != 0 {
+		p.publish(FrameMeters, b[:size])
+	}
 }
 
 // PublishHealth stores and announces a health frame.

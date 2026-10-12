@@ -17,17 +17,30 @@ uses immutable `audio/blobs/<sha256>.wav` and friendly
 and refuse collisions. Filesystems without hard links fail explicitly. PCM and
 staged WAV files remain recovery roots; automatic garbage collection is absent.
 
-The score retains every asset and clip declaration. The newest pass becomes the
-selected scene binding; selecting an older pass changes only that binding. Clip
+Legacy scene recording retains every asset and clip declaration in the score.
+The newest pass becomes the selected scene binding; selecting an older pass
+changes only that binding. Clip
 preroll trim preserves original PCM. Placement and clock confidence are retained
-in the journal; comp maps are not supported.
+in the journal. `BeginTimeline` also pins an arrangement take's punch range,
+backing origin and tempo. Session comp selections live in revisioned score
+metadata and refer to these retained passes; the host prints only the chosen
+mono vocal to a new immutable asset, keeping older prints for Undo.
 
 Studio exposes `GET /api/takes` and revision-checked `POST /api/takes` with actions
-`arm`, `start`, `stop`, `recover`, and `select`. Arm takes `track` and `scene`;
+`arm`, `record`, `start`, `stop`, `recover`, `select`, `comp`, and `listen`.
+Session arm/record requests add `recording: {start, end}` musical positions;
+comp/listen requests add the same range and a `takeId`. `listen` prepares a
+private song audition without publishing source. Legacy arm takes `track` and `scene`;
 recover/select take `takeId`. Requests include `revision` and use the same JSON
 origin checks as existing source edits. Source conflicts return HTTP 409 and keep
 published audio. Recovery/reapplication requires the current revision. Prepared
 source writes resume on open; completed takes never replay after undo.
+
+`GET /api/takes/{id}/waveform?bins=4096` returns bounded mono min/max peaks
+for a published arrangement take's covered vocal range. Counts are limited
+to 64–8192 bins. The host streams verified raw PCM, excludes count-in/pre-roll
+using the retained origin, and caches at most 16 immutable summaries outside
+recorder/source locks. Analysis never changes a take or a source transaction.
 
 An exclusive journal lock prevents concurrent recovery/recorders for the same
 score. `host/projectcopy.SaveAs` reads complete record prefixes while recording,

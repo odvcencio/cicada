@@ -2,9 +2,16 @@
 
 Studio is a GoSX server application. Tymbal opens native audio devices; Cicada's
 allocation-free kernel renders their buffers. The workstation handles the score
-editor, session, pattern grid, generator, live performance, mixer, takes,
+editor, session, pattern grid, pad sampler, generator, live performance, mixer, takes,
 history, audio settings, and export.
 It does not put a web framework inside the realtime callback.
+
+Session records full songs or punch ranges, retains up to eight looped passes,
+and offers waveform phrase selection with gain, timing, fades, and crossfades.
+Audio settings include a residual recording timing correction. Mixer provides
+ordered track effects and an EQ/compressor/de-esser vocal chain. Session also
+edits continuous automation points by pointer, touch, keyboard, or unit-aware
+fields; saved changes use the same source revision and Undo history.
 
 ## Framework conventions
 
@@ -75,8 +82,9 @@ rather than assuming that examples on `main` are supported by the pinned version
   status. It never transfers PCM or retained source candidates in polling data.
 - GoSX managed/native forms create edition-2 audio tracks, edit clip regions,
   gain and fades, and place clips in scenes. Source edits preserve comments and
-  check revisions before committing. The native host verifies and shares
-  bounded immutable PCM before playback. Prepared stereo voices join the
+  check revisions before committing. The native host verifies short assets
+  into bounded immutable PCM and streams long audio clips through a bounded
+  cache. Reader work stays outside the callback. Prepared stereo voices join the
   sequencer and existing mixer/effects; Tymbal owns output. The same prepared
   voices supply offline WAV/stems renders. No PCM enters the GoSX asset bundle.
 - Use `gosx build --prod` from the pinned module for production runtimes and

@@ -101,7 +101,7 @@ func TestSceneClipStartsOnceAndSeekRestoresKeep(t *testing.T) {
 	cfg := clipScheduleConfig()
 	cfg.BPMMilli = 120000
 	cfg.Schedule = nil
-	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneClip}}}, {}}
+	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}}, {}}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 4}, {Scene: 1, Bars: 1}}
 	// An asset long enough to remain active across scene entry.
 	cfg.Assets[0].Left = make([]float32, 480000)

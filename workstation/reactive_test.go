@@ -59,6 +59,42 @@ func TestReactiveEditReturnsCanonicalProjectionWithoutRedirect(t *testing.T) {
 	}
 }
 
+func TestReactivePlacementEditUsesRevisionCheckedArrangementAction(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=session"))
+	response, result := reactivePost(t, client, address, "arrange", map[string]string{
+		"csrf_token": csrf, "revision": "current", "action": "update", "name": "far-in", "at": "@5.3.1", "length": "320ticks",
+		"__cicada_location": "/?panel=session&placement=far-in",
+	})
+	var projection workspaceProjection
+	if err := json.Unmarshal(result.Data, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != 200 || !result.OK || projection.WriteRevision != "current" || projection.Location != "/?panel=session&placement=far-in" || len(*edits) != 1 {
+		t.Fatalf("placement action: %d %+v", response.StatusCode, result)
+	}
+	settings := (*edits)[0]["placement"].(map[string]any)
+	if settings["at"] != "@5.3.1" || settings["length"] != "320ticks" || (*edits)[0]["name"] != "far-in" {
+		t.Fatalf("placement fields: %+v", (*edits)[0])
+	}
+}
+
+func TestReactiveListeningPassesTargetWithoutReplacingWorkspace(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/?panel=session"))
+	response, result := reactivePost(t, client, address, "transport", map[string]string{
+		"csrf_token": csrf, "revision": "current", "action": "audition", "placement": "far-in", "mode": "solo", "loop": "true",
+		"__cicada_location": "/?panel=session&placement=far-in",
+	})
+	if response.StatusCode != 200 || !result.OK || result.Redirect != "" || len(*edits) != 1 {
+		t.Fatalf("audition action navigated: %d %+v edits=%+v", response.StatusCode, result, *edits)
+	}
+	payload := (*edits)[0]
+	if payload["placement"] != "far-in" || payload["mode"] != "solo" || payload["loop"] != true || payload["revision"] != "current" {
+		t.Fatalf("audition target was lost: %+v", payload)
+	}
+}
+
 func TestReactiveConflictRetainsValuesAndDoesNotProjectSavedState(t *testing.T) {
 	address, client, edits := testApp(t)
 	csrf := tokenFromPage(t, getPage(t, client, address+"/"))

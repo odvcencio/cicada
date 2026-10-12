@@ -1,6 +1,7 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const {createHash} = require('node:crypto');
 const fs = require('node:fs');
 const path = require('node:path');
 const {createRequire} = require('node:module');
@@ -42,7 +43,10 @@ test('shared score merges offline edits, retains per-user undo and rejects viewe
   const invitation = pages[0].getByRole('textbox', {name: 'Invitation code'});
   await wait(async () => (await invitation.inputValue()).length === 32, 'invitation was not created');
   await pages[1].getByRole('textbox', {name: 'Invitation code'}).fill(await invitation.inputValue());
-  await pages[1].getByRole('button', {name: 'Use invitation'}).click();
+  await Promise.all([
+    pages[1].waitForEvent('domcontentloaded'),
+    pages[1].getByRole('button', {name: 'Use invitation'}).click(),
+  ]);
   await wait(async () => await second.count() && !(await second.evaluate(node => node.readOnly)), 'invited editor remained read-only');
   await first.fill(original + '\n// first user\n');
   await wait(async () => (await second.inputValue()).includes('// first user'), 'remote edit did not arrive');
@@ -69,8 +73,15 @@ test('shared score merges offline edits, retains per-user undo and rejects viewe
   });
   assert.equal(response, 403);
   await wait(async () => !(await pages[0].getByRole('button', {name: 'Save shared score'}).isDisabled()), 'shared score did not sync before save');
-  await pages[0].getByRole('button', {name: 'Save shared score'}).click();
-  await pages[0].getByText('Shared score saved.', {exact: true}).waitFor();
+  const draft = await first.inputValue();
+  const [saved] = await Promise.all([
+    pages[0].waitForResponse(response => new URL(response.url()).pathname === '/api/collaboration/save' && response.request().method() === 'POST'),
+    pages[0].getByRole('button', {name: 'Save shared score'}).click(),
+  ]);
+  assert.equal(saved.status(), 200, 'shared score save failed');
+  const persisted = await (await pages[0].request.get(base + '/api/state')).json();
+  assert.equal(persisted.source, draft, 'shared draft was not saved');
+  assert.equal(persisted.revision, createHash('sha256').update(draft).digest('hex'), 'persisted revision does not match the shared draft');
   const shots = process.env.CICADA_COLLAB_SCREENSHOTS;
   if (shots) {
     fs.mkdirSync(shots, {recursive: true});

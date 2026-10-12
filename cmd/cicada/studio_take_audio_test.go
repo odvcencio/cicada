@@ -287,8 +287,8 @@ func TestAudioOnlyCaptureBacking(t *testing.T) {
 			if err := project.ValidateProject(backing); err != nil {
 				t.Fatal(err)
 			}
-			if backing.Scenes[0].Bindings["vox"] != "off" {
-				t.Fatal("audio accompaniment is not silent")
+			if backing.Scenes[0].Bindings["vox"] != id+"-clip" || len(backing.Assets) != len(p.Assets) || len(backing.Clips) != len(p.Clips) {
+				t.Fatal("capture removed the previous audio take")
 			}
 			after, err := project.CanonicalJSON(p)
 			if err != nil || string(before) != string(after) {
