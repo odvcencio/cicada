@@ -1,10 +1,13 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
 const path = require('node:path');
 
 async function checkAudioPerformance({browser, base, proof, ready, errors}) {
-  const desktop = await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce'});
+  const storage = process.env.CICADA_AUDIO_PERFORMANCE_STORAGE;
+  if (storage) assert.ok(path.isAbsolute(storage) && storage.startsWith('/tmp/'), 'Save Studio identity only in a private /tmp file.');
+  const desktop = await browser.newContext({viewport: {width: 1440, height: 1100}, reducedMotion: 'reduce', ...(storage && fs.existsSync(storage) ? {storageState: storage} : {})});
   let phone;
   try {
     const page = await desktop.newPage();
@@ -70,6 +73,7 @@ async function checkAudioPerformance({browser, base, proof, ready, errors}) {
     assert.equal(final.options.inputEnabled, false);
     assert.equal(final.runtime.armed, false);
   } finally {
+    if (storage) await desktop.storageState({path: storage});
     if (process.env.CICADA_PRODUCER_STORAGE) await desktop.storageState({path: process.env.CICADA_PRODUCER_STORAGE});
     if (phone) await phone.close();
     await desktop.close();
