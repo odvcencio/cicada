@@ -74,7 +74,7 @@ test('placements edit visually and Session follows saved Score without reloading
     await page.mouse.up();
   };
   try {
-    await page.goto(new URL('/?panel=session',base).href,{waitUntil:'networkidle'}); await ready(page);
+    await page.goto(new URL('/?panel=session',base).href,{waitUntil:'domcontentloaded'}); await ready(page);
     assert.equal((await state()).source,fixture,'runner refuses an unmarked or modified score');
     assert.equal(await page.locator('meta[name=gosx-page-cache]').getAttribute('content'),'no-store');
     assert.equal(await page.locator('[data-placement-block]').count(),9);
@@ -209,7 +209,7 @@ test('placements edit visually and Session follows saved Score without reloading
     assert.equal(desktop.bodyWidth,desktop.width);
 
     const mobileContext=await browser.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,deviceScaleFactor:1,reducedMotion:'reduce',storageState:await context.storageState()});
-    const mobile=await mobileContext.newPage(); await mobile.goto(new URL('/?panel=session&placement=far-in',base).href,{waitUntil:'networkidle'}); await ready(mobile);
+    const mobile=await mobileContext.newPage(); await mobile.goto(new URL('/?panel=session&placement=far-in',base).href,{waitUntil:'domcontentloaded'}); await ready(mobile);
     await mobile.getByRole('link',{name:'Edit placement far-in',exact:true}).tap(); await ready(mobile);
     const mobileFar=mobile.locator('[data-placement-inspector="far-in"]');
     await mobileFar.getByRole('button',{name:'Loop in song',exact:true}).tap(); await until(async()=>(await transport()).listening?.mode==='context','mobile listening did not start');
