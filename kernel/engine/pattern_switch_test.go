@@ -14,8 +14,8 @@ func TestSlideCarriesAcrossQuantizedPatternSwitch(t *testing.T) {
 			cfg.Tracks, cfg.MaxVoices = 1, 1
 			if mode != "pattern" {
 				cfg.Scenes = []Scene{
-					{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}},
-					{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}},
+					{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}},
+					{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 1}}},
 				}
 			}
 			if mode == "song" {

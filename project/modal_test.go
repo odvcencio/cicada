@@ -86,16 +86,16 @@ func TestModeledParametersAndAllocatedVoiceBudget(t *testing.T) {
 	}
 	var source strings.Builder
 	source.WriteString("cicada 2\npattern p {c4}\n")
-	for i := 0; i < 9; i++ {
+	for i := 0; i < 65; i++ {
 		fmt.Fprintf(&source, "track t%d model_steelpan {}\n", i)
 	}
 	source.WriteString("scene s {\n")
-	for i := 0; i < 9; i++ {
+	for i := 0; i < 65; i++ {
 		fmt.Fprintf(&source, "t%d=p\n", i)
 	}
 	source.WriteString("}\nsong {s}\n")
 	score, _ := notation.Parse([]byte(source.String()))
 	if p, _ := FromScore(score); p != nil {
-		t.Fatal("nine four-strike tracks passed 32-voice ceiling")
+		t.Fatal("sixty-five modal tracks passed native track capacity")
 	}
 }

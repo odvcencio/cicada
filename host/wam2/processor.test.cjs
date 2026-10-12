@@ -5,12 +5,19 @@ const path = require('node:path');
 const os = require('node:os');
 const { execFileSync } = require('node:child_process');
 
-test('WAM2 timed MIDI, automation, state and allocation-free processing', async () => {
+for (const vocalChain of [false,true]) {
+test(`WAM2 ${vocalChain ? 'vocal chain, ' : ''}timed MIDI, automation, state and allocation-free processing`, async () => {
   const root = path.resolve(__dirname, '../..');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cicada-wam-test-'));
   try {
     const plugin = path.join(dir, 'plugin');
-    execFileSync('go', ['run', './cmd/cicada', 'wam2', 'examples/live-intensity.cicada', '-o', plugin, '--midi-track', 'bass'], { cwd: root, env: { ...process.env, GOWORK: 'off' } });
+    let scorePath='examples/live-intensity.cicada';
+    if (vocalChain) {
+      scorePath=path.join(dir,'vocal-chain.cicada');
+      const score=fs.readFileSync(path.join(root,'examples/live-intensity.cicada'),'utf8').replace('track bass acid {','track bass acid {\n insert = hp -> leveler -> deess');
+      fs.writeFileSync(scorePath,score+'\nfx hp eq { type=highpass frequency=80Hz }\nfx leveler comp { threshold=-18dB ratio=3 makeup=0dB }\nfx deess deesser {}\n');
+    }
+    execFileSync('go', ['run', './cmd/cicada', 'wam2', scorePath, '-o', plugin, '--midi-track', 'bass'], { cwd: root, env: { ...process.env, GOWORK: 'off' } });
     let Processor;
     const scopes = new Map();
     let inside = false, constructors = 0;
@@ -31,6 +38,7 @@ test('WAM2 timed MIDI, automation, state and allocation-free processing', async 
     for (const get of ['getRingBuffer','getWamEventRingBuffer','getWamParameter','getWamParameterInfo','getWamParameterInterpolator','getWamProcessor']) sdk[get](id);
     const source = fs.readFileSync(path.join(__dirname, 'processor.js'), 'utf8').replace('export default function', 'function');
     new Function(`${source}; return registerProcessor;`)()(id);
+    if (vocalChain) assert.deepEqual(fs.readFileSync(path.join(plugin,'kernel.wasm')),fs.readFileSync(path.join(root,'build/cicada-vocals.wasm')),'WAM export selected the wrong kernel');
     const kernel = await WebAssembly.compile(fs.readFileSync(path.join(plugin, 'kernel.wasm')));
     const data = fs.readFileSync(path.join(plugin, 'score-48000.bin'));
     const image = data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength);
@@ -92,3 +100,5 @@ test('WAM2 timed MIDI, automation, state and allocation-free processing', async 
     process.stdout.write(JSON.stringify({callbacks:10000,renderConstructors:constructors,wasmMemoryGrowth:processor.x.memory.buffer.byteLength-memory,reusedEventEnvelopes:envelopes.size})+'\n');
   } finally { fs.rmSync(dir,{recursive:true,force:true}); }
 });
+
+}

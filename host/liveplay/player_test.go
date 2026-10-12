@@ -482,7 +482,7 @@ func liveSongScore(t *testing.T, name string, firstBars uint16) Score {
 	t.Helper()
 	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000, LoopSong: true}
 	cfg.Track[0].Kind = engine.VoiceAcid
-	cfg.Scenes = []engine.Scene{{Track: [16]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 0}}}, {Track: [16]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 1}}}}
+	cfg.Scenes = []engine.Scene{{Track: [engine.MaxTracks]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 0}}}, {Track: [engine.MaxTracks]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 1}}}}
 	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: firstBars}, {Scene: 1, Bars: 2}}
 	created, err := engine.New(cfg)
 	if err != nil {

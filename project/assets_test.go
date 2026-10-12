@@ -164,7 +164,9 @@ func TestScoresWithoutAssetsCompileUnchanged(t *testing.T) {
 	if err := json.Unmarshal(data, &want); err != nil {
 		t.Fatal(err)
 	}
-	// This baseline freezes the pre-audio corpus; new examples have their own tests.
+	// This baseline freezes semantic source JSON for the pre-audio corpus. Native
+	// engine configuration hashes were refreshed for the deliberate 64-track
+	// capacity expansion; portable image bytes remain separately frozen.
 	for _, key := range sortedKeys(want) {
 		path := filepath.Join("..", filepath.FromSlash(key))
 		t.Run(path, func(t *testing.T) {

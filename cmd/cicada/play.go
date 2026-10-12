@@ -170,6 +170,12 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 	if err != nil {
 		return liveplay.Score{}, err
 	}
+	// Native live scores prepare admitted worker lanes before a callback can
+	// take ownership. Browser images and offline reference renders stay serial.
+	if err := created.EnableParallel(0); err != nil {
+		_ = created.Close()
+		return liveplay.Score{}, err
+	}
 	sceneIDs := make([]string, len(p.Scenes))
 	for i, scene := range p.Scenes {
 		sceneIDs[i] = scene.ID

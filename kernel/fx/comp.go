@@ -211,6 +211,12 @@ func (c *Compressor) process(left, right, detectL, detectR float32, external boo
 	c.reduction += (target - c.reduction) * coefficient
 	c.makeup += (c.targetMakeup - c.makeup) * c.smooth
 	c.mix += (c.targetMix - c.mix) * c.smooth
+	// The detector, gain reduction and automation have advanced above. With
+	// zero audio the output is exactly zero for any finite gain; avoid the
+	// exponentiation without freezing an external sidechain or release.
+	if left == 0 && right == 0 {
+		return 0, 0
+	}
 	gain := fastmath.Exp2((c.makeup - c.reduction) * (math.Log2E * math.Ln10 / 20))
 	outL := l*(1-c.mix) + l*gain*c.mix
 	outR := r*(1-c.mix) + r*gain*c.mix

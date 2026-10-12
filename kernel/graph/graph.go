@@ -288,6 +288,7 @@ func (v *Voice) NoteOff() { v.gate = 0 }
 // voice's preallocated storage. Neither delay state nor ring memory is shared.
 func (v *Voice) CopyStateFrom(source *Voice) {
 	delays, memory, amps, neural := v.delays, v.delayMemory, v.amps, v.ddspVoices
+	quality := v.quality
 	*v = *source
 	v.delays, v.delayMemory, v.amps = delays, memory, amps
 	copy(v.delays, source.delays)
@@ -295,6 +296,10 @@ func (v *Voice) CopyStateFrom(source *Voice) {
 	copy(v.amps, source.amps)
 	v.ddspVoices = neural
 	copy(v.ddspVoices, source.ddspVoices)
+	v.quality = quality
+	if quality != nil {
+		quality.copyFrom(source.quality)
+	}
 }
 
 func (v *Voice) Reset() {

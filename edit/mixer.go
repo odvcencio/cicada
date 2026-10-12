@@ -889,7 +889,7 @@ func requestedFX(raw json.RawMessage) (mixerFXValue, error) {
 }
 
 func knownMixerEffectKind(kind string) bool {
-	return kind == "drive" || kind == "delay" || kind == "reverb" || kind == "comp"
+	return kind == "drive" || kind == "delay" || kind == "reverb" || kind == "comp" || kind == "eq" || kind == "deesser"
 }
 
 func ValidMixerIdentifier(name string) bool {

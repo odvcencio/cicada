@@ -9,7 +9,7 @@ import (
 func TestScheduleMatchesLegacySong(t *testing.T) {
 	cfg := testConfig()
 	cfg.BPMMilli = 137123
-	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot}}}, {Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 1}}}}
+	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot}}}, {Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 1}}}}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 0, Bars: 2}, {Scene: 1, Bars: 1}}
 	for _, loop := range []bool{false, true} {
 		cfg.LoopSong = loop
@@ -49,7 +49,7 @@ func TestScheduleMatchesLegacySong(t *testing.T) {
 
 func TestScheduleRenderSeekAllocationFree(t *testing.T) {
 	cfg := testConfig()
-	cfg.Scenes = []Scene{{Track: [16]SceneBinding{{Mode: SceneSlot}}}}
+	cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot}}}}
 	cfg.Schedule = []ScheduleEvent{{Tick: 0, EndTick: seq.TicksPerBar, Scene: 0}}
 	cfg.LoopSong = true
 	e, err := New(cfg)

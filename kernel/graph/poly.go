@@ -190,3 +190,18 @@ func (p *Poly) NextStereo() (float32, float32) {
 	// Fixed patch gain, independent of held-note count: no chord-volume pumping.
 	return out, out
 }
+
+// Idle reports a completely inactive finite voice pool, including its bounded
+// stolen-note tail. Unlike a monophonic graph there are no free-running graph
+// states while idle: slots are already skipped by NextStereo.
+func (p *Poly) Idle() bool {
+	if p.tailFrames > 0 {
+		return false
+	}
+	for i := range p.slots {
+		if p.slots[i].active {
+			return false
+		}
+	}
+	return true
+}

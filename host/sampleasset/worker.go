@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"m31labs.dev/cicada/kernel/stream"
@@ -34,22 +35,31 @@ type pageFailure struct {
 // goroutine; it cannot stall Render or spawn an unbounded backlog of seeks.
 // Sources remain caller-owned and may close only after Done has closed.
 type Worker struct {
-	cache        *stream.Cache
-	sources      map[uint32]PageSource
-	ctx          context.Context
-	cancel       context.CancelFunc
-	done         chan struct{}
-	mu           sync.Mutex // worker/control only; never reached by Render
-	pending      stream.Work
-	readCancel   context.CancelFunc
-	failures     []pageFailure // at most one entry per admitted arena page
-	failureOrder uint64
+	cache           *stream.Cache
+	sources         map[uint32]PageSource
+	ctx             context.Context
+	cancel          context.CancelFunc
+	done            chan struct{}
+	mu              sync.Mutex // worker/control only; never reached by Render
+	pending         stream.Work
+	readCancel      context.CancelFunc
+	failures        []pageFailure // at most one entry per admitted arena page
+	failureOrder    uint64
+	retireRequested atomic.Bool
+	onCancel        func()
 }
 
 func StartWorker(parent context.Context, cache *stream.Cache, sources map[uint32]PageSource) *Worker {
+	return startOwnedWorker(parent, cache, sources, nil)
+}
+
+// startOwnedWorker closes private native sources from the monitor goroutine,
+// including blocked ReadAt cancellation. External StartWorker sources retain
+// their caller-owned lifecycle.
+func startOwnedWorker(parent context.Context, cache *stream.Cache, sources map[uint32]PageSource, onCancel func()) *Worker {
 	ctx, cancel := context.WithCancel(parent)
 	w := &Worker{cache: cache, sources: make(map[uint32]PageSource, len(sources)), ctx: ctx, cancel: cancel, done: make(chan struct{}),
-		failures: make([]pageFailure, int(cache.Stats().ArenaBytes/stream.PageBytes))}
+		failures: make([]pageFailure, int(cache.Stats().ArenaBytes/stream.PageBytes)), onCancel: onCancel}
 	for id, source := range sources {
 		w.sources[id] = source
 	}
@@ -59,6 +69,9 @@ func StartWorker(parent context.Context, cache *stream.Cache, sources map[uint32
 
 // Cancel never waits for a stalled source. Wait (or Done) is a host teardown
 // operation, outside rendering, before closing source files or dropping plans.
+// Retire is callback-safe: cancellation and source closure run on the existing
+// monitor worker rather than acquiring context or file locks in rendering.
+func (w *Worker) Retire()               { w.retireRequested.Store(true) }
 func (w *Worker) Cancel()               { w.cancel() }
 func (w *Worker) Done() <-chan struct{} { return w.done }
 func (w *Worker) Wait(ctx context.Context) error {
@@ -150,6 +163,9 @@ func (w *Worker) clearFailureLocked(asset uint32, index int64) {
 
 func (w *Worker) watch(done chan<- struct{}) {
 	defer close(done)
+	if w.onCancel != nil {
+		defer w.onCancel()
+	}
 	ticker := time.NewTicker(2 * time.Millisecond)
 	defer ticker.Stop()
 	for {
@@ -157,6 +173,10 @@ func (w *Worker) watch(done chan<- struct{}) {
 		case <-w.ctx.Done():
 			return
 		case <-ticker.C:
+			if w.retireRequested.Load() {
+				w.cancel()
+				return
+			}
 			w.mu.Lock()
 			if w.readCancel != nil && !w.pending.Wanted() {
 				w.readCancel()
@@ -222,6 +242,9 @@ func (w *Worker) run() {
 // waits outside the callback and fails explicitly on source errors or deadline.
 // Reader intent must remain unchanged until it returns.
 func (w *Worker) WaitReady(ctx context.Context, reader *stream.Reader) error {
+	if reader.WindowReady() {
+		return ctx.Err()
+	}
 	ticker := time.NewTicker(time.Millisecond)
 	defer ticker.Stop()
 	for {

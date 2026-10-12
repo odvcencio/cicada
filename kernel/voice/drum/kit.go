@@ -700,9 +700,15 @@ func (k *Kit) nextState(lane Lane, s *state, p Params) float64 {
 	}
 	output *= s.accentGain
 	s.age++
-	lifetime := math.Min(4, 12*p.Decay)
-	if lane == CY {
-		lifetime = 12 * p.Decay
+	// Retire only after every recipe component has decayed. A fixed four-
+	// second ceiling cuts a long kick or open hat while it is still audible;
+	// a snare's wire tail is independent of its shorter shell decay.
+	lifetime := 12 * p.Decay
+	switch lane {
+	case SD:
+		lifetime = 12 * max(p.Decay, p.Snappy, .06)
+	case CP:
+		lifetime += 3 * p.Spread
 	}
 	if lane == BD && s.amp < 1e-6 || age > lifetime {
 		s.active = false

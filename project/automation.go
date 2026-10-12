@@ -76,8 +76,17 @@ func validateAutomation(p *Project) error {
 		return fmt.Errorf("CICADA-LIMIT: at most 32 automation lanes")
 	}
 	var end int64
-	for _, entry := range p.Song {
-		end += int64(entry.Bars) * 3840
+	if p.Arrange != nil {
+		// Placements define playback duration; markers do not extend it.
+		// Keep accepting a control point exactly at the exclusive end, as
+		// scene songs do, so a ramp can reach its final value there.
+		for _, placement := range p.Arrange.Placements {
+			end = max(end, placement.AtTick+placement.LengthTicks)
+		}
+	} else {
+		for _, entry := range p.Song {
+			end += int64(entry.Bars) * 3840
+		}
 	}
 	seen := map[string]bool{}
 	for _, lane := range p.Automation {
