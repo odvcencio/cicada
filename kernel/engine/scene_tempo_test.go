@@ -8,6 +8,7 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/acid"
 )
 
 // sceneTempoConfig plays bar 0 at 120 BPM, bar 1 at 60 BPM (set by scene 1),
@@ -442,5 +443,82 @@ func TestSceneTempoManualLaunchOnTheBoundaryKeepsTheSongTempo(t *testing.T) {
 	// The clip keeps its recorded speed: elapsed samples through the tempo step.
 	if a, b := through.clipVoices[0].sourceFrame, seeking.clipVoices[0].sourceFrame; !through.clipVoices[0].active || math.Abs(a-b) > 150 {
 		t.Fatalf("clip position through=%g seeking=%g", a, b)
+	}
+}
+
+// A looped song with a tempo scene, an automation lane and a committed edit:
+// the wrap returns the tempo to the score tempo and the lane's parameter to its
+// committed value, and the second pass steps the tempo again at the same bar.
+func TestSceneTempoLoopWithCommittedEditAndAutomationLane(t *testing.T) {
+	cfg := sceneTempoConfig()
+	cfg.LoopSong = true
+	cfg.Track[0].Acid = acid.DefaultParams()
+	cfg.Automation = []cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamAcidCutoff), Arg0: math.Float32bits(3000), Tick: 600}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.meterRate = 0
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	var l, r [128]float32
+	total := 0
+	renderTo := func(target int) {
+		for ; total < target; total += 128 {
+			e.Render(l[:], r[:])
+		}
+	}
+	render := func(frames int) { renderTo(total + frames) }
+	render(128)
+	if !e.PushCommittedBatch([]cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamAcidCutoff), Arg0: math.Float32bits(1500)}}) {
+		t.Fatal("committed edit refused")
+	}
+	renderTo(20_000) // past the lane's point at tick 600, about 15000 samples in
+	if got := e.voices[0].acidTarget.Cutoff; math.Abs(got-3000) > 1e-3 {
+		t.Fatalf("the lane did not move the cutoff: %g", got)
+	}
+	if e.transport.BPMMilli() != 120_000 {
+		t.Fatalf("first pass tempo %d", e.transport.BPMMilli())
+	}
+	renderTo(100_000) // into the slow scene
+	if e.transport.BPMMilli() != 60_000 {
+		t.Fatalf("slow scene tempo %d", e.transport.BPMMilli())
+	}
+	cycle := int(e.tempoCycleSamples)
+	renderTo(cycle - 256)
+	if e.transport.BPMMilli() != 60_000 {
+		t.Fatalf("tempo before the wrap %d", e.transport.BPMMilli())
+	}
+	renderTo(cycle + 1_280) // across the wrap
+	if e.transport.BPMMilli() != 120_000 {
+		t.Fatalf("the second pass runs at %d, want the score tempo", e.transport.BPMMilli())
+	}
+	if got := e.voices[0].acidTarget.Cutoff; math.Abs(got-1500) > 1e-3 {
+		t.Fatalf("the wrap left the cutoff at %g, want the committed 1500", got)
+	}
+	if a := e.transport.Clock().AnchorSample; a < int64(cycle) || a > int64(cycle)+128 {
+		t.Fatalf("the wrap re-anchored at %d, want about %d", a, cycle)
+	}
+	// The second pass steps down again at its second bar, 96000 samples on.
+	renderTo(cycle + 96_000 + 640)
+	if e.transport.BPMMilli() != 60_000 {
+		t.Fatalf("second pass slow scene tempo %d", e.transport.BPMMilli())
+	}
+	// Seeking into the slow scene after a loop plays at the slow tempo; seeking
+	// to the start returns to the score tempo.
+	e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 2})
+	render(128)
+	if e.transport.BPMMilli() != 60_000 {
+		t.Fatalf("seek into the slow scene after a loop gave %d", e.transport.BPMMilli())
+	}
+	if got := e.voices[0].acidTarget.Cutoff; math.Abs(got-1500) > 1e-3 && math.Abs(got-3000) > 1e-3 {
+		t.Fatalf("seek left the cutoff at %g", got)
+	}
+	e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff})
+	render(128)
+	if e.transport.BPMMilli() != 120_000 {
+		t.Fatalf("seek to the start gave %d", e.transport.BPMMilli())
+	}
+	if got := e.voices[0].acidTarget.Cutoff; math.Abs(got-1500) > 1e-3 && got != 3000 {
+		t.Fatalf("seek to the start left the cutoff at %g", got)
 	}
 }
