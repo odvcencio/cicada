@@ -98,7 +98,8 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		e.selectPatternNow(track, slot, c.Arg1 == 1)
 		return
 	}
-	updated := p.slots[slot]
+	e.patternEdit = p.slots[slot]
+	updated := &e.patternEdit
 	switch c.Op {
 	case cmd.OpSetStep:
 		step, err := seq.UnpackStep(c.Arg0)
@@ -155,11 +156,11 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 		e.fault(FaultPatternEdit)
 		return
 	}
-	if e.voices[track].kind == VoicePiano && !validPianoPattern(&updated) {
+	if e.voices[track].kind == VoicePiano && !validPianoPattern(updated) {
 		e.fault(FaultPatternEdit)
 		return
 	}
-	if keysEnabled && e.voices[track].kind == VoiceKeys && !validPianoPattern(&updated) {
+	if keysEnabled && e.voices[track].kind == VoiceKeys && !validPianoPattern(updated) {
 		e.fault(FaultPatternEdit)
 		return
 	}
@@ -173,7 +174,7 @@ func (e *Engine) applyPatternCommand(c cmd.Command) {
 			return
 		}
 	}
-	p.slots[slot] = updated
+	p.slots[slot] = *updated
 	if (c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) && p.active == int8(slot) && p.chainArmed {
 		if p.chainRepeat != 0 {
 			p.chainDue = p.chainStart + int64(updated.Len)*updated.GridTicks()*int64(p.chainRepeat)

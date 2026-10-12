@@ -37,6 +37,16 @@ func TestParameterRegistryGeneratedFilesAreCurrent(t *testing.T) {
 	if string(gotKernel) != string(wantKernel) {
 		t.Fatal("kernel/params_table.go is stale; run go run ./cmd/paramgen")
 	}
+	for file, generate := range map[string]func() ([]byte, error){"params_keys.go": paramdefs.GenerateKernelKeys, "params_core.go": paramdefs.GenerateKernelCore} {
+		want, err := generate()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := os.ReadFile("../kernel/" + file)
+		if err != nil || string(got) != string(want) {
+			t.Fatalf("kernel/%s is stale; run go run ./cmd/paramgen (%v)", file, err)
+		}
+	}
 	if len(kernel.Params) != len(paramdefs.Registry) {
 		t.Fatalf("kernel table has %d entries, source list has %d", len(kernel.Params), len(paramdefs.Registry))
 	}
@@ -153,6 +163,12 @@ func projectValidatorAccepts(descriptor paramdefs.Descriptor, number float64) bo
 		return err == nil
 	case strings.HasPrefix(descriptor.ID, "fx.reverb."):
 		_, err := ReverbParamsFromValues(values)
+		return err == nil
+	case strings.HasPrefix(descriptor.ID, "fx.eq."):
+		_, err := compileTrackEffect(Effect{Kind: "eq", Params: values}, 48000)
+		return err == nil
+	case strings.HasPrefix(descriptor.ID, "fx.deesser."):
+		_, err := DeesserParamsFromValues(values)
 		return err == nil
 	case strings.HasPrefix(descriptor.ID, "fx.comp."):
 		_, _, err := CompSpecFromValues(values)

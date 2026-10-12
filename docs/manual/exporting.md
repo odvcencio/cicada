@@ -62,6 +62,14 @@ creates a one-tick note overlap. `--pattern NAME` exports one pattern loop
 instead of the full song. Chance uses the first seeded pass on every
 repetition.
 
+Named `arrange` pattern placements also export through their shared start/release
+schedule. Each pattern restarts locally; note-offs are bounded by the
+placement's exclusive end, including tied chords. Arrangement markers become
+MIDI marker events. A partial final bar is included, and `--bars` can shorten
+the export. MIDI contains notes and timing, not rendered instruments, effects,
+or continuous sound-parameter automation. Scores containing audio clips require
+audio export; this MIDI path does not prepare clip assets.
+
 Import a type 0 or type 1 MIDI file into a new score:
 
 ```sh
@@ -76,8 +84,8 @@ hold the preceding row value. Overlapping notes become independent piano
 tracks. General MIDI drums use the built-in lanes. The import report counts
 onset and duration edits, cross-bar note retriggers, and drum velocity edits.
 
-Import supports fixed tempo, 4/4 meter, 60–960 ticks per cell, at most 16
-tracks, 256 bars, and 16 distinct bar patterns per track. Pitch spellings
+Import supports fixed tempo, 4/4 meter, 60–960 ticks per cell, at most 64
+tracks within the 256-voice native budget, 256 bars, and 16 distinct bar patterns per track. Pitch spellings
 support MIDI 12–95; the modeled piano supports 21–95 in imported scores.
 Controller, program and expression events are outside this note importer.
 Variable tempo or meter and unsupported drum pitches are rejected.

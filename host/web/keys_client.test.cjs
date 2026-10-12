@@ -10,7 +10,7 @@ function scoreImage(keys) {
   new Uint8Array(image).set([67, 73, 67, 49]);
   view.setUint16(4, 15, true);
   view.setUint32(12, 120000, true);
-  view.setUint16(30, keys ? 512 : 0, true);
+  view.setUint16(30, keys === 'vocals' ? 2048 : keys ? 512 : 0, true);
   return image;
 }
 
@@ -62,12 +62,12 @@ function setup(initialKeys = false) {
     ArrayBuffer, Uint8Array, Uint32Array, DataView, Set, Map, Error, Promise,
     performance, setTimeout, clearTimeout, setInterval: () => 1, clearInterval() {},
     requestAnimationFrame: callback => { queueMicrotask(callback); return 1; },
-    WebAssembly: {compile: async bytes => { compilations++; return {kind: new Uint8Array(bytes)[0] === 2 ? 'keys' : 'core'}; }},
+    WebAssembly: {compile: async bytes => { compilations++; return {kind: new Uint8Array(bytes)[0] === 2 ? 'keys' : new Uint8Array(bytes)[0]===3 ? 'vocals' : 'core'}; }},
     fetch: async url => {
       requests.push(url);
       if (url.startsWith('/api/kernel-image')) return {ok: true, headers: {get: () => revision}, arrayBuffer: async () => scoreImage(keys)};
-      if (url === '/api/kernel.wasm?keys=1' && failFetch) return {ok: false, text: async () => 'optional module is missing'};
-      return {ok: true, arrayBuffer: async () => new Uint8Array([url.includes('keys=1') ? 2 : 1]).buffer};
+      if (url.startsWith('/api/kernel.wasm?') && failFetch) return {ok: false, text: async () => 'optional module is missing'};
+      return {ok: true, arrayBuffer: async () => new Uint8Array([url.includes('keys=1') ? 2 : url.includes('vocals=1') ? 3 : 1]).buffer};
     }
   });
   vm.runInContext(fs.readFileSync(require.resolve('./client.js'), 'utf8'), context);
@@ -194,4 +194,22 @@ test('PM capability bit5 alone keeps the core module', () => {
   const image = scoreImage(false);
   new DataView(image).setUint16(30, 32, true);
   assert.equal(h.audio.imageModuleKind(image), 'core');
+});
+
+
+test('track chain images automatically load the vocal module, including cached capability rejection', async () => {
+  const h = setup('vocals');
+  h.capabilities(65537 | 2048);
+  await h.audio.startAudio();
+  assert.equal(h.audio.moduleKind,'vocals');
+  assert.equal(h.nodes[0].options.processorOptions.m.kind,'vocals');
+  assert.deepEqual(h.requests.filter(url => url.startsWith('/api/kernel.wasm')),['/api/kernel.wasm?vocals=1']);
+  const image=scoreImage('vocals');new DataView(image).setUint16(30,2048|512,true);
+  assert.equal(h.audio.imageModuleKind(image),'keys');
+  const stale=setup('vocals');
+  await assert.rejects(stale.audio.startAudio(), /Track inserts require/);
+  assert.equal(stale.audio.context,null);
+  const missing=setup('vocals');missing.failFetch(true);
+  await assert.rejects(missing.audio.startAudio(),/optional module is missing/);
+  assert.equal(missing.audio.context,null);
 });

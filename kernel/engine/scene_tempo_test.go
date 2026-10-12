@@ -21,9 +21,9 @@ func sceneTempoConfig() Config {
 		cfg.Patterns[0].Slots[0].Steps[step] = packedNoteValue(45 + uint8(step))
 	}
 	cfg.Scenes = []Scene{
-		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}},
-		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}},
-		{Track: [16]SceneBinding{{Mode: SceneSlot, Slot: 0}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}},
 	}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
 	return cfg
@@ -250,8 +250,8 @@ func TestSceneTempoClipSeekMatchesPlayingThrough(t *testing.T) {
 	cfg.Assets[0].Left = pcm
 	cfg.Clips = []ClipConfig{{EndFrame: int64(len(pcm))}}
 	cfg.Scenes = []Scene{
-		{Track: [16]SceneBinding{{Mode: SceneClip}}},
-		{Track: [16]SceneBinding{{Mode: SceneKeep}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneKeep}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}},
 		{},
 	}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
@@ -395,9 +395,9 @@ func TestSceneTempoManualLaunchOnTheBoundaryKeepsTheSongTempo(t *testing.T) {
 	cfg.Assets[0].Left = pcm
 	cfg.Clips = []ClipConfig{{EndFrame: int64(len(pcm))}}
 	cfg.Scenes = []Scene{
-		{Track: [16]SceneBinding{{Mode: SceneClip}}},
-		{Track: [16]SceneBinding{{Mode: SceneKeep}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}},
-		{Track: [16]SceneBinding{{Mode: SceneKeep}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 200}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneKeep}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}},
+		{Track: [MaxTracks]SceneBinding{{Mode: SceneKeep}}, Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 200}}},
 		{},
 	}
 	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 3, Bars: 1}}

@@ -8,7 +8,7 @@ import (
 
 func TestModalLiveRenderAllocationFreeAndReset(t *testing.T) {
 	for profile := modal.Profile(0); profile < modal.ProfileCount; profile++ {
-		cfg := Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120000, Track: [16]TrackConfig{{Kind: VoiceModal, Modal: profile}}}
+		cfg := Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120000, Track: [MaxTracks]TrackConfig{{Kind: VoiceModal, Modal: profile}}}
 		e, err := New(cfg)
 		if err != nil {
 			t.Fatal(err)

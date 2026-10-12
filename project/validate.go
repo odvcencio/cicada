@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/modal"
@@ -92,7 +93,7 @@ func ValidateProject(p *Project) error {
 	var compSidechain string
 	for _, effect := range p.Effects {
 		kind := semanticEffectKind(effect)
-		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" && kind != "eq" && kind != "transient" && kind != "width" && kind != "limiter" && kind != "convolution" {
+		if kind != "drive" && kind != "delay" && kind != "reverb" && kind != "comp" && kind != "eq" && kind != "transient" && kind != "width" && kind != "limiter" && kind != "convolution" && kind != "deesser" {
 			return fmt.Errorf("CICADA-UNSUPPORTED: effect kind %s is not implemented", kind)
 		}
 		if effect.ID == "music" || effect.ID == "sfx" || !validID(effect.ID) {
@@ -105,7 +106,7 @@ func ValidateProject(p *Project) error {
 		if !MasterHasInsert(p, effect.ID) {
 			kindCounts[kind]++
 		}
-		if kind == "eq" || kind == "transient" || kind == "width" || kind == "limiter" || kind == "convolution" {
+		if kind == "transient" || kind == "width" || kind == "limiter" || kind == "convolution" {
 			if !MasterHasInsert(p, effect.ID) {
 				return fmt.Errorf("CICADA-UNSUPPORTED: effect %s must be inserted on master", effect.ID)
 			}
@@ -126,6 +127,16 @@ func ValidateProject(p *Project) error {
 			if _, err := ReverbParamsFromValues(effect.Params); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
+		} else if kind == "deesser" {
+			if _, err := DeesserParamsFromValues(effect.Params); err != nil {
+				return fmt.Errorf("effect %s: %w", effect.ID, err)
+			}
+		} else if kind == "eq" {
+			if !MasterHasInsert(p, effect.ID) {
+				if _, err := compileTrackEffect(effect, 48000); err != nil {
+					return fmt.Errorf("effect %s: %w", effect.ID, err)
+				}
+			}
 		} else if kind == "comp" {
 			var err error
 			if _, compSidechain, err = CompSpecFromValues(effect.Params); err != nil {
@@ -136,8 +147,8 @@ func ValidateProject(p *Project) error {
 	if kindCounts["delay"] > 1 || kindCounts["reverb"] > 1 {
 		return fmt.Errorf("CICADA-UNSUPPORTED: multiple delay or reverb instances are not implemented")
 	}
-	if len(p.Tracks) < 1 || len(p.Tracks) > 16 || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 && p.Arrange == nil {
-		return fmt.Errorf("project needs 1 to 16 tracks, patterns, and a song")
+	if len(p.Tracks) < 1 || len(p.Tracks) > engine.MaxTracks || len(p.Patterns) == 0 && len(p.Clips) == 0 || len(p.Song) == 0 && p.Arrange == nil {
+		return fmt.Errorf("project needs 1 to %d tracks, patterns, and a song", engine.MaxTracks)
 	}
 	instruments := map[string]*instrument.Program{}
 	trackGraphs := map[string]graph.Program{}
@@ -308,16 +319,21 @@ func ValidateProject(p *Project) error {
 		if inserts == nil && track.Mixer.Insert != "none" {
 			inserts = []string{track.Mixer.Insert}
 		}
-		if len(inserts) > 1 {
-			return fmt.Errorf("CICADA-UNSUPPORTED: track insert chain is not implemented")
+		if len(inserts) > engine.MaxTrackInserts {
+			return fmt.Errorf("CICADA-LIMIT: track insert chain exceeds eight stages")
 		}
-		if len(inserts) == 1 {
-			effect, exists := effects[inserts[0]]
-			if !exists {
-				return fmt.Errorf("track %s references undeclared insert %s", track.ID, inserts[0])
+		seenInserts := map[string]bool{}
+		for _, name := range inserts {
+			if seenInserts[name] {
+				return fmt.Errorf("CICADA-DUPLICATE: track %s repeats effect %s", track.ID, name)
 			}
-			if semanticEffectKind(effect) != "drive" {
-				return fmt.Errorf("CICADA-UNSUPPORTED: %s as a track insert is not implemented", semanticEffectKind(effect))
+			seenInserts[name] = true
+			effect, exists := effects[name]
+			if !exists {
+				return fmt.Errorf("track %s references undeclared insert %s", track.ID, name)
+			}
+			if _, err := compileTrackEffect(effect, 48000); err != nil {
+				return fmt.Errorf("track %s effect %s: %w", track.ID, name, err)
 			}
 		}
 		if track.Mixer.SendA > 0 && !hasEffectKind(effects, "delay") {
@@ -453,7 +469,7 @@ func ValidateProject(p *Project) error {
 			if semanticEffectKind(effect) != "comp" {
 				continue
 			}
-			placed := MasterHasInsert(p, effect.ID)
+			placed := MasterHasInsert(p, effect.ID) || trackHasInsert(p, effect.ID)
 			for _, bus := range p.Buses {
 				onBus := bus.ID == "music" && len(bus.Mixer.Inserts) == 1 && bus.Mixer.Inserts[0] == effect.ID
 				if onBus && MasterHasInsert(p, effect.ID) {
@@ -462,16 +478,22 @@ func ValidateProject(p *Project) error {
 				placed = placed || onBus
 			}
 			if !placed {
-				return fmt.Errorf("CICADA-UNSUPPORTED: compressor %s must be inserted on bus music or master", effect.ID)
+				return fmt.Errorf("CICADA-UNSUPPORTED: compressor %s must be inserted on a track, bus music, or master", effect.ID)
 			}
 		}
 		if err := validateExports(p.Exports); err != nil {
 			return err
 		}
 	}
-	if compSidechain != "" && compSidechain != "music" && compSidechain != "sfx" {
-		if _, ok := tracks[compSidechain]; !ok {
-			return fmt.Errorf("compressor sidechain references unknown track %s", compSidechain)
+	for _, effect := range p.Effects {
+		if semanticEffectKind(effect) != "comp" {
+			continue
+		}
+		_, compSidechain, _ = CompSpecFromValues(effect.Params)
+		if compSidechain != "" && compSidechain != "music" && compSidechain != "sfx" {
+			if _, ok := tracks[compSidechain]; !ok {
+				return fmt.Errorf("compressor sidechain references unknown track %s", compSidechain)
+			}
 		}
 	}
 	allocatedVoices := 0
@@ -498,8 +520,8 @@ func ValidateProject(p *Project) error {
 			allocatedVoices++
 		}
 	}
-	if allocatedVoices > 32 {
-		return fmt.Errorf("project exceeds 32 allocated voices")
+	if allocatedVoices > engine.MaxVoices {
+		return fmt.Errorf("project exceeds %d allocated voices", engine.MaxVoices)
 	}
 	patterns := map[string]Pattern{}
 	for _, pattern := range p.Patterns {
@@ -738,8 +760,8 @@ func ValidateProject(p *Project) error {
 				voices++
 			}
 		}
-		if voices > 32 {
-			return fmt.Errorf("scene %s exceeds 32 simultaneous voices", scene.ID)
+		if voices > engine.MaxVoices {
+			return fmt.Errorf("scene %s exceeds %d simultaneous voices", scene.ID, engine.MaxVoices)
 		}
 	}
 	return nil

@@ -9,9 +9,12 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
+	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/modal"
+	"m31labs.dev/cicada/kernel/voice/piano"
 )
 
 // CompileEngine lowers a validated semantic project into immutable engine
@@ -114,7 +117,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 				return cfg, err
 			}
 			reverbParams = &params
-		} else if kind == "comp" {
+		} else if kind == "comp" && (!trackHasInsert(p, effect.ID) || musicHasInsert(p, effect.ID)) {
 			params, sidechain, err := CompSpecFromValues(effect.Params)
 			if err != nil {
 				return cfg, err
@@ -185,13 +188,16 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 		if len(inserts) == 0 && track.Mixer.Insert != "none" {
 			inserts = []string{track.Mixer.Insert}
 		}
-		if len(inserts) == 1 {
-			if effect, ok := effectsByID[inserts[0]]; ok && semanticEffectKind(effect) == "drive" {
-				params, err := DriveParamsFromValues(effect.Params)
-				if err != nil {
-					return cfg, err
-				}
-				config.InsertDrive = &params
+		for _, name := range inserts {
+			effect := effectsByID[name]
+			stage, err := compileTrackEffect(effect, sampleRate)
+			if err != nil {
+				return cfg, fmt.Errorf("track %s effect %s: %w", track.ID, name, err)
+			}
+			if len(inserts) == 1 && stage.Kind == engine.TrackEffectDrive {
+				config.InsertDrive = stage.Drive
+			} else {
+				config.InsertChain = append(config.InsertChain, stage)
 			}
 		}
 		if len(prepared) == len(p.Tracks) && prepared[ti] != nil {
@@ -414,6 +420,7 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 			return cfg, scheduleErr
 		}
 	}
+	cfg.MaxVoices = runtimeVoiceCapacity(&cfg)
 	validators, err := engine.PrepareParamValidators(&cfg)
 	if err != nil {
 		return cfg, fmt.Errorf("prepare parameter validation: %w", err)
@@ -435,6 +442,45 @@ func compileEngine(p *Project, sampleRate, maxBlock int, assets []engine.AudioAs
 		}
 	}
 	return cfg, nil
+}
+
+// runtimeVoiceCapacity keeps small projects compatible with the 32-voice
+// portable image while reserving the complete bounded native voice budget.
+func runtimeVoiceCapacity(cfg *engine.Config) int {
+	voices := 0
+	for ti := 0; ti < cfg.Tracks; ti++ {
+		v := &cfg.Track[ti]
+		switch v.Kind {
+		case engine.VoiceOff:
+		case engine.VoiceDrums:
+			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+				if v.Kit != nil {
+					if v.Kit[lane].Kind != engine.KitLaneOff {
+						voices++
+					}
+				} else if lane < drum.LT || v.Drums[lane] != (drum.Params{}) {
+					voices++
+				}
+			}
+		case engine.VoicePiano:
+			voices += piano.MaxVoices
+		case engine.VoiceModal:
+			voices += modal.MaxVoices
+		case engine.VoiceGraphPoly:
+			voices += graph.PolyVoices
+		case engine.VoiceGraph:
+			voices += max(1, int(v.Polyphony))
+		case engine.VoiceKeys:
+			voices += int(v.Keys.Controls[127])
+		case engine.VoiceSample:
+			voices += int(v.Sample.Voices)
+		case engine.VoicePrepared:
+			voices += v.Prepared.VoiceCount()
+		default:
+			voices++
+		}
+	}
+	return max(limits.PortableMaxVoices, voices)
 }
 
 // CompileSceneSettings resolves scene settings in source order to the same
@@ -491,9 +537,9 @@ func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved Resolved
 		}
 		if resolved.Descriptor.Curve == "toggle" {
 			switch value.Text {
-			case "false":
+			case "false", "off":
 				return 0, fx.FreeDelay, nil
-			case "true":
+			case "true", "on":
 				return 1, fx.FreeDelay, nil
 			}
 			for n, candidate := range resolved.Descriptor.Values {

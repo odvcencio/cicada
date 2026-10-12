@@ -2,14 +2,17 @@
 // audio readers. Only the worker writes pages; readers pin immutable ready pages.
 package stream
 
-import "sync/atomic"
+import (
+	"m31labs.dev/cicada/kernel/limits"
+	"sync/atomic"
+)
 
 const (
 	PageFrames = 4096
 	// Guards cover half of the sample voice's largest 768-tap SRC kernel.
 	GuardFrames = 384
 	PageBytes   = (PageFrames + 2*GuardFrames) * 2 * 4
-	MaxReaders  = 64
+	MaxReaders  = limits.MaxVoices * 2
 	empty       = uint32(0)
 	writing     = uint32(1)
 	ready       = uint32(2)
@@ -241,7 +244,14 @@ func (c *Cache) NextEligible(eligible func(asset uint32, index int64) bool) (Wor
 			if eligible != nil && !eligible(w.asset, index) {
 				continue
 			}
-			if work, ok := c.reserve(r.asset, index); ok {
+			var asset Asset
+			for _, candidate := range c.assets {
+				if candidate.ID == w.asset {
+					asset = candidate
+					break
+				}
+			}
+			if work, ok := c.reserve(asset, index); ok {
 				c.nextReader = (i + 1) % c.readerCount
 				return work, true
 			}

@@ -81,11 +81,11 @@ func TestProjectCLI(t *testing.T) {
 	if output := run(1, "validate", unicodePath); !strings.Contains(output, unicodePath+":2:38: error CICADA-PARAM:") {
 		t.Fatalf("validation did not use a Unicode scalar column: %q", output)
 	}
-	voiceLimit := filepath.Join("..", "..", "testdata", "invalid", "over-32-voices.cicada")
-	if output := run(1, "validate", voiceLimit); !strings.Contains(output, voiceLimit+":10:8: error CICADA-LIMIT:") {
+	voiceLimit := filepath.Join("..", "..", "testdata", "invalid", "over-256-voices.cicada")
+	if output := run(1, "validate", voiceLimit); !strings.Contains(output, voiceLimit+":28:8: error CICADA-LIMIT:") {
 		t.Fatalf("validation accepted a score above the voice ceiling: %q", output)
 	}
-	voiceWAV := filepath.Join(t.TempDir(), "over-32-voices.wav")
+	voiceWAV := filepath.Join(t.TempDir(), "over-256-voices.wav")
 	if output := run(1, "render", voiceLimit, "-o", voiceWAV, "--bars", "1"); !strings.Contains(output, "CICADA-LIMIT") {
 		t.Fatalf("render accepted a score above the voice ceiling: %q", output)
 	}

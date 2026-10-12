@@ -12,8 +12,8 @@ import (
 // parameters left by the last playback position. DSP instances stay in place.
 // This snapshot is allocated at construction, never on the audio thread.
 type sceneParameterState struct {
-	tracks     [16]sceneTrackParameters
-	layerMask  uint32
+	tracks     [MaxTracks]sceneTrackParameters
+	layerMask  trackMask
 	delay      fx.DelayParams
 	reverb     fx.ReverbParams
 	compressor fx.CompParams

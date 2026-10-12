@@ -9,6 +9,7 @@ import (
 	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/internal/paramdefs"
 	keyvoice "m31labs.dev/cicada/kernel/voice/keyboard"
+	"m31labs.dev/cicada/kernel/fx"
 )
 
 //go:embed params.json
@@ -129,29 +130,8 @@ func automaticMakeup(values map[string]Value) float64 {
 
 func delayDivisionMilliseconds(division string, tempoMilli int) float64 {
 	beats := 0.0
-	switch division {
-	case "1/32":
-		beats = .125
-	case "1/16":
-		beats = .25
-	case "1/16T":
-		beats = 1.0 / 6
-	case "1/16.":
-		beats = .375
-	case "1/8":
-		beats = .5
-	case "1/8T":
-		beats = 1.0 / 3
-	case "1/8.":
-		beats = .75
-	case "3/16":
-		beats = .75
-	case "1/4":
-		beats = 1
-	case "1/4.":
-		beats = 1.5
-	case "1/2":
-		beats = 2
+	if parsed, err := fx.ParseDelayDivision(division); err == nil {
+		beats = parsed.Beats()
 	}
 	if beats == 0 || tempoMilli <= 0 {
 		return 250

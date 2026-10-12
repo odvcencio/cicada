@@ -1,0 +1,14 @@
+{
+  "nativeTracks": 64,
+  "allMetersVisible": true,
+  "mobileOverflow": false,
+  "bufferChoices": [
+    64,
+    128,
+    256,
+    512,
+    1024
+  ],
+  "microphoneActivated": false,
+  "errors": []
+}

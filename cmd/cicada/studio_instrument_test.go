@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -51,7 +52,14 @@ func TestPresetCreationRejectsStaleWritesAndUndoesAtomically(t *testing.T) {
 func TestPresetCreationHonorsWholeProjectVoiceBudget(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "score.cicada")
-	source := []byte(presetEditScore)
+	// 28 reserved eight-voice graphs plus the acid and three presets use 249
+	// voices. The next preset must fail the native 256-voice budget atomically.
+	var reserve strings.Builder
+	reserve.WriteString("instrument reserved { voice poly { out = sine(pitch) * env(gate,100ms) } }\n")
+	for i := 0; i < 28; i++ {
+		fmt.Fprintf(&reserve, "track r%d reserved {}\n", i)
+	}
+	source := []byte(strings.Replace(presetEditScore, "// scene annotation", reserve.String()+"// scene annotation", 1))
 	for _, name := range []string{"pad-a", "pad-b", "pad-c"} {
 		var err error
 		source, err = addPresetSource(source, "warm-pad", name, name)

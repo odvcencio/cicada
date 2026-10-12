@@ -102,6 +102,9 @@ func designBand(rate int, p Band) biquad {
 }
 
 func (e *EQ) Process(left, right float32) (float32, float32) {
+	if left == 0 && right == 0 && e.Silent() {
+		return 0, 0
+	}
 	l, r := float64(left), float64(right)
 	for i := range e.filters {
 		if e.active[i] {
@@ -119,3 +122,15 @@ func (e *EQ) Reset() {
 }
 
 func (e *EQ) LatencyFrames() int { return 0 }
+
+// Silent checks the actual filter delay state. The existing biquad denormal
+// cleanup can eventually return it to exact zero; no new tail threshold is
+// introduced by the zero-input fast path.
+func (e *EQ) Silent() bool {
+	for i := range e.filters {
+		if e.active[i] && (e.filters[i].z1 != [2]float64{} || e.filters[i].z2 != [2]float64{}) {
+			return false
+		}
+	}
+	return true
+}

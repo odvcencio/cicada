@@ -1,6 +1,7 @@
 package render
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"m31labs.dev/cicada/host/schedule"
@@ -11,6 +12,7 @@ import (
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 	"math"
+	"time"
 )
 
 func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDir string, outputGain float32) (Report, error) {
@@ -45,6 +47,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if err != nil {
 		return report, err
 	}
+	defer player.Close()
 	events, err := project.CompileSchedule(p)
 	if err != nil {
 		return report, err
@@ -112,7 +115,16 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		} else if position == endFrame {
 			player.Push(cmd.Command{Op: cmd.OpStop, Track: 0xff})
 		}
+		readyCtx, readyCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		frames, err = player.PrepareRender(readyCtx, frames)
+		readyCancel()
+		if err != nil {
+			return report, fmt.Errorf("prepare streamed export: %w", err)
+		}
 		player.RenderWithTaps(left[:frames], right[:frames], taps[:frames])
+		if stats := player.StreamStats(); stats.MissingFrames > 0 {
+			return report, fmt.Errorf("streamed export missed %d source output frames", stats.MissingFrames)
+		}
 		for player.Poll(&message) {
 			if message.Kind == cmd.Fault {
 				return report, fmt.Errorf("scheduled render engine fault %d", message.A)

@@ -44,24 +44,24 @@ func TestAllKeysPatchesCompileChords(t *testing.T) {
 func TestKeysVoiceLimitsCountAgainstProjectBudget(t *testing.T) {
 	var source strings.Builder
 	source.WriteString("cicada 2\n")
-	for n := 0; n < 8; n++ {
+	for n := 0; n < 64; n++ {
 		fmt.Fprintf(&source, "track k%d tine_ep { voices=4 }\n", n)
 	}
 	source.WriteString("pattern p notes { c4 }\nscene main {\n")
-	for n := 0; n < 8; n++ {
+	for n := 0; n < 64; n++ {
 		fmt.Fprintf(&source, "k%d=p\n", n)
 	}
 	source.WriteString("}\nsong { main }\n")
 	p := keysScore(t, source.String())
 	if err := ValidateProject(p); err != nil {
-		t.Fatalf("exact 32 voices rejected: %v", err)
+		t.Fatalf("exact 256 voices rejected: %v", err)
 	}
 	v := p.Tracks[0].Params["voices"]
 	n := 5.0
 	v.Number = &n
 	p.Tracks[0].Params["voices"] = v
-	if err := ValidateProject(p); err == nil || !strings.Contains(err.Error(), "32 allocated voices") {
-		t.Fatalf("33 voices accepted: %v", err)
+	if err := ValidateProject(p); err == nil || !strings.Contains(err.Error(), "256 allocated voices") {
+		t.Fatalf("257 voices accepted: %v", err)
 	}
 }
 

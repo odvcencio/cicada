@@ -23,6 +23,10 @@ func (s *studio) audioDeviceScript(w http.ResponseWriter, _ *http.Request) {
 func (s *studio) audioConfig(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		w.Header().Set("Cache-Control", "no-store")
+		if r.URL.Query().Get("runtime") == "1" {
+			studioJSON(w, http.StatusOK, s.transport.audioRuntimeState())
+			return
+		}
 		studioJSON(w, http.StatusOK, s.transport.audioState())
 		return
 	}

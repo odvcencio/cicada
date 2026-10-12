@@ -108,14 +108,21 @@ func (h *studioHistory) expectRecordedTake(revision string) func() {
 	}
 }
 
-func (h *studioHistory) consumeRecordedTake(revision string) bool {
+// consumeRecordedTake settles the recording handoff for one publication.
+//
+// Rule: the handoff is keyed by playback content and covers only the next
+// publication poll makes after the take. If that publication has the take's
+// content, it is the take's own offer and is not logged as queued. If it has
+// other content (a later edit or a revert, as in take T then revert to A), the
+// take's offer was never published, so the handoff is dropped and the
+// publication is logged. Either way the handoff cannot outlive one
+// publication, so content that later returns to T is logged normally.
+func (h *studioHistory) consumeRecordedTake(key string) bool {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if revision == "" || h.pendingTakeRevision != revision {
-		return false
-	}
+	armed := h.pendingTakeRevision
 	h.pendingTakeRevision = ""
-	return true
+	return key != "" && armed == key
 }
 
 // record keeps transport activity in its own bounded ring. It never changes
@@ -565,9 +572,7 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 			func() {
 				s.transport.pollMu.Lock()
 				defer s.transport.pollMu.Unlock()
-				if fingerprint, err := playSourceHashBytes(s.path, current); err == nil {
-					s.transport.activateLocked(s.path, current, fingerprint)
-				}
+				s.transport.activateLocked()
 			}()
 		}
 		s.lastGoodSource, s.lastGoodProject = bytes.Clone(current), p
@@ -615,8 +620,13 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	}
 	s.lastGoodSource, s.lastGoodProject = bytes.Clone(updated), p
 	if s.transport != nil {
-		if fingerprint, err := playSourceHashBytes(s.path, updated); err == nil {
-			s.transport.activateLocked(s.path, updated, fingerprint)
+		if fingerprint, ok := s.transport.activateLocked(); ok {
+			// The write has landed and pollMu is held, so poll cannot see this
+			// content before the handoff is armed. A patch already made the
+			// content current, so no offer will follow it.
+			if edit.recordedTake && s.history != nil && !s.transport.isPlayingFingerprint(fingerprint) {
+				s.history.expectRecordedTake(studioFingerprintKey(fingerprint))
+			}
 		}
 	}
 	if mutation.HistoryDetail != "" {

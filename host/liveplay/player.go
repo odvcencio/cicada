@@ -3,6 +3,7 @@
 package liveplay
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel"
@@ -43,20 +45,21 @@ type Score struct {
 	HasReturnA      bool
 	HasReturnB      bool
 	HasSFX          bool
+	Range           *PlaybackRange // optional listening range prepared with a score edit
 	trackNames      *trackNameSnapshot
 	publication     uint64 // Assigned by Offer, ordered with patch publications.
 }
 
 type trackNameSnapshot struct {
-	ids           [16]string
-	incarnations  [16]uint64 // Assigned before publication when this score plays.
-	kinds         [16]string
-	poly          [16]bool
+	ids           [engine.MaxTracks]string
+	incarnations  [engine.MaxTracks]uint64 // Assigned before publication when this score plays.
+	kinds         [engine.MaxTracks]string
+	poly          [engine.MaxTracks]bool
 	count         uint8
-	committed     [17][kernel.ParamCount]atomic.Uint64 // Render writes; controls read.
-	defaults      engine.ParameterState                // Render-owned saved values, separate from scene values.
-	previewParams [16][kernel.ParamCount]bool
-	previewValues [16]engine.PreviewParamValidator
+	committed     [engine.MaxTracks + 1][kernel.ParamCount]atomic.Uint64 // Render writes; controls read.
+	defaults      engine.ParameterState                                  // Render-owned saved values, separate from scene values.
+	previewParams [engine.MaxTracks][kernel.ParamCount]bool
+	previewValues [engine.MaxTracks]engine.PreviewParamValidator
 }
 
 // PreviewTarget retains the immutable playing-track metadata and incarnation
@@ -78,8 +81,8 @@ type MeterValue struct{ Peak, RMS float32 }
 type MeterFrame struct {
 	Tick                           int64
 	TrackCount                     uint8
-	TrackIDs                       [16]string
-	Tracks                         [16]MeterValue
+	TrackIDs                       [engine.MaxTracks]string
+	Tracks                         [engine.MaxTracks]MeterValue
 	HasReturnA, HasReturnB, HasSFX bool
 	ReturnA, ReturnB               MeterValue
 	Music, SFX, MasterPre          MeterValue
@@ -188,7 +191,7 @@ type StartRequest struct {
 	Scene string
 }
 
-type slotLaunchBatch struct{ requests [16]slotLaunch }
+type slotLaunchBatch struct{ requests [engine.MaxTracks]slotLaunch }
 
 // Position is the most recently rendered musical location. Step is one-based
 // within a 16-step bar; the audio device may still be playing buffered frames.
@@ -200,75 +203,102 @@ type Position struct {
 // Player implements io.Reader for interleaved stereo float32 little-endian PCM.
 // Read is owned by the audio device; Offer may be called from a file watcher.
 type Player struct {
-	current           Score
-	previous          *engine.Engine
-	clock             seq.Clock
-	rate              int
-	sample            int64
-	bar               int64
-	nextBarSample     int64
-	fadeTotal         int
-	fadeRemaining     int
-	offers            chan Score
-	patches           chan *Patch
-	deferredPatch     *Patch // Render-owned head batch carried to the next block.
-	reconstructed     engine.ParameterState
-	blockParameters   engine.ParameterState
-	initialParameters bool
-	publicationMu     sync.Mutex // Orders patches/offers with Close, never Read.
-	publication       uint64
-	offerPublication  atomic.Uint64
-	landedRevision    atomic.Uint64
-	launches          atomic.Pointer[sceneLaunch]
-	launchSequence    atomic.Uint64
-	starts            chan StartRequest
-	startMu           sync.Mutex // control calls only; the audio reader never locks
-	startSequence     atomic.Uint64
-	pendingStart      atomic.Uint64
-	slotLaunches      atomic.Pointer[slotLaunchBatch]
-	notes             atomic.Pointer[noteBatch]
-	noteEpoch         atomic.Uint64 // odd: release overload; batches carry their admission epoch
-	heldNotes         [128]noteInput
-	heldOrder         [128]uint64
-	noteFinal         [16][128]cmd.Command
-	noteTouched       [16][128]bool
-	noteOrder         uint64
-	events            chan Event
-	left, right       [blockFrames]float32
-	oldL, oldR        [blockFrames]float32
-	pcm               [blockFrames * 8]byte
-	buffered          int
-	read              int
-	fault             error
-	closed            chan struct{}
-	closedOnce        sync.Once
-	jumpFadeRemaining int
-	position          atomic.Uint64
-	tempoMilli        atomic.Int64
-	scene             atomic.Pointer[string]
-	sceneSequence     uint64
-	sceneEngine       *engine.Engine
-	overrides         atomic.Pointer[liveOverrides]
-	trackNames        atomic.Pointer[trackNameSnapshot]
-	overrideSequence  atomic.Uint64
-	trackIncarnation  uint64 // Render-owned; increments when an identity appears.
-	trackCount        atomic.Uint32
-	overrideClears    chan overrideClear
-	overrideHook      func(snapshotLoaded bool) // Optional deterministic scheduler for tests.
-	meters            chan MeterFrame
-	meterScratch      MeterFrame
-	meterTick         int64
-	meterStarted      bool
-	loudness          *liveLoudness
-	publishMu         sync.Mutex
-	publisher         *Publisher
-	hostPaused        atomic.Bool
-	telemetry         telemetryState
+	retirement              *engineRetirement
+	retirementFault         atomic.Bool
+	current                 Score
+	offerMu                 sync.Mutex // control-only ownership transfer and teardown
+	admissionClosed         bool
+	closed                  chan struct{}
+	closedOnce              sync.Once
+	previous                *engine.Engine
+	clock                   seq.Clock
+	rate                    int
+	sample                  int64
+	bar                     int64
+	nextBarSample           int64
+	fadeTotal               int
+	fadeRemaining           int
+	offers                  chan Score
+	patches                 chan *Patch
+	deferredPatch           *Patch // Render-owned head batch carried to the next block.
+	reconstructed           engine.ParameterState
+	blockParameters         engine.ParameterState
+	initialParameters       bool
+	transportQueued         bool       // OpSeek/OpPlay queued for the block about to render; render-owned.
+	publicationMu           sync.Mutex // Orders patches/offers with Close, never Read.
+	publication             uint64
+	offerPublication        atomic.Uint64
+	landedRevision          atomic.Uint64
+	launches                atomic.Pointer[sceneLaunch]
+	launchSequence          atomic.Uint64
+	starts                  chan StartRequest
+	startMu                 sync.Mutex // control calls only; the audio reader never locks
+	startSequence           atomic.Uint64
+	pendingStart            atomic.Uint64
+	slotLaunches            atomic.Pointer[slotLaunchBatch]
+	notes                   atomic.Pointer[noteBatch]
+	noteEpoch               atomic.Uint64 // odd: release overload; batches carry their admission epoch
+	heldNotes               [128]noteInput
+	heldOrder               [128]uint64
+	noteFinal               [engine.MaxTracks][128]cmd.Command
+	noteTouched             [engine.MaxTracks][128]bool
+	noteOrder               uint64
+	events                  chan Event
+	left, right             [blockFrames]float32
+	oldL, oldR              [blockFrames]float32
+	pcm                     [blockFrames * 8]byte
+	buffered                int
+	read                    int
+	fault                   error
+	jumpFadeRemaining       int
+	position                atomic.Uint64
+	tempoMilli              atomic.Int64
+	scene                   atomic.Pointer[string]
+	sceneSequence           uint64
+	sceneEngine             *engine.Engine
+	overrides               atomic.Pointer[liveOverrides]
+	trackNames              atomic.Pointer[trackNameSnapshot]
+	overrideSequence        atomic.Uint64
+	trackIncarnation        uint64 // Render-owned identity generation.
+	overrideClears          chan overrideClear
+	overrideHook            func(snapshotLoaded bool)
+	trackCount              atomic.Uint32
+	appliedOverrideSnapshot *liveOverrides
+	appliedOverrideEngine   *engine.Engine
+	meters                  chan MeterFrame
+	meterScratch            MeterFrame
+	meterTick               int64
+	meterStarted            bool
+	loudness                *liveLoudness
+	publishMu               sync.Mutex
+	publisher               *Publisher
+	hostPaused              atomic.Bool
+	telemetry               telemetryState
+	rangeRequest            atomic.Pointer[playbackRangeRequest]
+	rangeState              atomic.Pointer[PlaybackRange]
+	playbackRange           *PlaybackRange // audio reader owns the active range
+	rangeFinished           atomic.Bool
+	rangeCycles             atomic.Uint64
+	streamEngine            atomic.Pointer[engine.Engine]
 }
 
-func New(initial Score, rate int) (*Player, error) {
+// New consumes the initial engine, closing it if player admission fails.
+func New(initial Score, rate int) (created *Player, admissionError error) {
+	defer func() {
+		if admissionError != nil && initial.Engine != nil {
+			_ = initial.Engine.Close()
+		}
+	}()
+	if len(initial.Tracks) > engine.MaxTracks {
+		return nil, fmt.Errorf("live score exceeds %d tracks", engine.MaxTracks)
+	}
 	if initial.Engine == nil || initial.SampleRate != rate {
 		return nil, fmt.Errorf("live score has no engine at %d Hz", rate)
+	}
+	if initial.Range != nil {
+		if err := initial.Range.Validate(); err != nil {
+			return nil, err
+		}
 	}
 	clock, err := seq.NewClock(rate, initial.BPMMilli)
 	if err != nil {
@@ -283,6 +313,15 @@ func New(initial Score, rate int) (*Player, error) {
 		masterLoudness.close()
 		return nil, fmt.Errorf("live engine rejected play")
 	}
+	primeTick := int64(0)
+	if initial.Range != nil {
+		primeTick = initial.Range.StartTick
+	}
+	if err := primeStreamScore(initial, primeTick); err != nil {
+		initial.Engine.Close()
+		masterLoudness.close()
+		return nil, err
+	}
 	initial.trackNames = makeTrackNames(initial)
 	p := &Player{
 		current: initial, clock: clock, rate: rate,
@@ -292,8 +331,11 @@ func New(initial Score, rate int) (*Player, error) {
 		overrideClears:    make(chan overrideClear, 64),
 		patches:           make(chan *Patch, 32),
 		closed:            make(chan struct{}),
-		initialParameters: true,
+		initialParameters: true, transportQueued: true,
 	}
+	p.retirement = newEngineRetirement(nil)
+	p.retirement.register(initial.Engine)
+	p.streamEngine.Store(initial.Engine)
 	p.overrides.Store(&liveOverrides{})
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
 	p.assignTrackIncarnations(initial.trackNames)
@@ -304,6 +346,9 @@ func New(initial Score, rate int) (*Player, error) {
 		p.scene.Store(&p.current.Song[0].Scene)
 	} else if len(initial.SceneIDs) != 0 {
 		p.scene.Store(&p.current.SceneIDs[0])
+	}
+	if initial.Range != nil {
+		_ = p.PlayRange(*initial.Range) // validated before creating the player
 	}
 	return p, nil
 }
@@ -344,20 +389,102 @@ func (p *Player) Close() {
 			}
 		}
 	})
+	p.offerMu.Lock()
+	defer p.offerMu.Unlock()
+	if p.admissionClosed {
+		return
+	}
+	p.admissionClosed = true
 	if p.loudness != nil {
 		p.loudness.close()
 	}
+	p.streamEngine.Store(nil)
+	p.retirement.shutdown()
+	p.previous = nil
+	for {
+		select {
+		case <-p.offers:
+		default:
+			return
+		}
+	}
+}
+
+// StreamStats exposes immutable arena and atomic reader counters to host UIs.
+func (p *Player) StreamStats() engine.StreamingStats {
+	if e := p.streamEngine.Load(); e != nil {
+		return e.StreamStats()
+	}
+	return engine.StreamingStats{}
+}
+func (p *Player) StreamError() error {
+	if e := p.streamEngine.Load(); e != nil {
+		return e.StreamError()
+	}
+	return nil
+}
+func primeStreamScore(score Score, tick int64) error {
+	if score.Engine.StreamStats().ArenaBytes == 0 {
+		return nil
+	}
+	commands := [2]cmd.Command{{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(tick / seq.TicksPerBar), Arg1: uint32(tick % seq.TicksPerBar)}, {Op: cmd.OpPlay, Track: 0xff}}
+	if !score.Engine.PushBatch(commands[:]) {
+		return fmt.Errorf("streamed score rejected preparation")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	_, err := score.Engine.PrepareRender(ctx, min(blockFrames, 4096))
+	return err
 }
 
 // Offer replaces any edit that has not landed yet with the newest valid score.
+// Offer consumes score ownership, including failed admission or replacement.
 func (p *Player) Offer(score Score) error {
+	p.offerMu.Lock()
+	defer p.offerMu.Unlock()
+	accepted := false
+	defer func() {
+		if !accepted && score.Engine != nil {
+			p.retirement.releaseUnused(score.Engine)
+		}
+	}()
+	if p.admissionClosed {
+		return fmt.Errorf("live player is closed")
+	}
+	if p.retirementFault.Load() {
+		return errRetirementInvariant
+	}
+	if score.Engine != nil && p.retirement.find(score.Engine) != nil {
+		accepted = true // ownership is already held by this player
+		return fmt.Errorf("live score engine is already owned by this player")
+	}
+	if len(score.Tracks) > engine.MaxTracks {
+		return fmt.Errorf("live score exceeds %d tracks", engine.MaxTracks)
+	}
 	if score.Engine == nil || score.SampleRate != p.rate {
 		return fmt.Errorf("live score has no engine at %d Hz", p.rate)
 	}
 	if _, err := seq.NewClock(p.rate, score.BPMMilli); err != nil {
 		return err
 	}
+	if score.Range != nil {
+		if err := score.Range.Validate(); err != nil {
+			return err
+		}
+	}
+	primeTick := p.Position().Bar * seq.TicksPerBar
+	if score.Range != nil {
+		primeTick = score.Range.StartTick
+	}
+	if err := primeStreamScore(score, primeTick); err != nil {
+		score.Engine.Close()
+		return err
+	}
 	score.trackNames = makeTrackNames(score)
+	if !p.retirement.register(score.Engine) {
+		return errRetirementBusy
+	}
+	// Patch publications and replacements share this order; Close excludes both.
 	p.publicationMu.Lock()
 	defer p.publicationMu.Unlock()
 	select {
@@ -371,10 +498,14 @@ func (p *Player) Offer(score Score) error {
 	for {
 		select {
 		case p.offers <- score:
+			accepted = true
 			return nil
 		default:
 			select {
-			case <-p.offers:
+			case discarded := <-p.offers:
+				if discarded.Engine != nil {
+					p.retirement.releaseUnused(discarded.Engine)
+				}
 			default:
 			}
 		}
@@ -386,7 +517,7 @@ func (p *Player) Events() <-chan Event { return p.events }
 func (p *Player) Meters() <-chan MeterFrame { return p.meters }
 
 func makeTrackNames(score Score) *trackNameSnapshot {
-	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), 16))}
+	snapshot := &trackNameSnapshot{count: uint8(min(len(score.Tracks), engine.MaxTracks))}
 	for _, parameter := range score.Parameters {
 		snapshot.storeCommitted(parameter.Track, parameter.ID, parameter.Value)
 		snapshot.defaults.Set(parameter.Track, parameter.ID, parameter.Value)
@@ -407,7 +538,7 @@ func makeTrackNames(score Score) *trackNameSnapshot {
 		}
 	}
 	if score.Engine != nil {
-		for index := 0; index < min(score.Engine.TrackCount(), 16); index++ {
+		for index := 0; index < min(score.Engine.TrackCount(), engine.MaxTracks); index++ {
 			snapshot.previewValues[index] = score.Engine.PreviewParamValidator(index)
 			family := "instrument"
 			switch score.Engine.TrackVoiceKind(index) {
@@ -491,9 +622,9 @@ func (p *Player) CommittedValue(track uint8, id kernel.ParamID) (float32, bool) 
 
 func (snapshot *trackNameSnapshot) storeCommitted(track uint8, id kernel.ParamID, value float32) {
 	if track == 0xff {
-		track = 16
+		track = engine.ParameterGlobalSlot
 	}
-	if track < 17 && id < kernel.ParamCount {
+	if track <= engine.ParameterGlobalSlot && id < kernel.ParamCount {
 		snapshot.committed[track][id].Store(1<<32 | uint64(math.Float32bits(value)))
 	}
 }
@@ -503,9 +634,9 @@ func (snapshot *trackNameSnapshot) committedValue(track uint8, id kernel.ParamID
 		return 0, false
 	}
 	if track == 0xff {
-		track = 16
+		track = engine.ParameterGlobalSlot
 	}
-	if track >= 17 {
+	if track > engine.ParameterGlobalSlot {
 		return 0, false
 	}
 	bits := snapshot.committed[track][id].Load()
@@ -895,6 +1026,7 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 		p.overrideHook(false)
 	}
 	remaining := len(p.overrideClears)
+	hadClears := remaining != 0
 	snapshot := p.overrides.Load()
 	if snapshot == nil {
 		return
@@ -914,6 +1046,12 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 			}
 		}
 	}
+	// Snapshot caching never bypasses the cancellation queue or its admission
+	// boundary hooks. Failed restoration/pushes invalidate it for retry.
+	if !newEngine && !hadClears && p.appliedOverrideSnapshot == snapshot && p.appliedOverrideEngine == target {
+		return
+	}
+	complete := true
 	for identity, overrides := range snapshot.tracks {
 		state := overrides.state
 		if newEngine {
@@ -956,6 +1094,8 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 				}
 				if target.Push(cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(value)}) {
 					state.retire(kernel.ParamID(id), override.version)
+				} else {
+					complete = false
 				}
 				continue
 			}
@@ -969,8 +1109,15 @@ func (p *Player) applyOverrides(target *engine.Engine, score Score, newEngine bo
 			command := cmd.Command{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(override.value)}
 			if target.Push(command) {
 				state.appliedVersions[id] = override.version
+			} else {
+				complete = false
 			}
 		}
+	}
+	if complete {
+		p.appliedOverrideSnapshot, p.appliedOverrideEngine = snapshot, target
+	} else {
+		p.appliedOverrideSnapshot = nil
 	}
 }
 
@@ -1001,14 +1148,14 @@ func (p *Player) collectMeter(message cmd.Message) {
 	if !p.meterStarted || p.meterTick != message.Tick {
 		p.meterScratch = MeterFrame{Tick: message.Tick, HasReturnA: p.current.HasReturnA, HasReturnB: p.current.HasReturnB, HasSFX: p.current.HasSFX}
 		p.meterTick, p.meterStarted = message.Tick, true
-		p.meterScratch.TrackCount = uint8(min(len(p.current.Tracks), 16))
+		p.meterScratch.TrackCount = uint8(min(len(p.current.Tracks), engine.MaxTracks))
 		for i := 0; i < int(p.meterScratch.TrackCount); i++ {
 			p.meterScratch.TrackIDs[i] = p.current.Tracks[i].ID
 		}
 	}
 	value := math.Float32frombits(message.B)
 	switch {
-	case message.Track < 16 && int(message.Track) < int(p.meterScratch.TrackCount):
+	case message.Track < engine.MaxTracks && int(message.Track) < int(p.meterScratch.TrackCount):
 		assignMeter(&p.meterScratch.Tracks[message.Track], message.A, value)
 	case message.Track == 0xf0:
 		assignMeter(&p.meterScratch.ReturnA, message.A, value)
@@ -1096,6 +1243,7 @@ func (p *Player) QueueSongEntry(index int, scene string) (uint64, error) {
 	if index < 0 || scene == "" {
 		return 0, fmt.Errorf("song entry index and scene are required")
 	}
+	p.ClearRange()
 	p.startMu.Lock()
 	defer p.startMu.Unlock()
 	request := StartRequest{ID: p.startSequence.Add(1), Index: index, Scene: scene}
@@ -1192,15 +1340,15 @@ func (p *Player) PendingSceneQuantize() uint32 {
 
 // PendingPatterns returns a copy of queued pattern launches. An empty Track
 // marks an unused entry. Read can consume the queue while the UI takes its copy.
-func (p *Player) PendingPatterns() [16]SlotRequest {
+func (p *Player) PendingPatterns() [engine.MaxTracks]SlotRequest {
 	if batch := p.slotLaunches.Load(); batch != nil {
-		var requests [16]SlotRequest
+		var requests [engine.MaxTracks]SlotRequest
 		for index, queued := range batch.requests {
 			requests[index] = queued.request
 		}
 		return requests
 	}
-	return [16]SlotRequest{}
+	return [engine.MaxTracks]SlotRequest{}
 }
 
 func (p *Player) PendingPatternQuantizes() map[string]uint32 {
@@ -1274,6 +1422,13 @@ func (p *Player) Read(out []byte) (int, error) {
 	}
 	written := 0
 	for written < len(out) {
+		if p.retirementFault.Load() {
+			if written > 0 {
+				return written, nil
+			}
+			return 0, p.fault
+		}
+		p.beginRequestedRange()
 		p.beginRequestedSong()
 		if p.read == p.buffered {
 			if p.fault != nil {
@@ -1282,7 +1437,9 @@ func (p *Player) Read(out []byte) (int, error) {
 				}
 				return 0, p.fault
 			}
-			p.renderBlock()
+			// Match the device's demand: rendering a full 256-frame block for a
+			// 64-frame callback delays live input by the retained 192 frames.
+			p.renderBlock((len(out) - written + 7) / 8)
 			if p.fault != nil {
 				continue
 			}
@@ -1323,6 +1480,7 @@ func (p *Player) beginRequestedSong() {
 				select {
 				case p.offers <- next:
 				default:
+					p.retireEngine(next.Engine)
 				}
 			}
 			p.emit(Event{Kind: "song-error", Name: request.Scene})
@@ -1334,8 +1492,14 @@ func (p *Player) beginRequestedSong() {
 		// old transport position.
 		p.launches.Store(nil)
 		p.slotLaunches.Swap(nil)
+		if p.previous != nil {
+			p.retireEngine(p.previous)
+		}
 		p.previous, p.fadeRemaining = nil, 0
 		if hasOffer {
+			if p.previous != nil {
+				p.retireEngine(p.previous)
+			}
 			p.previous = p.current.Engine
 			p.discardSupersededPatches(next.publication)
 			p.rebuildCommitted(next, int64(start-1)*seq.TicksPerBar)
@@ -1343,6 +1507,7 @@ func (p *Player) beginRequestedSong() {
 			p.heldNotes = [128]noteInput{}
 			p.heldOrder = [128]uint64{}
 			p.current = next
+			p.streamEngine.Store(next.Engine)
 			p.trackCount.Store(uint32(next.Engine.TrackCount()))
 			p.trackNames.Store(next.trackNames)
 			p.resetMeters()
@@ -1358,6 +1523,7 @@ func (p *Player) beginRequestedSong() {
 			return
 		}
 		p.rebuildCommitted(p.current, int64(start-1)*seq.TicksPerBar)
+		p.transportQueued = true
 		p.initialParameters = false
 		p.bar = int64(start) - 1
 		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.Engine.TempoAtTick(p.bar * seq.TicksPerBar), AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
@@ -1369,7 +1535,10 @@ func (p *Player) beginRequestedSong() {
 	}
 }
 
-func (p *Player) renderBlock() {
+func (p *Player) renderBlock(requestedFrames int) {
+	if p.finishPlaybackRange() {
+		return
+	}
 	clear(p.blockParameters[:])
 	if p.sample == p.nextBarSample {
 		p.bar++
@@ -1377,18 +1546,27 @@ func (p *Player) renderBlock() {
 		select {
 		case next := <-p.offers:
 			if p.bar > int64(^uint32(0)) || !next.Engine.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(p.bar)}) || !next.Engine.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+				p.retireEngine(next.Engine)
 				p.fault = fmt.Errorf("live engine rejected bar %d", p.bar)
 				return
+			}
+			if p.previous != nil {
+				p.retireEngine(p.previous)
 			}
 			p.previous = p.current.Engine
 			p.discardSupersededPatches(next.publication)
 			p.rebuildCommitted(next, p.bar*seq.TicksPerBar)
+			p.transportQueued = true
 			p.applyOverrides(next.Engine, next, true)
 			p.fadeTotal = p.rate / 200 // five milliseconds
 			p.fadeRemaining = p.fadeTotal
 			p.heldNotes = [128]noteInput{}
 			p.heldOrder = [128]uint64{}
 			p.current = next
+			p.streamEngine.Store(next.Engine)
+			if next.Range != nil {
+				p.setPlaybackRange(next.Range)
+			}
 			p.trackCount.Store(uint32(next.Engine.TrackCount()))
 			p.trackNames.Store(next.trackNames)
 			p.resetMeters()
@@ -1398,6 +1576,9 @@ func (p *Player) renderBlock() {
 				AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar,
 			}
 			p.tempoMilli.Store(p.clock.BPMMilli)
+			if r := next.Range; r != nil && (p.clock.TickAtSample(p.sample) < r.StartTick || p.clock.TickAtSample(p.sample) >= r.EndTick) {
+				p.seekListeningRange(r.StartTick)
+			}
 			select {
 			case p.events <- Event{Bar: p.bar + 1, Name: next.Name, Kind: "edit", Revision: next.Revision}:
 			default:
@@ -1417,7 +1598,10 @@ func (p *Player) renderBlock() {
 		}
 		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 	}
-	frames := int(min(int64(blockFrames), p.nextBarSample-p.sample))
+	frames := int(min(int64(min(blockFrames, requestedFrames)), p.nextBarSample-p.sample))
+	if r := p.playbackRange; r != nil {
+		frames = int(min(int64(frames), p.clock.SampleAtTick(r.EndTick)-p.sample))
+	}
 	if frames <= 0 {
 		p.fault = fmt.Errorf("live transport did not advance at bar %d", p.bar+1)
 		return
@@ -1433,8 +1617,8 @@ func (p *Player) renderBlock() {
 	if p.fault != nil {
 		return
 	}
-	p.queueSceneLaunch()
-	p.queueSlotLaunches()
+	p.queueSceneLaunch(frames)
+	p.queueSlotLaunches(frames)
 	p.notePendingScenes(tick)
 	p.applyOverrides(p.current.Engine, p.current, false)
 	p.current.Engine.Render(p.left[:frames], p.right[:frames])
@@ -1444,11 +1628,12 @@ func (p *Player) renderBlock() {
 		p.sceneEngine, p.sceneSequence = p.current.Engine, sequence
 		p.scene.Store(&p.current.SceneIDs[index])
 		request := p.launches.Load()
-		manual := request != nil && request.submitted.Load() && request.targetTick < p.clock.TickAtSample(p.sample+int64(frames))
+		manual := request != nil && request.submitted.Load() && p.clock.SampleAtTick(request.targetTick) < p.sample+int64(frames)
 		if !firstScene && !manual {
 			p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: p.current.SceneIDs[index], Kind: "song-scene"})
 		}
 	}
+	p.transportQueued = false
 	var message cmd.Message
 	for p.current.Engine.Poll(&message) {
 		if message.Kind == cmd.Fault {
@@ -1472,6 +1657,7 @@ func (p *Player) renderBlock() {
 		}
 		p.fadeRemaining -= fadeFrames
 		if p.fadeRemaining == 0 {
+			p.retireEngine(p.previous)
 			p.previous = nil
 		}
 	}
@@ -1484,6 +1670,18 @@ func (p *Player) renderBlock() {
 		}
 		p.jumpFadeRemaining -= fadeFrames
 	}
+	if r := p.playbackRange; r != nil {
+		endSample := p.clock.SampleAtTick(r.EndTick)
+		fade := int64(max(1, p.rate/200))
+		for i := 0; i < frames; i++ {
+			remaining := endSample - p.sample - int64(i) - 1
+			if remaining < fade {
+				gain := float32(max(int64(0), remaining)) / float32(fade)
+				p.left[i] *= gain
+				p.right[i] *= gain
+			}
+		}
+	}
 	// The engine output is post-limiter. Copy it only after transport fades have
 	// been applied, and never wait for the independent meter worker.
 	p.loudness.push(p.left[:frames], p.right[:frames])
@@ -1491,9 +1689,9 @@ func (p *Player) renderBlock() {
 		binary.LittleEndian.PutUint32(p.pcm[i*8:], math.Float32bits(p.left[i]))
 		binary.LittleEndian.PutUint32(p.pcm[i*8+4:], math.Float32bits(p.right[i]))
 	}
-	endTick := p.clock.TickAtSample(p.sample + int64(frames))
-	p.completeSceneLaunch(endTick)
-	p.completeSlotLaunches(endTick)
+	endSample := p.sample + int64(frames)
+	p.completeSceneLaunch(endSample)
+	p.completeSlotLaunches(endSample)
 	p.sample += int64(frames)
 	p.telemetry.storeTransport(p.sample, p.clock.TickAtSample(p.sample), p.current.Engine.Playing())
 	p.buffered, p.read = frames*8, 0
@@ -1697,7 +1895,7 @@ func findTrack(snapshot *trackNameSnapshot, id string) (uint8, string, bool) {
 	return 0, "", false
 }
 
-func (p *Player) queueSceneLaunch() {
+func (p *Player) queueSceneLaunch(frames int) {
 	request := p.launches.Load()
 	if request == nil || request.submitted.Load() {
 		return
@@ -1705,7 +1903,7 @@ func (p *Player) queueSceneLaunch() {
 	if len(p.offers) != 0 && p.sample < p.nextBarSample && request.targetTick >= p.clock.TickAtSample(p.nextBarSample) {
 		return
 	}
-	endSample := min(p.sample+blockFrames, p.nextBarSample)
+	endSample := min(p.sample+int64(frames), p.nextBarSample)
 	if request.targetTick > p.clock.TickAtSample(endSample) {
 		return
 	}
@@ -1811,7 +2009,7 @@ func quantizeQuantum(quantize cmd.Quantize) (int64, bool) {
 	}
 }
 
-func (p *Player) queueSlotLaunches() {
+func (p *Player) queueSlotLaunches(frames int) {
 	type scheduledSlot struct {
 		request slotLaunch
 		track   int
@@ -1822,7 +2020,7 @@ func (p *Player) queueSlotLaunches() {
 		if old == nil {
 			return
 		}
-		endSample := min(p.sample+blockFrames, p.nextBarSample)
+		endSample := min(p.sample+int64(frames), p.nextBarSample)
 		horizon := p.clock.TickAtSample(endSample)
 		next := *old
 		changed := false
@@ -1843,7 +2041,7 @@ func (p *Player) queueSlotLaunches() {
 				}
 			}
 			slot := -1
-			if track >= 0 && track < 16 {
+			if track >= 0 && track < engine.MaxTracks {
 				for candidate, name := range p.current.Tracks[track].Slots {
 					if name == request.request.Pattern {
 						slot = candidate
@@ -1851,7 +2049,7 @@ func (p *Player) queueSlotLaunches() {
 					}
 				}
 			}
-			if track < 0 || track >= 16 || slot < 0 {
+			if track < 0 || track >= engine.MaxTracks || slot < 0 {
 				failed = append(failed, request)
 				next.requests[index] = slotLaunch{}
 				changed = true
@@ -1905,9 +2103,9 @@ func (p *Player) removeSlotRequest(id uint64) {
 	}
 }
 
-func (p *Player) completeSceneLaunch(endTick int64) {
+func (p *Player) completeSceneLaunch(endSample int64) {
 	request := p.launches.Load()
-	if request == nil || !request.submitted.Load() || request.targetTick >= endTick {
+	if request == nil || !request.submitted.Load() || p.clock.SampleAtTick(request.targetTick) >= endSample {
 		return
 	}
 	if p.launches.CompareAndSwap(request, nil) {
@@ -1915,7 +2113,7 @@ func (p *Player) completeSceneLaunch(endTick int64) {
 	}
 }
 
-func (p *Player) completeSlotLaunches(endTick int64) {
+func (p *Player) completeSlotLaunches(endSample int64) {
 	for {
 		old := p.slotLaunches.Load()
 		if old == nil {
@@ -1925,7 +2123,7 @@ func (p *Player) completeSlotLaunches(endTick int64) {
 		var landed []slotLaunch
 		changed := false
 		for index, request := range old.requests {
-			if request.request.Track != "" && request.submitted && request.TargetTick < endTick {
+			if request.request.Track != "" && request.submitted && p.clock.SampleAtTick(request.TargetTick) < endSample {
 				landed = append(landed, request)
 				next.requests[index] = slotLaunch{}
 				changed = true

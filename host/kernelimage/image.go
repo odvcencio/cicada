@@ -10,6 +10,7 @@ import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
@@ -30,7 +31,7 @@ const PackCapability uint16 = 1 << 10
 
 const Capabilities = ModalCapability | ModeledKitCapability
 
-const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | Capabilities | GridCapability | ChainCapability | AutomationCapability | PackCapability
+const SupportedCapabilities = DelayCapability | PianoCapability | ExpressionCapability | NeuralAmpCapability | PMCapability | DDSPCapability | Capabilities | GridCapability | ChainCapability | AutomationCapability | PackCapability | enabledTrackEffectsCapability
 
 const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15  // experimental guitar in the unified image layout
@@ -153,6 +154,12 @@ func (r *reader) f64() (float64, error) {
 // version 15 layout for graph polyphony, schedules, and prepared audio. The decoded Config is separately
 // validated by engine.New before any audio is produced.
 func Encode(cfg engine.Config) ([]byte, error) {
+	if cfg.Tracks > limits.PortableMaxTracks || cfg.MaxVoices > limits.PortableMaxVoices {
+		return nil, Error("portable browser/WAM exports support at most 16 tracks and 32 allocated voices; use native playback or WAV/stems for larger projects")
+	}
+	if cfg.Streaming != nil {
+		return nil, Error("native streamed assets require resident compilation for a portable kernel image")
+	}
 	if cfg.MasterProcessor != nil {
 		return nil, Error("prepared master processor must be loaded separately from the project image")
 	}
@@ -292,6 +299,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			}
 		}
 	}
+	for _, track := range cfg.Track[:cfg.Tracks] {
+		if len(track.InsertChain) > 0 {
+			capabilities |= TrackEffectsCapability
+		}
+	}
 	w.u16(capabilities)
 	if cfg.DelayA == nil {
 		w.byte(0)
@@ -344,7 +356,11 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		w.byte(boolByte(cfg.CompMusic.MakeupAuto))
 		w.f64(cfg.CompMusic.MakeupDB)
 		w.f64(cfg.CompMusic.Mix)
-		w.byte(byte(cfg.CompSidechainTrack))
+		sidechain := cfg.CompSidechainTrack
+		if sidechain == engine.SFXSidechain {
+			sidechain = limits.PortableMaxTracks + 1
+		}
+		w.byte(byte(sidechain))
 	}
 	var busFlags uint16
 	if cfg.MusicBusMute {
@@ -400,6 +416,14 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			w.f64(spec.InsertDrive.GainDB)
 			w.f64(spec.InsertDrive.ToneHz)
 			w.f64(spec.InsertDrive.Mix)
+		}
+		if capabilities&TrackEffectsCapability != 0 {
+			if spec.InsertDrive != nil && len(spec.InsertChain) > 0 {
+				return nil, Error("legacy drive and insert chain cannot be combined")
+			}
+			if err := writeTrackEffects(&w, cfg.SampleRate, spec.InsertChain); err != nil {
+				return nil, err
+			}
 		}
 		switch spec.Kind {
 		case engine.VoiceOff, engine.VoiceAudio:
@@ -596,7 +620,7 @@ func Encode(cfg engine.Config) ([]byte, error) {
 				}
 			}
 		}
-		for _, binding := range scene.Track {
+		for _, binding := range scene.Track[:limits.PortableMaxTracks] {
 			switch binding.Mode {
 			case engine.SceneClip:
 				w.byte(255)
@@ -800,13 +824,16 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return err
 		}
 		sidechain, err := r.byte()
-		if err != nil || int(sidechain) > int(tracks) && int(sidechain) != engine.SFXSidechain {
+		if err != nil || int(sidechain) > int(tracks) && int(sidechain) != limits.PortableMaxTracks+1 {
 			return Error("invalid compressor sidechain track")
 		}
 		if err := params.Validate(); err != nil {
 			return err
 		}
 		cfg.CompMusic, cfg.CompSidechainTrack = params, int(sidechain)
+		if cfg.CompSidechainTrack == limits.PortableMaxTracks+1 {
+			cfg.CompSidechainTrack = engine.SFXSidechain
+		}
 	}
 	if version >= busMixerImageVersion {
 		busFlags, err := r.u16()
@@ -903,6 +930,16 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 				return err
 			}
 			spec.InsertDrive = params
+		}
+		if reserved&TrackEffectsCapability != 0 {
+			var err error
+			spec.InsertChain, err = readTrackEffects(&r, sampleRate)
+			if err != nil {
+				return err
+			}
+			if spec.InsertDrive != nil && len(spec.InsertChain) > 0 {
+				return Error("legacy drive and insert chain cannot be combined")
+			}
 		}
 		switch spec.Kind {
 		case engine.VoiceOff:
@@ -1172,7 +1209,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 
 	}
 	for scene := range cfg.Scenes {
-		for track := range cfg.Scenes[scene].Track {
+		for track := 0; track < limits.PortableMaxTracks; track++ {
 			binding, err := r.byte()
 			if err != nil {
 				return err
@@ -1259,6 +1296,15 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	if version == UnifiedImageVersion {
 		if err := readSchedule(&r, cfg); err != nil {
 			return err
+		}
+	}
+	if reserved&TrackEffectsCapability != 0 {
+		found := false
+		for _, track := range cfg.Track[:cfg.Tracks] {
+			found = found || len(track.InsertChain) > 0
+		}
+		if !found {
+			return Error("empty track insert image capability")
 		}
 	}
 	if r.at != len(r.data) {

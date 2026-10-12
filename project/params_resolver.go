@@ -71,6 +71,22 @@ func ResolveParameterPath(p *Project, path string) (ResolvedParam, error) {
 			if MasterHasInsert(p, owner) {
 				return fail("CICADA-UNSUPPORTED", "master effect controls are fixed until the score is recompiled")
 			}
+			if trackHasInsert(p, owner) {
+				// Legacy single drive remains addressable. Serial chain controls
+				// rebuild the score so different tracks never share mutable state.
+				legacy := semanticEffectKind(effect) == "drive"
+				for _, track := range p.Tracks {
+					names := mixerInsertIDs(track.Mixer)
+					for _, name := range names {
+						if name == owner && len(names) != 1 {
+							legacy = false
+						}
+					}
+				}
+				if !legacy {
+					return fail("CICADA-UNSUPPORTED", "track insert controls are saved and recompiled; live automation is unavailable")
+				}
+			}
 			effectOK = true
 			effectKind = semanticEffectKind(effect)
 			break

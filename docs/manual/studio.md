@@ -7,6 +7,11 @@ score files. Its editor, forms, navigation, meters, and live performance use
 GoSX; Tymbal handles native audio devices.
 Changes to patterns, mixer settings, and arrangements write back to the score.
 
+**Sampler** adds sixteen stereo pads, waveform chopping, pitch and reverse,
+effects, and performance resampling. A placement's **Sample into pads** link
+opens it as a source; printed performances become regular Session audio
+placements. See the [pad sampler guide](sampler.md).
+
 From a source checkout, build both executables and open a score:
 
 ```sh
@@ -19,6 +24,10 @@ Open the printed loopback URL. Playback starts only when you select **Play**.
 Linux, the default is Tymbal. Use **Audio** to select its devices and input
 monitoring settings while stopped.
 
+The null backend is silent. In WSL or on a Linux desktop using PulseAudio,
+select the system output explicitly with `--audio oto`. Rendered WAV and MP3
+files can also be played in your usual music player.
+
 ![GoSX Studio's desktop mixer and output meter surface.](screenshots/studio-desktop-1440.png)
 
 ![GoSX Studio's pattern controls on a narrow screen.](screenshots/studio-mobile-390.png)
@@ -27,8 +36,9 @@ monitoring settings while stopped.
 
 **Play**, **Pause**, **Stop**, and **Return to start** control native playback.
 The bar, step, backend, and errors update through GoSX live bindings. Valid
-score edits become active at the next bar; an invalid external edit leaves the
-last valid score playing.
+score edits become active at the next bar; during a shorter loop they become
+active when the loop restarts. An invalid external edit leaves the last valid
+score playing.
 
 **Session** shows a scene-by-track matrix. Select a scene header to launch its
 assignments, a pattern cell to queue one track, or **Stop** to stop a track.
@@ -41,6 +51,44 @@ set its length, duplicate it, remove it, or move it earlier or later.
 **Add to arrangement** appends an existing scene. At least one block remains.
 Structural changes to songs with intervening comments require a Score edit
 so those comments keep their attachment. Local scene and bar edits preserve them.
+
+For an edition-2 score using `arrange`, **Session** shows named placements on
+a track timeline with section markers. Select a block to open its controls.
+Drag it horizontally to move it, or drag its right edge to resize it. Arrow
+keys on a block or edge change its start or length by a sixteenth; hold Shift
+for a whole bar. Drag previews are saved only when released; Escape cancels.
+
+The placement controls change the track, pattern or clip, exact **Start**,
+and **Length**. Start accepts `@bar.beat.step` or exact ticks. Length accepts
+bars, note divisions, or ticks, such as `4bars`, `1/8`, or `320ticks`.
+**Make a copy**, **Remove placement**, **Add a placement**, and **Edit markers**
+keep arrangement work in Session. At least one placement must remain.
+Overlapping pattern placements, incompatible content, and stale writes are
+rejected without changing the score; audio placements may overlap. Every edit
+supports Undo. The **Placement list** shows exact starts and exclusive ends;
+sub-sixteenth boundaries retain their exact ticks. Content links open the
+pattern or clip editor. Returning from Score reads the current saved project.
+
+Choose a **Section** and **Loop section** to repeat from its marker to the next
+marker, or the arrangement end. For scene-based songs, **Loop block** repeats
+the selected song block. **Loop an exact range** accepts `@bar.beat.step` or
+ticks for both boundaries; the end is exclusive. A loop can start between bars
+and can be shorter than a bar.
+
+Each placement offers **Audition solo**, **Audition in song**, **Loop solo**,
+and **Loop in song**. Solo auditions play just that placement; song-context
+auditions play every part active over the same range. Once-through auditions
+stop at the placement's exclusive end. These controls use native playback and
+leave the score, mixer solo/mute settings, and Undo history unchanged.
+
+The transport shows the target, mode, and exact boundaries. **Pause** retains
+the selection; **Play** resumes it, or restarts a completed audition. Moving
+or trimming a placement, moving a section marker, and Undo update the selected
+listening range at the next bar or loop restart. Removing the target stops
+playback. **Play full song** restores all parts and starts at the beginning;
+**Stop listening** clears the listening selection and stops playback.
+
+![Tidal Glass placement editing and listening controls in Session, captured from the release build at 1440 px.](screenshots/studio-session-listening-1440.png)
 
 **Project settings** changes the title, tempo, key, and scale. Tempo keeps up
 to three decimal places. Changing the key retunes scale-degree notes; explicit
@@ -61,8 +109,19 @@ smoothing. **●** marks an explicit point; **↳** carries the previous value.
 Removing a point keeps that inherited value; add the score's default value
 explicitly to reset it. Repeated uses of a scene share its points. Playback,
 seek reconstruction, WAV exports, and stems use the same scene settings.
-The scene tempo (`tempo`) can be added, changed, and removed the same way; it steps at the scene boundary and the arrangement length is the sum of the steps. Edits preserve surrounding source comments and support Undo. These lanes
-place points at scene boundaries. Continuous curves and recording control movement are not supported.
+The scene tempo (`tempo`) can be added, changed, and removed the same way; it steps at the scene boundary and the arrangement length is the sum of the steps. Edits preserve surrounding source comments and support Undo. Scene lanes place
+points at scene boundaries. **Automation curves** edits continuous `automate`
+lanes across song or arrangement time: choose a parameter, double-click to add
+a point, drag points, or use arrow keys. Points snap to sixteenths and stay
+between their neighbors. **Transition** selects linear, smooth, step,
+exponential or tension-controlled curves. **Save point** makes one Undo step;
+**Remove selected point** removes it. Escape cancels a drag. The numerical fields
+retain unit-aware entry, and **All saved curves** shows the complete overview.
+Recording knob/fader movements is not implemented.
+
+![Session's continuous automation editor, captured from the current build with a test project.](screenshots/studio-producer-automation-1440.png)
+
+The editor also supports [touch editing on phone screens](screenshots/studio-producer-automation-390.png).
 
 ![GoSX scene automation with explicit points and inherited levels.](screenshots/studio-automation-1440.png)
 
@@ -187,6 +246,15 @@ source patcher. Each **Set** writes one parameter. Unsupported fields explain
 their limitation and remain available in **Score**.
 Ranges, units, enum choices, and On/Off controls come from Cicada's parameter
 registry. Existing track sends are included in their mixer strip.
+Audio tracks offer **Add vocal chain**: a high-pass EQ, compressor and de-esser
+in that order. A second click retains the existing vocal chain. Use the ordered
+**Insert chain** controls to move or remove stages, and follow each effect name
+to its parameter controls. These processors have independent state per track;
+changes are saved and recompiled. Finish a vocal take before changing saved
+mixer settings. See [track inserts](../audio/mix-chain.md#track-inserts) for
+processor syntax and supported controls.
+
+![An ordered EQ, compressor and de-esser chain on a test vocal track.](screenshots/studio-producer-vocal-chain-1440.png)
 For an edition 1 score, first check **Upgrade score to edition 2 for this change**.
 The domain service performs the migration and parameter edit together.
 #### PCM capture and shared sampler audition
@@ -196,8 +264,9 @@ instrument** in the Record panel. See [recording instruments](recording-instrume
 for microphone, WAV import and offline pack commands.
 
 Add an edition-2 audio track and a scene, stop transport, and open **Record**.
-Choose the target **Audio track** and **Scene** before arming. Synth tracks
-provide accompaniment during recording; recorded clips are auditioned separately.
+Choose the target **Audio track** and **Scene** before arming. The backing
+includes synths, samplers and existing audio clips; capture retains device input
+before monitoring and mixing.
 The GoSX meter surface shows track and master peaks, RMS, momentary,
 short-term and integrated LUFS, loudness range, true peak, and dropped blocks.
 **Reset live loudness** begins a new measurement. The surface stops polling
@@ -214,9 +283,10 @@ in **Session** to sequence it and include it in WAV exports.
 Declared parameters show their default and current track override. Apply a
 value to shape just that track; **Use default** removes its override. Values
 use the parameter's declared unit. Each change is revision checked and can be
-undone. Edit the complete graph in **Score**. Notes patterns and committed note
-takes currently store one pitch per step; overlapping polyphonic takes explain
-this limit instead of discarding chord notes.
+undone. Edit the complete graph in **Score**. Notes patterns support two- to
+four-pitch chords, editable in the grid or source. Committed note takes currently
+support single notes; overlapping polyphonic takes explain this limit instead
+of discarding chord notes.
 
 ## Score and history
 
@@ -241,16 +311,173 @@ History changes also check the disk revision.
 
 ## Audio, takes, and export
 
+**Audio** names the selected microphone and playback output and explains missing
+or disconnected devices. **Refresh devices** checks the current list without
+changing your routing; a disconnected saved choice stays selected until you
+choose a replacement. Route controls unlock automatically after playback stops.
+Technical errors are available under **Audio details**.
+
+![Microphone and playback setup with actionable device status.](screenshots/studio-audio-setup-1440.png)
+
+The controls also fit [phone screens](screenshots/studio-audio-setup-390.png).
+
 **Audio** selects input and output devices, input enablement, monitoring mute,
 gain, and stereo or mono channel selection. Stop playback before applying these
 settings. Device errors stay visible; Cicada does not silently switch engines.
 
-**Takes** selects an audio track and scene for native input recording. Enable input in
-**Audio**, then **Arm take**, **Record**, and **Finish take**. Recording begins
-after a one-bar count-in; status shows saved frames or seconds and incomplete
-input. The durable journal
-retains failed or conflicting takes. **Select take** commits a selected take;
-**Recover take** retries its recovery against the current revision.
+**Buffer size** offers 64, 128, 256, 512, or 1024 frames. Start with 128 for
+recording, use 64 when your device and song meet that deadline, and increase
+the buffer if playback drops out. Buffer size changes monitoring delay and
+processing headroom while retaining the selected device sample rate and sound
+quality. Stop playback and finish or disarm capture before changing it.
+
+**Buffer and timing** updates the requested and granted buffer, audio thread
+priority, peak callback cost, device deadlines and dropouts. Devices can grant a
+larger period, including a period shared by the microphone and output. Native
+rendering follows the actual callback demand without retaining an extra
+256-frame render block. Input and output latency are driver reports; reported
+round trip is their sum, and stays unknown when either report is unavailable.
+A hardware loopback measurement is needed to confirm microphone-to-headphone
+delay. Status polling does not open endpoints or repeatedly rediscover devices.
+
+Unmuted native monitoring continues while capture is armed and through count-in.
+Its gain only changes what you hear. Raw input is retained before monitoring,
+and a period-sized capture queue gives the disk writer at least one second of
+headroom without adding headphone latency.
+
+**Session → Record vocals** records across the full song, including arrange-only
+scores. In **Recording setup**, choose a microphone and output in **Audio**,
+enable input, and add an audio track such as `danilo`. Use headphones and leave
+monitoring muted if the device delay is distracting. Native recording requires
+Tymbal (`cicada studio score.cicada --audio tymbal`); Oto provides playback.
+
+Session explains whether your microphone is configured, off, or unavailable.
+**Choose microphone and output** opens Audio with **Apply and return to Session**,
+which returns to the same vocal track. Monitoring mute only affects what you
+hear; it does not mute the recorded microphone.
+
+**Microphone level** shows live mono or stereo input in dBFS while playback or
+capture opens your configured input. Play the song and sing a phrase before
+recording. Aim for peaks around −18 to −6 dBFS; adjust the microphone's input
+volume or your distance from it. Monitoring gain changes headphone volume and
+does not reduce input clipping. A peak marker keeps short overloads visible
+between updates and after Stop, and resets with the next playback or take.
+Polling microphone status does not open the device or create a recording.
+
+![Microphone levels and clipping feedback, using simulated input.](screenshots/studio-recording-levels-1440.png)
+
+The same controls fit [phone screens](screenshots/studio-recording-levels-390.png).
+
+The default **Punch in** and **Punch out** cover the complete song. **Full song**
+resets both fields after a punch. Set either
+to `@bar.beat.step` or exact ticks for a phrase, then **Record take**. A one-bar
+count-in precedes playback; a punch starts its backing up to one bar earlier.
+The previous vocal on that track is silent during capture. Recording stops
+automatically at the mapped input frame for Punch out. **Finish take** ends a
+pass early. The global **Stop & save take** button also drains and saves the
+current native take. Conflicting playback commands are disabled during capture
+across every panel; native requests enforce the same rule. Count-in is part of
+that protected recording period. Count-in and backing pre-roll remain in the raw recording and are
+excluded from the chosen vocal. Reported device timing compensates input delay;
+**Recording timing** in Audio adds a manual correction for the remaining delay.
+Positive **Recording timing correction (ms)** advances late input; negative
+values delay it. The range is −500 to +500 ms. This preserves raw PCM and does
+not reduce the latency of headphone monitoring. Automatic loopback measurement
+is not implemented.
+
+Choose **Passes** from 2 to 8 to record a punch range repeatedly. There is one
+initial count-in; subsequent passes loop the selected backing without another
+count-in or pre-roll. Every pass becomes a retained take lane. Stop saves the
+current partial pass, and clean completion chooses the last usable pass while
+keeping the earlier passes available for comping.
+
+A clean completed pass replaces only its covered range in the vocal. Each take
+remains under **Choose the best phrases**, in a waveform lane aligned to the
+song's bars. Drag across a waveform to select a phrase. Drag either edge to trim
+it, or the middle handle to move it. **Zoom** shows the whole song or fewer bars
+for tighter edits; **Snap** offers sixteenth notes, beats, bars, or free ticks.
+
+A playhead shows where playback is in the take lanes. **Loop selection** repeats
+the selected phrase in your chosen listening mode until **Stop audition**; neither audition
+changes the score. Space while focused on a waveform hears or stops the phrase.
+**Follow playback** advances the visible timeline at its edge when zoomed in.
+Follow is optional and remembered with the other lane preferences.
+
+![Looping a vocal phrase with its playhead and follow controls.](screenshots/studio-session-phrase-loop-1440.png)
+
+**Hear selection** auditions the selected phrase with backing without changing
+the score. Set **Hear with** to **Vocal only** to hear the selected vocal without
+backing; both modes use the track's effects. The same choice applies to loops
+and waveform Space auditioning. It leaves track mute/solo settings unchanged.
+
+**Phrase gain (dB)** adjusts a selection from −24 to +18 dB. Use the slider,
+its arrow keys, or the number field to bring quieter and louder passes into
+balance. **Hear selection** previews that level; **Use selection** saves it to
+the chosen interval while preserving its neighbors and their levels. **Reset
+gain** restores 0 dB in the editor; choose **Use selection** to save the reset.
+Original recordings keep their PCM. **Use whole take** uses the pass's complete
+covered interval at its original level.
+
+![Phrase gain and vocal-only auditioning in Session, using simulated vocal takes.](screenshots/studio-vocal-levels-1440.png)
+
+The level controls also fit [phone screens](screenshots/studio-vocal-levels-390.png).
+
+Amber regions show which pass supplies each part, both in **Chosen vocal** and
+on the take lanes, with each chosen phrase's gain beside its take name. Clicking
+a chosen region recalls its range and saved gain. **Set punch range** copies
+the selection into the recording fields; phrase gain does not change input gain.
+Selections support Undo and Redo, and each join has a short fade to prevent clicks.
+
+**Timing and transitions** gives the selected phrase its own **Advance phrase
+(ms)**, **Edge fade (ms)** and **Join crossfade (ms)**. **Earlier 5 ms** and
+**Later 5 ms** nudge timing without changing the selected song interval. Positive
+advance reads later source samples so the voice arrives earlier. The native
+editor rejects shifts without enough retained audio; it does not silently crop
+or pad them. Edge fades accept 0–100 ms (default 5 ms); crossfades accept
+0–100 ms (default 0). Joins use available recorded handles and clamp the overlap
+to their coverage. Audition previews all these settings; **Use selection** saves
+them, and clicking a chosen phrase recalls them. Raw recordings stay unchanged.
+
+Arrow keys on a selection edge trim it; Shift moves four grid steps. Arrow keys
+on the waveform move the phrase; Home/End move it to the take's boundaries.
+Escape or a canceled touch gesture restores the range before a drag. **Exact
+positions** retains the numerical range controls. Zoom, snap and unsaved
+selection and uncommitted gain survive auditions and panel changes within the
+browser tab. Undo/Redo restore the chosen phrase's saved level.
+
+Waveforms use bounded peak summaries of the same mono signal as the comp,
+excluding count-in and pre-roll and keeping punch takes at their song position.
+Each waveform scales independently for visibility; its height does not compare
+recording levels between takes. Waveform analysis does not edit or load the
+entire recording into browser memory. If a waveform is unavailable, the take
+stays retained and Exact positions remains available.
+
+![Session waveform take lanes with a dragged phrase and chosen vocal assembled from three retained takes.](screenshots/studio-vocal-lanes-1440.png)
+
+The same controls wrap for [phone-sized Session views](screenshots/studio-vocal-lanes-390.png).
+
+Session retains raw takes and their tempo/origin in the durable journal. The
+chosen vocal is printed as a mono WAV (stereo input is averaged). Native playback
+streams long audio clips from verified files through a bounded prefetch cache;
+separate lead, double and harmony prints no longer consume the shared resident
+sample budget. Short sampler assets retain a 64 MiB resident limit. A mono comp
+print can contain up to 16,777,216 frames, about 5 minutes 49 seconds at 48 kHz.
+Long takes are verified and read in bounded chunks when
+printing the comp. Failed or conflicting passes remain available for selection.
+Changing tempo requires restoring the take's recording tempo before comping;
+recorded vocals are not time-stretched.
+
+A scene-based song becomes ordinary Session placements on its first vocal
+selection. Explicit part starts and **Keep** continuity carry over, and block
+boundaries become markers. The original scene definitions remain available.
+Arrangement-only scores keep their existing placements and markers. Original
+PCM and previous comp prints remain on disk for recovery and Undo. Simultaneous
+multitrack input capture is not provided.
+
+**Takes** retains the scene-based recording and sample audition workflow:
+choose an audio track and scene, then **Arm take**, **Record**, and **Finish take**.
+**Select take** commits a selected pass; **Recover take** retries publication
+against the current revision. Arrangement takes can also be selected there.
 
 Use **Add audio track** to create a recording lane in an edition-2 score. An
 edition-1 score uses the explicit upgrade option in Mixer first. The Audio
@@ -277,14 +504,27 @@ Sampler patterns use the declared root pitch, voice budget, and oneshot or loop
 mode; note gates release their voices. Supported playback ratios are 0.125–8.
 **Live** does not offer sampler tracks; see [Live performance](#live-performance).
 
-Assets are verified and decoded before playback, confined to the project
-directory, and shared immutably between regions. Native playback admits up to
-64 MiB of resident PCM per prepared project and 16 clips per audio track. File
-I/O and decoding never run in the audio callback. While a new native take
-records, existing audio clips and sampler tracks are silent and synth tracks
-play as accompaniment. The portable AudioWorklet image uses the same sample-capable engine and
+Assets are verified before playback, confined to the project directory, and
+shared immutably between regions. Native playback streams long clip assets;
+resident sampler PCM is limited to 64 MiB, with 16 clips per audio track. File
+I/O and decoding never run in the audio callback. Offline WAV and stems exports
+wait for pages outside rendering and fail explicitly on missing audio. While a new native take
+records, the full project plays as accompaniment, including sampler tracks
+and earlier audio takes. Capture stores device input before monitoring and
+mixing, so the backing and monitoring gain are not printed into the take.
+The portable AudioWorklet image uses the same sample-capable engine and
 verified pack map as native playback and offline render. The existing 2 MiB
 project-image and 64 MiB native resident-PCM limits still apply.
+
+Resident stereo/sample assets retain their 8,388,608-frame limit. Recorded mono
+assets support 16,777,216 frames; the native streamed clip path avoids loading
+long vocals into the resident arena. Portable AudioWorklet/WAM projects retain
+their resident image limits. Native Session streaming does not provide browser
+worker page transfer.
+
+![Phrase timing, fades and crossfades in Session, using simulated retained takes.](screenshots/studio-producer-vocal-timing-1440.png)
+
+The same controls fit [phone screens](screenshots/studio-producer-vocal-timing-390.png).
 
 ### Library
 

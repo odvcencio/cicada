@@ -56,6 +56,24 @@ func (q *qualityState) reset() {
 		q.nodes[i].filter = svfState{}
 	}
 }
+
+// Keep the state-copy loop shared in the constrained TinyGo kernel.
+//
+//go:noinline
+func (q *qualityState) copyFrom(source *qualityState) {
+	nodes := q.nodes
+	*q = *source
+	q.nodes = nodes
+	for i := range q.nodes {
+		oscillator := q.nodes[i].oscillator
+		q.nodes[i] = source.nodes[i]
+		q.nodes[i].oscillator = oscillator
+		if oscillator != nil {
+			// Tables are immutable, but table selection is a per-voice cache.
+			*oscillator = *source.nodes[i].oscillator
+		}
+	}
+}
 func (q *qualityState) retrigger() {
 	q.previous, q.fade = q.last, q.fadeFrames
 	for i := range q.nodes {

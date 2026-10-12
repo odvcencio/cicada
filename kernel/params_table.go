@@ -151,34 +151,46 @@ const (
 	ParamGuitarDrive         ParamID = 137
 	ParamGuitarExperimental  ParamID = 138
 	ParamGuitarOctave        ParamID = 139
-	ParamKeysEpTremolo       ParamID = 140
-	ParamKeysEpTremoloRate   ParamID = 141
-	ParamKeysEpAutoPan       ParamID = 142
-	ParamKeysEpGain          ParamID = 143
-	ParamKeysEpDrive         ParamID = 144
-	ParamKeysClavGain        ParamID = 145
-	ParamKeysClavDrive       ParamID = 146
-	ParamKeysOrganGain       ParamID = 147
-	ParamKeysOrganDrive      ParamID = 148
-	ParamKeysOrganRotaryMix  ParamID = 149
-	ParamKeysOrganRotaryFast ParamID = 150
-	ParamKeysOrganDrawbar1   ParamID = 151
-	ParamKeysOrganDrawbar2   ParamID = 152
-	ParamKeysOrganDrawbar3   ParamID = 153
-	ParamKeysOrganDrawbar4   ParamID = 154
-	ParamKeysOrganDrawbar5   ParamID = 155
-	ParamKeysOrganDrawbar6   ParamID = 156
-	ParamKeysOrganDrawbar7   ParamID = 157
-	ParamKeysOrganDrawbar8   ParamID = 158
-	ParamKeysOrganDrawbar9   ParamID = 159
-	ParamKeysFmGain          ParamID = 160
-	ParamKeysAnalogDrive     ParamID = 161
-	ParamKeysAnalogOutput    ParamID = 162
-	ParamKeysStringsOutput   ParamID = 163
-	ParamCount                       = 164
+	ParamFxEqType            ParamID = 140
+	ParamFxEqFrequency       ParamID = 141
+	ParamFxEqQ               ParamID = 142
+	ParamFxEqGain            ParamID = 143
+	ParamFxDeesserFrequency  ParamID = 144
+	ParamFxDeesserThreshold  ParamID = 145
+	ParamFxDeesserRatio      ParamID = 146
+	ParamFxDeesserRange      ParamID = 147
+	ParamFxDeesserAttack     ParamID = 148
+	ParamFxDeesserRelease    ParamID = 149
+	ParamFxDeesserMix        ParamID = 150
+	ParamKeysEpTremolo       ParamID = 151
+	ParamKeysEpTremoloRate   ParamID = 152
+	ParamKeysEpAutoPan       ParamID = 153
+	ParamKeysEpGain          ParamID = 154
+	ParamKeysEpDrive         ParamID = 155
+	ParamKeysClavGain        ParamID = 156
+	ParamKeysClavDrive       ParamID = 157
+	ParamKeysOrganGain       ParamID = 158
+	ParamKeysOrganDrive      ParamID = 159
+	ParamKeysOrganRotaryMix  ParamID = 160
+	ParamKeysOrganRotaryFast ParamID = 161
+	ParamKeysOrganDrawbar1   ParamID = 162
+	ParamKeysOrganDrawbar2   ParamID = 163
+	ParamKeysOrganDrawbar3   ParamID = 164
+	ParamKeysOrganDrawbar4   ParamID = 165
+	ParamKeysOrganDrawbar5   ParamID = 166
+	ParamKeysOrganDrawbar6   ParamID = 167
+	ParamKeysOrganDrawbar7   ParamID = 168
+	ParamKeysOrganDrawbar8   ParamID = 169
+	ParamKeysOrganDrawbar9   ParamID = 170
+	ParamKeysFmGain          ParamID = 171
+	ParamKeysAnalogDrive     ParamID = 172
+	ParamKeysAnalogOutput    ParamID = 173
+	ParamKeysStringsOutput   ParamID = 174
+	ParamCount                       = 175
 )
 
-var Params = [...]ParamSpec{
+// paramsBase holds every row before the modeled-keyboard controls.
+var paramsBase = [...]ParamSpec{
 	{0, "mix.gain", "level", "track", "level", "dB", "fader", "source", -60, 6, -6, 0.1, 5, true, true, true},
 	{1, "mix.pan", "pan", "track", "pan", "", "linear", "source", -1, 1, 0, 0.01, 5, true, true, false},
 	{2, "mix.send_a", "send.delay", "track", "send", "", "linear", "source", 0, 1, 0, 0.01, 5, true, true, false},
@@ -319,31 +331,20 @@ var Params = [...]ParamSpec{
 	{137, "guitar.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 8, true, true, false},
 	{138, "guitar.experimental", "experimental", "track", "experimental", "", "toggle", "source", 0, 1, 0, 1, 0, false, false, false},
 	{139, "guitar.octave", "octave", "track", "octave", "", "linear", "source", 0, 6, 2, 1, 0, false, false, false},
-	{140, "keys.ep.tremolo", "tremolo", "track", "tremolo", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{141, "keys.ep.tremolo_rate", "tremolo_rate", "track", "tremolo_rate", "Hz", "linear", "source", 0.1, 12, 4.6, 0.1, 20, true, true, false},
-	{142, "keys.ep.auto_pan", "auto_pan", "track", "auto_pan", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{143, "keys.ep.gain", "gain", "track", "gain", "ratio", "linear", "source", 0, 2, 0.7, 0.01, 20, true, true, false},
-	{144, "keys.ep.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{145, "keys.clav.gain", "gain", "track", "gain", "ratio", "linear", "source", 0, 2, 0.7, 0.01, 20, true, true, false},
-	{146, "keys.clav.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{147, "keys.organ.gain", "gain", "track", "gain", "ratio", "linear", "source", 0, 2, 0.8, 0.01, 20, true, true, false},
-	{148, "keys.organ.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0.18, 0.01, 20, true, true, false},
-	{149, "keys.organ.rotary_mix", "rotary_mix", "track", "rotary_mix", "ratio", "linear", "source", 0, 1, 0.8, 0.01, 20, true, true, false},
-	{150, "keys.organ.rotary_fast", "rotary_fast", "track", "rotary_fast", "", "toggle", "source", 0, 1, 0, 1, 0, true, false, false},
-	{151, "keys.organ.drawbar1", "drawbar1", "track", "drawbar1", "", "linear", "source", 0, 8, 7, 1, 0, true, false, false},
-	{152, "keys.organ.drawbar2", "drawbar2", "track", "drawbar2", "", "linear", "source", 0, 8, 4, 1, 0, true, false, false},
-	{153, "keys.organ.drawbar3", "drawbar3", "track", "drawbar3", "", "linear", "source", 0, 8, 8, 1, 0, true, false, false},
-	{154, "keys.organ.drawbar4", "drawbar4", "track", "drawbar4", "", "linear", "source", 0, 8, 6, 1, 0, true, false, false},
-	{155, "keys.organ.drawbar5", "drawbar5", "track", "drawbar5", "", "linear", "source", 0, 8, 1, 1, 0, true, false, false},
-	{156, "keys.organ.drawbar6", "drawbar6", "track", "drawbar6", "", "linear", "source", 0, 8, 2, 1, 0, true, false, false},
-	{157, "keys.organ.drawbar7", "drawbar7", "track", "drawbar7", "", "linear", "source", 0, 8, 0, 1, 0, true, false, false},
-	{158, "keys.organ.drawbar8", "drawbar8", "track", "drawbar8", "", "linear", "source", 0, 8, 1, 1, 0, true, false, false},
-	{159, "keys.organ.drawbar9", "drawbar9", "track", "drawbar9", "", "linear", "source", 0, 8, 1, 1, 0, true, false, false},
-	{160, "keys.fm.gain", "gain", "track", "gain", "ratio", "linear", "source", 0.001, 2, 1, 0.01, 20, true, true, false},
-	{161, "keys.analog.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{162, "keys.analog.output", "output", "track", "output", "dB", "linear", "source", -60, 6, 0, 0.1, 20, true, true, false},
-	{163, "keys.strings.output", "output", "track", "output", "dB", "linear", "source", -60, 6, 0, 0.1, 20, true, true, false},
+	{140, "fx.eq.type", "eq.type", "global", "type", "", "enum", "source", 0, 4, 0, 0.1, 0, false, false, false},
+	{141, "fx.eq.frequency", "eq.frequency", "global", "frequency", "Hz", "log", "source", 10, 19845, 1000, 1, 0, false, false, false},
+	{142, "fx.eq.q", "eq.q", "global", "q", "ratio", "linear", "source", 0.1, 20, 1, 0.01, 0, false, false, false},
+	{143, "fx.eq.gain", "eq.gain", "global", "gain", "dB", "linear", "source", -24, 24, 0, 0.1, 0, false, false, false},
+	{144, "fx.deesser.frequency", "deesser.frequency", "global", "frequency", "Hz", "log", "source", 2000, 12000, 6000, 1, 0, false, false, false},
+	{145, "fx.deesser.threshold", "deesser.threshold", "global", "threshold", "dB", "linear", "source", -60, 0, -24, 0.1, 0, false, false, false},
+	{146, "fx.deesser.ratio", "deesser.ratio", "global", "ratio", "ratio", "linear", "source", 1, 20, 4, 0.01, 0, false, false, false},
+	{147, "fx.deesser.range", "deesser.range", "global", "range", "dB", "linear", "source", 0, 24, 9, 0.1, 0, false, false, false},
+	{148, "fx.deesser.attack", "deesser.attack", "global", "attack", "ms", "log", "source", 0.1, 20, 1, 0.1, 0, false, false, false},
+	{149, "fx.deesser.release", "deesser.release", "global", "release", "ms", "log", "source", 10, 500, 80, 1, 0, false, false, false},
+	{150, "fx.deesser.mix", "deesser.mix", "global", "mix", "ratio", "linear", "source", 0, 1, 1, 0.01, 0, false, false, false},
 }
+
+const paramsBaseCount = 151
 
 func Param(id ParamID) (ParamSpec, bool) {
 	if int(id) >= len(Params) {

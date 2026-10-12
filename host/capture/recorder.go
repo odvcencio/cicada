@@ -21,6 +21,7 @@ type Writer func(RecordedBlock, [][]float32) error
 type recordPlan struct {
 	countIn     CountIn
 	calibration Calibration
+	frames      int64 // positive: stop at this frame after the count-in
 }
 
 type writerError struct{ err error }
@@ -65,7 +66,16 @@ func (r *Recorder) FormatFits(frames, channels int) bool {
 // Begin starts one take on the next capture block. A new take needs a new
 // Recorder so trailing gaps and writer failures remain attached to the old take.
 func (r *Recorder) Begin(countIn CountIn, calibration Calibration) error {
-	if r.closed.Load() || r.ended.Load() || !r.plan.CompareAndSwap(nil, &recordPlan{countIn, calibration}) {
+	return r.BeginRange(countIn, calibration, 0)
+}
+
+// BeginRange retains count-in and pre-roll PCM, and ends on the exact input
+// frame at the selected range boundary. Zero frames keeps manual-stop behavior.
+func (r *Recorder) BeginRange(countIn CountIn, calibration Calibration, frames int64) error {
+	if frames < 0 {
+		return errors.New("capture range must have a nonnegative duration")
+	}
+	if r.closed.Load() || r.ended.Load() || !r.plan.CompareAndSwap(nil, &recordPlan{countIn: countIn, calibration: calibration, frames: frames}) {
 		return errors.New("capture take has already started or closed")
 	}
 	return nil
@@ -90,13 +100,28 @@ func (r *Recorder) Capture(b Block, input [][]float32) {
 	r.remaining.Store(left)
 	b.EngineFrame -= left
 	b.Calibration = r.current.calibration
+	if end := r.current.frames; end > 0 {
+		// Continue through reported input/output latency so the final mapped
+		// input frame reaches the punch boundary even after backing stops.
+		remaining := end - Place(b).EngineFrame
+		if remaining <= 0 {
+			r.ended.Store(true)
+			return
+		}
+		if remaining <= int64(b.Frames) {
+			b.Frames = int(remaining)
+			r.ring.Push(b, input)
+			r.ended.Store(true)
+			return
+		}
+	}
 	r.ring.Push(b, input)
 }
 
 // LeadIn writes count-in output and returns how many frames precede rendering.
 // Capture and LeadIn must run sequentially on the same audio owner.
 func (r *Recorder) LeadIn(output [][]float32) int {
-	if r.current == nil || r.ended.Load() || len(output) == 0 {
+	if r.current == nil || len(output) == 0 {
 		return 0
 	}
 	frames := int(min(int64(len(output[0])), max(int64(0), r.current.countIn.Frames-r.cursor)))
@@ -133,6 +158,7 @@ func (r *Recorder) Close() error {
 
 type Snapshot struct {
 	Recording       bool           `json:"recording"`
+	Completed       bool           `json:"completed"`
 	CountInFrames   int64          `json:"countInFrames"`
 	RemainingFrames int64          `json:"countInRemainingFrames"`
 	WrittenFrames   uint64         `json:"writtenFrames"`
@@ -146,7 +172,7 @@ type Snapshot struct {
 }
 
 func (r *Recorder) Snapshot() Snapshot {
-	s := Snapshot{Recording: r.plan.Load() != nil && !r.ended.Load() && !r.closed.Load(), RemainingFrames: r.remaining.Load(), WrittenFrames: r.written.Load(), Ring: r.ring.Stats(), FirstBlock: r.first.Load(), TrailingGap: r.trailing.Load()}
+	s := Snapshot{Recording: r.plan.Load() != nil && !r.ended.Load() && !r.closed.Load(), Completed: r.ended.Load(), RemainingFrames: r.remaining.Load(), WrittenFrames: r.written.Load(), Ring: r.ring.Stats(), FirstBlock: r.first.Load(), TrailingGap: r.trailing.Load()}
 	if p := r.plan.Load(); p != nil {
 		s.CountInFrames = p.countIn.Frames
 	}

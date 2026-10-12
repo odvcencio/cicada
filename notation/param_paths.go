@@ -28,8 +28,28 @@ func validateSceneSettings(score *Score, add func(string, string, string, Positi
 					}
 				}
 			}
+			for _, track := range score.Tracks {
+				for _, param := range track.Params {
+					if param.Name != "insert" {
+						continue
+					}
+					names := strings.Fields(param.Value)
+					for _, name := range names {
+						if name == "->" {
+							continue
+						}
+						if strings.HasPrefix(setting.Path, name+".") {
+							for _, effect := range score.Effects {
+								if effect.Name == name && (effect.Kind != "drive" || len(names) > 1) {
+									masterControl = true
+								}
+							}
+						}
+					}
+				}
+			}
 			if masterControl {
-				add("CICADA-UNSUPPORTED", "master effect controls are fixed until the score is recompiled", "error", setting.Position)
+				add("CICADA-UNSUPPORTED", "insert effect controls are fixed until the score is recompiled", "error", setting.Position)
 				continue
 			}
 			descriptor, _, _, code, message := resolveNotationPath(score, setting.Path)

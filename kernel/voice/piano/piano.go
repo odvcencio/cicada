@@ -72,6 +72,7 @@ type Instrument struct {
 	dcInL, dcInR, dcOutL, dcOutR, lowL, lowR    float32
 	tailL, tailR, tailDecay                     float32
 	tailFrames, stealFrames                     int
+	excited                                     bool
 }
 
 func New(sampleRate int) (*Instrument, error) {
@@ -198,6 +199,7 @@ func (p *Instrument) NoteOn(note, velocity uint8) error {
 		p.NoteOff(note)
 		return nil
 	}
+	p.excited = true
 	index := -1
 	// Retrigger the same key, retaining its vibrating string state and using
 	// another hammer impact rather than summing duplicate virtual strings.
@@ -334,6 +336,12 @@ func (p *Instrument) hammer(v *voice) {
 
 func (p *Instrument) NextStereo() (float32, float32) {
 	p.pedal += float32((p.pedalTarget - p.pedal) * p.pedalAlpha)
+	// Before the first hammer strike every string, soundboard, sympathetic
+	// resonator and output filter is exactly zero. Pedal smoothing still runs;
+	// after excitation render the full tail, even with no active key voices.
+	if !p.excited {
+		return 0, 0
+	}
 	var left, right float32
 	for i := range p.voices {
 		v := &p.voices[i]
@@ -429,4 +437,5 @@ func (p *Instrument) Reset() {
 	p.pedal, p.pedalTarget = 0, 0
 	p.dcInL, p.dcInR, p.dcOutL, p.dcOutR, p.lowL, p.lowR = 0, 0, 0, 0, 0, 0
 	p.tailL, p.tailR, p.tailFrames = 0, 0, 0
+	p.excited = false
 }
