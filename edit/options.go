@@ -29,14 +29,19 @@ type StagedRenderCheck interface {
 	HashWith(source []byte, files map[string][]byte) (string, error)
 }
 
-// IdentifiedRenderCheck can name the project inputs a render of source reads
-// (see rendercheck.Identity), given the files the batch has staged. A
-// comparison takes the identity of exactly what it renders before the first
-// render and after the second, and refuses if the project changed in between.
-// ok is false when the inputs cannot be identified.
-type IdentifiedRenderCheck interface {
+// SnapshotRenderCheck compares two candidates against one snapshot of the
+// project's source inputs (the files staged by the batch laid over unsaved
+// buffers over disk), so a file changed, or changed and restored, while the
+// renders run cannot make them read different inputs. Assets still load from
+// disk and are restated after rendering.
+type SnapshotRenderCheck interface {
 	StagedRenderCheck
-	InputIdentity(source []byte, files map[string][]byte) (identity string, ok bool)
+	// Compare renders before and after from one snapshot and reports whether
+	// they match. identity names that snapshot and both candidates.
+	Compare(before, after []byte, files map[string][]byte) (same bool, identity string, err error)
+	// PairIdentity names the same inputs as they are now; ok is false when they
+	// cannot be identified.
+	PairIdentity(before, after []byte, files map[string][]byte) (identity string, ok bool)
 }
 
 // ErrProjectChanged is returned by a render check, and becomes a refusal, when

@@ -147,61 +147,33 @@ func TestRenderCheckedProposalIsRefusedWhenTheIntentNoLongerHolds(t *testing.T) 
 	}
 }
 
-// changeAfterRenders wraps the Studio render check and runs mutate once the
-// second render of a comparison has returned.
-type changeAfterRenders struct {
-	edits.IdentifiedRenderCheck
-	calls  int
-	at     int // the call after which mutate runs; 2 when zero
-	mutate func()
-}
-
-func (c *changeAfterRenders) HashWith(source []byte, files map[string][]byte) (string, error) {
-	hash, err := c.IdentifiedRenderCheck.HashWith(source, files)
-	at := c.at
-	if at == 0 {
-		at = 2
-	}
-	if c.calls++; c.calls == at {
-		c.mutate()
-	}
-	return hash, err
-}
-
-func (c *changeAfterRenders) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
-
-// A peer edit that lands right after the second render must not be recorded as
-// verified: direct intents and staged proposals both refuse.
-func TestProjectChangeBetweenRendersIsRefusedByIntentsAndStaging(t *testing.T) {
+// A change after a comparison took its snapshot cannot alter what that comparison
+// rendered. It is caught before anything is written: the commit tail refuses a
+// direct request, and a staged proposal is run again on acceptance and refused.
+func TestProjectChangeAfterTheSnapshotIsCaughtBeforeAnyWrite(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	const cause = "the project changed during the render check; try again"
 	for _, route := range []string{"/api/intents", "/api/proposals"} {
 		t.Run(route, func(t *testing.T) {
-			dir := t.TempDir()
-			for name, data := range map[string]string{"cicada.mod": "project peers\ncicada 2\nentry \"main.cicada\"\nsource \"patterns.cicada\"\n", "main.cicada": proposalSongMain, "patterns.cicada": proposalSongPeer(proposalPlain)} {
-				if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o600); err != nil {
-					t.Fatal(err)
+			p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+			t.Cleanup(func() { rendercheck.AfterSnapshot = nil })
+			rendercheck.AfterSnapshot = func() {
+				_ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600)
+			}
+			env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
+			if route == "/api/intents" {
+				r := studioCall(t, p.handler, route, env)
+				if r.Code != 409 || !strings.Contains(r.Body.String(), cause) {
+					t.Fatalf("%d %s", r.Code, r.Body.String())
+				}
+			} else {
+				id := p.stage(t, proposalSongMain, &edits.ConvertSongToArrange{})
+				r := studioCall(t, p.handler, "/api/proposals/"+id+"/accept", map[string]any{})
+				if r.Code != 422 || !strings.Contains(r.Body.String(), "chance steps") {
+					t.Fatalf("accept: %d %s", r.Code, r.Body.String())
 				}
 			}
-			path, peer := filepath.Join(dir, "main.cicada"), filepath.Join(dir, "patterns.cicada")
-			s, err := newStudio(path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = s.shutdown() })
-			s.renderCheck = &changeAfterRenders{IdentifiedRenderCheck: s.renderCheck.(edits.IdentifiedRenderCheck), mutate: func() {
-				_ = os.WriteFile(peer, []byte(proposalSongPeer(proposalChance)), 0o600)
-			}}
-			env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
-			var body any = env
-			if route == "/api/proposals" {
-				body = edits.Proposal{Envelope: env}
-			}
-			r := studioCall(t, s.domainRoutes(), route, body)
-			if r.Code != 422 || !strings.Contains(r.Body.String(), cause) {
-				t.Fatalf("%d %s", r.Code, r.Body.String())
-			}
-			if got, _ := os.ReadFile(path); string(got) != proposalSongMain || len(studioHistoryEdits(t, s.domainRoutes())) != 0 {
+			if got, _ := os.ReadFile(p.path); string(got) != proposalSongMain || len(studioHistoryEdits(t, p.handler)) != 0 {
 				t.Fatal("a refused request wrote")
 			}
 		})
@@ -301,53 +273,30 @@ func TestCommitTailRefusesStaleOrMissingRenderIdentity(t *testing.T) {
 	}
 }
 
-// flipBeforeRender changes the project right before its first render reads it.
-type flipBeforeRender struct {
-	edits.StagedRenderCheck
-	renders int
-	before  func()
-}
-
-func (f *flipBeforeRender) HashWith(source []byte, files map[string][]byte) (string, error) {
-	if f.renders++; f.renders == 1 {
-		f.before()
-	}
-	return f.StagedRenderCheck.HashWith(source, files)
-}
-
-// A render that read different inputs than the cache key describes is discarded.
-// After the project is restored a retry must render again, and a real render
-// shows the conversion changes the audio, so it is refused.
-func TestRejectedComparisonLeavesNoCachedApproval(t *testing.T) {
+// A peer rewritten during the render and put back before any later check leaves
+// the disk identical to the start, so before/after comparisons cannot see it.
+// The renders read a snapshot, so what was rendered is what a fresh comparison
+// of the original project renders: here the chance steps, which are refused.
+func TestPeerRewrittenAndRestoredDuringTheRenderCannotApproveAConversion(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	for _, route := range []string{"/api/intents", "/api/proposals"} {
 		t.Run(route, func(t *testing.T) {
 			p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalChance))
-			s, err := newStudio(p.path)
-			if err != nil {
-				t.Fatal(err)
-			}
-			t.Cleanup(func() { _ = s.shutdown() })
-			inner := &flipBeforeRender{StagedRenderCheck: rendercheck.New(p.path).(edits.StagedRenderCheck)}
-			inner.before = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalPlain)), 0o600) }
-			restore := func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600) }
-			s.renderCheck = &changeAfterRenders{IdentifiedRenderCheck: rendercheck.Cached(p.path, inner), at: 1, mutate: restore}
+			t.Cleanup(func() { rendercheck.AfterSnapshot, rendercheck.AfterRender = nil, nil })
+			rendercheck.AfterSnapshot = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalPlain)), 0o600) }
+			rendercheck.AfterRender = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600) }
 			env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
 			var body any = env
 			if route == "/api/proposals" {
 				body = edits.Proposal{Envelope: env}
 			}
-			handler := s.domainRoutes()
-			r := studioCall(t, handler, route, body)
-			if r.Code != 422 || !strings.Contains(r.Body.String(), "the project changed during the render check; try again") {
-				t.Fatalf("first attempt: %d %s", r.Code, r.Body.String())
+			for attempt := 1; attempt <= 2; attempt++ {
+				r := studioCall(t, p.handler, route, body)
+				if r.Code != 422 || !strings.Contains(r.Body.String(), "chance steps") {
+					t.Fatalf("attempt %d: %d %s", attempt, r.Code, r.Body.String())
+				}
 			}
-			rendersAfterFirst := inner.renders
-			r = studioCall(t, handler, route, body)
-			if r.Code != 422 || !strings.Contains(r.Body.String(), "chance steps") || inner.renders <= rendersAfterFirst {
-				t.Fatalf("retry: %d %s (renders %d -> %d)", r.Code, r.Body.String(), rendersAfterFirst, inner.renders)
-			}
-			if got, _ := os.ReadFile(p.path); string(got) != proposalSongMain || len(studioHistoryEdits(t, handler)) != 0 {
+			if got, _ := os.ReadFile(p.path); string(got) != proposalSongMain || len(studioHistoryEdits(t, p.handler)) != 0 {
 				t.Fatal("a refused request wrote")
 			}
 		})

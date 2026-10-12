@@ -308,49 +308,35 @@ func (b batchCheck) Hash(source []byte) (string, error) {
 	return b.check.Hash(source)
 }
 
-// compareRenders hashes before and after through the batch-bound check and
-// reports whether they match. When the check identifies its inputs, the
-// identity is taken before the first render and confirmed after the second;
-// a difference (or an identity that cannot be computed) refuses.
+// compareRenders reports whether before and after render the same. A check
+// that snapshots the project renders both from one snapshot and returns its
+// identity; other checks just hash both candidates.
 func (c *Context) compareRenders(intent string, check RenderCheck, before, after []byte) (bool, error) {
-	changed := &RefusalError{Intent: intent, Cause: ErrProjectChanged.Error()}
-	guard, guarded := c.Options.RenderCheck.(IdentifiedRenderCheck)
-	files := c.fileOverrides()
-	// The identity covers both renders' sources with the files staged so far,
-	// so dependencies an earlier intent introduced are included.
-	recheck := func() (string, bool) {
-		a, ok := guard.InputIdentity(before, files)
-		if !ok {
-			return "", false
+	if snap, ok := c.Options.RenderCheck.(SnapshotRenderCheck); ok {
+		files := c.fileOverrides()
+		same, identity, err := snap.Compare(before, after, files)
+		if errors.Is(err, ErrProjectChanged) {
+			return false, &RefusalError{Intent: intent, Cause: ErrProjectChanged.Error()}
 		}
-		b, ok := guard.InputIdentity(after, files)
-		return a + "|" + b, ok
-	}
-	var first string
-	if guarded {
-		var ok bool
-		if first, ok = recheck(); !ok {
-			return false, changed
+		if err != nil {
+			return false, err
 		}
+		// The identity names the snapshot the renders used (the working source
+		// at this point in the batch, the files staged so far, and what they
+		// reference). Hosts compare the project against it before writing.
+		c.identities = append(c.identities, identity)
+		c.rechecks = append(c.rechecks, func() (string, bool) { return snap.PairIdentity(before, after, files) })
+		return same, nil
 	}
 	a, err := check.Hash(before)
-	if err == nil {
-		var b string
-		if b, err = check.Hash(after); err == nil {
-			if guarded {
-				if last, ok := recheck(); !ok || last != first {
-					return false, changed
-				}
-				c.identities = append(c.identities, first)
-				c.rechecks = append(c.rechecks, recheck)
-			}
-			return a == b, nil
-		}
+	if err != nil {
+		return false, err
 	}
-	if errors.Is(err, ErrProjectChanged) {
-		return false, changed
+	b, err := check.Hash(after)
+	if err != nil {
+		return false, err
 	}
-	return false, err
+	return a == b, nil
 }
 
 // renderCheckFor returns the configured check bound to every file this batch

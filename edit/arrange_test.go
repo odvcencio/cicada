@@ -336,26 +336,39 @@ func TestSplitClipOnChancePatternRefusesWhenTheRenderChanges(t *testing.T) {
 	}
 }
 
-// identifiedCheck reports an input identity that a test can change between renders.
-type identifiedCheck struct {
+// snapshotCheck is a SnapshotRenderCheck whose comparison identity and
+// failure a test controls.
+type snapshotCheck struct {
 	fakeCheck
-	identities []string // returned in order, the last one repeating
-	asked      int
-	sources    []string // every source an identity was asked for
+	identity string
+	fail     error
+	current  string // what PairIdentity reports; identity when empty
+	seen     []string
 }
 
-func (f *identifiedCheck) HashWith(source []byte, _ map[string][]byte) (string, error) {
+func (f *snapshotCheck) HashWith(source []byte, _ map[string][]byte) (string, error) {
 	return f.Hash(source)
 }
 
-func (f *identifiedCheck) InputIdentity(source []byte, _ map[string][]byte) (string, bool) {
-	f.sources = append(f.sources, string(source))
-	identity := f.identities[min(f.asked, len(f.identities)-1)]
-	f.asked++
-	return identity, identity != ""
+func (f *snapshotCheck) Compare(before, after []byte, _ map[string][]byte) (bool, string, error) {
+	f.seen = append(f.seen, string(before), string(after))
+	if f.fail != nil {
+		return false, "", f.fail
+	}
+	a, _ := f.Hash(before)
+	b, _ := f.Hash(after)
+	return a == b, f.identity, nil
 }
 
-func TestRenderComparisonRefusesWhenTheProjectChangesBetweenRenders(t *testing.T) {
+func (f *snapshotCheck) PairIdentity(before, after []byte, _ map[string][]byte) (string, bool) {
+	f.seen = append(f.seen, string(before), string(after))
+	if f.current != "" {
+		return f.current, true
+	}
+	return f.identity, f.identity != ""
+}
+
+func TestRenderComparisonRefusesWhenTheSnapshotCannotBeUsed(t *testing.T) {
 	split := `{"kind":"splitclip","entity":"placement:return","attick":11520}`
 	convertSource := templateHead + templateScenes + "song { main*2 break*2 }\n"
 	for _, c := range []struct {
@@ -364,16 +377,21 @@ func TestRenderComparisonRefusesWhenTheProjectChangesBetweenRenders(t *testing.T
 	}{{"split", split, namedScore(t)}, {"convert", `{"kind":"convertsongtoarrange"}`, []byte(convertSource)}} {
 		t.Run(c.name, func(t *testing.T) {
 			var refusal *RefusalError
-			for _, changing := range [][]string{{"before", "after"}, {"before", ""}, {""}} {
-				_, err := applyArrange(c.source, c.kind, Options{RenderCheck: &identifiedCheck{identities: changing}})
-				if !errors.As(err, &refusal) || refusal.Cause != "the project changed during the render check; try again" {
-					t.Fatalf("identities %v: %v", changing, err)
-				}
+			_, err := applyArrange(c.source, c.kind, Options{RenderCheck: &snapshotCheck{fail: ErrProjectChanged}})
+			if !errors.As(err, &refusal) || refusal.Cause != "the project changed during the render check; try again" {
+				t.Fatalf("unusable snapshot: %v", err)
 			}
-			stable := &identifiedCheck{identities: []string{"verified"}}
+			stable := &snapshotCheck{identity: "verified"}
 			got, err := applyArrange(c.source, c.kind, Options{RenderCheck: stable})
-			if err != nil || got.RenderIdentity != "verified|verified" || !got.RenderChecked {
+			if err != nil || got.RenderIdentity != "verified" || !got.RenderChecked || got.RenderRecheck == nil {
 				t.Fatalf("stable: %v identity=%q", err, got.RenderIdentity)
+			}
+			if identity, ok := got.RenderRecheck(); !ok || identity != "verified" {
+				t.Fatalf("recheck: %q %v", identity, ok)
+			}
+			stable.current = "changed"
+			if identity, _ := got.RenderRecheck(); identity == "verified" {
+				t.Fatal("the recheck ignored the project's current state")
 			}
 		})
 	}
@@ -424,7 +442,7 @@ func TestGeneratedPlacementNamesStayWithinTheIdentifierLimit(t *testing.T) {
 func TestRenderIdentityIsTakenFromTheWorkingSource(t *testing.T) {
 	original := "title \"original\"\ntrack bass acid {}\npattern hits { c3 . c4 . }\nscene a { bass = hits }\nsong { a*2 }\n"
 	working := strings.Replace(original, "original", "working", 1)
-	check := &identifiedCheck{identities: []string{"stable"}}
+	check := &snapshotCheck{identity: "stable"}
 	raw := `{"version":1,"intents":[{"kind":"replacetext","source":` + strconv.Quote(working) + `},{"kind":"convertsongtoarrange"}]}`
 	var env Envelope
 	if err := json.Unmarshal([]byte(raw), &env); err != nil {
@@ -434,16 +452,13 @@ func TestRenderIdentityIsTakenFromTheWorkingSource(t *testing.T) {
 	if err != nil || got.RenderIdentity == "" || got.RenderRecheck == nil {
 		t.Fatalf("apply: %v", err)
 	}
-	if len(check.sources) == 0 {
-		t.Fatal("no identity was taken")
+	got.RenderRecheck()
+	if len(check.seen) != 4 {
+		t.Fatalf("saw %d sources, want 4 (compare and recheck)", len(check.seen))
 	}
-	for _, source := range check.sources {
+	for _, source := range check.seen {
 		if strings.Contains(source, "original") {
-			t.Fatalf("identity taken from the original entry:\n%s", source)
+			t.Fatalf("the original entry was used:\n%s", source)
 		}
-	}
-	before := len(check.sources)
-	if _, ok := got.RenderRecheck(); !ok || len(check.sources) == before || strings.Contains(check.sources[len(check.sources)-1], "original") {
-		t.Fatal("the recheck did not use the working source")
 	}
 }

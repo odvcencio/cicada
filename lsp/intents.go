@@ -89,6 +89,7 @@ type cachedCheck struct {
 	key        func(source []byte, files map[string][]byte) (string, bool)
 	mu         sync.Mutex
 	byRevision map[string]hashResult
+	pairs      map[string]bool
 }
 
 // bind points the check at the current snapshot; cached results stay valid
@@ -99,15 +100,70 @@ func (c *cachedCheck) bind(inner edits.RenderCheck, key func([]byte, map[string]
 	c.inner, c.key = inner, key
 }
 
-// InputIdentity names the project inputs (including open buffers) a render reads.
-func (c *cachedCheck) InputIdentity(source []byte, files map[string][]byte) (string, bool) {
+// PairIdentity names a comparison's inputs, including open buffers, as they
+// are now.
+func (c *cachedCheck) PairIdentity(before, after []byte, files map[string][]byte) (string, bool) {
 	c.mu.Lock()
-	key := c.key
+	inner, key := c.inner, c.key
 	c.mu.Unlock()
+	if snap, ok := inner.(edits.SnapshotRenderCheck); ok {
+		return snap.PairIdentity(before, after, files)
+	}
 	if key == nil {
 		return "", true
 	}
-	return key(source, files)
+	a, ok := key(before, files)
+	if !ok {
+		return "", false
+	}
+	b, ok := key(after, files)
+	return a + "|" + b, ok
+}
+
+// Compare renders both candidates from one snapshot of the project (open
+// buffers included) and remembers the result under that snapshot's identity. A
+// check that cannot snapshot is compared by hashing both candidates.
+func (c *cachedCheck) Compare(before, after []byte, files map[string][]byte) (bool, string, error) {
+	c.mu.Lock()
+	inner := c.inner
+	c.mu.Unlock()
+	if inner == nil {
+		return false, "", edits.ErrNoRenderCheck
+	}
+	snap, ok := inner.(edits.SnapshotRenderCheck)
+	if !ok {
+		a, err := c.HashWith(before, files)
+		if err != nil {
+			return false, "", err
+		}
+		b, err := c.HashWith(after, files)
+		if err != nil {
+			return false, "", err
+		}
+		identity, _ := c.PairIdentity(before, after, files)
+		return a == b, identity, nil
+	}
+	current, ok := snap.PairIdentity(before, after, files)
+	if !ok {
+		return false, "", edits.ErrProjectChanged
+	}
+	c.mu.Lock()
+	if same, hit := c.pairs[current]; hit {
+		c.mu.Unlock()
+		return same, current, nil
+	}
+	c.mu.Unlock()
+	same, identity, err := snap.Compare(before, after, files)
+	if err != nil {
+		return false, "", err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.pairs == nil || len(c.pairs) >= cachedCheckLimit {
+		c.pairs = make(map[string]bool)
+	}
+	c.pairs[identity] = same
+	return same, identity, nil
 }
 
 func (c *cachedCheck) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }

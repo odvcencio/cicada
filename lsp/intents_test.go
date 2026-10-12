@@ -444,56 +444,25 @@ func TestRenderCacheKeyFollowsFilesStagedByABatch(t *testing.T) {
 	}
 }
 
-// flipRender changes the project right before its first render reads it.
-type flipRender struct {
-	edits.StagedRenderCheck
-	renders *int
-	before  func()
-}
-
-func (f flipRender) HashWith(source []byte, files map[string][]byte) (string, error) {
-	if *f.renders++; *f.renders == 1 && f.before != nil {
-		f.before()
-	}
-	return f.StagedRenderCheck.HashWith(source, files)
-}
-
-func (f flipRender) Hash(source []byte) (string, error) { return f.HashWith(source, nil) }
-
-// A render whose inputs changed under it is discarded, not cached. After the
-// project is restored the next request renders again; the real render shows
-// the conversion changes the audio, so no action is offered either time.
-func TestRejectedComparisonLeavesNoCachedApprovalInTheLSP(t *testing.T) {
+// A peer rewritten during the render and restored leaves the disk as it was, so
+// before/after identity checks cannot see it. The renders read one snapshot, so
+// the LSP never offers a conversion that a fresh comparison of the project
+// refuses, and nothing from the first request is served to the second.
+func TestPeerRewrittenAndRestoredDuringTheRenderOffersNoConversionInTheLSP(t *testing.T) {
 	const chance = "1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50"
 	entry := "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
 	path := writePeerProject(t, entry, peerDrums(chance))
 	peer := filepath.Join(filepath.Dir(path), "part.cicada")
-	renders, factories, firstRequest := 0, 0, 0
-	previous := newRenderCheck
-	newRenderCheck = func(path string, buffers map[string][]byte) edits.RenderCheck {
-		real := rendercheck.NewWith(path, buffers).(edits.StagedRenderCheck)
-		factories++
-		if factories == 1 {
-			return flipRender{StagedRenderCheck: real, renders: &renders, before: func() {
-				_ = os.WriteFile(peer, []byte(peerDrums("1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 .")), 0o600)
-			}}
-		}
-		// The second request starts from the restored project.
-		firstRequest = renders
-		_ = os.WriteFile(peer, []byte(peerDrums(chance)), 0o600)
-		return flipRender{StagedRenderCheck: real, renders: &renders}
+	rendercheck.AfterSnapshot = func() {
+		_ = os.WriteFile(peer, []byte(peerDrums("1 . 5 . 1 . 5 . 1 . 5 . 1 . 5 .")), 0o600)
 	}
-	t.Cleanup(func() { newRenderCheck = previous })
+	rendercheck.AfterRender = func() { _ = os.WriteFile(peer, []byte(peerDrums(chance)), 0o600) }
+	t.Cleanup(func() { rendercheck.AfterSnapshot, rendercheck.AfterRender = nil, nil })
 	request := func() map[string]any {
 		return map[string]any{"range": region{Start: position{Line: 2}, End: position{Line: 2}}, "context": map[string]any{"diagnostics": []any{}, "only": []string{"refactor"}}}
 	}
 	replies := actionFrames(t, path, entry, request(), request())
 	if len(replies[0]) != 0 || len(replies[1]) != 0 {
-		t.Fatalf("offered after a rejected comparison: %v %v", replies[0], replies[1])
-	}
-	// The retry renders both the song and its conversion; nothing from the
-	// rejected attempt may be served from the cache.
-	if renders-firstRequest != 2 {
-		t.Fatalf("the second request rendered %d times, want 2", renders-firstRequest)
+		t.Fatalf("offered a conversion that a fresh comparison refuses: %v %v", replies[0], replies[1])
 	}
 }

@@ -1,15 +1,18 @@
 package rendercheck
 
 import (
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -234,5 +237,80 @@ func TestCachedDiscardsAResultWhoseInputsChangedDuringTheRender(t *testing.T) {
 	rendersBefore := inner.calls
 	if _, err := check.Hash(entry); err != nil || inner.calls != rendersBefore+1 {
 		t.Fatalf("retry: err=%v renders=%d, want %d", err, inner.calls, rendersBefore+1)
+	}
+}
+
+func comparisonSources(t *testing.T, path string) (before, after []byte) {
+	t.Helper()
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The conversion the hosts would write for peerMain: one placement per run.
+	after = []byte("cicada 2\n" + strings.Replace(peerMain, "song { a*2 b*2 }", "arrange {\n  place a-1-bass bass beat {\n    at = @1.1.1 length = 2bars\n  }\n  place b-3-bass bass fill {\n    at = @3.1.1 length = 2bars\n  }\n}", 1))
+	return before, after
+}
+
+// The renders read the snapshot, not the disk: a peer rewritten after the
+// snapshot (and one rewritten and restored, which leaves the disk identical
+// afterwards) cannot change what was rendered.
+func TestComparisonRendersFromOneSnapshotOfTheSources(t *testing.T) {
+	path := writeProject(t, map[string]string{"cicada.mod": peerManifest, "main.cicada": peerMain, "patterns.cicada": peerPatterns(chanceSteps)})
+	peer := filepath.Join(filepath.Dir(path), "patterns.cicada")
+	before, after := comparisonSources(t, path)
+	snap := New(path).(edits.SnapshotRenderCheck)
+	fresh, freshIdentity, err := snap.Compare(before, after, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fresh {
+		t.Fatal("fixture: chance steps should render differently once split")
+	}
+	t.Cleanup(func() { AfterSnapshot, AfterRender = nil, nil })
+	for _, restore := range []bool{false, true} {
+		AfterSnapshot = func() {
+			// Plain steps would make the conversion render the same.
+			_ = os.WriteFile(peer, []byte(peerPatterns(plainSteps)), 0o600)
+		}
+		if restore {
+			AfterRender = func() { _ = os.WriteFile(peer, []byte(peerPatterns(chanceSteps)), 0o600) }
+		}
+		same, identity, err := snap.Compare(before, after, nil)
+		if err != nil || same != fresh || identity != freshIdentity {
+			t.Fatalf("restore=%v: same=%v identity match=%v err=%v", restore, same, identity == freshIdentity, err)
+		}
+		current, ok := snap.PairIdentity(before, after, nil)
+		if restore && (!ok || current != identity) {
+			t.Fatal("restored project should match the recorded identity")
+		}
+		if !restore && current == identity {
+			t.Fatal("a changed project must not match the recorded identity")
+		}
+		AfterSnapshot, AfterRender = nil, nil
+		_ = os.WriteFile(peer, []byte(peerPatterns(chanceSteps)), 0o600)
+	}
+}
+
+// An asset still loads from disk, so a rewrite during the render is caught by
+// its modification time even when the bytes are put back.
+func TestComparisonRefusesWhenAnAssetIsRewrittenDuringTheRender(t *testing.T) {
+	wav := testwav.Bytes(48000, 1, 16, 480, 1)
+	main := fmt.Sprintf("cicada 2\nasset wave \"wave.wav\" { sha256=\"%x\" format=wav frames=480 rate=48000Hz channels=1 }\nsampler hit { asset=wave root=c3 mode=oneshot voices=8 }\ntrack lead hit {}\npattern melody { c3 . c3 . }\nscene a { lead = melody }\nsong { a*2 }\n", sha256.Sum256(wav))
+	path := writeProject(t, map[string]string{"main.cicada": main, "wave.wav": string(wav)})
+	sample := filepath.Join(filepath.Dir(path), "wave.wav")
+	snap := New(path).(edits.SnapshotRenderCheck)
+	before := []byte(main)
+	after := []byte(strings.Replace(main, "song { a*2 }", "arrange {\n  place a-1-lead lead melody {\n    at = @1.1.1 length = 2bars\n  }\n}", 1))
+	if _, _, err := snap.Compare(before, after, nil); err != nil {
+		t.Fatalf("baseline: %v", err)
+	}
+	t.Cleanup(func() { AfterSnapshot = nil })
+	AfterSnapshot = func() {
+		_ = os.WriteFile(sample, wav, 0o600)
+		later := time.Now().Add(time.Hour)
+		_ = os.Chtimes(sample, later, later)
+	}
+	if _, _, err := snap.Compare(before, after, nil); !errors.Is(err, edits.ErrProjectChanged) {
+		t.Fatalf("asset rewritten during the render: %v", err)
 	}
 }
