@@ -298,6 +298,7 @@ func renderCheckFor(ctx *Context) (RenderCheck, error) {
 	if ctx.Options.RenderCheck == nil {
 		return nil, ErrNoRenderCheck
 	}
+	ctx.rendered = true
 	return batchCheck{check: ctx.Options.RenderCheck, files: ctx.fileOverrides()}, nil
 }
 

@@ -15,6 +15,9 @@ type Result struct {
 	Response  map[string]any
 	Plan      *Plan // compiled candidate
 	Unchanged bool
+	// RenderChecked reports that an intent consulted the render check, so the
+	// result depends on rendered audio and not only on source text.
+	RenderChecked bool
 }
 
 // File is an auxiliary source the commit writes atomically with the score.
@@ -43,6 +46,7 @@ type Context struct {
 	files     []File
 	fileIndex map[string]int
 	label     string
+	rendered  bool
 	response  map[string]any
 }
 
@@ -179,7 +183,7 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Response: ctx.response, Plan: plan}
+	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered}
 	result.Unchanged = bytes.Equal(ctx.Source, source) && len(ctx.files) == 0
 	return result, nil
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/edit/rendercheck"
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/migration"
 	"m31labs.dev/cicada/notation"
@@ -355,6 +356,11 @@ type stagedProposal struct {
 	// mixer records that a mixer writer ran while staging, so acceptance can
 	// apply the same capture guard to a proposal staged before the recording.
 	mixer bool
+	// renderIdentity is rendercheck.Identity of the inputs at staging, recorded
+	// when an intent consulted the render check. Empty with rendered set means
+	// the inputs could not be identified, so acceptance always reapplies.
+	rendered       bool
+	renderIdentity string
 }
 
 func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
@@ -417,7 +423,11 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 	if s.proposals == nil {
 		s.proposals = make(map[string]stagedProposal)
 	}
-	s.proposals[proposal.ID] = stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer}
+	entry := stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer, rendered: staged.Result.RenderChecked}
+	if entry.rendered {
+		entry.renderIdentity, _ = rendercheck.Identity(s.path, current, nil)
+	}
+	s.proposals[proposal.ID] = entry
 	s.previewProposal = proposal.ID
 	s.transport.applyPreview(staged.Ops)
 	studioJSON(w, http.StatusOK, map[string]any{"id": proposal.ID, "diff": staged.Diff, "ops": staged.Ops})
@@ -475,6 +485,22 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 		if err != nil || !bytes.Equal(latest, file.Before) {
 			studioJSON(w, http.StatusConflict, map[string]any{"error": "proposal file changed on disk; stage the proposal again", "revision": studioRevision(current), "source": string(current)})
 			return
+		}
+	}
+	// A render-checked candidate is only as good as the inputs its render saw.
+	// If any changed since staging (peers, manifests, assets), run the intents
+	// again, including their render checks, and accept only the same candidate.
+	if staged.rendered {
+		if identity, ok := rendercheck.Identity(s.path, current, nil); !ok || identity != staged.renderIdentity {
+			again, status, err := s.restageForAccept(current, proposal)
+			if err != nil {
+				studioJSON(w, status, map[string]any{"error": err.Error()})
+				return
+			}
+			if !sameCandidate(result, again.Result) {
+				studioJSON(w, http.StatusConflict, map[string]any{"error": "project inputs changed since staging and the proposal now produces a different result; stage the proposal again", "revision": studioRevision(current), "source": string(current)})
+				return
+			}
 		}
 	}
 	files, err := auxiliaryFiles(result.Files)
@@ -572,4 +598,35 @@ func conversionRefusal(env edits.Envelope, err error) (string, bool) {
 		return err.Error(), true
 	}
 	return "", false
+}
+
+// restageForAccept reruns a staged envelope against the current inputs. The
+// status is the HTTP status for a returned error.
+func (s *studio) restageForAccept(current []byte, proposal edits.Proposal) (*edits.Staged, int, error) {
+	opts, err := s.editOptions(current, nil)
+	if err != nil {
+		return nil, http.StatusUnprocessableEntity, err
+	}
+	opts.MixerGuard = s.mixerCaptureGuard
+	again, err := edits.Stage(current, proposal, opts)
+	if errors.Is(err, errMixerDuringCapture) {
+		return nil, http.StatusConflict, err
+	}
+	if err != nil {
+		return nil, http.StatusUnprocessableEntity, err
+	}
+	return again, 0, nil
+}
+
+// sameCandidate compares the source and every auxiliary file of two results.
+func sameCandidate(a, b *edits.Result) bool {
+	if !bytes.Equal(a.Source, b.Source) || len(a.Files) != len(b.Files) {
+		return false
+	}
+	for i := range a.Files {
+		if a.Files[i].Path != b.Files[i].Path || !bytes.Equal(a.Files[i].After, b.Files[i].After) {
+			return false
+		}
+	}
+	return true
 }
