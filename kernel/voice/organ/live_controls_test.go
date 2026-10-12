@@ -103,3 +103,37 @@ func TestDriveTransitionsHaveNoStep(t *testing.T) {
 		}
 	}
 }
+
+// A glide below 1 keeps the drawbar fade and the rotor acceleration; a glide
+// of 1 sets the registration and the rotors' speed directly.
+func TestDrawbarAndRotaryImmediacyFollowsTheGlide(t *testing.T) {
+	smooth := liveOrgan(t, .1)
+	if err := smooth.SetControl(controlDrawbar1, 0, .001); err != nil {
+		t.Fatal(err)
+	}
+	if smooth.drawbar[0] == smooth.drawbarTarget[0] {
+		t.Fatal("an ordinary drawbar change jumped")
+	}
+	if err := smooth.SetControl(controlRotaryFast, 1, .001); err != nil {
+		t.Fatal(err)
+	}
+	if smooth.hornSpeed != smooth.hornSlow {
+		t.Fatal("an ordinary rotary change moved the rotor at once")
+	}
+	now := liveOrgan(t, .1)
+	if err := now.SetControl(controlDrawbar1, 0, 1); err != nil {
+		t.Fatal(err)
+	}
+	if now.drawbar[0] != now.drawbarTarget[0] || now.drawbar[0] != 0 {
+		t.Fatalf("restored drawbar is %g", now.drawbar[0])
+	}
+	if err := now.SetControl(controlRotaryFast, 1, 1); err != nil {
+		t.Fatal(err)
+	}
+	if now.hornSpeed != now.hornFast || now.drumSpeed != now.drumFast {
+		t.Fatal("restored rotary speed did not reach the rotors")
+	}
+	if err := now.SetControl(controlRotaryFast, 0, 1); err != nil || now.hornSpeed != now.hornSlow || now.drumSpeed != now.drumSlow {
+		t.Fatal("restoring slow speed did not reach the rotors")
+	}
+}

@@ -638,9 +638,10 @@ func (p *Instrument) glide() {
 }
 
 // SetControl changes drive, rotary mix, gain, one drawbar or the rotary speed.
-// Drive, rotary mix and gain glide; a glide of 1 applies them at once. Drawbars
-// and rotary speed use their own smoothed setters and ignore the glide. It
-// allocates nothing.
+// Drive, rotary mix and gain glide; a glide of 1 applies them at once. A
+// drawbar fades over 4 ms and the rotors accelerate to a new speed, whatever
+// glide below 1 is given; a glide of 1 sets the registration and the rotors'
+// current speed directly, as a restore needs. It allocates nothing.
 func (p *Instrument) SetControl(index int, value, glide float32) error {
 	if !keyboard.ValidGlide(glide) {
 		return Error("glide must be in (0,1]")
@@ -652,12 +653,25 @@ func (p *Instrument) SetControl(index int, value, glide float32) error {
 		}
 		drawbars := p.params.Drawbars
 		drawbars[index-controlDrawbar1] = uint8(value)
-		return p.SetDrawbars(drawbars)
+		if err := p.SetDrawbars(drawbars); err != nil {
+			return err
+		}
+		if glide == 1 {
+			p.drawbar = p.drawbarTarget // At once: the registration itself, not just its target.
+		}
+		return nil
 	case index == controlRotaryFast:
 		if value != 0 && value != 1 {
 			return Error("organ rotary speed must be 0 or 1")
 		}
 		p.SetRotaryFast(value == 1)
+		if glide == 1 {
+			// At once: the rotors' current speed, not just their target.
+			p.hornSpeed, p.drumSpeed = p.hornSlow, p.drumSlow
+			if value == 1 {
+				p.hornSpeed, p.drumSpeed = p.hornFast, p.drumFast
+			}
+		}
 		return nil
 	case index == controlDrive:
 		if !keyboard.InRange(value, 0, 1) {

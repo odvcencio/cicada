@@ -57,9 +57,9 @@ var Prepare func(rate int, spec *Spec) (Voice, error)
 // Controller is implemented by voices whose registry controls scenes and
 // automation can change during playback. Index is a Spec.Controls slot. A
 // glide coefficient of 1 applies the value at once; any smaller coefficient is
-// the per-sample one-pole step toward it. Whole-number controls such as organ
-// drawbars ignore the glide because their setters smooth the change. Unknown
-// slots and out-of-range values return an error and change nothing.
+// the per-sample one-pole step toward it. Organ drawbars and rotary speed have
+// their own smoothing (a drawbar fade, rotor acceleration) for any glide below
+// 1, and a glide of 1 sets their effective state directly. Unknown slots and out-of-range values return an error and change nothing.
 type Controller interface {
 	SetControl(index int, value, glide float32) error
 }
