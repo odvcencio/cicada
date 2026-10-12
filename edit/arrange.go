@@ -70,6 +70,15 @@ func resolvePlacement(ctx *Context, id EntityID) (Placement, error) {
 	}
 	plan, err := ctx.CurrentPlan()
 	if err != nil {
+		// A score that does not compile can still name its placements. Editors
+		// repair such scores (an off-grid start), so read them from the syntax.
+		if score, _, parseErr := ctx.ParseProject(); parseErr == nil && score != nil && score.Arrange != nil {
+			for _, p := range score.Arrange.Placements {
+				if p.Name == id.Name() {
+					return Placement{ID: p.Name, Track: p.Track, Content: p.Content, AtTick: p.AtTick, LengthTicks: p.LengthTicks}, nil
+				}
+			}
+		}
 		return Placement{}, err
 	}
 	entity, err := Resolve(plan, id)

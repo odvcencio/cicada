@@ -19,10 +19,8 @@ import (
 	"unicode/utf16"
 	"unicode/utf8"
 
-	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/language"
-	"m31labs.dev/cicada/migration"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -56,6 +54,7 @@ type server struct {
 	canEditDocuments bool
 	canCreateFiles   bool
 	libraryContexts  map[string]libraryContext
+	checks           map[string]*cachedCheck
 }
 
 // Serve reads Content-Length framed JSON-RPC messages until exit or EOF.
@@ -248,84 +247,11 @@ func (s *server) handle(message request) error {
 		}
 		return s.reply(message.ID, inlayHints(s.documents[uri], params.Range))
 	case "textDocument/codeAction":
-		var params struct {
-			Context struct {
-				Only []string `json:"only"`
-			} `json:"context"`
-		}
-		if err := json.Unmarshal(message.Params, &params); err != nil {
-			return err
-		}
-		if len(params.Context.Only) > 0 {
-			requested := false
-			for _, kind := range params.Context.Only {
-				if kind == "quickfix" {
-					requested = true
-					break
-				}
-			}
-			if !requested {
-				return s.reply(message.ID, []any{})
-			}
-		}
-		uri, err := documentURI(message.Params)
+		actions, err := s.codeActions(message.Params)
 		if err != nil {
 			return err
 		}
-		source, ok := s.documents[uri]
-		if !ok || !s.canEditDocuments {
-			return s.reply(message.ID, []any{})
-		}
-		path, ok := scorePathFromURI(uri)
-		if !ok {
-			return s.reply(message.ID, []any{})
-		}
-		projectEdition, manifest, err := edition.ScoreEdition(path)
-		if err != nil || manifest == "" && !s.canCreateFiles {
-			return s.reply(message.ID, []any{})
-		}
-		if files, err := s.projectSources(uri); err == nil && usesSourceSet(files) {
-			return s.reply(message.ID, s.projectFixAction(files))
-		}
-		fixed, changed, err := migration.FixSource(source)
-		if err != nil || !changed {
-			return s.reply(message.ID, []any{})
-		}
-		changes := make([]any, 0, 3)
-		if manifest == "" {
-			name := strings.TrimSuffix(filepath.Base(path), ".cicada")
-			if !edition.ValidProjectName(name) {
-				return s.reply(message.ID, []any{})
-			}
-			manifestURI := fileURI(filepath.Join(filepath.Dir(path), "cicada.mod"))
-			changes = append(changes,
-				map[string]any{"kind": "create", "uri": manifestURI},
-				map[string]any{"textDocument": map[string]any{"uri": manifestURI, "version": nil}, "edits": []any{map[string]any{"range": region{}, "newText": "project " + name + "\ncicada 2\n"}}},
-			)
-		} else if projectEdition == 1 {
-			manifestData, readErr := os.ReadFile(manifest)
-			if readErr != nil {
-				return s.reply(message.ID, []any{})
-			}
-			upgraded, changed, upgradeErr := edition.UpgradeManifestEdition(manifestData)
-			if upgradeErr != nil || !changed {
-				return s.reply(message.ID, []any{})
-			}
-			manifestURI := fileURI(manifest)
-			changes = append(changes, map[string]any{
-				"textDocument": map[string]any{"uri": manifestURI, "version": nil},
-				"edits":        []any{map[string]any{"range": region{Start: position{}, End: utf16Position(manifestData, len(manifestData))}, "newText": string(upgraded)}},
-			})
-		}
-		changes = append(changes, map[string]any{
-			"textDocument": map[string]any{"uri": uri, "version": s.versions[uri]},
-			"edits":        []any{map[string]any{"range": region{Start: position{}, End: utf16Position(source, len(source))}, "newText": string(fixed)}},
-		})
-		action := map[string]any{
-			"title": "Apply Cicada notation fixes", "kind": "quickfix",
-			"edit": map[string]any{"documentChanges": changes},
-		}
-		return s.reply(message.ID, []any{action})
+		return s.reply(message.ID, actions)
 	case "textDocument/semanticTokens/full":
 		uri, err := documentURI(message.Params)
 		if err != nil {

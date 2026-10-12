@@ -21,6 +21,17 @@ The **Apply Cicada notation fixes** quick fix uses the same meaning-preserving
 migration as `cicada fix`. If it removes a legacy edition header, it can add
 the required `cicada.mod` manifest through a workspace edit.
 
+Two more code actions come from the edit service:
+
+- **Snap placement to the step grid** (quick fix) answers the diagnostic
+  "step pattern placement must start on a step" by moving the placement to the
+  nearest step. It changes only the `at` value.
+- **Convert song to arrange** (refactor) appears when the cursor is in the
+  `song` block and a test render shows that the converted score sounds the
+  same. The server renders the song and the converted score once per document
+  revision, so the action can take a moment on a long song. A song whose scenes
+  carry settings, or one that renders differently as placements, gets no action.
+
 ## VS Code
 
 The public repository includes a VS Code extension. From the repository root,
@@ -93,7 +104,15 @@ has none. Successful writes append one record to `.cicada/edits.jsonl`.
 Studio accepts the same envelope at `POST /api/intents`, with a required
 `revision`. It commits the whole batch as one undoable edit. A dry run returns
 `diff`, the current `revision`, `valid: true`, and `dryRun: true` without saving.
-Unknown fields and intent kinds are rejected. A revision conflict returns
+Unknown fields and intent kinds are rejected. The arrange intents are
+`moveclip`, `resizeclip`, `splitclip`, `duplicateclip` and `deleteclip`, each
+with an `entity` such as `placement:intro`, plus `attick` or `lengthticks` where
+they need a time. `convertsongtoarrange` replaces a `song` block with an
+`arrange` block, but only after a deterministic render shows the same audio; it
+refuses otherwise and names the cause when it can (for example scene settings,
+a pattern that would restart out of phase, or a drums track that starts a new
+placement). A dry run of that intent answers `convertible: true` with the diff,
+or `convertible: false` with a `cause`. A revision conflict returns
 HTTP 409 with `error`, `revision`, `source`, and `playingRevision`.
 
 ## Highlighting and navigation

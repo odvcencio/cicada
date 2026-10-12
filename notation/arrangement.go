@@ -237,7 +237,8 @@ func SetPlacementField(source []byte, name, field, value string) ([]byte, error)
 				result = append(result, source[end:]...)
 				_, ds := Parse(result)
 				for _, d := range ds {
-					if d.Severity == "error" {
+					// A project manifest can supply the edition that a bare file lacks.
+					if d.Severity == "error" && d.Code != "CICADA-VERSION" {
 						return nil, fmt.Errorf("%s: %s", d.Code, d.Message)
 					}
 				}

@@ -1,11 +1,15 @@
 package lsp
 
 import (
+	"bufio"
 	"bytes"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"unicode/utf8"
@@ -134,6 +138,177 @@ func TestMinimalTextEditRoundTripsAndUsesUTF16Ranges(t *testing.T) {
 			got := c.before[:start] + change.NewText + c.before[end:]
 			if got != c.after {
 				t.Fatalf("applied=%q, want=%q", got, c.after)
+			}
+		})
+	}
+}
+
+// actionFrames runs Serve over one document and the given code-action requests,
+// and returns the action lists in request order.
+func actionFrames(t *testing.T, path, source string, requests ...map[string]any) [][]map[string]json.RawMessage {
+	t.Helper()
+	uri := fileURI(path)
+	var input bytes.Buffer
+	input.Write(rpc(t, 1, "initialize", map[string]any{"capabilities": map[string]any{"workspace": map[string]any{"workspaceEdit": map[string]any{"documentChanges": true}}}}))
+	input.Write(rpc(t, 0, "textDocument/didOpen", map[string]any{"textDocument": map[string]any{"uri": uri, "version": 3, "text": source}}))
+	for i, request := range requests {
+		request["textDocument"] = map[string]any{"uri": uri}
+		input.Write(rpc(t, 2+i, "textDocument/codeAction", request))
+	}
+	input.Write(rpc(t, 0, "exit", map[string]any{}))
+	var output bytes.Buffer
+	if err := Serve(&input, &output); err != nil {
+		t.Fatal(err)
+	}
+	reader := bufio.NewReader(&output)
+	var results [][]map[string]json.RawMessage
+	for {
+		body, err := readFrame(reader)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		var frame struct {
+			ID     int                          `json:"id"`
+			Result []map[string]json.RawMessage `json:"result"`
+		}
+		if json.Unmarshal(body, &frame) == nil && frame.ID >= 2 {
+			results = append(results, frame.Result)
+		}
+	}
+	if len(results) != len(requests) {
+		t.Fatalf("got %d replies for %d requests", len(results), len(requests))
+	}
+	return results
+}
+
+// appliedEdit decodes an action's single document edit and applies it to source.
+func appliedEdit(t *testing.T, action map[string]json.RawMessage, source string) (textEdit, string, int) {
+	t.Helper()
+	var edit struct {
+		DocumentChanges []struct {
+			TextDocument struct {
+				Version int `json:"version"`
+			} `json:"textDocument"`
+			Edits []textEdit `json:"edits"`
+		} `json:"documentChanges"`
+	}
+	if err := json.Unmarshal(action["edit"], &edit); err != nil || len(edit.DocumentChanges) != 1 || len(edit.DocumentChanges[0].Edits) != 1 {
+		t.Fatalf("edit: %s, %v", action["edit"], err)
+	}
+	change := edit.DocumentChanges[0].Edits[0]
+	start, end := byteOffset([]byte(source), change.Range.Start), byteOffset([]byte(source), change.Range.End)
+	return change, source[:start] + change.NewText + source[end:], edit.DocumentChanges[0].TextDocument.Version
+}
+
+func actionTitle(action map[string]json.RawMessage) (string, string) {
+	var title, kind string
+	_ = json.Unmarshal(action["title"], &title)
+	_ = json.Unmarshal(action["kind"], &kind)
+	return title, kind
+}
+
+const offGridScore = "cicada 2\ntrack bass acid {}\npattern hits { c3 . c4 . }\narrange {\n  place a bass hits { at = 100ticks length = 1bar }\n}\n"
+
+func TestCodeActionSnapsOffGridPlacement(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "grid.cicada")
+	diagnostic := map[string]any{"range": region{Start: position{Line: 4}, End: position{Line: 4, Character: 1}}, "code": "CICADA-ARRANGEMENT", "message": "step pattern placement must start on a step"}
+	request := func(only ...string) map[string]any {
+		context := map[string]any{"diagnostics": []any{diagnostic}}
+		if len(only) > 0 {
+			context["only"] = only
+		}
+		return map[string]any{"range": region{Start: position{Line: 4}, End: position{Line: 4}}, "context": context}
+	}
+	replies := actionFrames(t, path, offGridScore, request(), request("quickfix"), request("refactor"),
+		map[string]any{"range": region{}, "context": map[string]any{"diagnostics": []any{}}})
+	for i, name := range []string{"no filter", "quickfix"} {
+		if len(replies[i]) != 1 {
+			t.Fatalf("%s: %d actions", name, len(replies[i]))
+		}
+		title, kind := actionTitle(replies[i][0])
+		change, applied, version := appliedEdit(t, replies[i][0], offGridScore)
+		if title != "Snap placement to the step grid" || kind != "quickfix" || version != 3 {
+			t.Fatalf("%s: %q %q v%d", name, title, kind, version)
+		}
+		// The edit replaces exactly the offending literal.
+		if change.NewText != "@1.1.1" || change.Range != (region{Start: position{Line: 4, Character: 27}, End: position{Line: 4, Character: 35}}) {
+			t.Fatalf("%s: edit %+v", name, change)
+		}
+		if want := strings.Replace(offGridScore, "100ticks", "@1.1.1", 1); applied != want {
+			t.Fatalf("%s: applied\n%s", name, applied)
+		}
+	}
+	if len(replies[2]) != 0 || len(replies[3]) != 0 {
+		t.Fatalf("refactor filter or empty diagnostics offered an action: %v %v", replies[2], replies[3])
+	}
+}
+
+type fakeRender struct {
+	mu     sync.Mutex
+	calls  int
+	differ bool
+}
+
+func (f *fakeRender) Hash(source []byte) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.differ && bytes.Contains(source, []byte("arrange {")) {
+		return "converted", nil
+	}
+	return "song", nil
+}
+
+const lspSongScore = "title \"Song\"\ntrack bass acid {}\npattern hits { c3 . c4 . }\nscene main { bass = hits }\nscene break { bass = hits }\nsong { main*2 break*2 }\n"
+
+func withRenderCheck(t *testing.T, fake edits.RenderCheck) {
+	t.Helper()
+	previous := newRenderCheck
+	newRenderCheck = func(string) edits.RenderCheck { return fake }
+	t.Cleanup(func() { newRenderCheck = previous })
+}
+
+func TestCodeActionOffersSongConversionAfterTheCheckAndCachesIt(t *testing.T) {
+	fake := &fakeRender{}
+	withRenderCheck(t, fake)
+	inSong := map[string]any{"range": region{Start: position{Line: 5}, End: position{Line: 5}}, "context": map[string]any{"diagnostics": []any{}}}
+	again := map[string]any{"range": region{Start: position{Line: 5, Character: 3}, End: position{Line: 5, Character: 3}}, "context": map[string]any{"diagnostics": []any{}, "only": []string{"refactor"}}}
+	outside := map[string]any{"range": region{Start: position{Line: 1}, End: position{Line: 1}}, "context": map[string]any{"diagnostics": []any{}}}
+	replies := actionFrames(t, filepath.Join(t.TempDir(), "song.cicada"), lspSongScore, inSong, again, outside)
+	for i := 0; i < 2; i++ {
+		if len(replies[i]) != 1 {
+			t.Fatalf("request %d: %d actions", i, len(replies[i]))
+		}
+		title, kind := actionTitle(replies[i][0])
+		_, applied, version := appliedEdit(t, replies[i][0], lspSongScore)
+		want := "cicada 2\n" + strings.Replace(lspSongScore, "song { main*2 break*2 }", "arrange {\n  place main-1-bass bass hits {\n    at = @1.1.1 length = 2bars\n  }\n  place break-2-bass bass hits {\n    at = @3.1.1 length = 2bars\n  }\n}", 1)
+		if title != "Convert song to arrange" || kind != "refactor" || version != 3 || applied != want {
+			t.Fatalf("request %d: %q %q v%d\n%s", i, title, kind, version, applied)
+		}
+	}
+	// A cursor outside the song block never starts a render.
+	if len(replies[2]) != 0 {
+		t.Fatalf("outside the song: %v", replies[2])
+	}
+	// The song and its conversion render once each across both requests.
+	if fake.calls != 2 {
+		t.Fatalf("render calls=%d, want 2", fake.calls)
+	}
+}
+
+func TestCodeActionHidesSongConversionWhenTheCheckFailsOrIsMissing(t *testing.T) {
+	inSong := func() map[string]any {
+		return map[string]any{"range": region{Start: position{Line: 5}, End: position{Line: 5}}, "context": map[string]any{"diagnostics": []any{}}}
+	}
+	for name, check := range map[string]edits.RenderCheck{"differs": &fakeRender{differ: true}, "none": nil} {
+		t.Run(name, func(t *testing.T) {
+			withRenderCheck(t, check)
+			replies := actionFrames(t, filepath.Join(t.TempDir(), "song.cicada"), lspSongScore, inSong())
+			if len(replies[0]) != 0 {
+				t.Fatalf("offered: %v", replies[0])
 			}
 		})
 	}

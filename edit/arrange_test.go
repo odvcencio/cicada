@@ -274,3 +274,17 @@ func TestArrangeIntentsRoundTripJSON(t *testing.T) {
 		}
 	}
 }
+
+func TestMoveClipRepairsAScoreThatDoesNotCompile(t *testing.T) {
+	source := bytes.Replace(namedScore(t), []byte("at = @1.2.1"), []byte("at = 100ticks"), 1)
+	if _, err := (arrangeCompiler{}).Compile(source, nil); err == nil {
+		t.Fatal("fixture compiles")
+	}
+	got, err := applyArrange(source, `{"kind":"moveclip","entity":"placement:intro","attick":0}`, Options{})
+	if err != nil || !bytes.Contains(got.Source, []byte("at = @1.1.1")) {
+		t.Fatalf("got %v", err)
+	}
+	if _, err := applyArrange(source, `{"kind":"moveclip","entity":"placement:nope","attick":0}`, Options{}); err == nil {
+		t.Fatal("unknown placement accepted")
+	}
+}
