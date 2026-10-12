@@ -37,12 +37,56 @@ song { dry held }
 Complete comping and melodic examples for each patch are in `examples/keys/`.
 Give pads enough held time for their attack. Note velocity changes the modeled
 pickup or modulation depth; `^` accents a note or chord. The sustain control
-uses the same live MIDI pedal path as the grand. Other score controls prepare
-new coefficients when the score is applied. The Organ Go API also supports
-smoothed live drawbars and rotary speed changes.
+uses the same live MIDI pedal path as the grand. Most other score controls
+prepare new coefficients when the score is applied; the next section lists the
+ones a scene or an `automate` lane can change during playback.
 
 Declared samplers, instruments and kits retain their own names: a declaration
 named `tine_ep` overrides that built-in patch in its score.
+
+## Changing controls during playback
+
+A scene setting such as `keys.tremolo = 0.6` or an `automate keys.tremolo`
+lane changes these controls while the song plays. Every other keyboard control
+is fixed until the score is applied again. A path from another family fails
+with `CICADA-PARAM`: `keys.tremolo` on a `clav` track is an error.
+
+| Family | Scene setting | `automate` | Range and unit |
+| --- | --- | --- | --- |
+| Every keyboard | `sustain` | yes | 0–1, normalized |
+| Tine and Reed EP | `tremolo`, `auto_pan`, `drive` | yes | 0–1, normalized |
+| Tine and Reed EP | `tremolo_rate` | yes | 0.1–12 hz |
+| Tine and Reed EP | `gain` | yes | 0–2, normalized |
+| Clav | `drive` | yes | 0–1, normalized |
+| Clav | `gain` | yes | 0–2, normalized |
+| Tonewheel Organ | `drive`, `rotary_mix` | yes | 0–1, normalized |
+| Tonewheel Organ | `gain` | yes | 0–2, normalized |
+| Tonewheel Organ | `rotary_fast` | no | `slow` or `fast` (also `off` or `on`) |
+| Tonewheel Organ | `drawbar1` to `drawbar9` | no | whole numbers 0–8 |
+| FM keys | `gain` | yes | 0.001–2, normalized |
+| Analog poly | `drive` | yes | 0–1, normalized |
+| Analog poly | `output` | yes | -60–6 dB |
+| Divide-down strings | `output` | yes | -60–6 dB |
+
+Continuous controls glide to a new value over about 20 ms, so a step in a scene
+or an automation lane does not click. Drawbars and rotary speed use the organ's
+own smoothing: a drawbar fades over about 4 ms, and the rotary horn and drum
+speed up or slow down over one to four seconds. Drawbar 9 stays silent while the organ's
+`percussion` is on, as on the hardware it models.
+
+```cicada
+cicada 2
+track keys tine_ep { }
+pattern comp notes { [c4 e4 g4 b4] - - . [d4 f4 a4 c5] - - . }
+automate keys.tremolo { @1.1.1 0 @3.1.1 0.8 }
+scene calm { keys = comp }
+scene wobble { keys = comp keys.tremolo_rate = 6hz keys.auto_pan = 0.7 }
+song { calm wobble }
+```
+
+Scene settings follow the same rule as every other scene parameter. A later
+scene that omits a setting keeps the earlier value, and starting the song again
+or seeking back to the start restores the track's authored value at once.
 
 ## Native and browser playback
 
