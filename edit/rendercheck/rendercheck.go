@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"path/filepath"
+	"sync"
 
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/project"
@@ -47,4 +48,39 @@ func (c check) Hash(source []byte) (string, error) {
 		return "", err
 	}
 	return hex.EncodeToString(sum.Sum(nil)), nil
+}
+
+const cachedLimit = 32
+
+type cachedResult struct {
+	hash string
+	err  error
+}
+
+type cached struct {
+	inner edits.RenderCheck
+	mu    sync.Mutex
+	by    map[string]cachedResult
+}
+
+// Cached remembers results by source revision, so a long-lived host renders
+// each distinct source once. It keeps at most 32 results and starts over when
+// the limit is reached. Errors are cached too: the same bytes fail the same way.
+func Cached(inner edits.RenderCheck) edits.RenderCheck {
+	return &cached{inner: inner}
+}
+
+func (c *cached) Hash(source []byte) (string, error) {
+	revision := edits.Revision(source)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if result, ok := c.by[revision]; ok {
+		return result.hash, result.err
+	}
+	hash, err := c.inner.Hash(source)
+	if c.by == nil || len(c.by) >= cachedLimit {
+		c.by = make(map[string]cachedResult)
+	}
+	c.by[revision] = cachedResult{hash, err}
+	return hash, err
 }

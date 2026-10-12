@@ -12,6 +12,7 @@ import (
 
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/edit/editlog"
+	"m31labs.dev/cicada/edit/rendercheck"
 	"m31labs.dev/cicada/internal/filetarget"
 )
 
@@ -79,7 +80,7 @@ func applyCommandWithHooks(args []string, stdout io.Writer, beforeSwap func()) e
 	if session != "" {
 		env.Session = session
 	}
-	s := &studio{path: path}
+	s := &studio{path: path, renderCheck: rendercheck.New(path)}
 	opts, err := s.editOptions(before, nil)
 	if err != nil {
 		return err

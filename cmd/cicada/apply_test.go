@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -231,5 +232,33 @@ func TestApplyAuxiliaryUpgradeDryRunAndWrite(t *testing.T) {
 	}
 	if info, _ := os.Stat(manifest); info.Mode().Perm() != 0600 {
 		t.Fatal("manifest mode changed")
+	}
+}
+
+func TestApplyConvertSongRefusesTemplateAndConvertsAcidProject(t *testing.T) {
+	path, intents, template := applyFixture(t)
+	writeApplyEnvelope(t, intents, edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}})
+	_, err := captureApply(t, path, intents, "--write")
+	var refusal *edits.RefusalError
+	if !errors.As(err, &refusal) || refusal.Cause != "drums track drums starts a new placement at bar 5, which renders differently from the song" {
+		t.Fatalf("template: %v", err)
+	}
+	if after, _ := os.ReadFile(path); !bytes.Equal(after, template) {
+		t.Fatal("a refused conversion changed the score")
+	}
+	// The project manifest declares edition 2, so no header is added.
+	acid := strings.Replace(string(template), "track drums drums {}\n", "", 1)
+	acid = strings.Replace(acid, " drums = beat", "", 2)
+	acid = strings.Replace(acid, "pattern beat drums {\n  bd: X... .... X... ....\n  sd: .... X... .... X...\n  ch: x.x. x.x. x.x. x.x.\n}\n\n", "", 1)
+	if err := os.WriteFile(path, []byte(acid), 0600); err != nil {
+		t.Fatal(err)
+	}
+	out, err := captureApply(t, path, intents, "--write")
+	if err != nil || !strings.Contains(out, "+  place main-1-bass bass pulse {") {
+		t.Fatalf("acid project: %v\n%s", err, out)
+	}
+	converted, _ := os.ReadFile(path)
+	if strings.Contains(string(converted), "song {") || strings.HasPrefix(string(converted), "cicada 2") || !strings.Contains(string(converted), "place break-2-bass bass pulse {\n    at = @5.1.1 length = 4bars\n  }") {
+		t.Fatalf("converted:\n%s", converted)
 	}
 }

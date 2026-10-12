@@ -138,3 +138,31 @@ func TestRenderCheckRefusesInvalidScore(t *testing.T) {
 		t.Fatalf("invalid score hashed: %v", err)
 	}
 }
+
+type countingCheck struct{ calls int }
+
+func (c *countingCheck) Hash(source []byte) (string, error) {
+	c.calls++
+	return string(source), nil
+}
+
+func TestCachedRendersEachRevisionOnce(t *testing.T) {
+	inner := &countingCheck{}
+	check := Cached(inner)
+	for _, source := range []string{"a", "b", "a", "b", "a"} {
+		if got, err := check.Hash([]byte(source)); err != nil || got != source {
+			t.Fatalf("%s: %q, %v", source, got, err)
+		}
+	}
+	if inner.calls != 2 {
+		t.Fatalf("inner called %d times, want 2", inner.calls)
+	}
+	for i := 0; i < 100; i++ {
+		if _, err := check.Hash([]byte{byte(i), 1}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(check.(*cached).by) > cachedLimit {
+		t.Fatalf("cache holds %d results", len(check.(*cached).by))
+	}
+}

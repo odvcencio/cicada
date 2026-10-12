@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/edit/rendercheck"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/modalfit"
 	"m31labs.dev/cicada/host/padsampler"
@@ -58,7 +59,7 @@ type studio struct {
 	exports             *studioExportController
 	liveControls        studioLiveControls
 	sessionID           string
-	renderCheck         edits.RenderCheck // nil until the render check is wired (M8)
+	renderCheck         edits.RenderCheck // caches song-to-arrange renders by source revision
 	samplerUndo         []padsampler.Bank
 	proposals           map[string]stagedProposal
 	previewProposal     string
@@ -213,7 +214,7 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 		return nil, err
 	}
 	absolute := target.Logical
-	s := &studio{path: absolute, sessionID: newStudioSessionID()}
+	s := &studio{path: absolute, sessionID: newStudioSessionID(), renderCheck: rendercheck.Cached(rendercheck.New(absolute))}
 	opened := false
 	defer func() {
 		if !opened && s.takes != nil {

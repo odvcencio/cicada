@@ -307,12 +307,21 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 		return
 	}
+	if cause, refused := conversionRefusal(env, err); refused && env.DryRun {
+		// A dry run asks whether the conversion is safe, so a refusal is an answer, not a failure.
+		studioJSON(w, http.StatusOK, map[string]any{"convertible": false, "cause": cause, "revision": studioRevision(current), "dryRun": true})
+		return
+	}
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
 	if env.DryRun {
-		studioJSON(w, http.StatusOK, map[string]any{"diff": intentDiff(current, result, "score.cicada"), "revision": studioRevision(current), "valid": true, "dryRun": true})
+		response := map[string]any{"diff": intentDiff(current, result, "score.cicada"), "revision": studioRevision(current), "valid": true, "dryRun": true}
+		if envelopeConverts(env) {
+			response["convertible"] = true
+		}
+		studioJSON(w, http.StatusOK, response)
 		return
 	}
 	if finish != nil {
@@ -538,4 +547,29 @@ func (t *studioTransport) applyPreview(ops []edits.PreviewOp) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.previewOps = append([]edits.PreviewOp(nil), ops...)
+}
+
+func envelopeConverts(env edits.Envelope) bool {
+	for _, intent := range env.Intents {
+		if _, ok := intent.(*edits.ConvertSongToArrange); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// conversionRefusal reports the named cause when a song conversion was refused
+// or could not be checked.
+func conversionRefusal(env edits.Envelope, err error) (string, bool) {
+	if err == nil || !envelopeConverts(env) {
+		return "", false
+	}
+	var refusal *edits.RefusalError
+	if errors.As(err, &refusal) && refusal.Intent == "ConvertSongToArrange" {
+		return refusal.Cause, true
+	}
+	if errors.Is(err, edits.ErrNoRenderCheck) {
+		return err.Error(), true
+	}
+	return "", false
 }
