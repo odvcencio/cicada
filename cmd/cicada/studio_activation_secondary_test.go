@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/host/liveplay"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 const secondaryPart = "title \"Studio\"\ntrack bass acid {}\ntrack drums drums {}\npattern pulse acid steps=4 { 1 . 5 . }\npattern beat drums steps=4 { bd: x... sd: .... }\nscene main { bass=pulse drums=beat }\nsong { main }\n"
@@ -27,6 +28,13 @@ func secondaryStudio(t *testing.T) (*studio, *liveplay.Player, string) {
 func secondaryStudioFiles(t *testing.T, entryText, part string) (*studio, *liveplay.Player, string) {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	return secondaryStudioIn(t, entryText, part)
+}
+
+// secondaryStudioIn leaves the environment alone so parallel subtests can use
+// it; their parent sets XDG_CONFIG_HOME once.
+func secondaryStudioIn(t *testing.T, entryText, part string) (*studio, *liveplay.Player, string) {
+	t.Helper()
 	dir := t.TempDir()
 	for name, text := range map[string]string{
 		"main.cicada": entryText, "part.cicada": part,
@@ -270,9 +278,17 @@ func TestRecordedTakeHandoffCoversOnlyTheNextPublication(t *testing.T) {
 // expects pending exactly when a publication has not landed.
 func TestPublicationLedgerGeneratedLifecycleAgainstRealPlayer(t *testing.T) {
 	titles := []string{"Studio", "Studio A", "Studio B", "Studio C"}
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	for seed := int64(0); seed < 12; seed++ {
+		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) { runPublicationLedgerSeed(t, seed, titles) })
+	}
+}
+
+func runPublicationLedgerSeed(t *testing.T, seed int64, titles []string) {
+	t.Parallel()
+	{
 		random := rand.New(rand.NewSource(seed))
-		s, stream, dir := secondaryStudio(t)
+		s, stream, dir := secondaryStudioIn(t, "cicada 2\n", secondaryPart)
 		tr := s.transport
 		content, played := "Studio", "Studio"
 		newest, outstanding := 0, 0
@@ -358,5 +374,31 @@ func TestPublicationLedgerOverflowDropsOldest(t *testing.T) {
 	}
 	if len(tr.offers) != 0 || tr.snapshot().Pending {
 		t.Fatal("the newest offer did not settle the queue")
+	}
+}
+
+// A listening-range replacement lands at the loop restart, not at a bar
+// boundary. Its edit event must still carry the publication token, or the
+// ledger keeps the offer pending forever.
+func TestListeningRangeReplacementSettlesTheLedger(t *testing.T) {
+	s, stream, dir := secondaryStudio(t)
+	tr := s.transport
+	listening := &studioListening{Kind: "range", StartTick: 0, EndTick: seq.TicksPerBar / 2, Loop: true}
+	tr.listening = listening
+	if err := stream.PlayRange(listening.playbackRange()); err != nil {
+		t.Fatal(err)
+	}
+	renderStudioPreview(t, stream, 256)
+	writePart(t, dir, "title \"Studio\"", "title \"Studio range\"")
+	tr.poll()
+	if !tr.snapshot().Pending || len(tr.offers) != 1 || tr.offers[0].plan != nil {
+		t.Fatalf("range offer: pending %v, ledger %d", tr.snapshot().Pending, len(tr.offers))
+	}
+	events := landOffers(t, s, stream)
+	if len(events) != 1 || events[0].Revision != "p1" {
+		t.Fatalf("range landing events: %+v", events)
+	}
+	if tr.snapshot().Pending || len(tr.offers) != 0 {
+		t.Fatalf("range landing left pending=%v with %d offers", tr.snapshot().Pending, len(tr.offers))
 	}
 }

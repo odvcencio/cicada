@@ -180,6 +180,7 @@ func TestVocalSceneConversionPreservesBacking(t *testing.T) {
 }
 
 func TestVocalFullLengthBeyondOldAssetLimit(t *testing.T) {
+	t.Parallel() // Independent of every other test: private temp directory and engine.
 	s := newTakeStudio(t, t.TempDir())
 	source := []byte(strings.Replace(strings.Replace(audioTakeScore, "cicada 2\n", "cicada 2\ntempo 120\n", 1), "song { main }", "song { main*93 }", 1))
 	os.WriteFile(s.path, source, 0600)
