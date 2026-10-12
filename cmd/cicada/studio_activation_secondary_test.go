@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/kernel/seq"
@@ -400,5 +402,114 @@ func TestListeningRangeReplacementSettlesTheLedger(t *testing.T) {
 	}
 	if tr.snapshot().Pending || len(tr.offers) != 0 {
 		t.Fatalf("range landing left pending=%v with %d offers", tr.snapshot().Pending, len(tr.offers))
+	}
+}
+
+// wideProject has enough tracks for the engine to start parallel workers.
+func wideProject() (entry, part string) {
+	var b strings.Builder
+	b.WriteString("cicada 2\n")
+	for i := 0; i < 32; i++ {
+		fmt.Fprintf(&b, "track t%02d acid {}\n", i)
+	}
+	b.WriteString("pattern pulse acid steps=4 { 1 . 5 . }\nscene main { t00=pulse }\nsong { main }\n")
+	return b.String(), "title \"Wide\"\n"
+}
+
+func waitGoroutines(t *testing.T, want func(int) bool) int {
+	t.Helper()
+	var n int
+	for i := 0; i < 100; i++ {
+		runtime.GC()
+		if n = runtime.NumGoroutine(); want(n) {
+			return n
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return n
+}
+
+// Stop can clear the stream after poll captured it and compiled the
+// replacement. The replacement was never offered, so poll still owns it and
+// must close it, which joins its parallel workers.
+func TestPollClosesPreparedReplacementWhenPlaybackStopsBeforeOffer(t *testing.T) {
+	entry, part := wideProject()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	before := waitGoroutines(t, func(int) bool { return true })
+	s, _, dir := secondaryStudioIn(t, entry, part)
+	tr := s.transport
+	var workers int
+	tr.prepareHook = func(prepared liveplay.Score) {
+		workers = prepared.Engine.ParallelWorkers()
+		tr.mu.Lock()
+		tr.stopLocked()
+		tr.mu.Unlock()
+	}
+	writePart(t, dir, "title \"Wide\"", "title \"Wider\"")
+	tr.poll()
+	if workers < 2 {
+		t.Skipf("the host cannot start parallel workers (%d lanes)", workers)
+	}
+	if tr.stream != nil || len(tr.offers) != 0 {
+		t.Fatal("stop left a stream or a queued offer")
+	}
+	// Stopping closed the playing stream and its engine; only the unoffered
+	// replacement could keep workers running. The count returns to where it
+	// was before the studio started.
+	after := waitGoroutines(t, func(n int) bool { return n <= before })
+	if after > before {
+		t.Fatalf("goroutines %d after the interleaving, %d before: the prepared engine's workers were not joined", after, before)
+	}
+}
+
+// Offer takes ownership of a score even when it rejects it. A closed player
+// must release the engine and join its workers, so callers never close twice.
+func TestOfferToClosedPlayerClosesTheRejectedEngine(t *testing.T) {
+	entry, part := wideProject()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	s, stream, _ := secondaryStudioIn(t, entry, part)
+	stream.Close()
+	base := waitGoroutines(t, func(int) bool { return true })
+	score, err := compileLiveScoreAtRate(s.path, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if score.Engine.ParallelWorkers() < 2 {
+		t.Skip("the host cannot start parallel workers")
+	}
+	if err := stream.Offer(score); err == nil {
+		t.Fatal("a closed player accepted a score")
+	}
+	if after := waitGoroutines(t, func(n int) bool { return n <= base }); after > base {
+		t.Fatalf("goroutines %d after the rejected offer, %d before it was compiled", after, base)
+	}
+}
+
+// startPrepared owns a prepared score until it hands it to a player. A refused
+// start (here: a sample-rate mismatch) must close the engine and its workers.
+func TestStartPreparedClosesTheScoreItRefuses(t *testing.T) {
+	entry, part := wideProject()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	s, stream, _ := secondaryStudioIn(t, entry, part)
+	stream.Close()
+	s.transport.stopLocked()
+	s.transport.audioNull = true
+	rate, err := s.transport.ensureSampleRate()
+	if err != nil {
+		t.Skip(err)
+	}
+	base := waitGoroutines(t, func(int) bool { return true })
+	prepared, err := compileLiveScoreAtRate(s.path, map[int]int{44100: 48000, 48000: 44100, 96000: 48000}[rate])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if prepared.Engine.ParallelWorkers() < 2 {
+		t.Skip("the host cannot start parallel workers")
+	}
+	if err := s.transport.startPrepared(-1, "", &prepared, [32]byte{1}, nil); err == nil {
+		t.Fatal("a mismatched sample rate was accepted")
+	}
+	if after := waitGoroutines(t, func(n int) bool { return n <= base }); after > base {
+		t.Fatalf("goroutines %d after the refused start, %d before the score was compiled", after, base)
 	}
 }
