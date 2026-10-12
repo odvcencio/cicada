@@ -182,6 +182,10 @@ const (
 	ParamCount                       = 175
 )
 
+// IsInteger reports whether a live parameter takes whole numbers only.
+func IsInteger(id ParamID) bool {
+	return false || id >= ParamKeysOrganDrawbar1 && id <= ParamKeysOrganDrawbar9
+}
 func Param(id ParamID) (ParamSpec, bool) {
 	if int(id) >= len(Params) {
 		return ParamSpec{}, false

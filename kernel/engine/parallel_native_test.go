@@ -144,6 +144,25 @@ func (v *parallelStalledVoice) NextStereo() (float32, float32) {
 	return v.parallelFixtureVoice.NextStereo()
 }
 
+// parallelGateVoice holds the callback lane until the worker lane has entered
+// its stalled voice, so the test does not depend on worker scheduling latency
+// inside the 1 ms synthetic deadline.
+type parallelGateVoice struct {
+	parallelFixtureVoice
+	wait <-chan struct{}
+	once atomic.Bool
+}
+
+func (v *parallelGateVoice) NextStereo() (float32, float32) {
+	if !v.once.Swap(true) {
+		select {
+		case <-v.wait:
+		case <-time.After(10 * time.Second):
+		}
+	}
+	return v.parallelFixtureVoice.NextStereo()
+}
+
 func TestParallelTimeoutRetiresAndJoinsBeforeOwnershipReturns(t *testing.T) {
 	if runtime.GOMAXPROCS(0) < 2 {
 		t.Skip("worker test requires two scheduler lanes")
@@ -151,6 +170,7 @@ func TestParallelTimeoutRetiresAndJoinsBeforeOwnershipReturns(t *testing.T) {
 	e := parallelFixture(t, 8, false)
 	v := &parallelStalledVoice{entered: make(chan struct{}), release: make(chan struct{})}
 	e.voices[1].prepared = v
+	e.voices[0].prepared = &parallelGateVoice{wait: v.entered}
 	if err := e.EnableParallel(2); err != nil {
 		t.Fatal(err)
 	}

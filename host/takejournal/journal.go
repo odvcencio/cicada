@@ -204,6 +204,7 @@ func (s *Store) loadJournals() error {
 
 func (s *Store) Close() error {
 	if s.lock != nil {
+		_ = unlockJournal(s.lock) // Release even if a forked child still shares the descriptor.
 		s.lock.Close()
 	}
 	if s.root != nil {

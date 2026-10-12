@@ -168,6 +168,7 @@ type voiceSlot struct {
 	keysControl                    keyboard.Controller
 	keysFamily                     keyboard.Family
 	keysValues                     [keysControlCount]float32
+	keysChanged                    uint32 // controls commanded since load, whatever their value
 	pianoSustain                   float32
 	legacyPoly                     *graph.Poly
 	graphNote                      uint8
@@ -259,6 +260,7 @@ type Engine struct {
 	automation                   []cmd.Command
 	automationIndex              int
 	automationTick               int64
+	automationLanes              []automationLane // Distinct parameters the timeline moves.
 	automationCycle              int64
 	layerMask                    trackMask // effective: layerAuthored gated by the macro layer tables
 	layerAuthored                trackMask // set by scenes, OpSetLayerMask and source-off; never by macros
@@ -1445,7 +1447,7 @@ func (e *Engine) setParamMode(c cmd.Command, immediate bool) {
 		e.fault(FaultParam)
 		return
 	}
-	if spec.Curve == "toggle" && value != 0 && value != 1 {
+	if spec.Curve == "toggle" && value != 0 && value != 1 || keysEnabled && kernel.IsInteger(kernel.ParamID(c.Index)) && value != float32(int32(value)) {
 		e.fault(FaultParam)
 		return
 	}

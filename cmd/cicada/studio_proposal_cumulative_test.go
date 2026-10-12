@@ -130,6 +130,7 @@ func TestGeneratedProposalsAcceptFinalCumulativeResult(t *testing.T) {
 		for variant := range 6 {
 			for seed := int64(0); seed < 4; seed++ {
 				t.Run(fmt.Sprintf("length=%d/variant=%d/seed=%d", length, variant, seed), func(t *testing.T) {
+					t.Parallel() // Each case owns its two studios and temporary projects.
 					newline := "\n"
 					if seed%2 != 0 {
 						newline = "\r\n"

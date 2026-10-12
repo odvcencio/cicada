@@ -252,6 +252,9 @@ func validateParameterValue(descriptor paramdefs.Descriptor, value Value) error 
 	if *value.Number < descriptor.Min || *value.Number > descriptor.Max {
 		return fmt.Errorf("value is outside %g..%g", descriptor.Min, descriptor.Max)
 	}
+	if descriptor.Type == "integer" && *value.Number != math.Trunc(*value.Number) {
+		return fmt.Errorf("value must be a whole number")
+	}
 	if descriptor.Curve == "toggle" && *value.Number != 0 && *value.Number != 1 {
 		return fmt.Errorf("toggle value must be on or off")
 	}

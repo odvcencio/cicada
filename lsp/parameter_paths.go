@@ -163,6 +163,14 @@ func parameterPathCompletion(source []byte, at position) []map[string]any {
 	trackKind, effectKind, scope := "", "", ""
 	if match := regexp.MustCompile(`(?m)^\s*track\s+` + regexp.QuoteMeta(owner) + `\s+([a-z_][a-z0-9_-]*)\s*\{`).FindSubmatch(source); len(match) == 2 {
 		trackKind, scope = string(match[1]), "track"
+		// A declared instrument, sampler or kit with the track's kind name wins
+		// over a built-in patch of that name, as in the compiler.
+		if declared := regexp.MustCompile(`(?m)^\s*(instrument|sampler|kit)\s+` + regexp.QuoteMeta(trackKind) + `\b`).FindSubmatch(source); len(declared) == 2 {
+			trackKind = "instrument"
+			if string(declared[1]) == "kit" {
+				trackKind = "drums"
+			}
+		}
 	}
 	if match := regexp.MustCompile(`(?m)^\s*fx\s+` + regexp.QuoteMeta(owner) + `(?:\s+([a-z_][a-z0-9_-]*))?\s*\{`).FindSubmatch(source); len(match) > 0 {
 		effectKind = owner

@@ -413,3 +413,36 @@ func TestPreviewDrumValidationDoesNotAllocateOnTheRenderThread(t *testing.T) {
 		})
 	}
 }
+
+// A fractional drawbar preview is refused at admission: nothing is published
+// and the score keeps playing.
+func TestPreviewRefusesFractionalDrawbarAndKeepsPlaying(t *testing.T) {
+	previewKeysPatch = "organ_full"
+	defer func() { previewKeysPatch = hostkeys.Names[0] }()
+	p, err := New(previewParameterScore(t, engine.VoiceKeys), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	renderPreview(t, p, blockFrames)
+	before := p.overrides.Load()
+	for _, value := range []float32{.5, 3.25, 7.999} {
+		if _, err := p.SetPreview(0, kernel.ParamKeysOrganDrawbar1, value); err == nil {
+			t.Fatalf("drawbar preview %g was admitted", value)
+		}
+	}
+	if p.overrides.Load() != before {
+		t.Fatal("a refused preview changed the override state")
+	}
+	renderPreview(t, p, 8*blockFrames)
+	if !p.current.Engine.Playing() {
+		t.Fatal("playback stopped after refused previews")
+	}
+	if _, err := p.SetPreview(0, kernel.ParamKeysOrganDrawbar1, 3); err != nil {
+		t.Fatalf("whole drawbar preview refused: %v", err)
+	}
+	renderPreview(t, p, 8*blockFrames)
+	if !p.current.Engine.Playing() {
+		t.Fatal("playback stopped after a whole-number drawbar preview")
+	}
+}

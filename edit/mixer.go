@@ -1122,6 +1122,11 @@ func paramWriterFor(score *notation.Score, owner, field string) (ParamWriter, er
 // setMixerParam is the /api/mixer gesture: an edition-1 score is upgraded
 // first (with confirmation), then the writer edits the smallest CST span.
 func setMixerParam(ctx *Context, path string, raw json.RawMessage, confirm bool) error {
+	if ctx.Options.MixerGuard != nil {
+		if err := ctx.Options.MixerGuard(); err != nil {
+			return err
+		}
+	}
 	if path == "" || len(raw) == 0 {
 		return errors.New("mixer path and value are required")
 	}

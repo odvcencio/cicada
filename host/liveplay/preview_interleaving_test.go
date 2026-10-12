@@ -13,6 +13,7 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 func TestPreviewCancelPublishedAfterRenderSnapshotWaitsForNextBlock(t *testing.T) {
@@ -129,6 +130,7 @@ type previewRenderCounts struct {
 	operations, checks, structuralOffers, supersededPatches int
 	additions, removals                                     int
 	automaticBoundaries, automaticPatched                   int
+	rangeWraps, rangeSeeks                                  int
 }
 
 type previewRenderReference struct {
@@ -155,6 +157,9 @@ type previewRenderReference struct {
 	// blocks is the index of the next render block within the song entry's
 	// first bar, or -1 when a seek or launch makes the position unmodelled.
 	blocks int
+	// rangeLoop is true while a listening range loops over bars one and two.
+	// Its restart at the end of bar two reconstructs the engine like a seek.
+	rangeLoop bool
 }
 
 type previewRenderPatch struct {
@@ -354,6 +359,10 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 			boundary = &previewRenderBoundary{
 				committed: model.committed,
 				phases:    make(chan bool), permit: make(chan struct{}), done: make(chan error, 1),
+			}
+			if model.rangeLoop && model.blocks == 2*previewBarBlocks && !model.start && !model.hasOffer {
+				model.start, model.seek = true, 0 // The loop restart is a seek to bar one.
+				counts.rangeWraps++
 			}
 			if model.start {
 				model.scene = model.seek
@@ -669,6 +678,18 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				model.seek = map[string]int{"seek-forward": 2, "seek-backward": 0, "seek-middle": 1}[op.kind]
 				model.start = true
 				failure = p.StartSongEntry(model.seek, []string{"preview", "later", "last"}[model.seek])
+			case "range-loop", "range-seek-middle":
+				// A listening range restarts at its first tick like a song-entry seek.
+				model.start = true
+				model.rangeLoop = op.kind == "range-loop"
+				if model.rangeLoop {
+					model.seek = 0
+					failure = p.PlayRange(PlaybackRange{StartTick: 0, EndTick: 2 * seq.TicksPerBar, Loop: true})
+				} else {
+					model.seek = 1
+					failure = p.PlayRange(PlaybackRange{StartTick: seq.TicksPerBar, EndTick: 3 * seq.TicksPerBar, Loop: true})
+				}
+				counts.rangeSeeks++
 			case "scene":
 				for boundary != nil {
 					failure = drain()
@@ -746,7 +767,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 				}
 			case "settle":
 				failure = settle()
-			case "approach", "approach-boundary":
+			case "approach", "approach-boundary", "approach-wrap":
 				// Render real blocks until the next one is the last block of bar
 				// one (approach) or the first block of bar two (approach-boundary).
 				for boundary != nil && failure == nil {
@@ -756,8 +777,14 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 					failure = fmt.Errorf("automatic boundary is unmodelled: blocks %d scene %d", model.blocks, model.scene)
 				}
 				target := previewBarBlocks - 1
-				if op.kind == "approach-boundary" {
+				switch op.kind {
+				case "approach-boundary":
 					target = previewBarBlocks
+				case "approach-wrap":
+					target = 2*previewBarBlocks - 1 // The next block is the last before the loop restarts.
+					if !model.rangeLoop {
+						failure = fmt.Errorf("approach-wrap needs a looping range")
+					}
 				}
 				for failure == nil && model.blocks < target {
 					if begin(); failure == nil && boundary != nil {
@@ -846,11 +873,29 @@ func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 			previewRenderOperation{kind: "offer", value: values[(seed+2)%5]}, previewRenderOperation{kind: "patch", value: values[(seed+4)%5]},
 			previewRenderOperation{kind: "seek-middle"}, previewRenderOperation{kind: "settle"},
 			previewRenderOperation{kind: "seek-backward"}, previewRenderOperation{kind: "settle"})
-		// A 1-in-16 sample also crosses the automatic bar-two boundary with a
+		// Listening-range seeks, with or without a patch in the same block, and
+		// a loop restart with a patch before, in and after the wrapping block.
+		operations = append(operations,
+			previewRenderOperation{kind: "range-seek-middle"}, previewRenderOperation{kind: "patch", value: values[(seed+1)%5]}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "patch", value: values[(seed+2)%5]}, previewRenderOperation{kind: "range-seek-middle"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "range-loop"}, previewRenderOperation{kind: "settle"})
+		if seed%256 == 0 { // Eight seeds: each loop restart renders two real bars.
+			patch := previewRenderOperation{kind: "patch", value: values[(seed+3)%5]}
+			operations = append(operations, previewRenderOperation{kind: "approach-wrap"})
+			if (seed/256)%2 == 1 {
+				operations = append(operations, previewRenderOperation{kind: "render-begin"}, previewRenderOperation{kind: "render-drain-N"})
+			}
+			operations = append(operations, patch, previewRenderOperation{kind: "settle"})
+			if (seed/256)%4 < 2 {
+				operations = append(operations, previewRenderOperation{kind: "set", client: 1, value: values[(seed+4)%5]},
+					previewRenderOperation{kind: "cancel", client: 1}, previewRenderOperation{kind: "settle"})
+			}
+		}
+		// A 1-in-32 sample also crosses the automatic bar-two boundary with a
 		// patch before it, in it, or after it, and with or without a preview.
-		if seed%16 == 0 {
-			variant := (seed / 16) % 3
-			if (seed/48)%2 == 0 {
+		if seed%32 == 0 {
+			variant := (seed / 32) % 3
+			if (seed/96)%2 == 0 {
 				operations = append(operations, previewRenderOperation{kind: "set", client: 0, value: values[(seed/96)%5]})
 			}
 			patch := previewRenderOperation{kind: "patch", value: values[(seed+2)%5]}
@@ -870,12 +915,16 @@ func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 			t.Fatalf("seed %d: %v; minimized counterexample: %v", seed, err, minimizePreviewRenderLifecycle(t, operations))
 		}
 	}
+	if counts.rangeWraps == 0 || counts.rangeSeeks == 0 {
+		t.Fatalf("no listening range seek or loop restart: %d wraps, %d seeks", counts.rangeWraps, counts.rangeSeeks)
+	}
 	if counts.automaticBoundaries == 0 || counts.automaticPatched == 0 {
 		t.Fatalf("no automatic boundary crossed with a patch: %d boundaries, %d patched", counts.automaticBoundaries, counts.automaticPatched)
 	}
 	if counts.additions == 0 || counts.removals == 0 {
 		t.Fatal("publication schedules did not add and remove tracks")
 	}
+	t.Logf("listening range seeks %d, loop restarts %d", counts.rangeSeeks, counts.rangeWraps)
 	t.Logf("automatic boundaries %d, with a same-block patch %d", counts.automaticBoundaries, counts.automaticPatched)
 	t.Logf("landed additions %d, removals %d", counts.additions, counts.removals)
 	t.Logf("executed operations %d, parameter/default checks %d, structural offers %d, superseded batches %d", counts.operations, counts.checks, counts.structuralOffers, counts.supersededPatches)

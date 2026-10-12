@@ -34,6 +34,25 @@ test:
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
 
+.PHONY: test-ci-core test-cmd-shard test-cmd-shard-check
+
+# CI runs ./cmd/cicada in parallel shards (see scripts/cmdshard), so the core
+# target covers every other package. `make test` still runs everything.
+test-ci-core:
+	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -count=1
+	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs
+	node host/web/chord_capability_test.cjs
+	node --test host/web/render-quantum.test.cjs
+
+# SHARD=k/N runs shard k of N; SHARDS=N checks that N shards cover every test once.
+SHARD ?= 1/3
+SHARDS ?= 3
+test-cmd-shard:
+	go run ./scripts/cmdshard run $(SHARD)
+
+test-cmd-shard-check:
+	go run ./scripts/cmdshard check $(SHARDS)
+
 .PHONY: test-audio-ideation test-editor-transcription test-record-worklet
 
 test-audio-ideation:

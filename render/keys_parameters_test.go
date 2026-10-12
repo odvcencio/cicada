@@ -27,6 +27,8 @@ AUTOMATION`
 		{"analog", "poly_keys", "keys.drive = 0.9 keys.output = -9dB", ""},
 		{"strings", "string_machine", "keys.output = -9dB", ""},
 		{"ep tremolo lane", "tine_ep", "", "automate keys.tremolo { @1.1.1 0 @3.1.1 1 }\n"},
+		{"ep gain lane starting after zero", "tine_ep", "", "automate keys.gain { @2.1.1 0.1 @3.1.1 1.2 }\n"},
+		{"strings output lane starting after zero", "string_machine", "", "automate keys.output { @2.1.1 -20db @3.1.1 -3db }\n"},
 		{"organ gain lane", "tonewheel_organ", "", "automate keys.gain { @1.1.1 0.8 @3.1.1 0.2 }\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

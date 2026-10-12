@@ -3,7 +3,7 @@ Usage: cicada <command> [arguments]
 Create a project, edit and validate scores, play them in Studio, or render files.
 
 Commands:
-  new, fix, check, fmt, play, studio, lsp
+  new, apply, fix, check, fmt, play, studio, lsp
   render, stems, verify-wav, verify-stems, midi, verify-midi, compare-midi, import-midi
   gen, explain, view, highlight, symbols, convert, compare, validate, ast
   events, graph, fields, params, golden, record-pack, fit-model, transcribe, wam2

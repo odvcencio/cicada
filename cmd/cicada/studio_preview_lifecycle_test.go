@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -219,6 +220,33 @@ type previewReferencePatch struct {
 	values                [4]float32
 	incarnations          [4]int
 	tracks                []int
+}
+
+func (c *previewLifecycleCounts) add(o previewLifecycleCounts) {
+	c.structuralOffers += o.structuralOffers
+	c.supersededPatches += o.supersededPatches
+	c.deferredBlocks += o.deferredBlocks
+	c.rejectedPatches += o.rejectedPatches
+	c.seeks += o.seeks
+	c.scenes += o.scenes
+	c.bursts += o.bursts
+	c.pausedBatches += o.pausedBatches
+	c.checks += o.checks
+	c.sets += o.sets
+	c.cancels += o.cancels
+	c.teardowns += o.teardowns
+	c.activations += o.activations
+	c.reorders += o.reorders
+	c.adds += o.adds
+	c.removes += o.removes
+	c.shifts += o.shifts
+	c.captures += o.captures
+	c.publications += o.publications
+	c.stalePublications += o.stalePublications
+	c.readdedPublications += o.readdedPublications
+	c.readds += o.readds
+	c.patches += o.patches
+	c.stalePatches += o.stalePatches
 }
 
 type previewLifecycleCounts struct {
@@ -806,56 +834,74 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 	values := [...]float32{-12, -9, -6, -3, 0}
 	var counts previewLifecycleCounts
 	operationsCount := 0
-	for seed := int64(0); seed < seeds; seed++ {
-		random := rand.New(rand.NewSource(seed))
-		operations := make([]previewOperation, 0, steps+3)
-		lastGestureClient := -1
-		for step := 0; step < steps; step++ {
-			op := previewOperation{kind: kinds[random.Intn(len(kinds))], client: random.Intn(3), track: random.Intn(4), value: values[random.Intn(len(values))]}
-			if op.kind == "newer-gesture" && lastGestureClient >= 0 {
-				op.client = (lastGestureClient + 1 + random.Intn(2)) % 3
-			}
-			if op.kind == "set" || op.kind == "newer-gesture" {
-				lastGestureClient = op.client
-			}
-			if op.kind == "remove-add" {
-				op.kind = "remove"
-				operations = append(operations, op)
-				op.kind = "add"
-			}
-			operations = append(operations, op)
+	var totals sync.Mutex
+	// Seeds are independent: each runPreviewLifecycle owns its players. Chunks
+	// run in parallel; the group subtest returns after all of them, so the
+	// totals below are complete. A chunk keeps the seeds' order and counters.
+	const chunkSize = 128
+	t.Run("seeds", func(t *testing.T) {
+		for first := int64(0); first < seeds; first += chunkSize {
+			t.Run(fmt.Sprintf("seeds=%d-%d", first, first+chunkSize-1), func(t *testing.T) {
+				t.Parallel()
+				var local previewLifecycleCounts
+				localOperations := 0
+				for seed := first; seed < first+chunkSize; seed++ {
+					random := rand.New(rand.NewSource(seed))
+					operations := make([]previewOperation, 0, steps+3)
+					lastGestureClient := -1
+					for step := 0; step < steps; step++ {
+						op := previewOperation{kind: kinds[random.Intn(len(kinds))], client: random.Intn(3), track: random.Intn(4), value: values[random.Intn(len(values))]}
+						if op.kind == "newer-gesture" && lastGestureClient >= 0 {
+							op.client = (lastGestureClient + 1 + random.Intn(2)) % 3
+						}
+						if op.kind == "set" || op.kind == "newer-gesture" {
+							lastGestureClient = op.client
+						}
+						if op.kind == "remove-add" {
+							op.kind = "remove"
+							operations = append(operations, op)
+							op.kind = "add"
+						}
+						operations = append(operations, op)
+					}
+					if seed < 64 {
+						operations = append(operations,
+							previewOperation{kind: "pause"}, previewOperation{kind: "burst", value: -3},
+							previewOperation{kind: "structural-offer-add", track: 3, value: -12},
+							previewOperation{kind: "queue-patch", track: 0, value: 0},
+							previewOperation{kind: "activate"}, previewOperation{kind: "resume"},
+							previewOperation{kind: "queue-burst", value: -6}, previewOperation{kind: "render-block"},
+							previewOperation{kind: "structural-offer-remove", track: 3, value: -3},
+							previewOperation{kind: "activate"}, previewOperation{kind: "seek-backward"})
+						// Force a suspended socket publication around two score activations,
+						// alongside a newer gesture on the replacement track from another client.
+						operations = append(operations,
+							previewOperation{kind: "close", client: 0}, previewOperation{kind: "close", client: 1},
+							previewOperation{kind: "add", track: 1}, previewOperation{kind: "add", track: 0},
+							previewOperation{kind: "set", client: 0, track: 0, value: 0},
+							previewOperation{kind: "capture", client: 0, track: 0, value: 0},
+							previewOperation{kind: "remove", track: 0}, previewOperation{kind: "add", track: 0},
+							previewOperation{kind: "set", client: 1, track: 0, value: -3},
+							previewOperation{kind: "publish", client: 0},
+						)
+					}
+					operations = append(operations, previewOperation{kind: "resume"})
+					for client := 0; client < 3; client++ {
+						operations = append(operations, previewOperation{kind: "close", client: client})
+					}
+					localOperations += len(operations)
+					if err := runPreviewLifecycle(t, operations, &local); err != nil {
+						minimal := minimizePreviewLifecycle(t, operations)
+						t.Fatalf("seed %d: %v; minimized counterexample: %v", seed, err, minimal)
+					}
+				}
+				totals.Lock()
+				defer totals.Unlock()
+				operationsCount += localOperations
+				counts.add(local)
+			})
 		}
-		if seed < 64 {
-			operations = append(operations,
-				previewOperation{kind: "pause"}, previewOperation{kind: "burst", value: -3},
-				previewOperation{kind: "structural-offer-add", track: 3, value: -12},
-				previewOperation{kind: "queue-patch", track: 0, value: 0},
-				previewOperation{kind: "activate"}, previewOperation{kind: "resume"},
-				previewOperation{kind: "queue-burst", value: -6}, previewOperation{kind: "render-block"},
-				previewOperation{kind: "structural-offer-remove", track: 3, value: -3},
-				previewOperation{kind: "activate"}, previewOperation{kind: "seek-backward"})
-			// Force a suspended socket publication around two score activations,
-			// alongside a newer gesture on the replacement track from another client.
-			operations = append(operations,
-				previewOperation{kind: "close", client: 0}, previewOperation{kind: "close", client: 1},
-				previewOperation{kind: "add", track: 1}, previewOperation{kind: "add", track: 0},
-				previewOperation{kind: "set", client: 0, track: 0, value: 0},
-				previewOperation{kind: "capture", client: 0, track: 0, value: 0},
-				previewOperation{kind: "remove", track: 0}, previewOperation{kind: "add", track: 0},
-				previewOperation{kind: "set", client: 1, track: 0, value: -3},
-				previewOperation{kind: "publish", client: 0},
-			)
-		}
-		operations = append(operations, previewOperation{kind: "resume"})
-		for client := 0; client < 3; client++ {
-			operations = append(operations, previewOperation{kind: "close", client: client})
-		}
-		operationsCount += len(operations)
-		if err := runPreviewLifecycle(t, operations, &counts); err != nil {
-			minimal := minimizePreviewLifecycle(t, operations)
-			t.Fatalf("seed %d: %v; minimized counterexample: %v", seed, err, minimal)
-		}
-	}
+	})
 	if counts.readdedPublications < 64 || counts.readds == 0 {
 		t.Fatal("no delayed publication crossed a remove/re-add boundary")
 	}

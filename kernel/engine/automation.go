@@ -20,6 +20,16 @@ func (e *Engine) loadAutomation(cfg *Config) error {
 		}
 	}
 	e.automation = append([]cmd.Command(nil), cfg.Automation...)
+	e.automationLanes = e.automationLanes[:0]
+	for _, c := range e.automation {
+		known := false
+		for _, lane := range e.automationLanes {
+			known = known || lane.track == c.Track && lane.id == kernel.ParamID(c.Index)
+		}
+		if !known {
+			e.automationLanes = append(e.automationLanes, automationLane{c.Track, kernel.ParamID(c.Index)})
+		}
+	}
 	e.automationTick = -1
 	e.automationCycle = e.scheduleDuration
 	return nil
@@ -38,8 +48,15 @@ func (e *Engine) advanceAutomation() {
 	if tick == e.automationTick {
 		return
 	}
-	snap := e.automationTick < 0 && tick > 0 || e.automationTick >= 0 && tick < e.automationTick
-	if snap {
+	// A seek, a play, a loop wrap or a replay after the song ended rewinds the
+	// timeline: values the lanes would hold at this tick are rebuilt at once. The
+	// first play from tick 0 is the one case that keeps the normal smoothing.
+	snap := false
+	if e.automationTick < 0 {
+		snap = tick > 0 || e.automationIndex > 0
+		e.automationIndex = 0
+	} else if tick < e.automationTick {
+		snap = true
 		e.automationIndex = 0
 	}
 	for e.automationIndex < len(e.automation) && e.automation[e.automationIndex].Tick <= tick {

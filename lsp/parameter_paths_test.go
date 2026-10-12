@@ -140,3 +140,27 @@ func TestKeyboardPathCompletionFollowsFamily(t *testing.T) {
 		}
 	}
 }
+
+// A declared instrument, sampler or kit named like a built-in keyboard patch
+// replaces the patch: completion must offer what the compiler accepts.
+func TestKeyboardPathCompletionHonorsOverridingDeclarations(t *testing.T) {
+	for _, declaration := range []string{
+		"instrument tine_ep { voice mono { out = sine(pitch) * env(gate, 80ms) } }\n",
+		"kit tine_ep { bd = builtin.bd }\n",
+	} {
+		source := []byte(declaration + "track keys tine_ep {}\nscene main { keys.\n}\n")
+		items := parameterPathCompletion(source, utf16Position(source, bytes.Index(source, []byte("keys."))+len("keys.")))
+		labels := map[string]bool{}
+		for _, item := range items {
+			labels[item["label"].(string)] = true
+		}
+		for _, keyboardOnly := range []string{"tremolo", "tremolo_rate", "auto_pan", "sustain"} {
+			if labels[keyboardOnly] {
+				t.Errorf("%q offers keyboard control %s for an overriding declaration", declaration[:10], keyboardOnly)
+			}
+		}
+		if !labels["level"] {
+			t.Errorf("%q lost the mixer controls: %v", declaration[:10], labels)
+		}
+	}
+}

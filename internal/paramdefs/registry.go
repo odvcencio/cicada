@@ -75,6 +75,22 @@ func GenerateKernel() ([]byte, error) {
 	}
 	fmt.Fprintf(&b, "\tParamCount = %d\n", len(Registry))
 	fmt.Fprintln(&b, ")")
+	fmt.Fprintln(&b, "// IsInteger reports whether a live parameter takes whole numbers only.")
+	fmt.Fprintln(&b, "func IsInteger(id ParamID) bool {")
+	fmt.Fprint(&b, "return false")
+	for i := 0; i < len(Registry); i++ {
+		if !Registry[i].Live || Registry[i].Type != "integer" {
+			continue
+		}
+		j := i
+		for j+1 < len(Registry) && Registry[j+1].Live && Registry[j+1].Type == "integer" {
+			j++
+		}
+		fmt.Fprintf(&b, " || id >= Param%s && id <= Param%s", GoName(Registry[i].ID), GoName(Registry[j].ID))
+		i = j
+	}
+	fmt.Fprintln(&b)
+	fmt.Fprintln(&b, "}")
 	fmt.Fprintln(&b, "func Param(id ParamID) (ParamSpec, bool) { if int(id) >= len(Params) { return ParamSpec{}, false }; return Params[id], true }")
 	formatted, err := format.Source(b.Bytes())
 	if err != nil {
