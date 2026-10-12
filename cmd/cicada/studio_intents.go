@@ -325,6 +325,10 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusOK, response)
 		return
 	}
+	if err := s.renderIdentityUnchanged(result, current); err != nil {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "revision": studioRevision(current), "source": string(current)})
+		return
+	}
 	if finish != nil {
 		if err := finish(result); err != nil {
 			studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
@@ -423,10 +427,9 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 	if s.proposals == nil {
 		s.proposals = make(map[string]stagedProposal)
 	}
-	entry := stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer, rendered: staged.Result.RenderChecked}
-	if entry.rendered {
-		entry.renderIdentity, _ = rendercheck.Identity(s.path, current, nil)
-	}
+	// The identity verified around the renders, not one taken afterwards: a
+	// change during the check must not be recorded as verified.
+	entry := stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer, rendered: staged.Result.RenderChecked, renderIdentity: staged.Result.RenderIdentity}
 	s.proposals[proposal.ID] = entry
 	s.previewProposal = proposal.ID
 	s.transport.applyPreview(staged.Ops)
@@ -629,4 +632,16 @@ func sameCandidate(a, b *edits.Result) bool {
 		}
 	}
 	return true
+}
+
+// renderIdentityUnchanged compares the identity verified around a result's
+// renders with the project right now, just before a commit.
+func (s *studio) renderIdentityUnchanged(result *edits.Result, current []byte) error {
+	if !result.RenderChecked || result.RenderIdentity == "" {
+		return nil
+	}
+	if identity, ok := rendercheck.Identity(s.path, current, nil); !ok || identity != result.RenderIdentity {
+		return errors.New("the project changed during the render check; try again")
+	}
+	return nil
 }

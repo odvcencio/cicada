@@ -29,6 +29,15 @@ type StagedRenderCheck interface {
 	HashWith(source []byte, files map[string][]byte) (string, error)
 }
 
+// IdentifiedRenderCheck can name the project inputs a render reads (see
+// rendercheck.Identity). A comparison takes the identity before its first
+// render and after its second and refuses if the project changed in between.
+// ok is false when the inputs cannot be identified.
+type IdentifiedRenderCheck interface {
+	StagedRenderCheck
+	InputIdentity(source []byte) (identity string, ok bool)
+}
+
 var ErrNoRenderCheck = errors.New("render check unavailable; the conversion is refused rather than risk changing the music")
 
 var ErrNoUpgrade = errors.New("edition upgrade unavailable")

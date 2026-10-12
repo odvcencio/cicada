@@ -99,6 +99,17 @@ func (c *cachedCheck) bind(inner edits.RenderCheck, key func([]byte, map[string]
 	c.inner, c.key = inner, key
 }
 
+// InputIdentity names the project inputs (including open buffers) a render reads.
+func (c *cachedCheck) InputIdentity(source []byte) (string, bool) {
+	c.mu.Lock()
+	key := c.key
+	c.mu.Unlock()
+	if key == nil {
+		return "", true
+	}
+	return key(source, nil)
+}
+
 func (c *cachedCheck) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
 
 // HashWith renders against the files an edit batch has staged; they are part

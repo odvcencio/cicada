@@ -3,6 +3,7 @@ package edit
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	gts "github.com/odvcencio/gotreesitter"
 	"m31labs.dev/cicada/kernel/seq"
@@ -58,15 +59,11 @@ func convertSongToArrange(ctx *Context, _ Intent) error {
 	if err != nil {
 		return err
 	}
-	before, err := check.Hash(ctx.Source)
+	same, err := ctx.compareRenders("ConvertSongToArrange", check, ctx.Source, converted)
 	if err != nil {
 		return err
 	}
-	after, err := check.Hash(converted)
-	if err != nil {
-		return err
-	}
-	if before != after {
+	if !same {
 		return refuseConvert(convertCause(ctx, placements))
 	}
 	ctx.Source, ctx.plan = converted, nil
@@ -89,6 +86,7 @@ func songPlacements(score *notation.Score) ([]convertedPlacement, error) {
 	}
 	var placements []convertedPlacement
 	open := make(map[string]int, len(score.Tracks))
+	used := map[string]bool{}
 	var tick int64
 	for index, entry := range score.Song {
 		bars := int64(entry.Bars)
@@ -119,7 +117,7 @@ func songPlacements(score *notation.Score) ([]convertedPlacement, error) {
 			default:
 				open[track.Name] = len(placements)
 				placements = append(placements, convertedPlacement{
-					name: fmt.Sprintf("%s-%d-%s", entry.Scene, index+1, track.Name), track: track.Name, content: action,
+					name: runName(entry.Scene, index+1, track.Name, used), track: track.Name, content: action,
 					at: tick, length: bars * seq.TicksPerBar,
 				})
 			}
@@ -243,4 +241,30 @@ func hasChance(pattern Pattern) bool {
 		}
 	}
 	return false
+}
+
+// runName names a placement run "<scene>-<entry>-<track>", shortening the
+// scene and then the track just enough to fit maxPlacementName, and falls back
+// to a numbered name if shortening makes two runs collide.
+func runName(scene string, entry int, track string, used map[string]bool) string {
+	middle := fmt.Sprintf("-%d-", entry)
+	budget := maxPlacementName - len(middle)
+	if len(scene)+len(track) > budget {
+		scene = truncateRunes(scene, max(1, budget-len(track)))
+		track = truncateRunes(track, max(1, budget-len(scene)))
+	}
+	name := scene + middle + track
+	if used[name] {
+		name = boundedName(name, func(candidate string) bool { return used[candidate] })
+	}
+	used[name] = true
+	return name
+}
+
+func truncateRunes(text string, limit int) string {
+	for len(text) > limit {
+		_, size := utf8.DecodeLastRuneInString(text)
+		text = text[:len(text)-size]
+	}
+	return text
 }

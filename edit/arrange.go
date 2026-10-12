@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"strconv"
+	"unicode/utf8"
 
 	gts "github.com/odvcencio/gotreesitter"
 	"github.com/odvcencio/gotreesitter/taproot/walk"
@@ -179,14 +180,32 @@ func placementCopy(source []byte, decl *gts.Node, walker *walk.Walker, name, at,
 	return string(text), err
 }
 
-// freePlacementName returns base-2, base-3, ... that no declaration uses.
-func freePlacementName(plan *Plan, source []byte, base string) string {
+// maxPlacementName is the longest arrangement identifier validation accepts.
+const maxPlacementName = 64
+
+// boundedName returns base-2, base-3, ... that taken rejects nothing of and
+// that fits maxPlacementName: it reserves room for the suffix and truncates the
+// base (on a rune boundary), so the result stays readable and deterministic.
+func boundedName(base string, taken func(string) bool) string {
 	for n := 2; ; n++ {
-		name := base + "-" + strconv.Itoa(n)
-		if !plan.Names[name] && !bytes.Contains(source, []byte(name)) {
+		suffix := "-" + strconv.Itoa(n)
+		room := maxPlacementName - len(suffix)
+		trimmed := base
+		for len(trimmed) > room {
+			_, size := utf8.DecodeLastRuneInString(trimmed)
+			trimmed = trimmed[:len(trimmed)-size]
+		}
+		if name := trimmed + suffix; !taken(name) {
 			return name
 		}
 	}
+}
+
+// freePlacementName returns a bounded name derived from base that no declaration uses.
+func freePlacementName(plan *Plan, source []byte, base string) string {
+	return boundedName(base, func(name string) bool {
+		return plan.Names[name] || bytes.Contains(source, []byte(name))
+	})
 }
 
 func lineIndent(source []byte, at int) string {
@@ -244,15 +263,11 @@ func splitClip(ctx *Context, in *SplitClip) ([]byte, string, error) {
 	if err != nil {
 		return nil, "", err
 	}
-	before, err := check.Hash(ctx.Source)
+	same, err := ctx.compareRenders("SplitClip", check, ctx.Source, cut)
 	if err != nil {
 		return nil, "", err
 	}
-	after, err := check.Hash(cut)
-	if err != nil {
-		return nil, "", err
-	}
-	if before != after {
+	if !same {
 		return nil, "", &RefusalError{Intent: "SplitClip", Cause: splitCause(plan, placement, pattern, bar)}
 	}
 	return cut, fmt.Sprintf("Clip %s split at %s", placement.ID, FormatPosition(in.AtTick)), nil
@@ -290,6 +305,40 @@ func (b batchCheck) Hash(source []byte) (string, error) {
 		return staged.HashWith(source, b.files)
 	}
 	return b.check.Hash(source)
+}
+
+// causeProjectChanged is the refusal when project inputs changed while a render
+// comparison ran, so neither render can be trusted.
+const causeProjectChanged = "the project changed during the render check; try again"
+
+// compareRenders hashes before and after through the batch-bound check and
+// reports whether they match. When the check identifies its inputs, the
+// identity is taken before the first render and confirmed after the second;
+// a difference (or an identity that cannot be computed) refuses.
+func (c *Context) compareRenders(intent string, check RenderCheck, before, after []byte) (bool, error) {
+	guard, guarded := c.Options.RenderCheck.(IdentifiedRenderCheck)
+	var first string
+	if guarded {
+		var ok bool
+		if first, ok = guard.InputIdentity(c.original); !ok {
+			return false, &RefusalError{Intent: intent, Cause: causeProjectChanged}
+		}
+	}
+	a, err := check.Hash(before)
+	if err != nil {
+		return false, err
+	}
+	b, err := check.Hash(after)
+	if err != nil {
+		return false, err
+	}
+	if guarded {
+		if last, ok := guard.InputIdentity(c.original); !ok || last != first || c.identity != "" && c.identity != first {
+			return false, &RefusalError{Intent: intent, Cause: causeProjectChanged}
+		}
+		c.identity = first
+	}
+	return a == b, nil
 }
 
 // renderCheckFor returns the configured check bound to every file this batch

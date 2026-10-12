@@ -18,6 +18,10 @@ type Result struct {
 	// RenderChecked reports that an intent consulted the render check, so the
 	// result depends on rendered audio and not only on source text.
 	RenderChecked bool
+	// RenderIdentity is the input identity taken before the first render and
+	// confirmed after the last; empty when the check does not identify inputs.
+	// Hosts compare it again right before committing.
+	RenderIdentity string
 }
 
 // File is an auxiliary source the commit writes atomically with the score.
@@ -47,6 +51,8 @@ type Context struct {
 	fileIndex map[string]int
 	label     string
 	rendered  bool
+	original  []byte // the source Apply was called with
+	identity  string // input identity verified around the render comparisons
 	response  map[string]any
 }
 
@@ -166,7 +172,7 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 	if env.Revision != "" && env.Revision != Revision(source) {
 		return nil, &ConflictError{Expected: env.Revision, Actual: Revision(source)}
 	}
-	ctx := &Context{Source: bytes.Clone(source), Options: opts, Envelope: env}
+	ctx := &Context{Source: bytes.Clone(source), Options: opts, Envelope: env, original: bytes.Clone(source)}
 	for _, intent := range env.Intents {
 		handler := handlers[intent.Kind()]
 		if handler == nil {
@@ -183,7 +189,7 @@ func Apply(source []byte, env Envelope, opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered}
+	result := &Result{Source: ctx.Source, Files: ctx.files, Label: ctx.label, Response: ctx.response, Plan: plan, RenderChecked: ctx.rendered, RenderIdentity: ctx.identity}
 	result.Unchanged = bytes.Equal(ctx.Source, source) && len(ctx.files) == 0
 	return result, nil
 }

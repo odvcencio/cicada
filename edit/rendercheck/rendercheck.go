@@ -53,6 +53,11 @@ func layer(base, staged map[string][]byte) map[string][]byte {
 	return all
 }
 
+// InputIdentity names the project inputs a render of source reads.
+func (c check) InputIdentity(source []byte) (string, bool) {
+	return Identity(c.path, source, c.overrides)
+}
+
 func merged(overrides map[string][]byte, path string, source []byte) map[string][]byte {
 	all := make(map[string][]byte, len(overrides)+1)
 	for name, data := range overrides {
@@ -109,7 +114,7 @@ type cached struct {
 // served from an older approval. When the inputs cannot be identified it does
 // not cache. It keeps at most 32 results and starts over at the limit. Errors
 // are cached too: the same inputs fail the same way.
-func Cached(path string, inner edits.RenderCheck) edits.StagedRenderCheck {
+func Cached(path string, inner edits.RenderCheck) edits.IdentifiedRenderCheck {
 	if abs, err := filepath.Abs(path); err == nil {
 		path = abs
 	}
@@ -118,9 +123,12 @@ func Cached(path string, inner edits.RenderCheck) edits.StagedRenderCheck {
 
 // CachedBy is Cached with a caller-supplied key. A key function that returns
 // false disables caching for that call.
-func CachedBy(key func(source []byte, files map[string][]byte) (string, bool), inner edits.RenderCheck) edits.StagedRenderCheck {
+func CachedBy(key func(source []byte, files map[string][]byte) (string, bool), inner edits.RenderCheck) edits.IdentifiedRenderCheck {
 	return &cached{inner: inner, key: key}
 }
+
+// InputIdentity names the project inputs a render of source reads.
+func (c *cached) InputIdentity(source []byte) (string, bool) { return c.key(source, nil) }
 
 func (c *cached) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
 

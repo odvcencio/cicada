@@ -335,3 +335,84 @@ func TestSplitClipOnChancePatternRefusesWhenTheRenderChanges(t *testing.T) {
 		t.Fatalf("differing: %v", err)
 	}
 }
+
+// identifiedCheck reports an input identity that a test can change between renders.
+type identifiedCheck struct {
+	fakeCheck
+	identities []string // returned in order, the last one repeating
+	asked      int
+}
+
+func (f *identifiedCheck) HashWith(source []byte, _ map[string][]byte) (string, error) {
+	return f.Hash(source)
+}
+
+func (f *identifiedCheck) InputIdentity([]byte) (string, bool) {
+	identity := f.identities[min(f.asked, len(f.identities)-1)]
+	f.asked++
+	return identity, identity != ""
+}
+
+func TestRenderComparisonRefusesWhenTheProjectChangesBetweenRenders(t *testing.T) {
+	split := `{"kind":"splitclip","entity":"placement:return","attick":11520}`
+	convertSource := templateHead + templateScenes + "song { main*2 break*2 }\n"
+	for _, c := range []struct {
+		name, kind string
+		source     []byte
+	}{{"split", split, namedScore(t)}, {"convert", `{"kind":"convertsongtoarrange"}`, []byte(convertSource)}} {
+		t.Run(c.name, func(t *testing.T) {
+			var refusal *RefusalError
+			for _, changing := range [][]string{{"before", "after"}, {"before", ""}, {""}} {
+				_, err := applyArrange(c.source, c.kind, Options{RenderCheck: &identifiedCheck{identities: changing}})
+				if !errors.As(err, &refusal) || refusal.Cause != "the project changed during the render check; try again" {
+					t.Fatalf("identities %v: %v", changing, err)
+				}
+			}
+			stable := &identifiedCheck{identities: []string{"verified"}}
+			got, err := applyArrange(c.source, c.kind, Options{RenderCheck: stable})
+			if err != nil || got.RenderIdentity != "verified" || !got.RenderChecked {
+				t.Fatalf("stable: %v identity=%q", err, got.RenderIdentity)
+			}
+		})
+	}
+}
+
+func TestGeneratedPlacementNamesStayWithinTheIdentifierLimit(t *testing.T) {
+	long := strings.Repeat("p", 64)
+	source := "cicada 2\ntrack bass acid {}\npattern pulse { c3 . c4 c3 }\narrange {\n  place " + long + " bass pulse { at = @1.1.1 length = 2bars }\n}\n"
+	got, err := applyArrange([]byte(source), `{"kind":"duplicateclip","entity":"placement:`+long+`"}`, Options{})
+	if err != nil || !bytes.Contains(got.Source, []byte("place "+strings.Repeat("p", 62)+"-2 bass")) {
+		t.Fatalf("duplicate of a 64-character name: %v", err)
+	}
+	split, err := applyArrange([]byte(source), `{"kind":"splitclip","entity":"placement:`+long+`","attick":3840}`, Options{RenderCheck: &fakeCheck{}})
+	if err != nil || !bytes.Contains(split.Source, []byte("place "+strings.Repeat("p", 62)+"-2 bass")) {
+		t.Fatalf("split of a 64-character name: %v", err)
+	}
+	// Suffix growth: names -2 to -9 are taken, so -10 needs one more character of room.
+	taken := map[string]bool{}
+	base := strings.Repeat("q", 64)
+	for n := 2; n <= 9; n++ {
+		taken[strings.Repeat("q", 62)+"-"+strconv.Itoa(n)] = true
+	}
+	name := boundedName(base, func(candidate string) bool { return taken[candidate] })
+	if name != strings.Repeat("q", 61)+"-10" || len(name) != 64 {
+		t.Fatalf("got %q (%d)", name, len(name))
+	}
+	if name := boundedName("short", func(string) bool { return false }); name != "short-2" {
+		t.Fatalf("short base: %q", name)
+	}
+	// Conversion: 32-character scene and track names would give 67 characters.
+	scene, track := strings.Repeat("s", 32), strings.Repeat("t", 32)
+	song := "title \"t\"\ntrack " + track + " acid {}\npattern hits { c3 . c4 . }\nscene " + scene + " { " + track + " = hits }\nsong { " + scene + "*2 }\n"
+	converted, err := convertScore(t, song, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range strings.Split(string(converted.Source), "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), "place "); ok {
+			if name := strings.Fields(rest)[0]; len(name) != 64 || !strings.Contains(name, "-1-") {
+				t.Fatalf("name %q (%d)", name, len(name))
+			}
+		}
+	}
+}

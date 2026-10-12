@@ -141,3 +141,86 @@ func TestRenderCheckedProposalIsRefusedWhenTheIntentNoLongerHolds(t *testing.T) 
 		t.Fatal("acceptance wrote after the inputs changed")
 	}
 }
+
+// changeAfterRenders wraps the Studio render check and runs mutate once the
+// second render of a comparison has returned.
+type changeAfterRenders struct {
+	edits.IdentifiedRenderCheck
+	calls  int
+	mutate func()
+}
+
+func (c *changeAfterRenders) HashWith(source []byte, files map[string][]byte) (string, error) {
+	hash, err := c.IdentifiedRenderCheck.HashWith(source, files)
+	if c.calls++; c.calls == 2 {
+		c.mutate()
+	}
+	return hash, err
+}
+
+func (c *changeAfterRenders) Hash(source []byte) (string, error) { return c.HashWith(source, nil) }
+
+// A peer edit that lands right after the second render must not be recorded as
+// verified: direct intents and staged proposals both refuse.
+func TestProjectChangeBetweenRendersIsRefusedByIntentsAndStaging(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	const cause = "the project changed during the render check; try again"
+	for _, route := range []string{"/api/intents", "/api/proposals"} {
+		t.Run(route, func(t *testing.T) {
+			dir := t.TempDir()
+			for name, data := range map[string]string{"cicada.mod": "project peers\ncicada 2\nentry \"main.cicada\"\nsource \"patterns.cicada\"\n", "main.cicada": proposalSongMain, "patterns.cicada": proposalSongPeer(proposalPlain)} {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(data), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			path, peer := filepath.Join(dir, "main.cicada"), filepath.Join(dir, "patterns.cicada")
+			s, err := newStudio(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = s.shutdown() })
+			s.renderCheck = &changeAfterRenders{IdentifiedRenderCheck: s.renderCheck.(edits.IdentifiedRenderCheck), mutate: func() {
+				_ = os.WriteFile(peer, []byte(proposalSongPeer(proposalChance)), 0o600)
+			}}
+			env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
+			var body any = env
+			if route == "/api/proposals" {
+				body = edits.Proposal{Envelope: env}
+			}
+			r := studioCall(t, s.domainRoutes(), route, body)
+			if r.Code != 422 || !strings.Contains(r.Body.String(), cause) {
+				t.Fatalf("%d %s", r.Code, r.Body.String())
+			}
+			if got, _ := os.ReadFile(path); string(got) != proposalSongMain || len(studioHistoryEdits(t, s.domainRoutes())) != 0 {
+				t.Fatal("a refused request wrote")
+			}
+		})
+	}
+}
+
+// The identity verified around the renders is compared again right before the commit.
+func TestRenderIdentityIsRecheckedBeforeTheCommit(t *testing.T) {
+	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+	s, err := newStudio(p.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.shutdown() })
+	opts, err := s.editOptions([]byte(proposalSongMain), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := edits.Apply([]byte(proposalSongMain), edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}, opts)
+	if err != nil || result.RenderIdentity == "" || !result.RenderChecked {
+		t.Fatalf("apply: %v identity=%q", err, result.RenderIdentity)
+	}
+	if err := s.renderIdentityUnchanged(result, []byte(proposalSongMain)); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.renderIdentityUnchanged(result, []byte(proposalSongMain)); err == nil || !strings.Contains(err.Error(), "changed during the render check") {
+		t.Fatalf("recheck: %v", err)
+	}
+}
