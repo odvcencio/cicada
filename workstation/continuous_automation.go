@@ -16,8 +16,14 @@ func continuousAutomation(p *project.Project) gosx.Node {
 		return gosx.Fragment()
 	}
 	var end int64
-	for _, entry := range p.Song {
-		end += int64(entry.Bars) * 3840
+	if p.Arrange != nil {
+		for _, place := range p.Arrange.Placements {
+			end = max(end, place.AtTick+place.LengthTicks)
+		}
+	} else {
+		for _, entry := range p.Song {
+			end += int64(entry.Bars) * 3840
+		}
 	}
 	if end == 0 {
 		return gosx.Fragment()

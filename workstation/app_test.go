@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/host/padsampler"
 	"m31labs.dev/cicada/project"
 )
 
@@ -20,11 +21,30 @@ func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
+		case "/api/sampler":
+			if r.Method == http.MethodGet {
+				b := padsampler.DefaultBank()
+				b.Sources = []padsampler.Source{{ID: strings.Repeat("a", 64), Name: "Test stereo sample", Asset: project.Asset{Frames: 16000, RateHz: 48000, Channels: 2}}}
+				_ = padsampler.Chop(&b, b.Sources[0].ID, 16)
+				_ = json.NewEncoder(w).Encode(samplerState{Revision: "current", BankRevision: "bank-current", Bank: b, Sounds: make([]string, 16)})
+				return
+			}
+			var edit map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
+				t.Error(err)
+			}
+			edits = append(edits, edit)
+			_, _ = io.WriteString(w, `{"revision":"current","bankRevision":"bank-current"}`)
 		case "/api/workspace":
 			_ = json.NewEncoder(w).Encode(workspace{Revision: "current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}})
 		case "/api/transport":
+			if r.Method == http.MethodPost {
+				var edit map[string]any
+				_ = json.NewDecoder(r.Body).Decode(&edit)
+				edits = append(edits, edit)
+			}
 			_ = json.NewEncoder(w).Encode(transport{Bar: 1, Step: 1})
-		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/project", "/api/export", "/api/clip", "/api/automation":
+		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/arrange", "/api/project", "/api/export", "/api/clip", "/api/automation":
 			var edit map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 				t.Error(err)

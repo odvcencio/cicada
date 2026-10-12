@@ -78,7 +78,7 @@ func newApp(b *backend) (http.Handler, error) {
 	app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			limit := int64(2 << 20)
-			if r.URL.Path == "/__instrument/import" {
+			if r.URL.Path == "/__instrument/import" || r.URL.Path == "/__sampler/import" {
 				limit = 65 << 20
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, limit)
@@ -110,6 +110,11 @@ func newApp(b *backend) (http.Handler, error) {
 		}))
 	}
 	app.Mount("POST /__instrument/import", http.HandlerFunc(s.importInstrument))
+	app.Mount("POST /__sampler/import", http.HandlerFunc(s.importSampler))
+	app.Mount("GET /media/sampler/{id}", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("id", strings.TrimSuffix(r.PathValue("id"), ".wav"))
+		s.samplerMedia(w, r)
+	}))
 	app.Mount("GET /media/instrument-hit", http.HandlerFunc(s.instrumentMedia))
 	app.Mount("GET /media/instrument", http.HandlerFunc(s.instrumentMedia))
 	app.Mount("GET /__workspace", http.HandlerFunc(s.workspaceProjection))
@@ -125,7 +130,8 @@ func newApp(b *backend) (http.Handler, error) {
 	app.Mount("GET /media/exports/{id}", http.HandlerFunc(s.exportAudio))
 	app.Mount("GET /media/transcription", http.HandlerFunc(s.transcriptionAudio))
 	app.Mount("GET /api/export", http.HandlerFunc(s.exportStatus))
-	for _, path := range []string{"/api/state", "/api/revision", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params"} {
+	app.Mount("GET /api/takes/{id}/waveform", http.HandlerFunc(s.vocalWaveform))
+	for _, path := range []string{"/api/state", "/api/revision", "/api/transport", "/api/meters", "/api/audio/config", "/api/takes", "/api/capture", "/api/history", "/api/params", "/api/sampler"} {
 		app.Mount("GET "+path, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var data json.RawMessage
 			if err := b.call(r.Context(), http.MethodGet, path, nil, &data); err != nil {
@@ -146,6 +152,9 @@ func (s *studioApp) page(ctx *server.Context) gosx.Node {
 
 func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace) {
 	ctx.NoStore()
+	// GoSX's managed navigation has its own page cache. HTTP no-store alone
+	// cannot invalidate an already visited panel after a score mutation.
+	ctx.AddHead(gosx.El("meta", gosx.Attrs(gosx.Attr("name", "gosx-page-cache"), gosx.Attr("content", "no-store"))))
 	if s.backend == nil {
 		return gosx.El("p", gosx.Text("Open a score with cicada studio to start the workspace.")), workspace{}
 	}
@@ -237,13 +246,14 @@ func (s *studioApp) toolbar(view workspace, csrf, panel string, t transport) gos
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "toolbar")),
 		s.form(view, csrf, panel, "transport", submit("action", "play", "Play"), submit("action", "pause", "Pause"), submit("action", "stop", "Stop"), submit("action", "home", "Return to start")),
 		s.form(view, csrf, panel, "undo", hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Undo")), s.form(view, csrf, panel, "redo", hidden("file", view.File), hidden("fileRevision", view.FileRevision), submit("", "", "Redo")),
-		ui.Position(ui.TransportProps{Playing: t.Playing, Bar: t.Bar, Step: t.Step, Backend: t.Backend, Error: t.Error}),
+		ui.Position(ui.TransportProps{Playing: t.Playing, Bar: t.Bar, Step: t.Step, Backend: t.Backend, Error: t.Error, Listening: t.Listening}),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "transport-capture-hint"), gosx.Attr("data-transport-capture-hint", ""), gosx.BoolAttr("hidden")), gosx.Text("Recording in progress. Stop saves your take; finish it before changing playback.")),
 	)
 }
 
 func (s *studioApp) navigation(panel string) gosx.Node {
 	var links []gosx.Node
-	for _, item := range []struct{ key, label string }{{"session", "Session"}, {"patterns", "Patterns"}, {"generator", "Generate"}, {"live", "Live"}, {"mixer", "Mixer"}, {"instruments", "Instruments"}, {"code", "Score"}, {"collaboration", "Collaborate"}, {"takes", "Takes"}, {"history", "History"}, {"audio", "Audio"}, {"export", "Export"}} {
+	for _, item := range []struct{ key, label string }{{"session", "Session"}, {"patterns", "Patterns"}, {"sampler", "Sampler"}, {"generator", "Generate"}, {"live", "Live"}, {"mixer", "Mixer"}, {"instruments", "Instruments"}, {"code", "Score"}, {"collaboration", "Collaborate"}, {"takes", "Takes"}, {"history", "History"}, {"audio", "Audio"}, {"export", "Export"}} {
 		attrs := gosx.Attrs(gosx.Attr("href", "/?panel="+item.key))
 		if panel == item.key {
 			attrs = append(attrs, gosx.Attr("aria-current", "page"))
