@@ -17,6 +17,51 @@ import (
 
 const copyScore = "cicada 2\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off }\nsong { main }\n"
 
+func TestSaveAsDestinationParents(t *testing.T) {
+	for _, kind := range []string{"missing-nested", "symlink-parent", "existing-parent"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			path := filepath.Join(root, "main.cicada")
+			for name, source := range map[string]string{"main.cicada": copyScore, "cicada.mod": "project copy\ncicada 2\n"} {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(source), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			parent := filepath.Join(root, "exports", "nested")
+			physical := parent
+			if kind == "existing-parent" {
+				if err := os.MkdirAll(parent, 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if kind == "symlink-parent" {
+				actual := filepath.Join(root, "actual")
+				if err := os.Mkdir(actual, 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink("actual", filepath.Join(root, "exports")); err != nil {
+					t.Fatal(err)
+				}
+				physical = filepath.Join(actual, "nested")
+			}
+			target := filepath.Join(parent, "copy.cicada")
+			if err := SaveAs(path, target); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := os.ReadFile(filepath.Join(physical, "copy.cicada")); err != nil || string(got) != copyScore {
+				t.Fatalf("destination source: %q %v", got, err)
+			}
+			if err := SaveAs(path, target); err == nil {
+				t.Error("existing destination replaced")
+			}
+			if kind == "symlink-parent" {
+				if got, err := os.Readlink(filepath.Join(root, "exports")); err != nil || got != "actual" {
+					t.Errorf("parent link changed: %q %v", got, err)
+				}
+			}
+		})
+	}
+}
+
 func pending(t *testing.T, dir string, finalize bool) (string, *takejournal.Store, string) {
 	t.Helper()
 	path := filepath.Join(dir, "main.cicada")
@@ -89,7 +134,10 @@ func TestSaveAsAssetCollisionAndMissingFailBeforeScore(t *testing.T) {
 	for _, kind := range []string{"collision", "missing", "corrupt", "symlink"} {
 		t.Run(kind, func(t *testing.T) {
 			dir := t.TempDir()
-			target := filepath.Join(dir, "copy.cicada")
+			if err := os.WriteFile(filepath.Join(dir, "cicada.mod"), []byte("project destination\ncicada 2\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			target := filepath.Join(dir, "exports", "nested", "copy.cicada")
 			if kind == "collision" {
 				asset := filepath.Join(dir, take.Asset.Path)
 				os.MkdirAll(filepath.Dir(asset), 0700)
@@ -319,35 +367,79 @@ func TestScoreInstallDoesNotReplaceConcurrentDestination(t *testing.T) {
 }
 
 func TestSaveAsCopiesMultiFileProjectAndUpdatesEntry(t *testing.T) {
-	root := t.TempDir()
-	files := map[string]string{
-		"cicada.mod":         "project score\ncicada 2\nentry \"main.cicada\"\nsource \"main.cicada\"\nsource \"parts/voice.cicada\"\nlicense \"MIT\"\nauthor \"Cicada contributors\"\n",
-		"main.cicada":        "scene verse { bass = pulse }\nsong { verse }\n",
-		"parts/voice.cicada": "// preserve bytes\ntrack bass acid {}\npattern pulse { 1 . 5 . }\n",
-	}
-	for name, data := range files {
-		path := filepath.Join(root, name)
-		if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(path, []byte(data), 0644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	target := filepath.Join(t.TempDir(), "copy.cicada")
-	if err := SaveAs(filepath.Join(root, "main.cicada"), target); err != nil {
-		t.Fatal(err)
-	}
-	set, err := project.ReadSources(target, nil)
-	if err != nil || len(set.Files) != 2 || set.Manifest.Entry != "copy.cicada" {
-		t.Fatalf("copied manifest: %+v %v", set, err)
-	}
-	if string(set.Files[0].Source) != files["main.cicada"] || string(set.Files[1].Source) != files["parts/voice.cicada"] {
-		t.Fatal("Save As changed source bytes")
-	}
-	score, ds := set.Parse()
-	if p, _ := project.FromScore(score); p == nil || len(ds) != 0 {
-		t.Fatalf("copied project: %+v", ds)
+	for _, kind := range []string{"regular", "entry-link", "secondary-link", "project-link"} {
+		t.Run(kind, func(t *testing.T) {
+			root := t.TempDir()
+			files := map[string]string{
+				"cicada.mod":         "project score\ncicada 2\nentry \"main.cicada\"\nsource \"main.cicada\"\nsource \"parts/voice.cicada\"\nlicense \"MIT\"\nauthor \"Cicada contributors\"\n",
+				"main.cicada":        "scene verse { bass = pulse }\nsong { verse }\n",
+				"parts/voice.cicada": "// preserve bytes\ntrack bass acid {}\npattern pulse { 1 . 5 . }\n",
+			}
+			for name, data := range files {
+				path := filepath.Join(root, name)
+				if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(data), 0644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			logicalRoot := root
+			links := map[string]string{}
+			if kind == "entry-link" || kind == "secondary-link" {
+				name := "main.cicada"
+				if kind == "secondary-link" {
+					name = "parts/voice.cicada"
+				}
+				link := filepath.Join(root, name)
+				physical := link + ".target"
+				if err := os.Rename(link, physical); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(filepath.Base(physical), link); err != nil {
+					t.Fatal(err)
+				}
+				links[link] = filepath.Base(physical)
+			} else if kind == "project-link" {
+				logicalRoot = filepath.Join(t.TempDir(), "alias")
+				if err := os.Symlink(root, logicalRoot); err != nil {
+					t.Fatal(err)
+				}
+				links[logicalRoot] = root
+			}
+			destinationRoot := t.TempDir()
+			target := filepath.Join(destinationRoot, "copy.cicada")
+			if kind == "project-link" {
+				alias := filepath.Join(t.TempDir(), "destination")
+				if err := os.Symlink(destinationRoot, alias); err != nil {
+					t.Fatal(err)
+				}
+				links[alias] = destinationRoot
+				target = filepath.Join(alias, "copy.cicada")
+			}
+			if err := SaveAs(filepath.Join(logicalRoot, "main.cicada"), target); err != nil {
+				t.Fatal(err)
+			}
+			set, err := project.ReadSources(target, nil)
+			if err != nil || len(set.Files) != 2 || set.Manifest.Entry != "copy.cicada" {
+				t.Fatalf("copied manifest: %+v %v", set, err)
+			}
+			if string(set.Files[0].Source) != files["main.cicada"] || string(set.Files[1].Source) != files["parts/voice.cicada"] {
+				t.Fatal("Save As changed source bytes")
+			}
+			score, ds := set.Parse()
+			if p, _ := project.FromScore(score); p == nil || len(ds) != 0 {
+				t.Fatalf("copied project: %+v", ds)
+			}
+			for link, destination := range links {
+				if got, err := os.Readlink(link); err != nil || got != destination {
+					t.Errorf("link changed: %q %v; want %q", got, err, destination)
+				}
+			}
+			if _, err := os.Stat(filepath.Join(destinationRoot, "main.cicada.target")); !os.IsNotExist(err) {
+				t.Errorf("Save As copied physical entry name: %v", err)
+			}
+		})
 	}
 }
 

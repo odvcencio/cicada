@@ -15,6 +15,7 @@ import (
 
 	"m31labs.dev/cicada/edition"
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -23,19 +24,16 @@ import (
 // are copied and verified before the target score becomes visible. Existing
 // dependencies must match; a collision never replaces unrelated audio.
 func SaveAs(score, target string) error {
-	score, err := filepath.Abs(score)
+	sourceTarget, err := filetarget.Resolve(score, filetarget.Existing)
 	if err != nil {
 		return err
 	}
-	score, err = filepath.EvalSymlinks(score)
+	destination, err := filetarget.Create(target)
 	if err != nil {
 		return err
 	}
-	target, err = filepath.Abs(target)
-	if err != nil {
-		return err
-	}
-	if score == target {
+	score, target = sourceTarget.Logical, destination.Logical
+	if score == target || sourceTarget.Physical == destination.Physical {
 		return nil
 	}
 	for dir := filepath.Dir(target); ; dir = filepath.Dir(dir) {
@@ -62,6 +60,19 @@ func SaveAs(score, target string) error {
 	dstDir, err := takejournal.ProjectRoot(target)
 	if err != nil {
 		return err
+	}
+	// Keep declared destination names while checking the actual publication
+	// target against the root used by the confined installer.
+	destinationRoot, err := filetarget.Resolve(dstDir, filetarget.Existing)
+	if err != nil {
+		return err
+	}
+	physicalName, err := filepath.Rel(destinationRoot.Physical, destination.Physical)
+	if err != nil {
+		return err
+	}
+	if !filepath.IsLocal(physicalName) {
+		return errors.New("Save As destination resolves outside the project root")
 	}
 	srcName, err := filepath.Rel(srcDir, score)
 	if err != nil {
@@ -112,7 +123,7 @@ func SaveAs(score, target string) error {
 	defer dst.Close()
 	// Save As creates a new score. Check early for a clear error, and use an
 	// exclusive installation below to cover destinations created during copying.
-	if _, err := dst.Lstat(dstName); err == nil {
+	if _, err := dst.Lstat(physicalName); err == nil {
 		return fmt.Errorf("Save As refuses existing destination %s; choose a new score path", dstName)
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
@@ -379,7 +390,7 @@ func SaveAs(score, target string) error {
 	if _, err := sources.VendorLibraries(dstDir); err != nil {
 		return err
 	}
-	return install(dst, dstName, bytes.NewReader(source), -1, true)
+	return install(dst, physicalName, bytes.NewReader(source), -1, true)
 }
 func install(root *os.Root, path string, reader io.Reader, n int64, exclusive bool) error {
 	if !notation.ValidAssetPath(path) {

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"m31labs.dev/cicada/edition"
+	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -35,6 +36,11 @@ func projectRoot() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	target, err := filetarget.Resolve(cwd, filetarget.Existing)
+	if err != nil {
+		return "", err
+	}
+	cwd = target.Logical
 	_, manifest, err := scoreEdition(filepath.Join(cwd, "main.cicada"))
 	if err != nil {
 		return "", err
@@ -75,7 +81,8 @@ func collectProjectFormatEdits(root string) ([]projectFormatEdit, error) {
 	}
 	var edits []projectFormatEdit
 	for _, path := range paths {
-		if _, err := projectFormatRecoveryPath(path); err != nil {
+		path, err := projectFormatRecoveryPath(path)
+		if err != nil {
 			return nil, fmt.Errorf("%s: %w", path, err)
 		}
 		source, err := os.ReadFile(path)
@@ -122,10 +129,16 @@ func projectScorePaths(root string) ([]string, error) {
 	}
 
 	var paths []string
-	err = filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
+	directory, err := os.OpenRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	defer directory.Close()
+	err = fs.WalkDir(directory.FS(), ".", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
+		path := filepath.Join(root, name)
 		if entry.IsDir() {
 			if path == root {
 				return nil
@@ -176,16 +189,12 @@ func writeProjectFormatEdit(edit projectFormatEdit) error {
 // Check recovery files even when the current source needs no format change.
 // A late write through a displaced handle can arrive after a prior run exits.
 func projectFormatRecoveryPath(path string) (string, error) {
-	absolute, err := filepath.Abs(path)
+	target, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return "", err
 	}
-	absolute, err = filepath.EvalSymlinks(absolute)
-	if err != nil {
+	if err := studioRecoveryConflict(target.Logical); err != nil {
 		return "", err
 	}
-	if err := studioRecoveryConflict(absolute); err != nil {
-		return "", err
-	}
-	return absolute, nil
+	return target.Logical, nil
 }
