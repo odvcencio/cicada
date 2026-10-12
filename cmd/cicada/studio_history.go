@@ -593,7 +593,18 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 	info, err := os.Stat(s.path)
 	committed, preserved := false, ""
 	if err == nil {
-		committed, preserved, err = studioWriteTakeIfRevision(s.path, updated, info.Mode().Perm(), edit.Revision, beforeSwap, hook.checkpoint)
+		swap := beforeSwap
+		if s.afterStage != nil {
+			// Test seam: runs once the candidate is staged and before it replaces
+			// the score, so a test can place an external write exactly there.
+			swap = func() {
+				if beforeSwap != nil {
+					beforeSwap()
+				}
+				s.afterStage()
+			}
+		}
+		committed, preserved, err = studioWriteTakeIfRevision(s.path, updated, info.Mode().Perm(), edit.Revision, swap, hook.checkpoint)
 	}
 	if err != nil {
 		if errors.Is(err, errStudioSwapUnavailable) {
