@@ -566,6 +566,20 @@ func applyExportTarget(p *project.Project, opts *render.Options, target *renderT
 
 const loudnessPassLimit = 6
 
+// When the score's master chain holds a limiter, loudness targeting applies its
+// gain at the master input and lets that limiter hold the true-peak ceiling.
+// Two guard rails keep the search from crushing the mix:
+//   - the input gain never exceeds +12 dB, which already covers the 2 to 3 LU
+//     gaps seen on punchy mixes with room to spare;
+//   - the limiter's own gain reduction stays at or below 6 dB, the upper end
+//     of ordinary streaming-master practice (a few dB of limiting).
+//
+// A target that needs more is reported as a shortfall, not forced.
+const (
+	maxExportInputGainDB        = 12.0
+	maxExportLimiterReductionDB = 6.0
+)
+
 func renderFile(score *notation.Score, path string, opts render.Options, target *renderTargetOptions) error {
 	if target != nil && target.Loudness {
 		return renderLoudnessFile(score, path, opts, *target)
@@ -607,6 +621,10 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 	if report.Passes > 0 {
 		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d, largest limiter gain reduction %.2f dB\n",
 			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.LargestLimiterReductionDB)
+		if report.GainStage == "master_input" {
+			fmt.Printf("%s: gain applied at the master input, ahead of the score's master chain; master limiter gain reduction %.2f dB (maximum %.1f dB), input gain cap +%.0f dB\n",
+				path, report.MasterLimiterReductionDB, maxExportLimiterReductionDB, maxExportInputGainDB)
+		}
 	}
 	return err
 }
@@ -619,7 +637,12 @@ type loudnessFileReport struct {
 	AppliedGainDB             float64 `json:"applied_gain_db"`
 	Passes                    int     `json:"passes"`
 	LargestLimiterReductionDB float64 `json:"largest_limiter_reduction_db"`
-	DCCorrection              struct {
+	// MasterLimiterReductionDB is the largest gain reduction of a limiter in
+	// the score's master chain. GainStage is "master_input" when the export gain
+	// ran ahead of that chain and "post_chain" for the crest-preserving gain.
+	MasterLimiterReductionDB float64 `json:"master_limiter_reduction_db"`
+	GainStage                string  `json:"gain_stage"`
+	DCCorrection             struct {
 		LeftFS  float64 `json:"left_fs"`
 		RightFS float64 `json:"right_fs"`
 	} `json:"dc_correction"`
@@ -677,13 +700,27 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	passes := 0
 	gain := 0.0
 	var biasL, biasR float32
+	limiterMode := false
+	if p, _ := project.FromScore(score); p != nil {
+		limiterMode = project.MasterHasLimiter(p)
+	}
+	// The direct mixer adds DC correction after the master chain and after
+	// the export gain stage; the scheduled engine adds it before the gain.
+	biasAfterInputGain := limiterMode && !render.UsesScheduledEngine(score, opts)
+	inputCapped := false
+	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
+	var bestChainReduction, fallbackChainReduction float64
 	for pass := 1; pass <= loudnessPassLimit; pass++ {
 		passes = pass
 		if onPass != nil {
 			onPass(pass)
 		}
 		passOptions := opts
-		passOptions.MasterGainDB = gain
+		if limiterMode {
+			passOptions.MasterInputGainDB = gain
+		} else {
+			passOptions.MasterGainDB = gain
+		}
 		passOptions.MasterBiasL, passOptions.MasterBiasR = biasL, biasR
 		passOptions.Normalize = false
 		file, err := os.OpenFile(candidatePath, os.O_WRONLY|os.O_TRUNC, 0)
@@ -715,15 +752,18 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		}
 		peakSafe := measurement.TruePeakDBTP <= target.TruePeakMaxDBTP
 		dcSafe := measurement.DCDB <= -60
-		safe := peakSafe && dcSafe
-		if dcSafe && !peakSafe && !hasBest {
-			excess := measurement.TruePeakDBTP - target.TruePeakMaxDBTP
+		chainReduction := passReport.MaxMasterChainLimiterReductionDB
+		limiterSafe := !limiterMode || chainReduction <= maxExportLimiterReductionDB
+		safe := peakSafe && dcSafe && limiterSafe
+		if dcSafe && !(peakSafe && limiterSafe) && !hasBest {
+			excess := math.Max(0, measurement.TruePeakDBTP-target.TruePeakMaxDBTP) + math.Max(0, chainReduction-maxExportLimiterReductionDB)
 			if excess < peakFallbackExcess {
 				if err := copyRenderFile(candidatePath, bestPath); err != nil {
 					return report, err
 				}
 				peakFallbackRender, peakFallbackMeasure, peakFallbackGain = passReport, measurement, gain
 				peakFallbackBiasL, peakFallbackBiasR, peakFallbackExcess = biasL, biasR, excess
+				fallbackChainReduction = chainReduction
 			}
 		}
 		if safe {
@@ -733,6 +773,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 					return report, err
 				}
 				bestRender, bestMeasure, bestGain, bestDelta, bestBiasL, bestBiasR, hasBest = passReport, measurement, gain, delta, biasL, biasR, true
+				bestChainReduction = chainReduction
 			}
 			if delta <= target.Tolerance {
 				break
@@ -740,8 +781,39 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		}
 		if !dcSafe {
 			gainLinear := math.Pow(10, gain/20)
+			if biasAfterInputGain {
+				gainLinear = 1
+			}
 			biasL -= float32(measurement.DCLeft / gainLinear)
 			biasR -= float32(measurement.DCRight / gainLinear)
+		}
+		if limiterMode {
+			next := gain
+			switch {
+			case !peakSafe:
+				next = gain - (measurement.TruePeakDBTP - target.TruePeakMaxDBTP + 0.05)
+			case !limiterSafe:
+				next = gain - (chainReduction - maxExportLimiterReductionDB + 0.05)
+			default:
+				slope := 1.0
+				if hasPrev && math.Abs(gain-prevGain) > 0.05 {
+					slope = math.Max(0.2, math.Min(1, (measurement.IntegratedLUFS-prevLUFS)/(gain-prevGain)))
+				}
+				next = gain + (target.LoudnessTarget-measurement.IntegratedLUFS)/slope
+			}
+			if math.IsNaN(next) || math.IsInf(next, 0) {
+				break
+			}
+			prevGain, prevLUFS, hasPrev = gain, measurement.IntegratedLUFS, true
+			if next > maxExportInputGainDB {
+				if gain >= maxExportInputGainDB {
+					inputCapped = true
+					break
+				}
+				next, inputCapped = maxExportInputGainDB, true
+			}
+			gain = math.Max(-120, next)
+			continue
 		}
 		if !peakSafe {
 			gain -= measurement.TruePeakDBTP - target.TruePeakMaxDBTP + 0.05
@@ -762,6 +834,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		}
 		bestRender, bestMeasure, bestGain = peakFallbackRender, peakFallbackMeasure, peakFallbackGain
 		bestBiasL, bestBiasR = peakFallbackBiasL, peakFallbackBiasR
+		bestChainReduction = fallbackChainReduction
 		bestDelta = math.Abs(bestMeasure.IntegratedLUFS - target.LoudnessTarget)
 		hasBest = true
 	}
@@ -770,6 +843,14 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("loudness target %.2f LUFS was not reached: render has no measurable loudness", target.LoudnessTarget)}
 	} else if bestMeasure.TruePeakDBTP > target.TruePeakMaxDBTP {
 		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("true peak %.2f dBTP exceeds ceiling %.2f dBTP", bestMeasure.TruePeakDBTP, target.TruePeakMaxDBTP)}
+	} else if limiterMode && bestChainReduction > maxExportLimiterReductionDB {
+		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("master limiter gain reduction %.2f dB exceeds the %.1f dB maximum; achieved %.2f LUFS (target %.2f LUFS)", bestChainReduction, maxExportLimiterReductionDB, bestMeasure.IntegratedLUFS, target.LoudnessTarget)}
+	} else if limiterMode && bestDelta > target.Tolerance && bestMeasure.IntegratedLUFS < target.LoudnessTarget && (inputCapped || bestChainReduction >= maxExportLimiterReductionDB-0.5) {
+		guard := fmt.Sprintf("the %.1f dB maximum master limiter gain reduction", maxExportLimiterReductionDB)
+		if inputCapped && bestChainReduction < maxExportLimiterReductionDB-0.5 {
+			guard = fmt.Sprintf("the +%.0f dB input gain cap ahead of the master limiter", maxExportInputGainDB)
+		}
+		shortfallErr = &loudnessShortfallError{message: fmt.Sprintf("loudness target shortfall %.2f LU: achieved %.2f LUFS at %s (master limiter reduction %.2f dB, target %.2f LUFS)", target.LoudnessTarget-bestMeasure.IntegratedLUFS, bestMeasure.IntegratedLUFS, guard, bestChainReduction, target.LoudnessTarget)}
 	} else if bestDelta > target.Tolerance {
 		shortfall := target.LoudnessTarget - bestMeasure.IntegratedLUFS
 		if shortfall > target.Tolerance && bestMeasure.TruePeakDBTP >= target.TruePeakMaxDBTP-0.1 {
@@ -797,7 +878,12 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	report.SamplePeakDBFS = bestMeasure.PeakDB
 	report.AppliedGainDB = bestGain
 	report.Passes = passes
-	report.LargestLimiterReductionDB = bestRender.MaxLimiterGainReductionDB
+	report.LargestLimiterReductionDB = math.Max(bestRender.MaxLimiterGainReductionDB, bestRender.MaxMasterChainLimiterReductionDB)
+	report.MasterLimiterReductionDB = bestRender.MaxMasterChainLimiterReductionDB
+	report.GainStage = "post_chain"
+	if limiterMode {
+		report.GainStage = "master_input"
+	}
 	report.DCCorrection.LeftFS, report.DCCorrection.RightFS = float64(bestBiasL), float64(bestBiasR)
 	report.Bars, report.From, report.Frames, report.SampleRate = bestRender.Bars, bestRender.From, bestRender.Frames, bestRender.SampleRate
 	if shortfallErr != nil {

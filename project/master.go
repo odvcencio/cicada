@@ -25,7 +25,36 @@ func MasterHasInsert(p *Project, id string) bool {
 	return false
 }
 
+// MasterHasLimiter reports whether the score's master insert chain contains a
+// limiter. Export loudness targeting applies its gain before such a chain so
+// the declared limiter enforces the true-peak ceiling.
+func MasterHasLimiter(p *Project) bool {
+	if p == nil || p.Master == nil {
+		return false
+	}
+	for _, name := range p.Master.Mixer.Inserts {
+		for _, effect := range p.Effects {
+			if effect.ID == name && semanticEffectKind(effect) == "limiter" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 type masterChain struct{ stages []engine.StereoProcessor }
+
+// LimiterGainReductionDB is the largest current gain reduction of any limiter
+// stage in the chain.
+func (c *masterChain) LimiterGainReductionDB() float64 {
+	reduction := 0.0
+	for _, stage := range c.stages {
+		if limiter, ok := stage.(interface{ LimiterGainReductionDB() float64 }); ok {
+			reduction = max(reduction, limiter.LimiterGainReductionDB())
+		}
+	}
+	return reduction
+}
 
 func (c *masterChain) Process(l, r float32) (float32, float32) {
 	for _, stage := range c.stages {

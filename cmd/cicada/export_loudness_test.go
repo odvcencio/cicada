@@ -1,0 +1,167 @@
+package main
+
+import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"m31labs.dev/cicada/render"
+)
+
+// noLimiterWAVSHA256 is the output of the pre-change renderer for
+// testdata/export-loudness/punchy-nolimiter.cicada with export "loud". A chain
+// without a limiter must keep producing exactly these bytes.
+const noLimiterWAVSHA256 = "dc6bea2bcdc3a890666d1e91b75a946576762871fa24ecbb2d761042b31a0328"
+
+func exportFixture(t *testing.T, name, export string) (inspection scoreInspection, opts render.Options, target renderTargetOptions) {
+	t.Helper()
+	inspection, err := inspectScore(filepath.Join("testdata", "export-loudness", name))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts = render.Options{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3}
+	target = renderTargetOptions{ExportName: export, TruePeakMaxDBTP: -1}
+	if err := applyExportTarget(inspection.semantic, &opts, &target); err != nil {
+		t.Fatal(err)
+	}
+	return inspection, opts, target
+}
+
+func TestExportLoudnessMasterLimiterReachesTarget(t *testing.T) {
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	wav := filepath.Join(t.TempDir(), "limiter.wav")
+	result, err := renderLoudnessFileReport(inspection.score, wav, opts, target, nil)
+	if err != nil {
+		t.Fatalf("target render: %v (%+v)", err, result)
+	}
+	report, err := render.VerifyWAV(wav, render.VerifyOptions{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3, PeakMaxDB: -.3, DCMaxDB: -60, LUFSTarget: -9, LUFSTolerance: .5, CheckLUFS: true, TruePeakMaxDBTP: -1, CheckTruePeak: true})
+	if err != nil {
+		t.Fatalf("verify-wav: %v", err)
+	}
+	t.Logf("METRIC EXPORT-LIMITER lufs=%.3f true_peak=%.3f gain=%+.2f chain_reduction=%.2f passes=%d", report.IntegratedLUFS, report.TruePeakDBTP, result.AppliedGainDB, result.MasterLimiterReductionDB, result.Passes)
+	if result.GainStage != "master_input" {
+		t.Fatalf("gain stage = %q, want master_input", result.GainStage)
+	}
+	if result.MasterLimiterReductionDB <= 0 {
+		t.Fatalf("master limiter never reduced gain: %+v", result)
+	}
+	if result.MasterLimiterReductionDB > maxExportLimiterReductionDB {
+		t.Fatalf("limiter reduction %.2f dB exceeds the %.1f dB maximum", result.MasterLimiterReductionDB, maxExportLimiterReductionDB)
+	}
+	if result.LargestLimiterReductionDB < result.MasterLimiterReductionDB {
+		t.Fatalf("largest limiter reduction %.2f omits the master chain limiter %.2f", result.LargestLimiterReductionDB, result.MasterLimiterReductionDB)
+	}
+	if report.TruePeakDBTP > -1 {
+		t.Fatalf("true peak %.3f dBTP above ceiling", report.TruePeakDBTP)
+	}
+}
+
+func TestExportLoudnessWithoutLimiterKeepsCrestPreservingGain(t *testing.T) {
+	inspection, opts, target := exportFixture(t, "punchy-nolimiter.cicada", "loud")
+	wav := filepath.Join(t.TempDir(), "nolimiter.wav")
+	result, err := renderLoudnessFileReport(inspection.score, wav, opts, target, nil)
+	var shortfall *loudnessShortfallError
+	if !errors.As(err, &shortfall) || !strings.Contains(err.Error(), "loudness target shortfall 1.86 LU") {
+		t.Fatalf("want the crest-factor shortfall, got %v", err)
+	}
+	if result.GainStage != "post_chain" || result.MasterLimiterReductionDB != 0 {
+		t.Fatalf("no-limiter report changed: %+v", result)
+	}
+	data, err := os.ReadFile(wav)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(data)
+	if got := hex.EncodeToString(sum[:]); got != noLimiterWAVSHA256 {
+		t.Fatalf("no-limiter output changed: sha256 %s", got)
+	}
+}
+
+func TestExportLoudnessInputGainCapReportsShortfall(t *testing.T) {
+	// Without the +6 dB master level the mix is quiet, so the +12 dB input
+	// gain cap binds before the limiter reduction maximum does.
+	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-limiter.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	quiet := filepath.Join(t.TempDir(), "quiet-limiter.cicada")
+	if err := os.WriteFile(quiet, []byte(strings.Replace(string(source), "level = 6dB ", "", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := inspectScore(quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3}
+	target := renderTargetOptions{LoudnessTarget: -4, TruePeakMaxDBTP: -1, Tolerance: .5, Loudness: true}
+	result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "cap.wav"), opts, target, nil)
+	var shortfall *loudnessShortfallError
+	if !errors.As(err, &shortfall) {
+		t.Fatalf("want a shortfall error, got %v (%+v)", err, result)
+	}
+	if result.AppliedGainDB > maxExportInputGainDB+1e-9 {
+		t.Fatalf("input gain %.2f dB exceeds the %.1f dB cap", result.AppliedGainDB, maxExportInputGainDB)
+	}
+	if !strings.Contains(err.Error(), "input gain cap") {
+		t.Fatalf("shortfall does not name the input gain cap: %v", err)
+	}
+	t.Logf("METRIC EXPORT-INPUT-CAP lufs=%.3f gain=%+.2f chain_reduction=%.2f err=%v", result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)
+}
+
+func TestExportLoudnessLimiterReductionMaximumReportsShortfall(t *testing.T) {
+	inspection, opts, target := exportFixture(t, "punchy-limiter.cicada", "loud")
+	target.LoudnessTarget = -4
+	wav := filepath.Join(t.TempDir(), "reduction.wav")
+	result, err := renderLoudnessFileReport(inspection.score, wav, opts, target, nil)
+	var shortfall *loudnessShortfallError
+	if !errors.As(err, &shortfall) {
+		t.Fatalf("want a shortfall error, got %v (%+v)", err, result)
+	}
+	if result.MasterLimiterReductionDB > maxExportLimiterReductionDB {
+		t.Fatalf("limiter reduction %.2f dB exceeds the %.1f dB maximum without a report", result.MasterLimiterReductionDB, maxExportLimiterReductionDB)
+	}
+	if !strings.Contains(err.Error(), "maximum master limiter gain reduction") {
+		t.Fatalf("shortfall does not name the limiter reduction maximum: %v", err)
+	}
+	t.Logf("METRIC EXPORT-REDUCTION-CAP lufs=%.3f gain=%+.2f chain_reduction=%.2f err=%v", result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)
+}
+
+func TestExportLoudnessMasterLimiterOnScheduledEngine(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-limiter.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := strings.Replace(string(source), "track bass acid {", "fx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }\ntrack bass acid { insert = cleanup ", 1)
+	path := filepath.Join(t.TempDir(), "scheduled-limiter.cicada")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := inspectScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3}
+	target := renderTargetOptions{ExportName: "loud", TruePeakMaxDBTP: -1}
+	if err := applyExportTarget(inspection.semantic, &opts, &target); err != nil {
+		t.Fatal(err)
+	}
+	if !render.UsesScheduledEngine(inspection.score, opts) {
+		t.Fatal("fixture does not use the scheduled engine")
+	}
+	wav := filepath.Join(t.TempDir(), "scheduled.wav")
+	result, err := renderLoudnessFileReport(inspection.score, wav, opts, target, nil)
+	if err != nil {
+		t.Fatalf("target render: %v (%+v)", err, result)
+	}
+	if result.GainStage != "master_input" || result.MasterLimiterReductionDB <= 0 || result.MasterLimiterReductionDB > maxExportLimiterReductionDB {
+		t.Fatalf("scheduled engine did not limit at the master input: %+v", result)
+	}
+	if result.TruePeakDBTP > -1 || result.AchievedLUFS < -9.5 || result.AchievedLUFS > -8.5 {
+		t.Fatalf("scheduled engine missed the target: %+v", result)
+	}
+	t.Logf("METRIC EXPORT-SCHEDULED lufs=%.3f true_peak=%.3f gain=%+.2f chain_reduction=%.2f", result.AchievedLUFS, result.TruePeakDBTP, result.AppliedGainDB, result.MasterLimiterReductionDB)
+}
