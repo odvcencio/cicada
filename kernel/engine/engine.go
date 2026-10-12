@@ -289,6 +289,7 @@ type Engine struct {
 	clipSpecs                    []ClipConfig
 	clipMaxFrames                int64
 	clipVoices                   [MaxVoices]clipPlayback
+	clipSlots                    [MaxTracks]clipSlotMask
 	loopSong, songMode           bool
 	songIndex                    int
 	songEndTick                  int64
