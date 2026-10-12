@@ -468,7 +468,7 @@ func TestRejectedComparisonLeavesNoCachedApprovalInTheLSP(t *testing.T) {
 	entry := "scene a { bass = beat }\nscene b { bass = fill }\nsong { a*2 b*2 }\n"
 	path := writePeerProject(t, entry, peerDrums(chance))
 	peer := filepath.Join(filepath.Dir(path), "part.cicada")
-	renders, factories := 0, 0
+	renders, factories, firstRequest := 0, 0, 0
 	previous := newRenderCheck
 	newRenderCheck = func(path string, buffers map[string][]byte) edits.RenderCheck {
 		real := rendercheck.NewWith(path, buffers).(edits.StagedRenderCheck)
@@ -479,6 +479,7 @@ func TestRejectedComparisonLeavesNoCachedApprovalInTheLSP(t *testing.T) {
 			}}
 		}
 		// The second request starts from the restored project.
+		firstRequest = renders
 		_ = os.WriteFile(peer, []byte(peerDrums(chance)), 0o600)
 		return flipRender{StagedRenderCheck: real, renders: &renders}
 	}
@@ -490,7 +491,9 @@ func TestRejectedComparisonLeavesNoCachedApprovalInTheLSP(t *testing.T) {
 	if len(replies[0]) != 0 || len(replies[1]) != 0 {
 		t.Fatalf("offered after a rejected comparison: %v %v", replies[0], replies[1])
 	}
-	if renders < 3 {
-		t.Fatalf("the second request did not render again (%d renders)", renders)
+	// The retry renders both the song and its conversion; nothing from the
+	// rejected attempt may be served from the cache.
+	if renders-firstRequest != 2 {
+		t.Fatalf("the second request rendered %d times, want 2", renders-firstRequest)
 	}
 }
