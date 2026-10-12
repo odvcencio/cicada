@@ -14,6 +14,8 @@ func main() {
 		make func() ([]byte, error)
 	}{
 		{"kernel/params_table.go", paramdefs.GenerateKernel},
+		{"kernel/params_keys.go", paramdefs.GenerateKernelKeys},
+		{"kernel/params_core.go", paramdefs.GenerateKernelCore},
 		{"project/params.json", paramdefs.GenerateJSON},
 	}
 	for _, output := range outputs {

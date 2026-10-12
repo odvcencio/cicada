@@ -189,7 +189,8 @@ const (
 	ParamCount                       = 175
 )
 
-var Params = [...]ParamSpec{
+// paramsBase holds every row before the modeled-keyboard controls.
+var paramsBase = [...]ParamSpec{
 	{0, "mix.gain", "level", "track", "level", "dB", "fader", "source", -60, 6, -6, 0.1, 5, true, true, true},
 	{1, "mix.pan", "pan", "track", "pan", "", "linear", "source", -1, 1, 0, 0.01, 5, true, true, false},
 	{2, "mix.send_a", "send.delay", "track", "send", "", "linear", "source", 0, 1, 0, 0.01, 5, true, true, false},
@@ -341,31 +342,9 @@ var Params = [...]ParamSpec{
 	{148, "fx.deesser.attack", "deesser.attack", "global", "attack", "ms", "log", "source", 0.1, 20, 1, 0.1, 0, false, false, false},
 	{149, "fx.deesser.release", "deesser.release", "global", "release", "ms", "log", "source", 10, 500, 80, 1, 0, false, false, false},
 	{150, "fx.deesser.mix", "deesser.mix", "global", "mix", "ratio", "linear", "source", 0, 1, 1, 0.01, 0, false, false, false},
-	{151, "keys.ep.tremolo", "tremolo", "track", "tremolo", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{152, "keys.ep.tremolo_rate", "tremolo_rate", "track", "tremolo_rate", "Hz", "linear", "source", 0.1, 12, 4.6, 0.1, 20, true, true, false},
-	{153, "keys.ep.auto_pan", "auto_pan", "track", "auto_pan", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{154, "keys.ep.gain", "gain", "track", "gain", "ratio", "linear", "source", 0, 2, 0.7, 0.01, 20, true, true, false},
-	{155, "keys.ep.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{156, "keys.clav.gain", "gain", "track", "gain", "ratio", "linear", "source", 0, 2, 0.7, 0.01, 20, true, true, false},
-	{157, "keys.clav.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{158, "keys.organ.gain", "gain", "track", "gain", "ratio", "linear", "source", 0, 2, 0.8, 0.01, 20, true, true, false},
-	{159, "keys.organ.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0.18, 0.01, 20, true, true, false},
-	{160, "keys.organ.rotary_mix", "rotary_mix", "track", "rotary_mix", "ratio", "linear", "source", 0, 1, 0.8, 0.01, 20, true, true, false},
-	{161, "keys.organ.rotary_fast", "rotary_fast", "track", "rotary_fast", "", "toggle", "source", 0, 1, 0, 1, 0, true, false, false},
-	{162, "keys.organ.drawbar1", "drawbar1", "track", "drawbar1", "", "linear", "source", 0, 8, 7, 1, 0, true, false, false},
-	{163, "keys.organ.drawbar2", "drawbar2", "track", "drawbar2", "", "linear", "source", 0, 8, 4, 1, 0, true, false, false},
-	{164, "keys.organ.drawbar3", "drawbar3", "track", "drawbar3", "", "linear", "source", 0, 8, 8, 1, 0, true, false, false},
-	{165, "keys.organ.drawbar4", "drawbar4", "track", "drawbar4", "", "linear", "source", 0, 8, 6, 1, 0, true, false, false},
-	{166, "keys.organ.drawbar5", "drawbar5", "track", "drawbar5", "", "linear", "source", 0, 8, 1, 1, 0, true, false, false},
-	{167, "keys.organ.drawbar6", "drawbar6", "track", "drawbar6", "", "linear", "source", 0, 8, 2, 1, 0, true, false, false},
-	{168, "keys.organ.drawbar7", "drawbar7", "track", "drawbar7", "", "linear", "source", 0, 8, 0, 1, 0, true, false, false},
-	{169, "keys.organ.drawbar8", "drawbar8", "track", "drawbar8", "", "linear", "source", 0, 8, 1, 1, 0, true, false, false},
-	{170, "keys.organ.drawbar9", "drawbar9", "track", "drawbar9", "", "linear", "source", 0, 8, 1, 1, 0, true, false, false},
-	{171, "keys.fm.gain", "gain", "track", "gain", "ratio", "linear", "source", 0.001, 2, 1, 0.01, 20, true, true, false},
-	{172, "keys.analog.drive", "drive", "track", "drive", "ratio", "linear", "source", 0, 1, 0, 0.01, 20, true, true, false},
-	{173, "keys.analog.output", "output", "track", "output", "dB", "linear", "source", -60, 6, 0, 0.1, 20, true, true, false},
-	{174, "keys.strings.output", "output", "track", "output", "dB", "linear", "source", -60, 6, 0, 0.1, 20, true, true, false},
 }
+
+const paramsBaseCount = 151
 
 func Param(id ParamID) (ParamSpec, bool) {
 	if int(id) >= len(Params) {
