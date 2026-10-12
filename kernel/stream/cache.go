@@ -271,17 +271,32 @@ func (c *Cache) Ready(asset uint32, index int64) bool {
 	return true
 }
 
+// pinRetries caps the failed CASes tolerated on one slot per acquire call.
+const pinRetries = 1024
+
+// casPin is the pin attempt. Tests replace it to force contention.
+var casPin = func(s *atomic.Uint32, old, next uint32) bool { return s.CompareAndSwap(old, next) }
+
+// acquire pins the ready page for (asset, index), or returns nil.
+//
+// Pinning is lock-free: a failed CAS means another reader pinned or released
+// the same slot and made progress, so the slot is reloaded and tried again. At
+// most pinRetries consecutive CASes may fail on one slot; after that the slot
+// counts as not found and the caller records a miss. Parallel render lanes
+// pin the same shared page at once, and without retries the loser would
+// report a resident page as missing and fade the track out.
 func (c *Cache) acquire(asset uint32, index int64) *page {
 	for i := range c.pages {
 		p := &c.pages[i]
-		// A failed CAS means another reader pinned or released this slot, so
-		// retrying is lock-free and bounded by the concurrent readers. Giving
-		// up would report a resident, shared page as missing and drop audio.
 		state := p.state.Load()
-		for state >= ready && !p.state.CompareAndSwap(state, state+pin) {
+		failed := 0
+		for state >= ready && !casPin(&p.state, state, state+pin) {
+			if failed++; failed > pinRetries {
+				break
+			}
 			state = p.state.Load()
 		}
-		if state < ready {
+		if state < ready || failed > pinRetries {
 			continue
 		}
 		if p.asset == asset && p.index == index {
