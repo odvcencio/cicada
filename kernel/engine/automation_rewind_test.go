@@ -12,6 +12,33 @@ import (
 // fresh playback after a seek to the start, a seek to the middle, a loop
 // restart and a replay after the song ended.
 func TestAutomationRewindsLikeFreshPlayback(t *testing.T) {
+	for _, placement := range []bool{false, true} {
+		t.Run(scheduleKindName(placement), func(t *testing.T) { automationRewindsLikeFreshPlayback(t, placement) })
+	}
+}
+
+func scheduleKindName(placement bool) string {
+	if placement {
+		return "placement"
+	}
+	return "song"
+}
+
+// rewindConfig is the two-bar source-chain song, or the same length as one
+// placement of its first pattern (an arrange schedule).
+func rewindConfig(t *testing.T, placement bool) Config {
+	cfg := sourceChainConfig(t)
+	if placement {
+		cfg.Song = nil
+		cfg.Schedule = []ScheduleEvent{
+			{Kind: SchedulePattern, Track: 0, Index: 0, Tick: 0, EndTick: 7680, ID: 1},
+			{Kind: SchedulePatternEnd, Track: 0, Tick: 7680, EndTick: 7680, ID: 1},
+		}
+	}
+	return cfg
+}
+
+func automationRewindsLikeFreshPlayback(t *testing.T, placement bool) {
 	type lane struct {
 		name  string
 		track uint16
@@ -25,7 +52,7 @@ func TestAutomationRewindsLikeFreshPlayback(t *testing.T) {
 	}
 	for _, l := range lanes {
 		for _, first := range []int64{0, 4} {
-			cfg := sourceChainConfig(t)
+			cfg := rewindConfig(t, placement)
 			if cfg.Track[0].Kind != VoiceAcid && l.id == kernel.ParamAcidCutoff {
 				t.Skip("fixture track 0 is not acid")
 			}
@@ -95,9 +122,15 @@ func TestAutomationRewindsLikeFreshPlayback(t *testing.T) {
 // playback does: the lane's parameter returns to its authored value (or the
 // tick-0 point) and the lane runs again.
 func TestAutomationLoopRestartAndReplayAfterEnd(t *testing.T) {
+	for _, placement := range []bool{false, true} {
+		t.Run(scheduleKindName(placement), func(t *testing.T) { automationLoopRestartAndReplayAfterEnd(t, placement) })
+	}
+}
+
+func automationLoopRestartAndReplayAfterEnd(t *testing.T, placement bool) {
 	for _, looped := range []bool{true, false} {
 		for _, first := range []int64{0, 4} {
-			cfg := sourceChainConfig(t)
+			cfg := rewindConfig(t, placement)
 			cfg.LoopSong = looped
 			for i, tick := range []int64{first, 600, 1200} {
 				cfg.Automation = append(cfg.Automation, cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits([]float32{.5, .9, .1}[i]), Tick: tick})
@@ -158,6 +191,49 @@ func TestAutomationLoopRestartAndReplayAfterEnd(t *testing.T) {
 			if got := e.voices[0].pan; got != .9 {
 				t.Fatalf("loop=%v first=%d: automation did not run again (%g at tick %d)", looped, first, got, e.transport.Tick())
 			}
+		}
+	}
+}
+
+// A scene launch and a director state change do not jump the timeline: the
+// automated value stays and the lane keeps running. Only starts and jumps
+// restore authored values and rewind the lanes.
+func TestSceneLaunchAndDirectorDoNotRewindAutomation(t *testing.T) {
+	for _, placement := range []bool{false, true} {
+		cfg := rewindConfig(t, placement)
+		cfg.Automation = []cmd.Command{
+			{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.9), Tick: 600},
+			{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamMixPan), Arg0: math.Float32bits(.1), Tick: 1200},
+		}
+		e, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.meterRate = 0
+		var left, right [128]float32
+		e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+		for e.transport.Tick() < 700 {
+			e.Render(left[:], right[:])
+		}
+		if e.voices[0].pan != .9 {
+			t.Fatalf("%s: pan %g before the launch", scheduleKindName(placement), e.voices[0].pan)
+		}
+		commands := []cmd.Command{{Op: cmd.OpSetState, Track: 255, Index: 0}}
+		if !placement {
+			commands = append(commands, cmd.Command{Op: cmd.OpLaunchScene, Track: 255, Index: 0})
+		}
+		for _, c := range commands {
+			e.Push(c)
+		}
+		e.Render(left[:], right[:])
+		if e.voices[0].pan != .9 {
+			t.Fatalf("%s: a launch or director change reset the automated value to %g", scheduleKindName(placement), e.voices[0].pan)
+		}
+		for e.transport.Tick() < 1300 {
+			e.Render(left[:], right[:])
+		}
+		if e.voices[0].pan != .1 {
+			t.Fatalf("%s: the lane stopped after a launch (%g)", scheduleKindName(placement), e.voices[0].pan)
 		}
 	}
 }

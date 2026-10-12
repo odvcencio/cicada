@@ -15,6 +15,16 @@ import (
 // a replay after the song ended, the voice must sound like fresh playback of
 // the same position, and the lane must run again.
 func TestKeyboardAutomationOnlySongsRewindLikeFreshPlayback(t *testing.T) {
+	for _, placement := range []bool{false, true} {
+		name := "song"
+		if placement {
+			name = "placement"
+		}
+		t.Run(name, func(t *testing.T) { keyboardAutomationRewind(t, placement) })
+	}
+}
+
+func keyboardAutomationRewind(t *testing.T, placement bool) {
 	const barFrames = 96000
 	type family struct{ patch, name string }
 	for _, f := range []family{{"tine_ep", "gain"}, {"clav", "drive"}, {"organ_full", "rotary_mix"}, {"fm_ep", "gain"}, {"poly_keys", "output"}, {"string_machine", "output"}} {
@@ -40,15 +50,25 @@ func TestKeyboardAutomationOnlySongsRewindLikeFreshPlayback(t *testing.T) {
 			// restart, so compare once the glide has settled.
 			{"first point at zero", []cmd.Command{{Op: cmd.OpSetParam, Track: 0, Index: uint16(id), Arg0: math.Float32bits(other), Tick: 0}, {Op: cmd.OpSetParam, Track: 0, Index: uint16(id), Arg0: math.Float32bits(authored), Tick: seq.TicksPerBar}}, 24000},
 		} {
-			for _, moment := range []string{"seek to the start", "seek to the middle", "loop restart", "replay after the end"} {
+			for _, moment := range []string{"seek to the start", "seek to the middle", "listening range (seek and play)", "reset and play", "loop restart", "replay after the end"} {
 				t.Run(f.patch+"/"+f.name+"/"+lane.name+"/"+moment, func(t *testing.T) {
 					newEngine := func(points []cmd.Command, value float32) *engine.Engine {
 						s := spec
 						s.Controls[slotOf(t, f.patch, f.name)] = value
 						cfg := engine.Config{SampleRate: 48000, MaxBlock: 128, Tracks: 1, MaxVoices: 8, BPMMilli: 120000}
 						cfg.Track[0].Kind, cfg.Track[0].Keys = engine.VoiceKeys, &s
-						cfg.Scenes = []engine.Scene{{}}
-						cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 3}}
+						if placement {
+							// An arrange schedule: one silent placement of three bars.
+							cfg.Patterns = []engine.PatternBank{{}}
+							cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 50}
+							cfg.Schedule = []engine.ScheduleEvent{
+								{Kind: engine.SchedulePattern, Track: 0, Index: 0, Tick: 0, EndTick: 3 * seq.TicksPerBar, ID: 1},
+								{Kind: engine.SchedulePatternEnd, Track: 0, Tick: 3 * seq.TicksPerBar, EndTick: 3 * seq.TicksPerBar, ID: 1},
+							}
+						} else {
+							cfg.Scenes = []engine.Scene{{}}
+							cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 3}}
+						}
 						cfg.LoopSong = moment == "loop restart"
 						cfg.Automation = append([]cmd.Command(nil), points...)
 						e, err := engine.New(cfg)
@@ -67,15 +87,23 @@ func TestKeyboardAutomationOnlySongsRewindLikeFreshPlayback(t *testing.T) {
 						}
 					}
 					switch moment {
-					case "seek to the start", "seek to the middle":
+					case "seek to the start", "seek to the middle", "listening range (seek and play)", "reset and play":
 						history.Push(play)
 						render(history, barFrames+8000)
 						seek := cmd.Command{Op: cmd.OpSeek, Track: 0xff}
-						if moment == "seek to the middle" {
+						if moment == "seek to the middle" || moment == "listening range (seek and play)" {
 							seek = cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 1, Arg1: 200}
 							fresh.Push(seek)
 						}
-						history.Push(seek)
+						if moment == "reset and play" {
+							history.Reset() // A host reset returns the voices and the transport to the start.
+							history.Push(play)
+						} else {
+							history.Push(seek)
+						}
+						if moment == "listening range (seek and play)" {
+							history.Push(play) // Hosts queue the pair for a range start.
+						}
 						fresh.Push(play)
 						if lane.name == "first point after zero" {
 							window = barFrames + 4096 // Include the lane running again.
