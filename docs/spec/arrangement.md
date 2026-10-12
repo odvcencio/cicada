@@ -35,7 +35,13 @@ inexact divisions never publish a partial edit. See [Studio](../manual/studio.md
 
 Compilation produces immutable start/release events in absolute ticks. Releases
 precede starts at the same tick; placement identities prevent an old release
-from stopping another instance. Preparation validates voice capacity and copies
+from stopping another instance. When another pattern placement starts on the
+same track at the release tick, including the wrap of a looping arrangement
+from the last end to a placement at tick 0, the release is skipped. Held notes,
+slides, and drum or voice tails carry across the boundary like a scene change.
+Step patterns, including chance steps, still restart at each placement's
+origin. A release followed by a gap still stops the track's notes and tails.
+Preparation validates voice capacity and copies
 event data outside rendering. Seeking reconstructs active placements and clip
 source positions without rendering skipped frames.
 

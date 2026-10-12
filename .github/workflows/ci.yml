@@ -106,6 +106,33 @@ jobs:
           if-no-files-found: warn
           path: build/parity/report.txt
 
+  studio-cli:
+    name: Studio CLI tests (shard ${{ matrix.shard }}/3)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'false'
+      - name: Tool versions
+        run: |
+          go version
+          tinygo version
+      - name: Shards cover every test once
+        run: make test-cmd-shard-check SHARDS=3
+      - name: cmd/cicada tests
+        run: make test-cmd-shard SHARD=${{ matrix.shard }}/3
+
   m0:
     name: M0 language and kernel
     runs-on: ubuntu-24.04
@@ -128,7 +155,7 @@ jobs:
         run: |
           set -euo pipefail
           make grammar-check
-          make test
+          make test-ci-core
           make test-kernel
           go vet ./...
           make test-golden | tee build/golden-report.txt
