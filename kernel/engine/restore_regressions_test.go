@@ -223,3 +223,68 @@ func TestLoopWrapChangesOnlyAutomationLanes(t *testing.T) {
 		}
 	}
 }
+
+// At a loop wrap only the automated parameter returns to its start value. A
+// preview on another parameter of the same voice or effect must hold, for a
+// sound voice, a keyboard voice and an effect, in song and arrange schedules.
+func TestLoopWrapKeepsPreviewsOnSiblingParameters(t *testing.T) {
+	cases := []struct {
+		name                  string
+		track                 uint8
+		lane                  kernel.ParamID
+		laneValue             float32
+		preview               kernel.ParamID
+		previewValue          float32
+		readLane, readPreview func(*Engine) float32
+	}{
+		{"acid cutoff lane, resonance preview", 0, kernel.ParamAcidCutoff, 3000, kernel.ParamAcidReso, .9,
+			func(e *Engine) float32 { return float32(e.voices[0].acidTarget.Cutoff) },
+			func(e *Engine) float32 { return float32(e.voices[0].acidTarget.Resonance) }},
+		{"keyboard tremolo lane, gain preview", 4, kernel.ParamKeysEpTremolo, .8, kernel.ParamKeysEpGain, 1.9,
+			func(e *Engine) float32 { return e.voices[4].keys.(*controlKeys).values[7] },
+			func(e *Engine) float32 { return e.voices[4].keys.(*controlKeys).values[10] }},
+		{"delay feedback lane, mix preview", 0xff, kernel.ParamFxDelayFeedback, .8, kernel.ParamFxDelayMix, .3,
+			func(e *Engine) float32 { return float32(e.delayA.Params().Feedback) },
+			func(e *Engine) float32 { return float32(e.delayA.Params().Mix) }},
+	}
+	for _, c := range cases {
+		for _, placement := range []bool{false, true} {
+			t.Run(c.name+"/"+scheduleKindName(placement), func(t *testing.T) {
+				cfg := restoreBase(t)
+				cfg.LoopSong = true
+				restoreScheduled(&cfg, placement)
+				cfg.Automation = []cmd.Command{{Op: cmd.OpSetParam, Track: c.track, Index: uint16(c.lane), Arg0: math.Float32bits(c.laneValue), Tick: 600}}
+				e, err := New(cfg)
+				if err != nil {
+					t.Fatal(err)
+				}
+				e.meterRate = 0
+				authored := c.readLane(e)
+				previewAuthored := c.readPreview(e)
+				var l, r [128]float32
+				e.Push(cmd.Command{Op: cmd.OpPlay, Track: 255})
+				for i := 0; i < 10; i++ {
+					e.Render(l[:], r[:])
+				}
+				if !e.Push(cmd.Command{Op: cmd.OpSetParam, Track: c.track, Index: uint16(c.preview), Arg0: math.Float32bits(c.previewValue)}) {
+					t.Fatal("preview refused")
+				}
+				for frames := 1280; frames < 76_800-128; frames += 128 {
+					e.Render(l[:], r[:])
+				}
+				if got := c.readLane(e); math.Abs(float64(got-c.laneValue)) > 1e-6 {
+					t.Fatalf("the lane did not move its parameter: %g", got)
+				}
+				for i := 0; i < 400; i++ {
+					e.Render(l[:1], r[:1])
+				}
+				if got := c.readLane(e); math.Abs(float64(got-authored)) > 1e-6 {
+					t.Fatalf("the lane's parameter is %g after the wrap, want the authored %g", got, authored)
+				}
+				if got := c.readPreview(e); math.Abs(float64(got-c.previewValue)) > 1e-6 || previewAuthored == c.previewValue {
+					t.Fatalf("the preview on a sibling parameter became %g, want %g", got, c.previewValue)
+				}
+			})
+		}
+	}
+}

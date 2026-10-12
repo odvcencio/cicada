@@ -3,6 +3,8 @@ package engine
 import (
 	"fmt"
 	"math"
+	"regexp"
+	"strconv"
 	"testing"
 
 	"m31labs.dev/cicada/internal/paramdefs"
@@ -33,6 +35,12 @@ func restoreBase(t *testing.T) Config {
 	for i, patch := range []uint8{1, 7, 12, 14, 19, 21} {
 		spec := &keyboard.Spec{Patch: patch}
 		spec.Controls[127] = 1
+		switch patch {
+		case 1:
+			spec.Controls[8], spec.Controls[10] = 4.6, .7 // Tremolo rate and gain have nonzero minimums or defaults.
+		case 14:
+			spec.Controls[1] = 1 // FM gain has a minimum of 0.001.
+		}
 		cfg.Track[4+i] = TrackConfig{Kind: VoiceKeys, Keys: spec}
 	}
 	for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
@@ -59,7 +67,7 @@ func restoreTarget(d paramdefs.Descriptor) (track uint8, value float32, ok bool)
 			return 0, 0, false
 		}
 	}
-	v := d.Min + .7*(d.Max-d.Min)
+	v := d.Min + .31*(d.Max-d.Min)
 	if d.Curve == "toggle" || d.Type == "integer" {
 		v = math.Round(v)
 	}
@@ -107,16 +115,17 @@ func engineState(e *Engine) string {
 		}
 		all = append(all, s)
 	}
-	state := fmt.Sprintf("%+v", all)
+	// Parameters travel as float32, so compare them to the precision they have.
+	state := roundNumbers(fmt.Sprintf("%+v", all))
 	state += fmt.Sprintf("|solo=%d layers=%v", e.soloCount, e.layerAuthored)
 	if e.delayA != nil {
-		state += fmt.Sprintf("|%+v", e.delayA.Params())
+		state += roundNumbers(fmt.Sprintf("|%+v", e.delayA.Params()))
 	}
 	if e.reverbB != nil {
-		state += fmt.Sprintf("|%+v", e.reverbB.Params())
+		state += roundNumbers(fmt.Sprintf("|%+v", e.reverbB.Params()))
 	}
 	if e.compMusic != nil {
-		state += fmt.Sprintf("|%+v", e.compMusic.Params())
+		state += roundNumbers(fmt.Sprintf("|%+v", e.compMusic.Params()))
 	}
 	return state
 }
@@ -239,4 +248,17 @@ func TestEveryLiveParameterRestoresLikeAFreshEngine(t *testing.T) {
 	if cases < 150 {
 		t.Fatalf("only %d cases", cases)
 	}
+}
+
+var numberPattern = regexp.MustCompile(`-?[0-9]+\.[0-9]+(?:e[+-]?[0-9]+)?`)
+
+// roundNumbers rewrites every decimal number to seven significant digits.
+func roundNumbers(text string) string {
+	return numberPattern.ReplaceAllStringFunc(text, func(number string) string {
+		value, err := strconv.ParseFloat(number, 64)
+		if err != nil {
+			return number
+		}
+		return strconv.FormatFloat(value, 'g', 7, 64)
+	})
 }
