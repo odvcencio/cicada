@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
 )
 
 // previewBarBlocks is the number of render blocks in one bar of
@@ -83,4 +84,95 @@ func TestAutomaticSceneTransitionOrdersCommittedValueWithEngine(t *testing.T) {
 			}
 		})
 	}
+}
+
+// settledScenePatch renders until the gain settles, then checks that the
+// engine, CommittedValue and the value restored by a preview cancel agree.
+func checkScenePatchOrdering(t *testing.T, p *Player, want float64) {
+	t.Helper()
+	wantPeak := .125 * math.Pow(10, want/20)
+	if got := lastBlockPeak(t, p, 64); math.Abs(got-wantPeak) > .002 {
+		t.Fatalf("engine peak %g, want %g (%g dB)", got, wantPeak, want)
+	}
+	if value, ok := p.CommittedValue(0, kernel.ParamMixGain); !ok || float64(value) != want {
+		t.Fatalf("committed value %g/%v, engine plays %g", value, ok, want)
+	}
+	target, _ := p.ResolvePreviewTrack("bass")
+	version, err := p.SetResolvedPreview(target, kernel.ParamMixGain, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastBlockPeak(t, p, 64)
+	p.CancelPreviewWait(version)
+	if got := lastBlockPeak(t, p, 64); math.Abs(got-wantPeak) > .002 {
+		t.Fatalf("after cancel peak %g, want %g (%g dB)", got, wantPeak, want)
+	}
+}
+
+func patchGain(t *testing.T, p *Player, value float32) {
+	t.Helper()
+	target, _ := p.ResolvePreviewTrack("bass")
+	batch := NewPatchArena(1).Begin(1)
+	batch.SetResolvedParam(target, kernel.ParamMixGain, value)
+	if err := p.Patch(batch); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Rows of the precedence table in noteSceneCommitted that run before the
+// patch (the patch wins), complementing the automatic-transition test above.
+func TestScenePrecedenceAgainstPatchDrainedInTheSameBlock(t *testing.T) {
+	const patched = -3
+	t.Run("song start applies scene then patch", func(t *testing.T) {
+		p, err := New(previewRenderScoreScenes(t, -6, 16, true), 48_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		patchGain(t, p, patched)
+		lastBlockPeak(t, p, 1)
+		checkScenePatchOrdering(t, p, patched)
+	})
+	t.Run("seek applies scene then patch", func(t *testing.T) {
+		p, err := New(previewRenderScore(t, -6), 48_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		lastBlockPeak(t, p, 4)
+		patchGain(t, p, patched)
+		if err := p.StartSongEntry(1, "later"); err != nil {
+			t.Fatal(err)
+		}
+		lastBlockPeak(t, p, 1)
+		checkScenePatchOrdering(t, p, patched)
+	})
+	t.Run("seek to bar one applies scene then patch", func(t *testing.T) {
+		p, err := New(previewRenderScoreScenes(t, -6, 16, true), 48_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		lastBlockPeak(t, p, 4)
+		patchGain(t, p, patched)
+		if err := p.StartSongEntry(0, "preview"); err != nil {
+			t.Fatal(err)
+		}
+		lastBlockPeak(t, p, 1)
+		checkScenePatchOrdering(t, p, patched)
+	})
+	t.Run("queued launch applies scene then patch", func(t *testing.T) {
+		p, err := New(previewRenderScore(t, -6), 48_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		lastBlockPeak(t, p, 4)
+		patchGain(t, p, patched)
+		if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1}) {
+			t.Fatal("launch rejected")
+		}
+		lastBlockPeak(t, p, 1)
+		checkScenePatchOrdering(t, p, patched)
+	})
 }

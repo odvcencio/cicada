@@ -215,6 +215,7 @@ type Player struct {
 	reconstructed     engine.ParameterState
 	blockParameters   engine.ParameterState
 	initialParameters bool
+	transportQueued   bool       // OpSeek/OpPlay queued for the block about to render; render-owned.
 	publicationMu     sync.Mutex // Orders patches/offers with Close, never Read.
 	publication       uint64
 	offerPublication  atomic.Uint64
@@ -291,7 +292,7 @@ func New(initial Score, rate int) (*Player, error) {
 		overrideClears:    make(chan overrideClear, 64),
 		patches:           make(chan *Patch, 32),
 		closed:            make(chan struct{}),
-		initialParameters: true,
+		initialParameters: true, transportQueued: true,
 	}
 	p.overrides.Store(&liveOverrides{})
 	p.trackCount.Store(uint32(initial.Engine.TrackCount()))
@@ -1355,6 +1356,7 @@ func (p *Player) beginRequestedSong() {
 			return
 		}
 		p.rebuildCommitted(p.current, int64(start-1)*seq.TicksPerBar)
+		p.transportQueued = true
 		p.initialParameters = false
 		p.bar = int64(start) - 1
 		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.BPMMilli, AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
@@ -1380,6 +1382,7 @@ func (p *Player) renderBlock() {
 			p.previous = p.current.Engine
 			p.discardSupersededPatches(next.publication)
 			p.rebuildCommitted(next, p.bar*seq.TicksPerBar)
+			p.transportQueued = true
 			p.applyOverrides(next.Engine, next, true)
 			p.fadeTotal = p.rate / 200 // five milliseconds
 			p.fadeRemaining = p.fadeTotal
@@ -1438,6 +1441,7 @@ func (p *Player) renderBlock() {
 			p.emit(Event{Bar: tick/seq.TicksPerBar + 1, Name: p.current.SceneIDs[index], Kind: "song-scene"})
 		}
 	}
+	p.transportQueued = false
 	var message cmd.Message
 	for p.current.Engine.Poll(&message) {
 		if message.Kind == cmd.Fault {

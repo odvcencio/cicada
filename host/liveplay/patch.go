@@ -378,6 +378,20 @@ func (p *Player) recordCommitted(track uint8, id kernel.ParamID, value float32) 
 	}
 }
 
+// Precedence of a scene value against a patch drained in the same block. The
+// render thread drains commands in priority order (transport 0, launch and
+// pattern selection 1, parameters 2), then runs the frame loop.
+//
+//	way the scene value applies         runs                  winner  why
+//	queued launch (OpLaunchScene)       drain, priority 1     patch   parameters (2) follow launches (1)
+//	song start (OpSeek, OpPlay)         drain, priority 0     patch   reconstruction precedes parameters
+//	seek / swap (OpSeek, OpPlay)        drain, priority 0     patch   same reconstruction path
+//	automatic transition (advanceSong)  frame loop, after it  scene   it applies after the drain
+//	any transition after block start    frame loop            scene   its tick is later than the block's
+//
+// The first three rows share one test: the scene started at the block's first
+// tick and the block queued a transport command (p.transportQueued) or a launch
+// (p.reconstructed, filled by notePendingScenes). Otherwise the scene wins.
 func (p *Player) noteSceneCommitted(index int, blockTick int64) {
 	p.current.Engine.VisitSceneParameters(uint16(index), func(parameter engine.SceneSetting, _ bool) {
 		if parameter.Division != 0 {
@@ -387,13 +401,9 @@ func (p *Player) noteSceneCommitted(index int, blockTick int64) {
 		if track == 0xff {
 			track = 16
 		}
-		// Only a queued launch drained with the patch runs before it: the
-		// kernel orders launches ahead of parameter changes. An automatic
-		// song transition runs after command draining, and a later transition
-		// within this block follows the patch too; both supersede it.
 		if p.current.Engine.CurrentSceneTick() <= blockTick && p.blockParameters[track][parameter.ID]>>32 != 0 &&
-			p.reconstructed[track][parameter.ID]>>32 != 0 {
-			return
+			(p.transportQueued || p.reconstructed[track][parameter.ID]>>32 != 0) {
+			return // The scene value applied first; the patch drained in this block follows it.
 		}
 		p.recordCommitted(parameter.Track, parameter.ID, parameter.Value)
 	})

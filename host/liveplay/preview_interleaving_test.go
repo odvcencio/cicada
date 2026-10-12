@@ -186,6 +186,12 @@ func previewRenderScore(t *testing.T, gain float32) Score {
 }
 
 func previewRenderScoreTracks(t *testing.T, gain float32, count int) Score {
+	return previewRenderScoreScenes(t, gain, count, false)
+}
+
+// previewRenderScoreScenes optionally also authors -9 dB in the first scene,
+// so song start and seeks to bar one reconstruct a scene setting.
+func previewRenderScoreScenes(t *testing.T, gain float32, count int, firstScene bool) Score {
 	t.Helper()
 	program := graph.Program{}
 	program.Nodes[0] = graph.Node{Op: graph.Constant, Value: 375}
@@ -202,6 +208,9 @@ func previewRenderScoreTracks(t *testing.T, gain float32, count int) Score {
 		cfg.Track[i].Graph.Nodes[2].Value = 0
 	}
 	cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0, ID: kernel.ParamMixGain, Value: -9}}}, {}}
+	if firstScene {
+		cfg.Scenes[0] = cfg.Scenes[1]
+	}
 	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
 	cfg.LoopSong = true
 	created, err := engine.New(cfg)
@@ -220,10 +229,14 @@ func previewRenderScoreTracks(t *testing.T, gain float32, count int) Score {
 			ParameterValue{Track: uint8(track), ID: kernel.ParamMixSendA, Value: 0},
 			ParameterValue{Track: uint8(track), ID: kernel.ParamMixSendB, Value: 0})
 	}
+	sceneParameters := [][]ParameterValue{nil, {{Track: 0, ID: kernel.ParamMixGain, Value: -9}}, nil}
+	if firstScene {
+		sceneParameters[0] = sceneParameters[1]
+	}
 	return Score{
 		Engine: created, SampleRate: 48_000, BPMMilli: 20_000, Name: "preview",
 		Tracks: tracks, HasSFX: true, SceneIDs: []string{"preview", "later", "last"},
-		SceneParameters: [][]ParameterValue{nil, {{Track: 0, ID: kernel.ParamMixGain, Value: -9}}, nil},
+		SceneParameters: sceneParameters,
 		Song:            []SongEntry{{Scene: "preview", StartBar: 1}, {Scene: "later", StartBar: 2}, {Scene: "last", StartBar: 3}},
 		Parameters:      parameters,
 	}
@@ -644,11 +657,8 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 						break
 					}
 				}
-			case "seek-forward", "seek-backward":
-				model.seek = 2
-				if op.kind == "seek-backward" {
-					model.seek = 0
-				}
+			case "seek-forward", "seek-backward", "seek-middle":
+				model.seek = map[string]int{"seek-forward": 2, "seek-backward": 0, "seek-middle": 1}[op.kind]
 				model.start = true
 				failure = p.StartSongEntry(model.seek, []string{"preview", "later", "last"}[model.seek])
 			case "scene":
@@ -816,6 +826,17 @@ func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 			previewRenderOperation{kind: "render-begin"}, previewRenderOperation{kind: "render-drain-N"},
 			previewRenderOperation{kind: secondKind, value: values[(seed+4)%5]}, previewRenderOperation{kind: "activate"},
 			previewRenderOperation{kind: "settle"}, previewRenderOperation{kind: "seek-forward"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "seek-backward"}, previewRenderOperation{kind: "settle"})
+		// Seeking into the scene that sets gain: a patch drained in the same
+		// block follows the reconstruction, whether it was published before or
+		// after the seek request, with or without a pending score.
+		operations = append(operations,
+			previewRenderOperation{kind: "patch", value: values[(seed+1)%5]}, previewRenderOperation{kind: "seek-middle"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "seek-backward"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "seek-middle"}, previewRenderOperation{kind: "patch", value: values[(seed+3)%5]}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "seek-backward"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "offer", value: values[(seed+2)%5]}, previewRenderOperation{kind: "patch", value: values[(seed+4)%5]},
+			previewRenderOperation{kind: "seek-middle"}, previewRenderOperation{kind: "settle"},
 			previewRenderOperation{kind: "seek-backward"}, previewRenderOperation{kind: "settle"})
 		// A 1-in-16 sample also crosses the automatic bar-two boundary with a
 		// patch before it, in it, or after it, and with or without a preview.
