@@ -75,7 +75,8 @@ func convertSongToArrange(ctx *Context, _ Intent) error {
 }
 
 // songPlacements turns the song into placements. A binding starts a placement
-// at its entry (even when it names the pattern already playing); `keep` and an
+// at its entry unless it names the pattern already playing on that track, which
+// extends the run (a run is named for its first scene); `keep` and an
 // omitted binding extend the track's open placement; `off` and `stop` close it.
 func songPlacements(score *notation.Score) ([]convertedPlacement, error) {
 	scenes := make(map[string]notation.Scene, len(score.Scenes))
@@ -112,6 +113,9 @@ func songPlacements(score *notation.Score) ([]convertedPlacement, error) {
 				}
 			case action == "off" || action == "stop" && !hasStopPattern:
 				delete(open, track.Name)
+			case hasOpen(open, track.Name) && placements[open[track.Name]].content == action:
+				// The same pattern continues: one placement per contiguous run.
+				placements[open[track.Name]].length += bars * seq.TicksPerBar
 			default:
 				open[track.Name] = len(placements)
 				placements = append(placements, convertedPlacement{
@@ -126,6 +130,11 @@ func songPlacements(score *notation.Score) ([]convertedPlacement, error) {
 		return nil, refuseConvert("no scene binds a pattern, so the arrange would be empty")
 	}
 	return placements, nil
+}
+
+func hasOpen(open map[string]int, track string) bool {
+	_, ok := open[track]
+	return ok
 }
 
 func convertedSource(ctx *Context, score *notation.Score, placements []convertedPlacement) ([]byte, error) {

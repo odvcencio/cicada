@@ -36,6 +36,9 @@ func (c arrangeCompiler) Compile(source []byte, files map[string][]byte) (*Plan,
 	plan := &Plan{Revision: Revision(source), Names: map[string]bool{}}
 	for _, pattern := range score.Patterns {
 		out := Pattern{ID: pattern.Name, Kind: pattern.Kind, Steps: uint8(len(pattern.Steps))}
+		if len(pattern.Steps) == 0 && len(pattern.Lanes) > 0 {
+			out.Steps = uint8(len(pattern.Lanes[0].Hits))
+		}
 		for _, token := range pattern.Steps {
 			out.Data = append(out.Data, &Step{Slide: strings.HasSuffix(token.Text, "~")})
 		}
@@ -286,5 +289,21 @@ func TestMoveClipRepairsAScoreThatDoesNotCompile(t *testing.T) {
 	}
 	if _, err := applyArrange(source, `{"kind":"moveclip","entity":"placement:nope","attick":0}`, Options{}); err == nil {
 		t.Fatal("unknown placement accepted")
+	}
+}
+
+func TestSplitClipOnDrumsRunsRenderCheck(t *testing.T) {
+	source := []byte("cicada 2\ntrack drums drums {}\npattern beat drums {\n  bd: X... .... X... ....\n}\narrange {\n  place run drums beat { at = @1.1.1 length = 4bars }\n}\n")
+	raw := `{"kind":"splitclip","entity":"placement:run","attick":7680}`
+	if _, err := applyArrange(source, raw, Options{}); !errors.Is(err, ErrNoRenderCheck) {
+		t.Fatalf("nil check: %v", err)
+	}
+	var refusal *RefusalError
+	differing := &fakeCheck{hashes: map[string]string{"run-2": "cut"}}
+	if _, err := applyArrange(source, raw, Options{RenderCheck: differing}); !errors.As(err, &refusal) || refusal.Cause != "splitting beat at bar 3 changes the render" {
+		t.Fatalf("differing: %v", err)
+	}
+	if got, err := applyArrange(source, raw, Options{RenderCheck: &fakeCheck{}}); err != nil || !bytes.Contains(got.Source, []byte("place run-2 drums beat")) {
+		t.Fatalf("equal: %v", err)
 	}
 }

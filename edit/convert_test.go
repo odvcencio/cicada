@@ -24,8 +24,9 @@ func convertScore(t *testing.T, source string, opts Options) (*Result, error) {
 
 func TestConvertSongToArrangeTemplate(t *testing.T) {
 	song := templateHead + templateScenes + "song { main*4 break*4 }\n"
-	arrange := "arrange {\n" + place("main-1-bass", "bass", "pulse", "@1.1.1", "4bars") + place("main-1-drums", "drums", "beat", "@1.1.1", "4bars") +
-		place("break-2-bass", "bass", "pulse", "@5.1.1", "4bars") + place("break-2-drums", "drums", "beat", "@5.1.1", "4bars") + "}\n"
+	// Both scenes bind the same patterns, so each track is one contiguous run
+	// named for its first scene: two placements, not four.
+	arrange := "arrange {\n" + place("main-1-bass", "bass", "pulse", "@1.1.1", "8bars") + place("main-1-drums", "drums", "beat", "@1.1.1", "8bars") + "}\n"
 	want := "cicada 2\n" + templateHead + templateScenes + arrange
 	got, err := convertScore(t, song, Options{})
 	if err != nil {
@@ -82,6 +83,21 @@ func TestConvertSongToArrangeKeepOffStop(t *testing.T) {
 	}
 }
 
+// Entries that bind the same pattern on a track form one run; a different
+// pattern or a rebind after `off` starts a new placement.
+func TestConvertSongToArrangeMergesContiguousRuns(t *testing.T) {
+	scenes := "scene a { bass = pulse }\nscene b { bass = pulse }\nscene c { bass = keep }\nscene d { bass = off }\nscene e { bass = pulse }\nscene f { bass = pulse }\n"
+	song := templateHead + scenes + "song { a*1 b*2 c*1 d*1 e*1 f*1 }\n"
+	arrange := "arrange {\n" + place("a-1-bass", "bass", "pulse", "@1.1.1", "4bars") + place("e-5-bass", "bass", "pulse", "@6.1.1", "2bars") + "}\n"
+	got, err := convertScore(t, song, Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "cicada 2\n" + templateHead + scenes + arrange; string(got.Source) != want {
+		t.Fatalf("got:\n%s\nwant:\n%s", got.Source, want)
+	}
+}
+
 func TestConvertSongToArrangeRefusals(t *testing.T) {
 	var refusal *RefusalError
 	withSettings := templateHead + "scene main { bass = pulse\n  bass.level = -3dB }\nsong { main*2 }\n"
@@ -115,14 +131,15 @@ func TestConvertSongToArrangeRefusals(t *testing.T) {
 
 func TestConvertSongToArrangeNamesPhaseCause(t *testing.T) {
 	two := "pattern two acid {\n  1 . . . 5 . . . 1 . . . 7 . . . 3 . . . 5 . . . 3 . . . 7 . . .\n}\n"
-	source := "title \"t\"\ntrack bass acid {}\n" + two + "scene a { bass = two }\nscene b { bass = two }\nsong { a*3 b*3 }\n"
+	other := strings.Replace(two, "pattern two", "pattern other", 1)
+	source := "title \"t\"\ntrack bass acid {}\n" + two + other + "scene a { bass = two }\nscene b { bass = other }\nsong { a*3 b*3 }\n"
 	differ := &fakeCheck{hashes: map[string]string{"arrange {": "converted"}}
 	var refusal *RefusalError
 	if _, err := convertScore(t, source, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "pattern two (2 bars) would restart out of phase at bar 4" {
 		t.Fatalf("phase: %v", err)
 	}
 	// In phase, the same placements name a drums cause only for drum patterns.
-	drums := "title \"t\"\ntrack drums drums {}\npattern beat drums {\n  bd: X... .... X... ....\n}\nscene a { drums = beat }\nscene b { drums = beat }\nsong { a*2 b*2 }\n"
+	drums := "title \"t\"\ntrack drums drums {}\npattern beat drums {\n  bd: X... .... X... ....\n}\npattern fill drums {\n  sd: X... .... X... ....\n}\nscene a { drums = beat }\nscene b { drums = fill }\nsong { a*2 b*2 }\n"
 	if _, err := convertScore(t, drums, Options{RenderCheck: differ}); !errors.As(err, &refusal) || refusal.Cause != "drums track drums starts a new placement at bar 3, which renders differently from the song" {
 		t.Fatalf("drums: %v", err)
 	}

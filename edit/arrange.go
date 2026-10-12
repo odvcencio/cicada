@@ -233,9 +233,15 @@ func splitClip(ctx *Context, in *SplitClip) ([]byte, string, error) {
 		return nil, "", &RefusalError{Intent: "SplitClip", Cause: fmt.Sprintf("split point is not on a pattern-length boundary (%s is %d ticks)", pattern.ID, unit)}
 	}
 	bar := in.AtTick/3840 + 1
-	if slides := len(pattern.Data) > 0 && pattern.Data[len(pattern.Data)-1] != nil && pattern.Data[len(pattern.Data)-1].Slide; slides {
-		// A final slide leans on the next cycle's first note; only the render
-		// can say whether the cut is audible.
+	slides := len(pattern.Data) > 0 && pattern.Data[len(pattern.Data)-1] != nil && pattern.Data[len(pattern.Data)-1].Slide
+	drums := pattern.Kind == "drums"
+	for _, track := range plan.Tracks {
+		drums = drums || track.ID == placement.Track && track.Kind == "drums"
+	}
+	if slides || drums {
+		// A final slide leans on the next cycle's first note, and drum
+		// placements restart audibly at a boundary; only the render can say
+		// whether the cut is audible.
 		check, err := renderCheckFor(ctx)
 		if err != nil {
 			return nil, "", err
@@ -253,6 +259,9 @@ func splitClip(ctx *Context, in *SplitClip) ([]byte, string, error) {
 			return nil, "", err
 		}
 		if before != after {
+			if !slides {
+				return nil, "", &RefusalError{Intent: "SplitClip", Cause: fmt.Sprintf("splitting %s at bar %d changes the render", pattern.ID, bar)}
+			}
 			return nil, "", &RefusalError{Intent: "SplitClip", Cause: fmt.Sprintf("splitting %s at bar %d cuts a slide", pattern.ID, bar)}
 		}
 		return cut, fmt.Sprintf("Clip %s split at %s", placement.ID, FormatPosition(in.AtTick)), nil

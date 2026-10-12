@@ -24,7 +24,7 @@ func (c *countingRender) Hash(source []byte) (string, error) {
 
 const convertSongScore = "title \"Convert\"\ntempo 130\n\ntrack bass acid {}\n\npattern pulse acid {\n  1 . . . 5 . . . 1 . . . 7 . . .\n}\n\nscene main { bass = pulse }\nscene break { bass = pulse }\n\nsong { main*2 break*2 }\n"
 
-const convertDrumSongScore = "title \"Convert\"\ntempo 130\n\ntrack drums drums {}\n\npattern beat drums {\n  bd: X... .... X... ....\n}\n\nscene main { drums = beat }\nscene break { drums = beat }\n\nsong { main*2 break*2 }\n"
+const convertDrumSongScore = "title \"Convert\"\ntempo 130\n\ntrack drums drums {}\n\npattern beat drums {\n  bd: X... .... X... ....\n}\n\npattern fill drums {\n  sd: X... .... X... ....\n}\n\nscene main { drums = beat }\nscene break { drums = fill }\n\nsong { main*2 break*2 }\n"
 
 func convertEnvelope(source string, dryRun bool) edits.Envelope {
 	return edits.Envelope{Version: 1, Revision: studioRevision([]byte(source)), Author: "tester", Session: "convert-test", DryRun: dryRun, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
@@ -74,7 +74,7 @@ func TestStudioConvertCommitsOneHistoryEntryAndUndoRestoresSong(t *testing.T) {
 		t.Fatalf("commit: %d %s", r.Code, r.Body.String())
 	}
 	converted, _ := os.ReadFile(path)
-	want := "cicada 2\n" + strings.Replace(convertSongScore, "song { main*2 break*2 }", "arrange {\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 2bars\n  }\n  place break-2-bass bass pulse {\n    at = @3.1.1 length = 2bars\n  }\n}", 1)
+	want := "cicada 2\n" + strings.Replace(convertSongScore, "song { main*2 break*2 }", "arrange {\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 4bars\n  }\n}", 1)
 	if string(converted) != want {
 		t.Fatalf("converted:\n%s\nwant:\n%s", converted, want)
 	}

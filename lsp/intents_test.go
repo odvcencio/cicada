@@ -284,7 +284,7 @@ func TestCodeActionOffersSongConversionAfterTheCheckAndCachesIt(t *testing.T) {
 		}
 		title, kind := actionTitle(replies[i][0])
 		_, applied, version := appliedEdit(t, replies[i][0], lspSongScore)
-		want := "cicada 2\n" + strings.Replace(lspSongScore, "song { main*2 break*2 }", "arrange {\n  place main-1-bass bass hits {\n    at = @1.1.1 length = 2bars\n  }\n  place break-2-bass bass hits {\n    at = @3.1.1 length = 2bars\n  }\n}", 1)
+		want := "cicada 2\n" + strings.Replace(lspSongScore, "song { main*2 break*2 }", "arrange {\n  place main-1-bass bass hits {\n    at = @1.1.1 length = 4bars\n  }\n}", 1)
 		if title != "Convert song to arrange" || kind != "refactor" || version != 3 || applied != want {
 			t.Fatalf("request %d: %q %q v%d\n%s", i, title, kind, version, applied)
 		}

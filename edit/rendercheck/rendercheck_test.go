@@ -53,29 +53,43 @@ func templateArrange(blocks string) string {
 	return "cicada 2\n" + head + body + templateScenes + "arrange {\n" + blocks + "}\n"
 }
 
-// Case 1: the new-project template as song and as the hand-written arrange
-// (one placement per scene entry and track) renders differently, because the
-// drum placements restart at bar 5. Merging each track into one placement
-// restores equal renders.
-func TestRenderCheckTemplateSongVersusArrange(t *testing.T) {
-	song := head + body + templateScenes + "song { main*4 break*4 }\n"
-	split := templateArrange("  place main-1-bass bass pulse { at = @1.1.1 length = 4bars }\n  place main-1-drums drums beat { at = @1.1.1 length = 4bars }\n" +
-		"  place break-2-bass bass pulse { at = @5.1.1 length = 4bars }\n  place break-2-drums drums beat { at = @5.1.1 length = 4bars }\n")
-	merged := templateArrange("  place main-1-bass bass pulse { at = @1.1.1 length = 8bars }\n  place main-1-drums drums beat { at = @1.1.1 length = 8bars }\n")
+func templateHashes(t *testing.T, sources ...string) []string {
+	t.Helper()
 	t.Parallel()
 	check := New(filepath.Join(t.TempDir(), "main.cicada"))
-	hash := func(source string) string {
+	var out []string
+	for _, source := range sources {
 		h, err := check.Hash([]byte(source))
 		if err != nil {
 			t.Fatal(err)
 		}
-		return h
+		out = append(out, h)
 	}
-	if hash(song) == hash(split) {
-		t.Fatal("split drum placements rendered like the song; the engine rule changed")
-	}
-	if hash(song) != hash(merged) {
+	return out
+}
+
+// Case 1: the new-project template as song and as one placement per contiguous
+// same-pattern run (what ConvertSongToArrange writes) render the same.
+func TestRenderCheckTemplateSongEqualsMergedArrange(t *testing.T) {
+	song := head + body + templateScenes + "song { main*4 break*4 }\n"
+	merged := templateArrange("  place main-1-bass bass pulse { at = @1.1.1 length = 8bars }\n  place main-1-drums drums beat { at = @1.1.1 length = 8bars }\n")
+	if h := templateHashes(t, song, merged); h[0] != h[1] {
 		t.Fatal("merged placements differ from the song")
+	}
+}
+
+// Case 1 as the plan hand-wrote it (one placement per scene entry and track)
+// documents an ENGINE GAP, not a rule to keep: adjacent drums placements render
+// differently from one run covering the same bars, with the difference starting
+// at the placement boundary. Acid placements are unaffected. When the engine is
+// fixed this test fails on purpose; then flip the assertion to equal and drop
+// the drums-specific SplitClip render check.
+func TestRenderCheckSplitDrumPlacementsDifferFromSongEngineGap(t *testing.T) {
+	song := head + body + templateScenes + "song { main*4 break*4 }\n"
+	split := templateArrange("  place main-1-bass bass pulse { at = @1.1.1 length = 4bars }\n  place main-1-drums drums beat { at = @1.1.1 length = 4bars }\n" +
+		"  place break-2-bass bass pulse { at = @5.1.1 length = 4bars }\n  place break-2-drums drums beat { at = @5.1.1 length = 4bars }\n")
+	if h := templateHashes(t, song, split); h[0] == h[1] {
+		t.Fatal("split drum placements now render like the song: the engine gap is fixed; flip this test")
 	}
 }
 

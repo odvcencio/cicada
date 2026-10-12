@@ -235,30 +235,31 @@ func TestApplyAuxiliaryUpgradeDryRunAndWrite(t *testing.T) {
 	}
 }
 
-func TestApplyConvertSongRefusesTemplateAndConvertsAcidProject(t *testing.T) {
+func TestApplyConvertSongConvertsTemplateAndRefusesDrumBoundary(t *testing.T) {
 	path, intents, template := applyFixture(t)
 	writeApplyEnvelope(t, intents, edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}})
-	_, err := captureApply(t, path, intents, "--write")
-	var refusal *edits.RefusalError
-	if !errors.As(err, &refusal) || refusal.Cause != "drums track drums starts a new placement at bar 5, which renders differently from the song" {
-		t.Fatalf("template: %v", err)
-	}
-	if after, _ := os.ReadFile(path); !bytes.Equal(after, template) {
-		t.Fatal("a refused conversion changed the score")
-	}
-	// The project manifest declares edition 2, so no header is added.
-	acid := strings.Replace(string(template), "track drums drums {}\n", "", 1)
-	acid = strings.Replace(acid, " drums = beat", "", 2)
-	acid = strings.Replace(acid, "pattern beat drums {\n  bd: X... .... X... ....\n  sd: .... X... .... X...\n  ch: x.x. x.x. x.x. x.x.\n}\n\n", "", 1)
-	if err := os.WriteFile(path, []byte(acid), 0600); err != nil {
-		t.Fatal(err)
-	}
 	out, err := captureApply(t, path, intents, "--write")
 	if err != nil || !strings.Contains(out, "+  place main-1-bass bass pulse {") {
-		t.Fatalf("acid project: %v\n%s", err, out)
+		t.Fatalf("template: %v\n%s", err, out)
 	}
+	// The project manifest declares edition 2, so no header is added. Both
+	// scenes bind the same patterns, so each track is one 8-bar placement.
 	converted, _ := os.ReadFile(path)
-	if strings.Contains(string(converted), "song {") || strings.HasPrefix(string(converted), "cicada 2") || !strings.Contains(string(converted), "place break-2-bass bass pulse {\n    at = @5.1.1 length = 4bars\n  }") {
-		t.Fatalf("converted:\n%s", converted)
+	want := string(template)[:strings.Index(string(template), "song {")] + ("arrange {\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 8bars\n  }\n  place main-1-drums drums beat {\n    at = @1.1.1 length = 8bars\n  }\n}\n")
+	if string(converted) != want {
+		t.Fatalf("converted:\n%s\nwant:\n%s", converted, want)
+	}
+	// A different drum pattern in the second scene needs a second placement, which the engine renders differently today.
+	if err := os.WriteFile(path, []byte(strings.Replace(string(template), "scene break {\n  bass = pulse\n  drums = beat\n}", "scene break {\n  bass = pulse\n  drums = fill\n}", 1)+"\npattern fill drums {\n  sd: X... .... X... ....\n}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	_, err = captureApply(t, path, intents, "--write")
+	var refusal *edits.RefusalError
+	if !errors.As(err, &refusal) || refusal.Cause != "drums track drums starts a new placement at bar 5, which renders differently from the song" {
+		t.Fatalf("drum boundary: %v", err)
+	}
+	if after, _ := os.ReadFile(path); !bytes.Equal(after, before) {
+		t.Fatal("a refused conversion changed the score")
 	}
 }
