@@ -15,9 +15,10 @@ type codeActionParams struct {
 	Context struct {
 		Only        []string `json:"only"`
 		Diagnostics []struct {
-			Range   region `json:"range"`
-			Code    string `json:"code"`
-			Message string `json:"message"`
+			Range region `json:"range"`
+			// LSP allows an integer or a string; only string codes can be Cicada's.
+			Code    json.RawMessage `json:"code"`
+			Message string          `json:"message"`
 		} `json:"diagnostics"`
 	} `json:"context"`
 }

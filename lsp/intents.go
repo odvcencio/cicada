@@ -1,6 +1,7 @@
 package lsp
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -290,7 +291,7 @@ func (s *server) intentAction(uri, title, kind string, before, after []byte) map
 func (s *server) snapActions(uri, path string, source []byte, params codeActionParams) []any {
 	var lines []int
 	for _, d := range params.Context.Diagnostics {
-		if d.Code == "CICADA-ARRANGEMENT" && strings.Contains(d.Message, "must start on a step") {
+		if diagnosticCode(d.Code) == "CICADA-ARRANGEMENT" && strings.Contains(d.Message, "must start on a step") {
 			lines = append(lines, d.Range.Start.Line+1)
 		}
 	}
@@ -359,4 +360,13 @@ func (s *server) convertAction(uri, path string, source []byte, params codeActio
 		return nil
 	}
 	return s.intentAction(uri, "Convert song to arrange", "refactor", source, result.Source)
+}
+
+// diagnosticCode returns a string code, or "" for a numeric or absent one.
+func diagnosticCode(raw json.RawMessage) string {
+	var code string
+	if json.Unmarshal(raw, &code) != nil {
+		return ""
+	}
+	return code
 }

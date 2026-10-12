@@ -71,15 +71,44 @@ func Serve(in io.Reader, out io.Writer) error {
 		}
 		var message request
 		if err := json.Unmarshal(body, &message); err != nil {
-			return err
+			// A malformed frame body is that message's problem, not the session's.
+			if err := s.sendError(nil, -32700, "parse error: "+err.Error()); err != nil {
+				return err
+			}
+			continue
 		}
 		if message.Method == "exit" {
 			return nil
 		}
 		if err := s.handle(message); err != nil {
-			return err
+			if !badParams(err) {
+				return err
+			}
+			// A request whose parameters do not decode gets an InvalidParams
+			// error (notifications get none); the session continues.
+			if len(message.ID) != 0 {
+				if err := s.sendError(message.ID, -32602, "invalid params: "+err.Error()); err != nil {
+					return err
+				}
+			}
 		}
 	}
+}
+
+// badParams reports a JSON decode failure of a request's parameters. Output
+// failures are not request-scoped and still end the session.
+func badParams(err error) bool {
+	var syntax *json.SyntaxError
+	var typed *json.UnmarshalTypeError
+	var invalid *json.InvalidUnmarshalError
+	return errors.As(err, &syntax) || errors.As(err, &typed) || errors.As(err, &invalid) || errors.Is(err, io.ErrUnexpectedEOF)
+}
+
+func (s *server) sendError(id json.RawMessage, code int, message string) error {
+	if len(id) == 0 {
+		id = json.RawMessage("null")
+	}
+	return s.send(map[string]any{"jsonrpc": "2.0", "id": id, "error": map[string]any{"code": code, "message": message}})
 }
 
 func readFrame(reader *bufio.Reader) ([]byte, error) {
