@@ -35,7 +35,7 @@ func (t *studioTransport) prepareTakeInput() (int, int, error) {
 		opened = true
 	}
 	actual := t.audio.Snapshot()
-	if actual.InputChannels < 1 || actual.InputChannels > 2 || actual.SampleRate != rate {
+	if actual.InputChannels < 1 || actual.InputChannels > 2 || actual.SampleRate != rate || actual.PeriodFrames < 1 || actual.PeriodFrames > 8192 {
 		if opened {
 			_ = t.audio.Close()
 			t.audio = nil
@@ -43,4 +43,15 @@ func (t *studioTransport) prepareTakeInput() (int, int, error) {
 		return 0, 0, fmt.Errorf("capture requires mono/stereo input at the selected %d Hz", rate)
 	}
 	return rate, actual.InputChannels, nil
+}
+
+// Allocate at least one second of writer headroom for the actual callback
+// period. A fixed 64-slot ring lasts only 85 ms at 64 frames / 48 kHz.
+// This queue belongs to the recording writer; it adds no monitoring latency.
+func (t *studioTransport) takeCaptureBufferShape(rate int) (slots, frames int) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	frames = t.audio.Snapshot().PeriodFrames
+	slots = max(64, (rate+frames-1)/frames+2)
+	return slots, frames
 }

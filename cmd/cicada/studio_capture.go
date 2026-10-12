@@ -2,9 +2,50 @@ package main
 
 import (
 	"fmt"
+	"time"
 
 	"m31labs.dev/cicada/host/capture"
 )
+
+// Manual correction is the residual after reported device timing, pinned to
+// the currently opened device. Wait only on the control side for its first
+// clock observation; the capture/render callback never waits.
+func (t *studioTransport) recordingCalibration() (capture.Calibration, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.recordingCalibrationLocked()
+}
+
+func (t *studioTransport) recordingCalibrationLocked() (capture.Calibration, error) {
+	ms := t.audioOptions.RecordingOffsetMS
+	if ms == 0 {
+		return capture.Calibration{}, nil
+	}
+	device, ok := t.audio.(interface{ CaptureDeviceEpoch() uint64 })
+	if !ok {
+		return capture.Calibration{}, fmt.Errorf("recording timing correction requires a native input clock")
+	}
+	deadline := time.Now().Add(250 * time.Millisecond)
+	for {
+		if epoch := device.CaptureDeviceEpoch(); epoch != 0 {
+			return capture.Calibration{DeviceEpoch: epoch, RemainingFrames: vocalMillisecondsFrames(ms, t.sampleRate), Valid: true}, nil
+		}
+		if !time.Now().Before(deadline) {
+			return capture.Calibration{}, fmt.Errorf("microphone clock is not ready; retry recording timing correction")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
+// The backing can end before the mapped input reaches punch-out. Keep duplex
+// callbacks running through that tail; the recorder stops on its input boundary.
+func (t *studioTransport) captureRunningLocked() bool {
+	if t.audio == nil {
+		return false
+	}
+	snapshot := t.audio.Snapshot()
+	return snapshot.Capture != nil && snapshot.Capture.Recording
+}
 
 // armCapture admits a prepared ring/writer and opens the device without starting
 // the score. The native take writer supplies this Recorder; browser capture is
@@ -77,6 +118,13 @@ func (t *studioTransport) prepareCaptureLocked(audio studioAudioDevice, bpmMilli
 	}
 	calibration := *t.pendingCapture
 	t.pendingCapture = nil
+	if !calibration.Valid {
+		var err error
+		calibration, err = t.recordingCalibrationLocked()
+		if err != nil {
+			return err
+		}
+	}
 	countIn, err := capture.DefaultCountIn(t.sampleRate, bpmMilli)
 	if err != nil {
 		return err
@@ -91,6 +139,7 @@ func (t *studioTransport) disarmCapture() error {
 		return nil
 	}
 	err := t.audio.DisarmCapture()
+	t.lastInput = t.audio.Snapshot()
 	if !t.playing && t.audio.StopClosesDevice() {
 		closeErr := t.audio.Close()
 		t.audio = nil

@@ -137,6 +137,10 @@ func auxiliaryFiles(files []edits.File) ([]studioAuxiliaryFile, error) {
 func (s *studio) applyIntents(w http.ResponseWriter, edit studioEdit, env edits.Envelope, writer edits.ParamWriter, beforeSwap func()) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if writer == edits.ParamWriterMixer && s.captureID != "" {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": "Finish the take before editing the mix."})
+		return
+	}
 	if err := studioRecoveryConflict(s.path); err != nil {
 		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 		return
