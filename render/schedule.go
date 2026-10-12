@@ -171,7 +171,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		}
 		position += int64(frames)
 	}
-	if err = writeMetadata(w, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames)); err != nil {
+	if err = writeMetadata(w, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), nil); err != nil {
 		return report, err
 	}
 	if stems != nil {

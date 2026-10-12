@@ -9,7 +9,6 @@ import (
 
 	"m31labs.dev/cicada/kernel/loudness"
 	"m31labs.dev/cicada/kernel/mix"
-	"m31labs.dev/cicada/kernel/seq"
 )
 
 type VerifyOptions struct {
@@ -97,30 +96,23 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 		return report, fmt.Errorf("WAV header does not match stereo %d-bit format at %d Hz", opts.Bits, opts.SampleRate)
 	}
 	dataBytes := int64(get32(40))
-	if dataBytes%int64(frameBytes) != 0 || info.Size() != 44+dataBytes+24 {
+	if dataBytes%int64(frameBytes) != 0 {
 		return report, fmt.Errorf("WAV size or frame alignment is invalid")
 	}
 	report.Frames = dataBytes / int64(frameBytes)
 	report.SampleRate, report.Bars, report.From = opts.SampleRate, opts.Bars, opts.From
-	var metadata [24]byte
-	if _, err := file.ReadAt(metadata[:], 44+dataBytes); err != nil {
+	timing, err := readWAVTiming(file, 44+dataBytes, info.Size())
+	if err != nil {
 		return report, err
 	}
-	if string(metadata[:4]) != "cica" || binary.LittleEndian.Uint32(metadata[4:8]) != 16 || binary.LittleEndian.Uint32(metadata[8:12]) != 1 {
-		return report, fmt.Errorf("missing Cicada timing metadata")
-	}
-	tempoMilli := binary.LittleEndian.Uint32(metadata[12:16])
-	bars := binary.LittleEndian.Uint32(metadata[16:20])
-	tailFrames := binary.LittleEndian.Uint32(metadata[20:24])
 	wantTail := uint32(math.Ceil(opts.TailSec * float64(opts.SampleRate)))
-	if bars != uint32(opts.Bars) || tailFrames != wantTail {
+	if timing.bars != uint32(opts.Bars) || timing.tailFrames != wantTail {
 		return report, fmt.Errorf("WAV bar or tail metadata differs from request")
 	}
-	clock, err := seq.NewClock(opts.SampleRate, int64(tempoMilli))
+	wantFrames, err := timing.frames(opts.SampleRate, opts.From)
 	if err != nil {
-		return report, fmt.Errorf("invalid WAV tempo metadata: %w", err)
+		return report, err
 	}
-	wantFrames := clock.SampleAtTick(int64(opts.From+int(bars))*seq.TicksPerBar) - clock.SampleAtTick(int64(opts.From)*seq.TicksPerBar) + int64(tailFrames)
 	if report.Frames != wantFrames {
 		return report, fmt.Errorf("WAV duration: got %d frames, want %d", report.Frames, wantFrames)
 	}
