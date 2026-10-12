@@ -597,6 +597,12 @@ type studioMutation struct {
 	Response      map[string]any
 	HistoryDetail string
 	Files         []studioAuxiliaryFile
+	// RenderChecked marks a mutation whose approval depends on rendered audio.
+	// RenderIdentity is the input identity verified around those renders; the
+	// commit tail compares it with the project under the commit lock, right
+	// before the write, and refuses if it changed or is unavailable.
+	RenderChecked  bool
+	RenderIdentity string
 }
 
 type studioAuxiliaryFile struct {

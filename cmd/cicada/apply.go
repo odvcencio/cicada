@@ -95,7 +95,7 @@ func applyCommandWithHooks(args []string, stdout io.Writer, beforeSwap func()) e
 	if !write || env.DryRun {
 		return nil
 	}
-	if err := s.renderIdentityUnchanged(result, before); err != nil {
+	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, before); err != nil {
 		return err
 	}
 	files, err := auxiliaryFiles(result.Files)

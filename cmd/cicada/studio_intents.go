@@ -325,10 +325,6 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusOK, response)
 		return
 	}
-	if err := s.renderIdentityUnchanged(result, current); err != nil {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "revision": studioRevision(current), "source": string(current)})
-		return
-	}
 	if finish != nil {
 		if err := finish(result); err != nil {
 			studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
@@ -343,7 +339,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files}
+	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files, RenderChecked: result.RenderChecked, RenderIdentity: result.RenderIdentity}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
 	if outcome.Status == http.StatusConflict {
 		if latest, err := os.ReadFile(s.path); err == nil {
@@ -493,6 +489,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 	// A render-checked candidate is only as good as the inputs its render saw.
 	// If any changed since staging (peers, manifests, assets), run the intents
 	// again, including their render checks, and accept only the same candidate.
+	verified := staged.renderIdentity
 	if staged.rendered {
 		if identity, ok := rendercheck.Identity(s.path, current, nil); !ok || identity != staged.renderIdentity {
 			again, status, err := s.restageForAccept(current, proposal)
@@ -504,6 +501,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, http.StatusConflict, map[string]any{"error": "project inputs changed since staging and the proposal now produces a different result; stage the proposal again", "revision": studioRevision(current), "source": string(current)})
 				return
 			}
+			verified = again.Result.RenderIdentity
 		}
 	}
 	files, err := auxiliaryFiles(result.Files)
@@ -528,7 +526,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 		s.history.observe(current, bar, step)
 	}
 	edit := studioEdit{Revision: proposal.Envelope.Revision, Label: proposal.Label, Author: proposal.Envelope.Author, Session: proposal.Envelope.Session}
-	mutation := studioMutation{Source: result.Source, Files: files, Response: result.Response}
+	mutation := studioMutation{Source: result.Source, Files: files, Response: result.Response, RenderChecked: staged.rendered, RenderIdentity: verified}
 	// Revalidate at acceptance, including project dependencies that may have
 	// changed since staging. The tail commits this candidate once.
 	outcome := s.commitMutationLocked(edit, current, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &proposal.Envelope, compiled: opts.Compiler.(*studioCompiler).compiled(result.Source, result.Files)})
@@ -634,13 +632,16 @@ func sameCandidate(a, b *edits.Result) bool {
 	return true
 }
 
-// renderIdentityUnchanged compares the identity verified around a result's
-// renders with the project right now, just before a commit.
-func (s *studio) renderIdentityUnchanged(result *edits.Result, current []byte) error {
-	if !result.RenderChecked || result.RenderIdentity == "" {
+// verifyRenderIdentity compares the identity verified around a mutation's
+// renders with the project right now. It is the one comparison: the commit tail
+// runs it under the commit lock before writing, and cicada apply, which writes
+// through its own exchange, runs it just before that. A mutation that was
+// render-checked but has no verified identity is refused.
+func (s *studio) verifyRenderIdentity(checked bool, verified string, current []byte) error {
+	if !checked {
 		return nil
 	}
-	if identity, ok := rendercheck.Identity(s.path, current, nil); !ok || identity != result.RenderIdentity {
+	if identity, ok := rendercheck.Identity(s.path, current, nil); !ok || verified == "" || identity != verified {
 		return errors.New("the project changed during the render check; try again")
 	}
 	return nil

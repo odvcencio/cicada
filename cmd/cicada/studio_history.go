@@ -590,6 +590,9 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 		s.transport.pollMu.Lock()
 		defer s.transport.pollMu.Unlock()
 	}
+	if err := s.verifyRenderIdentity(mutation.RenderChecked, mutation.RenderIdentity, current); err != nil {
+		return fail(http.StatusConflict, map[string]any{"error": err.Error(), "revision": studioRevision(current), "source": string(current)})
+	}
 	info, err := os.Stat(s.path)
 	committed, preserved := false, ""
 	if err == nil {

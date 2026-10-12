@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/project"
 )
 
 const (
@@ -198,7 +199,7 @@ func TestProjectChangeBetweenRendersIsRefusedByIntentsAndStaging(t *testing.T) {
 	}
 }
 
-// The identity verified around the renders is compared again right before the commit.
+// The shared comparison the commit tail runs (and cicada apply runs before its own exchange).
 func TestRenderIdentityIsRecheckedBeforeTheCommit(t *testing.T) {
 	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
 	s, err := newStudio(p.path)
@@ -214,13 +215,79 @@ func TestRenderIdentityIsRecheckedBeforeTheCommit(t *testing.T) {
 	if err != nil || result.RenderIdentity == "" || !result.RenderChecked {
 		t.Fatalf("apply: %v identity=%q", err, result.RenderIdentity)
 	}
-	if err := s.renderIdentityUnchanged(result, []byte(proposalSongMain)); err != nil {
+	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, []byte(proposalSongMain)); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.renderIdentityUnchanged(result, []byte(proposalSongMain)); err == nil || !strings.Contains(err.Error(), "changed during the render check") {
+	if err := s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, []byte(proposalSongMain)); err == nil || !strings.Contains(err.Error(), "changed during the render check") {
 		t.Fatalf("recheck: %v", err)
+	}
+}
+
+// V5: the peer changes while acceptance compiles the candidate, after the
+// acceptance-time identity comparison. The commit tail must still refuse.
+func TestPeerChangeDuringAcceptanceCompileIsRefusedByTheCommitTail(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+	id := p.stage(t, proposalSongMain, &edits.ConvertSongToArrange{})
+	previous := studioCompile
+	t.Cleanup(func() { studioCompile = previous })
+	studioCompile = func(path string, source []byte, overrides map[string][]byte) (*project.Project, error) {
+		compiled, err := previous(path, source, overrides)
+		_ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600)
+		return compiled, err
+	}
+	r := studioCall(t, p.handler, "/api/proposals/"+id+"/accept", map[string]any{})
+	studioCompile = previous
+	if r.Code != 409 || !strings.Contains(r.Body.String(), "the project changed during the render check; try again") {
+		t.Fatalf("%d %s", r.Code, r.Body.String())
+	}
+	if got, _ := os.ReadFile(p.path); string(got) != proposalSongMain || len(studioHistoryEdits(t, p.handler)) != 0 {
+		t.Fatal("the commit tail wrote after the project changed")
+	}
+	// A fresh request sees the changed project and is refused for the real reason.
+	fresh := edits.Envelope{Version: 1, Revision: studioRevision([]byte(proposalSongMain)), Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}
+	if r := studioCall(t, p.handler, "/api/intents", fresh); r.Code != 422 || !strings.Contains(r.Body.String(), "chance steps") {
+		t.Fatalf("fresh request: %d %s", r.Code, r.Body.String())
+	}
+}
+
+// Every mutation that carries a verified identity is checked in the tail, and one
+// that was render-checked without an identity is refused.
+func TestCommitTailRefusesStaleOrMissingRenderIdentity(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
+	s, err := newStudio(p.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.shutdown() })
+	opts, err := s.editOptions([]byte(proposalSongMain), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := edits.Apply([]byte(proposalSongMain), edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit := func(identity string) commitOutcome {
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		mutation := studioMutation{Source: result.Source, RenderChecked: true, RenderIdentity: identity}
+		return s.commitMutationLocked(studioEdit{Revision: studioRevision([]byte(proposalSongMain))}, []byte(proposalSongMain), mutation, nil, studioHistoryWriteNew, 0, commitHook{})
+	}
+	if outcome := commit(""); outcome.Status != 409 {
+		t.Fatalf("missing identity: %d %v", outcome.Status, outcome.Response)
+	}
+	if outcome := commit("stale"); outcome.Status != 409 {
+		t.Fatalf("stale identity: %d %v", outcome.Status, outcome.Response)
+	}
+	if got, _ := os.ReadFile(p.path); string(got) != proposalSongMain {
+		t.Fatal("a refused commit wrote")
+	}
+	if outcome := commit(result.RenderIdentity); outcome.Status != 200 {
+		t.Fatalf("verified identity: %d %v", outcome.Status, outcome.Response)
 	}
 }
