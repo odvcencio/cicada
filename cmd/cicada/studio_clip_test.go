@@ -105,3 +105,25 @@ func TestClipCommandsRejectStaleOrInvalidWritesAndUndo(t *testing.T) {
 		t.Fatal("audio region undo did not restore exact source")
 	}
 }
+
+func TestAudioAndPresetCreationReachNativeTrackCapacity(t *testing.T) {
+	var source strings.Builder
+	source.WriteString("cicada 2\n")
+	for i := 0; i < 63; i++ {
+		fmt.Fprintf(&source, "track t%d acid {}\n", i)
+	}
+	source.WriteString("pattern p acid {1}\nscene main {t0=p}\nsong {main}\n")
+	updated, err := newAudioTrackSource([]byte(source.String()), "last-vocal", 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := newAudioTrackSource(updated, "overflow", 2); err == nil || !strings.Contains(err.Error(), "64 tracks") {
+		t.Fatalf("track overflow: %v", err)
+	}
+	if _, err := addPresetSource([]byte(source.String()), "warm-pad", "pad-source", "last-pad"); err != nil {
+		t.Fatalf("64th preset track rejected: %v", err)
+	}
+	if _, err := addPresetSource(updated, "warm-pad", "pad-source", "overflow"); err == nil || !strings.Contains(err.Error(), "64 tracks") {
+		t.Fatalf("preset track overflow: %v", err)
+	}
+}

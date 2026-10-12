@@ -50,7 +50,9 @@
       inputEnabled: inputEnabled.checked,
       monitorMuted: monitorMuted.checked,
       monitorGain: Number(monitorGain.value),
-      monitorMode: monitorMode.value
+      monitorMode: monitorMode.value,
+      recordingOffsetMS: latest?.options.recordingOffsetMS || 0,
+      periodFrames: latest?.options.periodFrames || 256
     };
   }
 
@@ -79,7 +81,11 @@
     const periodMS = runtime.periodFrames * 1000 / runtime.sampleRate;
     const inputLatency = runtime.inputLatencyKnown ? `${runtime.inputLatencyMs.toFixed(1)} ms` : 'unreported';
     const outputLatency = runtime.outputLatencyKnown ? `${runtime.outputLatencyMs.toFixed(1)} ms` : 'unreported';
-    return `${runtime.backend} · ${outputName} ← ${inputName} · ${runtime.sampleRate} Hz · period ${runtime.periodFrames} frames (${periodMS.toFixed(1)} ms) · device latency in ${inputLatency} / out ${outputLatency} · callbacks ${runtime.callbacks || 0} · dropouts ${runtime.dropouts} · callback max ${runtime.callbackMaxUs.toFixed(0)} μs`;
+    const requested = runtime.requestedPeriodFrames && runtime.requestedPeriodFrames !== runtime.periodFrames ? `, requested ${runtime.requestedPeriodFrames}` : '';
+    const roundTrip = runtime.reportedRoundTripKnown ? ` · reported round trip ${runtime.reportedRoundTripMs.toFixed(1)} ms` : '';
+    const priority = runtime.audioPriority ? ` · audio priority ${runtime.audioPriority}` : '';
+    const warning = runtime.warning ? ` · ${runtime.warning}` : '';
+    return `${runtime.backend} · ${outputName} ← ${inputName} · ${runtime.sampleRate} Hz · period ${runtime.periodFrames} frames${requested} (${periodMS.toFixed(1)} ms) · device latency in ${inputLatency} / out ${outputLatency}${roundTrip}${priority} · callbacks ${runtime.callbacks || 0} · dropouts ${runtime.dropouts} · late ${runtime.late || 0} · callback max ${runtime.callbackMaxUs.toFixed(0)} μs${warning}`;
   }
 
   function updateControls(state, syncOptions) {

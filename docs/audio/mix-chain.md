@@ -4,7 +4,7 @@ The new `kernel/fx/pro` package prepares a stereo chain in this order: four-band
 
 Native hosts assign a prepared chain to `engine.Config.MasterProcessor` before `engine.New`. The engine runs it after master gain and before the existing master safety limiter. `MasterProcessorLatencyFrames` reports its additional delay. Project image encoding rejects a prepared processor, because it contains host-owned state that cannot be silently omitted.
 
-Browser hosts can load the optional `cicada-mix.wasm` companion module separately from the core. `host/promix/processor.mjs` prepares it before the AudioWorklet starts and copies stereo blocks of up to 128 frames without making new typed-array views during processing. Preparation, compilation, fetches and controls belong outside the callback. The companion adds download bytes and memory; its size is reported separately and does not change the default core's size gate of 320 KiB raw and 120 KiB Brotli. The core worklet and project image ABI are unchanged.
+Browser hosts can load the optional `cicada-mix.wasm` companion module separately from the core. `host/promix/processor.mjs` prepares it before the AudioWorklet starts and copies stereo blocks of up to 128 frames without making new typed-array views during processing. Preparation, compilation, fetches and controls belong outside the callback. The companion adds download bytes and memory; its size is reported separately and does not change the default core's size gate of 320 KiB raw and 120 KiB Brotli. The core retains these size gates; saved track effects use a separately negotiated project-image capability.
 
 Build and exercise the actual TinyGo module:
 
@@ -67,11 +67,73 @@ An unreachable target returns an error instead of claiming success.
 The chain accepts at most 16 distinct effect names, in any order. Processing and
 reset allocate no memory. Offline export removes the summed processor latency
 and drains delayed final samples. Omission or `insert = none` preserves legacy
-output. Track and music-bus insert limits are unchanged. Master effects have
+output. Tracks accept eight serial inserts; the music bus still accepts one compressor. Master effects have
 fixed controls until recompilation; scene settings and live parameter paths for
 them are rejected. A compressor cannot share state between music and master.
 
 Prepared processors cannot be encoded into a core WASM project image. Browser
 score playback needs the companion modules connected by its host; that wiring
-is separate from native playback and Studio's saved-chain display. The core
-kernel ABI, worklet and size gates remain unchanged.
+is separate from native playback and Studio's saved-chain display. The master companion remains separate from core track processing.
+
+
+## Track inserts
+
+Track inserts accept up to eight distinct named stages in authored order.
+Supported kinds are `drive`, `eq`, `comp`, and `deesser`. Each track owns separate
+filter and detector state. The chain runs before the fader and both send taps,
+so vocal reverb and delay receive the processed voice. All processing and resets
+allocate no memory. The engine aligns tracks to the longest drive-insert delay;
+EQ, compression, and de-essing add no latency.
+
+```cicada
+cicada 2
+fx cleanup eq { type = highpass frequency = 80Hz q = 0.707 }
+fx leveler comp { threshold = -18dB ratio = 3 makeup = 0dB }
+fx sibilance deesser { frequency = 6000Hz threshold = -24dB ratio = 4 range = 9dB }
+track lead acid { insert = cleanup -> leveler -> sibilance }
+pattern phrase acid { 1 . 3 . 5 . 3 . }
+scene main { lead = phrase }
+song { main*4 }
+```
+
+The same chain can be inserted on recorded `audio` tracks. Add one EQ declaration
+per band; track EQ frequency is 10–19845 Hz, with the same type, Q, and gain
+controls as master EQ. Track compressors detect their own stereo input and do
+not accept an external sidechain. Saved chain edits rebuild independent state;
+scene and live effect automation on a serial track chain are currently rejected.
+The legacy single-drive insert retains its live controls.
+
+The stereo-linked de-esser uses a complementary first-order split: it attenuates
+the high-frequency band while retaining the vocal body. `range` caps detector
+gain reduction; it does not guarantee that every frequency is attenuated by
+that amount. Set `mix = 0` for exact bypass.
+
+| De-esser control | Unit | Range | Default |
+| --- | --- | --- | --- |
+| `frequency` | Hz | 2000–12000 | 6000 |
+| `threshold` | dBFS (write `dB`) | −60–0 | −24 |
+| `ratio` | unitless | 1–20 | 4 |
+| `range` | dB | 0–24 | 9 |
+| `attack` | ms | 0.1–20 | 1 |
+| `release` | ms | 10–500 | 80 |
+| `mix` | unitless | 0–1 | 1 |
+
+Studio's **Add vocal chain** creates an 80 Hz highpass, a compressor at −18 dB
+with ratio 3 and zero makeup, and the default de-esser in one undoable save. It
+keeps existing inserts and leaves an existing EQ → compressor → de-esser trio
+unchanged. Adjust the threshold to the recorded signal; these defaults are a
+starting point, not automatic leveling. Finish an active take before saving
+Mixer changes.
+
+Native playback, export, and portable playback use the same saved track stages.
+Core images require `TrackEffectsCapability` (bit 11). Studio automatically loads
+`cicada-vocals.wasm` for those images; scores using modeled keyboard voices load
+`cicada-keys.wasm`, which also includes track processing. The default portable
+core rejects the track-processing requirement. Missing optional modules return
+an error instead of silently playing without the effects.
+
+Build the optional processing variant with `make build-vocals-wasm`. Its raw and
+Brotli bytes are reported separately; the default core retains the 320 KiB raw
+and 120 KiB Brotli gates. WAM2 export automatically packages the required variant
+from beside the configured core file. `make build-wam2` prepares both the core
+and vocal modules; modeled keys require `make build-keys-wasm`.

@@ -170,6 +170,12 @@ func compileLiveProjectAtRate(path string, p *project.Project, sampleRate int) (
 	if err != nil {
 		return liveplay.Score{}, err
 	}
+	// Native live scores prepare admitted worker lanes before a callback can
+	// take ownership. Browser images and offline reference renders stay serial.
+	if err := created.EnableParallel(0); err != nil {
+		_ = created.Close()
+		return liveplay.Score{}, err
+	}
 	sceneIDs := make([]string, len(p.Scenes))
 	for i, scene := range p.Scenes {
 		sceneIDs[i] = scene.ID
@@ -225,7 +231,7 @@ func hasSFXTracks(p *project.Project) bool {
 func liveProjectParameters(p *project.Project, prepared *engine.Engine) []liveplay.ParameterValue {
 	addresses := project.ParamAddresses(p)
 	values := make([]liveplay.ParameterValue, 0, len(addresses))
-	var validators [16]engine.PreviewParamValidator
+	var validators [engine.MaxTracks]engine.PreviewParamValidator
 	for track := 0; track < prepared.TrackCount(); track++ {
 		validators[track] = prepared.PreviewParamValidator(track)
 	}

@@ -11,6 +11,15 @@ import (
 )
 
 func Compile(p *project.Project, root string, rate, block int) (engine.Config, error) {
+	return compile(p, root, rate, block, false)
+}
+
+// CompileResident retains the bounded PCM kernel-image/browser path. Native
+// playback and offline exports use Compile to page long arrangement clips.
+func CompileResident(p *project.Project, root string, rate, block int) (engine.Config, error) {
+	return compile(p, root, rate, block, true)
+}
+func compile(p *project.Project, root string, rate, block int, forceResident bool) (engine.Config, error) {
 	if err := project.ValidateProject(p); err != nil {
 		return engine.Config{}, err
 	}
@@ -18,21 +27,50 @@ func Compile(p *project.Project, root string, rate, block int) (engine.Config, e
 		return project.CompileEngine(p, rate, block)
 	}
 	assets := make([]engine.AudioAsset, len(p.Assets))
+	var resident int64
+	clipAssets, samplerAssets := map[string]bool{}, map[string]bool{}
+	for _, clip := range p.Clips {
+		clipAssets[clip.Asset] = true
+	}
+	for _, sampler := range p.Samplers {
+		if sampler.Asset != "" {
+			samplerAssets[sampler.Asset] = true
+		}
+	}
+	var streamAssets []project.Asset
+	var streamIDs []uint32
 	for i, a := range p.Assets {
+		bytes := a.Frames * int64(a.Channels) * 4
+		if !forceResident && clipAssets[a.Name] && !samplerAssets[a.Name] && (bytes > 1<<20 || a.Frames > sampleasset.FrameLimit(a) || bytes > 64<<20-resident) {
+			id := uint32(i + 1)
+			assets[i] = engine.AudioAsset{SampleRate: a.RateHz, Frames: a.Frames, StreamID: id}
+			streamAssets = append(streamAssets, a)
+			streamIDs = append(streamIDs, id)
+			continue
+		}
+		if a.Frames > sampleasset.FrameLimit(a) || bytes <= 0 || bytes > 64<<20-resident {
+			return engine.Config{}, fmt.Errorf("project audio exceeds the 64 MiB resident PCM budget")
+		}
 		region, err := sampleasset.LoadRegion(root, a, 0, a.Frames, 60, false)
 		if err != nil {
 			return engine.Config{}, err
 		}
 		assets[i] = engine.AudioAsset{Left: region.Left, Right: region.Right, SampleRate: region.SampleRate}
+		resident += bytes
+	}
+	var streaming engine.StreamingFactory
+	if len(streamAssets) > 0 {
+		plan, err := sampleasset.PrepareStreamPlan(root, streamAssets, streamIDs)
+		if err != nil {
+			return engine.Config{}, err
+		}
+		streaming = plan
 	}
 	cfg, err := project.CompileEngineWithAssets(p, rate, block, assets)
 	if err != nil {
 		return cfg, err
 	}
-	var resident int64
-	for _, a := range assets {
-		resident += int64(len(a.Left)+len(a.Right)) * 4
-	}
+	cfg.Streaming = streaming
 	packs := map[string]*engine.PackFactory{}
 	for _, sampler := range p.Samplers {
 		if sampler.Pack == "" {

@@ -2,11 +2,13 @@ package project
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 
 	"m31labs.dev/cicada/instrument"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/notation"
 )
@@ -320,10 +322,10 @@ func checkSourceVoiceBudget(score *notation.Score, tracks map[string]notation.Tr
 				voices++
 			}
 		}
-		if voices > 32 {
+		if voices > limits.MaxVoices {
 			return []notation.Diagnostic{{
 				Code: "CICADA-LIMIT", Severity: "error", Position: entry.Position,
-				Message: "scene " + scene.Name + " exceeds 32 simultaneous voices",
+				Message: fmt.Sprintf("scene %s exceeds %d simultaneous voices", scene.Name, limits.MaxVoices),
 			}}
 		}
 	}

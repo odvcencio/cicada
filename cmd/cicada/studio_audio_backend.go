@@ -23,6 +23,7 @@ func defaultStudioAudioOptionsFor(name audiobackend.Name) studioAudioOptions {
 	return studioAudioOptions{
 		InputEnabled: runtime.GOOS == "windows" && name == audiobackend.Tymbal,
 		MonitorMuted: true, MonitorGain: 0.5, MonitorMode: "stereo",
+		PeriodFrames: liveBlockFrames,
 	}
 }
 
@@ -35,6 +36,7 @@ func enumerateStudioAudio(backendName string) (studioAudioInventory, error) {
 	name := audiobackend.Name(backendName)
 	inventory := studioAudioInventory{
 		Backend: studioAudioBackendLabel(name), BackendName: string(name), Host: studioAudioHost(name), Supported: supported,
+		BufferChoices: []int{64, 128, 256, 512, 1024},
 	}
 	if err != nil {
 		return inventory, err
@@ -48,6 +50,8 @@ func enumerateStudioAudio(backendName string) (studioAudioInventory, error) {
 		info := studioAudioDeviceInfo{
 			ID: device.ID, Name: device.Name, Inputs: device.Inputs, Outputs: device.Outputs,
 			DefaultInput: device.DefaultInput, DefaultOutput: device.DefaultOutput,
+			MinPeriod: device.MinPeriod, MaxPeriod: device.MaxPeriod,
+			DefaultPeriod: device.DefaultPeriod, FundamentalPeriod: device.FundamentalPeriod,
 		}
 		if len(device.SampleRates) != 0 {
 			info.SampleRate = device.SampleRates[0]
@@ -71,7 +75,7 @@ func studioAudioSampleRate(backendName string, options studioAudioOptions) (int,
 		captureChannels = 2
 	}
 	return backend.SampleRate(audiobackend.Config{
-		Channels: 2, FramesPerPeriod: liveBlockFrames,
+		Channels: 2, FramesPerPeriod: options.PeriodFrames,
 		Device: options.OutputDevice, CaptureDevice: options.InputDevice,
 		CaptureChannels: captureChannels, AllowMissingInput: true,
 	})
@@ -91,16 +95,17 @@ func openStudioAudio(source io.Reader, options studioAudioOptions, backendName s
 		captureChannels = 2
 	}
 	session := &backendStudioAudio{
-		reader:     source,
-		formatName: studioAudioBackendLabel(audiobackend.Name(backendName)),
-		outputName: "System default",
-		rawOutput:  backendName != string(audiobackend.Tymbal),
+		reader:                source,
+		formatName:            studioAudioBackendLabel(audiobackend.Name(backendName)),
+		outputName:            "System default",
+		rawOutput:             backendName != string(audiobackend.Tymbal),
+		requestedPeriodFrames: options.PeriodFrames,
 	}
 	session.engineEpoch = studioEngineEpoch.Add(1)
 	monitor := studioMonitorOptions(options)
 	session.monitorState.Store(&monitor)
 	config := audiobackend.Config{
-		SampleRate: sampleRate, Channels: 2, FramesPerPeriod: liveBlockFrames,
+		SampleRate: sampleRate, Channels: 2, FramesPerPeriod: options.PeriodFrames,
 		Device: options.OutputDevice, CaptureDevice: options.InputDevice,
 		CaptureChannels: captureChannels, AllowMissingInput: true,
 		Capture: session.captureInput,
@@ -134,32 +139,37 @@ func effectiveStudioAudioOptions(backendName string, options studioAudioOptions)
 }
 
 type backendStudioAudio struct {
-	reader         io.Reader
-	stream         audiobackend.Stream
-	actual         audiobackend.Format
-	rawOutput      bool
-	playing        atomic.Bool
-	monitorState   atomic.Pointer[studioAudioMonitor]
-	inputPeakL     atomic.Uint32
-	inputPeakR     atomic.Uint32
-	outputPeakL    atomic.Uint32
-	outputPeakR    atomic.Uint32
-	pcm            []byte
-	formatName     string
-	inputName      string
-	outputName     string
-	startupWarning string
-	lifeMu         sync.Mutex // control side only
-	active         bool
-	armed          atomic.Pointer[capture.Recorder]
-	source         atomic.Pointer[studioRenderSource]
-	rendering      atomic.Int64
-	engineEpoch    uint64 // callback owned
-	engineFrame    int64  // callback owned
-	currentSource  *studioRenderSource
-	periodCapture  *capture.Recorder
-	periodPlaying  bool
-	timingSeen     bool
+	reader                io.Reader
+	stream                audiobackend.Stream
+	actual                audiobackend.Format
+	rawOutput             bool
+	playing               atomic.Bool
+	monitorState          atomic.Pointer[studioAudioMonitor]
+	inputPeakL            atomic.Uint32
+	inputPeakR            atomic.Uint32
+	inputHeldL            atomic.Uint32
+	inputHeldR            atomic.Uint32
+	inputSession          atomic.Uint64
+	captureDeviceEpoch    atomic.Uint64
+	outputPeakL           atomic.Uint32
+	outputPeakR           atomic.Uint32
+	pcm                   []byte
+	formatName            string
+	inputName             string
+	outputName            string
+	startupWarning        string
+	lifeMu                sync.Mutex // control side only
+	active                bool
+	armed                 atomic.Pointer[capture.Recorder]
+	source                atomic.Pointer[studioRenderSource]
+	rendering             atomic.Int64
+	engineEpoch           uint64 // callback owned
+	engineFrame           int64  // callback owned
+	currentSource         *studioRenderSource
+	periodCapture         *capture.Recorder
+	periodPlaying         bool
+	timingSeen            bool
+	requestedPeriodFrames int
 }
 
 var studioEngineEpoch atomic.Uint64
@@ -177,6 +187,11 @@ func (a *backendStudioAudio) SetSource(reader io.Reader) {
 
 func (a *backendStudioAudio) captureInput(b capture.Block, input [][]float32) {
 	a.rendering.Add(1)
+	epoch := uint64(0)
+	if capture.Place(b).Confidence != capture.TimingUnavailable {
+		epoch = b.DeviceEpoch
+	}
+	a.captureDeviceEpoch.Store(epoch)
 	a.timingSeen = true
 	a.adoptSource()
 	a.periodPlaying = a.playing.Load()
@@ -185,6 +200,10 @@ func (a *backendStudioAudio) captureInput(b capture.Block, input [][]float32) {
 	if a.periodCapture != nil && a.periodPlaying {
 		a.periodCapture.Capture(b, input)
 	}
+}
+
+func (a *backendStudioAudio) CaptureDeviceEpoch() uint64 {
+	return a.captureDeviceEpoch.Load()
 }
 
 func (a *backendStudioAudio) adoptSource() {
@@ -207,22 +226,20 @@ func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 	if a.timingSeen {
 		playing = a.periodPlaying
 	}
-	if !playing {
-		clearStudioAudioOutput(output)
-		peakL, peakR, _, _ := measureStudioAudioInput(input)
-		a.inputPeakL.Store(math.Float32bits(peakL))
-		a.inputPeakR.Store(math.Float32bits(peakR))
-		a.outputPeakL.Store(0)
-		a.outputPeakR.Store(0)
-		return nil
-	}
-	peakL, peakR, _, _ := measureStudioAudioInput(input)
-	a.inputPeakL.Store(math.Float32bits(peakL))
-	a.inputPeakR.Store(math.Float32bits(peakR))
 	monitor := a.monitorState.Load()
 	if monitor == nil {
 		monitor = &studioMutedMonitor
 	}
+	if !playing {
+		clearStudioAudioOutput(output)
+		a.measureInput(input)
+		if a.periodCapture != nil && !a.rawOutput {
+			mixStudioMonitor(input, output, *monitor)
+		}
+		a.measureOutput(output)
+		return nil
+	}
+	a.measureInput(input)
 	var err error
 	reader := a.reader
 	if a.currentSource != nil {
@@ -241,11 +258,7 @@ func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 	if frames > 0 && a.rawOutput {
 		err = renderLivePlayPeriod(reader, a.pcm, tail[:min(len(output), 2)])
 	} else if frames > 0 {
-		var monitored [2][]float32
-		for ch := range min(len(input), 2) {
-			monitored[ch] = input[ch][min(delay, len(input[ch])):]
-		}
-		err = renderStudioAudioPeriod(reader, a.pcm, monitored[:min(len(input), 2)], tail[:min(len(output), 2)], *monitor)
+		err = renderStudioAudioPeriod(reader, a.pcm, nil, tail[:min(len(output), 2)], studioMutedMonitor)
 	}
 	if err != nil {
 		if a.periodCapture != nil {
@@ -254,7 +267,17 @@ func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 		clearStudioAudioOutput(output)
 		return err
 	}
+	if !a.rawOutput {
+		// Monitor all input, including warmup and count-in, without moving the
+		// score or adding a software queue ahead of the device period.
+		mixStudioMonitor(input, output, *monitor)
+	}
 	a.engineFrame += int64(frames)
+	a.measureOutput(output)
+	return nil
+}
+
+func (a *backendStudioAudio) measureOutput(output [][]float32) {
 	var outputL, outputR float32
 	for channelIndex, channel := range output {
 		for _, sample := range channel {
@@ -269,7 +292,6 @@ func (a *backendStudioAudio) renderPeriod(input, output [][]float32) error {
 	}
 	a.outputPeakL.Store(math.Float32bits(outputL))
 	a.outputPeakR.Store(math.Float32bits(outputR))
-	return nil
 }
 
 func (a *backendStudioAudio) Play() error {
@@ -278,7 +300,9 @@ func (a *backendStudioAudio) Play() error {
 	if err := a.Err(); err != nil {
 		return err
 	}
-	a.playing.Store(true)
+	if !a.playing.Swap(true) {
+		a.resetInputMeter()
+	}
 	if err := a.startDevice(); err != nil {
 		a.playing.Store(false)
 		return err
@@ -337,6 +361,7 @@ func (a *backendStudioAudio) BeginCapture(countIn capture.CountIn, calibration c
 	a.lifeMu.Lock()
 	defer a.lifeMu.Unlock()
 	if recorder := a.armed.Load(); recorder != nil {
+		a.resetInputMeter()
 		return recorder.Begin(countIn, calibration)
 	}
 	return fmt.Errorf("arm capture before recording")
@@ -409,13 +434,31 @@ func (a *backendStudioAudio) Snapshot() studioAudioSnapshot {
 		OutputLatencyMS:   float64(a.actual.Latency) / float64(time.Millisecond),
 		InputLatencyKnown: a.actual.CaptureLatency > 0, OutputLatencyKnown: a.actual.Latency > 0,
 		InputPeakL: math.Float32frombits(a.inputPeakL.Load()), InputPeakR: math.Float32frombits(a.inputPeakR.Load()),
+		InputHeldL: math.Float32frombits(a.inputHeldL.Load()), InputHeldR: math.Float32frombits(a.inputHeldR.Load()), InputSession: a.inputSession.Load(),
 		OutputPeakL: math.Float32frombits(a.outputPeakL.Load()), OutputPeakR: math.Float32frombits(a.outputPeakR.Load()),
 		Error: a.startupWarning,
 	}
 	if a.stream != nil {
+		format := a.stream.Format()
+		snapshot.AudioPriority, snapshot.DeadlineKnown = format.Priority, format.HasDeadline
 		stats := a.stream.Stats()
 		snapshot.Callbacks, snapshot.Dropouts, snapshot.Late = stats.Callbacks, stats.Dropouts, stats.Late
 		snapshot.CallbackMaxUS = float64(stats.CallbackMax) / float64(time.Microsecond)
+	}
+	snapshot.RequestedPeriodFrames, snapshot.DevicePeriods = a.requestedPeriodFrames, a.actual.Periods
+	if snapshot.SampleRate > 0 && snapshot.PeriodFrames > 0 {
+		snapshot.PeriodMS = float64(snapshot.PeriodFrames) * 1000 / float64(snapshot.SampleRate)
+		snapshot.CallbackBudgetPercent = snapshot.CallbackMaxUS / (snapshot.PeriodMS * 10)
+	}
+	snapshot.ReportedRoundTripKnown = snapshot.InputChannels > 0 && snapshot.InputLatencyKnown && snapshot.OutputLatencyKnown
+	if snapshot.ReportedRoundTripKnown {
+		snapshot.ReportedRoundTripMS = snapshot.InputLatencyMS + snapshot.OutputLatencyMS
+	}
+	if a.requestedPeriodFrames > 0 && a.actual.FramesPerPeriod > a.requestedPeriodFrames {
+		snapshot.Warning = fmt.Sprintf("Device negotiated %d frames for the requested %d-frame buffer.", a.actual.FramesPerPeriod, a.requestedPeriodFrames)
+	}
+	if snapshot.Dropouts > 0 || snapshot.Late > 0 || snapshot.CallbackBudgetPercent >= 100 {
+		snapshot.Warning = "Audio missed its buffer budget; stop and select a larger buffer."
 	}
 	if recorder := a.armed.Load(); recorder != nil {
 		state := recorder.Snapshot()

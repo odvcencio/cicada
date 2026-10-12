@@ -81,7 +81,7 @@ func TestWAVRejectsShortWrite(t *testing.T) {
 }
 
 func TestWAVRejectsOverVoiceBudgetBeforeWriting(t *testing.T) {
-	source, err := os.ReadFile("../testdata/invalid/over-32-voices.cicada")
+	source, err := os.ReadFile("../testdata/invalid/over-256-voices.cicada")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,7 +90,7 @@ func TestWAVRejectsOverVoiceBudgetBeforeWriting(t *testing.T) {
 		t.Fatalf("source diagnostics: %+v", diagnostics)
 	}
 	var output bytes.Buffer
-	if _, err := WAV(score, Options{SampleRate: 48_000, Bars: 1}, &output); err == nil || !strings.Contains(err.Error(), "32 simultaneous voices") {
+	if _, err := WAV(score, Options{SampleRate: 48_000, Bars: 1}, &output); err == nil || !strings.Contains(err.Error(), "256 simultaneous voices") {
 		t.Fatalf("voice limit was not enforced: %v", err)
 	}
 	if output.Len() != 0 {

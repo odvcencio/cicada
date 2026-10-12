@@ -16,7 +16,7 @@ song { verse }
 ## Musical contract and limits
 
 - `voice poly` is explicit and applies only to typed graph instruments. A track
-  assigned chord patterns allocates four slots against the 32-voice project limit.
+  assigned chord patterns allocates four slots against the native 256-voice project limit, or the portable 32-voice image limit.
   Scalar polyphonic patterns retain the eight-voice Live instrument mode
 - Chords contain 2–4 distinct resolved MIDI pitches. Octave marks and phrase
   transpose work. Suffix accent/chance applies to the complete cohort; `-`
@@ -28,9 +28,15 @@ song { verse }
   the previous cohort, including a longer chord replaced by a shorter one.
   Release/declick tails may overlap within the same four fixed slots
 - Voices choose the lowest free slot, then the quietest releasing slot estimated
-  from peak level × remaining release plus its tail, then the oldest gated note.
+  from peak level × envelope level (remaining fade for legacy `env` graphs)
+  plus its tail, then the oldest gated note.
   Equal rankings choose the lowest index. Sum order is fixed ascending-slot order
-- Release is bounded to 30 ms; one 5 ms declick tail belongs to each stolen slot.
+- Graphs containing `adsr` retain their authored release and filter/delay tails.
+  Silent voices retire after their delay storage has drained; a roughly
+  30-second safety bound prevents a constant gate from keeping a released
+  voice forever. Graphs without `adsr` retain the legacy 30 ms release fade.
+  One 5 ms declick tail belongs to each stolen slot. A new four-note chord
+  still needs all four slots and therefore steals the previous chord's tails.
   Handles remain monotonic across reset; stale handles/generation releases cannot
   stop replacements. The opt-in pool reseeds graph noise on reset/reuse; legacy
   mono graph reset behavior is unchanged

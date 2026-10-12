@@ -3,8 +3,9 @@
 Cicada has 21 original keyboard patches. Their modeled versions retain
 velocity, sustain and release behavior. All prepare coefficients before audio
 starts, allocate nothing during playback and support MIDI 21–108 at 44.1,
-48, 96 and 192 kHz. `voices` reserves 1–8 notes per track within the unchanged
-32-voice project budget.
+48, 96 and 192 kHz. `voices` reserves 1–8 notes per track within the native
+256-voice project budget. Browser and WAM images support up to 32 voices
+across 16 tracks; native playback supports up to 64 tracks.
 
 | Family | Score instrument names |
 | --- | --- |
@@ -104,6 +105,30 @@ and three block sizes. Reference and cost evidence is in the engine READMEs
 and [the reference report](keys-reference-measurements.md). Unknown reference
 registrations and velocities limit exact comparisons; listening is needed to
 assess the sound.
+
+## Levels
+
+Every modeled keyboard patch has one fixed calibration trim, so the same music
+at the same fader comes out at about the same loudness. The reference for each
+patch is its `examples/keys/<patch>.cicada` file at `level = 0dB`; its first
+four bars measure -24 LUFS integrated (BS.1770, plus or minus 0.5 LU). The trim
+sits at the voice output, in `LevelTrimDB` in `host/keyboard`. It is separate
+from `gain`, `output`, `level` and velocity, which keep their meaning and
+defaults: a score with `output = 6dB` gets the trim plus its 6 dB. Native
+playback, offline render and the keys WASM module apply the same trim.
+`TestKeysReferenceLevels` in `render` measures all 21 patches.
+
+Scores written before this change play their keyboard parts at a different
+loudness: trims range from -5.7 dB (`clav`) to +15.1 dB (`poly_keys`). Re-check
+the balance of existing mixes.
+
+The grand piano (`piano`) has its own fixed trim of +12.97 dB
+(`PianoLevelTrimDB` in `kernel/voice/keyboard`), applied at the voice output in
+the engine and in offline render. Its reference is `examples/modeled-piano.cicada`
+with the fader moved from -6 dB to 0 dB, rendered over its four bars; that
+measures -24 LUFS. `level`, velocity and `sustain` keep their meaning.
+`TestPianoReferenceLevel` in `render` checks it. Existing piano scores play
+about 13 dB louder than before.
 
 ## Tine and Reed EP controls
 

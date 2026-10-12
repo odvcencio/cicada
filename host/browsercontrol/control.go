@@ -39,7 +39,7 @@ type Controller struct {
 	policy     demopolicy.Policy
 	tracks     map[string]route
 	params     map[string]project.ResolvedParam
-	validators [16]engine.PreviewParamValidator
+	validators [engine.MaxTracks]engine.PreviewParamValidator
 	count      uint8
 	send       func([]byte) error
 	held       map[string]heldNote

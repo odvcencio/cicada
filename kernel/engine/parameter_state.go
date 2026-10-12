@@ -8,14 +8,18 @@ import (
 )
 
 // ParameterState stores registry values without allocating during reconstruction.
-// Slot 16 holds global parameters; the high word marks present values.
-type ParameterState [17][kernel.ParamCount]uint64
+// The slot after the last track (ParameterGlobalSlot) holds global parameters;
+// the high word marks present values.
+type ParameterState [MaxTracks + 1][kernel.ParamCount]uint64
+
+// ParameterGlobalSlot is the ParameterState index of global (track 0xff) values.
+const ParameterGlobalSlot = MaxTracks
 
 func (state *ParameterState) Set(track uint8, id kernel.ParamID, value float32) {
 	if track == 0xff {
-		track = 16
+		track = ParameterGlobalSlot
 	}
-	if track < 17 && id < kernel.ParamCount {
+	if track <= ParameterGlobalSlot && id < kernel.ParamCount {
 		state[track][id] = 1<<32 | uint64(math.Float32bits(value))
 	}
 }
@@ -46,7 +50,7 @@ func (state *ParameterState) visit(visitor parameterVisitor) {
 				continue
 			}
 			index := uint8(track)
-			if index == 16 {
+			if index == ParameterGlobalSlot {
 				index = 0xff
 			}
 			visitor.apply(SceneSetting{Track: index, ID: kernel.ParamID(id), Value: math.Float32frombits(uint32(bits))}, true)

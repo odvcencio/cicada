@@ -15,7 +15,7 @@ const patchCapacity = 64
 // Leave room for the largest note batch, all slot/scene launches, transport,
 // and currently active overrides. Limit work even when the kernel is empty.
 const patchBlockBudget = 2 * patchCapacity
-const renderCommandReserve = 256 + 16 + 1 + 2
+const renderCommandReserve = 256 + engine.MaxTracks + 1 + 2
 
 // PatchArena owns reusable batches. A successful Patch transfers ownership to
 // Read; rejected batches return immediately. Builders must stop after transfer.
@@ -92,7 +92,7 @@ func (patch *Patch) append(c cmd.Command, target PreviewTarget) {
 		patch.err = cmd.Error("patch command capacity exceeded")
 		return
 	}
-	if err := c.Validate(16); err != nil {
+	if err := c.Validate(engine.MaxTracks); err != nil {
 		patch.err = err
 		return
 	}
@@ -363,6 +363,7 @@ func (p *Player) rebuildCommitted(score Score, tick int64) {
 	if snapshot := p.overrides.Load(); snapshot != nil {
 		for _, overrides := range snapshot.tracks {
 			clear(overrides.state.appliedVersions[:])
+			p.appliedOverrideSnapshot = nil // Reapply: the committed base moved under the cache.
 		}
 	}
 }
@@ -374,10 +375,25 @@ func (p *Player) recordCommitted(track uint8, id kernel.ParamID, value float32) 
 	if snapshot := p.overrides.Load(); snapshot != nil {
 		if overrides := snapshot.tracks[names.overrideTrack(track)]; overrides != nil {
 			overrides.state.appliedVersions[id] = 0 // Reapply any different active gesture.
+			p.appliedOverrideSnapshot = nil         // applyOverrides caches by snapshot; invalidate it.
 		}
 	}
 }
 
+// Precedence of a scene value against a patch drained in the same block. The
+// render thread drains commands in priority order (transport 0, launch and
+// pattern selection 1, parameters 2), then runs the frame loop.
+//
+//	way the scene value applies         runs                  winner  why
+//	queued launch (OpLaunchScene)       drain, priority 1     patch   parameters (2) follow launches (1)
+//	song start (OpSeek, OpPlay)         drain, priority 0     patch   reconstruction precedes parameters
+//	seek / swap (OpSeek, OpPlay)        drain, priority 0     patch   same reconstruction path
+//	automatic transition (advanceSong)  frame loop, after it  scene   it applies after the drain
+//	any transition after block start    frame loop            scene   its tick is later than the block's
+//
+// The first three rows share one test: the scene started at the block's first
+// tick and the block queued a transport command (p.transportQueued) or a launch
+// (p.reconstructed, filled by notePendingScenes). Otherwise the scene wins.
 func (p *Player) noteSceneCommitted(index int, blockTick int64) {
 	p.current.Engine.VisitSceneParameters(uint16(index), func(parameter engine.SceneSetting, _ bool) {
 		if parameter.Division != 0 {
@@ -385,17 +401,18 @@ func (p *Player) noteSceneCommitted(index int, blockTick int64) {
 		}
 		track := parameter.Track
 		if track == 0xff {
-			track = 16
+			track = engine.ParameterGlobalSlot
 		}
-		// A same-tick patch follows scene launch in the kernel command order.
-		// A later transition within this block supersedes the patch instead.
-		if p.current.Engine.CurrentSceneTick() <= blockTick && p.blockParameters[track][parameter.ID]>>32 != 0 {
-			return
+		if p.current.Engine.CurrentSceneTick() <= blockTick && p.blockParameters[track][parameter.ID]>>32 != 0 &&
+			(p.transportQueued || p.reconstructed[track][parameter.ID]>>32 != 0) {
+			return // The scene value applied first; the patch drained in this block follows it.
 		}
 		p.recordCommitted(parameter.Track, parameter.ID, parameter.Value)
 	})
 }
 
+// notePendingScenes leaves the values of launches queued ahead of this block's
+// patches in p.reconstructed. noteSceneCommitted reads them after Render.
 func (p *Player) notePendingScenes(tick int64) {
 	clear(p.reconstructed[:])
 	p.current.Engine.VisitPendingSceneParameters(tick, func(setting engine.SceneSetting, _ bool) {
@@ -406,7 +423,7 @@ func (p *Player) notePendingScenes(tick int64) {
 	p.reconstructed.Visit(func(setting engine.SceneSetting, _ bool) {
 		track := setting.Track
 		if track == 0xff {
-			track = 16
+			track = engine.ParameterGlobalSlot
 		}
 		if p.blockParameters[track][setting.ID]>>32 == 0 {
 			p.recordCommitted(setting.Track, setting.ID, setting.Value)

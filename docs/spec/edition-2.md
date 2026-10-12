@@ -108,7 +108,8 @@ re-excitation. The model clamps pitch, including bend, to 40..2000 Hz.
 
 **Runtime:** Native playback, the production TinyGo AudioWorklet kernel and
 offline WAV/stem rendering use the same physical model and amp. One track uses
-one voice from the unchanged 32-voice, 16-track core limits. Storage is prepared
+one voice within the native 256-voice, 64-track limits, or the portable
+32-voice, 16-track limits. Storage is prepared
 before rendering; note/control/render callbacks allocate nothing. At 48 kHz the
 string delay stores 2,408 float64 samples (19,264 bytes), plus fixed voice/amp
 state. Guitar is available in the core profile within its unchanged size gates.

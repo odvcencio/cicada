@@ -17,7 +17,20 @@ Parse and validate source on the host, convert it to a typed project, and
 compile the project before starting audio. `project.CompileEngine` creates an
 engine configuration; `engine.New` validates and copies its track, pattern,
 scene, and song tables. `engine.Render` accepts 1–4096 equal-length float32
-stereo frames and allocates no memory after engine construction. A render
+stereo frames and allocates no memory after engine construction. Native hosts can call `EnableParallel(0)` before playback to prepare up to
+four render lanes for sessions with at least 32 tracks. Smaller sessions and
+short event intervals keep the serial path. Workers sleep between blocks and render independent track
+sources and inserts between sample-accurate control boundaries. The caller
+reduces tracks in their original order and processes sends, buses and master
+effects. Browser kernels stay serial. `Retire` cancels jobs without waiting;
+`Close` joins workers off the audio callback before releasing clip readers.
+Retired engines cannot be reset or reused. Windows workers request MMCSS
+Pro Audio on their own locked threads and restore it on exit; unavailable
+priority remains visible through `ParallelPriority`. Other hosts use normal OS
+scheduling. The bounded worker join protects ownership after a stalled job;
+it does not promise that a callback meets the device deadline.
+
+A render
 fault silences the rest of that block and stops transport.
 
 The native `cicada play` command follows the same boundary: compilation,
@@ -120,7 +133,10 @@ For drum patterns, a step command's note field selects a lane index from 0 to
 10 in this order: `bd sd ch oh cp rs lt mt ht cb cy`. Clear a rest for one
 lane without changing the other lanes at that step. A built-in drum voice
 allocates the added lanes when a pattern hits them or the track configures
-their parameters; the realtime cap remains 32 voices.
+their parameters. Native playback supports up to 64 tracks and 256 allocated
+voices; browser and WAM images retain 16 tracks and 32 voices. Small native
+projects keep the portable 32-voice configuration. Larger projects export as
+WAV or stems; portable export rejects them before writing an image.
 
 The engine can queue scene changes at a quantized boundary. Pattern-end
 quantization waits until active patterns reach a shared end. With different
@@ -197,6 +213,8 @@ text.
 | 41 | `FaultPolyGeneration` | A polyphonic track ran out of pattern generations. |
 | 42 | `FaultHostCommandBatch` | The host refused a command batch: the count was out of range, a record was invalid, or the queue was full. The WASM exports send this. |
 | 43 | `FaultHostRenderFrames` | The host asked for a frame count outside 1 to the block limit. The WASM exports send this. |
+| 46 | `FaultTrackInsert` | A serial track effect reported invalid audio. |
+| 47 | `FaultParallelWorker` | A native DSP worker failed or exceeded the bounded join time; replace the engine. |
 
 Numbers 12 to 19 are retired. Earlier builds used each of them for two to five
 unrelated faults, so a log line that holds one cannot be decoded with certainty.

@@ -9,6 +9,7 @@ import (
 
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/instrument"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -146,8 +147,8 @@ func addPresetSourceParsed(source []byte, presetID, instrumentName, trackName st
 			return nil, fmt.Errorf("track %s already exists", trackName)
 		}
 	}
-	if len(score.Tracks) >= 16 {
-		return nil, fmt.Errorf("a project supports at most 16 tracks")
+	if len(score.Tracks) >= limits.MaxTracks {
+		return nil, fmt.Errorf("a project supports at most %d tracks", limits.MaxTracks)
 	}
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {

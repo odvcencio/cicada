@@ -19,6 +19,15 @@ import (
 // MaxFrames bounds the resident PCM of one prepared asset (64 MiB stereo).
 const MaxFrames = 8 << 20
 
+// A mono vocal print can use the same 64 MiB allowance for a longer song.
+// Stereo samples retain their original bound; aggregate admission stays bounded.
+func FrameLimit(asset project.Asset) int64 {
+	if asset.Source == "recorded" && asset.Channels == 1 {
+		return 16 << 20
+	}
+	return MaxFrames
+}
+
 // LoadSampler connects a sampler declaration to a bounded sample pool.
 func LoadSampler(dir string, p *project.Project, name string) (*sample.Pool, error) {
 	if p == nil {
@@ -84,8 +93,8 @@ func LoadRegion(dir string, asset project.Asset, start, end int64, rootKey int, 
 	if h.Frames != asset.Frames || h.RateHz != asset.RateHz || h.Channels != asset.Channels {
 		return region, fmt.Errorf("sample asset dimensions differ from the declaration")
 	}
-	if h.Frames > MaxFrames {
-		return region, fmt.Errorf("sample asset exceeds %d resident frames", MaxFrames)
+	if h.Frames > FrameLimit(asset) {
+		return region, fmt.Errorf("sample asset exceeds %d resident frames", FrameLimit(asset))
 	}
 	if end == 0 {
 		end = h.Frames

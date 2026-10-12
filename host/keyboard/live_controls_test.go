@@ -268,3 +268,60 @@ func TestOrganDriveGlideToZeroSettlesToTheBypass(t *testing.T) {
 		t.Fatalf("after 250 ms the glided voice differs from a drive-0 voice by %.3g of its level", math.Sqrt(difference/reference))
 	}
 }
+
+// The level trim wraps every voice NewCalibrated builds. Live controls must
+// reach the voice through it, and the trim must stay applied.
+func TestCalibratedVoiceForwardsLiveControls(t *testing.T) {
+	for _, c := range liveCases {
+		t.Run(c.patch+"/"+c.name, func(t *testing.T) {
+			s, err := DefaultSpec(c.patch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			slot := slotOf(t, c.patch, c.name)
+			s.Controls[slot] = c.from
+			build := func(prepare func(int, *keyboard.Spec) (keyboard.Voice, error)) keyboard.Voice {
+				v, err := prepare(48000, &s)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, note := range [...]uint8{48, 60, 64, 67} {
+					_ = v.NoteOn(note, 100)
+				}
+				for range 1024 {
+					v.NextStereo()
+				}
+				return v
+			}
+			trimmed, raw := build(NewCalibrated), build(New)
+			if _, wrapped := trimmed.(*calibrated); wrapped != (LevelTrimLinear(s.Patch) != 1) {
+				t.Fatalf("patch %s wrapped=%v", c.patch, wrapped)
+			}
+			ref := build(NewCalibrated)
+			refL, refR := renderLive(ref)
+			controller, ok := trimmed.(keyboard.Controller)
+			if !ok {
+				t.Fatal("calibrated voice lost its live controls")
+			}
+			if err := controller.SetControl(slot, c.to, 1); err != nil {
+				t.Fatal(err)
+			}
+			gotL, gotR := renderLive(trimmed)
+			if _, size := onset(gotL, gotR, refL, refR); size == 0 {
+				t.Fatalf("%s did not change a calibrated voice", c.name)
+			}
+			if err := raw.(keyboard.Controller).SetControl(slot, c.to, 1); err != nil {
+				t.Fatal(err)
+			}
+			rawL, _ := renderLive(raw)
+			gain := LevelTrimLinear(s.Patch)
+			var worst float64
+			for i := range rawL {
+				worst = math.Max(worst, math.Abs(float64(gotL[i])-float64(rawL[i]*gain)))
+			}
+			if worst > 1e-6 {
+				t.Fatalf("calibrated output is not the trimmed raw output after the control: %g", worst)
+			}
+		})
+	}
+}

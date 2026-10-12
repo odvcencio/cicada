@@ -1,0 +1,53 @@
+cicada 2
+import "std/drum-machines"
+title "Classic Drum Study"
+tempo 120
+seed 808909
+
+// Equal track levels make the two families easy to compare without effects.
+track eight drum-machines.eight-oh-eight { level = -6dB }
+track nine drum-machines.nine-oh-nine { level = -6dB }
+
+pattern core drums {
+  bd: X... .... .... .... .... .... .... .... .... .... .... .... .... .... .... ....
+  sd: .... .... .... .... X... .... .... .... .... .... .... .... .... .... .... ....
+  ch: .... .... .... .... .... .... .... .... x... .... x... .... .... .... .... ....
+  oh: .... .... .... .... .... .... .... .... .... .... .... .... x... .... .... ....
+}
+pattern colors drums {
+  cp: X... .... .... .... .... .... .... .... .... .... .... .... .... .... .... ....
+  rs: .... .... .... .... x... .... .... .... .... .... .... .... .... .... .... ....
+  lt: .... .... .... .... .... .... .... .... x... .... .... .... .... .... .... ....
+  mt: .... .... .... .... .... .... .... .... .... .x.. .... .... .... .... .... ....
+  ht: .... .... .... .... .... .... .... .... .... .... ..x. .... .... .... .... ....
+  cb: .... .... .... .... .... .... .... .... .... .... .... .... x... .... .... ....
+  cy: .... .... .... .... .... .... .... .... .... .... .... .... .... .... X... ....
+}
+pattern groove drums {
+  bd: X... ..x. x... ..x. X... ..x. x..x ..x. X... ..x. x... ..x. X... ..x. x..x ...x
+  sd: .... x... .... X... .... x... .... X... .... x... .... X... .... x... ..x. X...
+  ch: x.x. x.x. x.x. x.x. x.x. x.x. x.x. x.x. x.x. x.x. x.x. x.x. x.x. x.x. x.x. x.x.
+  oh: .... .... ..x. .... .... .... .... ..x. .... .... ..x. .... .... .... .... ..x.
+  cp: .... .... .... x... .... .... .... x... .... .... .... x... .... .... .... x...
+  rs: .... ...x .... .... .... .... ...x .... .... ...x .... .... .... .... .... ....
+  lt: .... .... .... .... .... .... .... .... .... .... .... .... .... .... .... ...x
+  mt: .... .... .... .... .... .... .... .... .... .... .... .... .... .... .... .x..
+  ht: .... .... .... .... .... .... .... .... .... .... .... .... .... .... ...x ....
+  cb: .... ..x. .... ..x. .... ..x. .... ..x. .... ..x. .... ..x. .... ..x. .... ..x.
+  cy: X... .... .... .... .... .... .... .... .... .... .... .... .... .... .... ....
+}
+arrange {
+  marker eight-core { at = @1.1.1 }
+  marker eight-colors { at = @5.1.1 }
+  marker eight-groove { at = @9.1.1 }
+  marker nine-core { at = @17.1.1 }
+  marker nine-colors { at = @21.1.1 }
+  marker nine-groove { at = @25.1.1 }
+  place eight-core-part eight core { at = @1.1.1 length = 4bars }
+  place eight-colors-part eight colors { at = @5.1.1 length = 4bars }
+  place eight-groove-part eight groove { at = @9.1.1 length = 8bars }
+  place nine-core-part nine core { at = @17.1.1 length = 4bars }
+  place nine-colors-part nine colors { at = @21.1.1 length = 4bars }
+  place nine-groove-part nine groove { at = @25.1.1 length = 8bars }
+}
+export listening { rate = 48000Hz bits = 24 normalize = on tail = 2s }

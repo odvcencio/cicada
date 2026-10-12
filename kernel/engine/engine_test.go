@@ -295,7 +295,7 @@ func BenchmarkPatternRender16Tracks128(b *testing.B) {
 func BenchmarkLiveRender16Tracks128(b *testing.B) {
 	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 16, MaxVoices: 16, BPMMilli: 120_000}
 	var commands [16]cmd.Command
-	for track := range cfg.Track {
+	for track := 0; track < cfg.Tracks; track++ {
 		cfg.Track[track].Kind = VoiceAcid
 		commands[track] = cmd.Command{Op: cmd.OpNoteOn, Track: uint8(track), Arg0: 45 | 100<<8}
 	}

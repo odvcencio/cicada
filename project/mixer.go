@@ -46,8 +46,8 @@ func CompileMixerParams(track notation.Track) (Mixer, error) {
 					names = append(names, part)
 				}
 			}
-			if track.Name != "master" && (len(names) != 1 || strings.Contains(param.Value, "->")) {
-				return mixer, fmt.Errorf("insert chain is not implemented")
+			if track.Name != "master" && len(names) > 8 {
+				return mixer, fmt.Errorf("track insert chain exceeds eight stages")
 			}
 			if len(names) == 0 {
 				return mixer, fmt.Errorf("insert requires an effect name or none")

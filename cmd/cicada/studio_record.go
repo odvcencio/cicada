@@ -59,24 +59,12 @@ func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
 			edit.Pattern = recording.Pattern
 		}
 	}
-	var committedRevision string
-	var cancelHandoff func()
-	receipt := &studioRecordingResponse{ResponseWriter: w, onStatus: func(status int) {
-		// applyPreparedIntents still holds the edit lock while sending the
-		// outcome, so cancellation cannot race another recording commit.
-		if status != http.StatusOK && cancelHandoff != nil {
-			cancelHandoff()
-		}
-	}}
+	// The commit tail arms the poll handoff once the write lands, keyed by the
+	// playback fingerprint that poll will compute (entry, every source file and
+	// cicada.mod), so an unrelated edit to another file cannot consume it.
+	edit.recordedTake = true
 	intent := &edits.RecordTake{Recordings: editRecordings(edit.Recordings)}
-	s.applyPreparedIntents(receipt, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil, func(result *edits.Result) error {
-		committedRevision = edits.Revision(result.Source)
-		return nil
-	}, func() {
-		if s.history != nil {
-			cancelHandoff = s.history.expectRecordedTake(committedRevision)
-		}
-	})
+	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
 func editRecordings(recordings []studioTakeRecording) []edits.Recording {

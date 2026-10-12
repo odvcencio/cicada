@@ -16,6 +16,7 @@ import (
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
+	"m31labs.dev/cicada/workstation/control"
 )
 
 type backend struct {
@@ -68,7 +69,13 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 	if b.token != "" {
 		req.Header.Set("Authorization", "Bearer "+b.token)
 	}
-	response, err := b.client.Do(req)
+	client := b.client
+	if strings.HasPrefix(resource.Path, "/api/sampler") {
+		copy := *client
+		copy.Timeout = 60 * time.Second
+		client = &copy
+	}
+	response, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("Tymbal service is unavailable: %w", err)
 	}
@@ -137,35 +144,49 @@ type workspace struct {
 }
 
 type transport struct {
-	Playing bool   `json:"playing"`
-	Bar     int64  `json:"bar"`
-	Step    int64  `json:"step"`
-	Backend string `json:"activeBackend"`
-	Error   string `json:"error"`
+	Playing   bool   `json:"playing"`
+	Bar       int64  `json:"bar"`
+	Step      int64  `json:"step"`
+	Backend   string `json:"activeBackend"`
+	Error     string `json:"error"`
+	Listening string `json:"listeningStatus"`
 }
 
 type audioOptions struct {
-	InputDevice  string  `json:"inputDevice"`
-	OutputDevice string  `json:"outputDevice"`
-	InputEnabled bool    `json:"inputEnabled"`
-	MonitorMuted bool    `json:"monitorMuted"`
-	MonitorGain  float64 `json:"monitorGain"`
-	MonitorMode  string  `json:"monitorMode"`
+	InputDevice       string  `json:"inputDevice"`
+	OutputDevice      string  `json:"outputDevice"`
+	InputEnabled      bool    `json:"inputEnabled"`
+	MonitorMuted      bool    `json:"monitorMuted"`
+	MonitorGain       float64 `json:"monitorGain"`
+	MonitorMode       string  `json:"monitorMode"`
+	RecordingOffsetMS float64 `json:"recordingOffsetMS"`
+	PeriodFrames      int     `json:"periodFrames"`
+}
+type audioDevice struct {
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	Inputs            int    `json:"inputs"`
+	Outputs           int    `json:"outputs"`
+	DefaultInput      bool   `json:"defaultInput"`
+	DefaultOutput     bool   `json:"defaultOutput"`
+	MinPeriod         int    `json:"minPeriod"`
+	MaxPeriod         int    `json:"maxPeriod"`
+	DefaultPeriod     int    `json:"defaultPeriod"`
+	FundamentalPeriod int    `json:"fundamentalPeriod"`
 }
 type audioState struct {
 	Inventory struct {
-		BackendName string `json:"backendName"`
-		Message     string `json:"message"`
-		Devices     []struct {
-			ID      string `json:"id"`
-			Name    string `json:"name"`
-			Inputs  int    `json:"inputs"`
-			Outputs int    `json:"outputs"`
-		} `json:"devices"`
+		Supported     bool          `json:"supported"`
+		Backend       string        `json:"backend"`
+		BackendName   string        `json:"backendName"`
+		Message       string        `json:"message"`
+		Devices       []audioDevice `json:"devices"`
+		BufferChoices []int         `json:"bufferChoices"`
 	} `json:"inventory"`
-	Options audioOptions `json:"options"`
-	Playing bool         `json:"playing"`
-	Status  string       `json:"status"`
+	Options audioOptions         `json:"options"`
+	Runtime control.AudioRuntime `json:"runtime"`
+	Playing bool                 `json:"playing"`
+	Status  string               `json:"status"`
 }
 
 type mixerField struct {

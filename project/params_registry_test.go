@@ -154,6 +154,12 @@ func projectValidatorAccepts(descriptor paramdefs.Descriptor, number float64) bo
 	case strings.HasPrefix(descriptor.ID, "fx.reverb."):
 		_, err := ReverbParamsFromValues(values)
 		return err == nil
+	case strings.HasPrefix(descriptor.ID, "fx.eq."):
+		_, err := compileTrackEffect(Effect{Kind: "eq", Params: values}, 48000)
+		return err == nil
+	case strings.HasPrefix(descriptor.ID, "fx.deesser."):
+		_, err := DeesserParamsFromValues(values)
+		return err == nil
 	case strings.HasPrefix(descriptor.ID, "fx.comp."):
 		_, _, err := CompSpecFromValues(values)
 		return err == nil

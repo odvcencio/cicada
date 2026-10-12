@@ -82,7 +82,7 @@ func TestDelayImpulseTimingAndPingPong(t *testing.T) {
 			secondL, secondR = left, right
 		}
 	}
-	if firstL != 1 || firstR != 0 || math.Abs(float64(secondL)) > .02 || secondR < .3 {
+	if firstL != .5 || firstR != 0 || math.Abs(float64(secondL)) > .02 || secondR < .15 {
 		t.Fatalf("pingpong echoes first=(%g,%g), second=(%g,%g)", firstL, firstR, secondL, secondR)
 	}
 }

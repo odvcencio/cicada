@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,6 +22,7 @@ import (
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/kernel/cmd"
+	"m31labs.dev/cicada/project"
 )
 
 type studioTransport struct {
@@ -35,11 +38,13 @@ type studioTransport struct {
 	previewOps        []edits.PreviewOp
 	audio             studioAudioDevice
 	audioOptions      studioAudioOptions
+	lastInput         studioAudioSnapshot
 	sampleRate        int
 	cancel            context.CancelFunc
 	last              [32]byte
 	livePlan          *livePlan
-	pendingPlan       *livePlan
+	offers            []studioOffer // Published scores not yet reported landed, oldest first.
+	publications      uint64        // Last publication ID handed out; never reused.
 	arena             *liveplay.PatchArena
 	patchRevision     uint64
 	playing           bool
@@ -60,6 +65,7 @@ type studioTransport struct {
 	meterSequence     atomic.Uint64
 	telemetry         *liveplay.Publisher
 	pendingCapture    *capture.Calibration
+	listening         *studioListening
 }
 
 type studioMeterSnapshot struct {
@@ -76,25 +82,36 @@ type snapshotFrames struct {
 }
 
 type transportSnapshot struct {
-	Frames              *snapshotFrames   `json:"frames,omitempty"`
-	Type                string            `json:"type"`
-	Sequence            uint64            `json:"sequence"`
-	ActiveBackend       string            `json:"activeBackend"`
-	BrowserPlaying      bool              `json:"browserPlaying,omitempty"`
-	Playing             bool              `json:"playing"`
-	Bar                 int64             `json:"bar"`
-	Step                int64             `json:"step"`
-	Pending             bool              `json:"pending"`
-	PendingScene        string            `json:"pendingScene,omitempty"`
-	PendingSong         string            `json:"pendingSong,omitempty"`
-	PendingSlots        map[string]string `json:"pendingSlots,omitempty"`
-	PendingSlotQuantize map[string]uint32 `json:"pendingSlotQuantize,omitempty"`
-	PendingQuantize     uint32            `json:"pendingQuantize,omitempty"`
-	StoppedTracks       []string          `json:"stoppedTracks,omitempty"`
-	ActiveSlots         map[string]string `json:"activeSlots,omitempty"`
-	Scene               string            `json:"scene,omitempty"`
-	Landed              int64             `json:"landedBar,omitempty"`
-	Error               string            `json:"error"`
+	Frames              *snapshotFrames     `json:"frames,omitempty"`
+	Type                string              `json:"type"`
+	Sequence            uint64              `json:"sequence"`
+	ActiveBackend       string              `json:"activeBackend"`
+	BrowserPlaying      bool                `json:"browserPlaying,omitempty"`
+	Playing             bool                `json:"playing"`
+	Bar                 int64               `json:"bar"`
+	Step                int64               `json:"step"`
+	Pending             bool                `json:"pending"`
+	PendingScene        string              `json:"pendingScene,omitempty"`
+	PendingSong         string              `json:"pendingSong,omitempty"`
+	PendingSlots        map[string]string   `json:"pendingSlots,omitempty"`
+	PendingSlotQuantize map[string]uint32   `json:"pendingSlotQuantize,omitempty"`
+	PendingQuantize     uint32              `json:"pendingQuantize,omitempty"`
+	StoppedTracks       []string            `json:"stoppedTracks,omitempty"`
+	ActiveSlots         map[string]string   `json:"activeSlots,omitempty"`
+	Scene               string              `json:"scene,omitempty"`
+	Landed              int64               `json:"landedBar,omitempty"`
+	Error               string              `json:"error"`
+	Listening           *studioListening    `json:"listening,omitempty"`
+	ListeningStatus     string              `json:"listeningStatus"`
+	Streaming           *studioStreamHealth `json:"streaming,omitempty"`
+}
+
+type studioStreamHealth struct {
+	ArenaBytes    int64  `json:"arenaBytes"`
+	MissingFrames uint64 `json:"missingFrames"`
+	ReadErrors    uint64 `json:"readErrors"`
+	Recoveries    uint64 `json:"recoveries"`
+	Error         string `json:"error,omitempty"`
 }
 
 func newStudioTransport(path string) *studioTransport {
@@ -131,6 +148,26 @@ func (t *studioTransport) snapshot() transportSnapshot {
 		}
 	}
 	state := transportSnapshot{Type: "cicada/transport", Sequence: t.snapshotSeq, Playing: t.playing, Bar: 1, Step: 1, Pending: t.pending, Scene: t.scene, Landed: t.landed, Error: t.errText}
+	if t.stream != nil {
+		stats := t.stream.StreamStats()
+		if stats.ArenaBytes > 0 {
+			state.Streaming = &studioStreamHealth{ArenaBytes: stats.ArenaBytes, MissingFrames: stats.MissingFrames, ReadErrors: stats.ReadErrors, Recoveries: stats.Recoveries}
+			if err := t.stream.StreamError(); err != nil {
+				state.Streaming.Error = err.Error()
+			}
+		}
+	}
+	state.ListeningStatus = "Full song"
+	if t.listening != nil && t.stream != nil {
+		listening := *t.listening
+		if r := t.stream.PlaybackRange(); r != nil {
+			listening.StartTick, listening.EndTick, listening.Loop = r.StartTick, r.EndTick, r.Loop
+		}
+		listening.Completed, listening.Cycles = t.stream.RangeFinished(), t.stream.RangeCycles()
+		state.Listening = &listening
+		state.Playing = t.playing && !listening.Completed
+		state.ListeningStatus = listening.label()
+	}
 	if t.browserPlaying && t.browserSampleRate > 0 {
 		state.ActiveBackend = fmt.Sprintf("browser · AudioWorklet · %s", studioAudioRateLabel(t.browserSampleRate))
 		state.BrowserPlaying = true
@@ -205,6 +242,16 @@ func studioAudioRateLabel(sampleRate int) string {
 }
 
 func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte) error {
+	return t.startPrepared(index, scene, prepared, preparedHash, nil)
+}
+
+func (t *studioTransport) startPrepared(index int, scene string, prepared *liveplay.Score, preparedHash [32]byte, listening *studioListening) error {
+	preparedConsumed := false
+	defer func() {
+		if prepared != nil && !preparedConsumed && prepared.Engine != nil {
+			_ = prepared.Engine.Close()
+		}
+	}()
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
 	sampleRate, err := t.ensureSampleRate()
@@ -215,6 +262,27 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	defer t.mu.Unlock()
 	t.stopPreviewLocked()
 	if t.stream != nil {
+		wasListening := t.listening != nil
+		if listening != nil {
+			offered := *prepared
+			offered.Revision = t.recordOfferLocked(nil) // A listening range has no patchable plan.
+			if err := t.stream.Offer(offered); err != nil {
+				t.forgetOfferLocked(offered.Revision)
+				return err
+			}
+			preparedConsumed = true
+			if err := t.stream.PlayRange(listening.playbackRange()); err != nil {
+				return err
+			}
+			t.listening, t.last, t.pending = listening, preparedHash, true
+		} else if index >= 0 {
+			t.stream.ClearRange()
+			t.listening = nil
+		} else if t.listening != nil && t.stream.RangeFinished() {
+			if err := t.stream.PlayRange(t.listening.playbackRange()); err != nil {
+				return err
+			}
+		}
 		audioFailed := false
 		if t.audio != nil {
 			if err := t.audio.Err(); err != nil {
@@ -226,17 +294,21 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 			}
 		}
 		if index >= 0 {
-			if prepared != nil && preparedHash != t.last {
+			if prepared != nil && (preparedHash != t.last || wasListening) {
 				next := *prepared
 				plan := t.planAtFingerprint(preparedHash, sampleRate)
-				if plan != nil {
+				if plan != nil && listening == nil && !wasListening {
 					plan.prepareScore(&next)
+				} else {
+					plan = nil
 				}
+				next.Revision = t.recordOfferLocked(plan)
 				if err := t.stream.Offer(next); err != nil {
+					t.forgetOfferLocked(next.Revision)
 					return err
 				}
-				t.last, t.pending = preparedHash, true
-				t.pendingPlan = plan
+				preparedConsumed = true
+				t.last = preparedHash
 			}
 			requestID, err := t.stream.QueueSongEntry(index, scene)
 			if err != nil {
@@ -302,13 +374,31 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	}
 	// Plans and scene settings must describe the same committed source as the
 	// initial score. Capture backing has its own filtered engine authority.
-	initialPlan := t.planAtFingerprint(fingerprint, sampleRate)
+	var initialPlan *livePlan
+	if listening == nil {
+		initialPlan = t.planAtFingerprint(fingerprint, sampleRate)
+	}
 	if initialPlan != nil {
 		initialPlan.prepareScore(&initial)
 	}
 	stream, err := liveplay.New(initial, sampleRate)
 	if err != nil {
+		if initial.Engine != nil {
+			_ = initial.Engine.Close()
+		}
 		return err
+	}
+	preparedConsumed = true
+	streamAdopted := false
+	defer func() {
+		if !streamAdopted {
+			stream.Close()
+		}
+	}()
+	if listening != nil {
+		if err := stream.PlayRange(listening.playbackRange()); err != nil {
+			return err
+		}
 	}
 	var requestID uint64
 	if index >= 0 {
@@ -323,27 +413,26 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	} else {
 		audio, err = openStudioAudio(stream, t.audioOptions, t.selectedAudioBackend(), sampleRate)
 		if err != nil {
-			stream.Close()
 			return err
 		}
 	}
 	audio.SetMonitor(studioMonitorOptions(t.audioOptions))
 	if audio != nil {
 		if err := t.prepareCaptureLocked(audio, initial.BPMMilli); err != nil {
-			stream.Close()
 			return err
 		}
 		if err := audio.Play(); err != nil {
 			audio.Pause()
 			_ = audio.Close()
-			stream.Close()
 			return err
 		}
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	t.stream, t.audio, t.sampleRate, t.last, t.cancel = stream, audio, sampleRate, fingerprint, cancel
-	t.livePlan, t.pendingPlan, t.arena, t.patchRevision = initialPlan, nil, liveplay.NewPatchArena(16), 0
+	t.livePlan, t.offers, t.arena, t.patchRevision = initialPlan, nil, liveplay.NewPatchArena(16), 0
+	streamAdopted = true
 	t.playing, t.errText = true, ""
+	t.listening = listening
 	if index >= 0 {
 		t.pendingSong, t.pendingSongID = scene, requestID
 	} else {
@@ -354,6 +443,72 @@ func (t *studioTransport) startFrom(index int, scene string, prepared *liveplay.
 	t.publishHealthLocked()
 	go t.watch(ctx, stream)
 	return nil
+}
+
+func (t *studioTransport) isPlayingFingerprint(fingerprint [32]byte) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.stream != nil && t.last == fingerprint
+}
+
+// studioOffer pairs a published score's unique publication token with the
+// plan compiled for it. The plan is nil when the offer has no complete plan.
+//
+// Identity rules. A publication ID is a transport-owned counter, so every Offer
+// has its own token even when its content repeats (A, B, A). The content
+// fingerprint is separate: it only tells poll whether the files changed. The
+// player keeps only the newest offer that has not started, so a landing event
+// names exactly one ledger entry; that entry and every older one are done.
+type studioOffer struct {
+	token string
+	plan  *livePlan
+}
+
+// maxStudioOffers bounds the ledger; the player keeps one pending score and a
+// 32-event buffer, so older offers cannot still report a landing.
+const maxStudioOffers = 64
+
+// studioPublicationToken renders a publication ID as the Score.Revision token.
+func studioPublicationToken(id uint64) string { return "p" + strconv.FormatUint(id, 10) }
+
+// recordOfferLocked allocates the next publication token and queues it before
+// the Offer call, so a landing event cannot arrive ahead of its ledger entry.
+// Called with mu held.
+func (t *studioTransport) recordOfferLocked(plan *livePlan) string {
+	t.publications++
+	token := studioPublicationToken(t.publications)
+	if len(t.offers) == maxStudioOffers {
+		t.offers = append(t.offers[:0], t.offers[1:]...)
+	}
+	t.offers = append(t.offers, studioOffer{token: token, plan: plan})
+	t.pending = true
+	return token
+}
+
+// forgetOfferLocked removes an offer the player rejected. Called with mu held.
+func (t *studioTransport) forgetOfferLocked(token string) {
+	for i, offer := range t.offers {
+		if offer.token == token {
+			t.offers = append(t.offers[:i], t.offers[i+1:]...)
+			break
+		}
+	}
+	t.pending = len(t.offers) > 0
+}
+
+// playbackFingerprint is the one place that hashes committed playback state:
+// the entry file at the transport's own path and every source it names. Poll,
+// activation after any commit (entry or secondary session, changed or no-op),
+// scene launches and the recording handoff all call it, so they cannot
+// disagree about what "unchanged" means. The caller holds pollMu.
+func (t *studioTransport) playbackFingerprint() ([]byte, [32]byte, error) {
+	var empty [32]byte
+	source, err := os.ReadFile(t.path)
+	if err != nil {
+		return nil, empty, err
+	}
+	fingerprint, err := playSourceHashBytes(t.path, source)
+	return source, fingerprint, err
 }
 
 // Called with mu held. A hash mismatch leaves activation unavailable until
@@ -398,6 +553,7 @@ func (t *studioTransport) pauseLocked() {
 	if t.audio != nil {
 		audio := t.audio
 		audio.Pause()
+		t.lastInput = audio.Snapshot()
 		// Release duplex hosts after Pause so they no longer hold the input endpoint.
 		if audio.StopClosesDevice() {
 			if err := audio.Close(); err != nil {
@@ -456,13 +612,14 @@ func (t *studioTransport) stopLocked() {
 		t.stream.Close()
 		t.stream = nil
 	}
-	t.livePlan, t.pendingPlan, t.arena = nil, nil, nil
+	t.livePlan, t.offers, t.arena = nil, nil, nil
 	// A discarded stream has no muted tracks; do not report them as stopped.
 	t.stoppedTracks = nil
 	t.activeSlots = nil
 	t.scene = ""
 	t.pending = false
 	t.landed = 0
+	t.listening = nil
 }
 
 // returnToStart moves to bar 1. A playing transport keeps playing from the
@@ -608,6 +765,11 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 		case <-ticker.C:
 			t.poll()
 		case <-telemetryTicker.C:
+			t.mu.Lock()
+			if t.stream == stream && t.playing && stream.RangeFinished() && !t.captureRunningLocked() {
+				t.pauseLocked()
+			}
+			t.mu.Unlock()
 			stream.PublishTelemetry()
 		case <-healthFrames.C:
 			t.mu.Lock()
@@ -677,10 +839,16 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 		t.errText = event.Name
 	case "edit":
 		t.landed = event.Bar
-		if t.pendingPlan == nil || event.Revision == t.pendingPlan.revision {
-			t.livePlan, t.pendingPlan, t.pending = t.pendingPlan, nil, false
-		} else {
-			t.livePlan = nil // A newer offered revision has not landed yet.
+		// An edit event names its offer by the playback fingerprint token. Only
+		// that offer's plan becomes the live plan, and offers still queued
+		// behind it keep the transport pending. An unknown token (an offer the
+		// player already superseded) says nothing about the playing engine.
+		for i, offer := range t.offers {
+			if offer.token == event.Revision {
+				t.livePlan, t.offers = offer.plan, t.offers[i+1:]
+				t.pending = len(t.offers) > 0
+				break
+			}
 		}
 	default:
 		t.pending, t.landed = false, event.Bar
@@ -714,12 +882,7 @@ func (t *studioTransport) markLanded(event liveplay.Event) {
 func (t *studioTransport) poll() {
 	t.pollMu.Lock()
 	defer t.pollMu.Unlock()
-	source, err := os.ReadFile(t.path)
-	if err != nil {
-		t.setError(err)
-		return
-	}
-	fingerprint, err := playSourceHashBytes(t.path, source)
+	source, fingerprint, err := t.playbackFingerprint()
 	if err != nil {
 		t.setError(err)
 		return
@@ -727,10 +890,20 @@ func (t *studioTransport) poll() {
 	t.mu.Lock()
 	if fingerprint == t.last {
 		t.mu.Unlock()
+		// The files equal the playing score, so a take armed for other content
+		// can never be published. Drop its handoff.
+		if t.history != nil {
+			t.history.consumeRecordedTake("")
+		}
 		return
 	}
 	stream := t.stream
 	sampleRate := t.sampleRate
+	var listening *studioListening
+	if t.listening != nil {
+		copy := *t.listening
+		listening = &copy
+	}
 	t.mu.Unlock()
 	if stream == nil {
 		return
@@ -738,16 +911,53 @@ func (t *studioTransport) poll() {
 	if sampleRate <= 0 {
 		sampleRate = liveSampleRate
 	}
-	plan, err := buildLivePlan(t.path, source, sampleRate)
+	// A listening range is not a patchable plan: only a plain score gets one.
+	var plan *livePlan
+	var project *project.Project
+	listeningTargetError := false
+	if listening == nil {
+		plan, err = buildLivePlan(t.path, source, sampleRate)
+		if err == nil {
+			project = plan.project
+		}
+	} else {
+		project, err = compileStudioSource(t.path, source)
+		if err == nil {
+			project, listening, err = prepareStudioListening(project, *listening)
+			listeningTargetError = err != nil
+		}
+	}
 	var next liveplay.Score
 	if err == nil {
-		next, err = compileLiveProjectAtRate(t.path, plan.project, sampleRate)
-	}
-	if err == nil {
-		plan.prepareScore(&next)
-		err = stream.Offer(next)
+		next, err = compileLiveProjectAtRate(t.path, project, sampleRate)
+		if err == nil && listening != nil {
+			r := listening.playbackRange()
+			next.Range = &r
+		}
 	}
 	if err != nil {
+		if listeningTargetError {
+			t.mu.Lock()
+			t.stopLocked()
+			t.mu.Unlock()
+		}
+		t.setError(err)
+		return
+	}
+	if plan != nil {
+		plan.prepareScore(&next)
+	}
+	t.mu.Lock()
+	if t.stream != stream {
+		t.mu.Unlock()
+		return
+	}
+	next.Revision = t.recordOfferLocked(plan)
+	t.mu.Unlock()
+	if err := stream.Offer(next); err != nil {
+		t.mu.Lock()
+		t.forgetOfferLocked(next.Revision)
+		t.mu.Unlock()
 		t.setError(err)
 		return
 	}
@@ -757,12 +967,12 @@ func (t *studioTransport) poll() {
 		return
 	}
 	t.last = fingerprint
-	t.pendingPlan = plan
+	t.listening = listening
 	// Clear the transport error when a valid revision lands (UX review finding 2).
-	t.pending, t.errText = true, ""
+	t.errText = ""
 	position := stream.Position()
 	t.mu.Unlock()
-	if t.history != nil && !t.history.consumeRecordedTake(studioRevision(source)) {
+	if t.history != nil && !t.history.consumeRecordedTake(studioFingerprintKey(fingerprint)) {
 		t.history.record("queued", "Edit queued for the next bar", position.Bar, position.Step, "")
 	}
 }
@@ -770,7 +980,21 @@ func (t *studioTransport) poll() {
 // activateLocked runs after a successful commit while pollMu still covers the
 // file exchange. An offered engine keeps authority until its render event; a
 // subsequent commit cannot patch against that engine before it starts playing.
-func (t *studioTransport) activateLocked(path string, source []byte, fingerprint [32]byte) {
+//
+// It reads the committed entry and its sources through playbackFingerprint, so
+// a secondary-file session activates against the same state poll hashes. It
+// returns that fingerprint and whether it could be computed.
+func (t *studioTransport) activateLocked() ([32]byte, bool) {
+	source, fingerprint, err := t.playbackFingerprint()
+	if err != nil {
+		return fingerprint, false
+	}
+	path := t.path
+	t.activatePlanLocked(path, source, fingerprint)
+	return fingerprint, true
+}
+
+func (t *studioTransport) activatePlanLocked(path string, source []byte, fingerprint [32]byte) {
 	t.mu.Lock()
 	rate := t.sampleRate
 	t.mu.Unlock()
@@ -840,25 +1064,41 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusForbidden, map[string]string{"error": "cross-origin transport commands are not allowed"})
 		return
 	}
-	var input struct {
-		Action   string `json:"action"`
-		Scene    string `json:"scene"`
-		Revision string `json:"revision"`
-		Track    string `json:"track"`
-		Pattern  string `json:"pattern"`
-		Entry    int    `json:"entry"`
-		Quantize uint32 `json:"quantize"`
-	}
+	var input studioTransportInput
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1024)).Decode(&input); err != nil {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	s.mu.Lock()
-	instrumentCapture := s.captureInstrument
-	s.mu.Unlock()
-	if instrumentCapture {
+	defer s.mu.Unlock()
+	if s.captureInstrument {
 		studioJSON(w, http.StatusConflict, map[string]string{"error": "stop instrument recording before changing transport"})
 		return
+	}
+	if s.captureID != "" && s.captureRecorder != nil {
+		capture := s.captureRecorder.Snapshot()
+		// An armed device may still play and pause while preparing a take.
+		// Once capture begins, its input clock must keep the original backing
+		// and range until the take drains. Stop is also Finish take so the
+		// ordinary transport cannot strand a recorder with playback halted.
+		if capture.Recording || capture.Completed {
+			if input.Action != "stop" {
+				studioJSON(w, http.StatusConflict, map[string]string{"error": "finish the take before changing playback; Stop saves the current take"})
+				return
+			}
+			id := s.captureID
+			if err := s.finishVocalCapture(id); err != nil {
+				s.transport.setError(err)
+				status := http.StatusUnprocessableEntity
+				if errors.Is(err, errTakeRevision) {
+					status = http.StatusConflict
+				}
+				studioJSON(w, status, map[string]any{"error": err.Error(), "retained": true, "take": id})
+				return
+			}
+			studioJSON(w, http.StatusOK, s.transport.snapshot())
+			return
+		}
 	}
 	quantize := cmd.Quantize(input.Quantize)
 	if input.Action == "launch" || input.Action == "slot" {
@@ -881,6 +1121,18 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 		s.transport.pause()
 	case "stop":
 		s.transport.stop()
+	case "fullSong":
+		s.transport.stop()
+		if err := s.transport.start(); err != nil {
+			s.transport.setError(err)
+			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": err.Error()})
+			return
+		}
+	case "loop", "loopSection", "audition":
+		if status, err := s.startListeningLocked(input); err != nil {
+			studioJSON(w, status, map[string]string{"error": err.Error()})
+			return
+		}
 	case "home":
 		if err := s.transport.returnToStart(); err != nil {
 			s.transport.setError(err)
@@ -893,7 +1145,6 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	case "launch", "slot", "playFrom":
-		s.mu.Lock()
 		current, err := os.ReadFile(s.path)
 		if err == nil {
 			if p, parseErr := compileStudioSource(s.path, current); parseErr == nil {
@@ -901,17 +1152,14 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if err != nil || s.lastGoodProject == nil {
-			s.mu.Unlock()
 			studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "score is unavailable"})
 			return
 		}
 		if input.Revision == "" || input.Revision != studioRevision(s.lastGoodSource) {
-			s.mu.Unlock()
 			studioJSON(w, http.StatusConflict, map[string]string{"error": "score changed on disk; reload before launching a scene"})
 			return
 		}
 		project := s.lastGoodProject
-		s.mu.Unlock()
 		s.transport.mu.Lock()
 		hasStream := s.transport.stream != nil
 		s.transport.mu.Unlock()
@@ -974,8 +1222,9 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 				studioJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": compileErr.Error()})
 				return
 			}
-			fingerprint, hashErr := playSourceHashBytes(s.path, current)
+			_, fingerprint, hashErr := s.transport.playbackFingerprint()
 			if hashErr != nil {
+				_ = prepared.Engine.Close()
 				studioJSON(w, http.StatusServiceUnavailable, map[string]string{"error": hashErr.Error()})
 				return
 			}
@@ -987,7 +1236,7 @@ func (s *studio) transportCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	default:
-		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "action must be play, stop, trackStop, launch, slot, or playFrom"})
+		studioJSON(w, http.StatusBadRequest, map[string]string{"error": "unknown transport action"})
 		return
 	}
 	studioJSON(w, http.StatusOK, s.transport.snapshot())

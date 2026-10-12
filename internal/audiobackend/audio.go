@@ -87,11 +87,13 @@ func ParseFlag(args []string) (rest []string, value string, set bool, err error)
 }
 
 type Device struct {
-	ID, Name        string
-	Inputs, Outputs int
-	SampleRates     []int
-	DefaultInput    bool
-	DefaultOutput   bool
+	ID, Name                         string
+	Inputs, Outputs                  int
+	SampleRates                      []int
+	DefaultInput                     bool
+	DefaultOutput                    bool
+	MinPeriod, MaxPeriod             int
+	DefaultPeriod, FundamentalPeriod int
 }
 
 type Config struct {
@@ -118,6 +120,9 @@ type Format struct {
 	FramesPerPeriod int
 	Latency         time.Duration
 	CaptureLatency  time.Duration
+	Periods         int
+	Priority        string
+	HasDeadline     bool
 }
 
 type Stats struct {

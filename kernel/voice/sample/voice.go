@@ -3,7 +3,9 @@
 // until every voice and its release have finished; no asset I/O is performed.
 package sample
 
-import "math"
+import (
+	"math"
+)
 
 type Error string
 
@@ -57,6 +59,8 @@ func (p Params) Validate() error {
 
 type Voice struct {
 	region                     Region
+	source                     *streamSource
+	sourceMissing              bool
 	params                     Params
 	rate, fadeFrames           int
 	phase, ratio               float64
@@ -151,6 +155,9 @@ func (v *Voice) NoteOn(note, velocity uint8) error {
 	v.active, v.releasing, v.looped, v.held = velocity != 0, false, false, false
 	v.looped = v.region.Loop && v.region.Crossfade == 0 && v.region.Start == v.region.LoopStart
 	v.remaining = 0
+	if v.hasStream() {
+		return v.source.SeekFrame(int64(v.phase), 1)
+	}
 	return nil
 }
 
@@ -177,6 +184,9 @@ func (v *Voice) SeekFrames(frames int64) {
 	} else if v.phase >= float64(v.region.End) {
 		v.Reset()
 	}
+	if v.hasStream() && v.active {
+		_ = v.source.SeekFrame(int64(v.phase), 1)
+	}
 }
 
 // NoteOnAt starts a non-looping region at an output-frame offset. It seeks in
@@ -194,6 +204,9 @@ func (v *Voice) NoteOnAt(note, velocity uint8, outputFrame int64) error {
 		return nil
 	}
 	v.phase = phase
+	if v.hasStream() {
+		return v.source.SeekFrame(int64(v.phase), 1)
+	}
 	return nil
 }
 
@@ -225,6 +238,9 @@ func (v *Voice) KernelTaps() int {
 }
 
 func (v *Voice) Reset() {
+	if v.hasStream() {
+		v.source.Stop()
+	}
 	v.active, v.releasing, v.looped, v.held = false, false, false, false
 	v.phase, v.remaining, v.tailRemaining = 0, 0, 0
 	v.lastL, v.lastR, v.tailL, v.tailR, v.heldL, v.heldR = 0, 0, 0, 0, 0, 0
@@ -243,6 +259,10 @@ func (v *Voice) Render(left, right []float32) {
 func (v *Voice) NextStereo() (float32, float32) {
 	var left, right float32
 	if v.active {
+		v.sourceMissing = false
+		if v.hasStream() {
+			v.source.AdvanceFrame(int64(v.phase))
+		}
 		if v.gainAlpha != 0 {
 			v.gain += float64((v.targetGain - v.gain) * v.gainAlpha)
 		}
@@ -263,6 +283,9 @@ func (v *Voice) NextStereo() (float32, float32) {
 		} else {
 			l, r := v.interpolate()
 			left, right = float32(l*gain), float32(r*gain)
+		}
+		if v.hasStream() && !v.held {
+			left, right = v.source.FilterOutput(left, right, !v.sourceMissing, true)
 		}
 		if !v.held {
 			v.phase += v.ratio

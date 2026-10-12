@@ -1,7 +1,9 @@
 package notation
 
 import (
+	"fmt"
 	"m31labs.dev/cicada/internal/paramdefs"
+	"m31labs.dev/cicada/kernel/limits"
 	"m31labs.dev/cicada/kernel/voice/keyboard"
 	"m31labs.dev/cicada/kernel/voice/modal"
 	"m31labs.dev/cicada/kernel/voice/modeledkit"
@@ -95,8 +97,8 @@ func Validate(s *Score) (ds []Diagnostic) {
 			add("CICADA-SEED", "seed must be 0 to 4294967295", "error", s.SeedPosition)
 		}
 	}
-	if len(s.Tracks) == 0 || len(s.Tracks) > 16 {
-		add("CICADA-LIMIT", "score must have 1 to 16 tracks", "error", Position{Line: 1, Column: 1})
+	if len(s.Tracks) == 0 || len(s.Tracks) > limits.MaxTracks {
+		add("CICADA-LIMIT", fmt.Sprintf("score must have 1 to %d tracks", limits.MaxTracks), "error", Position{Line: 1, Column: 1})
 	}
 	instruments := make(map[string]Instrument, len(s.Instruments))
 	for _, inst := range s.Instruments {
@@ -493,7 +495,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 		if !onMaster {
 			kindCounts[effect.Kind]++
 		}
-		if effect.Kind != "drive" && effect.Kind != "delay" && effect.Kind != "reverb" && effect.Kind != "comp" && effect.Kind != "eq" && effect.Kind != "transient" && effect.Kind != "width" && effect.Kind != "limiter" && effect.Kind != "convolution" {
+		if effect.Kind != "drive" && effect.Kind != "delay" && effect.Kind != "reverb" && effect.Kind != "comp" && effect.Kind != "eq" && effect.Kind != "transient" && effect.Kind != "width" && effect.Kind != "limiter" && effect.Kind != "convolution" && effect.Kind != "deesser" {
 			add("CICADA-UNSUPPORTED", "effect kind "+effect.Kind+" is not implemented", "error", effect.Position)
 		}
 		seen := map[string]bool{}
@@ -517,7 +519,7 @@ func Validate(s *Score) (ds []Diagnostic) {
 			}
 		}
 	}
-	for _, kind := range []string{"delay", "reverb", "comp"} {
+	for _, kind := range []string{"delay", "reverb"} {
 		if kindCounts[kind] > 1 {
 			add("CICADA-UNSUPPORTED", "multiple "+kind+" instances are not implemented", "error", Position{Line: 1, Column: 1})
 		}
@@ -753,15 +755,22 @@ func validateTrackMixer(score *Score, track Track, effects map[string]Effect, na
 					names = append(names, chain[i])
 				}
 			}
-			if len(names) != 1 || strings.Contains(param.Value, "->") {
-				add("CICADA-UNSUPPORTED", "insert chain on track "+track.Name+" is not implemented", "error", param.ValuePosition)
+			if len(names) < 1 || len(names) > 8 {
+				add("CICADA-LIMIT", "track insert chain requires one to eight stages", "error", param.ValuePosition)
 				continue
 			}
-			effect, ok := effects[names[0]]
-			if !ok {
-				add("CICADA-REFERENCE", "track references undeclared insert "+names[0], "error", param.ValuePosition)
-			} else if effect.Kind != "drive" {
-				add("CICADA-UNSUPPORTED", effect.Kind+" as a track insert is not implemented", "error", param.ValuePosition)
+			seenInserts := map[string]bool{}
+			for _, name := range names {
+				if seenInserts[name] {
+					add("CICADA-DUPLICATE", "track repeats effect "+name, "error", param.ValuePosition)
+				}
+				seenInserts[name] = true
+				effect, ok := effects[name]
+				if !ok {
+					add("CICADA-REFERENCE", "track references undeclared insert "+name, "error", param.ValuePosition)
+				} else if effect.Kind != "drive" && effect.Kind != "eq" && effect.Kind != "comp" && effect.Kind != "deesser" {
+					add("CICADA-UNSUPPORTED", effect.Kind+" as a track insert is not implemented", "error", param.ValuePosition)
+				}
 			}
 		case "send":
 			effect, ok := effects[param.Target]

@@ -16,13 +16,13 @@ func TestDrumVoiceBudgetIncludesStoredLanesAndParams(t *testing.T) {
 		wantError                 bool
 	}{
 		{name: "legacy", tracks: 5, voices: 30},
-		{name: "legacy_over_cap", tracks: 6, wantError: true},
+		{name: "legacy_over_portable_cap", tracks: 6, voices: 36},
 		{name: "rest_only", rows: "lt: .; cy: .;", tracks: 5, voices: 30},
 		{name: "added_hit", rows: "lt: x;", tracks: 3, voices: 21},
 		{name: "added_parameter", params: "cy_decay=1500ms", tracks: 3, voices: 21},
 		{name: "stored_scene", extra: "pattern next drums steps=1 { cy: x; }\nscene unused { d0=next }\n", tracks: 3, voices: 19},
 		{name: "unused_pattern", extra: "pattern next drums steps=1 { cy: x; }\n", tracks: 3, voices: 18},
-		{name: "eleven_lanes_over_cap", rows: "lt: x; mt: x; ht: x; cb: x; cy: x;", tracks: 3, wantError: true},
+		{name: "eleven_lanes_over_cap", rows: "lt: x; mt: x; ht: x; cb: x; cy: x;", tracks: 24, wantError: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var source strings.Builder

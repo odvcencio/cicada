@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
@@ -49,7 +50,7 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 	if len(manifestData) > 8192 || json.Unmarshal(manifestData, &manifest) != nil ||
 		(manifest.Version != 1 && manifest.Version != 2) ||
 		(manifest.Version == 1 && (manifest.From < 0 || manifest.From > 255)) ||
-		(manifest.Version == 2 && (manifest.From < 1 || manifest.From > 256)) || len(manifest.Tracks) < 1 || len(manifest.Tracks) > 16 {
+		(manifest.Version == 2 && (manifest.From < 1 || manifest.From > 256)) || len(manifest.Tracks) < 1 || len(manifest.Tracks) > engine.MaxTracks {
 		return report, fmt.Errorf("invalid stem manifest")
 	}
 	from := manifest.From
