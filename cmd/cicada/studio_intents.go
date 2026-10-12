@@ -147,7 +147,7 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 	if err != nil {
 		return edits.Options{}, err
 	}
-	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath)}
+	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath), MixerGuard: s.mixerCaptureGuard}
 	if manifestPath != "" {
 		var supplied bool
 		opts.Manifest, supplied = overrides[manifestPath]
@@ -192,6 +192,18 @@ func auxiliaryFiles(files []edits.File) ([]studioAuxiliaryFile, error) {
 		result = append(result, studioAuxiliaryFile{Path: file.Path, Before: file.Before, After: file.After, Mode: mode})
 	}
 	return result, nil
+}
+
+var errMixerDuringCapture = errors.New("Finish the take before editing the mix.")
+
+// mixerCaptureGuard is the writer-level form of the /api/mixer refusal: edits
+// resolves the writer for each intent, so a batch that reaches the mixer
+// writer by any path is refused whole. The caller holds s.mu.
+func (s *studio) mixerCaptureGuard() error {
+	if s.captureID != "" {
+		return errMixerDuringCapture
+	}
+	return nil
 }
 
 // applyIntents is the intent-side twin of applyWithResult: the same prologue,
@@ -248,7 +260,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if writer == edits.ParamWriterMixer && s.captureID != "" {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "Finish the take before editing the mix."})
+		studioJSON(w, http.StatusConflict, map[string]any{"error": errMixerDuringCapture.Error()})
 		return
 	}
 	if err := studioRecoveryConflict(s.path); err != nil {
@@ -291,6 +303,10 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 	}
 	compiler := opts.Compiler.(*studioCompiler)
 	result, err := edits.Apply(current, env, opts)
+	if errors.Is(err, errMixerDuringCapture) {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -327,6 +343,9 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 type stagedProposal struct {
 	proposal edits.Proposal
 	staged   *edits.Staged
+	// mixer records that a mixer writer ran while staging, so acceptance can
+	// apply the same capture guard to a proposal staged before the recording.
+	mixer bool
 }
 
 func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
@@ -365,7 +384,16 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
+	touchedMixer := false
+	opts.MixerGuard = func() error {
+		touchedMixer = true
+		return s.mixerCaptureGuard()
+	}
 	staged, err := edits.Stage(current, proposal, opts)
+	if errors.Is(err, errMixerDuringCapture) {
+		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+		return
+	}
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
@@ -380,7 +408,7 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 	if s.proposals == nil {
 		s.proposals = make(map[string]stagedProposal)
 	}
-	s.proposals[proposal.ID] = stagedProposal{proposal: proposal, staged: staged}
+	s.proposals[proposal.ID] = stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer}
 	s.previewProposal = proposal.ID
 	s.transport.applyPreview(staged.Ops)
 	studioJSON(w, http.StatusOK, map[string]any{"id": proposal.ID, "diff": staged.Diff, "ops": staged.Ops})
@@ -419,6 +447,12 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	proposal, result := staged.proposal, staged.staged.Result
+	if staged.mixer {
+		if err := s.mixerCaptureGuard(); err != nil {
+			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+			return
+		}
+	}
 	current, ok := s.proposalSource(w, proposal.Envelope.Revision)
 	if !ok {
 		return
