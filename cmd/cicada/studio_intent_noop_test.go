@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
@@ -12,8 +11,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"m31labs.dev/cicada/project"
 )
 
 type noopFile struct {
@@ -168,55 +165,25 @@ func TestIntentRoutesKeepNoopResponsesAndEffects(t *testing.T) {
 	}
 }
 
+// A late conflict is an external write that lands after the candidate is
+// staged and before it replaces the score. The write happens inside the
+// commit's own pre-swap seam, so it always follows the route's revision check
+// and always precedes the swap; no timing is involved.
 func TestRecordRouteRestoresCommitHookAfterConflict(t *testing.T) {
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	_, path, s := studioTestStudio(t)
 	defer s.shutdown()
 	s.history.expectRecordedTake("previous-recording")
-	dir, err := studioRecoveryDir(path)
-	if err != nil {
-		t.Fatal(err)
-	}
 	external := []byte(studioScore + "// concurrent edit\n")
-	raced := make(chan error, 1)
-	original := studioCompile
-	defer func() { studioCompile = original }()
-	armed := false
-	studioCompile = func(filename string, source []byte, overrides map[string][]byte) (*project.Project, error) {
-		p, err := original(filename, source, overrides)
-		if err == nil && !armed && !bytes.Equal(source, []byte(studioScore)) {
-			armed = true
-			// Hold the history lock so the route cannot arm its beforeSwap
-			// hook until an external writer has changed the staged revision.
-			s.history.mu.Lock()
-			go func() {
-				defer s.history.mu.Unlock()
-				deadline := time.Now().Add(5 * time.Second)
-				for time.Now().Before(deadline) {
-					stages, err := filepath.Glob(filepath.Join(dir, studioRecoveryPattern(path)))
-					if err != nil {
-						raced <- err
-						return
-					}
-					if len(stages) > 0 {
-						raced <- os.WriteFile(path, external, 0600)
-						return
-					}
-					time.Sleep(time.Millisecond)
-				}
-				raced <- fmt.Errorf("recording never staged a source write")
-			}()
-		}
-		return p, err
+	staged := 0
+	var raced error
+	s.afterStage = func() {
+		staged++
+		raced = os.WriteFile(path, external, 0600)
 	}
 	response := studioCall(t, s.routes(), "/api/record", studioEdit{Revision: studioRevision([]byte(studioScore)), Track: "bass", Pattern: "pulse", Take: []studioTakeNote{{Note: 60, Velocity: 90, EndTick: 60}}})
-	select {
-	case err := <-raced:
-		if err != nil {
-			t.Fatal(err)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("recording did not reach the source exchange")
+	if raced != nil || staged != 1 {
+		t.Fatalf("external write at the staging seam: %d calls, %v", staged, raced)
 	}
 	if response.Code != http.StatusConflict {
 		t.Fatalf("late conflict: %d %s", response.Code, response.Body.String())
