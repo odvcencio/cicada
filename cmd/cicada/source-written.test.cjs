@@ -24,7 +24,7 @@ function setup(stage) {
     setStatus: (message, state) => statuses.push([message, state]),
     refreshProjection: async hint => { document.body.dataset.revision = hint.revision; editor.value = hint.source; }
   };
-  vm.runInNewContext(`let audioRevision='',audioWanted='',audioStaging=null;${syncSource}${handlerSource}`, env);
+  vm.runInNewContext(`let audioWanted='',audioStaging=null;${syncSource}${handlerSource}`, env);
   return {handler, document, editor, statuses};
 }
 
@@ -58,16 +58,18 @@ function audioHarness(stage, refresh) {
   let handler;
   const document = {body: {dataset: {revision: 'undone'}}}, editor = {value: 'score without preset'};
   const statuses = [], staged = [], disk = {revision: 'undone', source: 'score without preset'};
+  // Like the real client: a stage for the revision it already acknowledged returns at once.
+  const client = {revision: ''};
   const env = {
     document, editor, dirty: () => false, isBrowser: () => true, browserPlaying: false, staged, disk,
     revision: () => document.body.dataset.revision,
-    window: {addEventListener: (name, fn) => { handler = fn; }, cicadaBrowserAudio: {context: {}, stageCurrentScore: async revision => { staged.push(revision); return stage(revision); }}},
+    window: {addEventListener: (name, fn) => { handler = fn; }, cicadaBrowserAudio: {context: {}, stageCurrentScore: async revision => { if (revision === client.revision) return; staged.push(revision); await stage(revision); client.revision = revision; }}},
     setStatus: (message, state) => statuses.push([message, state]),
     refreshProjection: refresh || (async hint => { document.body.dataset.revision = hint.revision; editor.value = hint.source; }),
     fetch: async () => ({ok: true, json: async () => ({valid: true, ...disk})})
   };
-  const api = vm.runInNewContext(`(()=>{let busy=false,original='',audioRevision='',audioWanted='',audioStaging=null;${syncSource}${pollSource}${handlerSource}return {poll:pollScoreState,sync:syncBrowserAudio,audio:()=>audioRevision}})()`, env);
-  return {...api, handler, document, editor, statuses, staged, disk};
+  const api = vm.runInNewContext(`(()=>{let busy=false,original='',audioWanted='',audioStaging=null;${syncSource}${pollSource}${handlerSource}return {poll:pollScoreState,sync:syncBrowserAudio,want:value=>{audioWanted=value;}}})()`, env);
+  return {...api, audio: () => client.revision, handler, document, editor, statuses, staged, disk};
 }
 
 test('a poll retries a failed stage and audio reaches the new revision', async () => {
@@ -101,9 +103,12 @@ test('a source write whose stage fails is repaired by the next poll', async () =
 test('concurrent requests share one stage attempt and an older target never overwrites a newer one', async () => {
   const release = [];
   const h = audioHarness(() => new Promise(resolve => release.push(resolve)));
-  const first = h.sync('undone');
-  const joined = h.sync('undone');
-  const newer = h.sync('redone');      // replaces the wanted target while 'undone' is in flight
+  h.want('undone');
+  const first = h.sync();
+  const joined = h.sync();
+  await new Promise(resolve => setImmediate(resolve));
+  h.want('redone');                    // replaces the wanted target while 'undone' is in flight
+  const newer = h.sync();
   await new Promise(resolve => setImmediate(resolve));
   assert.deepEqual(h.staged, ['undone']);
   release.shift()();
@@ -168,4 +173,20 @@ test('an external edit stages audio even when the projection refresh fails, and 
   assert.equal(h.editor.value, 'score from outside');
   assert.equal(h.document.body.dataset.revision, 'external');
   assert.deepEqual(h.staged, ['external']);          // audio already there: no second stage
+});
+
+test('a handler whose refresh finishes late does not restore an older audio target', async () => {
+  const gates = {};
+  const h = audioHarness(async () => {}, hint => new Promise(resolve => {
+    gates[hint.revision] = () => { h.document.body.dataset.revision = hint.revision; h.editor.value = hint.source; resolve(); };
+  }));
+  const older = h.handler({detail: {revision: 'older', source: 'older score'}});
+  const newer = h.handler({detail: {revision: 'newer', source: 'newer score'}});
+  await new Promise(resolve => setImmediate(resolve));
+  gates.newer(); await newer;                        // the newer write finishes first
+  assert.equal(h.audio(), 'newer');
+  gates.older(); await older;                        // the older refresh finishes late
+  assert.deepEqual(h.staged, ['newer']);             // no stage for 'older', no false failure
+  assert.equal(h.audio(), 'newer');
+  assert.ok(h.statuses.every(s => s[1] !== 'error'));
 });
