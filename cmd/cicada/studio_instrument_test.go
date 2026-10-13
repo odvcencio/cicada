@@ -62,7 +62,7 @@ func TestPresetCreationHonorsWholeProjectVoiceBudget(t *testing.T) {
 	source := []byte(strings.Replace(presetEditScore, "// scene annotation", reserve.String()+"// scene annotation", 1))
 	for _, name := range []string{"pad-a", "pad-b", "pad-c"} {
 		var err error
-		source, err = addPresetSource(source, "warm-pad", name, name)
+		source, err = intentAddPreset(t, source, "warm-pad", name, name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -135,18 +135,18 @@ song { main }
 		}
 		return score
 	}
-	updated, err := instrumentParameterSource(source, parse(source), "keys", "brightness", "1250.125", false)
+	updated, err := intentInstrumentParameter(t, source, "keys", "brightness", "1250.125", false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(updated, []byte("brightness = 1250.125Hz // authored brightness\r\n")) || !bytes.Contains(updated, []byte("param brightness = 720Hz\r\n")) {
 		t.Fatalf("parameter edit changed shared graph defaults or comments: %s", updated)
 	}
-	updated, err = instrumentParameterSource(updated, parse(updated), "keys", "amount", "0.175", false)
+	updated, err = intentInstrumentParameter(t, updated, "keys", "amount", "0.175", false)
 	if err != nil || !bytes.Contains(updated, []byte("amount = 0.175")) {
 		t.Fatalf("new override: %v", err)
 	}
-	reset, err := instrumentParameterSource(updated, parse(updated), "keys", "brightness", "", true)
+	reset, err := intentInstrumentParameter(t, updated, "keys", "brightness", "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,13 +158,13 @@ song { main }
 	if !bytes.Contains(reset, []byte("// authored brightness\r\n")) || bytes.Contains(bytes.ReplaceAll(reset, []byte("\r\n"), nil), []byte("\n")) {
 		t.Fatal("reset changed comments or newline convention")
 	}
-	if _, err := instrumentParameterSource(reset, parse(reset), "keys", "attack", "", true); err == nil || !strings.Contains(err.Error(), "preserve the annotation") {
+	if _, err := intentInstrumentParameter(t, reset, "keys", "attack", "", true); err == nil || !strings.Contains(err.Error(), "preserve the annotation") {
 		t.Fatalf("internally commented override needs explicit editing: %v", err)
 	}
 }
 
 func TestInstrumentParameterWritesCheckRevisionUnitsAndUndo(t *testing.T) {
-	source, err := addPresetSource([]byte(presetEditScore), "warm-pad", "pad", "keys")
+	source, err := intentAddPreset(t, []byte(presetEditScore), "warm-pad", "pad", "keys")
 	if err != nil {
 		t.Fatal(err)
 	}

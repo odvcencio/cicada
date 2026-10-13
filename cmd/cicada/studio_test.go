@@ -292,7 +292,7 @@ func TestStudioRejectsReboundHost(t *testing.T) {
 
 func TestStudioGridEditFollowsSharedPhraseSource(t *testing.T) {
 	source := "title \"Phrase\"\ntrack bass acid {}\nphrase hook { 1 . }\npattern pulse { use hook*2 }\nscene main { bass=pulse }\nsong { main }\n"
-	updated, err := toggledSource([]byte(source), "pulse", "", 2)
+	updated, err := intentToggledSource(t, []byte(source), "pulse", "", 2)
 	if err != nil {
 		t.Fatal(err)
 	}

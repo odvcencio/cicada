@@ -43,6 +43,12 @@ type Options struct {
 	MasterGainDB    float64 // export gain after authored DSP, before the safety limiter
 	MasterBiasL     float32 // export DC correction after authored DSP, before export gain
 	MasterBiasR     float32 // export DC correction after authored DSP, before export gain
+	// NoteTap, when set, receives each note start (seq.NoteOn, drum hits
+	// included) and release (seq.NoteOff) that the render plays, in render
+	// order, from either render path. The events are the scheduler's own, so
+	// chains, scene phase, placements, ties, chance and transposition are
+	// already applied. It is called on the render goroutine.
+	NoteTap func(track int, event seq.Event)
 }
 
 type Report struct {
@@ -94,6 +100,9 @@ type trackRuntime struct {
 	currentSlot    uint8
 	current        seq.Pattern
 	active         *seq.Pattern
+	noteTap        func(int, seq.Event) // from Options.NoteTap
+	tapTick        int64                // tick of the scene boundary being applied
+	tapIndex       int
 	generation     uint64
 	activeGen      uint64
 	activeNoteID   int64
@@ -254,6 +263,7 @@ func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, st
 	if opts.Normalize {
 		preview := opts
 		preview.Normalize = false
+		preview.NoteTap = nil
 		report, err := renderWAV(score, preview, io.Discard, "", 1)
 		if err != nil {
 			return report, err
@@ -633,6 +643,9 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			if bar >= renderBars {
 				break
 			}
+			for ti := range tracks {
+				tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, int64(bar)*seq.TicksPerBar, ti
+			}
 			if err := applySceneBoundary(tracks, scene, stopIsAction, entryBar == 0); err != nil {
 				return report, err
 			}
@@ -744,6 +757,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 					}
 					return 0
 				})
+				if opts.NoteTap != nil {
+					for _, event := range events {
+						if event.event.Kind != seq.NoteExpression {
+							opts.NoteTap(event.track, event.event)
+						}
+					}
+				}
 				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
 					return report, err
 				}
@@ -753,11 +773,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	for ti := range tracks {
+		tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, int64(renderBars)*seq.TicksPerBar, ti
 		if tracks[ti].drums != nil {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				tracks[ti].drums.NoteOff(lane)
 			}
 		} else {
+			tracks[ti].tapRelease()
 			tracks[ti].voice.NoteOff()
 		}
 		tracks[ti].activeGen = 0
@@ -1340,6 +1362,14 @@ func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSl
 	}
 }
 
+// tapRelease reports the release of the sounding pattern note at the scene
+// boundary, before its identity is cleared.
+func (t *trackRuntime) tapRelease() {
+	if t.noteTap != nil && t.activeGen != 0 && t.activeNoteID != 0 {
+		t.noteTap(t.tapIndex, seq.Event{Kind: seq.NoteOff, NoteID: t.activeNoteID, Tick: t.tapTick})
+	}
+}
+
 func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool) error {
 	return applySceneBoundary(tracks, scene, stopIsAction, false)
 }
@@ -1369,6 +1399,7 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 				tracks[ti].active = nil
 				tracks[ti].currentName = ""
 				tracks[ti].hasPendingGate = false
+				tracks[ti].tapRelease()
 				tracks[ti].activeGen = 0
 				tracks[ti].voice.NoteOff()
 			default:
@@ -1405,6 +1436,7 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 					if transition.carry {
 						tracks[ti].slideFrom, tracks[ti].slideAt = transition.sourceNoteID, transition.targetSample
 					} else if transition.release.Sample <= transition.boundarySample {
+						tracks[ti].tapRelease()
 						tracks[ti].voice.NoteOff()
 						tracks[ti].activeGen = 0
 					}

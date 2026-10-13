@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 
+	"m31labs.dev/cicada/kernel/limits"
+
 	"m31labs.dev/cicada/notation"
 )
 
@@ -81,8 +83,8 @@ func newAudioTrackSource(ctx *Context, name string) ([]byte, error) {
 			return nil, fmt.Errorf("track %s already exists", name)
 		}
 	}
-	if len(score.Tracks) >= 16 {
-		return nil, fmt.Errorf("a project supports at most 16 tracks")
+	if len(score.Tracks) >= limits.MaxTracks {
+		return nil, fmt.Errorf("a project supports at most %d tracks", limits.MaxTracks)
 	}
 	root, walker, err := notation.ParseTree(source)
 	if err != nil {

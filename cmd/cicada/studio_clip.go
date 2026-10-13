@@ -3,10 +3,7 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"net/http"
-	"strconv"
-	"strings"
 
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel/limits"
@@ -100,72 +97,4 @@ func newAudioTrackSource(source []byte, name string, edition int) ([]byte, error
 		text = newline + text
 	}
 	return replaceSongSpan(source, at, at, []byte(text))
-}
-
-func clipSettingsSource(source []byte, id string, settings *studioClipSettings, edition int) ([]byte, error) {
-	if settings == nil || settings.Start < 0 || settings.End <= settings.Start || settings.FadeIn < 0 || settings.FadeOut < 0 || settings.FadeIn > settings.End-settings.Start || settings.FadeOut > settings.End-settings.Start || math.IsNaN(settings.GainDB) || math.IsInf(settings.GainDB, 0) || settings.GainDB < -60 || settings.GainDB > 24 {
-		return nil, fmt.Errorf("choose a valid source region, fades no longer than the region, and gain −60 to +24 dB")
-	}
-	score, _ := notation.ParseEdition(source, edition)
-	root, _, syntaxErr := notation.ParseTree(source)
-	// The transaction resolves imports and validates the complete project.
-	// Local clip bounds can still be inspected in an imported instrument score.
-	if score == nil || syntaxErr != nil || root.HasError() {
-		return nil, fmt.Errorf("score must validate before editing audio")
-	}
-	var original *notation.Clip
-	for i := range score.Clips {
-		if score.Clips[i].Name == id {
-			original = &score.Clips[i]
-			break
-		}
-	}
-	if original == nil {
-		return nil, fmt.Errorf("unknown clip %s", id)
-	}
-	for _, asset := range score.Assets {
-		if asset.Name == original.Asset && settings.End > asset.Frames {
-			return nil, fmt.Errorf("clip end exceeds the source asset")
-		}
-	}
-	node, walker, err := studioDeclaration(source, []string{"clip_decl"}, id)
-	if err != nil {
-		return nil, err
-	}
-	values := map[string]string{}
-	for _, value := range []struct {
-		name      string
-		old, next int64
-	}{{"start", original.StartFrame, settings.Start}, {"end", original.EndFrame, settings.End}, {"fade_in", original.FadeInFrames, settings.FadeIn}, {"fade_out", original.FadeOutFrames, settings.FadeOut}} {
-		if value.old != value.next {
-			values[value.name] = strconv.FormatInt(value.next, 10) + "frames"
-		}
-	}
-	if original.GainDB != settings.GainDB {
-		values["gain"] = strconv.FormatFloat(settings.GainDB, 'f', -1, 64) + "dB"
-	}
-	var edits []studioSpanEdit
-	for i := 0; i < node.NamedChildCount(); i++ {
-		param := node.NamedChild(i)
-		if walker.Type(param) != "param_decl" {
-			continue
-		}
-		name := walker.Text(walker.Field(param, "name"))
-		if text, ok := values[name]; ok {
-			value := walker.Field(param, "value")
-			edits = append(edits, studioSpanEdit{int(value.StartByte()), int(value.EndByte()), text})
-			delete(values, name)
-		}
-	}
-	var fields []string
-	for _, name := range []string{"start", "end", "gain", "fade_in", "fade_out"} {
-		if text, ok := values[name]; ok {
-			fields = append(fields, name+" = "+text)
-		}
-	}
-	if len(fields) > 0 {
-		at := int(node.StartByte()) + bytes.IndexByte(source[node.StartByte():node.EndByte()], '{') + 1
-		edits = append(edits, studioSpanEdit{at, at, " " + strings.Join(fields, " ") + " "})
-	}
-	return patchStudioSpans(source, edits)
 }

@@ -40,16 +40,16 @@ func TestStudioRatchetAndChanceCellsWriteSource(t *testing.T) {
 
 func TestCyclePreservesOtherModifiersAndPhraseSource(t *testing.T) {
 	source := []byte(strings.Replace(studioScore, "1 . 5 .", "1^~*8%70 . 5 .", 1))
-	ratchet, err := cycledStepSource(source, "pulse", "", 0, "ratchet")
+	ratchet, err := intentCycledSource(t, source, "pulse", "", 0, "ratchet")
 	if err != nil || !bytes.Contains(ratchet, []byte("1^~%70 . 5 .")) {
 		t.Fatalf("ratchet wrap lost note modifiers: %s, %v", ratchet, err)
 	}
-	chance, err := cycledStepSource(ratchet, "pulse", "", 0, "chance")
+	chance, err := intentCycledSource(t, ratchet, "pulse", "", 0, "chance")
 	if err != nil || !bytes.Contains(chance, []byte("1^~?50 . 5 .")) {
 		t.Fatalf("chance cycle did not modernize legacy spelling: %s, %v", chance, err)
 	}
 	phrase := []byte("track bass acid {}\nphrase hook { 1 . }\npattern pulse { use hook*2 }\nscene main { bass = pulse }\nsong { main }\n")
-	shared, err := cycledStepSource(phrase, "pulse", "", 2, "chance")
+	shared, err := intentCycledSource(t, phrase, "pulse", "", 2, "chance")
 	if err != nil || !bytes.Contains(shared, []byte("phrase hook { 1?75 . }")) || !bytes.Contains(shared, []byte("use hook*2")) {
 		t.Fatalf("phrase chance did not edit shared source: %s, %v", shared, err)
 	}
@@ -62,7 +62,7 @@ func TestCyclePreservesOtherModifiersAndPhraseSource(t *testing.T) {
 		{"bd", 0, "chance"},
 		{"", 0, "accent"},
 	} {
-		if _, err := cycledStepSource(source, "pulse", edit.lane, edit.index, edit.kind); err == nil {
+		if _, err := intentCycledSource(t, source, "pulse", edit.lane, edit.index, edit.kind); err == nil {
 			t.Fatalf("invalid dynamics edit accepted: %+v", edit)
 		}
 	}
