@@ -42,7 +42,7 @@ func TestClipRegionPatchesPreserveCommentsAndUnchangedUnits(t *testing.T) {
 
 func TestCreateAudioTrackAndAssignClip(t *testing.T) {
 	before := []byte(clipEditScore)
-	updated, err := newAudioTrackSource(before, "vocal-b", 2)
+	updated, err := intentAudioTrack(t, before, "vocal-b")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -57,14 +57,11 @@ func TestCreateAudioTrackAndAssignClip(t *testing.T) {
 	if p.Scenes[0].Bindings["vocal-b"] != "hit" || p.Tracks[1].Slots[0] == nil {
 		t.Fatal("audio bank was not assigned")
 	}
-	if _, err := newAudioTrackSource(before, "vox", 2); err == nil {
+	if _, err := intentAudioTrack(t, before, "vox"); err == nil {
 		t.Fatal("duplicate track")
 	}
-	if _, err := newAudioTrackSource(before, "bad\ntrack x", 2); err == nil {
+	if _, err := intentAudioTrack(t, before, "bad\ntrack x"); err == nil {
 		t.Fatal("track declaration injection")
-	}
-	if _, err := newAudioTrackSource(before, "new", 1); err == nil {
-		t.Fatal("implicit edition upgrade")
 	}
 }
 
@@ -114,11 +111,11 @@ func TestAudioAndPresetCreationReachNativeTrackCapacity(t *testing.T) {
 		fmt.Fprintf(&source, "track t%d acid {}\n", i)
 	}
 	source.WriteString("pattern p acid {1}\nscene main {t0=p}\nsong {main}\n")
-	updated, err := newAudioTrackSource([]byte(source.String()), "last-vocal", 2)
+	updated, err := intentAudioTrack(t, []byte(source.String()), "last-vocal")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := newAudioTrackSource(updated, "overflow", 2); err == nil || !strings.Contains(err.Error(), "64 tracks") {
+	if _, err := intentAudioTrack(t, updated, "overflow"); err == nil || !strings.Contains(err.Error(), "64 tracks") {
 		t.Fatalf("track overflow: %v", err)
 	}
 	if _, err := intentAddPreset(t, []byte(source.String()), "warm-pad", "pad-source", "last-pad"); err != nil {

@@ -134,17 +134,6 @@ func TestStudioSamplerRejectsStaleInvalidAndUnpreparedEdits(t *testing.T) {
 
 func ptrEffects(e padsampler.Effects) *padsampler.Effects { return &e }
 
-func TestSamplerAddsAudioTrackWithoutRevalidatingUnresolvedImports(t *testing.T) {
-	source := []byte("cicada 2\nimport \"std/keys\"\ntrack keys keys.tine_ep {}\npattern head { 1 . 3 . }\narrange { place original keys head { at = @1.1.1 length = 4bars } }\n")
-	updated, err := newAudioTrackSource(source, "sampler", 2)
-	if err != nil || !bytes.HasPrefix(updated, source) || !bytes.Contains(updated, []byte("track sampler audio {}")) {
-		t.Fatalf("imported score cannot acquire an audio track: %v", err)
-	}
-	if _, err = newAudioTrackSource(updated, "sampler", 2); err == nil {
-		t.Fatal("duplicate local audio track accepted")
-	}
-}
-
 func TestSamplerPrintClipCanBeEditedThroughTheClipRoute(t *testing.T) {
 	wav := testwav.Bytes(48000, 2, 16, 48000, 1)
 	source := []byte("cicada 2\ntrack lead acid {}\nasset printed-audio \"sample.wav\" { sha256 = \"" + fmt.Sprintf("%x", sha256.Sum256(wav)) + "\" format = wav frames = 48000 rate = 48000Hz channels = 2 }\nclip printed printed-audio { start = 0frames end = 48000frames }\npattern head { 1 . 3 . }\nscene main { lead=head }\nsong { main }\n")

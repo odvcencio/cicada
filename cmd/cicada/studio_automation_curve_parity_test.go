@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 
@@ -11,8 +10,9 @@ import (
 	"m31labs.dev/cicada/edit/editlog"
 )
 
-func TestAutomationPointIntentsMatchTheOldWriter(t *testing.T) {
-	recorder := newM10Recorder(t, "automation")
+// The recorded outcomes are what the retired curvePointSource produced.
+func TestAutomationPointIntentsWriteTheRecordedBytes(t *testing.T) {
+	golden := m10Golden(t, "automation")
 	crlf := strings.ReplaceAll(curveScore, "\n", "\r\n")
 	noLane := strings.Split(curveScore, "// keep this")[0]
 	oneLane := noLane + "automate bass.cutoff {\n  @2.1.1 400Hz\n}\n"
@@ -62,15 +62,12 @@ func TestAutomationPointIntentsMatchTheOldWriter(t *testing.T) {
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			want, wantErr := curvePointSource([]byte(c.source), c.path, c.point, c.remove, 2)
-			recorder.add(c.name, want, wantErr)
-			got, gotErr := edits.Apply([]byte(c.source), edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{curvePointIntent(c.path, c.point, c.remove)}}, edits.Options{Compiler: arrangementTextOnlyPlan{}, Edition: 2})
-			if (wantErr == nil) != (gotErr == nil) || wantErr != nil && wantErr.Error() != gotErr.Error() {
-				t.Fatalf("error %v, want %v", gotErr, wantErr)
+			got, err := edits.Apply([]byte(c.source), edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{curvePointIntent(c.path, c.point, c.remove)}}, edits.Options{Compiler: arrangementTextOnlyPlan{}, Edition: 2})
+			var source []byte
+			if err == nil {
+				source = got.Source
 			}
-			if wantErr == nil && !bytes.Equal(got.Source, want) {
-				t.Fatalf("bytes differ\n got: %q\nwant: %q", got.Source, want)
-			}
+			m10Check(t, golden, c.name, source, err)
 		})
 	}
 }

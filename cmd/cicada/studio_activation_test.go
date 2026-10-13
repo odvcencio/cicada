@@ -157,9 +157,9 @@ func TestActivationSavedPatchSurvivesSongSeek(t *testing.T) {
 	s, stream, created := activationStudioEngine(t, source)
 	renderStudioPreview(t, stream, 256)
 	response := httptest.NewRecorder()
-	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
+	s.applyText(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
 		return bytes.Replace(source, []byte("bd_decay=80ms"), []byte("bd_decay=120ms"), 1), nil
-	})
+	}, nil)
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
@@ -235,7 +235,7 @@ func TestActivationNamedKitSceneSettingsBecomeCommittedRestoreValues(t *testing.
 	}
 	updated := strings.Replace(source, "90ms", "120ms", 1)
 	response := httptest.NewRecorder()
-	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func([]byte) ([]byte, error) { return []byte(updated), nil })
+	s.applyText(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func([]byte) ([]byte, error) { return []byte(updated), nil }, nil)
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
@@ -273,9 +273,9 @@ landed:
 		t.Fatal("cancellation lost the activated scene value")
 	}
 	response = httptest.NewRecorder()
-	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
+	s.applyText(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
 		return bytes.Replace(source, []byte("track drums remapped {}"), []byte("track drums remapped { level=-3dB }"), 1), nil
-	})
+	}, nil)
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
@@ -294,7 +294,7 @@ func TestActivationNoopCommitRetiresOnlyMatchingPreview(t *testing.T) {
 		t.Fatal(err)
 	}
 	response := httptest.NewRecorder()
-	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) { return source, nil })
+	s.applyText(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) { return source, nil }, nil)
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
@@ -345,7 +345,7 @@ func TestActivationHoldsPollLockAcrossCommit(t *testing.T) {
 	s, stream := activationStudio(t, studioScore)
 	polled := make(chan struct{})
 	response := httptest.NewRecorder()
-	s.applyWithHook(response, studioEdit{Revision: studioRevision([]byte(studioScore))}, func(source []byte) ([]byte, error) {
+	s.applyText(response, studioEdit{Revision: studioRevision([]byte(studioScore))}, func(source []byte) ([]byte, error) {
 		return bytes.Replace(source, []byte("track bass acid {}"), []byte("track bass acid { level=-3dB }"), 1), nil
 	}, func() {
 		if s.transport.pollMu.TryLock() {
@@ -368,7 +368,7 @@ func TestActivationFallsBackForStructureAndPendingOffer(t *testing.T) {
 	s, stream := activationStudio(t, studioScore)
 	added := strings.Replace(studioScore, "track bass acid {}", "track bass acid {}\ntrack lead acid {}", 1)
 	response := httptest.NewRecorder()
-	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func([]byte) ([]byte, error) { return []byte(added), nil })
+	s.applyText(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func([]byte) ([]byte, error) { return []byte(added), nil }, nil)
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
@@ -377,9 +377,9 @@ func TestActivationFallsBackForStructureAndPendingOffer(t *testing.T) {
 		t.Fatal("structural commit did not offer")
 	}
 	response = httptest.NewRecorder()
-	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
+	s.applyText(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
 		return bytes.Replace(source, []byte("track bass acid {}"), []byte("track bass acid { level=-3dB }"), 1), nil
-	})
+	}, nil)
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
@@ -403,9 +403,9 @@ func TestActivationArenaPressureFallsBackWithoutMarkingRevision(t *testing.T) {
 	}()
 	before := s.transport.last
 	response := httptest.NewRecorder()
-	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
+	s.applyText(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
 		return bytes.Replace(source, []byte("track bass acid {}"), []byte("track bass acid { level=-3dB }"), 1), nil
-	})
+	}, nil)
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
@@ -422,9 +422,9 @@ func TestActivationQueuesSuccessiveCommitsBeforeRender(t *testing.T) {
 	s, stream := activationStudio(t, studioScore)
 	for _, replacement := range []string{"track bass acid { level=-3dB }", "track bass acid { level=0dB }"} {
 		response := httptest.NewRecorder()
-		s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func([]byte) ([]byte, error) {
+		s.applyText(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func([]byte) ([]byte, error) {
 			return []byte(strings.Replace(studioScore, "track bass acid {}", replacement, 1)), nil
-		})
+		}, nil)
 		if response.Code != http.StatusOK {
 			t.Fatal(response.Body.String())
 		}

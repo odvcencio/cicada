@@ -27,7 +27,7 @@ func TestPlacementEditsPatchFieldsAtomicallyAndPreserveSource(t *testing.T) {
 	for _, newline := range []string{"\n", "\r\n"} {
 		before := []byte(strings.ReplaceAll(studioPlacementScore, "\n", newline))
 		edit := studioEdit{Action: "update", Name: "one", Placement: &studioPlaceSettings{At: "@2.1.1", Length: "3bars"}}
-		updated, err := editedArrangementSource(before, edit)
+		updated, err := intentArrangement(t, before, edit)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -44,7 +44,7 @@ func TestPlacementEditsPatchFieldsAtomicallyAndPreserveSource(t *testing.T) {
 		if _, err := compileStudioSource(path, updated); err != nil {
 			t.Fatalf("atomic move/trim did not compile: %v", err)
 		}
-		copy, err := editedArrangementSource(updated, studioEdit{Action: "duplicate", Name: "one", NewName: "one-copy", Placement: &studioPlaceSettings{At: "@9.1.1"}})
+		copy, err := intentArrangement(t, updated, studioEdit{Action: "duplicate", Name: "one", NewName: "one-copy", Placement: &studioPlaceSettings{At: "@9.1.1"}})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,7 +54,7 @@ func TestPlacementEditsPatchFieldsAtomicallyAndPreserveSource(t *testing.T) {
 		if newline == "\r\n" && bytes.Contains(bytes.ReplaceAll(copy, []byte(newline), nil), []byte("\n")) {
 			t.Fatal("duplicate changed line endings")
 		}
-		removed, err := editedArrangementSource(copy, studioEdit{Action: "delete", Name: "one-copy"})
+		removed, err := intentArrangement(t, copy, studioEdit{Action: "delete", Name: "one-copy"})
 		if err != nil || bytes.Contains(removed, []byte("one-copy")) || !bytes.Contains(removed, []byte("// keep this comment")) {
 			t.Fatalf("remove changed another placement: %v", err)
 		}
@@ -127,7 +127,7 @@ func TestPlacementAppendAndMarkerCommands(t *testing.T) {
 		{Action: "delete-marker", Name: "return"},
 	} {
 		var err error
-		source, err = editedArrangementSource(source, edit)
+		source, err = intentArrangement(t, source, edit)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -141,18 +141,18 @@ func TestPlacementAppendAndMarkerCommands(t *testing.T) {
 		{Action: "update", Name: "missing", Placement: &studioPlaceSettings{At: "@1.1.1"}},
 		{Action: "marker", Name: "finish", Placement: &studioPlaceSettings{Length: "1bars"}},
 	} {
-		if _, err := editedArrangementSource(source, edit); err == nil {
+		if _, err := intentArrangement(t, source, edit); err == nil {
 			t.Fatalf("invalid arrangement edit accepted: %+v", edit)
 		}
 	}
 	for _, name := range []string{"ending", "two"} {
 		var err error
-		source, err = editedArrangementSource(source, studioEdit{Action: "delete", Name: name})
+		source, err = intentArrangement(t, source, studioEdit{Action: "delete", Name: name})
 		if err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := editedArrangementSource(source, studioEdit{Action: "delete", Name: "one"}); err == nil {
+	if _, err := intentArrangement(t, source, studioEdit{Action: "delete", Name: "one"}); err == nil {
 		t.Fatal("deleted the last placement")
 	}
 }

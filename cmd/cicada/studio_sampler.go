@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"time"
 
 	edits "m31labs.dev/cicada/edit"
@@ -488,38 +487,6 @@ func samplePlacement(p *project.Project, root, id string) (audition.Audio, error
 		}
 	}
 	return out, nil
-}
-
-func placeSamplerPrint(source []byte, p *project.Project, src padsampler.Source, input samplerCommand) ([]byte, error) {
-	if p.Edition != 2 || p.Arrange == nil {
-		return nil, fmt.Errorf("placing resamples requires an edition-2 score with a Session arrangement")
-	}
-	if !studioPatternName.MatchString(input.Track) {
-		return nil, fmt.Errorf("choose a lowercase audio track name")
-	}
-	found := false
-	for _, t := range p.Tracks {
-		if t.ID == input.Track {
-			if t.Kind != "audio" {
-				return nil, fmt.Errorf("choose an audio track for the resample")
-			}
-			found = true
-		}
-	}
-	var err error
-	if !found {
-		source, err = newAudioTrackSource(source, input.Track, 2)
-		if err != nil {
-			return nil, err
-		}
-	}
-	assetName, clipName := input.NewName+"-audio", input.NewName+"-clip"
-	a := src.Asset
-	declarations := fmt.Sprintf("\nasset %s %s { sha256 = %s format = wav frames = %d rate = %dHz channels = 2 }\nclip %s %s { start = 0frames end = %dframes fade_in = 240frames fade_out = 240frames }\n", assetName, strconv.Quote(a.Path), strconv.Quote(a.SHA256), a.Frames, a.RateHz, clipName, assetName, a.Frames)
-	// Add declarations without rewriting the musician's existing score.
-	source = append(append([]byte(nil), source...), []byte(declarations)...)
-	length := int64(math.Ceil(float64(a.Frames) * float64(p.TempoMilli) * float64(seq.PPQ) / (float64(padsampler.Rate) * 60000)))
-	return editedArrangementSource(source, studioEdit{Action: "append", NewName: input.NewName, Placement: &studioPlaceSettings{At: input.At, Length: fmt.Sprintf("%dticks", length), Track: input.Track, Content: clipName}})
 }
 
 // samplerPrintIntent maps a resample placement request to its intent.

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"strings"
 	"testing"
 
@@ -83,27 +82,36 @@ func arrangementParityCases() []struct {
 	return cases
 }
 
-func TestArrangementIntentsMatchTheOldWriter(t *testing.T) {
-	recorder := newM10Recorder(t, "arrangement")
+// The recorded outcomes are what the retired editedArrangementSource produced
+// for the same score and request: exact bytes, or the exact error text.
+func TestArrangementIntentsWriteTheRecordedBytes(t *testing.T) {
+	golden := m10Golden(t, "arrangement")
 	for _, c := range arrangementParityCases() {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			want, wantErr := editedArrangementSource([]byte(c.source), c.edit)
-			recorder.add(c.name, want, wantErr)
 			intent, ok := arrangementIntent(c.edit)
 			if !ok {
 				t.Fatalf("no intent for %q", c.edit.Action)
 			}
-			// Compare the text edit alone: the old writer never compiled.
-			got, gotErr := edits.Apply([]byte(c.source), edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{intent}}, edits.Options{Compiler: arrangementTextOnly{}})
-			if (wantErr == nil) != (gotErr == nil) || wantErr != nil && wantErr.Error() != gotErr.Error() {
-				t.Fatalf("error %v, want %v", gotErr, wantErr)
+			// The text edit alone: the retired writer never compiled.
+			got, err := edits.Apply([]byte(c.source), edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{intent}}, edits.Options{Compiler: arrangementTextOnly{}})
+			var source []byte
+			if err == nil {
+				source = got.Source
 			}
-			if wantErr == nil && !bytes.Equal(got.Source, want) {
-				t.Fatalf("bytes differ\n got: %q\nwant: %q", got.Source, want)
-			}
+			m10Check(t, golden, c.name, source, err)
 		})
 	}
+}
+
+// intentArrangement runs one placement request as an intent over a loose score.
+func intentArrangement(t *testing.T, source []byte, edit studioEdit) ([]byte, error) {
+	t.Helper()
+	intent, ok := arrangementIntent(edit)
+	if !ok {
+		t.Fatalf("no intent for %q", edit.Action)
+	}
+	return looseIntentSource(t, source, edits.ParamWriterAuto, intent)
 }
 
 // arrangementTextOnly accepts any candidate, so the comparison covers only the

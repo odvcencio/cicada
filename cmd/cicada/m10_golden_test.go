@@ -3,10 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"sync"
 	"testing"
 )
 
@@ -54,45 +52,4 @@ func m10Check(t *testing.T, golden map[string]m10Result, name string, source []b
 	if !bytes.Equal([]byte(got.Source), []byte(want.Source)) {
 		t.Fatalf("bytes differ\n got: %q\nwant: %q", got.Source, want.Source)
 	}
-}
-
-// m10Recorder writes outcomes of the retired writers when RECORD_M10_GOLDEN is
-// set. It exists only while the writers do.
-type m10Recorder struct {
-	mu      sync.Mutex
-	results map[string]m10Result
-	calls   map[string]int
-}
-
-func newM10Recorder(t *testing.T, group string) *m10Recorder {
-	r := &m10Recorder{results: map[string]m10Result{}, calls: map[string]int{}}
-	if os.Getenv("RECORD_M10_GOLDEN") != "" {
-		t.Cleanup(func() {
-			data, err := json.MarshalIndent(r.results, "", "  ")
-			if err != nil {
-				t.Error(err)
-				return
-			}
-			if err := os.WriteFile(m10GoldenPath(group), append(data, '\n'), 0o644); err != nil {
-				t.Error(err)
-			}
-		})
-	}
-	return r
-}
-
-func (r *m10Recorder) add(name string, source []byte, err error) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.results[name] = m10Outcome(source, err)
-}
-
-// addNext records the nth outcome of a test that runs several edits in a row.
-func (r *m10Recorder) addNext(name string, source []byte, err error) string {
-	r.mu.Lock()
-	r.calls[name]++
-	key := fmt.Sprintf("%s#%d", name, r.calls[name])
-	r.mu.Unlock()
-	r.add(key, source, err)
-	return key
 }

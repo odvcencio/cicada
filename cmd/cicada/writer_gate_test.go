@@ -21,6 +21,12 @@ var deletedWriters = []string{
 	"studioLibrarySetting", "studioSavedPresetSource",
 	"studioDeclaration", "noteSuffix", "patternSettingsSource", "independentPatternSource",
 	"patternStepSource", "duplicatePatternSource", "patternRangeSource", "resizePatternSource", "bindPatternSource",
+	// The last direct writers: arrangement, automation points, sampler prints,
+	// audio tracks, the shared span helpers and the callback commit path.
+	"patchStudioSpans", "studioSpanEdit", "replaceSongSpan", "newAudioTrackSource",
+	"apply", "applyWithHook", "applyWithResult",
+	"editedArrangementSource", "placementFieldPatches", "curvePointSource", "placeSamplerPrint",
+	"vocalArrangementSource", "removeVocalPrintDeclarations",
 }
 
 func TestDeletedWritersStayDeleted(t *testing.T) {
