@@ -3,15 +3,18 @@
 
 Every voice, drum, effect and master-chain setting has an allowed range. `cicada check`,
 `render`, Studio and the language server report each setting that is outside it, at
-the setting's own value, and report all of them in one run. A message names the
-setting, the value as you wrote it, and the range:
+the setting's own value. A message names the setting, the value as you wrote it, and
+the range:
 
 ```text
 main.cicada:4:14: error CICADA-PARAM: drums oh_decay 50ms is below the minimum 150ms (range 150ms to 1.2s)
 ```
 
 Scene settings and automation points that set the same parameters use the same
-wording. Limits are shown to six significant digits, rounded toward the inside of
+wording. Each stage reports all of its errors in one run, but a stage runs only when the
+one before it is clean: scene settings are checked while the score is read, then track
+and effect declarations, then automation points. Fix the errors from one stage and run
+again to see the next. Limits are shown to six significant digits, rounded toward the inside of
 the range. Mixer settings (`level`, `pan`, sends) are described in the
 [edition 1 specification](../spec/edition-1.md#track-mixer-settings).
 

@@ -112,8 +112,7 @@ func rangeMessage(d Descriptor, label, literal string, exact float64) string {
 	if lower := strings.ToLower(literal); math.IsNaN(exact) && (strings.HasSuffix(lower, "khz") || strings.HasSuffix(lower, "s") && !strings.HasSuffix(lower, "ms") || strings.HasSuffix(lower, "%")) {
 		slack = 1e-9
 	}
-	low := number < d.Min-slack*math.Max(1, math.Abs(d.Min))
-	high := number > d.Max+slack*math.Max(1, math.Abs(d.Max))
+	low, high := outside(d, number, slack)
 	if !low && !high {
 		return ""
 	}
@@ -139,6 +138,33 @@ func rangeMessage(d Descriptor, label, literal string, exact float64) string {
 		return label + " " + literal + " is below the minimum " + lowText + " " + span
 	}
 	return label + " " + literal + " is above the maximum " + highText + " " + span
+}
+
+// KeyboardTolerance is the absolute slack project/keys.go allows around a
+// keyboard parameter's float32 limits.
+const KeyboardTolerance = 1e-7
+
+// Tolerance is the absolute slack the validator that owns the row allows
+// around its limits: KeyboardTolerance for modeled keyboards, none elsewhere.
+func Tolerance(d Descriptor) float64 {
+	if strings.HasPrefix(d.ID, "keys.") {
+		return KeyboardTolerance
+	}
+	return 0
+}
+
+// outside applies the comparison of the validator that owns the row. Most rows
+// compare the float64 exactly (slack is only for scaled literals). A keyboard
+// value must lie within KeyboardTolerance of its float32 limits and, after
+// conversion to float32, within the limits themselves, as project/keys.go and
+// host/keyboard.Validate do in turn.
+func outside(d Descriptor, number, slack float64) (low, high bool) {
+	if Tolerance(d) == 0 {
+		return number < d.Min-slack*math.Max(1, math.Abs(d.Min)), number > d.Max+slack*math.Max(1, math.Abs(d.Max))
+	}
+	min32, max32 := float64(float32(d.Min)), float64(float32(d.Max))
+	narrowed := float64(float32(number))
+	return number < min32-KeyboardTolerance || narrowed < min32, number > max32+KeyboardTolerance || narrowed > max32
 }
 
 // FormatBound writes one range limit (upper marks a maximum) with the parameter's unit, such as 150ms,

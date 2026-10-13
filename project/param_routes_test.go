@@ -102,6 +102,32 @@ func routesFor(kind string) []string {
 	return []string{routeFree} // delay, reverb
 }
 
+type probe struct {
+	side    string
+	value   float64
+	accepts bool
+}
+
+// toleranceProbes test the owning validator's own slack: half the tolerance
+// beyond each limit must pass, and twice the tolerance beyond must fail. The
+// limits are the validator's, so keyboard limits are taken after float32
+// conversion. After the float32 conversion the keyboard still compares exactly,
+// so only values that round onto a limit pass.
+func toleranceProbes(d paramdefs.Descriptor) []probe {
+	tol := paramdefs.Tolerance(d)
+	if tol == 0 || d.Type == "integer" {
+		return nil // an integer row also rejects any fraction, so slack cannot show
+	}
+	low, high := float64(float32(d.Min)), float64(float32(d.Max))
+	// Below the minimum the keyboard converts to float32 and then compares
+	// exactly, so slack passes only where the conversion rounds up onto the limit.
+	lowHalf := low - tol/2
+	return []probe{
+		{"high+tol/2", high + tol/2, true}, {"low-tol/2", lowHalf, float64(float32(lowHalf)) >= low},
+		{"high+2tol", high + 2*tol, false}, {"low-2tol", low - 2*tol, false},
+	}
+}
+
 type agreementCase struct {
 	d     paramdefs.Descriptor
 	route string
@@ -141,15 +167,11 @@ func TestParameterTableAgreesWithKernelValidation(t *testing.T) {
 	for _, c := range agreementCases() {
 		d := c.d
 		span := d.Max - d.Min
-		type probe struct {
-			side    string
-			value   float64
-			accepts bool
-		}
 		probes := []probe{{"min", d.Min, true}, {"max", d.Max, true}, {"below", d.Min - span*1e-3, false}, {"above", d.Max + span*1e-3, false}}
 		for _, v := range d.Isolated {
 			probes = append(probes, probe{"isolated", v, true}, probe{"gap", (v + d.Min) / 2, false})
 		}
+		probes = append(probes, toleranceProbes(d)...)
 		for _, p := range probes {
 			literal := boundLiteral(d, p.value)
 			key := d.ID + "/" + c.route + "/" + p.side
@@ -220,13 +242,17 @@ func voiceScore(d paramdefs.Descriptor, literal, mode string) ([]byte, bool) {
 		return nil, false
 	}
 	var head, pat, name string
+	prefix := "cicada 1\ntempo 120\n"
 	switch parts[0] {
 	case "acid":
 		head, pat, name = "track b acid { %s }\nautomate_here", "pattern riff acid steps=1 { 1 }\nscene main { b = riff SCENE }", "b"
 	case "drum":
 		head, pat, name = "track b drums { %s }\nautomate_here", "pattern riff drums steps=1 { bd: x }\nscene main { b = riff SCENE }", "b"
+	case "keys":
+		head, pat, name = "track b "+sceneRegistryKeysPatch(d)+" { %s }\nautomate_here", "pattern riff notes { c4 . }\nscene main { b = riff SCENE }", "b"
+		prefix = "cicada 2\ntempo 120\n"
 	default:
-		return nil, false // guitar, piano and keys have their own preconditions; the compiler route covers them
+		return nil, false // guitar and piano have their own preconditions; the compiler route covers them
 	}
 	setting := d.Source + " = " + literal
 	auto, scene := "", ""
@@ -242,7 +268,7 @@ func voiceScore(d paramdefs.Descriptor, literal, mode string) ([]byte, bool) {
 	}
 	head = strings.Replace(head, "automate_here", auto, 1)
 	pat = strings.Replace(pat, "SCENE", scene, 1)
-	return []byte("cicada 1\ntempo 120\n" + head + "\n" + pat + "\nsong { main }\n"), true
+	return []byte(prefix + head + "\n" + pat + "\nsong { main }\n"), true
 }
 
 func rangeWordErrors(t *testing.T, source []byte) []string {
@@ -266,15 +292,11 @@ func TestParameterTableExactBoundsOnEveryRouteAndMode(t *testing.T) {
 	for _, c := range agreementCases() {
 		d := c.d
 		span := d.Max - d.Min
-		type probe struct {
-			name  string
-			value float64
-			bad   bool
-		}
-		probes := []probe{{"min", d.Min, false}, {"max", d.Max, false}, {"inside low", d.Min + span*1e-4, false}, {"inside high", d.Max - span*1e-4, false}, {"below", d.Min - span*1e-3, true}, {"above", d.Max + span*1e-3, true}}
+		probes := []probe{{"min", d.Min, true}, {"max", d.Max, true}, {"inside low", d.Min + span*1e-4, true}, {"inside high", d.Max - span*1e-4, true}, {"below", d.Min - span*1e-3, false}, {"above", d.Max + span*1e-3, false}}
 		for _, v := range d.Isolated {
-			probes = append(probes, probe{"isolated", v, false}, probe{"gap", (v + d.Min) / 2, true})
+			probes = append(probes, probe{"isolated", v, true}, probe{"gap", (v + d.Min) / 2, false})
 		}
+		probes = append(probes, toleranceProbes(d)...)
 		for _, mode := range []string{"source", "automation", "scene"} {
 			for _, p := range probes {
 				literal := boundLiteral(d, p.value)
@@ -283,8 +305,8 @@ func TestParameterTableExactBoundsOnEveryRouteAndMode(t *testing.T) {
 					continue
 				}
 				got := rangeWordErrors(t, source)
-				if p.bad != (len(got) > 0) {
-					t.Errorf("%s route %s %s %s = %s: range errors %v", d.ID, c.route, mode, p.name, literal, got)
+				if p.accepts == (len(got) > 0) {
+					t.Errorf("%s route %s %s %s = %s: range errors %v", d.ID, c.route, mode, p.side, literal, got)
 				}
 				for _, m := range got {
 					if strings.Contains(m, literal+" is below the minimum "+literal+" ") || strings.Contains(m, literal+" is above the maximum "+literal+" ") {
@@ -356,3 +378,53 @@ func TestMasterEQAndWidthRejectValuesOutsideTheirOwnLimits(t *testing.T) {
 		}
 	}
 }
+
+// project/keys.go accepts a keyboard value up to 1e-7 outside its float32
+// limits. The pre-check, ValidateProject and the JSON round trips must accept
+// exactly what the compiler accepts.
+func TestKeyboardToleranceIsAcceptedEverywhere(t *testing.T) {
+	for _, value := range []string{"2.00000001", "2.00000005", "2"} {
+		t.Run(value, func(t *testing.T) {
+			source := []byte("cicada 2\ntempo 120\ntrack e tine_ep { gain = " + value + " }\npattern p notes { c4 . }\nscene main { e = p }\nsong { main }\n")
+			score, diagnostics := notation.Parse(source)
+			if hasErrors(diagnostics) {
+				t.Fatal(diagnostics)
+			}
+			p, diagnostics := FromScore(score)
+			if p == nil {
+				t.Fatalf("FromScore: %+v", diagnostics)
+			}
+			if err := ValidateProject(p); err != nil {
+				t.Fatalf("ValidateProject: %v", err)
+			}
+			data, err := CanonicalJSON(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := DecodeJSON(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			exported, err := ToSource(decoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			again, diagnostics := notation.Parse(exported)
+			if hasErrors(diagnostics) {
+				t.Fatalf("exported source: %+v\n%s", diagnostics, exported)
+			}
+			if q, diagnostics := FromScore(again); q == nil {
+				t.Fatalf("exported source: %+v\n%s", diagnostics, exported)
+			}
+		})
+	}
+	source := []byte("cicada 2\ntempo 120\ntrack e tine_ep { gain = 2.0000002 }\npattern p notes { c4 . }\nscene main { e = p }\nsong { main }\n")
+	if got := scoreErrors(t, source); len(got) != 1 || !strings.Contains(got[0].Message, "tine_ep gain 2.0000002 is above the maximum 2") {
+		t.Fatalf("beyond the tolerance: %+v", got)
+	}
+	if _, err := KeysSpecFromValues("tine_ep", map[string]Value{"gain": {Unit: "unit", Number: ptr(2.0000002)}}); err == nil {
+		t.Fatal("the compiler accepted a value beyond its tolerance")
+	}
+}
+
+func ptr(v float64) *float64 { return &v }
