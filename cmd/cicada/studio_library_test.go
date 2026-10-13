@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	edits "m31labs.dev/cicada/edit"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -221,7 +222,7 @@ func TestStudioLibrarySavedPresetDefaultsAndImportedValues(t *testing.T) {
 		t.Fatalf("inherited values: %s", saved)
 	}
 	source := []byte(strings.Replace(studioLibraryScore, "cutoff=900Hz pan=0.2", "cutoff=0.54kHz pan=0 mute=off", 1))
-	updated, err := studioSavedPresetSource(filename, source, "lead", "defaults")
+	updated, err := intentSavedPresetSource(t, filename, source, "lead", "defaults")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -321,7 +322,7 @@ func TestStudioLibraryNativePreviewStopsOnPlay(t *testing.T) {
 
 func TestStudioLibraryFXSourceSpan(t *testing.T) {
 	source := studioLibraryImport([]byte(studioLibraryScore), "std/fx")
-	updated, err := studioLibrarySetting(source, "track_decl", "lead", "insert", "fx.drive")
+	updated, err := edits.LibrarySetting(source, "track_decl", "lead", "insert", "fx.drive")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -346,7 +347,7 @@ pattern melody { c3 . g3 . }
 scene main { lead=melody }
 song { main }
 `, sha256.Sum256(wav)))
-	updated, err := studioSavedPresetSource(filename, source, "lead", "saved")
+	updated, err := intentSavedPresetSource(t, filename, source, "lead", "saved")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +385,7 @@ func TestStudioLibrarySavesTransitivePresetWithDirectImport(t *testing.T) {
 	if err := os.WriteFile(pins.Path, pins.After, 0600); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := studioSavedPresetSource(filename, source, "lead", "saved")
+	updated, err := intentSavedPresetSource(t, filename, source, "lead", "saved")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +435,7 @@ func TestStudioLibrarySavedPresetPreservesAudibleDefaultOverrides(t *testing.T) 
 				track = "track lead original {}"
 			}
 			source := []byte("cicada 2\n" + declaration + track + "\npattern melody { 1 . 5 . }\nscene main { lead=melody }\nsong { main }\n")
-			updated, err := studioSavedPresetSource(filename, source, "lead", "saved")
+			updated, err := intentSavedPresetSource(t, filename, source, "lead", "saved")
 			if err != nil {
 				t.Fatal(err)
 			}

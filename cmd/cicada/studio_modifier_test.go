@@ -46,16 +46,16 @@ func TestStudioAccentAndSlideCellsWriteSource(t *testing.T) {
 
 func TestModifierGridPreservesChanceAndSharedPhrase(t *testing.T) {
 	source := []byte(strings.Replace(studioScore, "1 . 5 .", "1?70 . 5 .", 1))
-	accented, err := toggledModifierSource(source, "pulse", "", 0, "accent")
+	accented, err := intentModifierSource(t, source, "pulse", "", 0, "accent")
 	if err != nil || !bytes.Contains(accented, []byte("1^?70 . 5 .")) {
 		t.Fatalf("accent did not precede chance: %s, %v", accented, err)
 	}
-	slid, err := toggledModifierSource(accented, "pulse", "", 0, "slide")
+	slid, err := intentModifierSource(t, accented, "pulse", "", 0, "slide")
 	if err != nil || !bytes.Contains(slid, []byte("1^~?70 . 5 .")) {
 		t.Fatalf("slide did not preserve accent and chance: %s, %v", slid, err)
 	}
 	phrase := []byte("track bass acid {}\nphrase hook { 1 . }\npattern pulse { use hook*2 }\nscene main { bass = pulse }\nsong { main }\n")
-	shared, err := toggledModifierSource(phrase, "pulse", "", 2, "accent")
+	shared, err := intentModifierSource(t, phrase, "pulse", "", 2, "accent")
 	if err != nil || !bytes.Contains(shared, []byte("phrase hook { 1^ . }")) || !bytes.Contains(shared, []byte("use hook*2")) {
 		t.Fatalf("phrase modifier did not edit shared source: %s, %v", shared, err)
 	}
@@ -68,12 +68,12 @@ func TestModifierGridPreservesChanceAndSharedPhrase(t *testing.T) {
 		{"bd", 0, "accent"},
 		{"", 0, "chance"},
 	} {
-		if _, err := toggledModifierSource(source, "pulse", edit.lane, edit.index, edit.modifier); err == nil {
+		if _, err := intentModifierSource(t, source, "pulse", edit.lane, edit.index, edit.modifier); err == nil {
 			t.Fatalf("invalid modifier edit accepted: %+v", edit)
 		}
 	}
 	tied := []byte(strings.Replace(studioScore, "1 . 5 .", "1 - 5 .", 1))
-	if _, err := toggledModifierSource(tied, "pulse", "", 1, "slide"); err == nil {
+	if _, err := intentModifierSource(t, tied, "pulse", "", 1, "slide"); err == nil {
 		t.Fatal("tie accepted a slide modifier")
 	}
 }

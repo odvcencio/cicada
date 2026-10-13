@@ -32,7 +32,6 @@ import (
 	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/lsp"
-	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
 
@@ -690,70 +689,6 @@ func compileStudioSourceWithOverrides(path string, source []byte, overrides map[
 		return nil, err
 	}
 	return p, nil
-}
-
-func toggledSource(source []byte, patternID, laneID string, index int) ([]byte, error) {
-	if index < 0 || patternID == "" {
-		return nil, fmt.Errorf("pattern and nonnegative step are required")
-	}
-	score, diagnostics := notation.Parse(source)
-	if score == nil || hasDiagnosticErrors(diagnostics) {
-		return nil, fmt.Errorf("score must validate before a grid edit")
-	}
-	for _, pattern := range score.Patterns {
-		if pattern.Name != patternID {
-			continue
-		}
-		var token notation.StepToken
-		isDrum := pattern.Kind == "drums"
-		if isDrum {
-			for _, lane := range pattern.Lanes {
-				if lane.Name == laneID && index < len(lane.Hits) {
-					token = lane.Hits[index]
-					break
-				}
-			}
-		} else if laneID == "" && index < len(pattern.Steps) {
-			token = pattern.Steps[index]
-		}
-		if token.Position.Line == 0 {
-			return nil, fmt.Errorf("pattern %s has no step %d in lane %s", patternID, index+1, laneID)
-		}
-		start := studioSourceOffset(source, token.Position)
-		end := start + len(token.Text)
-		if end > len(source) || string(source[start:end]) != token.Text {
-			return nil, fmt.Errorf("step source no longer matches the projection")
-		}
-		replacement := "."
-		if token.Text == "." {
-			if isDrum {
-				replacement = "x"
-			} else {
-				replacement = "1"
-			}
-		}
-		updated := make([]byte, 0, len(source)-len(token.Text)+len(replacement))
-		updated = append(updated, source[:start]...)
-		updated = append(updated, replacement...)
-		updated = append(updated, source[end:]...)
-		return updated, nil
-	}
-	return nil, fmt.Errorf("unknown pattern %q", patternID)
-}
-
-func studioSourceOffset(source []byte, at notation.Position) int {
-	line, offset := 1, 0
-	for offset < len(source) && line < at.Line {
-		if source[offset] == '\n' {
-			line++
-		}
-		offset++
-	}
-	for column := 1; offset < len(source) && column < at.Column && source[offset] != '\n'; column++ {
-		_, size := utf8.DecodeRune(source[offset:])
-		offset += size
-	}
-	return offset
 }
 
 func studioJSON(w http.ResponseWriter, status int, value any) {
