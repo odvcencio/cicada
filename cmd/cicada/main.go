@@ -625,6 +625,9 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 	if report.Passes > 0 {
 		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d, largest limiter gain reduction %.2f dB\n",
 			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.LargestLimiterReductionDB)
+		for _, note := range report.Notes {
+			fmt.Printf("%s: note: %s\n", path, note)
+		}
 		switch {
 		case report.limiterMode:
 			fmt.Printf("%s: gain applied at the master input, ahead of the score's master chain; master limiter gain reduction %.2f dB (maximum %.1f dB), input gain cap +%.0f dB\n",
@@ -652,7 +655,9 @@ type loudnessFileReport struct {
 	MasterLimiterReductionDB float64 `json:"master_limiter_reduction_db"`
 	GainStage                string  `json:"gain_stage"`
 	limiterMode              bool
-	DCCorrection             struct {
+	// Notes lists conditions that affect how to read the result.
+	Notes        []string `json:"notes,omitempty"`
+	DCCorrection struct {
 		LeftFS  float64 `json:"left_fs"`
 		RightFS float64 `json:"right_fs"`
 	} `json:"dc_correction"`
@@ -714,12 +719,16 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	if p, _ := project.FromScore(score); p != nil {
 		limiterMode = project.MasterHasLimiter(p)
 		hasMasterChain = p.Master != nil && len(p.Master.Mixer.Inserts) > 0
+		if ceiling, ok := project.MasterLimiterCeilingDBTP(p); ok && ceiling > target.TruePeakMaxDBTP {
+			report.Notes = append(report.Notes, fmt.Sprintf("master limiter ceiling %.4g dBTP is above the export true-peak ceiling %.4g dBTP; the limiter cannot enforce the export ceiling, so the input gain is cut below the limiter threshold", ceiling, target.TruePeakMaxDBTP))
+		}
 	}
 	// The direct mixer adds DC correction after the master chain and after
 	// the export gain stage; the scheduled engine adds it before the gain.
 	biasAfterInputGain := limiterMode && !render.UsesScheduledEngine(score, opts)
 	inputCapped := false
 	prevGain, prevLUFS, hasPrev := 0.0, 0.0, false
+	safeGain, hasSafe, lowestUnsafe, prevUnsafe := 0.0, false, math.Inf(1), false
 	var bestChainReduction, fallbackChainReduction float64
 	for pass := 1; pass <= loudnessPassLimit; pass++ {
 		passes = pass
@@ -801,17 +810,49 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		}
 		if limiterMode {
 			next := gain
+			gainOK := peakSafe && limiterSafe
+			if gainOK {
+				if !hasSafe || gain > safeGain {
+					safeGain, hasSafe = gain, true
+				}
+			} else {
+				lowestUnsafe = math.Min(lowestUnsafe, gain)
+			}
 			switch {
-			case !peakSafe:
-				next = gain - (measurement.TruePeakDBTP - target.TruePeakMaxDBTP + 0.05)
-			case !limiterSafe:
-				next = gain - (chainReduction - maxExportLimiterReductionDB + 0.05)
+			case !gainOK:
+				// Subtracting the excess alone can crawl: while the master
+				// limiter holds the output at its own ceiling the peak barely
+				// moves with the input gain. Step at least by the loudness
+				// overage, then bracket between the known safe and unsafe gains.
+				cut := 0.0
+				if !peakSafe {
+					cut = measurement.TruePeakDBTP - target.TruePeakMaxDBTP + 0.05
+				}
+				if !limiterSafe {
+					cut = math.Max(cut, chainReduction-maxExportLimiterReductionDB+0.05)
+				}
+				if over := measurement.IntegratedLUFS - target.LoudnessTarget; over > cut {
+					cut = over
+				}
+				next = gain - cut
+				if hasSafe {
+					if mid := (safeGain + gain) / 2; next <= safeGain || prevUnsafe && next > mid {
+						next = mid
+					}
+				}
 			default:
 				slope := 1.0
 				if hasPrev && math.Abs(gain-prevGain) > 0.05 {
 					slope = math.Max(0.2, math.Min(1, (measurement.IntegratedLUFS-prevLUFS)/(gain-prevGain)))
 				}
 				next = gain + (target.LoudnessTarget-measurement.IntegratedLUFS)/slope
+				if next >= lowestUnsafe {
+					next = (gain + lowestUnsafe) / 2
+				}
+			}
+			prevUnsafe = !gainOK
+			if hasSafe && lowestUnsafe-safeGain < 0.02 {
+				break
 			}
 			if math.IsNaN(next) || math.IsInf(next, 0) {
 				break

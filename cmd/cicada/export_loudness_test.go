@@ -454,3 +454,61 @@ func TestExportLoudnessGainStageNamesPlacementPerRenderer(t *testing.T) {
 		}
 	}
 }
+
+// The limiter ceiling (0 dBTP) sits above the export ceiling (-1 dBTP) and a
+// high shelf makes the mix peaky. While the limiter holds the output at its own
+// ceiling, subtracting only the true-peak excess barely moves the peak, so the
+// search must step by the loudness overage and bracket the safe gain.
+func testLimiterCeilingAboveExportCeiling(t *testing.T, scheduled bool) {
+	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-limiter.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for _, r := range [][2]string{
+		{"ceiling = -1dBTP", "ceiling = 0dBTP"},
+		{"fx ceiling", "fx boost eq { type = low_shelf frequency = 10000Hz q = 0.707 gain = 12dB }\nfx ceiling"},
+		{"tone -> ceiling", "tone -> boost -> ceiling"},
+		{"-9LUFS", "-14LUFS"},
+	} {
+		text = strings.Replace(text, r[0], r[1], 1)
+	}
+	if scheduled {
+		text = strings.Replace(text, "track bass acid {", "fx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }\ntrack bass acid { insert = cleanup ", 1)
+	}
+	path := filepath.Join(t.TempDir(), "boost.cicada")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	inspection, err := inspectScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3}
+	target := renderTargetOptions{ExportName: "loud", TruePeakMaxDBTP: -1}
+	if err := applyExportTarget(inspection.semantic, &opts, &target); err != nil {
+		t.Fatal(err)
+	}
+	if got := render.UsesScheduledEngine(inspection.score, opts); got != scheduled {
+		t.Fatalf("UsesScheduledEngine = %v, want %v", got, scheduled)
+	}
+	result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "boost.wav"), opts, target, nil)
+	t.Logf("METRIC EXPORT-CEILING-MISMATCH scheduled=%v lufs=%.3f true_peak=%.3f gain=%+.2f passes=%d reduction=%.2f err=%v", scheduled, result.AchievedLUFS, result.TruePeakDBTP, result.AppliedGainDB, result.Passes, result.MasterLimiterReductionDB, err)
+	if err != nil {
+		t.Fatalf("reachable export failed: %v (%+v)", err, result)
+	}
+	if result.AchievedLUFS < -14.5 || result.AchievedLUFS > -13.5 || result.TruePeakDBTP > -1 {
+		t.Fatalf("missed the target: %+v", result)
+	}
+	if len(result.Notes) == 0 || !strings.Contains(result.Notes[0], "above the export true-peak ceiling") {
+		t.Fatalf("no ceiling mismatch note: %v", result.Notes)
+	}
+}
+
+func TestExportLoudnessLimiterCeilingAboveExportCeilingDirect(t *testing.T) {
+	testLimiterCeilingAboveExportCeiling(t, false)
+}
+
+func TestExportLoudnessLimiterCeilingAboveExportCeilingScheduled(t *testing.T) {
+	testLimiterCeilingAboveExportCeiling(t, true)
+}

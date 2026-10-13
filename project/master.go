@@ -42,6 +42,31 @@ func MasterHasLimiter(p *Project) bool {
 	return false
 }
 
+// MasterLimiterCeilingDBTP returns the lowest ceiling of the limiters in the
+// master insert chain, the one that bounds the output, and whether the chain
+// has a limiter.
+func MasterLimiterCeilingDBTP(p *Project) (float64, bool) {
+	if p == nil || p.Master == nil {
+		return 0, false
+	}
+	lowest, found := 0.0, false
+	for _, name := range p.Master.Mixer.Inserts {
+		for _, effect := range p.Effects {
+			if effect.ID != name || semanticEffectKind(effect) != "limiter" {
+				continue
+			}
+			ceiling := pro.DefaultParams().Limiter.CeilingDBTP
+			if v, ok := effect.Params["ceiling"]; ok && v.Number != nil {
+				ceiling = *v.Number
+			}
+			if !found || ceiling < lowest {
+				lowest, found = ceiling, true
+			}
+		}
+	}
+	return lowest, found
+}
+
 type masterChain struct {
 	stages []engine.StereoProcessor
 	// limiters holds each limiter stage's reduction reading, delayed by the
