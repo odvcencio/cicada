@@ -115,6 +115,20 @@ new placement). A dry run of that intent answers `convertible: true` with the di
 or `convertible: false` with a `cause`. A revision conflict returns
 HTTP 409 with `error`, `revision`, `source`, and `playingRevision`.
 
+Studio's arrangement panel uses a second set of arrange intents that keep the
+position and length text you type, such as `@5.1.1` or `3bars`:
+`updateplacement` (change `at`, `length`, `track` or `content` together, so a
+move and a trim never pass through an overlap), `addplacement`, `copyplacement`,
+`removeplacement`, `setmarker`, `addmarker` and `removemarker`. Each takes an
+`entity` (`placement:name` or `marker:name`) or a new `name`, and a `settings`
+object with the fields to set. `removeplacement` removes only the declaration;
+`deleteclip` also removes the comment lines above it. Automation lanes use
+`setautomationpoint` and `removeautomationpoint`, with an `entity` such as
+`param:bass.cutoff`, `at`, `oldat` (the point being moved), `value`, `shape`
+and `curve`. `placesamplerprint` and `placevocalcomp` record the two Studio
+actions that print audio first (resampled pads and comped vocal takes); they
+name the audio file Studio already wrote, so use them for replay, not to print.
+
 ## Highlighting and navigation
 
 `highlight` draws source in the terminal, writes a standalone HTML page, or

@@ -263,3 +263,36 @@ func TestApplyConvertSongConvertsTemplateAndRefusesRestartingChanceSteps(t *test
 		t.Fatal("a refused conversion changed the score")
 	}
 }
+
+// The intents that replaced the last direct Studio writers are plain JSON for
+// `cicada apply`, and --write records them in the edit log.
+func TestApplyAcceptsArrangementAndAutomationPointIntents(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.cicada")
+	source := "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\narrange {\n  place a bass riff { at = @1.1.1 length = 4bars }\n  marker m { at = @3.1.1 }\n}\nautomate bass.cutoff {\n  @1.1.1 400Hz\n}\n"
+	if err := os.WriteFile(path, []byte(source), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	intents := filepath.Join(dir, "intents.json")
+	envelope := `{"version":1,"intents":[
+		{"kind":"updateplacement","entity":"placement:a","settings":{"length":"6bars"}},
+		{"kind":"addmarker","name":"end","settings":{"at":"@7.1.1"}},
+		{"kind":"setautomationpoint","entity":"param:bass.cutoff","at":"@3.1.1","value":"1.2kHz","shape":"smooth"}]}`
+	if err := os.WriteFile(intents, []byte(envelope), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	diff, err := captureApply(t, path, intents)
+	for _, want := range []string{"length = 6bars", "marker end { at = @7.1.1 }", "@3.1.1 1200Hz smooth"} {
+		if err != nil || !strings.Contains(diff, want) {
+			t.Fatalf("diff lacks %q: %v\n%s", want, err, diff)
+		}
+	}
+	if _, err := captureApply(t, path, intents, "--write"); err != nil {
+		t.Fatal(err)
+	}
+	records, _, err := editlog.ReadLog(editlog.Path(path))
+	if err != nil || len(records) != 1 || len(records[0].Intents) != 3 {
+		t.Fatalf("%+v %v", records, err)
+	}
+}
