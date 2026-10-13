@@ -190,6 +190,7 @@ func (e *Engine) launchSceneTracks(index uint16, skipManualPatterns bool) {
 				p.chainArmed = false
 				continue
 			}
+			e.tapRelease(track, e.transport.Tick())
 			e.noteOff(track, 0xffff)
 			if p.playingNote != 0 {
 				e.emit(cmd.Message{Kind: cmd.NoteOff, Track: uint8(track), Tick: e.transport.Tick()})
@@ -333,6 +334,7 @@ func (e *Engine) advanceSong() {
 			e.songMode = false
 			e.transport.Stop()
 			for track := 0; track < e.tracks; track++ {
+				e.tapRelease(track, e.transport.Tick())
 				e.noteOff(track, 0xffff)
 				e.patterns[track].playingNote = 0
 				e.patterns[track].heldValid = false
