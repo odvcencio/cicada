@@ -526,6 +526,10 @@ func FromScore(score *notation.Score) (result *Project, diagnostics []notation.D
 			if err != nil {
 				return nil, append(diagnostics, notation.Diagnostic{Code: "CICADA-UNIT", Severity: "error", Message: err.Error(), Position: setting.ValuePosition})
 			}
+			if resolved.Descriptor.ID == "global.tempo" && value.Number != nil {
+				canonical := CanonicalTempo(*value.Number)
+				value.Number = &canonical
+			}
 			scene.Settings = append(scene.Settings, SceneSetting{Path: setting.Path, Value: sceneValueFrom(value)})
 		}
 		if len(scene.Settings) > 0 {

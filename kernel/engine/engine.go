@@ -233,6 +233,8 @@ type Engine struct {
 	liveEvents                   bool // set by any live-control op; keeps Bar and MacroReached off for hosts that never drain messages
 	lastBarTick                  int64
 	bpmMilli                     int64
+	tempoChain                   []seq.Clock
+	tempoCycleSamples            int64
 	voices                       [MaxTracks]voiceSlot
 	transport                    seq.Transport
 	limiter                      *mix.Limiter
@@ -301,6 +303,10 @@ type Engine struct {
 	songIndex                    int
 	songEndTick                  int64
 	manualSceneTick              int64
+	manualLaunch                 bool
+	songTempo                    bool  // a scheduled scene authors a tempo, even one equal to the score tempo
+	liveTempo                    bool  // a manual launch or command moved the tempo off the authored chain
+	seekTick, seekSample         int64 // where the last seek anchored the transport
 	manualPatternTick            [MaxTracks]int64
 }
 
@@ -750,6 +756,16 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 	if len(cfg.Scenes) > 1<<16 || len(cfg.Song) > 1<<16 {
 		return Error("arrangement exceeds the wire index range")
 	}
+	// A synced delay must fit its buffer at the slowest tempo the song reaches.
+	slowest := bpmMilli
+	for _, scene := range cfg.Scenes {
+		for _, setting := range scene.Settings {
+			if setting.ID == kernel.ParamGlobalTempo {
+				// An out-of-range value fails the range check below.
+				slowest = min(slowest, sceneTempoMilli(setting))
+			}
+		}
+	}
 	for _, scene := range cfg.Scenes {
 		for track, binding := range scene.Track {
 			if binding.Mode > SceneClip || track >= cfg.Tracks && binding.Mode != SceneKeep || binding.Mode == SceneSlot && binding.Slot >= 16 || binding.Mode == SceneClip && (int(binding.Clip) >= len(cfg.Clips) || cfg.Track[track].Kind != VoiceAudio) {
@@ -761,10 +777,12 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 			id    kernel.ParamID
 		}
 		seen := make(map[parameterAddress]bool, len(scene.Settings))
-		for _, setting := range scene.Settings {
+		for position, setting := range scene.Settings {
 			address := parameterAddress{track: setting.Track, id: setting.ID}
 			spec, ok := kernel.Param(setting.ID)
-			if !ok || !spec.Live || seen[address] {
+			// A scene's tempo comes first: launching it applies the tempo before
+			// the patterns and delay division that use it.
+			if !ok || !spec.Live && setting.ID != kernel.ParamGlobalTempo || seen[address] || setting.ID == kernel.ParamGlobalTempo && position != 0 {
 				return Error("scene parameter setting is invalid")
 			}
 			seen[address] = true
@@ -775,7 +793,7 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 				}
 				params := e.delayA.Params()
 				params.Division, params.TimeMs = setting.Division, 0
-				if err := params.ValidateTempo(bpmMilli); err != nil {
+				if err := params.ValidateTempo(slowest); err != nil {
 					return err
 				}
 			}
@@ -815,7 +833,10 @@ func (e *Engine) loadArrangement(cfg *Config, bpmMilli int64) error {
 		return err
 	}
 	e.loopSong = cfg.LoopSong
-	return nil
+	if e.delayA != nil && e.delayA.Params().ValidateTempo(slowest) != nil {
+		return Error("delay division does not fit the slowest scene tempo")
+	}
+	return e.buildTempoChain()
 }
 
 func (e *Engine) Push(c cmd.Command) bool {
@@ -920,6 +941,9 @@ func (e *Engine) Reset() {
 		e.compMusic.Reset()
 	}
 	e.transport, _ = seq.NewTransport(e.sampleRate, e.bpmMilli)
+	if e.delayA != nil {
+		_ = e.delayA.SetTempo(e.bpmMilli)
+	}
 	e.commandRead, e.commandWrite, e.messageRead, e.messageWrite = 0, 0, 0, 0
 	e.overflowRead, e.overflowLen = 0, 0
 	e.automationIndex, e.automationTick = 0, -1
@@ -930,6 +954,7 @@ func (e *Engine) Reset() {
 	e.renderFrame, e.renderFrames = 0, 0
 	e.layerMask, e.layerAuthored = trackMask(1)<<e.tracks-1, trackMask(1)<<e.tracks-1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
+	e.liveTempo, e.seekTick, e.seekSample = false, 0, 0
 	e.resetClips()
 	e.manualSceneTick = -1
 	e.currentScene = -1
@@ -938,6 +963,22 @@ func (e *Engine) Reset() {
 	}
 	e.resetDirector()
 	e.faulted = false
+}
+
+// syncTempo moves the delay and the event schedule to a changed tempo. It
+// reports false after a fault.
+func (e *Engine) syncTempo(scheduled *int64) bool {
+	tempo := e.transport.BPMMilli()
+	if tempo == *scheduled {
+		return true
+	}
+	if e.delayA != nil && e.delayA.SetTempo(tempo) != nil {
+		e.fault(FaultDelayTempo)
+		return false
+	}
+	e.scheduleAll()
+	*scheduled = tempo
+	return !e.faulted
 }
 
 func (e *Engine) Render(outL, outR []float32) {
@@ -1172,10 +1213,12 @@ func (e *Engine) apply(c cmd.Command) {
 		e.automationTick = -1
 		e.resetDirector()
 		e.resetClips()
-		if e.transport.SeekTick(int64(c.Arg0)*seq.TicksPerBar+int64(c.Arg1)) != nil {
+		e.seekTick = int64(c.Arg0)*seq.TicksPerBar + int64(c.Arg1)
+		if e.transport.SeekTick(e.seekTick) != nil {
 			e.fault(FaultSeek)
 			return
 		}
+		e.seekSample = e.transport.Sample()
 		e.lastBarTick = -1
 		for i := 0; i < e.tracks; i++ {
 			e.resetVoice(i)
@@ -1211,6 +1254,7 @@ func (e *Engine) apply(c cmd.Command) {
 			e.scheduleAll()
 		}
 	case cmd.OpSetTempo:
+		e.liveTempo = true
 		if e.transport.QueueTempo(int64(c.Arg0)) != nil {
 			e.fault(FaultTempo)
 		}

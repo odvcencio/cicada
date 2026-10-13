@@ -171,7 +171,7 @@ func formatSceneDeclaration(formatted string, source []byte, node *gts.Node, wal
 		if walker.Type(child) != "scene_assignment" {
 			continue
 		}
-		positions = append(positions, assignmentPosition{line: pos(walker, child).Line, path: strings.Contains(walker.Text(walker.Field(child, "target")), ".")})
+		positions = append(positions, assignmentPosition{line: pos(walker, child).Line, path: SceneAssignmentIsSetting(walker.Text(walker.Field(child, "target")), walker.Text(walker.Field(child, "value")))})
 	}
 	// The CST traversal already follows source order. Keep a sorted copy as a
 	// guard for parser implementations that expose extra nodes between fields.

@@ -1,7 +1,6 @@
 package engine
 
 import (
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/sample"
 	"math"
 	"math/bits"
@@ -161,12 +160,11 @@ func (e *Engine) nextClipStereo(track int) (float32, float32) {
 
 func (e *Engine) restoreSongClips(index int, cycleStart, tick int64) {
 	e.resetClips()
-	clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.transport.BPMMilli()}
-	sample := clock.SampleAtTick(tick)
+	sample := e.songSampleAtTick(tick)
 	startCycle := int64(0)
 	if e.loopSong {
-		oldestTick := clock.TickAtSample(max(0, sample-e.clipMaxFrames))
-		startCycle = oldestTick / e.scheduleDuration * e.scheduleDuration
+		// Cycles can differ from the first by a frame; start one early.
+		startCycle = max(0, max(0, sample-e.clipMaxFrames)/e.tempoCycleSamples-1) * e.scheduleDuration
 	}
 	// Replay starts and stops in source order. Explicit clip assignments
 	// retrigger that track; keep carries its clip across scenes and loop cycles.
@@ -177,7 +175,7 @@ func (e *Engine) restoreSongClips(index int, cycleStart, tick int64) {
 		}
 		for i := 0; i <= last && !e.faulted; i++ {
 			event := e.schedule[i]
-			elapsed := sample - clock.SampleAtTick(event.Tick+cycle)
+			elapsed := sample - e.songSampleAtTick(event.Tick+cycle)
 			for track, binding := range e.scenes[event.Scene].Track {
 				if track >= e.tracks || e.voices[track].kind != VoiceAudio {
 					continue

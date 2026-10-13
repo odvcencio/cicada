@@ -179,10 +179,8 @@ class CicadaKernel extends AudioWorkletProcessor {
       if (starts) { playing = true; post({ t: 's', p: true }); }
       if (stops) { if (CICADA_CAPTURE && capture && capture.recording) capture.stopping = true; playing = false; post(stoppedMessage); }
     };
-    const sampleAtTick = (tick) => {
-      const delta = tick - anchorTick;
-      return anchorSample + Math.ceil(delta * 60000 * rate / (bpm * 960));
-    };
+    // The kernel owns the tempo map, so a scene tempo moves the bar boundary.
+    const sampleAtTick = tick => anchorSample + active.x.tick_frames(anchorTick, tick);
     const swapAtBoundary = (tick) => {
       if (!pending || pending === true) { nextBarTick += 3840; return; }
       const next = pending;
@@ -236,7 +234,8 @@ class CicadaKernel extends AudioWorkletProcessor {
         let offset = lead;
         while (offset < left.length) {
           let boundary = sampleAtTick(nextBarTick);
-          if (engineSample === boundary) {
+          // A tempo increase can put the kernel's bar line behind the playhead.
+          while (engineSample >= boundary) {
             if (pending) swapAtBoundary(nextBarTick);
             else nextBarTick += 3840;
             boundary = sampleAtTick(nextBarTick);
@@ -260,7 +259,7 @@ class CicadaKernel extends AudioWorkletProcessor {
           }
           engineSample += frames;
           offset += frames;
-          if (pending && engineSample === boundary) swapAtBoundary(nextBarTick);
+          if (pending && engineSample >= boundary) swapAtBoundary(nextBarTick);
           else if (!pending && engineSample >= boundary) nextBarTick += 3840;
         }
         if (!(callbacks & 7) && ready) {

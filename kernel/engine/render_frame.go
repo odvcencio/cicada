@@ -11,15 +11,10 @@ import (
 
 func (e *Engine) prepareRenderFrame(frame int, scheduledTempo *int64, outL, outR []float32) bool {
 	e.renderFrame = frame
-	if e.transport.BPMMilli() != (*scheduledTempo) {
-		if e.delayA != nil && e.delayA.SetTempo(e.transport.BPMMilli()) != nil {
-			e.fault(FaultDelayTempo)
-			clear(outL[frame:])
-			clear(outR[frame:])
-			return false
-		}
-		e.scheduleAll()
-		(*scheduledTempo) = e.transport.BPMMilli()
+	if !e.syncTempo(scheduledTempo) {
+		clear(outL[frame:])
+		clear(outR[frame:])
+		return false
 	}
 	e.processPatternEvents(seq.NoteOff)
 	e.advanceSong()
@@ -30,6 +25,12 @@ func (e *Engine) prepareRenderFrame(frame int, scheduledTempo *int64, outL, outR
 	}
 	e.applyPending()
 	if e.faulted {
+		clear(outL[frame:])
+		clear(outR[frame:])
+		return false
+	}
+	// A scene launched in this frame may have stepped the tempo.
+	if !e.syncTempo(scheduledTempo) {
 		clear(outL[frame:])
 		clear(outR[frame:])
 		return false

@@ -304,6 +304,7 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 	if err != nil {
 		return nil, err
 	}
+	clock.BPMMilli = initial.Engine.TempoAtTick(0)
 	masterLoudness, err := newLiveLoudness(rate)
 	if err != nil {
 		return nil, err
@@ -340,7 +341,7 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 	p.assignTrackIncarnations(initial.trackNames)
 	p.trackNames.Store(initial.trackNames)
 	p.position.Store(1<<8 | 1)
-	p.tempoMilli.Store(initial.BPMMilli)
+	p.tempoMilli.Store(clock.BPMMilli)
 	if len(initial.Song) != 0 {
 		p.scene.Store(&p.current.Song[0].Scene)
 	} else if len(initial.SceneIDs) != 0 {
@@ -1525,8 +1526,8 @@ func (p *Player) beginRequestedSong() {
 		p.transportQueued = true
 		p.initialParameters = false
 		p.bar = int64(start) - 1
-		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.BPMMilli, AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
-		p.tempoMilli.Store(selected.BPMMilli)
+		p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: selected.Engine.TempoAtTick(p.bar * seq.TicksPerBar), AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar}
+		p.tempoMilli.Store(p.clock.BPMMilli)
 		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 		p.position.Store(uint64(start)<<8 | 1)
 		p.emit(Event{Bar: int64(start), Name: request.Scene, Kind: "song"})
@@ -1534,12 +1535,32 @@ func (p *Player) beginRequestedSong() {
 	}
 }
 
+// followLiveTempo keeps the bar clock on the tempo the engine is actually
+// playing. A manual scene launch can change it off the authored chain, and the
+// next bar boundary, where an offered edit lands, moves with it. The engine's
+// anchor is in its own frames, so the host sample is found from the current
+// position of both.
+func (p *Player) followLiveTempo() {
+	live := p.current.Engine.LiveClock()
+	if live.BPMMilli == p.clock.BPMMilli && live.AnchorTick == p.clock.AnchorTick {
+		return
+	}
+	p.clock = seq.Clock{
+		SampleRate: int64(p.rate), BPMMilli: live.BPMMilli,
+		AnchorSample: live.AnchorSample + p.sample - p.current.Engine.TransportSample(), AnchorTick: live.AnchorTick,
+	}
+	p.tempoMilli.Store(live.BPMMilli)
+	p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
+}
+
 func (p *Player) renderBlock(requestedFrames int) {
 	if p.finishPlaybackRange() {
 		return
 	}
 	clear(p.blockParameters[:])
-	if p.sample == p.nextBarSample {
+	// A tempo increase found after the fact can leave a bar line behind the
+	// playhead; every such line is handled before rendering.
+	for p.sample >= p.nextBarSample {
 		p.bar++
 		swapped := false
 		select {
@@ -1571,10 +1592,10 @@ func (p *Player) renderBlock(requestedFrames int) {
 			p.resetMeters()
 			swapped = true
 			p.clock = seq.Clock{
-				SampleRate: int64(p.rate), BPMMilli: next.BPMMilli,
+				SampleRate: int64(p.rate), BPMMilli: next.Engine.TempoAtTick(p.bar * seq.TicksPerBar),
 				AnchorSample: p.sample, AnchorTick: p.bar * seq.TicksPerBar,
 			}
-			p.tempoMilli.Store(next.BPMMilli)
+			p.tempoMilli.Store(p.clock.BPMMilli)
 			if r := next.Range; r != nil && (p.clock.TickAtSample(p.sample) < r.StartTick || p.clock.TickAtSample(p.sample) >= r.EndTick) {
 				p.seekListeningRange(r.StartTick)
 			}
@@ -1586,6 +1607,14 @@ func (p *Player) renderBlock(requestedFrames int) {
 		}
 		if swapped {
 			p.requeuePendingLaunches()
+		}
+		// A scene that sets a tempo steps it on this bar. Re-anchor the way the
+		// kernel transport does, at the sample where the bar begins.
+		if tempo := p.current.Engine.TempoAtTick(p.bar * seq.TicksPerBar); tempo != p.clock.BPMMilli {
+			if clock, err := p.clock.Reanchor(p.bar*seq.TicksPerBar, tempo); err == nil {
+				p.clock = clock
+				p.tempoMilli.Store(tempo)
+			}
 		}
 		p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 	}
@@ -1684,6 +1713,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 	p.completeSceneLaunch(endSample)
 	p.completeSlotLaunches(endSample)
 	p.sample += int64(frames)
+	p.followLiveTempo()
 	p.telemetry.storeTransport(p.sample, p.clock.TickAtSample(p.sample), p.current.Engine.Playing())
 	p.buffered, p.read = frames*8, 0
 }

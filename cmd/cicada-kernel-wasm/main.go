@@ -258,4 +258,16 @@ func messageDrain() int32 {
 	return n
 }
 
+// tickFrames counts the frames from one song tick to a later one when playback
+// starts at the first. The arguments are doubles because a 64-bit integer
+// reaches JavaScript as a BigInt; every tick and frame count here is below 2^53.
+//
+//go:wasmexport gosx_audio_tick_frames
+func tickFrames(from, to float64) float64 {
+	if audioEngine == nil {
+		return 0
+	}
+	return float64(audioEngine.FramesBetweenTicks(int64(from), int64(to)))
+}
+
 func main() {}
