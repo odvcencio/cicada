@@ -166,6 +166,15 @@ func (c *Chain) Reset() {
 
 func (c *Chain) Fault() bool { return c.fault }
 
+// LimiterGainReductionDB is the current gain reduction of the chain's limiter
+// stage, or zero when the chain has none.
+func (c *Chain) LimiterGainReductionDB() float64 {
+	if c.limiter == nil {
+		return 0
+	}
+	return c.limiter.GainReductionDB()
+}
+
 func (c *Chain) LatencyFrames() int {
 	frames := 0
 	if c.transient != nil {

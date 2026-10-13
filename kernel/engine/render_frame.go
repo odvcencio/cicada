@@ -282,6 +282,11 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 			clear(outR[frame:])
 			return 0, false
 		}
+		if e.taps != nil {
+			if limiter, ok := e.masterProcessor.(interface{ LimiterGainReductionDB() float64 }); ok {
+				e.taps[frame].MasterLimiterReductionDB = limiter.LimiterGainReductionDB()
+			}
+		}
 	}
 	accumulateMeter(&e.preMasterMeter, left, right)
 	outL[frame], outR[frame], _ = e.limiter.Process(left, right)

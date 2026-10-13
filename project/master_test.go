@@ -203,3 +203,16 @@ master { insert = room }
 		t.Fatalf("changed impulse accepted: %v", err)
 	}
 }
+
+func TestMasterHasLimiter(t *testing.T) {
+	if !MasterHasLimiter(masterProject(t, masterMusic+masterEffects)) {
+		t.Fatal("chain with a limiter not detected")
+	}
+	noLimiter := strings.Replace(strings.Replace(masterEffects, "fx ceiling limiter { ceiling = -1dBTP }\n", "", 1), " -> ceiling", "", 1)
+	if MasterHasLimiter(masterProject(t, masterMusic+noLimiter)) {
+		t.Fatal("chain without a limiter reported a limiter")
+	}
+	if MasterHasLimiter(masterProject(t, masterMusic)) || MasterHasLimiter(nil) {
+		t.Fatal("score without a master chain reported a limiter")
+	}
+}

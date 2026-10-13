@@ -19,4 +19,4 @@ Flags:
   --export <name>              use a named export profile
   --help                       show this help
 
-Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1.
+Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1. Loudness targets (--loudness, or an export block with loudness) add a static gain. Without a master limiter the direct renderer applies it after the master chain, which keeps crest factor and can miss an ambitious target; the scheduled renderer (arrangements, audio clips, serial track effects, sample packs) applies it before the chain, as it always has. If the score's master chain contains a limiter, the gain goes in before the chain so that limiter holds the true-peak ceiling, capped at +12 dB of input gain and 6 dB of limiter gain reduction; a target that needs more is reported as a shortfall.

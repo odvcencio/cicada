@@ -25,17 +25,124 @@ func MasterHasInsert(p *Project, id string) bool {
 	return false
 }
 
-type masterChain struct{ stages []engine.StereoProcessor }
+// MasterHasLimiter reports whether the score's master insert chain contains a
+// limiter. Export loudness targeting applies its gain before such a chain so
+// the declared limiter enforces the true-peak ceiling.
+func MasterHasLimiter(p *Project) bool {
+	if p == nil || p.Master == nil {
+		return false
+	}
+	for _, name := range p.Master.Mixer.Inserts {
+		for _, effect := range p.Effects {
+			if effect.ID == name && semanticEffectKind(effect) == "limiter" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// MasterLimiterCeilingDBTP returns the lowest ceiling of the limiters in the
+// master insert chain, the one that bounds the output, and whether the chain
+// has a limiter.
+func MasterLimiterCeilingDBTP(p *Project) (float64, bool) {
+	if p == nil || p.Master == nil {
+		return 0, false
+	}
+	lowest, found := 0.0, false
+	for _, name := range p.Master.Mixer.Inserts {
+		for _, effect := range p.Effects {
+			if effect.ID != name || semanticEffectKind(effect) != "limiter" {
+				continue
+			}
+			ceiling := pro.DefaultParams().Limiter.CeilingDBTP
+			if v, ok := effect.Params["ceiling"]; ok && v.Number != nil {
+				ceiling = *v.Number
+			}
+			if !found || ceiling < lowest {
+				lowest, found = ceiling, true
+			}
+		}
+	}
+	return lowest, found
+}
+
+type masterChain struct {
+	stages []engine.StereoProcessor
+	// limiters holds each limiter stage's reduction reading, delayed by the
+	// latency of the stages after it so it lines up with the chain output
+	// frame it affects.
+	limiters []limiterReading
+}
+
+type limiterReading struct {
+	stage      interface{ LimiterGainReductionDB() float64 }
+	downstream int
+	ring       []float64 // downstream readings; nil when no stage follows with latency
+	next       int
+	delayed    float64
+}
+
+func newMasterChain(stages []engine.StereoProcessor) *masterChain {
+	c := &masterChain{stages: stages}
+	for i, stage := range stages {
+		limiter, ok := stage.(interface{ LimiterGainReductionDB() float64 })
+		if !ok {
+			continue
+		}
+		reading := limiterReading{stage: limiter}
+		for _, later := range stages[i+1:] {
+			reading.downstream += later.LatencyFrames()
+		}
+		if reading.downstream > 0 {
+			reading.ring = make([]float64, reading.downstream)
+		}
+		c.limiters = append(c.limiters, reading)
+	}
+	return c
+}
+
+// LimiterGainReductionDB is the largest gain reduction affecting the current
+// chain output frame. Each limiter's reading is delayed by the latency of the
+// stages downstream of it before the maximum is taken. Call it once after each
+// Process; it does not advance any state.
+func (c *masterChain) LimiterGainReductionDB() float64 {
+	reduction := 0.0
+	for i := range c.limiters {
+		l := &c.limiters[i]
+		if l.ring == nil {
+			reduction = max(reduction, l.stage.LimiterGainReductionDB())
+		} else {
+			reduction = max(reduction, l.delayed)
+		}
+	}
+	return reduction
+}
 
 func (c *masterChain) Process(l, r float32) (float32, float32) {
 	for _, stage := range c.stages {
 		l, r = stage.Process(l, r)
+	}
+	for i := range c.limiters {
+		lim := &c.limiters[i]
+		if lim.ring != nil {
+			lim.delayed = lim.ring[lim.next]
+			lim.ring[lim.next] = lim.stage.LimiterGainReductionDB()
+			lim.next++
+			if lim.next == len(lim.ring) {
+				lim.next = 0
+			}
+		}
 	}
 	return l, r
 }
 func (c *masterChain) Reset() {
 	for _, stage := range c.stages {
 		stage.Reset()
+	}
+	for i := range c.limiters {
+		clear(c.limiters[i].ring)
+		c.limiters[i].next, c.limiters[i].delayed = 0, 0
 	}
 }
 func (c *masterChain) Fault() bool {
@@ -60,7 +167,7 @@ func PrepareMaster(p *Project, rate int) (engine.StereoProcessor, error) {
 	if p.Master == nil || len(p.Master.Mixer.Inserts) == 0 {
 		return nil, nil
 	}
-	c := &masterChain{}
+	var stages []engine.StereoProcessor
 	for _, name := range p.Master.Mixer.Inserts {
 		var effect Effect
 		for _, candidate := range p.Effects {
@@ -86,9 +193,9 @@ func PrepareMaster(p *Project, rate int) (engine.StereoProcessor, error) {
 		if err != nil {
 			return nil, fmt.Errorf("master effect %s: %w", name, err)
 		}
-		c.stages = append(c.stages, stage)
+		stages = append(stages, stage)
 	}
-	return c, nil
+	return newMasterChain(stages), nil
 }
 
 func masterEffectParams(effect Effect) (pro.Params, error) {

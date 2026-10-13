@@ -166,7 +166,10 @@ cicada verify-wav release.wav --rate 48000 --bits 24 --bars 16 --tail 3s --lufs 
 Bar numbers start at 1, so `--from 1` selects the first bar. The old
 `--from 0` input still selects bar 1 and prints a deprecation warning.
 Studio's Master panel also measures integrated loudness and exports at a
-target level. Use `--normalize` for peak normalization when you do not request
+target level. If the score's `master` chain contains a limiter, the loudness
+target applies its gain before that chain so your limiter holds the true-peak
+ceiling; see [Export loudness targets](../audio/mix-chain.md#export-loudness-targets).
+Use `--normalize` for peak normalization when you do not request
 a loudness target.
 
 ### Custom-voice glide
