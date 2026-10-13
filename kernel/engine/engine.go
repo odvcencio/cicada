@@ -201,8 +201,11 @@ type voiceSlot struct {
 }
 
 type meterAccum struct {
-	peak  float32
-	power float64
+	peak         float32
+	power        float64
+	peakL, peakR float32
+	powerL       float64
+	powerR       float64
 }
 
 // Engine has fixed command and message rings. The host owns cross-thread
@@ -251,7 +254,7 @@ type Engine struct {
 	masterMute, masterSolo       bool
 	commands                     [CommandCapacity]cmd.Command
 	commandRead, commandWrite    uint16
-	messages                     [256]cmd.Message
+	messages                     [messageCapacity]cmd.Message
 	messageRead, messageWrite    uint16
 	overflowMessages             [2]cmd.Message
 	overflowRead, overflowLen    uint8
@@ -265,6 +268,7 @@ type Engine struct {
 	layerMask                    trackMask // effective: layerAuthored gated by the macro layer tables
 	layerAuthored                trackMask // set by scenes, OpSetLayerMask and source-off; never by macros
 	meterRate, meterBlock        uint32
+	stereoMeters                 bool
 	meterFrames                  uint32
 	trackMeter                   [MaxTracks]meterAccum
 	returnAMeter, returnBMeter   meterAccum
@@ -312,6 +316,14 @@ type Engine struct {
 
 // TrackCount reports the immutable track count established by New.
 func (e *Engine) TrackCount() int { return e.tracks }
+
+// SetStereoMeters turns the per-channel track meter quantities on or off. A host
+// calls it before the engine renders, or on the render thread; OpMeterRate
+// Arg1 sets the same flag from a command stream.
+func (e *Engine) SetStereoMeters(on bool) { e.stereoMeters = on }
+
+// SceneCount reports how many scenes the engine can launch.
+func (e *Engine) SceneCount() int { return len(e.scenes) }
 
 // TrackVoiceKind reports the source selected at construction.
 func (e *Engine) TrackVoiceKind(track int) VoiceKind {
@@ -1043,6 +1055,10 @@ func accumulateMeter(m *meterAccum, left, right float32) {
 	peak := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right))))
 	m.peak = max(m.peak, peak)
 	m.power += (float64(left)*float64(left) + float64(right)*float64(right)) * .5
+	m.peakL = max(m.peakL, float32(math.Abs(float64(left))))
+	m.peakR = max(m.peakR, float32(math.Abs(float64(right))))
+	m.powerL += float64(left) * float64(left)
+	m.powerR += float64(right) * float64(right)
 }
 
 func smoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
@@ -1053,6 +1069,9 @@ func (e *Engine) emitMeters(masterBlockPeak float32) {
 	tick := e.transport.Tick()
 	for track := 0; track < e.tracks; track++ {
 		e.emitMeterPair(uint8(track), &e.trackMeter[track], tick)
+		if e.stereoMeters {
+			e.emitStereoMeter(uint8(track), &e.trackMeter[track], tick)
+		}
 		e.trackMeter[track] = meterAccum{}
 	}
 	e.emitMeterPair(0xf0, &e.returnAMeter, tick)
@@ -1073,6 +1092,20 @@ func (e *Engine) emitMeters(masterBlockPeak float32) {
 func (e *Engine) emitMeterPair(track uint8, meter *meterAccum, tick int64) {
 	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 0, B: math.Float32bits(meter.peak), Tick: tick})
 	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 1, B: math.Float32bits(meterRMS(meter, e.meterFrames)), Tick: tick})
+}
+
+// emitStereoMeter adds quantities 2 to 5: left peak, right peak, left RMS and
+// right RMS. The mono pair keeps its meaning.
+func (e *Engine) emitStereoMeter(track uint8, meter *meterAccum, tick int64) {
+	var rmsL, rmsR float32
+	if e.meterFrames != 0 {
+		rmsL = float32(math.Sqrt(meter.powerL / float64(e.meterFrames)))
+		rmsR = float32(math.Sqrt(meter.powerR / float64(e.meterFrames)))
+	}
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 2, B: math.Float32bits(meter.peakL), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 3, B: math.Float32bits(meter.peakR), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 4, B: math.Float32bits(rmsL), Tick: tick})
+	e.emit(cmd.Message{Kind: cmd.Meter, Track: track, A: 5, B: math.Float32bits(rmsR), Tick: tick})
 }
 
 func meterRMS(meter *meterAccum, frames uint32) float32 {
@@ -1161,7 +1194,7 @@ func commandPriority(op cmd.Op) int {
 	switch op {
 	case cmd.OpNoteOff, cmd.OpStop, cmd.OpSeek, cmd.OpPlay:
 		return 0
-	case cmd.OpSelectPattern, cmd.OpLaunchScene, cmd.OpSetChain, cmd.OpSetState, cmd.OpTriggerStinger:
+	case cmd.OpSelectPattern, cmd.OpLaunchScene, cmd.OpSetChain, cmd.OpSetState, cmd.OpTriggerStinger, cmd.OpSetSceneBinding:
 		return 1
 	case cmd.OpNoteOn:
 		return 3
@@ -1429,10 +1462,12 @@ func (e *Engine) apply(c cmd.Command) {
 		e.applyChainCommand(c)
 	case cmd.OpLaunchScene:
 		e.applySceneCommand(c)
+	case cmd.OpSetSceneBinding:
+		e.applySceneBindingCommand(c)
 	case cmd.OpSetLayerMask:
 		e.setAuthoredLayerMask(trackMask(c.Arg0) | trackMask(c.Arg1)<<32)
 	case cmd.OpMeterRate:
-		e.meterRate = c.Arg0
+		e.meterRate, e.stereoMeters = c.Arg0, c.Arg1&1 == 1
 	default:
 		e.fault(FaultUnhandledCommand) // No accepted command may be silently discarded.
 	}

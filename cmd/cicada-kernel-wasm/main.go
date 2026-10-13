@@ -43,6 +43,13 @@ func capabilities() uint32 {
 	return kernelimage.CapabilityChords | kernelimage.CapabilityUnifiedImage | kernelimage.CapabilitySpatial | uint32(kernelimage.SupportedCapabilities) | keyboardCapabilities
 }
 
+// gosx_audio_live_edits returns 1 when the kernel applies step, scene-binding
+// and parameter commands to a playing engine. The commands arrive through
+// gosx_audio_cmd_commit; no capability bit changes.
+//
+//go:wasmexport gosx_audio_live_edits
+func liveEdits() int32 { return 1 }
+
 // Allocation telemetry is queried by hosts outside the render callback.
 //
 //go:wasmexport gosx_audio_alloc_bytes

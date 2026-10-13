@@ -444,3 +444,58 @@ func TestActivationQueuesSuccessiveCommitsBeforeRender(t *testing.T) {
 		t.Fatal("watcher offered after queued commits")
 	}
 }
+
+// A toggled drum step and a toggled melodic step land as patches, without a
+// replacement engine.
+func TestActivationPatchesToggledStepsOfEveryKindWithoutReplacement(t *testing.T) {
+	for _, test := range []struct {
+		name, pattern, lane string
+	}{{"drum", "beat", "bd"}, {"acid", "pulse", ""}} {
+		t.Run(test.name, func(t *testing.T) {
+			s, stream := activationStudio(t, studioScore)
+			handler := s.domainRoutes()
+			renderStudioPreview(t, stream, 256)
+			response := studioCall(t, handler, "/api/toggle", studioEdit{Revision: studioRevision(s.lastGoodSource), Pattern: test.pattern, Lane: test.lane, Step: 1})
+			if response.Code != http.StatusOK {
+				t.Fatalf("toggle: %d %s", response.Code, response.Body.String())
+			}
+			if stream.LandedRevision() != 0 {
+				t.Fatal("the toggle landed a patch on the control thread")
+			}
+			renderStudioPreview(t, stream, 256)
+			s.transport.poll()
+			if stream.LandedRevision() != 1 || s.transport.snapshot().Pending {
+				t.Fatalf("toggled %s step did not patch (revision %d, pending %v)", test.name, stream.LandedRevision(), s.transport.snapshot().Pending)
+			}
+		})
+	}
+}
+
+func TestActivationPatchesSceneBindingWithoutReplacement(t *testing.T) {
+	source := "cicada 2\ntrack bass acid {}\npattern a acid steps=4 { 1 . 5 . }\npattern b acid steps=4 { 5 . 1 . }\nscene s1 { bass=a }\nscene s2 { bass=b }\nscene s3 { bass=b }\nsong { s1 s2 s3 }\n"
+	s, stream := activationStudio(t, source)
+	renderStudioPreview(t, stream, 256)
+	response := httptest.NewRecorder()
+	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
+		return bytes.Replace(source, []byte("scene s3 { bass=b }"), []byte("scene s3 { bass=a }"), 1), nil
+	})
+	if response.Code != http.StatusOK {
+		t.Fatal(response.Body.String())
+	}
+	renderStudioPreview(t, stream, 256)
+	if stream.LandedRevision() != 1 || s.transport.snapshot().Pending {
+		t.Fatalf("scene binding did not patch (revision %d, pending %v)", stream.LandedRevision(), s.transport.snapshot().Pending)
+	}
+}
+
+func TestHealthFrameCarriesThePlayerCPULoad(t *testing.T) {
+	s, stream := activationStudio(t, studioScore)
+	renderStudioPreview(t, stream, 256*20)
+	s.transport.mu.Lock()
+	s.transport.publishHealthLocked()
+	s.transport.mu.Unlock()
+	health, err := liveplay.DecodeHealthFrame(s.transport.telemetry.Latest()[liveplay.FrameHealth])
+	if err != nil || !(health.CPULoad > 0) || health.CPULoad != float32(stream.CPULoad()) {
+		t.Fatalf("health frame %+v (%v), player load %g", health, err, stream.CPULoad())
+	}
+}

@@ -62,6 +62,15 @@ const (
 	OpSetListenerPosition Op = 27
 	// OpSetListenerRotation carries yaw/pitch/roll radians in Arg0/Arg1/Pad.
 	OpSetListenerRotation Op = 28
+	// OpRetire (29) and OpSetLoop (30) are reserved numbers. Validate refuses
+	// both until the engine implements them, so none can latch a fault.
+	OpRetire  Op = 29
+	OpSetLoop Op = 30
+	// OpSetSceneBinding (31) rewrites one track's binding in one scene for its
+	// next launch. Track=255, Index=scene, Arg0=track | mode<<8 | slot<<16
+	// (mode 0 keep, 1 off, 2 slot, 3 clip) and Arg1=clip index. Unused fields
+	// are zero. The engine faults on a scene, slot or clip it does not have.
+	OpSetSceneBinding Op = 31
 )
 
 type Quantize uint32
@@ -168,7 +177,7 @@ func (c Command) Validate(tracks uint8) error {
 	if tracks < 1 || tracks > limits.MaxTracks {
 		return Error("track count exceeds runtime capacity")
 	}
-	if c.Op < OpPlay || c.Op > OpSetListenerRotation {
+	if c.Op < OpPlay || c.Op > OpSetSceneBinding || c.Op == OpRetire || c.Op == OpSetLoop {
 		return Error("unknown command opcode")
 	}
 	if c.Op == OpCue {
@@ -334,6 +343,11 @@ func (c Command) Validate(tracks uint8) error {
 		if c.Arg0 == 0 {
 			return Error("meter rate must be positive")
 		}
+	case OpSetSceneBinding:
+		track, mode, slot, spare := c.Arg0&0xff, c.Arg0>>8&0xff, c.Arg0>>16&0xff, c.Arg0>>24
+		if track >= 16 || mode > 3 || slot >= 16 || spare != 0 || c.Arg1 >= 65536 {
+			return Error("scene binding track, mode, slot or clip is out of range")
+		}
 	case OpDefineMacro, OpSetMacro:
 		value := math.Float32frombits(c.Arg0)
 		if c.Index >= 16 || math.IsNaN(float64(value)) || math.IsInf(float64(value), 0) || value < 0 || value > 1 {
@@ -349,7 +363,7 @@ func (c Command) Validate(tracks uint8) error {
 func globalOp(op Op) bool {
 	switch op {
 	case OpPlay, OpStop, OpSeek, OpSetTempo, OpLaunchScene, OpCue, OpSetLayerMask, OpMeterRate, OpDefineMacro, OpSetMacro,
-		OpSetLayers, OpSetLayerMasks, OpSetPhraseBars, OpSetState:
+		OpSetLayers, OpSetLayerMasks, OpSetPhraseBars, OpSetState, OpSetSceneBinding:
 		return true
 	case OpSetListenerPosition, OpSetListenerRotation:
 		return true

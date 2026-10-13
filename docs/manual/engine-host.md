@@ -213,6 +213,7 @@ text.
 | 41 | `FaultPolyGeneration` | A polyphonic track ran out of pattern generations. |
 | 42 | `FaultHostCommandBatch` | The host refused a command batch: the count was out of range, a record was invalid, or the queue was full. The WASM exports send this. |
 | 43 | `FaultHostRenderFrames` | The host asked for a frame count outside 1 to the block limit. The WASM exports send this. |
+| 44 | `FaultSceneBinding` | A scene-binding command named a scene, track or clip the engine does not have. |
 | 46 | `FaultTrackInsert` | A serial track effect reported invalid audio. |
 | 47 | `FaultParallelWorker` | A native DSP worker failed or exceeded the bounded join time; replace the engine. |
 
@@ -270,6 +271,19 @@ listener-relative buses before decoding into caller-owned `[]spatial.Frame`
 storage. Its length must match the output slices. Stereo tracks and effect
 returns are absent from this capture. Per-track meters and taps for positioned
 tracks report the mono signal before distance attenuation and decoding.
+
+## Live edits
+
+A host that sees the `gosx_audio_live_edits` WASM export (it returns 1) can edit a
+playing engine through `gosx_audio_cmd_commit`; no capability bit changes.
+
+| Command | Routing and payload |
+| --- | --- |
+| `OpSetStep`, `OpSetChordStep`, `OpSetPatternLen`, `OpSetPatternMeta` | As before. Set `Tick` to the next step boundary to land the edit there; `Tick=0` while playing waits for the next bar. Works on every pattern voice, including drum lanes (the lane is the step's `Note`). |
+| `OpSetSceneBinding` (31) | `Track=255`, `Index=scene`; `Arg0 = track \| mode<<8 \| slot<<16` with mode 0 keep, 1 off, 2 slot, 3 clip; `Arg1=clip`. Changes the binding for the scene's next launch and faults with code 44 on an unknown scene, track or clip. |
+| `OpMeterRate` | `Arg0` is the block interval. Bit 0 of `Arg1` adds per-channel track meters: quantities 2 to 5 are left peak, right peak, left RMS and right RMS beside the mono 0 and 1. |
+
+Numbers 29 and 30 are reserved for later live-edit commands; `Validate` rejects them.
 
 ## Regress audio changes
 

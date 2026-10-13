@@ -137,6 +137,24 @@ func gcd(a, b int64) int64 {
 	return a
 }
 
+// applySceneBindingCommand rewrites one scene binding in the engine's private
+// copy of the scene table. It takes effect at the scene's next launch, whether
+// from a command, the song or a loop restart; a scene already launched keeps
+// what it applied. Track and clip get the checks New applies; the command
+// validation bounds mode and slot (every slot below 16 exists).
+func (e *Engine) applySceneBindingCommand(c cmd.Command) {
+	track, binding := int(c.Arg0&0xff), SceneBinding{Mode: SceneMode(c.Arg0 >> 8 & 0xff), Slot: uint8(c.Arg0 >> 16 & 0xff), Clip: uint16(c.Arg1)}
+	if int(c.Index) >= len(e.scenes) || track >= e.tracks {
+		e.fault(FaultSceneBinding)
+		return
+	}
+	if binding.Mode == SceneClip && (int(binding.Clip) >= len(e.clipSpecs) || e.voices[track].kind != VoiceAudio) {
+		e.fault(FaultSceneBinding)
+		return
+	}
+	e.scenes[c.Index].Track[track] = binding
+}
+
 // launchScene is the manual path (a launch command or the director). While a
 // song carries scene tempos, the song owns the tempo: a manual launch changes
 // patterns and parameters but never the tempo, so the engine and the tempo

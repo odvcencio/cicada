@@ -12,6 +12,9 @@ import (
 
 const patchCapacity = 64
 
+// PatchCapacity is the most commands one Patch can carry.
+const PatchCapacity = patchCapacity
+
 // Leave room for the largest note batch, all slot/scene launches, transport,
 // and currently active overrides. Limit work even when the kernel is empty.
 const patchBlockBudget = 2 * patchCapacity
@@ -133,25 +136,40 @@ func validatePatchParam(names *trackNameSnapshot, track uint8, id kernel.ParamID
 	return validatePreviewValue(spec, validator, value)
 }
 
-func (patch *Patch) Step(track, slot, index uint8, packed uint32) {
-	patch.append(cmd.Command{Op: cmd.OpSetStep, Track: track, Index: uint16(index), Arg0: packed, Arg1: uint32(slot)}, PreviewTarget{})
+// Step, PatternLen, PatternMeta and Chord take a target from ResolvePreviewTrack,
+// so a batch built against one score cannot edit a different track that later
+// took the same index. Player.Patch stamps their tick at the next step boundary.
+func (patch *Patch) Step(target PreviewTarget, slot, index uint8, packed uint32) {
+	patch.append(cmd.Command{Op: cmd.OpSetStep, Track: target.track, Index: uint16(index), Arg0: packed, Arg1: uint32(slot)}, target)
 }
 
-func (patch *Patch) PatternLen(track, slot, length uint8) {
-	patch.append(cmd.Command{Op: cmd.OpSetPatternLen, Track: track, Index: uint16(length), Arg1: uint32(slot)}, PreviewTarget{})
+func (patch *Patch) PatternLen(target PreviewTarget, slot, length uint8) {
+	patch.append(cmd.Command{Op: cmd.OpSetPatternLen, Track: target.track, Index: uint16(length), Arg1: uint32(slot)}, target)
 }
 
-func (patch *Patch) PatternMeta(track, slot uint8, grid uint16, gate uint16, transpose int16) {
-	patch.append(cmd.Command{Op: cmd.OpSetPatternMeta, Track: track, Index: grid, Arg0: uint32(gate) | uint32(uint16(transpose))<<16, Arg1: uint32(slot)}, PreviewTarget{})
+// PatternMeta sets the grid ticks, swing in permille and transpose of a slot.
+func (patch *Patch) PatternMeta(target PreviewTarget, slot uint8, grid, swing uint16, transpose int8) {
+	patch.append(cmd.Command{Op: cmd.OpSetPatternMeta, Track: target.track, Index: grid, Arg0: uint32(swing) | uint32(uint16(int16(transpose)))<<16, Arg1: uint32(slot)}, target)
 }
 
-func (patch *Patch) Chord(track, slot, index uint8, notes [4]uint8, count uint8) {
-	c, err := cmd.ChordStepCommand(track, slot, index, notes, count)
+func (patch *Patch) Chord(target PreviewTarget, slot, index uint8, notes [4]uint8, count uint8) {
+	c, err := cmd.ChordStepCommand(target.track, slot, index, notes, count)
 	if err != nil {
 		patch.err = err
 		return
 	}
-	patch.append(c, PreviewTarget{})
+	patch.append(c, target)
+}
+
+// SceneBinding rewrites the binding of one track in one scene for the scene's
+// next launch. The target names the track; the engine index is resolved when
+// the batch lands, like every other track command.
+func (patch *Patch) SceneBinding(target PreviewTarget, scene uint16, binding engine.SceneBinding) {
+	patch.append(cmd.Command{Op: cmd.OpSetSceneBinding, Track: 0xff, Index: scene, Arg0: uint32(target.track) | uint32(binding.Mode)<<8 | uint32(binding.Slot)<<16, Arg1: uint32(binding.Clip)}, target)
+}
+
+func isPatternEdit(op cmd.Op) bool {
+	return op == cmd.OpSetStep || op == cmd.OpSetChordStep || op == cmd.OpSetPatternLen || op == cmd.OpSetPatternMeta
 }
 
 // Patch publishes without waiting for audio. Success transfers batch ownership;
@@ -178,7 +196,14 @@ func (p *Player) Patch(patch *Patch) error {
 	for i := 0; i < patch.n; i++ {
 		c := patch.commands[i]
 		target := patch.targets[i]
-		if c.Track != 0xff {
+		if c.Op == cmd.OpSetSceneBinding {
+			if target.names == nil {
+				return fail(cmd.Error("scene binding needs a resolved track"))
+			}
+			if target.player != p {
+				return fail(cmd.Error("patch target belongs to a different player"))
+			}
+		} else if c.Track != 0xff {
 			if target.names == nil {
 				if names == nil || c.Track >= names.count {
 					return fail(cmd.Error("patch track is out of range"))
@@ -290,13 +315,23 @@ func (p *Player) applyPatch(patch *Patch) {
 	names := p.trackNames.Load()
 	for i := 0; i < patch.n; i++ {
 		c := &patch.commands[i]
-		if c.Track != 0xff {
+		if c.Track != 0xff || c.Op == cmd.OpSetSceneBinding {
 			identity := patch.targets[i].names.overrideTrack(patch.targets[i].track)
 			if !names.containsTrack(identity) {
 				p.emit(Event{Kind: "patch-error", Name: "patch track incarnation is stale"})
 				return
 			}
-			c.Track, _ = names.trackIndex(identity.id)
+			resolved, _ := names.trackIndex(identity.id)
+			if c.Op == cmd.OpSetSceneBinding {
+				// The engine faults on a scene it lacks; refuse the batch instead.
+				if int(c.Index) >= p.current.Engine.SceneCount() {
+					p.emit(Event{Kind: "patch-error", Name: "patch scene is not in the playing engine"})
+					return
+				}
+				c.Arg0 = c.Arg0&^0xff | uint32(resolved)
+			} else {
+				c.Track = resolved
+			}
 		}
 		if c.Op == cmd.OpSetParam {
 			if err := validatePatchParam(names, c.Track, kernel.ParamID(c.Index), math.Float32frombits(c.Arg0)); err != nil {
@@ -308,7 +343,7 @@ func (p *Player) applyPatch(patch *Patch) {
 			p.emit(Event{Kind: "patch-error", Name: "patch command is invalid"})
 			return
 		}
-		if c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta {
+		if isPatternEdit(c.Op) {
 			c.Tick = (p.clock.TickAtSample(p.sample)/seq.TicksPerStep + 1) * seq.TicksPerStep
 		}
 	}

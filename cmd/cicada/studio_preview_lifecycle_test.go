@@ -14,6 +14,7 @@ import (
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 func TestPreviewPausedThenStoppedReleasesSocketTeardown(t *testing.T) {
@@ -215,7 +216,10 @@ type previewReferenceScore struct {
 	gains        [4]float32
 }
 
+// edit marks a step or scene-binding batch: it is ordered, budgeted and
+// dropped for a stale incarnation like a gain patch, and changes no gain.
 type previewReferencePatch struct {
+	edit                  bool
 	publication, commands int
 	values                [4]float32
 	incarnations          [4]int
@@ -247,6 +251,7 @@ func (c *previewLifecycleCounts) add(o previewLifecycleCounts) {
 	c.readds += o.readds
 	c.patches += o.patches
 	c.stalePatches += o.stalePatches
+	c.editPatches += o.editPatches
 }
 
 type previewLifecycleCounts struct {
@@ -254,7 +259,7 @@ type previewLifecycleCounts struct {
 	seeks, scenes, bursts, pausedBatches                                           int
 	checks, sets, cancels, teardowns, activations, reorders, adds, removes, shifts int
 	captures, publications, stalePublications, readdedPublications, readds         int
-	patches, stalePatches                                                          int
+	patches, stalePatches, editPatches                                             int
 }
 
 func previewLifecycleScore(t *testing.T, score previewReferenceScore) liveplay.Score {
@@ -536,6 +541,35 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			patch := previewReferencePatch{publication: publication, commands: 1, tracks: []int{pending.track}}
 			patch.values[pending.track], patch.incarnations[pending.track] = pending.value, pending.incarnation
 			patches = append(patches, patch)
+		case "step-patch", "binding-patch", "queue-step-patch":
+			if !present(op.track) {
+				break
+			}
+			target, err := p.ResolvePreviewTrack(previewTrackIDs[op.track])
+			if err != nil {
+				return err
+			}
+			patchRevision++
+			batch := arena.Begin(patchRevision)
+			if batch == nil {
+				return fmt.Errorf("patch arena exhausted")
+			}
+			if op.kind == "binding-patch" {
+				batch.SceneBinding(target, 2, engine.SceneBinding{Mode: engine.SceneKeep})
+			} else {
+				packed, err := seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100, Velocity: 100})
+				if err != nil {
+					return err
+				}
+				batch.Step(target, 0, 1, packed)
+			}
+			if err := p.Patch(batch); err != nil {
+				counts.rejectedPatches++
+				break
+			}
+			counts.editPatches++
+			publication++
+			patches = append(patches, previewReferencePatch{edit: true, publication: publication, commands: 1, tracks: []int{op.track}, incarnations: playing.incarnations})
 		case "seek-forward", "seek-backward":
 			index := 2
 			if op.kind == "seek-backward" {
@@ -684,7 +718,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 				return err
 			}
 		}
-		if paused || op.kind == "queue-patch" || op.kind == "queue-burst" || op.kind == "structural-offer-add" || op.kind == "structural-offer-remove" {
+		if paused || op.kind == "queue-patch" || op.kind == "queue-step-patch" || op.kind == "queue-burst" || op.kind == "structural-offer-add" || op.kind == "structural-offer-remove" {
 			continue
 		}
 		if startPending {
@@ -730,6 +764,9 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 				}
 				if !valid {
 					counts.stalePatches++
+					continue
+				}
+				if patch.edit {
 					continue
 				}
 				for _, identity := range patch.tracks {
@@ -885,6 +922,15 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 							previewOperation{kind: "publish", client: 0},
 						)
 					}
+					// Step and scene-binding batches ride the same queue: behind an
+					// older offer, across a removed track and through a capacity burst.
+					operations = append(operations,
+						previewOperation{kind: "step-patch", track: int(seed % 3)}, previewOperation{kind: "patch", track: 0, value: values[seed%5]},
+						previewOperation{kind: "binding-patch", track: int(seed % 3)}, previewOperation{kind: "render"},
+						previewOperation{kind: "structural-offer-remove", track: 1, value: -12}, previewOperation{kind: "queue-step-patch", track: 1},
+						previewOperation{kind: "binding-patch", track: 0}, previewOperation{kind: "activate"},
+						previewOperation{kind: "queue-burst", value: -6}, previewOperation{kind: "step-patch", track: 0}, previewOperation{kind: "render-block"},
+						previewOperation{kind: "seek-backward"})
 					operations = append(operations, previewOperation{kind: "resume"})
 					for client := 0; client < 3; client++ {
 						operations = append(operations, previewOperation{kind: "close", client: client})
@@ -905,6 +951,9 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 	if counts.readdedPublications < 64 || counts.readds == 0 {
 		t.Fatal("no delayed publication crossed a remove/re-add boundary")
 	}
+	if counts.editPatches == 0 {
+		t.Fatal("no step or scene-binding patch was published")
+	}
 	if counts.patches == 0 || counts.stalePatches == 0 {
 		t.Fatal("patches did not exercise delayed stale incarnations")
 	}
@@ -919,6 +968,7 @@ func TestPreviewLifecycleReplacementOrderingRegressions(t *testing.T) {
 	for name, operations := range map[string][]previewOperation{
 		"older-structural":    {{kind: "queue-patch", value: -3}, {kind: "structural-offer-add", track: 3, value: -12}, {kind: "activate"}, {kind: "render"}, {kind: "seek-backward"}},
 		"deferred-structural": {{kind: "queue-burst", value: -3}, {kind: "render-block"}, {kind: "structural-offer-remove", track: 2, value: -12}, {kind: "queue-patch", value: 0}, {kind: "activate"}, {kind: "seek-backward"}},
+		"edit-behind-offer":   {{kind: "structural-offer-remove", track: 1, value: -12}, {kind: "queue-step-patch", track: 1}, {kind: "binding-patch", track: 0}, {kind: "activate"}, {kind: "render"}},
 		"later-waits":         {{kind: "offer", value: -12}, {kind: "patch", value: -3}, {kind: "activate"}, {kind: "seek-backward"}},
 	} {
 		t.Run(name, func(t *testing.T) {

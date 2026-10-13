@@ -531,9 +531,12 @@ func (t *studioTransport) planAtFingerprint(fingerprint [32]byte, rate int) *liv
 }
 
 // publishHealthLocked publishes one health frame. Call it with t.mu held.
-// CPULoad stays 0 until the player measures it.
+// CPULoad is the player's render-time average, and 0 before any block.
 func (t *studioTransport) publishHealthLocked() {
 	var frame liveplay.HealthFrame
+	if t.stream != nil {
+		frame.CPULoad = float32(t.stream.CPULoad())
+	}
 	if t.audio != nil {
 		snapshot := t.audio.Snapshot()
 		frame.Dropouts = uint32(min(snapshot.Dropouts, uint64(^uint32(0))))
@@ -1043,6 +1046,56 @@ func (t *studioTransport) activatePlanLocked(path string, source []byte, fingerp
 			return
 		}
 		batch.SetResolvedParam(target, change.id, change.value)
+	}
+	targets := make(map[uint8]liveplay.PreviewTarget)
+	resolve := func(track uint8) (liveplay.PreviewTarget, bool) {
+		if target, ok := targets[track]; ok {
+			return target, true
+		}
+		if int(track) >= len(next.project.Tracks) {
+			return liveplay.PreviewTarget{}, false
+		}
+		target, err := t.stream.ResolvePreviewTrack(next.project.Tracks[track].ID)
+		if err != nil {
+			return liveplay.PreviewTarget{}, false
+		}
+		targets[track] = target
+		return target, true
+	}
+	for _, edit := range delta.edits {
+		var track uint8
+		switch edit := edit.(type) {
+		case stepChange:
+			track = edit.track
+		case lenChange:
+			track = edit.track
+		case metaChange:
+			track = edit.track
+		}
+		target, ok := resolve(track)
+		if !ok {
+			batch.Release()
+			return
+		}
+		switch edit := edit.(type) {
+		case stepChange:
+			batch.Step(target, edit.slot, edit.index, edit.packed)
+			if edit.chord != nil {
+				batch.Chord(target, edit.slot, edit.index, edit.chord.Notes, edit.chord.Count)
+			}
+		case lenChange:
+			batch.PatternLen(target, edit.slot, edit.length)
+		case metaChange:
+			batch.PatternMeta(target, edit.slot, edit.grid, edit.swing, edit.transpose)
+		}
+	}
+	for _, change := range delta.bindings {
+		target, ok := resolve(change.track)
+		if !ok {
+			batch.Release()
+			return
+		}
+		batch.SceneBinding(target, change.scene, change.binding)
 	}
 	if err := t.stream.Patch(batch); err != nil {
 		return

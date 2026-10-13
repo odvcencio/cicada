@@ -76,7 +76,12 @@ type ParameterValue struct {
 	Value float32
 }
 
-type MeterValue struct{ Peak, RMS float32 }
+// MeterValue is one meter. Peak and RMS are the mono values. Track meters also
+// fill PeakL, PeakR, RMSL and RMSR; returns and buses leave those at zero.
+type MeterValue struct {
+	Peak, RMS                float32
+	PeakL, PeakR, RMSL, RMSR float32
+}
 
 type MeterFrame struct {
 	Tick                           int64
@@ -88,6 +93,11 @@ type MeterFrame struct {
 	Music, SFX, MasterPre          MeterValue
 	MasterPeak, MasterRMS          float32
 	CompGR, LimiterGR              float32
+}
+
+// PreLimiterOver reports a block whose pre-limiter peak exceeded -0.3 dBFS.
+func (f MeterFrame) PreLimiterOver() bool {
+	return 20*math.Log10(float64(f.MasterPre.Peak)) > -0.3
 }
 
 type parameterOverride struct {
@@ -273,6 +283,8 @@ type Player struct {
 	publishMu               sync.Mutex
 	publisher               *Publisher
 	hostPaused              atomic.Bool
+	cpuLoad                 float64       // render-owned exponential average
+	cpuLoadBits             atomic.Uint64 // float64 bits of cpuLoad for readers
 	telemetry               telemetryState
 	rangeRequest            atomic.Pointer[playbackRangeRequest]
 	rangeState              atomic.Pointer[PlaybackRange]
@@ -313,6 +325,7 @@ func New(initial Score, rate int) (created *Player, admissionError error) {
 		masterLoudness.close()
 		return nil, fmt.Errorf("live engine rejected play")
 	}
+	initial.Engine.SetStereoMeters(true)
 	primeTick := int64(0)
 	if initial.Range != nil {
 		primeTick = initial.Range.StartTick
@@ -1156,7 +1169,18 @@ func (p *Player) collectMeter(message cmd.Message) {
 	value := math.Float32frombits(message.B)
 	switch {
 	case message.Track < engine.MaxTracks && int(message.Track) < int(p.meterScratch.TrackCount):
-		assignMeter(&p.meterScratch.Tracks[message.Track], message.A, value)
+		track := &p.meterScratch.Tracks[message.Track]
+		assignMeter(track, message.A, value)
+		switch message.A {
+		case 2:
+			track.PeakL = value
+		case 3:
+			track.PeakR = value
+		case 4:
+			track.RMSL = value
+		case 5:
+			track.RMSR = value
+		}
 	case message.Track == 0xf0:
 		assignMeter(&p.meterScratch.ReturnA, message.A, value)
 	case message.Track == 0xf1:
@@ -1501,6 +1525,7 @@ func (p *Player) beginRequestedSong() {
 				p.retireEngine(p.previous)
 			}
 			p.previous = p.current.Engine
+			next.Engine.SetStereoMeters(true)
 			p.discardSupersededPatches(next.publication)
 			p.rebuildCommitted(next, int64(start-1)*seq.TicksPerBar)
 			p.applyOverrides(next.Engine, next, true)
@@ -1553,6 +1578,22 @@ func (p *Player) followLiveTempo() {
 	p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 }
 
+// cpuLoadAlpha weights the newest block in the CPU load average.
+const cpuLoadAlpha = 0.1
+
+// noteRenderTime folds one block into the load average: wall time spent in
+// Engine.Render over the time that many frames take to play. It allocates
+// nothing; time.Now and time.Since use the monotonic clock.
+func (p *Player) noteRenderTime(elapsed time.Duration, frames int) {
+	load := elapsed.Seconds() / (float64(frames) / float64(p.rate))
+	p.cpuLoad += cpuLoadAlpha * (load - p.cpuLoad)
+	p.cpuLoadBits.Store(math.Float64bits(p.cpuLoad))
+}
+
+// CPULoad returns the exponential average of render time over block time:
+// 0.5 means the engine used half of each block's real-time budget.
+func (p *Player) CPULoad() float64 { return math.Float64frombits(p.cpuLoadBits.Load()) }
+
 func (p *Player) renderBlock(requestedFrames int) {
 	if p.finishPlaybackRange() {
 		return
@@ -1574,6 +1615,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 				p.retireEngine(p.previous)
 			}
 			p.previous = p.current.Engine
+			next.Engine.SetStereoMeters(true)
 			p.discardSupersededPatches(next.publication)
 			p.rebuildCommitted(next, p.bar*seq.TicksPerBar)
 			p.transportQueued = true
@@ -1641,7 +1683,9 @@ func (p *Player) renderBlock(requestedFrames int) {
 	p.queueSlotLaunches(frames)
 	p.notePendingScenes(tick)
 	p.applyOverrides(p.current.Engine, p.current, false)
+	renderStart := time.Now()
 	p.current.Engine.Render(p.left[:frames], p.right[:frames])
+	p.noteRenderTime(time.Since(renderStart), frames)
 	if index, sequence := p.current.Engine.CurrentScene(); index >= 0 && index < len(p.current.SceneIDs) && (p.sceneEngine != p.current.Engine || p.sceneSequence != sequence) {
 		p.noteSceneCommitted(index, tick)
 		firstScene := p.sceneEngine == nil
