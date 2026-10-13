@@ -113,6 +113,11 @@ test-collaboration:
 test-studio-continuity:
 	node --test workstation/browser/continuity.test.cjs
 
+.PHONY: test-studio-shell
+# Requires a running Studio; the tests only read pages and observe requests.
+test-studio-shell:
+	node --test workstation/browser/shell.test.cjs
+
 .PHONY: test-studio-placements
 test-studio-placements:
 	node --test workstation/browser/placements.test.cjs

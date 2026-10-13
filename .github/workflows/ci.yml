@@ -284,6 +284,7 @@ jobs:
             sleep 0.1
           done
           make test-studio-continuity | tee build/studio-continuity-report.txt
+          make test-studio-shell | tee build/studio-shell-report.txt
           # Use a new Studio process so its first authenticated session owns it.
           kill "$studio_pid"
           wait "$studio_pid" || true
@@ -316,6 +317,7 @@ jobs:
           if-no-files-found: warn
           path: |
             build/studio-continuity-report.txt
+            build/studio-shell-report.txt
             build/studio-continuity-server.log
             build/studio-collaboration-report.txt
             build/studio-collaboration-server.log
