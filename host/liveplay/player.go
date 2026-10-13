@@ -93,6 +93,7 @@ type MeterFrame struct {
 	Music, SFX, MasterPre          MeterValue
 	MasterPeak, MasterRMS          float32
 	CompGR, LimiterGR              float32
+	stereo                         bool // the engine sent per-channel track quantities
 }
 
 // PreLimiterOver reports a block whose pre-limiter peak exceeded -0.3 dBFS.
@@ -1171,6 +1172,7 @@ func (p *Player) collectMeter(message cmd.Message) {
 	case message.Track < engine.MaxTracks && int(message.Track) < int(p.meterScratch.TrackCount):
 		track := &p.meterScratch.Tracks[message.Track]
 		assignMeter(track, message.A, value)
+		p.meterScratch.stereo = p.meterScratch.stereo || message.A >= 2 && message.A <= 5
 		switch message.A {
 		case 2:
 			track.PeakL = value
@@ -1213,6 +1215,14 @@ func assignMeter(meter *MeterValue, quantity uint16, value float32) {
 }
 
 func (p *Player) publishMeter(frame MeterFrame) {
+	if !frame.stereo {
+		// The engine drops per-channel quantities for a session too wide for its
+		// message ring. Report both channels at the mono level.
+		for i := 0; i < int(frame.TrackCount); i++ {
+			track := &frame.Tracks[i]
+			track.PeakL, track.PeakR, track.RMSL, track.RMSR = track.Peak, track.Peak, track.RMS, track.RMS
+		}
+	}
 	p.telemetry.storeMeters(&frame)
 	select {
 	case p.meters <- frame:

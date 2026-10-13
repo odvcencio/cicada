@@ -470,38 +470,49 @@ func TestStereoMeterQuantitiesFollowPan(t *testing.T) {
 	}
 }
 
-func TestStereoMeterEmissionForEveryTrackFitsTheMessageRing(t *testing.T) {
-	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: MaxTracks, MaxVoices: MaxTracks, BPMMilli: 120_000}
-	for i := range MaxTracks {
-		cfg.Track[i] = TrackConfig{Kind: VoiceGraph, Graph: sineProgram(375, 1), GainDB: 0, GainSet: true}
-	}
-	e, err := New(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !e.Push(cmd.Command{Op: cmd.OpMeterRate, Track: 0xff, Arg0: 1, Arg1: 1}) {
-		t.Fatal("meter rate rejected")
-	}
-	var left, right [128]float32
-	e.Render(left[:], right[:])
-	perTrack := map[uint8]int{}
-	masterRMS := false
-	var m cmd.Message
-	for e.Poll(&m) {
-		if m.Kind == cmd.Fault {
-			t.Fatalf("fault %d", m.A)
+// A frame is all stereo or all mono: the master message that closes it must
+// survive, and no track may carry a partial set of quantities.
+func TestStereoMeterEmissionIsAllOrNothingAndKeepsTheFrameClosed(t *testing.T) {
+	for _, tracks := range []int{16, MaxTracks} {
+		cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: tracks, MaxVoices: tracks, BPMMilli: 120_000}
+		for i := range tracks {
+			cfg.Track[i] = TrackConfig{Kind: VoiceGraph, Graph: sineProgram(375, 1), GainDB: 0, GainSet: true}
 		}
-		if m.Kind == cmd.Meter && m.Track < MaxTracks {
-			perTrack[m.Track]++
+		e, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
 		}
-		masterRMS = masterRMS || m.Kind == cmd.Meter && m.Track == 0xff && m.A == 1
-	}
-	for track := range uint8(MaxTracks) {
-		if perTrack[track] != 6 {
-			t.Fatalf("track %d produced %d meter messages, want 6", track, perTrack[track])
+		if !e.Push(cmd.Command{Op: cmd.OpMeterRate, Track: 0xff, Arg0: 1, Arg1: 1}) {
+			t.Fatal("meter rate rejected")
 		}
-	}
-	if !masterRMS {
-		t.Fatal("the master RMS message that closes a meter frame was dropped")
+		var left, right [128]float32
+		e.Render(left[:], right[:])
+		perTrack := map[uint8]int{}
+		masterRMS := false
+		var m cmd.Message
+		for e.Poll(&m) {
+			if m.Kind == cmd.Fault {
+				t.Fatalf("fault %d", m.A)
+			}
+			if m.Kind == cmd.Meter && int(m.Track) < tracks {
+				perTrack[m.Track]++
+			}
+			masterRMS = masterRMS || m.Kind == cmd.Meter && m.Track == 0xff && m.A == 1
+		}
+		first := perTrack[0]
+		if first != 2 && first != 6 {
+			t.Fatalf("%d tracks: track 0 produced %d meter messages", tracks, first)
+		}
+		for track := range uint8(tracks) {
+			if perTrack[track] != first {
+				t.Fatalf("%d tracks: track %d produced %d messages, track 0 produced %d", tracks, track, perTrack[track], first)
+			}
+		}
+		if tracks == 16 && first != 6 {
+			t.Fatal("a sixteen-track session must report stereo meters")
+		}
+		if !masterRMS {
+			t.Fatalf("%d tracks: the master RMS message that closes a meter frame was dropped", tracks)
+		}
 	}
 }

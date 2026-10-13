@@ -52,6 +52,11 @@ func TestNativeLastTrackLiveNotesOverridesAndMeters(t *testing.T) {
 	if last.TrackCount != 64 || last.TrackIDs[63] != "t63" || last.Tracks[63].Peak <= 0 || math.IsNaN(float64(last.Tracks[63].Peak)) {
 		t.Fatalf("last track meters: %+v", last)
 	}
+	// Sixty-four tracks are too wide for the engine's message ring to carry
+	// per-channel quantities, so both channels report the mono level.
+	if track := last.Tracks[63]; track.PeakL != track.Peak || track.PeakR != track.Peak || track.RMSL != track.RMS || track.RMSR != track.RMS {
+		t.Fatalf("a mono-only frame must report equal channels: %+v", track)
+	}
 	identity := p.trackNames.Load().overrideTrack(63)
 	overrides := p.overrides.Load().tracks[identity]
 	if overrides == nil || identity.id != "t63" || identity.incarnation == 0 {

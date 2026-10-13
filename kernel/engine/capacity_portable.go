@@ -3,7 +3,3 @@
 package engine
 
 type trackMask = uint32
-
-// messageCapacity holds one emission of stereo meters for the sixteen portable
-// tracks (six messages each) beside the other status messages of a block.
-const messageCapacity = 256
