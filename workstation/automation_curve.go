@@ -113,7 +113,7 @@ func (s *studioApp) continuousAutomation(ctx *server.Context, v workspace, csrf 
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("data-automation-new", "")), gosx.Text("New point")), pointForm,
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Transitions describe the segment arriving at each point. Save records one Undo step. Curves override scene settings after their first point.")))
 	encoded, _ := json.Marshal(props)
-	surface := ctx.Engine(engine.Config{Name: "CicadaAutomationCurve", Kind: engine.KindSurface, MountID: "cicada-automation-curve", Runtime: engine.RuntimeGoWASM, WASMPath: ui.MeterEnginePath, Props: encoded, Capabilities: []engine.Capability{engine.CapPointer, engine.CapKeyboard}, RequiredCapabilities: []engine.Capability{engine.CapWASM}}, gosx.El("div", gosx.Attrs(gosx.Attr("data-automation-curve-props", string(encoded))), content))
+	surface := meterEngine(ctx, engine.Config{Name: "CicadaAutomationCurve", Kind: engine.KindSurface, MountID: "cicada-automation-curve", Runtime: engine.RuntimeGoWASM, Props: encoded, Capabilities: []engine.Capability{engine.CapPointer, engine.CapKeyboard}, RequiredCapabilities: []engine.Capability{engine.CapWASM}}, gosx.El("div", gosx.Attrs(gosx.Attr("data-automation-curve-props", string(encoded))), content))
 	return ui.Panel(ui.PanelProps{ID: "automation-editor", Title: "Automation curves", Description: "Draw vocal rides, filter sweeps and effect movement across the full song."}, surface,
 		gosx.El("details", gosx.Attrs(gosx.Attr("class", "automation-overview")), gosx.El("summary", gosx.Text("All saved curves")), continuousAutomation(p)))
 }
