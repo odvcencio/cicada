@@ -234,7 +234,8 @@ class CicadaKernel extends AudioWorkletProcessor {
         let offset = lead;
         while (offset < left.length) {
           let boundary = sampleAtTick(nextBarTick);
-          if (engineSample === boundary) {
+          // A tempo increase can put the kernel's bar line behind the playhead.
+          while (engineSample >= boundary) {
             if (pending) swapAtBoundary(nextBarTick);
             else nextBarTick += 3840;
             boundary = sampleAtTick(nextBarTick);
@@ -258,7 +259,7 @@ class CicadaKernel extends AudioWorkletProcessor {
           }
           engineSample += frames;
           offset += frames;
-          if (pending && engineSample === boundary) swapAtBoundary(nextBarTick);
+          if (pending && engineSample >= boundary) swapAtBoundary(nextBarTick);
           else if (!pending && engineSample >= boundary) nextBarTick += 3840;
         }
         if (!(callbacks & 7) && ready) {

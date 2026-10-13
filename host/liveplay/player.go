@@ -1558,7 +1558,9 @@ func (p *Player) renderBlock(requestedFrames int) {
 		return
 	}
 	clear(p.blockParameters[:])
-	if p.sample == p.nextBarSample {
+	// A tempo increase found after the fact can leave a bar line behind the
+	// playhead; every such line is handled before rendering.
+	for p.sample >= p.nextBarSample {
 		p.bar++
 		swapped := false
 		select {

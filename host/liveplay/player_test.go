@@ -7,6 +7,7 @@ import (
 
 	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 	"m31labs.dev/cicada/kernel/seq"
@@ -1154,5 +1155,75 @@ func TestEditsLandOnTheLoopSeamBarLinesAcrossLoops(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the edit did not land on the predicted bar line")
+	}
+}
+
+// An immediate (unquantized) launch that speeds the tempo up near the end of a
+// bar puts the true bar line behind the block already rendered. Playback must
+// go on, and the next edit lands on the next true bar line.
+func TestImmediateSpeedupMidBarKeepsPlayingAndEditsLandOnTheNextBarLine(t *testing.T) {
+	build := func(name string) Score {
+		cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000}
+		cfg.Track[0].Kind = engine.VoiceAcid
+		cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 240}}}}
+		cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 8}}
+		created, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name, SceneIDs: []string{"a", "fast"}}
+	}
+	p, err := New(build("first"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stop one block before the bar line at frame 96000 and launch at once.
+	if _, err := io.CopyN(io.Discard, p, (96_000-blockFrames)*8); err != nil {
+		t.Fatal(err)
+	}
+	if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Arg0: 0}) {
+		t.Fatal("launch rejected")
+	}
+	// The new bar line (bar 1, near frame 95872) is behind the first block.
+	if _, err := io.CopyN(io.Discard, p, 20_000*8); err != nil {
+		t.Fatalf("playback stopped after the speedup: %v", err)
+	}
+	if got := p.BPMMilli(); got != 240_000 {
+		t.Fatalf("tempo after the launch = %d", got)
+	}
+	for len(p.Events()) > 0 {
+		<-p.Events()
+	}
+	played := int64(96_000 - blockFrames + 20_000)
+	if err := p.Offer(build("edit")); err != nil {
+		t.Fatal(err)
+	}
+	// The next true bar line is the engine's second bar line under the live clock.
+	line := p.current.Engine.FramesBetweenTicks(0, 2*seq.TicksPerBar)
+	if line <= played+1_000 {
+		t.Fatalf("test setup: bar line %d is not ahead of %d", line, played)
+	}
+	if _, err := io.CopyN(io.Discard, p, (line-played-1)*8); err != nil {
+		t.Fatal(err)
+	}
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" {
+			t.Fatalf("the edit landed before the bar line: %+v", event)
+		}
+	}
+	var frame [8]byte
+	for range 2 {
+		if _, err := io.ReadFull(p, frame[:]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found := false
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" && event.Name == "edit" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the edit did not land on the next true bar line")
 	}
 }

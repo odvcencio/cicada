@@ -72,8 +72,9 @@ func (e *Engine) songSampleAtTick(tick int64) int64 {
 		clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.transport.BPMMilli()}
 		return clock.SampleAtTick(tick)
 	}
-	cycle, index, local := e.chainStep(tick)
-	return cycle*e.tempoCycleSamples + e.tempoChain[index].SampleAtTick(local)
+	// Play through from the start with the transport's own rules, including the
+	// loop seams that reanchor nothing, so a seek agrees with playing through.
+	return e.authoredFrames(0, tick)
 }
 
 // TempoAtTick is the tempo, in thousandths of a BPM, that plays at a song tick
@@ -99,6 +100,11 @@ func (e *Engine) FramesBetweenTicks(from, to int64) int64 {
 	if e.liveTempo && from == e.seekTick && to > from {
 		return e.transport.Clock().SampleAtTick(to) - e.seekSample
 	}
+	return e.authoredFrames(from, to)
+}
+
+// authoredFrames follows the authored chain only, whatever the live transport did.
+func (e *Engine) authoredFrames(from, to int64) int64 {
 	clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.TempoAtTick(from), AnchorTick: from}
 	if len(e.tempoChain) != 0 {
 		cycle, index, _ := e.chainStep(from)

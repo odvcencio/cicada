@@ -163,7 +163,8 @@ func (e *Engine) restoreSongClips(index int, cycleStart, tick int64) {
 	sample := e.songSampleAtTick(tick)
 	startCycle := int64(0)
 	if e.loopSong {
-		startCycle = max(0, sample-e.clipMaxFrames) / e.tempoCycleSamples * e.scheduleDuration
+		// Cycles can differ from the first by a frame; start one early.
+		startCycle = max(0, max(0, sample-e.clipMaxFrames)/e.tempoCycleSamples-1) * e.scheduleDuration
 	}
 	// Replay starts and stops in source order. Explicit clip assignments
 	// retrigger that track; keep carries its clip across scenes and loop cycles.

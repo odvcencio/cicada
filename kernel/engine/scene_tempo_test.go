@@ -655,3 +655,51 @@ func TestSceneTempoLoopSeamPredictionMatchesTheTransportAcrossLoops(t *testing.T
 		}
 	}
 }
+
+// With one-bar scenes at 124, 90 and 124 BPM in a loop, the transport keeps its
+// 124 BPM anchor across the seam. A seek into a later pass must put a running
+// clip exactly where playing through put it, not a frame ahead.
+func TestSceneTempoLoopedClipSeekMatchesPlayingThrough(t *testing.T) {
+	pcm := make([]float32, 960_000)
+	for i := range pcm {
+		pcm[i] = float32(i%127) / 1024
+	}
+	set := func(v float32) []SceneSetting { return []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: v}} }
+	for _, tempos := range [][3]float32{{124, 90, 124}, {121, 60, 121}} {
+		cfg := clipScheduleConfig()
+		cfg.BPMMilli, cfg.Schedule = 120000, nil
+		cfg.Assets[0].Left = pcm
+		cfg.Clips = []ClipConfig{{EndFrame: int64(len(pcm))}}
+		cfg.Scenes = []Scene{
+			{Track: [MaxTracks]SceneBinding{{Mode: SceneClip}}, Settings: set(tempos[0])},
+			{Track: [MaxTracks]SceneBinding{{Mode: SceneKeep}}, Settings: set(tempos[1])},
+			{Track: [MaxTracks]SceneBinding{{Mode: SceneKeep}}, Settings: set(tempos[2])},
+		}
+		cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
+		cfg.LoopSong = true
+		through, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		through.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+		var l, r [128]float32
+		// Play through three passes and one bar into the fourth, plus 137 ticks.
+		target := 10*seq.TicksPerBar + 137
+		for through.transport.Tick() < target {
+			through.Render(l[:1], r[:1])
+		}
+		seeking, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		tick := target
+		seeking.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: uint32(tick / seq.TicksPerBar), Arg1: uint32(tick % seq.TicksPerBar)})
+		seeking.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+		seeking.Render(l[:1], r[:1])
+		// Frame N is the first at which the tick is reached; both engines render it.
+		through.Render(l[:1], r[:1])
+		if a, b := through.clipVoices[0].sourceFrame, seeking.clipVoices[0].sourceFrame; !seeking.clipVoices[0].active || a != b {
+			t.Fatalf("%v: clip position through=%g seeking=%g at tick %d", tempos, a, b, tick)
+		}
+	}
+}

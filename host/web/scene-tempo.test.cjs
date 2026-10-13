@@ -15,9 +15,10 @@ const frames = (from, to) => {
   return from >= bar ? Math.ceil((to - from) * 60000 * rate / (60000 * 960)) : at(to) - at(from);
 };
 
-async function harness(asset) {
+async function harness(asset, framesFn = frames) {
   let Type, port;
   const messages = [], instances = [];
+  instances.counts = [];
   const context = vm.createContext({
     CICADA_CAPTURE: false, sampleRate: rate, performance: { now: () => 1 },
     WebAssembly: { instantiate: async () => {
@@ -30,8 +31,9 @@ async function harness(asset) {
         gosx_audio_cmd_cap: () => 512, gosx_audio_cmd_ptr: () => 8192, gosx_audio_msg_ptr: () => 32768,
         gosx_audio_out_ptr: () => 49152, gosx_audio_msg_drain: () => 0,
         gosx_audio_cmd_commit: count => instance.commits.push(new Uint8Array(memory.buffer, 8192, count * 24).slice()),
-        gosx_audio_tick_frames: frames,
+        gosx_audio_tick_frames: (from, to) => framesFn(from, to),
         gosx_audio_render(count) {
+          instances.counts.push(count);
           if (instance === instances[1] && !instance.rendered) instances.swapAt = instances[0].rendered;
           instance.rendered += count;
         }
@@ -71,5 +73,31 @@ for (const asset of ['processor.js', 'processor.min.js', 'processor-capture.min.
     const swap = h.instances[1].commits.find(bytes => bytes[0] === 3 && bytes[24] === 1);
     assert.ok(swap, 'the new engine received the swap seek and play');
     assert.equal(swap[4], 2, 'the swap seeks to bar 3 (index 2)');
+  });
+}
+
+// An immediate tempo increase can put the kernel's next bar line behind the
+// playhead: 95854 when 95872 frames are already rendered. The processor swaps
+// the queued edit at once and never asks the kernel to render a negative or an
+// oversized length.
+for (const asset of ['processor.js', 'processor.min.js', 'processor-capture.min.js']) {
+  test(`${asset}: a queued edit and an immediate speedup never render a bad length`, async () => {
+    let sped = false;
+    const base = (from, to) => Math.ceil((to - from) * 60000 * rate / (120000 * 960));
+    const h = await harness(asset, (from, to) => (sped && from === 0 && to === bar ? 95854 : base(from, to)));
+    const command = op => { const bytes = new Uint8Array(24); bytes[0] = op; bytes[1] = 255; h.port().onmessage({ data: { t: 'c', bytes } }); };
+    command(1);
+    const quantum = [[new Float32Array(128), new Float32Array(128)]];
+    let quanta = 0;
+    const step = () => { h.instance.process([], quantum); quanta++; if (h.instances[0].rendered >= 95872) sped = true; };
+    for (let i = 0; i < 90; i++) step();
+    h.port().onmessage({ data: { t: 'i', i: h.image, r: 'edit' } });
+    while (!h.messages.some(m => m.t === 't')) { step(); await new Promise(resolve => setImmediate(resolve)); }
+    for (let i = 0; i < 700 && !h.instances.swapAt; i++) step();
+    for (let i = 0; i < 5; i++) step();
+    assert.equal(h.instances.swapAt, 95872, 'the edit swaps at the first quantum past the corrected bar line');
+    assert.ok(h.instances.counts.every(n => Number.isInteger(n) && n > 0 && n <= 128), `render lengths ${h.instances.counts.filter(n => !(n > 0 && n <= 128))}`);
+    const swap = h.instances[1].commits.find(bytes => bytes[0] === 3 && bytes[24] === 1);
+    assert.ok(swap && swap[4] === 1, 'the new engine seeks to bar 2');
   });
 }

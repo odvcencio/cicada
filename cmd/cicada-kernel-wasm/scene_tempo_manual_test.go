@@ -21,7 +21,7 @@ import (
 // A manual scene launch that lands on the exact song-boundary tick must leave
 // native and WASM in agreement: the same audio, the same tempo, and the same
 // bar placement from the tick_frames export.
-func TestSceneTempoManualLaunchOnBoundaryNativeWASMParity(t *testing.T) {
+func TestAudioWASMSceneTempoManualLaunchOnBoundaryParity(t *testing.T) {
 	score, diagnostics, err := project.LoadScore(filepath.Join("..", "..", "examples", "scene-tempo.cicada"), nil)
 	if err != nil || len(diagnostics) != 0 {
 		t.Fatalf("score: %v %+v", err, diagnostics)
@@ -127,7 +127,7 @@ func TestSceneTempoManualLaunchOnBoundaryNativeWASMParity(t *testing.T) {
 // launched by hand moves the transport. The export the AudioWorklet uses to
 // place bar boundaries must follow: 288000 frames to bar 2, not 192000, and
 // the same in native and WASM.
-func TestSceneTempoManualLaunchWithoutChainTickFramesFollowsTheTransport(t *testing.T) {
+func TestAudioWASMSceneTempoManualLaunchWithoutChainTickFrames(t *testing.T) {
 	cfg := engine.Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120_000}
 	cfg.Track[0].Kind = engine.VoiceAcid
 	cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}}}
@@ -202,7 +202,7 @@ func TestSceneTempoManualLaunchWithoutChainTickFramesFollowsTheTransport(t *test
 // A looping song whose first and last tempos match each other but not the score
 // tempo: the bar placement the AudioWorklet asks for must be the frames the
 // native transport takes, across many loops, and the same in WASM.
-func TestSceneTempoLoopSeamTickFramesNativeWASMParity(t *testing.T) {
+func TestAudioWASMSceneTempoLoopSeamTickFrames(t *testing.T) {
 	cfg := engine.Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120_000, LoopSong: true}
 	cfg.Track[0].Kind = engine.VoiceAcid
 	set := func(v float32) []engine.SceneSetting {
