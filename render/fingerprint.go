@@ -40,20 +40,17 @@ func EngineFingerprint(cfg engine.Config, bars int) (Fingerprint, error) {
 	if bars < 1 || bars > 256 || cfg.SampleRate%10 != 0 {
 		return result, fmt.Errorf("fingerprint requires 1 to 256 bars and a 100 ms-aligned sample rate")
 	}
-	if cfg.BPMMilli == 0 {
-		cfg.BPMMilli = 120_000
-	}
-	clock, err := seq.NewClock(cfg.SampleRate, cfg.BPMMilli)
-	if err != nil {
-		return result, err
-	}
-	sampleCount := clock.SampleAtTick(int64(bars) * seq.TicksPerBar)
-	if sampleCount < 1 || sampleCount > int64(^uint32(0)) {
-		return result, fmt.Errorf("fingerprint sample count is out of range")
+	if cfg.SampleRate < 1 {
+		return result, fmt.Errorf("fingerprint requires a sample rate")
 	}
 	player, err := engine.New(cfg)
 	if err != nil {
 		return result, err
+	}
+	// The engine knows its tempo steps, so the span follows scene tempos.
+	sampleCount := player.FramesBetweenTicks(0, int64(bars)*seq.TicksPerBar)
+	if sampleCount < 1 || sampleCount > int64(^uint32(0)) {
+		return result, fmt.Errorf("fingerprint sample count is out of range")
 	}
 	if !player.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 		return result, fmt.Errorf("fingerprint play command was rejected")

@@ -9,7 +9,6 @@ import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/mix"
-	"m31labs.dev/cicada/kernel/seq"
 	"m31labs.dev/cicada/kernel/voice/acid"
 	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/kernel/voice/guitar"
@@ -97,12 +96,12 @@ func compileSceneParameters(p *project.Project, tracks []trackRuntime, sampleRat
 	if err != nil {
 		return nil, err
 	}
-	clock, err := seq.NewClock(sampleRate, int64(p.TempoMilli))
+	tempo, err := project.NewTempoMap(sampleRate, int64(p.TempoMilli), project.SongTempoChanges(p))
 	if err != nil {
 		return nil, err
 	}
 	for _, control := range controls {
-		parameters.automation = append(parameters.automation, offlineControl{Sample: clock.SampleAtTick(control.Tick), Setting: engine.SceneSetting{Track: control.Track, ID: kernel.ParamID(control.Index), Value: math.Float32frombits(control.Arg0)}})
+		parameters.automation = append(parameters.automation, offlineControl{Sample: tempo.SampleAtTick(control.Tick), Setting: engine.SceneSetting{Track: control.Track, ID: kernel.ParamID(control.Index), Value: math.Float32frombits(control.Arg0)}})
 	}
 	parameters.updateMuteTargets()
 	return parameters, nil
@@ -161,6 +160,9 @@ func (p *sceneParameters) set(setting engine.SceneSetting) error {
 		params := p.delay.Params()
 		params.Division, params.TimeMs = setting.Division, 0
 		return p.delay.SetParams(params)
+	}
+	if setting.ID == kernel.ParamGlobalTempo {
+		return nil // the render loop steps the tempo at the scene boundary
 	}
 	spec, ok := kernel.Param(setting.ID)
 	if !ok || !spec.Live {

@@ -611,6 +611,9 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			return nil, Error("scene parameter setting count exceeds the image limit")
 		}
 		for i, setting := range scene.Settings {
+			if setting.ID == kernel.ParamGlobalTempo && i != 0 {
+				return nil, Error("scene tempo must be the first scene setting")
+			}
 			if err := validateSceneSetting(&cfg, setting); err != nil {
 				return nil, err
 			}
@@ -1260,6 +1263,9 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 					}
 					return Error("guitar controls require image version 15")
 				}
+				if setting.ID == kernel.ParamGlobalTempo && i != 0 {
+					return Error("scene tempo must be the first scene setting")
+				}
 				if err := validateSceneSetting(cfg, *setting); err != nil {
 					return err
 				}
@@ -1481,7 +1487,10 @@ func readGraphInto(r *reader, version uint16, capabilities uint16, program *grap
 
 func validateSceneSetting(cfg *engine.Config, setting engine.SceneSetting) error {
 	spec, ok := kernel.Param(setting.ID)
-	if !ok || !spec.Live {
+	// Scene tempo (ID 113) is the one scene setting that is not live. The scene
+	// settings record already stores an ID and a float, so the image layout and
+	// version are unchanged. Decoders from before scene tempo reject the ID.
+	if !ok || !spec.Live && setting.ID != kernel.ParamGlobalTempo {
 		return Error("scene parameter setting is not live")
 	}
 	if spec.Scope == "track" {

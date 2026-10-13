@@ -357,7 +357,7 @@ song { main*4 }
 
 **Meaning:** A path addresses a registered setting on a declared track, effect, or bus. Those names share one namespace. Effect paths use the declared effect name, such as `room.feedback`. Track paths use the track name, such as `bass.cutoff` or `beat.bd_tune`. The send paths `bass.send.delay` and `bass.send.reverb` address the delay and reverb sends. Drum lane controls keep their flat suffixes, such as `bd_tune`.
 
-**Types and units:** The parameter registry sets each path's type, unit, range, default, and whether it can change live. Numeric scene values use the registered unit and range; toggles and enumerations use their registered words. Track voice parameters are listed in the [built-in track parameter catalog](built-in-track-parameters.md); effect values are listed under [Named effects](#named-effects). Scene settings can target only live parameters.
+**Types and units:** The parameter registry sets each path's type, unit, range, default, and whether it can change live. Numeric scene values use the registered unit and range; toggles and enumerations use their registered words. Track voice parameters are listed in the [built-in track parameter catalog](built-in-track-parameters.md); effect values are listed under [Named effects](#named-effects). Scene settings can target only live parameters, with one exception: the [scene tempo](#scene-tempo).
 
 **Defaults:** Each path starts with its registry default. A track or effect block value overrides that default. A scene setting overrides the block value when that scene lands, and remains active until another scene sets the same path. For example, `bass.cutoff` defaults to 600 Hz, while the acid track block may set it to 700 Hz.
 
@@ -404,7 +404,7 @@ Use `cicada explain score.cicada bass.cutoff @3.2.4` to inspect the registry def
 
 Seeking or restarting a song with scene settings reconstructs parameters from the authored track and effect blocks, then replays earlier scene settings. Values left by later playback or live edits do not carry backward into the reconstructed song position.
 
-**Errors:** Duplicate settings for one path in a scene report `CICADA-DUPLICATE`. Unknown owners report `CICADA-REFERENCE`; ambiguous track/effect owners report `CICADA-REFERENCE` and a rename hint. Unknown settings report `CICADA-PARAM`; wrong values or units report `CICADA-UNIT`. A non-boundary numeric value that rounds outside its float32 range, or a synced delay division that exceeds the four-second buffer at the score tempo, reports `CICADA-PARAM`. A registered value with no engine representation reports `CICADA-UNSUPPORTED` and names its path and value. Non-live paths and reserved `master` paths report `CICADA-UNSUPPORTED`.
+**Errors:** Duplicate settings for one path in a scene report `CICADA-DUPLICATE`. Unknown owners report `CICADA-REFERENCE`; ambiguous track/effect owners report `CICADA-REFERENCE` and a rename hint. Unknown settings report `CICADA-PARAM`; wrong values or units report `CICADA-UNIT`. A non-boundary numeric value that rounds outside its float32 range, or a synced delay division that exceeds the four-second buffer at the score tempo, reports `CICADA-PARAM`. A registered value with no engine representation reports `CICADA-UNSUPPORTED` and names its path and value. Non-live paths, except the [scene tempo](#scene-tempo), and reserved `master` paths report `CICADA-UNSUPPORTED`.
 
 **Example:** The second scene leaves `bass.cutoff`, `drums.level`, and the synced delay division at the values set by the first scene:
 
@@ -461,6 +461,50 @@ song { main }
 ```
 
 **Edition history:** Scene parameter settings were added to edition 1 without changing pattern binding syntax. At a song scene switch they land with the scene and carry forward until overridden.
+
+
+## Scene tempo
+
+**Syntax (EBNF):** `tempo = number` inside a scene body, for example `tempo = 84`. A bare `tempo` target with a number is the scene tempo. A bare `tempo` target with a name is still a pattern binding, so a track called `tempo` keeps working: `tempo = riff` binds it, and `tempo = 84` sets the tempo.
+
+**Meaning:** The scene sets the song tempo from its first bar. The change is a step on the bar line where the scene starts, so every bar of the scene, and of later scenes that omit `tempo`, plays at that tempo. Several short scenes with falling values make a stepped slow-down. Patterns, automation positions, song bars, and the Studio timeline are counted in ticks and bars, so they follow the new tempo without change. A synced `delay.time` division is recalculated at the new tempo, and the engine crossfades once. When one scene sets both, the tempo applies first.
+
+**Types and units:** A plain number of beats per minute from 20 to 300. A decimal such as `96.5` is allowed; the engine rounds to the nearest thousandth of a BPM. A unit suffix reports `CICADA-UNIT`. `tempo` is not live and not automatable: `automate` and live parameter commands reject it.
+
+**Defaults:** The tempo starts at the score's `tempo`. It carries through later scenes until a scene sets it again. Restarting the song, seeking to the first bar, and each pass of a looped song return to the score tempo. Seeking into a later bar plays at the tempo that bar would have had when played through from the start.
+
+**Errors:** A value outside 20 to 300 reports `CICADA-UNIT`. A synced delay division must fit the four-second buffer at the slowest tempo the song reaches, the score tempo or any scene tempo; otherwise the score reports `CICADA-PARAM`. A `tempo` setting in a score with an `arrange` block reports `CICADA-UNSUPPORTED` and names the scene, because arrangements place content by tick and have no scene boundaries.
+
+**Live launches:** While a song carries scene tempos, the song owns the tempo. A scene launched by hand or by the director changes patterns and parameters but not the tempo, so playback, seeking and bar placement always agree. A song with no scene tempo lets a launched scene set it.
+
+**Limitations:** There is no tempo automation, ramp, or per-scene transpose. Audio clips are not time-stretched: a clip plays at its recorded speed and ends where its source ends, whatever the tempo. Count-in and recorded takes assume one tempo, and capture across a tempo step is not supported. A MIDI file import accepts one tempo.
+
+**Compatibility:** The kernel image stores a scene tempo as an ordinary scene setting (owner `0xff`, parameter ID 113, a float32 BPM value), so the image layout and version number are unchanged. Image decoders from before scene tempo reject ID 113 because they accept only live settings; use a build with this feature to load such an image. WAV files written for a song with tempo changes carry version 2 of the `cica` timing chunk, which lists each tempo step; `verify-wav` reads both versions, and a song with one tempo still writes version 1.
+
+**Example:** The first two bars play at 120 BPM and the last two at 66 BPM. The longer [`examples/scene-tempo.cicada`](../../examples/scene-tempo.cicada) steps down four times and moves a synced delay with it:
+
+```cicada
+cicada 2
+tempo 120
+
+track bass acid {}
+
+pattern riff acid steps=4 { 1 . 5 . }
+
+scene main {
+  bass = riff
+}
+
+scene outro {
+  bass = riff
+  tempo = 66
+}
+
+song {
+  main*2
+  outro*2
+}
+```
 
 ## Songs
 

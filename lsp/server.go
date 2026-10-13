@@ -719,17 +719,26 @@ func inlayHints(source []byte, requested *region) []any {
 		}
 	}
 	bars := 0
+	elapsed, tempo := 0.0, float64(score.TempoMilli)
 	for _, entry := range score.Song {
 		startBar := bars + 1
 		bars += entry.Bars
+		for _, scene := range score.Scenes {
+			if scene.Name == entry.Scene {
+				if milli, ok := notation.SceneTempoMilli(scene); ok {
+					tempo = float64(milli)
+				}
+				break
+			}
+		}
 		offset := scalarOffset(source, entry.Position)
 		for offset < len(source) && source[offset] != ' ' && source[offset] != '\t' && source[offset] != '\r' && source[offset] != '\n' && source[offset] != '}' {
 			offset++
 		}
-		seconds := 0.0
-		if score.TempoMilli > 0 {
-			seconds = float64(bars) * 240000 / float64(score.TempoMilli)
+		if tempo > 0 {
+			elapsed += float64(entry.Bars) * 240000 / tempo
 		}
+		seconds := elapsed
 		minute := int(seconds) / 60
 		second := seconds - float64(minute*60)
 		label := fmt.Sprintf("bars %d–%d, %d:%04.1f", startBar, bars, minute, second)

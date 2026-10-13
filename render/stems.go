@@ -98,7 +98,7 @@ func newStemOutput(dir string, p *project.Project, report Report) (*stemOutput, 
 			return nil, err
 		}
 		stems.files = append(stems.files, stemFile{file: file, buffer: make([]byte, 0, 4096*8)})
-		err = writeFloatHeader(file, report.SampleRate, uint32(report.Frames*8))
+		err = writeFloatHeader(file, report.SampleRate, uint32(report.Frames*8), len(report.tempoChanges))
 		if err != nil {
 			return nil, err
 		}
@@ -177,7 +177,7 @@ func (s *stemOutput) finish(tempoMilli uint32) error {
 		if f.frames != s.report.Frames {
 			return fmt.Errorf("stem %d wrote %d frames, expected %d", i, f.frames, s.report.Frames)
 		}
-		if err := writeMetadata(f.file, tempoMilli, uint32(s.report.Bars), uint32(s.report.TailFrames)); err != nil {
+		if err := writeMetadata(f.file, tempoMilli, uint32(s.report.Bars), uint32(s.report.TailFrames), s.report.tempoChanges); err != nil {
 			return err
 		}
 		if err := f.file.Sync(); err != nil {
@@ -220,10 +220,10 @@ func (s *stemOutput) abort() {
 	os.RemoveAll(s.temporary)
 }
 
-func writeFloatHeader(w io.Writer, sampleRate int, dataBytes uint32) error {
+func writeFloatHeader(w io.Writer, sampleRate int, dataBytes uint32, tempoChanges int) error {
 	var header [44]byte
 	copy(header[:4], "RIFF")
-	binary.LittleEndian.PutUint32(header[4:8], dataBytes+60)
+	binary.LittleEndian.PutUint32(header[4:8], dataBytes+36+uint32(metadataBytes(tempoChanges)))
 	copy(header[8:12], "WAVE")
 	copy(header[12:16], "fmt ")
 	binary.LittleEndian.PutUint32(header[16:20], 16)

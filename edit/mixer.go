@@ -676,6 +676,9 @@ func CanonicalMixerLiteral(descriptor paramdefs.Descriptor, raw json.RawMessage)
 	if err != nil {
 		return "", err
 	}
+	if strings.EqualFold(descriptor.Unit, "bpm") && suffix != "" {
+		return "", fmt.Errorf("%s is a plain number of beats per minute", descriptor.Source)
+	}
 	if unit != "" && suffix != "" && suffix != unit {
 		return "", fmt.Errorf("%s requires %s", descriptor.Source, unit)
 	}

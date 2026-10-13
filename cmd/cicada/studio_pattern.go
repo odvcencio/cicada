@@ -617,7 +617,7 @@ func bindPatternSource(source []byte, sceneID, trackID, patternID string) ([]byt
 	}
 	for i := 0; i < node.NamedChildCount(); i++ {
 		binding := node.NamedChild(i)
-		if walker.Type(binding) == "scene_assignment" && walker.Text(walker.Field(binding, "target")) == trackID {
+		if walker.Type(binding) == "scene_assignment" && walker.Text(walker.Field(binding, "target")) == trackID && !notation.SceneAssignmentIsSetting(trackID, walker.Text(walker.Field(binding, "value"))) {
 			value := walker.Field(binding, "value")
 			return replaceSongSpan(source, int(value.StartByte()), int(value.EndByte()), []byte(patternID))
 		}

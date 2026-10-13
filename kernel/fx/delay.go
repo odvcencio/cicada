@@ -219,7 +219,13 @@ func (d *Delay) changeTime(frames float64) {
 	if d.newFrames == 0 {
 		d.oldFrames, d.newFrames, d.fade = frames, frames, 1
 	} else if frames != d.newFrames {
-		d.oldFrames, d.newFrames, d.fade = d.newFrames, frames, 0
+		// A change made before any sample played has not been heard, so a second
+		// one (a tempo step and a new division at one scene boundary) moves the
+		// target and keeps the fade's origin: one transition from what played.
+		if d.fade != 0 {
+			d.oldFrames = d.newFrames
+		}
+		d.newFrames, d.fade = frames, 0
 	}
 }
 

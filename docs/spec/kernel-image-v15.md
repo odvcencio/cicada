@@ -9,6 +9,13 @@ endian. The only accepted versions are 8, 9, 10, 11, 12, 13 and 15. Existing
 8–13 readers retain their validation and layouts. Configurations needing none
 of the new fields are still written as **byte-identical version 13**.
 
+A scene tempo needs no new layout or version. It is an ordinary entry in a scene's
+settings list: owner `0xff`, parameter ID 113 (`global.tempo`), a float32 value
+from 20 to 300, and no delay division. Images that use it are written with the
+version they would have had without it (13, or 15 when other fields need it).
+Decoders from before scene tempo reject ID 113 as a setting that is not live, so
+they cannot load such an image. The decoder rejects values outside 20 to 300.
+
 Version 14 is deliberately rejected before destination or engine mutation.
 Its incompatible layouts cannot be identified safely. A
 consumer must recompile project source; it must never infer the dialect from

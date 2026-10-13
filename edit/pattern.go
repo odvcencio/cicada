@@ -642,7 +642,7 @@ func bindPatternSource(ctx *Context, sceneID, trackID, patternID string) ([]byte
 	}
 	for i := 0; i < node.NamedChildCount(); i++ {
 		binding := node.NamedChild(i)
-		if walker.Type(binding) == "scene_assignment" && walker.Text(walker.Field(binding, "target")) == trackID {
+		if walker.Type(binding) == "scene_assignment" && walker.Text(walker.Field(binding, "target")) == trackID && !notation.SceneAssignmentIsSetting(trackID, walker.Text(walker.Field(binding, "value"))) {
 			value := walker.Field(binding, "value")
 			return ReplaceSpan(source, ctx.Options.Path, Span{int(value.StartByte()), int(value.EndByte()), patternID, ctx.Options.Path})
 		}

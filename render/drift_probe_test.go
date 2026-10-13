@@ -141,7 +141,7 @@ func driftWriteWAV(t *testing.T, path string, audio driftAudio, score *notation.
 		}
 		at += n
 	}
-	if err := writeMetadata(file, uint32(score.TempoMilli), uint32(bars), uint32(math.Ceil(tail*48000))); err != nil {
+	if err := writeMetadata(file, uint32(score.TempoMilli), uint32(bars), uint32(math.Ceil(tail*48000)), nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := file.Close(); err != nil {

@@ -56,7 +56,8 @@ cicada verify-midi first-acid.mid --ppq 960 --type 1
 ```
 
 The file contains one track per Cicada track, tempo, meter, key signature, and
-General MIDI drum notes. Swing and ratchets affect tick positions; a slide
+General MIDI drum notes. A scene that sets `tempo` adds a tempo event at its
+first bar. Swing and ratchets affect tick positions; a slide
 creates a one-tick note overlap. `--pattern NAME` exports one pattern loop
 instead of the full song. Chance uses the first seeded pass on every
 repetition.

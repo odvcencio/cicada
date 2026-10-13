@@ -243,7 +243,7 @@ func validateParameterValue(descriptor paramdefs.Descriptor, value Value) error 
 		return fmt.Errorf("expected a finite numeric value")
 	}
 	want := strings.ToLower(descriptor.Unit)
-	if want == "" || want == "ratio" || want == "semitone" || want == "cent" {
+	if want == "" || want == "ratio" || want == "semitone" || want == "cent" || want == "bpm" {
 		want = "unit"
 	}
 	if value.Unit != want {
