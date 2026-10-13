@@ -37,7 +37,9 @@ func (*parallelFixtureVoice) Play() error                         { return nil }
 
 func parallelFixture(t testing.TB, tracks int, drives bool) *Engine {
 	t.Helper()
-	cfg := Config{SampleRate: 48000, MaxBlock: 128, Tracks: tracks, MaxVoices: MaxVoices, BPMMilli: 120000}
+	// A long floor keeps a loaded machine from timing out a lane and faulting
+	// tests that assert PCM or faults. The stall tests shorten it on purpose.
+	cfg := Config{SampleRate: 48000, MaxBlock: 128, Tracks: tracks, MaxVoices: MaxVoices, BPMMilli: 120000, ParallelWaitFloor: time.Second}
 	for track := 0; track < tracks; track++ {
 		cfg.Track[track].Kind = VoicePrepared
 		cfg.Track[track].Prepared = parallelFixtureFactory{phase: uint32(track+1) * 2654435761}
