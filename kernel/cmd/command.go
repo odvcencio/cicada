@@ -345,7 +345,7 @@ func (c Command) Validate(tracks uint8) error {
 		}
 	case OpSetSceneBinding:
 		track, mode, slot, spare := c.Arg0&0xff, c.Arg0>>8&0xff, c.Arg0>>16&0xff, c.Arg0>>24
-		if track >= 16 || mode > 3 || slot >= 16 || spare != 0 || c.Arg1 >= 65536 {
+		if track >= limits.MaxTracks || mode > 3 || slot >= 16 || spare != 0 || c.Arg1 >= 65536 {
 			return Error("scene binding track, mode, slot or clip is out of range")
 		}
 	case OpDefineMacro, OpSetMacro:

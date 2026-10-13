@@ -2,6 +2,7 @@ package liveplay
 
 import (
 	"encoding/binary"
+	"fmt"
 	"io"
 	"math"
 	"testing"
@@ -220,5 +221,45 @@ func TestStepPatchUsesTheLiveTempoAfterASceneTempoChange(t *testing.T) {
 	first := firstSound(samples)
 	if first < 0 || patchFrame+first < 192_000 || patchFrame+first > 192_400 {
 		t.Fatalf("edited step first sounded at frame %d, want 192,000", patchFrame+first)
+	}
+}
+
+// Native sessions reach 64 tracks; a binding for track index 17 must reach the
+// engine, and a scene-binding patch must change that track's next launch.
+func TestSceneBindingPatchReachesTracksBeyondSixteen(t *testing.T) {
+	const tracks = 20
+	if engine.MaxTracks < tracks {
+		t.Skip("this build has fewer than 20 tracks")
+	}
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: tracks, MaxVoices: tracks, BPMMilli: 120_000, Seed: 7}
+	for i := range tracks {
+		cfg.Track[i].Kind = engine.VoiceAcid
+	}
+	cfg.Scenes = []engine.Scene{{}}
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	score := Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: "wide", SceneIDs: []string{"main"}, Tracks: make([]TrackSlots, tracks)}
+	for i := range score.Tracks {
+		score.Tracks[i].ID = fmt.Sprintf("t%d", i)
+	}
+	p, err := New(score, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	target, err := p.ResolvePreviewTrack("t17")
+	if err != nil || target.track != 17 {
+		t.Fatalf("target %+v %v", target, err)
+	}
+	batch := NewPatchArena(1).Begin(1)
+	batch.SceneBinding(target, 0, engine.SceneBinding{Mode: engine.SceneSlot, Slot: 3})
+	if err := p.Patch(batch); err != nil {
+		t.Fatal(err)
+	}
+	_ = readFrames(t, p, blockFrames)
+	if p.LandedRevision() != 1 || p.fault != nil {
+		t.Fatalf("binding for track 17 did not land: revision %d, fault %v", p.LandedRevision(), p.fault)
 	}
 }

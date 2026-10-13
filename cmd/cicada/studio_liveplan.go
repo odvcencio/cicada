@@ -102,6 +102,11 @@ type planDelta struct {
 	// at one step boundary.
 	edits    []any
 	bindings []bindingChange
+	// effective holds the pattern banks as the engine will hold them after the
+	// edits land. It differs from a fresh compile in steps beyond a shortened
+	// length, which the engine keeps. adopt installs it in the next plan so the
+	// following diff replays from the engine's state, not from zeros.
+	effective []engine.PatternBank
 }
 
 func buildLivePlan(path string, source []byte, sampleRate int) (*livePlan, error) {
@@ -267,7 +272,9 @@ func planDiff(old, next *livePlan) planDelta {
 		return structural("pattern or scene tables changed size")
 	}
 	for track := range a.Patterns {
-		if reason := diffPatternBank(&delta, uint8(track), &a.Patterns[track], &b.Patterns[track], &a.Track[track]); reason != "" {
+		bank, reason := diffPatternBank(&delta, uint8(track), &a.Patterns[track], &b.Patterns[track], &a.Track[track])
+		delta.effective = append(delta.effective, bank)
+		if reason != "" {
 			return structural(reason)
 		}
 	}
@@ -325,6 +332,14 @@ func planDiff(old, next *livePlan) planDelta {
 	return delta
 }
 
+// adopt makes next model the engine after this delta lands: edits leave steps
+// beyond a shortened length in place, which a fresh compile would zero.
+func (d planDelta) adopt(next *livePlan) {
+	if d.effective != nil {
+		next.cfg.Patterns = d.effective
+	}
+}
+
 func editCommandCount(edits []any) int {
 	n := 0
 	for _, edit := range edits {
@@ -339,9 +354,14 @@ func editCommandCount(edits []any) int {
 // diffPatternBank appends the edits that turn the old bank into the new one. It
 // returns a reason when some difference has no command: the chain, a slot that
 // appears or disappears, expression, gate or seed.
-func diffPatternBank(delta *planDelta, track uint8, old, next *engine.PatternBank, config *engine.TrackConfig) string {
+func diffPatternBank(delta *planDelta, track uint8, old, next *engine.PatternBank, config *engine.TrackConfig) (engine.PatternBank, string) {
+	effective := *next
+	if next.Drums != nil {
+		lanes := *next.Drums
+		effective.Drums = &lanes
+	}
 	if !reflect.DeepEqual(old.Chain, next.Chain) || (old.Drums == nil) != (next.Drums == nil) {
-		return "pattern chain or bank kind changed"
+		return effective, "pattern chain or bank kind changed"
 	}
 	for slot := range old.Slots {
 		var oldLanes, nextLanes *[drum.LaneCount]seq.Pattern
@@ -350,22 +370,27 @@ func diffPatternBank(delta *planDelta, track uint8, old, next *engine.PatternBan
 		}
 		if old.Slots[slot].Len == 0 || next.Slots[slot].Len == 0 {
 			if !reflect.DeepEqual(old.Slots[slot], next.Slots[slot]) || oldLanes != nil && *oldLanes != *nextLanes {
-				return "pattern slot appeared or disappeared"
+				return effective, "pattern slot appeared or disappeared"
 			}
 			continue
 		}
-		edits, reason := diffSlot(track, uint8(slot), &old.Slots[slot], &next.Slots[slot], oldLanes, nextLanes, config)
+		edits, final, finalLanes, reason := diffSlot(track, uint8(slot), &old.Slots[slot], &next.Slots[slot], oldLanes, nextLanes, config)
 		if reason != "" {
-			return reason
+			return effective, reason
 		}
 		delta.edits = append(delta.edits, edits...)
+		effective.Slots[slot] = final
+		if finalLanes != nil {
+			effective.Drums[slot] = *finalLanes
+		}
 	}
-	return ""
+	return effective, ""
 }
 
-func diffSlot(track, slot uint8, old, next *seq.Pattern, oldLanes, nextLanes *[drum.LaneCount]seq.Pattern, config *engine.TrackConfig) ([]any, string) {
+// diffSlot also returns the slot as the engine will hold it after the edits.
+func diffSlot(track, slot uint8, old, next *seq.Pattern, oldLanes, nextLanes *[drum.LaneCount]seq.Pattern, config *engine.TrackConfig) ([]any, seq.Pattern, *[drum.LaneCount]seq.Pattern, string) {
 	if old.GatePercent != next.GatePercent || old.Seed != next.Seed || !reflect.DeepEqual(old.Expression, next.Expression) {
-		return nil, "pattern gate, seed or expression changed"
+		return nil, *old, oldLanes, "pattern gate, seed or expression changed"
 	}
 	var lenEdit, metaEdit any
 	if old.Len != next.Len {
@@ -396,13 +421,13 @@ func diffSlot(track, slot uint8, old, next *seq.Pattern, oldLanes, nextLanes *[d
 		}
 	}
 	if lenEdit == nil && metaEdit == nil && len(steps) == 0 {
-		return nil, ""
+		return nil, *old, oldLanes, ""
 	}
 	if oldLanes != nil {
 		for lane := range nextLanes {
 			shared := nextLanes[lane]
 			if shared.Len != next.Len || shared.StepTicks != next.StepTicks || shared.SwingPermille != next.SwingPermille || shared.Transpose != next.Transpose || shared.GatePercent != next.GatePercent {
-				return nil, "drum lane differs from its slot"
+				return nil, *old, oldLanes, "drum lane differs from its slot"
 			}
 		}
 	}
@@ -425,11 +450,11 @@ func diffSlot(track, slot uint8, old, next *seq.Pattern, oldLanes, nextLanes *[d
 				}
 			}
 		}
-		if replayEdits(edits, old, next, oldLanes, nextLanes, config) {
-			return edits, ""
+		if final, lanes, ok := replayEdits(edits, old, next, oldLanes, nextLanes, config); ok {
+			return edits, final, lanes, ""
 		}
 	}
-	return nil, "pattern edit has no valid order"
+	return nil, *old, oldLanes, "pattern edit has no valid order"
 }
 
 // editCommand is the kernel command that carries one edit; a step with a chord
@@ -452,8 +477,8 @@ func chordCommand(edit stepChange) (cmd.Command, error) {
 
 // replayEdits applies the edits to copies of the old slot with the kernel's own
 // edit rules and reports whether every step is accepted and the result is the
-// new slot.
-func replayEdits(edits []any, old, next *seq.Pattern, oldLanes, nextLanes *[drum.LaneCount]seq.Pattern, config *engine.TrackConfig) bool {
+// new slot. It returns the slot the edits leave behind.
+func replayEdits(edits []any, old, next *seq.Pattern, oldLanes, nextLanes *[drum.LaneCount]seq.Pattern, config *engine.TrackConfig) (seq.Pattern, *[drum.LaneCount]seq.Pattern, bool) {
 	slot := *old
 	var lanes *[drum.LaneCount]seq.Pattern
 	if oldLanes != nil {
@@ -466,31 +491,31 @@ func replayEdits(edits []any, old, next *seq.Pattern, oldLanes, nextLanes *[drum
 	for _, edit := range edits {
 		c, _ := editCommand(edit)
 		if !apply(c) {
-			return false
+			return seq.Pattern{}, nil, false
 		}
 		if step, ok := edit.(stepChange); ok && step.chord != nil {
 			chord, err := chordCommand(step)
 			if err != nil || !apply(chord) {
-				return false
+				return seq.Pattern{}, nil, false
 			}
 		}
 	}
 	if slot.Len != next.Len || slot.StepTicks != next.StepTicks || slot.SwingPermille != next.SwingPermille || slot.Transpose != next.Transpose {
-		return false
+		return seq.Pattern{}, nil, false
 	}
 	for i := uint8(0); i < next.Len; i++ {
 		if lanes != nil {
 			for lane := range lanes {
 				want := nextLanes[lane].Steps[i]
 				if got := lanes[lane].Steps[i]; got != want && got != want&^0x7f|uint32(lane) {
-					return false
+					return seq.Pattern{}, nil, false
 				}
 			}
 		} else if slot.Steps[i] != next.Steps[i] || slot.Chords[i] != next.Chords[i] {
-			return false
+			return seq.Pattern{}, nil, false
 		}
 	}
-	return true
+	return slot, lanes, true
 }
 
 // Remove only numeric controls represented in the validated parameter map.
