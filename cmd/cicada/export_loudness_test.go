@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -241,4 +242,84 @@ func TestExportLoudnessRangeIgnoresPrerollLimiterReductionDirect(t *testing.T) {
 
 func TestExportLoudnessRangeIgnoresPrerollLimiterReductionScheduled(t *testing.T) {
 	testExcerptIgnoresLoudPreroll(t, true)
+}
+
+// Two chained limiters: the first (-20 dBTP, 1 ms lookahead) is followed by a
+// second with a longer lookahead, so the first limiter's reading must be
+// delayed by the second's latency before it is counted against the delivered
+// frames.
+const chainedLimiterMaster = "fx first limiter { ceiling = -12dBTP lookahead = 1ms release = 20ms }\nfx last limiter { ceiling = -1dBTP lookahead = 10ms release = 20ms }\nmaster { level = 6dB insert = tone -> first -> last }"
+
+func chainedLimiterReplacements(scheduled bool, extra ...string) []string {
+	r := []string{"fx ceiling limiter { ceiling = -1dBTP lookahead = 3ms release = 100ms }\nmaster { level = 6dB insert = tone -> ceiling }", chainedLimiterMaster}
+	if scheduled {
+		r = append(r, "track bass acid {", "fx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }\ntrack bass acid { insert = cleanup ")
+	}
+	r = append(r, "loudness = -30LUFS", "loudness = -22LUFS", "scene excerpt { bass = bass-a drums = rest-d }", "scene excerpt { bass = bass-a drums = beat-a }")
+	return append(r, extra...)
+}
+
+// chainedExcerptReduction renders the excerpt at a fixed input gain and
+// returns the master chain reduction the renderer reports for it.
+func chainedExcerptReduction(t *testing.T, path string, scheduled bool) float64 {
+	t.Helper()
+	inspection, err := inspectScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := render.Options{SampleRate: 48000, Bits: 24, From: 4, Bars: 2, TailSec: 1, MasterInputGainDB: -3}
+	if got := render.UsesScheduledEngine(inspection.score, opts); got != scheduled {
+		t.Fatalf("UsesScheduledEngine = %v, want %v", got, scheduled)
+	}
+	report, err := render.WAV(inspection.score, opts, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report.MaxMasterChainLimiterReductionDB
+}
+
+// The reported reduction must not depend on what was rendered before the
+// range. Exact per-frame alignment of each limiter is checked on the chain
+// itself in project.TestMasterChainWindowedReductionAtBothBoundaries.
+func testChainedLimitersRangeIgnoresPreroll(t *testing.T, scheduled bool) {
+	loud := chainedExcerptReduction(t, writeScoreVariant(t, chainedLimiterReplacements(scheduled)...), scheduled)
+	quiet := chainedExcerptReduction(t, writeScoreVariant(t, chainedLimiterReplacements(scheduled, "song { intro*2 gap*2 excerpt*2 }", "song { gap*4 excerpt*2 }")...), scheduled)
+	t.Logf("METRIC EXPORT-CHAINED scheduled=%v loud_intro=%.6f silent_intro=%.6f", scheduled, loud, quiet)
+	if quiet <= 0 {
+		t.Fatalf("excerpt never engaged the limiters (%.6f dB)", quiet)
+	}
+	// The intro leaves drum noise state behind, so the delivered audio is not
+	// bit-identical; the reductions must still agree closely. Counting the
+	// intro would raise the loud-intro figure by several dB.
+	if d := loud - quiet; d < -0.5 || d > 0.5 {
+		t.Fatalf("reduction %.6f dB with a loud intro differs from %.6f dB with a silent one", loud, quiet)
+	}
+}
+
+func TestExportLoudnessChainedLimitersRangeDirect(t *testing.T) {
+	testChainedLimitersRangeIgnoresPreroll(t, false)
+}
+
+func TestExportLoudnessChainedLimitersRangeScheduled(t *testing.T) {
+	testChainedLimitersRangeIgnoresPreroll(t, true)
+}
+
+func TestExportLoudnessChainedLimitersFullSong(t *testing.T) {
+	for _, scheduled := range []bool{false, true} {
+		path := writeScoreVariant(t, chainedLimiterReplacements(scheduled)...)
+		inspection, err := inspectScore(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 6, TailSec: 1}
+		target := renderTargetOptions{ExportName: "quiet", TruePeakMaxDBTP: -1}
+		if err := applyExportTarget(inspection.semantic, &opts, &target); err != nil {
+			t.Fatal(err)
+		}
+		result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "full.wav"), opts, target, nil)
+		t.Logf("METRIC EXPORT-CHAINED-FULL scheduled=%v lufs=%.3f gain=%+.2f chain_reduction=%.3f err=%v", scheduled, result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)
+		if err != nil || result.MasterLimiterReductionDB <= 0 || result.MasterLimiterReductionDB > maxExportLimiterReductionDB {
+			t.Fatalf("full-song chained limiter export: %v (%+v)", err, result)
+		}
+	}
 }
