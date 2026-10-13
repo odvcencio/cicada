@@ -70,7 +70,7 @@ func (s *studioApp) sampler(ctx *server.Context, v workspace, csrf string) gosx.
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "sampler-event-strip"), gosx.Attr("data-sampler-events", ""), gosx.Attr("aria-label", "Recorded pad hits"))),
 		gosx.El("details", gosx.Attrs(gosx.BoolAttr("open")), gosx.El("summary", gosx.Text("Resample to a pad and Session")), resample), audio)
 	props, _ := json.Marshal(map[string]any{"csrf": csrf, "tempo": v.Project.TempoMilli, "revision": v.Revision})
-	surface := ctx.Engine(engine.Config{Name: "CicadaSampler", Kind: engine.KindSurface, MountID: "cicada-sampler", Runtime: engine.RuntimeGoWASM, WASMPath: ui.MeterEnginePath, Props: props, Capabilities: []engine.Capability{engine.CapAudio, engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapCanvas}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch, engine.CapAudio}}, content)
+	surface := meterEngine(ctx, engine.Config{Name: "CicadaSampler", Kind: engine.KindSurface, MountID: "cicada-sampler", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapAudio, engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapCanvas}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch, engine.CapAudio}}, content)
 	var selectedEditor gosx.Node = gosx.El("p", gosx.Text("Import a WAV or sample a Session placement to fill the bank."))
 	if len(state.Bank.Sources) > 0 {
 		src, _ := state.Bank.Source(p.Source)
