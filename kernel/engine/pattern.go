@@ -249,15 +249,36 @@ func editSlotIndex(c cmd.Command) int {
 	return int(c.Arg1)
 }
 
-// PatternEditsValid reports whether the pattern edits in cs, applied in order,
-// would all be accepted by this engine as it stands: the voice kind of each
-// track (a chord needs a chord voice, a drum step needs a drum track), and the
-// slot state after the edits still waiting in the pending queue. Other commands
-// in cs are ignored. It copies each touched slot into stack scratch, mutates
-// nothing in the engine and allocates nothing. Call it only from the render
-// thread, which owns the engine.
+// editTick is the tick at which the engine applies a pattern edit, as drainCommands
+// and applyPending decide it. An edit that is already due applies at the current
+// tick, ahead of any later one; the engine takes due commands in arrival order.
+// fromRing marks a command not yet read: a Tick=0 edit then waits for the next bar
+// while playing, unless it carries PatternEditNow.
+func (e *Engine) editTick(c cmd.Command, fromRing bool) int64 {
+	now := e.transport.Tick()
+	if fromRing && c.Tick == 0 && c.Pad != cmd.PatternEditNow && e.transport.Playing() {
+		return (now/seq.TicksPerBar + 1) * seq.TicksPerBar
+	}
+	return max(c.Tick, now)
+}
+
+// PatternEditsValid reports whether the pattern edits in cs would all be
+// accepted by this engine when they apply. It builds the state the engine will
+// have then: the active slot and drum lanes, then every edit for that slot still
+// in the pending queue, in the command ring unread, or in cs itself, taken in the
+// order the engine executes them (earliest tick first, arrival order within a
+// tick). Edits in cs count as arriving after everything already queued. Other
+// commands are ignored. It copies the slot into stack scratch, mutates nothing
+// and allocates nothing. Call it only from the render thread, which owns the
+// engine; a host calls it once per batch, after the earlier batches have been
+// pushed, so the ring holds every earlier batch.
 func (e *Engine) PatternEditsValid(cs []cmd.Command) bool {
 	var seen [MaxTracks * 16 / 64]uint64
+	ring := int(e.commandWrite - e.commandRead)
+	var taken [(2*CommandCapacity + 64 + 63) / 64]uint64
+	if e.pendingLen+ring+len(cs) > len(taken)*64 {
+		return false
+	}
 	for i := range cs {
 		first := cs[i]
 		if !isPatternEditOp(first.Op) {
@@ -280,16 +301,34 @@ func (e *Engine) PatternEditsValid(cs []cmd.Command) bool {
 		if p.drumSlots != nil {
 			lanes, lanesPtr = p.drumSlots[slot], &lanes
 		}
-		// Edits already queued for this slot land first, in arrival order.
-		for j := 0; j < e.pendingLen; j++ {
-			q := e.pending[j]
-			if isPatternEditOp(q.Op) && int(q.Track) == track && editSlotIndex(q) == slot && !editSlot(&scratch, lanesPtr, q, kind, poly) {
-				return false
+		clear(taken[:])
+		for {
+			// Pick the next edit for this slot: earliest tick, then arrival order
+			// (pending, then the ring, then cs).
+			best, bestTick := -1, int64(0)
+			var bestCmd cmd.Command
+			consider := func(index int, c cmd.Command, fromRing bool) {
+				if !isPatternEditOp(c.Op) || int(c.Track) != track || editSlotIndex(c) != slot || taken[index/64]&(1<<(index%64)) != 0 {
+					return
+				}
+				if tick := e.editTick(c, fromRing); best < 0 || tick < bestTick {
+					best, bestTick, bestCmd = index, tick, c
+				}
 			}
-		}
-		for j := i; j < len(cs); j++ {
-			q := cs[j]
-			if isPatternEditOp(q.Op) && int(q.Track) == track && editSlotIndex(q) == slot && !editSlot(&scratch, lanesPtr, q, kind, poly) {
+			for j := 0; j < e.pendingLen; j++ {
+				consider(j, e.pending[j], false)
+			}
+			for k := 0; k < ring; k++ {
+				consider(e.pendingLen+k, e.commands[(e.commandRead+uint16(k))%uint16(len(e.commands))], true)
+			}
+			for m := i; m < len(cs); m++ {
+				consider(e.pendingLen+ring+m, cs[m], true)
+			}
+			if best < 0 {
+				break
+			}
+			taken[best/64] |= 1 << (best % 64)
+			if !editSlot(&scratch, lanesPtr, bestCmd, kind, poly) {
 				return false
 			}
 		}

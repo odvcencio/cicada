@@ -625,3 +625,46 @@ func TestPatternEditNowAppliesAtOnceWhilePlaying(t *testing.T) {
 		t.Fatal("an unflagged Tick=0 edit must wait for the next bar")
 	}
 }
+
+// Queued edits run earliest tick first, and an edit that applies at once runs
+// ahead of one still waiting for its tick. The unread command ring counts too.
+func TestPatternEditsValidFollowsExecutionOrderAcrossPendingAndRing(t *testing.T) {
+	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120_000, Seed: 1}
+	cfg.Track[0].Kind = VoiceAcid
+	cfg.Patterns = []PatternBank{{}}
+	cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 55, Seed: 1}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.cfgSlotTranspose(t) // +24 waits in pending for a far tick
+	note := func(n uint8, tick int64, pad uint32) []cmd.Command {
+		return []cmd.Command{{Op: cmd.OpSetStep, Track: 0, Index: 3, Arg0: packedNoteValue(n), Tick: tick, Pad: pad}}
+	}
+	if e.PatternEditsValid(note(110, 2_000_000, 0)) {
+		t.Fatal("a note stamped after the transpose lands out of range")
+	}
+	if e.PatternEditsValid(note(110, 0, cmd.PatternEditNow)) {
+		t.Fatal("an immediate note runs first, then the queued transpose pushes it out of range")
+	}
+	if !e.PatternEditsValid(note(60, 0, cmd.PatternEditNow)) {
+		t.Fatal("a low note stays valid under the transpose")
+	}
+	// An earlier batch still unread in the ring counts as well.
+	if !e.Push(cmd.Command{Op: cmd.OpSetPatternMeta, Track: 0, Arg0: uint32(uint16(24)) << 16, Tick: 1_500_000}) {
+		t.Fatal("push rejected")
+	}
+	fresh, _ := New(cfg)
+	if !fresh.Push(cmd.Command{Op: cmd.OpSetPatternMeta, Track: 0, Arg0: uint32(uint16(24)) << 16, Tick: 1_500_000}) {
+		t.Fatal("push rejected")
+	}
+	if fresh.PatternEditsValid(note(110, 2_000_000, 0)) {
+		t.Fatal("a transpose waiting unread in the ring must be applied first")
+	}
+	if fresh.PatternEditsValid(note(110, 1_000_000, 0)) {
+		t.Fatal("a note stamped before the transpose still meets it later, and the transpose would fault")
+	}
+	if !fresh.PatternEditsValid(note(60, 1_000_000, 0)) {
+		t.Fatal("a low note is valid before and after the transpose")
+	}
+}

@@ -536,3 +536,119 @@ func TestStepEditsLandInShortLoopsWithAParameterBatchBehind(t *testing.T) {
 		})
 	}
 }
+
+// dependentScore plays one pattern track whose slot 0 holds one gated note at
+// step 3 (or step 12, for the chain test).
+func dependentScore(t *testing.T, kind engine.VoiceKind, step int, note uint8) Score {
+	t.Helper()
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: piano.MaxVoices, BPMMilli: 120_000, Seed: 7, LoopSong: true}
+	cfg.Track[0].Kind = kind
+	cfg.Patterns = []engine.PatternBank{{}}
+	cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 55, Seed: cfg.Seed}
+	packed, err := seq.PackStep(seq.Step{Note: note, Gate: true, Ratchet: 1, Probability: 100, Velocity: 110})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Patterns[0].Slots[0].Steps[step] = packed
+	cfg.Scenes = []engine.Scene{{Track: [engine.MaxTracks]engine.SceneBinding{{Mode: engine.SceneSlot, Slot: 0}}}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 8}}
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: "dependent", Tracks: []TrackSlots{{ID: "bass"}}, SceneIDs: []string{"main"}}
+}
+
+type dependentBatch func(*Patch, PreviewTarget)
+
+func publishDependent(t *testing.T, p *Player, batches ...dependentBatch) *PatchArena {
+	t.Helper()
+	target, err := p.ResolvePreviewTrack("bass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	arena := NewPatchArena(len(batches))
+	for i, build := range batches {
+		batch := arena.Begin(uint64(i + 1))
+		build(batch, target)
+		if err := p.Patch(batch); err != nil { // no render between publications
+			t.Fatal(err)
+		}
+	}
+	return arena
+}
+
+func stepTo(step, note uint8) dependentBatch {
+	packed, _ := seq.PackStep(seq.Step{Note: note, Gate: true, Ratchet: 1, Probability: 100, Velocity: 110})
+	return func(b *Patch, target PreviewTarget) { b.Step(target, 0, step, packed) }
+}
+
+func transpose(semitones int8) dependentBatch {
+	return func(b *Patch, target PreviewTarget) { b.PatternMeta(target, 0, 0, 0, semitones) }
+}
+
+func length(n uint8) dependentBatch {
+	return func(b *Patch, target PreviewTarget) { b.PatternLen(target, 0, n) }
+}
+
+// Batches published back to back are validated in the order the engine runs
+// them, so a later batch is judged against the state the earlier ones leave.
+func TestDependentBatchesAreValidatedInExecutionOrder(t *testing.T) {
+	run := func(t *testing.T, score Score, batches ...dependentBatch) (*Player, *PatchArena, []float32) {
+		p, err := New(score, 48_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(p.Close)
+		arena := publishDependent(t, p, batches...)
+		samples := readFrames(t, p, 96_000+blockFrames)
+		return p, arena, samples
+	}
+	t.Run("transpose then a note it would push out of range", func(t *testing.T) {
+		p, arena, _ := run(t, dependentScore(t, engine.VoiceAcid, 3, 60), transpose(24), stepTo(3, 110))
+		if p.fault != nil {
+			t.Fatalf("the second batch faulted the engine: %v", p.fault)
+		}
+		if p.LandedRevision() != 1 || arena.Free() != 2 {
+			t.Fatalf("revision %d, %d free: the dependent batch must be refused", p.LandedRevision(), arena.Free())
+		}
+		_ = readFrames(t, p, 4*blockFrames) // playback continues
+	})
+	t.Run("note change then a transpose that is valid only after it", func(t *testing.T) {
+		// Piano range ends at 108: note 100 plus 24 is out of range, 60 plus 24 is not.
+		p, arena, samples := run(t, dependentScore(t, engine.VoicePiano, 3, 100), stepTo(3, 60), transpose(24))
+		if p.fault != nil {
+			t.Fatalf("engine fault: %v", p.fault)
+		}
+		if p.LandedRevision() != 2 || arena.Free() != 2 {
+			t.Fatalf("revision %d, %d free: both valid batches must land", p.LandedRevision(), arena.Free())
+		}
+		if firstSound(samples) < 0 {
+			t.Fatal("the edited note never sounded")
+		}
+	})
+	t.Run("length, transpose and growth chain", func(t *testing.T) {
+		// Step 12 holds note 110. Shortening to 8 keeps it, transposing +24 is fine
+		// while it is beyond the length, and growing back would expose 134.
+		p, arena, _ := run(t, dependentScore(t, engine.VoiceAcid, 12, 110), length(8), transpose(24), length(16))
+		if p.fault != nil {
+			t.Fatalf("the growth batch faulted the engine: %v", p.fault)
+		}
+		if p.LandedRevision() != 2 || arena.Free() != 3 {
+			t.Fatalf("revision %d, %d free: only the growth batch is refused", p.LandedRevision(), arena.Free())
+		}
+	})
+	t.Run("the same chain with the retained note replaced first", func(t *testing.T) {
+		both := func(b *Patch, target PreviewTarget) {
+			stepTo(12, 60)(b, target)
+			length(16)(b, target)
+		}
+		p, arena, _ := run(t, dependentScore(t, engine.VoiceAcid, 12, 110), length(8), transpose(24), both)
+		if p.fault != nil {
+			t.Fatalf("engine fault: %v", p.fault)
+		}
+		if p.LandedRevision() != 3 || arena.Free() != 3 {
+			t.Fatalf("revision %d, %d free: all three batches are valid", p.LandedRevision(), arena.Free())
+		}
+	})
+}

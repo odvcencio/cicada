@@ -139,7 +139,10 @@ func gcd(a, b int64) int64 {
 
 // SceneBindingValid reports whether OpSetSceneBinding c names a scene, track
 // and clip this engine has. It is the check applySceneBindingCommand makes, so
-// a host can refuse a batch that would fault the engine playing now.
+// a host can refuse a batch that would fault the engine playing now. It reads
+// only state no queued command changes (scene count, track count, voice kinds and
+// the clip table), so unlike pattern edits it does not depend on commands still
+// waiting in the ring or the pending queue.
 func (e *Engine) SceneBindingValid(c cmd.Command) bool {
 	track, mode, clip := int(c.Arg0&0xff), SceneMode(c.Arg0>>8&0xff), int(c.Arg1)
 	if int(c.Index) >= len(e.scenes) || track >= e.tracks {
