@@ -1191,14 +1191,22 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   const morphSelectors = ['#source-view', '#patterns', '#arrangement', '#song', '#tracks', '#mixer-settings', '#voice'];
   // refreshProjection re-renders only the source view, patterns, scene matrix, song, and voice
   // sections. The page, MIDI access, armed tracks, active panel, focus, and scroll stay.
+  function staleRefresh(startRevision, currentRevision, replyRevision) {
+    return startRevision !== currentRevision && Boolean(replyRevision) && replyRevision !== currentRevision;
+  }
   async function refreshProjection(hint = {}) {
     const focused = document.activeElement;
     const key = focused?.classList?.contains('step-edit') ? ['pattern', 'lane', 'step', 'pitch', 'modifier'].map(name => focused.dataset[name] ?? '').join('|') : '';
     const scrolls = [...document.querySelectorAll('.projection, .source-pane')].map(node => [node, node.scrollTop]);
+    const startRevision = revision();
     const [page, stateResponse] = await Promise.all([fetch('/', {cache:'no-store'}), fetch('/api/state', {cache:'no-store'})]);
     if (!page.ok) throw new Error('projection unavailable');
     const state = stateResponse.ok ? await stateResponse.json() : {};
     const next = new DOMParser().parseFromString(await page.text(), 'text/html');
+    // A reply that was read before a local write (undo, redo, library save)
+    // describes the older score. Drop it; the write's own refresh applies the
+    // newer one. A revision that did not move during the fetch is applied as is.
+    if (staleRefresh(startRevision, revision(), next.body.dataset.revision || state.revision)) return;
     replaceProjection({document, nextDocument: next, selectors: morphSelectors});
     bindSong();
     initGrids();
@@ -1252,11 +1260,16 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   window.addEventListener('cicada:sourcewritten', async event => {
     const result = event.detail;
     if (!result?.revision || dirty()) return;
+    // Show the written source first. Browser audio staging waits in one shared
+    // queue behind earlier stages and can be slow or fail; the editor must not
+    // wait for it, or an undo/redo can leave the editor on the older text.
+    try {
+      await refreshProjection({revision: result.revision, source: result.source});
+    } catch { setStatus('Source changed; the projection could not refresh', 'error'); return; }
     try {
       if (isBrowser() && window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(result.revision);
-      await refreshProjection({revision: result.revision, source: result.source});
       setStatus('Source edit applied', 'success');
-    } catch { setStatus('Source changed; the projection could not refresh', 'error'); }
+    } catch (error) { setStatus('Source edit applied; browser audio could not stage it: ' + error.message, 'error'); }
   });
   // pollScoreState picks up edits made outside this page. A /api/state reply is
   // only as fresh as the moment the server read it. If this page wrote a newer
@@ -1274,8 +1287,8 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       if (busy || state.revision === revision()) return;
       if (dirty()) { setStatus('The file changed outside Studio. Save with care or discard your draft.', 'error', 'conflict'); return; }
       if (state.valid) {
-        if (isBrowser() && window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(state.revision);
         await refreshProjection({revision: state.revision, source: state.source});
+        if (isBrowser() && window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(state.revision);
         setStatus(isBrowser() && window.cicadaBrowserAudio.context && browserPlaying ? 'External edit queued for the next bar' : 'Score reloaded from disk', 'success');
       }
       else {
