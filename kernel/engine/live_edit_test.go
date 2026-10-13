@@ -405,7 +405,7 @@ func TestSceneBindingFaultsOnUnusableTargets(t *testing.T) {
 		}
 	}
 	for name, c := range map[string]cmd.Command{
-		"track 16":           {Op: cmd.OpSetSceneBinding, Track: 0xff, Arg0: 16},
+		"track beyond build": {Op: cmd.OpSetSceneBinding, Track: 0xff, Arg0: uint32(MaxTracks)},
 		"mode 4":             {Op: cmd.OpSetSceneBinding, Track: 0xff, Arg0: 4 << 8},
 		"slot 16":            {Op: cmd.OpSetSceneBinding, Track: 0xff, Arg0: 16 << 16},
 		"reserved byte":      {Op: cmd.OpSetSceneBinding, Track: 0xff, Arg0: 1 << 24},
