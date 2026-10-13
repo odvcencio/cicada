@@ -8,11 +8,12 @@ import (
 	"m31labs.dev/cicada/kernel/fx"
 	"runtime"
 	"testing"
+	"time"
 )
 
 func performanceEngine(t testing.TB, tracks, frames, lanes int) *Engine {
 	t.Helper()
-	cfg := Config{SampleRate: 48000, MaxBlock: frames, Tracks: tracks, MaxVoices: tracks, BPMMilli: 120000}
+	cfg := Config{SampleRate: 48000, MaxBlock: frames, Tracks: tracks, MaxVoices: tracks, BPMMilli: 120000, ParallelWaitFloor: time.Second}
 	commands := make([]cmd.Command, tracks)
 	for track := 0; track < tracks; track++ {
 		cfg.Track[track].Kind = VoiceAcid

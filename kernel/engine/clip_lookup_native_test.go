@@ -8,6 +8,7 @@ import (
 	"math"
 	"sync"
 	"testing"
+	"time"
 
 	"m31labs.dev/cicada/kernel/voice/sample"
 )
@@ -228,6 +229,9 @@ func TestClipSlotIndexWholeRenderLoopsAndSeekWithoutAllocating(t *testing.T) {
 	cfg.Clips[0].EndFrame = 101
 	cfg.Schedule = nil
 	cfg.LoopSong = true
+	// The default 100 ms floor faults a lane on a loaded machine; the test
+	// asserts zero faults and zero allocations, not lane latency.
+	cfg.ParallelWaitFloor = time.Second
 	for slot := 0; slot < 256; slot++ {
 		cfg.Schedule = append(cfg.Schedule, ScheduleEvent{Tick: 0, EndTick: 240, Kind: ScheduleClip, Track: uint8(slot % 64), Index: 0, ID: uint32(slot + 1)})
 	}
