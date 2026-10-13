@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/audition"
 	"m31labs.dev/cicada/host/padsampler"
 	"m31labs.dev/cicada/host/schedule"
@@ -392,13 +393,19 @@ func (s *studio) samplerCommand(w http.ResponseWriter, r *http.Request) {
 			b.Pads[input.Destination-1] = padsampler.Pad{Name: input.NewName, Source: src.ID, End: src.Asset.Frames, Mode: "oneshot", ReleaseMS: 5, BypassEffects: true}
 		}
 		if input.Place {
-			updated, err := placeSamplerPrint(source, p, src, input)
+			opts, err := s.editOptions(source, nil)
 			if err != nil {
 				fail(err)
 				return
 			}
-			mutation := studioMutation{Source: updated, HistoryDetail: "Resample pads into Session", Files: []studioAuxiliaryFile{{Path: filepath.Join(store.Root, store.BankPath), Before: before, After: padsampler.BankBytes(b), Mode: 0600}}, Response: map[string]any{"placement": input.NewName, "bankRevision": padsampler.Revision(b)}}
-			outcome := s.commitMutationLocked(studioEdit{Revision: input.Revision, Label: "Resample pads into Session"}, source, mutation, nil, studioHistoryWriteNew, 0, commitHook{})
+			env := edits.Envelope{Version: edits.EnvelopeVersion, Revision: input.Revision, Intents: []edits.Intent{samplerPrintIntent(src, input)}}
+			result, err := edits.Apply(source, env, opts)
+			if err != nil {
+				fail(err)
+				return
+			}
+			mutation := studioMutation{Source: result.Source, HistoryDetail: "Resample pads into Session", Files: []studioAuxiliaryFile{{Path: filepath.Join(store.Root, store.BankPath), Before: before, After: padsampler.BankBytes(b), Mode: 0600}}, Response: map[string]any{"placement": input.NewName, "bankRevision": padsampler.Revision(b)}}
+			outcome := s.commitMutationLocked(studioEdit{Revision: input.Revision, Label: "Resample pads into Session"}, source, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &env})
 			studioJSON(w, outcome.Status, outcome.Response)
 			return
 		}
@@ -513,4 +520,10 @@ func placeSamplerPrint(source []byte, p *project.Project, src padsampler.Source,
 	source = append(append([]byte(nil), source...), []byte(declarations)...)
 	length := int64(math.Ceil(float64(a.Frames) * float64(p.TempoMilli) * float64(seq.PPQ) / (float64(padsampler.Rate) * 60000)))
 	return editedArrangementSource(source, studioEdit{Action: "append", NewName: input.NewName, Placement: &studioPlaceSettings{At: input.At, Length: fmt.Sprintf("%dticks", length), Track: input.Track, Content: clipName}})
+}
+
+// samplerPrintIntent maps a resample placement request to its intent.
+func samplerPrintIntent(src padsampler.Source, input samplerCommand) *edits.PlaceSamplerPrint {
+	a := src.Asset
+	return &edits.PlaceSamplerPrint{Name: input.NewName, Track: input.Track, At: input.At, Asset: edits.PrintAsset{Path: a.Path, SHA256: a.SHA256, Frames: a.Frames, RateHz: a.RateHz}}
 }

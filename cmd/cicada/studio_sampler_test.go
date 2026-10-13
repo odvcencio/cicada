@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/host/audition"
 	"m31labs.dev/cicada/host/padsampler"
 	"m31labs.dev/cicada/internal/testwav"
@@ -92,6 +93,10 @@ func TestStudioSamplerPlacementResampleAndAtomicUndo(t *testing.T) {
 	p, err := compileStudioSource(s.path, source)
 	if err != nil || len(p.Arrange.Placements) != 3 || len(p.Clips) != 1 {
 		t.Fatalf("resampled arrangement: %v", err)
+	}
+	records, _, err := editlog.ReadLog(editlog.Path(s.path))
+	if err != nil || len(records) != 1 || len(records[0].Intents) != 1 || !strings.Contains(string(records[0].Intents[0]), `"kind":"placesamplerprint"`) || records[0].Label != "Resample pads into Session" {
+		t.Fatalf("edit log: %+v %v", records, err)
 	}
 	_, _, printed, printIDs := samplerSnapshot(t, h)
 	if !printed.Pads[15].BypassEffects || len(printed.Performance.Hits) != 1 || printIDs[15] == "" {
