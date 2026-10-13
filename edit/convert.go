@@ -1,0 +1,270 @@
+package edit
+
+import (
+	"fmt"
+	"strings"
+	"unicode/utf8"
+
+	gts "github.com/odvcencio/gotreesitter"
+	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/notation"
+)
+
+// ConvertSongToArrange rewrites a `song` block as an `arrange` block of
+// placements. It writes only when the render check shows the converted score
+// renders to the same bytes; otherwise it refuses and names the cause.
+type ConvertSongToArrange struct{}
+
+func (ConvertSongToArrange) Kind() string { return "convertsongtoarrange" }
+
+func init() {
+	Register("convertsongtoarrange", func() Intent { return &ConvertSongToArrange{} })
+	Handle("convertsongtoarrange", convertSongToArrange)
+}
+
+type convertedPlacement struct {
+	name, track, content string
+	at, length           int64
+}
+
+func refuseConvert(cause string) error {
+	return &RefusalError{Intent: "ConvertSongToArrange", Cause: cause}
+}
+
+func convertSongToArrange(ctx *Context, _ Intent) error {
+	score, ds, err := ctx.ParseProject()
+	if err != nil {
+		return err
+	}
+	if score == nil || hasErrors(ds) {
+		return fmt.Errorf("score must validate before converting the song")
+	}
+	if len(score.Song) == 0 {
+		return refuseConvert("the score has no song to convert")
+	}
+	for _, scene := range score.Scenes {
+		if len(scene.Settings) > 0 {
+			return refuseConvert("scene " + scene.Name + " has settings that arrange cannot carry yet")
+		}
+	}
+	placements, err := songPlacements(score)
+	if err != nil {
+		return err
+	}
+	converted, err := convertedSource(ctx, score, placements)
+	if err != nil {
+		return err
+	}
+	check, err := renderCheckFor(ctx)
+	if err != nil {
+		return err
+	}
+	same, err := ctx.compareRenders("ConvertSongToArrange", check, ctx.Source, converted)
+	if err != nil {
+		return err
+	}
+	if !same {
+		return refuseConvert(convertCause(ctx, placements))
+	}
+	ctx.Source, ctx.plan = converted, nil
+	ctx.SetLabel("Song converted to arrange")
+	return nil
+}
+
+// songPlacements turns the song into placements. A binding starts a placement
+// at its entry unless it names the pattern already playing on that track, which
+// extends the run (a run is named for its first scene); `keep` and an
+// omitted binding extend the track's open placement; `off` and `stop` close it.
+func songPlacements(score *notation.Score) ([]convertedPlacement, error) {
+	scenes := make(map[string]notation.Scene, len(score.Scenes))
+	for _, scene := range score.Scenes {
+		scenes[scene.Name] = scene
+	}
+	hasStopPattern := false
+	for _, pattern := range score.Patterns {
+		hasStopPattern = hasStopPattern || pattern.Name == "stop"
+	}
+	var placements []convertedPlacement
+	open := make(map[string]int, len(score.Tracks))
+	used := map[string]bool{}
+	var tick int64
+	for index, entry := range score.Song {
+		bars := int64(entry.Bars)
+		if bars < 1 {
+			bars = 1
+		}
+		scene, ok := scenes[entry.Scene]
+		if !ok {
+			return nil, fmt.Errorf("song uses unknown scene %q", entry.Scene)
+		}
+		for _, track := range score.Tracks {
+			action := "keep"
+			for _, binding := range scene.Bindings {
+				if binding.Track == track.Name {
+					action = binding.Pattern
+				}
+			}
+			switch {
+			case action == "keep":
+				if at, ok := open[track.Name]; ok {
+					placements[at].length += bars * seq.TicksPerBar
+				}
+			case action == "off" || action == "stop" && !hasStopPattern:
+				delete(open, track.Name)
+			case hasOpen(open, track.Name) && placements[open[track.Name]].content == action:
+				// The same pattern continues: one placement per contiguous run.
+				placements[open[track.Name]].length += bars * seq.TicksPerBar
+			default:
+				open[track.Name] = len(placements)
+				placements = append(placements, convertedPlacement{
+					name: runName(entry.Scene, index+1, track.Name, used), track: track.Name, content: action,
+					at: tick, length: bars * seq.TicksPerBar,
+				})
+			}
+		}
+		tick += bars * seq.TicksPerBar
+	}
+	if len(placements) == 0 {
+		return nil, refuseConvert("no scene binds a pattern, so the arrange would be empty")
+	}
+	return placements, nil
+}
+
+func hasOpen(open map[string]int, track string) bool {
+	_, ok := open[track]
+	return ok
+}
+
+func convertedSource(ctx *Context, score *notation.Score, placements []convertedPlacement) ([]byte, error) {
+	source := ctx.Source
+	root, walker, err := notation.ParseTree(source)
+	if err != nil {
+		return nil, err
+	}
+	var song, header *gts.Node
+	for i := 0; i < root.NamedChildCount(); i++ {
+		node := root.NamedChild(i)
+		switch walker.Type(node) {
+		case "song_decl":
+			if song == nil {
+				song = node
+			}
+		case "integer":
+			if header == nil {
+				header = node
+			}
+		}
+	}
+	if song == nil {
+		return nil, refuseConvert("the song is declared in another source file; convert it there")
+	}
+	nl := Newline(source)
+	var block strings.Builder
+	block.WriteString("arrange {")
+	for _, p := range placements {
+		fmt.Fprintf(&block, "%s  place %s %s %s {%s    at = %s length = %s%s  }", nl, p.name, p.track, p.content, nl, FormatPosition(p.at), FormatLength(p.length), nl)
+	}
+	block.WriteString(nl + "}")
+	spans := []Span{{int(song.StartByte()), int(song.EndByte()), block.String(), ctx.Options.Path}}
+	if score.Version != 2 {
+		if ctx.Options.ManifestPath != "" {
+			return nil, refuseConvert(fmt.Sprintf("the project manifest declares edition %d; arrange needs edition 2", score.Version))
+		}
+		if header != nil {
+			spans = append(spans, Span{int(header.StartByte()), int(header.EndByte()), "2", ctx.Options.Path})
+		} else {
+			spans = append(spans, Span{0, 0, "cicada 2" + nl, ctx.Options.Path})
+		}
+	}
+	return PatchSpans(source, ctx.Options.Path, spans)
+}
+
+// convertCause names why a conversion rendered differently when the plan
+// shows a reason. The render check stays the ground truth: this only words the
+// refusal.
+func convertCause(ctx *Context, placements []convertedPlacement) string {
+	plan, err := ctx.CurrentPlan()
+	if err != nil || plan == nil {
+		return "the converted score renders differently"
+	}
+	patterns := make(map[string]Pattern, len(plan.Patterns))
+	for _, pattern := range plan.Patterns {
+		patterns[pattern.ID] = pattern
+	}
+	var chance string
+	for i, p := range placements {
+		var next *convertedPlacement
+		for j := i + 1; j < len(placements); j++ {
+			if placements[j].track == p.track {
+				next = &placements[j]
+				break
+			}
+		}
+		pattern, known := patterns[p.content]
+		if next == nil || next.at != p.at+p.length || !known {
+			continue
+		}
+		if unit := pattern.LengthTicks(); unit > 0 && p.length%unit != 0 {
+			return fmt.Sprintf("pattern %s (%s) would restart out of phase at bar %d", pattern.ID, describeBars(unit), next.at/seq.TicksPerBar+1)
+		}
+		if restarted := patterns[next.content]; hasChance(restarted) && chance == "" {
+			chance = fmt.Sprintf("pattern %s has chance steps that restart at bar %d", restarted.ID, next.at/seq.TicksPerBar+1)
+		}
+	}
+	if chance != "" {
+		return chance
+	}
+	return "the converted score renders differently"
+}
+
+func describeBars(ticks int64) string {
+	switch {
+	case ticks == seq.TicksPerBar:
+		return "1 bar"
+	case ticks%seq.TicksPerBar == 0:
+		return fmt.Sprintf("%d bars", ticks/seq.TicksPerBar)
+	}
+	return fmt.Sprintf("%d ticks", ticks)
+}
+
+// hasChance reports a step that plays with a probability below 100: chance
+// passes restart at each placement origin, so a placement boundary can change
+// which steps play.
+func hasChance(pattern Pattern) bool {
+	steps := pattern.Data
+	for _, lane := range pattern.Lanes {
+		steps = append(append([]*Step(nil), steps...), lane...)
+	}
+	for _, step := range steps {
+		if step != nil && step.Probability > 0 && step.Probability < 100 {
+			return true
+		}
+	}
+	return false
+}
+
+// runName names a placement run "<scene>-<entry>-<track>", shortening the
+// scene and then the track just enough to fit maxPlacementName, and falls back
+// to a numbered name if shortening makes two runs collide.
+func runName(scene string, entry int, track string, used map[string]bool) string {
+	middle := fmt.Sprintf("-%d-", entry)
+	budget := maxPlacementName - len(middle)
+	if len(scene)+len(track) > budget {
+		scene = truncateRunes(scene, max(1, budget-len(track)))
+		track = truncateRunes(track, max(1, budget-len(scene)))
+	}
+	name := scene + middle + track
+	if used[name] {
+		name = boundedName(name, func(candidate string) bool { return used[candidate] })
+	}
+	used[name] = true
+	return name
+}
+
+func truncateRunes(text string, limit int) string {
+	for len(text) > limit {
+		_, size := utf8.DecodeLastRuneInString(text)
+		text = text[:len(text)-size]
+	}
+	return text
+}
