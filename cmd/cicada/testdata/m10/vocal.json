@@ -1,53 +1,53 @@
 {
-  "TestVocalCompIntentMatchesTheOldWriter/bad_gain#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/bad_gain#1": {
     "error": "phrase gain must be finite and between -24 and +18 dB"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/bad_region#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/bad_region#1": {
     "error": "choose a region covered by this take (@1.1.1 to @3.1.1)"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/edited_managed_block#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/edited_managed_block#1": {
     "source": "cicada 2\ntempo 120\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\narrange {\n  marker block-1 { at = 0ticks }\n  place backing-1 bass pulse { at = 0ticks length = 7680ticks }\n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 7680ticks }\n}\n\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":7680}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 192000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 192000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/edited_managed_block#2": {
+  "TestVocalCompIntentWritesTheRecordedBytes/edited_managed_block#2": {
     "error": "vocal comp declarations were edited; restore them before selecting"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/edited_managed_block#3": {
+  "TestVocalCompIntentWritesTheRecordedBytes/edited_managed_block#3": {
     "error": "vocal comp declarations are incomplete"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/existing_arrangement#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/existing_arrangement#1": {
     "source": "cicada 2\ntempo 120\n// keep\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\narrange {\n  // opening\n  place a bass pulse { at = 0ticks length = 7680ticks }\n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 3840ticks }\n}\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":3840}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 96000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 96000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/extra_declaration_inside_the_block#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/extra_declaration_inside_the_block#1": {
     "source": "cicada 2\ntempo 120\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\narrange {\n  marker block-1 { at = 0ticks }\n  place backing-1 bass pulse { at = 0ticks length = 7680ticks }\n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 7680ticks }\n}\n\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":7680}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 192000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 192000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/extra_declaration_inside_the_block#2": {
+  "TestVocalCompIntentWritesTheRecordedBytes/extra_declaration_inside_the_block#2": {
     "source": "cicada 2\ntempo 120\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\narrange {\n  marker block-1 { at = 0ticks }\n  place backing-1 bass pulse { at = 0ticks length = 7680ticks }\n\n  \n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 7680ticks }\n}\n\n\n\n\ntrack extra audio {}\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":3840},{\"take\":\"TAKE-2\",\"startTick\":3840,\"endTick\":7680}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 192000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 192000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/out_of_coverage#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/out_of_coverage#1": {
     "error": "choose a region covered by this take (@1.1.1 to @3.1.1)"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/placement_name_taken#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/placement_name_taken#1": {
     "error": "placement name vocal-vox already exists"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/replacing_an_earlier_print#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/replacing_an_earlier_print#1": {
     "source": "cicada 2\ntempo 120\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\narrange {\n  marker block-1 { at = 0ticks }\n  place backing-1 bass pulse { at = 0ticks length = 7680ticks }\n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 7680ticks }\n}\n\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":7680}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 192000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 192000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/replacing_an_earlier_print#2": {
+  "TestVocalCompIntentWritesTheRecordedBytes/replacing_an_earlier_print#2": {
     "source": "cicada 2\ntempo 120\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\narrange {\n  marker block-1 { at = 0ticks }\n  place backing-1 bass pulse { at = 0ticks length = 7680ticks }\n\n  \n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 7680ticks }\n}\n\n\n\n\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":3840},{\"take\":\"TAKE-2\",\"startTick\":3840,\"endTick\":7680}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 192000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 192000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/replacing_an_earlier_print#3": {
+  "TestVocalCompIntentWritesTheRecordedBytes/replacing_an_earlier_print#3": {
     "source": "cicada 2\ntempo 120\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\narrange {\n  marker block-1 { at = 0ticks }\n  place backing-1 bass pulse { at = 0ticks length = 7680ticks }\n\n  \n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 7680ticks }\n}\n\n\n\n\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":7680}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 192000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 192000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/scene_bindings_and_holds#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/scene_bindings_and_holds#1": {
     "source": "cicada 2\ntempo 120\ntrack lead acid {}\ntrack vox audio {}\npattern one acid steps=4 { 1 . 5 . }\npattern two acid steps=4 { 3 . 6 . }\nscene a { lead=one vox=off }\nscene hold { lead=keep }\nscene b { lead=two }\nscene quiet { lead=off }\narrange {\n  marker block-1 { at = 0ticks }\n  marker block-2 { at = 3840ticks }\n  marker block-3 { at = 7680ticks }\n  place backing-1 lead one { at = 0ticks length = 7680ticks }\n  marker block-4 { at = 11520ticks }\n  place backing-2 lead two { at = 7680ticks length = 3840ticks }\n  marker block-5 { at = 15360ticks }\n  place backing-3 lead one { at = 15360ticks length = 3840ticks }\n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 3840ticks }\n}\n\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":3840}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 96000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 96000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/scene_song_full_take#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/scene_song_full_take#1": {
     "source": "cicada 2\ntempo 120\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\narrange {\n  marker block-1 { at = 0ticks }\n  place backing-1 bass pulse { at = 0ticks length = 7680ticks }\n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 7680ticks }\n}\n\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":7680}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 192000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 192000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/scene_song_punch#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/scene_song_punch#1": {
     "source": "cicada 2\ntempo 120\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\narrange {\n  marker block-1 { at = 0ticks }\n  place backing-1 bass pulse { at = 0ticks length = 7680ticks }\n\n  place vocal-vox vox ASSET-1-clip { at = 960ticks length = 2880ticks }\n}\n\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":960,\"endTick\":3840}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 72000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 72000frames }\n// cicada-vocal-end vox\n"
   },
-  "TestVocalCompIntentMatchesTheOldWriter/scene_song_with_gain_and_offset#1": {
+  "TestVocalCompIntentWritesTheRecordedBytes/scene_song_with_gain_and_offset#1": {
     "source": "cicada 2\ntempo 120\n// retain this comment\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\nscene main { bass = pulse vox = off // keep binding comment\n}\narrange {\n  marker block-1 { at = 0ticks }\n  place backing-1 bass pulse { at = 0ticks length = 7680ticks }\n\n  place vocal-vox vox ASSET-1-clip { at = 0ticks length = 3840ticks }\n}\n\n\n// cicada-vocal-begin vox\n// cicada-vocal-comp {\"track\":\"vox\",\"tempoMilli\":120000,\"segments\":[{\"take\":\"TAKE-1\",\"startTick\":0,\"endTick\":3840,\"offsetMS\":12,\"fadeMS\":5}],\"asset\":\"ASSET-1\"}\nasset ASSET-1 \"audio/comps/SHA-1.wav\" { sha256 = \"SHA-1\" format = wav frames = 96000 rate = 48000Hz channels = 1 source = recorded }\nclip ASSET-1-clip ASSET-1 { start = 0frames end = 96000frames }\n// cicada-vocal-end vox\n"
   }
 }

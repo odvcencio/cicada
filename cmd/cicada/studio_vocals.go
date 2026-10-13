@@ -11,7 +11,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -213,212 +212,11 @@ func recordingTimeline(p *project.Project, settings *studioRecordingSettings) (*
 	return &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-seq.TicksPerBar), TempoMilli: int64(p.TempoMilli)}, nil
 }
 
-// Scene songs gain ordinary placements so a continuous vocal can span blocks.
-// Explicit scene bindings restart a part; Keep carries its phase to the next block.
-func vocalArrangementSource(source []byte, p *project.Project) ([]byte, error) {
-	if p.Arrange != nil {
-		return source, nil
-	}
-	root, w, err := notation.ParseTree(source)
-	if err != nil {
-		return nil, err
-	}
-	var start, end int
-	for i := 0; i < root.NamedChildCount(); i++ {
-		n := root.NamedChild(i)
-		if w.Type(n) == "song_decl" {
-			start, end = int(n.StartByte()), int(n.EndByte())
-			break
-		}
-	}
-	if end == 0 {
-		return nil, fmt.Errorf("full-song recording needs a song or arrangement")
-	}
-	scenes := map[string]project.Scene{}
-	for _, v := range p.Scenes {
-		scenes[v.ID] = v
-	}
-	var text strings.Builder
-	text.WriteString("arrange {\n")
-	at := int64(0)
-	counter := 0
-	type activePart struct {
-		content string
-		start   int64
-	}
-	active := map[string]activePart{}
-	flush := func(track string, part activePart, until int64) {
-		if until <= part.start {
-			return
-		}
-		counter++
-		fmt.Fprintf(&text, "  place backing-%d %s %s { at = %dticks length = %dticks }\n", counter, track, part.content, part.start, until-part.start)
-	}
-	for i, entry := range p.Song {
-		fmt.Fprintf(&text, "  marker block-%d { at = %dticks }\n", i+1, at)
-		scene := scenes[entry.Scene]
-		for _, track := range p.Tracks {
-			binding := scene.Bindings[track.ID]
-			if binding == "" || binding == "keep" {
-				continue
-			}
-			if part, ok := active[track.ID]; ok {
-				flush(track.ID, part, at)
-				delete(active, track.ID)
-			}
-			if binding != "off" {
-				active[track.ID] = activePart{binding, at}
-			}
-		}
-		at += int64(entry.Bars) * seq.TicksPerBar
-	}
-	for _, track := range p.Tracks {
-		if part, ok := active[track.ID]; ok {
-			flush(track.ID, part, at)
-		}
-	}
-	text.WriteString("}\n")
-	return replaceSongSpan(source, start, end, []byte(text.String()))
-}
-
-// Comp audio is a bounded mono print; every source pass remains in the journal.
-// Only this track's generated asset/clip/placement is replaced. Older prints
-// stay on disk so Undo, Redo, recovery and exported projects retain their audio.
+// vocalTakeSource is the candidate source for selecting a take; see
+// vocalTakeEnvelope for the checks and the intent behind it.
 func (s *studio) vocalTakeSource(source []byte, t takejournal.Take, settings *studioRecordingSettings) ([]byte, error) {
-	gainDB, _, err := vocalPhraseSettings(settings)
-	if err != nil {
-		return nil, err
-	}
-	p, err := compileStudioSource(s.path, source)
-	if err != nil {
-		return nil, err
-	}
-	if t.Timeline == nil {
-		return nil, fmt.Errorf("choose a Session arrangement take")
-	}
-	if int64(p.TempoMilli) != t.Timeline.TempoMilli {
-		return nil, fmt.Errorf("restore the recording tempo before selecting this take")
-	}
-	found := false
-	for _, tr := range p.Tracks {
-		if tr.ID == t.Track && tr.Kind == "audio" {
-			found = true
-		}
-	}
-	if !found {
-		return nil, fmt.Errorf("take target must be an existing audio track")
-	}
-	lo, hi := takeCoverage(t)
-	if settings != nil {
-		if settings.Start != "" {
-			lo, err = notationTicks(settings.Start)
-			if err != nil {
-				return nil, err
-			}
-		}
-		if settings.End != "" {
-			hi, err = notationTicks(settings.End)
-			if err != nil {
-				return nil, err
-			}
-		}
-	}
-	from, to := takeCoverage(t)
-	if lo < from || hi > to || hi <= lo || hi > studioArrangementEnd(p) {
-		return nil, fmt.Errorf("choose a region covered by this take (%s to %s)", listeningPosition(from), listeningPosition(to))
-	}
-	comps, err := vocalComps(source)
-	if err != nil {
-		return nil, err
-	}
-	next := vocalComp{Track: t.Track, Tempo: t.Timeline.TempoMilli}
-	var previous *vocalComp
-	for i := range comps {
-		if comps[i].Track == t.Track {
-			previous = &comps[i]
-			next.Segments = comps[i].Segments
-			break
-		}
-	}
-	if previous != nil && previous.Tempo != next.Tempo {
-		return nil, fmt.Errorf("vocal comp tempo differs from this take")
-	}
-	segment := vocalSegment{Take: t.ID, Start: lo, End: hi, GainDB: gainDB}
-	if settings != nil {
-		segment.OffsetMS, segment.FadeMS, segment.CrossfadeMS = settings.OffsetMS, settings.FadeMS, settings.CrossfadeMS
-	}
-	next.Segments = replaceVocalSegment(next.Segments, segment)
-	asset, err := s.printVocalComp(next, t.Rate)
-	if err != nil {
-		return nil, err
-	}
-	next.Asset = asset.Name
-	source, err = vocalArrangementSource(source, p)
-	if err != nil {
-		return nil, err
-	}
-	// Remove just the managed block and its placement, preserving every other byte.
-	if previous != nil {
-		begin := []byte("// cicada-vocal-begin " + t.Track + "\n")
-		finish := []byte("// cicada-vocal-end " + t.Track + "\n")
-		a := bytes.Index(source, begin)
-		if a < 0 {
-			return nil, fmt.Errorf("vocal comp declarations were edited; restore them before selecting")
-		}
-		b := bytes.Index(source[a:], finish)
-		if b < 0 {
-			return nil, fmt.Errorf("vocal comp declarations are incomplete")
-		}
-		// Generic score edits can append an effect or another declaration before
-		// the trailing managed comment. Delete only our print declarations and
-		// metadata, retaining those user/application edits byte for byte.
-		block := source[a : a+b+len(finish)]
-		kept, e := removeVocalPrintDeclarations(block, previous, begin, finish)
-		if e != nil {
-			return nil, e
-		}
-		source, err = replaceSongSpan(source, a, a+b+len(finish), kept)
-		if err != nil {
-			return nil, err
-		}
-	}
-	root, w, err := notation.ParseTree(source)
-	if err != nil {
-		return nil, err
-	}
-	var edits []studioSpanEdit
-	foundArrangement := false
-	placeID := "vocal-" + t.Track
-	for i := 0; i < root.NamedChildCount(); i++ {
-		n := root.NamedChild(i)
-		if w.Type(n) != "arrange_decl" {
-			continue
-		}
-		foundArrangement = true
-		for j := 0; j < n.NamedChildCount(); j++ {
-			child := n.NamedChild(j)
-			if w.Type(child) == "place_decl" && w.Text(w.Field(child, "name")) == placeID {
-				if previous == nil {
-					return nil, fmt.Errorf("placement name %s already exists", placeID)
-				}
-				edits = append(edits, studioSpanEdit{start: int(child.StartByte()), end: int(child.EndByte()), text: ""})
-			}
-		}
-		first, last := next.Segments[0].Start, next.Segments[len(next.Segments)-1].End
-		line := fmt.Sprintf("\n  place %s %s %s-clip { at = %dticks length = %dticks }\n", placeID, t.Track, asset.Name, first, last-first)
-		edits = append(edits, studioSpanEdit{start: int(n.EndByte()) - 1, end: int(n.EndByte()) - 1, text: line})
-	}
-	if !foundArrangement {
-		return nil, fmt.Errorf("open the score file containing the arrangement before selecting a vocal")
-	}
-	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
-	source, err = patchStudioSpans(source, edits)
-	if err != nil {
-		return nil, err
-	}
-	metadata, _ := json.Marshal(next)
-	text := fmt.Sprintf("\n// cicada-vocal-begin %s\n%s%s\nasset %s %s { sha256 = %s format = wav frames = %d rate = %dHz channels = 1 source = recorded }\nclip %s-clip %s { start = 0frames end = %dframes }\n// cicada-vocal-end %s\n", t.Track, vocalCompPrefix, metadata, asset.Name, strconv.Quote(asset.Path), strconv.Quote(asset.SHA256), asset.Frames, asset.RateHz, asset.Name, asset.Name, asset.Frames, t.Track)
-	return append(source, []byte(text)...), nil
+	candidate, _, err := s.vocalTakeEnvelope(source, t, settings)
+	return candidate, err
 }
 
 // vocalSourceCompiler hands the edit service the plan of the score being
@@ -436,6 +234,10 @@ func (c vocalSourceCompiler) Compile(source []byte, _ map[string][]byte) (*edits
 	return &edits.Plan{Revision: edits.Revision(source)}, nil
 }
 
+// Comp audio is a bounded mono print; every source pass remains in the journal.
+// Only this track's generated asset/clip/placement is replaced. Older prints
+// stay on disk so Undo, Redo, recovery and exported projects retain their audio.
+//
 // vocalTakeEnvelope checks the take against the score, prints the comp audio,
 // and applies the PlaceVocalComp intent. It returns the candidate source and
 // the envelope the commit records in the edit log.
@@ -524,37 +326,6 @@ func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *
 		return nil, env, err
 	}
 	return result.Source, env, nil
-}
-
-func removeVocalPrintDeclarations(block []byte, previous *vocalComp, begin, finish []byte) ([]byte, error) {
-	root, w, err := notation.ParseTree(block)
-	if err != nil {
-		return nil, err
-	}
-	edits := []studioSpanEdit{{start: 0, end: len(begin)}, {start: len(block) - len(finish), end: len(block)}}
-	for i := 0; i < root.NamedChildCount(); i++ {
-		n := root.NamedChild(i)
-		kind, name := w.Type(n), w.Text(w.Field(n, "name"))
-		if kind == "asset_decl" && name == previous.Asset || kind == "clip_decl" && name == previous.Asset+"-clip" {
-			edits = append(edits, studioSpanEdit{start: int(n.StartByte()), end: int(n.EndByte())})
-		}
-	}
-	for at := 0; at < len(block); {
-		end := bytes.IndexByte(block[at:], '\n')
-		if end < 0 {
-			end = len(block) - at - 1
-		}
-		end += at + 1
-		if bytes.HasPrefix(block[at:end], []byte(vocalCompPrefix)) {
-			var metadata vocalComp
-			if json.Unmarshal(bytes.TrimSpace(block[at+len(vocalCompPrefix):end]), &metadata) == nil && metadata.Track == previous.Track {
-				edits = append(edits, studioSpanEdit{start: at, end: end})
-			}
-		}
-		at = end
-	}
-	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
-	return patchStudioSpans(block, edits)
 }
 
 func (s *studio) printVocalComp(c vocalComp, rate int) (project.Asset, error) {

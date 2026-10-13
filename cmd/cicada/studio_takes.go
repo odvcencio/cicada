@@ -70,6 +70,13 @@ func (s *studio) recoverTakesOnOpen() error {
 // atomic revision exchange as other Studio edits. Reopening can distinguish an
 // applied source from a pending candidate without replaying an undo.
 func (s *studio) commitTake(id, expected string, candidate []byte) error {
+	return s.commitTakeWith(id, expected, candidate, nil)
+}
+
+// commitTakeWith also takes the envelope that produced the candidate, which the
+// edit log records. Without one, a Session take logs no intents: a recovered
+// candidate does not carry the intent that built it.
+func (s *studio) commitTakeWith(id, expected string, candidate []byte, env *edits.Envelope) error {
 	current, err := os.ReadFile(s.path)
 	if err != nil {
 		return err
@@ -86,7 +93,9 @@ func (s *studio) commitTake(id, expected string, candidate []byte) error {
 	}
 	if candidate == nil {
 		if t.Timeline != nil {
-			candidate, err = s.vocalTakeSource(current, t, nil)
+			var built edits.Envelope
+			candidate, built, err = s.vocalTakeEnvelope(current, t, nil)
+			env = &built
 		} else {
 			candidate, err = takejournal.SelectSource(current, t)
 		}
@@ -104,9 +113,13 @@ func (s *studio) commitTake(id, expected string, candidate []byte) error {
 	if err = studioRecoveryConflict(s.path); err != nil {
 		return err
 	}
-	intent := &edits.SelectTake{ID: t.ID, Track: t.Track, Scene: t.Scene, Rate: t.Rate, Channels: t.Channels, StartFrame: t.StartFrame(), Asset: edits.TakeAsset{Name: t.Asset.Name, Path: t.Asset.Path, SHA256: t.Asset.SHA256, Frames: t.Asset.Frames, RateHz: t.Asset.RateHz, Channels: t.Asset.Channels}}
-	env := edits.Envelope{Version: edits.EnvelopeVersion, Revision: expected, Intents: []edits.Intent{intent}}
-	outcome := s.commitMutationLocked(studioEdit{Revision: expected, Label: "Select audio take"}, current, studioMutation{Source: candidate}, nil, studioHistoryWriteNew, 0, commitHook{checkpoint: s.takes.Checkpoint, envelope: &env, compiled: p})
+	if env == nil {
+		env = &edits.Envelope{Version: edits.EnvelopeVersion, Revision: expected}
+		if t.Timeline == nil {
+			env.Intents = []edits.Intent{&edits.SelectTake{ID: t.ID, Track: t.Track, Scene: t.Scene, Rate: t.Rate, Channels: t.Channels, StartFrame: t.StartFrame(), Asset: edits.TakeAsset{Name: t.Asset.Name, Path: t.Asset.Path, SHA256: t.Asset.SHA256, Frames: t.Asset.Frames, RateHz: t.Asset.RateHz, Channels: t.Asset.Channels}}}
+		}
+	}
+	outcome := s.commitMutationLocked(studioEdit{Revision: expected, Label: "Select audio take"}, current, studioMutation{Source: candidate}, nil, studioHistoryWriteNew, 0, commitHook{checkpoint: s.takes.Checkpoint, envelope: env, compiled: p})
 	// An already-selected take succeeds without exchanging the source. Both
 	// changed and unchanged successes must complete the journal transition.
 	if outcome.Status != http.StatusOK {
@@ -334,6 +347,8 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var candidate []byte
+		var built edits.Envelope
+		var env *edits.Envelope
 		if t.Timeline == nil && (edit.Action == "comp" || edit.Action == "listen" || edit.Action == "listen-loop") {
 			fail(errors.New("choose a Session arrangement take for phrase comping"))
 			return
@@ -348,11 +363,12 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 				fail(errTakeRevision)
 				return
 			}
-			candidate, err = s.vocalTakeSource(source, t, edit.Recording)
+			candidate, built, err = s.vocalTakeEnvelope(source, t, edit.Recording)
 			if err != nil {
 				fail(err)
 				return
 			}
+			env = &built
 			if edit.Action == "listen" || edit.Action == "listen-loop" {
 				if err = s.listenVocalTake(candidate, source, t, edit.Recording, edit.Action == "listen-loop"); err != nil {
 					fail(err)
@@ -362,7 +378,7 @@ func (s *studio) takeCommand(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err = s.commitTake(edit.TakeID, edit.Revision, candidate); err != nil {
+		if err = s.commitTakeWith(edit.TakeID, edit.Revision, candidate, env); err != nil {
 			fail(err)
 			return
 		}
