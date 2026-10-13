@@ -85,7 +85,7 @@ correct render.
 | `bright` | Spectral centroid in Hz: higher is brighter. |
 | `attack` | Median time from the start of a note to its peak, in ms. |
 | `decay20` | Median time for the level to fall 20 dB below its peak, in ms. Each note is measured only until the next detected attack on that track. A `>` means the median note did not fall 20 dB before the next attack (or 2 s), so the value is a lower bound: the note is sustained. |
-| `on/bar` | Detected note starts per bar over the bars where the track plays or sounds. A bar counts when a note starts or is still held in it (a held note with no release lasts to the end of the range) or when the stem has sound in it (for a track that plays notes, sound in the half second after a bar starts is treated as the release tail of the bar before and is ignored). A note ends when the renderer releases it: its own release, a scene that stops the track, the end of a placement, or the next note on the track. A note that starts mid-bar counts its first bar. |
+| `on/bar` | Detected note starts per bar over the bars where the track plays or sounds. A bar counts when a note starts or is still held in it (a held note with no release lasts to the end of the range) or when the stem has sound in it (for a track that plays notes, sound in the half second after a bar starts is treated as the release tail of the bar before and is ignored). A note ends when the renderer releases it: its own release, a scene that stops the track, the end of a placement, or, for a held pitched note, the next note on the track. A drum hit or a clip start has no length: it counts only the bar it starts in, and its tail counts only through the stem energy above. A note that starts mid-bar counts its first bar. |
 | step 1-16 | Rhythm profile (next paragraph). The percentage is the swing of the track's pattern. |
 
 The **rhythm profile** shows where in the bar the track's attacks land. Each
@@ -97,7 +97,15 @@ plays a pattern count. A skank on the offbeats fills cells 3, 7, 11 and 15.
 
 **Sections.** One row per song entry, or per marker in an arrangement: mix
 loudness (RMS dBFS), brightness, note starts per bar over all tracks, and the
-tracks in it. A track is in a section when its stem sounds there or it played
+tracks in it. A section runs from its marker tick to the next marker tick, and
+every measure uses exactly those ticks, so a marker inside a bar (for example
+at beat 3) splits that bar between two sections. `bars` shows the bar that
+holds the first tick through the bar that holds the last tick, so two sections
+can share a bar number; the JSON `from_tick` and `to_tick` give the exact
+boundaries (960 ticks per quarter note, 3840 per bar). Note starts per bar is
+the count divided by the section length in bars, fractional for a short
+section. The range chosen with `--from` and `--bars` clips the first and last
+section. A track is in a section when its stem sounds there or it played
 notes there, so audio clips, samplers and sustained tails are listed.
 
 ## Reading the images
@@ -179,8 +187,8 @@ decimals. Levels below the floor read -120.
 | `masked_bars` | number | Bars with `masked` true. |
 | `bars[]` | array | One per analyzed bar: `bar` (one-based), `written_notes` (pitch classes), `written`, `heard` (from the pitched stems), `heard_fit` (0..1 cosine similarity of the pitch-class energy to the chosen chord), `mix_rms_dbfs`, `audibility_db`, `masked` (`audibility_db` below -15), `match` (`agree`, `disagree`, `no-written-pitch`, `silent`). |
 | `harmony_mismatches` | number | Count of bars with `match` `disagree`. |
-| `tracks[]` | array | One per track, in score order: `id`, `silent` (true under -80 dBFS; the other fields except `rms_dbfs` are then zero), `rms_dbfs`, `level_vs_loudest_db`, `energy_share_pct`, `band_vs_mix_db`, `masked` (`band_vs_mix_db` below -15), `centroid_hz`, `attack_ms`, `decay20_ms`, `decay20_lower_bound`, `onsets`, `active_bars` (bars where the track plays or sounds), `onsets_per_bar`, `swing_percent`, `rhythm` (16 numbers, 0..1, slot 1 first). |
-| `sections[]` | array | `name`, `from_bar`, `to_bar` (inclusive, one-based), `rms_dbfs`, `centroid_hz`, `onsets_per_bar`, `tracks`. |
+| `tracks[]` | array | One per track, in score order: `id`, `silent` (true under -80 dBFS; the other fields except `rms_dbfs` are then zero, including `energy_share_pct`, and the silent track is left out of the other tracks' shares), `rms_dbfs`, `level_vs_loudest_db`, `energy_share_pct`, `band_vs_mix_db`, `masked` (`band_vs_mix_db` below -15), `centroid_hz`, `attack_ms`, `decay20_ms`, `decay20_lower_bound`, `onsets`, `active_bars` (bars where the track plays or sounds), `onsets_per_bar`, `swing_percent`, `rhythm` (16 numbers, 0..1, slot 1 first). |
+| `sections[]` | array | `name`, `from_bar` (bar holding the first tick, one-based), `to_bar` (bar holding the last tick, inclusive), `from_tick`, `to_tick` (absolute ticks, end exclusive), `rms_dbfs`, `centroid_hz`, `onsets_per_bar`, `tracks`. |
 | `images[]` | array | File names written to `-o`. Omitted without `-o`. |
 
 ## Limits

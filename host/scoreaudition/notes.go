@@ -10,14 +10,18 @@ import (
 
 // loggedNote is one note start the renderer played, with its release.
 type loggedNote struct {
-	track  int
-	slot   uint8
-	tick   int64
-	end    int64 // release tick; equal to tick for a hit with no release
-	off    bool  // a release was tapped
-	notes  [4]uint8
-	count  uint8
-	noteID int64
+	track int
+	slot  uint8
+	tick  int64
+	end   int64 // release tick; equal to tick for a hit with no release
+	off   bool  // a release was tapped or a later note replaced this one
+	// replaced marks an end set by the next note on the track, not by a
+	// release the renderer reported. Only a sustained pitched note keeps that
+	// end; a drum hit or clip start lasts no time.
+	replaced bool
+	notes    [4]uint8
+	count    uint8
+	noteID   int64
 }
 
 // noteLog collects the render's note events (render.Options.NoteTap).
@@ -44,7 +48,7 @@ func (l *noteLog) tap(track int, ev seq.Event) {
 		// A new note on a track ends the one it replaces (a slide's source, or
 		// a note whose release the engine did not report).
 		if i, ok := l.cur[track]; ok && !l.notes[i].off {
-			l.notes[i].end, l.notes[i].off = max(l.notes[i].end, ev.Tick), true
+			l.notes[i].end, l.notes[i].off, l.notes[i].replaced = max(l.notes[i].end, ev.Tick), true, true
 			delete(l.open, [2]int64{int64(track), l.notes[i].noteID})
 		}
 		l.open[key] = len(l.notes)
@@ -152,10 +156,7 @@ func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars i
 		if n.tick < fromTick {
 			first = -1
 		}
-		end := max(n.end, n.tick)
-		if !n.off && n.track < len(sustain) && sustain[n.track] {
-			end = max(end, rangeEnd)
-		}
+		end := n.endTick(sustain, rangeEnd)
 		// A note released before the range never reaches it. Integer division
 		// truncates toward zero, so without this a release less than a bar
 		// before the range would mark the range's first bar active.
@@ -192,6 +193,42 @@ func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars i
 		}
 	}
 	return out
+}
+
+// endTick is the tick where the note stops sounding. A tapped release ends
+// it. The next note on the track ends a sustained pitched note, but a drum hit
+// or clip start has no length: its tail comes from the stem. A pitched note
+// with no release lasts to rangeEnd. sustain marks the pitched tracks.
+func (n loggedNote) endTick(sustain []bool, rangeEnd int64) int64 {
+	pitched := n.track < len(sustain) && sustain[n.track]
+	end := max(n.end, n.tick)
+	if n.replaced && !pitched {
+		return n.tick
+	}
+	if !n.off && pitched {
+		end = max(end, rangeEnd)
+	}
+	return end
+}
+
+// overlaps reports whether any note of the track sounds in [t0, t1) ticks.
+func (l *noteLog) overlaps(track int, t0, t1 int64, sustain []bool, rangeEnd int64) bool {
+	for _, n := range l.notes {
+		if n.track != track {
+			continue
+		}
+		end := n.endTick(sustain, rangeEnd)
+		if end <= n.tick { // an instant: a hit counts where it starts
+			if n.tick >= t0 && n.tick < t1 {
+				return true
+			}
+			continue
+		}
+		if n.tick < t1 && end > t0 {
+			return true
+		}
+	}
+	return false
 }
 
 func patternOf(cfg engine.Config, track, slot int) *seq.Pattern {

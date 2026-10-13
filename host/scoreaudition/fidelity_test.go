@@ -527,3 +527,148 @@ func TestNoteReleasedBeforeRangeIsNotActive(t *testing.T) {
 		check(t, source, dir)
 	})
 }
+
+const midBarSections = `
+track bass pad {}
+pattern hit notes {
+  [c4 e4 g4] . . . . . . . . . . . . . . .
+}
+arrange {
+  place a keys hit { at = @1.1.1 length = 1920ticks }
+  place b bass hit { at = @1.3.1 length = 1bar }
+  marker intro { at = @1.1.1 }
+  marker main { at = @1.3.1 }
+}
+`
+
+const sceneHeader = `cicada 2
+title "Sections"
+tempo 120
+key c major
+seed 1
+instrument pad {
+  voice poly {
+    let amp = adsr(gate, 30ms, 100ms, 0.9, 200ms)
+    out = saw(pitch) * amp * velocity * 0.3
+  }
+}
+track keys pad {}
+`
+
+func checkMidBarSections(t *testing.T, source, dir string) {
+	t.Helper()
+	a := analyzeIn(t, source, dir)
+	t.Logf("%s", textOf(a))
+	secs := a.Report.Sections
+	if len(secs) != 2 || secs[0].Name != "intro" || secs[1].Name != "main" {
+		t.Fatalf("sections %+v, want intro and main", secs)
+	}
+	intro, main := secs[0], secs[1]
+	if !slices.Contains(intro.Tracks, "keys") || slices.Contains(intro.Tracks, "bass") {
+		t.Errorf("intro tracks %v, want keys only", intro.Tracks)
+	}
+	if !slices.Contains(main.Tracks, "bass") || slices.Contains(main.Tracks, "keys") {
+		t.Errorf("main tracks %v, want bass only", main.Tracks)
+	}
+	if intro.FromBar != 1 || intro.ToBar != 1 || main.FromBar != 1 || main.ToBar != 2 {
+		t.Errorf("bars intro %d-%d main %d-%d", intro.FromBar, intro.ToBar, main.FromBar, main.ToBar)
+	}
+	if intro.ToTick != 1920 || main.FromTick != 1920 {
+		t.Errorf("ticks intro to %d main from %d, want 1920", intro.ToTick, main.FromTick)
+	}
+	// One chord in half a bar is 2 starts per bar; one in 1.5 bars is 0.67.
+	if intro.OnsetsPerBar < 1.2 || intro.OnsetsPerBar > 2.8 || main.OnsetsPerBar < 0.3 || main.OnsetsPerBar > 1.0 {
+		t.Errorf("onsets per bar intro %.2f main %.2f", intro.OnsetsPerBar, main.OnsetsPerBar)
+	}
+}
+
+// A marker may sit inside a bar. Sections are measured between the marker
+// ticks, so the half bar before the marker is its own section.
+func TestMidBarMarkerSections(t *testing.T) {
+	t.Run("scene renderer", func(t *testing.T) {
+		checkMidBarSections(t, sceneHeader+midBarSections, "")
+	})
+	t.Run("engine renderer", func(t *testing.T) {
+		source, dir := clipSource(t, midBarSections)
+		checkMidBarSections(t, source, dir)
+	})
+}
+
+const sparseDrums = `
+track kit drums {}
+pattern hit drums {
+  ch: ..x. .... .... ....
+}
+pattern none drums {
+  ch: .... .... .... ....
+}
+scene hit { kit = hit }
+scene rest { kit = none }
+song {
+  hit
+  rest
+  rest
+  hit
+}
+`
+
+// A drum hit lasts no time. Silent bars between hits are not active, and the
+// hits do not extend over them.
+func TestSparseDrumsAreNotSustained(t *testing.T) {
+	check := func(t *testing.T, source, dir string) {
+		t.Helper()
+		a := analyzeIn(t, source, dir)
+		t.Logf("%s", textOf(a))
+		kit := track(t, a, "kit")
+		if kit.ActiveBars != 2 {
+			t.Errorf("kit active bars %d, want 2", kit.ActiveBars)
+		}
+		if kit.OnsetsPerBar < 0.9 || kit.OnsetsPerBar > 1.1 {
+			t.Errorf("kit onsets per bar %.2f, want 1", kit.OnsetsPerBar)
+		}
+		for _, s := range a.Report.Sections {
+			if s.Name == "rest" && slices.Contains(s.Tracks, "kit") {
+				t.Errorf("section rest lists kit: %+v", s)
+			}
+		}
+	}
+	t.Run("scene renderer", func(t *testing.T) {
+		check(t, sceneHeader+sparseDrums, "")
+	})
+	t.Run("engine renderer", func(t *testing.T) {
+		source, dir := clipSource(t, sparseDrums)
+		check(t, source, dir)
+	})
+}
+
+const quietPad = `cicada 2
+title "Quiet"
+tempo 120
+key c major
+seed 1
+instrument pad {
+  voice poly {
+    out = saw(pitch) * env(gate, 200ms) * velocity * 0.0001
+  }
+}
+track keys pad {}
+pattern chords notes {
+  [c4 e4 g4] - - - - - - - - - - - - - - -
+}
+scene s { keys = chords }
+song { s*2 }
+`
+
+// A track under -80 dBFS with a nonzero stem is silent: every measure except
+// rms_dbfs is zero, including its energy share.
+func TestSilentTrackHasZeroShare(t *testing.T) {
+	a := analyze(t, quietPad)
+	t.Logf("%s", textOf(a))
+	keys := track(t, a, "keys")
+	if !keys.Silent || keys.RMSdBFS <= -120 {
+		t.Fatalf("keys not a nonzero silent stem: %+v", keys)
+	}
+	if keys.EnergySharePct != 0 || keys.LevelVsLoudestDB != 0 {
+		t.Errorf("silent track share %.1f level %.1f, want 0", keys.EnergySharePct, keys.LevelVsLoudestDB)
+	}
+}

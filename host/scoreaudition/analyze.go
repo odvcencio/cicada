@@ -95,8 +95,10 @@ type TrackReport struct {
 
 type SectionReport struct {
 	Name         string   `json:"name"`
-	FromBar      int      `json:"from_bar"`
-	ToBar        int      `json:"to_bar"`
+	FromBar      int      `json:"from_bar"`  // bar that holds the start tick, one-based
+	ToBar        int      `json:"to_bar"`    // bar that holds the last tick, one-based
+	FromTick     int64    `json:"from_tick"` // absolute start tick (960 per quarter note)
+	ToTick       int64    `json:"to_tick"`   // absolute end tick, exclusive
 	RMSdBFS      float64  `json:"rms_dbfs"`
 	CentroidHz   float64  `json:"centroid_hz"`
 	OnsetsPerBar float64  `json:"onsets_per_bar"`
@@ -461,7 +463,10 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		peaks := pickPeaks(env)
 		tr.Onsets = len(peaks)
 		for _, pk := range peaks {
-			work[ti].onsets = append(work[ti].onsets, pk*onsetHop)
+			// Flux peaks on the first frame that sees the attack, up to a
+			// quarter window early, so a hit on a section line would
+			// otherwise land in the section before it.
+			work[ti].onsets = append(work[ti].onsets, pk*onsetHop+onsetFFT/4)
 		}
 		activeBars := 0
 		for _, on := range acts[ti].active {
@@ -490,11 +495,14 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		r.Tracks[ti].LevelVsLoudestDB = round(10*math.Log10(share), 1)
 	}
 	var sumEnergy float64
-	for _, w := range work {
-		sumEnergy += w.energy
+	for ti, w := range work {
+		if !r.Tracks[ti].Silent {
+			sumEnergy += w.energy
+		}
 	}
 	for ti := range r.Tracks {
-		if sumEnergy > 0 {
+		// A silent track has no measurements except its level.
+		if sumEnergy > 0 && !r.Tracks[ti].Silent {
 			r.Tracks[ti].EnergySharePct = round(100*work[ti].energy/sumEnergy, 1)
 		}
 	}
@@ -535,17 +543,18 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	sort.Slice(r.Score.Swing, func(i, j int) bool { return r.Score.Swing[i].SwingPercent < r.Score.Swing[j].SwingPercent })
 
-	// Sections.
+	// Sections. Boundaries stay in ticks: a marker may sit inside a bar, and
+	// rounding it to a bar would merge or drop sections.
 	type span struct {
 		name     string
-		from, to int // absolute bars, to exclusive
+		from, to int64 // absolute ticks, to exclusive
 	}
 	var spans []span
 	if p.Arrange == nil {
-		at := 0
+		at := int64(0)
 		for _, e := range p.Song {
-			spans = append(spans, span{e.Scene, at, at + int(e.Bars)})
-			at += int(e.Bars)
+			spans = append(spans, span{e.Scene, at, at + int64(e.Bars)*seq.TicksPerBar})
+			at += int64(e.Bars) * seq.TicksPerBar
 		}
 	} else {
 		ms := append([]project.Marker(nil), p.Arrange.Markers...)
@@ -554,20 +563,25 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 			ms = append([]project.Marker{{ID: "start"}}, ms...)
 		}
 		for i, m := range ms {
-			to := songBars
+			to := int64(songBars) * seq.TicksPerBar
 			if i+1 < len(ms) {
-				to = int(ms[i+1].AtTick / seq.TicksPerBar)
+				to = ms[i+1].AtTick
 			}
-			spans = append(spans, span{m.ID, int(m.AtTick / seq.TicksPerBar), to})
+			spans = append(spans, span{m.ID, m.AtTick, to})
 		}
 	}
+	rangeEnd := fromTick + int64(bars)*seq.TicksPerBar
+	sampleAt := func(tick int64) int {
+		return min(max(int(clock.SampleAtTick(tick)-baseSample), 0), mix.Len())
+	}
 	for _, sp := range spans {
-		lo, hi := max(sp.from, opts.From), min(sp.to, opts.From+bars)
+		lo, hi := max(sp.from, fromTick), min(sp.to, rangeEnd)
 		if hi <= lo {
 			continue
 		}
-		s0, s1 := min(barSample(lo-opts.From), mix.Len()), min(barSample(hi-opts.From), mix.Len())
-		sec := SectionReport{Name: sp.name, FromBar: lo + 1, ToBar: hi, RMSdBFS: round(rmsDB(mix.Slice(s0, s1)), 1), Tracks: []string{}}
+		s0, s1 := sampleAt(lo), sampleAt(hi)
+		sec := SectionReport{Name: sp.name, FromBar: int(lo/seq.TicksPerBar) + 1, ToBar: int((hi-1)/seq.TicksPerBar) + 1,
+			FromTick: lo, ToTick: hi, RMSdBFS: round(rmsDB(mix.Slice(s0, s1)), 1), Tracks: []string{}}
 		var num, den float64
 		for i := 0; i < nSpec; i++ {
 			if c := i * specHopSize; c >= s0 && c < s1 {
@@ -586,15 +600,22 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 				}
 			}
 			// A track belongs to a section when its stem sounds there or it
-			// played notes there.
-			for b := lo; b < hi; b++ {
-				if acts[ti].active[b-opts.From] || acts[ti].played[b-opts.From] || barSounding[ti][b-opts.From] {
-					sec.Tracks = append(sec.Tracks, p.Tracks[ti].ID)
-					break
-				}
+			// played notes there. As for bars, a track that plays notes gets
+			// a grace period after the section start for the release tail of
+			// a note that ended before it.
+			if notes.overlaps(ti, lo, hi, sustain, rangeEnd) {
+				sec.Tracks = append(sec.Tracks, p.Tracks[ti].ID)
+				continue
+			}
+			g0, g1 := min(s0, stems[ti].Len()), min(s1, stems[ti].Len())
+			if played[ti] {
+				g0 = min(g0+graceSamples, g1)
+			}
+			if g1 > g0 && rmsDB(stems[ti].Slice(g0, g1)) >= silentDB {
+				sec.Tracks = append(sec.Tracks, p.Tracks[ti].ID)
 			}
 		}
-		sec.OnsetsPerBar = round(float64(count)/float64(hi-lo), 2)
+		sec.OnsetsPerBar = round(float64(count)/(float64(hi-lo)/float64(seq.TicksPerBar)), 2)
 		r.Sections = append(r.Sections, sec)
 	}
 	return a, nil
