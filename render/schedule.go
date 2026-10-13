@@ -102,6 +102,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		metricStart = 0
 	}
 	metricEnd := endFrame + report.TailFrames + insertLatency
+	report.chainStart, report.chainEnd = masterChainWindow(opts.From, fromFrame, endFrame+report.TailFrames, int(insertLatency), player.MasterProcessorLatencyFrames())
 	ceiling := math.Pow(10, mix.CeilingDB/20)
 	taps := make([]engine.TapFrame, opts.Block)
 	left, right := make([]float32, opts.Block), make([]float32, opts.Block)
@@ -142,7 +143,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 					}
 				}
 			}
-			report.MaxMasterChainLimiterReductionDB = max(report.MaxMasterChainLimiterReductionDB, tap.MasterLimiterReductionDB)
+			report.noteMasterChainReduction(position+int64(i), tap.MasterLimiterReductionDB)
 			report.MaxLimiterGainReductionDB = max(report.MaxLimiterGainReductionDB, tap.LimiterReductionDB)
 			if stems != nil {
 				for t := range p.Tracks {

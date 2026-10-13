@@ -71,6 +71,31 @@ type Report struct {
 	rangeSkip                        int64
 	metricStart                      int64
 	metricEnd                        int64
+	chainStart                       int64
+	chainEnd                         int64
+}
+
+// masterChainWindow returns the half-open range of render sample positions
+// whose master-chain limiter reduction lands on delivered output frames. A
+// limiter reduction read at position s applies to the chain output at s, which
+// the render delivers at s minus the track insert and master chain latency, so
+// the window starts that much after the first delivered source frame. A render
+// from bar zero keeps every position so full-song reports are unchanged.
+func masterChainWindow(from int, fromFrame, endFrame int64, insertLatency, masterLatency int) (start, end int64) {
+	shift := int64(insertLatency + masterLatency)
+	start = fromFrame + shift
+	if from == 0 {
+		start = 0
+	}
+	return start, endFrame + shift
+}
+
+// noteMasterChainReduction records a master-chain limiter reduction read at
+// render sample position at, ignoring discarded preroll and flush frames.
+func (r *Report) noteMasterChainReduction(at int64, db float64) {
+	if at >= r.chainStart && at < r.chainEnd {
+		r.MaxMasterChainLimiterReductionDB = max(r.MaxMasterChainLimiterReductionDB, db)
+	}
 }
 
 type trackRuntime struct {
@@ -603,6 +628,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		report.metricStart = 0
 	}
 	report.metricEnd = renderFrames + int64(insertLatency+masterLatency)
+	report.chainStart, report.chainEnd = masterChainWindow(report.From, fromFrame, renderFrames, insertLatency, masterLatency)
 	limiter, err := mix.NewLimiter(opts.SampleRate)
 	if err != nil {
 		return report, err
@@ -1643,7 +1669,7 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 				return fmt.Errorf("master chain DSP fault")
 			}
 			if busState.masterLimiter != nil {
-				report.MaxMasterChainLimiterReductionDB = max(report.MaxMasterChainLimiterReductionDB, busState.masterLimiter.LimiterGainReductionDB())
+				report.noteMasterChainReduction(sample, busState.masterLimiter.LimiterGainReductionDB())
 			}
 			left = (left + masterBiasL) * busState.outputGain
 			right = (right + masterBiasR) * busState.outputGain

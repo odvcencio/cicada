@@ -165,3 +165,80 @@ func TestExportLoudnessMasterLimiterOnScheduledEngine(t *testing.T) {
 	}
 	t.Logf("METRIC EXPORT-SCHEDULED lufs=%.3f true_peak=%.3f gain=%+.2f chain_reduction=%.2f", result.AchievedLUFS, result.TruePeakDBTP, result.AppliedGainDB, result.MasterLimiterReductionDB)
 }
+
+// writeScoreVariant writes the loud-intro fixture with text replacements applied.
+func writeScoreVariant(t *testing.T, replacements ...string) string {
+	t.Helper()
+	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "loud-intro-quiet-excerpt.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(source)
+	for i := 0; i+1 < len(replacements); i += 2 {
+		if !strings.Contains(text, replacements[i]) {
+			t.Fatalf("fixture has no %q", replacements[i])
+		}
+		text = strings.Replace(text, replacements[i], replacements[i+1], 1)
+	}
+	path := filepath.Join(t.TempDir(), "score.cicada")
+	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func exportExcerpt(t *testing.T, path string, scheduled bool) (loudnessFileReport, error) {
+	t.Helper()
+	inspection, err := inspectScore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := render.Options{SampleRate: 48000, Bits: 24, From: 4, Bars: 2, TailSec: 1}
+	target := renderTargetOptions{ExportName: "quiet", TruePeakMaxDBTP: -1}
+	if err := applyExportTarget(inspection.semantic, &opts, &target); err != nil {
+		t.Fatal(err)
+	}
+	if got := render.UsesScheduledEngine(inspection.score, opts); got != scheduled {
+		t.Fatalf("UsesScheduledEngine = %v, want %v", got, scheduled)
+	}
+	return renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "excerpt.wav"), opts, target, nil)
+}
+
+// The excerpt is quiet and needs about +10 dB of input gain. The intro would
+// drive the limiter past the 6 dB maximum at that gain, but the excerpt does
+// not, so the export must reach its target and report the excerpt's own
+// limiter reduction.
+func testExcerptIgnoresLoudPreroll(t *testing.T, scheduled bool) {
+	variants := []string{}
+	if scheduled {
+		variants = []string{"track bass acid {", "fx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }\ntrack bass acid { insert = cleanup "}
+	}
+	loud, err := exportExcerpt(t, writeScoreVariant(t, variants...), scheduled)
+	t.Logf("METRIC EXPORT-EXCERPT scheduled=%v lufs=%.3f gain=%+.2f chain_reduction=%.2f err=%v", scheduled, loud.AchievedLUFS, loud.AppliedGainDB, loud.MasterLimiterReductionDB, err)
+	if err != nil {
+		t.Fatalf("excerpt export rejected for limiter reduction outside the excerpt: %v (%+v)", err, loud)
+	}
+	if loud.AchievedLUFS < -30.5 || loud.AchievedLUFS > -29.5 {
+		t.Fatalf("excerpt reached %.2f LUFS, want -30 +/- 0.5", loud.AchievedLUFS)
+	}
+	if loud.MasterLimiterReductionDB > 1 || loud.LargestLimiterReductionDB > 1 {
+		t.Fatalf("reported reduction %.2f dB includes the discarded intro", loud.MasterLimiterReductionDB)
+	}
+
+	// The same excerpt after a silent intro is the reference result.
+	quiet, err := exportExcerpt(t, writeScoreVariant(t, append(variants, "song { intro*2 gap*2 excerpt*2 }", "song { gap*4 excerpt*2 }")...), scheduled)
+	if err != nil {
+		t.Fatalf("silent-intro reference failed: %v", err)
+	}
+	if d := loud.AppliedGainDB - quiet.AppliedGainDB; d < -0.1 || d > 0.1 {
+		t.Fatalf("gain %.2f dB differs from the silent-intro reference %.2f dB", loud.AppliedGainDB, quiet.AppliedGainDB)
+	}
+}
+
+func TestExportLoudnessRangeIgnoresPrerollLimiterReductionDirect(t *testing.T) {
+	testExcerptIgnoresLoudPreroll(t, false)
+}
+
+func TestExportLoudnessRangeIgnoresPrerollLimiterReductionScheduled(t *testing.T) {
+	testExcerptIgnoresLoudPreroll(t, true)
+}
