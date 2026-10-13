@@ -57,44 +57,34 @@ func (p *fftPlan) transform(re, im []float64) {
 	}
 }
 
-// magFrames computes the Hann-windowed magnitude spectrum of count frames of x.
-// start(i) gives the first sample of frame i; samples outside x read as zero.
-// fn receives frames in order with n/2+1 magnitudes; it must not keep the slice.
-// Two real frames share one complex transform.
-func magFrames(x []float32, p *fftPlan, count int, start func(int) int, fn func(i int, mag []float64)) {
+// magFrames computes the Hann-windowed magnitude spectrum of count frames of a
+// stereo signal. start(i) gives the first sample of frame i; samples outside
+// the signal read as zero. The magnitude combines the channels by power,
+// sqrt((|L|^2+|R|^2)/2), so opposite-polarity channels do not cancel and a
+// centred signal reads as its mono magnitude. fn receives frames in order with
+// n/2+1 magnitudes; it must not keep the slice. The left channel is the real
+// part and the right the imaginary part of one complex transform.
+func magFrames(x stereo, p *fftPlan, count int, start func(int) int, fn func(i int, mag []float64)) {
 	n := p.n
 	re, im := make([]float64, n), make([]float64, n)
-	a, b := make([]float64, n/2+1), make([]float64, n/2+1)
-	load := func(dst []float64, i int) {
+	mag := make([]float64, n/2+1)
+	for i := 0; i < count; i++ {
 		s := start(i)
 		for k := 0; k < n; k++ {
 			j := s + k
-			if j >= 0 && j < len(x) {
-				dst[k] = float64(x[j]) * p.window[k]
+			if j >= 0 && j < len(x.L) {
+				re[k], im[k] = float64(x.L[j])*p.window[k], float64(x.R[j])*p.window[k]
 			} else {
-				dst[k] = 0
-			}
-		}
-	}
-	for i := 0; i < count; i += 2 {
-		load(re, i)
-		paired := i+1 < count
-		if paired {
-			load(im, i+1)
-		} else {
-			for k := range im {
-				im[k] = 0
+				re[k], im[k] = 0, 0
 			}
 		}
 		p.transform(re, im)
 		for k := 0; k <= n/2; k++ {
 			m := (n - k) % n
-			a[k] = 0.5 * math.Hypot(re[k]+re[m], im[k]-im[m])
-			b[k] = 0.5 * math.Hypot(im[k]+im[m], re[k]-re[m])
+			l := math.Hypot(re[k]+re[m], im[k]-im[m]) / 2
+			r := math.Hypot(im[k]+im[m], re[k]-re[m]) / 2
+			mag[k] = math.Sqrt((l*l + r*r) / 2)
 		}
-		fn(i, a)
-		if paired {
-			fn(i+1, b)
-		}
+		fn(i, mag)
 	}
 }

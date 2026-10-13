@@ -2,7 +2,9 @@ package scoreaudition
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -152,8 +154,28 @@ func TestMidBarPlacementCountsEveryBar(t *testing.T) {
 
 func clipSource(t *testing.T, body string) (string, string) {
 	t.Helper()
+	return clipSourceWith(t, body, testwav.Bytes(48000, 2, 16, 96000, 1))
+}
+
+// stereoSine is a 16-bit stereo 220 Hz clip of 96000 frames at about -22 dBFS
+// per channel. With invert the right channel has the opposite polarity.
+func stereoSine(invert bool) []byte {
+	data := testwav.Bytes(48000, 2, 16, 96000, 1)
+	for i := 0; i < 96000; i++ {
+		v := int16(math.Round(0.08 * 32767 * math.Sin(2*math.Pi*220*float64(i)/48000)))
+		r := v
+		if invert {
+			r = -v
+		}
+		binary.LittleEndian.PutUint16(data[44+i*4:], uint16(v))
+		binary.LittleEndian.PutUint16(data[46+i*4:], uint16(r))
+	}
+	return data
+}
+
+func clipSourceWith(t *testing.T, body string, asset []byte) (string, string) {
+	t.Helper()
 	dir := t.TempDir()
-	asset := testwav.Bytes(48000, 2, 16, 96000, 1)
 	if err := os.WriteFile(filepath.Join(dir, "clip.wav"), asset, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -211,5 +233,83 @@ arrange {
 	}
 	if !strings.Contains(textOf(a), "vox") {
 		t.Error("text lacks vox")
+	}
+}
+
+// Opposite-polarity stereo cancels when channels are averaged. The report must
+// measure each channel, so the clip reads the same level as its in-phase twin.
+func TestOppositePolarityStereoClipIsAudible(t *testing.T) {
+	body := `
+scene verse { vox = region keys = chord }
+song { verse*2 }
+`
+	var reports [2]*Analysis
+	for i, invert := range []bool{false, true} {
+		source, dir := clipSourceWith(t, "", stereoSine(invert))
+		reports[i] = analyzeIn(t, source+body, dir)
+	}
+	normal, inverted := track(t, reports[0], "vox"), track(t, reports[1], "vox")
+	t.Logf("%s", textOf(reports[1]))
+	if inverted.Silent || inverted.RMSdBFS < -60 {
+		t.Fatalf("inverted clip reads silent: %+v", inverted)
+	}
+	if math.Abs(inverted.RMSdBFS-normal.RMSdBFS) > 0.5 || math.Abs(inverted.LevelVsLoudestDB-normal.LevelVsLoudestDB) > 0.5 {
+		t.Errorf("levels differ: in phase %.1f/%.1f dB, opposite %.1f/%.1f dB", normal.RMSdBFS, normal.LevelVsLoudestDB, inverted.RMSdBFS, inverted.LevelVsLoudestDB)
+	}
+	if math.Abs(inverted.CentroidHz-normal.CentroidHz) > 50 {
+		t.Errorf("centroid %.0f vs %.0f Hz", inverted.CentroidHz, normal.CentroidHz)
+	}
+	if !slices.Contains(reports[1].Report.Sections[0].Tracks, "vox") {
+		t.Errorf("sections %+v do not list the inverted clip", reports[1].Report.Sections)
+	}
+	if got, want := reports[1].Report.Sections[0].RMSdBFS, reports[0].Report.Sections[0].RMSdBFS; math.Abs(got-want) > 0.5 {
+		t.Errorf("section loudness %.1f vs %.1f dBFS", got, want)
+	}
+}
+
+const tiedChord = `cicada 2
+title "Tied"
+tempo 120
+key c major
+seed 1
+
+instrument pad {
+  voice poly {
+    let amp = adsr(gate, 30ms, 100ms, 0.9, 200ms)
+    out = saw(pitch) * amp * velocity * 0.3
+  }
+}
+
+track keys pad {}
+
+pattern held notes {
+  [c4 e4 g4] - - - - - - - - - - - - - - -
+  - - - - - - - - - - - - - - - -
+  - - - - - - - - - - - - - - - -
+  - - - - - - - - - - - - - - - -
+}
+scene s { keys = held }
+song { s*4 }
+`
+
+// A four-bar tied chord has one tapped start and no release before the render
+// stops. It is active in all four bars.
+func TestSustainedNoteRunsToRenderEnd(t *testing.T) {
+	score, _ := notation.Parse([]byte(tiedChord))
+	for _, tc := range []struct{ from, bars, active int }{{0, 0, 4}, {1, 2, 2}, {2, 0, 2}} {
+		a, err := Analyze(score, Options{From: tc.from, Bars: tc.bars, TempDir: t.TempDir()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		keys := track(t, a, "keys")
+		if keys.ActiveBars != tc.active {
+			t.Errorf("from %d bars %d: active bars %d, want %d", tc.from, tc.bars, keys.ActiveBars, tc.active)
+		}
+		if tc.from == 0 && keys.OnsetsPerBar > 0.6 {
+			t.Errorf("onsets per bar %.2f, want about 0.25", keys.OnsetsPerBar)
+		}
+		if !slices.Contains(a.Report.Sections[0].Tracks, "keys") {
+			t.Errorf("section lacks keys: %+v", a.Report.Sections)
+		}
 	}
 }

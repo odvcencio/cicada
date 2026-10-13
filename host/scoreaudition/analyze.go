@@ -229,9 +229,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 
 	// Read the stems and sum the pitched ones: the heard harmony comes from
 	// them, so drums and their pitched noise do not decide the chord.
-	stems := make([][]float32, len(p.Tracks))
+	stems := make([]stereo, len(p.Tracks))
 	pitched := make([]bool, len(p.Tracks))
-	pitchedMix := make([]float32, len(mix))
+	pitchedMix := stereo{L: make([]float32, mix.Len()), R: make([]float32, mix.Len())}
 	for ti, track := range p.Tracks {
 		s, _, err := readFloatWAV(filepath.Join(stemDir, fmt.Sprintf("%02d-%s.wav", ti+1, track.ID)))
 		if err != nil {
@@ -240,8 +240,9 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		stems[ti] = s
 		pitched[ti] = ti < len(cfg.Track) && pitchedKind(cfg.Track[ti].Kind)
 		if pitched[ti] {
-			for i := 0; i < len(pitchedMix) && i < len(s); i++ {
-				pitchedMix[i] += s[i]
+			for i := 0; i < mix.Len() && i < s.Len(); i++ {
+				pitchedMix.L[i] += s.L[i]
+				pitchedMix.R[i] += s.R[i]
 			}
 		}
 	}
@@ -259,7 +260,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 			inBand[k] = true
 		}
 	}
-	chromaOf := func(sig []float32) ([][12]float64, []float64) {
+	chromaOf := func(sig stereo) ([][12]float64, []float64) {
 		chroma := make([][12]float64, frames)
 		band := make([]float64, frames)
 		magFrames(sig, chromaPlan, frames, func(i int) int {
@@ -280,7 +281,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		})
 		return chroma, band
 	}
-	trackBand := func(sig []float32) float64 {
+	trackBand := func(sig stereo) float64 {
 		var total float64
 		magFrames(sig, chromaPlan, frames, func(i int) int {
 			tick := int64(opts.From)*seq.TicksPerBar + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
@@ -334,13 +335,13 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 			bp += pitchedBand[b*16+f]
 			bm += mixBand[b*16+f]
 		}
-		lo, hi := min(barSample(b), len(mix)), min(barSample(b+1), len(mix))
-		pitchedRMS := rmsDB(pitchedMix[lo:hi])
+		lo, hi := min(barSample(b), mix.Len()), min(barSample(b+1), mix.Len())
+		pitchedRMS := rmsDB(pitchedMix.Slice(lo, hi))
 		heard := bestChord(v)
 		name, wm, count := writtenChord(sets[b])
 		aud := bandDB(bp, bm)
 		br := BarReport{Bar: opts.From + b + 1, WrittenNotes: []string{}, Written: name, Heard: heard.Name, HeardFit: heard.Score,
-			MixRMSdBFS: round(rmsDB(mix[lo:hi]), 1), AudibilityDB: round(aud, 1), Masked: aud < maskedBelowDB}
+			MixRMSdBFS: round(rmsDB(mix.Slice(lo, hi)), 1), AudibilityDB: round(aud, 1), Masked: aud < maskedBelowDB}
 		if br.Masked {
 			r.MaskedBars++
 		}
@@ -370,7 +371,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 
 	// Mix spectrogram.
 	specPlan := newPlan(specFFT)
-	nSpec := len(mix)/specHopSize + 1
+	nSpec := mix.Len()/specHopSize + 1
 	a.specRows = make([][]float32, nSpec)
 	rowLo := make([]int, specRows)
 	rowHi := make([]int, specRows)
@@ -421,27 +422,26 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	work := make([]trackWork, len(p.Tracks))
 	onsetPlan := newPlan(onsetFFT)
-	acts := notes.activity(cfg, len(p.Tracks), fromTick, bars)
-	// Per-bar stem energy: a track with no note events (an audio clip) is
-	// active where its stem sounds.
+	// Per-bar stem energy; with note activity it decides where a track is
+	// active (a clip has no notes, a tail outlives its note).
 	barSounding := make([][]bool, len(p.Tracks))
+	sustain := make([]bool, len(p.Tracks))
 	for ti := range p.Tracks {
+		sustain[ti] = pitched[ti]
 		barSounding[ti] = make([]bool, bars)
 		for b := 0; b < bars; b++ {
-			lo, hi := min(barSample(b), len(stems[ti])), min(barSample(b+1), len(stems[ti]))
-			barSounding[ti][b] = hi > lo && rmsDB(stems[ti][lo:hi]) >= silentDB
-		}
-		if !acts[ti].hasEvents {
-			copy(acts[ti].active, barSounding[ti])
+			lo, hi := min(barSample(b), stems[ti].Len()), min(barSample(b+1), stems[ti].Len())
+			barSounding[ti][b] = hi > lo && rmsDB(stems[ti].Slice(lo, hi)) >= silentDB
 		}
 	}
+	acts := notes.activity(cfg, len(p.Tracks), fromTick, bars, sustain, barSounding)
 	var maxEnergy float64
 	for ti, track := range p.Tracks {
 		tr := TrackReport{ID: track.ID, Rhythm: make([]float64, 16)}
 		s := stems[ti]
 		var energy float64
-		for _, v := range s {
-			energy += float64(v) * float64(v)
+		for i := range s.L {
+			energy += float64(s.L[i])*float64(s.L[i]) + float64(s.R[i])*float64(s.R[i])
 		}
 		work[ti].energy = energy
 		tr.RMSdBFS = round(rmsDB(s), 1)
@@ -560,8 +560,8 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		if hi <= lo {
 			continue
 		}
-		s0, s1 := min(barSample(lo-opts.From), len(mix)), min(barSample(hi-opts.From), len(mix))
-		sec := SectionReport{Name: sp.name, FromBar: lo + 1, ToBar: hi, RMSdBFS: round(rmsDB(mix[s0:s1]), 1), Tracks: []string{}}
+		s0, s1 := min(barSample(lo-opts.From), mix.Len()), min(barSample(hi-opts.From), mix.Len())
+		sec := SectionReport{Name: sp.name, FromBar: lo + 1, ToBar: hi, RMSdBFS: round(rmsDB(mix.Slice(s0, s1)), 1), Tracks: []string{}}
 		var num, den float64
 		for i := 0; i < nSpec; i++ {
 			if c := i * specHopSize; c >= s0 && c < s1 {
@@ -594,21 +594,23 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	return a, nil
 }
 
-func rmsDB(s []float32) float64 {
-	if len(s) == 0 {
+// rmsDB is the RMS level over both channels: the square root of the mean of
+// the channel powers.
+func rmsDB(s stereo) float64 {
+	if s.Len() == 0 {
 		return -120
 	}
 	var sum float64
-	for _, v := range s {
-		sum += float64(v) * float64(v)
+	for i := range s.L {
+		sum += float64(s.L[i])*float64(s.L[i]) + float64(s.R[i])*float64(s.R[i])
 	}
-	return db(math.Sqrt(sum / float64(len(s))))
+	return db(math.Sqrt(sum / float64(2*s.Len())))
 }
 
 // onsetEnvelope is the positive log-magnitude spectral flux; element i is
 // centered at sample i*onsetHop.
-func onsetEnvelope(s []float32, plan *fftPlan) []float64 {
-	count := len(s)/onsetHop + 1
+func onsetEnvelope(s stereo, plan *fftPlan) []float64 {
+	count := s.Len()/onsetHop + 1
 	env := make([]float64, count)
 	prev := make([]float64, onsetFFT/2+1)
 	cur := make([]float64, onsetFFT/2+1)
@@ -641,9 +643,9 @@ func pickPeaks(env []float64) []int {
 	return out
 }
 
-func trackCentroid(s []float32, rate int) float64 {
+func trackCentroid(s stereo, rate int) float64 {
 	plan := newPlan(specFFT)
-	count := len(s)/2048 + 1
+	count := s.Len()/2048 + 1
 	var num, den float64
 	binHz := float64(rate) / specFFT
 	magFrames(s, plan, count, func(i int) int { return i * 2048 }, func(_ int, mag []float64) {
@@ -663,15 +665,15 @@ func trackCentroid(s []float32, rate int) float64 {
 // next detected attack (or 2 s). A note that does not fall 20 dB by then
 // reports the gap as a lower bound; the flag is true when the median note is
 // such a lower bound.
-func noteShape(s []float32, peaks []int, rate int) (attackMs, decayMs float64, lowerBound bool) {
+func noteShape(s stereo, peaks []int, rate int) (attackMs, decayMs float64, lowerBound bool) {
 	// 5 ms centered RMS envelope.
 	blk := int(float64(rate) * 0.005)
-	prefix := make([]float64, len(s)+1)
-	for i, v := range s {
-		prefix[i+1] = prefix[i] + float64(v)*float64(v)
+	prefix := make([]float64, s.Len()+1)
+	for i := range s.L {
+		prefix[i+1] = prefix[i] + (float64(s.L[i])*float64(s.L[i])+float64(s.R[i])*float64(s.R[i]))/2
 	}
 	env := func(i int) float64 {
-		lo, hi := max(0, i-blk/2), min(len(s), i+blk/2+1)
+		lo, hi := max(0, i-blk/2), min(s.Len(), i+blk/2+1)
 		return math.Sqrt(math.Max(0, prefix[hi]-prefix[lo])/float64(hi-lo) + 1e-12)
 	}
 	type dec struct {
@@ -686,7 +688,7 @@ func noteShape(s []float32, peaks []int, rate int) (attackMs, decayMs float64, l
 	}
 	for n := 0; n < limit; n++ {
 		t0 := max(0, peaks[n]*onsetHop-int(float64(rate)*0.012))
-		t1 := min(len(s), t0+2*rate)
+		t1 := min(s.Len(), t0+2*rate)
 		if n+1 < len(peaks) {
 			t1 = min(t1, max(0, peaks[n+1]*onsetHop-int(float64(rate)*0.012)))
 		}

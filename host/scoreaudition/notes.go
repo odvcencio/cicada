@@ -14,6 +14,7 @@ type loggedNote struct {
 	slot   uint8
 	tick   int64
 	end    int64 // release tick; equal to tick for a hit with no release
+	off    bool  // a release was tapped
 	notes  [4]uint8
 	count  uint8
 	noteID int64
@@ -46,6 +47,7 @@ func (l *noteLog) tap(track int, ev seq.Event) {
 			if ev.Tick > l.notes[i].end {
 				l.notes[i].end = ev.Tick
 			}
+			l.notes[i].off = true
 			delete(l.open, key)
 		}
 	}
@@ -109,7 +111,13 @@ type barActivity struct {
 // active when a note overlaps it, so a placement that starts mid-bar counts
 // its first bar. The bar's pattern is the one that played its latest start,
 // carried forward through bars of sustain.
-func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars int) []barActivity {
+//
+// A pitched note with no tapped release (a tied chord still held when the
+// render stops) lasts to the end of the analyzed range. sounding marks the
+// bars where each track's stem has sound; it is merged in so a track is
+// active wherever it either played or sounded.
+func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars int, sustain []bool, sounding [][]bool) []barActivity {
+	rangeEnd := fromTick + int64(bars)*seq.TicksPerBar
 	out := make([]barActivity, tracks)
 	for i := range out {
 		out[i] = barActivity{active: make([]bool, bars), played: make([]bool, bars), pattern: make([]*seq.Pattern, bars)}
@@ -125,9 +133,13 @@ func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars i
 		if n.tick < fromTick {
 			first = -1
 		}
-		lastBar := int((max(n.end, n.tick) - fromTick) / seq.TicksPerBar)
+		end := max(n.end, n.tick)
+		if !n.off && n.track < len(sustain) && sustain[n.track] {
+			end = max(end, rangeEnd)
+		}
+		lastBar := int((end - fromTick) / seq.TicksPerBar)
 		// A release exactly on a bar line does not reach into that bar.
-		if n.end > n.tick && (n.end-fromTick)%seq.TicksPerBar == 0 {
+		if end > n.tick && (end-fromTick)%seq.TicksPerBar == 0 {
 			lastBar--
 		}
 		if first >= 0 && first < bars {
@@ -142,6 +154,9 @@ func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars i
 		}
 	}
 	for ti := range out {
+		for b := 0; b < bars && ti < len(sounding); b++ {
+			out[ti].active[b] = out[ti].active[b] || sounding[ti][b]
+		}
 		var carry *seq.Pattern
 		for b := 0; b < bars; b++ {
 			if out[ti].pattern[b] != nil {

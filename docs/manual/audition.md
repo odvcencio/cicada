@@ -20,7 +20,9 @@ cicada audition song.cicada --from 9 --bars 8 --json
 
 The command renders the mix and the per-track stems in process with the same
 engine as `cicada render` and `cicada stems`, with no tail. The same score and
-options give the same report and the same image bytes. It needs no extra tools.
+options give the same report and the same image bytes. Levels and spectra
+combine the left and right channels by power, so opposite-polarity stereo is
+measured at its true level instead of cancelling. It needs no extra tools.
 Rendering takes about as long as `cicada render`.
 
 ## Reading the text report
@@ -83,7 +85,7 @@ correct render.
 | `bright` | Spectral centroid in Hz: higher is brighter. |
 | `attack` | Median time from the start of a note to its peak, in ms. |
 | `decay20` | Median time for the level to fall 20 dB below its peak, in ms. Each note is measured only until the next detected attack on that track. A `>` means the median note did not fall 20 dB before the next attack (or 2 s), so the value is a lower bound: the note is sustained. |
-| `on/bar` | Detected note starts per bar over the bars where the track plays or sounds. A note that starts mid-bar counts its first bar. |
+| `on/bar` | Detected note starts per bar over the bars where the track plays or sounds. A bar counts when a note starts or is still held in it (a held note with no release lasts to the end of the range) or when the stem has sound in it. A note that starts mid-bar counts its first bar. |
 | step 1-16 | Rhythm profile (next paragraph). The percentage is the swing of the track's pattern. |
 
 The **rhythm profile** shows where in the bar the track's attacks land. Each
