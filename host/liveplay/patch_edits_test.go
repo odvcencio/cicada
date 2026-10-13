@@ -340,7 +340,7 @@ func TestStepPatchInTheLastStepOfALoopSoundsAfterTheRestart(t *testing.T) {
 	if err := p.PlayRange(loop); err != nil {
 		t.Fatal(err)
 	}
-	const barFrames = 96_000 // one bar at 120 BPM
+	const barFrames = 96_000                                                // one bar at 120 BPM
 	_ = readFrames(t, p, barFrames-6_000+blockFrames-barFrames%blockFrames) // into the last step (tick 3,600 starts at frame 90,000)
 	target, err := p.ResolvePreviewTrack("bass")
 	if err != nil {
