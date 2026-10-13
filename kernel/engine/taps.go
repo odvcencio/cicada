@@ -9,7 +9,10 @@ type Stereo struct{ Left, Right float32 }
 type TapFrame struct {
 	Tracks                                  [MaxTracks]Stereo
 	ReturnA, ReturnB, Music, SFX, PreMaster Stereo
-	LimiterReductionDB                      float64
+	// MasterLimiterReductionDB is the gain reduction of any limiter inside the
+	// prepared master processor, zero when there is none.
+	MasterLimiterReductionDB float64
+	LimiterReductionDB       float64
 }
 
 func (e *Engine) RenderWithTaps(left, right []float32, taps []TapFrame) {
