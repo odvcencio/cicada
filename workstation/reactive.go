@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"strings"
 
-	"m31labs.dev/cicada/workstation/ui"
 	"m31labs.dev/gosx"
 	"m31labs.dev/gosx/action"
 	"m31labs.dev/gosx/engine"
@@ -47,10 +46,9 @@ func (s *studioApp) reactiveWorkspace(ctx *server.Context, view workspace, body 
 		// Register GoSX's own standalone asset through its managed script API.
 		ctx.Runtime().ManagedScript("/gosx/patch.js", server.ManagedScriptOptions{Role: server.ManagedScriptRolePatch})
 		props, _ := json.Marshal(map[string]string{"revision": view.Revision, "csrf": session.Token(ctx.Request), "projectRevision": view.ProjectRevision})
-		runtime = ctx.Engine(engine.Config{
+		runtime = meterEngine(ctx, engine.Config{
 			Name: "CicadaWorkspace", Kind: engine.KindSurface,
 			MountID: "cicada-workspace-runtime", Runtime: engine.RuntimeGoWASM,
-			WASMPath:             ui.MeterEnginePath,
 			Props:                props,
 			Capabilities:         []engine.Capability{engine.CapFetch},
 			RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch},
