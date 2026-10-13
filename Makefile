@@ -91,6 +91,7 @@ build-workstation:
 	cp workstation/dist/server/app build/cicada-workstation.new
 	mv -f build/cicada-workstation.new build/cicada-workstation
 	cp workstation/dist/build.json build/workstation/build.json
+	rm -rf build/workstation/assets build/workstation/public
 	cp -R workstation/dist/assets workstation/dist/public build/workstation/
 
 build-workstation-release:
@@ -99,6 +100,7 @@ build-workstation-release:
 	cp workstation/dist/server/app build/cicada-workstation.new
 	mv -f build/cicada-workstation.new build/cicada-workstation
 	cp workstation/dist/build.json build/workstation/build.json
+	rm -rf build/workstation/assets build/workstation/public
 	cp -R workstation/dist/assets workstation/dist/public build/workstation/
 
 test-workstation:
