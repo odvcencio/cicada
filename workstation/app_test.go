@@ -45,6 +45,11 @@ func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 			}
 			_ = json.NewEncoder(w).Encode(transport{Bar: 1, Step: 1})
 		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/arrange", "/api/project", "/api/export", "/api/clip", "/api/automation":
+			if r.Method == http.MethodGet {
+				// The shell renders the export status; reads carry no edit.
+				_, _ = io.WriteString(w, `{}`)
+				return
+			}
 			var edit map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 				t.Error(err)

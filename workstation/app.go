@@ -94,6 +94,7 @@ func newApp(b *backend) (http.Handler, error) {
 	})
 	app.Use(sessions.Protect)
 	app.Page("GET /{$}", s.page)
+	app.Page("GET /studio", s.shell)
 	if b == nil {
 		return app.Build(), nil
 	}
@@ -152,13 +153,16 @@ func (s *studioApp) page(ctx *server.Context) gosx.Node {
 	return s.reactiveWorkspace(ctx, view, body)
 }
 
-func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace) {
+// loadWorkspace opens the editing session and reads the workspace for a page.
+// When ok is false the node is the complete page body, because the app is unavailable. The panel
+// name selects the code file and draft restoration only for "code".
+func (s *studioApp) loadWorkspace(ctx *server.Context, panel string) (workspace, ui.ShellProps, gosx.Node, bool) {
 	ctx.NoStore()
 	// GoSX's managed navigation has its own page cache. HTTP no-store alone
 	// cannot invalidate an already visited panel after a score mutation.
 	ctx.AddHead(gosx.El("meta", gosx.Attrs(gosx.Attr("name", "gosx-page-cache"), gosx.Attr("content", "no-store"))))
 	if s.backend == nil {
-		return gosx.El("p", gosx.Text("Open a score with cicada studio to start the workspace.")), workspace{}
+		return workspace{}, ui.ShellProps{}, gosx.El("p", gosx.Text("Open a score with cicada studio to start the workspace.")), false
 	}
 	// Studio is an editing session. GoSX leaves anonymous reads cookie-free;
 	// establish state before requesting the CSRF token used by every action.
@@ -176,9 +180,9 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 	var view workspace
 	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/workspace", nil, &view); err != nil {
 		ctx.SetStatus(http.StatusServiceUnavailable)
-		return ui.Panel(ui.PanelProps{ID: "workspace", Title: "Studio unavailable", Description: err.Error()}), workspace{}
+		return workspace{}, ui.ShellProps{}, ui.Panel(ui.PanelProps{ID: "workspace", Title: "Studio unavailable", Description: err.Error()}), false
 	}
-	if ctx.Request.URL.Query().Get("panel") == "code" {
+	if panel == "code" {
 		selected := ctx.Request.URL.Query().Get("file")
 		for _, file := range view.Files {
 			if selected == file.Name || selected == "" && view.File == "" {
@@ -214,10 +218,6 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 			}
 		}
 	}
-	panel := ctx.Request.URL.Query().Get("panel")
-	if panel == "" {
-		panel = "session"
-	}
 	if panel == "code" {
 		if saved, ok := s.draft(session.Current(ctx.Request).String("score-draft"), workspaceOwner(ctx.Request)); ok && saved.File == view.File {
 			view.Source, view.FileRevision = saved.Source, saved.Revision
@@ -226,6 +226,18 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 				props.Message, props.HasMessage = "Unsaved score draft restored. Save it after correcting the error or conflict.", true
 			}
 		}
+	}
+	return view, props, gosx.Node{}, true
+}
+
+func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace) {
+	panel := ctx.Request.URL.Query().Get("panel")
+	if panel == "" {
+		panel = "session"
+	}
+	view, props, unavailable, ok := s.loadWorkspace(ctx, panel)
+	if !ok {
+		return unavailable, workspace{}
 	}
 	csrf := session.Token(ctx.Request)
 	var state transport
