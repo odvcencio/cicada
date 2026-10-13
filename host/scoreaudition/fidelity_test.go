@@ -754,3 +754,56 @@ func TestSceneTempoChangesPlaceEveryBar(t *testing.T) {
 		check(t, source, dir)
 	})
 }
+
+const swungThenStraight = `
+pattern swung notes {
+  swing = 66%
+  c4 . e4 . g4 . e4 . c4 . e4 . g4 . e4 .
+}
+pattern straight notes {
+  c4 . e4 . g4 . e4 . c4 . e4 . g4 . e4 .
+}
+scene a { keys = swung }
+scene b { keys = straight }
+song {
+  a
+  b
+}
+`
+
+// An excerpt's swing facts list only patterns that play inside it, on the
+// scene renderer and on the engine renderer (an audio track selects the
+// engine). The preroll still plays the swung bar to set up state.
+func TestExcerptSwingIgnoresPrerollPatterns(t *testing.T) {
+	check := func(t *testing.T, source, dir string) {
+		t.Helper()
+		score, ds := notation.Parse([]byte(source))
+		for _, d := range ds {
+			if d.Severity == "error" {
+				t.Fatalf("parse: %s", d.Error())
+			}
+		}
+		full, err := Analyze(score, Options{TempDir: t.TempDir(), AssetDir: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g := full.Report.Score.Swing; len(g) != 1 || g[0].SwingPercent != 66 {
+			t.Fatalf("full song swing %+v, want one 66%% group", g)
+		}
+		excerpt, err := Analyze(score, Options{From: 1, Bars: 1, TempDir: t.TempDir(), AssetDir: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if g := excerpt.Report.Score.Swing; len(g) != 0 {
+			t.Errorf("straight excerpt reports swing %+v", g)
+		}
+	}
+	t.Run("scene renderer", func(t *testing.T) {
+		source := strings.Replace(heldThenOff, "track vox audio {}\n", "", 1)
+		check(t, source[:strings.Index(source, "pattern held notes")]+swungThenStraight, "")
+	})
+	t.Run("engine renderer", func(t *testing.T) {
+		source, dir := clipSource(t, swungThenStraight)
+		check(t, source, dir)
+	})
+}

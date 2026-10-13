@@ -91,11 +91,15 @@ func (l *noteLog) writtenSets(pitched []bool, fromTick int64, bars int) [][12]bo
 
 type trackSlot struct{ track, slot int }
 
-// slotsUsed lists the (track, pattern slot) pairs that played notes.
-func (l *noteLog) slotsUsed() []trackSlot {
+// slotsUsed lists the (track, pattern slot) pairs whose notes sound in
+// [t0, t1) ticks. Preroll notes that end before t0 do not count.
+func (l *noteLog) slotsUsed(t0, t1 int64, sustain []bool, rangeEnd int64) []trackSlot {
 	seen := map[trackSlot]bool{}
 	var out []trackSlot
 	for _, n := range l.notes {
+		if !n.sounds(t0, t1, sustain, rangeEnd) {
+			continue
+		}
 		k := trackSlot{n.track, int(n.slot)}
 		if !seen[k] {
 			seen[k] = true
@@ -217,18 +221,21 @@ func (l *noteLog) overlaps(track int, t0, t1 int64, sustain []bool, rangeEnd int
 		if n.track != track {
 			continue
 		}
-		end := n.endTick(sustain, rangeEnd)
-		if end <= n.tick { // an instant: a hit counts where it starts
-			if n.tick >= t0 && n.tick < t1 {
-				return true
-			}
-			continue
-		}
-		if n.tick < t1 && end > t0 {
+		if n.sounds(t0, t1, sustain, rangeEnd) {
 			return true
 		}
 	}
 	return false
+}
+
+// sounds reports whether the note sounds in [t0, t1) ticks. An instant (a
+// hit with no length) counts where it starts.
+func (n loggedNote) sounds(t0, t1 int64, sustain []bool, rangeEnd int64) bool {
+	end := n.endTick(sustain, rangeEnd)
+	if end <= n.tick {
+		return n.tick >= t0 && n.tick < t1
+	}
+	return n.tick < t1 && end > t0
 }
 
 func patternOf(cfg engine.Config, track, slot int) *seq.Pattern {

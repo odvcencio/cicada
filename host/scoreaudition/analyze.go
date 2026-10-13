@@ -532,7 +532,8 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	groups := map[float64]*SwingGroup{}
 	trackSet, patternSet := map[float64]map[string]bool{}, map[float64]map[string]bool{}
-	for _, pl := range notes.slotsUsed() {
+	swingEnd := fromTick + int64(bars)*seq.TicksPerBar
+	for _, pl := range notes.slotsUsed(fromTick, swingEnd, sustain, swingEnd) {
 		if pl.track >= len(p.Tracks) || pl.slot >= len(p.Tracks[pl.track].Slots) {
 			continue
 		}
