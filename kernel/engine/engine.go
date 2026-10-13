@@ -1164,7 +1164,7 @@ func (e *Engine) drainCommands() {
 		if c.Op == cmd.OpSetLayerMask && c.Tick == 0 {
 			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
 		}
-		if e.transport.Playing() && c.Tick == 0 && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
+		if e.transport.Playing() && c.Tick == 0 && c.Pad != cmd.PatternEditNow && (c.Op == cmd.OpSetStep || c.Op == cmd.OpSetChordStep || c.Op == cmd.OpSetPatternLen || c.Op == cmd.OpSetPatternMeta) {
 			c.Tick = (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
 		}
 		if e.pendingLen == len(e.pending) {

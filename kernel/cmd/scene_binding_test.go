@@ -24,3 +24,26 @@ func TestSceneBindingTrackBoundFollowsTheBuildCapacity(t *testing.T) {
 		}
 	}
 }
+
+func TestPatternEditNowFlagIsAcceptedOnlyOnPatternEdits(t *testing.T) {
+	errText := func(c Command) string {
+		if err := c.Validate(1); err != nil {
+			return err.Error()
+		}
+		return ""
+	}
+	for _, op := range []Op{OpSetStep, OpSetPatternLen, OpSetPatternMeta, OpSetChordStep} {
+		plain := Command{Op: op, Track: 0, Index: 4}
+		flagged, other := plain, plain
+		flagged.Pad, other.Pad = PatternEditNow, 2
+		if errText(flagged) != errText(plain) {
+			t.Fatalf("op %d: the flag changed validation: %q / %q", op, errText(flagged), errText(plain))
+		}
+		if errText(other) == errText(plain) {
+			t.Fatalf("op %d accepted another padding value", op)
+		}
+	}
+	if errText(Command{Op: OpSetParam, Track: 0, Pad: PatternEditNow}) == errText(Command{Op: OpSetParam, Track: 0}) {
+		t.Fatal("the flag is only for pattern edits")
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/piano"
 )
 
 // editScore is one acid track that starts in a silent slot 0. Slot 1 plays a
@@ -387,5 +388,151 @@ func TestStepPatchLandsInARangeShorterThanOneStep(t *testing.T) {
 	_ = readFrames(t, p, 8*blockFrames)
 	if p.LandedRevision() != 1 || p.fault != nil {
 		t.Fatalf("edit in a one-step range: revision %d, fault %v", p.LandedRevision(), p.fault)
+	}
+}
+
+// A replacement can keep a track's ID but change its voice. A chord batch built
+// for a piano would fault an acid track (code 39), so the batch is refused whole.
+func TestPatternBatchIsCheckedAgainstTheReplacementEngine(t *testing.T) {
+	build := func(kind engine.VoiceKind) Score {
+		cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: piano.MaxVoices, BPMMilli: 120_000, Seed: 7}
+		cfg.Track[0].Kind = kind
+		cfg.Patterns = []engine.PatternBank{{}}
+		cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 55, Seed: cfg.Seed}
+		created, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: "swap", Tracks: []TrackSlots{{ID: "bass"}}}
+	}
+	note, _ := seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100, Velocity: 100})
+	batchFor := func(arena *PatchArena, p *Player, revision uint64) *Patch {
+		target, err := p.ResolvePreviewTrack("bass")
+		if err != nil {
+			t.Fatal(err)
+		}
+		batch := arena.Begin(revision)
+		batch.Step(target, 0, 1, note)
+		batch.Chord(target, 0, 1, [4]uint8{60, 64, 67, 0}, 3)
+		return batch
+	}
+	p, err := New(build(engine.VoicePiano), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	arena := NewPatchArena(2)
+	batch := batchFor(arena, p, 1)
+	if err := p.Offer(build(engine.VoiceAcid)); err != nil { // same ID, no chord support
+		t.Fatal(err)
+	}
+	if err := p.Patch(batch); err != nil {
+		t.Fatal(err)
+	}
+	_ = readFrames(t, p, 2*96_000+blockFrames)
+	if p.fault != nil {
+		t.Fatalf("a chord batch stopped the replacement engine: %v", p.fault)
+	}
+	if p.LandedRevision() != 0 || arena.Free() != 2 {
+		t.Fatalf("incompatible batch reported landed (%d) or leaked (%d free)", p.LandedRevision(), arena.Free())
+	}
+	_ = readFrames(t, p, 4*blockFrames) // playback continues
+	// The same batch against the piano still lands.
+	q, err := New(build(engine.VoicePiano), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	if err := q.Patch(batchFor(arena, q, 2)); err != nil {
+		t.Fatal(err)
+	}
+	_ = readFrames(t, q, blockFrames)
+	if q.LandedRevision() != 2 || q.fault != nil {
+		t.Fatalf("a valid chord batch did not land: revision %d fault %v", q.LandedRevision(), q.fault)
+	}
+}
+
+// For every loop of 1 to 1,300 ticks, at any start and tick, an edit is placed
+// at a boundary the range renders, held for a restart that reaches one, or
+// applied at once when no boundary is reachable. It is never left waiting on a
+// tick the range excludes.
+func TestPatchBoundaryIsAlwaysReachableOrApplied(t *testing.T) {
+	for start := int64(0); start < 600; start += 7 {
+		for length := int64(1); length <= 1_300; length++ {
+			for _, loop := range []bool{true, false} {
+				r := &PlaybackRange{StartTick: start, EndTick: start + length, Loop: loop}
+				for tick := start; tick < r.EndTick; tick += 1 + length/9 {
+					stamp, hold, now := patchBoundaryFor(r, tick)
+					next := (r.StartTick/seq.TicksPerStep + 1) * seq.TicksPerStep
+					switch {
+					case now:
+						if hold || loop && next < r.EndTick {
+							t.Fatalf("%+v tick %d: applied at once though a boundary is reachable", *r, tick)
+						}
+					case hold:
+						if !loop || next >= r.EndTick || stamp < r.EndTick {
+							t.Fatalf("%+v tick %d: held without a reachable restart boundary", *r, tick)
+						}
+					default:
+						if stamp <= tick || stamp >= r.EndTick {
+							t.Fatalf("%+v tick %d: stamp %d is not inside the range", *r, tick, stamp)
+						}
+					}
+				}
+			}
+		}
+	}
+}
+
+// Short and unaligned loops: the step edit lands and sounds, and a parameter
+// batch published behind it lands too.
+func TestStepEditsLandInShortLoopsWithAParameterBatchBehind(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		start, end int64
+		step       uint8
+	}{
+		{"one tick", 0, 1, 0}, {"exactly one step", 0, 240, 0}, {"one step and a tick", 0, 241, 0},
+		{"later start", 480, 720, 2}, {"unaligned", 7, 300, 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p, err := New(editScore(t), 48_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			if err := p.PlayRange(PlaybackRange{StartTick: test.start, EndTick: test.end, Loop: true}); err != nil {
+				t.Fatal(err)
+			}
+			_ = readFrames(t, p, 4*blockFrames)
+			target, _ := p.ResolvePreviewTrack("bass")
+			note, _ := seq.PackStep(seq.Step{Note: 52, Gate: true, Ratchet: 1, Probability: 100, Velocity: 120})
+			arena := NewPatchArena(2)
+			edit := arena.Begin(1)
+			edit.Step(target, 0, test.step, note)
+			gain := arena.Begin(2)
+			gain.SetResolvedParam(target, kernel.ParamMixGain, -3)
+			if err := p.Patch(edit); err != nil {
+				t.Fatal(err)
+			}
+			if err := p.Patch(gain); err != nil {
+				t.Fatal(err)
+			}
+			samples := readFrames(t, p, 96_000)
+			if p.LandedRevision() != 2 || arena.Free() != 2 || p.fault != nil {
+				t.Fatalf("edit and parameter batch: revision %d, %d free, fault %v", p.LandedRevision(), arena.Free(), p.fault)
+			}
+			if test.end-test.start == 1 {
+				// A loop of 25 frames cannot hold a note. Widen the range to show
+				// that the edit reached the engine's pattern.
+				if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: 240, Loop: true}); err != nil {
+					t.Fatal(err)
+				}
+				samples = readFrames(t, p, 48_000)
+			}
+			if firstSound(samples) < 0 {
+				t.Fatal("the edited step never sounded")
+			}
+		})
 	}
 }

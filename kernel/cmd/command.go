@@ -186,7 +186,7 @@ func (c Command) Validate(tracks uint8) error {
 		// Remove this check when the engine implements cues.
 		return Error("cue command is not implemented")
 	}
-	if c.Op != OpNoteExpression && !spatialOp(c.Op) && c.Pad != 0 || c.Tick < 0 {
+	if c.Op != OpNoteExpression && !spatialOp(c.Op) && c.Pad != 0 && !(c.Pad == PatternEditNow && patternEditOp(c.Op)) || c.Tick < 0 {
 		return Error("nonzero command padding or negative tick")
 	}
 	if globalOp(c.Op) {
@@ -358,6 +358,16 @@ func (c Command) Validate(tracks uint8) error {
 		}
 	}
 	return nil
+}
+
+// PatternEditNow, set in Pad of a step, chord, length or metadata command with
+// Tick=0, applies the edit at once. Without it a Tick=0 edit waits for the next
+// bar. A host uses it where no later boundary can be reached, such as a loop
+// shorter than a bar.
+const PatternEditNow uint32 = 1
+
+func patternEditOp(op Op) bool {
+	return op == OpSetStep || op == OpSetChordStep || op == OpSetPatternLen || op == OpSetPatternMeta
 }
 
 func globalOp(op Op) bool {

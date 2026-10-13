@@ -516,3 +516,112 @@ func TestStereoMeterEmissionIsAllOrNothingAndKeepsTheFrameClosed(t *testing.T) {
 		}
 	}
 }
+
+func TestPatternEditsValidChecksVoiceSlotAndPendingState(t *testing.T) {
+	build := func(kind VoiceKind) *Engine {
+		cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 12, BPMMilli: 120_000, Seed: 4242}
+		cfg.Track[0].Kind = kind
+		cfg.Patterns = []PatternBank{{}}
+		cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 55, Seed: cfg.Seed}
+		if kind == VoiceDrums {
+			cfg.Patterns[0].Drums = new([16][drum.LaneCount]seq.Pattern)
+			for lane := range cfg.Patterns[0].Drums[0] {
+				cfg.Patterns[0].Drums[0][lane] = cfg.Patterns[0].Slots[0]
+			}
+		}
+		e, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	step := func(index uint16, note uint8) cmd.Command {
+		return cmd.Command{Op: cmd.OpSetStep, Track: 0, Index: index, Arg0: packedNoteValue(note)}
+	}
+	chord, err := cmd.ChordStepCommand(0, 0, 1, [4]uint8{60, 64, 67, 0}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	acid := build(VoiceAcid)
+	if !acid.PatternEditsValid([]cmd.Command{step(1, 60)}) {
+		t.Fatal("a plain step on an acid track was refused")
+	}
+	if acid.PatternEditsValid([]cmd.Command{step(1, 60), chord}) {
+		t.Fatal("a chord on an acid track must be refused (fault 39)")
+	}
+	if !acid.PatternEditsValid([]cmd.Command{{Op: cmd.OpSetParam, Track: 0}}) {
+		t.Fatal("a batch without pattern edits is valid")
+	}
+	kit := build(VoiceDrums)
+	if !kit.PatternEditsValid([]cmd.Command{{Op: cmd.OpSetStep, Track: 0, Index: 2, Arg0: liveEditDrum(drum.SD)}}) {
+		t.Fatal("a drum step on a drum track was refused")
+	}
+	if kit.PatternEditsValid([]cmd.Command{{Op: cmd.OpSetStep, Track: 0, Index: 2, Arg0: packedNoteValue(60)}}) {
+		t.Fatal("a pitched step names no drum lane and must be refused")
+	}
+	// An edit still waiting in the pending queue counts as applied.
+	pending := build(VoiceAcid)
+	pending.cfgSlotTranspose(t)
+	later := []cmd.Command{step(3, 110)}
+	if !build(VoiceAcid).PatternEditsValid(later) {
+		t.Fatal("note 110 is valid without a transpose")
+	}
+	if pending.PatternEditsValid(later) {
+		t.Fatal("note 110 is out of range after the queued +24 transpose")
+	}
+	if allocs := testing.AllocsPerRun(100, func() { acid.PatternEditsValid([]cmd.Command{step(1, 60)}) }); allocs != 0 {
+		t.Fatalf("dry run allocated %g", allocs)
+	}
+}
+
+// cfgSlotTranspose queues a future +24 transpose of slot 0 without applying it.
+func (e *Engine) cfgSlotTranspose(t *testing.T) {
+	t.Helper()
+	meta := cmd.Command{Op: cmd.OpSetPatternMeta, Track: 0, Arg0: uint32(uint16(24)) << 16, Arg1: 0, Tick: 1_000_000}
+	if !e.Push(meta) {
+		t.Fatal("meta rejected")
+	}
+	var l, r [128]float32
+	e.Render(l[:], r[:]) // drains the ring into the pending queue
+}
+
+// A Tick=0 edit waits for the next bar unless it carries PatternEditNow.
+func TestPatternEditNowAppliesAtOnceWhilePlaying(t *testing.T) {
+	soundsAt := func(pad uint32) bool {
+		cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120_000, Seed: 1}
+		cfg.Track[0].Kind = VoiceAcid
+		cfg.Patterns = []PatternBank{{}}
+		cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 55, Seed: 1}
+		cfg.Scenes = []Scene{{Track: [MaxTracks]SceneBinding{{Mode: SceneSlot, Slot: 0}}}}
+		cfg.Song = []SongEntry{{Scene: 0, Bars: 8}}
+		e, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.meterRate = 0
+		var l, r [128]float32
+		var m cmd.Message
+		if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+			t.Fatal("rejected")
+		}
+		e.Render(l[:], r[:]) // playing before the edit arrives
+		if !e.Push(cmd.Command{Op: cmd.OpSetStep, Track: 0, Index: 8, Arg0: packedNoteValue(52), Pad: pad}) {
+			t.Fatal("rejected")
+		}
+		for range 700 { // 89,600 frames: step 8 sounds at frame 48,000; the next bar is at 96,000
+			e.Render(l[:], r[:])
+			for e.Poll(&m) {
+				if m.Kind == cmd.NoteOn {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !soundsAt(cmd.PatternEditNow) {
+		t.Fatal("the flagged edit did not apply at once")
+	}
+	if soundsAt(0) {
+		t.Fatal("an unflagged Tick=0 edit must wait for the next bar")
+	}
+}

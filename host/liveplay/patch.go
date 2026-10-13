@@ -168,21 +168,25 @@ func (patch *Patch) SceneBinding(target PreviewTarget, scene uint16, binding eng
 	patch.append(cmd.Command{Op: cmd.OpSetSceneBinding, Track: 0xff, Index: scene, Arg0: uint32(target.track) | uint32(binding.Mode)<<8 | uint32(binding.Slot)<<16, Arg1: uint32(binding.Clip)}, target)
 }
 
-// patchBoundary is the tick where a pattern edit lands: the next step boundary,
-// or the current tick when the playback range is shorter than one step and
-// would never reach a boundary.
-func (p *Player) patchBoundary() int64 {
-	tick := p.clock.TickAtSample(p.sample)
-	if r := p.playbackRange; r != nil && r.EndTick-r.StartTick < seq.TicksPerStep {
-		return max(tick, 1)
+// patchBoundaryFor places a pattern edit. Normally it lands on the next step
+// boundary. A boundary at or after the range end is never rendered: if the loop
+// restart makes a boundary reachable inside the range the edit must hold until
+// then (hold); otherwise no boundary is reachable and it applies at once (now).
+func patchBoundaryFor(r *PlaybackRange, tick int64) (stamp int64, hold, now bool) {
+	stamp = (tick/seq.TicksPerStep + 1) * seq.TicksPerStep
+	if r == nil || stamp < r.EndTick {
+		return stamp, false, false
 	}
-	return (tick/seq.TicksPerStep + 1) * seq.TicksPerStep
+	if r.Loop && (r.StartTick/seq.TicksPerStep+1)*seq.TicksPerStep < r.EndTick {
+		return stamp, true, false
+	}
+	return 0, false, true
 }
 
-// patchBoundaryPastRange reports a boundary at or after the range end.
+// patchBoundaryPastRange reports an edit that must wait for the loop restart.
 func (p *Player) patchBoundaryPastRange() bool {
-	r := p.playbackRange
-	return r != nil && p.patchBoundary() >= r.EndTick
+	_, hold, _ := patchBoundaryFor(p.playbackRange, p.clock.TickAtSample(p.sample))
+	return hold
 }
 
 func (patch *Patch) edits() bool {
@@ -380,8 +384,20 @@ func (p *Player) applyPatch(patch *Patch) {
 			return
 		}
 		if isPatternEdit(c.Op) {
-			c.Tick = p.patchBoundary()
+			stamp, _, now := patchBoundaryFor(p.playbackRange, p.clock.TickAtSample(p.sample))
+			c.Tick = stamp
+			if now {
+				c.Tick, c.Pad = 0, cmd.PatternEditNow
+			}
 		}
+	}
+	// A replacement can keep a track's ID with another voice (a chord batch
+	// built for a piano would fault an acid track). Dry-run every pattern edit
+	// against the engine playing now, as it will apply them; refuse the whole
+	// batch so its revision never reports as landed.
+	if !p.current.Engine.PatternEditsValid(patch.commands[:patch.n]) {
+		p.emit(Event{Kind: "patch-error", Name: "patch pattern edit does not fit the playing engine"})
+		return
 	}
 	if !p.current.Engine.PushCommittedBatch(patch.commands[:patch.n]) {
 		p.emit(Event{Kind: "patch-error", Name: "patch could not be published"})

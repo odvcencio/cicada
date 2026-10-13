@@ -206,29 +206,95 @@ func syncDrumLanes(lanes *[drum.LaneCount]seq.Pattern, shared *seq.Pattern) {
 	}
 }
 
+// editSlot applies one pattern-edit command to a scratch slot (and, on a drum
+// track, its lane patterns) by the rules the engine uses, and reports whether
+// the engine would accept it.
+func editSlot(slot *seq.Pattern, lanes *[drum.LaneCount]seq.Pattern, c cmd.Command, kind VoiceKind, poly bool) bool {
+	if kind == VoiceDrums {
+		if lanes == nil {
+			return false
+		}
+		if c.Op == cmd.OpSetStep {
+			return drumStepEdit(lanes, c) == 0
+		}
+	}
+	if editPattern(slot, c, kind, poly) != 0 {
+		return false
+	}
+	if lanes != nil {
+		syncDrumLanes(lanes, slot)
+	}
+	return true
+}
+
 // ApplyPatternEdit applies one pattern-edit command (OpSetStep, OpSetChordStep,
 // OpSetPatternLen or OpSetPatternMeta) to a slot as a playing engine would, so a
 // host can check a sequence of edits before it sends them. lanes is nil for
 // every track but a drum track. A returned error means the engine would fault.
 func ApplyPatternEdit(slot *seq.Pattern, lanes *[drum.LaneCount]seq.Pattern, c cmd.Command, track *TrackConfig) error {
-	if track.Kind == VoiceDrums {
-		if lanes == nil {
-			return Error("drum slot needs its lane patterns")
-		}
-		if c.Op == cmd.OpSetStep {
-			if drumStepEdit(lanes, c) != 0 {
-				return Error("drum step edit is invalid")
-			}
-			return nil
-		}
-	}
-	if code := editPattern(slot, c, track.Kind, track.Kind == VoiceGraph && track.Polyphony == 4); code != 0 {
+	if !editSlot(slot, lanes, c, track.Kind, track.Kind == VoiceGraph && track.Polyphony == 4) {
 		return Error("pattern edit is invalid for the voice")
 	}
-	if lanes != nil {
-		syncDrumLanes(lanes, slot)
-	}
 	return nil
+}
+
+func isPatternEditOp(op cmd.Op) bool {
+	return op == cmd.OpSetStep || op == cmd.OpSetChordStep || op == cmd.OpSetPatternLen || op == cmd.OpSetPatternMeta
+}
+
+func editSlotIndex(c cmd.Command) int {
+	if c.Op == cmd.OpSetChordStep {
+		return int(c.Arg1 & 15)
+	}
+	return int(c.Arg1)
+}
+
+// PatternEditsValid reports whether the pattern edits in cs, applied in order,
+// would all be accepted by this engine as it stands: the voice kind of each
+// track (a chord needs a chord voice, a drum step needs a drum track), and the
+// slot state after the edits still waiting in the pending queue. Other commands
+// in cs are ignored. It copies each touched slot into stack scratch, mutates
+// nothing in the engine and allocates nothing. Call it only from the render
+// thread, which owns the engine.
+func (e *Engine) PatternEditsValid(cs []cmd.Command) bool {
+	var seen [MaxTracks * 16 / 64]uint64
+	for i := range cs {
+		first := cs[i]
+		if !isPatternEditOp(first.Op) {
+			continue
+		}
+		track, slot := int(first.Track), editSlotIndex(first)
+		if track >= e.tracks || slot >= 16 {
+			return false
+		}
+		bit := track*16 + slot
+		if seen[bit/64]&(1<<(bit%64)) != 0 {
+			continue
+		}
+		seen[bit/64] |= 1 << (bit % 64)
+		p := &e.patterns[track]
+		kind, poly := e.voices[track].kind, e.voices[track].poly != nil
+		scratch := p.slots[slot]
+		var lanes [drum.LaneCount]seq.Pattern
+		var lanesPtr *[drum.LaneCount]seq.Pattern
+		if p.drumSlots != nil {
+			lanes, lanesPtr = p.drumSlots[slot], &lanes
+		}
+		// Edits already queued for this slot land first, in arrival order.
+		for j := 0; j < e.pendingLen; j++ {
+			q := e.pending[j]
+			if isPatternEditOp(q.Op) && int(q.Track) == track && editSlotIndex(q) == slot && !editSlot(&scratch, lanesPtr, q, kind, poly) {
+				return false
+			}
+		}
+		for j := i; j < len(cs); j++ {
+			q := cs[j]
+			if isPatternEditOp(q.Op) && int(q.Track) == track && editSlotIndex(q) == slot && !editSlot(&scratch, lanesPtr, q, kind, poly) {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func (e *Engine) selectPatternNow(track, slot int, restart bool) {
