@@ -9,6 +9,7 @@ import (
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 // loudScore plays a full-scale sine, optionally through the music-bus
@@ -164,5 +165,31 @@ func TestCPULoadEMAIsReportedAndRenderDoesNotAllocate(t *testing.T) {
 		}
 	}); allocs != 0 {
 		t.Fatalf("render allocated %g times per block", allocs)
+	}
+}
+
+// Every engine reaches the render thread through New or Offer, so a
+// replacement installed by a listening-range seek keeps channel separation.
+func TestRangeReplacementKeepsStereoMeterSeparation(t *testing.T) {
+	p, err := New(meterScore(t, "first", -6), 48_000) // pan -1: hard left
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	replacement := meterScore(t, "replacement", -6)
+	r := PlaybackRange{StartTick: 0, EndTick: 2 * seq.TicksPerBar, Loop: true}
+	replacement.Range = &r
+	if err := p.Offer(replacement); err != nil {
+		t.Fatal(err)
+	}
+	if err := p.PlayRange(r); err != nil {
+		t.Fatal(err)
+	}
+	frame := lastMeterFrame(t, p, 48_000*8/4)
+	if p.current.Name != "replacement" {
+		t.Fatalf("range seek did not install the replacement: %s", p.current.Name)
+	}
+	if track := frame.Tracks[0]; track.PeakL < .3 || track.PeakR != 0 || track.RMSR != 0 {
+		t.Fatalf("replacement lost channel separation: %+v", track)
 	}
 }

@@ -672,7 +672,7 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 						model.patches = append(model.patches, previewRenderPatch{publication: model.publication, value: op.value, commands: 1})
 					}
 				}
-			case "step-patch", "binding-patch":
+			case "step-patch", "binding-patch", "clip-binding-patch":
 				patchRevision++
 				batch := arena.Begin(patchRevision)
 				if batch != nil {
@@ -683,7 +683,13 @@ func runPreviewRenderLifecycle(t *testing.T, operations []previewRenderOperation
 						break
 					}
 					kind := previewPatchStep
-					if op.kind == "binding-patch" {
+					if op.kind == "clip-binding-patch" {
+						// No track here is audio: the render thread refuses the batch
+						// before the engine could fault. It still takes its place in
+						// publication order and budget, and moves no value.
+						kind = previewPatchBinding
+						batch.SceneBinding(target, 2, engine.SceneBinding{Mode: engine.SceneClip})
+					} else if op.kind == "binding-patch" {
 						kind = previewPatchBinding
 						batch.SceneBinding(target, 2, engine.SceneBinding{Mode: engine.SceneKeep})
 					} else {
@@ -962,7 +968,9 @@ func TestPreviewRenderLifecycleGeneratedStateMachine(t *testing.T) {
 			previewRenderOperation{kind: "step-patch"}, previewRenderOperation{kind: "offer-add", value: values[(seed+2)%5]},
 			previewRenderOperation{kind: "binding-patch"}, previewRenderOperation{kind: "activate"}, previewRenderOperation{kind: "settle"},
 			previewRenderOperation{kind: "burst", value: values[(seed+3)%5]}, previewRenderOperation{kind: "step-patch"},
-			previewRenderOperation{kind: "seek-middle"}, previewRenderOperation{kind: "binding-patch"}, previewRenderOperation{kind: "settle"})
+			previewRenderOperation{kind: "seek-middle"}, previewRenderOperation{kind: "binding-patch"}, previewRenderOperation{kind: "settle"},
+			previewRenderOperation{kind: "clip-binding-patch"}, previewRenderOperation{kind: "offer-remove", value: values[(seed+4)%5]},
+			previewRenderOperation{kind: "clip-binding-patch"}, previewRenderOperation{kind: "activate"}, previewRenderOperation{kind: "settle"})
 		operations = append(operations, previewRenderOperation{kind: "Close"})
 		if err := runPreviewRenderLifecycle(t, operations, &counts); err != nil {
 			t.Fatalf("seed %d: %v; minimized counterexample: %v", seed, err, minimizePreviewRenderLifecycle(t, operations))

@@ -541,7 +541,7 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			patch := previewReferencePatch{publication: publication, commands: 1, tracks: []int{pending.track}}
 			patch.values[pending.track], patch.incarnations[pending.track] = pending.value, pending.incarnation
 			patches = append(patches, patch)
-		case "step-patch", "binding-patch", "queue-step-patch":
+		case "step-patch", "binding-patch", "clip-binding-patch", "queue-step-patch":
 			if !present(op.track) {
 				break
 			}
@@ -554,7 +554,10 @@ func runPreviewLifecycle(t *testing.T, operations []previewOperation, counts *pr
 			if batch == nil {
 				return fmt.Errorf("patch arena exhausted")
 			}
-			if op.kind == "binding-patch" {
+			if op.kind == "clip-binding-patch" {
+				// No track here is audio, so the render thread refuses the batch.
+				batch.SceneBinding(target, 2, engine.SceneBinding{Mode: engine.SceneClip})
+			} else if op.kind == "binding-patch" {
 				batch.SceneBinding(target, 2, engine.SceneBinding{Mode: engine.SceneKeep})
 			} else {
 				packed, err := seq.PackStep(seq.Step{Note: 60, Gate: true, Ratchet: 1, Probability: 100, Velocity: 100})
@@ -930,6 +933,7 @@ func TestPreviewLifecycleGeneratedStateMachine(t *testing.T) {
 						previewOperation{kind: "structural-offer-remove", track: 1, value: -12}, previewOperation{kind: "queue-step-patch", track: 1},
 						previewOperation{kind: "binding-patch", track: 0}, previewOperation{kind: "activate"},
 						previewOperation{kind: "queue-burst", value: -6}, previewOperation{kind: "step-patch", track: 0}, previewOperation{kind: "render-block"},
+						previewOperation{kind: "clip-binding-patch", track: 0}, previewOperation{kind: "render-block"},
 						previewOperation{kind: "seek-backward"})
 					operations = append(operations, previewOperation{kind: "resume"})
 					for client := 0; client < 3; client++ {

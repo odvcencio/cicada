@@ -486,6 +486,9 @@ func (p *Player) Offer(score Score) error {
 			return err
 		}
 	}
+	// Every engine the player installs arrives through here (or New), so this
+	// is the one place that turns on per-channel meters.
+	score.Engine.SetStereoMeters(true)
 	primeTick := p.Position().Bar * seq.TicksPerBar
 	if score.Range != nil {
 		primeTick = score.Range.StartTick
@@ -1535,7 +1538,6 @@ func (p *Player) beginRequestedSong() {
 				p.retireEngine(p.previous)
 			}
 			p.previous = p.current.Engine
-			next.Engine.SetStereoMeters(true)
 			p.discardSupersededPatches(next.publication)
 			p.rebuildCommitted(next, int64(start-1)*seq.TicksPerBar)
 			p.applyOverrides(next.Engine, next, true)
@@ -1625,7 +1627,6 @@ func (p *Player) renderBlock(requestedFrames int) {
 				p.retireEngine(p.previous)
 			}
 			p.previous = p.current.Engine
-			next.Engine.SetStereoMeters(true)
 			p.discardSupersededPatches(next.publication)
 			p.rebuildCommitted(next, p.bar*seq.TicksPerBar)
 			p.transportQueued = true

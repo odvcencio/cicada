@@ -168,6 +168,32 @@ func (patch *Patch) SceneBinding(target PreviewTarget, scene uint16, binding eng
 	patch.append(cmd.Command{Op: cmd.OpSetSceneBinding, Track: 0xff, Index: scene, Arg0: uint32(target.track) | uint32(binding.Mode)<<8 | uint32(binding.Slot)<<16, Arg1: uint32(binding.Clip)}, target)
 }
 
+// patchBoundary is the tick where a pattern edit lands: the next step boundary,
+// or the current tick when the playback range is shorter than one step and
+// would never reach a boundary.
+func (p *Player) patchBoundary() int64 {
+	tick := p.clock.TickAtSample(p.sample)
+	if r := p.playbackRange; r != nil && r.EndTick-r.StartTick < seq.TicksPerStep {
+		return max(tick, 1)
+	}
+	return (tick/seq.TicksPerStep + 1) * seq.TicksPerStep
+}
+
+// patchBoundaryPastRange reports a boundary at or after the range end.
+func (p *Player) patchBoundaryPastRange() bool {
+	r := p.playbackRange
+	return r != nil && p.patchBoundary() >= r.EndTick
+}
+
+func (patch *Patch) edits() bool {
+	for i := 0; i < patch.n; i++ {
+		if isPatternEdit(patch.commands[i].Op) {
+			return true
+		}
+	}
+	return false
+}
+
 func isPatternEdit(op cmd.Op) bool {
 	return op == cmd.OpSetStep || op == cmd.OpSetChordStep || op == cmd.OpSetPatternLen || op == cmd.OpSetPatternMeta
 }
@@ -300,6 +326,13 @@ func (p *Player) drainPatches() {
 			p.deferredPatch = patch
 			return
 		}
+		if patch.edits() && p.patchBoundaryPastRange() {
+			// The next step lies at or beyond the end of the range, a tick the
+			// loop never renders. Hold the batch, and the ones behind it, until
+			// the restart puts the next boundary inside the range.
+			p.deferredPatch = patch
+			return
+		}
 		if patch.n > max(0, budget) {
 			p.deferredPatch = patch
 			return
@@ -323,12 +356,15 @@ func (p *Player) applyPatch(patch *Patch) {
 			}
 			resolved, _ := names.trackIndex(identity.id)
 			if c.Op == cmd.OpSetSceneBinding {
-				// The engine faults on a scene it lacks; refuse the batch instead.
-				if int(c.Index) >= p.current.Engine.SceneCount() {
-					p.emit(Event{Kind: "patch-error", Name: "patch scene is not in the playing engine"})
+				// A replacement can keep a track's ID with another voice kind or
+				// clip table, and the engine faults on a binding it cannot hold.
+				// Check the engine playing now, as the engine will, and refuse the
+				// whole batch so its revision never reports as landed.
+				c.Arg0 = c.Arg0&^0xff | uint32(resolved)
+				if !p.current.Engine.SceneBindingValid(*c) {
+					p.emit(Event{Kind: "patch-error", Name: "patch scene binding does not fit the playing engine"})
 					return
 				}
-				c.Arg0 = c.Arg0&^0xff | uint32(resolved)
 			} else {
 				c.Track = resolved
 			}
@@ -344,7 +380,7 @@ func (p *Player) applyPatch(patch *Patch) {
 			return
 		}
 		if isPatternEdit(c.Op) {
-			c.Tick = (p.clock.TickAtSample(p.sample)/seq.TicksPerStep + 1) * seq.TicksPerStep
+			c.Tick = p.patchBoundary()
 		}
 	}
 	if !p.current.Engine.PushCommittedBatch(patch.commands[:patch.n]) {

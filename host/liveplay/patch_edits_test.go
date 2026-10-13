@@ -263,3 +263,129 @@ func TestSceneBindingPatchReachesTracksBeyondSixteen(t *testing.T) {
 		t.Fatalf("binding for track 17 did not land: revision %d, fault %v", p.LandedRevision(), p.fault)
 	}
 }
+
+// A replacement can keep a track's ID but change its voice. A clip binding
+// built against the old audio track would fault the new acid engine, so the
+// batch is refused whole and its revision never reports as landed.
+func TestSceneBindingPatchIsCheckedAgainstTheReplacementEngine(t *testing.T) {
+	build := func(audio bool) Score {
+		cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 4, BPMMilli: 120_000, Seed: 7}
+		cfg.Track[0].Kind = engine.VoiceAcid
+		if audio {
+			pcm := make([]float32, 48_000)
+			cfg.Track[0] = engine.TrackConfig{Kind: engine.VoiceAudio, GainSet: true}
+			cfg.Assets = []engine.AudioAsset{{Left: pcm, SampleRate: 48_000}}
+			cfg.Clips = []engine.ClipConfig{{EndFrame: int64(len(pcm))}}
+		}
+		cfg.Scenes = []engine.Scene{{}}
+		created, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: "swap", Tracks: []TrackSlots{{ID: "bass"}}, SceneIDs: []string{"main"}}
+	}
+	p, err := New(build(true), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	target, err := p.ResolvePreviewTrack("bass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	arena := NewPatchArena(2)
+	batch := arena.Begin(1)
+	batch.SceneBinding(target, 0, engine.SceneBinding{Mode: engine.SceneClip, Clip: 0})
+	if err := p.Offer(build(false)); err != nil { // same ID, now an acid voice
+		t.Fatal(err)
+	}
+	if err := p.Patch(batch); err != nil {
+		t.Fatal(err)
+	}
+	_ = readFrames(t, p, 2*96_000+blockFrames) // past the bar where the replacement lands
+	if p.fault != nil {
+		t.Fatalf("a stale clip binding stopped the replacement engine: %v", p.fault)
+	}
+	if p.LandedRevision() != 0 || arena.Free() != 2 {
+		t.Fatalf("incompatible batch reported landed (%d) or leaked (%d free)", p.LandedRevision(), arena.Free())
+	}
+	// The same binding against the audio engine still lands.
+	q, err := New(build(true), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer q.Close()
+	target, _ = q.ResolvePreviewTrack("bass")
+	batch = arena.Begin(2)
+	batch.SceneBinding(target, 0, engine.SceneBinding{Mode: engine.SceneClip, Clip: 0})
+	if err := q.Patch(batch); err != nil {
+		t.Fatal(err)
+	}
+	_ = readFrames(t, q, blockFrames)
+	if q.LandedRevision() != 2 || q.fault != nil {
+		t.Fatalf("a valid clip binding did not land: revision %d fault %v", q.LandedRevision(), q.fault)
+	}
+}
+
+// A step edit submitted in the last step of a listening loop would be stamped
+// at the loop end, a tick the loop never renders. It waits for the restart and
+// then lands at the first step boundary of the next pass; the audio shows it.
+func TestStepPatchInTheLastStepOfALoopSoundsAfterTheRestart(t *testing.T) {
+	p, err := New(editScore(t), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	loop := PlaybackRange{StartTick: 0, EndTick: seq.TicksPerBar, Loop: true}
+	if err := p.PlayRange(loop); err != nil {
+		t.Fatal(err)
+	}
+	const barFrames = 96_000 // one bar at 120 BPM
+	_ = readFrames(t, p, barFrames-6_000+blockFrames-barFrames%blockFrames) // into the last step (tick 3,600 starts at frame 90,000)
+	target, err := p.ResolvePreviewTrack("bass")
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, _ := seq.PackStep(seq.Step{Note: 52, Gate: true, Ratchet: 1, Probability: 100, Velocity: 120})
+	batch := NewPatchArena(1).Begin(1)
+	batch.Step(target, 0, 2, note)
+	if err := p.Patch(batch); err != nil {
+		t.Fatal(err)
+	}
+	read := barFrames - 6_000 + blockFrames - barFrames%blockFrames
+	rest := readFrames(t, p, 3*barFrames/2)
+	if p.LandedRevision() != 1 {
+		t.Fatalf("the patch never landed: revision %d", p.LandedRevision())
+	}
+	// Step 2 of the second pass sounds 480 ticks (12,000 frames) after the restart.
+	restart := barFrames - read
+	first := firstSound(rest)
+	if first < restart+12_000 || first > restart+12_000+600 {
+		t.Fatalf("edit first sounded at frame %d of the rest, want about %d (restart %d)", first, restart+12_000, restart)
+	}
+}
+
+// A range shorter than one step never reaches a step boundary, so an edit
+// lands at the current tick instead of waiting for the loop forever.
+func TestStepPatchLandsInARangeShorterThanOneStep(t *testing.T) {
+	p, err := New(editScore(t), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: 100, Loop: true}); err != nil {
+		t.Fatal(err)
+	}
+	_ = readFrames(t, p, 2*blockFrames)
+	target, _ := p.ResolvePreviewTrack("bass")
+	note, _ := seq.PackStep(seq.Step{Note: 52, Gate: true, Ratchet: 1, Probability: 100, Velocity: 120})
+	batch := NewPatchArena(1).Begin(1)
+	batch.Step(target, 0, 0, note)
+	if err := p.Patch(batch); err != nil {
+		t.Fatal(err)
+	}
+	_ = readFrames(t, p, 8*blockFrames)
+	if p.LandedRevision() != 1 || p.fault != nil {
+		t.Fatalf("edit in a one-step range: revision %d, fault %v", p.LandedRevision(), p.fault)
+	}
+}
