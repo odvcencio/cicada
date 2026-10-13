@@ -854,6 +854,10 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   });
   let original = editor.value;
   let busy = false;
+  // Browser audio tracks its own staged revision. The page can display a score
+  // before audio has staged it; audioWanted is the newest score that audio must
+  // reach, audioStaging is the one in-flight attempt.
+  let audioRevision = '', audioWanted = '', audioStaging = null;
   let idle = Promise.resolve();
   let audioModeValue = 'native';
   let browserPlaying = false;
@@ -915,7 +919,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
         if (state.valid) {
           // Keep text typed since the save was sent; only replace a clean editor.
           if (!dirty()) { document.body.dataset.revision = state.revision; original = state.source; editor.value = state.source; }
-          if (window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(state.revision);
+          if (window.cicadaBrowserAudio.context) { await window.cicadaBrowserAudio.stageCurrentScore(state.revision); audioRevision = audioWanted = state.revision; }
           await refreshProjection({revision: state.revision, source: state.source});
           setStatus(window.cicadaBrowserAudio.context && browserPlaying ? 'Saved; browser score queued for the next bar' : 'Saved to score file', 'success');
         }
@@ -1191,6 +1195,21 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
   const morphSelectors = ['#source-view', '#patterns', '#arrangement', '#song', '#tracks', '#mixer-settings', '#voice'];
   // refreshProjection re-renders only the source view, patterns, scene matrix, song, and voice
   // sections. The page, MIDI access, armed tracks, active panel, focus, and scroll stay.
+  // syncBrowserAudio stages audioWanted until browser audio reaches it. A new
+  // target replaces an older wanted one and joins the in-flight attempt, so an
+  // older score is never staged over a newer one. A rejection leaves audio
+  // behind, and the next poll or source write calls this again to retry.
+  async function syncBrowserAudio(target = '') {
+    if (target) audioWanted = target;
+    if (!isBrowser() || !window.cicadaBrowserAudio.context) return;
+    while (audioRevision !== audioWanted) {
+      if (!audioStaging) {
+        const staging = audioWanted;
+        audioStaging = window.cicadaBrowserAudio.stageCurrentScore(staging).then(() => { audioRevision = staging; }).finally(() => { audioStaging = null; });
+      }
+      await audioStaging;
+    }
+  }
   function staleRefresh(startRevision, currentRevision, replyRevision) {
     return startRevision !== currentRevision && Boolean(replyRevision) && replyRevision !== currentRevision;
   }
@@ -1243,7 +1262,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       if (!response.ok) { setStatus(result.error || 'Mixer edit failed', 'error'); return false; }
       document.body.dataset.revision = result.revision;
       document.body.dataset.playing = playing ? 'true' : 'false';
-      if (isBrowser() && window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(result.revision);
+      if (isBrowser() && window.cicadaBrowserAudio.context) { await window.cicadaBrowserAudio.stageCurrentScore(result.revision); audioRevision = audioWanted = result.revision; }
       await refreshProjection({revision:result.revision, source:result.source});
       if (preview) preview(result);
       setStatus(`Saved mixer change at line ${result.changedRange.start}`, 'success');
@@ -1267,7 +1286,7 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       await refreshProjection({revision: result.revision, source: result.source});
     } catch { setStatus('Source changed; the projection could not refresh', 'error'); return; }
     try {
-      if (isBrowser() && window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(result.revision);
+      await syncBrowserAudio(result.revision);
       setStatus('Source edit applied', 'success');
     } catch (error) { setStatus('Source edit applied; browser audio could not stage it: ' + error.message, 'error'); }
   });
@@ -1284,12 +1303,19 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       const state = await response.json();
       if (revision() !== requestedRevision) return;
       if (!response.ok) { setStatus(state.error || 'Cannot read score state', 'error'); return; }
-      if (busy || state.revision === revision()) return;
+      if (busy) return;
+      if (state.revision === revision()) {
+        // The page matches disk. Retry browser audio if an earlier stage failed.
+        if (state.valid) await syncBrowserAudio(audioWanted ? state.revision : '').catch(error => setStatus('Browser audio could not stage the score; retrying: ' + error.message, 'error'));
+        return;
+      }
       if (dirty()) { setStatus('The file changed outside Studio. Save with care or discard your draft.', 'error', 'conflict'); return; }
       if (state.valid) {
         await refreshProjection({revision: state.revision, source: state.source});
-        if (isBrowser() && window.cicadaBrowserAudio.context) await window.cicadaBrowserAudio.stageCurrentScore(state.revision);
-        setStatus(isBrowser() && window.cicadaBrowserAudio.context && browserPlaying ? 'External edit queued for the next bar' : 'Score reloaded from disk', 'success');
+        try {
+          await syncBrowserAudio(state.revision);
+          setStatus(isBrowser() && window.cicadaBrowserAudio.context && browserPlaying ? 'External edit queued for the next bar' : 'Score reloaded from disk', 'success');
+        } catch (error) { setStatus('Score reloaded; browser audio could not stage it, retrying: ' + error.message, 'error'); }
       }
       else {
         original = state.source; editor.value = original; document.body.dataset.revision = state.revision;
