@@ -59,6 +59,17 @@ func TrackParam(voice, name string) (Descriptor, bool) {
 // written, so the message reads "delay feedback 1.4 is above the maximum 0.95
 // (range 0 to 0.95)".
 func RangeMessage(d Descriptor, label, literal string) string {
+	return rangeMessage(d, label, literal, math.NaN())
+}
+
+// RangeMessageValue is RangeMessage for a value that has no source text, such
+// as an automation point in a typed project. The float64 is compared with the
+// bounds as it is; the text is only formatted for the message.
+func RangeMessageValue(d Descriptor, label string, value float64) string {
+	return rangeMessage(d, label, FormatValue(d, value), value)
+}
+
+func rangeMessage(d Descriptor, label, literal string, exact float64) string {
 	if d.Off && literal == "off" {
 		return ""
 	}
@@ -77,17 +88,34 @@ func RangeMessage(d Descriptor, label, literal string) string {
 	if d.Curve == "enum" || d.Curve == "toggle" || unit != wantUnit(d) {
 		return ""
 	}
-	const slack = 1e-9
+	if !math.IsNaN(exact) {
+		number = exact
+	}
+	// Only a literal that was scaled (kHz, s, %) can carry multiplication error;
+	// the project compilers convert those with exact decimal shifts. Values in
+	// the base unit are compared exactly.
+	slack := 0.0
+	if lower := strings.ToLower(literal); math.IsNaN(exact) && (strings.HasSuffix(lower, "khz") || strings.HasSuffix(lower, "s") && !strings.HasSuffix(lower, "ms") || strings.HasSuffix(lower, "%")) {
+		slack = 1e-9
+	}
 	low := number < d.Min-slack*math.Max(1, math.Abs(d.Min))
 	high := number > d.Max+slack*math.Max(1, math.Abs(d.Max))
 	if !low && !high {
 		return ""
 	}
-	span := "(range " + FormatBound(d, d.Min, false) + " to " + FormatBound(d, d.Max, true) + rangeSuffix(d) + ")"
-	if low {
-		return label + " " + literal + " is below the minimum " + FormatBound(d, d.Min, false) + " " + span
+	lowText, highText := FormatBound(d, d.Min, false), FormatBound(d, d.Max, true)
+	// Never print a value equal to the bound it is said to break.
+	if literal == lowText {
+		lowText = FormatValue(d, d.Min)
 	}
-	return label + " " + literal + " is above the maximum " + FormatBound(d, d.Max, true) + " " + span
+	if literal == highText {
+		highText = FormatValue(d, d.Max)
+	}
+	span := "(range " + lowText + " to " + highText + rangeSuffix(d) + ")"
+	if low {
+		return label + " " + literal + " is below the minimum " + lowText + " " + span
+	}
+	return label + " " + literal + " is above the maximum " + highText + " " + span
 }
 
 // FormatBound writes one range limit (upper marks a maximum) with the parameter's unit, such as 150ms,
@@ -136,8 +164,7 @@ func roundBound(value float64, upper bool) float64 {
 // FormatValue writes a base-unit number the way a score writes it, such as
 // 90000Hz or 1.7, for messages about values that have no source text.
 func FormatValue(d Descriptor, value float64) string {
-	clean, _ := strconv.ParseFloat(strconv.FormatFloat(value, 'g', 6, 64), 64)
-	text := strconv.FormatFloat(clean, 'f', -1, 64)
+	text := strconv.FormatFloat(value, 'f', -1, 64)
 	switch strings.ToLower(d.Unit) {
 	case "hz":
 		return text + "Hz"

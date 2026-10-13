@@ -122,7 +122,7 @@ func validateAutomation(p *Project) error {
 			if point.Value.Number == nil || point.Value.Text != "" {
 				return fmt.Errorf("CICADA-UNIT: continuous automation needs numeric values")
 			}
-			if message := paramdefs.RangeMessage(resolved.Descriptor, fmt.Sprintf("%s point %d", lane.Path, i+1), paramdefs.FormatValue(resolved.Descriptor, *point.Value.Number)); message != "" {
+			if message := paramdefs.RangeMessageValue(resolved.Descriptor, fmt.Sprintf("%s point %d", lane.Path, i+1), *point.Value.Number); message != "" {
 				return fmt.Errorf("CICADA-UNIT: %s", message)
 			}
 			if err := validateParameterValue(resolved.Descriptor, point.Value.projectValue()); err != nil {

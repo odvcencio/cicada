@@ -1,6 +1,7 @@
 package project
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"regexp"
@@ -338,5 +339,136 @@ func TestBuiltInTrackParameterCatalogMatchesTable(t *testing.T) {
 	}
 	if rows < 50 {
 		t.Fatalf("only %d catalog ranges were compared; the catalog format changed", rows)
+	}
+}
+
+// Exact bounds must pass at full float64 precision on every path: source
+// settings, scene settings, automation points, and the typed and JSON project.
+func TestTomTuneExactBoundsPassOnEveryPath(t *testing.T) {
+	max := strconv.FormatFloat(1.4983070768766815, 'f', -1, 64)
+	for _, value := range []string{max, "1.498306", "1.498307", "0.6674199270850172", "0.66742"} {
+		t.Run(value, func(t *testing.T) {
+			source := rangeScore("track d drums { lt_tune = " + value + " }\nautomate d.lt_tune { @1.1.1 " + value + " @1.2.1 1 }")
+			source = []byte(strings.Replace(string(source), "scene main { d = beat }", "scene main { d = beat d.mt_tune = "+value+" }", 1))
+			score, diagnostics := notation.Parse(source)
+			if hasErrors(diagnostics) {
+				t.Fatalf("parse: %+v", diagnostics)
+			}
+			p, diagnostics := FromScore(score)
+			if p == nil {
+				t.Fatalf("FromScore: %+v", diagnostics)
+			}
+			data, err := CanonicalJSON(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := DecodeJSON(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := ValidateProject(decoded); err != nil {
+				t.Fatalf("JSON project: %v", err)
+			}
+		})
+	}
+}
+
+func TestOutsideTomBoundNeverContradictsItself(t *testing.T) {
+	source := rangeScore("track d drums { lt_tune = 1.4983071 }")
+	got := scoreErrors(t, source)
+	if len(got) != 1 || !strings.Contains(got[0].Message, "lt_tune 1.4983071 is above the maximum 1.498") {
+		t.Fatalf("got %+v", got)
+	}
+	d, _ := paramdefs.TrackParam("drums", "lt_tune")
+	next := math.Nextafter(d.Max, 2)
+	if m := paramdefs.RangeMessageValue(d, "x", next); !strings.Contains(m, strconv.FormatFloat(next, 'f', -1, 64)+" is above the maximum 1.498") {
+		t.Fatalf("%s", m)
+	}
+}
+
+func TestInvalidAcidGateIsReportedOnce(t *testing.T) {
+	source := []byte("cicada 1\ntempo 120\ntrack bass acid {\n  gate = 150%\n}\npattern riff acid steps=1 { 1 }\nscene main { bass = riff }\nsong { main }\n")
+	got := scoreErrors(t, source)
+	if len(got) != 1 || got[0].Position.Line != 4 {
+		t.Fatalf("want one diagnostic on line 4, got %+v", got)
+	}
+}
+
+// rowScore puts one row's literal in a score. It reports false for rows that
+// the score path cannot reach.
+func rowScore(d paramdefs.Descriptor, literal string, automate bool) ([]byte, bool) {
+	parts := strings.Split(d.ID, ".")
+	var devices, path string
+	switch parts[0] {
+	case "acid":
+		return nil, false // acid needs its own pattern kind; covered below
+	case "drum":
+		devices, path = "track d drums { "+d.Source+" = "+literal+" }", "d."+d.Path
+	case "fx":
+		master := ""
+		if parts[1] == "transient" || parts[1] == "width" || parts[1] == "limiter" {
+			master = "\nmaster { insert = e }"
+		}
+		devices, path = "fx e "+parts[1]+" { "+d.Source+" = "+literal+" }"+master+"\ntrack d drums {}", "e."+strings.TrimPrefix(d.Path, parts[1]+".")
+	default:
+		return nil, false
+	}
+	if automate {
+		devices = strings.Replace(devices, d.Source+" = "+literal, "", 1) + "\nautomate " + path + " { @1.1.1 " + literal + " }"
+	}
+	return rangeScore(devices), true
+}
+
+func rangeWordErrors(t *testing.T, source []byte) []string {
+	t.Helper()
+	var out []string
+	for _, d := range scoreErrors(t, source) {
+		if strings.Contains(d.Message, "the minimum") || strings.Contains(d.Message, "the maximum") {
+			out = append(out, d.Message)
+		}
+	}
+	return out
+}
+
+// The exact limits, written as the shortest literal that round-trips the
+// float64, and a value just inside each limit, must pass through source
+// settings and automation points. Values just outside must be reported.
+func TestParameterTableExactBoundsThroughSourceAndAutomation(t *testing.T) {
+	rows := append(append([]paramdefs.Descriptor(nil), paramdefs.Registry...), paramdefs.HostOnly...)
+	checked := 0
+	for _, d := range rows {
+		if d.Curve == "enum" || d.Curve == "toggle" || strings.HasPrefix(d.ID, "mix.") || d.Source == "octave" || d.Source == "sidechain" {
+			continue
+		}
+		span := d.Max - d.Min
+		for _, automate := range []bool{false, true} {
+			if automate && (!d.Automatable || !d.Live) {
+				continue
+			}
+			for _, c := range []struct {
+				name  string
+				value float64
+				bad   bool
+			}{{"min", d.Min, false}, {"max", d.Max, false}, {"inside low", d.Min + span*1e-4, false}, {"inside high", d.Max - span*1e-4, false}, {"below", d.Min - span*1e-3, true}, {"above", d.Max + span*1e-3, true}} {
+				literal := boundLiteral(d, c.value)
+				source, ok := rowScore(d, literal, automate)
+				if !ok {
+					continue
+				}
+				got := rangeWordErrors(t, source)
+				if c.bad != (len(got) > 0) {
+					t.Errorf("%s %s (automate=%v) = %s: range errors %v", d.ID, c.name, automate, literal, got)
+				}
+				for _, m := range got {
+					if strings.Contains(m, fmt.Sprintf("%s is below the minimum %s ", literal, literal)) || strings.Contains(m, fmt.Sprintf("%s is above the maximum %s ", literal, literal)) {
+						t.Errorf("contradictory message %q", m)
+					}
+				}
+				checked++
+			}
+		}
+	}
+	if checked < 300 {
+		t.Fatalf("only %d source checks ran", checked)
 	}
 }
