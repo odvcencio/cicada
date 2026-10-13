@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 
+	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/notation"
 )
@@ -23,20 +24,27 @@ type AutomationPoint struct {
 }
 
 func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
+	// Out-of-range points are all reported; the first point of any other kind
+	// of error still ends the pass.
+	var ranges []notation.Diagnostic
 	for _, source := range score.Automation {
 		lane := AutomationLane{Path: source.Path, Points: []AutomationPoint{}}
 		resolved, err := ResolveParameterPath(p, source.Path)
 		if err != nil {
-			return automationDiagnostic("CICADA-REFERENCE", err, source.Position)
+			return append(ranges, automationDiagnostic("CICADA-REFERENCE", err, source.Position)...)
 		}
 		for _, point := range source.Points {
 			tick, err := notation.PositionTick(point.At)
 			if err != nil {
-				return automationDiagnostic("CICADA-POSITION", err, point.Position)
+				return append(ranges, automationDiagnostic("CICADA-POSITION", err, point.Position)...)
+			}
+			if message := paramdefs.RangeMessage(resolved.Descriptor, source.Path+" "+point.At, point.Value); message != "" {
+				ranges = append(ranges, notation.Diagnostic{Code: "CICADA-UNIT", Message: message, Severity: "error", Position: point.Position})
+				continue
 			}
 			value, err := parseParameterValue(resolved.Descriptor, point.Value)
 			if err != nil {
-				return automationDiagnostic("CICADA-UNIT", err, point.Position)
+				return append(ranges, automationDiagnostic("CICADA-UNIT", err, point.Position)...)
 			}
 			shape := point.Shape
 			if shape == "" {
@@ -46,14 +54,17 @@ func lowerAutomation(p *Project, score *notation.Score) []notation.Diagnostic {
 			if point.Curve != "" {
 				curve, err = strconv.ParseFloat(point.Curve, 64)
 				if err != nil || shape != "curve" {
-					return automationDiagnostic("CICADA-PARAM", fmt.Errorf("only curve takes unitless tension"), point.Position)
+					return append(ranges, automationDiagnostic("CICADA-PARAM", fmt.Errorf("only curve takes unitless tension"), point.Position)...)
 				}
 			} else if shape == "curve" {
-				return automationDiagnostic("CICADA-PARAM", fmt.Errorf("curve needs tension -8..8"), point.Position)
+				return append(ranges, automationDiagnostic("CICADA-PARAM", fmt.Errorf("curve needs tension -8..8"), point.Position)...)
 			}
 			lane.Points = append(lane.Points, AutomationPoint{Tick: tick, Value: sceneValueFrom(value), Shape: shape, Curve: curve})
 		}
 		p.Automation = append(p.Automation, lane)
+	}
+	if len(ranges) > 0 {
+		return ranges
 	}
 	if len(p.Automation) > 0 {
 		p.Format, p.Version = FormatID2, 2
@@ -110,6 +121,9 @@ func validateAutomation(p *Project) error {
 			}
 			if point.Value.Number == nil || point.Value.Text != "" {
 				return fmt.Errorf("CICADA-UNIT: continuous automation needs numeric values")
+			}
+			if message := paramdefs.RangeMessage(resolved.Descriptor, fmt.Sprintf("%s point %d", lane.Path, i+1), paramdefs.FormatValue(resolved.Descriptor, *point.Value.Number)); message != "" {
+				return fmt.Errorf("CICADA-UNIT: %s", message)
 			}
 			if err := validateParameterValue(resolved.Descriptor, point.Value.projectValue()); err != nil {
 				return fmt.Errorf("CICADA-UNIT: %w", err)

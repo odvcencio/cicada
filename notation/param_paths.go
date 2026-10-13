@@ -1,6 +1,7 @@
 package notation
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -61,8 +62,13 @@ func validateSceneSettings(score *Score, add func(string, string, string, Positi
 				add("CICADA-UNSUPPORTED", "scene setting "+setting.Path+" is not live", "error", setting.Position)
 				continue
 			}
-			if err := validateSceneValue(descriptor, setting.Value); err != nil {
-				add("CICADA-UNIT", "invalid value for "+setting.Path+": "+err.Error(), "error", setting.ValuePosition)
+			if err := validateSceneValue(descriptor, setting.Path, setting.Value); err != nil {
+				var outside sceneRangeError
+				if errors.As(err, &outside) {
+					add("CICADA-UNIT", string(outside), "error", setting.ValuePosition)
+				} else {
+					add("CICADA-UNIT", "invalid value for "+setting.Path+": "+err.Error(), "error", setting.ValuePosition)
+				}
 			}
 		}
 	}
@@ -187,10 +193,16 @@ func notationModeledPiano(score *Score, kind string) bool {
 	return true
 }
 
+// sceneRangeError is a complete range message that names the path and value,
+// so it is reported without the "invalid value for" prefix.
+type sceneRangeError string
+
+func (e sceneRangeError) Error() string { return string(e) }
+
 // validateSceneValue accepts the values the registry accepts for a live
 // setting. The error says what the setting expects in the registry's own terms,
 // so it never shows the text of a Go parse error.
-func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {
+func validateSceneValue(descriptor paramdefs.Descriptor, path, source string) error {
 	if source == "off" && descriptor.Off {
 		return nil
 	}
@@ -220,6 +232,9 @@ func validateSceneValue(descriptor paramdefs.Descriptor, source string) error {
 			return sceneValueMismatch(descriptor, source)
 		}
 		return nil
+	}
+	if message := paramdefs.RangeMessage(descriptor, path, source); message != "" {
+		return sceneRangeError(message)
 	}
 	if math.IsNaN(value) || math.IsInf(value, 0) || value < descriptor.Min || value > descriptor.Max {
 		return fmt.Errorf("%s is outside the range %s", source, sceneValueRange(descriptor))
@@ -326,4 +341,11 @@ func contains(values []string, value string) bool {
 		}
 	}
 	return false
+}
+
+// ParameterVoiceKind names the voice family of a track kind in the parameter
+// registry: acid, drums, guitar, piano, a modeled keyboard family, or
+// instrument for authored voices.
+func ParameterVoiceKind(score *Score, kind string) string {
+	return notationParameterVoiceKind(score, kind)
 }

@@ -46,8 +46,11 @@ func Check(score *notation.Score) (map[string]*instrument.Program, []notation.Di
 		}
 		kits[kit.ID] = kit
 	}
-	for _, track := range score.Tracks {
-		tracks[track.Name] = track
+	rangeDiagnostics, flagged := checkParamRanges(score)
+	diagnostics = append(diagnostics, rangeDiagnostics...)
+	for _, authored := range score.Tracks {
+		tracks[authored.Name] = authored
+		track := withoutFlagged(authored, flagged)
 		if _, err := CompileMixerParams(track); err != nil {
 			position := parameterErrorPosition(track, func(single notation.Track) error {
 				_, err := CompileMixerParams(single)

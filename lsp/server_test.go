@@ -317,3 +317,44 @@ func TestEditionOneAudioNameDiagnostics(t *testing.T) {
 		})
 	}
 }
+
+// A parameter out of range is published at the parameter's own value, with the
+// parameter name, the value and the allowed range in the message.
+func TestParameterRangeDiagnosticPositionAndMessage(t *testing.T) {
+	source := []byte("cicada 1\ntrack bass acid {\n  cutoff = 30000Hz\n  reso = 1.7\n}\npattern riff acid steps=1 { 1 }\nscene main { bass = riff }\nsong { main }\n")
+	uri := fileURI(filepath.Join(t.TempDir(), "main.cicada"))
+	var output bytes.Buffer
+	server := &server{out: &output, documents: map[string][]byte{uri: source}}
+	if err := server.publish(uri); err != nil {
+		t.Fatal(err)
+	}
+	var message struct {
+		Params struct {
+			Diagnostics []struct {
+				Range struct {
+					Start struct{ Line, Character int }
+				}
+				Message string
+			}
+		}
+	}
+	if err := json.Unmarshal(bytes.TrimSpace(output.Bytes()[bytes.IndexByte(output.Bytes(), '{'):]), &message); err != nil {
+		t.Fatalf("%v: %s", err, output.Bytes())
+	}
+	got := message.Params.Diagnostics
+	if len(got) != 2 {
+		t.Fatalf("want 2 diagnostics, got %s", output.Bytes())
+	}
+	want := []struct {
+		line, character int
+		message         string
+	}{
+		{2, 11, "acid cutoff 30000Hz is above the maximum 8000Hz (range 20Hz to 8000Hz)"},
+		{3, 9, "acid reso 1.7 is above the maximum 1 (range 0 to 1)"},
+	}
+	for i, w := range want {
+		if got[i].Range.Start.Line != w.line || got[i].Range.Start.Character != w.character || got[i].Message != w.message {
+			t.Errorf("diagnostic %d = line %d char %d %q; want line %d char %d %q", i, got[i].Range.Start.Line, got[i].Range.Start.Character, got[i].Message, w.line, w.character, w.message)
+		}
+	}
+}

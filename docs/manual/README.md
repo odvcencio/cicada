@@ -73,6 +73,8 @@ together.
   engine.
 - [Engine scaling measurements](engine-metrics.md) — run synthetic sessions
   and compare CPU and offline render costs between builds.
+- [Parameter ranges](parameter-ranges.md) — the allowed range of every voice,
+  drum and effect setting, as the diagnostics report it.
 - [Troubleshooting](troubleshooting.md) — diagnose notation, editor, playback,
   and export problems.
 
