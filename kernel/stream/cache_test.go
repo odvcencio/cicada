@@ -2,6 +2,8 @@ package stream
 
 import (
 	"math"
+	"sync"
+	"sync/atomic"
 	"testing"
 )
 
@@ -250,5 +252,79 @@ func TestAdmissionAndSharedPageOwnership(t *testing.T) {
 	rs[1].Stop()
 	if _, err := c.NewReader(1); err == nil {
 		t.Fatal("unbounded reader registration")
+	}
+}
+
+// Parallel render lanes pin the same shared page at once. A pin that loses a
+// race with another reader must still find the resident page; it must not be
+// reported as a missing frame.
+func TestConcurrentPinsOfOneResidentPageNeverMiss(t *testing.T) {
+	c, readers := newTestCache(t, 4, 1, 1<<20)
+	if err := readers[0].SeekFrame(0, 1); err != nil {
+		t.Fatal(err)
+	}
+	prime(c)
+	if !c.Ready(1, 0) {
+		t.Fatal("page 0 is not resident")
+	}
+	var misses atomic.Int64
+	var wg sync.WaitGroup
+	for lane := 0; lane < 8; lane++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 200000; i++ {
+				p := c.acquire(1, 0)
+				if p == nil {
+					misses.Add(1)
+					continue
+				}
+				p.state.Add(^uint32(pin - 1))
+			}
+		}()
+	}
+	wg.Wait()
+	if n := misses.Load(); n != 0 {
+		t.Fatalf("resident page reported missing %d times under concurrent pins", n)
+	}
+}
+
+// A slot that keeps losing its CAS is given up after pinRetries failures and
+// reported as a single counted miss, without spinning.
+func TestPinRetryCapFallsBackToOneCountedMiss(t *testing.T) {
+	c, readers := newTestCache(t, 1, 1, 1<<20)
+	if err := readers[0].SeekFrame(0, 1); err != nil {
+		t.Fatal(err)
+	}
+	prime(c)
+	resident := 0
+	for i := range c.pages {
+		if c.pages[i].state.Load() >= ready {
+			resident++
+		}
+	}
+	if resident == 0 {
+		t.Fatal("no resident page")
+	}
+	attempts := 0
+	old := casPin
+	casPin = func(*atomic.Uint32, uint32, uint32) bool { attempts++; return false }
+	defer func() { casPin = old }()
+	if p := c.acquire(1, 0); p != nil {
+		t.Fatal("acquire pinned a page although every CAS failed")
+	}
+	if want := resident * (pinRetries + 1); attempts != want {
+		t.Fatalf("CAS attempts=%d want %d", attempts, want)
+	}
+	var l, r [1]float32
+	readers[0].Render(l[:], r[:])
+	if got := readers[0].Stats().Misses; got != 1 {
+		t.Fatalf("counted misses=%d want 1", got)
+	}
+	casPin = old
+	if p := c.acquire(1, 0); p == nil {
+		t.Fatal("page lost after contention ended")
+	} else {
+		p.state.Add(^uint32(pin - 1))
 	}
 }
