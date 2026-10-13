@@ -155,11 +155,12 @@ type Config struct {
 	// or SFXSidechain for the post-fader SFX bus.
 	CompSidechainTrack int
 	// ParallelWaitFloor is the shortest time the render thread waits for the
-	// parallel lanes to finish one segment before it retires the pool and falls
-	// back to serial rendering (which is silent for the segment that timed
-	// out). Zero selects DefaultParallelWaitFloor. Raise it for offline renders
-	// or tests that run on a heavily loaded machine. Negative values are
-	// rejected. It has no effect on builds without parallel rendering.
+	// parallel lanes to finish one segment. A timeout retires the pool for good:
+	// every later render reports FaultParallelWorker and the host must close and
+	// recreate the engine to recover. Zero selects DefaultParallelWaitFloor.
+	// Raise it for offline renders or tests that run on a heavily loaded
+	// machine. Negative values are rejected. It has no effect on builds without
+	// parallel rendering.
 	ParallelWaitFloor time.Duration `json:"-"`
 }
 
