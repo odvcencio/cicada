@@ -182,7 +182,7 @@ func TestRecordedTakePreservesSimultaneousDrumLanes(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, lane := range []string{"bd", "sd"} {
-		token, err := studioDrumToken(source, "beat", lane, 1)
+		token, err := testDrumToken(source, "beat", lane, 1)
 		if err != nil || token == "." {
 			t.Fatalf("lost %s hit: token=%q error=%v", lane, token, err)
 		}

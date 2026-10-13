@@ -199,7 +199,7 @@ func TestStudioLibrarySavesPublicPresetWithPrivateInstrument(t *testing.T) {
 	if err := os.WriteFile(pins.Path, pins.After, 0600); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := studioSavedPresetSource(filename, source, "lead", "saved")
+	updated, err := intentSavedPresetSource(t, filename, source, "lead", "saved")
 	if err != nil {
 		t.Fatal(err)
 	}

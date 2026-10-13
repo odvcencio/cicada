@@ -13,7 +13,7 @@ const studioSongScore = "title \"Song lane\"\ntrack bass acid {}\npattern pulse 
 
 func TestSongEditsPreserveSourceOutsideEntrySpans(t *testing.T) {
 	before := []byte(studioSongScore)
-	moved, err := editedSongSource(before, "move", 0, 2, 0)
+	moved, err := intentSongSource(t, before, "move", 0, 2, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,14 +23,14 @@ func TestSongEditsPreserveSourceOutsideEntrySpans(t *testing.T) {
 	if !bytes.Equal(before[:bytes.Index(before, []byte("song {"))], moved[:bytes.Index(moved, []byte("song {"))]) {
 		t.Fatal("other declarations changed")
 	}
-	changed, err := editedSongSource(moved, "bars", 0, 0, 8)
+	changed, err := intentSongSource(t, moved, "bars", 0, 0, 8, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !bytes.Contains(changed, []byte("song {\n  chorus*8\n  dusk*3")) {
 		t.Fatalf("implicit bar count was not added: %s", changed)
 	}
-	changed, err = editedSongSource(changed, "bars", 1, 0, 5)
+	changed, err = intentSongSource(t, changed, "bars", 1, 0, 5, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,12 +39,13 @@ func TestSongEditsPreserveSourceOutsideEntrySpans(t *testing.T) {
 	}
 }
 
-func TestSongReorderRefusesAmbiguousComments(t *testing.T) {
+func TestSongReorderMovesOwnLineCommentsWithTheirEntry(t *testing.T) {
 	source := strings.Replace(studioSongScore, "  chorus\n", "  // cue chorus\n  chorus\n", 1)
-	if _, err := editedSongSource([]byte(source), "move", 0, 1, 0); err == nil || !strings.Contains(err.Error(), "comments") {
-		t.Fatalf("comment was reassigned: %v", err)
+	moved, err := intentSongSource(t, []byte(source), "move", 0, 1, 0, "")
+	if err != nil || !bytes.Contains(moved, []byte("song {\n  // cue chorus\n  chorus\n  dusk*2\n  dusk*3\n}")) {
+		t.Fatalf("comment did not travel with its entry: %q, %v", moved, err)
 	}
-	if _, err := editedSongSource([]byte(source), "bars", 1, 0, 4); err != nil {
+	if _, err := intentSongSource(t, []byte(source), "bars", 1, 0, 4, ""); err != nil {
 		t.Fatalf("local bar edit should preserve comment: %v", err)
 	}
 }
@@ -52,7 +53,7 @@ func TestSongReorderRefusesAmbiguousComments(t *testing.T) {
 func TestSongEditsPreserveCRLFAndMultiplierSpacing(t *testing.T) {
 	source := strings.Replace(studioSongScore, "dusk*2", "dusk * 2", 1)
 	source = strings.ReplaceAll(source, "\n", "\r\n")
-	updated, err := editedSongSource([]byte(source), "bars", 0, 0, 7)
+	updated, err := intentSongSource(t, []byte(source), "bars", 0, 0, 7, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +63,7 @@ func TestSongEditsPreserveCRLFAndMultiplierSpacing(t *testing.T) {
 	if bytes.Contains(bytes.ReplaceAll(updated, []byte("\r\n"), nil), []byte("\n")) {
 		t.Fatal("line endings changed")
 	}
-	moved, err := editedSongSource(updated, "move", 0, 2, 0)
+	moved, err := intentSongSource(t, updated, "move", 0, 2, 0, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,19 +75,19 @@ func TestSongEditsPreserveCRLFAndMultiplierSpacing(t *testing.T) {
 func TestArrangementAppendDuplicateReplaceAndDelete(t *testing.T) {
 	for _, newline := range []string{"\n", "\r\n"} {
 		before := []byte(strings.ReplaceAll(studioSongScore, "\n", newline))
-		updated, err := editedSongBlockSource(before, "append", 0, 0, 12, "chorus")
+		updated, err := intentSongSource(t, before, "append", 0, 0, 12, "chorus")
 		if err != nil {
 			t.Fatal(err)
 		}
-		updated, err = editedSongBlockSource(updated, "duplicate", 1, 0, 0, "")
+		updated, err = intentSongSource(t, updated, "duplicate", 1, 0, 0, "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		updated, err = editedSongBlockSource(updated, "scene", 2, 0, 0, "dusk")
+		updated, err = intentSongSource(t, updated, "scene", 2, 0, 0, "dusk")
 		if err != nil {
 			t.Fatal(err)
 		}
-		updated, err = editedSongBlockSource(updated, "delete", 0, 0, 0, "")
+		updated, err = intentSongSource(t, updated, "delete", 0, 0, 0, "")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -102,11 +103,11 @@ func TestArrangementAppendDuplicateReplaceAndDelete(t *testing.T) {
 			t.Fatal("arrangement changed line endings")
 		}
 	}
-	if _, err := editedSongBlockSource([]byte(studioSongScore), "append", 0, 0, 4, "missing"); err == nil {
+	if _, err := intentSongSource(t, []byte(studioSongScore), "append", 0, 0, 4, "missing"); err == nil {
 		t.Fatal("unknown scene accepted")
 	}
 	one := []byte(strings.Replace(studioSongScore, "  dusk*2\n  chorus\n  dusk*3", "  dusk", 1))
-	if _, err := editedSongBlockSource(one, "delete", 0, 0, 0, ""); err == nil {
+	if _, err := intentSongSource(t, one, "delete", 0, 0, 0, ""); err == nil {
 		t.Fatal("deleted final arrangement block")
 	}
 }

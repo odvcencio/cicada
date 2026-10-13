@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -13,6 +15,7 @@ import (
 
 	"m31labs.dev/cicada/host/audition"
 	"m31labs.dev/cicada/host/padsampler"
+	"m31labs.dev/cicada/internal/testwav"
 )
 
 func samplerStudio(t *testing.T) (*studio, http.Handler) {
@@ -137,11 +140,21 @@ func TestSamplerAddsAudioTrackWithoutRevalidatingUnresolvedImports(t *testing.T)
 	}
 }
 
-func TestSamplerPrintClipCanBeEditedWithImportedInstruments(t *testing.T) {
-	source := []byte("cicada 2\nimport \"std/keys\"\ntrack keys keys.tine_ep {}\nasset printed-audio \"sample.wav\" { sha256 = \"" + strings.Repeat("0", 64) + "\" format = wav frames = 48000 rate = 48000Hz channels = 2 }\nclip printed printed-audio { start = 0frames end = 48000frames }\n")
-	updated, err := clipSettingsSource(source, "printed", &studioClipSettings{End: 44100, GainDB: -3, FadeIn: 120, FadeOut: 240}, 2)
-	if err != nil || !bytes.Contains(updated, []byte("end = 44100frames")) || !bytes.Contains(updated, []byte("gain = -3dB")) {
-		t.Fatalf("imported score cannot edit a printed clip: %v", err)
+func TestSamplerPrintClipCanBeEditedThroughTheClipRoute(t *testing.T) {
+	wav := testwav.Bytes(48000, 2, 16, 48000, 1)
+	source := []byte("cicada 2\ntrack lead acid {}\nasset printed-audio \"sample.wav\" { sha256 = \"" + fmt.Sprintf("%x", sha256.Sum256(wav)) + "\" format = wav frames = 48000 rate = 48000Hz channels = 2 }\nclip printed printed-audio { start = 0frames end = 48000frames }\npattern head { 1 . 3 . }\nscene main { lead=head }\nsong { main }\n")
+	path := studioTestPath(t, string(source))
+	if err := os.WriteFile(filepath.Join(filepath.Dir(path), "sample.wav"), wav, 0600); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := studioHandler(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response := studioCall(t, handler, "/api/clip", studioEdit{Revision: studioRevision(source), Action: "clip-settings", Pattern: "printed", ClipSettings: &studioClipSettings{End: 44100, GainDB: -3, FadeIn: 120, FadeOut: 240}})
+	updated, _ := os.ReadFile(path)
+	if response.Code != http.StatusOK || !bytes.Contains(updated, []byte("end = 44100frames")) || !bytes.Contains(updated, []byte("gain = -3dB")) {
+		t.Fatalf("printed clip edit failed: %d %s", response.Code, response.Body.String())
 	}
 }
 
