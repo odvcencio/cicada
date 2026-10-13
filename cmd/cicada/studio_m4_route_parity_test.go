@@ -55,7 +55,7 @@ func m4RouteCases() []m4RouteCase {
 	}{
 		{"set", "main", "bass.cutoff", `"1.25kHz"`, "automation-set", 200, ""}, {"insert precision", "hold", "bass.level", `-6.25`, "automation-set", 200, ""}, {"remove", "main", "bass.cutoff", "", "automation-remove", 200, ""},
 		{"missing point", "hold", "bass.pan", "", "automation-remove", 422, "scene hold has no point for bass.pan"}, {"out of range", "main", "bass.cutoff", `50000`, "automation-set", 422, ""}, {"unit mismatch", "main", "bass.level", `"2Hz"`, "automation-set", 422, ""},
-		{"forbidden", "main", "bass.insert", `"none"`, "automation-set", 422, "bass.insert cannot be automated at a scene boundary"}, {"tempo", "main", "tempo", `140`, "automation-set", 422, "tempo cannot be automated at a scene boundary"},
+		{"forbidden", "main", "bass.insert", `"none"`, "automation-set", 422, "bass.insert cannot be automated at a scene boundary"}, {"scene tempo set", "main", "tempo", `140`, "automation-set", 200, ""}, {"scene tempo insert", "hold", "tempo", `84.5`, "automation-set", 200, ""}, {"scene tempo missing", "hold", "tempo", "", "automation-remove", 422, "scene hold has no point for tempo"}, {"scene tempo range", "main", "tempo", `301`, "automation-set", 422, ""},
 		{"unknown path", "main", "unknown.pan", `0`, "automation-set", 422, ""}, {"missing scene", "missing", "bass.pan", `0`, "automation-set", 422, `unknown declaration "missing"`}, {"missing value", "main", "bass.pan", "", "automation-set", 422, ""}, {"unknown", "main", "bass.pan", `0`, "bad", 400, "choose an automation operation"},
 	} {
 		add("/api/automation", c.name, automationScore, studioEdit{Action: c.action, Scene: c.scene, Path: c.path, Value: json.RawMessage(c.value)}, c.status, c.message)

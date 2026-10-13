@@ -72,6 +72,15 @@ func (s *studioApp) automation(ctx *server.Context, v workspace, csrf string) go
 		descriptors[address.Address] = resolved.Descriptor
 		values[address.Address] = fmt.Sprint(address.Value) + automationUnit(resolved.Descriptor.Unit)
 	}
+	// The scene tempo is the one bare setting a scene may carry. It steps at the
+	// scene boundary, so it is offered here beside the scene points. It stays out
+	// of the continuous automation curves, which need a live, automatable
+	// parameter, and out of scores whose arrangement has no scene boundaries.
+	if resolved, err := project.ResolveParameterPath(p, project.SceneTempoPath); err == nil && p.Arrange == nil {
+		paths = append(paths, project.SceneTempoPath)
+		descriptors[project.SceneTempoPath] = resolved.Descriptor
+		values[project.SceneTempoPath] = strconv.FormatFloat(float64(p.TempoMilli)/1000, 'f', -1, 64)
+	}
 	sort.Strings(paths)
 	if len(paths) == 0 {
 		return gosx.Fragment()

@@ -35,6 +35,15 @@ func TestM4SettingsWriterParity(t *testing.T) {
 			}},
 			{"scene remove", automationScore, `{"kind":"removescenesetting","entity":"setting:main/bass.cutoff"}`, studioEdit{Action: "automation-remove", Scene: "main", Path: "bass.cutoff"}, func(s []byte) ([]byte, error) { return sceneAutomationSource(s, "main", "bass.cutoff", nil, true, 1) }},
 			{"scene missing point", automationScore, `{"kind":"removescenesetting","entity":"setting:main/bass.pan"}`, studioEdit{}, func(s []byte) ([]byte, error) { return sceneAutomationSource(s, "main", "bass.pan", nil, true, 1) }},
+			{"scene tempo insert", automationScore, `{"kind":"setscenesetting","entity":"setting:hold/tempo","value":84}`, studioEdit{Action: "automation-set", Scene: "hold", Path: "tempo"}, func(s []byte) ([]byte, error) {
+				return sceneAutomationSource(s, "hold", "tempo", json.RawMessage(`84`), false, 1)
+			}},
+			{"scene tempo change", strings.Replace(automationScore, "scene hold { bass = keep }", "scene hold { tempo = 90 bass = keep }", 1), `{"kind":"setscenesetting","entity":"setting:hold/tempo","value":66.5}`, studioEdit{Action: "automation-set", Scene: "hold", Path: "tempo"}, func(s []byte) ([]byte, error) {
+				return sceneAutomationSource(s, "hold", "tempo", json.RawMessage(`66.5`), false, 1)
+			}},
+			{"scene tempo range", automationScore, `{"kind":"setscenesetting","entity":"setting:hold/tempo","value":301}`, studioEdit{}, func(s []byte) ([]byte, error) {
+				return sceneAutomationSource(s, "hold", "tempo", json.RawMessage(`301`), false, 1)
+			}},
 			{"scene forbidden", automationScore, `{"kind":"setscenesetting","entity":"setting:main/bass.insert","value":"none"}`, studioEdit{}, func(s []byte) ([]byte, error) {
 				return sceneAutomationSource(s, "main", "bass.insert", json.RawMessage(`"none"`), false, 1)
 			}},
