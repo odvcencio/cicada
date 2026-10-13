@@ -65,7 +65,8 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 		seen[track.ID] = true
 	}
 	songBars := 256
-	var wantChanges []project.TempoChange
+	var songChanges []project.TempoChange
+	var scoreMilli int
 	if score != nil {
 		p, diagnostics := project.FromScore(score)
 		if p == nil {
@@ -93,7 +94,7 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 			end = max(end, v.Tick, v.EndTick)
 		}
 		songBars = int((end + seq.TicksPerBar - 1) / seq.TicksPerBar)
-		wantChanges = project.SongTempoChanges(p)
+		songChanges, scoreMilli = project.SongTempoChanges(p), p.TempoMilli
 	}
 	names := make([]string, 0, len(manifest.Tracks)+5)
 	for index, track := range manifest.Tracks {
@@ -143,10 +144,10 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 			if current[0] != 44_100 && current[0] != 48_000 && current[0] != 96_000 || current[2] < 1 || current[2] > 256 || from+int(current[2]) > songBars || score != nil && currentTiming[0] != uint32(score.TempoMilli) || currentTiming[1] > current[0]*10 {
 				return report, fmt.Errorf("%s: invalid rate, bars, tempo, or tail", name)
 			}
-			if score != nil && !sameTempoChanges(stemTiming.changes, wantChanges) {
+			if score != nil && !sameTempoChanges(stemTiming.changes, project.ExcerptTempoChanges(scoreMilli, songChanges, from, int(current[2]))) {
 				return report, fmt.Errorf("%s: tempo steps differ from the score", name)
 			}
-			if want, err := stemTiming.frames(int(current[0]), from); err != nil || want != int64(current[1]) {
+			if want, err := stemTiming.frames(int(current[0]), from); err != nil || !framesMatch(int64(current[1]), want, from, stemTiming.changes) {
 				return report, fmt.Errorf("%s: frame count differs from musical duration", name)
 			}
 		} else if current != reference || currentTiming != timing || !sameTempoChanges(stemTiming.changes, referenceChanges) {

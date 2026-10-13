@@ -9,6 +9,21 @@ import (
 	"m31labs.dev/cicada/project"
 )
 
+// maxWAVTempoChanges bounds the tempo steps one cica chunk records. The writer
+// refuses a range that needs more, and the reader refuses a chunk that holds more.
+const maxWAVTempoChanges = 256
+
+// framesMatch compares a file's length with the recorded timing. An excerpt
+// that starts after tempo changes cannot record the sub-sample position of its
+// first bar, so its length may differ by one frame from the full-song count.
+func framesMatch(got, want int64, from int, changes []project.TempoChange) bool {
+	if got == want {
+		return true
+	}
+	diff := got - want
+	return from > 0 && len(changes) > 0 && diff >= -1 && diff <= 1
+}
+
 // wavTiming is the content of a cica chunk, version 1 or 2.
 type wavTiming struct {
 	tempoMilli, bars, tailFrames uint32
@@ -26,7 +41,7 @@ func readWAVTiming(file io.ReaderAt, at, fileSize int64) (wavTiming, error) {
 		return timing, fmt.Errorf("missing Cicada timing metadata")
 	}
 	size, version := int64(binary.LittleEndian.Uint32(head[4:8])), binary.LittleEndian.Uint32(head[8:12])
-	if string(head[:4]) != "cica" || version != 1 && version != 2 || size < 16 || (size-16)%8 != 0 || version == 1 && size != 16 || version == 2 && size == 16 || (size-16)/8 > 256 {
+	if string(head[:4]) != "cica" || version != 1 && version != 2 || size < 16 || (size-16)%8 != 0 || version == 1 && size != 16 || version == 2 && size == 16 || (size-16)/8 > maxWAVTempoChanges {
 		return timing, fmt.Errorf("missing Cicada timing metadata")
 	}
 	if fileSize != at+8+size {

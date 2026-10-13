@@ -11,6 +11,11 @@ import (
 // scene boundary.
 const SceneTempoPath = "tempo"
 
+// CanonicalTempo rounds a tempo to the nearest thousandth of a BPM. Every
+// consumer (engine, tempo map, renders, MIDI, durations) works in whole
+// milli-BPM, so the project stores, serializes and compiles this one value.
+func CanonicalTempo(bpm float64) float64 { return math.Round(bpm*1000) / 1000 }
+
 // SceneTempoMilli reads a scene's tempo in thousandths of a BPM. It reports
 // false when the scene does not set a tempo or the value is not in 20..300.
 func SceneTempoMilli(scene Scene) (int, bool) {
@@ -18,7 +23,7 @@ func SceneTempoMilli(scene Scene) (int, bool) {
 		if setting.Path != SceneTempoPath || setting.Value.Number == nil {
 			continue
 		}
-		milli := math.Round(*setting.Value.Number * 1000)
+		milli := math.Round(CanonicalTempo(*setting.Value.Number) * 1000)
 		if milli < 20_000 || milli > 300_000 {
 			return 0, false
 		}
@@ -128,6 +133,29 @@ func (m *TempoMap) TickAtSample(sample int64) int64 {
 
 // Changed reports whether the map has any step.
 func (m *TempoMap) Changed() bool { return len(m.clocks) > 1 }
+
+// ExcerptTempoChanges is the tempo state a render of bars [from, from+bars)
+// needs: the tempo at its first bar, if that differs from the score tempo,
+// followed by the changes inside the range. Changes before the range are not
+// needed, so a short excerpt of a long song stays within a decoder's limit.
+func ExcerptTempoChanges(scoreMilli int, changes []TempoChange, from, bars int) []TempoChange {
+	current := scoreMilli
+	var out []TempoChange
+	for _, change := range changes {
+		if change.Bar <= from {
+			current = change.BPMMilli
+		}
+	}
+	if current != scoreMilli {
+		out = append(out, TempoChange{Bar: from, BPMMilli: current})
+	}
+	for _, change := range changes {
+		if change.Bar > from && change.Bar < from+bars {
+			out = append(out, change)
+		}
+	}
+	return out
+}
 
 // SongSeconds is the length of the first bars of the song in seconds, summed
 // across the tempo steps. It is for display; playback and renders use TempoMap.

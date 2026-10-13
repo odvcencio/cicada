@@ -522,3 +522,58 @@ func TestSceneTempoLoopWithCommittedEditAndAutomationLane(t *testing.T) {
 		t.Fatalf("seek to the start left the cutoff at %g", got)
 	}
 }
+
+// With no scene tempo in the song the authored chain is empty. A scene outside
+// the song that sets 60 BPM and is launched by hand still moves the transport,
+// and the bar placement the hosts use follows the live clock.
+func TestSceneTempoManualLaunchWithoutAChainMovesHostBoundaries(t *testing.T) {
+	cfg := testConfig()
+	cfg.Tracks = 1
+	cfg.Scenes = []Scene{{}, {Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}}}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 8}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(e.tempoChain) != 0 {
+		t.Fatal("the song should have no authored tempo chain")
+	}
+	if got := e.FramesBetweenTicks(0, 2*seq.TicksPerBar); got != 192_000 {
+		t.Fatalf("authored frames to bar 2 = %d", got)
+	}
+	e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	var l, r [128]float32
+	for range 100 {
+		e.Render(l[:], r[:])
+	}
+	e.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Arg0: 2}) // next bar line
+	for range 700 { // 102400 frames: past the bar line at 96000
+		e.Render(l[:], r[:])
+	}
+	if e.transport.BPMMilli() != 60_000 {
+		t.Fatalf("the launch left the tempo at %d", e.transport.BPMMilli())
+	}
+	if got := e.FramesBetweenTicks(0, 2*seq.TicksPerBar); got != 96_000+192_000 {
+		t.Fatalf("frames to bar 2 after the launch = %d, want 288000", got)
+	}
+	if got := e.FramesBetweenTicks(0, seq.TicksPerBar); got != 96_000 {
+		t.Fatalf("frames to bar 1 = %d", got)
+	}
+	// A seek back to the start restores the authored tempo and chain.
+	e.Push(cmd.Command{Op: cmd.OpSeek, Track: 0xff})
+	e.Render(l[:], r[:])
+	if e.transport.BPMMilli() != 120_000 || e.FramesBetweenTicks(0, 2*seq.TicksPerBar) != 192_000 {
+		t.Fatalf("seek did not restore the authored tempo: %d", e.transport.BPMMilli())
+	}
+}
+
+// Every whole milli-BPM the project can write comes back from the float32 the
+// image carries.
+func TestSceneTempoMilliRoundTripsThroughFloat32(t *testing.T) {
+	for milli := int64(20_000); milli <= 300_000; milli++ {
+		setting := SceneSetting{Value: float32(float64(milli) / 1000)}
+		if got := sceneTempoMilli(setting); got != milli {
+			t.Fatalf("%d milli-BPM read back as %d", milli, got)
+		}
+	}
+}

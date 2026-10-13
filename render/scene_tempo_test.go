@@ -316,3 +316,124 @@ func TestSceneTempoSlideIntoNextSceneMatchesKernelSampleForSample(t *testing.T) 
 		}
 	}
 }
+
+// Authored tempos just around a rounding boundary become one canonical
+// milli-BPM value, and the engine, the tempo map and the offline render agree
+// on it to the frame.
+func TestSceneTempoRoundingBoundariesAgreeEverywhere(t *testing.T) {
+	for _, text := range []string{"20.0004999", "20.0005", "20.0005001", "96.0004999", "96.0005", "96.0005001", "299.9995", "299.9994999"} {
+		t.Run(text, func(t *testing.T) {
+			source := "tempo 120\ntrack bass acid {}\npattern riff acid steps=1 { 1 }\nscene a { bass = riff }\nscene b { bass = riff tempo = " + text + " }\nsong { a*2 b*3 }\n"
+			score, diagnostics := notation.Parse([]byte(source))
+			if len(diagnostics) != 0 {
+				t.Fatal(diagnostics)
+			}
+			p, ds := project.FromScore(score)
+			if p == nil {
+				t.Fatal(ds)
+			}
+			milli, ok := project.SceneTempoMilli(p.Scenes[1])
+			if !ok {
+				t.Fatal("no scene tempo")
+			}
+			stored := *p.Scenes[1].Settings[0].Value.Number
+			if stored != float64(milli)/1000 {
+				t.Fatalf("the project keeps %v, want the canonical %v", stored, float64(milli)/1000)
+			}
+			const rate = 48_000
+			tempo, err := project.NewTempoMap(rate, int64(p.TempoMilli), project.SongTempoChanges(p))
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := tempo.SampleAtTick(5 * seq.TicksPerBar)
+			cfg, err := project.CompileEngine(p, rate, 128)
+			if err != nil {
+				t.Fatal(err)
+			}
+			player, err := engine.New(cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := player.TempoAtTick(2 * seq.TicksPerBar); got != int64(milli) {
+				t.Fatalf("the engine plays %d milli-BPM, the project says %d", got, milli)
+			}
+			if got := player.FramesBetweenTicks(0, 5*seq.TicksPerBar); got != want {
+				t.Fatalf("engine frames %d, tempo map %d", got, want)
+			}
+			// The engine's transport, not only its map, reaches bar 5 there.
+			player.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+			var l, r [128]float32
+			reached := int64(-1)
+			for frame := int64(0); frame < want+256 && reached < 0; frame += 128 {
+				player.Render(l[:], r[:])
+				if player.TransportSample() >= want && player.LiveClock().TickAtSample(want) >= 5*seq.TicksPerBar {
+					reached = want
+				}
+			}
+			if live := player.LiveClock(); live.BPMMilli != int64(milli) {
+				t.Fatalf("the transport plays %d milli-BPM", live.BPMMilli)
+			}
+			var wav bytes.Buffer
+			noDither := false
+			report, err := WAV(score, Options{SampleRate: rate, TailSec: 0, Dither: &noDither}, &wav)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if report.Frames != want {
+				t.Fatalf("offline render %d frames, tempo map %d", report.Frames, want)
+			}
+		})
+	}
+}
+
+// A valid 260-bar song that alternates 120 and 60 BPM has 259 tempo changes,
+// more than one timing chunk records. An excerpt carries only the tempo at its
+// first bar and the changes inside it, so it still verifies.
+func TestSceneTempoExcerptOfALongSongVerifies(t *testing.T) {
+	var song strings.Builder
+	for i := 0; i < 130; i++ {
+		song.WriteString(" a b")
+	}
+	source := "tempo 120\ntrack bass acid {}\npattern riff acid steps=1 { 1 }\nscene a { bass = riff tempo = 120 }\nscene b { bass = riff tempo = 60 }\nsong {" + song.String() + " }\n"
+	score, diagnostics := notation.Parse([]byte(source))
+	if len(diagnostics) != 0 {
+		t.Fatal(diagnostics)
+	}
+	p, ds := project.FromScore(score)
+	if p == nil {
+		t.Fatal(ds)
+	}
+	if got := len(project.SongTempoChanges(p)); got != 259 {
+		t.Fatalf("the song has %d tempo changes", got)
+	}
+	// Bars 102 and 103 (zero-based 101 and 102): 60 BPM, then 120 BPM.
+	if got := project.ExcerptTempoChanges(p.TempoMilli, project.SongTempoChanges(p), 101, 2); len(got) != 2 || got[0] != (project.TempoChange{Bar: 101, BPMMilli: 60_000}) || got[1] != (project.TempoChange{Bar: 102, BPMMilli: 120_000}) {
+		t.Fatalf("excerpt state = %+v", got)
+	}
+	noDither := false
+	opts := Options{SampleRate: 48_000, From: 101, Bars: 2, TailSec: .1, Dither: &noDither}
+	var wav bytes.Buffer
+	report, err := WAV(score, opts, &wav)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 192000 frames at 60 BPM, then 96000 at 120 BPM, then the tail.
+	if report.Frames != 192_000+96_000+4_800 {
+		t.Fatalf("excerpt frames = %d", report.Frames)
+	}
+	path := filepath.Join(t.TempDir(), "excerpt.wav")
+	if err := os.WriteFile(path, wav.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyWAV(path, VerifyOptions{SampleRate: 48_000, Bits: 24, From: 101, Bars: 2, TailSec: .1, PeakMaxDB: 0, DCMaxDB: 0}); err != nil {
+		t.Fatalf("verify-wav: %v", err)
+	}
+	dir := filepath.Join(t.TempDir(), "stems")
+	stems, err := Stems(score, opts, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if verified, err := VerifyStems(score, dir, VerifyStemsOptions{ResidualMaxDB: -80}); err != nil || verified.Frames != stems.Frames {
+		t.Fatalf("verify-stems: %+v, %v", verified, err)
+	}
+}

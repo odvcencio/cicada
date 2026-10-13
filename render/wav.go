@@ -420,7 +420,10 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
-	report.tempoChanges = tempoChanges
+	report.tempoChanges = project.ExcerptTempoChanges(semantic.TempoMilli, tempoChanges, report.From, report.Bars)
+	if len(report.tempoChanges) > maxWAVTempoChanges {
+		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
+	}
 	fromFrame := tempoMap.SampleAtTick(int64(report.From) * seq.TicksPerBar)
 	renderFrames := tempoMap.SampleAtTick(int64(renderBars)*seq.TicksPerBar) + report.TailFrames
 	report.Frames = renderFrames - fromFrame

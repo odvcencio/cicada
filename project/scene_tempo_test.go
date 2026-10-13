@@ -132,3 +132,27 @@ func TestCompiledSceneTempoComesFirst(t *testing.T) {
 		t.Fatalf("scene b settings: %+v", settings)
 	}
 }
+
+// A project read from JSON may carry a tempo with more than three decimals. The
+// map, the durations and the compiled setting must all read the same milli-BPM.
+func TestNonCanonicalSceneTempoCompilesToTheSameMilli(t *testing.T) {
+	for _, number := range []float64{20.0004999, 20.0005, 20.0005001, 96.0004999, 96.0005, 96.0005001} {
+		p, ds := tempoProject(t, tempoSteps)
+		if p == nil {
+			t.Fatal(ds)
+		}
+		n := number
+		p.Scenes[1].Settings[0].Value.Number = &n
+		milli, ok := SceneTempoMilli(p.Scenes[1])
+		if !ok {
+			t.Fatal("no tempo")
+		}
+		settings, err := CompileSceneSettings(p, p.Scenes[1])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := int(float64(settings[0].Value)*1000 + .5); got != milli {
+			t.Fatalf("%v: map says %d milli-BPM, the engine setting reads %d", number, milli, got)
+		}
+	}
+}

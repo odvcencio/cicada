@@ -113,7 +113,7 @@ func VerifyWAV(path string, opts VerifyOptions) (VerifyReport, error) {
 	if err != nil {
 		return report, err
 	}
-	if report.Frames != wantFrames {
+	if !framesMatch(report.Frames, wantFrames, opts.From, timing.changes) {
 		return report, fmt.Errorf("WAV duration: got %d frames, want %d", report.Frames, wantFrames)
 	}
 	var sums [2]float64

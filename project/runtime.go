@@ -560,7 +560,11 @@ func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved Resolved
 	if value.Number == nil {
 		return 0, fx.FreeDelay, fmt.Errorf("setting has no numeric value")
 	}
-	compiled, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *value.Number)
+	number := *value.Number
+	if resolved.ID == kernel.ParamGlobalTempo {
+		number = CanonicalTempo(number) // the kernel reads back exactly these milli-BPM
+	}
+	compiled, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, number)
 	if err != nil {
 		return 0, fx.FreeDelay, err
 	}
