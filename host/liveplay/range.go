@@ -114,8 +114,8 @@ func (p *Player) seekListeningRange(tick int64) {
 	p.transportQueued = true
 	p.initialParameters = false
 	p.bar = tick / seq.TicksPerBar
-	p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: p.current.BPMMilli, AnchorSample: p.sample, AnchorTick: tick}
-	p.tempoMilli.Store(p.current.BPMMilli)
+	p.clock = seq.Clock{SampleRate: int64(p.rate), BPMMilli: p.current.Engine.TempoAtTick(tick), AnchorSample: p.sample, AnchorTick: tick}
+	p.tempoMilli.Store(p.clock.BPMMilli)
 	p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
 	p.position.Store(uint64((tick/seq.TicksPerBar+1)<<8 | (tick%seq.TicksPerBar)/seq.TicksPerStep + 1))
 	p.jumpFadeRemaining = p.rate / 200

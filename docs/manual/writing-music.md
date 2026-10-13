@@ -171,6 +171,37 @@ See [controls and limits](../spec/edition-2.md#experimental-guitar-voice).
 Drive zero still has amp coloration. This voice models one string and a
 generic amp; it does not emulate a measured guitar, circuit or cabinet.
 
+## Change the tempo between scenes
+
+A scene can set the song tempo. The change is a step on the bar line where the scene starts. In this score the first two bars play at 120 BPM and the last two at 66 BPM:
+
+```cicada
+cicada 2
+tempo 120
+
+track bass acid {}
+
+pattern riff acid steps=4 { 1 . 5 . }
+
+scene main {
+  bass = riff
+}
+
+scene outro {
+  bass = riff
+  tempo = 66
+}
+
+song {
+  main*2
+  outro*2
+}
+```
+
+The tempo is a plain number from 20 to 300 beats per minute. It carries into later scenes until another scene sets it, so a run of short scenes with falling values gives a stepped slow-down. Playing from the start, seeking, and each pass of a looped song begin at the score's `tempo`. Synced delay times follow the tempo. The [scene-tempo example](../../examples/scene-tempo.cicada) steps from 120 down to 66 BPM, and `cicada midi` writes one tempo event for each step.
+
+There are no tempo ramps or automation lanes, and audio clips are not time-stretched, so a clip keeps its recorded speed at any tempo. Count-in and recording assume one tempo. See [scene tempo](../spec/edition-1.md#scene-tempo).
+
 ## Shape a note
 
 Keep modifiers next to the note they change:

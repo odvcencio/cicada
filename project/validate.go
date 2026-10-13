@@ -120,7 +120,7 @@ func ValidateProject(p *Project) error {
 			if err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
-			if err := params.ValidateTempo(int64(p.TempoMilli)); err != nil {
+			if err := params.ValidateTempo(int64(SlowestTempoMilli(p))); err != nil {
 				return fmt.Errorf("effect %s: %w", effect.ID, err)
 			}
 		} else if kind == "reverb" {
@@ -697,7 +697,10 @@ func ValidateProject(p *Project) error {
 			if err != nil {
 				return err
 			}
-			if !resolved.Descriptor.Live {
+			if setting.Path == SceneTempoPath && p.Arrange != nil {
+				return fmt.Errorf("CICADA-UNSUPPORTED: scene %s sets tempo, which a project with an arrange block does not apply", scene.ID)
+			}
+			if !resolved.Descriptor.Live && !notation.SceneTempoPath(resolved.Descriptor.ID) {
 				return fmt.Errorf("CICADA-UNSUPPORTED: scene setting %s is not live", setting.Path)
 			}
 			if setting.Value.Number != nil && (setting.Value.Unit == "enum" || setting.Value.Text != "") || setting.Value.Number == nil && (setting.Value.Unit != "enum" || setting.Value.Text == "") {

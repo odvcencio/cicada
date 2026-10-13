@@ -1,0 +1,67 @@
+title "Scene tempo"
+
+tempo 120
+
+key a minor
+
+seed 4242
+
+fx delay delay {
+  time = 1/8
+  feedback = 0.35
+  damp = 6kHz
+  pingpong = true
+  width = 1
+  mix = 0.8
+}
+
+track bass acid {
+  cutoff = 620Hz
+  send delay = 0.3
+}
+
+track drums drums {}
+
+pattern riff {
+  1 . . . 5 . . . | 1 . . . 3 . . .
+}
+
+pattern low {
+  1 . 1 . 5 . . . | 1 . . . 3 . 5 .
+}
+
+pattern beat drums {
+  bd: X...x...X...x...
+  sd: ....X.......X...
+}
+
+scene main {
+  bass = riff
+  drums = beat
+}
+
+scene slower {
+  bass = riff
+  drums = beat
+  tempo = 100
+}
+
+scene slowest {
+  bass = low
+  drums = beat
+  tempo = 84
+}
+
+scene outro {
+  bass = low
+  drums = beat
+  tempo = 66
+  delay.time = 1/4
+}
+
+song {
+  main*2
+  slower
+  slowest
+  outro*2
+}

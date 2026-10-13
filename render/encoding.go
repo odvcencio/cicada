@@ -102,9 +102,15 @@ func (encoder *wavEncoder) writeFrame(dst []byte, left, right float32, ceiling f
 }
 
 func writeWAVHeader(w io.Writer, sampleRate, bits int, dataBytes uint32) error {
+	return writeWAVHeaderTempo(w, sampleRate, bits, dataBytes, 0)
+}
+
+// writeWAVHeaderTempo sizes the RIFF container for a cica chunk that records
+// the given number of tempo changes.
+func writeWAVHeaderTempo(w io.Writer, sampleRate, bits int, dataBytes uint32, tempoChanges int) error {
 	var header [44]byte
 	copy(header[0:4], "RIFF")
-	binary.LittleEndian.PutUint32(header[4:8], dataBytes+60)
+	binary.LittleEndian.PutUint32(header[4:8], dataBytes+36+uint32(metadataBytes(tempoChanges)))
 	copy(header[8:12], "WAVE")
 	copy(header[12:16], "fmt ")
 	binary.LittleEndian.PutUint32(header[16:20], 16)

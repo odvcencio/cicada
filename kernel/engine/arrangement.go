@@ -137,8 +137,14 @@ func gcd(a, b int64) int64 {
 	return a
 }
 
+// launchScene is the manual path (a launch command or the director). While a
+// song carries scene tempos, the song owns the tempo: a manual launch changes
+// patterns and parameters but never the tempo, so the engine and the tempo
+// chain cannot disagree.
 func (e *Engine) launchScene(index uint16) {
+	e.manualLaunch = true
 	e.launchSceneMode(index, false, false)
+	e.manualLaunch = false
 }
 
 func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
@@ -146,8 +152,17 @@ func (e *Engine) launchSceneWithSkip(index uint16, skipManualPatterns bool) {
 }
 
 func (e *Engine) launchSceneMode(index uint16, skipManualPatterns, snapSettings bool) {
+	e.applySceneTempo(index, snapSettings)
 	e.launchSceneTracks(index, skipManualPatterns)
 	e.applySceneSettingsMode(index, snapSettings)
+}
+
+// applySceneTempo runs first: the scene's patterns and delay division use it.
+// The project compiler puts a scene's tempo ahead of its other settings.
+func (e *Engine) applySceneTempo(index uint16, snap bool) {
+	if settings := e.scenes[index].Settings; len(settings) != 0 && settings[0].ID == kernel.ParamGlobalTempo {
+		e.applySceneSetting(settings[0], snap)
+	}
 }
 
 func (e *Engine) launchSceneTracks(index uint16, skipManualPatterns bool) {
@@ -234,6 +249,14 @@ func (e *Engine) applySceneSetting(setting SceneSetting, snap bool) {
 		}
 		return
 	}
+	if setting.ID == kernel.ParamGlobalTempo {
+		if e.manualLaunch && e.songTempo {
+			return
+		}
+		e.setSceneTempo(sceneTempoMilli(setting))
+		e.liveTempo = e.liveTempo || e.manualLaunch
+		return
+	}
 	command := cmd.Command{Op: cmd.OpSetParam, Track: setting.Track, Index: uint16(setting.ID), Arg0: math.Float32bits(setting.Value)}
 	if snap {
 		e.setParamImmediate(command)
@@ -242,6 +265,18 @@ func (e *Engine) applySceneSetting(setting SceneSetting, snap bool) {
 	}
 	if e.faulted {
 		return
+	}
+}
+
+// setSceneTempo steps the tempo at the current tick. The delay follows at once,
+// so a division set by the same scene fades only once.
+func (e *Engine) setSceneTempo(bpmMilli int64) {
+	if bpmMilli == e.transport.BPMMilli() {
+		return
+	}
+	e.transport.SetTempoNow(bpmMilli)
+	if e.delayA != nil && e.delayA.SetTempo(bpmMilli) != nil {
+		e.fault(FaultDelayTempo)
 	}
 }
 
@@ -305,6 +340,9 @@ func (e *Engine) advanceSong() {
 			return
 		}
 		e.songIndex = 0
+		if e.sceneDefaults != nil {
+			e.setSceneTempo(e.TempoAtTick(0)) // a loop starts again at the song's first tempo; no reanchor if it already plays it
+		}
 		// Restarting the loop is a fresh start for automated parameters: they
 		// return to their authored values before the lanes begin again.
 		if len(e.automation) != 0 && !e.restartAutomationLanes() {
@@ -315,5 +353,7 @@ func (e *Engine) advanceSong() {
 	e.songEndTick += entry.EndTick - entry.Tick
 	if e.manualSceneTick != e.transport.Tick() {
 		e.launchSceneWithSkip(entry.Scene, true)
+	} else {
+		e.applySceneTempo(entry.Scene, false) // the manual scene wins the patterns, not the tempo
 	}
 }

@@ -47,6 +47,17 @@ type parallelWorker struct {
 	padding [8]uint64
 }
 
+// parallelConfig holds the Config values that EnableParallel reads later.
+type parallelConfig struct{ waitFloor time.Duration }
+
+func (e *Engine) configureParallel(cfg *Config) error {
+	if cfg.ParallelWaitFloor < 0 {
+		return Error("parallel wait floor is out of range")
+	}
+	e.parallelConfig.waitFloor = cfg.ParallelWaitFloor
+	return nil
+}
+
 // EnableParallel prepares native DSP workers outside the render callback.
 // workers counts the caller's lane too: 4 creates three background workers.
 // Zero selects up to four lanes for sessions of at least 32 tracks. Explicit
@@ -74,12 +85,15 @@ func (e *Engine) EnableParallel(workers int) error {
 		engine: e, lanes: workers,
 		left: make([]float32, e.tracks*e.maxBlock), right: make([]float32, e.tracks*e.maxBlock),
 		faultFrame: make([]int, e.tracks), faultCode: make([]uint16, e.tracks),
-		stop: make(chan struct{}), waitFloor: 100 * time.Millisecond,
+		stop: make(chan struct{}), waitFloor: DefaultParallelWaitFloor,
 	}
 	for lane := 1; lane < workers; lane++ {
 		w := &p.workers[lane-1]
 		w.pool, w.lane = p, lane
 		w.wake, w.ready, w.joined = make(chan struct{}, 1), make(chan struct{}), make(chan struct{})
+	}
+	if e.parallelConfig.waitFloor > 0 {
+		p.waitFloor = e.parallelConfig.waitFloor
 	}
 	e.parallel = p
 	for lane := 1; lane < workers; lane++ {

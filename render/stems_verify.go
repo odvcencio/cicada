@@ -65,6 +65,8 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 		seen[track.ID] = true
 	}
 	songBars := 256
+	var songChanges []project.TempoChange
+	var scoreMilli int
 	if score != nil {
 		p, diagnostics := project.FromScore(score)
 		if p == nil {
@@ -92,6 +94,7 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 			end = max(end, v.Tick, v.EndTick)
 		}
 		songBars = int((end + seq.TicksPerBar - 1) / seq.TicksPerBar)
+		songChanges, scoreMilli = project.SongTempoChanges(p), p.TempoMilli
 	}
 	names := make([]string, 0, len(manifest.Tracks)+5)
 	for index, track := range manifest.Tracks {
@@ -107,6 +110,7 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 	readers := make([]*bufio.Reader, 0, len(names))
 	var reference [3]uint32 // sample rate, frames, bars
 	var timing [2]uint32    // tempo milli, tail frames
+	var referenceChanges []project.TempoChange
 	for i, name := range names {
 		file, err := os.Open(filepath.Join(dir, name))
 		if err != nil {
@@ -126,28 +130,27 @@ func VerifyStems(score *notation.Score, dir string, opts VerifyStemsOptions) (Ve
 		dataBytes := get32(40)
 		if string(header[:4]) != "RIFF" || string(header[8:12]) != "WAVE" || string(header[12:16]) != "fmt " || string(header[36:40]) != "data" ||
 			get32(4) != uint32(info.Size()-8) || get32(16) != 16 || get16(20) != 3 || get16(22) != 2 ||
-			get32(28) != get32(24)*8 || get16(32) != 8 || get16(34) != 32 || dataBytes%8 != 0 || info.Size() != int64(dataBytes)+68 {
+			get32(28) != get32(24)*8 || get16(32) != 8 || get16(34) != 32 || dataBytes%8 != 0 {
 			return report, fmt.Errorf("%s: invalid stereo float32 WAV", name)
 		}
-		var metadata [24]byte
-		if _, err := file.ReadAt(metadata[:], 44+int64(dataBytes)); err != nil {
+		stemTiming, err := readWAVTiming(file, 44+int64(dataBytes), info.Size())
+		if err != nil {
 			return report, fmt.Errorf("%s: %w", name, err)
 		}
-		if string(metadata[:4]) != "cica" || binary.LittleEndian.Uint32(metadata[4:8]) != 16 || binary.LittleEndian.Uint32(metadata[8:12]) != 1 {
-			return report, fmt.Errorf("%s: missing Cicada timing metadata", name)
-		}
-		current := [3]uint32{get32(24), dataBytes / 8, binary.LittleEndian.Uint32(metadata[16:20])}
-		currentTiming := [2]uint32{binary.LittleEndian.Uint32(metadata[12:16]), binary.LittleEndian.Uint32(metadata[20:24])}
+		current := [3]uint32{get32(24), dataBytes / 8, stemTiming.bars}
+		currentTiming := [2]uint32{stemTiming.tempoMilli, stemTiming.tailFrames}
 		if i == 0 {
-			reference, timing = current, currentTiming
+			reference, timing, referenceChanges = current, currentTiming, stemTiming.changes
 			if current[0] != 44_100 && current[0] != 48_000 && current[0] != 96_000 || current[2] < 1 || current[2] > 256 || from+int(current[2]) > songBars || score != nil && currentTiming[0] != uint32(score.TempoMilli) || currentTiming[1] > current[0]*10 {
 				return report, fmt.Errorf("%s: invalid rate, bars, tempo, or tail", name)
 			}
-			clock, err := seq.NewClock(int(current[0]), int64(currentTiming[0]))
-			if err != nil || clock.SampleAtTick(int64(from+int(current[2]))*seq.TicksPerBar)-clock.SampleAtTick(int64(from)*seq.TicksPerBar)+int64(currentTiming[1]) != int64(current[1]) {
+			if score != nil && !sameTempoChanges(stemTiming.changes, project.ExcerptTempoChanges(scoreMilli, songChanges, from, int(current[2]))) {
+				return report, fmt.Errorf("%s: tempo steps differ from the score", name)
+			}
+			if want, err := stemTiming.frames(int(current[0]), from); err != nil || !framesMatch(int64(current[1]), want, from, stemTiming.changes) {
 				return report, fmt.Errorf("%s: frame count differs from musical duration", name)
 			}
-		} else if current != reference || currentTiming != timing {
+		} else if current != reference || currentTiming != timing || !sameTempoChanges(stemTiming.changes, referenceChanges) {
 			return report, fmt.Errorf("%s: stem timing differs", name)
 		}
 		readers = append(readers, bufio.NewReaderSize(file, 32*1024))

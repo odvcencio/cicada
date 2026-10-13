@@ -1,7 +1,5 @@
 package engine
 
-import "m31labs.dev/cicada/kernel/seq"
-
 // StereoVoiceFactory holds immutable, host-prepared audio. Each Engine gets a
 // separate voice owner. Construction may allocate; voice methods must neither
 // allocate nor perform I/O. PCM remains immutable for the engine's lifetime.
@@ -26,7 +24,6 @@ type StereoVoice interface {
 func (e *Engine) restorePreparedClips(songIndex int, cycleStart int64) {
 	// Seek reanchors the transport clock at its current tick; that clock clamps
 	// earlier ticks. Use the score clock to recover elapsed musical duration.
-	clock, _ := seq.NewClock(e.sampleRate, e.transport.BPMMilli())
 	for track := 0; track < e.tracks; track++ {
 		v := &e.voices[track]
 		if !v.preparedClip {
@@ -46,7 +43,7 @@ func (e *Engine) restorePreparedClips(songIndex int, cycleStart int64) {
 		v.prepared.Reset()
 		e.patterns[track].active = int8(slot)
 		if slot >= 0 {
-			elapsed := clock.SampleAtTick(e.transport.Tick()) - clock.SampleAtTick(origin)
+			elapsed := e.songSampleAtTick(e.transport.Tick()) - e.songSampleAtTick(origin)
 			if v.prepared.SelectSlot(uint8(slot), max(0, elapsed), e.transport.Playing()) != nil {
 				e.fault(FaultPreparedVoice)
 				return

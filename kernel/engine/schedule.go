@@ -250,8 +250,7 @@ func (e *Engine) applyScheduleEvent(v ScheduleEvent, tick int64) {
 		p.eventCount = 0
 		p.eventIndex = 0
 	case ScheduleClip:
-		clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.transport.BPMMilli()}
-		elapsed := clock.SampleAtTick(tick) - clock.SampleAtTick(v.Tick+e.cycleStart)
+		elapsed := e.songSampleAtTick(tick) - e.songSampleAtTick(v.Tick+e.cycleStart)
 		e.startClip(track, v.Index, int(v.ID), max(0, elapsed))
 	case ScheduleClipEnd:
 		for i := range e.clipVoices {

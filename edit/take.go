@@ -85,7 +85,7 @@ func selectTakeSource(source []byte, targetFile string, t SelectTake) ([]byte, e
 		}
 		for j := 0; j < node.NamedChildCount(); j++ {
 			binding := node.NamedChild(j)
-			if w.Type(binding) != "scene_assignment" || w.Text(w.Field(binding, "target")) != t.Track {
+			if w.Type(binding) != "scene_assignment" || w.Text(w.Field(binding, "target")) != t.Track || notation.SceneAssignmentIsSetting(t.Track, w.Text(w.Field(binding, "value"))) {
 				continue
 			}
 			value := w.Field(binding, "value")
