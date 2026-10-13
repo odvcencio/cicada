@@ -1317,11 +1317,16 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       }
       if (dirty()) { setStatus('The file changed outside Studio. Save with care or discard your draft.', 'error', 'conflict'); return; }
       if (state.valid) {
-        await refreshProjection({revision: state.revision, source: state.source});
+        // Record the audio target first. The projection refresh and the audio
+        // stage are independent: a failure of one must not skip the other.
+        audioWanted = state.revision;
+        let refreshed = true;
+        try { await refreshProjection({revision: state.revision, source: state.source}); }
+        catch { refreshed = false; setStatus('The score changed on disk; the projection could not refresh', 'error'); }
         try {
           await syncBrowserAudio(state.revision);
-          setStatus(isBrowser() && window.cicadaBrowserAudio.context && browserPlaying ? 'External edit queued for the next bar' : 'Score reloaded from disk', 'success');
-        } catch (error) { setStatus('Score reloaded; browser audio could not stage it, retrying: ' + error.message, 'error'); }
+          if (refreshed) setStatus(isBrowser() && window.cicadaBrowserAudio.context && browserPlaying ? 'External edit queued for the next bar' : 'Score reloaded from disk', 'success');
+        } catch (error) { setStatus((refreshed ? 'Score reloaded' : 'The score changed on disk; the projection could not refresh') + '; browser audio could not stage it, retrying: ' + error.message, 'error'); }
       }
       else {
         original = state.source; editor.value = original; document.body.dataset.revision = state.revision;

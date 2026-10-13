@@ -149,3 +149,23 @@ test('a poll stages when audio is behind even if no earlier write recorded a tar
   await h.poll();
   assert.equal(h.audio(), 'redone');
 });
+
+test('an external edit stages audio even when the projection refresh fails, and a later poll updates the editor', async () => {
+  let projection = false;
+  const h = audioHarness(async () => {}, async function (hint) {
+    if (!projection) throw new Error('projection unavailable');
+    h.document.body.dataset.revision = hint.revision; h.editor.value = hint.source;
+  });
+  h.disk.revision = 'external'; h.disk.source = 'score from outside';
+  await h.poll();                                    // page revision 'undone' differs from disk
+  assert.deepEqual(h.staged, ['external']);
+  assert.equal(h.audio(), 'external');
+  assert.equal(h.document.body.dataset.revision, 'undone');
+  assert.equal(h.editor.value, 'score without preset');
+  assert.deepEqual(h.statuses.map(s => s[0]), ['The score changed on disk; the projection could not refresh']);
+  projection = true;
+  await h.poll();                                    // the refresh succeeds this time
+  assert.equal(h.editor.value, 'score from outside');
+  assert.equal(h.document.body.dataset.revision, 'external');
+  assert.deepEqual(h.staged, ['external']);          // audio already there: no second stage
+});
