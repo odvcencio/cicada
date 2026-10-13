@@ -224,6 +224,13 @@ func TestReplacementSupersedesDeferredPatchesWithoutAllocation(t *testing.T) {
 					p.sample = p.nextBarSample
 				}
 			}
+			// AllocsPerRun counts mallocs from every goroutine. Each player's
+			// off-thread loudness meter allocates a snapshot every 100 ms, so a
+			// slow window under load would count meter work, not render work.
+			// Stop the meters; Read still pushes blocks into their rings.
+			for _, p := range players {
+				p.loudness.close()
+			}
 			i := 0
 			allocs := testing.AllocsPerRun(20, func() {
 				p := players[i]
