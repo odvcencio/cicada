@@ -1,5 +1,7 @@
 package scoreaudition
 
+import "strings"
+
 // Fixtures are small scores written to exercise one property each.
 
 const skankMajor = `cicada 2
@@ -193,4 +195,38 @@ pattern swung notes {
 }
 scene s { ticks = swung }
 song { s*4 }
+`
+
+// maskedPart's pad is inaudible. drumHeavy keeps the same loud drums but lets
+// the pad play its chords about 20 dB under the kit, which is quiet but pitched.
+var drumHeavy = strings.Replace(maskedPart, "level = -40dB", "level = -32dB", 1)
+
+const swungTwoPatterns = `cicada 2
+title "Two swings"
+tempo 110
+key a minor
+seed 1
+
+instrument tick {
+  voice mono {
+    out = square(pitch) * env(gate, 50ms) * velocity * 0.4
+  }
+}
+
+track high tick {}
+track low tick {}
+
+pattern a notes {
+  swing = 60%
+  . a4 . a4 . a4 . a4 . a4 . a4 . a4 . a4
+}
+pattern b notes {
+  swing = 60%
+  . a2 . a2 . a2 . a2 . a2 . a2 . a2 . a2
+}
+scene s {
+  high = a
+  low = b
+}
+song { s*2 }
 `

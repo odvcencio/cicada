@@ -31,31 +31,35 @@ type Options struct {
 }
 
 type Report struct {
-	Format     string          `json:"format"`
-	Title      string          `json:"title"`
-	SampleRate int             `json:"sample_rate"`
-	Score      Facts           `json:"score"`
-	HeardKey   []keyGuess      `json:"heard_key"`
-	Bars       []BarReport     `json:"bars"`
-	Tracks     []TrackReport   `json:"tracks"`
-	Sections   []SectionReport `json:"sections"`
-	Mismatches int             `json:"harmony_mismatches"`
-	Images     []string        `json:"images,omitempty"`
+	Format       string          `json:"format"`
+	Title        string          `json:"title"`
+	SampleRate   int             `json:"sample_rate"`
+	Score        Facts           `json:"score"`
+	HeardKey     []keyGuess      `json:"heard_key"`    // from the summed pitched stems
+	FullMixKey   []keyGuess      `json:"full_mix_key"` // from the whole mix, drums included
+	AudibilityDB float64         `json:"audibility_db"`
+	MaskedBars   int             `json:"masked_bars"`
+	Bars         []BarReport     `json:"bars"`
+	Tracks       []TrackReport   `json:"tracks"`
+	Sections     []SectionReport `json:"sections"`
+	Mismatches   int             `json:"harmony_mismatches"`
+	Images       []string        `json:"images,omitempty"`
 }
 
 type Facts struct {
-	TempoBPM   float64        `json:"tempo_bpm"`
-	WrittenKey string         `json:"written_key"`
-	SongBars   int            `json:"song_bars"`
-	FromBar    int            `json:"from_bar"`
-	Bars       int            `json:"bars"`
-	Swing      []PatternSwing `json:"swing,omitempty"`
+	TempoBPM   float64      `json:"tempo_bpm"`
+	WrittenKey string       `json:"written_key"`
+	SongBars   int          `json:"song_bars"`
+	FromBar    int          `json:"from_bar"`
+	Bars       int          `json:"bars"`
+	Swing      []SwingGroup `json:"swing,omitempty"`
 }
 
-type PatternSwing struct {
-	Pattern      string   `json:"pattern"`
+// SwingGroup lists the tracks and patterns that share one swing value.
+type SwingGroup struct {
 	SwingPercent float64  `json:"swing_percent"`
 	Tracks       []string `json:"tracks"`
+	Patterns     []string `json:"patterns"`
 }
 
 type BarReport struct {
@@ -65,7 +69,9 @@ type BarReport struct {
 	Heard        string   `json:"heard"`
 	HeardFit     float64  `json:"heard_fit"`
 	MixRMSdBFS   float64  `json:"mix_rms_dbfs"`
-	Match        string   `json:"match"` // agree, disagree, no-written-pitch, silent
+	AudibilityDB float64  `json:"audibility_db"` // pitched stems vs whole mix, 125 Hz to 2 kHz
+	Masked       bool     `json:"masked"`        // audibility_db below -15
+	Match        string   `json:"match"`         // agree, disagree, no-written-pitch, silent
 }
 
 type TrackReport struct {
@@ -74,6 +80,8 @@ type TrackReport struct {
 	RMSdBFS           float64   `json:"rms_dbfs"`
 	LevelVsLoudestDB  float64   `json:"level_vs_loudest_db"`
 	EnergySharePct    float64   `json:"energy_share_pct"`
+	BandVsMixDB       float64   `json:"band_vs_mix_db"` // 125 Hz-2 kHz energy re the whole mix
+	Masked            bool      `json:"masked"`         // band_vs_mix_db below -15
 	CentroidHz        float64   `json:"centroid_hz"`
 	AttackMs          float64   `json:"attack_ms"`
 	Decay20Ms         float64   `json:"decay20_ms"`
@@ -109,13 +117,18 @@ type Analysis struct {
 }
 
 const (
-	silentDB    = -80.0
-	specRows    = 160
-	chromaFFT   = 8192
-	onsetFFT    = 1024
-	onsetHop    = 256
-	specFFT     = 4096
-	specHopSize = 1024
+	silentDB = -80.0
+	// maskedBelowDB is the audibility under which the pitched parts count as
+	// masked: they hold under about 3% of the mix energy in the chord band.
+	maskedBelowDB = -15.0
+	bandLowHz     = 125
+	bandHighHz    = 2000
+	specRows      = 160
+	chromaFFT     = 8192
+	onsetFFT      = 1024
+	onsetHop      = 256
+	specFFT       = 4096
+	specHopSize   = 1024
 )
 
 func db(x float64) float64 {
@@ -214,37 +227,99 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	r.Format, r.Title, r.SampleRate = FormatVersion, p.Title, rate
 	r.Score = Facts{TempoBPM: round(bpm, 3), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars}
 
-	// Mix chroma, one frame per sixteenth note.
+	// Read the stems and sum the pitched ones: the heard harmony comes from
+	// them, so drums and their pitched noise do not decide the chord.
+	stems := make([][]float32, len(p.Tracks))
+	pitched := make([]bool, len(p.Tracks))
+	pitchedMix := make([]float32, len(mix))
+	for ti, track := range p.Tracks {
+		s, _, err := readFloatWAV(filepath.Join(stemDir, fmt.Sprintf("%02d-%s.wav", ti+1, track.ID)))
+		if err != nil {
+			return nil, err
+		}
+		stems[ti] = s
+		pitched[ti] = ti < len(cfg.Track) && pitchedKind(cfg.Track[ti].Kind)
+		if pitched[ti] {
+			for i := 0; i < len(pitchedMix) && i < len(s); i++ {
+				pitchedMix[i] += s[i]
+			}
+		}
+	}
+
+	// Chroma and band power, one frame per sixteenth note.
+	frames := bars * 16
 	chromaPlan := newPlan(chromaFFT)
 	binPC := make([]int, chromaFFT/2+1)
+	inBand := make([]bool, chromaFFT/2+1)
 	for k := range binPC {
 		f := float64(k) * float64(rate) / chromaFFT
 		binPC[k] = -1
-		if f >= 125 && f <= 2000 {
+		if f >= bandLowHz && f <= bandHighHz {
 			binPC[k] = ((int(math.Round(12*math.Log2(f/440)+9)) % 12) + 12) % 12
+			inBand[k] = true
 		}
 	}
-	frames := bars * 16
-	a.chroma = make([][12]float64, frames)
-	magFrames(mix, chromaPlan, frames, func(i int) int {
-		tick := int64(opts.From)*seq.TicksPerBar + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
-		return int(clock.SampleAtTick(tick)-baseSample) - chromaFFT/2
-	}, func(i int, mag []float64) {
-		// Only spectral peaks count: broadband noise from drums and
-		// aliasing then adds little to any pitch class.
-		for k, pc := range binPC {
-			if pc >= 0 && k > 0 && k+1 < len(mag) && mag[k] > mag[k-1] && mag[k] >= mag[k+1] {
-				a.chroma[i][pc] += mag[k]
+	chromaOf := func(sig []float32) ([][12]float64, []float64) {
+		chroma := make([][12]float64, frames)
+		band := make([]float64, frames)
+		magFrames(sig, chromaPlan, frames, func(i int) int {
+			tick := int64(opts.From)*seq.TicksPerBar + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
+			return int(clock.SampleAtTick(tick)-baseSample) - chromaFFT/2
+		}, func(i int, mag []float64) {
+			// Only spectral peaks count for chroma: broadband noise then
+			// adds little to any pitch class.
+			for k, pc := range binPC {
+				if pc < 0 {
+					continue
+				}
+				band[i] += mag[k] * mag[k]
+				if k > 0 && k+1 < len(mag) && mag[k] > mag[k-1] && mag[k] >= mag[k+1] {
+					chroma[i][pc] += mag[k]
+				}
+			}
+		})
+		return chroma, band
+	}
+	trackBand := func(sig []float32) float64 {
+		var total float64
+		magFrames(sig, chromaPlan, frames, func(i int) int {
+			tick := int64(opts.From)*seq.TicksPerBar + int64(i)*(seq.TicksPerStep) + seq.TicksPerStep/2
+			return int(clock.SampleAtTick(tick)-baseSample) - chromaFFT/2
+		}, func(_ int, mag []float64) {
+			for k := range mag {
+				if inBand[k] {
+					total += mag[k] * mag[k]
+				}
+			}
+		})
+		return total
+	}
+	var mixBand, pitchedBand []float64
+	a.chroma, pitchedBand = chromaOf(pitchedMix)
+	var mixChroma [][12]float64
+	mixChroma, mixBand = chromaOf(mix)
+	sumChroma := func(c [][12]float64) (t [12]float64) {
+		for _, f := range c {
+			for i := range t {
+				t[i] += f[i]
 			}
 		}
-	})
-	var total [12]float64
-	for _, c := range a.chroma {
-		for i := range total {
-			total[i] += c[i]
-		}
+		return t
 	}
-	r.HeardKey = estimateKey(total)
+	r.HeardKey = estimateKey(sumChroma(a.chroma))
+	r.FullMixKey = estimateKey(sumChroma(mixChroma))
+	bandDB := func(pitchedPower, mixPower float64) float64 {
+		if pitchedPower <= 0 || mixPower <= 0 {
+			return -120
+		}
+		return math.Max(-120, 10*math.Log10(pitchedPower/mixPower))
+	}
+	var allP, allM float64
+	for i := range mixBand {
+		allP += pitchedBand[i]
+		allM += mixBand[i]
+	}
+	r.AudibilityDB = round(bandDB(allP, allM), 1)
 
 	// Per-bar harmony.
 	sets, err := writtenSets(p, cfg, places, opts.From, bars)
@@ -253,25 +328,35 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	for b := 0; b < bars; b++ {
 		var v [12]float64
+		var bp, bm float64
 		for f := 0; f < 16; f++ {
 			for i := range v {
 				v[i] += a.chroma[b*16+f][i]
 			}
+			bp += pitchedBand[b*16+f]
+			bm += mixBand[b*16+f]
 		}
 		lo, hi := min(barSample(b), len(mix)), min(barSample(b+1), len(mix))
-		rms := rmsDB(mix[lo:hi])
+		pitchedRMS := rmsDB(pitchedMix[lo:hi])
 		heard := bestChord(v)
 		name, wm, count := writtenChord(sets[b])
-		br := BarReport{Bar: opts.From + b + 1, WrittenNotes: []string{}, Written: name, Heard: heard.Name, HeardFit: heard.Score, MixRMSdBFS: round(rms, 1)}
+		aud := bandDB(bp, bm)
+		br := BarReport{Bar: opts.From + b + 1, WrittenNotes: []string{}, Written: name, Heard: heard.Name, HeardFit: heard.Score,
+			MixRMSdBFS: round(rmsDB(mix[lo:hi]), 1), AudibilityDB: round(aud, 1), Masked: aud < maskedBelowDB}
+		if br.Masked {
+			r.MaskedBars++
+		}
 		for pc, on := range sets[b] {
 			if on {
 				br.WrittenNotes = append(br.WrittenNotes, noteNames[pc])
 			}
 		}
 		switch {
-		case rms < silentDB:
+		case pitchedRMS < silentDB:
 			br.Heard, br.HeardFit, br.Match = "", 0, "silent"
-			if count > 0 {
+			if count == 0 {
+				br.Match = "no-written-pitch"
+			} else {
 				r.Mismatches++
 				br.Match = "disagree"
 			}
@@ -343,10 +428,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	for ti, track := range p.Tracks {
 		acts[ti] = trackActivity(cfg, places, ti, opts.From, bars)
 		tr := TrackReport{ID: track.ID, Rhythm: make([]float64, 16)}
-		s, _, err := readFloatWAV(filepath.Join(stemDir, fmt.Sprintf("%02d-%s.wav", ti+1, track.ID)))
-		if err != nil {
-			return nil, err
-		}
+		s := stems[ti]
 		var energy float64
 		for _, v := range s {
 			energy += float64(v) * float64(v)
@@ -376,6 +458,8 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 		tr.OnsetsPerBar = round(float64(tr.Onsets)/float64(activeBars), 2)
 		tr.CentroidHz = round(trackCentroid(s, rate), 0)
+		tr.BandVsMixDB = round(bandDB(trackBand(s), allM), 1)
+		tr.Masked = tr.BandVsMixDB < maskedBelowDB
 		tr.AttackMs, tr.Decay20Ms, tr.Decay20LowerBound = noteShape(s, peaks, rate)
 		tr.Rhythm, tr.SwingPercent = rhythmProfile(env, rate, clock, baseSample, opts.From, bars, acts[ti])
 		r.Tracks = append(r.Tracks, tr)
@@ -398,31 +482,41 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 	}
 
-	// Pattern swing facts.
-	swingTracks := map[string]map[string]bool{}
+	// Swing facts: one group per distinct swing value.
+	patternSwing := map[string]float64{}
+	for _, pat := range p.Patterns {
+		patternSwing[pat.ID] = float64(pat.SwingPercent100) / 100
+	}
+	groups := map[float64]*SwingGroup{}
+	trackSet, patternSet := map[float64]map[string]bool{}, map[float64]map[string]bool{}
 	for _, pl := range places {
 		if pl.track >= len(p.Tracks) {
 			continue
 		}
-		if id := p.Tracks[pl.track].Slots[pl.slot]; id != nil {
-			if swingTracks[*id] == nil {
-				swingTracks[*id] = map[string]bool{}
-			}
-			swingTracks[*id][p.Tracks[pl.track].ID] = true
-		}
-	}
-	for _, pat := range p.Patterns {
-		users, ok := swingTracks[pat.ID]
-		if !ok || pat.SwingPercent100 == 5000 {
+		id := p.Tracks[pl.track].Slots[pl.slot]
+		if id == nil || patternSwing[*id] == 50 {
 			continue
 		}
-		ps := PatternSwing{Pattern: pat.ID, SwingPercent: round(float64(pat.SwingPercent100)/100, 2)}
-		for t := range users {
-			ps.Tracks = append(ps.Tracks, t)
+		v := round(patternSwing[*id], 2)
+		if groups[v] == nil {
+			groups[v] = &SwingGroup{SwingPercent: v}
+			trackSet[v], patternSet[v] = map[string]bool{}, map[string]bool{}
 		}
-		sort.Strings(ps.Tracks)
-		r.Score.Swing = append(r.Score.Swing, ps)
+		trackSet[v][p.Tracks[pl.track].ID] = true
+		patternSet[v][*id] = true
 	}
+	for v, g := range groups {
+		for t := range trackSet[v] {
+			g.Tracks = append(g.Tracks, t)
+		}
+		for n := range patternSet[v] {
+			g.Patterns = append(g.Patterns, n)
+		}
+		sort.Strings(g.Tracks)
+		sort.Strings(g.Patterns)
+		r.Score.Swing = append(r.Score.Swing, *g)
+	}
+	sort.Slice(r.Score.Swing, func(i, j int) bool { return r.Score.Swing[i].SwingPercent < r.Score.Swing[j].SwingPercent })
 
 	// Sections.
 	type span struct {

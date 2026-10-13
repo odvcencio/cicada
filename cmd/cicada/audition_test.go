@@ -58,7 +58,7 @@ func TestAuditionCommandText(t *testing.T) {
 	if err := auditionCommand([]string{score, "--from", "2", "--bars", "2"}, &stdout, &stderr); err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{"heard key:", "harmony per bar", "tracks (", "sections:", "bass"} {
+	for _, want := range []string{"heard key (pitched stems):", "full mix key:", "audibility:", "harmony per bar", "tracks (", "sections:", "bass"} {
 		if !bytes.Contains(stdout.Bytes(), []byte(want)) {
 			t.Errorf("text report lacks %q:\n%s", want, stdout.String())
 		}
