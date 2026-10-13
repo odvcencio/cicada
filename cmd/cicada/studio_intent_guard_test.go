@@ -192,6 +192,8 @@ func TestRouteGuardsMatchIntentsAndApply(t *testing.T) {
 			`{"kind":"addaudiotrack","name":"vox"}`, false, http.StatusUnprocessableEntity},
 		{"recovery file blocks mixer edit", "cicada 2\n" + studioScore, "/api/mixer", `{"revision":%q,"path":"bass.level","value":-6}`,
 			`{"kind":"setparam","entity":"param:bass.level","value":-6}`, true, http.StatusConflict},
+		{"recovery file blocks song conversion", "cicada 2\n" + studioScore, "", "",
+			`{"kind":"convertsongtoarrange"}`, true, 0},
 		{"recovery file blocks pattern edit", "cicada 2\n" + studioScore, "/api/pattern", `{"revision":%q,"action":"toggle","pattern":"pulse","step":1}`,
 			`{"kind":"togglestep","entity":"step:pulse/1","shared":"pattern"}`, true, http.StatusConflict},
 	}

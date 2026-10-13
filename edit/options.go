@@ -20,6 +20,35 @@ type RenderCheck interface {
 	Hash(source []byte) (string, error)
 }
 
+// StagedRenderCheck is a RenderCheck that can render the state a batch would
+// commit: files holds the cumulative auxiliary files staged by earlier intents
+// (path -> bytes, for example an upgraded cicada.mod). Hosts' checks implement
+// it so a render never reads a superseded file from disk.
+type StagedRenderCheck interface {
+	RenderCheck
+	HashWith(source []byte, files map[string][]byte) (string, error)
+}
+
+// SnapshotRenderCheck compares two candidates against one snapshot of the
+// project's source inputs (the files staged by the batch laid over unsaved
+// buffers over disk), so a file changed, or changed and restored, while the
+// renders run cannot make them read different inputs. Assets still load from
+// disk and are restated after rendering.
+type SnapshotRenderCheck interface {
+	StagedRenderCheck
+	// Compare renders before and after from one snapshot and reports whether
+	// they match. identity names that snapshot and both candidates.
+	Compare(before, after []byte, files map[string][]byte) (same bool, identity string, err error)
+	// PairIdentity names the same inputs as they are now; ok is false when they
+	// cannot be identified.
+	PairIdentity(before, after []byte, files map[string][]byte) (identity string, ok bool)
+}
+
+// ErrProjectChanged is returned by a render check, and becomes a refusal, when
+// project inputs changed (or cannot be identified) while a render ran, so the
+// result must not be used or remembered.
+var ErrProjectChanged = errors.New("the project changed during the render check; try again")
+
 var ErrNoRenderCheck = errors.New("render check unavailable; the conversion is refused rather than risk changing the music")
 
 var ErrNoUpgrade = errors.New("edition upgrade unavailable")

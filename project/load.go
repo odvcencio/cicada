@@ -40,17 +40,48 @@ type Sources struct {
 // can include cicada.mod and cicada.sum for validation before an editor
 // commits manifest changes or new pins.
 func ReadSources(path string, overrides map[string][]byte) (*Sources, error) {
+	return readSources(path, overrides, nil)
+}
+
+// Resolution pins which manifest governs a score, so a caller that has already
+// resolved the project (and captured its sources) is not affected by manifests
+// that appear or disappear on disk afterwards. ManifestPath is "" for a score
+// with no manifest.
+type Resolution struct{ ManifestPath string }
+
+// ReadSourcesPinned is ReadSources without manifest discovery: the project is
+// the one in resolution.
+func ReadSourcesPinned(path string, overrides map[string][]byte, resolution Resolution) (*Sources, error) {
+	return readSources(path, overrides, &resolution)
+}
+
+// LoadScorePinned is LoadScore with a pinned manifest resolution.
+func LoadScorePinned(path string, overrides map[string][]byte, resolution Resolution) (*notation.Score, []notation.Diagnostic, error) {
+	sources, err := readSources(path, overrides, &resolution)
+	if err != nil {
+		return nil, nil, err
+	}
+	score, diagnostics := sources.Parse()
+	return score, diagnostics, nil
+}
+
+func readSources(path string, overrides map[string][]byte, pin *Resolution) (*Sources, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
-	_, manifestPath, err := edition.ScoreEdition(absolute)
-	if err != nil {
-		var manifestError *edition.ManifestError
-		if errors.As(err, &manifestError) {
-			return nil, sourceError(manifestPath, manifestError.Line, manifestError.Column, manifestError.Code, manifestError.Message, err)
+	var manifestPath string
+	if pin != nil {
+		manifestPath = pin.ManifestPath
+	} else {
+		_, manifestPath, err = edition.ScoreEdition(absolute)
+		if err != nil {
+			var manifestError *edition.ManifestError
+			if errors.As(err, &manifestError) {
+				return nil, sourceError(manifestPath, manifestError.Line, manifestError.Column, manifestError.Code, manifestError.Message, err)
+			}
+			return nil, err
 		}
-		return nil, err
 	}
 	set := &Sources{Root: filepath.Dir(absolute), ManifestPath: manifestPath}
 	paths := []string{absolute}

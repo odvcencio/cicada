@@ -12,6 +12,7 @@ import (
 
 	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/edit/editlog"
+	"m31labs.dev/cicada/edit/rendercheck"
 	"m31labs.dev/cicada/internal/filetarget"
 )
 
@@ -79,7 +80,7 @@ func applyCommandWithHooks(args []string, stdout io.Writer, beforeSwap func()) e
 	if session != "" {
 		env.Session = session
 	}
-	s := &studio{path: path}
+	s := &studio{path: path, renderCheck: rendercheck.New(path)}
 	opts, err := s.editOptions(before, nil)
 	if err != nil {
 		return err
@@ -114,7 +115,9 @@ func applyCommandWithHooks(args []string, stdout io.Writer, beforeSwap func()) e
 	if err != nil {
 		return err
 	}
-	if err := writeFixedRevision(path, before, result.Source, info.Mode().Perm(), beforeSwap); err != nil {
+	if err := writeFixedRevisionChecked(path, before, result.Source, info.Mode().Perm(), beforeSwap, func() error {
+		return s.verifyRenderIdentity(result.RenderChecked, result.RenderIdentity, result.RenderRecheck)
+	}); err != nil {
 		return err
 	}
 	if err := studioWriteAuxiliaryFiles(changedFiles); err != nil {
