@@ -7,8 +7,10 @@ import (
 
 	"m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 func testScore(t *testing.T, name string, bpmMilli int64, scenes ...engine.Scene) Score {
@@ -945,5 +947,283 @@ func TestGMDrumLaneEditParity(t *testing.T) {
 		if got != want || ok != wantOK {
 			t.Fatalf("note %d: (%d,%v), want (%d,%v)", note, got, ok, want, wantOK)
 		}
+	}
+}
+
+// tempoSongScore plays one bar at 120 BPM, then scene "slow" sets 60 BPM for two bars.
+func tempoSongScore(t *testing.T, name string) Score {
+	t.Helper()
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000}
+	cfg.Track[0].Kind = engine.VoiceAcid
+	cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 2}}
+	cfg.LoopSong = true
+	created, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name}
+}
+
+func TestEditsSwapOnTheBarAfterASceneTempoChange(t *testing.T) {
+	p, err := New(tempoSongScore(t, "first"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := p.BPMMilli(); got != 120_000 {
+		t.Fatalf("tempo before the change = %d", got)
+	}
+	// Bar 1 is 96000 frames at 120 BPM. Bar 2 is 192000 frames at 60 BPM.
+	if _, err := io.CopyN(io.Discard, p, (96_000+1)*8); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.BPMMilli(); got != 60_000 {
+		t.Fatalf("tempo in bar 2 = %d, want 60000", got)
+	}
+	if err := p.Offer(tempoSongScore(t, "edit")); err != nil {
+		t.Fatal(err)
+	}
+	// The next boundary is 192000 frames after the start of bar 2, not 96000.
+	if _, err := io.CopyN(io.Discard, p, (192_000-2)*8); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("edit landed before the slow bar ended: %+v", event)
+	default:
+	}
+	var frame [8]byte
+	if _, err := io.ReadFull(p, frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case event := <-p.Events():
+		t.Fatalf("edit landed one frame early: %+v", event)
+	default:
+	}
+	if _, err := io.ReadFull(p, frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" && event.Name == "edit" && event.Bar == 3 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("edit did not land at the bar after the slow bar")
+	}
+	// The new engine seeks to bar 3 (index 2), which is still 60 BPM.
+	if got := p.BPMMilli(); got != 60_000 {
+		t.Fatalf("tempo after the swap = %d", got)
+	}
+}
+
+// Bar boundaries that step the tempo keep the native callback allocation free.
+func TestSceneTempoNativeCallbackAllocationFree(t *testing.T) {
+	p, err := New(tempoSongScore(t, "alloc"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	var output [blockFrames * 8]byte
+	var readErr error
+	// Run past the first bar, which ends at 96000 frames.
+	allocations := testing.AllocsPerRun(96_000/blockFrames+200, func() { _, readErr = p.Read(output[:]) })
+	if readErr != nil || allocations != 0 || p.BPMMilli() != 60_000 {
+		t.Fatalf("allocations=%g err=%v tempo=%d", allocations, readErr, p.BPMMilli())
+	}
+}
+
+// The song has no scene tempo, so the authored chain is empty. A scene that is
+// not in the song sets 60 BPM and is launched by hand: the next bar is then
+// 192000 frames long, and an offered edit must land there, not at 96000.
+func TestEditsFollowTheTempoOfAManualSceneLaunch(t *testing.T) {
+	build := func(name string) Score {
+		cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000}
+		cfg.Track[0].Kind = engine.VoiceAcid
+		cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}}}
+		cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 8}}
+		created, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name, SceneIDs: []string{"a", "slow"}}
+	}
+	p, err := New(build("first"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.LaunchScene("slow"); err != nil {
+		t.Fatal(err)
+	}
+	// The launch lands on bar 2 (frame 96000); read into it.
+	if _, err := io.CopyN(io.Discard, p, (96_000+1_000)*8); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.BPMMilli(); got != 60_000 {
+		t.Fatalf("tempo after the manual launch = %d", got)
+	}
+	for len(p.Events()) > 0 {
+		<-p.Events()
+	}
+	if err := p.Offer(build("edit")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, (96_000+192_000-96_000-1_000-1)*8); err != nil {
+		t.Fatal(err)
+	}
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" {
+			t.Fatalf("the edit landed before the slow bar ended: %+v", event)
+		}
+	}
+	var frame [8]byte
+	if _, err := io.ReadFull(p, frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(p, frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" && event.Name == "edit" && event.Bar == 3 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the edit did not land at the end of the slow bar")
+	}
+}
+
+// A looping song whose first and last tempos match each other but not the score
+// tempo keeps the engine's transport and the player's bar clock on the same
+// samples across loops: an offered edit lands on the bar line the kernel
+// predicts, after three passes.
+func TestEditsLandOnTheLoopSeamBarLinesAcrossLoops(t *testing.T) {
+	build := func(name string) (Score, *engine.Engine) {
+		cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000, LoopSong: true}
+		cfg.Track[0].Kind = engine.VoiceAcid
+		set := func(v float32) []engine.SceneSetting {
+			return []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: v}}
+		}
+		cfg.Scenes = []engine.Scene{{Settings: set(124)}, {Settings: set(90)}, {Settings: set(124)}}
+		cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
+		created, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name}, created
+	}
+	first, reference := build("first")
+	p, err := New(first, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const bar = 9 // the tenth bar line, three passes in
+	boundary := reference.FramesBetweenTicks(0, int64(bar+1)*seq.TicksPerBar)
+	before := reference.FramesBetweenTicks(0, int64(bar)*seq.TicksPerBar)
+	if _, err := io.CopyN(io.Discard, p, (before+1_000)*8); err != nil {
+		t.Fatal(err)
+	}
+	edit, _ := build("edit")
+	if err := p.Offer(edit); err != nil {
+		t.Fatal(err)
+	}
+	for len(p.Events()) > 0 {
+		<-p.Events()
+	}
+	if _, err := io.CopyN(io.Discard, p, (boundary-before-1_000-1)*8); err != nil {
+		t.Fatal(err)
+	}
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" {
+			t.Fatalf("the edit landed before the predicted bar line: %+v", event)
+		}
+	}
+	var frame [8]byte
+	for range 2 {
+		if _, err := io.ReadFull(p, frame[:]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found := false
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" && event.Name == "edit" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the edit did not land on the predicted bar line")
+	}
+}
+
+// An immediate (unquantized) launch that speeds the tempo up near the end of a
+// bar puts the true bar line behind the block already rendered. Playback must
+// go on, and the next edit lands on the next true bar line.
+func TestImmediateSpeedupMidBarKeepsPlayingAndEditsLandOnTheNextBarLine(t *testing.T) {
+	build := func(name string) Score {
+		cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000}
+		cfg.Track[0].Kind = engine.VoiceAcid
+		cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 240}}}}
+		cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 8}}
+		created, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name, SceneIDs: []string{"a", "fast"}}
+	}
+	p, err := New(build("first"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Stop one block before the bar line at frame 96000 and launch at once.
+	if _, err := io.CopyN(io.Discard, p, (96_000-blockFrames)*8); err != nil {
+		t.Fatal(err)
+	}
+	if !p.current.Engine.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Arg0: 0}) {
+		t.Fatal("launch rejected")
+	}
+	// The new bar line (bar 1, near frame 95872) is behind the first block.
+	if _, err := io.CopyN(io.Discard, p, 20_000*8); err != nil {
+		t.Fatalf("playback stopped after the speedup: %v", err)
+	}
+	if got := p.BPMMilli(); got != 240_000 {
+		t.Fatalf("tempo after the launch = %d", got)
+	}
+	for len(p.Events()) > 0 {
+		<-p.Events()
+	}
+	played := int64(96_000 - blockFrames + 20_000)
+	if err := p.Offer(build("edit")); err != nil {
+		t.Fatal(err)
+	}
+	// The next true bar line is the engine's second bar line under the live clock.
+	line := p.current.Engine.FramesBetweenTicks(0, 2*seq.TicksPerBar)
+	if line <= played+1_000 {
+		t.Fatalf("test setup: bar line %d is not ahead of %d", line, played)
+	}
+	if _, err := io.CopyN(io.Discard, p, (line-played-1)*8); err != nil {
+		t.Fatal(err)
+	}
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" {
+			t.Fatalf("the edit landed before the bar line: %+v", event)
+		}
+	}
+	var frame [8]byte
+	for range 2 {
+		if _, err := io.ReadFull(p, frame[:]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found := false
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" && event.Name == "edit" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the edit did not land on the next true bar line")
 	}
 }

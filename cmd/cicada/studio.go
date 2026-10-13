@@ -22,6 +22,7 @@ import (
 	"unicode/utf8"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/edit/rendercheck"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/modalfit"
 	"m31labs.dev/cicada/host/padsampler"
@@ -58,7 +59,7 @@ type studio struct {
 	exports             *studioExportController
 	liveControls        studioLiveControls
 	sessionID           string
-	renderCheck         edits.RenderCheck // nil until the render check is wired (M8)
+	renderCheck         edits.RenderCheck // caches song-to-arrange renders by source revision
 	samplerUndo         []padsampler.Bank
 	proposals           map[string]stagedProposal
 	previewProposal     string
@@ -214,7 +215,7 @@ func newStudioWithInvalid(path string, allowInvalid bool) (*studio, error) {
 		return nil, err
 	}
 	absolute := target.Logical
-	s := &studio{path: absolute, sessionID: newStudioSessionID()}
+	s := &studio{path: absolute, sessionID: newStudioSessionID(), renderCheck: rendercheck.Cached(absolute, rendercheck.New(absolute))}
 	opened := false
 	defer func() {
 		if !opened && s.takes != nil {
@@ -597,6 +598,15 @@ type studioMutation struct {
 	Response      map[string]any
 	HistoryDetail string
 	Files         []studioAuxiliaryFile
+	// RenderChecked marks a mutation whose approval depends on rendered audio.
+	// RenderIdentity is the input identity verified around those renders; the
+	// commit tail compares it with the project under the commit lock, right
+	// before the write, and refuses if it changed or is unavailable.
+	RenderChecked  bool
+	RenderIdentity string
+	// RenderRecheck recomputes the identity from the same working sources and
+	// staged files the renders used.
+	RenderRecheck func() (string, bool)
 }
 
 type studioAuxiliaryFile struct {

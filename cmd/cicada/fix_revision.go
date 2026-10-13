@@ -9,7 +9,13 @@ import (
 // Validate the displaced revision, including editor saves during staging/fsync.
 // Keep displaced inodes linked so late writes through open handles are recoverable.
 func writeFixedRevision(path string, before, after []byte, mode os.FileMode, beforeSwap func()) error {
-	committed, recovery, err := studioWriteIfRevision(path, after, mode, studioRevision(before), beforeSwap)
+	return writeFixedRevisionChecked(path, before, after, mode, beforeSwap, nil)
+}
+
+// writeFixedRevisionChecked is writeFixedRevision with a veto that runs after
+// the replacement is staged and immediately before the exchange.
+func writeFixedRevisionChecked(path string, before, after []byte, mode os.FileMode, beforeSwap func(), veto func() error) error {
+	committed, recovery, err := studioPublish(path, after, mode, studioRevision(before), beforeSwap, nil, veto)
 	if err != nil {
 		return err
 	}

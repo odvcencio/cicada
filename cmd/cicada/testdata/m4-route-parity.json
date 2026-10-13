@@ -219,6 +219,94 @@
       "Automation · main / bass.cutoff removed"
     ]
   },
+  "automation/scene tempo insert/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "4d1df67cae040f812414ead03fd145cc07fbc2daeb1ea8dc3b86a53d3615693f",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "4d1df67cae040f812414ead03fd145cc07fbc2daeb1ea8dc3b86a53d3615693f",
+      "source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  tempo = 84.5\n bass = keep }\nsong { main hold main }\n",
+      "valid": true
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold {\n  tempo = 84.5\n bass = keep }\nsong { main hold main }\n",
+    "Labels": [
+      "Automation · hold / tempo set"
+    ]
+  },
+  "automation/scene tempo insert/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "98b01458fcdb2b46893d0e2ec81a7173a83043f7506f709b2b0a5e97b28443b3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "98b01458fcdb2b46893d0e2ec81a7173a83043f7506f709b2b0a5e97b28443b3",
+      "source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  tempo = 84.5\r\n bass = keep }\r\nsong { main hold main }\r\n",
+      "valid": true
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold {\r\n  tempo = 84.5\r\n bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": [
+      "Automation · hold / tempo set"
+    ]
+  },
+  "automation/scene tempo missing/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "scene hold has no point for tempo"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/scene tempo missing/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "scene hold has no point for tempo"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/scene tempo range/\"\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "value is outside 20..300"
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": null
+  },
+  "automation/scene tempo range/\"\\r\\n\"": {
+    "Code": 422,
+    "Body": {
+      "error": "value is outside 20..300"
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": null
+  },
+  "automation/scene tempo set/\"\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "a93a30696522bd748817fb9a50f11b2c1a8901514dfe4224d7ce025396e90e04",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "a93a30696522bd748817fb9a50f11b2c1a8901514dfe4224d7ce025396e90e04",
+      "source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  tempo = 140\n\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+      "valid": true
+    },
+    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  tempo = 140\n\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
+    "Labels": [
+      "Automation · main / tempo set"
+    ]
+  },
+  "automation/scene tempo set/\"\\r\\n\"": {
+    "Code": 200,
+    "Body": {
+      "playingRevision": "84d5bd46c347b7407c5f591a049dfb553aafb742cb7adf2797e0030af39c5ac3",
+      "preserved": "\u003cpreserved-score\u003e",
+      "revision": "84d5bd46c347b7407c5f591a049dfb553aafb742cb7adf2797e0030af39c5ac3",
+      "source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  tempo = 140\r\n\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+      "valid": true
+    },
+    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  tempo = 140\r\n\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
+    "Labels": [
+      "Automation · main / tempo set"
+    ]
+  },
   "automation/set/\"\\n\"": {
     "Code": 200,
     "Body": {
@@ -246,22 +334,6 @@
     "Labels": [
       "Automation · main / bass.cutoff set"
     ]
-  },
-  "automation/tempo/\"\\n\"": {
-    "Code": 422,
-    "Body": {
-      "error": "tempo cannot be automated at a scene boundary"
-    },
-    "Source": "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern riff acid steps=2 { 1 . }\nscene main {\n  bass = riff // keep binding\n  bass.cutoff = 900.0Hz // keep point comment\n}\nscene hold { bass = keep }\nsong { main hold main }\n",
-    "Labels": null
-  },
-  "automation/tempo/\"\\r\\n\"": {
-    "Code": 422,
-    "Body": {
-      "error": "tempo cannot be automated at a scene boundary"
-    },
-    "Source": "tempo 120\r\ntrack bass acid { cutoff = 700Hz }\r\npattern riff acid steps=2 { 1 . }\r\nscene main {\r\n  bass = riff // keep binding\r\n  bass.cutoff = 900.0Hz // keep point comment\r\n}\r\nscene hold { bass = keep }\r\nsong { main hold main }\r\n",
-    "Labels": null
   },
   "automation/unit mismatch/\"\\n\"": {
     "Code": 422,

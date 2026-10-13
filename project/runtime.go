@@ -496,7 +496,14 @@ func CompileSceneSettings(p *Project, scene Scene) ([]engine.SceneSetting, error
 		if err != nil {
 			return nil, fmt.Errorf("scene %s path %s: %w", scene.ID, setting.Path, err)
 		}
-		settings = append(settings, engine.SceneSetting{Track: resolved.Track, ID: resolved.ID, Value: value, Division: division})
+		compiled := engine.SceneSetting{Track: resolved.Track, ID: resolved.ID, Value: value, Division: division}
+		if resolved.ID == kernel.ParamGlobalTempo {
+			// The new tempo applies first, so a delay division in the same
+			// scene fades once, to its final length.
+			settings = append([]engine.SceneSetting{compiled}, settings...)
+			continue
+		}
+		settings = append(settings, compiled)
 	}
 	return settings, nil
 }
@@ -521,7 +528,7 @@ func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved Resolved
 					return 0, fx.FreeDelay, err
 				}
 				params.Division, params.TimeMs = division, 0
-				if err := params.ValidateTempo(int64(p.TempoMilli)); err != nil {
+				if err := params.ValidateTempo(int64(SlowestTempoMilli(p))); err != nil {
 					return 0, fx.FreeDelay, fmt.Errorf("CICADA-PARAM: scene setting %s value %q: %w", setting.Path, value.Text, err)
 				}
 				return 0, division, nil
@@ -553,7 +560,11 @@ func sceneSettingKernelValue(p *Project, setting SceneSetting, resolved Resolved
 	if value.Number == nil {
 		return 0, fx.FreeDelay, fmt.Errorf("setting has no numeric value")
 	}
-	compiled, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, *value.Number)
+	number := *value.Number
+	if resolved.ID == kernel.ParamGlobalTempo {
+		number = CanonicalTempo(number) // the kernel reads back exactly these milli-BPM
+	}
+	compiled, err := ParameterFloat32Value(resolved.Descriptor.Min, resolved.Descriptor.Max, number)
 	if err != nil {
 		return 0, fx.FreeDelay, err
 	}

@@ -127,11 +127,22 @@ func TestExamplesPCM24Parity(t *testing.T) {
 					for _, entry := range cfg.Song {
 						bars += int(entry.Bars)
 					}
-					clock, err := seq.NewClock(rate, cfg.BPMMilli)
+					tempo, err := project.NewTempoMap(rate, cfg.BPMMilli, project.SongTempoChanges(p))
 					if err != nil || bars == 0 {
 						t.Fatalf("song clock: %v, bars=%d", err, bars)
 					}
-					frames := int(clock.SampleAtTick(int64(bars)*seq.TicksPerBar)) + 3*rate
+					// The kernel's own bar placement, as the AudioWorklet asks for it,
+					// must agree between native and WASM and with the tempo map.
+					for from := 0; from < bars; from += 3 {
+						for bar := from + 1; bar <= bars; bar++ {
+							got := math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(float64(int64(from)*seq.TicksPerBar)), math.Float64bits(float64(int64(bar)*seq.TicksPerBar))))
+							want := native.FramesBetweenTicks(int64(from)*seq.TicksPerBar, int64(bar)*seq.TicksPerBar)
+							if from == 0 && want != tempo.SampleAtTick(int64(bar)*seq.TicksPerBar) || int64(got) != want {
+								t.Fatalf("frames from bar %d to bar %d: WASM %v, native %d, tempo map %d", from, bar, got, want, tempo.SampleAtTick(int64(bar)*seq.TicksPerBar))
+							}
+						}
+					}
+					frames := int(tempo.SampleAtTick(int64(bars)*seq.TicksPerBar)) + 3*rate
 					name := fmt.Sprintf("%s-%d.pcm24", filepath.Base(path), rate)
 					file, err := os.Create(filepath.Join(output, name))
 					if err != nil {

@@ -36,6 +36,7 @@ async function setup(asset, hooks = false) {
         gosx_audio_cmd_cap: () => 512, gosx_audio_cmd_ptr: () => 8192,
         gosx_audio_msg_ptr: () => 32768, gosx_audio_out_ptr: () => 49152,
         gosx_audio_cmd_commit: count => instance.commits.push(new Uint8Array(instance.memory.buffer, 8192, count * 24).slice()),
+        gosx_audio_tick_frames: (from, to) => Math.ceil((to - from) * 60000 * 48000 / (120000 * 960)),
         gosx_audio_render() {
           instance.renders++;
           new Float32Array(instance.memory.buffer, 49152, 256).fill(1);
