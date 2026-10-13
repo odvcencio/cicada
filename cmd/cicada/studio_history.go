@@ -601,7 +601,18 @@ func (s *studio) commitMutationLocked(edit studioEdit, current []byte, mutation 
 				return s.verifyRenderIdentity(mutation.RenderChecked, mutation.RenderIdentity, mutation.RenderRecheck)
 			}
 		}
-		committed, preserved, err = studioPublish(s.path, updated, info.Mode().Perm(), edit.Revision, beforeSwap, hook.checkpoint, veto)
+		swap := beforeSwap
+		if s.afterStage != nil {
+			// Test seam: runs once the candidate is staged and before it replaces
+			// the score, so a test can place an external write exactly there.
+			swap = func() {
+				if beforeSwap != nil {
+					beforeSwap()
+				}
+				s.afterStage()
+			}
+		}
+		committed, preserved, err = studioPublish(s.path, updated, info.Mode().Perm(), edit.Revision, swap, hook.checkpoint, veto)
 	}
 	if err != nil {
 		if errors.Is(err, edits.ErrProjectChanged) {
