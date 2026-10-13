@@ -49,3 +49,30 @@ func TestArrangementExactSourceAndMusicalTime(t *testing.T) {
 		}
 	}
 }
+
+func TestSetPlacementFieldRefusals(t *testing.T) {
+	source := []byte(arrangeFixture)
+	for _, c := range []struct{ name, field, value, want string }{
+		{"bass-1", "color", "1bar", `unknown placement field "color"`},
+		{"missing", "at", "@1.1.1", `placement "missing" has no at field`},
+		{"bass-1", "length", "@1.1.1", "expected exact ticks, bars, or note division"},
+		{"bass-1", "at", "soon", "expected exact ticks, bars, or note division"},
+	} {
+		if got, err := SetPlacementField(source, c.name, c.field, c.value); err == nil || got != nil || !bytes.Contains([]byte(err.Error()), []byte(c.want)) {
+			t.Errorf("%s.%s=%s: got %q, %v; want error containing %q", c.name, c.field, c.value, got, err, c.want)
+		}
+	}
+	moved, err := SetPlacementField(source, "bass-1", "at", "@1.1.1")
+	if err != nil || !bytes.Equal(moved, bytes.Replace(source, []byte("@2.3.4"), []byte("@1.1.1"), 1)) {
+		t.Fatalf("moved %q, %v", moved, err)
+	}
+}
+
+func TestSetPlacementFieldAcceptsBareFileUnderManifestEdition(t *testing.T) {
+	// A file without a header relies on its manifest for edition 2.
+	source := []byte("track bass acid {}\npattern hits { c3 . c4 . }\narrange {\n  place a bass hits { at = 100ticks length = 1bar }\n}\n")
+	got, err := SetPlacementField(source, "a", "at", "@1.1.1")
+	if err != nil || !bytes.Contains(got, []byte("at = @1.1.1 length")) {
+		t.Fatalf("got %q, %v", got, err)
+	}
+}

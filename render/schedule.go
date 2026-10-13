@@ -67,26 +67,31 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 	if opts.Bars > 0 {
 		endTick = int64(opts.From+opts.Bars) * seq.TicksPerBar
 	}
-	clock, err := seq.NewClock(opts.SampleRate, score.TempoMilli)
+	songChanges := project.SongTempoChanges(p)
+	tempoMap, err := project.NewTempoMap(opts.SampleRate, int64(p.TempoMilli), songChanges)
 	if err != nil {
 		return report, err
 	}
-	fromFrame := clock.SampleAtTick(int64(opts.From) * seq.TicksPerBar)
-	endFrame := clock.SampleAtTick(endTick)
+	fromFrame := tempoMap.SampleAtTick(int64(opts.From) * seq.TicksPerBar)
+	endFrame := tempoMap.SampleAtTick(endTick)
 	report = Report{SampleRate: opts.SampleRate, Bars: int((endTick+seq.TicksPerBar-1)/seq.TicksPerBar) - opts.From, From: opts.From, MasterGainDB: cfg.MasterGainDB, TailFrames: int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))}
+	report.tempoChanges = project.ExcerptTempoChanges(p.TempoMilli, songChanges, report.From, report.Bars)
+	if len(report.tempoChanges) > maxWAVTempoChanges {
+		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
+	}
 	dither := opts.Dither == nil || *opts.Dither
 	encoder, err := newWAVEncoder(opts.Bits, dither, score.Seed, outputGain)
 	if err != nil {
 		return report, err
 	}
-	maxFrames := int64(^uint32(0)-60) / int64(encoder.frameBytes())
+	maxFrames := (int64(^uint32(0))-int64(36+metadataBytes(len(report.tempoChanges)))) / int64(encoder.frameBytes())
 	spanFrames := endFrame - fromFrame
 	if spanFrames < 0 || report.TailFrames > maxFrames || spanFrames > maxFrames-report.TailFrames {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
 	report.Frames = spanFrames + report.TailFrames
 	dataBytes := report.Frames * int64(encoder.frameBytes())
-	if err = writeWAVHeader(w, opts.SampleRate, opts.Bits, uint32(dataBytes)); err != nil {
+	if err = writeWAVHeaderTempo(w, opts.SampleRate, opts.Bits, uint32(dataBytes), len(report.tempoChanges)); err != nil {
 		return report, err
 	}
 	var stems *stemOutput
@@ -186,7 +191,7 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		}
 		position += int64(frames)
 	}
-	if err = writeMetadata(w, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames)); err != nil {
+	if err = writeMetadata(w, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges); err != nil {
 		return report, err
 	}
 	if stems != nil {

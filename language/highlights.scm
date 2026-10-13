@@ -222,6 +222,9 @@
 ((scene_assignment value: (scene_value (identifier) @function))
   (#not-any-of? @function "off" "keep" "stop"))
 
+; A scene value can be a synced delay division such as `delay.time = 1/8`.
+(scene_value (fraction) @number.fraction)
+
 (song_entry scene: (identifier) @label)
 (song_entry "*" @operator.repeat)
 (song_entry bars: (integer) @number.bars)

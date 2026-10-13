@@ -69,6 +69,7 @@ type Report struct {
 	rangeSkip                 int64
 	metricStart               int64
 	metricEnd                 int64
+	tempoChanges              []project.TempoChange
 }
 
 type trackRuntime struct {
@@ -424,12 +425,21 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	report.SampleRate = opts.SampleRate
 	report.MasterGainDB = masterGainDB
 	report.TailFrames = int64(math.Ceil(opts.TailSec * float64(opts.SampleRate)))
-	fromFrame := clock.SampleAtTick(int64(report.From) * seq.TicksPerBar)
-	renderFrames := clock.SampleAtTick(int64(renderBars)*seq.TicksPerBar) + report.TailFrames
+	tempoChanges := project.SongTempoChanges(semantic)
+	tempoMap, err := project.NewTempoMap(opts.SampleRate, score.TempoMilli, tempoChanges)
+	if err != nil {
+		return report, err
+	}
+	report.tempoChanges = project.ExcerptTempoChanges(semantic.TempoMilli, tempoChanges, report.From, report.Bars)
+	if len(report.tempoChanges) > maxWAVTempoChanges {
+		return report, fmt.Errorf("bars %d to %d hold %d tempo changes; the WAV timing chunk records at most %d, so render a shorter range", report.From+1, report.From+report.Bars, len(report.tempoChanges), maxWAVTempoChanges)
+	}
+	fromFrame := tempoMap.SampleAtTick(int64(report.From) * seq.TicksPerBar)
+	renderFrames := tempoMap.SampleAtTick(int64(renderBars)*seq.TicksPerBar) + report.TailFrames
 	report.Frames = renderFrames - fromFrame
 	report.rangeSkip = fromFrame
 	dataBytes := report.Frames * int64(encoder.frameBytes())
-	if dataBytes > int64(^uint32(0))-60 {
+	if dataBytes > int64(^uint32(0))-int64(36+metadataBytes(len(report.tempoChanges))) {
 		return report, fmt.Errorf("WAV exceeds RIFF size limit")
 	}
 	var prepared []engine.StereoVoiceFactory
@@ -597,7 +607,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if err != nil {
 		return report, err
 	}
-	if err := writeWAVHeader(writer, opts.SampleRate, opts.Bits, uint32(dataBytes)); err != nil {
+	if err := writeWAVHeaderTempo(writer, opts.SampleRate, opts.Bits, uint32(dataBytes), len(report.tempoChanges)); err != nil {
 		return report, err
 	}
 	masterGain := float32(1)
@@ -639,7 +649,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			if err := applySceneBoundary(tracks, scene, stopIsAction, entryBar == 0); err != nil {
 				return report, err
 			}
+			clock = tempoMap.ClockAtTick(int64(bar) * seq.TicksPerBar)
 			if entryBar == 0 {
+				// The tempo steps first, so a delay division set by the same
+				// scene fades once to its final length.
+				if delayA != nil && delayA.SetTempo(clock.BPMMilli) != nil {
+					return report, fmt.Errorf("delay does not fit the tempo of scene %s", entry.Scene)
+				}
 				if err := parameters.apply(entry.Scene); err != nil {
 					return report, err
 				}
@@ -648,7 +664,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			if bar+1 < renderBars {
 				nextScene = sceneAtBar(score, semantic, schedule, bar+1)
 			}
-			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, clock, stopIsAction)
+			planSceneTransitions(tracks, nextScene, int64(bar+1)*seq.TicksPerBar, tempoMap.SampleAtTick, stopIsAction)
 			end := clock.SampleAtTick(int64(bar+1) * seq.TicksPerBar)
 			for position < end {
 				if err := advanceRenderChains(tracks, clock.TickAtSample(position)); err != nil {
@@ -794,7 +810,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if report.writtenFrames != report.Frames {
 		return report, fmt.Errorf("limiter wrote %d frames, expected %d", report.writtenFrames, report.Frames)
 	}
-	if err := writeMetadata(writer, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames)); err != nil {
+	if err := writeMetadata(writer, uint32(score.TempoMilli), uint32(report.Bars), uint32(report.TailFrames), report.tempoChanges); err != nil {
 		return report, err
 	}
 	if stems != nil {
@@ -1293,7 +1309,7 @@ func sceneAtBar(score *notation.Score, p *project.Project, schedule []engine.Sch
 	return findScene(score, p.Scenes[schedule[i].Scene].ID)
 }
 
-func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryTick int64, clock seq.Clock, stopIsAction bool) {
+func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryTick int64, sampleAt func(int64) int64, stopIsAction bool) {
 	for ti := range tracks {
 		track := &tracks[ti]
 		track.transition = sceneTransition{}
@@ -1308,13 +1324,13 @@ func planSceneTransitions(tracks []trackRuntime, next *notation.Scene, boundaryT
 			if !ok {
 				continue // applyScene reports the invalid binding at the boundary
 			}
-			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), track.currentSlot, track.patternSlots[binding.Pattern], boundaryTick, clock)
+			track.transition = sceneTransitionFor(track.active, &target, uint8(ti), track.currentSlot, track.patternSlots[binding.Pattern], boundaryTick, sampleAt)
 			break
 		}
 	}
 }
 
-func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSlot uint8, boundaryTick int64, clock seq.Clock) sceneTransition {
+func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSlot uint8, boundaryTick int64, sampleAt func(int64) int64) sceneTransition {
 	if boundaryTick < seq.TicksPerStep || boundaryTick%seq.TicksPerStep != 0 {
 		return sceneTransition{}
 	}
@@ -1341,8 +1357,8 @@ func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSl
 	carry := err == nil && target.Chords[targetIndex].Count == 0 && next.Gate && !next.Tie && seq.ProbabilityHit(next.Probability, target.Seed, track, targetSlot, targetStep/int64(target.Len), targetIndex)
 	return sceneTransition{
 		valid: true, carry: carry, sourceNoteID: sourceNoteID,
-		boundarySample: clock.SampleAtTick(boundaryTick), targetSample: clock.SampleAtTick(boundaryTick),
-		release: seq.Event{Kind: seq.NoteOff, NoteID: sourceNoteID, Tick: offTick, Sample: clock.SampleAtTick(offTick), Track: track},
+		boundarySample: sampleAt(boundaryTick), targetSample: sampleAt(boundaryTick),
+		release: seq.Event{Kind: seq.NoteOff, NoteID: sourceNoteID, Tick: offTick, Sample: sampleAt(offTick), Track: track},
 	}
 }
 
@@ -1752,15 +1768,27 @@ func flushLimiter(w io.Writer, limiter *mix.Limiter, stems *stemOutput, encoder 
 
 // The trailing cica chunk makes musical duration independently verifiable.
 // Standard WAV readers skip this private chunk after the PCM data.
-func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32) error {
-	var chunk [24]byte
+//
+// Version 1 is 24 bytes: the score tempo, the bars, and the tail. A song whose
+// scenes change tempo writes version 2, which adds one (bar, tempo) pair for
+// each step after those fields. A song with a single tempo still writes the
+// exact version 1 bytes.
+func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32, changes []project.TempoChange) error {
+	chunk := make([]byte, metadataBytes(len(changes)))
 	copy(chunk[:4], "cica")
-	binary.LittleEndian.PutUint32(chunk[4:8], 16)
+	binary.LittleEndian.PutUint32(chunk[4:8], uint32(len(chunk)-8))
 	binary.LittleEndian.PutUint32(chunk[8:12], 1)
+	if len(changes) > 0 {
+		binary.LittleEndian.PutUint32(chunk[8:12], 2)
+	}
 	binary.LittleEndian.PutUint32(chunk[12:16], tempoMilli)
 	binary.LittleEndian.PutUint32(chunk[16:20], bars)
 	binary.LittleEndian.PutUint32(chunk[20:24], tailFrames)
-	n, err := w.Write(chunk[:])
+	for i, change := range changes {
+		binary.LittleEndian.PutUint32(chunk[24+8*i:], uint32(change.Bar))
+		binary.LittleEndian.PutUint32(chunk[28+8*i:], uint32(change.BPMMilli))
+	}
+	n, err := w.Write(chunk)
 	if err != nil {
 		return err
 	}
@@ -1769,6 +1797,9 @@ func writeMetadata(w io.Writer, tempoMilli, bars, tailFrames uint32) error {
 	}
 	return nil
 }
+
+// metadataBytes is the size of the whole cica chunk, header included.
+func metadataBytes(changes int) int { return 24 + 8*changes }
 
 func expressionEventPriority(kind seq.EventKind) int {
 	if kind == seq.NoteOff {

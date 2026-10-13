@@ -307,12 +307,32 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
 		return
 	}
+	if cause, refused := conversionRefusal(env, err); refused && env.DryRun {
+		// A dry run asks whether the conversion is safe, so a refusal is an answer, not a failure.
+		studioJSON(w, http.StatusOK, map[string]any{"convertible": false, "cause": cause, "revision": studioRevision(current), "dryRun": true})
+		return
+	}
 	if err != nil {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
+	if env.DryRun && result.RenderChecked {
+		// A dry run reports that the change is safe, so it needs the same freshness.
+		if err := s.verifyRenderIdentity(true, result.RenderIdentity, result.RenderRecheck); err != nil {
+			if envelopeConverts(env) {
+				studioJSON(w, http.StatusOK, map[string]any{"convertible": false, "cause": err.Error(), "revision": studioRevision(current), "dryRun": true})
+			} else {
+				studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error(), "revision": studioRevision(current), "source": string(current)})
+			}
+			return
+		}
+	}
 	if env.DryRun {
-		studioJSON(w, http.StatusOK, map[string]any{"diff": intentDiff(current, result, "score.cicada"), "revision": studioRevision(current), "valid": true, "dryRun": true})
+		response := map[string]any{"diff": intentDiff(current, result, "score.cicada"), "revision": studioRevision(current), "valid": true, "dryRun": true}
+		if envelopeConverts(env) {
+			response["convertible"] = true
+		}
+		studioJSON(w, http.StatusOK, response)
 		return
 	}
 	if finish != nil {
@@ -329,7 +349,7 @@ func (s *studio) applyPreparedIntents(w http.ResponseWriter, edit studioEdit, en
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
 		return
 	}
-	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files}
+	mutation := studioMutation{Source: result.Source, Response: result.Response, Files: files, RenderChecked: result.RenderChecked, RenderIdentity: result.RenderIdentity, RenderRecheck: result.RenderRecheck}
 	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{envelope: &env, compiled: compiler.compiled(result.Source, result.Files)})
 	if outcome.Status == http.StatusConflict {
 		if latest, err := os.ReadFile(s.path); err == nil {
@@ -346,6 +366,11 @@ type stagedProposal struct {
 	// mixer records that a mixer writer ran while staging, so acceptance can
 	// apply the same capture guard to a proposal staged before the recording.
 	mixer bool
+	// renderIdentity is the render identity verified at staging, recorded
+	// when an intent consulted the render check. Empty with rendered set means
+	// the inputs could not be identified, so acceptance always reapplies.
+	rendered       bool
+	renderIdentity string
 }
 
 func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
@@ -408,7 +433,10 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 	if s.proposals == nil {
 		s.proposals = make(map[string]stagedProposal)
 	}
-	s.proposals[proposal.ID] = stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer}
+	// The identity verified around the renders, not one taken afterwards: a
+	// change during the check must not be recorded as verified.
+	entry := stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer, rendered: staged.Result.RenderChecked, renderIdentity: staged.Result.RenderIdentity}
+	s.proposals[proposal.ID] = entry
 	s.previewProposal = proposal.ID
 	s.transport.applyPreview(staged.Ops)
 	studioJSON(w, http.StatusOK, map[string]any{"id": proposal.ID, "diff": staged.Diff, "ops": staged.Ops})
@@ -468,6 +496,24 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// A render-checked candidate is only as good as the inputs its render saw.
+	// If any changed since staging (peers, manifests, assets), run the intents
+	// again, including their render checks, and accept only the same candidate.
+	verified, recheck := staged.renderIdentity, result.RenderRecheck
+	if staged.rendered {
+		if identity, ok := currentRenderIdentity(result); !ok || identity != staged.renderIdentity {
+			again, status, err := s.restageForAccept(current, proposal)
+			if err != nil {
+				studioJSON(w, status, map[string]any{"error": err.Error()})
+				return
+			}
+			if !sameCandidate(result, again.Result) {
+				studioJSON(w, http.StatusConflict, map[string]any{"error": "project inputs changed since staging and the proposal now produces a different result; stage the proposal again", "revision": studioRevision(current), "source": string(current)})
+				return
+			}
+			verified, recheck = again.Result.RenderIdentity, again.Result.RenderRecheck
+		}
+	}
 	files, err := auxiliaryFiles(result.Files)
 	if err != nil {
 		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
@@ -490,7 +536,7 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 		s.history.observe(current, bar, step)
 	}
 	edit := studioEdit{Revision: proposal.Envelope.Revision, Label: proposal.Label, Author: proposal.Envelope.Author, Session: proposal.Envelope.Session}
-	mutation := studioMutation{Source: result.Source, Files: files, Response: result.Response}
+	mutation := studioMutation{Source: result.Source, Files: files, Response: result.Response, RenderChecked: staged.rendered, RenderIdentity: verified, RenderRecheck: recheck}
 	// Revalidate at acceptance, including project dependencies that may have
 	// changed since staging. The tail commits this candidate once.
 	outcome := s.commitMutationLocked(edit, current, mutation, nil, studioHistoryWriteNew, 0, commitHook{envelope: &proposal.Envelope, compiled: opts.Compiler.(*studioCompiler).compiled(result.Source, result.Files)})
@@ -538,4 +584,87 @@ func (t *studioTransport) applyPreview(ops []edits.PreviewOp) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.previewOps = append([]edits.PreviewOp(nil), ops...)
+}
+
+func envelopeConverts(env edits.Envelope) bool {
+	for _, intent := range env.Intents {
+		if _, ok := intent.(*edits.ConvertSongToArrange); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// conversionRefusal reports the named cause when a song conversion was refused
+// or could not be checked.
+func conversionRefusal(env edits.Envelope, err error) (string, bool) {
+	if err == nil || !envelopeConverts(env) {
+		return "", false
+	}
+	var refusal *edits.RefusalError
+	if errors.As(err, &refusal) && refusal.Intent == "ConvertSongToArrange" {
+		return refusal.Cause, true
+	}
+	if errors.Is(err, edits.ErrNoRenderCheck) {
+		return err.Error(), true
+	}
+	return "", false
+}
+
+// restageForAccept reruns a staged envelope against the current inputs. The
+// status is the HTTP status for a returned error.
+func (s *studio) restageForAccept(current []byte, proposal edits.Proposal) (*edits.Staged, int, error) {
+	opts, err := s.editOptions(current, nil)
+	if err != nil {
+		return nil, http.StatusUnprocessableEntity, err
+	}
+	opts.MixerGuard = s.mixerCaptureGuard
+	again, err := edits.Stage(current, proposal, opts)
+	if errors.Is(err, errMixerDuringCapture) {
+		return nil, http.StatusConflict, err
+	}
+	if err != nil {
+		return nil, http.StatusUnprocessableEntity, err
+	}
+	return again, 0, nil
+}
+
+// sameCandidate compares the source and every auxiliary file of two results.
+func sameCandidate(a, b *edits.Result) bool {
+	if !bytes.Equal(a.Source, b.Source) || len(a.Files) != len(b.Files) {
+		return false
+	}
+	for i := range a.Files {
+		if a.Files[i].Path != b.Files[i].Path || !bytes.Equal(a.Files[i].After, b.Files[i].After) {
+			return false
+		}
+	}
+	return true
+}
+
+// verifyRenderIdentity compares the identity verified around a mutation's
+// renders with the project right now, recomputed from the same working sources
+// and staged files the renders used. It is the one comparison: the commit tail
+// runs it under the commit lock before writing, and cicada apply, which writes
+// through its own exchange, runs it just before that. A mutation that was
+// render-checked but has no verified identity is refused.
+func (s *studio) verifyRenderIdentity(checked bool, verified string, recheck func() (string, bool)) error {
+	if !checked {
+		return nil
+	}
+	if recheck == nil || verified == "" {
+		return edits.ErrProjectChanged
+	}
+	if identity, ok := recheck(); !ok || identity != verified {
+		return edits.ErrProjectChanged
+	}
+	return nil
+}
+
+// currentRenderIdentity recomputes a result's render identity now.
+func currentRenderIdentity(result *edits.Result) (string, bool) {
+	if result.RenderRecheck == nil {
+		return "", false
+	}
+	return result.RenderRecheck()
 }

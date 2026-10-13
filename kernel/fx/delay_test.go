@@ -139,3 +139,47 @@ func TestDelayFiniteAndAllocationFree(t *testing.T) {
 		t.Fatal("reset retained fault")
 	}
 }
+
+// A tempo step and a new division at one scene boundary are one transition:
+// the fade starts from the read head that was playing, never from a target that
+// no sample has yet used. The output stays continuous in either call order.
+func TestDelayTempoAndDivisionAtOneBoundaryFadeOnce(t *testing.T) {
+	for _, tempoFirst := range []bool{true, false} {
+		d, err := NewDelay(48_000, 120_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		params := DefaultDelayParams()
+		params.Division, params.TimeMs, params.Feedback, params.Mix, params.Width = Eighth, 0, 0, 1, 1
+		if err := d.SetParams(params); err != nil {
+			t.Fatal(err)
+		}
+		d.Reset()
+		sine := func(n int) float32 { return float32(.5 * math.Sin(2*math.Pi*110*float64(n)/48_000)) }
+		var previous float32
+		maxStep := 0.0
+		for n := 0; n < 60_000; n++ {
+			if n == 30_000 {
+				next := params
+				next.Division = Quarter
+				if tempoFirst {
+					if d.SetTempo(60_000) != nil || d.SetParams(next) != nil {
+						t.Fatal("transition refused")
+					}
+				} else if d.SetParams(next) != nil || d.SetTempo(60_000) != nil {
+					t.Fatal("transition refused")
+				}
+			}
+			l, _ := d.Process(sine(n), sine(n))
+			if n > 12_100 && math.Abs(float64(l-previous)) > maxStep {
+				maxStep = math.Abs(float64(l - previous))
+			}
+			previous = l
+		}
+		// A 110 Hz sine at .5 moves by .0072 a sample; the 20 ms fade between two
+		// read heads adds well under .02. The broken transition stepped by .12.
+		if maxStep > .02 {
+			t.Fatalf("tempoFirst=%v: the output stepped by %g across the transition", tempoFirst, maxStep)
+		}
+	}
+}

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	"m31labs.dev/cicada/notation"
 )
 
 type SetSceneSetting struct {
@@ -77,7 +79,10 @@ func sceneSettingSource(ctx *Context, sceneID, path string, raw json.RawMessage,
 	if err != nil {
 		return nil, err
 	}
-	if !strings.Contains(path, ".") || !resolved.Descriptor.Live || !remove && !resolved.Descriptor.Automatable {
+	// The scene tempo is the one bare path a scene may set. It is not live and
+	// not automatable: it steps at the scene boundary.
+	tempo := path == "tempo" && resolved.Descriptor.ID == "global.tempo"
+	if !tempo && (!strings.Contains(path, ".") || !resolved.Descriptor.Live || !remove && !resolved.Descriptor.Automatable) {
 		return nil, fmt.Errorf("%s cannot be automated at a scene boundary", path)
 	}
 	node, walker, err := declaration(source, []string{"scene_decl"}, sceneID)
@@ -97,7 +102,7 @@ func sceneSettingSource(ctx *Context, sceneID, path string, raw json.RawMessage,
 	}
 	for i := 0; i < node.NamedChildCount(); i++ {
 		assignment := node.NamedChild(i)
-		if walker.Type(assignment) != "scene_assignment" || walker.Text(walker.Field(assignment, "target")) != path {
+		if walker.Type(assignment) != "scene_assignment" || walker.Text(walker.Field(assignment, "target")) != path || tempo && !notation.SceneAssignmentIsSetting(path, walker.Text(walker.Field(assignment, "value"))) {
 			continue
 		}
 		if remove {
