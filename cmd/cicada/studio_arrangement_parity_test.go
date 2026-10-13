@@ -84,10 +84,12 @@ func arrangementParityCases() []struct {
 }
 
 func TestArrangementIntentsMatchTheOldWriter(t *testing.T) {
+	recorder := newM10Recorder(t, "arrangement")
 	for _, c := range arrangementParityCases() {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
 			want, wantErr := editedArrangementSource([]byte(c.source), c.edit)
+			recorder.add(c.name, want, wantErr)
 			intent, ok := arrangementIntent(c.edit)
 			if !ok {
 				t.Fatalf("no intent for %q", c.edit.Action)

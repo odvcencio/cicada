@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/host/capture"
 	"m31labs.dev/cicada/host/sampleasset"
 	"m31labs.dev/cicada/host/takejournal"
@@ -92,26 +93,13 @@ func vocalMillisecondsFrames(ms float64, rate int) int64 {
 
 func notationTicks(value string) (int64, error) { return notation.MusicalTicks(value, true) }
 
-type vocalSegment struct {
-	Take   string  `json:"take"`
-	Start  int64   `json:"startTick"`
-	End    int64   `json:"endTick"`
-	GainDB float64 `json:"gainDB,omitempty"`
-	// Positive offset reads later source frames at the same song position. Raw
-	// take coordinates remain immutable; trimming either side keeps this mapping.
-	OffsetMS    float64  `json:"offsetMS,omitempty"`
-	FadeMS      *float64 `json:"fadeMS,omitempty"`
-	CrossfadeMS *float64 `json:"crossfadeMS,omitempty"`
-}
+// The comp types live in the edit service, which writes their metadata comment.
+type (
+	vocalSegment = edits.VocalSegment
+	vocalComp    = edits.VocalComp
+)
 
-type vocalComp struct {
-	Track    string         `json:"track"`
-	Tempo    int64          `json:"tempoMilli"`
-	Segments []vocalSegment `json:"segments"`
-	Asset    string         `json:"asset"`
-}
-
-const vocalCompPrefix = "// cicada-vocal-comp "
+const vocalCompPrefix = edits.VocalCompPrefix
 
 func vocalComps(source []byte) ([]vocalComp, error) {
 	var result []vocalComp
@@ -431,6 +419,111 @@ func (s *studio) vocalTakeSource(source []byte, t takejournal.Take, settings *st
 	metadata, _ := json.Marshal(next)
 	text := fmt.Sprintf("\n// cicada-vocal-begin %s\n%s%s\nasset %s %s { sha256 = %s format = wav frames = %d rate = %dHz channels = 1 source = recorded }\nclip %s-clip %s { start = 0frames end = %dframes }\n// cicada-vocal-end %s\n", t.Track, vocalCompPrefix, metadata, asset.Name, strconv.Quote(asset.Path), strconv.Quote(asset.SHA256), asset.Frames, asset.RateHz, asset.Name, asset.Name, asset.Frames, t.Track)
 	return append(source, []byte(text)...), nil
+}
+
+// vocalSourceCompiler hands the edit service the plan of the score being
+// edited. The candidate is not compiled here: the commit path compiles it with
+// its asset, as it always has.
+type vocalSourceCompiler struct {
+	source []byte
+	plan   *edits.Plan
+}
+
+func (c vocalSourceCompiler) Compile(source []byte, _ map[string][]byte) (*edits.Plan, error) {
+	if bytes.Equal(source, c.source) {
+		return c.plan, nil
+	}
+	return &edits.Plan{Revision: edits.Revision(source)}, nil
+}
+
+// vocalTakeEnvelope checks the take against the score, prints the comp audio,
+// and applies the PlaceVocalComp intent. It returns the candidate source and
+// the envelope the commit records in the edit log.
+func (s *studio) vocalTakeEnvelope(source []byte, t takejournal.Take, settings *studioRecordingSettings) ([]byte, edits.Envelope, error) {
+	var env edits.Envelope
+	gainDB, _, err := vocalPhraseSettings(settings)
+	if err != nil {
+		return nil, env, err
+	}
+	p, err := compileStudioSource(s.path, source)
+	if err != nil {
+		return nil, env, err
+	}
+	if t.Timeline == nil {
+		return nil, env, fmt.Errorf("choose a Session arrangement take")
+	}
+	if int64(p.TempoMilli) != t.Timeline.TempoMilli {
+		return nil, env, fmt.Errorf("restore the recording tempo before selecting this take")
+	}
+	found := false
+	for _, tr := range p.Tracks {
+		if tr.ID == t.Track && tr.Kind == "audio" {
+			found = true
+		}
+	}
+	if !found {
+		return nil, env, fmt.Errorf("take target must be an existing audio track")
+	}
+	lo, hi := takeCoverage(t)
+	if settings != nil {
+		if settings.Start != "" {
+			lo, err = notationTicks(settings.Start)
+			if err != nil {
+				return nil, env, err
+			}
+		}
+		if settings.End != "" {
+			hi, err = notationTicks(settings.End)
+			if err != nil {
+				return nil, env, err
+			}
+		}
+	}
+	from, to := takeCoverage(t)
+	if lo < from || hi > to || hi <= lo || hi > studioArrangementEnd(p) {
+		return nil, env, fmt.Errorf("choose a region covered by this take (%s to %s)", listeningPosition(from), listeningPosition(to))
+	}
+	comps, err := vocalComps(source)
+	if err != nil {
+		return nil, env, err
+	}
+	next := vocalComp{Track: t.Track, Tempo: t.Timeline.TempoMilli}
+	var previous *vocalComp
+	for i := range comps {
+		if comps[i].Track == t.Track {
+			previous = &comps[i]
+			next.Segments = comps[i].Segments
+			break
+		}
+	}
+	if previous != nil && previous.Tempo != next.Tempo {
+		return nil, env, fmt.Errorf("vocal comp tempo differs from this take")
+	}
+	segment := vocalSegment{Take: t.ID, Start: lo, End: hi, GainDB: gainDB}
+	if settings != nil {
+		segment.OffsetMS, segment.FadeMS, segment.CrossfadeMS = settings.OffsetMS, settings.FadeMS, settings.CrossfadeMS
+	}
+	next.Segments = replaceVocalSegment(next.Segments, segment)
+	asset, err := s.printVocalComp(next, t.Rate)
+	if err != nil {
+		return nil, env, err
+	}
+	next.Asset = asset.Name
+	intent := &edits.PlaceVocalComp{Comp: next, Asset: edits.PrintAsset{Path: asset.Path, SHA256: asset.SHA256, Frames: asset.Frames, RateHz: asset.RateHz}}
+	if previous != nil {
+		intent.Previous = &edits.VocalPrevious{Asset: previous.Asset}
+	}
+	opts, err := s.editOptions(source, nil)
+	if err != nil {
+		return nil, env, err
+	}
+	opts.Compiler = vocalSourceCompiler{source: source, plan: project.EditPlan(p, source)}
+	env = edits.Envelope{Version: edits.EnvelopeVersion, Revision: studioRevision(source), Intents: []edits.Intent{intent}}
+	result, err := edits.Apply(source, env, opts)
+	if err != nil {
+		return nil, env, err
+	}
+	return result.Source, env, nil
 }
 
 func removeVocalPrintDeclarations(block []byte, previous *vocalComp, begin, finish []byte) ([]byte, error) {

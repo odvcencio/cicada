@@ -25,6 +25,7 @@ func (c originalPlanCompiler) Compile(source []byte, _ map[string][]byte) (*edit
 }
 
 func TestSamplerPrintIntentMatchesTheOldWriter(t *testing.T) {
+	recorder := newM10Recorder(t, "sampler")
 	withAudio := strings.Replace(studioListeningScore, "pattern pulse", "track vox audio {}\npattern pulse", 1)
 	withScene := strings.Replace(studioListeningScore, "track left", "scene main { left=pulse }\ntrack left", 1)
 	crlf := strings.ReplaceAll(studioListeningScore, "\n", "\r\n")
@@ -57,6 +58,7 @@ func TestSamplerPrintIntentMatchesTheOldWriter(t *testing.T) {
 			}
 			src := padsampler.Source{Asset: project.Asset{Path: "sampler/audio/print.wav", SHA256: strings.Repeat("ab", 32), Frames: c.frames, RateHz: padsampler.Rate, Channels: 2}}
 			want, wantErr := placeSamplerPrint([]byte(c.source), p, src, c.input)
+			recorder.add(c.name, want, wantErr)
 			compiler := originalPlanCompiler{original: []byte(c.source), plan: project.EditPlan(p, []byte(c.source))}
 			got, gotErr := edits.Apply([]byte(c.source), edits.Envelope{Version: edits.EnvelopeVersion, Intents: []edits.Intent{samplerPrintIntent(src, c.input)}}, edits.Options{Compiler: compiler, Path: path})
 			if (wantErr == nil) != (gotErr == nil) || wantErr != nil && wantErr.Error() != gotErr.Error() {
