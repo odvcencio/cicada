@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -231,5 +232,34 @@ func TestApplyAuxiliaryUpgradeDryRunAndWrite(t *testing.T) {
 	}
 	if info, _ := os.Stat(manifest); info.Mode().Perm() != 0600 {
 		t.Fatal("manifest mode changed")
+	}
+}
+
+func TestApplyConvertSongConvertsTemplateAndRefusesRestartingChanceSteps(t *testing.T) {
+	path, intents, template := applyFixture(t)
+	writeApplyEnvelope(t, intents, edits.Envelope{Version: 1, Intents: []edits.Intent{&edits.ConvertSongToArrange{}}})
+	out, err := captureApply(t, path, intents, "--write")
+	if err != nil || !strings.Contains(out, "+  place main-1-bass bass pulse {") {
+		t.Fatalf("template: %v\n%s", err, out)
+	}
+	// The project manifest declares edition 2, so no header is added. Both
+	// scenes bind the same patterns, so each track is one 8-bar placement.
+	converted, _ := os.ReadFile(path)
+	want := string(template)[:strings.Index(string(template), "song {")] + ("arrange {\n  place main-1-bass bass pulse {\n    at = @1.1.1 length = 8bars\n  }\n  place main-1-drums drums beat {\n    at = @1.1.1 length = 8bars\n  }\n}\n")
+	if string(converted) != want {
+		t.Fatalf("converted:\n%s\nwant:\n%s", converted, want)
+	}
+	// A different pattern with chance steps in the second scene needs a second placement, and chance passes restart at a placement origin.
+	if err := os.WriteFile(path, []byte(strings.Replace(string(template), "scene break {\n  bass = pulse\n  drums = beat\n}", "scene break {\n  bass = lively\n  drums = beat\n}", 1)+"\npattern lively acid {\n  1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50 1?50 . 5?50 1?50\n}\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	_, err = captureApply(t, path, intents, "--write")
+	var refusal *edits.RefusalError
+	if !errors.As(err, &refusal) || refusal.Cause != "pattern lively has chance steps that restart at bar 5" {
+		t.Fatalf("chance boundary: %v", err)
+	}
+	if after, _ := os.ReadFile(path); !bytes.Equal(after, before) {
+		t.Fatal("a refused conversion changed the score")
 	}
 }

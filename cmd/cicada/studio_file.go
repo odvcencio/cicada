@@ -23,6 +23,18 @@ func studioWriteIfRevision(path string, updated []byte, mode os.FileMode, expect
 }
 
 func studioWriteTakeIfRevision(path string, updated []byte, mode os.FileMode, expected string, beforeSwap func(), checkpoint func(takejournal.Stage)) (bool, string, error) {
+	return studioPublish(path, updated, mode, expected, beforeSwap, checkpoint, nil)
+}
+
+// studioPublishSeam runs immediately before the veto, after the replacement is
+// staged. Tests use it to change the project at the publication boundary.
+var studioPublishSeam func()
+
+// studioPublish writes updated through a staged file and an atomic exchange.
+// veto, when set, runs after the staged file is written and synced and
+// immediately before the exchange; a non-nil error aborts: the staged file is
+// removed and the score is untouched.
+func studioPublish(path string, updated []byte, mode os.FileMode, expected string, beforeSwap func(), checkpoint func(takejournal.Stage), veto func() error) (bool, string, error) {
 	target, err := filetarget.Resolve(path, filetarget.Existing)
 	if err != nil {
 		return false, "", err
@@ -63,6 +75,14 @@ func studioWriteTakeIfRevision(path string, updated []byte, mode os.FileMode, ex
 	}
 	if beforeSwap != nil {
 		beforeSwap()
+	}
+	if studioPublishSeam != nil {
+		studioPublishSeam()
+	}
+	if veto != nil {
+		if err := veto(); err != nil {
+			return false, "", err
+		}
 	}
 	displacedPath, err := studioSwap(path, stagePath)
 	if err != nil {
