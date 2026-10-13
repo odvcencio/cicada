@@ -342,3 +342,41 @@ func TestParallelCallbackTimingSample(t *testing.T) {
 		}
 	}
 }
+
+func TestParallelWaitFloorDefaultAndConfig(t *testing.T) {
+	if DefaultParallelWaitFloor != 100*time.Millisecond {
+		t.Fatalf("default wait floor %v, want 100ms", DefaultParallelWaitFloor)
+	}
+	config := func(floor time.Duration) Config {
+		cfg := Config{SampleRate: 48000, MaxBlock: 128, Tracks: 8, MaxVoices: MaxVoices, BPMMilli: 120000, ParallelWaitFloor: floor}
+		for track := 0; track < cfg.Tracks; track++ {
+			cfg.Track[track].Kind = VoicePrepared
+			cfg.Track[track].Prepared = parallelFixtureFactory{phase: uint32(track + 1)}
+		}
+		return cfg
+	}
+	build := func(floor time.Duration) *Engine {
+		t.Helper()
+		e, err := New(config(floor))
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { e.Close() })
+		if err := e.EnableParallel(2); err != nil {
+			t.Fatal(err)
+		}
+		return e
+	}
+	if runtime.GOMAXPROCS(0) < 2 {
+		t.Skip("parallel rendering needs two CPUs")
+	}
+	if got := build(0).parallel.waitFloor; got != 100*time.Millisecond {
+		t.Fatalf("zero config gave wait floor %v, want 100ms", got)
+	}
+	if got := build(time.Second).parallel.waitFloor; got != time.Second {
+		t.Fatalf("configured wait floor %v, want 1s", got)
+	}
+	if _, err := New(config(-1)); err == nil {
+		t.Fatal("negative wait floor was accepted")
+	}
+}

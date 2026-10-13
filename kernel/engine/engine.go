@@ -3,6 +3,7 @@ package engine
 
 import (
 	"math"
+	"time"
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -153,7 +154,18 @@ type Config struct {
 	// CompSidechainTrack is zero for self-detection, a one-based track index,
 	// or SFXSidechain for the post-fader SFX bus.
 	CompSidechainTrack int
+	// ParallelWaitFloor is the shortest time the render thread waits for the
+	// parallel lanes to finish one segment. A timeout retires the pool for good:
+	// every later render reports FaultParallelWorker and the host must close and
+	// recreate the engine to recover. Zero selects DefaultParallelWaitFloor.
+	// Raise it for offline renders or tests that run on a heavily loaded
+	// machine. Negative values are rejected. It has no effect on builds without
+	// parallel rendering.
+	ParallelWaitFloor time.Duration `json:"-"`
 }
+
+// DefaultParallelWaitFloor is the production parallel lane wait floor.
+const DefaultParallelWaitFloor = 100 * time.Millisecond
 
 type voiceSlot struct {
 	kind                           VoiceKind
@@ -208,9 +220,11 @@ type meterAccum struct {
 // Engine has fixed command and message rings. The host owns cross-thread
 // communication and calls Push only on the render thread.
 type Engine struct {
+	tap                          noteTap
 	streamClosed                 bool
 	rawPlaying                   bool
 	parallel                     *parallelState
+	parallelConfig               parallelConfig
 	spatial                      spatialState
 	sampleRate, maxBlock, tracks int
 	paramAlpha                   [kernel.ParamCount]float32
@@ -380,6 +394,9 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
 		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
+	if err := e.configureParallel(cfg); err != nil {
+		return nil, err
+	}
 	e.spatial.rotation = spatial.ListenerRotation(0, 0, 0)
 	e.spatial.music.Init(cfg.SampleRate)
 	e.spatial.sfx.Init(cfg.SampleRate)
@@ -920,6 +937,7 @@ func (e *Engine) Reset() {
 		e.patterns[i].active = -1
 		e.patterns[i].eventCount, e.patterns[i].eventIndex = 0, 0
 		e.patterns[i].heldValid = false
+		e.tapRelease(i, e.transport.Tick())
 		e.patterns[i].playingNote = 0
 		e.patterns[i].chainLen = 0
 		e.patterns[i].chainArmed = false
@@ -1205,6 +1223,7 @@ func (e *Engine) apply(c cmd.Command) {
 		e.transport.Stop()
 		e.lastBarTick = -1
 		for i := 0; i < e.tracks; i++ {
+			e.tapRelease(i, e.transport.Tick())
 			e.noteOff(i, 0xffff)
 			e.patterns[i].playingNote = 0
 			e.patterns[i].heldValid = false
@@ -1236,6 +1255,7 @@ func (e *Engine) apply(c cmd.Command) {
 			e.compMusic.Reset()
 		}
 		for i := 0; i < e.tracks; i++ {
+			e.tapRelease(i, e.transport.Tick())
 			e.patterns[i].playingNote = 0
 			e.patterns[i].heldValid = false
 			if e.patterns[i].chainLen != 0 {
@@ -1325,6 +1345,7 @@ func (e *Engine) apply(c cmd.Command) {
 		if keysEnabled && v.kind == VoiceKeys && e.patterns[track].playingNote != 0 {
 			e.releaseKeysPattern(track)
 		}
+		e.tapRelease(track, e.transport.Tick())
 		e.patterns[track].playingNote = 0
 		e.patterns[track].heldValid = false
 		switch v.kind {
@@ -1413,6 +1434,9 @@ func (e *Engine) apply(c cmd.Command) {
 		index := c.Index
 		if v.kind == VoiceGraph && v.noteIdentity != 0 && c.Index == v.noteIdentity {
 			index = 0xffff
+		}
+		if index == 0xffff {
+			e.tapRelease(int(c.Track), e.transport.Tick())
 		}
 		e.noteOff(int(c.Track), index)
 		if e.voices[c.Track].kind != VoicePiano && (!keysEnabled || e.voices[c.Track].kind != VoiceKeys) || c.Index == 0xffff {

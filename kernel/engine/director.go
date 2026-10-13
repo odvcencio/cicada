@@ -122,6 +122,7 @@ func (e *Engine) fadeSceneTrack(track int, off bool) bool {
 
 func (e *Engine) stopDirectorTrack(track int) {
 	p := &e.patterns[track]
+	e.tapRelease(track, e.transport.Tick())
 	e.noteOff(track, 0xffff)
 	p.active = -1
 	p.chainArmed = false

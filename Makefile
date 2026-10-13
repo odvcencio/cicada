@@ -30,7 +30,7 @@ ENGINE_METRICS_ARGS ?=
 
 test:
 	go test ./... -count=1
-	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs
+	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
 
@@ -40,7 +40,7 @@ test:
 # target covers every other package. `make test` still runs everything.
 test-ci-core:
 	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -count=1
-	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs
+	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
 
@@ -91,6 +91,7 @@ build-workstation:
 	cp workstation/dist/server/app build/cicada-workstation.new
 	mv -f build/cicada-workstation.new build/cicada-workstation
 	cp workstation/dist/build.json build/workstation/build.json
+	rm -rf build/workstation/assets build/workstation/public
 	cp -R workstation/dist/assets workstation/dist/public build/workstation/
 
 build-workstation-release:
@@ -99,6 +100,7 @@ build-workstation-release:
 	cp workstation/dist/server/app build/cicada-workstation.new
 	mv -f build/cicada-workstation.new build/cicada-workstation
 	cp workstation/dist/build.json build/workstation/build.json
+	rm -rf build/workstation/assets build/workstation/public
 	cp -R workstation/dist/assets workstation/dist/public build/workstation/
 
 test-workstation:

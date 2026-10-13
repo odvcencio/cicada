@@ -30,11 +30,16 @@ func main() {
 		}
 		return data
 	}
-	kernel, bridge, runtime := read("kernel.wasm"), read("demo.wasm"), read("wasm_exec.js")
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
 		log.Fatal(err)
 	}
+	kernel, bridge, runtime := read("kernel.wasm"), read("demo.wasm"), read("wasm_exec.js")
+	// Announce the bound address before NewHandler, which compresses every
+	// asset at the highest gzip and Brotli levels and is slow on a loaded host.
+	// A missing bundle still fails above, before any URL is printed. The
+	// kernel queues early connections until Serve runs.
+	fmt.Printf("http://%s\n", listener.Addr())
 	if *host == "" {
 		if address, ok := listener.Addr().(*net.TCPAddr); ok && address.IP.IsLoopback() {
 			*host = listener.Addr().String()
@@ -44,7 +49,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("http://%s\n", listener.Addr())
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second}
 	log.Fatal(server.Serve(listener))
 }

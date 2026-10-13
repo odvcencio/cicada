@@ -5,6 +5,7 @@ const {spawn}=require('node:child_process');
 const path=require('node:path');
 const fs=require('node:fs');
 const assert=require('node:assert/strict');
+const {waitForServerURL}=require('./server-url.cjs');
 (async()=>{
   const repo=path.resolve(__dirname,'../..');
   const evidence=process.env.CICADA_DEMO_EVIDENCE_DIR||path.join(repo,'build/demo-evidence');
@@ -12,12 +13,7 @@ const assert=require('node:assert/strict');
   const server=spawn(path.join(repo,'build/demo-static-test-server'),[repo,process.env.WASM_EXEC_PATH],{stdio:['ignore','pipe','pipe']});
   let browser;
   try {
-    const base=await new Promise((resolve,reject)=>{
-      const timeout=setTimeout(()=>reject(new Error('fixture start timeout')),15000);
-      server.stdout.on('data',data=>{const url=data.toString().match(/http:\/\/127\.0\.0\.1:\d+/);if(url){clearTimeout(timeout);resolve(url[0]);}});
-      server.once('exit',code=>reject(new Error('fixture exited '+code)));
-      server.stderr.on('data',data=>process.stderr.write(data));
-    });
+    const base=await waitForServerURL(server,{label:'Fixture server'});
     browser=await chromium.launch({executablePath:process.env.CHROMIUM||'/usr/bin/chromium',headless:true,args:['--no-sandbox','--mute-audio']});
     const page=await browser.newPage();const errors=[];const requests=[];
     page.on('pageerror',error=>errors.push(error.message));
