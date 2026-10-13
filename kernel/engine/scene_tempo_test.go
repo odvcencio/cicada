@@ -547,7 +547,7 @@ func TestSceneTempoManualLaunchWithoutAChainMovesHostBoundaries(t *testing.T) {
 		e.Render(l[:], r[:])
 	}
 	e.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Arg0: 2}) // next bar line
-	for range 700 { // 102400 frames: past the bar line at 96000
+	for range 700 {                                                            // 102400 frames: past the bar line at 96000
 		e.Render(l[:], r[:])
 	}
 	if e.transport.BPMMilli() != 60_000 {
