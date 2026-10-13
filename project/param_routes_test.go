@@ -17,6 +17,9 @@ const (
 	routeMaster = "master" // effect in the master chain (built by pro.New at 48 kHz)
 	routeBus    = "bus"    // compressor inserted on the music bus
 	routeFree   = "free"   // declared effect with no insert, as scenes and automation address it
+	// A modeled keyboard track: every setting it accepts, the rows inherited
+	// from the piano included, is compiled by KeysSpecFromValues.
+	routeKeyboard = "keyboard"
 )
 
 // kernelAccepts sends one literal through the project compilers, which end in
@@ -38,7 +41,11 @@ func kernelAccepts(t *testing.T, d paramdefs.Descriptor, literal, route string) 
 	case "guitar":
 		_, err = CompileGuitarParams(notation.Track{Kind: "guitar", Params: []notation.Param{{Name: "experimental", Value: "on"}, param}})
 	case "piano":
-		_, err = CompilePianoSustain(notation.Track{Kind: "piano", Params: []notation.Param{param}})
+		if route == routeKeyboard {
+			_, err = KeysSpecFromValues("tine_ep", values)
+		} else {
+			_, err = CompilePianoSustain(notation.Track{Kind: "piano", Params: []notation.Param{param}})
+		}
 	case "keys":
 		_, err = KeysSpecFromValues(sceneRegistryKeysPatch(d), values)
 	case "fx":
@@ -113,24 +120,52 @@ type probe struct {
 // limits are the validator's, so keyboard limits are taken after float32
 // conversion. After the float32 conversion the keyboard still compares exactly,
 // so only values that round onto a limit pass.
-func toleranceProbes(d paramdefs.Descriptor) []probe {
-	tol := paramdefs.Tolerance(d)
-	if tol == 0 || d.Type == "integer" {
+func toleranceProbes(d paramdefs.Descriptor, route, mode string) []probe {
+	tol := paramdefs.KeyboardTolerance
+	if route != routeKeyboard || d.Type == "integer" {
 		return nil // an integer row also rejects any fraction, so slack cannot show
 	}
 	low, high := float64(float32(d.Min)), float64(float32(d.Max))
 	// Below the minimum the keyboard converts to float32 and then compares
 	// exactly, so slack passes only where the conversion rounds up onto the limit.
 	lowHalf := low - tol/2
-	return []probe{
+	probes := []probe{
 		{"high+tol/2", high + tol/2, true}, {"low-tol/2", lowHalf, float64(float32(lowHalf)) >= low},
 		{"high+2tol", high + 2*tol, false}, {"low-2tol", low - 2*tol, false},
 	}
+	if mode != "" && mode != "source" {
+		// Scene settings and automation points are validated by the exact
+		// descriptor comparison (validateParameterValue and the registry
+		// range), not by the keyboard compiler, so no slack applies.
+		for i := range probes {
+			probes[i].accepts = false
+		}
+	}
+	return probes
 }
 
 type agreementCase struct {
 	d     paramdefs.Descriptor
 	route string
+}
+
+// probesFor lists the values to try for a case in a mode ("" is the compiler).
+func probesFor(c agreementCase, mode string) []probe {
+	d := c.d
+	span := d.Max - d.Min
+	inLow, inHigh := d.Min+span*1e-4, d.Max-span*1e-4
+	// A fraction is a different error. The registry does not mark acid.gate
+	// integer, but pattern compilation reads the track gate with Atoi
+	// (project/compile.go), so a fractional gate is rejected there with its own
+	// message; the table is left alone because Type feeds the kernel image.
+	if d.Type == "integer" || d.ID == "acid.gate" {
+		inLow, inHigh = d.Min+1, d.Max-1
+	}
+	probes := []probe{{"min", d.Min, true}, {"max", d.Max, true}, {"inside low", inLow, true}, {"inside high", inHigh, true}, {"below", d.Min - span*1e-3, false}, {"above", d.Max + span*1e-3, false}}
+	for _, v := range d.Isolated {
+		probes = append(probes, probe{"isolated", v, true}, probe{"gap", (v + d.Min) / 2, false})
+	}
+	return append(probes, toleranceProbes(d, c.route, mode)...)
 }
 
 func agreementCases() []agreementCase {
@@ -151,7 +186,11 @@ func agreementCases() []agreementCase {
 				}
 				cases = append(cases, agreementCase{row, route})
 			}
-		case parts[0] == "acid", parts[0] == "drum", parts[0] == "guitar", parts[0] == "piano" && parts[1] == "sustain", parts[0] == "keys":
+		case parts[0] == "piano" && parts[1] == "sustain":
+			cases = append(cases, agreementCase{d, routeTrack}, agreementCase{d, routeKeyboard})
+		case parts[0] == "keys":
+			cases = append(cases, agreementCase{d, routeKeyboard})
+		case parts[0] == "acid", parts[0] == "drum", parts[0] == "guitar":
 			cases = append(cases, agreementCase{d, routeTrack})
 		}
 	}
@@ -166,12 +205,7 @@ func TestParameterTableAgreesWithKernelValidation(t *testing.T) {
 	checked := 0
 	for _, c := range agreementCases() {
 		d := c.d
-		span := d.Max - d.Min
-		probes := []probe{{"min", d.Min, true}, {"max", d.Max, true}, {"below", d.Min - span*1e-3, false}, {"above", d.Max + span*1e-3, false}}
-		for _, v := range d.Isolated {
-			probes = append(probes, probe{"isolated", v, true}, probe{"gap", (v + d.Min) / 2, false})
-		}
-		probes = append(probes, toleranceProbes(d)...)
+		probes := probesFor(c, "")
 		for _, p := range probes {
 			literal := boundLiteral(d, p.value)
 			key := d.ID + "/" + c.route + "/" + p.side
@@ -181,7 +215,11 @@ func TestParameterTableAgreesWithKernelValidation(t *testing.T) {
 				}
 				continue
 			}
-			if host := paramdefs.RangeMessage(d, "x", literal) == ""; host != p.accepts {
+			message := paramdefs.RangeMessage(d, "x", literal)
+			if c.route == routeKeyboard {
+				message = paramdefs.RangeMessageKeyboard(d, "x", literal)
+			}
+			if host := message == ""; host != p.accepts {
 				t.Errorf("%s route %s = %s: host table accepts %v, want %v", d.ID, c.route, literal, host, p.accepts)
 			}
 			checked++
@@ -202,7 +240,7 @@ func scoreOnRoute(d paramdefs.Descriptor, literal, route, mode string) ([]byte, 
 	track = "d"
 	switch parts[0] {
 	case "acid", "drum", "guitar", "piano", "keys":
-		return voiceScore(d, literal, mode)
+		return voiceScore(d, literal, route, mode)
 	case "fx":
 		kind := parts[1]
 		if kind == "master" {
@@ -236,20 +274,31 @@ func scoreOnRoute(d paramdefs.Descriptor, literal, route, mode string) ([]byte, 
 	return []byte("cicada 1\ntempo 120\n" + devices + "\npattern beat drums steps=1 { bd: x }\nscene main { " + track + " = beat " + bindings + " }\nsong { main }\n"), true
 }
 
-func voiceScore(d paramdefs.Descriptor, literal, mode string) ([]byte, bool) {
+func keysPatchFor(d paramdefs.Descriptor) string {
+	if patch := sceneRegistryKeysPatch(d); patch != "" {
+		return patch
+	}
+	return "tine_ep"
+}
+
+func voiceScore(d paramdefs.Descriptor, literal, route, mode string) ([]byte, bool) {
 	parts := strings.Split(d.ID, ".")
 	if mode != "source" && !(d.Live && d.Automatable) {
 		return nil, false
 	}
 	var head, pat, name string
 	prefix := "cicada 1\ntempo 120\n"
-	switch parts[0] {
+	kind := parts[0]
+	if kind == "piano" && route == routeKeyboard {
+		kind = "keys"
+	}
+	switch kind {
 	case "acid":
 		head, pat, name = "track b acid { %s }\nautomate_here", "pattern riff acid steps=1 { 1 }\nscene main { b = riff SCENE }", "b"
 	case "drum":
 		head, pat, name = "track b drums { %s }\nautomate_here", "pattern riff drums steps=1 { bd: x }\nscene main { b = riff SCENE }", "b"
 	case "keys":
-		head, pat, name = "track b "+sceneRegistryKeysPatch(d)+" { %s }\nautomate_here", "pattern riff notes { c4 . }\nscene main { b = riff SCENE }", "b"
+		head, pat, name = "track b "+keysPatchFor(d)+" { %s }\nautomate_here", "pattern riff notes { c4 . }\nscene main { b = riff SCENE }", "b"
 		prefix = "cicada 2\ntempo 120\n"
 	default:
 		return nil, false // guitar and piano have their own preconditions; the compiler route covers them
@@ -271,44 +320,50 @@ func voiceScore(d paramdefs.Descriptor, literal, mode string) ([]byte, bool) {
 	return []byte(prefix + head + "\n" + pat + "\nsong { main }\n"), true
 }
 
-func rangeWordErrors(t *testing.T, source []byte) []string {
+// buildErrors parses and builds the score. ok is false if there is no project.
+func buildErrors(t *testing.T, source []byte) (errs []notation.Diagnostic, ok bool) {
 	t.Helper()
-	var out []string
-	for _, d := range scoreErrors(t, source) {
-		if strings.Contains(d.Message, "the minimum") || strings.Contains(d.Message, "the maximum") {
-			out = append(out, d.Message)
+	score, diagnostics := notation.Parse(source)
+	if !hasErrors(diagnostics) {
+		var p *Project
+		p, more := FromScore(score)
+		diagnostics = append(diagnostics, more...)
+		ok = p != nil
+	}
+	for _, d := range diagnostics {
+		if d.Severity == "error" {
+			errs = append(errs, d)
 		}
 	}
-	return out
+	return errs, ok && len(errs) == 0
 }
 
 // The exact limits, written as the shortest literal that round-trips the
 // float64, and values just inside each limit, must pass through the score on
-// every route and mode the parameter can take. Values just outside, and values
-// in the gap before an isolated value, must be reported. No printed value may
-// equal the bound it is said to break.
+// every route and mode the parameter can take: no error diagnostic at all and a
+// built project. Values just outside, and values in the gap before an isolated
+// value, must be rejected (in the source mode, with a range message). No
+// printed value may equal the bound it is said to break.
 func TestParameterTableExactBoundsOnEveryRouteAndMode(t *testing.T) {
 	checked := 0
 	for _, c := range agreementCases() {
 		d := c.d
-		span := d.Max - d.Min
-		probes := []probe{{"min", d.Min, true}, {"max", d.Max, true}, {"inside low", d.Min + span*1e-4, true}, {"inside high", d.Max - span*1e-4, true}, {"below", d.Min - span*1e-3, false}, {"above", d.Max + span*1e-3, false}}
-		for _, v := range d.Isolated {
-			probes = append(probes, probe{"isolated", v, true}, probe{"gap", (v + d.Min) / 2, false})
-		}
-		probes = append(probes, toleranceProbes(d)...)
 		for _, mode := range []string{"source", "automation", "scene"} {
-			for _, p := range probes {
+			for _, p := range probesFor(c, mode) {
 				literal := boundLiteral(d, p.value)
 				source, ok := scoreOnRoute(d, literal, c.route, mode)
 				if !ok {
 					continue
 				}
-				got := rangeWordErrors(t, source)
-				if p.accepts == (len(got) > 0) {
-					t.Errorf("%s route %s %s %s = %s: range errors %v", d.ID, c.route, mode, p.side, literal, got)
+				errs, built := buildErrors(t, source)
+				switch {
+				case p.accepts && !built:
+					t.Errorf("%s route %s %s %s = %s: rejected: %+v", d.ID, c.route, mode, p.side, literal, errs)
+				case !p.accepts && len(errs) == 0:
+					t.Errorf("%s route %s %s %s = %s: accepted", d.ID, c.route, mode, p.side, literal)
 				}
-				for _, m := range got {
+				for _, e := range errs {
+					m := e.Message
 					if strings.Contains(m, literal+" is below the minimum "+literal+" ") || strings.Contains(m, literal+" is above the maximum "+literal+" ") {
 						t.Errorf("contradictory message %q", m)
 					}
@@ -428,3 +483,62 @@ func TestKeyboardToleranceIsAcceptedEverywhere(t *testing.T) {
 }
 
 func ptr(v float64) *float64 { return &v }
+
+func rangeWordErrors(t *testing.T, source []byte) []string {
+	t.Helper()
+	var out []string
+	for _, d := range scoreErrors(t, source) {
+		if strings.Contains(d.Message, "the minimum") || strings.Contains(d.Message, "the maximum") {
+			out = append(out, d.Message)
+		}
+	}
+	return out
+}
+
+// A keyboard track also takes the rows it inherits from the piano, such as
+// sustain. They are compiled by KeysSpecFromValues, so the keyboard rule
+// applies; a real piano track keeps the exact comparison.
+func TestInheritedPianoRowsFollowTheKeyboardRuleOnKeyboardTracks(t *testing.T) {
+	for _, patch := range []string{"tine_ep", "fm_ep"} {
+		t.Run(patch, func(t *testing.T) {
+			source := []byte("cicada 2\ntempo 120\ntrack e " + patch + " { sustain = 1.00000005 }\npattern p notes { c4 . }\nscene main { e = p }\nsong { main }\n")
+			score, diagnostics := notation.Parse(source)
+			if hasErrors(diagnostics) {
+				t.Fatal(diagnostics)
+			}
+			p, diagnostics := FromScore(score)
+			if p == nil {
+				t.Fatalf("FromScore: %+v", diagnostics)
+			}
+			if _, err := KeysSpecFromValues(patch, p.Tracks[0].Params); err != nil {
+				t.Fatalf("compiler: %v", err)
+			}
+			if err := ValidateProject(p); err != nil {
+				t.Fatalf("ValidateProject: %v", err)
+			}
+			data, err := CanonicalJSON(p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			decoded, err := DecodeJSON(data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			exported, err := ToSource(decoded)
+			if err != nil {
+				t.Fatal(err)
+			}
+			again, diagnostics := notation.Parse(exported)
+			if hasErrors(diagnostics) {
+				t.Fatalf("exported source: %+v\n%s", diagnostics, exported)
+			}
+			if q, diagnostics := FromScore(again); q == nil {
+				t.Fatalf("exported source: %+v\n%s", diagnostics, exported)
+			}
+		})
+	}
+	piano := []byte("cicada 2\ntempo 120\ntrack p piano { sustain = 1.00000005 }\npattern q notes { c4 . }\nscene main { p = q }\nsong { main }\n")
+	if got := scoreErrors(t, piano); len(got) != 1 || got[0].Position.Line != 3 || !strings.Contains(got[0].Message, "piano sustain") {
+		t.Fatalf("a real piano must keep the exact comparison: %+v", got)
+	}
+}

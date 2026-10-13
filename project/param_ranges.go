@@ -20,11 +20,15 @@ import (
 func checkParamRanges(score *notation.Score) ([]notation.Diagnostic, map[notation.Position]bool) {
 	var diagnostics []notation.Diagnostic
 	flagged := map[notation.Position]bool{}
-	report := func(param notation.Param, descriptor paramdefs.Descriptor, label string) {
+	report := func(param notation.Param, descriptor paramdefs.Descriptor, label string, keyboard bool) {
 		if strings.HasPrefix(param.Value, "\"") {
 			return
 		}
-		message := paramdefs.RangeMessage(descriptor, label+" "+param.Name, param.Value)
+		check := paramdefs.RangeMessage
+		if keyboard {
+			check = paramdefs.RangeMessageKeyboard
+		}
+		message := check(descriptor, label+" "+param.Name, param.Value)
 		if message == "" {
 			return
 		}
@@ -47,12 +51,19 @@ func checkParamRanges(score *notation.Score) ([]notation.Diagnostic, map[notatio
 		if voice == "instrument" {
 			continue // authored parameters declare no bounds
 		}
+		// A modeled keyboard track is compiled by KeysSpecFromValues for every
+		// setting it accepts, the ones it inherits from the piano included.
+		keyboard := false
+		switch voice {
+		case "ep", "clav", "organ", "fm", "analog", "strings":
+			keyboard = true
+		}
 		for _, param := range track.Params {
 			if param.Name == "octave" {
 				continue // checked with the instrument octave rules
 			}
 			if descriptor, ok := paramdefs.TrackParam(voice, param.Name); ok {
-				report(param, descriptor, track.Kind)
+				report(param, descriptor, track.Kind, keyboard)
 			}
 		}
 	}
@@ -74,7 +85,7 @@ func checkParamRanges(score *notation.Score) ([]notation.Diagnostic, map[notatio
 				continue // names a bus, which a score can declare
 			}
 			if descriptor, ok := paramdefs.DeviceParam(kind, param.Name, master[effect.Name]); ok {
-				report(param, descriptor, kind)
+				report(param, descriptor, kind, false)
 			}
 		}
 	}

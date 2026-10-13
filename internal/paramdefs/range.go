@@ -73,17 +73,25 @@ func TrackParam(voice, name string) (Descriptor, bool) {
 // written, so the message reads "delay feedback 1.4 is above the maximum 0.95
 // (range 0 to 0.95)".
 func RangeMessage(d Descriptor, label, literal string) string {
-	return rangeMessage(d, label, literal, math.NaN())
+	return rangeMessage(d, label, literal, math.NaN(), false)
+}
+
+// RangeMessageKeyboard is RangeMessage for a setting on a modeled keyboard
+// track. Every setting such a track accepts, including the rows it inherits
+// from the piano, is compiled by project.KeysSpecFromValues, so the keyboard
+// rule applies (see KeyboardTolerance).
+func RangeMessageKeyboard(d Descriptor, label, literal string) string {
+	return rangeMessage(d, label, literal, math.NaN(), true)
 }
 
 // RangeMessageValue is RangeMessage for a value that has no source text, such
 // as an automation point in a typed project. The float64 is compared with the
 // bounds as it is; the text is only formatted for the message.
 func RangeMessageValue(d Descriptor, label string, value float64) string {
-	return rangeMessage(d, label, FormatValue(d, value), value)
+	return rangeMessage(d, label, FormatValue(d, value), value, false)
 }
 
-func rangeMessage(d Descriptor, label, literal string, exact float64) string {
+func rangeMessage(d Descriptor, label, literal string, exact float64, keyboard bool) string {
 	if d.Off && literal == "off" {
 		return ""
 	}
@@ -112,7 +120,7 @@ func rangeMessage(d Descriptor, label, literal string, exact float64) string {
 	if lower := strings.ToLower(literal); math.IsNaN(exact) && (strings.HasSuffix(lower, "khz") || strings.HasSuffix(lower, "s") && !strings.HasSuffix(lower, "ms") || strings.HasSuffix(lower, "%")) {
 		slack = 1e-9
 	}
-	low, high := outside(d, number, slack)
+	low, high := outside(d, number, slack, keyboard)
 	if !low && !high {
 		return ""
 	}
@@ -144,22 +152,14 @@ func rangeMessage(d Descriptor, label, literal string, exact float64) string {
 // keyboard parameter's float32 limits.
 const KeyboardTolerance = 1e-7
 
-// Tolerance is the absolute slack the validator that owns the row allows
-// around its limits: KeyboardTolerance for modeled keyboards, none elsewhere.
-func Tolerance(d Descriptor) float64 {
-	if strings.HasPrefix(d.ID, "keys.") {
-		return KeyboardTolerance
-	}
-	return 0
-}
-
-// outside applies the comparison of the validator that owns the row. Most rows
+// outside applies the comparison of the validator that owns the track being
+// checked, not the row's origin. Most tracks
 // compare the float64 exactly (slack is only for scaled literals). A keyboard
 // value must lie within KeyboardTolerance of its float32 limits and, after
 // conversion to float32, within the limits themselves, as project/keys.go and
 // host/keyboard.Validate do in turn.
-func outside(d Descriptor, number, slack float64) (low, high bool) {
-	if Tolerance(d) == 0 {
+func outside(d Descriptor, number, slack float64, keyboard bool) (low, high bool) {
+	if !keyboard {
 		return number < d.Min-slack*math.Max(1, math.Abs(d.Min)), number > d.Max+slack*math.Max(1, math.Abs(d.Max))
 	}
 	min32, max32 := float64(float32(d.Min)), float64(float32(d.Max))
