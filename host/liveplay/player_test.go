@@ -9,6 +9,7 @@ import (
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
+	"m31labs.dev/cicada/kernel/seq"
 )
 
 func testScore(t *testing.T, name string, bpmMilli int64, scenes ...engine.Scene) Score {
@@ -1091,5 +1092,67 @@ func TestEditsFollowTheTempoOfAManualSceneLaunch(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("the edit did not land at the end of the slow bar")
+	}
+}
+
+// A looping song whose first and last tempos match each other but not the score
+// tempo keeps the engine's transport and the player's bar clock on the same
+// samples across loops: an offered edit lands on the bar line the kernel
+// predicts, after three passes.
+func TestEditsLandOnTheLoopSeamBarLinesAcrossLoops(t *testing.T) {
+	build := func(name string) (Score, *engine.Engine) {
+		cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000, LoopSong: true}
+		cfg.Track[0].Kind = engine.VoiceAcid
+		set := func(v float32) []engine.SceneSetting {
+			return []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: v}}
+		}
+		cfg.Scenes = []engine.Scene{{Settings: set(124)}, {Settings: set(90)}, {Settings: set(124)}}
+		cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
+		created, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name}, created
+	}
+	first, reference := build("first")
+	p, err := New(first, 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const bar = 9 // the tenth bar line, three passes in
+	boundary := reference.FramesBetweenTicks(0, int64(bar+1)*seq.TicksPerBar)
+	before := reference.FramesBetweenTicks(0, int64(bar)*seq.TicksPerBar)
+	if _, err := io.CopyN(io.Discard, p, (before+1_000)*8); err != nil {
+		t.Fatal(err)
+	}
+	edit, _ := build("edit")
+	if err := p.Offer(edit); err != nil {
+		t.Fatal(err)
+	}
+	for len(p.Events()) > 0 {
+		<-p.Events()
+	}
+	if _, err := io.CopyN(io.Discard, p, (boundary-before-1_000-1)*8); err != nil {
+		t.Fatal(err)
+	}
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" {
+			t.Fatalf("the edit landed before the predicted bar line: %+v", event)
+		}
+	}
+	var frame [8]byte
+	for range 2 {
+		if _, err := io.ReadFull(p, frame[:]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	found := false
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" && event.Name == "edit" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the edit did not land on the predicted bar line")
 	}
 }

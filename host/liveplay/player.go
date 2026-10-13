@@ -1542,7 +1542,7 @@ func (p *Player) beginRequestedSong() {
 // position of both.
 func (p *Player) followLiveTempo() {
 	live := p.current.Engine.LiveClock()
-	if live.BPMMilli == p.clock.BPMMilli {
+	if live.BPMMilli == p.clock.BPMMilli && live.AnchorTick == p.clock.AnchorTick {
 		return
 	}
 	p.clock = seq.Clock{

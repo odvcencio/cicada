@@ -341,7 +341,7 @@ func (e *Engine) advanceSong() {
 		}
 		e.songIndex = 0
 		if e.sceneDefaults != nil {
-			e.setSceneTempo(e.bpmMilli) // a loop starts again at the score tempo
+			e.setSceneTempo(e.TempoAtTick(0)) // a loop starts again at the song's first tempo; no reanchor if it already plays it
 		}
 		// Restarting the loop is a fresh start for automated parameters: they
 		// return to their authored values before the lanes begin again.

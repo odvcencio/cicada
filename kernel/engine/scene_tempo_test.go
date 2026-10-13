@@ -610,3 +610,48 @@ func TestSceneTempoExplicitScoreTempoStillProtectsAgainstManualLaunches(t *testi
 		}
 	}
 }
+
+func loopSeamConfig(first, middle, last float32) Config {
+	cfg := testConfig()
+	cfg.Tracks = 1
+	set := func(v float32) []SceneSetting {
+		return []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: v}}
+	}
+	cfg.Scenes = []Scene{{Settings: set(first)}, {Settings: set(middle)}, {Settings: set(last)}}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
+	cfg.LoopSong = true
+	return cfg
+}
+
+// The song's first and last tempos match each other but differ from the score
+// tempo. The loop wrap must not reanchor the transport, and the frames the
+// kernel predicts for every bar line across many loops must be the frames the
+// transport really takes.
+func TestSceneTempoLoopSeamPredictionMatchesTheTransportAcrossLoops(t *testing.T) {
+	for _, tempos := range [][3]float32{{121, 124, 121}, {124, 90, 124}, {121, 121, 121}} {
+		e, err := New(loopSeamConfig(tempos[0], tempos[1], tempos[2]))
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+		const cycles, bars = 5, 3
+		var l, r [1]float32
+		reached := map[int64]int64{}
+		for frame := int64(1); len(reached) < cycles*bars; frame++ {
+			e.Render(l[:], r[:])
+			if bar := e.transport.Tick() / seq.TicksPerBar; bar > 0 {
+				if _, seen := reached[bar]; !seen {
+					reached[bar] = frame
+				}
+			}
+			if frame > 4_000_000 {
+				t.Fatal("the transport did not reach the expected bars")
+			}
+		}
+		for bar := int64(1); bar <= cycles*bars; bar++ {
+			if got, want := e.FramesBetweenTicks(0, bar*seq.TicksPerBar), reached[bar]; got != want {
+				t.Fatalf("%v bar %d: predicted %d frames, the transport took %d", tempos, bar, got, want)
+			}
+		}
+	}
+}

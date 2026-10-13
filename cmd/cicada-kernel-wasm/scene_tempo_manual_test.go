@@ -198,3 +198,72 @@ func TestSceneTempoManualLaunchWithoutChainTickFramesFollowsTheTransport(t *test
 		}
 	}
 }
+
+// A looping song whose first and last tempos match each other but not the score
+// tempo: the bar placement the AudioWorklet asks for must be the frames the
+// native transport takes, across many loops, and the same in WASM.
+func TestSceneTempoLoopSeamTickFramesNativeWASMParity(t *testing.T) {
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120_000, LoopSong: true}
+	cfg.Track[0].Kind = engine.VoiceAcid
+	set := func(v float32) []engine.SceneSetting {
+		return []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: v}}
+	}
+	cfg.Scenes = []engine.Scene{{Settings: set(124)}, {Settings: set(90)}, {Settings: set(124)}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
+	image, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wasm, err := os.ReadFile(wasmModulePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+	module, err := r.Instantiate(ctx, wasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(name string, args ...uint64) uint64 {
+		t.Helper()
+		result, err := module.ExportedFunction(name).Call(ctx, args...)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(result) == 0 {
+			return 0
+		}
+		return result[0]
+	}
+	call("_initialize")
+	ptr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
+	if !module.Memory().Write(ptr, image) || call("gosx_audio_init", 48_000, 128, 2) != 0 {
+		t.Fatal("WASM init failed")
+	}
+	native, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	native.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	var l, rr [1]float32
+	reached := map[int64]int64{}
+	for frame := int64(1); len(reached) < 15; frame++ {
+		native.Render(l[:], rr[:])
+		if b := bar2(native); b > 0 {
+			if _, seen := reached[b]; !seen {
+				reached[b] = frame
+			}
+		}
+	}
+	for bar := int64(1); bar <= 15; bar++ {
+		got := int64(math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(0), math.Float64bits(float64(bar*seq.TicksPerBar)))))
+		if got != reached[bar] || got != native.FramesBetweenTicks(0, bar*seq.TicksPerBar) {
+			t.Fatalf("bar %d: WASM %d, native prediction %d, the transport took %d", bar, got, native.FramesBetweenTicks(0, bar*seq.TicksPerBar), reached[bar])
+		}
+	}
+}
+
+func bar2(e *engine.Engine) int64 {
+	return e.LiveClock().TickAtSample(e.TransportSample()) / seq.TicksPerBar
+}

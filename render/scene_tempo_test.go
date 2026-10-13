@@ -540,3 +540,18 @@ func TestSceneTempoExcerptAfterReturningToTheScoreTempoVerifies(t *testing.T) {
 		}
 	}
 }
+
+// A scene that steps the tempo and the delay division together fades the delay
+// once. The offline render and the kernel agree sample for sample, at both
+// common sample rates, in either order the settings are written.
+func TestSceneTempoWithDelayDivisionMatchesKernelSampleForSample(t *testing.T) {
+	for _, settings := range []string{"tempo = 60 delay.time = 1/4", "delay.time = 1/4 tempo = 60"} {
+		source := "tempo 120\nfx delay delay { time = 1/8 feedback = 0.3 damp = 6kHz mix = 1 }\ntrack bass acid { send delay = 0.8 }\npattern p acid steps=16 { 1 . . . 5 . . . 1 . . . 3 . . . }\nscene a { bass = p }\nscene b { bass = p " + settings + " }\nsong { a b }\n"
+		for _, rate := range []int{44100, 48000} {
+			offline, native := renderBoth(t, source, rate, 2)
+			if peak, _ := driftDelta(t, offline, native); peak != 0 {
+				t.Fatalf("%q at %d Hz: offline minus kernel peak %.9f", settings, rate, peak)
+			}
+		}
+	}
+}
