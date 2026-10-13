@@ -188,6 +188,7 @@ func (e *Engine) advancePlacementSchedule() {
 				e.songMode = false
 				e.transport.Stop()
 				for t := 0; t < e.tracks; t++ {
+					e.tapRelease(t, e.transport.Tick())
 					e.noteOff(t, 0xffff)
 				}
 				e.resetClips()
@@ -241,6 +242,7 @@ func (e *Engine) applyScheduleEvent(v ScheduleEvent, tick int64) {
 		if e.placementID[track] != v.ID || e.patternHandoff(v) {
 			return
 		}
+		e.tapRelease(track, v.Tick+e.cycleStart)
 		e.noteOff(track, 0xffff)
 		p := &e.patterns[track]
 		p.active = -1

@@ -394,10 +394,6 @@ func (s *studio) libraryInsert(w http.ResponseWriter, r *http.Request) {
 	}, nil)
 }
 
-func studioLibrarySetting(source []byte, declKind, owner, field, literal string) ([]byte, error) {
-	return edits.LibrarySetting(source, declKind, owner, field, literal)
-}
-
 func (s *studio) librarySavePreset(w http.ResponseWriter, r *http.Request) {
 	edit, ok := studioRequest(w, r)
 	if !ok {
@@ -411,14 +407,6 @@ func (s *studio) librarySavePreset(w http.ResponseWriter, r *http.Request) {
 		}
 		return edits.Envelope{Intents: []edits.Intent{&edits.SavePreset{Track: edit.Track, Name: edit.Name, Declaration: string(declaration)}}}, nil
 	}, nil, nil)
-}
-
-func studioSavedPresetSource(scorePath string, source []byte, track, name string) ([]byte, error) {
-	declaration, err := studioSavedPresetDeclaration(scorePath, source, track, name)
-	if err != nil {
-		return nil, err
-	}
-	return append(bytes.Clone(source), declaration...), nil
 }
 
 // Library resolution and private instrument snapshots stay in the host. The

@@ -43,7 +43,7 @@ func TestPatternVariationIsIndependentPreservesSoundAndDoesNotCopySlot(t *testin
 	for _, newline := range []string{"\n", "\r\n"} {
 		source := strings.Replace(studioPatternScore, "use hook +12 }", "use hook +12 } // parent comment", 1)
 		before := []byte(strings.ReplaceAll(source, "\n", newline))
-		updated, err := duplicatePatternSource(before, "p", "variation")
+		updated, err := intentDuplicatePattern(t, before, "p", "variation")
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -53,11 +53,7 @@ func TestPatternVariationIsIndependentPreservesSoundAndDoesNotCopySlot(t *testin
 		if !reflect.DeepEqual(parent, clone) {
 			t.Fatalf("variation changed playback: parent=%+v clone=%+v", parent, clone)
 		}
-		node, _, err := studioDeclaration(updated, studioPatternTypes, "variation")
-		if err != nil {
-			t.Fatal(err)
-		}
-		text := string(updated[node.StartByte():node.EndByte()])
+		text := testDeclarationText(t, updated, "variation")
 		if strings.Contains(text, "use hook") || strings.Contains(text, "slot") {
 			t.Fatalf("variation retained shared phrase or reserved slot: %s", text)
 		}
@@ -67,7 +63,7 @@ func TestPatternVariationIsIndependentPreservesSoundAndDoesNotCopySlot(t *testin
 		if newline == "\r\n" && bytes.Contains(bytes.ReplaceAll(updated, []byte(newline), nil), []byte("\n")) {
 			t.Fatal("clone changed line endings")
 		}
-		if _, err := duplicatePatternSource(updated, "p", "variation"); err == nil {
+		if _, err := intentDuplicatePattern(t, updated, "p", "variation"); err == nil {
 			t.Fatal("duplicate name accepted")
 		}
 	}
@@ -76,7 +72,7 @@ func TestPatternVariationIsIndependentPreservesSoundAndDoesNotCopySlot(t *testin
 func TestPrecisionStepEditDoesNotChangeSharedPhrase(t *testing.T) {
 	before := []byte(studioPatternScore)
 	original := patternProject(t, before)
-	updated, err := patternStepSource(before, "p", "", 4, &studioStepEdit{Mode: "note", Pitch: 72, Accent: true, Slide: true, Ratchet: 8, Chance: 23})
+	updated, err := intentPatternStep(t, before, "p", "", 4, &studioStepEdit{Mode: "note", Pitch: 72, Accent: true, Slide: true, Ratchet: 8, Chance: 23})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -93,7 +89,7 @@ func TestPrecisionStepEditDoesNotChangeSharedPhrase(t *testing.T) {
 			t.Fatalf("unselected step %d changed", index)
 		}
 	}
-	updated, err = patternStepSource(updated, "beat", "bd", 1, &studioStepEdit{Mode: "hit", Velocity: "4", Ratchet: 3, Chance: 50})
+	updated, err = intentPatternStep(t, updated, "beat", "bd", 1, &studioStepEdit{Mode: "hit", Velocity: "4", Ratchet: 3, Chance: 50})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,14 +98,14 @@ func TestPrecisionStepEditDoesNotChangeSharedPhrase(t *testing.T) {
 	if hit == nil || hit.Velocity != 56 || hit.Ratchet != 3 || hit.Probability != 50 {
 		t.Fatalf("drum dynamics=%+v", hit)
 	}
-	if _, err := patternStepSource(updated, "beat", "bd", 1, &studioStepEdit{Mode: "tie", Ratchet: 1, Chance: 100}); err == nil {
+	if _, err := intentPatternStep(t, updated, "beat", "bd", 1, &studioStepEdit{Mode: "tie", Ratchet: 1, Chance: 100}); err == nil {
 		t.Fatal("drum tie accepted")
 	}
 }
 
 func TestPatternSettingsAndBindingPreserveAuthoredSource(t *testing.T) {
 	source := strings.Replace(studioPatternScore, "swing = 54%", "swing = 54% // swing note\n", 1)
-	updated, err := patternSettingsSource([]byte(source), "p", &studioPatternSettings{Swing100: 5725, Gate: 80, Transpose: -12})
+	updated, err := intentPatternSettings(t, []byte(source), "p", &studioPatternSettings{Swing100: 5725, Gate: 80, Transpose: -12})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +116,7 @@ func TestPatternSettingsAndBindingPreserveAuthoredSource(t *testing.T) {
 	if !bytes.Contains(updated, []byte("swing = 57.25% // swing note")) || !bytes.Contains(updated, []byte("slot=7")) {
 		t.Fatal("settings discarded source spelling or comments")
 	}
-	updated, err = bindPatternSource(updated, "main", "bass", "shared")
+	updated, err = intentBindScene(t, updated, "main", "bass", "shared")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +124,7 @@ func TestPatternSettingsAndBindingPreserveAuthoredSource(t *testing.T) {
 	if p.Scenes[0].Bindings["bass"] != "shared" || !bytes.Contains(updated, []byte("bass = shared drums=beat")) {
 		t.Fatal("binding was not changed locally")
 	}
-	updated, err = bindPatternSource(updated, "other", "drums", "beat")
+	updated, err = intentBindScene(t, updated, "other", "drums", "beat")
 	if err != nil || patternProject(t, updated).Scenes[1].Bindings["drums"] != "beat" {
 		t.Fatalf("missing scene binding was not inserted: %v", err)
 	}
@@ -176,7 +172,7 @@ func TestPatternRangesPreserveDynamicsAndOverlapCopies(t *testing.T) {
 		if operation == "rotate" {
 			edit.Amount = -1
 		}
-		updated, err := patternRangeSource(before, "p", "", edit)
+		updated, err := intentPatternRange(t, before, "p", "", edit)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -212,10 +208,10 @@ func TestPatternRangesPreserveDynamicsAndOverlapCopies(t *testing.T) {
 			}
 		}
 	}
-	if _, err := patternRangeSource(before, "beat", "bd", &studioPatternRange{Operation: "transpose", First: 0, Last: 3, Amount: 1}); err == nil {
+	if _, err := intentPatternRange(t, before, "beat", "bd", &studioPatternRange{Operation: "transpose", First: 0, Last: 3, Amount: 1}); err == nil {
 		t.Fatal("drum transpose accepted")
 	}
-	if _, err := patternRangeSource(before, "p", "", &studioPatternRange{Operation: "copy", First: 0, Last: 3, Target: 7}); err == nil {
+	if _, err := intentPatternRange(t, before, "p", "", &studioPatternRange{Operation: "copy", First: 0, Last: 3, Target: 7}); err == nil {
 		t.Fatal("copy past pattern end accepted")
 	}
 }
@@ -223,7 +219,7 @@ func TestPatternRangesPreserveDynamicsAndOverlapCopies(t *testing.T) {
 func TestPatternResizeUpdatesEveryLaneAndExplicitLength(t *testing.T) {
 	before := []byte(strings.Replace(studioPatternScore, "pattern beat drums { bd: x.Xx3; }", "pattern beat drums steps=4 { bd: x.Xx3; sd: .x..; }", 1))
 	for _, id := range []string{"p", "beat"} {
-		updated, err := resizePatternSource(before, id, 64)
+		updated, err := intentResizePattern(t, before, id, 64)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -235,7 +231,7 @@ func TestPatternResizeUpdatesEveryLaneAndExplicitLength(t *testing.T) {
 		if p.Patterns[index].Steps != 64 {
 			t.Fatal("pattern did not grow to maximum length")
 		}
-		updated, err = resizePatternSource(updated, id, 1)
+		updated, err = intentResizePattern(t, updated, id, 1)
 		if err != nil || patternProject(t, updated).Patterns[index].Steps != 1 {
 			t.Fatalf("pattern did not shrink: %v", err)
 		}
@@ -248,7 +244,7 @@ func TestPatternResizeUpdatesEveryLaneAndExplicitLength(t *testing.T) {
 func TestPatternVariationKeepsCustomInstrumentOctave(t *testing.T) {
 	before := []byte("key a minor\ninstrument synth { octave = 4 voice mono { out = saw(pitch) } }\ntrack lead synth {}\nphrase hook { 1 . 5~ }\npattern p { use hook 1' }\nscene main { lead=p }\nsong { main }\n")
 	original := patternProject(t, before).Patterns[0]
-	updated, err := duplicatePatternSource(before, "p", "variation")
+	updated, err := intentDuplicatePattern(t, before, "p", "variation")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +252,7 @@ func TestPatternVariationKeepsCustomInstrumentOctave(t *testing.T) {
 	if !reflect.DeepEqual(original.Data, clone.Data) {
 		t.Fatal("unassigned variation changed custom voice octave")
 	}
-	updated, err = bindPatternSource(updated, "main", "lead", "variation")
+	updated, err = intentBindScene(t, updated, "main", "lead", "variation")
 	if err != nil || !reflect.DeepEqual(original.Data, patternProject(t, updated).Patterns[1].Data) {
 		t.Fatalf("assigned variation changed octave: %v", err)
 	}

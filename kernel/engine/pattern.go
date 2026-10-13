@@ -600,6 +600,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 					p.forceValid = false
 				}
 				if released {
+					e.tap.fire(track, item.event)
 					e.emit(cmd.Message{Kind: cmd.NoteOff, Track: uint8(track), Tick: item.event.Tick})
 				}
 				continue
@@ -614,6 +615,8 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				}
 				continue
 			}
+			// A new note ends the one it replaces, including a slide's source.
+			e.tapRelease(track, event.Tick)
 			switch e.voices[track].kind {
 			case VoiceAcid:
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)
@@ -703,6 +706,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				p.slideFrom, p.slideAt = 0, 0
 				p.forceValid = false
 			}
+			e.tap.fire(track, event)
 			e.emit(cmd.Message{Kind: cmd.NoteOn, Track: uint8(track), A: uint16(event.Note), Tick: event.Tick})
 		}
 	}

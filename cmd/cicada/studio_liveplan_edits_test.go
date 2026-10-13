@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	edits "m31labs.dev/cicada/edit"
 	"m31labs.dev/cicada/internal/testwav"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
@@ -71,7 +72,7 @@ func TestPlanDiffEmitsStepPatchesForEveryPatternKind(t *testing.T) {
 		{"graph-chords", "pchords", "", "chords"}, {"keys", "pkeys", "", "keysx"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			edited, err := toggledSource([]byte(source), test.pattern, test.lane, 1)
+			edited, err := toggleStepAt(path, []byte(source), test.pattern, test.lane, 1)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -267,4 +268,15 @@ func assertDeltaReproducesPattern(t *testing.T, before, after *livePlan, delta p
 			t.Fatalf("patched engine plays an extra note %s", key)
 		}
 	}
+}
+
+// toggleStepAt applies a ToggleStep intent compiled against the score at path,
+// so assets beside that score resolve as they do in Studio.
+func toggleStepAt(path string, source []byte, pattern, lane string, index int) ([]byte, error) {
+	intent := &edits.ToggleStep{Entity: intentStepEntity(pattern, lane, index), Shared: "definition"}
+	result, err := edits.Apply(source, edits.Envelope{Version: 1, Intents: []edits.Intent{intent}}, edits.Options{Compiler: &studioCompiler{path: path}, ParamWriter: edits.ParamWriterAuto})
+	if err != nil {
+		return nil, err
+	}
+	return result.Source, nil
 }

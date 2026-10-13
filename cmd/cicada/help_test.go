@@ -19,6 +19,7 @@ func TestHelpTextGolden(t *testing.T) {
 		{name: "play", args: []string{"help", "play"}},
 		{name: "studio", args: []string{"studio", "--help"}},
 		{name: "render", args: []string{"render", "--help"}},
+		{name: "audition", args: []string{"audition", "--help"}},
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {

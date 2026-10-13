@@ -61,7 +61,7 @@ func TestChordGridPitchEditsKeepOtherPitchesAndExactSource(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			source := []byte(strings.Replace(studioChordScore, "[d4 f4 a4]", tt.before, 1))
-			updated, err := pitchedSource(source, "harmony", "", 0, tt.pitch)
+			updated, err := intentPitchedSource(t, source, "harmony", "", 0, tt.pitch)
 			wantSource := strings.Replace(string(source), tt.before, tt.after, 1)
 			if err != nil || string(updated) != wantSource {
 				t.Fatalf("got %s, %v; want %s", updated, err, wantSource)
@@ -94,7 +94,7 @@ func TestChordGridRepeatedAndTransposedPhraseEdits(t *testing.T) {
 	original := append([]byte(nil), source...)
 	for i := 0; i < 4; i++ {
 		var err error
-		source, err = pitchedSource(source, "harmony", "", 2, 79) // Add C5 through the +7 use.
+		source, err = intentPitchedSource(t, source, "harmony", "", 2, 79) // Add C5 through the +7 use.
 		if err != nil || !bytes.Contains(source, []byte("[d4 f4 a4 c5]^?70")) {
 			t.Fatalf("add through phrase: %s %v", source, err)
 		}
@@ -102,16 +102,16 @@ func TestChordGridRepeatedAndTransposedPhraseEdits(t *testing.T) {
 		if !reflect.DeepEqual(p.Patterns[0].Data[0].Notes, []int{62, 65, 69, 72}) || !reflect.DeepEqual(p.Patterns[0].Data[2].Notes, []int{69, 72, 76, 79}) {
 			t.Fatalf("shared uses did not retain transpose: %+v", p.Patterns[0].Data)
 		}
-		source, err = pitchedSource(source, "harmony", "", 2, 79)
+		source, err = intentPitchedSource(t, source, "harmony", "", 2, 79)
 		if err != nil || !bytes.Equal(source, original) {
 			t.Fatalf("repeat roundtrip: %s %v", source, err)
 		}
 	}
-	removed, err := pitchedSource(source, "harmony", "", 2, 72) // Middle F4 through +7.
+	removed, err := intentPitchedSource(t, source, "harmony", "", 2, 72) // Middle F4 through +7.
 	if err != nil || !bytes.Contains(removed, []byte("[d4 a4]^?70")) {
 		t.Fatalf("remove through phrase: %s %v", removed, err)
 	}
-	if updated, err := pitchedSource(source, "harmony", "", 2, 0); err == nil || updated != nil {
+	if updated, err := intentPitchedSource(t, source, "harmony", "", 2, 0); err == nil || updated != nil {
 		t.Fatal("accepted unrepresentable phrase pitch")
 	}
 }
@@ -228,7 +228,7 @@ func TestChordGridSingletonKeepsMonoSetClearBehavior(t *testing.T) {
 		pitch int
 		token string
 	}{{62, "f4^?70"}, {69, "a4^?70"}, {69, "."}, {62, "d4"}} {
-		source, err = pitchedSource(source, "harmony", "", 0, edit.pitch)
+		source, err = intentPitchedSource(t, source, "harmony", "", 0, edit.pitch)
 		if err != nil || !bytes.Contains(source, []byte("{ "+edit.token+" - . c4 }")) {
 			t.Fatalf("mono after singleton: %s %v", source, err)
 		}
@@ -262,7 +262,7 @@ func TestChordGridMIDIExtremesAddRemove(t *testing.T) {
 		spelling string
 	}{{0, "c0,"}, {127, "g6'''"}} {
 		source := []byte(studioChordScore)
-		added, err := pitchedSource(source, "harmony", "", 0, tt.pitch)
+		added, err := intentPitchedSource(t, source, "harmony", "", 0, tt.pitch)
 		if err != nil || !bytes.Contains(added, []byte("[d4 f4 a4 "+tt.spelling+"]^?70")) {
 			t.Fatalf("add extreme: %s %v", added, err)
 		}
@@ -270,7 +270,7 @@ func TestChordGridMIDIExtremesAddRemove(t *testing.T) {
 		if p.Patterns[0].Data[0].Notes[3] != tt.pitch {
 			t.Fatal("wrong extreme pitch")
 		}
-		removed, err := pitchedSource(added, "harmony", "", 0, tt.pitch)
+		removed, err := intentPitchedSource(t, added, "harmony", "", 0, tt.pitch)
 		if err != nil || !bytes.Equal(removed, source) {
 			t.Fatalf("remove extreme: %s %v", removed, err)
 		}
@@ -282,7 +282,7 @@ func TestChordGridSingletonSpacedSharedModifiers(t *testing.T) {
 		t.Run(spacing, func(t *testing.T) {
 			source := []byte(strings.Replace(studioChordScore, "[d4 f4 a4]^?70", "[d4 f4] ^"+spacing+"?70", 1))
 			chordGridProject(t, source)
-			updated, err := pitchedSource(source, "harmony", "", 0, 62)
+			updated, err := intentPitchedSource(t, source, "harmony", "", 0, 62)
 			if err != nil {
 				t.Fatal(err)
 			}
