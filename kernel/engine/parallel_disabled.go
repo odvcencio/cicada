@@ -6,6 +6,11 @@ package engine
 // per-track block buffers. This preserves the portable core's resource budget.
 type parallelState struct{}
 
+// Browser kernels never create workers, so the wait floor is ignored.
+type parallelConfig struct{}
+
+func (e *Engine) configureParallel(*Config) error { return nil }
+
 func (e *Engine) EnableParallel(workers int) error {
 	if workers < 0 || workers > 4 {
 		return Error("parallel DSP requires zero to four render lanes")
