@@ -474,3 +474,56 @@ func TestHeardFitStaysInRange(t *testing.T) {
 		}
 	}
 }
+
+const stabRestStab = `
+pattern stab notes {
+  [c4 e4 g4] . . . . . . . . . . . . . . .
+}
+pattern idle notes {
+  . . . .
+}
+scene hit { keys = stab }
+scene rest { keys = idle }
+song {
+  hit
+  rest
+  hit
+}
+`
+
+// A note released before the selected range must not mark the range's first
+// bar active, on the scene renderer and on the engine renderer (an audio track
+// selects the engine).
+func TestNoteReleasedBeforeRangeIsNotActive(t *testing.T) {
+	check := func(t *testing.T, source, dir string) {
+		t.Helper()
+		score, ds := notation.Parse([]byte(source))
+		for _, d := range ds {
+			if d.Severity == "error" {
+				t.Fatalf("parse: %s", d.Error())
+			}
+		}
+		a, err := Analyze(score, Options{From: 1, Bars: 2, TempDir: t.TempDir(), AssetDir: dir})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("%s", textOf(a))
+		if keys := track(t, a, "keys"); keys.ActiveBars != 1 {
+			t.Errorf("keys active bars %d, want 1", keys.ActiveBars)
+		}
+		for _, s := range a.Report.Sections {
+			if s.Name == "rest" && slices.Contains(s.Tracks, "keys") {
+				t.Errorf("section rest lists keys: %+v", s)
+			}
+		}
+	}
+	t.Run("scene renderer", func(t *testing.T) {
+		source := strings.Replace(heldThenOff, "track vox audio {}\n", "", 1)
+		source = source[:strings.Index(source, "pattern held notes")] + stabRestStab
+		check(t, source, "")
+	})
+	t.Run("engine renderer", func(t *testing.T) {
+		source, dir := clipSource(t, stabRestStab)
+		check(t, source, dir)
+	})
+}

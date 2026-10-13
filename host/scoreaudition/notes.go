@@ -156,6 +156,12 @@ func (l *noteLog) activity(cfg engine.Config, tracks int, fromTick int64, bars i
 		if !n.off && n.track < len(sustain) && sustain[n.track] {
 			end = max(end, rangeEnd)
 		}
+		// A note released before the range never reaches it. Integer division
+		// truncates toward zero, so without this a release less than a bar
+		// before the range would mark the range's first bar active.
+		if n.tick < fromTick && end <= fromTick {
+			continue
+		}
 		lastBar := int((end - fromTick) / seq.TicksPerBar)
 		// A release exactly on a bar line does not reach into that bar.
 		if end > n.tick && (end-fromTick)%seq.TicksPerBar == 0 {
