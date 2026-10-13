@@ -3,6 +3,7 @@ package engine
 
 import (
 	"math"
+	"time"
 
 	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
@@ -153,7 +154,18 @@ type Config struct {
 	// CompSidechainTrack is zero for self-detection, a one-based track index,
 	// or SFXSidechain for the post-fader SFX bus.
 	CompSidechainTrack int
+	// ParallelWaitFloor is the shortest time the render thread waits for the
+	// parallel lanes to finish one segment. A timeout retires the pool for good:
+	// every later render reports FaultParallelWorker and the host must close and
+	// recreate the engine to recover. Zero selects DefaultParallelWaitFloor.
+	// Raise it for offline renders or tests that run on a heavily loaded
+	// machine. Negative values are rejected. It has no effect on builds without
+	// parallel rendering.
+	ParallelWaitFloor time.Duration `json:"-"`
 }
+
+// DefaultParallelWaitFloor is the production parallel lane wait floor.
+const DefaultParallelWaitFloor = 100 * time.Millisecond
 
 type voiceSlot struct {
 	kind                           VoiceKind
@@ -214,6 +226,7 @@ type Engine struct {
 	streamClosed                 bool
 	rawPlaying                   bool
 	parallel                     *parallelState
+	parallelConfig               parallelConfig
 	spatial                      spatialState
 	sampleRate, maxBlock, tracks int
 	paramAlpha                   [kernel.ParamCount]float32
@@ -392,6 +405,9 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
 		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
+	if err := e.configureParallel(cfg); err != nil {
+		return nil, err
+	}
 	e.spatial.rotation = spatial.ListenerRotation(0, 0, 0)
 	e.spatial.music.Init(cfg.SampleRate)
 	e.spatial.sfx.Init(cfg.SampleRate)
