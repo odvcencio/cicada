@@ -1535,6 +1535,24 @@ func (p *Player) beginRequestedSong() {
 	}
 }
 
+// followLiveTempo keeps the bar clock on the tempo the engine is actually
+// playing. A manual scene launch can change it off the authored chain, and the
+// next bar boundary, where an offered edit lands, moves with it. The engine's
+// anchor is in its own frames, so the host sample is found from the current
+// position of both.
+func (p *Player) followLiveTempo() {
+	live := p.current.Engine.LiveClock()
+	if live.BPMMilli == p.clock.BPMMilli {
+		return
+	}
+	p.clock = seq.Clock{
+		SampleRate: int64(p.rate), BPMMilli: live.BPMMilli,
+		AnchorSample: live.AnchorSample + p.sample - p.current.Engine.TransportSample(), AnchorTick: live.AnchorTick,
+	}
+	p.tempoMilli.Store(live.BPMMilli)
+	p.nextBarSample = p.clock.SampleAtTick((p.bar + 1) * seq.TicksPerBar)
+}
+
 func (p *Player) renderBlock(requestedFrames int) {
 	if p.finishPlaybackRange() {
 		return
@@ -1693,6 +1711,7 @@ func (p *Player) renderBlock(requestedFrames int) {
 	p.completeSceneLaunch(endSample)
 	p.completeSlotLaunches(endSample)
 	p.sample += int64(frames)
+	p.followLiveTempo()
 	p.telemetry.storeTransport(p.sample, p.clock.TickAtSample(p.sample), p.current.Engine.Playing())
 	p.buffered, p.read = frames*8, 0
 }

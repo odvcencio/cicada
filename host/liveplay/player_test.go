@@ -1032,3 +1032,64 @@ func TestSceneTempoNativeCallbackAllocationFree(t *testing.T) {
 		t.Fatalf("allocations=%g err=%v tempo=%d", allocations, readErr, p.BPMMilli())
 	}
 }
+
+// The song has no scene tempo, so the authored chain is empty. A scene that is
+// not in the song sets 60 BPM and is launched by hand: the next bar is then
+// 192000 frames long, and an offered edit must land there, not at 96000.
+func TestEditsFollowTheTempoOfAManualSceneLaunch(t *testing.T) {
+	build := func(name string) Score {
+		cfg := engine.Config{SampleRate: 48_000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 1, BPMMilli: 120_000}
+		cfg.Track[0].Kind = engine.VoiceAcid
+		cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}}}
+		cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 8}}
+		created, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: name, SceneIDs: []string{"a", "slow"}}
+	}
+	p, err := New(build("first"), 48_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.LaunchScene("slow"); err != nil {
+		t.Fatal(err)
+	}
+	// The launch lands on bar 2 (frame 96000); read into it.
+	if _, err := io.CopyN(io.Discard, p, (96_000+1_000)*8); err != nil {
+		t.Fatal(err)
+	}
+	if got := p.BPMMilli(); got != 60_000 {
+		t.Fatalf("tempo after the manual launch = %d", got)
+	}
+	for len(p.Events()) > 0 {
+		<-p.Events()
+	}
+	if err := p.Offer(build("edit")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.CopyN(io.Discard, p, (96_000+192_000-96_000-1_000-1)*8); err != nil {
+		t.Fatal(err)
+	}
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" {
+			t.Fatalf("the edit landed before the slow bar ended: %+v", event)
+		}
+	}
+	var frame [8]byte
+	if _, err := io.ReadFull(p, frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.ReadFull(p, frame[:]); err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for len(p.Events()) > 0 {
+		if event := <-p.Events(); event.Kind == "edit" && event.Name == "edit" && event.Bar == 3 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the edit did not land at the end of the slow bar")
+	}
+}

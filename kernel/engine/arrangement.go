@@ -254,6 +254,7 @@ func (e *Engine) applySceneSetting(setting SceneSetting, snap bool) {
 			return
 		}
 		e.setSceneTempo(sceneTempoMilli(setting))
+		e.liveTempo = e.liveTempo || e.manualLaunch
 		return
 	}
 	command := cmd.Command{Op: cmd.OpSetParam, Track: setting.Track, Index: uint16(setting.ID), Arg0: math.Float32bits(setting.Value)}

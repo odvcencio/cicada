@@ -90,7 +90,14 @@ func (e *Engine) TempoAtTick(tick int64) int64 {
 // playback starts at the first, so hosts place bar boundaries with the kernel's
 // own clock and never keep a copy of the tempo map. It follows the transport:
 // each tempo step re-anchors at the sample where its tick first plays.
+//
+// After a manual launch or a tempo command moved the tempo off the authored
+// chain, the answer follows the live transport instead: the clock the engine
+// is actually playing, counted from the sample of the last seek.
 func (e *Engine) FramesBetweenTicks(from, to int64) int64 {
+	if e.liveTempo && from == e.seekTick && to > from {
+		return e.transport.Clock().SampleAtTick(to) - e.seekSample
+	}
 	clock := seq.Clock{SampleRate: int64(e.sampleRate), BPMMilli: e.TempoAtTick(from), AnchorTick: from}
 	if len(e.tempoChain) != 0 {
 		cycle, index, _ := e.chainStep(from)
@@ -114,3 +121,11 @@ func (e *Engine) FramesBetweenTicks(from, to int64) int64 {
 	}
 	return clock.SampleAtTick(to)
 }
+
+// LiveClock is the clock the transport is playing now, with the sample it is
+// anchored at counted in the engine's own frames. Hosts that place bar
+// boundaries follow it after a manual launch changes the tempo.
+func (e *Engine) LiveClock() seq.Clock { return e.transport.Clock() }
+
+// TransportSample counts the frames the engine has rendered.
+func (e *Engine) TransportSample() int64 { return e.transport.Sample() }

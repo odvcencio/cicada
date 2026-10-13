@@ -11,6 +11,7 @@ import (
 
 	"github.com/tetratelabs/wazero"
 	"m31labs.dev/cicada/host/kernelimage"
+	"m31labs.dev/cicada/kernel"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/seq"
@@ -119,5 +120,81 @@ func TestSceneTempoManualLaunchOnBoundaryNativeWASMParity(t *testing.T) {
 	tempo, _ := project.NewTempoMap(rate, int64(p.TempoMilli), project.SongTempoChanges(p))
 	if native.FramesBetweenTicks(0, 6*seq.TicksPerBar) != tempo.SampleAtTick(6*seq.TicksPerBar) {
 		t.Fatal("the tempo map and the export disagree")
+	}
+}
+
+// With no scene tempo in the song, a scene outside it that sets 60 BPM and is
+// launched by hand moves the transport. The export the AudioWorklet uses to
+// place bar boundaries must follow: 288000 frames to bar 2, not 192000, and
+// the same in native and WASM.
+func TestSceneTempoManualLaunchWithoutChainTickFramesFollowsTheTransport(t *testing.T) {
+	cfg := engine.Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120_000}
+	cfg.Track[0].Kind = engine.VoiceAcid
+	cfg.Scenes = []engine.Scene{{}, {Settings: []engine.SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}}}
+	cfg.Song = []engine.SongEntry{{Scene: 0, Bars: 8}}
+	image, err := kernelimage.Encode(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wasm, err := os.ReadFile(wasmModulePath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	r := wazero.NewRuntime(ctx)
+	defer r.Close(ctx)
+	module, err := r.Instantiate(ctx, wasm)
+	if err != nil {
+		t.Fatal(err)
+	}
+	call := func(name string, args ...uint64) uint64 {
+		t.Helper()
+		result, err := module.ExportedFunction(name).Call(ctx, args...)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if len(result) == 0 {
+			return 0
+		}
+		return result[0]
+	}
+	call("_initialize")
+	ptr := uint32(call("gosx_audio_project_alloc", uint64(len(image))))
+	if !module.Memory().Write(ptr, image) || call("gosx_audio_init", 48_000, 128, 2) != 0 {
+		t.Fatal("WASM init failed")
+	}
+	native, err := engine.New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	push := func(c cmd.Command) {
+		t.Helper()
+		record, err := cmd.EncodeCommand(c, 1)
+		if err != nil || !module.Memory().Write(uint32(call("gosx_audio_cmd_ptr")), record[:]) || !native.Push(c) {
+			t.Fatalf("command: %v", err)
+		}
+		call("gosx_audio_cmd_commit", 1)
+	}
+	frames := func(bar int64) (wasmFrames float64, nativeFrames int64) {
+		to := bar * seq.TicksPerBar
+		return math.Float64frombits(call("gosx_audio_tick_frames", math.Float64bits(0), math.Float64bits(float64(to)))), native.FramesBetweenTicks(0, to)
+	}
+	push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	for block := 0; block < 800; block++ {
+		if block == 100 {
+			push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Arg0: 2})
+		}
+		var l, rr [128]float32
+		native.Render(l[:], rr[:])
+		call("gosx_audio_render", 128)
+		call("gosx_audio_msg_drain")
+		native.Poll(&cmd.Message{})
+	}
+	for bar := int64(1); bar <= 3; bar++ {
+		w, n := frames(bar)
+		want := int64(96_000) + (bar-1)*192_000
+		if int64(w) != n || n != want {
+			t.Fatalf("bar %d: WASM %v native %d want %d", bar, w, n, want)
+		}
 	}
 }

@@ -304,6 +304,8 @@ type Engine struct {
 	songEndTick                  int64
 	manualSceneTick              int64
 	manualLaunch                 bool
+	liveTempo                    bool  // a manual launch or command moved the tempo off the authored chain
+	seekTick, seekSample         int64 // where the last seek anchored the transport
 	manualPatternTick            [MaxTracks]int64
 }
 
@@ -951,6 +953,7 @@ func (e *Engine) Reset() {
 	e.renderFrame, e.renderFrames = 0, 0
 	e.layerMask, e.layerAuthored = trackMask(1)<<e.tracks-1, trackMask(1)<<e.tracks-1
 	e.songMode, e.songIndex, e.songEndTick = false, 0, 0
+	e.liveTempo, e.seekTick, e.seekSample = false, 0, 0
 	e.resetClips()
 	e.manualSceneTick = -1
 	e.currentScene = -1
@@ -1209,10 +1212,12 @@ func (e *Engine) apply(c cmd.Command) {
 		e.automationTick = -1
 		e.resetDirector()
 		e.resetClips()
-		if e.transport.SeekTick(int64(c.Arg0)*seq.TicksPerBar+int64(c.Arg1)) != nil {
+		e.seekTick = int64(c.Arg0)*seq.TicksPerBar + int64(c.Arg1)
+		if e.transport.SeekTick(e.seekTick) != nil {
 			e.fault(FaultSeek)
 			return
 		}
+		e.seekSample = e.transport.Sample()
 		e.lastBarTick = -1
 		for i := 0; i < e.tracks; i++ {
 			e.resetVoice(i)
@@ -1248,6 +1253,7 @@ func (e *Engine) apply(c cmd.Command) {
 			e.scheduleAll()
 		}
 	case cmd.OpSetTempo:
+		e.liveTempo = true
 		if e.transport.QueueTempo(int64(c.Arg0)) != nil {
 			e.fault(FaultTempo)
 		}
