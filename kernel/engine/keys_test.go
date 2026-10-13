@@ -326,3 +326,216 @@ func TestKeysReleaseTargetsMIDIPitchInsteadOfLiveIdentity(t *testing.T) {
 		t.Fatal("keys accepted a note identity as a MIDI release pitch")
 	}
 }
+
+// controlKeys records live-control calls the way a real family voice receives them.
+type controlKeys struct {
+	fakeKeys
+	values [128]float32
+	glides [128]float32
+	calls  int
+	fail   bool
+}
+
+func (c *controlKeys) SetControl(index int, value, glide float32) error {
+	if c.fail || index < 0 || index >= len(c.values) {
+		return Error("fake control rejected")
+	}
+	c.values[index], c.glides[index] = value, glide
+	c.calls++
+	return nil
+}
+
+func installControlKeys(t *testing.T, patch uint8) {
+	t.Helper()
+	old := keyboard.Prepare
+	t.Cleanup(func() { keyboard.Prepare = old })
+	keyboard.Prepare = func(rate int, spec *keyboard.Spec) (keyboard.Voice, error) {
+		c := new(controlKeys)
+		copy(c.values[:], spec.Controls[:])
+		return c, nil
+	}
+}
+
+func controlKeysConfig(patch uint8) Config {
+	cfg := keysConfig()
+	cfg.Track[0].Keys.Patch = patch
+	return cfg
+}
+
+func TestKeysControlsReachTheirFamilySlot(t *testing.T) {
+	cases := []struct {
+		patch uint8
+		id    kernel.ParamID
+		slot  int
+		value float32
+	}{
+		{1, kernel.ParamKeysEpTremolo, 7, .6},
+		{1, kernel.ParamKeysEpTremoloRate, 8, 6},
+		{1, kernel.ParamKeysEpAutoPan, 9, .4},
+		{1, kernel.ParamKeysEpGain, 10, 1.2},
+		{1, kernel.ParamKeysEpDrive, 6, .5},
+		{7, kernel.ParamKeysClavGain, 6, 1.1},
+		{7, kernel.ParamKeysClavDrive, 5, .3},
+		{10, kernel.ParamKeysOrganGain, 21, 1.3},
+		{10, kernel.ParamKeysOrganDrive, 17, .4},
+		{10, kernel.ParamKeysOrganRotaryMix, 18, .5},
+		{10, kernel.ParamKeysOrganRotaryFast, 20, 1},
+		{10, kernel.ParamKeysOrganDrawbar1, 1, 3},
+		{10, kernel.ParamKeysOrganDrawbar9, 9, 8},
+		{14, kernel.ParamKeysFmGain, 1, .9},
+		{17, kernel.ParamKeysAnalogDrive, 14, .6},
+		{17, kernel.ParamKeysAnalogOutput, 21, -6},
+		{21, kernel.ParamKeysStringsOutput, 10, -3},
+	}
+	for _, c := range cases {
+		installControlKeys(t, c.patch)
+		e, err := New(controlKeysConfig(c.patch))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f := e.voices[0].keys.(*controlKeys)
+		e.apply(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(c.id), Arg0: math.Float32bits(c.value)})
+		if e.faulted || f.values[c.slot] != c.value || f.calls != 1 {
+			t.Fatalf("%s did not reach slot %d: faulted=%v value=%g calls=%d", kernel.Params[c.id].Name, c.slot, e.faulted, f.values[c.slot], f.calls)
+		}
+		if got, want := f.glides[c.slot], e.paramAlpha[c.id]; got != want {
+			t.Fatalf("%s glide %g, want the registry smoothing %g", kernel.Params[c.id].Name, got, want)
+		}
+	}
+}
+
+func TestKeysControlOfAnotherFamilyOrVoiceFaults(t *testing.T) {
+	installControlKeys(t, 1)
+	e, err := New(controlKeysConfig(1)) // electric piano
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []kernel.ParamID{kernel.ParamKeysClavGain, kernel.ParamKeysOrganDrawbar1, kernel.ParamKeysStringsOutput} {
+		e.faulted = false
+		e.apply(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(id), Arg0: math.Float32bits(1)})
+		if !e.faulted {
+			t.Fatalf("%s reached an electric piano", kernel.Params[id].Name)
+		}
+	}
+	installFakeKeys(t) // A voice without live controls.
+	e, err = New(keysConfig())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.apply(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamKeysEpGain), Arg0: math.Float32bits(1)})
+	if !e.faulted {
+		t.Fatal("a control reached a voice that has no live controls")
+	}
+	installControlKeys(t, 1)
+	e, _ = New(controlKeysConfig(1))
+	e.voices[0].keys.(*controlKeys).fail = true
+	e.apply(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamKeysEpGain), Arg0: math.Float32bits(1)})
+	if !e.faulted {
+		t.Fatal("a voice rejection did not fault")
+	}
+}
+
+func TestKeysSceneControlsSnapshotAndRestore(t *testing.T) {
+	installControlKeys(t, 1)
+	cfg := controlKeysConfig(1)
+	cfg.Track[0].Keys.Controls[7] = .25 // Authored tremolo.
+	cfg.Scenes = []Scene{{}, {Settings: []SceneSetting{{Track: 0, ID: kernel.ParamKeysEpTremolo, Value: .9}}}, {}}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}, {Scene: 2, Bars: 1}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f := e.voices[0].keys.(*controlKeys)
+	e.apply(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	e.apply(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 1})
+	if e.faulted || f.values[7] != .9 {
+		t.Fatalf("scene did not set tremolo: faulted=%v value=%g", e.faulted, f.values[7])
+	}
+	// Like every scene parameter, a later scene that omits the setting keeps it.
+	e.apply(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 2})
+	if e.faulted || f.values[7] != .9 {
+		t.Fatalf("a later scene lost the earlier tremolo setting: %g", f.values[7])
+	}
+	// Restarting the song restores the authored value, at once.
+	e.apply(cmd.Command{Op: cmd.OpSeek, Track: 0xff})
+	if e.faulted || f.values[7] != .25 || f.glides[7] != 1 {
+		t.Fatalf("restart kept tremolo %g (glide %g); want the authored .25", f.values[7], f.glides[7])
+	}
+	calls := f.calls
+	e.apply(cmd.Command{Op: cmd.OpSeek, Track: 0xff})
+	if f.calls != calls {
+		t.Fatal("restoring an unchanged control called the voice")
+	}
+}
+
+func TestKeysAutomationNeedsItsFamily(t *testing.T) {
+	installControlKeys(t, 1)
+	lane := func(id kernel.ParamID, track uint8) []cmd.Command {
+		return []cmd.Command{{Op: cmd.OpSetParam, Track: track, Index: uint16(id), Arg0: math.Float32bits(.5)}}
+	}
+	cfg := controlKeysConfig(1)
+	cfg.Automation = lane(kernel.ParamKeysEpTremolo, 0)
+	if _, err := New(cfg); err != nil {
+		t.Fatalf("automation of an electric piano control was rejected: %v", err)
+	}
+	for _, c := range []struct {
+		id    kernel.ParamID
+		track uint8
+	}{{kernel.ParamKeysClavGain, 0}, {kernel.ParamKeysEpTremolo, 0xff}, {kernel.ParamKeysOrganDrawbar1, 0}} {
+		cfg.Automation = lane(c.id, c.track)
+		if _, err := New(cfg); err == nil {
+			t.Fatalf("automation of %s on track %d was accepted", kernel.Params[c.id].Name, c.track)
+		}
+	}
+}
+
+func TestKeysControlEngineAllocatesNothing(t *testing.T) {
+	installControlKeys(t, 1)
+	cfg := controlKeysConfig(1)
+	cfg.Scenes = []Scene{{}, {Settings: []SceneSetting{{Track: 0, ID: kernel.ParamKeysEpTremolo, Value: .9}}}}
+	cfg.Song = []SongEntry{{Scene: 0, Bars: 1}, {Scene: 1, Bars: 1}}
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var left, right [128]float32
+	var message cmd.Message
+	value := float32(0)
+	allocations := testing.AllocsPerRun(100, func() {
+		value = 1 - value
+		e.Push(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamKeysEpGain), Arg0: math.Float32bits(value)})
+		e.Push(cmd.Command{Op: cmd.OpSetParam, Track: 0, Index: uint16(kernel.ParamKeysEpTremolo), Arg0: math.Float32bits(value)})
+		e.Render(left[:], right[:])
+		for e.Poll(&message) {
+		}
+	})
+	if allocations != 0 || e.faulted {
+		t.Fatalf("allocations=%g fault=%v", allocations, e.faulted)
+	}
+	e.apply(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	allocations = testing.AllocsPerRun(50, func() {
+		e.apply(cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 1})
+		e.apply(cmd.Command{Op: cmd.OpSeek, Track: 0xff})
+	})
+	if allocations != 0 || e.faulted {
+		t.Fatalf("scene restore allocations=%g fault=%v", allocations, e.faulted)
+	}
+}
+
+func TestKeysControlTableMatchesRegistry(t *testing.T) {
+	for id := keysControlFirst; id <= keysControlLast; id++ {
+		spec, ok := kernel.Param(id)
+		if !ok || len(spec.Name) < 6 || spec.Name[:5] != "keys." {
+			t.Fatalf("ID %d in the keys range is %q", id, spec.Name)
+		}
+		if keysControls[id-keysControlFirst].family == keyboard.NoFamily {
+			t.Fatalf("%s has no family in the engine control table", spec.Name)
+		}
+		if got := keyboard.Family(keysControls[id-keysControlFirst].family).String(); spec.Name[5:5+len(got)] != got {
+			t.Fatalf("%s is mapped to family %q", spec.Name, got)
+		}
+	}
+	if next, ok := kernel.Param(keysControlLast + 1); ok && len(next.Name) >= 5 && next.Name[:5] == "keys." {
+		t.Fatalf("%s follows the engine control table", next.Name)
+	}
+}

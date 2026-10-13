@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/host/keyboard"
 	"m31labs.dev/cicada/internal/paramdefs"
 	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
@@ -168,6 +169,8 @@ func sceneRegistryScore(descriptor paramdefs.Descriptor, value string) string {
 			trackKind, patternKind = "drums", "drums"
 		} else if sceneRegistryHasVoice(descriptor, "piano") {
 			trackKind, patternKind = "piano", "notes"
+		} else if patch := sceneRegistryKeysPatch(descriptor); patch != "" {
+			trackKind, patternKind = patch, "notes"
 		} else {
 			trackKind, patternKind = "voice", "notes"
 			fmt.Fprintln(&source, "instrument voice { voice mono { out = sine(pitch) * env(gate, 120ms) } }")
@@ -177,7 +180,7 @@ func sceneRegistryScore(descriptor paramdefs.Descriptor, value string) string {
 	if patternKind == "drums" {
 		lane := strings.Split(descriptor.ID, ".")[1]
 		fmt.Fprintf(&source, "pattern riff drums steps=1 { %s: X }\n", lane)
-	} else if trackKind == "piano" {
+	} else if trackKind == "piano" || patternKind == "notes" && keyboard.ID(trackKind) != 0 {
 		fmt.Fprintln(&source, "pattern riff notes steps=1 { c4 }")
 	} else {
 		fmt.Fprintf(&source, "pattern riff %s steps=1 { 1 }\n", patternKind)
@@ -188,6 +191,18 @@ func sceneRegistryScore(descriptor paramdefs.Descriptor, value string) string {
 	}
 	fmt.Fprintf(&source, "scene main { lane = riff %s = %s }\nsong { main }\n", path, value)
 	return source.String()
+}
+
+// sceneRegistryKeysPatch names one modeled-keyboard patch for a registry row
+// that applies to a keyboard family.
+func sceneRegistryKeysPatch(descriptor paramdefs.Descriptor) string {
+	patches := map[string]string{"ep": "tine_ep", "clav": "clav", "organ": "tonewheel_organ", "fm": "fm_ep", "analog": "poly_keys", "strings": "string_machine"}
+	for _, voice := range descriptor.Voices {
+		if patch := patches[voice]; patch != "" {
+			return patch
+		}
+	}
+	return ""
 }
 
 func sceneRegistryHasVoice(descriptor paramdefs.Descriptor, voice string) bool {
