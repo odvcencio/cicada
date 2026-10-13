@@ -1,15 +1,19 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/render"
 )
 
@@ -320,6 +324,133 @@ func TestExportLoudnessChainedLimitersFullSong(t *testing.T) {
 		t.Logf("METRIC EXPORT-CHAINED-FULL scheduled=%v lufs=%.3f gain=%+.2f chain_reduction=%.3f err=%v", scheduled, result.AchievedLUFS, result.AppliedGainDB, result.MasterLimiterReductionDB, err)
 		if err != nil || result.MasterLimiterReductionDB <= 0 || result.MasterLimiterReductionDB > maxExportLimiterReductionDB {
 			t.Fatalf("full-song chained limiter export: %v (%+v)", err, result)
+		}
+	}
+}
+
+// addDC24 adds a constant offset, in full-scale units, to the 24-bit stereo
+// samples of a WAV.
+func addDC24(t *testing.T, wav []byte, left, right float64) {
+	t.Helper()
+	at := bytes.Index(wav, []byte("data"))
+	if at < 0 {
+		t.Fatal("no data chunk")
+	}
+	size := int(binary.LittleEndian.Uint32(wav[at+4:]))
+	data := wav[at+8 : at+8+size]
+	for i := 0; i+6 <= len(data); i += 6 {
+		for c, offset := range [2]float64{left, right} {
+			b := data[i+3*c : i+3*c+3]
+			v := int32(b[0]) | int32(b[1])<<8 | int32(int8(b[2]))<<16
+			v += int32(math.Round(offset * 8388607))
+			v = max(-8388608, min(8388607, v))
+			b[0], b[1], b[2] = byte(v), byte(v>>8), byte(v>>16)
+		}
+	}
+}
+
+// A capped pass can fail the DC check. The loop must render one more pass
+// with the new corrections before it stops. DC is injected because the
+// fixtures produce none: on the direct renderer it rides the signal and grows
+// with the input gain; on the scheduled engine it grows with the square of the
+// gain.
+func testCappedPassRendersPendingDCCorrection(t *testing.T, scheduled bool) {
+	defer func(previous func(*notation.Score, render.Options, io.Writer) (render.Report, error)) {
+		loudnessRenderPass = previous
+	}(loudnessRenderPass)
+	const dc = 0.004
+	var gains []float64
+	loudnessRenderPass = func(score *notation.Score, opts render.Options, w io.Writer) (render.Report, error) {
+		var buf bytes.Buffer
+		report, err := render.WAV(score, opts, &buf)
+		if err != nil {
+			return report, err
+		}
+		gain := math.Pow(10, opts.MasterInputGainDB/20)
+		// The renderer already added its correction; add only the source DC.
+		// The scheduled engine applies the correction before the gain, so a
+		// source whose DC grows faster than the gain (here with its square)
+		// is what leaves a capped pass uncorrected.
+		offset := dc * gain
+		if scheduled {
+			offset = dc * gain * gain
+		}
+		gains = append(gains, opts.MasterInputGainDB)
+		addDC24(t, buf.Bytes(), offset, offset)
+		_, err = w.Write(buf.Bytes())
+		return report, err
+	}
+	var replacements []string
+	if scheduled {
+		// A flat master EQ lets the engine's pre-chain correction reach the
+		// output, and no master level keeps that correction's scale equal to
+		// the input gain the loop divides by.
+		replacements = []string{"level = 6dB ", "", "type = highpass frequency = 25Hz q = 0.707", "type = peak frequency = 1000Hz q = 1 gain = 0dB", "track bass acid {", "fx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }\ntrack bass acid { insert = cleanup "}
+	}
+	inspection, err := inspectScore(writeScoreVariant(t, replacements...))
+	if err != nil {
+		t.Fatal(err)
+	}
+	opts := render.Options{SampleRate: 48000, Bits: 24, From: 4, Bars: 2, TailSec: 1}
+	target := renderTargetOptions{ExportName: "quiet", TruePeakMaxDBTP: -1}
+	if err := applyExportTarget(inspection.semantic, &opts, &target); err != nil {
+		t.Fatal(err)
+	}
+	target.LoudnessTarget = -29 // needs about +12.4 dB, so the +12 dB cap binds
+	if scheduled {
+		target.LoudnessTarget = -35 // the same without the 6 dB master level
+	}
+	result, err := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "dc.wav"), opts, target, nil)
+	t.Logf("METRIC EXPORT-CAP-DC scheduled=%v gains=%v lufs=%.3f passes=%d dc=%+.6f err=%v", scheduled, gains, result.AchievedLUFS, result.Passes, result.DCCorrection.LeftFS, err)
+	if err != nil {
+		t.Fatalf("capped pass with DC correction was not rendered: %v (%+v)", err, result)
+	}
+	if result.AppliedGainDB > maxExportInputGainDB+1e-9 || math.Abs(result.AchievedLUFS-target.LoudnessTarget) > 0.5 {
+		t.Fatalf("unexpected result %+v", result)
+	}
+}
+
+func TestExportLoudnessCappedPassRendersPendingDCCorrectionDirect(t *testing.T) {
+	testCappedPassRendersPendingDCCorrection(t, false)
+}
+
+func TestExportLoudnessCappedPassRendersPendingDCCorrectionScheduled(t *testing.T) {
+	testCappedPassRendersPendingDCCorrection(t, true)
+}
+
+// Without a limiter the scheduled engine still adds the export gain ahead of
+// the master chain, so the report must say master_input there and post_chain
+// on the direct renderer.
+func TestExportLoudnessGainStageNamesPlacementPerRenderer(t *testing.T) {
+	source, err := os.ReadFile(filepath.Join("testdata", "export-loudness", "punchy-nolimiter.cicada"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, scheduled := range []bool{false, true} {
+		text := string(source)
+		if scheduled {
+			text = strings.Replace(text, "track bass acid {", "fx cleanup eq { type = highpass frequency = 30Hz q = 0.707 }\ntrack bass acid { insert = cleanup ", 1)
+		}
+		path := filepath.Join(t.TempDir(), "nolimiter.cicada")
+		if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		inspection, err := inspectScore(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		opts := render.Options{SampleRate: 48000, Bits: 24, Bars: 4, TailSec: 3}
+		target := renderTargetOptions{ExportName: "loud", TruePeakMaxDBTP: -1}
+		if err := applyExportTarget(inspection.semantic, &opts, &target); err != nil {
+			t.Fatal(err)
+		}
+		result, _ := renderLoudnessFileReport(inspection.score, filepath.Join(t.TempDir(), "x.wav"), opts, target, nil)
+		want := "post_chain"
+		if scheduled {
+			want = "master_input"
+		}
+		if result.GainStage != want || result.limiterMode {
+			t.Fatalf("scheduled=%v: gain stage %q limiterMode %v, want %q without limiter mode", scheduled, result.GainStage, result.limiterMode, want)
 		}
 	}
 }

@@ -566,6 +566,10 @@ func applyExportTarget(p *project.Project, opts *render.Options, target *renderT
 
 const loudnessPassLimit = 6
 
+// loudnessRenderPass renders one measurement pass; tests replace it to inject
+// DC offsets the fixtures do not produce.
+var loudnessRenderPass = render.WAV
+
 // When the score's master chain holds a limiter, loudness targeting applies its
 // gain at the master input and lets that limiter hold the true-peak ceiling.
 // Two guard rails keep the search from crushing the mix:
@@ -621,9 +625,12 @@ func renderLoudnessFile(score *notation.Score, path string, opts render.Options,
 	if report.Passes > 0 {
 		fmt.Printf("%s: %d bars from bar %d, %d frames at %d Hz, achieved %.2f LUFS, true peak %.2f dBTP, applied gain %+.2f dB, DC correction L %+.7f/R %+.7f FS, passes %d, largest limiter gain reduction %.2f dB\n",
 			path, report.Bars, report.From+1, report.Frames, report.SampleRate, report.AchievedLUFS, report.TruePeakDBTP, report.AppliedGainDB, report.DCCorrection.LeftFS, report.DCCorrection.RightFS, report.Passes, report.LargestLimiterReductionDB)
-		if report.GainStage == "master_input" {
+		switch {
+		case report.limiterMode:
 			fmt.Printf("%s: gain applied at the master input, ahead of the score's master chain; master limiter gain reduction %.2f dB (maximum %.1f dB), input gain cap +%.0f dB\n",
 				path, report.MasterLimiterReductionDB, maxExportLimiterReductionDB, maxExportInputGainDB)
+		case report.GainStage == "master_input":
+			fmt.Printf("%s: gain applied at the master input, ahead of the score's master chain (scheduled renderer)\n", path)
 		}
 	}
 	return err
@@ -639,9 +646,12 @@ type loudnessFileReport struct {
 	LargestLimiterReductionDB float64 `json:"largest_limiter_reduction_db"`
 	// MasterLimiterReductionDB is the largest gain reduction of a limiter in
 	// the score's master chain. GainStage is "master_input" when the export gain
-	// ran ahead of that chain and "post_chain" for the crest-preserving gain.
+	// runs ahead of the master chain (a chain with a limiter on either renderer,
+	// or any chain on the scheduled engine) and "post_chain" when it runs after
+	// the chain (the direct renderer without a limiter) or no chain exists.
 	MasterLimiterReductionDB float64 `json:"master_limiter_reduction_db"`
 	GainStage                string  `json:"gain_stage"`
+	limiterMode              bool
 	DCCorrection             struct {
 		LeftFS  float64 `json:"left_fs"`
 		RightFS float64 `json:"right_fs"`
@@ -700,9 +710,10 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	passes := 0
 	gain := 0.0
 	var biasL, biasR float32
-	limiterMode := false
+	limiterMode, hasMasterChain := false, false
 	if p, _ := project.FromScore(score); p != nil {
 		limiterMode = project.MasterHasLimiter(p)
+		hasMasterChain = p.Master != nil && len(p.Master.Mixer.Inserts) > 0
 	}
 	// The direct mixer adds DC correction after the master chain and after
 	// the export gain stage; the scheduled engine adds it before the gain.
@@ -727,7 +738,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 		if err != nil {
 			return report, err
 		}
-		passReport, renderErr := render.WAV(score, passOptions, file)
+		passReport, renderErr := loudnessRenderPass(score, passOptions, file)
 		if renderErr == nil {
 			renderErr = file.Sync()
 		}
@@ -779,6 +790,7 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 				break
 			}
 		}
+		pendingDC := !dcSafe
 		if !dcSafe {
 			gainLinear := math.Pow(10, gain/20)
 			if biasAfterInputGain {
@@ -808,6 +820,11 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 			if next > maxExportInputGainDB {
 				if gain >= maxExportInputGainDB {
 					inputCapped = true
+					if pendingDC && pass < loudnessPassLimit {
+						// The capped pass failed the DC check; render it
+						// again with the new corrections before stopping.
+						continue
+					}
 					break
 				}
 				next, inputCapped = maxExportInputGainDB, true
@@ -881,7 +898,12 @@ func renderLoudnessFileReportWithShortfall(score *notation.Score, path, shortfal
 	report.LargestLimiterReductionDB = math.Max(bestRender.MaxLimiterGainReductionDB, bestRender.MaxMasterChainLimiterReductionDB)
 	report.MasterLimiterReductionDB = bestRender.MaxMasterChainLimiterReductionDB
 	report.GainStage = "post_chain"
+	report.limiterMode = limiterMode
 	if limiterMode {
+		report.GainStage = "master_input"
+	} else if hasMasterChain && render.UsesScheduledEngine(score, opts) {
+		// The scheduled engine adds the export gain to its master gain, which
+		// it applies ahead of the master processor.
 		report.GainStage = "master_input"
 	}
 	report.DCCorrection.LeftFS, report.DCCorrection.RightFS = float64(bestBiasL), float64(bestBiasR)

@@ -28,11 +28,23 @@ type chainRun struct {
 	last      []float64 // last limiter alone, fed by the first limiter's output
 }
 
-func runBurst(t *testing.T, burstAt, frames int) chainRun {
+type burstChains struct{ chain, firstOnly, lastOnly *masterChain }
+
+func newBurstChains(t *testing.T) burstChains {
 	t.Helper()
-	chain := preparedChain(t, firstLimiter+lastLimiter, "master { insert = first -> last }")
-	firstOnly := preparedChain(t, firstLimiter, "master { insert = first }")
-	lastOnly := preparedChain(t, lastLimiter, "master { insert = last }")
+	return burstChains{
+		preparedChain(t, firstLimiter+lastLimiter, "master { insert = first -> last }"),
+		preparedChain(t, firstLimiter, "master { insert = first }"),
+		preparedChain(t, lastLimiter, "master { insert = last }"),
+	}
+}
+
+func runBurst(t *testing.T, chains burstChains, burstAt, frames int) chainRun {
+	t.Helper()
+	chain, firstOnly, lastOnly := chains.chain, chains.firstOnly, chains.lastOnly
+	chain.Reset()
+	firstOnly.Reset()
+	lastOnly.Reset()
 	var run chainRun
 	for i := 0; i < frames; i++ {
 		var in float32
@@ -66,7 +78,7 @@ func TestMasterChainAlignsEachLimiterWithDownstreamLatency(t *testing.T) {
 	if downstream == 0 || chain.LatencyFrames() <= downstream {
 		t.Fatalf("fixture needs a later latent stage: downstream %d total %d", downstream, chain.LatencyFrames())
 	}
-	run := runBurst(t, 3000, 12000)
+	run := runBurst(t, newBurstChains(t), 3000, 12000)
 	for c := range run.aggregate {
 		want := run.last[c]
 		if c >= downstream {
@@ -82,14 +94,22 @@ func TestMasterChainAlignsEachLimiterWithDownstreamLatency(t *testing.T) {
 // counts; one that lands wholly before it does not. The windowed aggregate
 // must agree with the aligned oracle at both boundaries.
 func TestMasterChainWindowedReductionAtBothBoundaries(t *testing.T) {
-	const frames, from = 14000, 6000
+	const frames, from = 26000, 16000
 	chain := preparedChain(t, firstLimiter+lastLimiter, "master { insert = first -> last }")
 	total, downstream := chain.LatencyFrames(), chain.stages[1].LatencyFrames()
 	start := from + total
 	oldDiffers := false
 	counted, excluded := false, false
-	for p := start - 4*downstream - 2000; p < start+500; p += 7 {
-		run := runBurst(t, p, frames)
+	chains := newBurstChains(t)
+	var positions []int
+	for p := start - 12000; p < start-1500; p += 1500 {
+		positions = append(positions, p)
+	}
+	for p := start - 1500; p < start+500; p += 29 {
+		positions = append(positions, p)
+	}
+	for _, p := range positions {
+		run := runBurst(t, chains, p, frames)
 		oracle := 0.0
 		for c := start; c < frames; c++ {
 			v := run.last[c]
@@ -112,7 +132,7 @@ func TestMasterChainWindowedReductionAtBothBoundaries(t *testing.T) {
 		if oracle > 6 {
 			counted = true
 		}
-		if oracle == 0 {
+		if oracle < 0.05 {
 			excluded = true
 		}
 	}
@@ -122,7 +142,9 @@ func TestMasterChainWindowedReductionAtBothBoundaries(t *testing.T) {
 	if !counted {
 		t.Fatal("sweep never counted a burst in the delivered interval")
 	}
-	_ = excluded
+	if !excluded {
+		t.Fatal("sweep never excluded a burst that lies wholly before the first delivered frame")
+	}
 }
 
 var _ engine.StereoProcessor = (*masterChain)(nil)

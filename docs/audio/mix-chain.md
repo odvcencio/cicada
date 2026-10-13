@@ -63,7 +63,7 @@ one static gain. Where that gain goes depends on the master chain.
 
 | Master chain | Where the gain goes | What holds the true-peak ceiling |
 | --- | --- | --- |
-| No limiter | After the master chain. Output is unchanged from earlier releases. | The gain stops at the ceiling. It keeps crest factor, so an ambitious target can miss and returns a shortfall error. |
+| No limiter | Direct renderer: after the master chain. Scheduled renderer (arrangements, audio clips, serial track effects, sample packs): at the master input, as in earlier releases, because the engine applies its master gain before the chain. Output is unchanged from earlier releases. | The gain stops at the ceiling. It keeps crest factor, so an ambitious target can miss and returns a shortfall error. |
 | Contains a `limiter` | At the master input: after the music and SFX buses sum and the master `level`, before the chain. | Your limiter. The extra level reaches it, so it reduces peaks and a punchy mix can get louder than its natural crest allows. |
 
 With a limiter in the chain, the renderer keeps two guard rails:
@@ -75,7 +75,7 @@ With a limiter in the chain, the renderer keeps two guard rails:
 A target that needs more than either limit stops short and returns a shortfall
 error that names the limit that bound. The WAV from the best pass is still
 written (Studio keeps it as a separate shortfall file). The render summary
-reports the applied gain, the gain stage (`master_input` or `post_chain`), the
+reports the applied gain, the gain stage (`master_input` when the gain runs ahead of the master chain, `post_chain` when it runs after it or there is no chain), the
 chain limiter's largest gain reduction, and the largest gain reduction of any
 limiter. Review these numbers and run `cicada verify-wav` on the result.
 
