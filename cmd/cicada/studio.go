@@ -62,6 +62,7 @@ type studio struct {
 	samplerUndo         []padsampler.Bank
 	proposals           map[string]stagedProposal
 	previewProposal     string
+	afterStage          func() // Test seam: nil in production; see commitMutationLocked.
 }
 
 func studioCommand(args []string) error {
