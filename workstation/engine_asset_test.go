@@ -130,3 +130,31 @@ func TestMeterEnginePathUsesResolvedFile(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// Two builds that both match their bytes (for example a release directory
+// that kept an older build) are ambiguous: neither wins.
+func TestResolveMeterEngineRefusesTwoValidFiles(t *testing.T) {
+	public := t.TempDir()
+	for _, body := range [][]byte{[]byte("\x00asm-meters-a"), []byte("\x00asm-meters-b")} {
+		writeEngine(t, public, engineName(body), body)
+	}
+	got, err := resolveMeterEngine(public)
+	if err == nil || got != "" || !strings.Contains(err.Error(), "2 cicada-meters") {
+		t.Fatalf("got %q, %v; want an ambiguity error", got, err)
+	}
+}
+
+// A missing asset is not cached: once go generate writes it, the next request
+// finds it without a restart.
+func TestMeterEnginePathRecoversAfterGenerate(t *testing.T) {
+	public := t.TempDir()
+	useMeterEngineDir(t, public)
+	if got := meterEnginePath(); got != "" {
+		t.Fatalf("before generate: %q", got)
+	}
+	body := []byte("\x00asm-generated-later")
+	writeEngine(t, public, engineName(body), body)
+	if got := meterEnginePath(); got != "/engines/"+engineName(body) {
+		t.Fatalf("after generate: %q", got)
+	}
+}
