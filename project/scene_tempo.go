@@ -141,12 +141,16 @@ func (m *TempoMap) Changed() bool { return len(m.clocks) > 1 }
 func ExcerptTempoChanges(scoreMilli int, changes []TempoChange, from, bars int) []TempoChange {
 	current := scoreMilli
 	var out []TempoChange
+	history := false
 	for _, change := range changes {
 		if change.Bar <= from {
-			current = change.BPMMilli
+			current, history = change.BPMMilli, true
 		}
 	}
-	if current != scoreMilli {
+	// Any change before the start leaves the first bar at a position the full
+	// song reaches through earlier steps, so the start state is recorded even
+	// when it equals the score tempo. A song with no changes records nothing.
+	if history {
 		out = append(out, TempoChange{Bar: from, BPMMilli: current})
 	}
 	for _, change := range changes {

@@ -577,3 +577,36 @@ func TestSceneTempoMilliRoundTripsThroughFloat32(t *testing.T) {
 		}
 	}
 }
+
+// A song whose scheduled scene authors the score tempo has no tempo steps, but
+// it still owns the tempo: a scene launched by hand must not change it.
+func TestSceneTempoExplicitScoreTempoStillProtectsAgainstManualLaunches(t *testing.T) {
+	for _, authored := range []float32{120, 121} {
+		cfg := testConfig()
+		cfg.Tracks = 1
+		cfg.Scenes = []Scene{
+			{Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: authored}}},
+			{Settings: []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: 60}}},
+		}
+		cfg.Song = []SongEntry{{Scene: 0, Bars: 8}}
+		e, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+		var l, r [128]float32
+		for range 100 {
+			e.Render(l[:], r[:])
+		}
+		e.Push(cmd.Command{Op: cmd.OpLaunchScene, Track: 0xff, Index: 1, Arg0: 2})
+		for range 800 {
+			e.Render(l[:], r[:])
+		}
+		if want := int64(authored) * 1000; e.transport.BPMMilli() != want {
+			t.Fatalf("authored %g BPM became %d after a manual launch", authored, e.transport.BPMMilli())
+		}
+		if got := e.FramesBetweenTicks(0, 2*seq.TicksPerBar); got != int64(math.Ceil(float64(2*240000*48000)/float64(authored*1000))) {
+			t.Fatalf("authored %g BPM: frames to bar 2 = %d", authored, got)
+		}
+	}
+}

@@ -304,6 +304,7 @@ type Engine struct {
 	songEndTick                  int64
 	manualSceneTick              int64
 	manualLaunch                 bool
+	songTempo                    bool  // a scheduled scene authors a tempo, even one equal to the score tempo
 	liveTempo                    bool  // a manual launch or command moved the tempo off the authored chain
 	seekTick, seekSample         int64 // where the last seek anchored the transport
 	manualPatternTick            [MaxTracks]int64

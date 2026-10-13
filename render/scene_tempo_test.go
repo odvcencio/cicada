@@ -3,6 +3,7 @@ package render
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 	"math"
 	"os"
 	"path/filepath"
@@ -435,5 +436,107 @@ func TestSceneTempoExcerptOfALongSongVerifies(t *testing.T) {
 	}
 	if verified, err := VerifyStems(score, dir, VerifyStemsOptions{ResidualMaxDB: -80}); err != nil || verified.Frames != stems.Frames {
 		t.Fatalf("verify-stems: %+v, %v", verified, err)
+	}
+}
+
+// Both export routes read the song's tempo steps: the plain renderer and the
+// scheduled one that scores with track inserts, audio clips or packed samplers
+// take. A 120 then 60 BPM song is 6 s long on either route.
+func TestSceneTempoScheduledRouteKeepsTheWholeSong(t *testing.T) {
+	const insert = "fx hp eq { type = highpass frequency = 80Hz q = 0.707 }\n"
+	for _, route := range []struct{ name, fx, track string }{
+		{"plain", "", "track lead acid {}\n"},
+		{"scheduled with an EQ insert", insert, "track lead acid { insert = hp }\n"},
+	} {
+		t.Run(route.name, func(t *testing.T) {
+			source := "cicada 2\ntempo 120\n" + route.fx + route.track + "pattern line acid { 1 . 3 . 5 . 3 . }\nscene a { lead = line }\nscene b { lead = line tempo = 60 }\nsong { a b }\n"
+			score, diagnostics := notation.Parse([]byte(source))
+			if len(diagnostics) != 0 {
+				t.Fatal(diagnostics)
+			}
+			noDither := false
+			opts := Options{SampleRate: 48_000, TailSec: .1, Dither: &noDither}
+			var wav bytes.Buffer
+			report, err := WAV(score, opts, &wav)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if want := int64(96_000 + 192_000 + 4_800); report.Frames != want {
+				t.Fatalf("exported %d frames, want %d (6 s plus the tail)", report.Frames, want)
+			}
+			chunk := wav.Bytes()[44+report.Frames*6:]
+			if binary.LittleEndian.Uint32(chunk[8:12]) != 2 || binary.LittleEndian.Uint32(chunk[4:8]) != 16+8 {
+				t.Fatalf("timing chunk: % x", chunk)
+			}
+			path := filepath.Join(t.TempDir(), "song.wav")
+			if err := os.WriteFile(path, wav.Bytes(), 0644); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := VerifyWAV(path, VerifyOptions{SampleRate: 48_000, Bits: 24, Bars: 2, TailSec: .1, PeakMaxDB: 0, DCMaxDB: 0}); err != nil {
+				t.Fatal(err)
+			}
+			dir := filepath.Join(t.TempDir(), "stems")
+			stems, err := Stems(score, opts, dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if stems.Frames != report.Frames {
+				t.Fatalf("stems are %d frames, the WAV %d", stems.Frames, report.Frames)
+			}
+			if _, err := VerifyStems(score, dir, VerifyStemsOptions{ResidualMaxDB: -80}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+// An excerpt that starts after the song has returned to the score tempo still
+// records its start state, so the length verifies on both routes.
+func TestSceneTempoExcerptAfterReturningToTheScoreTempoVerifies(t *testing.T) {
+	cases := []struct {
+		name          string
+		score, middle int
+		song          string
+		from, bars    int
+	}{
+		{"124 to 60 to 124", 124, 60, "a b c*4", 4, 1},
+		{"121 to 60 to 121", 121, 60, "a b c*3", 2, 1},
+	}
+	const insert = "fx hp eq { type = highpass frequency = 80Hz q = 0.707 }\n"
+	for _, c := range cases {
+		for _, route := range []struct{ name, fx, track string }{{"plain", "", "track lead acid {}\n"}, {"scheduled", insert, "track lead acid { insert = hp }\n"}} {
+			t.Run(c.name+"/"+route.name, func(t *testing.T) {
+				source := fmt.Sprintf("cicada 2\ntempo %d\n%s%spattern line acid { 1 . 3 . 5 . 3 . }\nscene a { lead = line }\nscene b { lead = line tempo = %d }\nscene c { lead = line tempo = %d }\nsong { %s }\n", c.score, route.fx, route.track, c.middle, c.score, c.song)
+				score, diagnostics := notation.Parse([]byte(source))
+				if len(diagnostics) != 0 {
+					t.Fatal(diagnostics)
+				}
+				noDither := false
+				opts := Options{SampleRate: 48_000, From: c.from, Bars: c.bars, TailSec: .05, Dither: &noDither}
+				var wav bytes.Buffer
+				report, err := WAV(score, opts, &wav)
+				if err != nil {
+					t.Fatal(err)
+				}
+				chunk := wav.Bytes()[44+report.Frames*6:]
+				if binary.LittleEndian.Uint32(chunk[8:12]) != 2 {
+					t.Fatalf("an excerpt after tempo changes must record its start state: % x", chunk[:12])
+				}
+				path := filepath.Join(t.TempDir(), "excerpt.wav")
+				if err := os.WriteFile(path, wav.Bytes(), 0644); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := VerifyWAV(path, VerifyOptions{SampleRate: 48_000, Bits: 24, From: c.from, Bars: c.bars, TailSec: .05, PeakMaxDB: 0, DCMaxDB: 0}); err != nil {
+					t.Fatalf("verify-wav: %v", err)
+				}
+				dir := filepath.Join(t.TempDir(), "stems")
+				if _, err := Stems(score, opts, dir); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := VerifyStems(score, dir, VerifyStemsOptions{ResidualMaxDB: -80}); err != nil {
+					t.Fatalf("verify-stems: %v", err)
+				}
+			})
+		}
 	}
 }

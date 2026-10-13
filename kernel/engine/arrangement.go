@@ -250,7 +250,7 @@ func (e *Engine) applySceneSetting(setting SceneSetting, snap bool) {
 		return
 	}
 	if setting.ID == kernel.ParamGlobalTempo {
-		if e.manualLaunch && len(e.tempoChain) != 0 {
+		if e.manualLaunch && e.songTempo {
 			return
 		}
 		e.setSceneTempo(sceneTempoMilli(setting))

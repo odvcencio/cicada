@@ -30,6 +30,7 @@ func (e *Engine) buildTempoChain() error {
 	chain := []seq.Clock{clock}
 	for _, entry := range e.schedule {
 		for _, setting := range e.scenes[entry.Scene].Settings {
+			e.songTempo = e.songTempo || setting.ID == kernel.ParamGlobalTempo
 			if milli := sceneTempoMilli(setting); setting.ID == kernel.ParamGlobalTempo && milli != clock.BPMMilli {
 				next := stepClock(clock, entry.Tick, milli)
 				if entry.Tick == clock.AnchorTick {
