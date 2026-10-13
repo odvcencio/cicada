@@ -208,6 +208,7 @@ type meterAccum struct {
 // Engine has fixed command and message rings. The host owns cross-thread
 // communication and calls Push only on the render thread.
 type Engine struct {
+	tap                          noteTap
 	streamClosed                 bool
 	rawPlaying                   bool
 	parallel                     *parallelState

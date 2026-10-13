@@ -43,6 +43,12 @@ type Options struct {
 	MasterGainDB    float64 // export gain after authored DSP, before the safety limiter
 	MasterBiasL     float32 // export DC correction after authored DSP, before export gain
 	MasterBiasR     float32 // export DC correction after authored DSP, before export gain
+	// NoteTap, when set, receives each note start (seq.NoteOn, drum hits
+	// included) and release (seq.NoteOff) that the render plays, in render
+	// order, from either render path. The events are the scheduler's own, so
+	// chains, scene phase, placements, ties, chance and transposition are
+	// already applied. It is called on the render goroutine.
+	NoteTap func(track int, event seq.Event)
 }
 
 type Report struct {
@@ -253,6 +259,7 @@ func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, st
 	if opts.Normalize {
 		preview := opts
 		preview.Normalize = false
+		preview.NoteTap = nil
 		report, err := renderWAV(score, preview, io.Discard, "", 1)
 		if err != nil {
 			return report, err
@@ -728,6 +735,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 					}
 					return 0
 				})
+				if opts.NoteTap != nil {
+					for _, event := range events {
+						if event.event.Kind != seq.NoteExpression {
+							opts.NoteTap(event.track, event.event)
+						}
+					}
+				}
 				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
 					return report, err
 				}

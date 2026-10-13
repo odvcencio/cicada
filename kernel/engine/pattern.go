@@ -567,6 +567,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 					p.forceValid = false
 				}
 				if released {
+					e.tap.fire(track, item.event)
 					e.emit(cmd.Message{Kind: cmd.NoteOff, Track: uint8(track), Tick: item.event.Tick})
 				}
 				continue
@@ -670,6 +671,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				p.slideFrom, p.slideAt = 0, 0
 				p.forceValid = false
 			}
+			e.tap.fire(track, event)
 			e.emit(cmd.Message{Kind: cmd.NoteOn, Track: uint8(track), A: uint16(event.Note), Tick: event.Tick})
 		}
 	}

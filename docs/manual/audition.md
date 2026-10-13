@@ -51,7 +51,10 @@ still audible. MASKED is separate from `DISAGREE`.
 **Harmony per bar.** Each bar has two chord names:
 
 - *written* is the chord that best matches the pitch classes of all pitched
-  notes that start in that bar (drum and audio tracks are ignored). With one or
+  notes that start in that bar (drum and audio tracks are ignored). The notes
+  are the ones the renderer plays, captured during the same render, so section
+  chains, the phase of a pattern started by a scene change, arrangement
+  placements, ties, chance and transposition are already applied. With one or
   two pitch classes the notes are listed, joined with `+`, because they do not
   decide a chord.
 - *heard* is the chord that best matches the pitch-class energy of the summed
@@ -80,7 +83,7 @@ correct render.
 | `bright` | Spectral centroid in Hz: higher is brighter. |
 | `attack` | Median time from the start of a note to its peak, in ms. |
 | `decay20` | Median time for the level to fall 20 dB below its peak, in ms. Each note is measured only until the next detected attack on that track. A `>` means the median note did not fall 20 dB before the next attack (or 2 s), so the value is a lower bound: the note is sustained. |
-| `on/bar` | Detected note starts per bar where the track plays. |
+| `on/bar` | Detected note starts per bar over the bars where the track plays or sounds. A note that starts mid-bar counts its first bar. |
 | step 1-16 | Rhythm profile (next paragraph). The percentage is the swing of the track's pattern. |
 
 The **rhythm profile** shows where in the bar the track's attacks land. Each
@@ -92,7 +95,8 @@ plays a pattern count. A skank on the offbeats fills cells 3, 7, 11 and 15.
 
 **Sections.** One row per song entry, or per marker in an arrangement: mix
 loudness (RMS dBFS), brightness, note starts per bar over all tracks, and the
-tracks that sound in it.
+tracks in it. A track is in a section when its stem sounds there or it played
+notes there, so audio clips, samplers and sustained tails are listed.
 
 ## Reading the images
 
@@ -173,7 +177,7 @@ decimals. Levels below the floor read -120.
 | `masked_bars` | number | Bars with `masked` true. |
 | `bars[]` | array | One per analyzed bar: `bar` (one-based), `written_notes` (pitch classes), `written`, `heard` (from the pitched stems), `heard_fit` (0..1 template similarity), `mix_rms_dbfs`, `audibility_db`, `masked` (`audibility_db` below -15), `match` (`agree`, `disagree`, `no-written-pitch`, `silent`). |
 | `harmony_mismatches` | number | Count of bars with `match` `disagree`. |
-| `tracks[]` | array | One per track, in score order: `id`, `silent` (true under -80 dBFS; the other fields except `rms_dbfs` are then zero), `rms_dbfs`, `level_vs_loudest_db`, `energy_share_pct`, `band_vs_mix_db`, `masked` (`band_vs_mix_db` below -15), `centroid_hz`, `attack_ms`, `decay20_ms`, `decay20_lower_bound`, `onsets`, `onsets_per_bar`, `swing_percent`, `rhythm` (16 numbers, 0..1, slot 1 first). |
+| `tracks[]` | array | One per track, in score order: `id`, `silent` (true under -80 dBFS; the other fields except `rms_dbfs` are then zero), `rms_dbfs`, `level_vs_loudest_db`, `energy_share_pct`, `band_vs_mix_db`, `masked` (`band_vs_mix_db` below -15), `centroid_hz`, `attack_ms`, `decay20_ms`, `decay20_lower_bound`, `onsets`, `active_bars` (bars where the track plays or sounds), `onsets_per_bar`, `swing_percent`, `rhythm` (16 numbers, 0..1, slot 1 first). |
 | `sections[]` | array | `name`, `from_bar`, `to_bar` (inclusive, one-based), `rms_dbfs`, `centroid_hz`, `onsets_per_bar`, `tracks`. |
 | `images[]` | array | File names written to `-o`. Omitted without `-o`. |
 

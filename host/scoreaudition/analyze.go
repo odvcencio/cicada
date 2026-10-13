@@ -87,6 +87,7 @@ type TrackReport struct {
 	Decay20Ms         float64   `json:"decay20_ms"`
 	Decay20LowerBound bool      `json:"decay20_lower_bound"`
 	Onsets            int       `json:"onsets"`
+	ActiveBars        int       `json:"active_bars"` // bars where the track plays or sounds
 	OnsetsPerBar      float64   `json:"onsets_per_bar"`
 	SwingPercent      float64   `json:"swing_percent"`
 	Rhythm            []float64 `json:"rhythm"`
@@ -192,18 +193,17 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	if bars == 0 {
 		bars = songBars - opts.From
 	}
-	places, err := buildPlacements(p, cfg, events)
-	if err != nil {
-		return nil, err
-	}
-
+	// The written notes are the note events the renderer plays, tapped during
+	// the same render that produces the stems, so chains, scene phase,
+	// arrangements, ties, chance and transposition are exactly what sounded.
+	var notes noteLog
 	tmp, err := os.MkdirTemp(opts.TempDir, "cicada-audition-*")
 	if err != nil {
 		return nil, err
 	}
 	defer os.RemoveAll(tmp)
 	stemDir := filepath.Join(tmp, "stems")
-	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir}
+	ropts := render.Options{SampleRate: rate, Bits: 32, From: opts.From, Bars: bars, AssetRoot: opts.AssetDir, AssetDir: opts.AssetDir, NoteTap: notes.tap}
 	if _, err := render.Stems(score, ropts, stemDir); err != nil {
 		return nil, err
 	}
@@ -322,10 +322,8 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	r.AudibilityDB = round(bandDB(allP, allM), 1)
 
 	// Per-bar harmony.
-	sets, err := writtenSets(p, cfg, places, opts.From, bars)
-	if err != nil {
-		return nil, err
-	}
+	fromTick := int64(opts.From) * seq.TicksPerBar
+	sets := notes.writtenSets(pitched, fromTick, bars)
 	for b := 0; b < bars; b++ {
 		var v [12]float64
 		var bp, bm float64
@@ -423,10 +421,22 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	work := make([]trackWork, len(p.Tracks))
 	onsetPlan := newPlan(onsetFFT)
-	acts := make([]barActivity, len(p.Tracks))
+	acts := notes.activity(cfg, len(p.Tracks), fromTick, bars)
+	// Per-bar stem energy: a track with no note events (an audio clip) is
+	// active where its stem sounds.
+	barSounding := make([][]bool, len(p.Tracks))
+	for ti := range p.Tracks {
+		barSounding[ti] = make([]bool, bars)
+		for b := 0; b < bars; b++ {
+			lo, hi := min(barSample(b), len(stems[ti])), min(barSample(b+1), len(stems[ti]))
+			barSounding[ti][b] = hi > lo && rmsDB(stems[ti][lo:hi]) >= silentDB
+		}
+		if !acts[ti].hasEvents {
+			copy(acts[ti].active, barSounding[ti])
+		}
+	}
 	var maxEnergy float64
 	for ti, track := range p.Tracks {
-		acts[ti] = trackActivity(cfg, places, ti, opts.From, bars)
 		tr := TrackReport{ID: track.ID, Rhythm: make([]float64, 16)}
 		s := stems[ti]
 		var energy float64
@@ -456,6 +466,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		if activeBars == 0 {
 			activeBars = bars
 		}
+		tr.ActiveBars = activeBars
 		tr.OnsetsPerBar = round(float64(tr.Onsets)/float64(activeBars), 2)
 		tr.CentroidHz = round(trackCentroid(s, rate), 0)
 		tr.BandVsMixDB = round(bandDB(trackBand(s), allM), 1)
@@ -489,8 +500,8 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	}
 	groups := map[float64]*SwingGroup{}
 	trackSet, patternSet := map[float64]map[string]bool{}, map[float64]map[string]bool{}
-	for _, pl := range places {
-		if pl.track >= len(p.Tracks) {
+	for _, pl := range notes.slotsUsed() {
+		if pl.track >= len(p.Tracks) || pl.slot >= len(p.Tracks[pl.track].Slots) {
 			continue
 		}
 		id := p.Tracks[pl.track].Slots[pl.slot]
@@ -568,11 +579,10 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 					count++
 				}
 			}
-			if r.Tracks[ti].Silent {
-				continue
-			}
+			// A track belongs to a section when its stem sounds there or it
+			// played notes there.
 			for b := lo; b < hi; b++ {
-				if acts[ti].active[b-opts.From] {
+				if acts[ti].active[b-opts.From] || acts[ti].played[b-opts.From] || barSounding[ti][b-opts.From] {
 					sec.Tracks = append(sec.Tracks, p.Tracks[ti].ID)
 					break
 				}
