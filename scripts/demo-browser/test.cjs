@@ -8,6 +8,7 @@ const path = require('node:path');
 const {spawn} = require('node:child_process');
 const {setTimeout: sleep} = require('node:timers/promises');
 const {startSoakTiming} = require('./soak-timing.cjs');
+const {waitForServerURL} = require('./server-url.cjs');
 const repo = path.resolve(__dirname, '../..');
 const soak = process.argv.includes('--soak');
 const evidence = process.env.CICADA_DEMO_EVIDENCE_DIR || path.join(repo, 'build/demo-evidence');
@@ -26,12 +27,10 @@ async function until(run, timeout = 20000) {
   let chrome, socket, chromeLog, soakTiming;
   const pending = new Map();
   try {
-    const base = await new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('Demo server start timed out')), 15000);
-      server.stdout.on('data', data => { const match = data.toString().match(/http:\/\/127\.0\.0\.1:\d+/); if (match) { clearTimeout(timer); resolve(match[0]); } });
-      server.once('exit', code => { clearTimeout(timer); reject(new Error(`Demo server exited ${code}`)); });
-      server.stderr.on('data', data => process.stderr.write(data));
-    });
+    const base = await waitForServerURL(server, {label: 'Demo server', onFailure: ({stdout, stderr}) => {
+      fs.writeFileSync(path.join(evidence, 'server-stdout.log'), stdout);
+      fs.writeFileSync(path.join(evidence, 'server-stderr.log'), stderr);
+    }});
     chromeLog = fs.openSync(path.join(evidence, 'chrome.log'), 'w');
     chrome = spawn(process.env.CHROME_BIN || 'google-chrome', ['--headless=new', '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage', '--no-first-run', '--no-default-browser-check', '--mute-audio', '--remote-debugging-address=127.0.0.1', '--remote-debugging-port=0', `--user-data-dir=${profile}`, 'about:blank'], {env: {...process.env, PULSE_SERVER: 'unix:/nonexistent'}, stdio: ['ignore', chromeLog, chromeLog]});
     let launchError;

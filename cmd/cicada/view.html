@@ -1258,11 +1258,18 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
       setStatus('Source edit applied', 'success');
     } catch { setStatus('Source changed; the projection could not refresh', 'error'); }
   });
-  setInterval(async () => {
+  // pollScoreState picks up edits made outside this page. A /api/state reply is
+  // only as fresh as the moment the server read it. If this page wrote a newer
+  // revision (undo, redo, library save) while the request was in flight, the
+  // reply describes an older score; applying it would roll the editor and
+  // revision back, and the next history action would fail its revision check.
+  async function pollScoreState() {
     if (busy) return;
+    const requestedRevision = revision();
     try {
       const response = await fetch('/api/state', {cache:'no-store'});
       const state = await response.json();
+      if (revision() !== requestedRevision) return;
       if (!response.ok) { setStatus(state.error || 'Cannot read score state', 'error'); return; }
       if (busy || state.revision === revision()) return;
       if (dirty()) { setStatus('The file changed outside Studio. Save with care or discard your draft.', 'error', 'conflict'); return; }
@@ -1276,7 +1283,8 @@ body[data-studio] .workspace.live-mode .projection > :not(#live-surface) { displ
         setStatus(state.error || 'The score on disk has an error; showing the last valid projection.', 'error');
       }
     } catch { setStatus('Waiting for the local Studio server', 'error'); }
-  }, 1500);
+  }
+  setInterval(pollScoreState, 1500);
   const sourcePane = document.getElementById('notation');
   const workspaceEl = document.querySelector('main.workspace');
   const barSave = document.getElementById('bar-save');
