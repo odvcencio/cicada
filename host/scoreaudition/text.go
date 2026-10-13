@@ -24,6 +24,13 @@ func rhythmRow(profile []float64) string {
 func (r *Report) WriteText(w io.Writer) {
 	f := r.Score
 	fmt.Fprintf(w, "== %s: %d bars from bar %d (song has %d) at %g BPM, written key %s\n", r.Title, f.Bars, f.FromBar, f.SongBars, f.TempoBPM, f.WrittenKey)
+	if len(f.TempoChanges) > 0 {
+		var steps []string
+		for _, c := range f.TempoChanges {
+			steps = append(steps, fmt.Sprintf("bar %d: %g BPM", c.Bar, c.BPM))
+		}
+		fmt.Fprintf(w, "tempo changes (the score tempo applies before the first): %s\n", strings.Join(steps, ", "))
+	}
 	for _, s := range f.Swing {
 		fmt.Fprintf(w, "swing %g%%: %s\n", s.SwingPercent, strings.Join(s.Tracks, ", "))
 	}
@@ -64,7 +71,7 @@ func (r *Report) WriteText(w io.Writer) {
 	}
 	fmt.Fprintf(w, "\nsections:\n")
 	for _, s := range r.Sections {
-		fmt.Fprintf(w, "  %-12s bars %d-%d  %6.1f dBFS  bright %5.0f Hz  %5.2f onsets/bar  %s\n", s.Name, s.FromBar, s.ToBar, s.RMSdBFS, s.CentroidHz, s.OnsetsPerBar, strings.Join(s.Tracks, " "))
+		fmt.Fprintf(w, "  %-12s bars %d-%d  %g BPM  %6.1f dBFS  bright %5.0f Hz  %5.2f onsets/bar  %s\n", s.Name, s.FromBar, s.ToBar, s.TempoBPM, s.RMSdBFS, s.CentroidHz, s.OnsetsPerBar, strings.Join(s.Tracks, " "))
 	}
 	if len(r.Images) > 0 {
 		fmt.Fprintf(w, "\nimages: %s\n", strings.Join(r.Images, ", "))

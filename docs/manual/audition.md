@@ -28,8 +28,7 @@ Rendering takes about as long as `cicada render`.
 ## Reading the text report
 
 **Header.** Tempo, the key you wrote, the bar range, and one line per distinct
-swing value listing the tracks that play it (`swing 56%: drums, bass`). Tempo is one value for the whole score; this version
-has no scene tempo changes.
+swing value listing the tracks that play it (`swing 56%: drums, bass`). `BPM` is the score tempo. When scenes set their own tempo, a `tempo changes` line lists each step (`bar 3: 180 BPM`). For a range that starts after a change, the first step is the tempo at the first analyzed bar. Without a step at the first bar, the score tempo applies there. Bars, chroma frames, sections and the images follow the same tempo map as the renderer, so a bar after a change is measured where it sounds.
 
 **Heard key.** The key estimated from the pitched stems, by the
 Krumhansl-Schmuckler method: their pitch-class energy is correlated with 24
@@ -176,10 +175,11 @@ decimals. Levels below the floor read -120.
 | `format` | string | Always `cicada.audition/1`. |
 | `title` | string | Score title. |
 | `sample_rate` | number | Render rate in Hz (48000). |
-| `score.tempo_bpm` | number | Tempo. |
+| `score.tempo_bpm` | number | Score tempo. |
 | `score.written_key` | string | Key from the score, for example `A minor`. |
 | `score.song_bars` | number | Bars in the whole song. |
 | `score.from_bar`, `score.bars` | number | First analyzed bar (one-based) and the count. |
+| `score.tempo_changes[]` | array | Scene tempo steps that govern the analyzed bars: `bar` (one-based) and `bpm`. Omitted when none. `score.tempo_bpm` stays the score tempo. |
 | `score.swing[]` | array | One entry per distinct swing value, ascending: `swing_percent`, `tracks`, `patterns`. Omitted when none. |
 | `heard_key[]` | array | Top three keys from the summed pitched stems: `key` (for example `C major`), `score` (correlation). |
 | `full_mix_key[]` | array | The same from the whole mix. |
@@ -188,7 +188,7 @@ decimals. Levels below the floor read -120.
 | `bars[]` | array | One per analyzed bar: `bar` (one-based), `written_notes` (pitch classes), `written`, `heard` (from the pitched stems), `heard_fit` (0..1 cosine similarity of the pitch-class energy to the chosen chord), `mix_rms_dbfs`, `audibility_db`, `masked` (`audibility_db` below -15), `match` (`agree`, `disagree`, `no-written-pitch`, `silent`). |
 | `harmony_mismatches` | number | Count of bars with `match` `disagree`. |
 | `tracks[]` | array | One per track, in score order: `id`, `silent` (true under -80 dBFS; the other fields except `rms_dbfs` are then zero, including `energy_share_pct`, and the silent track is left out of the other tracks' shares), `rms_dbfs`, `level_vs_loudest_db`, `energy_share_pct`, `band_vs_mix_db`, `masked` (`band_vs_mix_db` below -15), `centroid_hz`, `attack_ms`, `decay20_ms`, `decay20_lower_bound`, `onsets`, `active_bars` (bars where the track plays or sounds), `onsets_per_bar`, `swing_percent`, `rhythm` (16 numbers, 0..1, slot 1 first). |
-| `sections[]` | array | `name`, `from_bar` (bar holding the first tick, one-based), `to_bar` (bar holding the last tick, inclusive), `from_tick`, `to_tick` (absolute ticks, end exclusive), `rms_dbfs`, `centroid_hz`, `onsets_per_bar`, `tracks`. |
+| `sections[]` | array | `name`, `tempo_bpm` (tempo at the section start), `from_bar` (bar holding the first tick, one-based), `to_bar` (bar holding the last tick, inclusive), `from_tick`, `to_tick` (absolute ticks, end exclusive), `rms_dbfs`, `centroid_hz`, `onsets_per_bar`, `tracks`. |
 | `images[]` | array | File names written to `-o`. Omitted without `-o`. |
 
 ## Limits

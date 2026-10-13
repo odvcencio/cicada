@@ -672,3 +672,85 @@ func TestSilentTrackHasZeroShare(t *testing.T) {
 		t.Errorf("silent track share %.1f level %.1f, want 0", keys.EnergySharePct, keys.LevelVsLoudestDB)
 	}
 }
+
+const sceneTempoBody = `
+track kit drums {}
+pattern cc notes {
+  [c4 e4 g4] . . . [c4 e4 g4] . . . [c4 e4 g4] . . . [c4 e4 g4] . . .
+}
+pattern gg notes {
+  [g3 b3 d4] . . . [g3 b3 d4] . . . [g3 b3 d4] . . . [g3 b3 d4] . . .
+}
+pattern beat drums {
+  bd: X... X... X... X...
+}
+scene slow { keys = cc kit = beat }
+scene fast { tempo = 180 keys = gg kit = beat }
+song {
+  slow*2
+  fast*4
+}
+`
+
+// Bars after a scene tempo change sit where the renderer puts them: every bar
+// agrees with its chord, none reads silent, and the report lists the tempos.
+func TestSceneTempoChangesPlaceEveryBar(t *testing.T) {
+	check := func(t *testing.T, source, dir string) {
+		t.Helper()
+		source = strings.Replace(source, "tempo 120", "tempo 90", 1)
+		score, ds := notation.Parse([]byte(source))
+		for _, d := range ds {
+			if d.Severity == "error" {
+				t.Fatalf("parse: %s", d.Error())
+			}
+		}
+		for _, tc := range []struct {
+			from, bars int
+			written    string
+			changes    []TempoChange
+			tempos     []float64
+		}{
+			{0, 0, "C C G G G G", []TempoChange{{Bar: 3, BPM: 180}}, []float64{90, 180}},
+			{1, 3, "C G G", []TempoChange{{Bar: 3, BPM: 180}}, []float64{90, 180}},
+			{4, 2, "G G", []TempoChange{{Bar: 5, BPM: 180}}, []float64{180}},
+		} {
+			a, err := Analyze(score, Options{From: tc.from, Bars: tc.bars, TempDir: t.TempDir(), AssetDir: dir})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("from %d: %s", tc.from, textOf(a))
+			var got []string
+			for _, b := range a.Report.Bars {
+				got = append(got, b.Written)
+				if b.Match != "agree" {
+					t.Errorf("from %d bar %d written %q heard %q match %s", tc.from, b.Bar, b.Written, b.Heard, b.Match)
+				}
+			}
+			if strings.Join(got, " ") != tc.written {
+				t.Errorf("from %d written %v, want %s", tc.from, got, tc.written)
+			}
+			if a.Report.Score.TempoBPM != 90 {
+				t.Errorf("tempo_bpm %v, want the score tempo 90", a.Report.Score.TempoBPM)
+			}
+			if !slices.Equal(a.Report.Score.TempoChanges, tc.changes) {
+				t.Errorf("from %d tempo changes %+v, want %+v", tc.from, a.Report.Score.TempoChanges, tc.changes)
+			}
+			var tempos []float64
+			for _, s := range a.Report.Sections {
+				if tempos == nil || tempos[len(tempos)-1] != s.TempoBPM {
+					tempos = append(tempos, s.TempoBPM)
+				}
+			}
+			if !slices.Equal(tempos, tc.tempos) {
+				t.Errorf("from %d section tempos %v, want %v", tc.from, tempos, tc.tempos)
+			}
+		}
+	}
+	t.Run("scene renderer", func(t *testing.T) {
+		check(t, sceneHeader+sceneTempoBody, "")
+	})
+	t.Run("engine renderer", func(t *testing.T) {
+		source, dir := clipSource(t, sceneTempoBody)
+		check(t, source, dir)
+	})
+}

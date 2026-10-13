@@ -53,6 +53,16 @@ type Facts struct {
 	FromBar    int          `json:"from_bar"`
 	Bars       int          `json:"bars"`
 	Swing      []SwingGroup `json:"swing,omitempty"`
+	// TempoChanges lists the scene tempo steps that govern the analyzed bars.
+	// When the range starts after a change, the first entry is the tempo at
+	// the first analyzed bar. tempo_bpm stays the score tempo.
+	TempoChanges []TempoChange `json:"tempo_changes,omitempty"`
+}
+
+// TempoChange says that from Bar (one-based) the tempo is BPM.
+type TempoChange struct {
+	Bar int     `json:"bar"`
+	BPM float64 `json:"bpm"`
 }
 
 // SwingGroup lists the tracks and patterns that share one swing value.
@@ -97,6 +107,7 @@ type SectionReport struct {
 	Name         string   `json:"name"`
 	FromBar      int      `json:"from_bar"`  // bar that holds the start tick, one-based
 	ToBar        int      `json:"to_bar"`    // bar that holds the last tick, one-based
+	TempoBPM     float64  `json:"tempo_bpm"` // tempo at the section start
 	FromTick     int64    `json:"from_tick"` // absolute start tick (960 per quarter note)
 	ToTick       int64    `json:"to_tick"`   // absolute end tick, exclusive
 	RMSdBFS      float64  `json:"rms_dbfs"`
@@ -214,7 +225,10 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		return nil, err
 	}
 
-	clock, err := seq.NewClock(rate, int64(p.TempoMilli))
+	// The renderer's own tempo map: bars after a scene tempo change land on
+	// the samples the renderer wrote them to.
+	songChanges := project.SongTempoChanges(p)
+	clock, err := project.NewTempoMap(rate, int64(p.TempoMilli), songChanges)
 	if err != nil {
 		return nil, err
 	}
@@ -223,11 +237,15 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		return int(clock.SampleAtTick(int64(opts.From+b)*seq.TicksPerBar) - baseSample)
 	}
 	bpm := float64(p.TempoMilli) / 1000
+	var tempoChanges []TempoChange
+	for _, c := range project.ExcerptTempoChanges(p.TempoMilli, songChanges, opts.From, bars) {
+		tempoChanges = append(tempoChanges, TempoChange{Bar: c.Bar + 1, BPM: float64(c.BPMMilli) / 1000})
+	}
 
 	a := &Analysis{rate: rate, specHop: specHopSize, firstBarIdx: opts.From}
 	r := &a.Report
 	r.Format, r.Title, r.SampleRate = FormatVersion, p.Title, rate
-	r.Score = Facts{TempoBPM: round(bpm, 3), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars}
+	r.Score = Facts{TempoBPM: round(bpm, 3), WrittenKey: fmt.Sprintf("%s %s", noteNames[p.Key.Root%12], p.Key.Scale), SongBars: songBars, FromBar: opts.From + 1, Bars: bars, TempoChanges: tempoChanges}
 
 	// Read the stems and sum the pitched ones: the heard harmony comes from
 	// them, so drums and their pitched noise do not decide the chord.
@@ -581,7 +599,7 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 		s0, s1 := sampleAt(lo), sampleAt(hi)
 		sec := SectionReport{Name: sp.name, FromBar: int(lo/seq.TicksPerBar) + 1, ToBar: int((hi-1)/seq.TicksPerBar) + 1,
-			FromTick: lo, ToTick: hi, RMSdBFS: round(rmsDB(mix.Slice(s0, s1)), 1), Tracks: []string{}}
+			TempoBPM: float64(clock.ClockAtTick(lo).BPMMilli) / 1000, FromTick: lo, ToTick: hi, RMSdBFS: round(rmsDB(mix.Slice(s0, s1)), 1), Tracks: []string{}}
 		var num, den float64
 		for i := 0; i < nSpec; i++ {
 			if c := i * specHopSize; c >= s0 && c < s1 {
@@ -754,7 +772,7 @@ func noteShape(s stereo, peaks []int, rate int) (attackMs, decayMs float64, lowe
 // rhythmProfile returns the mean onset strength at each sixteenth of the bar,
 // scaled so the largest is 1, over the bars where the track plays a pattern.
 // Swung slots are looked up where the pattern's swing places them.
-func rhythmProfile(env []float64, rate int, clock seq.Clock, base int64, from, bars int, act barActivity) ([]float64, float64) {
+func rhythmProfile(env []float64, rate int, clock *project.TempoMap, base int64, from, bars int, act barActivity) ([]float64, float64) {
 	prof, cnt := make([]float64, 16), make([]float64, 16)
 	swing := 50.0
 	swingSet := false
