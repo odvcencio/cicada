@@ -1102,6 +1102,10 @@ func (t *studioTransport) activatePlanLocked(path string, source []byte, fingerp
 	}
 	t.patchRevision++
 	t.last, t.livePlan, t.errText = fingerprint, next, ""
+	if t.history != nil {
+		// A patched take has no landing event; its handoff ends here.
+		t.history.consumeRecordedTake(studioFingerprintKey(fingerprint))
+	}
 }
 
 func (t *studioTransport) setError(err error) {

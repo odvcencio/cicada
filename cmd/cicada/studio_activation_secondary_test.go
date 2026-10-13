@@ -214,6 +214,9 @@ func queuedLines(s *studio) int {
 func TestRecordedTakeHandoffCoversOnlyTheNextPublication(t *testing.T) {
 	setup := func(t *testing.T) (*studio, *liveplay.Player, string, []byte) {
 		s, stream, dir := recordingStudio(t)
+		// These cases follow the offer handoff. Without a playing plan every
+		// edit is structural, so it takes the offer path, not an in-place patch.
+		s.transport.livePlan = nil
 		original, _ := os.ReadFile(s.path)
 		recordPartTake(t, s)
 		return s, stream, dir, original
@@ -511,5 +514,23 @@ func TestStartPreparedClosesTheScoreItRefuses(t *testing.T) {
 	}
 	if after := waitGoroutines(t, func(n int) bool { return n <= base }); after > base {
 		t.Fatalf("goroutines %d after the refused start, %d before the score was compiled", after, base)
+	}
+}
+
+// A take that changes only steps is patched in place: there is no landing
+// event and no replacement, and the take's handoff ends with the patch.
+func TestRecordedTakePatchesInPlaceAndEndsItsHandoff(t *testing.T) {
+	s, stream, _ := recordingStudio(t)
+	recordPartTake(t, s)
+	renderStudioPreview(t, stream, 256)
+	s.transport.poll()
+	if stream.LandedRevision() != 1 || s.transport.snapshot().Pending || queuedLines(s) != 0 {
+		t.Fatalf("take did not patch: revision %d, pending %v, queued lines %d", stream.LandedRevision(), s.transport.snapshot().Pending, queuedLines(s))
+	}
+	s.history.mu.Lock()
+	armed := s.history.pendingTakeRevision
+	s.history.mu.Unlock()
+	if armed != "" {
+		t.Fatal("the patched take left its handoff armed")
 	}
 }
