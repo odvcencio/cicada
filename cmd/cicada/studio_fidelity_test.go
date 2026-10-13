@@ -88,7 +88,7 @@ func TestRouteParity_InstrumentSetParameter(t *testing.T) {
 	if score == nil || hasDiagnosticErrors(ds) {
 		t.Fatal(ds)
 	}
-	set, err := instrumentParameterSource(fixture, score, "keys", "brightness", "0.5", false)
+	set, err := intentInstrumentParameter(t, fixture, "keys", "brightness", "0.5", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -99,8 +99,7 @@ func TestRouteParity_InstrumentSetParameter(t *testing.T) {
 	value, _ := json.Marshal("0.5")
 	assertRoute(t, fixture, "/api/instrument", studioEdit{Action: "set-parameter", Track: "keys", NewName: "brightness", Value: value}, 200, set, "Set keys.brightness", "")
 
-	setScore, _ := notation.Parse(set)
-	reset, err := instrumentParameterSource(set, setScore, "keys", "brightness", "", true)
+	reset, err := intentInstrumentParameter(t, set, "keys", "brightness", "", true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,7 +212,7 @@ func instrumentParameterRouteMatchesWriter(t *testing.T, path string, source []b
 	if err != nil || score == nil || hasDiagnosticErrors(ds) {
 		t.Fatalf("fixture invalid: %v %v", err, ds)
 	}
-	want, err := instrumentParameterSource(source, score, "keys", "brightness", "0.5", false)
+	want, err := intentInstrumentParameter(t, source, "keys", "brightness", "0.5", false)
 	if err != nil {
 		t.Fatal(err)
 	}

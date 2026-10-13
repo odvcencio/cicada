@@ -299,6 +299,12 @@ revision files live in app data, with late writes from other editors retained. A
 keeps the file unchanged and retains the draft across reload and navigation.
 Rejected drafts expire after thirty minutes or when Studio closes.
 
+Every Studio edit is an intent: a small, named change such as toggling a step or
+moving a song block. Studio records each applied intent, with its author and
+session, in the edit log at `.cicada/edits.jsonl` next to the score. The
+`cicada apply` command runs the same intents through the same API, so a
+scripted edit and a click in Studio produce the same bytes.
+
 The file remains authoritative. If another editor saves first, Studio reports
 a conflict and retains your draft. Reload **Score** to see the current file
 beside it, combine the changes in the editor, and select **Save combined draft**.

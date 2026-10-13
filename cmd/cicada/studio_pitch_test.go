@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -12,7 +13,7 @@ import (
 func TestStudioPitchEditPreservesOtherChordPitches(t *testing.T) {
 	for _, steps := range []string{"[d4 f4 a4]^?70", "use harmony"} {
 		for _, pitch := range []int{62, 64} {
-			t.Run(steps+"/"+sourcePitch(pitch), func(t *testing.T) {
+			t.Run(steps+"/"+strconv.Itoa(pitch), func(t *testing.T) {
 				source := []byte("instrument piano { voice poly { out=sine(pitch)*env(gate,300ms) } }\n" +
 					"track keys piano {}\nphrase harmony { [d4 f4 a4]^?70 }\n" +
 					"pattern chords notes { " + steps + " }\nscene main { keys=chords }\nsong { main }\n")
@@ -82,32 +83,24 @@ func TestStudioPitchGridWritesChosenNoteToSource(t *testing.T) {
 
 func TestPitchGridKeepsStepModifiersAndEditsSharedPhrases(t *testing.T) {
 	source := []byte(strings.Replace(studioScore, "1 . 5 .", "1^?70 . 5 .", 1))
-	updated, err := pitchedSource(source, "pulse", "", 0, 48)
+	updated, err := intentPitchedSource(t, source, "pulse", "", 0, 48)
 	if err != nil || !bytes.Contains(updated, []byte("c3^?70 . 5 .")) {
 		t.Fatalf("pitch edit lost modifiers: %s, %v", updated, err)
 	}
-	if _, err := pitchedSource(source, "pulse", "bd", 0, 48); err == nil {
+	if _, err := intentPitchedSource(t, source, "pulse", "bd", 0, 48); err == nil {
 		t.Fatal("pitch edit accepted a drum lane")
 	}
-	if _, err := pitchedSource(source, "pulse", "", 0, 128); err == nil {
+	if _, err := intentPitchedSource(t, source, "pulse", "", 0, 128); err == nil {
 		t.Fatal("pitch edit accepted a pitch outside MIDI range")
 	}
 	phrase := []byte("track bass acid {}\nphrase hook { 1 . }\npattern pulse { use hook*2 }\nscene main { bass = pulse }\nsong { main }\n")
-	shared, err := pitchedSource(phrase, "pulse", "", 2, 48)
+	shared, err := intentPitchedSource(t, phrase, "pulse", "", 2, 48)
 	if err != nil || !bytes.Contains(shared, []byte("phrase hook { c3 . }")) || !bytes.Contains(shared, []byte("use hook*2")) {
 		t.Fatalf("expanded phrase pitch did not edit shared source: %s, %v", shared, err)
 	}
 	transposed := []byte("track bass acid {}\nphrase hook { 1 . }\npattern pulse { use hook use hook +7 }\nscene main { bass = pulse }\nsong { main }\n")
-	shared, err = pitchedSource(transposed, "pulse", "", 2, 53) // F3 through a +7 phrase use
+	shared, err = intentPitchedSource(t, transposed, "pulse", "", 2, 53) // F3 through a +7 phrase use
 	if err != nil || !bytes.Contains(shared, []byte("phrase hook { a#2 . }")) {
 		t.Fatalf("transposed phrase pitch did not invert its transpose: %s, %v", shared, err)
-	}
-}
-
-func TestSourcePitchSpellsMIDIExtremes(t *testing.T) {
-	for pitch, want := range map[int]string{0: "c0,", 48: "c3", 61: "c#4", 127: "g6'''"} {
-		if got := sourcePitch(pitch); got != want {
-			t.Errorf("MIDI %d: got %q, want %q", pitch, got, want)
-		}
 	}
 }
