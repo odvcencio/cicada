@@ -12,7 +12,6 @@ TestProjectCLI 3.24
 TestCreatingCommandsDestinationParents 3.2
 TestStudioLibraryPreviewsUseKernelAndDoNotWrite 2.87
 TestPatternEditsKeepInheritedAudioEditionSource 2.52
-TestPatternIntentWriterParity 1.89
 TestNativeMicrophoneInstrumentToStudioAndRender 1.85
 TestRouteParity_Song 1.79
 TestRouteParity_Toggle 1.55
@@ -31,7 +30,6 @@ TestScoreWritersRefuseUnsafeDeclaredLinks 1.01
 TestVocalEditingOffsetFadesAndImmutablePrints 0.97
 TestRouteParity_Project 0.96
 TestDocumentationHygiene 0.89
-TestGridSharedWriterParity 0.89
 TestVocalLoopFinitePassesKeepExactPCMAndOneCountIn 0.81
 TestSessionListeningLoopsStopsAndLeavesSourceAndUndoUnchanged 0.78
 TestM4RoutesCommitPublicIntents 0.74
@@ -55,7 +53,6 @@ TestStudioLibraryPreviewCallbackDoesNotAllocate 0.58
 TestStudioVocalChainAddsEditableOrderedStagesAndIsIdempotent 0.58
 TestVocalEditingKeepsInsertedEffectsThroughCompAndAudition 0.58
 TestContinuityPatternRouteParity 0.57
-TestSongWriterParity 0.57
 TestVocalCompFullSongPunchAndRetainedPasses 0.57
 TestInitialGapAcrossCountInPublicationAndAudition 0.54
 TestNativeTakeTrailingGap 0.54
@@ -63,11 +60,9 @@ TestVocalEditingResidualCalibrationPreservesRawAndExactBoundary 0.54
 TestRouteParity_InstrumentLooseScoresAndProjects 0.52
 TestRouteParity_Source 0.44
 TestTakeRoutesAcceptUnchangedSelection 0.44
-TestM4SettingsWriterParity 0.43
 TestRouteParity_Files 0.43
 TestStudioPitchEditPreservesOtherChordPitches 0.43
 TestStudioNullAudioPacesRenderingWithoutOpeningDevice 0.41
-TestGridWriterParity 0.4
 TestRepeatedContentPublicationsSettleOnTheRealLandingEvent 0.4
 TestStudioProposalAuxiliaryOnlyAcceptUndoRedo 0.4
 TestStudioMultiFileSession 0.37
@@ -139,7 +134,6 @@ TestM4CommentMoveUndoRestoresExactSource 0.15
 TestStudioLibrarySavePresetValuesAndUndo 0.15
 TestStudioSongRouteUpdatesFileAndRejectsStaleRevision 0.15
 TestStudioUndoRedoAndRedoClearing 0.15
-TestUntransposedChordPatternWriterParity 0.15
 TestApplyWritePreservesSymlinkTargets 0.14
 TestBrowserTakeConflictRetainsPublishedAudio 0.14
 TestFidelityRule4_ReadingAndNoOpWritesAddNoHistory 0.14

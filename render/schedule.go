@@ -48,6 +48,9 @@ func renderScheduleWAV(score *notation.Score, opts Options, w io.Writer, stemsDi
 		return report, err
 	}
 	defer player.Close()
+	if opts.NoteTap != nil {
+		player.SetNoteTap(func(track uint8, event seq.Event) { opts.NoteTap(int(track), event) })
+	}
 	events, err := project.CompileSchedule(p)
 	if err != nil {
 		return report, err

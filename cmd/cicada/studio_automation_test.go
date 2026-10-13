@@ -15,7 +15,7 @@ const automationScore = "tempo 120\ntrack bass acid { cutoff = 700Hz }\npattern 
 
 func TestSceneAutomationPreservesSourceAndValidatesCatalogValues(t *testing.T) {
 	source := []byte(strings.ReplaceAll(automationScore, "\n", "\r\n"))
-	updated, err := sceneAutomationSource(source, "main", "bass.cutoff", json.RawMessage(`"1.25kHz"`), false, 1)
+	updated, err := intentSceneSetting(t, source, "main", "bass.cutoff", json.RawMessage(`"1.25kHz"`), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -24,7 +24,7 @@ func TestSceneAutomationPreservesSourceAndValidatesCatalogValues(t *testing.T) {
 			t.Fatalf("lost %q: %s", text, updated)
 		}
 	}
-	updated, err = sceneAutomationSource(updated, "hold", "bass.level", json.RawMessage(`-6.25`), false, 1)
+	updated, err = intentSceneSetting(t, updated, "hold", "bass.level", json.RawMessage(`-6.25`), false)
 	if err != nil || !bytes.Contains(updated, []byte("bass.level = -6.25dB\r\n")) {
 		t.Fatalf("automation precision: %v %s", err, updated)
 	}
@@ -32,7 +32,7 @@ func TestSceneAutomationPreservesSourceAndValidatesCatalogValues(t *testing.T) {
 	if got := *p.Scenes[1].Settings[0].Value.Number; got != -6.25 {
 		t.Fatalf("gain rounded to %g", got)
 	}
-	removed, err := sceneAutomationSource(updated, "main", "bass.cutoff", nil, true, 1)
+	removed, err := intentSceneSetting(t, updated, "main", "bass.cutoff", nil, true)
 	if err != nil || !bytes.Contains(removed, []byte("// keep point comment\r\n")) || bytes.Contains(removed, []byte("bass.cutoff =")) {
 		t.Fatalf("point removal: %v %s", err, removed)
 	}
@@ -52,7 +52,7 @@ func TestSceneAutomationPreservesSourceAndValidatesCatalogValues(t *testing.T) {
 		{"main", "unknown.pan", `0`},
 		{"missing", "bass.pan", `0`},
 	} {
-		if _, err := sceneAutomationSource(source, tc.scene, tc.path, json.RawMessage(tc.value), false, 1); err == nil {
+		if _, err := intentSceneSetting(t, source, tc.scene, tc.path, json.RawMessage(tc.value), false); err == nil {
 			t.Fatalf("accepted unsafe point %+v", tc)
 		}
 	}
