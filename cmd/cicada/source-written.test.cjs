@@ -54,7 +54,7 @@ test('a projection reply read before a local write is dropped', () => {
 
 // The real syncBrowserAudio, pollScoreState, and source-written handler share
 // audio state, as they do in view.html. The fake stage records every attempt.
-function audioHarness(stage) {
+function audioHarness(stage, refresh) {
   let handler;
   const document = {body: {dataset: {revision: 'undone'}}}, editor = {value: 'score without preset'};
   const statuses = [], staged = [], disk = {revision: 'undone', source: 'score without preset'};
@@ -63,7 +63,7 @@ function audioHarness(stage) {
     revision: () => document.body.dataset.revision,
     window: {addEventListener: (name, fn) => { handler = fn; }, cicadaBrowserAudio: {context: {}, stageCurrentScore: async revision => { staged.push(revision); return stage(revision); }}},
     setStatus: (message, state) => statuses.push([message, state]),
-    refreshProjection: async hint => { document.body.dataset.revision = hint.revision; editor.value = hint.source; },
+    refreshProjection: refresh || (async hint => { document.body.dataset.revision = hint.revision; editor.value = hint.source; }),
     fetch: async () => ({ok: true, json: async () => ({valid: true, ...disk})})
   };
   const api = vm.runInNewContext(`(()=>{let busy=false,original='',audioRevision='',audioWanted='',audioStaging=null;${syncSource}${pollSource}${handlerSource}return {poll:pollScoreState,sync:syncBrowserAudio,audio:()=>audioRevision}})()`, env);
@@ -113,4 +113,39 @@ test('concurrent requests share one stage attempt and an older target never over
   await Promise.all([first, joined, newer]);
   assert.equal(h.audio(), 'redone');
   assert.deepEqual(h.staged, ['undone', 'redone']);
+});
+
+test('a projection failure still stages audio in the same handler and keeps the projection error', async () => {
+  const h = audioHarness(async () => {}, async () => { throw new Error('projection unavailable'); });
+  await h.handler({detail: {revision: 'redone', source: 'score with preset bright'}});
+  assert.deepEqual(h.staged, ['redone']);
+  assert.equal(h.audio(), 'redone');
+  assert.deepEqual(h.statuses.map(s => s[0]), ['Source changed; the projection could not refresh']);
+});
+
+test('an empty audio target, a projection failure and a stage failure are repaired by later polls', async () => {
+  let projection = false, stageFailures = 1;
+  const h = audioHarness(async () => { if (stageFailures-- > 0) throw new Error('stage failed'); }, async function (hint) {
+    if (!projection) throw new Error('projection unavailable');
+    h.document.body.dataset.revision = hint.revision; h.editor.value = hint.source;
+  });
+  assert.equal(h.audio(), '');
+  // The history write already moved the page revision before the handler ran.
+  h.document.body.dataset.revision = 'redone';
+  h.disk.revision = 'redone'; h.disk.source = 'score with preset bright';
+  await h.handler({detail: {revision: 'redone', source: 'score with preset bright'}});
+  assert.equal(h.audio(), '');                       // stage failed after the projection failed
+  assert.match(h.statuses.at(-1)[0], /projection could not refresh; browser audio could not stage/);
+  projection = true;
+  await h.poll();                                    // page matches disk: the poll stages again
+  assert.equal(h.audio(), 'redone');
+  await h.poll();
+  assert.deepEqual(h.staged, ['redone', 'redone']);
+});
+
+test('a poll stages when audio is behind even if no earlier write recorded a target', async () => {
+  const h = audioHarness(async () => {});
+  h.document.body.dataset.revision = 'redone'; h.disk.revision = 'redone';
+  await h.poll();
+  assert.equal(h.audio(), 'redone');
 });
