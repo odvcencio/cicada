@@ -11,7 +11,7 @@ main.cicada:4:14: error CICADA-PARAM: drums oh_decay 50ms is below the minimum 1
 ```
 
 Scene settings and automation points that set the same parameters use the same
-wording. Limits are shown to four significant digits, rounded toward the inside of
+wording. Limits are shown to six significant digits, rounded toward the inside of
 the range. Mixer settings (`level`, `pan`, sends) are described in the
 [edition 1 specification](../spec/edition-1.md#track-mixer-settings).
 
@@ -128,7 +128,7 @@ the range. Mixer settings (`level`, `pan`, sends) are described in the
 
 | Setting | Unit | Minimum | Maximum | Also accepts |
 | --- | --- | --- | --- | --- |
-| `lt_tune` | unitless | 0.6675 | 1.498 |  |
+| `lt_tune` | unitless | 0.66742 | 1.4983 |  |
 | `lt_decay` | ms or s | 80ms | 1s |  |
 | `lt_sweep` | unitless | 0 | 2 |  |
 | `lt_level` | dB | -60dB | 6dB | `off` |
@@ -138,7 +138,7 @@ the range. Mixer settings (`level`, `pan`, sends) are described in the
 
 | Setting | Unit | Minimum | Maximum | Also accepts |
 | --- | --- | --- | --- | --- |
-| `mt_tune` | unitless | 0.6675 | 1.498 |  |
+| `mt_tune` | unitless | 0.66742 | 1.4983 |  |
 | `mt_decay` | ms or s | 80ms | 1s |  |
 | `mt_sweep` | unitless | 0 | 2 |  |
 | `mt_level` | dB | -60dB | 6dB | `off` |
@@ -148,7 +148,7 @@ the range. Mixer settings (`level`, `pan`, sends) are described in the
 
 | Setting | Unit | Minimum | Maximum | Also accepts |
 | --- | --- | --- | --- | --- |
-| `ht_tune` | unitless | 0.6675 | 1.498 |  |
+| `ht_tune` | unitless | 0.66742 | 1.4983 |  |
 | `ht_decay` | ms or s | 80ms | 1s |  |
 | `ht_sweep` | unitless | 0 | 2 |  |
 | `ht_level` | dB | -60dB | 6dB | `off` |
@@ -230,14 +230,20 @@ the range. Mixer settings (`level`, `pan`, sends) are described in the
 | `release` | ms or s | 10ms | 500ms |  |
 | `mix` | unitless | 0 | 1 |  |
 
-## EQ (track insert or master) (`fx name eq`)
+## EQ (track insert) (`fx name eq`)
 
 | Setting | Unit | Minimum | Maximum | Also accepts |
 | --- | --- | --- | --- | --- |
 | `type` | word | - | - | `peak`, `low_shelf`, `high_shelf`, `highpass`, `lowpass` |
-| `frequency` | Hz | 10Hz | 19840Hz |  |
+| `frequency` | Hz | 10Hz | 19845Hz |  |
 | `q` | unitless | 0.1 | 20 |  |
 | `gain` | dB | -24dB | 24dB |  |
+
+## EQ on the master chain (`fx name eq` listed in `master { insert }`; the frequency limit is 0.45 of 48 kHz, and the other settings use the track EQ limits)
+
+| Setting | Unit | Minimum | Maximum | Also accepts |
+| --- | --- | --- | --- | --- |
+| `frequency` | Hz | 10Hz | 21600Hz |  |
 
 ## Transient shaper (master) (`fx name transient`)
 
@@ -254,7 +260,7 @@ the range. Mixer settings (`level`, `pan`, sends) are described in the
 | Setting | Unit | Minimum | Maximum | Also accepts |
 | --- | --- | --- | --- | --- |
 | `amount` | unitless | 0 | 2 |  |
-| `bass_mono` | Hz | 20Hz | 500Hz |  |
+| `bass_mono` | Hz | 20Hz | 500Hz | `0` (bypass) |
 
 ## Limiter (master) (`fx name limiter`)
 

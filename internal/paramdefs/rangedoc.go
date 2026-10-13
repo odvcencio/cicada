@@ -2,6 +2,7 @@ package paramdefs
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -20,7 +21,7 @@ func GenerateRangesDoc() ([]byte, error) {
 	b.WriteString("main.cicada:4:14: error CICADA-PARAM: drums oh_decay 50ms is below the minimum 150ms (range 150ms to 1.2s)\n")
 	b.WriteString("```\n\n")
 	b.WriteString("Scene settings and automation points that set the same parameters use the same\n")
-	b.WriteString("wording. Limits are shown to four significant digits, rounded toward the inside of\n")
+	b.WriteString("wording. Limits are shown to six significant digits, rounded toward the inside of\n")
 	b.WriteString("the range. Mixer settings (`level`, `pan`, sends) are described in the\n")
 	b.WriteString("[edition 1 specification](../spec/edition-1.md#track-mixer-settings).\n")
 
@@ -48,9 +49,13 @@ func GenerateRangesDoc() ([]byte, error) {
 	}
 	for _, kind := range []struct{ id, name string }{
 		{"drive", "Drive"}, {"delay", "Delay"}, {"reverb", "Reverb"}, {"comp", "Compressor"}, {"deesser", "De-esser"},
-		{"eq", "EQ (track insert or master)"}, {"transient", "Transient shaper (master)"}, {"width", "Width (master)"}, {"limiter", "Limiter (master)"},
+		{"eq", "EQ (track insert)"}, {"master.eq", "EQ on the master chain"}, {"transient", "Transient shaper (master)"}, {"width", "Width (master)"}, {"limiter", "Limiter (master)"},
 	} {
-		sections = append(sections, section{kind.name + " (`fx name " + kind.id + "`)", prefix("fx." + kind.id + ".")})
+		title := kind.name + " (`fx name " + kind.id + "`)"
+		if kind.id == "master.eq" {
+			title = kind.name + " (`fx name eq` listed in `master { insert }`; the frequency limit is 0.45 of 48 kHz, and the other settings use the track EQ limits)"
+		}
+		sections = append(sections, section{title, prefix("fx." + kind.id + ".")})
 	}
 	for _, s := range sections {
 		var lines []string
@@ -92,6 +97,9 @@ func rangeDocRow(d Descriptor) string {
 	}
 	if d.Off {
 		accepts = append(accepts, "`off`")
+	}
+	for _, v := range d.Isolated {
+		accepts = append(accepts, "`"+strconv.FormatFloat(v, 'f', -1, 64)+"` ("+d.IsolatedNote+")")
 	}
 	low, high := FormatBound(d, d.Min, false), FormatBound(d, d.Max, true)
 	if d.Curve == "enum" || d.Curve == "toggle" {

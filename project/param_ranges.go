@@ -56,6 +56,14 @@ func checkParamRanges(score *notation.Score) ([]notation.Diagnostic, map[notatio
 			}
 		}
 	}
+	master := map[string]bool{}
+	for _, param := range score.Master {
+		if param.Name == "insert" {
+			for _, name := range strings.Fields(param.Value) {
+				master[name] = true
+			}
+		}
+	}
 	for _, effect := range score.Effects {
 		kind := effect.Kind
 		if kind == "" {
@@ -65,7 +73,7 @@ func checkParamRanges(score *notation.Score) ([]notation.Diagnostic, map[notatio
 			if param.Name == "sidechain" {
 				continue // names a bus, which a score can declare
 			}
-			if descriptor, ok := paramdefs.DeviceParam(kind, param.Name); ok {
+			if descriptor, ok := paramdefs.DeviceParam(kind, param.Name, master[effect.Name]); ok {
 				report(param, descriptor, kind)
 			}
 		}

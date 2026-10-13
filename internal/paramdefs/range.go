@@ -19,7 +19,10 @@ var HostOnly = []Descriptor{
 	{ID: "fx.transient.slow", Path: "transient.slow", Source: "slow", Scope: "global", Unit: "ms", Min: 10, Max: 100, Curve: "log"},
 	{ID: "fx.transient.release", Path: "transient.release", Source: "release", Scope: "global", Unit: "ms", Min: 20, Max: 1000, Curve: "log"},
 	{ID: "fx.width.amount", Path: "width.amount", Source: "amount", Scope: "global", Unit: "ratio", Min: 0, Max: 2, Curve: "linear"},
-	{ID: "fx.width.bass_mono", Path: "width.bass_mono", Source: "bass_mono", Scope: "global", Unit: "Hz", Min: 20, Max: 500, Curve: "log"},
+	{ID: "fx.width.bass_mono", Path: "width.bass_mono", Source: "bass_mono", Scope: "global", Unit: "Hz", Min: 20, Max: 500, Curve: "log", Isolated: []float64{0}, IsolatedNote: "bypass"},
+	// A master EQ is built by pro.New at 48 kHz, so its frequency limit is
+	// 0.45 * 48000. A track EQ keeps the registry row, which stops at 19845 Hz.
+	{ID: "fx.master.eq.frequency", Path: "master.eq.frequency", Source: "frequency", Scope: "global", Unit: "Hz", Min: 10, Max: 21600, Curve: "log"},
 	{ID: "fx.limiter.ceiling", Path: "limiter.ceiling", Source: "ceiling", Scope: "global", Unit: "dBTP", Min: -12, Max: 0, Curve: "linear"},
 	{ID: "fx.limiter.lookahead", Path: "limiter.lookahead", Source: "lookahead", Scope: "global", Unit: "ms", Min: 1, Max: 10, Curve: "log"},
 	{ID: "fx.limiter.release", Path: "limiter.release", Source: "release", Scope: "global", Unit: "ms", Min: 20, Max: 1000, Curve: "log"},
@@ -27,7 +30,18 @@ var HostOnly = []Descriptor{
 
 // DeviceParam finds the descriptor for one setting of a built-in effect, such
 // as ("delay", "feedback"). It reads the registry first, then HostOnly.
-func DeviceParam(kind, name string) (Descriptor, bool) {
+//
+// Pass master for an effect inserted on the master chain. A device can take
+// different limits on different routes; today only the EQ frequency does. Track
+// inserts and bus inserts share the registry rows.
+func DeviceParam(kind, name string, master bool) (Descriptor, bool) {
+	if master {
+		for _, d := range HostOnly {
+			if d.ID == "fx.master."+kind+"."+name {
+				return d, true
+			}
+		}
+	}
 	id := "fx." + kind + "." + name
 	if d, ok := Lookup(id); ok {
 		return d, true
@@ -103,6 +117,11 @@ func rangeMessage(d Descriptor, label, literal string, exact float64) string {
 	if !low && !high {
 		return ""
 	}
+	for _, v := range d.Isolated {
+		if number == v {
+			return ""
+		}
+	}
 	lowText, highText := FormatBound(d, d.Min, false), FormatBound(d, d.Max, true)
 	// Never print a value equal to the bound it is said to break.
 	if literal == lowText {
@@ -111,7 +130,11 @@ func rangeMessage(d Descriptor, label, literal string, exact float64) string {
 	if literal == highText {
 		highText = FormatValue(d, d.Max)
 	}
-	span := "(range " + lowText + " to " + highText + rangeSuffix(d) + ")"
+	extra := ""
+	for _, v := range d.Isolated {
+		extra += ", or " + strconv.FormatFloat(v, 'f', -1, 64) + " to " + d.IsolatedNote
+	}
+	span := "(range " + lowText + " to " + highText + rangeSuffix(d) + extra + ")"
 	if low {
 		return label + " " + literal + " is below the minimum " + lowText + " " + span
 	}
@@ -119,12 +142,11 @@ func rangeMessage(d Descriptor, label, literal string, exact float64) string {
 }
 
 // FormatBound writes one range limit (upper marks a maximum) with the parameter's unit, such as 150ms,
-// 1.2s, 8000Hz or -60dB. Four significant digits are enough to tell the limits
-// apart.
+// 1.2s, 8000Hz or -60dB. Six significant digits keep every limit exact except the tom tune limits.
 func FormatBound(d Descriptor, value float64, upper bool) string {
 	rounded := roundBound(value, upper)
 	text := func(v float64) string {
-		clean, _ := strconv.ParseFloat(strconv.FormatFloat(v, 'g', 6, 64), 64)
+		clean, _ := strconv.ParseFloat(strconv.FormatFloat(v, 'g', 8, 64), 64)
 		return strconv.FormatFloat(clean, 'f', -1, 64)
 	}
 	switch strings.ToLower(d.Unit) {
@@ -143,18 +165,18 @@ func FormatBound(d Descriptor, value float64, upper bool) string {
 	return text(rounded)
 }
 
-// roundBound keeps four significant digits and rounds toward the inside of the
+// roundBound keeps six significant digits and rounds toward the inside of the
 // range, so a value that matches the printed limit is never reported as outside.
 func roundBound(value float64, upper bool) float64 {
-	nearest, err := strconv.ParseFloat(strconv.FormatFloat(value, 'g', 4, 64), 64)
+	nearest, err := strconv.ParseFloat(strconv.FormatFloat(value, 'g', 6, 64), 64)
 	if err != nil || math.Abs(nearest-value) <= 1e-12*math.Abs(value) {
 		return value
 	}
 	if upper == (nearest < value) {
 		return nearest
 	}
-	// Step one unit in the fourth digit toward the inside.
-	unit := math.Pow(10, math.Floor(math.Log10(math.Abs(value)))-3)
+	// Step one unit in the sixth digit toward the inside.
+	unit := math.Pow(10, math.Floor(math.Log10(math.Abs(value)))-5)
 	if upper {
 		return nearest - unit
 	}

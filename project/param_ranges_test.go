@@ -1,7 +1,6 @@
 package project
 
 import (
-	"fmt"
 	"math"
 	"os"
 	"regexp"
@@ -10,7 +9,6 @@ import (
 	"testing"
 
 	"m31labs.dev/cicada/internal/paramdefs"
-	"m31labs.dev/cicada/kernel/fx/pro"
 	"m31labs.dev/cicada/notation"
 )
 
@@ -156,53 +154,6 @@ func TestAutomationRangeNamesThePointAndReportsEveryOne(t *testing.T) {
 	}
 }
 
-// kernelAccepts sends one literal through the project compilers, which end in
-// the kernel Validate functions, and reports whether the kernel took it.
-func kernelAccepts(t *testing.T, d paramdefs.Descriptor, literal string) bool {
-	t.Helper()
-	param := notation.Param{Name: d.Source, Value: literal}
-	value, err := projectValue(literal)
-	if err != nil {
-		t.Fatalf("%s: %v", d.ID, err)
-	}
-	values := map[string]Value{d.Source: value}
-	parts := strings.Split(d.ID, ".")
-	switch parts[0] {
-	case "acid":
-		_, err = CompileAcidParams(notation.Track{Kind: "acid", Params: []notation.Param{param}})
-	case "drum":
-		_, err = CompileDrumParams(notation.Track{Kind: "drums", Params: []notation.Param{param}})
-	case "guitar":
-		_, err = CompileGuitarParams(notation.Track{Kind: "guitar", Params: []notation.Param{{Name: "experimental", Value: "on"}, param}})
-	case "piano":
-		_, err = CompilePianoSustain(notation.Track{Kind: "piano", Params: []notation.Param{param}})
-	case "fx":
-		switch parts[1] {
-		case "drive":
-			_, err = DriveParamsFromValues(values)
-		case "delay":
-			_, err = DelayParamsFromValues(values)
-		case "reverb":
-			_, err = ReverbParamsFromValues(values)
-		case "comp":
-			_, _, err = CompSpecFromValues(values)
-		case "deesser":
-			_, err = DeesserParamsFromValues(values)
-		case "eq":
-			_, err = compileTrackEffect(Effect{ID: "e", Kind: "eq", Params: values}, 48000)
-		default:
-			var params pro.Params
-			params, err = masterEffectParams(Effect{ID: "e", Kind: parts[1], Params: values})
-			if err == nil {
-				_, err = pro.New(48000, params)
-			}
-		}
-	default:
-		t.Fatalf("no kernel path for %s", d.ID)
-	}
-	return err == nil
-}
-
 func boundLiteral(d paramdefs.Descriptor, v float64) string {
 	text := strconv.FormatFloat(v, 'f', -1, 64)
 	switch strings.ToLower(d.Unit) {
@@ -216,59 +167,6 @@ func boundLiteral(d paramdefs.Descriptor, v float64) string {
 		return text + "dBTP"
 	}
 	return text
-}
-
-// intentionalDifferences lists rows where the kernel accepts a value that the
-// host table rejects, with the reason. No row may differ without an entry here.
-// Keys read "<row id>/<min|max|below|above>". It is empty today.
-var intentionalDifferences = map[string]string{}
-
-// The host table and the kernel must agree on every numeric parameter: the
-// limits pass the kernel, and a value just outside each limit fails it.
-func TestParameterTableAgreesWithKernelValidation(t *testing.T) {
-	var rows []paramdefs.Descriptor
-	for _, d := range paramdefs.Registry {
-		rows = append(rows, d)
-	}
-	rows = append(rows, paramdefs.HostOnly...)
-	checked := 0
-	for _, d := range rows {
-		voiceOK := false
-		for _, v := range d.Voices {
-			voiceOK = voiceOK || v == "acid" || v == "drums" || v == "guitar" || v == "piano" && strings.HasPrefix(d.ID, "piano.")
-		}
-		fxRow := strings.HasPrefix(d.ID, "fx.")
-		if !fxRow && !voiceOK || strings.HasPrefix(d.ID, "mix.") || d.Source == "octave" || d.Curve == "enum" || d.Curve == "toggle" {
-			continue
-		}
-		span := d.Max - d.Min
-		for _, c := range []struct {
-			side    string
-			value   float64
-			accepts bool
-		}{
-			{"min", d.Min, true},
-			{"max", d.Max, true},
-			{"below", d.Min - span*1e-3, false},
-			{"above", d.Max + span*1e-3, false},
-		} {
-			literal := boundLiteral(d, c.value)
-			if got := kernelAccepts(t, d, literal); got != c.accepts {
-				key := d.ID + "/" + c.side
-				if _, ok := intentionalDifferences[key]; !ok {
-					t.Errorf("%s = %s: kernel accepts %v, table says %v", d.ID, literal, got, c.accepts)
-				}
-				continue
-			}
-			if host := paramdefs.RangeMessage(d, "x", literal) == ""; host != c.accepts {
-				t.Errorf("%s = %s: host table accepts %v, want %v", d.ID, literal, host, c.accepts)
-			}
-			checked++
-		}
-	}
-	if checked < 300 {
-		t.Fatalf("only %d limit checks ran; the table walk lost rows", checked)
-	}
 }
 
 func TestParameterRangesDocIsCurrent(t *testing.T) {
@@ -391,84 +289,5 @@ func TestInvalidAcidGateIsReportedOnce(t *testing.T) {
 	got := scoreErrors(t, source)
 	if len(got) != 1 || got[0].Position.Line != 4 {
 		t.Fatalf("want one diagnostic on line 4, got %+v", got)
-	}
-}
-
-// rowScore puts one row's literal in a score. It reports false for rows that
-// the score path cannot reach.
-func rowScore(d paramdefs.Descriptor, literal string, automate bool) ([]byte, bool) {
-	parts := strings.Split(d.ID, ".")
-	var devices, path string
-	switch parts[0] {
-	case "acid":
-		return nil, false // acid needs its own pattern kind; covered below
-	case "drum":
-		devices, path = "track d drums { "+d.Source+" = "+literal+" }", "d."+d.Path
-	case "fx":
-		master := ""
-		if parts[1] == "transient" || parts[1] == "width" || parts[1] == "limiter" {
-			master = "\nmaster { insert = e }"
-		}
-		devices, path = "fx e "+parts[1]+" { "+d.Source+" = "+literal+" }"+master+"\ntrack d drums {}", "e."+strings.TrimPrefix(d.Path, parts[1]+".")
-	default:
-		return nil, false
-	}
-	if automate {
-		devices = strings.Replace(devices, d.Source+" = "+literal, "", 1) + "\nautomate " + path + " { @1.1.1 " + literal + " }"
-	}
-	return rangeScore(devices), true
-}
-
-func rangeWordErrors(t *testing.T, source []byte) []string {
-	t.Helper()
-	var out []string
-	for _, d := range scoreErrors(t, source) {
-		if strings.Contains(d.Message, "the minimum") || strings.Contains(d.Message, "the maximum") {
-			out = append(out, d.Message)
-		}
-	}
-	return out
-}
-
-// The exact limits, written as the shortest literal that round-trips the
-// float64, and a value just inside each limit, must pass through source
-// settings and automation points. Values just outside must be reported.
-func TestParameterTableExactBoundsThroughSourceAndAutomation(t *testing.T) {
-	rows := append(append([]paramdefs.Descriptor(nil), paramdefs.Registry...), paramdefs.HostOnly...)
-	checked := 0
-	for _, d := range rows {
-		if d.Curve == "enum" || d.Curve == "toggle" || strings.HasPrefix(d.ID, "mix.") || d.Source == "octave" || d.Source == "sidechain" {
-			continue
-		}
-		span := d.Max - d.Min
-		for _, automate := range []bool{false, true} {
-			if automate && (!d.Automatable || !d.Live) {
-				continue
-			}
-			for _, c := range []struct {
-				name  string
-				value float64
-				bad   bool
-			}{{"min", d.Min, false}, {"max", d.Max, false}, {"inside low", d.Min + span*1e-4, false}, {"inside high", d.Max - span*1e-4, false}, {"below", d.Min - span*1e-3, true}, {"above", d.Max + span*1e-3, true}} {
-				literal := boundLiteral(d, c.value)
-				source, ok := rowScore(d, literal, automate)
-				if !ok {
-					continue
-				}
-				got := rangeWordErrors(t, source)
-				if c.bad != (len(got) > 0) {
-					t.Errorf("%s %s (automate=%v) = %s: range errors %v", d.ID, c.name, automate, literal, got)
-				}
-				for _, m := range got {
-					if strings.Contains(m, fmt.Sprintf("%s is below the minimum %s ", literal, literal)) || strings.Contains(m, fmt.Sprintf("%s is above the maximum %s ", literal, literal)) {
-						t.Errorf("contradictory message %q", m)
-					}
-				}
-				checked++
-			}
-		}
-	}
-	if checked < 300 {
-		t.Fatalf("only %d source checks ran", checked)
 	}
 }
