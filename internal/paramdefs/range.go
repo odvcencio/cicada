@@ -73,25 +73,17 @@ func TrackParam(voice, name string) (Descriptor, bool) {
 // written, so the message reads "delay feedback 1.4 is above the maximum 0.95
 // (range 0 to 0.95)".
 func RangeMessage(d Descriptor, label, literal string) string {
-	return rangeMessage(d, label, literal, math.NaN(), false)
-}
-
-// RangeMessageKeyboard is RangeMessage for a setting on a modeled keyboard
-// track. Every setting such a track accepts, including the rows it inherits
-// from the piano, is compiled by project.KeysSpecFromValues, so the keyboard
-// rule applies (see KeyboardTolerance).
-func RangeMessageKeyboard(d Descriptor, label, literal string) string {
-	return rangeMessage(d, label, literal, math.NaN(), true)
+	return rangeMessage(d, label, literal, math.NaN())
 }
 
 // RangeMessageValue is RangeMessage for a value that has no source text, such
 // as an automation point in a typed project. The float64 is compared with the
 // bounds as it is; the text is only formatted for the message.
 func RangeMessageValue(d Descriptor, label string, value float64) string {
-	return rangeMessage(d, label, FormatValue(d, value), value, false)
+	return rangeMessage(d, label, FormatValue(d, value), value)
 }
 
-func rangeMessage(d Descriptor, label, literal string, exact float64, keyboard bool) string {
+func rangeMessage(d Descriptor, label, literal string, exact float64) string {
 	if d.Off && literal == "off" {
 		return ""
 	}
@@ -113,14 +105,7 @@ func rangeMessage(d Descriptor, label, literal string, exact float64, keyboard b
 	if !math.IsNaN(exact) {
 		number = exact
 	}
-	// Only a literal that was scaled (kHz, s, %) can carry multiplication error;
-	// the project compilers convert those with exact decimal shifts. Values in
-	// the base unit are compared exactly.
-	slack := 0.0
-	if lower := strings.ToLower(literal); math.IsNaN(exact) && (strings.HasSuffix(lower, "khz") || strings.HasSuffix(lower, "s") && !strings.HasSuffix(lower, "ms") || strings.HasSuffix(lower, "%")) {
-		slack = 1e-9
-	}
-	low, high := outside(d, number, slack, keyboard)
+	low, high := number < d.Min, number > d.Max
 	if !low && !high {
 		return ""
 	}
@@ -129,6 +114,13 @@ func rangeMessage(d Descriptor, label, literal string, exact float64, keyboard b
 			return ""
 		}
 	}
+	return RangeText(d, label, literal, low)
+}
+
+// RangeText writes the message for a value that a compiler's own comparison
+// has found below (low) or above the descriptor's range. Callers that compare
+// with a route's own function, as the keyboard compiler does, pass its verdict.
+func RangeText(d Descriptor, label, literal string, low bool) string {
 	lowText, highText := FormatBound(d, d.Min, false), FormatBound(d, d.Max, true)
 	// Never print a value equal to the bound it is said to break.
 	if literal == lowText {
@@ -146,25 +138,6 @@ func rangeMessage(d Descriptor, label, literal string, exact float64, keyboard b
 		return label + " " + literal + " is below the minimum " + lowText + " " + span
 	}
 	return label + " " + literal + " is above the maximum " + highText + " " + span
-}
-
-// KeyboardTolerance is the absolute slack project/keys.go allows around a
-// keyboard parameter's float32 limits.
-const KeyboardTolerance = 1e-7
-
-// outside applies the comparison of the validator that owns the track being
-// checked, not the row's origin. Most tracks
-// compare the float64 exactly (slack is only for scaled literals). A keyboard
-// value must lie within KeyboardTolerance of its float32 limits and, after
-// conversion to float32, within the limits themselves, as project/keys.go and
-// host/keyboard.Validate do in turn.
-func outside(d Descriptor, number, slack float64, keyboard bool) (low, high bool) {
-	if !keyboard {
-		return number < d.Min-slack*math.Max(1, math.Abs(d.Min)), number > d.Max+slack*math.Max(1, math.Abs(d.Max))
-	}
-	min32, max32 := float64(float32(d.Min)), float64(float32(d.Max))
-	narrowed := float64(float32(number))
-	return number < min32-KeyboardTolerance || narrowed < min32, number > max32+KeyboardTolerance || narrowed > max32
 }
 
 // FormatBound writes one range limit (upper marks a maximum) with the parameter's unit, such as 150ms,
@@ -274,11 +247,8 @@ func isWord(s string) bool {
 	return true
 }
 
-// rangeNumber is LiteralNumber plus the dBTP suffix used by the limiter.
+// rangeNumber reads a literal with the shared parser.
 func rangeNumber(literal string) (float64, string, bool) {
-	if lower := strings.ToLower(literal); strings.HasSuffix(lower, "dbtp") {
-		n, err := strconv.ParseFloat(strings.TrimSuffix(lower, "dbtp"), 64)
-		return n, "dbtp", err == nil && !math.IsNaN(n) && !math.IsInf(n, 0)
-	}
-	return LiteralNumber(literal)
+	n, unit, err := ParseBase(literal)
+	return n, unit, err == nil && !math.IsNaN(n) && !math.IsInf(n, 0)
 }

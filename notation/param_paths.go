@@ -340,24 +340,8 @@ func sceneValueNumber(descriptor paramdefs.Descriptor, value float64) string {
 	return text
 }
 
-func notationBaseValue(source string) (float64, string, error) {
-	unit, scale := "unit", 1.0
-	for _, suffix := range []struct {
-		text, unit string
-		scale      float64
-	}{{"khz", "hz", 1000}, {"hz", "hz", 1}, {"ms", "ms", 1}, {"db", "db", 1}, {"s", "ms", 1000}, {"%", "unit", .01}} {
-		if strings.HasSuffix(strings.ToLower(source), suffix.text) {
-			unit, scale = suffix.unit, suffix.scale
-			source = source[:len(source)-len(suffix.text)]
-			break
-		}
-	}
-	value, err := strconv.ParseFloat(source, 64)
-	if err != nil {
-		return 0, "", err
-	}
-	return value * scale, unit, nil
-}
+// notationBaseValue is the shared source-number parser, paramdefs.ParseBase.
+func notationBaseValue(source string) (float64, string, error) { return paramdefs.ParseBase(source) }
 
 func contains(values []string, value string) bool {
 	for _, candidate := range values {

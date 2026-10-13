@@ -1,6 +1,7 @@
 package project
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -121,7 +122,7 @@ type probe struct {
 // conversion. After the float32 conversion the keyboard still compares exactly,
 // so only values that round onto a limit pass.
 func toleranceProbes(d paramdefs.Descriptor, route, mode string) []probe {
-	tol := paramdefs.KeyboardTolerance
+	tol := keysTolerance
 	if route != routeKeyboard || d.Type == "integer" {
 		return nil // an integer row also rejects any fraction, so slack cannot show
 	}
@@ -215,10 +216,7 @@ func TestParameterTableAgreesWithKernelValidation(t *testing.T) {
 				}
 				continue
 			}
-			message := paramdefs.RangeMessage(d, "x", literal)
-			if c.route == routeKeyboard {
-				message = paramdefs.RangeMessageKeyboard(d, "x", literal)
-			}
+			message := hostMessage(c, literal)
 			if host := message == ""; host != p.accepts {
 				t.Errorf("%s route %s = %s: host table accepts %v, want %v", d.ID, c.route, literal, host, p.accepts)
 			}
@@ -438,7 +436,7 @@ func TestMasterEQAndWidthRejectValuesOutsideTheirOwnLimits(t *testing.T) {
 // limits. The pre-check, ValidateProject and the JSON round trips must accept
 // exactly what the compiler accepts.
 func TestKeyboardToleranceIsAcceptedEverywhere(t *testing.T) {
-	for _, value := range []string{"2.00000001", "2.00000005", "2"} {
+	for _, value := range []string{"2.00000001", "2.00000005", "2", "200.00001%", "2.0000001"} {
 		t.Run(value, func(t *testing.T) {
 			source := []byte("cicada 2\ntempo 120\ntrack e tine_ep { gain = " + value + " }\npattern p notes { c4 . }\nscene main { e = p }\nsong { main }\n")
 			score, diagnostics := notation.Parse(source)
@@ -541,4 +539,93 @@ func TestInheritedPianoRowsFollowTheKeyboardRuleOnKeyboardTracks(t *testing.T) {
 	if got := scoreErrors(t, piano); len(got) != 1 || got[0].Position.Line != 3 || !strings.Contains(got[0].Message, "piano sustain") {
 		t.Fatalf("a real piano must keep the exact comparison: %+v", got)
 	}
+}
+
+// hostMessage is the pre-check's verdict for a case: the keyboard comparison on
+// the keyboard route, the exact one elsewhere.
+func hostMessage(c agreementCase, literal string) string {
+	if c.route == routeKeyboard {
+		return keysRangeMessage(keysPatchFor(c.d), c.d, "x", c.d.Source, literal)
+	}
+	return paramdefs.RangeMessage(c.d, "x", literal)
+}
+
+// shiftText moves the decimal point of a plain decimal text by places digits,
+// without arithmetic, so a spelling is exact.
+func shiftText(text string, places int) string {
+	sign := ""
+	if strings.HasPrefix(text, "-") {
+		sign, text = "-", text[1:]
+	}
+	point := strings.IndexByte(text, '.')
+	if point < 0 {
+		point = len(text)
+	}
+	digits := strings.ReplaceAll(text, ".", "")
+	at := point + places
+	switch {
+	case at <= 0:
+		digits = "0." + strings.Repeat("0", -at) + digits
+	case at >= len(digits):
+		digits += strings.Repeat("0", at-len(digits))
+	default:
+		digits = digits[:at] + "." + digits[at:]
+	}
+	if strings.Contains(digits, ".") {
+		digits = strings.TrimRight(digits, "0")
+		digits = strings.TrimSuffix(digits, ".")
+	}
+	return sign + digits
+}
+
+// spellings writes one base-unit value in every spelling the source accepts
+// for the row's unit: the base unit, the scaled unit (kHz, s, %), and
+// scientific notation.
+func spellings(d paramdefs.Descriptor, value float64) []string {
+	text := strconv.FormatFloat(value, 'f', -1, 64)
+	sci := strconv.FormatFloat(value, 'e', -1, 64)
+	switch strings.ToLower(d.Unit) {
+	case "hz":
+		return []string{text + "Hz", shiftText(text, -3) + "kHz", sci + "Hz", text + "hz"}
+	case "ms":
+		return []string{text + "ms", shiftText(text, -3) + "s", sci + "ms"}
+	case "db":
+		return []string{text + "dB", sci + "dB"}
+	case "dbtp":
+		return []string{text + "dBTP", sci + "dBTP"}
+	}
+	return []string{text, shiftText(text, 2) + "%", sci}
+}
+
+// At every boundary, every accepted spelling of the same value must get the
+// same verdict from the pre-check as from the compiler that owns the route.
+func TestEverySpellingOfABoundaryAgreesWithTheCompiler(t *testing.T) {
+	checked := 0
+	for _, c := range agreementCases() {
+		for _, p := range probesFor(c, "") {
+			for _, literal := range spellings(c.d, p.value) {
+				if _, err := projectValue(literal); err != nil {
+					continue
+				}
+				// A spelling the compiler rejects for its form (not its value),
+				// such as scientific notation for the whole-number gate, is not
+				// a range question: the pre-check stays silent and the compiler
+				// reports it.
+				kernel := kernelAccepts(t, c.d, literal, c.route)
+				host := hostMessage(c, literal) == ""
+				if kernel != host && !(host && !kernel && formOnly(c.d, literal)) {
+					t.Errorf("%s route %s %s = %s: compiler accepts %v, pre-check accepts %v", c.d.ID, c.route, p.side, literal, kernel, host)
+				}
+				checked++
+			}
+		}
+	}
+	if checked < 1500 {
+		t.Fatalf("only %d spellings were compared", checked)
+	}
+}
+
+// formOnly reports spellings the compiler refuses for a reason other than range.
+func formOnly(d paramdefs.Descriptor, literal string) bool {
+	return d.ID == "acid.gate" && strings.ContainsAny(literal, "eE.")
 }

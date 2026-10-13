@@ -1,6 +1,7 @@
 package project
 
 import (
+	"m31labs.dev/cicada/host/keyboard"
 	"strings"
 
 	"m31labs.dev/cicada/internal/paramdefs"
@@ -20,15 +21,16 @@ import (
 func checkParamRanges(score *notation.Score) ([]notation.Diagnostic, map[notation.Position]bool) {
 	var diagnostics []notation.Diagnostic
 	flagged := map[notation.Position]bool{}
-	report := func(param notation.Param, descriptor paramdefs.Descriptor, label string, keyboard bool) {
+	report := func(param notation.Param, descriptor paramdefs.Descriptor, label, patch string, keyboard bool) {
 		if strings.HasPrefix(param.Value, "\"") {
 			return
 		}
-		check := paramdefs.RangeMessage
+		message := ""
 		if keyboard {
-			check = paramdefs.RangeMessageKeyboard
+			message = keysRangeMessage(patch, descriptor, label+" "+param.Name, param.Name, param.Value)
+		} else {
+			message = paramdefs.RangeMessage(descriptor, label+" "+param.Name, param.Value)
 		}
-		message := check(descriptor, label+" "+param.Name, param.Value)
 		if message == "" {
 			return
 		}
@@ -63,7 +65,7 @@ func checkParamRanges(score *notation.Score) ([]notation.Diagnostic, map[notatio
 				continue // checked with the instrument octave rules
 			}
 			if descriptor, ok := paramdefs.TrackParam(voice, param.Name); ok {
-				report(param, descriptor, track.Kind, keyboard)
+				report(param, descriptor, track.Kind, track.Kind, keyboard)
 			}
 		}
 	}
@@ -85,7 +87,7 @@ func checkParamRanges(score *notation.Score) ([]notation.Diagnostic, map[notatio
 				continue // names a bus, which a score can declare
 			}
 			if descriptor, ok := paramdefs.DeviceParam(kind, param.Name, master[effect.Name]); ok {
-				report(param, descriptor, kind, false)
+				report(param, descriptor, kind, "", false)
 			}
 		}
 	}
@@ -106,4 +108,33 @@ func withoutFlagged(track notation.Track, flagged map[notation.Position]bool) no
 	}
 	track.Params = kept
 	return track
+}
+
+// keysRangeMessage is the pre-check for a setting on a modeled keyboard track.
+// It reads the value and compares it with the functions KeysSpecFromValues and
+// host/keyboard.Validate use, so it differs from the compiler only in the
+// message text. A value that is not a plain number in the parameter's unit is
+// left to the compiler, which reports it.
+func keysRangeMessage(patch string, descriptor paramdefs.Descriptor, label, name, literal string) string {
+	value, err := projectValue(literal)
+	if err != nil || value.Unit == "enum" {
+		return ""
+	}
+	for _, p := range keyboard.Parameters(patch) {
+		if p.Name != name {
+			continue
+		}
+		n, err := keysNumber(p, name, value)
+		if err != nil {
+			return ""
+		}
+		low, high := keysOutsideTolerance(p, n)
+		if !low && !high {
+			low, high = keyboard.OutsideFloat32(p, float32(n))
+		}
+		if low || high {
+			return paramdefs.RangeText(descriptor, label, literal, low)
+		}
+	}
+	return ""
 }
