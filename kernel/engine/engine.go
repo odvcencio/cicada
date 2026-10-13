@@ -135,7 +135,8 @@ type Config struct {
 	DelayA     *fx.DelayParams
 	ReverbB    *fx.ReverbParams
 	CompMusic  *fx.CompParams
-	// MasterBias is an optional DC correction before gain and limiting.
+	// MasterBias is an optional DC correction added after the master chain and
+	// master gain, immediately before the limiter.
 	MasterBiasL float32 `json:",omitempty"`
 	MasterBiasR float32 `json:",omitempty"`
 	// MasterGainDB is a static gain applied immediately before the master

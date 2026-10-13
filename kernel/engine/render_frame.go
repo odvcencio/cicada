@@ -265,8 +265,6 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 	if e.masterMute {
 		left, right = 0, 0
 	}
-	left += e.masterBiasL
-	right += e.masterBiasR
 	if e.masterGain != 1 {
 		left *= e.masterGain
 		right *= e.masterGain
@@ -287,6 +285,12 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 				e.taps[frame].MasterLimiterReductionDB = limiter.LimiterGainReductionDB()
 			}
 		}
+	}
+	// The export DC correction goes in after the master chain and every gain
+	// stage, so no filter or gain sits between it and the output.
+	if e.masterBiasL != 0 || e.masterBiasR != 0 {
+		left += e.masterBiasL
+		right += e.masterBiasR
 	}
 	accumulateMeter(&e.preMasterMeter, left, right)
 	outL[frame], outR[frame], _ = e.limiter.Process(left, right)
