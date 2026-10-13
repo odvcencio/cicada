@@ -582,6 +582,8 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 				}
 				continue
 			}
+			// A new note ends the one it replaces, including a slide's source.
+			e.tapRelease(track, event.Tick)
 			switch e.voices[track].kind {
 			case VoiceAcid:
 				e.voices[track].acid.NoteOn(event.Note, event.Accent, event.Slide, event.Velocity)

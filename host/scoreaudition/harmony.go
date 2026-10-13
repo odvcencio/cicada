@@ -48,7 +48,8 @@ func bestChord(v [12]float64) chordMatch {
 		norm += x * x
 		top = math.Max(top, x)
 	}
-	best := chordMatch{Score: -1}
+	best := chordMatch{}
+	bestRank := -1.0
 	if norm == 0 {
 		return chordMatch{}
 	}
@@ -64,8 +65,12 @@ func bestChord(v [12]float64) chordMatch {
 				score -= 0.02
 			}
 			score += 0.03 * v[root] / top
-			if score > best.Score+1e-12 {
-				best = chordMatch{Name: noteNames[root] + q.suffix, Root: root, Quality: qi, Score: score}
+			if score > bestRank+1e-12 {
+				bestRank = score
+				// The exported fit is the plain cosine similarity, 0 to 1;
+				// the penalty and root bonus only rank the templates.
+				fit := dot / (norm * math.Sqrt(float64(len(q.tones))))
+				best = chordMatch{Name: noteNames[root] + q.suffix, Root: root, Quality: qi, Score: math.Min(1, fit)}
 				best.Tones = [12]bool{}
 				for _, t := range q.tones {
 					best.Tones[(root+t)%12] = true

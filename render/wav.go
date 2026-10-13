@@ -99,6 +99,9 @@ type trackRuntime struct {
 	currentSlot    uint8
 	current        seq.Pattern
 	active         *seq.Pattern
+	noteTap        func(int, seq.Event) // from Options.NoteTap
+	tapTick        int64                // tick of the scene boundary being applied
+	tapIndex       int
 	generation     uint64
 	activeGen      uint64
 	activeNoteID   int64
@@ -630,6 +633,9 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 			if bar >= renderBars {
 				break
 			}
+			for ti := range tracks {
+				tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, int64(bar)*seq.TicksPerBar, ti
+			}
 			if err := applySceneBoundary(tracks, scene, stopIsAction, entryBar == 0); err != nil {
 				return report, err
 			}
@@ -751,11 +757,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	for ti := range tracks {
+		tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, int64(renderBars)*seq.TicksPerBar, ti
 		if tracks[ti].drums != nil {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				tracks[ti].drums.NoteOff(lane)
 			}
 		} else {
+			tracks[ti].tapRelease()
 			tracks[ti].voice.NoteOff()
 		}
 		tracks[ti].activeGen = 0
@@ -1338,6 +1346,14 @@ func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSl
 	}
 }
 
+// tapRelease reports the release of the sounding pattern note at the scene
+// boundary, before its identity is cleared.
+func (t *trackRuntime) tapRelease() {
+	if t.noteTap != nil && t.activeGen != 0 && t.activeNoteID != 0 {
+		t.noteTap(t.tapIndex, seq.Event{Kind: seq.NoteOff, NoteID: t.activeNoteID, Tick: t.tapTick})
+	}
+}
+
 func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool) error {
 	return applySceneBoundary(tracks, scene, stopIsAction, false)
 }
@@ -1367,6 +1383,7 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 				tracks[ti].active = nil
 				tracks[ti].currentName = ""
 				tracks[ti].hasPendingGate = false
+				tracks[ti].tapRelease()
 				tracks[ti].activeGen = 0
 				tracks[ti].voice.NoteOff()
 			default:
@@ -1403,6 +1420,7 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 					if transition.carry {
 						tracks[ti].slideFrom, tracks[ti].slideAt = transition.sourceNoteID, transition.targetSample
 					} else if transition.release.Sample <= transition.boundarySample {
+						tracks[ti].tapRelease()
 						tracks[ti].voice.NoteOff()
 						tracks[ti].activeGen = 0
 					}

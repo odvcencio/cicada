@@ -900,6 +900,7 @@ func (e *Engine) Reset() {
 		e.patterns[i].active = -1
 		e.patterns[i].eventCount, e.patterns[i].eventIndex = 0, 0
 		e.patterns[i].heldValid = false
+		e.tapRelease(i, e.transport.Tick())
 		e.patterns[i].playingNote = 0
 		e.patterns[i].chainLen = 0
 		e.patterns[i].chainArmed = false
@@ -1165,6 +1166,7 @@ func (e *Engine) apply(c cmd.Command) {
 		e.transport.Stop()
 		e.lastBarTick = -1
 		for i := 0; i < e.tracks; i++ {
+			e.tapRelease(i, e.transport.Tick())
 			e.noteOff(i, 0xffff)
 			e.patterns[i].playingNote = 0
 			e.patterns[i].heldValid = false
@@ -1194,6 +1196,7 @@ func (e *Engine) apply(c cmd.Command) {
 			e.compMusic.Reset()
 		}
 		for i := 0; i < e.tracks; i++ {
+			e.tapRelease(i, e.transport.Tick())
 			e.patterns[i].playingNote = 0
 			e.patterns[i].heldValid = false
 			if e.patterns[i].chainLen != 0 {
@@ -1282,6 +1285,7 @@ func (e *Engine) apply(c cmd.Command) {
 		if keysEnabled && v.kind == VoiceKeys && e.patterns[track].playingNote != 0 {
 			e.releaseKeysPattern(track)
 		}
+		e.tapRelease(track, e.transport.Tick())
 		e.patterns[track].playingNote = 0
 		e.patterns[track].heldValid = false
 		switch v.kind {
@@ -1370,6 +1374,9 @@ func (e *Engine) apply(c cmd.Command) {
 		index := c.Index
 		if v.kind == VoiceGraph && v.noteIdentity != 0 && c.Index == v.noteIdentity {
 			index = 0xffff
+		}
+		if index == 0xffff {
+			e.tapRelease(int(c.Track), e.transport.Tick())
 		}
 		e.noteOff(int(c.Track), index)
 		if e.voices[c.Track].kind != VoicePiano && (!keysEnabled || e.voices[c.Track].kind != VoiceKeys) || c.Index == 0xffff {

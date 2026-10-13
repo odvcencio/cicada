@@ -313,3 +313,164 @@ func TestSustainedNoteRunsToRenderEnd(t *testing.T) {
 		}
 	}
 }
+
+const heldThenOff = `cicada 2
+title "Held then off"
+tempo 120
+key c major
+seed 1
+
+instrument pad {
+  voice poly {
+    let amp = adsr(gate, 30ms, 100ms, 0.9, 100ms)
+    out = saw(pitch) * amp * velocity * 0.3
+  }
+}
+
+track keys pad {}
+track vox audio {}
+
+pattern held notes {
+  [c4 e4 g4] - - - - - - - - - - - - - - -
+  - - - - - - - - - - - - - - - -
+}
+pattern idle notes {
+  . . . .
+}
+`
+
+// A scene that stops a two-bar held note after one bar must end its activity there, on the scene
+// renderer and on the engine renderer (an audio track selects the engine).
+func TestSceneOffEndsHeldNote(t *testing.T) {
+	scenes := `
+scene a { keys = held }
+scene b { keys = off }
+song {
+  a
+  b*3
+}
+`
+	t.Run("scene renderer", func(t *testing.T) {
+		source := strings.Replace(heldThenOff, "track vox audio {}\n", "", 1) + scenes
+		a := analyze(t, source)
+		t.Logf("%s", textOf(a))
+		checkHeldThenSilent(t, a, 1)
+	})
+	t.Run("engine renderer", func(t *testing.T) {
+		full, dir := clipSource(t, "")
+		body := strings.Replace(full, "pattern chord notes {\n  [c4 e4 g4] - - - - - - - - - - - - - - -\n}\n", "pattern held notes {\n  [c4 e4 g4] - - - - - - - - - - - - - - -\n  - - - - - - - - - - - - - - - -\n}\n", 1)
+		a := analyzeIn(t, body+"\nscene a { keys = held }\nscene b { keys = off }\nsong {\n  a\n  b*3\n}\n", dir)
+		t.Logf("%s", textOf(a))
+		checkHeldThenSilent(t, a, 1)
+	})
+}
+
+func checkHeldThenSilent(t *testing.T, a *Analysis, heldBars int) {
+	t.Helper()
+	keys := track(t, a, "keys")
+	if keys.ActiveBars != heldBars {
+		t.Errorf("keys active bars %d, want %d", keys.ActiveBars, heldBars)
+	}
+	for _, s := range a.Report.Sections {
+		if s.Name == "b" && slices.Contains(s.Tracks, "keys") {
+			t.Errorf("section b lists keys: %+v", s)
+		}
+	}
+}
+
+const placedThenSilent = `cicada 2
+title "Placed"
+tempo 120
+key c major
+seed 1
+
+instrument pad {
+  voice poly {
+    let amp = adsr(gate, 30ms, 100ms, 0.9, 100ms)
+    out = saw(pitch) * amp * velocity * 0.3
+  }
+}
+instrument quiet {
+  voice mono {
+    out = square(pitch) * env(gate, 60ms) * velocity * 0.0
+  }
+}
+
+track keys pad {}
+track later quiet {}
+
+pattern held notes {
+  [c4 e4 g4] - - - - - - - - - - - - - - -
+  - - - - - - - - - - - - - - - -
+}
+pattern idle notes {
+  c4 . . .
+}
+arrange {
+  place a keys held { at = @1.1.1 length = 1bar }
+  place b later idle { at = @3.1.1 length = 2bars }
+  marker one { at = @1.1.1 }
+  marker two { at = @3.1.1 }
+}
+`
+
+func TestPlacementEndEndsHeldNote(t *testing.T) {
+	a := analyze(t, placedThenSilent)
+	t.Logf("%s", textOf(a))
+	keys := track(t, a, "keys")
+	if keys.ActiveBars != 1 {
+		t.Errorf("keys active bars %d, want 1", keys.ActiveBars)
+	}
+	if two := a.Report.Sections[1]; slices.Contains(two.Tracks, "keys") {
+		t.Errorf("section two lists keys: %+v", two)
+	}
+}
+
+const mutedPad = `cicada 2
+title "Mute"
+tempo 120
+key c major
+seed 1
+
+instrument pad {
+  voice poly {
+    out = saw(pitch) * env(gate, 200ms) * velocity * 0.0
+  }
+}
+track keys pad {}
+pattern chords notes {
+  [c4 e4 g4] - - - - - - - - - - - - - - -
+}
+scene s { keys = chords }
+song { s*2 }
+`
+
+// Written notes with no sound are `silent`, not a wrong chord.
+func TestSilentWrittenBarIsNotADisagreement(t *testing.T) {
+	a := analyze(t, mutedPad)
+	t.Logf("%s", textOf(a))
+	for _, b := range a.Report.Bars {
+		if b.Written != "C" || b.Match != "silent" {
+			t.Errorf("bar %d written %q match %q, want written C, silent", b.Bar, b.Written, b.Match)
+		}
+	}
+	if a.Report.Mismatches != 0 {
+		t.Errorf("%d mismatches, want 0", a.Report.Mismatches)
+	}
+}
+
+func TestHeardFitStaysInRange(t *testing.T) {
+	var v [12]float64
+	v[0], v[4], v[7] = 1, 1, 1
+	m := bestChord(v)
+	if m.Name != "C" || m.Score < 0.99 || m.Score > 1 {
+		t.Errorf("exact C triad: %+v", m)
+	}
+	for _, source := range []string{skankMajor, hornsMinor} {
+		for _, b := range analyze(t, source).Report.Bars {
+			if b.HeardFit < 0 || b.HeardFit > 1 {
+				t.Errorf("bar %d heard_fit %v outside 0..1", b.Bar, b.HeardFit)
+			}
+		}
+	}
+}

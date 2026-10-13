@@ -85,7 +85,7 @@ correct render.
 | `bright` | Spectral centroid in Hz: higher is brighter. |
 | `attack` | Median time from the start of a note to its peak, in ms. |
 | `decay20` | Median time for the level to fall 20 dB below its peak, in ms. Each note is measured only until the next detected attack on that track. A `>` means the median note did not fall 20 dB before the next attack (or 2 s), so the value is a lower bound: the note is sustained. |
-| `on/bar` | Detected note starts per bar over the bars where the track plays or sounds. A bar counts when a note starts or is still held in it (a held note with no release lasts to the end of the range) or when the stem has sound in it. A note that starts mid-bar counts its first bar. |
+| `on/bar` | Detected note starts per bar over the bars where the track plays or sounds. A bar counts when a note starts or is still held in it (a held note with no release lasts to the end of the range) or when the stem has sound in it (for a track that plays notes, sound in the half second after a bar starts is treated as the release tail of the bar before and is ignored). A note ends when the renderer releases it: its own release, a scene that stops the track, the end of a placement, or the next note on the track. A note that starts mid-bar counts its first bar. |
 | step 1-16 | Rhythm profile (next paragraph). The percentage is the swing of the track's pattern. |
 
 The **rhythm profile** shows where in the bar the track's attacks land. Each
@@ -177,7 +177,7 @@ decimals. Levels below the floor read -120.
 | `full_mix_key[]` | array | The same from the whole mix. |
 | `audibility_db` | number | Pitched stems against the whole mix, 125 Hz to 2 kHz, in dB. |
 | `masked_bars` | number | Bars with `masked` true. |
-| `bars[]` | array | One per analyzed bar: `bar` (one-based), `written_notes` (pitch classes), `written`, `heard` (from the pitched stems), `heard_fit` (0..1 template similarity), `mix_rms_dbfs`, `audibility_db`, `masked` (`audibility_db` below -15), `match` (`agree`, `disagree`, `no-written-pitch`, `silent`). |
+| `bars[]` | array | One per analyzed bar: `bar` (one-based), `written_notes` (pitch classes), `written`, `heard` (from the pitched stems), `heard_fit` (0..1 cosine similarity of the pitch-class energy to the chosen chord), `mix_rms_dbfs`, `audibility_db`, `masked` (`audibility_db` below -15), `match` (`agree`, `disagree`, `no-written-pitch`, `silent`). |
 | `harmony_mismatches` | number | Count of bars with `match` `disagree`. |
 | `tracks[]` | array | One per track, in score order: `id`, `silent` (true under -80 dBFS; the other fields except `rms_dbfs` are then zero), `rms_dbfs`, `level_vs_loudest_db`, `energy_share_pct`, `band_vs_mix_db`, `masked` (`band_vs_mix_db` below -15), `centroid_hz`, `attack_ms`, `decay20_ms`, `decay20_lower_bound`, `onsets`, `active_bars` (bars where the track plays or sounds), `onsets_per_bar`, `swing_percent`, `rhythm` (16 numbers, 0..1, slot 1 first). |
 | `sections[]` | array | `name`, `from_bar`, `to_bar` (inclusive, one-based), `rms_dbfs`, `centroid_hz`, `onsets_per_bar`, `tracks`. |

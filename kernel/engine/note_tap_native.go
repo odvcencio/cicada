@@ -20,5 +20,17 @@ func (t *noteTap) fire(track int, event seq.Event) {
 	}
 }
 
+// tapRelease reports the release of the track's playing pattern note at tick.
+// Call it before the note's identity is cleared. It does nothing when no
+// pattern note is playing, so a release already tapped is not repeated.
+func (e *Engine) tapRelease(track int, tick int64) {
+	if e.tap.fn == nil {
+		return
+	}
+	if id := e.patterns[track].playingNote; id != 0 {
+		e.tap.fn(uint8(track), seq.Event{Kind: seq.NoteOff, NoteID: id, Tick: tick, Track: uint8(track)})
+	}
+}
+
 // SetNoteTap installs or, with nil, removes the note tap.
 func (e *Engine) SetNoteTap(fn NoteTap) { e.tap.fn = fn }

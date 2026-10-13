@@ -8,3 +8,5 @@ import "m31labs.dev/cicada/kernel/seq"
 type noteTap struct{}
 
 func (noteTap) fire(int, seq.Event) {}
+
+func (*Engine) tapRelease(int, int64) {}

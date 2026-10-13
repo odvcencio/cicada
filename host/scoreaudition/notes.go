@@ -24,14 +24,15 @@ type loggedNote struct {
 type noteLog struct {
 	mu    sync.Mutex
 	notes []loggedNote
-	open  map[[2]int64]int // (track, note id) -> index of the latest start
+	open  map[[2]int64]int // (track, note id) -> index of a note not yet released
+	cur   map[int]int      // track -> index of its latest start
 }
 
 func (l *noteLog) tap(track int, ev seq.Event) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	if l.open == nil {
-		l.open = map[[2]int64]int{}
+		l.open, l.cur = map[[2]int64]int{}, map[int]int{}
 	}
 	key := [2]int64{int64(track), ev.NoteID}
 	switch ev.Kind {
@@ -40,7 +41,14 @@ func (l *noteLog) tap(track int, ev seq.Event) {
 		if n.count == 0 {
 			n.notes[0], n.count = ev.Note, 1
 		}
+		// A new note on a track ends the one it replaces (a slide's source, or
+		// a note whose release the engine did not report).
+		if i, ok := l.cur[track]; ok && !l.notes[i].off {
+			l.notes[i].end, l.notes[i].off = max(l.notes[i].end, ev.Tick), true
+			delete(l.open, [2]int64{int64(track), l.notes[i].noteID})
+		}
 		l.open[key] = len(l.notes)
+		l.cur[track] = len(l.notes)
 		l.notes = append(l.notes, n)
 	case seq.NoteOff:
 		if i, ok := l.open[key]; ok {
@@ -105,6 +113,17 @@ type barActivity struct {
 	active    []bool // a note starts in the bar or is still sounding in it
 	played    []bool // a note starts in the bar
 	pattern   []*seq.Pattern
+}
+
+// hasEvents reports which tracks logged any note.
+func (l *noteLog) hasEvents(tracks int) []bool {
+	out := make([]bool, tracks)
+	for _, n := range l.notes {
+		if n.track < tracks {
+			out[n.track] = true
+		}
+	}
+	return out
 }
 
 // activity builds each track's bar activity from the logged notes. A bar is

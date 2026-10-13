@@ -352,12 +352,10 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 		}
 		switch {
 		case pitchedRMS < silentDB:
+			// Written notes but no sound is its own state, not a wrong chord.
 			br.Heard, br.HeardFit, br.Match = "", 0, "silent"
 			if count == 0 {
 				br.Match = "no-written-pitch"
-			} else {
-				r.Mismatches++
-				br.Match = "disagree"
 			}
 		case count == 0:
 			br.Match = "no-written-pitch"
@@ -426,11 +424,19 @@ func Analyze(score *notation.Score, opts Options) (*Analysis, error) {
 	// active (a clip has no notes, a tail outlives its note).
 	barSounding := make([][]bool, len(p.Tracks))
 	sustain := make([]bool, len(p.Tracks))
+	played := notes.hasEvents(len(p.Tracks))
+	// A track that plays notes gets a grace period at the start of each bar
+	// for the release tail of a note that ended in the bar before; its stem
+	// counts as sounding only if sound remains after the grace.
+	graceSamples := rate / 2
 	for ti := range p.Tracks {
 		sustain[ti] = pitched[ti]
 		barSounding[ti] = make([]bool, bars)
 		for b := 0; b < bars; b++ {
 			lo, hi := min(barSample(b), stems[ti].Len()), min(barSample(b+1), stems[ti].Len())
+			if played[ti] {
+				lo = min(lo+graceSamples, hi)
+			}
 			barSounding[ti][b] = hi > lo && rmsDB(stems[ti].Slice(lo, hi)) >= silentDB
 		}
 	}
