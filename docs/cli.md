@@ -4,6 +4,15 @@ Run `cicada help` for the command list, `cicada help COMMAND` for command usage,
 or `cicada help lib COMMAND` for a library subcommand. Each command also accepts
 `--help`.
 
+## Audition
+
+`cicada audition SCORE [-o DIR] [--from BAR] [--bars N] [--json]` renders the
+mix and stems and reports the heard key, written and heard chords per bar,
+per-track level, brightness, attack, decay and rhythm, and per-section
+loudness. With `-o` it writes `spectrogram.png`, `chroma.png` and
+`rhythm.png`. See [Audition](manual/audition.md) for each field and the JSON
+schema.
+
 ## Libraries
 
 Run library commands from the project folder, except `new`, which needs no

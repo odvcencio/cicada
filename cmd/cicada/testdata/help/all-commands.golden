@@ -227,6 +227,20 @@ Flags:
 
 Use --from 1 for the first bar. The legacy value --from 0 is accepted with a warning and means bar 1.
 
+### audition
+cicada audition <score.cicada> [flags]
+
+report what a score sounds like
+
+Flags:
+  -o <directory>   write spectrogram.png, chroma.png and rhythm.png
+  --from <bar>     one-based start bar (default 1)
+  --bars <n>       bars to analyze; 0 means through song end
+  --json           write the report as JSON (format cicada.audition/1)
+  --help           show this help
+
+Renders the mix and stems, then reports heard key, written and heard chords per bar, and per-track level, brightness, attack, decay and rhythm. See docs/manual/audition.md.
+
 ### verify-wav
 cicada verify-wav <file.wav> [flags]
 

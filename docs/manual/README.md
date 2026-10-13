@@ -68,6 +68,8 @@ together.
 - [Managing libraries](libraries.md) — create, inspect, pin, and vendor reusable
   declarations and audio; copy projects with Save As.
 - [Exporting](exporting.md) — render WAV, stems, and MIDI.
+- [Audition](audition.md) — check what a score sounds like: heard key, chords,
+  per-track level, brightness, decay and rhythm, with images.
 - [Live playback and mixing](next-level.md) — use native audio, host macros, MIDI, and mixer settings.
 - [Hosting the engine](engine-host.md) — integrate Cicada's Go or TinyGo audio
   engine.
