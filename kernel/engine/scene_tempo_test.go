@@ -664,7 +664,9 @@ func TestSceneTempoLoopedClipSeekMatchesPlayingThrough(t *testing.T) {
 	for i := range pcm {
 		pcm[i] = float32(i%127) / 1024
 	}
-	set := func(v float32) []SceneSetting { return []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: v}} }
+	set := func(v float32) []SceneSetting {
+		return []SceneSetting{{Track: 0xff, ID: kernel.ParamGlobalTempo, Value: v}}
+	}
 	for _, tempos := range [][3]float32{{124, 90, 124}, {121, 60, 121}} {
 		cfg := clipScheduleConfig()
 		cfg.BPMMilli, cfg.Schedule = 120000, nil
