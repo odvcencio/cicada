@@ -470,13 +470,14 @@ func TestStereoMeterQuantitiesFollowPan(t *testing.T) {
 	}
 }
 
-// A frame is all stereo or all mono: the master message that closes it must
-// survive, and no track may carry a partial set of quantities.
-func TestStereoMeterEmissionIsAllOrNothingAndKeepsTheFrameClosed(t *testing.T) {
-	for _, tracks := range []int{16, MaxTracks} {
+// Every track of the build, up to the native 64, gets all six meter messages. A
+// ring too full to hold the whole emission sends the mono pair for every track
+// instead, and the master message that closes the frame survives either way.
+func TestStereoMeterEmissionFitsEveryTrackOrFallsBackWhole(t *testing.T) {
+	build := func(tracks int) *Engine {
 		cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: tracks, MaxVoices: tracks, BPMMilli: 120_000}
 		for i := range tracks {
-			cfg.Track[i] = TrackConfig{Kind: VoiceGraph, Graph: sineProgram(375, 1), GainDB: 0, GainSet: true}
+			cfg.Track[i] = TrackConfig{Kind: VoiceGraph, Graph: sineProgram(375, 1), GainDB: 0, GainSet: true, Pan: -1}
 		}
 		e, err := New(cfg)
 		if err != nil {
@@ -485,10 +486,12 @@ func TestStereoMeterEmissionIsAllOrNothingAndKeepsTheFrameClosed(t *testing.T) {
 		if !e.Push(cmd.Command{Op: cmd.OpMeterRate, Track: 0xff, Arg0: 1, Arg1: 1}) {
 			t.Fatal("meter rate rejected")
 		}
+		return e
+	}
+	collect := func(e *Engine, tracks int) (perTrack map[uint8]int, peaks [2]float32, masterRMS bool) {
 		var left, right [128]float32
 		e.Render(left[:], right[:])
-		perTrack := map[uint8]int{}
-		masterRMS := false
+		perTrack = map[uint8]int{}
 		var m cmd.Message
 		for e.Poll(&m) {
 			if m.Kind == cmd.Fault {
@@ -496,24 +499,42 @@ func TestStereoMeterEmissionIsAllOrNothingAndKeepsTheFrameClosed(t *testing.T) {
 			}
 			if m.Kind == cmd.Meter && int(m.Track) < tracks {
 				perTrack[m.Track]++
+				if int(m.Track) == tracks-1 && (m.A == 2 || m.A == 3) {
+					peaks[m.A-2] = math.Float32frombits(m.B)
+				}
 			}
 			masterRMS = masterRMS || m.Kind == cmd.Meter && m.Track == 0xff && m.A == 1
 		}
-		first := perTrack[0]
-		if first != 2 && first != 6 {
-			t.Fatalf("%d tracks: track 0 produced %d meter messages", tracks, first)
-		}
+		return
+	}
+	for _, tracks := range []int{16, MaxTracks} {
+		perTrack, peaks, masterRMS := collect(build(tracks), tracks)
 		for track := range uint8(tracks) {
-			if perTrack[track] != first {
-				t.Fatalf("%d tracks: track %d produced %d messages, track 0 produced %d", tracks, track, perTrack[track], first)
+			if perTrack[track] != 6 {
+				t.Fatalf("%d tracks: track %d produced %d meter messages, want 6", tracks, track, perTrack[track])
 			}
-		}
-		if tracks == 16 && first != 6 {
-			t.Fatal("a sixteen-track session must report stereo meters")
 		}
 		if !masterRMS {
 			t.Fatalf("%d tracks: the master RMS message that closes a meter frame was dropped", tracks)
 		}
+		// The last track is hard left: separation survives at the full track count.
+		if tracks == MaxTracks && (peaks[0] <= 0 || peaks[1] != 0) {
+			t.Fatalf("%d tracks: last track peaks L=%g R=%g, want a hard-left signal", tracks, peaks[0], peaks[1])
+		}
+	}
+	// A ring already holding more than the emission leaves room for falls back whole.
+	full := build(MaxTracks)
+	for i := 0; i < len(full.messages)-300; i++ {
+		full.emit(cmd.Message{Kind: cmd.Switched, A: uint16(i)})
+	}
+	perTrack, _, masterRMS := collect(full, MaxTracks)
+	for track := range uint8(MaxTracks) {
+		if perTrack[track] != 2 {
+			t.Fatalf("crowded ring: track %d produced %d meter messages, want the mono pair", track, perTrack[track])
+		}
+	}
+	if !masterRMS {
+		t.Fatal("crowded ring: the master message was dropped")
 	}
 }
 

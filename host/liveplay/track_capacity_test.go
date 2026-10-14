@@ -19,6 +19,7 @@ func TestNativeLastTrackLiveNotesOverridesAndMeters(t *testing.T) {
 	program.Nodes[1] = graph.Node{Op: graph.Sine, A: 0}
 	program.Len, program.Output = 2, 1
 	cfg.Track[63].Kind, cfg.Track[63].Graph = engine.VoiceGraph, program
+	cfg.Track[63].Pan = -1 // hard left
 	e, err := engine.New(cfg)
 	if err != nil {
 		t.Fatal(err)
@@ -52,10 +53,10 @@ func TestNativeLastTrackLiveNotesOverridesAndMeters(t *testing.T) {
 	if last.TrackCount != 64 || last.TrackIDs[63] != "t63" || last.Tracks[63].Peak <= 0 || math.IsNaN(float64(last.Tracks[63].Peak)) {
 		t.Fatalf("last track meters: %+v", last)
 	}
-	// Sixty-four tracks are too wide for the engine's message ring to carry
-	// per-channel quantities, so both channels report the mono level.
-	if track := last.Tracks[63]; track.PeakL != track.Peak || track.PeakR != track.Peak || track.RMSL != track.RMS || track.RMSR != track.RMS {
-		t.Fatalf("a mono-only frame must report equal channels: %+v", track)
+	// The message ring holds stereo quantities for all sixty-four tracks, so the
+	// last track keeps its channel separation.
+	if track := last.Tracks[63]; track.PeakL <= 0 || track.PeakR != 0 || track.RMSL <= 0 || track.RMSR != 0 {
+		t.Fatalf("hard-left track 63 lost its channel separation at 64 tracks: %+v", track)
 	}
 	identity := p.trackNames.Load().overrideTrack(63)
 	overrides := p.overrides.Load().tracks[identity]

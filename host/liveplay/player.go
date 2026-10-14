@@ -1219,8 +1219,8 @@ func assignMeter(meter *MeterValue, quantity uint16, value float32) {
 
 func (p *Player) publishMeter(frame MeterFrame) {
 	if !frame.stereo {
-		// The engine drops per-channel quantities for a session too wide for its
-		// message ring. Report both channels at the mono level.
+		// The engine drops per-channel quantities when its message ring is too full for
+		// the whole emission. Report both channels at the mono level.
 		for i := 0; i < int(frame.TrackCount); i++ {
 			track := &frame.Tracks[i]
 			track.PeakL, track.PeakR, track.RMSL, track.RMSR = track.Peak, track.Peak, track.RMS, track.RMS

@@ -268,7 +268,7 @@ type Engine struct {
 	masterMute, masterSolo       bool
 	commands                     [CommandCapacity]cmd.Command
 	commandRead, commandWrite    uint16
-	messages                     [256]cmd.Message
+	messages                     [messageCapacity]cmd.Message
 	messageRead, messageWrite    uint16
 	overflowMessages             [2]cmd.Message
 	overflowRead, overflowLen    uint8
@@ -1086,8 +1086,8 @@ func smoothingAlpha(id kernel.ParamID, sampleRate int) float32 {
 func (e *Engine) emitMeters(masterBlockPeak float32) {
 	tick := e.transport.Tick()
 	// Four more messages per track must fit beside the rest of the emission, or
-	// a full ring would drop the master message that closes the frame. A session
-	// too wide for the ring reports mono pairs only; hosts treat missing stereo
+	// a full ring would drop the master message that closes the frame. When the ring
+	// is too full for them, tracks report mono pairs only; hosts treat missing stereo
 	// quantities as equal channels.
 	stereo := e.stereoMeters && int(e.messageWrite-e.messageRead)+e.tracks*6+16 <= len(e.messages)
 	for track := 0; track < e.tracks; track++ {
