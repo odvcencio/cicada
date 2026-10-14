@@ -9,10 +9,13 @@ import (
 	"m31labs.dev/gosx/signal"
 )
 
-// Engines that hold input the server has not seen register a check here. A
-// refresh never discards unsaved work: while any check reports work, or a form
-// control on the page differs from what the server rendered, the shell shows a
-// notice instead of reloading.
+// A refresh never discards unsaved work. Each engine that holds work the
+// server has not seen registers a check here (the Sampler's performance, Live's
+// note takes, the automation editor's points). A check reads the engine's real
+// state, so gestures, key edits and programmatic writes all count, and it turns
+// false only when the service accepted the work or the user discarded it. The
+// refresh asks this registry plus the edited-controls check below, and nothing
+// else. An engine that holds unsaved work and does not register is a bug.
 var unsavedWork sync.Map // map[string]func() bool
 
 // holdUnsavedWork registers an engine's check and returns its removal.

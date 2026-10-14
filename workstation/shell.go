@@ -73,17 +73,13 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	dock := oneOf(query.Get("dock"), shellDocks)
 	region := oneOf(query.Get("region"), shellPhones)
 	// The Code lens always shows the score, so the loader selects its file.
-	codeView, props, unavailable, ok := s.loadWorkspace(ctx, "code")
+	// One read: the Code lens gets the selected file and any restored draft;
+	// every other panel gets the unmodified snapshot, so its source matches the
+	// saved project.
+	var view workspace
+	codeView, props, unavailable, ok := s.loadWorkspace(ctx, "code", &view)
 	if !ok {
 		return unavailable, workspace{}, false
-	}
-	// Only the Code lens shows the selected file and any restored draft. Every
-	// other panel reads the saved score, so its source matches the saved project.
-	view := codeView
-	var saved workspace
-	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/workspace", nil, &saved); err == nil {
-		saved.DiskSource, saved.DiskRevision = saved.Source, saved.Revision
-		view = saved
 	}
 	csrf := session.Token(ctx.Request)
 	var state transport

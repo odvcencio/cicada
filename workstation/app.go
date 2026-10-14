@@ -156,8 +156,9 @@ func (s *studioApp) page(ctx *server.Context) gosx.Node {
 
 // loadWorkspace opens the editing session and reads the workspace for a page.
 // When ok is false the node is the complete page body, because the app is unavailable. The panel
-// name selects the code file and draft restoration only for "code".
-func (s *studioApp) loadWorkspace(ctx *server.Context, panel string) (workspace, ui.ShellProps, gosx.Node, bool) {
+// name selects the code file and draft restoration only for "code". When saved
+// is not nil it receives the same read before those changes.
+func (s *studioApp) loadWorkspace(ctx *server.Context, panel string, saved *workspace) (workspace, ui.ShellProps, gosx.Node, bool) {
 	ctx.NoStore()
 	// GoSX's managed navigation has its own page cache. HTTP no-store alone
 	// cannot invalidate an already visited panel after a score mutation.
@@ -182,6 +183,12 @@ func (s *studioApp) loadWorkspace(ctx *server.Context, panel string) (workspace,
 	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/workspace", nil, &view); err != nil {
 		ctx.SetStatus(http.StatusServiceUnavailable)
 		return workspace{}, ui.ShellProps{}, ui.Panel(ui.PanelProps{ID: "workspace", Title: "Studio unavailable", Description: err.Error()}), false
+	}
+	if saved != nil {
+		// The unmodified snapshot, taken before any file selection or draft
+		// restoration, for panels that must match the saved project.
+		*saved = view
+		saved.DiskSource, saved.DiskRevision = saved.Source, saved.Revision
 	}
 	if panel == "code" {
 		selected := ctx.Request.URL.Query().Get("file")
@@ -236,7 +243,7 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 	if panel == "" {
 		panel = "session"
 	}
-	view, props, unavailable, ok := s.loadWorkspace(ctx, panel)
+	view, props, unavailable, ok := s.loadWorkspace(ctx, panel, nil)
 	if !ok {
 		return unavailable, workspace{}
 	}

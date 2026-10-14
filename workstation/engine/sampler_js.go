@@ -53,7 +53,7 @@ type samplerUI struct {
 	voices                               []*samplerVoice
 	perf                                 padsampler.Performance
 	keyPads                              map[int]bool
-	savedHits                            int
+	savedPerf                            string
 	initialized, recording, posting      bool
 	origin                               float64
 	recordRevision                       string
@@ -253,7 +253,7 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 	}
 	go u.refreshLoop()
 	go u.clockLoop()
-	releaseUnsaved := holdUnsavedWork("sampler", func() bool { return len(u.perf.Hits) != u.savedHits })
+	releaseUnsaved := holdUnsavedWork("sampler", u.unsavedPerformance)
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
@@ -322,7 +322,7 @@ func (u *samplerUI) load() error {
 	}
 	if !u.initialized {
 		u.perf = state.Bank.Performance
-		u.savedHits = len(u.perf.Hits)
+		u.savedPerf = u.perfFingerprint()
 		u.recordRevision = state.Revision
 		u.initialized = true
 		u.events()
@@ -626,6 +626,7 @@ func (u *samplerUI) resample(form js.Value) {
 	}
 	u.posting = true
 	data, _ := json.Marshal(u.perf)
+	submitted := string(data)
 	values := map[string]string{"action": "resample", "performance": string(data), "revision": u.recordRevision, "bankRevision": u.state.BankRevision, "__cicada_location": workspaceLocation()}
 	for _, key := range []string{"csrf_token", "newName", "track", "at", "destination"} {
 		values[key] = form.Call("querySelector", "[name="+key+"]").Get("value").String()
@@ -657,12 +658,29 @@ func (u *samplerUI) resample(form js.Value) {
 			return
 		}
 		u.status("Resampled · open Session to arrange the new clip.")
+		// The service accepted exactly the performance that was submitted. Later
+		// hits still count as unsaved.
+		u.savedPerf = submitted
 		u.recordRevision = ""
 		_ = u.load()
 		u.recordRevision = u.state.Revision
 		workspaceRefreshRequested.Update(func(n uint64) uint64 { return n + 1 })
 	}()
 }
+
+// perfFingerprint identifies the performance's content, so every recorded or
+// edited hit changes it and two different performances of equal length differ.
+func (u *samplerUI) perfFingerprint() string {
+	data, _ := json.Marshal(u.perf)
+	return string(data)
+}
+
+// unsavedPerformance is the Sampler's entry in the unsaved-work registry: hits
+// that exist and differ from the performance the service last accepted.
+func (u *samplerUI) unsavedPerformance() bool {
+	return len(u.perf.Hits) > 0 && u.perfFingerprint() != u.savedPerf
+}
+
 func (u *samplerUI) editor() js.Value {
 	return u.panel.Call("querySelector", "#sampler-pad-editor form")
 }

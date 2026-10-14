@@ -40,7 +40,7 @@ async function sharedBrowser() {
       executablePath = [process.env.PROGRAMFILES, process.env['PROGRAMFILES(X86)']]
         .filter(Boolean).map(root => path.join(root, 'Google', 'Chrome', 'Application', 'chrome.exe')).find(candidate => fs.existsSync(candidate));
     }
-    const browser = await playwright().chromium.launch({headless: process.env.CICADA_HEADLESS !== '0', executablePath});
+    const browser = await playwright().chromium.launch({headless: process.env.CICADA_HEADLESS !== '0', executablePath, args: ['--autoplay-policy=no-user-gesture-required']});
     shared = {browser, context: await browser.newContext({viewport: {width: 1440, height: 900}})};
   }
   return shared;
@@ -281,19 +281,43 @@ test('a finished Live note take shows its review and commit controls without a r
   await page.close();
 });
 
-test('a sampler resample from the shell refreshes Arrange and the Code lens', async t => {
-  const {page} = await openShell('?tab=arrange');
-  const loaded = await page.evaluate(() => document.querySelectorAll('[data-sampler-pad]:not([disabled])').length);
-  if (loaded === 0) {
-    t.skip('no sample pads are loaded in this score');
-    await page.close();
-    return;
-  }
-  await page.locator('[data-sampler-control="record"]').click();
-  await page.locator('[data-sampler-pad]:not([disabled])').first().click();
-  await page.locator('[data-sampler-control="stop"]').click();
-  await page.locator('[data-sampler-resample] button[type="submit"]').click();
-  await page.locator('#studio-code', {hasText: 'pad-print'}).waitFor({timeout: 20_000});
+// Pads load without audio hardware: the upload decodes in the browser's own
+// audio context, as the sampler regression does. Record one hit, check the
+// unsaved performance blocks a refresh, resample, and check that the accepted
+// performance no longer blocks it, so the shell refreshes by itself.
+test('a sampler resample from the shell refreshes Arrange and the Code lens', {timeout: 120_000}, async () => {
+  const {page, requests} = await openShell('?tab=arrange');
+  const frames = 24000, wav = Buffer.alloc(44 + frames * 8);
+  wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16);
+  wav.writeUInt16LE(3, 20); wav.writeUInt16LE(2, 22); wav.writeUInt32LE(48000, 24); wav.writeUInt32LE(384000, 28);
+  wav.writeUInt16LE(8, 32); wav.writeUInt16LE(32, 34); wav.write('data', 36); wav.writeUInt32LE(frames * 8, 40);
+  for (let i = 0; i < frames; i++) { wav.writeFloatLE(.35 * Math.sin(i * 2 * Math.PI * 220 / 48000), 44 + i * 8); wav.writeFloatLE(.2 * Math.sin(i * 2 * Math.PI * 330 / 48000), 48 + i * 8); }
+  const openSampler = async () => {
+    if (!(await page.locator('#browser-sampler').evaluate(section => section.open))) await page.locator('#browser-sampler > summary').click();
+  };
+  await openSampler();
+  await page.locator('input[type=file][name=audio]').setInputFiles({name: 'Shell regression.wav', mimeType: 'audio/wav', buffer: wav});
+  await Promise.all([page.waitForURL(/\/studio/), page.getByRole('button', {name: 'Import and chop WAV', exact: true}).click()]);
+  await page.locator('#studio-shell').waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('[data-sampler-pad]:not([disabled])').length > 0, null, {timeout: 45_000});
+  await openSampler();
+  await page.getByRole('button', {name: 'Record pads', exact: true}).click();
+  await page.keyboard.press('1');
+  const hits = async () => JSON.parse(await page.locator('[data-sampler-resample] input[name=performance]').inputValue()).hits.length;
+  await page.waitForFunction(() => JSON.parse(document.querySelector('[data-sampler-resample] input[name=performance]').value).hits.length === 1);
+  await page.getByRole('button', {name: 'Stop pads', exact: true}).click();
+  assert.equal(await hits(), 1);
+  // The unsaved performance is protected from an automatic refresh.
+  await page.evaluate(() => { window.__alive = true; document.dispatchEvent(new Event('cicada:shell-refresh')); });
+  await page.locator('#studio-refresh-notice').waitFor({state: 'visible'});
+  assert.equal(await page.evaluate(() => window.__alive === true), true, 'the unresampled performance survived the refresh request');
+  // After a confirmed resample the same request goes through.
+  const documents = requests.filter(request => request === 'GET /studio').length;
+  await page.locator('[data-sampler-resample] form [name=newName]').fill('shell-print');
+  await page.getByRole('button', {name: 'Resample performance', exact: true}).click();
+  await page.waitForFunction(() => document.querySelector('#studio-code textarea')?.value.includes('shell-print'), null, {timeout: 60_000});
+  assert.ok(requests.filter(request => request === 'GET /studio').length > documents, 'the shell refreshed by itself');
+  assert.ok(!(await page.locator('#studio-refresh-notice').isVisible()), 'no notice after the accepted resample');
   await page.close();
 });
 
