@@ -89,26 +89,40 @@ func BenchmarkPatternEditsValidTypical(b *testing.B) {
 	}
 }
 
-// The dry run shares the render thread with 0.67 ms blocks, so a full queue and
-// a 64-edit batch must stay a small fraction of one. The bound has headroom for
-// a loaded machine; the smallest of several runs is compared.
-func TestPatternEditsValidTimingBudget(t *testing.T) {
-	const budget = 100 * time.Microsecond
-	for name, slots := range map[string]int{"one slot": 1, "sixteen slots": 16} {
-		e, cs := editQueueEngine(t, 224, 224, 64, slots)
-		best := time.Hour
-		for run := 0; run < 7; run++ {
-			start := time.Now()
-			for i := 0; i < 20; i++ {
-				if !e.PatternEditsValid(cs) {
-					t.Fatalf("%s: worst-case batch was refused", name)
-				}
+// bestDryRun is the smallest of several timings of one PatternEditsValid call.
+func bestDryRun(t *testing.T, pending, ring, batch, slots int) time.Duration {
+	t.Helper()
+	e, cs := editQueueEngine(t, pending, ring, batch, slots)
+	reps := 4_000 / (1 + (pending+ring)/8) // keep each timed run near a millisecond
+	reps = max(reps, 4)
+	best := time.Hour
+	for run := 0; run < 9; run++ {
+		start := time.Now()
+		for i := 0; i < reps; i++ {
+			if !e.PatternEditsValid(cs) {
+				t.Fatal("batch was refused")
 			}
-			best = min(best, time.Since(start)/20)
 		}
-		if best > budget {
-			t.Fatalf("%s: worst-case dry run takes %v per batch, budget %v", name, best, budget)
-		}
-		t.Logf("%s: worst-case dry run %v per batch", name, best)
+		best = min(best, time.Since(start)/time.Duration(reps))
+	}
+	return best
+}
+
+// The dry run shares the render thread with 0.67 ms blocks. Wall-clock limits do
+// not hold across machines, so this compares costs measured in the same run: a
+// full queue and a 64-edit batch must cost a bounded multiple of a small batch,
+// and spreading the batch over sixteen slots a small multiple of one slot. The
+// earlier quadratic scan cost about 175 times the typical batch; the current one
+// about 10 times.
+func TestPatternEditsValidScalesWithQueueNotItsProduct(t *testing.T) {
+	typical := bestDryRun(t, 0, 0, 8, 1)
+	one := bestDryRun(t, 224, 224, 64, 1)
+	sixteen := bestDryRun(t, 224, 224, 64, 16)
+	t.Logf("typical %v, worst case %v (%.1fx), sixteen slots %v (%.1fx the worst case)", typical, one, float64(one)/float64(typical), sixteen, float64(sixteen)/float64(one))
+	if one > 35*typical {
+		t.Fatalf("worst case %v is %.0fx the typical %v; limit 35x (the quadratic scan was about 175x)", one, float64(one)/float64(typical), typical)
+	}
+	if sixteen > 4*one {
+		t.Fatalf("sixteen slots cost %v, %.1fx the one-slot worst case %v; limit 4x", sixteen, float64(sixteen)/float64(one), one)
 	}
 }
