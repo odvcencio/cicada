@@ -259,6 +259,9 @@ func masterEffectParams(effect Effect) (pro.Params, error) {
 		default:
 			return p, fmt.Errorf("CICADA-PARAM: unknown %s parameter %s", kind, name)
 		}
+		if kind+"."+name == "width.bass_mono" && v.Number != nil && *v.Number == 0 && v.Unit == "unit" {
+			v.Unit = "hz" // a plain 0 turns the filter off, as 0Hz does
+		}
 		if v.Number == nil || v.Text != "" || v.Unit != unit || math.IsNaN(*v.Number) || math.IsInf(*v.Number, 0) {
 			return p, fmt.Errorf("CICADA-PARAM: %s %s requires %s", kind, name, unit)
 		}

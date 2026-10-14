@@ -30,7 +30,7 @@ ENGINE_METRICS_ARGS ?=
 
 test:
 	go test ./... -count=1
-	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs
+	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
 
@@ -40,7 +40,7 @@ test:
 # target covers every other package. `make test` still runs everything.
 test-ci-core:
 	go test $$(go list ./... | grep -v '^m31labs.dev/cicada/cmd/cicada$$') -count=1
-	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs
+	node --test cmd/cicada/studio-chord-grid.test.cjs cmd/cicada/browser_cpu_node.test.cjs scripts/demo-browser/soak-timing.test.cjs scripts/demo-browser/server-url.test.cjs cmd/cicada/state-poll.test.cjs cmd/cicada/source-written.test.cjs cmd/cicada/audio-sync-client.test.cjs
 	node host/web/chord_capability_test.cjs
 	node --test host/web/render-quantum.test.cjs host/web/scene-tempo.test.cjs
 
