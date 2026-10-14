@@ -7,8 +7,10 @@
  *
  * Install Playwright in the test environment, or set CICADA_PLAYWRIGHT_MODULE
  * to its package path or a createRequire anchor. CICADA_CHROME_PATH selects an
- * installed Chrome; CICADA_HEADLESS=0 shows it. The tests only read pages and
- * observe requests, so any running Studio works.
+ * installed Chrome; CICADA_HEADLESS=0 shows it. Several tests change the score:
+ * they post a pattern edit, press Undo and may record or resample. Run them only
+ * against a disposable score on a fresh Studio process, as CI does, because the
+ * first browser session to reach a Studio owns it.
  */
 'use strict';
 
@@ -164,13 +166,12 @@ test('tab lists expose roles, states and labels (axe-style structure check)', as
   await page.close();
 });
 
-// Engines that save (sampler resample, Live note takes) ask GoSX's managed
-// navigation to revalidate /studio: window.__gosx.host.navigation.revalidate().
-// This drives that exact call after a change made behind the page's back, so it
-// needs no audio hardware, and checks that revisions and score text advance
-// together and the next edit is not rejected as stale. CI starts the Studio for
-// this file with a fresh process, so this browser session owns it.
-test('a refresh after an engine save leaves the shell current', async () => {
+// Engines that save (sampler resample, Live note takes, finished takes) bump a
+// signal, and on /studio one watcher reloads the current URL. This test makes the
+// change behind the page's back and reloads, which is what that watcher does, and
+// checks what a reload guarantees: every revision field matches the saved score,
+// the shell is the page that came back, and the next edit is not rejected as stale.
+test('a reload after an engine save leaves the shell current', async () => {
   const {page, requests} = await openShell('?tab=arrange');
   const base = new URL(process.env.CICADA_STUDIO_URL);
   const {context} = await sharedBrowser();
@@ -184,18 +185,43 @@ test('a refresh after an engine save leaves the shell current', async () => {
   assert.ok(edit.status() < 400, `the behind-the-back edit must save, got ${edit.status()}`);
   const after = await state();
   assert.notEqual(after.revision, before.revision, 'the edit advanced the score revision');
-  const documents = requests.filter(request => request.startsWith('GET /studio')).length;
-  await page.evaluate(() => window.__gosx.host.navigation.revalidate());
-  await page.waitForFunction(revision => {
-    const inputs = [...document.querySelectorAll('#studio-shell input[type="hidden"][name="revision"]')];
-    return inputs.length > 0 && inputs.every(input => input.value === revision);
-  }, after.revision);
-  assert.ok(requests.filter(request => request.startsWith('GET /studio')).length > documents, 'the refresh asked the server for the shell again');
-  assert.deepEqual(await page.evaluate(() => document.querySelector('#studio-shell') !== null), true, 'the shell stayed mounted');
+  const documents = requests.filter(request => request === 'GET /studio').length;
+  await page.reload();
+  await page.locator('#studio-shell').waitFor();
+  assert.ok(requests.filter(request => request === 'GET /studio').length > documents, 'the reload fetched the shell again');
+  const revisions = await page.evaluate(() => [...document.querySelectorAll('#studio-shell input[type="hidden"][name="revision"]')].map(input => input.value));
+  assert.ok(revisions.length > 0 && revisions.every(value => value === after.revision), `revision fields ${JSON.stringify(revisions)} must all be ${after.revision}`);
   // The next edit, with no manual navigation, is not rejected as stale.
   const undone = page.waitForResponse(response => response.url().endsWith('/__actions/undo'));
   await page.locator('#undo-form button[type="submit"]').click();
   assert.ok((await undone).status() < 400, 'the edit after a refresh must not conflict');
+  await page.close();
+});
+
+// Capture state has one publisher for the page. On /studio the Takes engine
+// starts it; without it the status would stay on its initial line forever.
+test('a fresh shell load publishes native capture status', async () => {
+  const {page} = await openShell('?tab=arrange');
+  await page.waitForFunction(() => {
+    const status = document.querySelector('[data-capture-status]');
+    return status && status.textContent.trim() !== '' && !/Refreshing native capture/.test(status.textContent);
+  }, null, {timeout: 15_000});
+  await page.close();
+});
+
+// Live and the Sampler both claim letter keys and both stay mounted. The Sampler
+// stops the event at the document when it plays, so a probe on window sees the
+// key only if the Sampler did not take it.
+test('the closed Sampler does not take the Live keyboard', async () => {
+  const {page} = await openShell('?tab=session');
+  await page.waitForFunction(() => document.querySelector('#browser-sampler') && document.querySelector('[data-live-control]'));
+  await page.evaluate(() => { window.__keys = []; window.addEventListener('keydown', event => window.__keys.push(event.key)); });
+  await page.locator('body').focus();
+  await page.keyboard.press('a');
+  assert.deepEqual(await page.evaluate(() => window.__keys), ['a'], 'with the Sampler section closed, a reaches Live');
+  await page.locator('#browser-sampler > summary').click();
+  await page.keyboard.press('a');
+  assert.deepEqual(await page.evaluate(() => window.__keys), ['a'], 'with the Sampler section open and focused, the Sampler owns the key');
   await page.close();
 });
 

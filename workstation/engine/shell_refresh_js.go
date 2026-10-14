@@ -12,10 +12,12 @@ import (
 // application gets from the workspace engine. Engines that save (sampler
 // resample, retained Live note takes, finished takes) bump
 // workspaceRefreshRequested. The shell has no workspace engine, so one watcher
-// asks GoSX's managed navigation to revalidate the current URL: the server
-// renders the shell again, and GoSX reconciles the page, so the score,
-// the review controls and every revision field advance together. The panel
-// application keeps its own consumer and is untouched.
+// reloads the current /studio URL: the server renders the shell again, so the
+// score, the review controls and every revision field advance together. The
+// URL carries the view, the inspected file, pattern and step; the Code lens
+// draft and the retained note take live in the server session and come back
+// with the page. I looked for a lighter in-place refresh in the pinned GoSX
+// runtime and did not rely on one (see the PR notes).
 //
 // S2 replaces the bump with hub telemetry.
 func watchShellRefresh() {
@@ -27,11 +29,6 @@ func watchShellRefresh() {
 		}
 		seen = requested
 		if js.Global().Get("location").Get("pathname").String() != "/studio" {
-			return
-		}
-		navigation := js.Global().Get("__gosx").Get("host").Get("navigation")
-		if navigation.Type() == js.TypeObject && navigation.Get("revalidate").Type() == js.TypeFunction {
-			navigation.Call("revalidate")
 			return
 		}
 		js.Global().Get("location").Call("reload")

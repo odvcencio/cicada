@@ -52,6 +52,7 @@ type samplerUI struct {
 	buffers                              map[string]js.Value
 	voices                               []*samplerVoice
 	perf                                 padsampler.Performance
+	keyPads                              map[int]bool
 	initialized, recording, posting      bool
 	origin                               float64
 	recordRevision                       string
@@ -178,11 +179,25 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 			if i < 0 {
 				return
 			}
+			if event == "keyup" {
+				if u.keyPads[i+1] {
+					delete(u.keyPads, i+1)
+					u.releasePad(i + 1)
+					e.Call("preventDefault")
+				}
+				return
+			}
+			// Letter keys belong to Live unless the Sampler region has focus.
+			if !ownsKeyboard(keysSampler) {
+				return
+			}
 			e.Call("preventDefault")
 			e.Call("stopImmediatePropagation")
-			if event == "keyup" {
-				u.releasePad(i + 1)
-			} else if !e.Get("repeat").Bool() {
+			if !e.Get("repeat").Bool() {
+				if u.keyPads == nil {
+					u.keyPads = map[int]bool{}
+				}
+				u.keyPads[i+1] = true
 				u.audio.Call("resume")
 				velocity := 1.
 				if e.Get("shiftKey").Bool() {
@@ -193,6 +208,12 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 		})
 	}
 	u.listen(js.Global(), "blur", func(js.Value) { u.stop() })
+	watchKeyboardOwner(u.listen, keysSampler, func() {
+		for pad := range u.keyPads {
+			delete(u.keyPads, pad)
+			u.releasePad(pad)
+		}
+	})
 	u.listen(u.canvas, "pointerdown", func(e js.Value) {
 		if u.posting {
 			return

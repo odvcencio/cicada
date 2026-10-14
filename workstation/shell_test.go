@@ -12,6 +12,7 @@ import (
 
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
+	"m31labs.dev/gosx"
 	"m31labs.dev/gosx/command"
 )
 
@@ -525,5 +526,48 @@ func TestShellProjectionCarriesTheSavedScoreAndRevision(t *testing.T) {
 	}
 	if projection.Revision != "after" {
 		t.Errorf("projection revision=%q", projection.Revision)
+	}
+}
+
+func TestShellGetFormsStayInTheShell(t *testing.T) {
+	// The three panels that submit with GET render these forms.
+	forms := map[string]gosx.Node{
+		"View register":     gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/"), gosx.Attr("class", "actions")), hidden("panel", "patterns"), hidden("pattern", "p"), hidden("step", "3"), field("Lowest octave", wholeInput("octave", 3, -1, 8)), submit("", "", "View register")),
+		"Inspect parameter": gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/"), gosx.Attr("class", "action-form")), hidden("panel", "session"), field("Parameter", selectInput("automationPath", "a.b", []string{"a.b", "c.d"})), submit("", "", "Inspect parameter")),
+		"Update audition":   gosx.El("form", gosx.Attrs(gosx.Attr("method", "get"), gosx.Attr("action", "/"), gosx.Attr("class", "actions")), hidden("panel", "takes"), hidden("take", "t1"), field("Root MIDI note", numberInput("root", "60", "0", "127")), submit("", "", "Update audition")),
+	}
+	address, client, _ := testApp(t)
+	current, _ := url.Parse("/studio?tab=session&dock=device&file=b.cicada&pattern=p")
+	for name, form := range forms {
+		rendered := gosx.RenderHTML(shellLinks(current, form))
+		if strings.Contains(rendered, `action="/"`) || strings.Contains(rendered, `name="panel"`) {
+			t.Errorf("%s still targets the panel app: %s", name, rendered)
+		}
+		if !strings.Contains(rendered, `action="/studio"`) {
+			t.Fatalf("%s does not submit to /studio: %s", name, rendered)
+		}
+		// Submit natively: collect the form's named fields the way a browser does.
+		query := url.Values{}
+		for _, input := range regexp.MustCompile(`<input[^>]*type="hidden"[^>]*>`).FindAllString(rendered, -1) {
+			n := regexp.MustCompile(`name="([^"]*)"`).FindStringSubmatch(input)
+			v := regexp.MustCompile(`value="([^"]*)"`).FindStringSubmatch(input)
+			if n != nil && v != nil {
+				query.Set(n[1], v[1])
+			}
+		}
+		for key, want := range map[string]string{"tab": "session", "dock": "device", "file": "b.cicada"} {
+			if query.Get(key) != want {
+				t.Errorf("%s: hidden %s=%q, want %q", name, key, query.Get(key), want)
+			}
+		}
+		response, err := client.Get(address + "/studio?" + query.Encode())
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		if response.StatusCode != 200 || !strings.Contains(string(data), `id="studio-shell"`) {
+			t.Errorf("%s: native submission left the shell: %d", name, response.StatusCode)
+		}
 	}
 }

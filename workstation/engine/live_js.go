@@ -434,6 +434,9 @@ func (u *liveUI) bindControls() {
 		if t.Type() == js.TypeObject && !t.Call("closest", "input,textarea,select,[contenteditable=true]").IsNull() {
 			return
 		}
+		if !ownsKeyboard(keysLive) {
+			return
+		}
 		key := strings.ToLower(e.Get("key").String())
 		if key == " " || key == "enter" {
 			b := t.Call("closest", "[data-live-note],[data-live-drum]")
@@ -451,6 +454,13 @@ func (u *liveUI) bindControls() {
 	})
 	u.on(window, "keyup", func(e js.Value) { u.noteOff("key:" + strings.ToLower(e.Get("key").String())) })
 	u.on(window, "blur", func(js.Value) { u.closeNotes() })
+	watchKeyboardOwner(u.on, keysLive, func() {
+		for id := range u.held {
+			if strings.HasPrefix(id, "key:") {
+				u.noteOff(id)
+			}
+		}
+	})
 	u.on(window, "pagehide", func(js.Value) {
 		u.sequence++
 		form := url.Values{"csrf_token": {u.props.CSRF}, "type": {"release"}, "lease": {u.lease}, "sequence": {strconv.FormatUint(u.sequence, 10)}}

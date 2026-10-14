@@ -281,12 +281,29 @@ func shellRedirect(r *http.Request, target string) string {
 	return target
 }
 
-// shellLinks points a mounted panel's links at /studio instead of "/".
+var (
+	shellGetForm   = regexp.MustCompile(`(?s)<form([^>]*method="get"[^>]*)action="/"([^>]*)>(.*?)</form>`)
+	shellPanelName = regexp.MustCompile(`<input[^>]*name="panel"[^>]*>`)
+)
+
+// shellLinks points a mounted panel's links and GET forms at /studio instead of
+// "/". A GET form keeps the shell selection and file as hidden fields and drops
+// the legacy "panel" field.
 func shellLinks(current *url.URL, node gosx.Node) gosx.Node {
 	rendered := gosx.RenderHTML(node)
-	if !strings.Contains(rendered, `href="/?`) {
+	if !strings.Contains(rendered, `href="/?`) && !shellGetForm.MatchString(rendered) {
 		return node
 	}
+	rendered = shellGetForm.ReplaceAllStringFunc(rendered, func(match string) string {
+		parts := shellGetForm.FindStringSubmatch(match)
+		var fields strings.Builder
+		for _, name := range shellKept {
+			if value := current.Query().Get(name); value != "" {
+				fields.WriteString(`<input type="hidden" name="` + name + `" value="` + html.EscapeString(value) + `">`)
+			}
+		}
+		return `<form` + parts[1] + `action="/studio"` + parts[2] + `>` + fields.String() + shellPanelName.ReplaceAllString(parts[3], "") + `</form>`
+	})
 	return gosx.RawHTML(shellLinkPattern.ReplaceAllStringFunc(rendered, func(match string) string {
 		target := html.UnescapeString(shellLinkPattern.FindStringSubmatch(match)[1])
 		return `href="` + html.EscapeString(shellDestination(current, target, true)) + `"`
