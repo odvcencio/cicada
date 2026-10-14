@@ -3,7 +3,9 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -151,5 +153,57 @@ func TestVocalCompCommitLogsItsIntent(t *testing.T) {
 	}
 	if len(records[1].Intents) != 0 {
 		t.Fatalf("a candidate without its envelope logged %+v", records[1].Intents)
+	}
+}
+
+// Metadata that Studio would reject when it reads the comp back must never be
+// written, whichever public door the intent comes through.
+func TestPublicIntentsRefuseMetadataTheReaderRejects(t *testing.T) {
+	asset := `"asset":{"path":"comp.wav","sha256":"` + strings.Repeat("ab", 32) + `","frames":480,"ratehz":48000}`
+	comp := func(tempo int, segment string) string {
+		return fmt.Sprintf(`{"kind":"placevocalcomp","comp":{"track":"vox","tempoMilli":%d,"segments":[%s],"asset":"comp"},%s}`, tempo, segment, asset)
+	}
+	ok := `{"take":"t","startTick":0,"endTick":3840}`
+	cases := map[string]string{
+		"tempo zero":        comp(0, ok),
+		"tempo too high":    comp(400000, ok),
+		"tempo not project": comp(130000, ok),
+		"empty region":      comp(120000, `{"take":"t","startTick":3840,"endTick":3840}`),
+		"negative start":    comp(120000, `{"take":"t","startTick":-1,"endTick":3840}`),
+		"gain too high":     comp(120000, `{"take":"t","startTick":0,"endTick":3840,"gainDB":40}`),
+		"offset too large":  comp(120000, `{"take":"t","startTick":0,"endTick":3840,"offsetMS":900}`),
+		"fade too long":     comp(120000, `{"take":"t","startTick":0,"endTick":3840,"fadeMS":500}`),
+		"bad track":         strings.Replace(comp(120000, ok), `"track":"vox"`, `"track":"Bad Track"`, 1),
+		"bad asset name":    strings.Replace(comp(120000, ok), `"asset":"comp"`, `"asset":"x y\nz"`, 1),
+		"bad digest":        strings.Replace(comp(120000, ok), strings.Repeat("ab", 32), "ab", 1),
+		"no frames":         strings.Replace(comp(120000, ok), `"frames":480`, `"frames":0`, 1),
+		"sampler no digest": `{"kind":"placesamplerprint","name":"print","track":"vox","at":"@1.1.1","asset":{"path":"p.wav","sha256":"","frames":480,"ratehz":48000}}`,
+	}
+	for name, intent := range cases {
+		t.Run(name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			s := newTakeStudio(t, t.TempDir())
+			source := []byte(strings.Replace(audioTakeScore, "cicada 2\n", "cicada 2\ntempo 120\n", 1))
+			if err := os.WriteFile(s.path, source, 0600); err != nil {
+				t.Fatal(err)
+			}
+			before := snapshotStudioState(t, s)
+			body := fmt.Sprintf(`{"version":1,"revision":%q,"intents":[%s]}`, studioRevision(source), intent)
+			if response := studioCallRaw(t, s.routes(), "/api/intents", body); response.Code < 400 {
+				t.Fatalf("/api/intents accepted: %d %s", response.Code, response.Body)
+
+			}
+			file := filepath.Join(t.TempDir(), "intents.json")
+			if err := os.WriteFile(file, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := applyCommandWithHooks([]string{s.path, file, "--write"}, io.Discard, nil); err == nil {
+				t.Fatal("cicada apply accepted")
+			}
+			after := snapshotStudioState(t, s)
+			if !bytes.Equal(after.source, before.source) || after.log != before.log {
+				t.Fatal("refused intent left a trace")
+			}
+		})
 	}
 }

@@ -34,12 +34,7 @@ type studioRecordingSettings struct {
 	Passes       int      `json:"passes,omitempty"`
 }
 
-func validateVocalGain(gainDB float64) error {
-	if math.IsNaN(gainDB) || math.IsInf(gainDB, 0) || gainDB < -24 || gainDB > 18 {
-		return fmt.Errorf("phrase gain must be finite and between -24 and +18 dB")
-	}
-	return nil
-}
+func validateVocalGain(gainDB float64) error { return edits.ValidateVocalGain(gainDB) }
 
 func vocalPhraseSettings(settings *studioRecordingSettings) (gainDB float64, mode string, err error) {
 	mode = "context"
@@ -68,15 +63,7 @@ func vocalPhraseSettings(settings *studioRecordingSettings) (gainDB float64, mod
 }
 
 func validateVocalEdits(offsetMS float64, fadeMS, crossfadeMS *float64) error {
-	if math.IsNaN(offsetMS) || math.IsInf(offsetMS, 0) || offsetMS < -500 || offsetMS > 500 {
-		return fmt.Errorf("phrase timing advance must be finite and between -500 and +500 ms")
-	}
-	for name, value := range map[string]*float64{"fade": fadeMS, "crossfade": crossfadeMS} {
-		if value != nil && (math.IsNaN(*value) || math.IsInf(*value, 0) || *value < 0 || *value > 100) {
-			return fmt.Errorf("phrase %s must be finite and between 0 and 100 ms", name)
-		}
-	}
-	return nil
+	return edits.ValidateVocalEdits(offsetMS, fadeMS, crossfadeMS)
 }
 
 func vocalEditValue(value *float64, fallback float64) float64 {
@@ -110,19 +97,8 @@ func vocalComps(source []byte) ([]vocalComp, error) {
 		if err := json.Unmarshal([]byte(strings.TrimPrefix(line, vocalCompPrefix)), &c); err != nil {
 			return nil, fmt.Errorf("vocal comp metadata: %w", err)
 		}
-		if !studioPatternName.MatchString(c.Track) || len(c.Segments) > 4096 || c.Tempo < 20000 || c.Tempo > 300000 {
-			return nil, fmt.Errorf("invalid vocal comp metadata")
-		}
-		for _, seg := range c.Segments {
-			if seg.Start < 0 || seg.End <= seg.Start || seg.End > 1<<40 {
-				return nil, fmt.Errorf("invalid vocal comp region")
-			}
-			if err := validateVocalGain(seg.GainDB); err != nil {
-				return nil, fmt.Errorf("invalid vocal comp metadata: %w", err)
-			}
-			if err := validateVocalEdits(seg.OffsetMS, seg.FadeMS, seg.CrossfadeMS); err != nil {
-				return nil, fmt.Errorf("invalid vocal comp metadata: %w", err)
-			}
+		if err := edits.ValidateVocalComp(c); err != nil {
+			return nil, err
 		}
 		result = append(result, c)
 	}

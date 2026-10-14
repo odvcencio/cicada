@@ -47,6 +47,9 @@ func init() {
 }
 
 func samplerPrintSource(ctx *Context, in PlaceSamplerPrint) ([]byte, error) {
+	if in.Asset.RateHz <= 0 || in.Asset.Frames <= 0 || in.Asset.Path == "" || len(in.Asset.SHA256) != 64 {
+		return nil, fmt.Errorf("sampler print needs a path, a SHA-256 digest, a frame count and a sample rate")
+	}
 	plan, err := ctx.CurrentPlan()
 	if err != nil {
 		return nil, err
@@ -77,9 +80,6 @@ func samplerPrintSource(ctx *Context, in PlaceSamplerPrint) ([]byte, error) {
 	declarations := fmt.Sprintf("\nasset %s %s { sha256 = %s format = wav frames = %d rate = %dHz channels = 2 }\nclip %s %s { start = 0frames end = %dframes fade_in = 240frames fade_out = 240frames }\n", assetName, strconv.Quote(a.Path), strconv.Quote(a.SHA256), a.Frames, a.RateHz, clipName, assetName, a.Frames)
 	// Add declarations without rewriting the musician's existing score.
 	source = append(append([]byte(nil), source...), []byte(declarations)...)
-	if a.RateHz <= 0 {
-		return nil, fmt.Errorf("sampler print needs a sample rate")
-	}
 	length := int64(math.Ceil(float64(a.Frames) * float64(plan.TempoMilli) * float64(seq.PPQ) / (float64(a.RateHz) * 60000)))
 	return arrangementSource(source, file, arrangementOp{action: "append", newName: in.Name, settings: &PlacementSettings{At: in.At, Length: fmt.Sprintf("%dticks", length), Track: in.Track, Content: clipName}})
 }

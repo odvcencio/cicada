@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -72,14 +74,81 @@ func init() {
 	})
 }
 
+// ValidateVocalGain is the phrase gain rule: finite, -24 to +18 dB.
+func ValidateVocalGain(gainDB float64) error {
+	if math.IsNaN(gainDB) || math.IsInf(gainDB, 0) || gainDB < -24 || gainDB > 18 {
+		return fmt.Errorf("phrase gain must be finite and between -24 and +18 dB")
+	}
+	return nil
+}
+
+// ValidateVocalEdits is the phrase timing rule: advance within 500 ms, fades within 0 to 100 ms.
+func ValidateVocalEdits(offsetMS float64, fadeMS, crossfadeMS *float64) error {
+	if math.IsNaN(offsetMS) || math.IsInf(offsetMS, 0) || offsetMS < -500 || offsetMS > 500 {
+		return fmt.Errorf("phrase timing advance must be finite and between -500 and +500 ms")
+	}
+	for name, value := range map[string]*float64{"fade": fadeMS, "crossfade": crossfadeMS} {
+		if value != nil && (math.IsNaN(*value) || math.IsInf(*value, 0) || *value < 0 || *value > 100) {
+			return fmt.Errorf("phrase %s must be finite and between 0 and 100 ms", name)
+		}
+	}
+	return nil
+}
+
+// ValidateVocalComp is the one rule for a comp's metadata. The intent applies
+// it before writing the metadata comment and Studio applies it when reading
+// the comment back, so a comp that Studio would reject is never written.
+func ValidateVocalComp(c VocalComp) error {
+	if !patternName.MatchString(c.Track) || len(c.Segments) > 4096 || c.Tempo < 20000 || c.Tempo > 300000 {
+		return fmt.Errorf("invalid vocal comp metadata")
+	}
+	for _, seg := range c.Segments {
+		if seg.Start < 0 || seg.End <= seg.Start || seg.End > 1<<40 {
+			return fmt.Errorf("invalid vocal comp region")
+		}
+		if err := ValidateVocalGain(seg.GainDB); err != nil {
+			return fmt.Errorf("invalid vocal comp metadata: %w", err)
+		}
+		if err := ValidateVocalEdits(seg.OffsetMS, seg.FadeMS, seg.CrossfadeMS); err != nil {
+			return fmt.Errorf("invalid vocal comp metadata: %w", err)
+		}
+	}
+	return nil
+}
+
+var printedName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_-]{0,127}$`)
+
+// validatePrintAsset checks the file facts that become an asset declaration.
+func validatePrintAsset(name string, a PrintAsset) error {
+	if !printedName.MatchString(name) {
+		return fmt.Errorf("choose a valid name for the printed audio")
+	}
+	if a.Path == "" || a.Frames <= 0 || a.RateHz <= 0 || len(a.SHA256) != 64 {
+		return fmt.Errorf("printed audio needs a path, a SHA-256 digest, a frame count and a sample rate")
+	}
+	return nil
+}
+
 func vocalCompSource(ctx *Context, in PlaceVocalComp) ([]byte, error) {
 	next, track := in.Comp, in.Comp.Track
 	if len(next.Segments) == 0 {
 		return nil, fmt.Errorf("choose a vocal phrase before printing")
 	}
+	if err := ValidateVocalComp(next); err != nil {
+		return nil, err
+	}
+	if err := validatePrintAsset(next.Asset, in.Asset); err != nil {
+		return nil, err
+	}
+	if in.Previous != nil && !printedName.MatchString(in.Previous.Asset) {
+		return nil, fmt.Errorf("choose a valid name for the printed audio")
+	}
 	plan, err := ctx.CurrentPlan()
 	if err != nil {
 		return nil, err
+	}
+	if int64(plan.TempoMilli) != next.Tempo {
+		return nil, fmt.Errorf("vocal comp tempo differs from the project tempo")
 	}
 	source, file := ctx.Source, ctx.Options.Path
 	source, err = vocalArrangementSource(source, file, plan)
