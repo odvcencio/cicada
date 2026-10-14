@@ -33,6 +33,7 @@ func EditPlan(p *Project, source []byte, files ...notation.SourceFile) *edit.Pla
 		}
 	}
 	plan.Edition = p.Edition
+	plan.HasArrange = p.Arrange != nil
 	plan.Title = p.Title
 	plan.TempoMilli = p.TempoMilli
 	plan.KeyRoot = p.Key.Root

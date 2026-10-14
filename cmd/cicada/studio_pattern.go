@@ -1,12 +1,10 @@
 package main
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
-	"sort"
 
 	edits "m31labs.dev/cicada/edit"
 )
@@ -99,31 +97,6 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 	env.Intents = []edits.Intent{intent}
 	edit.Label = studioEditLabel(edit)
 	s.applyIntents(w, edit, env, edits.ParamWriterAuto, nil)
-}
-
-type studioSpanEdit struct {
-	start, end int
-	text       string
-}
-
-// Apply disjoint CST patches from the end so offsets refer to the original
-// source throughout. Everything outside these spans remains byte-identical.
-func patchStudioSpans(source []byte, edits []studioSpanEdit) ([]byte, error) {
-	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
-	updated := bytes.Clone(source)
-	limit := len(source)
-	for _, edit := range edits {
-		if edit.start < 0 || edit.end < edit.start || edit.end > limit {
-			return nil, fmt.Errorf("overlapping or invalid source patches")
-		}
-		var err error
-		updated, err = replaceSongSpan(updated, edit.start, edit.end, []byte(edit.text))
-		if err != nil {
-			return nil, err
-		}
-		limit = edit.start
-	}
-	return updated, nil
 }
 
 var studioPatternName = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,63}$`)

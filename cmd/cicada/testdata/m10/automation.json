@@ -1,0 +1,110 @@
+{
+  "arrange end": {
+    "error": "score must validate before editing automation"
+  },
+  "arrange past end": {
+    "error": "score must validate before editing automation"
+  },
+  "bad old position": {
+    "error": "expected exact ticks, bars, or note division; actual \"later\""
+  },
+  "bad position": {
+    "error": "choose a sixteenth-note position within the song"
+  },
+  "bad shape": {
+    "error": "choose linear, step, smooth, exponential or curve"
+  },
+  "empty value": {
+    "error": "value must be a finite number"
+  },
+  "insert after last": {
+    "error": "choose a sixteenth-note position within the song"
+  },
+  "insert before first": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 400Hz // low\n    @1.2.1 500Hz linear\n@5.1.1 1600Hz smooth // high\n}\n"
+  },
+  "insert between": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 400Hz // low\n    @3.1.1 1250Hz smooth\n@5.1.1 1600Hz smooth // high\n}\n"
+  },
+  "insert crlf": {
+    "source": "cicada 2\r\ntempo 120\r\ntrack bass acid { cutoff=700Hz }\r\npattern riff acid steps=4 { 1 . 5 . }\r\nscene main { bass=riff }\r\nsong { main*4 }\r\n// keep this\r\nautomate bass.cutoff {\r\n  @1.1.1 400Hz // low\r\n    @3.1.1 1250Hz smooth\r\n@5.1.1 1600Hz smooth // high\r\n}\r\n"
+  },
+  "insert curve": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 400Hz // low\n    @3.1.1 500Hz curve -1.5\n@5.1.1 1600Hz smooth // high\n}\n"
+  },
+  "insert exponential": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 400Hz // low\n    @3.1.1 500Hz exponential\n@5.1.1 1600Hz smooth // high\n}\n"
+  },
+  "invalid score": {
+    "error": "score must validate before editing automation"
+  },
+  "move": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 400Hz // low\n  @4.1.1 900Hz curve -1 // high\n}\n"
+  },
+  "new lane": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n\nautomate bass.cutoff {\n  @2.1.1 500Hz linear\n}\n"
+  },
+  "new lane crlf": {
+    "source": "cicada 2\r\ntempo 120\r\ntrack bass acid { cutoff=700Hz }\r\npattern riff acid steps=4 { 1 . 5 . }\r\nscene main { bass=riff }\r\nsong { main*4 }\r\n\r\nautomate bass.level {\r\n  @2.1.1 -9.5dB linear\r\n}\r\n"
+  },
+  "occupied": {
+    "error": "another automation point already occupies that position"
+  },
+  "off the grid": {
+    "error": "choose a sixteenth-note position within the song"
+  },
+  "off the song": {
+    "error": "choose a sixteenth-note position within the song"
+  },
+  "out of range": {
+    "error": "value is outside 20..8000"
+  },
+  "remove": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 400Hz // low\n   // high\n}\n"
+  },
+  "remove bad shape": {
+    "error": "choose linear, step, smooth, exponential or curve"
+  },
+  "remove by old position": {
+    "error": "another automation point already occupies that position"
+  },
+  "remove last point": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n\n"
+  },
+  "remove missing": {
+    "error": "automation point no longer exists"
+  },
+  "remove no lane": {
+    "error": "automation point no longer exists"
+  },
+  "replace in place": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 450Hz linear // low\n  @5.1.1 1600Hz smooth // high\n}\n"
+  },
+  "replace same position": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 450Hz linear // low\n  @5.1.1 1600Hz smooth // high\n}\n"
+  },
+  "song end": {
+    "source": "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 400Hz // low\n  @5.1.1 500Hz linear // high\n}\n"
+  },
+  "stale old position": {
+    "error": "automation point no longer exists"
+  },
+  "stale old position no lane": {
+    "error": "automation point no longer exists"
+  },
+  "tension too large": {
+    "error": "curve tension must be −8 to +8 and only applies to curve"
+  },
+  "tension without curve": {
+    "error": "curve tension must be −8 to +8 and only applies to curve"
+  },
+  "toggle parameter": {
+    "error": "bass.insert has no continuous numeric automation"
+  },
+  "unknown parameter": {
+    "error": "unknown parameter path owner ghost"
+  },
+  "wrong unit": {
+    "error": "cutoff requires Hz"
+  }
+}

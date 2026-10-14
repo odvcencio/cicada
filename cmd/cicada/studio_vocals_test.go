@@ -37,8 +37,13 @@ func TestVocalCompReplacePreservesNeighbors(t *testing.T) {
 
 func fakeTimelineTake(t *testing.T, s *studio, start, end int64, frames int, value float32) takejournal.Take {
 	t.Helper()
+	return fakeTimelineTakeAt(t, s, start, end, frames, value, 120000)
+}
+
+func fakeTimelineTakeAt(t *testing.T, s *studio, start, end int64, frames int, value float32, tempoMilli int64) takejournal.Take {
+	t.Helper()
 	source, _ := os.ReadFile(s.path)
-	timeline := &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-seq.TicksPerBar), TempoMilli: 120000}
+	timeline := &takejournal.Timeline{StartTick: start, EndTick: end, PlaybackStartTick: max(0, start-seq.TicksPerBar), TempoMilli: tempoMilli}
 	id, err := s.takes.BeginTimeline("vox", "session", studioRevision(source), 48000, 1, timeline)
 	if err != nil {
 		t.Fatal(err)
@@ -133,11 +138,11 @@ func TestVocalSceneConversionPreservesBacking(t *testing.T) {
 	dir := t.TempDir()
 	s := newTakeStudio(t, dir)
 	os.WriteFile(s.path, source, 0600)
-	p, err := compileStudioSource(s.path, source)
-	if err != nil {
-		t.Fatal(err)
-	}
-	candidate, err := vocalArrangementSource(source, p)
+	// A silent take: the comp adds the arrange block and a placement but no sound,
+	// so the render must equal the scene song's.
+	takeFrames := int(seq.Clock{SampleRate: 48000, BPMMilli: 137333}.SampleAtTick(5 * seq.TicksPerBar))
+	take := fakeTimelineTakeAt(t, s, 0, 5*seq.TicksPerBar, takeFrames, 0, 137333)
+	candidate, err := s.vocalTakeSource(source, take, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

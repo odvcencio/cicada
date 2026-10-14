@@ -20,20 +20,22 @@ func (s *studio) addVocalChain(w http.ResponseWriter, request studioEdit) {
 		return
 	}
 	request.Label = "Add vocal chain to " + request.Track
-	s.applyWithResult(w, request, func(source []byte) (studioMutation, error) {
+	var chain []string
+	var response map[string]any
+	prepare := func(source []byte, opts *edits.Options) (edits.Envelope, error) {
 		if s.captureID != "" {
-			return studioMutation{}, fmt.Errorf("finish the recording before adding vocal effects")
+			return edits.Envelope{}, fmt.Errorf("finish the recording before adding vocal effects")
 		}
 		score, ds, err := parseScoreForPath(s.path, source)
 		if err != nil {
-			return studioMutation{}, err
+			return edits.Envelope{}, err
 		}
 		if score == nil || hasDiagnosticErrors(ds) {
-			return studioMutation{}, fmt.Errorf("score must validate before adding vocal effects")
+			return edits.Envelope{}, fmt.Errorf("score must validate before adding vocal effects")
 		}
 		score, ds = notation.ResolvePresets(score)
 		if hasDiagnosticErrors(ds) {
-			return studioMutation{}, fmt.Errorf("presets must validate before adding vocal effects")
+			return edits.Envelope{}, fmt.Errorf("presets must validate before adding vocal effects")
 		}
 		var track *notation.Track
 		used := map[string]bool{}
@@ -52,19 +54,20 @@ func (s *studio) addVocalChain(w http.ResponseWriter, request studioEdit) {
 		}
 		used["music"], used["sfx"], used["master"] = true, true, true
 		if track == nil {
-			return studioMutation{}, fmt.Errorf("unknown track %s", request.Track)
+			return edits.Envelope{}, fmt.Errorf("unknown track %s", request.Track)
 		}
-		chain := sourceInsertNames(track.Params)
+		chain = sourceInsertNames(track.Params)
 		// Any existing EQ -> compressor -> de-esser trio fulfils this preset. A
 		// second click must never double compression or silently change settings.
 		for i := 0; i+2 < len(chain); i++ {
 			a, b, c := findNotationEffect(score, chain[i]), findNotationEffect(score, chain[i+1]), findNotationEffect(score, chain[i+2])
 			if a != nil && b != nil && c != nil && a.Kind == "eq" && b.Kind == "comp" && c.Kind == "deesser" {
-				return studioMutation{Source: source, Response: map[string]any{"track": request.Track, "inserts": chain, "message": "Vocal chain is already present."}}, nil
+				response = map[string]any{"track": request.Track, "inserts": chain, "message": "Vocal chain is already present."}
+				return edits.Envelope{}, nil
 			}
 		}
 		if len(chain)+3 > engine.MaxTrackInserts {
-			return studioMutation{}, fmt.Errorf("vocal chain needs three free insert slots; tracks support eight stages")
+			return edits.Envelope{}, fmt.Errorf("vocal chain needs three free insert slots; tracks support eight stages")
 		}
 		name := func(suffix string) string {
 			base := request.Track
@@ -96,19 +99,13 @@ func (s *studio) addVocalChain(w http.ResponseWriter, request studioEdit) {
 		set(comp+".makeup", "0dB")
 		chain = append(chain, hp, comp, deess)
 		set(request.Track+".insert", strings.Join(chain, " -> "))
-		opts, err := s.editOptions(source, nil)
-		if err != nil {
-			return studioMutation{}, err
-		}
 		opts.ParamWriter = edits.ParamWriterMixer
-		result, err := edits.Apply(source, edits.Envelope{Version: edits.EnvelopeVersion, Revision: request.Revision, Author: request.Author, Session: request.Session, Intents: intents}, opts)
-		if err != nil {
-			return studioMutation{}, err
-		}
-		files, err := auxiliaryFiles(result.Files)
-		if err != nil {
-			return studioMutation{}, err
-		}
-		return studioMutation{Source: result.Source, Files: files, Response: map[string]any{"track": request.Track, "inserts": chain}}, nil
-	}, nil)
+		response = map[string]any{"track": request.Track, "inserts": chain}
+		return edits.Envelope{Intents: intents}, nil
+	}
+	finish := func(result *edits.Result) error {
+		result.Response = response
+		return nil
+	}
+	s.applyPreparedIntents(w, request, edits.Envelope{}, edits.ParamWriterAuto, prepare, finish, nil)
 }

@@ -1,13 +1,9 @@
 package main
 
 import (
-	"bytes"
-	"fmt"
 	"net/http"
 
 	edits "m31labs.dev/cicada/edit"
-	"m31labs.dev/cicada/kernel/limits"
-	"m31labs.dev/cicada/notation"
 )
 
 type studioClipSettings struct {
@@ -51,50 +47,4 @@ func (s *studio) editClip(w http.ResponseWriter, r *http.Request) {
 	}
 	edit.Label = studioEditLabel(edit)
 	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
-}
-
-func newAudioTrackSource(source []byte, name string, edition int) ([]byte, error) {
-	if edition != 2 || !studioPatternName.MatchString(name) {
-		return nil, fmt.Errorf("choose a lowercase audio track name in an edition-2 score")
-	}
-	root, walker, err := notation.ParseTree(source)
-	if err != nil {
-		return nil, err
-	}
-	if root.HasError() {
-		return nil, fmt.Errorf("fix score syntax before adding a track")
-	}
-	// Imported instruments are resolved by the enclosing project transaction.
-	// Inspect local declarations without trying to validate a loose-file score.
-	tracks := 0
-	for i := 0; i < root.NamedChildCount(); i++ {
-		node := root.NamedChild(i)
-		if walker.Type(node) != "track_decl" {
-			continue
-		}
-		tracks++
-		if walker.Text(walker.Field(node, "name")) == name {
-			return nil, fmt.Errorf("track %s already exists", name)
-		}
-	}
-	if tracks >= limits.MaxTracks {
-		return nil, fmt.Errorf("a project supports at most %d tracks", limits.MaxTracks)
-	}
-	at := len(source)
-	for i := 0; i < root.NamedChildCount(); i++ {
-		node := root.NamedChild(i)
-		if walker.Type(node) == "scene_decl" {
-			at = int(node.StartByte())
-			break
-		}
-	}
-	newline := "\n"
-	if bytes.Contains(source, []byte("\r\n")) {
-		newline = "\r\n"
-	}
-	text := "track " + name + " audio {}" + newline + newline
-	if at > 0 && source[at-1] != '\n' {
-		text = newline + text
-	}
-	return replaceSongSpan(source, at, at, []byte(text))
 }
