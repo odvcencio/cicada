@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/host/audition"
 	"m31labs.dev/cicada/host/padsampler"
 	"m31labs.dev/cicada/internal/testwav"
@@ -93,6 +94,10 @@ func TestStudioSamplerPlacementResampleAndAtomicUndo(t *testing.T) {
 	if err != nil || len(p.Arrange.Placements) != 3 || len(p.Clips) != 1 {
 		t.Fatalf("resampled arrangement: %v", err)
 	}
+	records, _, err := editlog.ReadLog(editlog.Path(s.path))
+	if err != nil || len(records) != 1 || len(records[0].Intents) != 1 || !strings.Contains(string(records[0].Intents[0]), `"kind":"placesamplerprint"`) || records[0].Label != "Resample pads into Session" {
+		t.Fatalf("edit log: %+v %v", records, err)
+	}
 	_, _, printed, printIDs := samplerSnapshot(t, h)
 	if !printed.Pads[15].BypassEffects || len(printed.Performance.Hits) != 1 || printIDs[15] == "" {
 		t.Fatal("print did not become a playable bypassed pad")
@@ -128,17 +133,6 @@ func TestStudioSamplerRejectsStaleInvalidAndUnpreparedEdits(t *testing.T) {
 }
 
 func ptrEffects(e padsampler.Effects) *padsampler.Effects { return &e }
-
-func TestSamplerAddsAudioTrackWithoutRevalidatingUnresolvedImports(t *testing.T) {
-	source := []byte("cicada 2\nimport \"std/keys\"\ntrack keys keys.tine_ep {}\npattern head { 1 . 3 . }\narrange { place original keys head { at = @1.1.1 length = 4bars } }\n")
-	updated, err := newAudioTrackSource(source, "sampler", 2)
-	if err != nil || !bytes.HasPrefix(updated, source) || !bytes.Contains(updated, []byte("track sampler audio {}")) {
-		t.Fatalf("imported score cannot acquire an audio track: %v", err)
-	}
-	if _, err = newAudioTrackSource(updated, "sampler", 2); err == nil {
-		t.Fatal("duplicate local audio track accepted")
-	}
-}
 
 func TestSamplerPrintClipCanBeEditedThroughTheClipRoute(t *testing.T) {
 	wav := testwav.Bytes(48000, 2, 16, 48000, 1)

@@ -9,7 +9,7 @@ import (
 )
 
 // workspace is the atomic score snapshot consumed by the GoSX workstation.
-// Mutations still pass through applyWithResult and its revision/file checks.
+// Mutations pass through the intent commit tail and its revision/file checks.
 func (s *studio) workspace(w http.ResponseWriter, r *http.Request) {
 	s.observeHistory()
 	s.mu.Lock()

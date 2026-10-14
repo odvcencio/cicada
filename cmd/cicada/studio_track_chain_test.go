@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"m31labs.dev/cicada/edit/editlog"
 	"m31labs.dev/cicada/project"
 	"net/http"
 	"os"
@@ -73,5 +74,28 @@ func TestStudioVocalChainRefusesRecordingAndStaleRevision(t *testing.T) {
 	r = studioCall(t, s.routes(), "/api/mixer", studioEdit{Action: "vocal-chain", Track: "vox", Revision: "stale"})
 	if r.Code != http.StatusConflict {
 		t.Fatalf("stale chain edit %d %s", r.Code, r.Body)
+	}
+}
+
+// The chain's three effects and their settings reach the edit log as intents.
+func TestStudioVocalChainLogsItsIntents(t *testing.T) {
+	path := mixerProject(t, "project test\ncicada 2\n", studioMixerScore)
+	if reply := mixerRoute(t, path, studioEdit{Action: "vocal-chain", Track: "bass"}); reply.Code != http.StatusOK {
+		t.Fatalf("%d %+v", reply.Code, reply.Body)
+	}
+	records, _, err := editlog.ReadLog(editlog.Path(path))
+	if err != nil || len(records) != 1 {
+		t.Fatalf("%+v %v", records, err)
+	}
+	kinds := map[string]int{}
+	for _, raw := range records[0].Intents {
+		var intent struct{ Kind string }
+		if err := json.Unmarshal(raw, &intent); err != nil {
+			t.Fatal(err)
+		}
+		kinds[intent.Kind]++
+	}
+	if kinds["addeffect"] != 3 || kinds["setparam"] != 7 || records[0].Label != "Add vocal chain to bass" {
+		t.Fatalf("%v %q", kinds, records[0].Label)
 	}
 }

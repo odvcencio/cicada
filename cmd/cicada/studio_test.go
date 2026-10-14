@@ -160,7 +160,7 @@ func TestStudioCommitRestoresExternalSaveDuringValidation(t *testing.T) {
 	outside := strings.Replace(studioScore, "Studio", "Outside editor", 1)
 	wanted := strings.Replace(studioScore, "Studio", "Studio edit", 1)
 	recorder := httptest.NewRecorder()
-	s.applyWithHook(recorder, studioEdit{Revision: studioRevision([]byte(studioScore)), Source: wanted}, func([]byte) ([]byte, error) {
+	s.applyText(recorder, studioEdit{Revision: studioRevision([]byte(studioScore)), Source: wanted}, func([]byte) ([]byte, error) {
 		return []byte(wanted), nil
 	}, func() {
 		staged := path + ".outside"

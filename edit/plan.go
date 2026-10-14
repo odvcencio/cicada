@@ -18,6 +18,7 @@ func Revision(source []byte) string {
 type Plan struct {
 	Revision     string
 	Edition      int
+	HasArrange   bool // the score has an arrange block (placements, even if none are listed)
 	Title        string
 	TempoMilli   int
 	KeyRoot      uint8

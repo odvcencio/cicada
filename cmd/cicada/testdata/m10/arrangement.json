@@ -1,0 +1,158 @@
+{
+  "append": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  place two bass pulse { at = @5.1.1 length = 4bars }\n  marker return { at = @5.1.1 }\n  place ending bass pulse { at = @9.1.1 length = 320ticks }\n}\n"
+  },
+  "append bad name": {
+    "error": "choose a unique region name of at most 64 lowercase letters, digits, underscores, or hyphens, starting with a letter or underscore"
+  },
+  "append crlf": {
+    "source": "cicada 2\r\ntitle \"Placement edits\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\narrange {\r\n  // Opening stays beside this placement.\r\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\r\n  place two bass pulse { at = @5.1.1 length = 4bars }\r\n  marker return { at = @5.1.1 }\r\n  place ending bass pulse { at = @9.1.1 length = 1bars }\r\n}\r\n"
+  },
+  "append inline block": {
+    "source": "cicada 2\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange { place one bass pulse { at = @1.1.1 length = 4bars } \n  place ending bass pulse { at = @9.1.1 length = 1bars }\n}"
+  },
+  "append marker": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  place two bass pulse { at = @5.1.1 length = 4bars }\n  marker return { at = @5.1.1 }\n  marker finish { at = @10.1.1 }\n}\n"
+  },
+  "append marker content": {
+    "error": "markers do not have track or content fields"
+  },
+  "append marker crlf": {
+    "source": "cicada 2\r\ntitle \"Placement edits\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\narrange {\r\n  // Opening stays beside this placement.\r\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\r\n  place two bass pulse { at = @5.1.1 length = 4bars }\r\n  marker return { at = @5.1.1 }\r\n  marker finish { at = @10.1.1 }\r\n}\r\n"
+  },
+  "append marker length": {
+    "error": "markers have a position, not a length"
+  },
+  "append marker taken": {
+    "error": "choose a unique region name of at most 64 lowercase letters, digits, underscores, or hyphens, starting with a letter or underscore"
+  },
+  "append no arrange": {
+    "error": "this score uses scenes; named placements require an arrange block"
+  },
+  "append no settings": {
+    "error": "placement settings are required"
+  },
+  "append no start": {
+    "error": "choose a start position"
+  },
+  "append no track": {
+    "error": "choose a track, pattern or clip, and length"
+  },
+  "append taken name": {
+    "error": "choose a unique region name of at most 64 lowercase letters, digits, underscores, or hyphens, starting with a letter or underscore"
+  },
+  "delete": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  \n  marker return { at = @5.1.1 }\n}\n"
+  },
+  "delete keeps comment": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n   // keep this comment\n  place two bass pulse { at = @5.1.1 length = 4bars }\n  marker return { at = @5.1.1 }\n}\n"
+  },
+  "delete last": {
+    "error": "keep at least one placement in the arrangement"
+  },
+  "delete marker": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  place two bass pulse { at = @5.1.1 length = 4bars }\n  \n}\n"
+  },
+  "delete marker no arrange": {
+    "error": "this score uses scenes; named placements require an arrange block"
+  },
+  "delete marker unknown": {
+    "error": "unknown arrangement region \"one\""
+  },
+  "delete unknown": {
+    "error": "unknown arrangement region \"ghost\""
+  },
+  "duplicate": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  place two bass pulse { at = @5.1.1 length = 4bars }\n  marker return { at = @5.1.1 }\n  place one-copy bass pulse { at = @9.1.1 length = 4bars }\n}\n"
+  },
+  "duplicate crlf": {
+    "source": "cicada 2\r\ntitle \"Placement edits\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\narrange {\r\n  // Opening stays beside this placement.\r\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\r\n  place two bass pulse { at = @5.1.1 length = 4bars }\r\n  marker return { at = @5.1.1 }\r\n  place two-copy bass pulse { at = @9.1.1 length = 4bars }\r\n}\r\n"
+  },
+  "duplicate missing field": {
+    "error": "region has no at field"
+  },
+  "duplicate no start": {
+    "error": "choose a start position"
+  },
+  "duplicate override fields": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  place two bass pulse { at = @5.1.1 length = 4bars }\n  marker return { at = @5.1.1 }\n  place one-copy bass pulse { at = @9.1.1 length = 1bars }\n}\n"
+  },
+  "duplicate taken": {
+    "error": "choose a unique region name of at most 64 lowercase letters, digits, underscores, or hyphens, starting with a letter or underscore"
+  },
+  "duplicate unknown": {
+    "error": "unknown arrangement region \"ghost\""
+  },
+  "marker empty settings": {
+    "error": "choose a placement field to edit"
+  },
+  "marker length": {
+    "error": "markers have a position, not a length"
+  },
+  "marker move": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  place two bass pulse { at = @5.1.1 length = 4bars }\n  marker return { at = @9.1.1 }\n}\n"
+  },
+  "marker no settings": {
+    "error": "placement settings are required"
+  },
+  "marker track": {
+    "error": "markers do not have track or content fields"
+  },
+  "marker unknown": {
+    "error": "unknown arrangement region \"one\""
+  },
+  "update bad length": {
+    "error": "length: expected exact nonnegative musical ticks; actual \"1/7\""
+  },
+  "update bad reference": {
+    "error": "choose an existing track and pattern or clip"
+  },
+  "update bad start": {
+    "error": "start: expected exact ticks, bars, or note division; actual \"soon\""
+  },
+  "update crlf": {
+    "source": "cicada 2\r\ntitle \"Placement edits\"\r\ntrack bass acid {}\r\npattern pulse { 1 . 5 . }\r\narrange {\r\n  // Opening stays beside this placement.\r\n  place one bass pulse { at = @2.1.1 length = 4bars } // keep this comment\r\n  place two bass pulse { at = @5.1.1 length = 4bars }\r\n  marker return { at = @5.1.1 }\r\n}\r\n"
+  },
+  "update dotted reference": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  place two bass lib.pulse { at = @5.1.1 length = 4bars }\n  marker return { at = @5.1.1 }\n}\n"
+  },
+  "update empty name": {
+    "error": "unknown arrangement region \"\""
+  },
+  "update empty settings": {
+    "error": "choose a placement field to edit"
+  },
+  "update length only": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  place two bass pulse { at = @5.1.1 length = 2bars }\n  marker return { at = @5.1.1 }\n}\n"
+  },
+  "update marker name as placement": {
+    "error": "unknown arrangement region \"return\""
+  },
+  "update missing field": {
+    "error": "region has no at field"
+  },
+  "update missing length field": {
+    "error": "region has no length field"
+  },
+  "update move and trim": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @2.1.1 length = 3bars } // keep this comment\n  place two bass pulse { at = @5.1.1 length = 4bars }\n  marker return { at = @5.1.1 }\n}\n"
+  },
+  "update no arrange": {
+    "error": "this score uses scenes; named placements require an arrange block"
+  },
+  "update no settings": {
+    "error": "placement settings are required"
+  },
+  "update slash name": {
+    "error": "unknown arrangement region \"a/b\""
+  },
+  "update syntax error": {
+    "error": "2:10: syntax error near \"{{\""
+  },
+  "update track and content": {
+    "source": "cicada 2\ntitle \"Placement edits\"\ntrack bass acid {}\npattern pulse { 1 . 5 . }\narrange {\n  // Opening stays beside this placement.\n  place one bass pulse { at = @1.1.1 length = 4bars } // keep this comment\n  place two bass pulse { at = @5.1.1 length = 4bars }\n  marker return { at = @5.1.1 }\n}\n"
+  },
+  "update unknown": {
+    "error": "unknown arrangement region \"ghost\""
+  }
+}

@@ -70,7 +70,11 @@ type Options struct {
 	// MixerGuard, when set, runs before any mixer write, whether the route
 	// pinned the mixer writer or the generic surface resolved to it. A non-nil
 	// error refuses the whole envelope, so no earlier intent is committed.
-	MixerGuard   func() error
+	MixerGuard func() error
+	// CaptureGuard, when set, runs before an automation point edit. A non-nil
+	// error refuses the whole envelope. Hosts use it to refuse score edits
+	// while a recording is open.
+	CaptureGuard func() error
 	Compiler     Compiler
 	RenderCheck  RenderCheck
 	Path         string                // absolute path of the entry score

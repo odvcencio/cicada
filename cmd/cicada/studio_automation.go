@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	edits "m31labs.dev/cicada/edit"
@@ -24,12 +23,14 @@ func (s *studio) editAutomation(w http.ResponseWriter, r *http.Request) {
 			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "choose an automation point"})
 			return
 		}
-		s.apply(w, edit, func(source []byte) ([]byte, error) {
-			if s.captureID != "" {
-				return nil, fmt.Errorf("finish the recording before editing automation")
+		env := edits.Envelope{Intents: []edits.Intent{curvePointIntent(edit.Path, point, edit.Action == "automation-point-remove")}}
+		edit.Label = studioEditLabel(edit)
+		s.applyPreparedIntents(w, edit, env, edits.ParamWriterAuto, func([]byte, *edits.Options) (edits.Envelope, error) {
+			if err := s.automationCaptureGuard(); err != nil {
+				return edits.Envelope{}, err
 			}
-			return curvePointSource(source, edit.Path, point, edit.Action == "automation-point-remove", edition)
-		})
+			return env, nil
+		}, nil, nil)
 		return
 	}
 	if edit.Action != "automation-set" && edit.Action != "automation-remove" {
@@ -48,4 +49,13 @@ func (s *studio) editAutomation(w http.ResponseWriter, r *http.Request) {
 	}
 	edit.Label = studioEditLabel(edit)
 	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
+}
+
+// curvePointIntent maps one automation point request to its intent.
+func curvePointIntent(path string, point studioCurvePoint, remove bool) edits.Intent {
+	entity := edits.EntityID("param:" + path)
+	if remove {
+		return &edits.RemoveAutomationPoint{Entity: entity, OldAt: point.OldAt, At: point.At, Shape: point.Shape, Curve: point.Curve}
+	}
+	return &edits.SetAutomationPoint{Entity: entity, OldAt: point.OldAt, At: point.At, Value: point.Value, Shape: point.Shape, Curve: point.Curve}
 }

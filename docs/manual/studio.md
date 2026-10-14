@@ -299,12 +299,15 @@ revision files live in app data, with late writes from other editors retained. A
 keeps the file unchanged and retains the draft across reload and navigation.
 Rejected drafts expire after thirty minutes or when Studio closes.
 
-Most Studio edits are intents: small, named changes such as toggling a step or
-moving a song block. Grid, pattern, song, scene, project, clip, instrument and
-library edits all use them. Studio records each committed edit, with its author
-and session, in the edit log at `.cicada/edits.jsonl` next to the score. A few
-routes (arrangement placements, vocal lanes, automation curves and the track
-chain) still write the score directly, so their log entries list no intents.
+Every Studio edit is an intent: a small, named change such as toggling a step,
+moving a song block, changing an arrangement placement, setting an automation
+point, adding the vocal chain, comping a vocal take or placing a resampled
+print. Studio records each committed edit, with its author and session, in the
+edit log at `.cicada/edits.jsonl` next to the score. Undo, redo and restoring a
+revision record the restore itself, with no intents, because they replay saved
+bytes. A Session take recovered after a crash from its stored candidate source
+is also logged without intents, because the journal keeps the candidate bytes
+but not the edit that built them.
 The `cicada apply` command runs intents through the same API, so a scripted
 edit and a click in Studio produce the same bytes.
 

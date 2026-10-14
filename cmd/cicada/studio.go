@@ -581,17 +581,6 @@ func (s *studio) toggleStep(w http.ResponseWriter, r *http.Request) {
 	s.applyIntents(w, edit, edits.Envelope{Intents: []edits.Intent{intent}}, edits.ParamWriterAuto, nil)
 }
 
-func (s *studio) apply(w http.ResponseWriter, edit studioEdit, change func([]byte) ([]byte, error)) {
-	s.applyWithHook(w, edit, change, nil)
-}
-
-func (s *studio) applyWithHook(w http.ResponseWriter, edit studioEdit, change func([]byte) ([]byte, error), beforeSwap func()) {
-	s.applyWithResult(w, edit, func(source []byte) (studioMutation, error) {
-		updated, err := change(source)
-		return studioMutation{Source: updated}, err
-	}, beforeSwap)
-}
-
 type studioMutation struct {
 	Source        []byte
 	Response      map[string]any
@@ -613,35 +602,6 @@ type studioAuxiliaryFile struct {
 	Before []byte
 	After  []byte
 	Mode   os.FileMode
-}
-
-func (s *studio) applyWithResult(w http.ResponseWriter, edit studioEdit, change func([]byte) (studioMutation, error), beforeSwap func()) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := studioRecoveryConflict(s.path); err != nil {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
-		return
-	}
-	current, err := os.ReadFile(s.path)
-	if err != nil {
-		studioJSON(w, http.StatusInternalServerError, map[string]any{"error": err.Error()})
-		return
-	}
-	if s.history != nil {
-		bar, step := s.historyPosition()
-		s.history.observe(current, bar, step)
-	}
-	if studioRevision(current) != edit.Revision {
-		studioJSON(w, http.StatusConflict, map[string]any{"error": "score changed on disk; reload before saving"})
-		return
-	}
-	mutation, err := change(current)
-	if err != nil {
-		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
-		return
-	}
-	outcome := s.commitMutationLocked(edit, current, mutation, beforeSwap, studioHistoryWriteNew, 0, commitHook{})
-	studioJSON(w, outcome.Status, outcome.Response)
 }
 
 func compileStudioSource(path string, source []byte) (*project.Project, error) {

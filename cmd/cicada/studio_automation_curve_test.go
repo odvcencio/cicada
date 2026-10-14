@@ -7,13 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	edits "m31labs.dev/cicada/edit"
 )
 
 const curveScore = "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\nscene main { bass=riff }\nsong { main*4 }\n// keep this\nautomate bass.cutoff {\n  @1.1.1 400Hz // low\n  @5.1.1 1600Hz smooth // high\n}\n"
 
 func TestStudioCurvePointPreservesCommentsUnitsAndOrder(t *testing.T) {
 	source := []byte(strings.ReplaceAll(curveScore, "\n", "\r\n"))
-	updated, err := curvePointSource(source, "bass.cutoff", studioCurvePoint{At: "@3.1.1", Value: "1.25kHz", Shape: "smooth"}, false, 2)
+	updated, err := intentCurvePoint(t, source, "bass.cutoff", studioCurvePoint{At: "@3.1.1", Value: "1.25kHz", Shape: "smooth"}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +28,7 @@ func TestStudioCurvePointPreservesCommentsUnitsAndOrder(t *testing.T) {
 			t.Fatalf("comment/newline lost: %s", updated)
 		}
 	}
-	updated, err = curvePointSource(updated, "bass.cutoff", studioCurvePoint{OldAt: "@3.1.1", At: "@4.1.1", Value: "900Hz", Shape: "curve", Curve: -1}, false, 2)
+	updated, err = intentCurvePoint(t, updated, "bass.cutoff", studioCurvePoint{OldAt: "@3.1.1", At: "@4.1.1", Value: "900Hz", Shape: "curve", Curve: -1}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +36,7 @@ func TestStudioCurvePointPreservesCommentsUnitsAndOrder(t *testing.T) {
 	if p.Automation[0].Points[1].Tick != 11520 || p.Automation[0].Points[1].Curve != -1 {
 		t.Fatal("move/shape failed")
 	}
-	updated, err = curvePointSource(updated, "bass.cutoff", studioCurvePoint{At: "@4.1.1"}, true, 2)
+	updated, err = intentCurvePoint(t, updated, "bass.cutoff", studioCurvePoint{At: "@4.1.1"}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +45,7 @@ func TestStudioCurvePointPreservesCommentsUnitsAndOrder(t *testing.T) {
 		t.Fatal("point retained")
 	}
 	for _, bad := range []studioCurvePoint{{At: "@8.1.1", Value: "500Hz"}, {At: "1ticks", Value: "500Hz"}, {At: "@2.1.1", Value: "50000Hz"}, {OldAt: "@2.1.1", At: "@3.1.1", Value: "500Hz"}, {At: "@2.1.1", Value: "500Hz", Shape: "oops"}} {
-		if _, err = curvePointSource(updated, "bass.cutoff", bad, false, 2); err == nil {
+		if _, err = intentCurvePoint(t, updated, "bass.cutoff", bad, false); err == nil {
 			t.Fatalf("accepted %+v", bad)
 		}
 	}
@@ -72,4 +74,10 @@ func TestStudioCurvePointRevisionAndUndo(t *testing.T) {
 	if string(got) != curveScore {
 		t.Fatal("Undo changed original")
 	}
+}
+
+// intentCurvePoint edits one automation point through the intent and the Studio compiler.
+func intentCurvePoint(t *testing.T, source []byte, path string, point studioCurvePoint, remove bool) ([]byte, error) {
+	t.Helper()
+	return intentSource(t, source, edits.ParamWriterAuto, curvePointIntent(path, point, remove))
 }

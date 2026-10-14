@@ -1,0 +1,41 @@
+{
+  "bad name": {
+    "error": "16:24: syntax error near \"N\""
+  },
+  "bad start": {
+    "error": "start: expected exact ticks, bars, or note division; actual \"soon\""
+  },
+  "bad track name": {
+    "error": "choose a lowercase audio track name"
+  },
+  "crlf": {
+    "source": "cicada 2\r\ntrack left acid { level = -8dB }\r\ntrack right acid { level = -10dB }\r\npattern pulse { 1 . 5 . }\r\narrange {\r\n  place bed left pulse { at = @1.1.1 length = 4bars }\r\n  place pickup right pulse { at = @2.2.1 length = 1/4 }\r\n  marker later { at = @3.1.1 }\r\n  marker opening { at = @1.1.1 }\r\n  marker middle { at = @2.1.1 }\r\n  place print sampler print-clip { at = @5.1.1 length = 2080ticks }\r\n}\r\ntrack sampler audio {}\r\n\r\n\nasset print-audio \"sampler/audio/print.wav\" { sha256 = \"abababababababababababababababababababababababababababababababab\" format = wav frames = 48000 rate = 48000Hz channels = 2 }\nclip print-clip print-audio { start = 0frames end = 48000frames fade_in = 240frames fade_out = 240frames }\n"
+  },
+  "edition one": {
+    "error": "placing resamples requires an edition-2 score with a Session arrangement"
+  },
+  "existing audio track": {
+    "source": "cicada 2\ntrack left acid { level = -8dB }\ntrack right acid { level = -10dB }\ntrack vox audio {}\npattern pulse { 1 . 5 . }\narrange {\n  place bed left pulse { at = @1.1.1 length = 4bars }\n  place pickup right pulse { at = @2.2.1 length = 1/4 }\n  marker later { at = @3.1.1 }\n  marker opening { at = @1.1.1 }\n  marker middle { at = @2.1.1 }\n  place print vox print-clip { at = @5.1.1 length = 2080ticks }\n}\n\nasset print-audio \"sampler/audio/print.wav\" { sha256 = \"abababababababababababababababababababababababababababababababab\" format = wav frames = 48000 rate = 48000Hz channels = 2 }\nclip print-clip print-audio { start = 0frames end = 48000frames fade_in = 240frames fade_out = 240frames }\n"
+  },
+  "new track": {
+    "source": "cicada 2\ntrack left acid { level = -8dB }\ntrack right acid { level = -10dB }\npattern pulse { 1 . 5 . }\narrange {\n  place bed left pulse { at = @1.1.1 length = 4bars }\n  place pickup right pulse { at = @2.2.1 length = 1/4 }\n  marker later { at = @3.1.1 }\n  marker opening { at = @1.1.1 }\n  marker middle { at = @2.1.1 }\n  place print sampler print-clip { at = @5.1.1 length = 4160ticks }\n}\ntrack sampler audio {}\n\n\nasset print-audio \"sampler/audio/print.wav\" { sha256 = \"abababababababababababababababababababababababababababababababab\" format = wav frames = 96000 rate = 48000Hz channels = 2 }\nclip print-clip print-audio { start = 0frames end = 96000frames fade_in = 240frames fade_out = 240frames }\n"
+  },
+  "new track before scene": {
+    "source": "cicada 2\ntrack sampler audio {}\n\nscene main { left=pulse }\ntrack left acid { level = -8dB }\ntrack right acid { level = -10dB }\npattern pulse { 1 . 5 . }\narrange {\n  place bed left pulse { at = @1.1.1 length = 4bars }\n  place pickup right pulse { at = @2.2.1 length = 1/4 }\n  marker later { at = @3.1.1 }\n  marker opening { at = @1.1.1 }\n  marker middle { at = @2.1.1 }\n  place print sampler print-clip { at = @5.1.1 length = 2080ticks }\n}\n\nasset print-audio \"sampler/audio/print.wav\" { sha256 = \"abababababababababababababababababababababababababababababababab\" format = wav frames = 48000 rate = 48000Hz channels = 2 }\nclip print-clip print-audio { start = 0frames end = 48000frames fade_in = 240frames fade_out = 240frames }\n"
+  },
+  "no start": {
+    "error": "choose a start position"
+  },
+  "note track": {
+    "error": "choose an audio track for the resample"
+  },
+  "rounds length up": {
+    "source": "cicada 2\ntrack left acid { level = -8dB }\ntrack right acid { level = -10dB }\npattern pulse { 1 . 5 . }\narrange {\n  place bed left pulse { at = @1.1.1 length = 4bars }\n  place pickup right pulse { at = @2.2.1 length = 1/4 }\n  marker later { at = @3.1.1 }\n  marker opening { at = @1.1.1 }\n  marker middle { at = @2.1.1 }\n  place print sampler print-clip { at = @5.1.1 length = 2080ticks }\n}\ntrack sampler audio {}\n\n\nasset print-audio \"sampler/audio/print.wav\" { sha256 = \"abababababababababababababababababababababababababababababababab\" format = wav frames = 47999 rate = 48000Hz channels = 2 }\nclip print-clip print-audio { start = 0frames end = 47999frames fade_in = 240frames fade_out = 240frames }\n"
+  },
+  "scene song": {
+    "error": "placing resamples requires an edition-2 score with a Session arrangement"
+  },
+  "taken placement name": {
+    "error": "choose a unique region name of at most 64 lowercase letters, digits, underscores, or hyphens, starting with a letter or underscore"
+  }
+}
