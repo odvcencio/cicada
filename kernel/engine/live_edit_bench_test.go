@@ -114,7 +114,7 @@ func bestDryRun(t *testing.T, pending, ring, batch, slots int) time.Duration {
 // and spreading the batch over sixteen slots a small multiple of one slot. The
 // earlier quadratic scan cost about 175 times the typical batch; the current one
 // about 10 times.
-func TestPatternEditsValidScalesWithQueueNotItsProduct(t *testing.T) {
+func TestPatternEditsValidTimingScalesWithQueueNotItsProduct(t *testing.T) {
 	typical := bestDryRun(t, 0, 0, 8, 1)
 	one := bestDryRun(t, 224, 224, 64, 1)
 	sixteen := bestDryRun(t, 224, 224, 64, 16)
