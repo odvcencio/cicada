@@ -18,7 +18,7 @@ var trackCount = 1
 var output [8192]float32
 var commandBytes [512 * cmd.CommandSize]byte
 var decoded [512]cmd.Command
-var messageBytes [256 * cmd.MessageSize]byte
+var messageBytes [engine.MessageCapacity * cmd.MessageSize]byte
 var sceneBytes, songBytes []byte
 var arrangementPrepared, songLoop bool
 var projectBytes []byte

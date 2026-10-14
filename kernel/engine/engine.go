@@ -268,7 +268,7 @@ type Engine struct {
 	masterMute, masterSolo       bool
 	commands                     [CommandCapacity]cmd.Command
 	commandRead, commandWrite    uint16
-	messages                     [messageCapacity]cmd.Message
+	messages                     [MessageCapacity]cmd.Message
 	messageRead, messageWrite    uint16
 	overflowMessages             [2]cmd.Message
 	overflowRead, overflowLen    uint8
@@ -896,6 +896,12 @@ func (e *Engine) PushBatch(commands []cmd.Command) bool {
 
 // CommandCapacity is the fixed command and pending-command capacity.
 const CommandCapacity = 512
+
+// MessageCapacity is the status ring size, the same in every build so native and
+// WASM engines keep the same messages under the same drain schedule. One
+// emission of stereo meters for 64 tracks is 384 messages (six per track) plus
+// 16 others; the sixteen-track core build needs 112.
+const MessageCapacity = 512
 
 // AvailableCommands includes commands waiting for a future tick. Only the
 // render owner may inspect or mutate the engine's queues.
