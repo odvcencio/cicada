@@ -17,6 +17,12 @@ import (
 
 func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 	t.Helper()
+	return testAppWorkspace(t, nil)
+}
+
+// testAppWorkspace serves the given /api/workspace reply; nil means a valid test score.
+func testAppWorkspace(t *testing.T, reply *workspace) (string, *http.Client, *[]map[string]any) {
+	t.Helper()
 	var edits []map[string]any
 	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -40,6 +46,10 @@ func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 		case "/api/instrument-record":
 			_, _ = io.WriteString(w, `{}`)
 		case "/api/workspace":
+			if reply != nil {
+				_ = json.NewEncoder(w).Encode(*reply)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(workspace{Revision: "current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}})
 		case "/api/transport":
 			if r.Method == http.MethodPost {

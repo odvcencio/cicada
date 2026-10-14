@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/notation"
+	"m31labs.dev/cicada/project"
 	"m31labs.dev/gosx/command"
 )
 
@@ -441,5 +443,87 @@ func TestShellAllowsReactiveResampleAndRejectsForeignLocations(t *testing.T) {
 		if result.OK || response.StatusCode == 200 || len(*edits) != before {
 			t.Errorf("location %q was accepted: %d %+v", bad, response.StatusCode, result)
 		}
+	}
+}
+
+func TestShellRendersAnInvalidScoreAndKeepsTheCodeLens(t *testing.T) {
+	broken := &workspace{
+		Revision: "current", Filename: "broken.cicada", Source: "pattern oops {\n", Valid: false, Error: "line 1: unterminated pattern",
+		Files: []projectFile{{Name: "broken.cicada", Source: "pattern oops {\n", Revision: "current", Diagnostics: []notation.Diagnostic{{Code: "CIC001", Message: "unterminated pattern", Severity: "error", Position: notation.Position{Line: 1, Column: 15}}}}},
+	}
+	address, client, _ := testAppWorkspace(t, broken)
+	for _, query := range []string{"", "?tab=session", "?tab=mixer&dock=device"} {
+		response, err := client.Get(address + "/studio" + query)
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, _ := io.ReadAll(response.Body)
+		response.Body.Close()
+		body := string(data)
+		if response.StatusCode != http.StatusOK {
+			t.Fatalf("invalid score %q: status %d", query, response.StatusCode)
+		}
+		for _, want := range []string{`id="studio-code"`, "CIC001", "unterminated pattern", "pattern oops {", `id="undo-form"`} {
+			if !strings.Contains(body, want) {
+				t.Errorf("invalid score %q: shell lacks %q", query, want)
+			}
+		}
+		// Every score-dependent panel says why it is unavailable.
+		for _, id := range []string{"session", "live", "mixer", "patterns", "instruments", "generator", "takes", "sampler"} {
+			if !strings.Contains(body, `id="panel-`+id+`-unavailable"`) {
+				t.Errorf("invalid score %q: panel %s did not degrade", query, id)
+			}
+		}
+		if !strings.Contains(body, "Fix the score in the Code lens") {
+			t.Errorf("invalid score %q: no repair hint", query)
+		}
+	}
+}
+
+func TestShellPanelsSurvivePanicsInsideAPanel(t *testing.T) {
+	// A project the panels do not expect must not take the page down.
+	odd := &workspace{Revision: "current", Filename: "odd.cicada", Source: "x", Valid: true, Project: &project.Project{}}
+	address, client, _ := testAppWorkspace(t, odd)
+	response, err := client.Get(address + "/studio?tab=session")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("empty project: status %d", response.StatusCode)
+	}
+}
+
+func TestShellProjectionCarriesTheSavedScoreAndRevision(t *testing.T) {
+	reply := &workspace{Revision: "current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}}
+	address, client, _ := testAppWorkspace(t, reply)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/studio?tab=arrange"))
+	// An engine saves: the service now holds a new revision and a new placement.
+	reply.Revision = "after"
+	reply.Source = "title \"Test\"\nplace resampled at @1.1.1\n"
+	reply.Project.Arrange = &project.Arrangement{Placements: []project.Placement{{ID: "pad-print", Track: "sampler", Content: "pad-print"}}}
+	response, result := reactivePost(t, client, address, "sampler", map[string]string{
+		"csrf_token": csrf, "revision": "current", "bankRevision": "bank-current", "action": "resample", "destination": "1",
+		"performance": `{"hits":[]}`, "newName": "pad-print", "__cicada_location": "/studio?tab=arrange",
+	})
+	var projection workspaceProjection
+	if err := json.Unmarshal(result.Data, &projection); response.StatusCode != 200 || err != nil {
+		t.Fatalf("status=%d err=%v", response.StatusCode, err)
+	}
+	// The revalidation the engine asks for renders the same state: the new
+	// revision in every form, the new source in the Code lens, the placement in Arrange.
+	page := getPage(t, client, address+"/studio?tab=arrange")
+	for name, body := range map[string]string{"projection": projection.HTML, "revalidated page": page} {
+		if strings.Contains(body, `name="revision" value="current"`) {
+			t.Errorf("%s still carries the old revision", name)
+		}
+		for _, want := range []string{`name="revision" value="after"`, "place resampled at", "pad-print"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("%s lacks %q", name, want)
+			}
+		}
+	}
+	if projection.Revision != "after" {
+		t.Errorf("projection revision=%q", projection.Revision)
 	}
 }

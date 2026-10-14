@@ -164,6 +164,82 @@ test('tab lists expose roles, states and labels (axe-style structure check)', as
   await page.close();
 });
 
+// Engines that save (sampler resample, Live note takes) ask GoSX's managed
+// navigation to revalidate /studio: window.__gosx.host.navigation.revalidate().
+// This drives that exact call after a change made behind the page's back, so it
+// needs no audio hardware, and checks that revisions and score text advance
+// together and the next edit is not rejected as stale. CI starts the Studio for
+// this file with a fresh process, so this browser session owns it.
+test('a refresh after an engine save leaves the shell current', async () => {
+  const {page, requests} = await openShell('?tab=arrange');
+  const base = new URL(process.env.CICADA_STUDIO_URL);
+  const {context} = await sharedBrowser();
+  const state = async () => (await context.request.get(new URL('/api/state', base).href)).json();
+  const before = await state();
+  const csrf = await page.locator('input[name="csrf_token"]').first().inputValue();
+  const edit = await context.request.post(new URL('/__actions/pattern', base).href, {
+    form: {csrf_token: csrf, revision: before.revision, action: 'toggle', pattern: 'continuity', step: '2', __gosx_return_to: '/studio'},
+    maxRedirects: 0,
+  });
+  assert.ok(edit.status() < 400, `the behind-the-back edit must save, got ${edit.status()}`);
+  const after = await state();
+  assert.notEqual(after.revision, before.revision, 'the edit advanced the score revision');
+  const documents = requests.filter(request => request.startsWith('GET /studio')).length;
+  await page.evaluate(() => window.__gosx.host.navigation.revalidate());
+  await page.waitForFunction(revision => {
+    const inputs = [...document.querySelectorAll('#studio-shell input[type="hidden"][name="revision"]')];
+    return inputs.length > 0 && inputs.every(input => input.value === revision);
+  }, after.revision);
+  assert.ok(requests.filter(request => request.startsWith('GET /studio')).length > documents, 'the refresh asked the server for the shell again');
+  assert.deepEqual(await page.evaluate(() => document.querySelector('#studio-shell') !== null), true, 'the shell stayed mounted');
+  // The next edit, with no manual navigation, is not rejected as stale.
+  const undone = page.waitForResponse(response => response.url().endsWith('/__actions/undo'));
+  await page.locator('#undo-form button[type="submit"]').click();
+  assert.ok((await undone).status() < 400, 'the edit after a refresh must not conflict');
+  await page.close();
+});
+
+// The Live note take and sampler resample scenarios drive the engines
+// themselves. They need pads loaded or an armed audio context, which a Studio
+// started with --audio null may not provide; they skip with that reason.
+test('a finished Live note take shows its review and commit controls without a reload', async t => {
+  const {page, requests} = await openShell('?tab=session');
+  const record = page.locator('[data-live-control="record"]');
+  try {
+    await page.waitForFunction(() => document.querySelector('[data-live-control="record"]:not([disabled])'), null, {timeout: 10_000});
+  } catch {
+    t.skip('Live input is not ready in this environment (no audio or lease)');
+    await page.close();
+    return;
+  }
+  const documents = requests.filter(request => request.startsWith('GET /studio')).length;
+  await record.click();
+  await page.keyboard.press('a');
+  await page.waitForTimeout(150);
+  await page.keyboard.up('a');
+  await page.locator('[data-live-control="finish"]').click();
+  await page.locator('.note-preview').waitFor({timeout: 15_000});
+  assert.ok(await page.locator('.note-preview form[action="/__actions/note-commit"], .note-preview form[action$="note-commit"]').count() > 0, 'review shows the commit form');
+  assert.ok(requests.filter(request => request.startsWith('GET /studio')).length > documents, 'shown by a shell refresh, not by hand');
+  await page.close();
+});
+
+test('a sampler resample from the shell refreshes Arrange and the Code lens', async t => {
+  const {page} = await openShell('?tab=arrange');
+  const loaded = await page.evaluate(() => document.querySelectorAll('[data-sampler-pad]:not([disabled])').length);
+  if (loaded === 0) {
+    t.skip('no sample pads are loaded in this score');
+    await page.close();
+    return;
+  }
+  await page.locator('[data-sampler-control="record"]').click();
+  await page.locator('[data-sampler-pad]:not([disabled])').first().click();
+  await page.locator('[data-sampler-control="stop"]').click();
+  await page.locator('[data-sampler-resample] button[type="submit"]').click();
+  await page.locator('#studio-code', {hasText: 'pad-print'}).waitFor({timeout: 20_000});
+  await page.close();
+});
+
 // The workbench chunk in GoSX PR 605 adds the roving tab stop and the tab keys,
 // and wires $view and $dock to the tabs. Set CICADA_SHELL_TABS=1 once the pinned
 // GoSX has them.

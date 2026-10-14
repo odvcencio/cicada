@@ -114,7 +114,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ui.CaptureHint(),
 	)
 
-	panel := func(name string) gosx.Node { return shellLinks(ctx.Request.URL, s.panel(ctx, view, csrf, name)) }
+	panel := func(name string) gosx.Node { return shellLinks(ctx.Request.URL, s.shellPanel(ctx, view, csrf, name)) }
 	// Every panel renders, hidden unless selected, so in-place tab switching
 	// has its content.
 	centerPanel := func(id, name string) gosx.Node {
@@ -313,4 +313,35 @@ func shellReturn(r *http.Request) {
 	if r.Form != nil {
 		r.Form[action.ReturnTargetField] = []string{rewritten}
 	}
+}
+
+// shellNeedsScore lists the panels that read the parsed project. The Code lens,
+// History, Audio and Export work from the source and the service, so a broken
+// score can still be repaired and inspected in the shell.
+var shellNeedsScore = map[string]bool{
+	"session": true, "live": true, "mixer": true, "patterns": true, "instruments": true,
+	"generator": true, "takes": true, "sampler": true,
+}
+
+var shellPanelTitles = map[string]string{
+	"session": "Arrange", "live": "Session", "mixer": "Mixer", "patterns": "Clip", "instruments": "Instruments",
+	"generator": "Generate", "takes": "Takes", "sampler": "Sampler",
+}
+
+// shellPanel mounts a panel, or a short explanation when the score does not
+// parse. A panel that still fails (for example on a half-formed project) is
+// replaced by the same explanation, so one panel cannot take the page down.
+func (s *studioApp) shellPanel(ctx *server.Context, v workspace, csrf, name string) (node gosx.Node) {
+	unavailable := func(reason string) gosx.Node {
+		return ui.Panel(ui.PanelProps{ID: "panel-" + name + "-unavailable", Title: shellPanelTitles[name], Description: reason})
+	}
+	if shellNeedsScore[name] && (v.Project == nil || !v.Valid && v.Error != "") {
+		return unavailable("Fix the score in the Code lens to use this panel.")
+	}
+	defer func() {
+		if recover() != nil {
+			node = unavailable("This panel could not read the score. Fix the score in the Code lens.")
+		}
+	}()
+	return s.panel(ctx, v, csrf, name)
 }
