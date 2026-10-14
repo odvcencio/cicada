@@ -305,9 +305,9 @@ point, adding the vocal chain, comping a vocal take or placing a resampled
 print. Studio records each committed edit, with its author and session, in the
 edit log at `.cicada/edits.jsonl` next to the score. Undo, redo and restoring a
 revision record the restore itself, with no intents, because they replay saved
-bytes. A take that Studio recovers after a crash is also logged without
-intents, because the journal keeps the candidate source but not the edit that
-built it.
+bytes. A Session take recovered after a crash from its stored candidate source
+is also logged without intents, because the journal keeps the candidate bytes
+but not the edit that built them.
 The `cicada apply` command runs intents through the same API, so a scripted
 edit and a click in Studio produce the same bytes.
 
