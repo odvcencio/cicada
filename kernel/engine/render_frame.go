@@ -269,9 +269,6 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 		left *= e.masterGain
 		right *= e.masterGain
 	}
-	if e.taps != nil {
-		e.taps[frame].PreMaster = Stereo{left, right}
-	}
 	if e.masterProcessor != nil {
 		left, right = e.masterProcessor.Process(left, right)
 		if e.masterProcessor.Fault() {
@@ -291,6 +288,12 @@ func (e *Engine) renderMixedFrame(frame int, outL, outR []float32) (float32, boo
 	if e.masterBiasL != 0 || e.masterBiasR != 0 {
 		left += e.masterBiasL
 		right += e.masterBiasR
+	}
+	// PreMaster is the sample entering the final limiter: after the master
+	// chain, master gain and the export DC correction. The direct renderer's
+	// pre-limiter peak and overs measure the same point.
+	if e.taps != nil {
+		e.taps[frame].PreMaster = Stereo{left, right}
 	}
 	accumulateMeter(&e.preMasterMeter, left, right)
 	outL[frame], outR[frame], _ = e.limiter.Process(left, right)
