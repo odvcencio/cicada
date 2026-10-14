@@ -4,6 +4,8 @@ export default function registerProcessor(moduleId) {
   const { WamProcessor, WamParameterInfo, WamParameter } = scope;
   if (scope.CicadaProcessor) return;
 
+  // Status ring: engine.MessageCapacity (512) messages of 16 bytes; a Go test keeps this equal.
+  const MESSAGE_BYTES = 512 * 16;
   class CicadaProcessor extends WamProcessor {
     constructor(options) {
       super(options);
@@ -34,7 +36,7 @@ export default function registerProcessor(moduleId) {
         this.commands = new Uint8Array(x.memory.buffer, x.gosx_audio_cmd_ptr(), x.gosx_audio_cmd_cap() * 24);
         this.left = new Float32Array(x.memory.buffer, x.gosx_audio_out_ptr(), 128);
         this.right = new Float32Array(x.memory.buffer, x.gosx_audio_out_ptr() + 512, 128);
-        this.messages = new Uint8Array(x.memory.buffer, x.gosx_audio_msg_ptr(), 256 * 16);
+        this.messages = new Uint8Array(x.memory.buffer, x.gosx_audio_msg_ptr(), MESSAGE_BYTES);
         this.commands.set(setup);
         if (setup.length) x.gosx_audio_cmd_commit(setup.length / 24);
       });

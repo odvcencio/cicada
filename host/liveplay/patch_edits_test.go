@@ -773,3 +773,58 @@ func publish(t *testing.T, p *Player, arena *PatchArena, revision uint64, target
 		t.Fatal(err)
 	}
 }
+
+// A seek lands the edits published before it and leaves the ones published after
+// it for their own boundaries on the new timeline.
+func TestSeekLandsEarlierEditsAndNotLaterOnes(t *testing.T) {
+	note, _ := seq.PackStep(seq.Step{Note: 52, Gate: true, Ratchet: 1, Probability: 100, Velocity: 120})
+	loop := PlaybackRange{StartTick: 0, EndTick: seq.TicksPerBar, Loop: true}
+	setup := func(t *testing.T) (*Player, PreviewTarget) {
+		p, err := New(editScore(t), 48_000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(p.Close)
+		if err := p.PlayRange(loop); err != nil {
+			t.Fatal(err)
+		}
+		_ = readFrames(t, p, 4*blockFrames)
+		target, _ := p.ResolvePreviewTrack("bass")
+		return p, target
+	}
+	t.Run("an edit published before the seek lands at the seek", func(t *testing.T) {
+		p, target := setup(t)
+		arena := NewPatchArena(2)
+		publish(t, p, arena, 1, target, func(b *Patch, target PreviewTarget) { b.Step(target, 0, 0, note) })
+		_ = readFrames(t, p, blockFrames) // pending until its boundary, tick 240
+		if err := p.PlayRange(loop); err != nil {
+			t.Fatal(err)
+		}
+		samples := readFrames(t, p, 48_000)
+		if first := firstSound(samples); first < 0 || first > 2_000 {
+			t.Fatalf("the earlier edit first sounded at frame %d, want the restart", first)
+		}
+	})
+	t.Run("an edit published after the seek waits for its own boundary", func(t *testing.T) {
+		p, target := setup(t)
+		arena := NewPatchArena(3)
+		// A silent edit stays pending ahead of the seek: the seek lands it, and an
+		// edit behind the seek must survive that.
+		publish(t, p, arena, 1, target, func(b *Patch, target PreviewTarget) { b.PatternLen(target, 0, 16) })
+		_ = readFrames(t, p, blockFrames)
+		if err := p.PlayRange(loop); err != nil {
+			t.Fatal(err)
+		}
+		publish(t, p, arena, 2, target, func(b *Patch, target PreviewTarget) { b.Step(target, 0, 0, note) })
+		samples := readFrames(t, p, 3*96_000/2)
+		// Step 0 sounds at tick 0 of each pass, but the edit lands at tick 240 of the
+		// first pass, so the first note is the second pass, a bar after the restart.
+		first := firstSound(samples)
+		if first < 90_000 {
+			t.Fatalf("the edit sounded at frame %d of the first pass, before its own boundary", first)
+		}
+		if first > 100_000 {
+			t.Fatalf("the edit first sounded at frame %d, want the second pass (about 96,000)", first)
+		}
+	})
+}

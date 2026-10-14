@@ -696,16 +696,21 @@ func TestPatternEditsValidFollowsExecutionOrderAcrossPendingAndRing(t *testing.T
 	}
 }
 
-// The AudioWorklet carries one drain of the status ring in a fixed buffer. The
-// buffer size must follow MessageCapacity, or the client rejects a full drain.
-func TestWorkletMessageBufferMatchesTheMessageCapacity(t *testing.T) {
-	source, err := os.ReadFile("../../host/web/processor.js")
-	if err != nil {
-		t.Skipf("worklet source not available: %v", err)
-	}
+// Every JavaScript reader of the drained message block sizes its view from the
+// ring capacity. A smaller view leaves messages past it unread, or rejected.
+func TestMessageBlockReadersMatchTheMessageCapacity(t *testing.T) {
 	want := fmt.Sprintf("MESSAGE_BYTES = %d * 16", MessageCapacity)
-	if !strings.Contains(string(source), want) {
-		t.Fatalf("host/web/processor.js must declare %q to match engine.MessageCapacity", want)
+	for _, file := range []string{
+		"host/web/processor.js", "host/wam2/processor.js", "cmd/cicada/browser_cpu_node.js",
+		"tools/audio/kernel-cpu-compare.mjs", "tools/audio/kit-cpu.cjs",
+	} {
+		source, err := os.ReadFile("../../" + file)
+		if err != nil {
+			t.Skipf("%s not available: %v", file, err)
+		}
+		if !strings.Contains(string(source), want) {
+			t.Errorf("%s must declare %q to match engine.MessageCapacity", file, want)
+		}
 	}
 }
 
@@ -818,5 +823,89 @@ func TestPatternEditsRunInArrivalOrderAcrossSeeks(t *testing.T) {
 	run(e, 600)
 	if n, tr := state(e); n != 60 || tr != 24 {
 		t.Fatalf("both edits should have run by now: note %d, transpose %d", n, tr)
+	}
+}
+
+// A seek applies the edits that arrived before it exactly once and never touches
+// the ones that arrived after, including seeks started from OpPlay.
+func TestSeekFlushesOnlyEditsAheadOfIt(t *testing.T) {
+	build := func() *Engine {
+		cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120_000, Seed: 1}
+		cfg.Track[0].Kind = VoiceAcid
+		cfg.Patterns = []PatternBank{{}}
+		cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 55, Seed: 1}
+		e, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.meterRate = 0
+		return e
+	}
+	step := func(index uint16, note uint8, tick int64) cmd.Command {
+		return cmd.Command{Op: cmd.OpSetStep, Track: 0, Index: index, Arg0: packedNoteValue(note), Tick: tick}
+	}
+	noteAt := func(e *Engine, index int) uint32 { return e.patterns[0].slots[0].Steps[index] & 0x7f }
+	var l, r [128]float32
+	pushAll := func(e *Engine, cs ...cmd.Command) {
+		t.Helper()
+		if !e.PushBatch(cs) {
+			t.Fatal("push rejected")
+		}
+	}
+	for name, test := range map[string]struct {
+		transport cmd.Command
+		prepare   func(e *Engine)
+	}{
+		"explicit seek":      {transport: cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 0, Arg1: 100}},
+		"seek to a bar line": {transport: cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 1, Arg1: 0}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			e := build()
+			pushAll(e, cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+			for e.transport.Tick() < 2_000 {
+				e.Render(l[:], r[:])
+			}
+			// Ahead of the seek: lands at it. Behind it: stays until its tick.
+			pushAll(e, step(1, 60, 2_400), test.transport, step(2, 70, 5_000))
+			e.Render(l[:], r[:])
+			if noteAt(e, 1) != 60 {
+				t.Fatalf("the edit ahead of the seek did not land at it: %d", noteAt(e, 1))
+			}
+			if noteAt(e, 2) == 70 {
+				t.Fatalf("the edit behind the seek was applied at the seek, tick %d", e.transport.Tick())
+			}
+			for e.transport.Tick() < 5_001 && e.transport.Tick() > 0 {
+				e.Render(l[:], r[:])
+			}
+			if noteAt(e, 2) != 70 {
+				t.Fatalf("the edit behind the seek never landed at its tick: %d", noteAt(e, 2))
+			}
+		})
+	}
+	// OpPlay can restart a finished placement schedule: an internal seek to tick 0.
+	cfg := mixedOwnerConfig()
+	cfg.LoopSong = false
+	e, err := New(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.meterRate = 0
+	pushAll(e, cmd.Command{Op: cmd.OpPlay, Track: 0xff})
+	for blocks := 0; blocks < 400; blocks++ { // the schedule is 960 ticks and then stops
+		e.Render(l[:], r[:])
+	}
+	if e.transport.Playing() {
+		t.Fatal("the placement schedule should have ended")
+	}
+	ahead := cmd.Command{Op: cmd.OpSetStep, Track: 1, Index: 3, Arg0: packedNoteValue(61), Tick: 100}
+	behind := cmd.Command{Op: cmd.OpSetStep, Track: 1, Index: 4, Arg0: packedNoteValue(62), Tick: 5_000}
+	pushAll(e, ahead, cmd.Command{Op: cmd.OpPlay, Track: 0xff}, behind)
+	e.Render(l[:], r[:])
+	slot := &e.patterns[1].slots[0]
+	if slot.Steps[3]&0x7f != 61 {
+		t.Fatalf("the edit ahead of the schedule restart did not land: %d", slot.Steps[3]&0x7f)
+	}
+	if slot.Steps[4]&0x7f == 62 {
+		t.Fatal("the edit behind the schedule restart was applied by it")
 	}
 }

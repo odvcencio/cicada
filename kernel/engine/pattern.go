@@ -288,21 +288,34 @@ func editSlotIndex(c cmd.Command) int {
 // counting), so it is not a discontinuity.
 
 // flushPatternEdits applies, in arrival order, the pattern edits ahead of the
-// command being applied. Outside applyPending that is every pending edit.
+// command being applied: the prefix of the pending queue that arrived before it.
+// flushLimit is that prefix length. It shrinks as entries leave, so the prefix
+// stays exactly the entries that arrived before the command, a second call finds
+// no edits in it, and an edit that arrived after the command is never touched.
+// Outside applyPending (flushLimit is -1) every pending edit arrived earlier.
 func (e *Engine) flushPatternEdits() {
-	limit := e.flushLimit
-	if limit < 0 || limit > e.pendingLen {
-		limit = e.pendingLen
+	if e.flushLimit < 0 {
+		for i := 0; i < e.pendingLen && !e.faulted; {
+			if !isPatternEditOp(e.pending[i].Op) {
+				i++
+				continue
+			}
+			c := e.pending[i]
+			copy(e.pending[i:], e.pending[i+1:e.pendingLen])
+			e.pendingLen--
+			e.apply(c)
+		}
+		return
 	}
-	for i := 0; i < limit && !e.faulted; {
-		c := e.pending[i]
-		if !isPatternEditOp(c.Op) {
+	for i := 0; i < e.flushLimit && !e.faulted; {
+		if !isPatternEditOp(e.pending[i].Op) {
 			i++
 			continue
 		}
+		c := e.pending[i]
 		copy(e.pending[i:], e.pending[i+1:e.pendingLen])
 		e.pendingLen--
-		limit--
+		e.flushLimit--
 		e.apply(c)
 	}
 }

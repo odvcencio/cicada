@@ -95,7 +95,7 @@ success. It rejects invalid project data, channels, or block sizes and returns
 `gosx_audio_cmd_ptr` exposes 512 fixed 24-byte little-endian command records.
 Write a complete batch and commit it with `gosx_audio_cmd_commit(n)`; a
 rejected batch faults the engine with code 42. `gosx_audio_msg_drain` reads
-fixed 16-byte status records. Drain messages regularly so the host can report
+fixed 16-byte status records, up to 512 per call (the status ring size, `engine.MessageCapacity`), so size the view over `gosx_audio_msg_ptr` as 512 x 16 bytes. Drain messages regularly so the host can report
 queued scenes, transport changes, and engine errors. See
 [Fault codes](#fault-codes).
 
