@@ -8,8 +8,8 @@ import (
 // milestone flips entries from Reserved to live instead of adding chords.
 //
 // A Reserved entry consumes its chord and shows as unavailable in the shortcuts
-// dialog. Toggle chords (Tab, Shift+Tab, B) come in pairs that differ by their
-// When guard, because a command's Value is fixed and the guard reads the signal.
+// dialog. The B toggle is a pair of commands that differ by their When guard,
+// because a command's Value is fixed and the guard reads the signal.
 func shellCommands() []command.Command {
 	transport := func(action string, extra map[string]any) command.Action {
 		value := map[string]any{"op": "transport", "action": action}
@@ -25,10 +25,14 @@ func shellCommands() []command.Command {
 		{ID: "transport.record", Title: "Record", Group: "Transport", Keys: []string{"F9"}, Action: command.Action{Signal: "$record", Value: "toggle"}},
 		{ID: "transport.loop", Title: "Loop selection", Group: "Transport", Keys: []string{"Mod+L"}, Reserved: true},
 
-		{ID: "view.session", Title: "Switch between Arrange and Session", Group: "View", Keys: []string{"Tab"}, When: map[string]any{"$view": "arrange"}, Action: command.Action{Signal: "$view", Value: "session"}},
-		{ID: "view.arrange", Title: "Switch between Arrange and Session", Group: "View", Keys: []string{"Tab"}, When: map[string]any{"$view": "session"}, Action: command.Action{Signal: "$view", Value: "arrange"}},
-		{ID: "dock.toggle", Title: "Switch between Clip and Device", Group: "View", Keys: []string{"Shift+Tab"}, When: map[string]any{"$dock": "clip"}, Action: command.Action{Signal: "$dock", Value: "device"}},
-		{ID: "dock.clip", Title: "Switch between Clip and Device", Group: "View", Keys: []string{"Shift+Tab"}, When: map[string]any{"$dock": "device"}, Action: command.Action{Signal: "$dock", Value: "clip"}},
+		// Alt+Shift+digit keeps Tab and Shift+Tab for focus traversal. It avoids
+		// the browser tab-switch chords (Ctrl/Alt+digit) and screen-reader keys.
+		{ID: "view.arrange", Title: "Show Arrange view", Group: "View", Keys: []string{"Alt+Shift+1"}, Action: command.Action{Signal: "$view", Value: "arrange"}},
+		{ID: "view.session", Title: "Show Session view", Group: "View", Keys: []string{"Alt+Shift+2"}, Action: command.Action{Signal: "$view", Value: "session"}},
+		{ID: "view.mixer", Title: "Show Mixer view", Group: "View", Keys: []string{"Alt+Shift+3"}, Action: command.Action{Signal: "$view", Value: "mixer"}},
+		{ID: "dock.clip", Title: "Show Clip tab", Group: "View", Keys: []string{"Alt+Shift+4"}, Action: command.Action{Signal: "$dock", Value: "clip"}},
+		{ID: "dock.device", Title: "Show Device tab", Group: "View", Keys: []string{"Alt+Shift+5"}, Action: command.Action{Signal: "$dock", Value: "device"}},
+		{ID: "dock.automation", Title: "Show Automation tab", Group: "View", Keys: []string{"Alt+Shift+6"}, Action: command.Action{Signal: "$dock", Value: "automation"}},
 		{ID: "palette.open", Title: "Show keyboard shortcuts", Group: "View", Keys: []string{"Mod+K", "?"}, Action: command.Action{Open: "#palette"}},
 
 		// TODO(gosx-s0): the edit commands below submit managed forms. They stay
@@ -76,4 +80,4 @@ func shellCommands() []command.Command {
 
 // shellToggleMirrors names the second command of each toggle pair. The
 // shortcuts dialog lists the pair once.
-var shellToggleMirrors = map[string]bool{"view.arrange": true, "dock.clip": true, "tool.select": true}
+var shellToggleMirrors = map[string]bool{"tool.select": true}

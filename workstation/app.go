@@ -109,6 +109,7 @@ func newApp(b *backend) (http.Handler, error) {
 				http.Error(w, "Viewers cannot change the workspace.", http.StatusForbidden)
 				return
 			}
+			shellReturn(r)
 			s.serveAction(w, r, name, handler)
 		}))
 	}

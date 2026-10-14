@@ -102,21 +102,17 @@ func (s *studioApp) shell(ctx *server.Context) gosx.Node {
 	)
 
 	panel := func(name string) gosx.Node { return s.panel(ctx, view, csrf, name) }
+	// Every panel renders, hidden unless selected, so in-place tab switching
+	// has its content.
 	centerPanel := func(id, name string) gosx.Node {
-		if id != tab {
-			return ui.TabPanel(ui.TabPanelProps{ID: "view-panel-" + id, Hidden: true})
-		}
-		return ui.TabPanel(ui.TabPanelProps{ID: "view-panel-" + id}, panel(name))
+		return ui.TabPanel(ui.TabPanelProps{ID: "view-panel-" + id, Tab: "view-tab-" + id, Hidden: id != tab}, panel(name))
 	}
 	dockPanel := func(id string, content func() gosx.Node) gosx.Node {
-		if id != dock {
-			return ui.TabPanel(ui.TabPanelProps{ID: "detail-panel-" + id, Hidden: true})
-		}
-		return ui.TabPanel(ui.TabPanelProps{ID: "detail-panel-" + id}, content())
+		return ui.TabPanel(ui.TabPanelProps{ID: "detail-panel-" + id, Tab: "detail-tab-" + id, Hidden: id != dock}, content())
 	}
-	later := func(text string) func() gosx.Node {
+	later := func(id, text string) func() gosx.Node {
 		return func() gosx.Node {
-			return ui.Panel(ui.PanelProps{ID: "detail-later", Title: "Not in this view yet", Description: text})
+			return ui.Panel(ui.PanelProps{ID: id, Title: "Not in this view yet", Description: text})
 		}
 	}
 
@@ -135,15 +131,15 @@ func (s *studioApp) shell(ctx *server.Context) gosx.Node {
 		ClipHref: shellLink(tab, dock, region, "dock", "clip"), DeviceHref: shellLink(tab, dock, region, "dock", "device"), AutomationHref: shellLink(tab, dock, region, "dock", "automation"),
 		ClipShown: dock == "clip", DeviceShown: dock == "device", AutomationShown: dock == "automation", Height: strconv.Itoa(shellDockHeight),
 	}, dockPanel("clip", func() gosx.Node { return panel("patterns") }),
-		dockPanel("device", later("The Device view arrives with the Browser lane; use Instruments in the Browser for now.")),
-		dockPanel("automation", later("Automation lanes are in the Session panel under Arrange for now.")))
+		dockPanel("device", later("detail-device-later", "The Device view arrives with the Browser lane; use Instruments in the Browser for now.")),
+		dockPanel("automation", later("detail-automation-later", "Automation lanes are in the Session panel under Arrange for now.")))
 	code := ui.CodeLens(ui.CodeLensProps{Open: true, Width: strconv.Itoa(shellCodeWidth)}, panel("code"), panel("collaboration"))
 
 	dialogs := gosx.Fragment(
 		ui.DialogFrame(ui.DialogFrameProps{ID: "history-dialog", Title: "History"}, panel("history")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "audio-dialog", Title: "Audio devices"}, panel("audio")),
 		ui.DialogFrame(ui.DialogFrameProps{ID: "export-dialog", Title: "Export"}, panel("export")),
-		ui.DialogFrame(ui.DialogFrameProps{ID: "palette", Title: "Keyboard shortcuts"}, shortcuts()),
+		ui.DialogFrame(ui.DialogFrameProps{ID: "palette", Title: "Keyboard shortcuts"}, shortcuts(), ui.ShortcutNotes()),
 	)
 	message, hasMessage := props.Message, props.HasMessage
 	for name, result := range action.States(ctx.Request) {
@@ -219,5 +215,49 @@ func registerShell(ctx *server.Context, tab, dock string) {
 	if err := runtime.Commands(shellCommands()...); err != nil {
 		// The table is static, so a failure is a programming error that a test catches.
 		panic(err)
+	}
+}
+
+// shellReturn keeps a mounted panel's form in the shell. Panels name their own
+// return target in the legacy form "/?panel=<name>&<state>"; when the form was
+// submitted from the shell (by Referer), the target becomes "/studio" with the
+// panel's state and the shell's current tab, dock and region. Targets that are
+// not legacy panel URLs, and submissions from elsewhere, are left alone.
+func shellReturn(r *http.Request) {
+	if r.PostForm == nil && strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		_ = r.ParseForm()
+	}
+	if r.PostForm == nil {
+		return
+	}
+	values := r.PostForm[action.ReturnTargetField]
+	if len(values) == 0 {
+		return
+	}
+	referer, err := url.Parse(r.Header.Get("Referer"))
+	if err != nil || referer.Path != "/studio" || (referer.Host != "" && referer.Host != r.Host) {
+		return
+	}
+	target, err := url.Parse(values[0])
+	if err != nil || target.IsAbs() || target.Host != "" || target.Path != "/" {
+		return
+	}
+	query := target.Query()
+	if query.Get("panel") == "" {
+		return
+	}
+	query.Del("panel")
+	for _, name := range []string{"tab", "dock", "region"} {
+		if value := referer.Query().Get(name); value != "" && query.Get(name) == "" {
+			query.Set(name, value)
+		}
+	}
+	rewritten := "/studio"
+	if encoded := query.Encode(); encoded != "" {
+		rewritten += "?" + encoded
+	}
+	r.PostForm[action.ReturnTargetField] = []string{rewritten}
+	if r.Form != nil {
+		r.Form[action.ReturnTargetField] = []string{rewritten}
 	}
 }

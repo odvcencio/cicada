@@ -10,6 +10,13 @@ import gosx "m31labs.dev/gosx"
 // Tab, TabPanel, Collapsible) render the exact attributes that GoSX's P1 M3
 // recipes emit, in the recipes' component names. TODO(gosx-pr-605): when those
 // recipes merge, install them with `gosx ui add` and delete the stand-ins.
+//
+// Tabs follow the WAI-ARIA tab pattern. The server renders the roles, states
+// and ids (tablist, tab, tabpanel, aria-selected, aria-controls,
+// aria-labelledby) over ordinary ?tab= links, so they work without JavaScript.
+// The workbench chunk adds the roving tab stop and the Left/Right/Home/End and
+// Enter/Space keys; the server sets no tabindex, so without the chunk every tab
+// stays in the normal Tab order.
 type ShellFrameProps struct {
 	Region     string
 	Message    string
@@ -63,16 +70,17 @@ type TabProps struct {
 }
 
 func Tab(props TabProps, children ...gosx.Node) gosx.Node {
-	return gosx.Fragment(gosx.If(props.Selected, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("data-gosx-tab", props.ID), gosx.Attr("data-gosx-tab-panel", props.Panel), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Selected == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("data-gosx-tab", props.ID), gosx.Attr("data-gosx-tab-panel", props.Panel)), gosx.Expr(children)))))
+	return gosx.Fragment(gosx.If(props.Selected, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "true"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.ID), gosx.Attr("data-gosx-tab-panel", props.Panel), gosx.Attr("aria-current", "page")), gosx.Expr(children)))), gosx.If(props.Selected == false, gosx.Fragment(gosx.El("a", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__tab"), gosx.Attr("href", props.Href), gosx.Attr("role", "tab"), gosx.Attr("aria-selected", "false"), gosx.Attr("aria-controls", props.Panel), gosx.Attr("data-gosx-tab", props.ID), gosx.Attr("data-gosx-tab-panel", props.Panel)), gosx.Expr(children)))))
 }
 
 type TabPanelProps struct {
 	ID     string
+	Tab    string
 	Hidden bool
 }
 
 func TabPanel(props TabPanelProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("section", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__panel"), gosx.Attr("hidden", props.Hidden)), gosx.Expr(children))
+	return gosx.El("section", gosx.Attrs(gosx.Attr("id", props.ID), gosx.Attr("class", "gsx-tabs__panel"), gosx.Attr("role", "tabpanel"), gosx.Attr("aria-labelledby", props.Tab), gosx.Attr("hidden", props.Hidden)), gosx.Expr(children))
 }
 
 type CollapsibleProps struct {
@@ -175,7 +183,7 @@ type CenterProps struct {
 }
 
 func Center(props CenterProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("main", gosx.Attrs(gosx.Attr("id", "studio-center"), gosx.Attr("class", "gsx-dock__center shell-region"), gosx.Attr("data-studio-region", props.View)), gosx.El("div", gosx.Attrs(gosx.Attr("id", "view-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$view"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("aria-label", "Views")), Tab(TabProps{ID: "view-tab-arrange", Href: props.ArrangeHref, Panel: "view-panel-arrange", Selected: props.ArrangeShown}, gosx.Text("Arrange")), Tab(TabProps{ID: "view-tab-session", Href: props.SessionHref, Panel: "view-panel-session", Selected: props.SessionShown}, gosx.Text("Session")), Tab(TabProps{ID: "view-tab-mixer", Href: props.MixerHref, Panel: "view-panel-mixer", Selected: props.MixerShown}, gosx.Text("Mixer"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
+	return gosx.El("main", gosx.Attrs(gosx.Attr("id", "studio-center"), gosx.Attr("class", "gsx-dock__center shell-region"), gosx.Attr("data-studio-region", props.View)), gosx.El("div", gosx.Attrs(gosx.Attr("id", "view-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$view"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Views")), Tab(TabProps{ID: "view-tab-arrange", Href: props.ArrangeHref, Panel: "view-panel-arrange", Selected: props.ArrangeShown}, gosx.Text("Arrange")), Tab(TabProps{ID: "view-tab-session", Href: props.SessionHref, Panel: "view-panel-session", Selected: props.SessionShown}, gosx.Text("Session")), Tab(TabProps{ID: "view-tab-mixer", Href: props.MixerHref, Panel: "view-panel-mixer", Selected: props.MixerShown}, gosx.Text("Mixer"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
 }
 
 type DetailDockProps struct {
@@ -189,7 +197,7 @@ type DetailDockProps struct {
 }
 
 func DetailDock(props DetailDockProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
+	return gosx.El("section", gosx.Attrs(gosx.Attr("id", "studio-detail"), gosx.Attr("class", "gsx-dock__bottom shell-region"), gosx.Attr("aria-label", "Detail dock")), SplitHandleY(SplitHandleProps{Signal: "$layout.dockHeight", Label: "Resize Detail dock", Min: "120", Max: "640", Value: props.Height}), gosx.El("div", gosx.Attrs(gosx.Attr("id", "detail-tabs"), gosx.BoolAttr("data-gosx-tabs"), gosx.Attr("data-gosx-tabs-signal", "$dock"), gosx.Attr("class", "shell-tabs")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "gsx-tabs__list"), gosx.Attr("role", "tablist"), gosx.Attr("aria-orientation", "horizontal"), gosx.Attr("aria-label", "Detail")), Tab(TabProps{ID: "detail-tab-clip", Href: props.ClipHref, Panel: "detail-panel-clip", Selected: props.ClipShown}, gosx.Text("Clip")), Tab(TabProps{ID: "detail-tab-device", Href: props.DeviceHref, Panel: "detail-panel-device", Selected: props.DeviceShown}, gosx.Text("Device")), Tab(TabProps{ID: "detail-tab-automation", Href: props.AutomationHref, Panel: "detail-panel-automation", Selected: props.AutomationShown}, gosx.Text("Automation"))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "shell-scroll")), gosx.Expr(children))))
 }
 
 type CodeLensProps struct {
@@ -262,4 +270,7 @@ func HiddenField(props HiddenFieldProps, children ...gosx.Node) gosx.Node {
 }
 func CaptureHint(children ...gosx.Node) gosx.Node {
 	return gosx.El("p", gosx.Attrs(gosx.Attr("class", "transport-capture-hint"), gosx.BoolAttr("data-transport-capture-hint"), gosx.BoolAttr("hidden")), gosx.Text("Recording in progress. Stop saves your take; finish it before changing playback."))
+}
+func ShortcutNotes(children ...gosx.Node) gosx.Node {
+	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "shortcut-group")), gosx.El("h3", gosx.Text("Keyboard focus")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Tab and Shift+Tab always move keyboard focus. Inside a tab list, Left and Right arrows, Home and End move between tabs, and Enter or Space opens one.")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Single-key shortcuts (B, Z, X and ?) do not run while you type in a text field, a list or a menu.")))
 }

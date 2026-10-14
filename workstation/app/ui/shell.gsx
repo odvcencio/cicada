@@ -7,6 +7,13 @@ package ui
 // Tab, TabPanel, Collapsible) render the exact attributes that GoSX's P1 M3
 // recipes emit, in the recipes' component names. TODO(gosx-pr-605): when those
 // recipes merge, install them with `gosx ui add` and delete the stand-ins.
+//
+// Tabs follow the WAI-ARIA tab pattern. The server renders the roles, states
+// and ids (tablist, tab, tabpanel, aria-selected, aria-controls,
+// aria-labelledby) over ordinary ?tab= links, so they work without JavaScript.
+// The workbench chunk adds the roving tab stop and the Left/Right/Home/End and
+// Enter/Space keys; the server sets no tabindex, so without the chunk every tab
+// stays in the normal Tab order.
 
 type ShellFrameProps struct {
 	Region     string
@@ -125,6 +132,9 @@ component Tab(props: TabProps) {
 				id={props.ID}
 				class="gsx-tabs__tab"
 				href={props.Href}
+				role="tab"
+				aria-selected="true"
+				aria-controls={props.Panel}
 				data-gosx-tab={props.ID}
 				data-gosx-tab-panel={props.Panel}
 				aria-current="page"
@@ -135,6 +145,9 @@ component Tab(props: TabProps) {
 				id={props.ID}
 				class="gsx-tabs__tab"
 				href={props.Href}
+				role="tab"
+				aria-selected="false"
+				aria-controls={props.Panel}
 				data-gosx-tab={props.ID}
 				data-gosx-tab-panel={props.Panel}
 			>{children}</a>
@@ -143,12 +156,13 @@ component Tab(props: TabProps) {
 }
 
 type TabPanelProps struct {
-	ID     string
-	Hidden bool
+	ID       string
+	Tab      string
+	Hidden   bool
 }
 
 component TabPanel(props: TabPanelProps) {
-	return <section id={props.ID} class="gsx-tabs__panel" hidden={props.Hidden}>{children}</section>
+	return <section id={props.ID} class="gsx-tabs__panel" role="tabpanel" aria-labelledby={props.Tab} hidden={props.Hidden}>{children}</section>
 }
 
 type CollapsibleProps struct {
@@ -284,7 +298,7 @@ type CenterProps struct {
 component Center(props: CenterProps) {
 	return <main id="studio-center" class="gsx-dock__center shell-region" data-studio-region={props.View}>
 		<div id="view-tabs" data-gosx-tabs data-gosx-tabs-signal="$view" class="shell-tabs">
-			<nav class="gsx-tabs__list" aria-label="Views">
+			<nav class="gsx-tabs__list" role="tablist" aria-orientation="horizontal" aria-label="Views">
 				<Tab ID="view-tab-arrange" Href={props.ArrangeHref} Panel="view-panel-arrange" Selected={props.ArrangeShown}>Arrange</Tab>
 				<Tab ID="view-tab-session" Href={props.SessionHref} Panel="view-panel-session" Selected={props.SessionShown}>Session</Tab>
 				<Tab ID="view-tab-mixer" Href={props.MixerHref} Panel="view-panel-mixer" Selected={props.MixerShown}>Mixer</Tab>
@@ -308,7 +322,7 @@ component DetailDock(props: DetailDockProps) {
 	return <section id="studio-detail" class="gsx-dock__bottom shell-region" aria-label="Detail dock">
 		<SplitHandleY Signal="$layout.dockHeight" Label="Resize Detail dock" Min="120" Max="640" Value={props.Height} />
 		<div id="detail-tabs" data-gosx-tabs data-gosx-tabs-signal="$dock" class="shell-tabs">
-			<nav class="gsx-tabs__list" aria-label="Detail">
+			<nav class="gsx-tabs__list" role="tablist" aria-orientation="horizontal" aria-label="Detail">
 				<Tab ID="detail-tab-clip" Href={props.ClipHref} Panel="detail-panel-clip" Selected={props.ClipShown}>Clip</Tab>
 				<Tab ID="detail-tab-device" Href={props.DeviceHref} Panel="detail-panel-device" Selected={props.DeviceShown}>Device</Tab>
 				<Tab ID="detail-tab-automation" Href={props.AutomationHref} Panel="detail-panel-automation" Selected={props.AutomationShown}>Automation</Tab>
@@ -407,4 +421,12 @@ component HiddenField(props: HiddenFieldProps) {
 
 component CaptureHint() {
 	return <p class="transport-capture-hint" data-transport-capture-hint hidden>Recording in progress. Stop saves your take; finish it before changing playback.</p>
+}
+
+component ShortcutNotes() {
+	return <section class="shortcut-group">
+		<h3>Keyboard focus</h3>
+		<p class="muted">Tab and Shift+Tab always move keyboard focus. Inside a tab list, Left and Right arrows, Home and End move between tabs, and Enter or Space opens one.</p>
+		<p class="muted">Single-key shortcuts (B, Z, X and ?) do not run while you type in a text field, a list or a menu.</p>
+	</section>
 }

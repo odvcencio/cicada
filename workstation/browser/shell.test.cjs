@@ -112,12 +112,84 @@ test('shell fits a 390 px phone without horizontal scroll and shows one region',
 // The next tests wait on pieces that are not in GoSX yet. They stay in the file
 // as skipped tests so the assertions are ready when the pieces land.
 
-test('Tab switches the view and Shift+Tab the dock', {skip: 'pending GoSX Tabs recipe binding (GoSX PR 605): $view has no listener until the recipe lands'}, async () => {
+test('Tab and Shift+Tab move keyboard focus and never switch views', async () => {
   const {page} = await openShell();
+  const commands = [];
+  await page.exposeFunction('recordCommand', id => commands.push(id));
+  await page.evaluate(() => document.addEventListener('gosx:command', event => window.recordCommand(event.detail.id)));
+  await page.locator('body').focus();
+  const seen = new Set();
+  for (let step = 0; step < 6; step++) {
+    await page.keyboard.press('Tab');
+    seen.add(await page.evaluate(() => document.activeElement?.id || document.activeElement?.tagName));
+  }
+  assert.ok(seen.size > 1, 'Tab walks through different elements');
+  await page.keyboard.press('Shift+Tab');
+  assert.deepEqual(commands, [], 'Tab and Shift+Tab run no command');
+  await page.locator('#view-tab-arrange[aria-current="page"]').waitFor();
+  await page.close();
+});
+
+test('tab lists expose roles, states and labels (axe-style structure check)', async () => {
+  const {page} = await openShell('?tab=session');
+  const problems = await page.evaluate(() => {
+    const found = [];
+    for (const list of document.querySelectorAll('[role="tablist"]')) {
+      if (!list.getAttribute('aria-label')) found.push('tablist without a label');
+      const tabs = [...list.querySelectorAll('[role="tab"]')];
+      if (tabs.length < 2) found.push('tablist with fewer than two tabs');
+      if (tabs.filter(tab => tab.getAttribute('aria-selected') === 'true').length !== 1) found.push('want exactly one selected tab');
+      // The chunk gives exactly one tab stop; the server markup gives none or all.
+      const stops = tabs.filter(tab => tab.tabIndex === 0).length;
+      if (stops !== 1 && stops !== tabs.length) found.push(`tab stops: ${stops}`);
+      for (const tab of tabs) {
+        const panel = document.getElementById(tab.getAttribute('aria-controls'));
+        if (!panel || panel.getAttribute('role') !== 'tabpanel' || panel.getAttribute('aria-labelledby') !== tab.id) found.push(`tab ${tab.id} has no matching tabpanel`);
+        else if (panel.hidden === (tab.getAttribute('aria-selected') === 'true')) found.push(`panel for ${tab.id} hidden state disagrees`);
+        if (!tab.textContent.trim()) found.push(`tab ${tab.id} has no name`);
+      }
+    }
+    for (const control of document.querySelectorAll('button, [role="separator"]')) {
+      if (!(control.textContent.trim() || control.getAttribute('aria-label'))) found.push(`unnamed ${control.tagName} ${control.className}`);
+    }
+    return found;
+  });
+  assert.deepEqual(problems, []);
+  await page.close();
+});
+
+// The workbench chunk in GoSX PR 605 adds the roving tab stop and the tab keys,
+// and wires $view and $dock to the tabs. Set CICADA_SHELL_TABS=1 once the pinned
+// GoSX has them.
+const tabsReady = process.env.CICADA_SHELL_TABS === '1' ? false : 'pending GoSX PR 605 (tab keys and the $view binding)';
+
+test('arrow keys, Home and End move between tabs inside the tab list', {skip: tabsReady}, async () => {
+  const {page} = await openShell();
+  const first = page.locator('#view-tab-arrange');
+  await first.focus();
+  await page.keyboard.press('ArrowRight');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'view-tab-session');
+  await page.keyboard.press('End');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'view-tab-mixer');
+  await page.keyboard.press('Home');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'view-tab-arrange');
+  await page.keyboard.press('ArrowLeft');
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'view-tab-mixer', 'Left wraps');
+  await page.keyboard.press('Enter');
+  await page.locator('#view-tab-mixer[aria-selected="true"]').waitFor();
+  assert.ok(await page.locator('#view-panel-mixer').isVisible());
+  // One tab stop: Tab leaves the tab list instead of visiting each tab.
   await page.keyboard.press('Tab');
-  await page.locator('a[href="?tab=session"][aria-current="page"]').waitFor();
-  await page.keyboard.press('Tab');
-  await page.locator('a[href="?tab=arrange"][aria-current="page"]').waitFor();
+  assert.ok(!(await page.evaluate(() => document.activeElement.closest('[role="tablist"]'))));
+  await page.close();
+});
+
+test('Alt+Shift+2 shows the Session view and Alt+Shift+5 the Device tab', {skip: tabsReady}, async () => {
+  const {page} = await openShell();
+  await page.keyboard.press('Alt+Shift+Digit2');
+  await page.locator('#view-tab-session[aria-selected="true"]').waitFor();
+  await page.keyboard.press('Alt+Shift+Digit5');
+  await page.locator('#detail-tab-device[aria-selected="true"]').waitFor();
   await page.close();
 });
 
