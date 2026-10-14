@@ -147,7 +147,7 @@ func (s *studio) editOptions(source []byte, files map[string][]byte) (edits.Opti
 	if err != nil {
 		return edits.Options{}, err
 	}
-	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath), MixerGuard: s.mixerCaptureGuard}
+	opts := edits.Options{Compiler: &studioCompiler{path: s.path}, RenderCheck: s.renderCheck, Path: s.path, Edition: editionNumber, ManifestPath: manifestPath, Sources: sources.Files, Now: time.Now, UpgradeEdition: s.upgradeEdition(manifestPath), MixerGuard: s.mixerCaptureGuard, CaptureGuard: s.automationCaptureGuard}
 	if manifestPath != "" {
 		var supplied bool
 		opts.Manifest, supplied = overrides[manifestPath]
@@ -202,6 +202,17 @@ var errMixerDuringCapture = errors.New("Finish the take before editing the mix."
 func (s *studio) mixerCaptureGuard() error {
 	if s.captureID != "" {
 		return errMixerDuringCapture
+	}
+	return nil
+}
+
+var errAutomationDuringCapture = errors.New("finish the recording before editing automation")
+
+// automationCaptureGuard refuses automation point edits while a take is open,
+// with the text /api/automation always used. The caller holds s.mu.
+func (s *studio) automationCaptureGuard() error {
+	if s.captureID != "" {
+		return errAutomationDuringCapture
 	}
 	return nil
 }
@@ -366,6 +377,8 @@ type stagedProposal struct {
 	// mixer records that a mixer writer ran while staging, so acceptance can
 	// apply the same capture guard to a proposal staged before the recording.
 	mixer bool
+	// capture records that an automation point edit ran while staging.
+	capture bool
 	// renderIdentity is the render identity verified at staging, recorded
 	// when an intent consulted the render check. Empty with rendered set means
 	// the inputs could not be identified, so acceptance always reapplies.
@@ -409,7 +422,11 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 		return
 	}
-	touchedMixer := false
+	touchedMixer, touchedCapture := false, false
+	opts.CaptureGuard = func() error {
+		touchedCapture = true
+		return s.automationCaptureGuard()
+	}
 	opts.MixerGuard = func() error {
 		touchedMixer = true
 		return s.mixerCaptureGuard()
@@ -435,7 +452,7 @@ func (s *studio) stageProposal(w http.ResponseWriter, r *http.Request) {
 	}
 	// The identity verified around the renders, not one taken afterwards: a
 	// change during the check must not be recorded as verified.
-	entry := stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer, rendered: staged.Result.RenderChecked, renderIdentity: staged.Result.RenderIdentity}
+	entry := stagedProposal{proposal: proposal, staged: staged, mixer: touchedMixer, capture: touchedCapture, rendered: staged.Result.RenderChecked, renderIdentity: staged.Result.RenderIdentity}
 	s.proposals[proposal.ID] = entry
 	s.previewProposal = proposal.ID
 	s.transport.applyPreview(staged.Ops)
@@ -478,6 +495,12 @@ func (s *studio) acceptProposal(w http.ResponseWriter, r *http.Request) {
 	if staged.mixer {
 		if err := s.mixerCaptureGuard(); err != nil {
 			studioJSON(w, http.StatusConflict, map[string]any{"error": err.Error()})
+			return
+		}
+	}
+	if staged.capture {
+		if err := s.automationCaptureGuard(); err != nil {
+			studioJSON(w, http.StatusUnprocessableEntity, map[string]any{"error": err.Error()})
 			return
 		}
 	}

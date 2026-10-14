@@ -258,3 +258,105 @@ func TestRouteGuardsMatchIntentsAndApply(t *testing.T) {
 		})
 	}
 }
+
+// An automation point edit changes the revision a take publishes against, so
+// /api/automation refuses it during a recording (422). The intents behind that
+// route, alone, in a batch, as a dry run, or staged before the recording and
+// accepted during it, must refuse with the same status and text.
+func TestAutomationPointEditsRefusedDuringCaptureOnEveryPath(t *testing.T) {
+	const text = "finish the recording before editing automation"
+	set := `{"kind":"setautomationpoint","entity":"param:bass.level","at":"@1.1.1","value":"-6dB"}`
+	remove := `{"kind":"removeautomationpoint","entity":"param:bass.level","at":"@1.1.1"}`
+	toggle := `{"kind":"togglestep","entity":"step:pulse/1","shared":"definition"}`
+	point, _ := json.Marshal(studioCurvePoint{At: "@1.1.1", Value: "-6dB"})
+	cases := []struct{ name, route, body string }{
+		{"set route", "/api/automation", fmt.Sprintf(`{"revision":%%q,"action":"automation-point-set","path":"bass.level","value":%s}`, point)},
+		{"remove route", "/api/automation", fmt.Sprintf(`{"revision":%%q,"action":"automation-point-remove","path":"bass.level","value":%s}`, point)},
+		{"set intent", "/api/intents", `{"version":1,"revision":%q,"intents":[` + set + `]}`},
+		{"remove intent", "/api/intents", `{"version":1,"revision":%q,"intents":[` + remove + `]}`},
+		{"batch after another intent", "/api/intents", `{"version":1,"revision":%q,"intents":[` + toggle + `,` + set + `]}`},
+		{"batch before another intent", "/api/intents", `{"version":1,"revision":%q,"intents":[` + remove + `,` + toggle + `]}`},
+		{"dry run", "/api/intents", `{"version":1,"revision":%q,"dryrun":true,"intents":[` + set + `]}`},
+		{"stage", "/api/proposals", `{"envelope":{"version":1,"revision":%q,"intents":[` + set + `]}}`},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			s := newTakeStudio(t, t.TempDir())
+			id := activeVocalCapture(t, s)
+			before := snapshotStudioState(t, s)
+			response := studioCallRaw(t, s.routes(), c.route, fmt.Sprintf(c.body, studioRevision(before.source)))
+			if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), text) {
+				t.Fatalf("%d %s", response.Code, response.Body)
+			}
+			after := snapshotStudioState(t, s)
+			if !bytes.Equal(after.source, before.source) || after.history != before.history || after.log != before.log {
+				t.Fatal("refused edit left a trace")
+			}
+			s.mu.Lock()
+			err := s.finishVocalCapture(id)
+			s.mu.Unlock()
+			if err != nil {
+				t.Fatalf("take did not publish after refusal: %v", err)
+			}
+		})
+	}
+	t.Run("accept during capture", func(t *testing.T) {
+		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		s := newTakeStudio(t, t.TempDir())
+		before := snapshotStudioState(t, s)
+		response := studioCallRaw(t, s.routes(), "/api/proposals", fmt.Sprintf(`{"envelope":{"version":1,"revision":%q,"intents":[`+set+`]}}`, studioRevision(before.source)))
+		var staged struct {
+			ID string `json:"id"`
+		}
+		if response.Code != http.StatusOK || json.Unmarshal(response.Body.Bytes(), &staged) != nil || staged.ID == "" {
+			t.Fatalf("stage: %d %s", response.Code, response.Body)
+		}
+		id := activeVocalCapture(t, s)
+		response = studioCallRaw(t, s.routes(), "/api/proposals/"+staged.ID+"/accept", "{}")
+		if response.Code != http.StatusUnprocessableEntity || !strings.Contains(response.Body.String(), text) {
+			t.Fatalf("accept: %d %s", response.Code, response.Body)
+		}
+		after := snapshotStudioState(t, s)
+		if !bytes.Equal(after.source, before.source) || after.history != before.history || after.log != before.log {
+			t.Fatal("refused acceptance left a trace")
+		}
+		s.mu.Lock()
+		err := s.finishVocalCapture(id)
+		s.mu.Unlock()
+		if err != nil {
+			t.Fatalf("take did not publish: %v", err)
+		}
+	})
+}
+
+// Audit of the other M10 intents: their routes never had a capture guard, so
+// the intent must not add one. Route and intent answer alike during a take.
+func TestM10RoutesAndIntentsAgreeDuringCapture(t *testing.T) {
+	score := "cicada 2\ntempo 120\ntrack vox audio {}\ntrack bass acid {}\npattern pulse acid steps=4 { 1 . 5 . }\narrange {\n  place a bass pulse { at = @1.1.1 length = 4bars }\n  marker m { at = @3.1.1 }\n}\n"
+	for _, c := range []struct{ name, route, body, intent string }{
+		{"update placement", `{"revision":%q,"action":"update","name":"a","placement":{"length":"3bars"}}`, "", `{"kind":"updateplacement","entity":"placement:a","settings":{"length":"3bars"}}`},
+		{"add placement", `{"revision":%q,"action":"append","newName":"b","placement":{"at":"@9.1.1","length":"1bars","track":"bass","content":"pulse"}}`, "", `{"kind":"addplacement","name":"b","settings":{"at":"@9.1.1","length":"1bars","track":"bass","content":"pulse"}}`},
+		{"copy placement", `{"revision":%q,"action":"duplicate","name":"a","newName":"c","placement":{"at":"@9.1.1"}}`, "", `{"kind":"copyplacement","entity":"placement:a","name":"c","settings":{"at":"@9.1.1"}}`},
+		{"set marker", `{"revision":%q,"action":"marker","name":"m","placement":{"at":"@4.1.1"}}`, "", `{"kind":"setmarker","entity":"marker:m","settings":{"at":"@4.1.1"}}`},
+		{"add marker", `{"revision":%q,"action":"append-marker","newName":"n","placement":{"at":"@5.1.1"}}`, "", `{"kind":"addmarker","name":"n","settings":{"at":"@5.1.1"}}`},
+		{"remove marker", `{"revision":%q,"action":"delete-marker","name":"m"}`, "", `{"kind":"removemarker","entity":"marker:m"}`},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			status := func(route, body string) int {
+				t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+				s := newTakeStudio(t, t.TempDir())
+				if err := os.WriteFile(s.path, []byte(score), 0600); err != nil {
+					t.Fatal(err)
+				}
+				activeVocalCapture(t, s)
+				return studioCallRaw(t, s.routes(), route, fmt.Sprintf(body, studioRevision([]byte(score)))).Code
+			}
+			viaRoute := status("/api/arrange", c.route)
+			viaIntent := status("/api/intents", `{"version":1,"revision":%q,"intents":[`+c.intent+`]}`)
+			if viaRoute != viaIntent {
+				t.Fatalf("route %d, intent %d", viaRoute, viaIntent)
+			}
+		})
+	}
+}

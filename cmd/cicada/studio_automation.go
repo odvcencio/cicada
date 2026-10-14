@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	edits "m31labs.dev/cicada/edit"
@@ -27,8 +26,8 @@ func (s *studio) editAutomation(w http.ResponseWriter, r *http.Request) {
 		env := edits.Envelope{Intents: []edits.Intent{curvePointIntent(edit.Path, point, edit.Action == "automation-point-remove")}}
 		edit.Label = studioEditLabel(edit)
 		s.applyPreparedIntents(w, edit, env, edits.ParamWriterAuto, func([]byte, *edits.Options) (edits.Envelope, error) {
-			if s.captureID != "" {
-				return edits.Envelope{}, fmt.Errorf("finish the recording before editing automation")
+			if err := s.automationCaptureGuard(); err != nil {
+				return edits.Envelope{}, err
 			}
 			return env, nil
 		}, nil, nil)

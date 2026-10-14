@@ -61,6 +61,11 @@ func editAutomationPoint(ctx *Context, intent Intent) error {
 	case *RemoveAutomationPoint:
 		entity, point, remove = in.Entity, automationPoint{in.OldAt, in.At, "", in.Shape, in.Curve}, true
 	}
+	if ctx.Options.CaptureGuard != nil {
+		if err := ctx.Options.CaptureGuard(); err != nil {
+			return err
+		}
+	}
 	if _, err := ParseEntityID(string(entity)); err != nil {
 		return err
 	}
