@@ -213,7 +213,7 @@ test-wasm: build-kernel-wasm build-vocals-wasm test-chord-wasm
 test-worklet-negotiation: build-worklets
 	node host/web/chord_capability_test.cjs
 	node host/web/client_capability_test.cjs
-	node --test host/web/worklet-followups.test.cjs host/web/client-lifecycle.test.cjs
+	node --test host/web/worklet-followups.test.cjs host/web/client-lifecycle.test.cjs host/web/message-drain.test.cjs
 
 test-browser: build-kernel-wasm
 	mkdir -p build

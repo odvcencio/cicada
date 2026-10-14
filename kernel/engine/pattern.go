@@ -277,11 +277,84 @@ func editSlotIndex(c cmd.Command) int {
 // fromRing marks a command not yet read: a Tick=0 edit then waits for the next bar
 // while playing, unless it carries PatternEditNow.
 func (e *Engine) editTick(c cmd.Command, fromRing bool) int64 {
-	now := e.transport.Tick()
-	if fromRing && c.Tick == 0 && c.Pad != cmd.PatternEditNow && e.transport.Playing() {
-		return (now/seq.TicksPerBar + 1) * seq.TicksPerBar
+	return max(e.queuedTick(c, fromRing), e.transport.Tick())
+}
+
+// queuedTick is the tick a queued command waits for. Only an unread pattern edit
+// with Tick=0 differs from its own tick: drainCommands moves it to the next bar
+// while playing, unless it carries PatternEditNow.
+func (e *Engine) queuedTick(c cmd.Command, fromRing bool) int64 {
+	if fromRing && isPatternEditOp(c.Op) && c.Tick == 0 && c.Pad != cmd.PatternEditNow && e.transport.Playing() {
+		return (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
 	}
-	return max(c.Tick, now)
+	return c.Tick
+}
+
+// queuedCommand returns the command at a position in the combined order: the
+// pending queue, then the unread ring, then the batch under test.
+func (e *Engine) queuedCommand(index, ring int, cs []cmd.Command) (cmd.Command, bool) {
+	switch {
+	case index < e.pendingLen:
+		return e.pending[index], false
+	case index < e.pendingLen+ring:
+		return e.commands[(e.commandRead+uint16(index-e.pendingLen))%uint16(len(e.commands))], true
+	}
+	return cs[index-e.pendingLen-ring], true
+}
+
+// seekAmongQueued reports a seek that is waiting to run. A seek moves the tick
+// every later tick comparison is made against.
+func (e *Engine) seekAmongQueued(ring int, cs []cmd.Command) bool {
+	for i := 0; i < e.pendingLen+ring+len(cs); i++ {
+		if c, _ := e.queuedCommand(i, ring, cs); c.Op == cmd.OpSeek {
+			return true
+		}
+	}
+	return false
+}
+
+// executionRanks numbers the queued commands in the order the engine runs them
+// when a seek is waiting: due commands run by priority and arrival, a seek jumps
+// the tick so later commands may stop being due, and when nothing is due time
+// passes to the earliest waiting tick. It is quadratic in the queue, so it runs
+// only while a seek is queued. It fills ranks and reports whether it fit.
+func (e *Engine) executionRanks(ring int, cs []cmd.Command, ranks []uint16) bool {
+	total := e.pendingLen + ring + len(cs)
+	if total > len(ranks) {
+		return false
+	}
+	var done [(2*CommandCapacity + 64 + 63) / 64]uint64
+	now := e.transport.Tick()
+	next := uint16(0)
+	for remaining := total; remaining > 0; {
+		best, bestPriority, earliest := -1, 0, int64(0)
+		for index := 0; index < total; index++ {
+			if done[index/64]&(1<<(index%64)) != 0 {
+				continue
+			}
+			c, fromRing := e.queuedCommand(index, ring, cs)
+			tick := e.queuedTick(c, fromRing)
+			if tick <= now {
+				if priority := commandPriority(c.Op); best < 0 || priority < bestPriority {
+					best, bestPriority = index, priority
+				}
+			} else if earliest == 0 || tick < earliest {
+				earliest = tick
+			}
+		}
+		if best < 0 {
+			now = earliest
+			continue
+		}
+		done[best/64] |= 1 << (best % 64)
+		remaining--
+		if c, _ := e.queuedCommand(best, ring, cs); c.Op == cmd.OpSeek {
+			now = int64(c.Arg0)*seq.TicksPerBar + int64(c.Arg1)
+		}
+		ranks[best] = next
+		next++
+	}
+	return true
 }
 
 // queuedEdit locates one edit in the pending queue, the unread ring or the
@@ -306,12 +379,21 @@ const patternEditCap = CommandCapacity + 64
 // the engine judged them when they arrived; that edit and every one after it is
 // validated. One pass collects the edits, so the cost grows with the queue plus
 // the batch, not their product. It copies the slot into stack scratch, mutates
-// nothing and allocates nothing. Call it only from the render thread, which owns
-// the engine, once the earlier batches have been pushed.
+// nothing and allocates nothing. A queued OpSeek changes which commands are due
+// and so their order; while one is queued the order comes from executionRanks,
+// which replays the whole queue. OpPlay and OpStop leave the tick alone, and a
+// tempo change moves frames, not ticks, so neither changes the order. Call it only
+// from the render thread, which owns the engine, once the earlier batches have
+// been pushed.
 func (e *Engine) PatternEditsValid(cs []cmd.Command) bool {
 	var seen [MaxTracks * 16 / 64]uint64
 	var queue [patternEditCap]queuedEdit
 	ring := int(e.commandWrite - e.commandRead)
+	var ranks [2*CommandCapacity + 64]uint16
+	seeking := e.seekAmongQueued(ring, cs)
+	if seeking && !e.executionRanks(ring, cs, ranks[:]) {
+		return false
+	}
 	for i := range cs {
 		first := cs[i]
 		if !isPatternEditOp(first.Op) {
@@ -334,7 +416,11 @@ func (e *Engine) PatternEditsValid(cs []cmd.Command) bool {
 			if n == len(queue) {
 				return false
 			}
-			queue[n] = queuedEdit{tick: e.editTick(c, fromRing), slot: uint16(index)}
+			tick := e.editTick(c, fromRing)
+			if seeking {
+				tick = int64(ranks[index])
+			}
+			queue[n] = queuedEdit{tick: tick, slot: uint16(index)}
 			n++
 			return true
 		}

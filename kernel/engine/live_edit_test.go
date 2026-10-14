@@ -1,7 +1,10 @@
 package engine
 
 import (
+	"fmt"
 	"math"
+	"os"
+	"strings"
 	"testing"
 
 	"m31labs.dev/cicada/kernel"
@@ -524,7 +527,9 @@ func TestStereoMeterEmissionFitsEveryTrackOrFallsBackWhole(t *testing.T) {
 	}
 	// A ring already holding more than the emission leaves room for falls back whole.
 	full := build(MaxTracks)
-	for i := 0; i < len(full.messages)-300; i++ {
+	// Leave room for the mono emission but less than the stereo reservation, whatever
+	// the build's track limit: six messages per track plus sixteen.
+	for i := 0; i < len(full.messages)-(MaxTracks*6+15); i++ {
 		full.emit(cmd.Message{Kind: cmd.Switched, A: uint16(i)})
 	}
 	perTrack, _, masterRMS := collect(full, MaxTracks)
@@ -687,5 +692,105 @@ func TestPatternEditsValidFollowsExecutionOrderAcrossPendingAndRing(t *testing.T
 	}
 	if !fresh.PatternEditsValid(note(60, 1_000_000, 0)) {
 		t.Fatal("a low note is valid before and after the transpose")
+	}
+}
+
+// The AudioWorklet carries one drain of the status ring in a fixed buffer. The
+// buffer size must follow MessageCapacity, or the client rejects a full drain.
+func TestWorkletMessageBufferMatchesTheMessageCapacity(t *testing.T) {
+	source, err := os.ReadFile("../../host/web/processor.js")
+	if err != nil {
+		t.Skipf("worklet source not available: %v", err)
+	}
+	want := fmt.Sprintf("MESSAGE_BYTES = %d * 16", MessageCapacity)
+	if !strings.Contains(string(source), want) {
+		t.Fatalf("host/web/processor.js must declare %q to match engine.MessageCapacity", want)
+	}
+}
+
+// A queued seek moves the tick every later comparison is made against, so the
+// order the engine runs two edits in can differ from their order before the seek.
+func TestPatternEditsValidFollowsQueuedSeeks(t *testing.T) {
+	build := func() *Engine {
+		cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: piano.MaxVoices, BPMMilli: 120_000, Seed: 1}
+		cfg.Track[0].Kind = VoicePiano
+		cfg.Patterns = []PatternBank{{}}
+		cfg.Patterns[0].Slots[0] = seq.Pattern{Len: 16, GatePercent: 55, Seed: 1}
+		cfg.Patterns[0].Slots[0].Steps[3] = packedNoteValue(100) // piano range ends at 108
+		e, err := New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.meterRate = 0
+		var l, r [128]float32
+		if !e.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
+			t.Fatal("play rejected")
+		}
+		for e.transport.Tick() < 5_000 {
+			e.Render(l[:], r[:])
+		}
+		return e
+	}
+	lower := func(tick int64) cmd.Command {
+		return cmd.Command{Op: cmd.OpSetStep, Track: 0, Index: 3, Arg0: packedNoteValue(60), Tick: tick}
+	}
+	up := func(tick int64) cmd.Command {
+		return cmd.Command{Op: cmd.OpSetPatternMeta, Track: 0, Arg0: uint32(uint16(24)) << 16, Tick: tick}
+	}
+	back := cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 0, Arg1: 100}
+	// Both edits are already due, so they run in arrival order: lower, then up.
+	plain := build()
+	if !plain.Push(lower(4_800)) || !plain.PatternEditsValid([]cmd.Command{up(4_700)}) {
+		t.Fatal("two due edits run in arrival order: the note drops before the transpose")
+	}
+	// With a seek queued between them, neither is due after it. They then run by
+	// tick, the transpose (4,700) first, and it lifts note 100 out of range.
+	seeking := build()
+	if !seeking.Push(lower(4_800)) || !seeking.Push(back) {
+		t.Fatal("push rejected")
+	}
+	if seeking.PatternEditsValid([]cmd.Command{up(4_700)}) {
+		t.Fatal("after the seek the transpose runs first and faults the piano")
+	}
+	// The engine does fault that way: run it.
+	faultOf := func(e *Engine) uint16 {
+		var l, r [128]float32
+		var m cmd.Message
+		for blocks := 0; blocks < 1_200; blocks++ {
+			e.Render(l[:], r[:])
+			for e.Poll(&m) {
+				if m.Kind == cmd.Fault {
+					return m.A
+				}
+			}
+		}
+		return 0
+	}
+	if !seeking.Push(up(4_700)) {
+		t.Fatal("push rejected")
+	}
+	if code := faultOf(seeking); code != FaultPatternEdit {
+		t.Fatalf("the engine ran the edits in the predicted order and faulted with %d, want %d", code, FaultPatternEdit)
+	}
+	// Stamped the other way round the order is the same before and after the seek.
+	ordered := build()
+	if !ordered.Push(lower(4_700)) || !ordered.Push(back) || !ordered.PatternEditsValid([]cmd.Command{up(4_800)}) {
+		t.Fatal("the note drops first by tick, so the transpose is valid")
+	}
+	if !ordered.Push(up(4_800)) || faultOf(ordered) != 0 {
+		t.Fatal("the valid order must run without a fault")
+	}
+	// The seek can also be in the pending queue, not the ring.
+	var l, r [128]float32
+	queued := build()
+	if !queued.Push(lower(4_800)) || !queued.Push(back) {
+		t.Fatal("push rejected")
+	}
+	queued.Render(l[:], r[:]) // runs the seek and leaves the note edit pending
+	if queued.transport.Tick() > 1_000 {
+		t.Fatalf("the seek did not run: tick %d", queued.transport.Tick())
+	}
+	if queued.PatternEditsValid([]cmd.Command{up(4_700)}) {
+		t.Fatal("pending edit and the earlier tick: the transpose still runs first")
 	}
 }

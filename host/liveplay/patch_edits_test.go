@@ -556,7 +556,7 @@ func dependentScore(t *testing.T, kind engine.VoiceKind, step int, note uint8) S
 	if err != nil {
 		t.Fatal(err)
 	}
-	return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: "dependent", Tracks: []TrackSlots{{ID: "bass"}}, SceneIDs: []string{"main"}}
+	return Score{Engine: created, SampleRate: 48_000, BPMMilli: 120_000, Name: "dependent", Tracks: []TrackSlots{{ID: "bass"}}, SceneIDs: []string{"main"}, Song: []SongEntry{{Scene: "main", StartBar: 1}}}
 }
 
 type dependentBatch func(*Patch, PreviewTarget)
@@ -651,4 +651,49 @@ func TestDependentBatchesAreValidatedInExecutionOrder(t *testing.T) {
 			t.Fatalf("revision %d, %d free: all three batches are valid", p.LandedRevision(), arena.Free())
 		}
 	})
+}
+
+// A song-entry seek queued between two batches moves the tick under them. The
+// second batch is judged in the order the engine will run them, after the seek.
+func TestDependentBatchesAcrossAQueuedBackwardSeek(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		second       dependentBatch
+		wantRevision uint64
+	}{
+		{"dependent batch that would fault is refused", stepTo(3, 110), 1},
+		{"dependent batch that is valid lands", stepTo(3, 70), 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			p, err := New(dependentScore(t, engine.VoiceAcid, 3, 60), 48_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			_ = readFrames(t, p, 2*96_000) // two bars in, so the seek goes backward
+			target, _ := p.ResolvePreviewTrack("bass")
+			arena := NewPatchArena(2)
+			first := arena.Begin(1)
+			transpose(24)(first, target)
+			if err := p.Patch(first); err != nil {
+				t.Fatal(err)
+			}
+			if err := p.StartSongEntry(0, "main"); err != nil {
+				t.Fatal(err)
+			}
+			second := arena.Begin(2)
+			test.second(second, target)
+			if err := p.Patch(second); err != nil {
+				t.Fatal(err)
+			}
+			_ = readFrames(t, p, 3*96_000)
+			if p.fault != nil {
+				t.Fatalf("the engine faulted: %v", p.fault)
+			}
+			if p.LandedRevision() != test.wantRevision || arena.Free() != 2 {
+				t.Fatalf("revision %d, %d free; want revision %d", p.LandedRevision(), arena.Free(), test.wantRevision)
+			}
+			_ = readFrames(t, p, 4*blockFrames) // playback continues
+		})
+	}
 }
