@@ -89,7 +89,7 @@ func (s *studioApp) mutation(path string, payload func(map[string]string) (any, 
 		if path == "/api/transport" && action.WantsJSON(ctx.Request) {
 			return nil
 		}
-		ctx.RedirectBackWithMessage("/", "")
+		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/"), "")
 		return nil
 	}
 }
@@ -128,7 +128,7 @@ func (s *studioApp) saveSource(ctx *action.Context) error {
 	if ctx.FormData["intent"] == "discard" {
 		session.Current(ctx.Request).Delete("score-draft")
 		ctx.FormData = nil
-		ctx.RedirectBackWithMessage("/?panel=code", "Draft discarded. The file is unchanged.")
+		ctx.RedirectBackWithMessage(shellRedirect(ctx.Request, "/?panel=code"), "Draft discarded. The file is unchanged.")
 		return nil
 	}
 	if ctx.FormData["intent"] == "merge" {

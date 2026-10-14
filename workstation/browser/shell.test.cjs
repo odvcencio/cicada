@@ -85,11 +85,17 @@ test('shell keyboard: a reserved chord does nothing and is listed as unavailable
   await page.keyboard.press('Control+j');
   assert.equal(await unavailable, 'arrange.consolidate');
   assert.deepEqual(requests.slice(before), [], 'a reserved chord sends nothing');
-  await page.keyboard.press('Shift+/');
+  // The Shortcuts button opens the same disclosure the palette chord does.
+  await page.locator('button[data-gosx-disclosure-target="#palette"]').click();
   const dialog = page.locator('#palette');
   await dialog.waitFor({state: 'visible'});
   const row = dialog.locator('li', {hasText: 'Consolidate'});
   assert.match(await row.innerText(), /Unavailable/);
+  await page.keyboard.press('Escape');
+  await dialog.waitFor({state: 'hidden'});
+  // Browsers report ? as key "?" or, with Shift held, as "/"; both chords are registered.
+  await page.keyboard.press('Shift+/');
+  await dialog.waitFor({state: 'visible'});
   await page.keyboard.press('Escape');
   await dialog.waitFor({state: 'hidden'});
   await page.close();

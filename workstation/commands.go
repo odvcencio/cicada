@@ -33,7 +33,7 @@ func shellCommands() []command.Command {
 		{ID: "dock.clip", Title: "Show Clip tab", Group: "View", Keys: []string{"Alt+Shift+4"}, Action: command.Action{Signal: "$dock", Value: "clip"}},
 		{ID: "dock.device", Title: "Show Device tab", Group: "View", Keys: []string{"Alt+Shift+5"}, Action: command.Action{Signal: "$dock", Value: "device"}},
 		{ID: "dock.automation", Title: "Show Automation tab", Group: "View", Keys: []string{"Alt+Shift+6"}, Action: command.Action{Signal: "$dock", Value: "automation"}},
-		{ID: "palette.open", Title: "Show keyboard shortcuts", Group: "View", Keys: []string{"Mod+K", "?"}, Action: command.Action{Open: "#palette"}},
+		{ID: "palette.open", Title: "Show keyboard shortcuts", Group: "View", Keys: []string{"Mod+K", "?", "Shift+/"}, Action: command.Action{Open: "#palette"}},
 
 		// TODO(gosx-s0): the edit commands below submit managed forms. They stay
 		// Reserved until command.Action.Submit exists; then each becomes

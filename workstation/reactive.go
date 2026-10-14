@@ -71,7 +71,7 @@ func workspaceLocation(raw string) (string, error) {
 		raw = "/"
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.IsAbs() || u.Host != "" || u.Path != "/" || strings.HasPrefix(raw, "//") {
+	if err != nil || u.IsAbs() || u.Host != "" || (u.Path != "/" && u.Path != "/studio") || strings.HasPrefix(raw, "//") {
 		return "", fmt.Errorf("workspace location must be the local Studio page")
 	}
 	return u.String(), nil
@@ -86,7 +86,14 @@ func (s *studioApp) projection(r *http.Request, location string) (workspaceProje
 	request.URL, _ = url.Parse(location)
 	request.Method, request.Body = http.MethodGet, nil
 	ctx := &server.Context{Request: request, PageState: *server.NewPageStateForRequest(request)}
-	body, view := s.workspaceContent(ctx)
+	var body gosx.Node
+	var view workspace
+	if request.URL.Path == "/studio" {
+		// The shell is its own page: project it, not the panel app.
+		body, view, _ = s.shellContent(ctx)
+	} else {
+		body, view = s.workspaceContent(ctx)
+	}
 	if view.Revision == "" {
 		return workspaceProjection{}, fmt.Errorf("saved workspace is unavailable; refresh saved state to reconnect")
 	}

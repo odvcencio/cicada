@@ -35,6 +35,10 @@ func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 			}
 			edits = append(edits, edit)
 			_, _ = io.WriteString(w, `{"revision":"current","bankRevision":"bank-current"}`)
+		case "/api/sampler/import":
+			_, _ = io.WriteString(w, `{}`)
+		case "/api/instrument-record":
+			_, _ = io.WriteString(w, `{}`)
 		case "/api/workspace":
 			_ = json.NewEncoder(w).Encode(workspace{Revision: "current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}})
 		case "/api/transport":

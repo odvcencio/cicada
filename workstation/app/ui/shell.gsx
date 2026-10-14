@@ -231,12 +231,13 @@ component Placeholder(props: PlaceholderProps) {
 }
 
 type DialogTriggerProps struct {
-	Target string
+	Target   string
+	Controls string
 	Label  string
 }
 
 component DialogTrigger(props: DialogTriggerProps) {
-	return <button type="button" class="shell-command" data-gosx-disclosure-target={props.Target} aria-controls={props.Target} aria-expanded="false">{props.Label}</button>
+	return <button type="button" class="shell-command" data-gosx-disclosure-target={props.Target} aria-controls={props.Controls} aria-expanded="false">{props.Label}</button>
 }
 
 type DialogFrameProps struct {

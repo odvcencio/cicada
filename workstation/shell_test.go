@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -128,7 +129,7 @@ func TestShellRegistersEveryCommandInTheTable(t *testing.T) {
 	}
 	for id, keys := range map[string]string{
 		"transport.toggle": "Space", "transport.home": "Home", "view.arrange": "Alt+Shift+1", "view.session": "Alt+Shift+2", "view.mixer": "Alt+Shift+3", "dock.clip": "Alt+Shift+4", "dock.device": "Alt+Shift+5", "dock.automation": "Alt+Shift+6",
-		"edit.undo": "Mod+Z", "edit.redo": "Mod+Shift+Z", "palette.open": "Mod+K,?", "arrange.consolidate": "Mod+J",
+		"edit.undo": "Mod+Z", "edit.redo": "Mod+Shift+Z", "palette.open": "Mod+K,?,Shift+/", "arrange.consolidate": "Mod+J",
 		"live.scene.1": "F1", "live.scene.8": "F8", "transport.record": "F9", "tool.draw": "B", "select.left": "ArrowLeft",
 	} {
 		if got[id].ID == "" || strings.Join(got[id].Keys, ",") != keys {
@@ -294,5 +295,151 @@ func TestShellPanelFormsReturnToTheShell(t *testing.T) {
 	}
 	if got := send("", "/?panel=history"); got != "/?panel=history" {
 		t.Errorf("a form without a Referer must keep its target, got %q", got)
+	}
+}
+
+// shellPost submits a form the way a mounted panel does from the given page.
+func shellPost(t *testing.T, client *http.Client, address, route string, form url.Values, referer string) *http.Response {
+	t.Helper()
+	req, _ := http.NewRequest("POST", address+route, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Origin", address)
+	req.Header.Set("X-CSRF-Token", form.Get("csrf_token"))
+	if referer != "" {
+		req.Header.Set("Referer", referer)
+	}
+	response, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { response.Body.Close() })
+	return response
+}
+
+func TestShellPatternEditsStayInTheShell(t *testing.T) {
+	address, client, edits := testApp(t)
+	page := address + "/studio?tab=session&dock=automation&file=b.cicada"
+	csrf := tokenFromPage(t, getPage(t, client, page))
+	cases := []struct {
+		name string
+		form url.Values
+		want string
+		old  string
+	}{
+		{"pitch", url.Values{"action": {"pitch"}, "pattern": {"p"}, "step": {"4"}, "pitch": {"72"}, "octave": {"3"}}, "/studio?dock=automation&file=b.cicada&octave=3&pattern=p&step=4&tab=session", "/?octave=3&panel=patterns&pattern=p&step=4"},
+		{"note", url.Values{"action": {"step"}, "pattern": {"p"}, "step": {"5"}, "mode": {"note"}, "velocity": {"100"}, "pitch": {"60"}, "ratchet": {"1"}, "chance": {"100"}}, "/studio?dock=automation&file=b.cicada&pattern=p&step=5&tab=session", "/?panel=patterns&pattern=p&step=5"},
+		{"duplicate", url.Values{"action": {"duplicate"}, "pattern": {"p"}, "newName": {"q"}}, "/studio?dock=automation&file=b.cicada&pattern=q&step=1&tab=session", "/?panel=patterns&pattern=q&step=1"},
+	}
+	for _, c := range cases {
+		c.form.Set("csrf_token", csrf)
+		c.form.Set("revision", "current")
+		c.form.Set("__gosx_return_to", "/?panel=patterns&pattern=p&step=1")
+		if got := shellPost(t, client, address, "/__actions/pattern", c.form, page).Header.Get("Location"); got != c.want {
+			t.Errorf("%s from the shell redirected to %q, want %q", c.name, got, c.want)
+		}
+		if got := shellPost(t, client, address, "/__actions/pattern", c.form, address+"/?panel=patterns").Header.Get("Location"); got != c.old {
+			t.Errorf("%s from the panel app redirected to %q, want the legacy %q", c.name, got, c.old)
+		}
+	}
+	if len(*edits) != 2*len(cases) {
+		t.Errorf("edits=%d", len(*edits))
+	}
+}
+
+func TestShellLinksAndNavigationKeepTheEditingSelection(t *testing.T) {
+	body := shellBody(t, "?file=b.cicada&pattern=p&step=3&tab=session&pad=2")
+	mixer := regexp.MustCompile(`<a[^>]*href="(\?[^"]*)"[^>]*>Mixer`).FindStringSubmatch(body)
+	if mixer == nil {
+		t.Fatal("no Mixer link")
+	}
+	link, _ := url.ParseQuery(strings.TrimPrefix(strings.ReplaceAll(mixer[1], "&amp;", "&"), "?"))
+	for key, want := range map[string]string{"file": "b.cicada", "pattern": "p", "step": "3", "pad": "2", "tab": "mixer"} {
+		if link.Get(key) != want {
+			t.Errorf("Mixer link %q: %s=%q, want %q", mixer[1], key, link.Get(key), want)
+		}
+	}
+	// Mounted panel links stay in the shell and keep the shell selection.
+	if strings.Contains(body, `href="/?panel=`) {
+		t.Error("a mounted panel link still leaves the shell")
+	}
+	code := regexp.MustCompile(`href="(/studio\?[^"]*file=[^"]*)"`).FindStringSubmatch(body)
+	if code == nil || !strings.Contains(code[1], "tab=session") {
+		t.Errorf("Code links must target /studio and keep the tab: %v", code)
+	}
+	if !regexp.MustCompile(`data-sampler-edit="2"`).MatchString(body) || !regexp.MustCompile(`href="/studio\?[^"]*pad=2[^"]*"[^>]*data-sampler-edit`).MatchString(body) {
+		t.Error("sampler Edit links must navigate to /studio")
+	}
+	for _, id := range []string{"history-dialog", "audio-dialog", "export-dialog", "palette"} {
+		if !strings.Contains(body, `aria-controls="`+id+`"`) {
+			t.Errorf("dialog trigger lacks aria-controls=%q", id)
+		}
+	}
+	if strings.Contains(body, `aria-controls="#`) {
+		t.Error("aria-controls must be a bare id")
+	}
+}
+
+func TestShellUploadsReturnToTheShell(t *testing.T) {
+	address, client, _ := testApp(t)
+	page := address + "/studio?tab=session&pad=3"
+	csrf := tokenFromPage(t, getPage(t, client, page))
+	for route, want := range map[string]string{"/__sampler/import": "/studio?pad=1&tab=session", "/__instrument/import": "/studio?tab=session"} {
+		field := map[string]string{"/__sampler/import": "audio", "/__instrument/import": "wav"}[route]
+		var body strings.Builder
+		form := multipart.NewWriter(&body)
+		_ = form.WriteField("csrf_token", csrf)
+		_ = form.WriteField("revision", "current")
+		_ = form.WriteField("bankRevision", "bank-current")
+		part, _ := form.CreateFormFile(field, "a.wav")
+		_, _ = part.Write([]byte("RIFF"))
+		_ = form.Close()
+		for referer, wantLocation := range map[string]string{page: want, address + "/?panel=sampler": ""} {
+			req, _ := http.NewRequest("POST", address+route, strings.NewReader(body.String()))
+			req.Header.Set("Content-Type", form.FormDataContentType())
+			req.Header.Set("Origin", address)
+			req.Header.Set("X-CSRF-Token", csrf)
+			req.Header.Set("Referer", referer)
+			response, err := client.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			response.Body.Close()
+			got := response.Header.Get("Location")
+			if wantLocation != "" && got != wantLocation {
+				t.Errorf("%s from the shell redirected to %q, want %q (status %d)", route, got, wantLocation, response.StatusCode)
+			}
+			if wantLocation == "" && !strings.HasPrefix(got, "/?panel=") {
+				t.Errorf("%s from the panel app redirected to %q", route, got)
+			}
+		}
+	}
+}
+
+func TestShellAllowsReactiveResampleAndRejectsForeignLocations(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/studio?tab=session&pad=2"))
+	response, result := reactivePost(t, client, address, "sampler", map[string]string{
+		"csrf_token": csrf, "revision": "current", "bankRevision": "bank-current", "action": "resample", "destination": "1",
+		"performance": `{"hits":[]}`, "newName": "r", "__cicada_location": "/studio?tab=session&pad=2",
+	})
+	if response.StatusCode != 200 || !result.OK {
+		t.Fatalf("resample from /studio failed: %d %+v", response.StatusCode, result)
+	}
+	var projection workspaceProjection
+	if err := json.Unmarshal(result.Data, &projection); err != nil {
+		t.Fatal(err)
+	}
+	if len(*edits) != 1 || projection.Location != "/studio?tab=session&pad=2" || !strings.Contains(projection.HTML, `id="studio-shell"`) || projection.Revision != "current" {
+		t.Errorf("shell projection: edits=%d %+v", len(*edits), projection)
+	}
+	for _, bad := range []string{"https://evil.example/studio", "//evil.example/studio", "/studio/../admin", "/other"} {
+		before := len(*edits)
+		response, result := reactivePost(t, client, address, "sampler", map[string]string{
+			"csrf_token": csrf, "revision": "current", "bankRevision": "bank-current", "action": "resample", "destination": "1",
+			"performance": `{"hits":[]}`, "__cicada_location": bad,
+		})
+		if result.OK || response.StatusCode == 200 || len(*edits) != before {
+			t.Errorf("location %q was accepted: %d %+v", bad, response.StatusCode, result)
+		}
 	}
 }

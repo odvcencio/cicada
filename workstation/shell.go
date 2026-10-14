@@ -1,8 +1,10 @@
 package main
 
 import (
+	"html"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -37,32 +39,43 @@ func oneOf(value string, allowed []string) string {
 	return allowed[0]
 }
 
-// shellLink keeps the other regions' selections when one of them changes.
-func shellLink(tab, dock, region string, key, value string) string {
-	query := url.Values{"tab": {tab}, "dock": {dock}, "region": {region}}
+// shellLink changes one shell selection and keeps everything else in the
+// query: the inspected file, pattern, step and the other regions' selections.
+func shellLink(current url.Values, key, value string) string {
+	query := url.Values{}
+	for name, values := range current {
+		query[name] = append([]string(nil), values...)
+	}
+	query.Set("tab", oneOf(query.Get("tab"), shellTabs))
+	query.Set("dock", oneOf(query.Get("dock"), shellDocks))
+	query.Set("region", oneOf(query.Get("region"), shellPhones))
 	query.Set(key, value)
-	var parts []string
-	for _, name := range []string{"tab", "dock", "region"} {
-		fallback := map[string]string{"tab": shellTabs[0], "dock": shellDocks[0], "region": shellPhones[0]}[name]
-		if query.Get(name) != fallback {
-			parts = append(parts, name+"="+url.QueryEscape(query.Get(name)))
+	// Defaults stay implicit, except for the key being chosen.
+	for name, fallback := range map[string]string{"tab": shellTabs[0], "dock": shellDocks[0], "region": shellPhones[0]} {
+		if name != key && query.Get(name) == fallback {
+			query.Del(name)
 		}
 	}
-	if len(parts) == 0 {
-		return "?" + key + "=" + url.QueryEscape(value)
-	}
-	return "?" + strings.Join(parts, "&")
+	return "?" + query.Encode()
 }
 
 func (s *studioApp) shell(ctx *server.Context) gosx.Node {
+	body, _, _ := s.shellContent(ctx)
+	return body
+}
+
+// shellContent renders the shell and returns the workspace it was built from;
+// ok is false when the app is unavailable and the node explains why.
+func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, bool) {
 	query := ctx.Request.URL.Query()
+	current := query
 	tab := oneOf(query.Get("tab"), shellTabs)
 	dock := oneOf(query.Get("dock"), shellDocks)
 	region := oneOf(query.Get("region"), shellPhones)
 	// The Code lens always shows the score, so the loader selects its file.
 	view, props, unavailable, ok := s.loadWorkspace(ctx, "code")
 	if !ok {
-		return unavailable
+		return unavailable, workspace{}, false
 	}
 	csrf := session.Token(ctx.Request)
 	var state transport
@@ -94,14 +107,14 @@ func (s *studioApp) shell(ctx *server.Context) gosx.Node {
 		ui.Placeholder(ui.PlaceholderProps{Label: "Metronome"}),
 		ui.Position(ui.TransportProps{Playing: state.Playing, Bar: state.Bar, Step: state.Step, Backend: state.Backend, Error: state.Error, Listening: state.Listening}),
 		form("undo-form", "undo", file("Undo")), form("redo-form", "redo", file("Redo")),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#history-dialog", Label: "History"}),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#audio-dialog", Label: "Audio"}),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#export-dialog", Label: "Export"}),
-		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#palette", Label: "Shortcuts"}),
+		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#history-dialog", Controls: "history-dialog", Label: "History"}),
+		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#audio-dialog", Controls: "audio-dialog", Label: "Audio"}),
+		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#export-dialog", Controls: "export-dialog", Label: "Export"}),
+		ui.DialogTrigger(ui.DialogTriggerProps{Target: "#palette", Controls: "palette", Label: "Shortcuts"}),
 		ui.CaptureHint(),
 	)
 
-	panel := func(name string) gosx.Node { return s.panel(ctx, view, csrf, name) }
+	panel := func(name string) gosx.Node { return shellLinks(ctx.Request.URL, s.panel(ctx, view, csrf, name)) }
 	// Every panel renders, hidden unless selected, so in-place tab switching
 	// has its content.
 	centerPanel := func(id, name string) gosx.Node {
@@ -124,11 +137,11 @@ func (s *studioApp) shell(ctx *server.Context) gosx.Node {
 	)
 	center := ui.Center(ui.CenterProps{
 		View:        tab,
-		ArrangeHref: shellLink(tab, dock, region, "tab", "arrange"), SessionHref: shellLink(tab, dock, region, "tab", "session"), MixerHref: shellLink(tab, dock, region, "tab", "mixer"),
+		ArrangeHref: shellLink(current, "tab", "arrange"), SessionHref: shellLink(current, "tab", "session"), MixerHref: shellLink(current, "tab", "mixer"),
 		ArrangeShown: tab == "arrange", SessionShown: tab == "session", MixerShown: tab == "mixer",
 	}, centerPanel("arrange", "session"), centerPanel("session", "live"), centerPanel("mixer", "mixer"))
 	detail := ui.DetailDock(ui.DetailDockProps{
-		ClipHref: shellLink(tab, dock, region, "dock", "clip"), DeviceHref: shellLink(tab, dock, region, "dock", "device"), AutomationHref: shellLink(tab, dock, region, "dock", "automation"),
+		ClipHref: shellLink(current, "dock", "clip"), DeviceHref: shellLink(current, "dock", "device"), AutomationHref: shellLink(current, "dock", "automation"),
 		ClipShown: dock == "clip", DeviceShown: dock == "device", AutomationShown: dock == "automation", Height: strconv.Itoa(shellDockHeight),
 	}, dockPanel("clip", func() gosx.Node { return panel("patterns") }),
 		dockPanel("device", later("detail-device-later", "The Device view arrives with the Browser lane; use Instruments in the Browser for now.")),
@@ -149,15 +162,15 @@ func (s *studioApp) shell(ctx *server.Context) gosx.Node {
 		}
 	}
 	phone := ui.PhoneNav(ui.PhoneNavProps{
-		CenterHref: shellLink(tab, dock, region, "region", "center"), BrowserHref: shellLink(tab, dock, region, "region", "browser"),
-		DetailHref: shellLink(tab, dock, region, "region", "detail"), CodeHref: shellLink(tab, dock, region, "region", "code"),
+		CenterHref: shellLink(current, "region", "center"), BrowserHref: shellLink(current, "region", "browser"),
+		DetailHref: shellLink(current, "region", "detail"), CodeHref: shellLink(current, "region", "code"),
 		BrowserOn: region == "browser", CenterOn: region == "center", DetailOn: region == "detail", CodeOn: region == "code",
 	})
 	workbench := ui.Dock(ui.DockProps{
 		ID: "studio-workbench", LeftSignal: "$layout.browserWidth", RightSignal: "$layout.codeWidth", BottomSignal: "$layout.dockHeight",
 		Left: strconv.Itoa(shellBrowserWidth), Right: strconv.Itoa(shellCodeWidth), Bottom: strconv.Itoa(shellDockHeight),
 	}, top, browser, center, code, detail)
-	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage}, phone, workbench, dialogs)
+	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage}, phone, workbench, dialogs), view, true
 }
 
 func engineLabel(state transport) string {
@@ -218,11 +231,71 @@ func registerShell(ctx *server.Context, tab, dock string) {
 	}
 }
 
+// shellKept lists the query keys a shell destination carries over from the
+// page the user is on. Everything else comes from the destination itself, so a
+// stale pattern step or lane never survives an explicit choice.
+var shellKept = []string{"tab", "dock", "region", "file"}
+
+var shellLinkPattern = regexp.MustCompile(`href="(/\?[^"]*)"`)
+
+// shellDestination turns a legacy panel destination ("/?panel=<name>&<state>")
+// into the matching /studio URL: the destination's own state plus the shell
+// selection and file from "from". Other targets are returned unchanged.
+func shellDestination(from *url.URL, target string, needPanel bool) string {
+	parsed, err := url.Parse(target)
+	if err != nil || parsed.IsAbs() || parsed.Host != "" || parsed.Path != "/" {
+		return target
+	}
+	query := parsed.Query()
+	if needPanel && query.Get("panel") == "" {
+		return target
+	}
+	query.Del("panel")
+	for _, name := range shellKept {
+		if value := from.Query().Get(name); value != "" && query.Get(name) == "" {
+			query.Set(name, value)
+		}
+	}
+	rewritten := "/studio"
+	if encoded := query.Encode(); encoded != "" {
+		rewritten += "?" + encoded
+	}
+	return rewritten
+}
+
+// shellOrigin reports the /studio page a request was submitted from, by Referer.
+func shellOrigin(r *http.Request) (*url.URL, bool) {
+	referer, err := url.Parse(r.Header.Get("Referer"))
+	if err != nil || referer.Path != "/studio" || (referer.Host != "" && referer.Host != r.Host) {
+		return nil, false
+	}
+	return referer, true
+}
+
+// shellRedirect is the destination a handler should redirect to: the legacy
+// target for callers on "/", the shell equivalent for callers on /studio.
+func shellRedirect(r *http.Request, target string) string {
+	if from, ok := shellOrigin(r); ok {
+		return shellDestination(from, target, false)
+	}
+	return target
+}
+
+// shellLinks points a mounted panel's links at /studio instead of "/".
+func shellLinks(current *url.URL, node gosx.Node) gosx.Node {
+	rendered := gosx.RenderHTML(node)
+	if !strings.Contains(rendered, `href="/?`) {
+		return node
+	}
+	return gosx.RawHTML(shellLinkPattern.ReplaceAllStringFunc(rendered, func(match string) string {
+		target := html.UnescapeString(shellLinkPattern.FindStringSubmatch(match)[1])
+		return `href="` + html.EscapeString(shellDestination(current, target, true)) + `"`
+	}))
+}
+
 // shellReturn keeps a mounted panel's form in the shell. Panels name their own
 // return target in the legacy form "/?panel=<name>&<state>"; when the form was
-// submitted from the shell (by Referer), the target becomes "/studio" with the
-// panel's state and the shell's current tab, dock and region. Targets that are
-// not legacy panel URLs, and submissions from elsewhere, are left alone.
+// submitted from the shell, the target becomes the /studio equivalent.
 func shellReturn(r *http.Request) {
 	if r.PostForm == nil && strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
 		_ = r.ParseForm()
@@ -231,31 +304,11 @@ func shellReturn(r *http.Request) {
 		return
 	}
 	values := r.PostForm[action.ReturnTargetField]
-	if len(values) == 0 {
+	from, ok := shellOrigin(r)
+	if len(values) == 0 || !ok {
 		return
 	}
-	referer, err := url.Parse(r.Header.Get("Referer"))
-	if err != nil || referer.Path != "/studio" || (referer.Host != "" && referer.Host != r.Host) {
-		return
-	}
-	target, err := url.Parse(values[0])
-	if err != nil || target.IsAbs() || target.Host != "" || target.Path != "/" {
-		return
-	}
-	query := target.Query()
-	if query.Get("panel") == "" {
-		return
-	}
-	query.Del("panel")
-	for _, name := range []string{"tab", "dock", "region"} {
-		if value := referer.Query().Get(name); value != "" && query.Get(name) == "" {
-			query.Set(name, value)
-		}
-	}
-	rewritten := "/studio"
-	if encoded := query.Encode(); encoded != "" {
-		rewritten += "?" + encoded
-	}
+	rewritten := shellDestination(from, values[0], true)
 	r.PostForm[action.ReturnTargetField] = []string{rewritten}
 	if r.Form != nil {
 		r.Form[action.ReturnTargetField] = []string{rewritten}

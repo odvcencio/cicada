@@ -106,6 +106,11 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.listen(root, "click", func(e js.Value) {
 		target := e.Get("target")
 		if edit := target.Call("closest", "[data-sampler-edit]"); !edit.IsNull() {
+			// The shell has no workspace refresh consumer; its Edit link is a
+			// real /studio URL, so let the browser navigate to it.
+			if js.Global().Get("location").Get("pathname").String() == "/studio" {
+				return
+			}
 			e.Call("preventDefault")
 			e.Call("stopImmediatePropagation")
 			location, _ := url.Parse(workspaceLocation())

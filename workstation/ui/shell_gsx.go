@@ -136,12 +136,13 @@ func Placeholder(props PlaceholderProps, children ...gosx.Node) gosx.Node {
 }
 
 type DialogTriggerProps struct {
-	Target string
-	Label  string
+	Target   string
+	Controls string
+	Label    string
 }
 
 func DialogTrigger(props DialogTriggerProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command"), gosx.Attr("data-gosx-disclosure-target", props.Target), gosx.Attr("aria-controls", props.Target), gosx.Attr("aria-expanded", "false")), gosx.Expr(props.Label))
+	return gosx.El("button", gosx.Attrs(gosx.Attr("type", "button"), gosx.Attr("class", "shell-command"), gosx.Attr("data-gosx-disclosure-target", props.Target), gosx.Attr("aria-controls", props.Controls), gosx.Attr("aria-expanded", "false")), gosx.Expr(props.Label))
 }
 
 type DialogFrameProps struct {
