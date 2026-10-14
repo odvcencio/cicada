@@ -652,8 +652,9 @@ func TestPatternEditNowAppliesAtOnceWhilePlaying(t *testing.T) {
 	}
 }
 
-// Queued edits run earliest tick first, and an edit that applies at once runs
-// ahead of one still waiting for its tick. The unread command ring counts too.
+// Queued edits run in arrival order, an immediate edit included, so a queued
+// transpose is judged before a later note whatever their ticks. The unread
+// command ring counts too.
 func TestPatternEditsValidFollowsExecutionOrderAcrossPendingAndRing(t *testing.T) {
 	cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: 4, BPMMilli: 120_000, Seed: 1}
 	cfg.Track[0].Kind = VoiceAcid
@@ -708,9 +709,10 @@ func TestWorkletMessageBufferMatchesTheMessageCapacity(t *testing.T) {
 	}
 }
 
-// A queued seek moves the tick every later comparison is made against, so the
-// order the engine runs two edits in can differ from their order before the seek.
-func TestPatternEditsValidFollowsQueuedSeeks(t *testing.T) {
+// Pattern edits run in arrival order whatever their ticks, and a seek first
+// lands the edits that arrived before it. So a batch is valid exactly when the
+// queue replayed in arrival order is, whenever seeks are published.
+func TestPatternEditsRunInArrivalOrderAcrossSeeks(t *testing.T) {
 	build := func() *Engine {
 		cfg := Config{SampleRate: 48_000, MaxBlock: 128, Tracks: 1, MaxVoices: piano.MaxVoices, BPMMilli: 120_000, Seed: 1}
 		cfg.Track[0].Kind = VoicePiano
@@ -731,66 +733,90 @@ func TestPatternEditsValidFollowsQueuedSeeks(t *testing.T) {
 		}
 		return e
 	}
-	lower := func(tick int64) cmd.Command {
-		return cmd.Command{Op: cmd.OpSetStep, Track: 0, Index: 3, Arg0: packedNoteValue(60), Tick: tick}
+	note := func(n uint8, tick int64) cmd.Command {
+		return cmd.Command{Op: cmd.OpSetStep, Track: 0, Index: 3, Arg0: packedNoteValue(n), Tick: tick}
 	}
-	up := func(tick int64) cmd.Command {
-		return cmd.Command{Op: cmd.OpSetPatternMeta, Track: 0, Arg0: uint32(uint16(24)) << 16, Tick: tick}
+	transpose := func(semitones int8, tick int64) cmd.Command {
+		return cmd.Command{Op: cmd.OpSetPatternMeta, Track: 0, Arg0: uint32(uint16(int16(semitones))) << 16, Tick: tick}
 	}
-	back := cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: 0, Arg1: 100}
-	// Both edits are already due, so they run in arrival order: lower, then up.
-	plain := build()
-	if !plain.Push(lower(4_800)) || !plain.PatternEditsValid([]cmd.Command{up(4_700)}) {
-		t.Fatal("two due edits run in arrival order: the note drops before the transpose")
+	seek := func(bar, tick uint32) cmd.Command {
+		return cmd.Command{Op: cmd.OpSeek, Track: 0xff, Arg0: bar, Arg1: tick}
 	}
-	// With a seek queued between them, neither is due after it. They then run by
-	// tick, the transpose (4,700) first, and it lifts note 100 out of range.
-	seeking := build()
-	if !seeking.Push(lower(4_800)) || !seeking.Push(back) {
-		t.Fatal("push rejected")
+	push := func(e *Engine, cs ...cmd.Command) {
+		t.Helper()
+		if !e.PushBatch(cs) {
+			t.Fatal("push rejected")
+		}
 	}
-	if seeking.PatternEditsValid([]cmd.Command{up(4_700)}) {
-		t.Fatal("after the seek the transpose runs first and faults the piano")
-	}
-	// The engine does fault that way: run it.
-	faultOf := func(e *Engine) uint16 {
+	run := func(e *Engine, ticks int64) {
+		t.Helper()
 		var l, r [128]float32
 		var m cmd.Message
-		for blocks := 0; blocks < 1_200; blocks++ {
+		for end := e.transport.Tick() + ticks; e.transport.Tick() < end; {
 			e.Render(l[:], r[:])
 			for e.Poll(&m) {
 				if m.Kind == cmd.Fault {
-					return m.A
+					t.Fatalf("fault %d at tick %d", m.A, e.transport.Tick())
 				}
 			}
 		}
-		return 0
 	}
-	if !seeking.Push(up(4_700)) {
-		t.Fatal("push rejected")
+	state := func(e *Engine) (note uint32, semitones int8) {
+		slot := &e.patterns[0].slots[0]
+		return slot.Steps[3] & 0x7f, slot.Transpose
 	}
-	if code := faultOf(seeking); code != FaultPatternEdit {
-		t.Fatalf("the engine ran the edits in the predicted order and faulted with %d, want %d", code, FaultPatternEdit)
+	// A reported case: A (note 60, then +24) waits for tick 5,040; a backward seek and
+	// B (note 105, transpose 0) wait for tick 240; before either runs, a seek to
+	// 7,680. Run by tick B would land first. In arrival order B's note 105 meets the
+	// +24 from A, so B is refused; a valid B is accepted and everything runs clean.
+	e := build()
+	push(e, note(60, 5_040), transpose(24, 5_040), seek(0, 200))
+	if e.PatternEditsValid([]cmd.Command{note(105, 240), transpose(0, 240)}) {
+		t.Fatal("B's note 105 runs under A's +24 and must be refused")
 	}
-	// Stamped the other way round the order is the same before and after the seek.
-	ordered := build()
-	if !ordered.Push(lower(4_700)) || !ordered.Push(back) || !ordered.PatternEditsValid([]cmd.Command{up(4_800)}) {
-		t.Fatal("the note drops first by tick, so the transpose is valid")
+	valid := []cmd.Command{note(70, 240), transpose(0, 240)}
+	if !e.PatternEditsValid(valid) {
+		t.Fatal("a valid B was refused")
 	}
-	if !ordered.Push(up(4_800)) || faultOf(ordered) != 0 {
-		t.Fatal("the valid order must run without a fault")
+	push(e, valid...)
+	push(e, seek(2, 0))
+	run(e, 400)
+	if n, tr := state(e); n != 70 || tr != 0 {
+		t.Fatalf("edits ran out of arrival order: note %d, transpose %d; want 70 and 0", n, tr)
 	}
-	// The seek can also be in the pending queue, not the ring.
-	var l, r [128]float32
-	queued := build()
-	if !queued.Push(lower(4_800)) || !queued.Push(back) {
-		t.Fatal("push rejected")
+	// Backward jump, an edit, a forward jump: the dependent batch is judged after them.
+	e = build()
+	push(e, seek(0, 100), note(60, 150), seek(2, 0))
+	if !e.PatternEditsValid([]cmd.Command{transpose(24, 0)}) {
+		t.Fatal("+24 over the note 60 that arrived first is valid")
 	}
-	queued.Render(l[:], r[:]) // runs the seek and leaves the note edit pending
-	if queued.transport.Tick() > 1_000 {
-		t.Fatalf("the seek did not run: tick %d", queued.transport.Tick())
+	push(e, transpose(24, 160))
+	if e.PatternEditsValid([]cmd.Command{note(105, 0)}) {
+		t.Fatal("note 105 meets the queued +24 and must be refused")
 	}
-	if queued.PatternEditsValid([]cmd.Command{up(4_700)}) {
-		t.Fatal("pending edit and the earlier tick: the transpose still runs first")
+	run(e, 400)
+	if n, tr := state(e); n != 60 || tr != 24 {
+		t.Fatalf("after the jumps: note %d, transpose %d; want 60 and 24", n, tr)
+	}
+	// A seek lands the edits ahead of it at once. The step boundary they were
+	// stamped for (tick 5,040) is on a timeline that stops here.
+	e = build()
+	push(e, note(60, 5_040), seek(0, 200))
+	var block, spare [128]float32
+	e.Render(block[:], spare[:])
+	if n, _ := state(e); n != 60 || e.transport.Tick() > 1_000 {
+		t.Fatalf("the edit before the seek did not land at the seek: note %d, tick %d", n, e.transport.Tick())
+	}
+	// An edit that arrives later but is stamped earlier waits behind the first: the
+	// +24 (tick 5,100) must not run ahead of the note 60 (tick 6,000).
+	e = build()
+	push(e, note(60, 6_000), transpose(24, 5_100))
+	run(e, 500)
+	if n, tr := state(e); n != 100 || tr != 0 {
+		t.Fatalf("an edit ran ahead of one that arrived before it: note %d, transpose %d", n, tr)
+	}
+	run(e, 600)
+	if n, tr := state(e); n != 60 || tr != 24 {
+		t.Fatalf("both edits should have run by now: note %d, transpose %d", n, tr)
 	}
 }

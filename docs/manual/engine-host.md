@@ -283,6 +283,8 @@ playing engine through `gosx_audio_cmd_commit`; no capability bit changes.
 | `OpSetSceneBinding` (31) | `Track=255`, `Index=scene`; `Arg0 = track \| mode<<8 \| slot<<16` with mode 0 keep, 1 off, 2 slot, 3 clip; `Arg1=clip`. Changes the binding for the scene's next launch and faults with code 44 on an unknown scene, track or clip. |
 | `OpMeterRate` | `Arg0` is the block interval. Bit 0 of `Arg1` adds per-channel track meters: quantities 2 to 5 are left peak, right peak, left RMS and right RMS beside the mono 0 and 1. The ring holds the quantities for every track of the build (512 messages in every build). An engine whose ring is already too full for the whole emission sends the mono pair for every track instead, and the host reports both channels at the mono level. |
 
+Pattern edits run in the order they arrive, whatever their `Tick` values: an edit waits while an earlier edit still waits for its tick, and a seek (or a restart of the song schedule) first applies every edit that arrived before it, at once, because their step boundaries belong to the timeline it ends. A host can therefore check a batch by replaying the queue in order.
+
 Numbers 29 and 30 are reserved for later live-edit commands; `Validate` rejects them.
 
 ## Regress audio changes

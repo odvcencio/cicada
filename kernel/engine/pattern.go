@@ -271,129 +271,75 @@ func editSlotIndex(c cmd.Command) int {
 	return int(c.Arg1)
 }
 
-// editTick is the tick at which the engine applies a pattern edit, as drainCommands
-// and applyPending decide it. An edit that is already due applies at the current
-// tick, ahead of any later one; the engine takes due commands in arrival order.
-// fromRing marks a command not yet read: a Tick=0 edit then waits for the next bar
-// while playing, unless it carries PatternEditNow.
-func (e *Engine) editTick(c cmd.Command, fromRing bool) int64 {
-	return max(e.queuedTick(c, fromRing), e.transport.Tick())
+// Pattern edits run in arrival order, whatever their ticks, so a host can check a
+// batch by replaying the queue in order. Two rules keep that true:
+//
+//   - applyPending holds back an edit while an edit that arrived before it is
+//     still waiting for its tick (head-of-line order), and
+//   - a transport discontinuity (a seek, a restart of the song or placement
+//     schedule) first applies every edit that arrived before it, in order, at
+//     the point where the old timeline ends. Their step boundaries lie on a
+//     timeline that no longer plays, so they land at once instead of being
+//     re-timed against the new position.
+//
+// Between discontinuities the tick only moves forward and a host stamps edits
+// at nondecreasing step boundaries, so the tick order already equals arrival
+// order and the rules change nothing. A song loop does not move the tick (it keeps
+// counting), so it is not a discontinuity.
+
+// flushPatternEdits applies, in arrival order, the pattern edits ahead of the
+// command being applied. Outside applyPending that is every pending edit.
+func (e *Engine) flushPatternEdits() {
+	limit := e.flushLimit
+	if limit < 0 || limit > e.pendingLen {
+		limit = e.pendingLen
+	}
+	for i := 0; i < limit && !e.faulted; {
+		c := e.pending[i]
+		if !isPatternEditOp(c.Op) {
+			i++
+			continue
+		}
+		copy(e.pending[i:], e.pending[i+1:e.pendingLen])
+		e.pendingLen--
+		limit--
+		e.apply(c)
+	}
 }
 
-// queuedTick is the tick a queued command waits for. Only an unread pattern edit
-// with Tick=0 differs from its own tick: drainCommands moves it to the next bar
-// while playing, unless it carries PatternEditNow.
-func (e *Engine) queuedTick(c cmd.Command, fromRing bool) int64 {
-	if fromRing && isPatternEditOp(c.Op) && c.Tick == 0 && c.Pad != cmd.PatternEditNow && e.transport.Playing() {
-		return (e.transport.Tick()/seq.TicksPerBar + 1) * seq.TicksPerBar
-	}
-	return c.Tick
+// seekTransport moves the playhead after landing the edits that arrived before
+// the move.
+func (e *Engine) seekTransport(tick int64) error {
+	e.flushPatternEdits()
+	return e.transport.SeekTick(tick)
 }
 
 // queuedCommand returns the command at a position in the combined order: the
 // pending queue, then the unread ring, then the batch under test.
-func (e *Engine) queuedCommand(index, ring int, cs []cmd.Command) (cmd.Command, bool) {
+func (e *Engine) queuedCommand(index, ring int, cs []cmd.Command) cmd.Command {
 	switch {
 	case index < e.pendingLen:
-		return e.pending[index], false
+		return e.pending[index]
 	case index < e.pendingLen+ring:
-		return e.commands[(e.commandRead+uint16(index-e.pendingLen))%uint16(len(e.commands))], true
+		return e.commands[(e.commandRead+uint16(index-e.pendingLen))%uint16(len(e.commands))]
 	}
-	return cs[index-e.pendingLen-ring], true
+	return cs[index-e.pendingLen-ring]
 }
-
-// seekAmongQueued reports a seek that is waiting to run. A seek moves the tick
-// every later tick comparison is made against.
-func (e *Engine) seekAmongQueued(ring int, cs []cmd.Command) bool {
-	for i := 0; i < e.pendingLen+ring+len(cs); i++ {
-		if c, _ := e.queuedCommand(i, ring, cs); c.Op == cmd.OpSeek {
-			return true
-		}
-	}
-	return false
-}
-
-// executionRanks numbers the queued commands in the order the engine runs them
-// when a seek is waiting: due commands run by priority and arrival, a seek jumps
-// the tick so later commands may stop being due, and when nothing is due time
-// passes to the earliest waiting tick. It is quadratic in the queue, so it runs
-// only while a seek is queued. It fills ranks and reports whether it fit.
-func (e *Engine) executionRanks(ring int, cs []cmd.Command, ranks []uint16) bool {
-	total := e.pendingLen + ring + len(cs)
-	if total > len(ranks) {
-		return false
-	}
-	var done [(2*CommandCapacity + 64 + 63) / 64]uint64
-	now := e.transport.Tick()
-	next := uint16(0)
-	for remaining := total; remaining > 0; {
-		best, bestPriority, earliest := -1, 0, int64(0)
-		for index := 0; index < total; index++ {
-			if done[index/64]&(1<<(index%64)) != 0 {
-				continue
-			}
-			c, fromRing := e.queuedCommand(index, ring, cs)
-			tick := e.queuedTick(c, fromRing)
-			if tick <= now {
-				if priority := commandPriority(c.Op); best < 0 || priority < bestPriority {
-					best, bestPriority = index, priority
-				}
-			} else if earliest == 0 || tick < earliest {
-				earliest = tick
-			}
-		}
-		if best < 0 {
-			now = earliest
-			continue
-		}
-		done[best/64] |= 1 << (best % 64)
-		remaining--
-		if c, _ := e.queuedCommand(best, ring, cs); c.Op == cmd.OpSeek {
-			now = int64(c.Arg0)*seq.TicksPerBar + int64(c.Arg1)
-		}
-		ranks[best] = next
-		next++
-	}
-	return true
-}
-
-// queuedEdit locates one edit in the pending queue, the unread ring or the
-// batch under test, with the tick at which it applies.
-type queuedEdit struct {
-	tick int64
-	slot uint16 // index in pending, then ring, then batch order
-}
-
-// patternEditCap bounds the edits for one slot: the engine admits at most
-// CommandCapacity queued commands, and a batch is at most 64.
-const patternEditCap = CommandCapacity + 64
 
 // PatternEditsValid reports whether the pattern edits in cs would all be
-// accepted by this engine when they apply. For each slot cs touches it takes the
-// active slot and drum lanes, then every edit for that slot in the pending queue,
-// the unread command ring and cs, in the order the engine executes them:
-// earliest tick first, arrival order within a tick (pending, then the ring, then
-// cs). An edit already due or flagged PatternEditNow runs ahead of one waiting
-// for its tick, and an unflagged Tick=0 edit waits for the next bar while
-// playing. Edits ahead of the first edit in cs are applied without checks, since
-// the engine judged them when they arrived; that edit and every one after it is
-// validated. One pass collects the edits, so the cost grows with the queue plus
-// the batch, not their product. It copies the slot into stack scratch, mutates
-// nothing and allocates nothing. A queued OpSeek changes which commands are due
-// and so their order; while one is queued the order comes from executionRanks,
-// which replays the whole queue. OpPlay and OpStop leave the tick alone, and a
-// tempo change moves frames, not ticks, so neither changes the order. Call it only
-// from the render thread, which owns the engine, once the earlier batches have
-// been pushed.
+// accepted by this engine when they apply. Edits run in arrival order, so for
+// each slot cs touches it takes the active slot and drum lanes, then every edit
+// for that slot in the pending queue, the unread command ring and cs, in that
+// order. Queued edits are applied without checks, since the engine judged them
+// when they arrived; each edit in cs is validated. Other commands are ignored,
+// including transport commands: a seek lands the edits ahead of it in the same
+// order and does not change it. It copies the slot into stack scratch, mutates
+// nothing and allocates nothing, and costs a pass over the queue and the batch
+// per touched slot. Call it only from the render thread, which owns the engine,
+// once the earlier batches have been pushed.
 func (e *Engine) PatternEditsValid(cs []cmd.Command) bool {
 	var seen [MaxTracks * 16 / 64]uint64
-	var queue [patternEditCap]queuedEdit
 	ring := int(e.commandWrite - e.commandRead)
-	var ranks [2*CommandCapacity + 64]uint16
-	seeking := e.seekAmongQueued(ring, cs)
-	if seeking && !e.executionRanks(ring, cs, ranks[:]) {
-		return false
-	}
 	for i := range cs {
 		first := cs[i]
 		if !isPatternEditOp(first.Op) {
@@ -408,47 +354,6 @@ func (e *Engine) PatternEditsValid(cs []cmd.Command) bool {
 			continue
 		}
 		seen[bit/64] |= 1 << (bit % 64)
-		match := func(c cmd.Command) bool {
-			return isPatternEditOp(c.Op) && int(c.Track) == track && editSlotIndex(c) == slot
-		}
-		n := 0
-		add := func(index int, c cmd.Command, fromRing bool) bool {
-			if n == len(queue) {
-				return false
-			}
-			tick := e.editTick(c, fromRing)
-			if seeking {
-				tick = int64(ranks[index])
-			}
-			queue[n] = queuedEdit{tick: tick, slot: uint16(index)}
-			n++
-			return true
-		}
-		for j := 0; j < e.pendingLen; j++ {
-			if c := e.pending[j]; match(c) && !add(j, c, false) {
-				return false
-			}
-		}
-		for k := 0; k < ring; k++ {
-			if c := e.commands[(e.commandRead+uint16(k))%uint16(len(e.commands))]; match(c) && !add(e.pendingLen+k, c, true) {
-				return false
-			}
-		}
-		batchStart := e.pendingLen + ring
-		for m := i; m < len(cs); m++ {
-			if match(cs[m]) {
-				if !add(batchStart+m, cs[m], true) {
-					return false
-				}
-			}
-		}
-		// Earliest tick first; the index keeps arrival order within a tick. Queues
-		// are nearly always in order already.
-		for k := 1; k < n; k++ {
-			for q := k; q > 0 && (queue[q].tick < queue[q-1].tick || queue[q].tick == queue[q-1].tick && queue[q].slot < queue[q-1].slot); q-- {
-				queue[q], queue[q-1] = queue[q-1], queue[q]
-			}
-		}
 		p := &e.patterns[track]
 		kind, poly := e.voices[track].kind, e.voices[track].poly != nil
 		scratch := p.slots[slot]
@@ -457,24 +362,28 @@ func (e *Engine) PatternEditsValid(cs []cmd.Command) bool {
 		if p.drumSlots != nil {
 			lanes, lanesPtr = p.drumSlots[slot], &lanes
 		}
-		checked := false
-		for k := 0; k < n; k++ {
-			index := int(queue[k].slot)
-			var c cmd.Command
-			switch {
-			case index < e.pendingLen:
-				c = e.pending[index]
-			case index < batchStart:
-				c = e.commands[(e.commandRead+uint16(index-e.pendingLen))%uint16(len(e.commands))]
-			default:
-				c = cs[index-batchStart]
+		valid := true
+		visit := func(c *cmd.Command, queued bool) {
+			if !valid || !isPatternEditOp(c.Op) || int(c.Track) != track || editSlotIndex(*c) != slot {
+				return
 			}
-			checked = checked || index >= batchStart
-			if !checked {
-				changeSlot(&scratch, lanesPtr, c, kind, poly)
-			} else if !editSlot(&scratch, lanesPtr, c, kind, poly) {
-				return false
+			if queued {
+				changeSlot(&scratch, lanesPtr, *c, kind, poly)
+			} else if !editSlot(&scratch, lanesPtr, *c, kind, poly) {
+				valid = false
 			}
+		}
+		for j := 0; j < e.pendingLen; j++ {
+			visit(&e.pending[j], true)
+		}
+		for k := 0; k < ring; k++ {
+			visit(&e.commands[(e.commandRead+uint16(k))%uint16(len(e.commands))], true)
+		}
+		for m := i; m < len(cs); m++ {
+			visit(&cs[m], false)
+		}
+		if !valid {
+			return false
 		}
 	}
 	return true

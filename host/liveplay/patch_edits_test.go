@@ -697,3 +697,79 @@ func TestDependentBatchesAcrossAQueuedBackwardSeek(t *testing.T) {
 		})
 	}
 }
+
+// Seeks published after a batch was accepted cannot reorder it: edits run in
+// arrival order, and a seek first lands the ones ahead of it. Each sequence ends
+// with a batch that is valid only in arrival order.
+func TestSeeksPublishedAfterAcceptedBatchesNeverReorderThem(t *testing.T) {
+	both := func(note uint8, semitones int8) dependentBatch {
+		return func(b *Patch, target PreviewTarget) {
+			stepTo(3, note)(b, target)
+			transpose(semitones)(b, target)
+		}
+	}
+	oneBar := int64(seq.TicksPerBar)
+	sequences := map[string]func(t *testing.T, p *Player, arena *PatchArena, target PreviewTarget){
+		"backward seek then forward seek": func(t *testing.T, p *Player, arena *PatchArena, target PreviewTarget) {
+			publish(t, p, arena, 1, target, both(60, 24)) // waits for its step boundary
+			if err := p.StartSongEntry(0, "main"); err != nil {
+				t.Fatal(err)
+			}
+			publish(t, p, arena, 2, target, both(110, 0)) // meets A's +24 in arrival order
+			publish(t, p, arena, 3, target, both(70, 0))
+			if err := p.StartSongEntry(0, "main"); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"backward jump, edit, forward jump": func(t *testing.T, p *Player, arena *PatchArena, target PreviewTarget) {
+			if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: 4 * oneBar, Loop: true}); err != nil {
+				t.Fatal(err)
+			}
+			publish(t, p, arena, 1, target, both(60, 24))
+			if err := p.PlayRange(PlaybackRange{StartTick: 2 * oneBar, EndTick: 4 * oneBar, Loop: true}); err != nil {
+				t.Fatal(err)
+			}
+			publish(t, p, arena, 2, target, both(110, 0))
+			publish(t, p, arena, 3, target, both(70, 0))
+		},
+		"loop wraps between batches": func(t *testing.T, p *Player, arena *PatchArena, target PreviewTarget) {
+			if err := p.PlayRange(PlaybackRange{StartTick: 0, EndTick: oneBar, Loop: true}); err != nil {
+				t.Fatal(err)
+			}
+			publish(t, p, arena, 1, target, both(60, 24))
+			_ = readFrames(t, p, 3*96_000+blockFrames) // the loop wraps several times
+			publish(t, p, arena, 2, target, both(110, 0))
+			publish(t, p, arena, 3, target, both(70, 0))
+		},
+	}
+	for name, run := range sequences {
+		t.Run(name, func(t *testing.T) {
+			p, err := New(dependentScore(t, engine.VoiceAcid, 3, 100), 48_000)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer p.Close()
+			_ = readFrames(t, p, 96_000+blockFrames)
+			target, _ := p.ResolvePreviewTrack("bass")
+			arena := NewPatchArena(3)
+			run(t, p, arena, target)
+			_ = readFrames(t, p, 4*96_000)
+			if p.fault != nil {
+				t.Fatalf("the engine faulted: %v", p.fault)
+			}
+			// Batches 1 and 3 land; 2 would put note 110 under +24 and is refused.
+			if p.LandedRevision() != 3 || arena.Free() != 3 {
+				t.Fatalf("revision %d, %d free: want batches 1 and 3 applied and 2 refused", p.LandedRevision(), arena.Free())
+			}
+		})
+	}
+}
+
+func publish(t *testing.T, p *Player, arena *PatchArena, revision uint64, target PreviewTarget, build dependentBatch) {
+	t.Helper()
+	batch := arena.Begin(revision)
+	build(batch, target)
+	if err := p.Patch(batch); err != nil {
+		t.Fatal(err)
+	}
+}

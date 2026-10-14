@@ -274,6 +274,7 @@ type Engine struct {
 	overflowRead, overflowLen    uint8
 	pending                      [CommandCapacity]cmd.Command
 	pendingLen                   int
+	flushLimit                   int // pending entries that arrived before the command being applied, or -1
 	automation                   []cmd.Command
 	automationIndex              int
 	automationTick               int64
@@ -405,7 +406,7 @@ func NewFromConfig(cfg *Config) (*Engine, error) {
 	}
 	e := &Engine{sampleRate: cfg.SampleRate, maxBlock: cfg.MaxBlock, tracks: cfg.Tracks, bpmMilli: bpmMilli, transport: transport, limiter: limiter, masterGain: masterGain, masterBiasL: cfg.MasterBiasL, masterBiasR: cfg.MasterBiasR,
 		musicBusMute: cfg.MusicBusMute, musicBusSolo: cfg.MusicBusSolo, sfxBusMute: cfg.SFXBusMute, sfxBusSolo: cfg.SFXBusSolo, masterMute: cfg.MasterMute, masterSolo: cfg.MasterSolo,
-		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1}
+		layerMask: (1 << cfg.Tracks) - 1, layerAuthored: (1 << cfg.Tracks) - 1, meterRate: 4, playheadFrames: cfg.SampleRate / 60, manualSceneTick: -1, currentScene: -1, lastBarTick: -1, flushLimit: -1}
 	if err := e.configureParallel(cfg); err != nil {
 		return nil, err
 	}
@@ -1193,8 +1194,19 @@ func (e *Engine) applyPending() {
 	chainPhase := false
 	for {
 		best, priority := -1, 5
+		// An edit waits while an earlier edit still waits for its tick.
+		editWaiting := false
 		for i := 0; i < e.pendingLen; i++ {
-			if e.pending[i].Tick <= e.transport.Tick() && commandPriority(e.pending[i].Op) < priority {
+			due := e.pending[i].Tick <= e.transport.Tick()
+			if isPatternEditOp(e.pending[i].Op) {
+				if !due {
+					editWaiting = true
+				}
+				if editWaiting {
+					continue
+				}
+			}
+			if due && commandPriority(e.pending[i].Op) < priority {
 				best, priority = i, commandPriority(e.pending[i].Op)
 			}
 		}
@@ -1212,7 +1224,9 @@ func (e *Engine) applyPending() {
 		c := e.pending[best]
 		copy(e.pending[best:], e.pending[best+1:e.pendingLen])
 		e.pendingLen--
+		e.flushLimit = best // the edits ahead of c arrived before it
 		e.apply(c)
+		e.flushLimit = -1
 		if e.faulted {
 			return
 		}
@@ -1273,11 +1287,12 @@ func (e *Engine) apply(c cmd.Command) {
 			e.patterns[i].heldValid = false
 		}
 	case cmd.OpSeek:
+		e.flushPatternEdits() // the old timeline ends here
 		e.automationTick = -1
 		e.resetDirector()
 		e.resetClips()
 		e.seekTick = int64(c.Arg0)*seq.TicksPerBar + int64(c.Arg1)
-		if e.transport.SeekTick(e.seekTick) != nil {
+		if e.seekTransport(e.seekTick) != nil {
 			e.fault(FaultSeek)
 			return
 		}

@@ -325,7 +325,7 @@ func (e *Engine) startSong() {
 		return
 	}
 	if tick != e.transport.Tick() {
-		_ = e.transport.SeekTick(tick)
+		_ = e.seekTransport(tick)
 	}
 	e.restoreSourceChains(tick)
 	entry := e.schedule[index]
