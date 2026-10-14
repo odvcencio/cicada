@@ -16,7 +16,7 @@ function setup() {
   const env = {
     document, editor, window: {cicadaBrowserAudio: {context: null}}, browserPlaying: false,
     isBrowser: () => false, revision: () => document.body.dataset.revision,
-    setStatus() {}, dirty: () => false,
+    setStatus() {}, dirty: () => false, audioWanted: '', syncBrowserAudio: async () => {},
     refreshProjection: async hint => { refreshes.push(hint); document.body.dataset.revision = hint.revision; editor.value = hint.source; },
     fetch: async () => { requested(); await gate; return {ok: true, json: async () => ({valid: true, revision: 'saved', source: 'score with preset bright'})}; }
   };

@@ -4,6 +4,7 @@ const vm = require('node:vm');
 const test = require('node:test');
 const html = fs.readFileSync(__dirname + '/view.html', 'utf8');
 const refreshSource = html.match(/  async function refreshProjection\(hint = \{\}\) \{[\s\S]*?\n  \}/)[0];
+const staleSource = html.match(/  function staleRefresh\([\s\S]*?\n  \}\n/)[0];
 const sendSource = html.match(/  async function send\(path, payload\) \{[\s\S]*?\n  \}/)[0];
 
 test('Studio navigation hides section links without hiding the actionable error chip', () => {
@@ -41,14 +42,15 @@ for (const target of [{pitch:'65'}, {modifier:'accent'}, {}]) {
     const old = cell({...identity, ...target});
     const cells = [cell({...identity,pitch:'74'}), cell({...identity,pitch:'65'}), cell({...identity,modifier:'accent'}), cell(identity)];
     const state = {
-      document: {activeElement:old, body:{dataset:{}}, querySelectorAll: selector => selector === '.step-edit' ? cells : []},
+      document: {activeElement:old, body:{dataset:{revision:'prior'}}, querySelectorAll: selector => selector === '.step-edit' ? cells : []},
       fetch: async () => ({ok:true, text:async () => '', json:async () => ({source:'score'})}),
       DOMParser: class { parseFromString() { return {body:{dataset:{revision:'next'}}}; } },
       replaceProjection() {}, morphSelectors:[], bindSong() {}, initGrids() {}, dirty: () => false,
       original:'score', editor:{value:'score'}, setRovingTarget: cell => state.roving = cell,
       updateBar() {}, window:{dispatchEvent() {}}, CustomEvent: class {},
+      revision: () => state.document.body.dataset.revision,
     };
-    vm.runInNewContext(refreshSource,state);
+    vm.runInNewContext(staleSource + refreshSource,state);
     await state.refreshProjection();
     const wanted = cells.find(c => c.dataset.pitch === target.pitch && c.dataset.modifier === target.modifier);
     assert.equal(state.roving,wanted);
@@ -62,14 +64,15 @@ test('when a removed outer pitch row disappears, focus falls back to the same st
   const otherPitch = cell({pattern:'harmony',step:'0',pitch:'62'});
   const cells = [otherPitch,cell({pattern:'other',step:'0'}),note];
   const state = {
-    document:{activeElement:cell({pattern:'harmony',step:'0',pitch:'84'}),body:{dataset:{}},querySelectorAll:selector => selector === '.step-edit' ? cells : []},
+    document:{activeElement:cell({pattern:'harmony',step:'0',pitch:'84'}),body:{dataset:{revision:'prior'}},querySelectorAll:selector => selector === '.step-edit' ? cells : []},
     fetch:async () => ({ok:true,text:async () => '',json:async () => ({source:'score'})}),
     DOMParser:class {parseFromString(){return {body:{dataset:{revision:'next'}}};}},
     replaceProjection(){},morphSelectors:[],bindSong(){},initGrids(){},dirty:()=>false,
     original:'score',editor:{value:'score'},setRovingTarget:cell => state.roving=cell,
     updateBar(){},window:{dispatchEvent(){}},CustomEvent:class {},
+    revision:() => state.document.body.dataset.revision,
   };
-  vm.runInNewContext(refreshSource,state);
+  vm.runInNewContext(staleSource + refreshSource,state);
   await state.refreshProjection();
   assert.equal(state.roving,note);
   assert.equal(note.focused,true);

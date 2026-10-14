@@ -117,6 +117,7 @@ function captureUI(server={activeCapture:'',takes:[]},tracks=['vox'],scenes=['ma
       DOMParser:class {parseFromString(){return next;}},
       replaceProjection:require('./studio-workspace.js').replaceProjection,
       bindSong(){},initGrids(){},updateBar(){},dirty(){return false;},editor:{},original:'',
+      revision:()=>document.body.dataset.revision,
     });
     await window.cicadaRefreshProjection();
   }
