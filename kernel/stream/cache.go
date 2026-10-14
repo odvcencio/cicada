@@ -4,6 +4,7 @@ package stream
 
 import (
 	"m31labs.dev/cicada/kernel/limits"
+	"runtime"
 	"sync/atomic"
 )
 
@@ -274,6 +275,12 @@ func (c *Cache) Ready(asset uint32, index int64) bool {
 // pinRetries caps the failed CASes tolerated on one slot per acquire call.
 const pinRetries = 1024
 
+// pinYieldEvery is how many failed CASes pass between yields to the
+// scheduler. A yield lets the lanes that keep winning the cache line finish
+// their pin and release, so a loser does not burn the retry budget in a tight
+// spin against them.
+const pinYieldEvery = 16
+
 // casPin is the pin attempt. Tests replace it to force contention.
 var casPin = func(s *atomic.Uint32, old, next uint32) bool { return s.CompareAndSwap(old, next) }
 
@@ -285,6 +292,13 @@ var casPin = func(s *atomic.Uint32, old, next uint32) bool { return s.CompareAnd
 // counts as not found and the caller records a miss. Parallel render lanes
 // pin the same shared page at once, and without retries the loser would
 // report a resident page as missing and fade the track out.
+//
+// With more lanes than free CPUs, one lane can lose 1024 CASes in a row to
+// lanes that re-pin the cache line faster than it can retry (a miss of a
+// resident page was observed in about 1 of 200 runs of the 8-lane test under
+// CPU load). Yielding every pinYieldEvery failures lets the winners drain.
+// Gosched is a no-op when nothing else is runnable, so the uncontended path is
+// unchanged and the retry cap still bounds the loop.
 func (c *Cache) acquire(asset uint32, index int64) *page {
 	for i := range c.pages {
 		p := &c.pages[i]
@@ -293,6 +307,9 @@ func (c *Cache) acquire(asset uint32, index int64) *page {
 		for state >= ready && !casPin(&p.state, state, state+pin) {
 			if failed++; failed > pinRetries {
 				break
+			}
+			if failed%pinYieldEvery == 0 {
+				runtime.Gosched()
 			}
 			state = p.state.Load()
 		}
