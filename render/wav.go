@@ -41,8 +41,19 @@ type Options struct {
 	Normalize       bool    // peak normalize the post-limiter output to -1 dBFS
 	Block           int     // zero selects 4096 frames
 	MasterGainDB    float64 // export gain after authored DSP, before the safety limiter
-	MasterBiasL     float32 // export DC correction after authored DSP, before export gain
-	MasterBiasR     float32 // export DC correction after authored DSP, before export gain
+	// MasterInputGainDB is export gain at the master input: after the music
+	// and SFX buses sum and the authored master level, before the score's
+	// master insert chain. Loudness targeting uses it when the chain holds a
+	// limiter. Without a prepared master chain it equals MasterGainDB.
+	MasterInputGainDB float64
+	MasterBiasL       float32 // export DC correction after authored DSP, before export gain
+	MasterBiasR       float32 // export DC correction after authored DSP, before export gain
+	// NoteTap, when set, receives each note start (seq.NoteOn, drum hits
+	// included) and release (seq.NoteOff) that the render plays, in render
+	// order, from either render path. The events are the scheduler's own, so
+	// chains, scene phase, placements, ties, chance and transposition are
+	// already applied. It is called on the render goroutine.
+	NoteTap func(track int, event seq.Event)
 }
 
 type Report struct {
@@ -58,12 +69,40 @@ type Report struct {
 	TailFrames                int64
 	MasterGainDB              float64
 	MaxLimiterGainReductionDB float64
-	writtenFrames             int64
-	skipFrames                int
-	rangeSkip                 int64
-	metricStart               int64
-	metricEnd                 int64
-	tempoChanges              []project.TempoChange
+	// MaxMasterChainLimiterReductionDB is the largest gain reduction of a
+	// limiter declared in the score's master insert chain.
+	MaxMasterChainLimiterReductionDB float64
+	writtenFrames                    int64
+	skipFrames                       int
+	rangeSkip                        int64
+	metricStart                      int64
+	metricEnd                        int64
+	chainStart                       int64
+	chainEnd                         int64
+	tempoChanges                     []project.TempoChange
+}
+
+// masterChainWindow returns the half-open range of render sample positions
+// whose master-chain limiter reduction lands on delivered output frames. A
+// limiter reduction read at position s applies to the chain output at s, which
+// the render delivers at s minus the track insert and master chain latency, so
+// the window starts that much after the first delivered source frame. A render
+// from bar zero keeps every position so full-song reports are unchanged.
+func masterChainWindow(from int, fromFrame, endFrame int64, insertLatency, masterLatency int) (start, end int64) {
+	shift := int64(insertLatency + masterLatency)
+	start = fromFrame + shift
+	if from == 0 {
+		start = 0
+	}
+	return start, endFrame + shift
+}
+
+// noteMasterChainReduction records a master-chain limiter reduction read at
+// render sample position at, ignoring discarded preroll and flush frames.
+func (r *Report) noteMasterChainReduction(at int64, db float64) {
+	if at >= r.chainStart && at < r.chainEnd {
+		r.MaxMasterChainLimiterReductionDB = max(r.MaxMasterChainLimiterReductionDB, db)
+	}
 }
 
 type trackRuntime struct {
@@ -94,6 +133,9 @@ type trackRuntime struct {
 	currentSlot    uint8
 	current        seq.Pattern
 	active         *seq.Pattern
+	noteTap        func(int, seq.Event) // from Options.NoteTap
+	tapTick        int64                // tick of the scene boundary being applied
+	tapIndex       int
 	generation     uint64
 	activeGen      uint64
 	activeNoteID   int64
@@ -114,6 +156,7 @@ type trackRuntime struct {
 
 type busMixerState struct {
 	masterProcessor      engine.StereoProcessor
+	masterLimiter        interface{ LimiterGainReductionDB() float64 }
 	outputGain           float32
 	musicMute, musicSolo bool
 	sfxMute, sfxSolo     bool
@@ -254,6 +297,7 @@ func renderWithOptions(score *notation.Score, opts Options, writer io.Writer, st
 	if opts.Normalize {
 		preview := opts
 		preview.Normalize = false
+		preview.NoteTap = nil
 		report, err := renderWAV(score, preview, io.Discard, "", 1)
 		if err != nil {
 			return report, err
@@ -310,6 +354,13 @@ func hasResidentSampler(score *notation.Score) bool {
 	return false
 }
 
+// UsesScheduledEngine reports whether a render goes through the streamed
+// engine path rather than the direct WAV mixer. The two paths inject DC
+// correction at different points relative to export gain.
+func UsesScheduledEngine(score *notation.Score, opts Options) bool {
+	return score != nil && (score.Arrange != nil || hasAudioClipTrack(score) || hasSerialTrackEffects(score) || hasPackSampler(score) && !opts.SamplerBaseline)
+}
+
 func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir string, outputGain float32) (Report, error) {
 	if opts.AssetRoot == "" {
 		opts.AssetRoot = opts.AssetDir
@@ -317,7 +368,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if opts.AssetDir == "" {
 		opts.AssetDir = opts.AssetRoot
 	}
-	if score != nil && (score.Arrange != nil || hasAudioClipTrack(score) || hasSerialTrackEffects(score) || hasPackSampler(score) && !opts.SamplerBaseline) {
+	if UsesScheduledEngine(score, opts) {
 		return renderScheduleWAV(score, opts, writer, stemsDir, outputGain)
 	}
 	var report Report
@@ -336,7 +387,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 	if opts.Block < 1 || opts.Block > 4096 {
 		return report, fmt.Errorf("WAV block must be 1 to 4096 frames")
 	}
-	if math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 || math.IsNaN(float64(opts.MasterBiasL)) || math.IsInf(float64(opts.MasterBiasL), 0) || math.IsNaN(float64(opts.MasterBiasR)) || math.IsInf(float64(opts.MasterBiasR), 0) {
+	if math.IsNaN(opts.MasterGainDB) || math.IsInf(opts.MasterGainDB, 0) || opts.MasterGainDB < -120 || opts.MasterGainDB > 24 || math.IsNaN(opts.MasterInputGainDB) || math.IsInf(opts.MasterInputGainDB, 0) || opts.MasterInputGainDB < -120 || opts.MasterInputGainDB > 24 || math.IsNaN(float64(opts.MasterBiasL)) || math.IsInf(float64(opts.MasterBiasL), 0) || math.IsNaN(float64(opts.MasterBiasR)) || math.IsInf(float64(opts.MasterBiasR), 0) {
 		return report, fmt.Errorf("master gain or DC correction is out of range")
 	}
 	dither := opts.Dither == nil || *opts.Dither
@@ -392,7 +443,11 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		return report, err
 	}
 	busState := busMixerState{masterProcessor: masterProcessor, outputGain: 1}
+	busState.masterLimiter, _ = masterProcessor.(interface{ LimiterGainReductionDB() float64 })
 	masterGainDB := opts.MasterGainDB
+	if masterProcessor == nil {
+		masterGainDB += opts.MasterInputGainDB
+	}
 	authoredGainDB := float64(0)
 	for _, bus := range semantic.Buses {
 		switch bus.ID {
@@ -593,6 +648,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		report.metricStart = 0
 	}
 	report.metricEnd = renderFrames + int64(insertLatency+masterLatency)
+	report.chainStart, report.chainEnd = masterChainWindow(report.From, fromFrame, renderFrames, insertLatency, masterLatency)
 	limiter, err := mix.NewLimiter(opts.SampleRate)
 	if err != nil {
 		return report, err
@@ -605,7 +661,7 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		masterGain = float32(math.Pow(10, masterGainDB/20))
 	}
 	if masterProcessor != nil {
-		masterGain = float32(math.Pow(10, authoredGainDB/20))
+		masterGain = float32(math.Pow(10, (authoredGainDB+opts.MasterInputGainDB)/20))
 		busState.outputGain = float32(math.Pow(10, opts.MasterGainDB/20))
 	}
 	var eventBuf [128]seq.Event
@@ -632,6 +688,9 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		for entryBar := range entry.Bars {
 			if bar >= renderBars {
 				break
+			}
+			for ti := range tracks {
+				tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, int64(bar)*seq.TicksPerBar, ti
 			}
 			if err := applySceneBoundary(tracks, scene, stopIsAction, entryBar == 0); err != nil {
 				return report, err
@@ -744,6 +803,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 					}
 					return 0
 				})
+				if opts.NoteTap != nil {
+					for _, event := range events {
+						if event.event.Kind != seq.NoteExpression {
+							opts.NoteTap(event.track, event.event)
+						}
+					}
+				}
 				if err := renderBlock(writer, tracks, delayA, reverbB, compMusic, compSidechainTrack, opts.MasterBiasL, opts.MasterBiasR, masterGain, busState, limiter, stems, &encoder, events, position, frames, block, &report); err != nil {
 					return report, err
 				}
@@ -753,11 +819,13 @@ func renderWAV(score *notation.Score, opts Options, writer io.Writer, stemsDir s
 		}
 	}
 	for ti := range tracks {
+		tracks[ti].noteTap, tracks[ti].tapTick, tracks[ti].tapIndex = opts.NoteTap, int64(renderBars)*seq.TicksPerBar, ti
 		if tracks[ti].drums != nil {
 			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
 				tracks[ti].drums.NoteOff(lane)
 			}
 		} else {
+			tracks[ti].tapRelease()
 			tracks[ti].voice.NoteOff()
 		}
 		tracks[ti].activeGen = 0
@@ -1340,6 +1408,14 @@ func sceneTransitionFor(source, target *seq.Pattern, track, sourceSlot, targetSl
 	}
 }
 
+// tapRelease reports the release of the sounding pattern note at the scene
+// boundary, before its identity is cleared.
+func (t *trackRuntime) tapRelease() {
+	if t.noteTap != nil && t.activeGen != 0 && t.activeNoteID != 0 {
+		t.noteTap(t.tapIndex, seq.Event{Kind: seq.NoteOff, NoteID: t.activeNoteID, Tick: t.tapTick})
+	}
+}
+
 func applyScene(tracks []trackRuntime, scene *notation.Scene, stopIsAction bool) error {
 	return applySceneBoundary(tracks, scene, stopIsAction, false)
 }
@@ -1369,6 +1445,7 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 				tracks[ti].active = nil
 				tracks[ti].currentName = ""
 				tracks[ti].hasPendingGate = false
+				tracks[ti].tapRelease()
 				tracks[ti].activeGen = 0
 				tracks[ti].voice.NoteOff()
 			default:
@@ -1405,6 +1482,7 @@ func applySceneBoundary(tracks []trackRuntime, scene *notation.Scene, stopIsActi
 					if transition.carry {
 						tracks[ti].slideFrom, tracks[ti].slideAt = transition.sourceNoteID, transition.targetSample
 					} else if transition.release.Sample <= transition.boundarySample {
+						tracks[ti].tapRelease()
 						tracks[ti].voice.NoteOff()
 						tracks[ti].activeGen = 0
 					}
@@ -1637,6 +1715,9 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			left, right = busState.masterProcessor.Process(left, right)
 			if busState.masterProcessor.Fault() {
 				return fmt.Errorf("master chain DSP fault")
+			}
+			if busState.masterLimiter != nil {
+				report.noteMasterChainReduction(sample, busState.masterLimiter.LimiterGainReductionDB())
 			}
 			left = (left + masterBiasL) * busState.outputGain
 			right = (right + masterBiasR) * busState.outputGain

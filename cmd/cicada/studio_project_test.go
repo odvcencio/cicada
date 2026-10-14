@@ -12,7 +12,7 @@ import (
 func TestProjectSettingsPreserveEditionCommentsAndPitchSpelling(t *testing.T) {
 	for _, newline := range []string{"\n", "\r\n"} {
 		before := []byte(strings.ReplaceAll("cicada 2\n// authored header\nkey db minor\ntempo // tempo comment\n138.0\ntrack bass acid {}\npattern p { 1 . c#3 . }\nscene main { bass=p }\nsong { main }\n", "\n", newline))
-		updated, err := projectSettingsSource(before, &studioProjectSettings{Title: "東京 \"Studio\"", TempoMilli: 127125, Root: "c#", Scale: "minor"})
+		updated, err := intentProjectSettings(t, before, &studioProjectSettings{Title: "東京 \"Studio\"", TempoMilli: 127125, Root: "c#", Scale: "minor"})
 		if err != nil {
 			t.Fatal(err)
 		}

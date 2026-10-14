@@ -245,7 +245,7 @@ func (s *studioApp) workspaceContent(ctx *server.Context) (gosx.Node, workspace)
 	_ = s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/transport", nil, &state)
 	var meters gosx.Node = gosx.Fragment()
 	if runtimeRoot() != "" && panel == "mixer" {
-		meters = gosx.El("section", gosx.Attrs(gosx.Attr("aria-label", "Master loudness")), ctx.Engine(engine.Config{Name: "CicadaMeters", Kind: engine.KindSurface, MountID: "cicada-meters", Runtime: engine.RuntimeGoWASM, WASMPath: ui.MeterEnginePath, Capabilities: []engine.Capability{engine.CapCanvas, engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapCanvas, engine.CapWASM, engine.CapFetch}}, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Live output meters require browser WASM and canvas support."))), s.form(view, csrf, "mixer", "loudness-reset", submit("", "", "Reset live loudness")))
+		meters = gosx.El("section", gosx.Attrs(gosx.Attr("aria-label", "Master loudness")), meterEngine(ctx, engine.Config{Name: "CicadaMeters", Kind: engine.KindSurface, MountID: "cicada-meters", Runtime: engine.RuntimeGoWASM, Capabilities: []engine.Capability{engine.CapCanvas, engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapCanvas, engine.CapWASM, engine.CapFetch}}, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Live output meters require browser WASM and canvas support."))), s.form(view, csrf, "mixer", "loudness-reset", submit("", "", "Reset live loudness")))
 	}
 	return ui.Shell(props, s.toolbar(view, csrf, panel, state), s.navigation(panel), gosx.El("main", gosx.Attrs(gosx.Attr("id", "workspace")), meters, s.panel(ctx, view, csrf, panel))), view
 }

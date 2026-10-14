@@ -378,6 +378,6 @@ func (s *studioApp) collaborationPanel(ctx *server.Context) gosx.Node {
 	actor, role := s.collaboration.member(ctx.Request, false)
 	props, _ := json.Marshal(map[string]string{"actor": actor, "role": role, "csrf": session.Token(ctx.Request)})
 	return ui.Panel(ui.PanelProps{ID: "collaboration", Title: "Collaborate", Description: "Edit a shared score draft. Save a valid draft to hear it at the next bar."},
-		ctx.Engine(engine.Config{Name: "CicadaCollaboration", Kind: engine.KindSurface, MountID: "cicada-collaboration", Runtime: engine.RuntimeGoWASM, WASMPath: ui.MeterEnginePath, Props: props, Capabilities: []engine.Capability{engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}},
+		meterEngine(ctx, engine.Config{Name: "CicadaCollaboration", Kind: engine.KindSurface, MountID: "cicada-collaboration", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}},
 			gosx.El("p", gosx.Text("Shared editing requires browser WASM support."))))
 }

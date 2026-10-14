@@ -41,6 +41,10 @@ var (
 	_ keyboard.Controller = (*calibrated)(nil)
 )
 
+// OutsideFloat32 reports which limit a stored control value lies beyond. The
+// value is compared exactly, as Validate does, after conversion to float32.
+func OutsideFloat32(p Parameter, v float32) (low, high bool) { return v < p.Min, v > p.Max }
+
 func Validate(s *keyboard.Spec) error {
 	if s == nil || Name(s.Patch) == "" {
 		return fmt.Errorf("unknown keyboard patch")
@@ -49,7 +53,8 @@ func Validate(s *keyboard.Spec) error {
 	for _, p := range Parameters(Name(s.Patch)) {
 		v := s.Controls[p.Index]
 		used[p.Index] = true
-		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) || v < p.Min || v > p.Max || p.Integer && v != float32(int(v)) {
+		low, high := OutsideFloat32(p, v)
+		if math.IsNaN(float64(v)) || math.IsInf(float64(v), 0) || low || high || p.Integer && v != float32(int(v)) {
 			return fmt.Errorf("keys parameter %s outside range", p.Name)
 		}
 	}
