@@ -661,6 +661,9 @@ func (u *samplerUI) resample(form js.Value) {
 		// The service accepted exactly the performance that was submitted. Later
 		// hits still count as unsaved.
 		u.savedPerf = submitted
+		// The controls it submitted are accepted too, so they no longer hold a
+		// refresh back; anything changed since the submit stays unsaved.
+		acknowledgeSubmitted(form, values)
 		u.recordRevision = ""
 		_ = u.load()
 		u.recordRevision = u.state.Revision

@@ -24,14 +24,51 @@ func holdUnsavedWork(name string, dirty func() bool) (release func()) {
 	return func() { unsavedWork.Delete(name) }
 }
 
-// markEdited tags a control the user changed. Engines also set control values
-// when they mount, so only controls that received a real input event count.
+// markEdited tags a control that received an input or change event. Engines
+// also set control values when they mount, but they do that without an event, so
+// only user edits and the engines' own draft gestures (a waveform boundary drag,
+// a vocal punch, a full-song button) count. Those gestures dispatch a synthetic
+// input event on purpose, so untrusted events count too.
 func markEdited(event js.Value) {
-	if !event.Get("isTrusted").Bool() {
-		return
-	}
 	if target := event.Get("target"); target.Type() == js.TypeObject && target.Get("setAttribute").Type() == js.TypeFunction {
 		target.Call("setAttribute", "data-edited", "true")
+	}
+}
+
+// acknowledgeSubmitted records that the service accepted the values an engine
+// submitted from form. Each edited control whose current value is exactly what
+// was submitted becomes the new baseline and loses its edited marker. A control
+// changed after the submit keeps differing, and controls outside the form are
+// untouched, so unrelated drafts stay protected.
+func acknowledgeSubmitted(form js.Value, submitted map[string]string) {
+	if form.IsNull() || form.IsUndefined() {
+		return
+	}
+	controls := form.Call("querySelectorAll", "[data-edited]")
+	for i := 0; i < controls.Length(); i++ {
+		control := controls.Index(i)
+		name := control.Get("name").String()
+		value, sent := submitted[name]
+		switch {
+		case control.Get("tagName").String() == "SELECT":
+			if sent && control.Get("value").String() == value {
+				options := control.Get("options")
+				for j := 0; j < options.Length(); j++ {
+					options.Index(j).Set("defaultSelected", options.Index(j).Get("selected").Bool())
+				}
+				control.Call("removeAttribute", "data-edited")
+			}
+		case control.Get("type").String() == "checkbox" || control.Get("type").String() == "radio":
+			if control.Get("checked").Bool() == sent {
+				control.Set("defaultChecked", control.Get("checked").Bool())
+				control.Call("removeAttribute", "data-edited")
+			}
+		default:
+			if sent && control.Get("value").String() == value {
+				control.Set("defaultValue", value)
+				control.Call("removeAttribute", "data-edited")
+			}
+		}
 	}
 }
 

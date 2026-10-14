@@ -301,6 +301,28 @@ test('a sampler resample from the shell refreshes Arrange and the Code lens', {t
   await page.locator('#studio-shell').waitFor();
   await page.waitForFunction(() => document.querySelectorAll('[data-sampler-pad]:not([disabled])').length > 0, null, {timeout: 45_000});
   await openSampler();
+  // A waveform boundary drag writes the pad editor through a synthetic input
+  // event. The unsaved boundary holds a refresh back until it is saved.
+  const endField = page.locator('#sampler-pad-editor form [name=end]');
+  const endBefore = await endField.inputValue();
+  const canvas = page.locator('[data-sampler-wave]');
+  await canvas.scrollIntoViewIfNeeded();
+  const wave = await canvas.boundingBox();
+  await page.mouse.move(wave.x + wave.width / 16, wave.y + wave.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(wave.x + wave.width / 10, wave.y + wave.height / 2, {steps: 5});
+  await page.mouse.up();
+  assert.notEqual(await endField.inputValue(), endBefore, 'the drag moved the end boundary');
+  await page.evaluate(() => { window.__alive = true; document.dispatchEvent(new Event('cicada:shell-refresh')); });
+  await page.locator('#studio-refresh-notice').waitFor({state: 'visible'});
+  assert.equal(await page.evaluate(() => window.__alive === true), true, 'the unsaved boundary survived the refresh request');
+  // Saving the pad accepts it: the page comes back with the notice cleared.
+  await page.getByRole('button', {name: 'Save pad', exact: true}).click();
+  await page.waitForFunction(() => window.__alive !== true);
+  await page.locator('#studio-shell').waitFor();
+  assert.ok(!(await page.locator('#studio-refresh-notice').isVisible()), 'the notice is gone after the save');
+  await page.waitForFunction(() => document.querySelectorAll('[data-sampler-pad]:not([disabled])').length > 0, null, {timeout: 45_000});
+  await openSampler();
   await page.getByRole('button', {name: 'Record pads', exact: true}).click();
   await page.keyboard.press('1');
   const hits = async () => JSON.parse(await page.locator('[data-sampler-resample] input[name=performance]').inputValue()).hits.length;
