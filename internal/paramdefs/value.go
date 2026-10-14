@@ -3,7 +3,6 @@ package paramdefs
 import (
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 )
 
@@ -48,21 +47,15 @@ func ValidateLiteral(d Descriptor, literal string) (code string, err error) {
 	return "", nil
 }
 
-// LiteralNumber normalizes the source units shared by registry parameters.
+// LiteralNumber normalizes the source units shared by registry parameters. It
+// reads the text with ParseBase and accepts only the units registry rows use.
 func LiteralNumber(literal string) (float64, string, bool) {
-	text, unit, scale := strings.ToLower(literal), "unit", 1.0
-	for _, suffix := range []struct {
-		text, unit string
-		scale      float64
-	}{{"khz", "hz", 1000}, {"hz", "hz", 1}, {"ms", "ms", 1}, {"db", "db", 1}, {"s", "ms", 1000}, {"%", "unit", .01}} {
-		if strings.HasSuffix(text, suffix.text) {
-			text = strings.TrimSuffix(text, suffix.text)
-			unit, scale = suffix.unit, suffix.scale
-			break
-		}
+	n, unit, err := ParseBase(literal)
+	switch unit {
+	case "unit", "hz", "ms", "db":
+	default:
+		return 0, "", false
 	}
-	n, err := strconv.ParseFloat(text, 64)
-	n *= scale
 	return n, unit, err == nil && !math.IsNaN(n) && !math.IsInf(n, 0)
 }
 
