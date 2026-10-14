@@ -38,6 +38,43 @@ func (p *Project) NeedsKeysEngine() bool {
 	return false
 }
 
+// keysTolerance is the absolute slack around a keyboard parameter's float32
+// limits that KeysSpecFromValues allows.
+const keysTolerance = 1e-7
+
+// keysNumber converts a numeric source value to the keyboard parameter's unit.
+// KeysSpecFromValues and the range pre-check both read values through it.
+func keysNumber(p keyboard.Parameter, name string, v Value) (float64, error) {
+	if v.Number == nil || math.IsNaN(*v.Number) || math.IsInf(*v.Number, 0) {
+		return 0, fmt.Errorf("keys parameter %s needs a finite number", name)
+	}
+	n := *v.Number
+	unit := v.Unit
+	if p.Unit == "s" && unit == "ms" {
+		n /= 1000
+		unit = "s"
+	}
+	if p.Unit == "s" && unit == "unit" {
+		unit = "s"
+	}
+	if p.Unit == "cents" && unit == "unit" {
+		unit = "cents"
+	}
+	want := p.Unit
+	if want == "" {
+		want = "unit"
+	}
+	if unit != want {
+		return 0, fmt.Errorf("keys parameter %s requires %s", name, want)
+	}
+	return n, nil
+}
+
+// keysOutsideTolerance is KeysSpecFromValues' range test.
+func keysOutsideTolerance(p keyboard.Parameter, n float64) (low, high bool) {
+	return n < float64(p.Min)-keysTolerance, n > float64(p.Max)+keysTolerance
+}
+
 // KeysSpecFromValues resolves the original patch and all authored controls.
 // Hosts prepare the resulting instrument before taking ownership of audio.
 func KeysSpecFromValues(kind string, values map[string]Value) (keyvoice.Spec, error) {
@@ -67,29 +104,11 @@ func KeysSpecFromValues(kind string, values map[string]Value) (keyvoice.Spec, er
 				s.Controls[p.Index] = n
 				break
 			}
-			if v.Number == nil || math.IsNaN(*v.Number) || math.IsInf(*v.Number, 0) {
-				return s, fmt.Errorf("keys parameter %s needs a finite number", name)
+			n, err := keysNumber(p, name, v)
+			if err != nil {
+				return s, err
 			}
-			n := *v.Number
-			unit := v.Unit
-			if p.Unit == "s" && unit == "ms" {
-				n /= 1000
-				unit = "s"
-			}
-			if p.Unit == "s" && unit == "unit" {
-				unit = "s"
-			}
-			if p.Unit == "cents" && unit == "unit" {
-				unit = "cents"
-			}
-			want := p.Unit
-			if want == "" {
-				want = "unit"
-			}
-			if unit != want {
-				return s, fmt.Errorf("keys parameter %s requires %s", name, want)
-			}
-			if n < float64(p.Min)-1e-7 || n > float64(p.Max)+1e-7 || p.Integer && n != math.Trunc(n) {
+			if low, high := keysOutsideTolerance(p, n); low || high || p.Integer && n != math.Trunc(n) {
 				return s, fmt.Errorf("keys parameter %s outside %g..%g", name, p.Min, p.Max)
 			}
 			s.Controls[p.Index] = float32(n)

@@ -34,6 +34,11 @@ type Descriptor struct {
 	Automatable bool     `json:"automatable"`
 	Persist     string   `json:"persist"`
 	Schema      string   `json:"schema,omitempty"`
+	// Isolated lists numbers accepted outside [Min, Max], such as 0 to bypass
+	// a filter. IsolatedNote says what they do. Host-only rows use them; no
+	// registry row does.
+	Isolated     []float64 `json:"isolated,omitempty"`
+	IsolatedNote string    `json:"isolated_note,omitempty"`
 }
 
 // Registry is loaded from the single checked-in data source in stable order;

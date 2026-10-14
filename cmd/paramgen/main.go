@@ -17,6 +17,7 @@ func main() {
 		{"kernel/params_keys.go", paramdefs.GenerateKernelKeys},
 		{"kernel/params_core.go", paramdefs.GenerateKernelCore},
 		{"project/params.json", paramdefs.GenerateJSON},
+		{"docs/manual/parameter-ranges.md", paramdefs.GenerateRangesDoc},
 	}
 	for _, output := range outputs {
 		data, err := output.make()

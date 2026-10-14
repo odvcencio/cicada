@@ -1,0 +1,23 @@
+cicada 2
+tempo 138
+key a minor
+seed 4242
+track bass acid { cutoff = 620Hz reso = 0.62 envmod = 0.7 decay = 380ms accent = 0.8 drive = 0.25 filter = diode }
+track drums drums { bd_tune = 55Hz bd_decay = 400ms ch_decay = 60ms }
+pattern bass-a { 1^ . 1~ 5 . 1 7, . | 1^ . 1'~ 1 5^ 3 1 . }
+pattern rest-b { . . . . . . . . }
+pattern beat-a drums {
+  bd: X... .... X... ....
+  sd: .... X... .... X...
+}
+pattern rest-d drums {
+  bd: .... .... .... ....
+}
+scene intro { bass = bass-a drums = beat-a }
+scene gap { bass = rest-b drums = rest-d }
+scene excerpt { bass = bass-a drums = rest-d }
+song { intro*2 gap*2 excerpt*2 }
+fx tone eq { type = highpass frequency = 25Hz q = 0.707 }
+fx ceiling limiter { ceiling = -1dBTP lookahead = 3ms release = 100ms }
+master { level = 6dB insert = tone -> ceiling }
+export quiet { loudness = -30LUFS true_peak = -1dBTP normalize = off }
