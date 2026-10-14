@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"mime/multipart"
@@ -13,6 +14,7 @@ import (
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 	"m31labs.dev/gosx"
+	"m31labs.dev/gosx/action"
 	"m31labs.dev/gosx/command"
 )
 
@@ -432,7 +434,7 @@ func TestShellAllowsReactiveResampleAndRejectsForeignLocations(t *testing.T) {
 	if err := json.Unmarshal(result.Data, &projection); err != nil {
 		t.Fatal(err)
 	}
-	if len(*edits) != 1 || projection.Location != "/studio?tab=session&pad=2" || !strings.Contains(projection.HTML, `id="studio-shell"`) || projection.Revision != "current" {
+	if len(*edits) != 1 || projection.Location != "/studio?tab=session&pad=2" || projection.HTML != "" || projection.Revision != "current" {
 		t.Errorf("shell projection: edits=%d %+v", len(*edits), projection)
 	}
 	for _, bad := range []string{"https://evil.example/studio", "//evil.example/studio", "/studio/../admin", "/other"} {
@@ -514,7 +516,7 @@ func TestShellProjectionCarriesTheSavedScoreAndRevision(t *testing.T) {
 	// The revalidation the engine asks for renders the same state: the new
 	// revision in every form, the new source in the Code lens, the placement in Arrange.
 	page := getPage(t, client, address+"/studio?tab=arrange")
-	for name, body := range map[string]string{"projection": projection.HTML, "revalidated page": page} {
+	for name, body := range map[string]string{"revalidated page": page} {
 		if strings.Contains(body, `name="revision" value="current"`) {
 			t.Errorf("%s still carries the old revision", name)
 		}
@@ -524,8 +526,8 @@ func TestShellProjectionCarriesTheSavedScoreAndRevision(t *testing.T) {
 			}
 		}
 	}
-	if projection.Revision != "after" {
-		t.Errorf("projection revision=%q", projection.Revision)
+	if projection.HTML != "" {
+		t.Errorf("a shell save returns a receipt, not a page: %d bytes of HTML", len(projection.HTML))
 	}
 }
 
@@ -613,5 +615,45 @@ func TestShellRendersAHiddenRefreshNoticeLinkingToThePage(t *testing.T) {
 	}
 	if !strings.Contains(notice, `href="/studio?tab=session&amp;file=b.cicada"`) {
 		t.Errorf("the notice must link to the current page: %s", notice)
+	}
+}
+
+func TestShellResampleReceiptStaysSmallForALargeScore(t *testing.T) {
+	// The Code lens holds the whole source, so a shell projection grows with the
+	// score. The sampler reads this response through a 1 MiB cap and treats a
+	// failed read as a failed save, so the shell must answer with a receipt.
+	big := "title \"Big\"\n" + strings.Repeat("// padding line to make the score large\n", 70000) // about 2.7 MiB
+	reply := &workspace{Revision: "current", Filename: "big.cicada", Source: big, Valid: true, Project: &project.Project{Title: "Big", TempoMilli: 120000, Key: project.Key{Scale: "minor"}}}
+	address, client, edits := testAppWorkspace(t, reply)
+	if page := getPage(t, client, address+"/studio?tab=session"); len(page) < 1<<20 {
+		t.Fatalf("the shell page is %d bytes; the test needs a page past the sampler's 1 MiB cap", len(page))
+	}
+	csrf := tokenFromPage(t, getPage(t, client, address+"/studio?tab=session"))
+	body, _ := json.Marshal(map[string]string{
+		"csrf_token": csrf, "revision": "current", "bankRevision": "bank-current", "action": "resample", "destination": "1",
+		"performance": `{"hits":[]}`, "newName": "r", "__cicada_location": "/studio?tab=session",
+	})
+	req, _ := http.NewRequest("POST", address+"/__actions/sampler", bytes.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-CSRF-Token", csrf)
+	req.Header.Set("X-Cicada-Reactive", "1")
+	response, err := client.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	// Decode through the same cap the sampler engine uses.
+	data, _ := io.ReadAll(io.LimitReader(response.Body, 1<<20))
+	var result action.Result
+	if err := json.Unmarshal(data, &result); err != nil || !result.OK {
+		t.Fatalf("the sampler would reject this response (%d bytes read, err=%v): %.200s", len(data), err, data)
+	}
+	if len(data) > 4<<10 || len(*edits) != 1 {
+		t.Errorf("receipt is %d bytes with %d edits; want a few hundred bytes and one write", len(data), len(*edits))
+	}
+	var receipt workspaceProjection
+	if err := json.Unmarshal(result.Data, &receipt); err != nil || receipt.HTML != "" || receipt.Revision != "current" || receipt.Location != "/studio?tab=session" {
+		t.Errorf("receipt: %+v err=%v", receipt, err)
 	}
 }

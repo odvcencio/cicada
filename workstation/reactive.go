@@ -177,7 +177,16 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 		if name == "pattern" && followPattern && result.Redirect != "" {
 			location = result.Redirect
 		}
-		projection, err := s.projection(r, location)
+		var projection workspaceProjection
+		var err error
+		if target, parseErr := url.Parse(location); parseErr == nil && target.Path == "/studio" {
+			// The shell does not apply a projection: after a save it reloads. Its
+			// engines read this response through size caps, and the whole shell can
+			// exceed them (the Code lens holds the source), so return a receipt.
+			projection = workspaceProjection{Revision: receipt.Revision, Location: location}
+		} else {
+			projection, err = s.projection(r, location)
+		}
 		if err != nil {
 			// The write succeeded; never encourage a blind POST retry.
 			result.Message = "Saved. " + err.Error()

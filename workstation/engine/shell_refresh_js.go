@@ -35,6 +35,62 @@ func markEdited(event js.Value) {
 	}
 }
 
+// controlValue is a control's current value as a string; a checkbox reports
+// "true" or "false".
+func controlValue(control js.Value) string {
+	if t := control.Get("type").String(); t == "checkbox" || t == "radio" {
+		if control.Get("checked").Bool() {
+			return "true"
+		}
+		return "false"
+	}
+	return control.Get("value").String()
+}
+
+// baselineValue is what the control showed before the user touched it: the
+// effective value captured at first interaction, which includes the browser's
+// own default (a select with no selected option shows its first) and anything an
+// engine restored at mount. A control reached only by an engine gesture has no
+// captured baseline, so it falls back to the rendered default.
+func baselineValue(control js.Value) string {
+	if control.Call("hasAttribute", "data-baseline").Bool() {
+		return control.Call("getAttribute", "data-baseline").String()
+	}
+	switch tag := control.Get("tagName").String(); {
+	case tag == "SELECT":
+		options := control.Get("options")
+		for i := 0; i < options.Length(); i++ {
+			if options.Index(i).Get("defaultSelected").Bool() {
+				return options.Index(i).Get("value").String()
+			}
+		}
+		if options.Length() > 0 {
+			return options.Index(0).Get("value").String()
+		}
+		return ""
+	case control.Get("type").String() == "checkbox" || control.Get("type").String() == "radio":
+		if control.Get("defaultChecked").Bool() {
+			return "true"
+		}
+		return "false"
+	}
+	return control.Get("defaultValue").String()
+}
+
+// captureBaseline records a control's effective value before its first edit.
+func captureBaseline(event js.Value) {
+	target := event.Get("target")
+	if target.Type() != js.TypeObject || target.Get("tagName").Type() != js.TypeString {
+		return
+	}
+	switch target.Get("tagName").String() {
+	case "INPUT", "SELECT", "TEXTAREA":
+		if !target.Call("hasAttribute", "data-baseline").Bool() {
+			target.Call("setAttribute", "data-baseline", controlValue(target))
+		}
+	}
+}
+
 // acknowledgeSubmitted records that the service accepted the values an engine
 // submitted from form. Each edited control whose current value is exactly what
 // was submitted becomes the new baseline and loses its edited marker. A control
@@ -47,34 +103,22 @@ func acknowledgeSubmitted(form js.Value, submitted map[string]string) {
 	controls := form.Call("querySelectorAll", "[data-edited]")
 	for i := 0; i < controls.Length(); i++ {
 		control := controls.Index(i)
-		name := control.Get("name").String()
-		value, sent := submitted[name]
-		switch {
-		case control.Get("tagName").String() == "SELECT":
-			if sent && control.Get("value").String() == value {
-				options := control.Get("options")
-				for j := 0; j < options.Length(); j++ {
-					options.Index(j).Set("defaultSelected", options.Index(j).Get("selected").Bool())
-				}
-				control.Call("removeAttribute", "data-edited")
-			}
-		case control.Get("type").String() == "checkbox" || control.Get("type").String() == "radio":
-			if control.Get("checked").Bool() == sent {
-				control.Set("defaultChecked", control.Get("checked").Bool())
-				control.Call("removeAttribute", "data-edited")
-			}
-		default:
-			if sent && control.Get("value").String() == value {
-				control.Set("defaultValue", value)
-				control.Call("removeAttribute", "data-edited")
-			}
+		value, sent := submitted[control.Get("name").String()]
+		current := controlValue(control)
+		if t := control.Get("type").String(); t == "checkbox" || t == "radio" {
+			value = map[bool]string{true: "true", false: "false"}[sent]
+			sent = true
+		}
+		if sent && current == value {
+			control.Call("setAttribute", "data-baseline", current)
+			control.Call("removeAttribute", "data-edited")
 		}
 	}
 }
 
-// controlsDirty reports an edited text, number, select, checkbox or textarea
-// control whose current value still differs from the rendered one, for example
-// Code lens text typed since the last save.
+// controlsDirty reports an edited control whose current value differs from its
+// baseline, for example Code lens text typed since the last save. Changing a
+// control and changing it back is clean.
 func controlsDirty() bool {
 	root := js.Global().Get("document").Call("getElementById", "studio-shell")
 	if root.IsNull() {
@@ -82,24 +126,8 @@ func controlsDirty() bool {
 	}
 	controls := root.Call("querySelectorAll", "[data-edited]")
 	for i := 0; i < controls.Length(); i++ {
-		control := controls.Index(i)
-		switch tag := control.Get("tagName").String(); {
-		case tag == "SELECT":
-			options := control.Get("options")
-			for j := 0; j < options.Length(); j++ {
-				option := options.Index(j)
-				if option.Get("selected").Bool() != option.Get("defaultSelected").Bool() {
-					return true
-				}
-			}
-		case tag == "INPUT" && (control.Get("type").String() == "checkbox" || control.Get("type").String() == "radio"):
-			if control.Get("checked").Bool() != control.Get("defaultChecked").Bool() {
-				return true
-			}
-		default:
-			if control.Get("value").String() != control.Get("defaultValue").String() {
-				return true
-			}
+		if control := controls.Index(i); controlValue(control) != baselineValue(control) {
+			return true
 		}
 	}
 	return false
@@ -151,6 +179,14 @@ func watchShellRefresh() {
 		seen = requested
 		refreshShell()
 	})
+	for _, name := range []string{"focusin", "pointerdown", "keydown"} {
+		js.Global().Get("document").Call("addEventListener", name, js.FuncOf(func(_ js.Value, args []js.Value) any {
+			if len(args) > 0 {
+				captureBaseline(args[0])
+			}
+			return nil
+		}), true)
+	}
 	for _, name := range []string{"input", "change"} {
 		js.Global().Get("document").Call("addEventListener", name, js.FuncOf(func(_ js.Value, args []js.Value) any {
 			if len(args) > 0 {

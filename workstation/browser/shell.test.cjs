@@ -229,6 +229,24 @@ test('a refresh request keeps unsaved Code lens text and shows a notice', async 
   await page.close();
 });
 
+// A select that renders no selected option shows its first one. Changing it and
+// changing it back leaves nothing unsaved, so a refresh request still reloads.
+test('changing a select and changing it back is clean', async () => {
+  const {page} = await openShell('?tab=session');
+  const select = page.locator('[data-live-target]');
+  const values = await select.locator('option').evaluateAll(options => options.map(option => option.value));
+  assert.ok(values.length >= 2, 'the learn-target select has options to change between');
+  const original = await select.inputValue();
+  await select.focus(); // a person focuses a control before changing it
+  const other = values.find(value => value !== original);
+  await select.selectOption(other);
+  await select.selectOption(original);
+  const reloaded = page.waitForEvent('load');
+  await page.evaluate(() => document.dispatchEvent(new Event('cicada:shell-refresh')));
+  await reloaded;
+  await page.close();
+});
+
 // Capture state has one publisher for the page. On /studio the Takes engine
 // starts it; without it the status would stay on its initial line forever.
 test('a fresh shell load publishes native capture status', async () => {
@@ -297,8 +315,7 @@ test('a sampler resample from the shell refreshes Arrange and the Code lens', {t
   };
   await openSampler();
   await page.locator('input[type=file][name=audio]').setInputFiles({name: 'Shell regression.wav', mimeType: 'audio/wav', buffer: wav});
-  await Promise.all([page.waitForURL(/\/studio/), page.getByRole('button', {name: 'Import and chop WAV', exact: true}).click()]);
-  await page.locator('#studio-shell').waitFor();
+  await page.getByRole('button', {name: 'Import and chop WAV', exact: true}).click();
   await page.waitForFunction(() => document.querySelectorAll('[data-sampler-pad]:not([disabled])').length > 0, null, {timeout: 45_000});
   await openSampler();
   // A waveform boundary drag writes the pad editor through a synthetic input
@@ -316,11 +333,26 @@ test('a sampler resample from the shell refreshes Arrange and the Code lens', {t
   await page.evaluate(() => { window.__alive = true; document.dispatchEvent(new Event('cicada:shell-refresh')); });
   await page.locator('#studio-refresh-notice').waitFor({state: 'visible'});
   assert.equal(await page.evaluate(() => window.__alive === true), true, 'the unsaved boundary survived the refresh request');
-  // Saving the pad accepts it: the page comes back with the notice cleared.
+  // Saving the pad accepts it. GoSX may swap the page in place or reload it, so
+  // wait for the service to hold the new bank, then ask for a refresh until the
+  // page reloads: a saved boundary no longer holds the refresh back.
+  const base = new URL(process.env.CICADA_STUDIO_URL);
+  const {context} = await sharedBrowser();
+  const bank = async () => (await context.request.get(new URL('/api/sampler', base).href)).json();
+  const bankBefore = (await bank()).bankRevision;
   await page.getByRole('button', {name: 'Save pad', exact: true}).click();
-  await page.waitForFunction(() => window.__alive !== true);
+  const deadline = Date.now() + 20_000;
+  while ((await bank()).bankRevision === bankBefore && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
+  assert.notEqual((await bank()).bankRevision, bankBefore, 'the pad saved');
+  let reloaded = false;
+  for (let attempt = 0; attempt < 10 && !reloaded; attempt++) {
+    const loaded = page.waitForEvent('load', {timeout: 2_000}).then(() => true, () => false);
+    await page.evaluate(() => document.dispatchEvent(new Event('cicada:shell-refresh'))).catch(() => {});
+    reloaded = await loaded;
+  }
+  assert.ok(reloaded, 'after the save, a refresh request reloads the page');
   await page.locator('#studio-shell').waitFor();
-  assert.ok(!(await page.locator('#studio-refresh-notice').isVisible()), 'the notice is gone after the save');
+  assert.ok(!(await page.locator('#studio-refresh-notice').isVisible()), 'no notice after the reload');
   await page.waitForFunction(() => document.querySelectorAll('[data-sampler-pad]:not([disabled])').length > 0, null, {timeout: 45_000});
   await openSampler();
   await page.getByRole('button', {name: 'Record pads', exact: true}).click();
