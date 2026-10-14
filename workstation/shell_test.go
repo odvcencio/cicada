@@ -571,3 +571,47 @@ func TestShellGetFormsStayInTheShell(t *testing.T) {
 		}
 	}
 }
+
+func TestShellClipReadsTheSavedScoreNotTheCodeLensSelection(t *testing.T) {
+	saved := "pattern d drums steps=4 {\n  bd: x . . .\n}\n"
+	reply := &workspace{
+		Revision: "current", Filename: "main.cicada", Source: saved, Valid: true,
+		Files:   []projectFile{{Name: "main.cicada", Source: saved, Revision: "current"}, {Name: "other.cicada", Source: "title \"Other\"\n", Revision: "other-rev"}},
+		Project: &project.Project{Title: "T", TempoMilli: 120000, Key: project.Key{Scale: "minor"}, Patterns: []project.Pattern{{ID: "d", Kind: "drums", Steps: 4, Lanes: map[string][]*project.Step{"bd": {nil, nil, nil, nil}}}}},
+	}
+	address, client, _ := testAppWorkspace(t, reply)
+	clip := func(body string) string {
+		return regexp.MustCompile(`(?s)<section[^>]*id="detail-panel-clip".*?</section>`).FindString(body)
+	}
+	hasLane := func(body string) bool { return strings.Contains(clip(body), "lane=bd") }
+	// Selecting a file that does not hold the pattern changes only the Code lens.
+	body := getPage(t, client, address+"/studio?file=other.cicada&pattern=d")
+	if !strings.Contains(body, "title &#34;Other&#34;") && !strings.Contains(body, `title "Other"`) {
+		t.Error("the Code lens must show the selected file")
+	}
+	if !hasLane(body) {
+		t.Error("Clip lost the saved pattern's drum lanes when another file was selected")
+	}
+	// A retained draft that leaves the drums out changes only the Code lens too.
+	csrf := tokenFromPage(t, body)
+	form := url.Values{"csrf_token": {csrf}, "revision": {"current"}, "fileRevision": {"current"}, "file": {"main.cicada"}, "content": {"invalid draft without drums\n"}}
+	shellPost(t, client, address, "/__actions/source", form, address+"/studio")
+	body = getPage(t, client, address+"/studio?file=main.cicada&pattern=d")
+	if !strings.Contains(body, "invalid draft without drums") {
+		t.Skip("the fake service did not retain a draft for this request")
+	}
+	if !hasLane(body) {
+		t.Error("Clip lost the saved pattern's drum lanes when a draft was restored")
+	}
+}
+
+func TestShellRendersAHiddenRefreshNoticeLinkingToThePage(t *testing.T) {
+	body := shellBody(t, "?tab=session&file=b.cicada")
+	notice := regexp.MustCompile(`(?s)<p[^>]*id="studio-refresh-notice"[^>]*>.*?</p>`).FindString(body)
+	if notice == "" || !strings.Contains(notice, " hidden") || !strings.Contains(notice, `role="status"`) {
+		t.Fatalf("refresh notice missing or visible: %q", notice)
+	}
+	if !strings.Contains(notice, `href="/studio?tab=session&amp;file=b.cicada"`) {
+		t.Errorf("the notice must link to the current page: %s", notice)
+	}
+}

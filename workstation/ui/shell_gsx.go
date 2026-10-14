@@ -21,10 +21,11 @@ type ShellFrameProps struct {
 	Region     string
 	Message    string
 	HasMessage bool
+	Href       string
 }
 
 func ShellFrame(props ShellFrameProps, children ...gosx.Node) gosx.Node {
-	return gosx.El("div", gosx.Attrs(gosx.Attr("id", "studio-shell"), gosx.Attr("class", "shell"), gosx.Attr("data-phone-region", props.Region)), gosx.El("a", gosx.Attrs(gosx.Attr("class", "skip"), gosx.Attr("href", "#studio-center")), gosx.Text("Skip to workspace")), gosx.If(props.HasMessage, gosx.Fragment(gosx.El("p", gosx.Attrs(gosx.Attr("class", "notice"), gosx.Attr("role", "status")), gosx.Expr(props.Message)))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "notices"), gosx.BoolAttr("data-gosx-toast-host"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"))), gosx.Expr(children))
+	return gosx.El("div", gosx.Attrs(gosx.Attr("id", "studio-shell"), gosx.Attr("class", "shell"), gosx.Attr("data-phone-region", props.Region)), gosx.El("a", gosx.Attrs(gosx.Attr("class", "skip"), gosx.Attr("href", "#studio-center")), gosx.Text("Skip to workspace")), gosx.El("p", gosx.Attrs(gosx.Attr("id", "studio-refresh-notice"), gosx.Attr("class", "notice"), gosx.Attr("role", "status"), gosx.BoolAttr("hidden")), gosx.Text("The score changed while you have unsaved changes here. Save or copy them, then "), gosx.El("a", gosx.Attrs(gosx.Attr("href", props.Href)), gosx.Text("refresh this page")), gosx.Text(". Saving now is refused because the score moved on.")), gosx.If(props.HasMessage, gosx.Fragment(gosx.El("p", gosx.Attrs(gosx.Attr("class", "notice"), gosx.Attr("role", "status")), gosx.Expr(props.Message)))), gosx.El("div", gosx.Attrs(gosx.Attr("class", "notices"), gosx.BoolAttr("data-gosx-toast-host"), gosx.Attr("role", "status"), gosx.Attr("aria-live", "polite"))), gosx.Expr(children))
 }
 
 type DockProps struct {

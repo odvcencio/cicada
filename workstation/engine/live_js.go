@@ -101,10 +101,12 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.syncControls()
 	go u.runCommands()
 	go u.poll()
+	releaseUnsaved := holdUnsavedWork("live", func() bool { return len(u.takes) > 0 || u.recording || len(u.held) > 0 })
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
 		}
+		releaseUnsaved()
 		u.closeNotes()
 		u.saveTake()
 		for _, e := range append(u.events, u.midiEvents...) {

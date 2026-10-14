@@ -19,11 +19,13 @@ type ShellFrameProps struct {
 	Region     string
 	Message    string
 	HasMessage bool
+	Href       string
 }
 
 component ShellFrame(props: ShellFrameProps) {
 	return <div id="studio-shell" class="shell" data-phone-region={props.Region}>
 		<a class="skip" href="#studio-center">Skip to workspace</a>
+		<p id="studio-refresh-notice" class="notice" role="status" hidden>The score changed while you have unsaved changes here. Save or copy them, then <a href={props.Href}>refresh this page</a>. Saving now is refused because the score moved on.</p>
 		<If cond={props.HasMessage}><p class="notice" role="status">{props.Message}</p></If>
 		<div class="notices" data-gosx-toast-host role="status" aria-live="polite"></div>
 		{children}

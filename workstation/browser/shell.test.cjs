@@ -198,6 +198,37 @@ test('a reload after an engine save leaves the shell current', async () => {
   await page.close();
 });
 
+// Engines ask for a shell refresh through a signal; "cicada:shell-refresh" on the
+// document is the same request. A refresh never discards unsaved work: a clean
+// page reloads, and a page with typed Code lens text keeps it and shows a notice.
+test('a refresh request on a clean page reloads the shell', async () => {
+  const {page} = await openShell('?tab=arrange');
+  await page.evaluate(() => { window.__alive = true; });
+  const reloaded = page.waitForEvent('load');
+  await page.evaluate(() => document.dispatchEvent(new Event('cicada:shell-refresh')));
+  await reloaded;
+  await page.locator('#studio-shell').waitFor();
+  assert.equal(await page.evaluate(() => window.__alive === true), false, 'the page reloaded');
+  assert.ok(!(await page.locator('#studio-refresh-notice').isVisible()), 'no notice on a clean reload');
+  await page.close();
+});
+
+test('a refresh request keeps unsaved Code lens text and shows a notice', async () => {
+  const {page, requests} = await openShell('?tab=arrange');
+  const editor = page.locator('#studio-code textarea').first();
+  await editor.focus();
+  await page.keyboard.type(' // unsaved note');
+  await page.evaluate(() => { window.__alive = true; });
+  const documents = requests.filter(request => request === 'GET /studio').length;
+  await page.evaluate(() => document.dispatchEvent(new Event('cicada:shell-refresh')));
+  await page.locator('#studio-refresh-notice').waitFor({state: 'visible'});
+  assert.equal(await page.evaluate(() => window.__alive === true), true, 'the page was not reloaded');
+  assert.match(await editor.inputValue(), /\/\/ unsaved note/, 'the typed text survived');
+  assert.equal(requests.filter(request => request === 'GET /studio').length, documents, 'no new shell request');
+  assert.ok(await page.locator('#studio-refresh-notice a[href^="/studio"]').count() > 0, 'the notice links to the current page');
+  await page.close();
+});
+
 // Capture state has one publisher for the page. On /studio the Takes engine
 // starts it; without it the status would stay on its initial line forever.
 test('a fresh shell load publishes native capture status', async () => {

@@ -73,9 +73,17 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 	dock := oneOf(query.Get("dock"), shellDocks)
 	region := oneOf(query.Get("region"), shellPhones)
 	// The Code lens always shows the score, so the loader selects its file.
-	view, props, unavailable, ok := s.loadWorkspace(ctx, "code")
+	codeView, props, unavailable, ok := s.loadWorkspace(ctx, "code")
 	if !ok {
 		return unavailable, workspace{}, false
+	}
+	// Only the Code lens shows the selected file and any restored draft. Every
+	// other panel reads the saved score, so its source matches the saved project.
+	view := codeView
+	var saved workspace
+	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/workspace", nil, &saved); err == nil {
+		saved.DiskSource, saved.DiskRevision = saved.Source, saved.Revision
+		view = saved
 	}
 	csrf := session.Token(ctx.Request)
 	var state transport
@@ -84,7 +92,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 
 	returnTo := ctx.Request.URL.RequestURI()
 	file := func(name string) gosx.Node {
-		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: view.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: view.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name}))
+		return gosx.Fragment(ui.HiddenField(ui.HiddenFieldProps{Name: "file", Value: codeView.File}), ui.HiddenField(ui.HiddenFieldProps{Name: "fileRevision", Value: codeView.FileRevision}), ui.ActionButton(ui.ActionButtonProps{Label: name}))
 	}
 	form := func(id, name string, children ...gosx.Node) gosx.Node {
 		return ui.ActionForm(ui.ActionFormProps{ID: id, Action: "/__actions/" + name, CSRF: csrf, Revision: view.Revision, ReturnTo: returnTo}, children...)
@@ -114,7 +122,15 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ui.CaptureHint(),
 	)
 
-	panel := func(name string) gosx.Node { return shellLinks(ctx.Request.URL, s.shellPanel(ctx, view, csrf, name)) }
+	panelView := func(name string) workspace {
+		if name == "code" {
+			return codeView
+		}
+		return view
+	}
+	panel := func(name string) gosx.Node {
+		return shellLinks(ctx.Request.URL, s.shellPanel(ctx, panelView(name), csrf, name))
+	}
 	// Every panel renders, hidden unless selected, so in-place tab switching
 	// has its content.
 	centerPanel := func(id, name string) gosx.Node {
@@ -170,7 +186,7 @@ func (s *studioApp) shellContent(ctx *server.Context) (gosx.Node, workspace, boo
 		ID: "studio-workbench", LeftSignal: "$layout.browserWidth", RightSignal: "$layout.codeWidth", BottomSignal: "$layout.dockHeight",
 		Left: strconv.Itoa(shellBrowserWidth), Right: strconv.Itoa(shellCodeWidth), Bottom: strconv.Itoa(shellDockHeight),
 	}, top, browser, center, code, detail)
-	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage}, phone, workbench, dialogs), view, true
+	return ui.ShellFrame(ui.ShellFrameProps{Region: region, Message: message, HasMessage: hasMessage, Href: ctx.Request.URL.RequestURI()}, phone, workbench, dialogs), view, true
 }
 
 func engineLabel(state transport) string {

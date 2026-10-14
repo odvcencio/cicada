@@ -53,6 +53,7 @@ type samplerUI struct {
 	voices                               []*samplerVoice
 	perf                                 padsampler.Performance
 	keyPads                              map[int]bool
+	savedHits                            int
 	initialized, recording, posting      bool
 	origin                               float64
 	recordRevision                       string
@@ -252,10 +253,12 @@ func mountSampler(host enginewasm.Context) (enginewasm.Handle, error) {
 	}
 	go u.refreshLoop()
 	go u.clockLoop()
+	releaseUnsaved := holdUnsavedWork("sampler", func() bool { return len(u.perf.Hits) != u.savedHits })
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
 		}
+		releaseUnsaved()
 		u.stop()
 		cancel()
 		for _, b := range u.bindings {
@@ -319,6 +322,7 @@ func (u *samplerUI) load() error {
 	}
 	if !u.initialized {
 		u.perf = state.Bank.Performance
+		u.savedHits = len(u.perf.Hits)
 		u.recordRevision = state.Revision
 		u.initialized = true
 		u.events()
