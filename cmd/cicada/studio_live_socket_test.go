@@ -122,9 +122,18 @@ func TestLiveSocketRejectsRequestsWithoutTheServiceToken(t *testing.T) {
 	conn.CloseNow()
 }
 
+// The health schedule is checked on a manual clock: one frame at start, then
+// exactly one frame per tick of a 500 ms (twice a second) period. A wall-clock
+// window would count dropped ticks on a loaded machine as a regression.
 func TestLiveSocketPublishesHealthAtStartAndTwiceASecond(t *testing.T) {
 	_, _, s := studioTestStudio(t)
 	s.transport.audioNull = true
+	ticks := make(chan time.Time)
+	var period time.Duration
+	s.transport.healthTicks = func(d time.Duration) (<-chan time.Time, func()) {
+		period = d
+		return ticks, func() {}
+	}
 	sub := s.transport.telemetry.Subscribe(256)
 	defer s.transport.telemetry.Unsubscribe(sub)
 	if err := s.transport.start(); err != nil {
@@ -134,15 +143,44 @@ func TestLiveSocketPublishesHealthAtStartAndTwiceASecond(t *testing.T) {
 	if s.transport.telemetry.Latest()[liveplay.FrameHealth] == nil {
 		t.Fatal("no health frame right after start")
 	}
-	time.Sleep(1100 * time.Millisecond)
-	health := 0
-	for len(sub.C) > 0 {
-		if <-sub.C == liveplay.FrameHealth {
-			health++
+	if period != 500*time.Millisecond {
+		t.Fatalf("health period %v, want 500ms (twice a second)", period)
+	}
+	// pending drains queued notifications and counts the health frames.
+	pending := func() int {
+		n := 0
+		for {
+			select {
+			case kind := <-sub.C:
+				if kind == liveplay.FrameHealth {
+					n++
+				}
+			default:
+				return n
+			}
 		}
 	}
-	if health < 3 || health > 4 { // one at start plus about two in 1.1 s
-		t.Fatalf("health frames in 1.1 s: %d", health)
+	if n := pending(); n != 1 {
+		t.Fatalf("health frames at start: %d, want 1", n)
+	}
+	for tick := 1; tick <= 4; tick++ {
+		if n := pending(); n != 0 {
+			t.Fatalf("health frame before tick %d: %d", tick, n)
+		}
+		select {
+		case ticks <- time.Now():
+		case <-time.After(30 * time.Second):
+			t.Fatalf("publisher stopped reading ticks before tick %d", tick)
+		}
+		deadline := time.After(30 * time.Second)
+		for got := false; !got; {
+			select {
+			case kind := <-sub.C:
+				got = kind == liveplay.FrameHealth
+			case <-deadline:
+				t.Fatalf("no health frame after tick %d", tick)
+			}
+		}
 	}
 }
 
