@@ -305,6 +305,26 @@ test('a finished Live note take shows its review and commit controls without a r
 // performance no longer blocks it, so the shell refreshes by itself.
 test('a sampler resample from the shell refreshes Arrange and the Code lens', {timeout: 120_000}, async () => {
   const {page, requests} = await openShell('?tab=arrange');
+  const base = new URL(process.env.CICADA_STUDIO_URL);
+  const {context} = await sharedBrowser();
+  const current = await (await context.request.get(new URL('/api/state', base).href)).json();
+  // CI reuses the continuity fixture, whose scenes and song have no Session
+  // arrangement. Give this scenario a real placement destination before it
+  // resamples, so it exercises both the saved score and the Arrange view.
+  if (!/^arrange\s*\{/m.test(current.source)) {
+    const source = current.source.replace(/^song\s*\{[^}]*\}/m, 'arrange { place shell-backing keys continuity { at=@1.1.1 length=4bars } }');
+    assert.notEqual(source, current.source, 'the disposable song fixture became an arrangement');
+    const csrf = await page.locator('input[name=csrf_token]').first().inputValue();
+    const response = await context.request.post(new URL('/__actions/source', base).href, {
+      form: {csrf_token: csrf, revision: current.revision, content: source, __gosx_return_to: '/studio?tab=arrange'},
+      maxRedirects: 0,
+    });
+    assert.equal(response.status(), 303, 'the arrangement fixture saved');
+    const saved = await (await context.request.get(new URL('/api/state', base).href)).json();
+    assert.equal(saved.source, source, 'the service accepted the arrangement fixture');
+    await page.reload();
+    await page.locator('#studio-shell').waitFor();
+  }
   const frames = 24000, wav = Buffer.alloc(44 + frames * 8);
   wav.write('RIFF'); wav.writeUInt32LE(wav.length - 8, 4); wav.write('WAVEfmt ', 8); wav.writeUInt32LE(16, 16);
   wav.writeUInt16LE(3, 20); wav.writeUInt16LE(2, 22); wav.writeUInt32LE(48000, 24); wav.writeUInt32LE(384000, 28);
@@ -336,14 +356,15 @@ test('a sampler resample from the shell refreshes Arrange and the Code lens', {t
   // Saving the pad accepts it. GoSX may swap the page in place or reload it, so
   // wait for the service to hold the new bank, then ask for a refresh until the
   // page reloads: a saved boundary no longer holds the refresh back.
-  const base = new URL(process.env.CICADA_STUDIO_URL);
-  const {context} = await sharedBrowser();
   const bank = async () => (await context.request.get(new URL('/api/sampler', base).href)).json();
   const bankBefore = (await bank()).bankRevision;
   await page.getByRole('button', {name: 'Save pad', exact: true}).click();
   const deadline = Date.now() + 20_000;
   while ((await bank()).bankRevision === bankBefore && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 100));
   assert.notEqual((await bank()).bankRevision, bankBefore, 'the pad saved');
+  await page.waitForURL(url => url.pathname === '/studio' && url.searchParams.get('pad') === '1');
+  await page.locator('#studio-shell').waitFor();
+  assert.equal(new URL(page.url()).pathname, '/studio', 'the accepted managed pad save stays in the shell');
   let reloaded = false;
   for (let attempt = 0; attempt < 10 && !reloaded; attempt++) {
     const loaded = page.waitForEvent('load', {timeout: 2_000}).then(() => true, () => false);
@@ -359,6 +380,9 @@ test('a sampler resample from the shell refreshes Arrange and the Code lens', {t
   await page.keyboard.press('1');
   const hits = async () => JSON.parse(await page.locator('[data-sampler-resample] input[name=performance]').inputValue()).hits.length;
   await page.waitForFunction(() => JSON.parse(document.querySelector('[data-sampler-resample] input[name=performance]').value).hits.length === 1);
+  // Recording has a 100 ms lead-in and rounds hits to the next sixteenth.
+  // Let the scheduled hit start; Stop intentionally cancels future hits.
+  await page.waitForTimeout(250);
   await page.getByRole('button', {name: 'Stop pads', exact: true}).click();
   assert.equal(await hits(), 1);
   // The unsaved performance is protected from an automatic refresh.
@@ -369,7 +393,11 @@ test('a sampler resample from the shell refreshes Arrange and the Code lens', {t
   const documents = requests.filter(request => request === 'GET /studio').length;
   await page.locator('[data-sampler-resample] form [name=newName]').fill('shell-print');
   await page.getByRole('button', {name: 'Resample performance', exact: true}).click();
-  await page.waitForFunction(() => document.querySelector('#studio-code textarea')?.value.includes('shell-print'), null, {timeout: 60_000});
+  await page.waitForFunction(() => {
+    const status = document.querySelector('[data-sampler-status]')?.textContent || '';
+    if (status.startsWith('Resampling failed')) throw new Error(status);
+    return document.querySelector('#studio-code textarea')?.value.includes('shell-print');
+  }, null, {timeout: 60_000});
   assert.ok(requests.filter(request => request === 'GET /studio').length > documents, 'the shell refreshed by itself');
   assert.ok(!(await page.locator('#studio-refresh-notice').isVisible()), 'no notice after the accepted resample');
   await page.close();

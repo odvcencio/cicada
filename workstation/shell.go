@@ -326,15 +326,26 @@ func shellLinks(current *url.URL, node gosx.Node) gosx.Node {
 // return target in the legacy form "/?panel=<name>&<state>"; when the form was
 // submitted from the shell, the target becomes the /studio equivalent.
 func shellReturn(r *http.Request) {
-	if r.PostForm == nil && strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
-		_ = r.ParseForm()
+	from, ok := shellOrigin(r)
+	if !ok {
+		return
+	}
+	if r.PostForm == nil {
+		switch contentType := r.Header.Get("Content-Type"); {
+		case strings.HasPrefix(contentType, "multipart/form-data"):
+			// GoSX's managed forms send FormData, including forms without files.
+			// Parse before rewriting their return target; the action handler has
+			// not populated PostForm yet. The app bounds and cleans up the body.
+			_ = r.ParseMultipartForm(2 << 20)
+		case strings.HasPrefix(contentType, "application/x-www-form-urlencoded"):
+			_ = r.ParseForm()
+		}
 	}
 	if r.PostForm == nil {
 		return
 	}
 	values := r.PostForm[action.ReturnTargetField]
-	from, ok := shellOrigin(r)
-	if len(values) == 0 || !ok {
+	if len(values) == 0 {
 		return
 	}
 	rewritten := shellDestination(from, values[0], true)

@@ -303,6 +303,52 @@ func TestShellPanelFormsReturnToTheShell(t *testing.T) {
 	}
 }
 
+func TestShellManagedMultipartFormsReturnToTheShell(t *testing.T) {
+	address, client, edits := testApp(t)
+	csrf := tokenFromPage(t, getPage(t, client, address+"/studio?tab=session&dock=device"))
+	for _, fromShell := range []bool{true, false} {
+		var body bytes.Buffer
+		form := multipart.NewWriter(&body)
+		for key, value := range map[string]string{
+			"csrf_token": csrf, "revision": "current", "bankRevision": "bank-current",
+			"action": "effects", "preset": "clean", "__gosx_return_to": "/?panel=sampler&pad=1",
+		} {
+			if err := form.WriteField(key, value); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := form.Close(); err != nil {
+			t.Fatal(err)
+		}
+		req, _ := http.NewRequest(http.MethodPost, address+"/__actions/sampler", &body)
+		req.Header.Set("Content-Type", form.FormDataContentType())
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("Origin", address)
+		req.Header.Set("X-CSRF-Token", csrf)
+		referer, want := "/?panel=sampler", "/?panel=sampler&pad=1"
+		if fromShell {
+			referer, want = "/studio?tab=session&dock=device&file=b.cicada", "/studio?dock=device&file=b.cicada&pad=1&tab=session"
+		}
+		req.Header.Set("Referer", address+referer)
+		response, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var result action.Result
+		err = json.NewDecoder(response.Body).Decode(&result)
+		response.Body.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.StatusCode != http.StatusSeeOther || !result.OK || result.Redirect != want {
+			t.Errorf("managed form from %s: status=%d result=%+v, want redirect %q", referer, response.StatusCode, result, want)
+		}
+	}
+	if len(*edits) != 2 {
+		t.Errorf("writes=%d, want one per accepted submit", len(*edits))
+	}
+}
+
 // shellPost submits a form the way a mounted panel does from the given page.
 func shellPost(t *testing.T, client *http.Client, address, route string, form url.Values, referer string) *http.Response {
 	t.Helper()
