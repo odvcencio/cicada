@@ -1,6 +1,10 @@
-//go:build windows
+//go:build windows || darwin
 
 package main
+
+// The desktop host shared by Windows and macOS. Everything that calls the
+// operating system directly lives in host_windows.go and host_darwin.go:
+// defaultDataDir, webViewDataDir, hideConsole and showError.
 
 import (
 	"context"
@@ -11,13 +15,10 @@ import (
 	"html"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
-	"unsafe"
 
 	"m31labs.dev/gosx/desktop"
 	"m31labs.dev/gosx/desktop/sidecar"
@@ -59,22 +60,22 @@ func main() {
 func run() error {
 	started := time.Now()
 	flags := flag.NewFlagSet("cicada-studio", flag.ContinueOnError)
-	cicadaPath := flags.String("cicada", "", "path to cicada.exe (default: next to this program, then PATH)")
+	cicadaPath := flags.String("cicada", "", "path to the cicada executable (default: next to this program, then PATH)")
 	audio := flags.String("audio", "", "audio backend passed to cicada studio: tymbal, oto, or null")
-	dataDir := flags.String("data-dir", "", "folder for settings, logs, and the WebView2 profile")
-	mute := flags.Bool("mute", false, "mute the Studio page (tests)")
-	devTools := flags.Bool("devtools", false, "enable developer tools (F12)")
+	dataDir := flags.String("data-dir", "", "folder for settings and logs (and the WebView2 profile on Windows)")
+	mute := flags.Bool("mute", false, "mute the Studio page (tests; no effect on macOS)")
+	devTools := flags.Bool("devtools", false, "enable developer tools (F12 on Windows, the context menu on macOS)")
 	smokeOut := flags.String("smoke-out", "", "write a startup report to this JSON file and exit once Studio loads (tests)")
 	smokeHold := flags.Duration("smoke-hold", 1500*time.Millisecond, "with --smoke-out, how long to keep Studio open after it loads")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
 	}
 	if *dataDir == "" {
-		base, err := os.UserCacheDir() // %LOCALAPPDATA% on Windows
+		dir, err := defaultDataDir()
 		if err != nil {
 			return err
 		}
-		*dataDir = filepath.Join(base, "Cicada Studio")
+		*dataDir = dir
 	}
 	if err := os.MkdirAll(filepath.Join(*dataDir, "logs"), 0o755); err != nil {
 		return err
@@ -113,7 +114,7 @@ func run() error {
 		Version:          buildVersion,
 		HTML:             statusPage("Starting Cicada Studio", filepath.Base(score)),
 		BackgroundColor:  backgroundColor,
-		UserDataDir:      filepath.Join(*dataDir, "WebView2"),
+		UserDataDir:      webViewDataDir(*dataDir),
 		MuteAudio:        *mute,
 		DevTools:         *devTools,
 		SingleInstance:   *smokeOut == "",
@@ -122,7 +123,7 @@ func run() error {
 			h.onNavigationCompleted(event)
 		},
 		// Start the audio engine once this process owns the window, while
-		// WebView2 starts. Starting it earlier would also start it in a
+		// the web view starts. Starting it earlier would also start it in a
 		// second launch that only forwards its file and exits.
 		OnWindowCreated: func(*desktop.Window) { go h.open(score) },
 		OnClose:         h.shutdown,
@@ -130,10 +131,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if err := h.app.SetMinSize(800, 560); err != nil {
+	if err := h.optionalChrome("minimum window size", h.app.SetMinSize(800, 560)); err != nil {
 		return err
 	}
-	if err := h.app.SetMenuBar(h.menu()); err != nil {
+	if err := h.optionalChrome("menu bar", h.app.SetMenuBar(h.menu())); err != nil {
 		return err
 	}
 	// Installed copies (Setup writes install.json beside the executable)
@@ -157,6 +158,18 @@ func run() error {
 		h.writeSmoke()
 	}
 	return runErr
+}
+
+// optionalChrome passes through the result of a window or menu call that a
+// platform backend may not provide yet. desktop.ErrUnsupported (the GoSX
+// darwin backend before its menu slice) is logged and skipped so Studio still
+// opens without that chrome; any other error stops startup.
+func (h *host) optionalChrome(what string, err error) error {
+	if errors.Is(err, desktop.ErrUnsupported) {
+		fmt.Fprintf(h.logOut, "%s host: %s skipped: %v\n", time.Now().Format(time.RFC3339), what, err)
+		return nil
+	}
+	return err
 }
 
 // open stops the current Studio process, starts one for score, and shows it.
@@ -430,10 +443,6 @@ func documentsDir() string {
 	return "."
 }
 
-func hideConsole(cmd *exec.Cmd) {
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000}
-}
-
 func statusPage(title, detail string) string {
 	return `<!doctype html><html><head><meta charset="utf-8"><style>body{margin:0;height:100vh;display:grid;place-items:center;background:` + backgroundColor +
 		`;color:#e2e9dc;font:16px/1.5 "Segoe UI",system-ui,sans-serif}p{color:#a6b5a6}</style></head><body><main><h1>` +
@@ -442,16 +451,4 @@ func statusPage(title, detail string) string {
 
 func errorPage(score string, err error) string {
 	return statusPage("Cicada Studio stopped", score+": "+err.Error()+". Use View > Reload Studio to try again; details are in the studio log.")
-}
-
-var (
-	user32          = syscall.NewLazyDLL("user32.dll")
-	procMessageBoxW = user32.NewProc("MessageBoxW")
-)
-
-func showError(title, message string) {
-	t, _ := syscall.UTF16PtrFromString(title)
-	m, _ := syscall.UTF16PtrFromString(message)
-	const mbIconError, mbSetForeground = 0x10, 0x10000
-	procMessageBoxW.Call(0, uintptr(unsafe.Pointer(m)), uintptr(unsafe.Pointer(t)), mbIconError|mbSetForeground)
 }
