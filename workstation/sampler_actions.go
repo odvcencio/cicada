@@ -154,5 +154,5 @@ func (s *studioApp) importSampler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, string(data), response.StatusCode)
 		return
 	}
-	http.Redirect(w, r, "/?panel=sampler&pad=1", http.StatusSeeOther)
+	http.Redirect(w, r, shellRedirect(r, "/?panel=sampler&pad=1"), http.StatusSeeOther)
 }

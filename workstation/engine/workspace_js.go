@@ -195,7 +195,9 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 	go u.run()
 	go u.watchFiles()
 	go u.watchAudioControls()
-	go u.watchCapture()
+	busy := func() bool { return u.busy.Load() }
+	captureBusy.Store(&busy)
+	releaseCapture := capturePublisher.acquire()
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
@@ -206,6 +208,7 @@ func mountWorkspace(host enginewasm.Context) (enginewasm.Handle, error) {
 			event.target.Call("removeEventListener", event.name, event.callback, true)
 			event.callback.Release()
 		}
+		releaseCapture()
 		watch.Dispose()
 		refreshWatch.Dispose()
 		u.clearQueue()

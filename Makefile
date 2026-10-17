@@ -115,6 +115,11 @@ test-collaboration:
 test-studio-continuity:
 	node --test workstation/browser/continuity.test.cjs
 
+.PHONY: test-studio-shell
+# Requires a fresh Studio process with a disposable score; this suite edits the score.
+test-studio-shell:
+	node --test workstation/browser/shell.test.cjs
+
 .PHONY: test-studio-placements
 test-studio-placements:
 	node --test workstation/browser/placements.test.cjs

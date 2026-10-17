@@ -98,7 +98,7 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	if err == nil && destination != "" {
 		// The framework captures native return targets before invoking the
 		// handler. Choose the new inspected step explicitly after a success.
-		ctx.RedirectWithMessage(destination, "")
+		ctx.RedirectWithMessage(shellRedirect(ctx.Request, destination), "")
 	}
 	return err
 }

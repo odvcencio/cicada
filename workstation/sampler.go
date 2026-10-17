@@ -22,6 +22,9 @@ type samplerState struct {
 }
 
 func (s *studioApp) sampler(ctx *server.Context, v workspace, csrf string) gosx.Node {
+	if v.Project == nil {
+		return failure(fmt.Errorf("save a valid score to use this panel"))
+	}
 	var state samplerState
 	if err := s.backend.call(ctx.Request.Context(), http.MethodGet, "/api/sampler", nil, &state); err != nil {
 		return failure(err)
