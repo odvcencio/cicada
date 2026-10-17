@@ -55,11 +55,19 @@ func EngineFingerprint(cfg engine.Config, bars int) (Fingerprint, error) {
 	if !player.Push(cmd.Command{Op: cmd.OpPlay, Track: 0xff}) {
 		return result, fmt.Errorf("fingerprint play command was rejected")
 	}
+	var message cmd.Message
 	left := make([]float32, int(sampleCount))
 	right := make([]float32, int(sampleCount))
 	for at := 0; at < len(left); {
 		frames := min(cfg.MaxBlock, len(left)-at)
 		player.Render(left[at:at+frames], right[at:at+frames])
+		// Drain the status messages, as a host does. Left unread they fill the
+		// message ring, and what a fingerprint hears would then depend on its size.
+		for player.Poll(&message) {
+			if message.Kind == cmd.Fault {
+				return result, fmt.Errorf("fingerprint render faulted with code %d", message.A)
+			}
+		}
 		at += frames
 	}
 	return FingerprintStereo(left, right, cfg.SampleRate)

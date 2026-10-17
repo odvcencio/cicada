@@ -3,11 +3,13 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math"
 	"net/http"
+	"sync/atomic"
 	"syscall/js"
 	"time"
 
@@ -25,12 +27,31 @@ type captureUpdate struct {
 // on every panel. Navigating away from Session does not lose recording truth.
 var nativeCapture = signal.New(captureUpdate{})
 
-func (u *workspaceUI) watchCapture() {
+// capturePublisher publishes nativeCapture and syncs the transport controls.
+// The workspace engine (panel application) and the Takes engine (shell) both
+// acquire it, so a fresh /studio load has a publisher without the workspace.
+var capturePublisher = &sharedLoop{start: func(ctx context.Context) { go publishCapture(ctx) }}
+
+// captureBusy lets the workspace engine hold transport buttons disabled while
+// one of its own requests is in flight.
+var captureBusy atomic.Pointer[func() bool]
+
+func captureRoot() js.Value {
+	document := js.Global().Get("document")
+	for _, id := range []string{"cicada-workspace", "studio-shell"} {
+		if root := document.Call("getElementById", id); !root.IsNull() {
+			return root
+		}
+	}
+	return js.Null()
+}
+
+func publishCapture(ctx context.Context) {
 	client := &http.Client{Timeout: 2 * time.Second}
 	ticker := time.NewTicker(300 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		request, err := http.NewRequestWithContext(u.ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/capture", nil)
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, js.Global().Get("location").Get("origin").String()+"/api/capture", nil)
 		if err != nil {
 			return
 		}
@@ -44,26 +65,30 @@ func (u *workspaceUI) watchCapture() {
 			}
 			response.Body.Close()
 		}
-		if u.closed.Load() || u.ctx.Err() != nil {
+		if ctx.Err() != nil {
 			return
 		}
 		update := captureUpdate{State: state, Ready: true, Error: err != nil}
 		nativeCapture.Set(update)
-		if !update.Error {
-			u.syncCaptureControls(state)
+		if root := captureRoot(); !update.Error && !root.IsNull() {
+			busy := false
+			if fn := captureBusy.Load(); fn != nil {
+				busy = (*fn)()
+			}
+			syncCaptureControls(root, state, busy)
 		}
 		select {
-		case <-u.ctx.Done():
+		case <-ctx.Done():
 			return
 		case <-ticker.C:
 		}
 	}
 }
 
-func (u *workspaceUI) syncCaptureControls(state control.CaptureState) {
+func syncCaptureControls(root js.Value, state control.CaptureState, busy bool) {
 	locked := state.Active != "" && state.Capture != nil && (state.Capture.Recording || state.Capture.Completed)
-	u.root.Call("setAttribute", "data-recording-transport-locked", fmt.Sprint(locked))
-	buttons := u.root.Call("querySelectorAll", "form[action='/__actions/transport'] button")
+	root.Call("setAttribute", "data-recording-transport-locked", fmt.Sprint(locked))
+	buttons := root.Call("querySelectorAll", "form[action='/__actions/transport'] button")
 	for i := 0; i < buttons.Length(); i++ {
 		button := buttons.Index(i)
 		action := ""
@@ -89,12 +114,12 @@ func (u *workspaceUI) syncCaptureControls(state control.CaptureState) {
 				button.Call("setAttribute", "data-capture-transport-lock", fmt.Sprint(button.Get("disabled").Bool()))
 			}
 			button.Set("disabled", true)
-		} else if !u.busy.Load() && button.Call("hasAttribute", "data-capture-transport-lock").Bool() {
+		} else if !busy && button.Call("hasAttribute", "data-capture-transport-lock").Bool() {
 			button.Set("disabled", workspaceAttr(button, "data-capture-transport-lock") == "true")
 			button.Call("removeAttribute", "data-capture-transport-lock")
 		}
 	}
-	if hint := u.root.Call("querySelector", "[data-transport-capture-hint]"); workspacePresent(hint) {
+	if hint := root.Call("querySelector", "[data-transport-capture-hint]"); workspacePresent(hint) {
 		hint.Set("hidden", !locked)
 	}
 }

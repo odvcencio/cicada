@@ -14,13 +14,6 @@ import (
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 )
 
-type curveEditorPoint struct {
-	Tick       int64
-	Value      float64
-	Shape      string
-	Curve      float64
-	OriginalAt string
-}
 type curveEditorProps struct {
 	Path, Unit, Scale string
 	Min, Max          float64
@@ -108,7 +101,15 @@ func mountAutomationCurve(host enginewasm.Context) (enginewasm.Handle, error) {
 		}
 	})
 	u.root.Call("setAttribute", "data-automation-ready", "true")
+	// The draft is the editor's points. Gestures, arrow keys and field edits
+	// all change them without a form edit event, so compare the points
+	// themselves with what the server rendered. A confirmed save re-renders the
+	// props and resets both; a discarded drag restores the point.
+	releaseUnsaved := holdUnsavedWork(fmt.Sprintf("automation-curve:%s:%p", p.Path, u), func() bool {
+		return !u.closed && curvePointsDiffer(u.points, u.props.Points)
+	})
 	return enginewasm.HandleFunc(func() {
+		releaseUnsaved()
 		u.closed = true
 		for _, b := range u.bindings {
 			b.node.Call("removeEventListener", b.event, b.fn)

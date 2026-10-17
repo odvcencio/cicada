@@ -137,6 +137,33 @@ func gcd(a, b int64) int64 {
 	return a
 }
 
+// SceneBindingValid reports whether OpSetSceneBinding c names a scene, track
+// and clip this engine has. It is the check applySceneBindingCommand makes, so
+// a host can refuse a batch that would fault the engine playing now. It reads
+// only state no queued command changes (scene count, track count, voice kinds and
+// the clip table), so unlike pattern edits it does not depend on commands still
+// waiting in the ring or the pending queue.
+func (e *Engine) SceneBindingValid(c cmd.Command) bool {
+	track, mode, clip := int(c.Arg0&0xff), SceneMode(c.Arg0>>8&0xff), int(c.Arg1)
+	if int(c.Index) >= len(e.scenes) || track >= e.tracks {
+		return false
+	}
+	return mode != SceneClip || clip < len(e.clipSpecs) && e.voices[track].kind == VoiceAudio
+}
+
+// applySceneBindingCommand rewrites one scene binding in the engine's private
+// copy of the scene table. It takes effect at the scene's next launch, whether
+// from a command, the song or a loop restart; a scene already launched keeps
+// what it applied. The command validation bounds mode and slot (every slot
+// below 16 exists).
+func (e *Engine) applySceneBindingCommand(c cmd.Command) {
+	if !e.SceneBindingValid(c) {
+		e.fault(FaultSceneBinding)
+		return
+	}
+	e.scenes[c.Index].Track[c.Arg0&0xff] = SceneBinding{Mode: SceneMode(c.Arg0 >> 8 & 0xff), Slot: uint8(c.Arg0 >> 16 & 0xff), Clip: uint16(c.Arg1)}
+}
+
 // launchScene is the manual path (a launch command or the director). While a
 // song carries scene tempos, the song owns the tempo: a manual launch changes
 // patterns and parameters but never the tempo, so the engine and the tempo
@@ -298,7 +325,7 @@ func (e *Engine) startSong() {
 		return
 	}
 	if tick != e.transport.Tick() {
-		_ = e.transport.SeekTick(tick)
+		_ = e.seekTransport(tick)
 	}
 	e.restoreSourceChains(tick)
 	entry := e.schedule[index]

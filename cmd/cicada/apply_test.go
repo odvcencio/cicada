@@ -66,7 +66,7 @@ func captureApply(t *testing.T, args ...string) (string, error) {
 }
 
 func TestApplyDiffWriteAndStudioParity(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	path, intents, before := applyFixture(t)
 	files := noopFiles(t, filepath.Dir(path))
 	diff, err := captureApply(t, path, intents)
@@ -118,7 +118,7 @@ func TestApplyDiffWriteAndStudioParity(t *testing.T) {
 func TestApplyWritePreservesSymlinkTargets(t *testing.T) {
 	for _, kind := range []string{"absolute", "relative", "outside-project", "project-directory"} {
 		t.Run(kind, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			isolateState(t)
 			path, intents, before := applyFixture(t)
 			// An alias outside the project is a loose score, so its authored
 			// edition must be sufficient without the target's manifest.
@@ -212,7 +212,7 @@ func TestApplyRefusesConcurrentSaveAtExchange(t *testing.T) {
 }
 
 func TestApplyAuxiliaryUpgradeDryRunAndWrite(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	path := studioTestPath(t, studioScore)
 	manifest := filepath.Join(filepath.Dir(path), "cicada.mod")
 	if err := os.WriteFile(manifest, []byte("project cli\ncicada 1\n"), 0600); err != nil {
@@ -267,7 +267,7 @@ func TestApplyConvertSongConvertsTemplateAndRefusesRestartingChanceSteps(t *test
 // The intents that replaced the last direct Studio writers are plain JSON for
 // `cicada apply`, and --write records them in the edit log.
 func TestApplyAcceptsArrangementAndAutomationPointIntents(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.cicada")
 	source := "cicada 2\ntempo 120\ntrack bass acid { cutoff=700Hz }\npattern riff acid steps=4 { 1 . 5 . }\narrange {\n  place a bass riff { at = @1.1.1 length = 4bars }\n  marker m { at = @3.1.1 }\n}\nautomate bass.cutoff {\n  @1.1.1 400Hz\n}\n"

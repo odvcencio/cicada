@@ -17,7 +17,7 @@ import (
 )
 
 func TestStudioIntentsCommitDryRunAndNoop(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	_, handler, path := proposalFixture(t, studioMixerScore)
 	env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(studioMixerScore)), Author: "tester", Session: "intents-test", DryRun: true, Intents: []edits.Intent{
 		&edits.SetParam{Entity: "param:bass.level", Value: json.RawMessage(`-3`)},
@@ -133,7 +133,7 @@ func TestStudioIntentsCanonicalConflictAndInvalidCandidate(t *testing.T) {
 }
 
 func TestStudioIntentsAuxiliaryOnlyUpgradeMatchesSequentialHTTP(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for _, first := range []string{"setparam", "addeffect"} {
 		t.Run(first, func(t *testing.T) {
 			source := strings.Replace(studioScore, "track bass acid {}", "track bass acid { level = -6dB }", 1)

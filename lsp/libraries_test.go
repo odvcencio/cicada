@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/internal/isolatetest"
 	"m31labs.dev/cicada/project"
 )
 
@@ -126,7 +127,7 @@ func TestLibraryImportCompletionUsesProjectLibraryRoot(t *testing.T) {
 }
 
 func TestStandardLibraryDefinitionsHaveReadableSources(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	state := isolatetest.State(t)
 	s, main, _ := libraryServer(t)
 	for _, test := range []struct{ library, binding, reference string }{
 		{"std/synth", "track lead synth.glassbass {}", "synth.glassbass"},
@@ -146,6 +147,11 @@ func TestStandardLibraryDefinitionsHaveReadableSources(t *testing.T) {
 			filename, ok := scorePathFromURI(uri)
 			if !ok {
 				t.Fatalf("invalid URI: %s", uri)
+			}
+			// The editor cache must follow the isolated directory on every platform,
+			// including macOS, where XDG_CACHE_HOME is ignored.
+			if !strings.HasPrefix(filename, state+string(filepath.Separator)) {
+				t.Fatalf("std source cached outside the isolated state directory %s: %s", state, filename)
 			}
 			data, err := os.ReadFile(filename)
 			if err != nil || !bytes.Contains(data, []byte(strings.Split(test.reference, ".")[1])) {
@@ -167,7 +173,7 @@ func TestStandardLibraryDefinitionsHaveReadableSources(t *testing.T) {
 }
 
 func TestStandardLibraryDefinitionDidOpenUsesLibraryContext(t *testing.T) {
-	t.Setenv("XDG_CACHE_HOME", t.TempDir())
+	isolatetest.State(t)
 	s, main, _ := libraryServer(t)
 	source := []byte("import \"std/synth\"\ntrack bass synth.glassbass {}\npattern riff { 1 . 5 . }\nscene main { bass = riff }\nsong { main }\n")
 	path := mustScorePath(t, main)

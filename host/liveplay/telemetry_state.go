@@ -19,8 +19,11 @@ type telemetryState struct {
 	tick       atomic.Int64
 	playing    atomic.Bool
 	trackCount atomic.Uint32
-	tracks     [engine.MaxTracks][2]atomic.Uint32 // peak, RMS as float32 bits
-	written    atomic.Bool                        // set once the render thread has stored a position
+	tracks     [engine.MaxTracks][4]atomic.Uint32 // peak L, peak R, RMS L, RMS R as float32 bits
+	compGR     atomic.Uint32                      // float32 bits, dB
+	limiterGR  atomic.Uint32                      // float32 bits, dB
+	over       atomic.Bool
+	written    atomic.Bool // set once the render thread has stored a position
 }
 
 func (t *telemetryState) storeTransport(sample, tick int64, playing bool) {
@@ -36,9 +39,15 @@ func (t *telemetryState) storeMeters(f *MeterFrame) {
 	t.seq.Add(1)
 	t.trackCount.Store(uint32(f.TrackCount))
 	for i := range t.tracks {
-		t.tracks[i][0].Store(math.Float32bits(f.Tracks[i].Peak))
-		t.tracks[i][1].Store(math.Float32bits(f.Tracks[i].RMS))
+		track := &f.Tracks[i]
+		t.tracks[i][0].Store(math.Float32bits(track.PeakL))
+		t.tracks[i][1].Store(math.Float32bits(track.PeakR))
+		t.tracks[i][2].Store(math.Float32bits(track.RMSL))
+		t.tracks[i][3].Store(math.Float32bits(track.RMSR))
 	}
+	t.compGR.Store(math.Float32bits(max(0, f.CompGR)))
+	t.limiterGR.Store(math.Float32bits(max(0, f.LimiterGR)))
+	t.over.Store(f.PreLimiterOver())
 	t.seq.Add(1)
 }
 
@@ -56,9 +65,12 @@ func (t *telemetryState) load() (sample, tick int64, playing bool, meters Meters
 		sample, tick, playing = t.sample.Load(), t.tick.Load(), t.playing.Load()
 		meters = MetersFrame{TrackCount: uint8(t.trackCount.Load())}
 		for i := range t.tracks {
-			p, r := math.Float32frombits(t.tracks[i][0].Load()), math.Float32frombits(t.tracks[i][1].Load())
-			meters.Tracks[i] = TrackMeter{PeakL: p, PeakR: p, RMSL: r, RMSR: r}
+			meters.Tracks[i] = TrackMeter{
+				PeakL: math.Float32frombits(t.tracks[i][0].Load()), PeakR: math.Float32frombits(t.tracks[i][1].Load()),
+				RMSL: math.Float32frombits(t.tracks[i][2].Load()), RMSR: math.Float32frombits(t.tracks[i][3].Load()),
+			}
 		}
+		meters.Master = MasterMeter{CompGRDB: math.Float32frombits(t.compGR.Load()), LimiterGRDB: math.Float32frombits(t.limiterGR.Load()), PreLimiterOver: t.over.Load()}
 		if t.seq.Load() == before {
 			return sample, tick, playing, meters, meters.TrackCount != 0, haveTransport, true
 		}
@@ -105,7 +117,7 @@ func (p *Player) PublishTelemetry() {
 	}
 	if haveMeters {
 		loud := p.Loudness()
-		meters.Master = MasterMeter{MomentaryLUFS: float32(loud.MomentaryLUFS), ShortTermLUFS: float32(loud.ShortTermLUFS), TruePeakDBTP: float32(loud.TruePeakDBTP)}
+		meters.Master.MomentaryLUFS, meters.Master.ShortTermLUFS, meters.Master.TruePeakDBTP = float32(loud.MomentaryLUFS), float32(loud.ShortTermLUFS), float32(loud.TruePeakDBTP)
 		pub.PublishMeters(meters)
 	}
 }

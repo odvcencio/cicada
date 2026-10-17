@@ -26,7 +26,7 @@ func TestScoreWriterLogicalIdentity(t *testing.T) {
 			manifestKind := map[bool]string{false: "implicit", true: "explicit"}[explicit]
 			for _, command := range []string{"apply", "fix", "fmt", "studio"} {
 				t.Run(kind+"/"+manifestKind+"/"+command, func(t *testing.T) {
-					t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+					isolateState(t)
 					root := t.TempDir()
 					entry := "track bass acid { send_a = 0.2 }\nfx room delay {}\nscene main { bass=pulse }\nsong { main }\n"
 					part := "pattern pulse acid steps=4 { 1 . 5 . }\n"
@@ -152,7 +152,7 @@ func TestScoreWriterLogicalIdentity(t *testing.T) {
 
 // A dry run reads under the declared name, prints a diff against it, and writes nothing.
 func TestApplyDryRunKeepsDeclaredLink(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	root := t.TempDir()
 	source := "track bass acid {}\npattern p acid steps=1 { 1 }\nscene main { bass=p }\nsong { main }\n"
 	for name, data := range map[string]string{"cicada.mod": "project dry\ncicada 1\nentry \"main.cicada\"\nsource \"parts.cicada\"\n", "main.cicada.target": source, "parts.cicada": "// part\n"} {

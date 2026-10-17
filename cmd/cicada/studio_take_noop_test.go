@@ -13,7 +13,7 @@ import (
 )
 
 func TestTakeRoutesAcceptUnchangedSelection(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for _, action := range []string{"select", "recover"} {
 		t.Run(action, func(t *testing.T) {
 			s := newTakeStudio(t, t.TempDir())

@@ -62,7 +62,7 @@ func (p renderProposalProject) stage(t *testing.T, entry string, intent edits.In
 }
 
 func TestRenderCheckedProposalsAreReverifiedWhenProjectInputsChange(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	cases := []struct {
 		name, entry, peer string
 		intent            edits.Intent
@@ -133,7 +133,7 @@ func TestRenderCheckedProposalsAreReverifiedWhenProjectInputsChange(t *testing.T
 // A peer change after staging that makes the intent invalid (a 3-step pattern
 // puts tick 7680 off a pattern boundary) is refused when the envelope runs again.
 func TestRenderCheckedProposalIsRefusedWhenTheIntentNoLongerHolds(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	entry := "cicada 2\narrange {\n  place run bass pulse {\n    at = @1.1.1\n    length = 4bars\n  }\n}\n"
 	p := newRenderProposalProject(t, entry, proposalSplitPart)
 	id := p.stage(t, entry, &edits.SplitClip{Entity: "placement:run", AtTick: 7680})
@@ -153,7 +153,7 @@ func TestRenderCheckedProposalIsRefusedWhenTheIntentNoLongerHolds(t *testing.T) 
 // rendered. It is caught before anything is written: the commit tail refuses a
 // direct request, and a staged proposal is run again on acceptance and refused.
 func TestProjectChangeAfterTheSnapshotIsCaughtBeforeAnyWrite(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	const cause = "the project changed during the render check; try again"
 	for _, route := range []string{"/api/intents", "/api/proposals"} {
 		t.Run(route, func(t *testing.T) {
@@ -212,7 +212,7 @@ func TestRenderIdentityIsRecheckedBeforeTheCommit(t *testing.T) {
 // V5: the peer changes while acceptance compiles the candidate, after the
 // acceptance-time identity comparison. The commit tail must still refuse.
 func TestPeerChangeDuringAcceptanceCompileIsRefusedByTheCommitTail(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
 	id := p.stage(t, proposalSongMain, &edits.ConvertSongToArrange{})
 	previous := studioCompile
@@ -240,7 +240,7 @@ func TestPeerChangeDuringAcceptanceCompileIsRefusedByTheCommitTail(t *testing.T)
 // Every mutation that carries a verified identity is checked in the tail, and one
 // that was render-checked without an identity is refused.
 func TestCommitTailRefusesStaleOrMissingRenderIdentity(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
 	s, err := newStudio(p.path)
 	if err != nil {
@@ -280,7 +280,7 @@ func TestCommitTailRefusesStaleOrMissingRenderIdentity(t *testing.T) {
 // The renders read a snapshot, so what was rendered is what a fresh comparison
 // of the original project renders: here the chance steps, which are refused.
 func TestPeerRewrittenAndRestoredDuringTheRenderCannotApproveAConversion(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for _, route := range []string{"/api/intents", "/api/proposals"} {
 		t.Run(route, func(t *testing.T) {
 			p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalChance))
@@ -309,7 +309,7 @@ func TestPeerRewrittenAndRestoredDuringTheRenderCannotApproveAConversion(t *test
 // verified identity describes that working score, so removing the sample after
 // acceptance compiles is caught by the commit tail.
 func TestRenderIdentityCoversDependenciesIntroducedByTheBatch(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.cicada")
 	original := "cicada 2\ntrack bass acid {}\npattern melody { c3 . c4 . }\nscene a { bass = melody }\nscene b { bass = melody }\nsong { a*2 b*2 }\n"
@@ -367,7 +367,7 @@ func dirNames(t *testing.T, dir string) []string {
 // change at the publication boundary, after the temporary file is written and
 // just before the exchange, must abort the write and leave nothing behind.
 func TestPublicationBoundaryVetoesAStaleRenderApproval(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	const cause = "the project changed during the render check; try again"
 	boundary := func(t *testing.T, peer string) {
 		t.Cleanup(func() { studioPublishSeam = nil })
@@ -425,7 +425,7 @@ func TestPublicationBoundaryVetoesAStaleRenderApproval(t *testing.T) {
 // A manifest discovered on disk after the renders changes the resolved project.
 // The identity includes the resolution, so the commit tail refuses.
 func TestNewlyDiscoveredManifestIsRefusedByTheCommitTail(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	dir := t.TempDir()
 	path := filepath.Join(dir, "main.cicada")
 	loose := "title \"t\"\ntempo 130\ntrack bass acid {}\npattern hits { c3 . c4 . }\nscene a { bass = hits }\nscene b { bass = hits }\nsong { a*2 b*2 }\n"
@@ -452,7 +452,7 @@ func TestNewlyDiscoveredManifestIsRefusedByTheCommitTail(t *testing.T) {
 
 // A dry run says a conversion is safe, so it is held to the same freshness.
 func TestStaleDryRunIsNotReportedConvertible(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	p := newRenderProposalProject(t, proposalSongMain, proposalSongPeer(proposalPlain))
 	t.Cleanup(func() { rendercheck.AfterSnapshot = nil })
 	rendercheck.AfterSnapshot = func() { _ = os.WriteFile(p.peer, []byte(proposalSongPeer(proposalChance)), 0o600) }
