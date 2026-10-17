@@ -71,7 +71,7 @@ func compareParallelRender(t *testing.T, cfg engine.Config, frames int, streamed
 	// Match the engine's own parallel tests: a loaded machine can starve a
 	// lane for longer than the 100 ms production floor, which retires the pool
 	// and silences the output. This changes the test, not production behavior.
-	cfg.ParallelWaitFloor = time.Second
+	cfg.ParallelWaitFloor = 30 * time.Second
 	parallel, err := engine.New(cfg)
 	if err != nil {
 		t.Fatal(err)

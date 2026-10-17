@@ -26,7 +26,10 @@ import (
 )
 
 type studioTransport struct {
-	takeInputOpener   studioTakeInputOpener
+	takeInputOpener studioTakeInputOpener
+	// healthTicks starts the health frame schedule. Tests replace it with a
+	// manual clock; nil selects a wall-clock ticker.
+	healthTicks       func(period time.Duration) (ticks <-chan time.Time, stop func())
 	path              string
 	audioBackend      string
 	mu                sync.Mutex
@@ -442,7 +445,8 @@ func (t *studioTransport) startPrepared(index int, scene string, prepared *livep
 	stream.SetPublisher(t.telemetry)
 	stream.PublishTelemetry()
 	t.publishHealthLocked()
-	go t.watch(ctx, stream)
+	healthTicks, stopHealthTicks := t.startHealthTicks()
+	go t.watch(ctx, stream, healthTicks, stopHealthTicks)
 	return nil
 }
 
@@ -746,15 +750,26 @@ func (t *studioTransport) loudness() liveplay.LoudnessSnapshot {
 	return liveplay.LoudnessSnapshot{}
 }
 
-func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
+// healthFramePeriod is the interval between published health frames (twice a
+// second).
+const healthFramePeriod = 500 * time.Millisecond
+
+func (t *studioTransport) startHealthTicks() (<-chan time.Time, func()) {
+	if t.healthTicks != nil {
+		return t.healthTicks(healthFramePeriod)
+	}
+	ticker := time.NewTicker(healthFramePeriod)
+	return ticker.C, ticker.Stop
+}
+
+func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player, healthFrames <-chan time.Time, stopHealthFrames func()) {
 	ticker := time.NewTicker(100 * time.Millisecond)
 	health := time.NewTicker(time.Second)
 	telemetryTicker := time.NewTicker(40 * time.Millisecond)
-	healthFrames := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 	defer health.Stop()
 	defer telemetryTicker.Stop()
-	defer healthFrames.Stop()
+	defer stopHealthFrames()
 	for {
 		select {
 		case <-ctx.Done():
@@ -772,7 +787,7 @@ func (t *studioTransport) watch(ctx context.Context, stream *liveplay.Player) {
 			}
 			t.mu.Unlock()
 			stream.PublishTelemetry()
-		case <-healthFrames.C:
+		case <-healthFrames:
 			t.mu.Lock()
 			t.publishHealthLocked()
 			t.mu.Unlock()

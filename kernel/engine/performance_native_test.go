@@ -13,7 +13,7 @@ import (
 
 func performanceEngine(t testing.TB, tracks, frames, lanes int) *Engine {
 	t.Helper()
-	cfg := Config{SampleRate: 48000, MaxBlock: frames, Tracks: tracks, MaxVoices: tracks, BPMMilli: 120000, ParallelWaitFloor: time.Second}
+	cfg := Config{SampleRate: 48000, MaxBlock: frames, Tracks: tracks, MaxVoices: tracks, BPMMilli: 120000, ParallelWaitFloor: 30 * time.Second}
 	commands := make([]cmd.Command, tracks)
 	for track := 0; track < tracks; track++ {
 		cfg.Track[track].Kind = VoiceAcid
@@ -68,7 +68,7 @@ func TestNativeParallelFullRenderExactPCM(t *testing.T) {
 		defer a.Close()
 		defer b.Close()
 		// Race instrumentation is deliberately slower than device deadlines.
-		b.parallel.waitFloor = 1000000000
+		b.parallel.waitFloor = 30 * time.Second
 		al, ar, bl, br := make([]float32, frames), make([]float32, frames), make([]float32, frames), make([]float32, frames)
 		for block := 0; block < 10; block++ {
 			a.Render(al, ar)
