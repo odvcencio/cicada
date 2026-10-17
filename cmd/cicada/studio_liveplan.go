@@ -485,17 +485,17 @@ func replayEdits(edits []any, old, next *seq.Pattern, oldLanes, nextLanes *[drum
 		copied := *oldLanes
 		lanes = &copied
 	}
-	apply := func(c cmd.Command) bool {
+	accepts := func(c cmd.Command) bool {
 		return c.Validate(engine.MaxTracks) == nil && engine.ApplyPatternEdit(&slot, lanes, c, config) == nil
 	}
 	for _, edit := range edits {
 		c, _ := editCommand(edit)
-		if !apply(c) {
+		if !accepts(c) {
 			return seq.Pattern{}, nil, false
 		}
 		if step, ok := edit.(stepChange); ok && step.chord != nil {
 			chord, err := chordCommand(step)
-			if err != nil || !apply(chord) {
+			if err != nil || !accepts(chord) {
 				return seq.Pattern{}, nil, false
 			}
 		}

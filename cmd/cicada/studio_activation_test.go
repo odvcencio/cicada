@@ -476,9 +476,8 @@ func TestActivationPatchesSceneBindingWithoutReplacement(t *testing.T) {
 	s, stream := activationStudio(t, source)
 	renderStudioPreview(t, stream, 256)
 	response := httptest.NewRecorder()
-	s.apply(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, func(source []byte) ([]byte, error) {
-		return bytes.Replace(source, []byte("scene s3 { bass=b }"), []byte("scene s3 { bass=a }"), 1), nil
-	})
+	edited := strings.Replace(source, "scene s3 { bass=b }", "scene s3 { bass=a }", 1)
+	s.applyIntents(response, studioEdit{Revision: studioRevision(s.lastGoodSource)}, edits.Envelope{Intents: []edits.Intent{&edits.ReplaceText{Source: edited}}}, edits.ParamWriterAuto, nil)
 	if response.Code != http.StatusOK {
 		t.Fatal(response.Body.String())
 	}
