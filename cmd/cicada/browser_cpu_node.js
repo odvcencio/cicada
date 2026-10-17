@@ -1,3 +1,5 @@
+// Status ring: engine.MessageCapacity (512) messages of 16 bytes; a Go test keeps this equal.
+const MESSAGE_BYTES = 512 * 16;
 const fs = require('node:fs');
 
 function calibrateCPUClockResolutionMs(cpuUsage = process.cpuUsage, sampleCount = 4096) {
@@ -40,7 +42,7 @@ async function main() {
   const left = new Float32Array(x.memory.buffer, outPtr, 128);
   const right = new Float32Array(x.memory.buffer, outPtr + 128 * 4, 128);
   const copiedLeft = new Float32Array(128), copiedRight = new Float32Array(128);
-  const messages = new Uint8Array(x.memory.buffer, x.gosx_audio_msg_ptr(), 256 * 16);
+  const messages = new Uint8Array(x.memory.buffer, x.gosx_audio_msg_ptr(), MESSAGE_BYTES);
   const samples = new Float32Array(blockCount);
   const initialMemoryBytes = x.memory.buffer.byteLength;
   let warmMemoryBytes = initialMemoryBytes;

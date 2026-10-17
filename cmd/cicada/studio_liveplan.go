@@ -11,8 +11,11 @@ import (
 	"m31labs.dev/cicada/host/liveplay"
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/kernel"
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/fx"
+	"m31labs.dev/cicada/kernel/seq"
+	"m31labs.dev/cicada/kernel/voice/drum"
 	"m31labs.dev/cicada/project"
 )
 
@@ -68,10 +71,42 @@ type paramChange struct {
 	id     kernel.ParamID
 	value  float32
 }
+
+// stepChange sets one step of one pattern slot. chord is the additive payload
+// of the new step, or nil. A drum step carries its lane in packed.Note.
+type stepChange struct {
+	track, slot, index uint8
+	packed             uint32
+	chord              *seq.ChordStep
+}
+type lenChange struct{ track, slot, length uint8 }
+type metaChange struct {
+	track, slot uint8
+	grid, swing uint16
+	transpose   int8
+}
+
+// bindingChange rewrites one track's binding in one scene for its next launch.
+type bindingChange struct {
+	scene   uint16
+	track   uint8
+	binding engine.SceneBinding
+}
+
 type planDelta struct {
 	structural bool
 	reason     string
 	params     []paramChange
+	// edits holds stepChange, lenChange and metaChange values in the order that
+	// keeps every intermediate pattern valid; the engine applies them in order
+	// at one step boundary.
+	edits    []any
+	bindings []bindingChange
+	// effective holds the pattern banks as the engine will hold them after the
+	// edits land. It differs from a fresh compile in steps beyond a shortened
+	// length, which the engine keeps. adopt installs it in the next plan so the
+	// following diff replays from the engine's state, not from zeros.
+	effective []engine.PatternBank
 }
 
 func buildLivePlan(path string, source []byte, sampleRate int) (*livePlan, error) {
@@ -164,9 +199,10 @@ func buildLivePlan(path string, source []byte, sampleRate int) (*livePlan, error
 	return plan, nil
 }
 
-// M3 patches live parameter values. Every remaining compiled difference goes through
-// Offer until the later step, scene-binding and table milestones support it.
-// Comparing the rest of cfg also catches non-live settings and asset changes.
+// planDiff patches live parameter values, pattern steps, chords, lengths and
+// metadata, and scene bindings. Every other compiled difference goes through
+// Offer until the later table milestones support it. Comparing the rest of cfg
+// also catches non-live settings and asset changes.
 func planDiff(old, next *livePlan) planDelta {
 	structural := func(reason string) planDelta { return planDelta{structural: true, reason: reason} }
 	if old == nil || next == nil {
@@ -231,10 +267,36 @@ func planDiff(old, next *livePlan) planDelta {
 			cfg.CompMusic = &fx.CompParams{}
 		}
 	}
+	delta := planDelta{}
+	if len(a.Patterns) != len(b.Patterns) || len(a.Scenes) != len(b.Scenes) {
+		return structural("pattern or scene tables changed size")
+	}
+	for track := range a.Patterns {
+		bank, reason := diffPatternBank(&delta, uint8(track), &a.Patterns[track], &b.Patterns[track], &a.Track[track])
+		delta.effective = append(delta.effective, bank)
+		if reason != "" {
+			return structural(reason)
+		}
+	}
+	for scene := range a.Scenes {
+		for track := 0; track < engine.MaxTracks; track++ {
+			if a.Scenes[scene].Track[track] != b.Scenes[scene].Track[track] {
+				delta.bindings = append(delta.bindings, bindingChange{scene: uint16(scene), track: uint8(track), binding: b.Scenes[scene].Track[track]})
+			}
+		}
+	}
+	// Patterns and scene bindings were compared above; blank them for the rest.
+	for _, cfg := range []*engine.Config{&a, &b} {
+		cfg.Patterns = nil
+		scenes := make([]engine.Scene, len(cfg.Scenes))
+		for i := range scenes {
+			scenes[i].Settings = cfg.Scenes[i].Settings
+		}
+		cfg.Scenes = scenes
+	}
 	if !reflect.DeepEqual(a, b) {
 		return structural("compiled engine structure changed")
 	}
-	delta := planDelta{}
 	for key, value := range next.params {
 		previous, ok := old.params[key]
 		if ok && math.Float32bits(previous) == math.Float32bits(value) {
@@ -264,7 +326,196 @@ func planDiff(old, next *livePlan) planDelta {
 		}
 		return a.id < b.id
 	})
+	if len(delta.params)+len(delta.bindings)+editCommandCount(delta.edits) > liveplay.PatchCapacity {
+		return structural("edit is larger than one patch")
+	}
 	return delta
+}
+
+// adopt makes next model the engine after this delta lands: edits leave steps
+// beyond a shortened length in place, which a fresh compile would zero.
+func (d planDelta) adopt(next *livePlan) {
+	if d.effective != nil {
+		next.cfg.Patterns = d.effective
+	}
+}
+
+func editCommandCount(edits []any) int {
+	n := 0
+	for _, edit := range edits {
+		n++
+		if step, ok := edit.(stepChange); ok && step.chord != nil {
+			n++
+		}
+	}
+	return n
+}
+
+// diffPatternBank appends the edits that turn the old bank into the new one. It
+// returns a reason when some difference has no command: the chain, a slot that
+// appears or disappears, expression, gate or seed.
+func diffPatternBank(delta *planDelta, track uint8, old, next *engine.PatternBank, config *engine.TrackConfig) (engine.PatternBank, string) {
+	effective := *next
+	if next.Drums != nil {
+		lanes := *next.Drums
+		effective.Drums = &lanes
+	}
+	if !reflect.DeepEqual(old.Chain, next.Chain) || (old.Drums == nil) != (next.Drums == nil) {
+		return effective, "pattern chain or bank kind changed"
+	}
+	for slot := range old.Slots {
+		var oldLanes, nextLanes *[drum.LaneCount]seq.Pattern
+		if old.Drums != nil {
+			oldLanes, nextLanes = &old.Drums[slot], &next.Drums[slot]
+		}
+		if old.Slots[slot].Len == 0 || next.Slots[slot].Len == 0 {
+			if !reflect.DeepEqual(old.Slots[slot], next.Slots[slot]) || oldLanes != nil && *oldLanes != *nextLanes {
+				return effective, "pattern slot appeared or disappeared"
+			}
+			continue
+		}
+		edits, final, finalLanes, reason := diffSlot(track, uint8(slot), &old.Slots[slot], &next.Slots[slot], oldLanes, nextLanes, config)
+		if reason != "" {
+			return effective, reason
+		}
+		delta.edits = append(delta.edits, edits...)
+		effective.Slots[slot] = final
+		if finalLanes != nil {
+			effective.Drums[slot] = *finalLanes
+		}
+	}
+	return effective, ""
+}
+
+// diffSlot also returns the slot as the engine will hold it after the edits.
+func diffSlot(track, slot uint8, old, next *seq.Pattern, oldLanes, nextLanes *[drum.LaneCount]seq.Pattern, config *engine.TrackConfig) ([]any, seq.Pattern, *[drum.LaneCount]seq.Pattern, string) {
+	if old.GatePercent != next.GatePercent || old.Seed != next.Seed || !reflect.DeepEqual(old.Expression, next.Expression) {
+		return nil, *old, oldLanes, "pattern gate, seed or expression changed"
+	}
+	var lenEdit, metaEdit any
+	if old.Len != next.Len {
+		lenEdit = lenChange{track: track, slot: slot, length: next.Len}
+	}
+	if old.StepTicks != next.StepTicks || old.SwingPermille != next.SwingPermille || old.Transpose != next.Transpose {
+		metaEdit = metaChange{track: track, slot: slot, grid: next.StepTicks, swing: next.SwingPermille, transpose: next.Transpose}
+	}
+	var steps []any
+	// Steps beyond the new length cannot sound and a shorter pattern keeps its
+	// old ones; a longer pattern takes every new step so none is stale.
+	for index := uint8(0); index < next.Len; index++ {
+		grown := index >= old.Len
+		if oldLanes != nil {
+			for lane := drum.Lane(0); lane < drum.LaneCount; lane++ {
+				if o, n := oldLanes[lane].Steps[index], nextLanes[lane].Steps[index]; grown || o != n {
+					steps = append(steps, stepChange{track: track, slot: slot, index: index, packed: n&^0x7f | uint32(lane)})
+				}
+			}
+			continue
+		}
+		if grown || old.Steps[index] != next.Steps[index] || old.Chords[index] != next.Chords[index] {
+			change := stepChange{track: track, slot: slot, index: index, packed: next.Steps[index]}
+			if chord := next.Chords[index]; chord.Count > 0 {
+				change.chord = &chord
+			}
+			steps = append(steps, change)
+		}
+	}
+	if lenEdit == nil && metaEdit == nil && len(steps) == 0 {
+		return nil, *old, oldLanes, ""
+	}
+	if oldLanes != nil {
+		for lane := range nextLanes {
+			shared := nextLanes[lane]
+			if shared.Len != next.Len || shared.StepTicks != next.StepTicks || shared.SwingPermille != next.SwingPermille || shared.Transpose != next.Transpose || shared.GatePercent != next.GatePercent {
+				return nil, *old, oldLanes, "drum lane differs from its slot"
+			}
+		}
+	}
+	// Try a few orders; keep the first for which the engine would accept every
+	// intermediate pattern. A length or transpose change can invalidate a pattern
+	// before the steps that fix it have landed, in one direction or the other.
+	reversed := make([]any, len(steps))
+	for i := range steps {
+		reversed[len(steps)-1-i] = steps[i]
+	}
+	for _, order := range [][][]any{
+		{{lenEdit, metaEdit}, steps}, {{metaEdit, lenEdit}, steps}, {steps, {lenEdit, metaEdit}}, {steps, {metaEdit, lenEdit}},
+		{{lenEdit, metaEdit}, reversed}, {{metaEdit, lenEdit}, reversed}, {reversed, {lenEdit, metaEdit}}, {reversed, {metaEdit, lenEdit}},
+	} {
+		var edits []any
+		for _, group := range order {
+			for _, edit := range group {
+				if edit != nil {
+					edits = append(edits, edit)
+				}
+			}
+		}
+		if final, lanes, ok := replayEdits(edits, old, next, oldLanes, nextLanes, config); ok {
+			return edits, final, lanes, ""
+		}
+	}
+	return nil, *old, oldLanes, "pattern edit has no valid order"
+}
+
+// editCommand is the kernel command that carries one edit; a step with a chord
+// also sends the chord command from chordCommand.
+func editCommand(edit any) (cmd.Command, bool) {
+	switch edit := edit.(type) {
+	case stepChange:
+		return cmd.Command{Op: cmd.OpSetStep, Track: edit.track, Index: uint16(edit.index), Arg0: edit.packed, Arg1: uint32(edit.slot)}, true
+	case lenChange:
+		return cmd.Command{Op: cmd.OpSetPatternLen, Track: edit.track, Index: uint16(edit.length), Arg1: uint32(edit.slot)}, true
+	case metaChange:
+		return cmd.Command{Op: cmd.OpSetPatternMeta, Track: edit.track, Index: edit.grid, Arg0: uint32(edit.swing) | uint32(uint16(int16(edit.transpose)))<<16, Arg1: uint32(edit.slot)}, true
+	}
+	return cmd.Command{}, false
+}
+
+func chordCommand(edit stepChange) (cmd.Command, error) {
+	return cmd.ChordStepCommand(edit.track, edit.slot, edit.index, edit.chord.Notes, edit.chord.Count)
+}
+
+// replayEdits applies the edits to copies of the old slot with the kernel's own
+// edit rules and reports whether every step is accepted and the result is the
+// new slot. It returns the slot the edits leave behind.
+func replayEdits(edits []any, old, next *seq.Pattern, oldLanes, nextLanes *[drum.LaneCount]seq.Pattern, config *engine.TrackConfig) (seq.Pattern, *[drum.LaneCount]seq.Pattern, bool) {
+	slot := *old
+	var lanes *[drum.LaneCount]seq.Pattern
+	if oldLanes != nil {
+		copied := *oldLanes
+		lanes = &copied
+	}
+	accepts := func(c cmd.Command) bool {
+		return c.Validate(engine.MaxTracks) == nil && engine.ApplyPatternEdit(&slot, lanes, c, config) == nil
+	}
+	for _, edit := range edits {
+		c, _ := editCommand(edit)
+		if !accepts(c) {
+			return seq.Pattern{}, nil, false
+		}
+		if step, ok := edit.(stepChange); ok && step.chord != nil {
+			chord, err := chordCommand(step)
+			if err != nil || !accepts(chord) {
+				return seq.Pattern{}, nil, false
+			}
+		}
+	}
+	if slot.Len != next.Len || slot.StepTicks != next.StepTicks || slot.SwingPermille != next.SwingPermille || slot.Transpose != next.Transpose {
+		return seq.Pattern{}, nil, false
+	}
+	for i := uint8(0); i < next.Len; i++ {
+		if lanes != nil {
+			for lane := range lanes {
+				want := nextLanes[lane].Steps[i]
+				if got := lanes[lane].Steps[i]; got != want && got != want&^0x7f|uint32(lane) {
+					return seq.Pattern{}, nil, false
+				}
+			}
+		} else if slot.Steps[i] != next.Steps[i] || slot.Chords[i] != next.Chords[i] {
+			return seq.Pattern{}, nil, false
+		}
+	}
+	return slot, lanes, true
 }
 
 // Remove only numeric controls represented in the validated parameter map.

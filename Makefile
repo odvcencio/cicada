@@ -9,7 +9,7 @@ build-wam2: build-kernel-wasm build-vocals-wasm
 	npm install --prefix build/wam2-sdk --ignore-scripts --no-package-lock --no-save @webaudiomodules/sdk@0.0.12
 
 test-wam2: build-wam2
-	node --test host/wam2/processor.test.cjs
+	node --test host/wam2/processor.test.cjs host/wam2/message-drain.test.cjs
 	go test ./host/wam2 ./cmd/cicada -run WAM2 -count=1
 	go test -tags browser ./cmd/cicada -run '^TestBrowserWAM2$$' -count=1 -timeout=3m -v
 
@@ -213,7 +213,7 @@ test-wasm: build-kernel-wasm build-vocals-wasm test-chord-wasm
 test-worklet-negotiation: build-worklets
 	node host/web/chord_capability_test.cjs
 	node host/web/client_capability_test.cjs
-	node --test host/web/worklet-followups.test.cjs host/web/client-lifecycle.test.cjs
+	node --test host/web/worklet-followups.test.cjs host/web/client-lifecycle.test.cjs host/web/message-drain.test.cjs
 
 test-browser: build-kernel-wasm
 	mkdir -p build

@@ -123,4 +123,8 @@ const (
 	// FaultHostRenderFrames: the host asked for a render of a frame count outside
 	// 1 to the block limit. A host reports it with InjectFault.
 	FaultHostRenderFrames uint16 = 43
+	// FaultSceneBinding: a scene-binding command named a scene, track, slot or
+	// clip that the engine does not have. 46 and 47 were taken by later faults
+	// than the live-edit plan expected, so this code is 44.
+	FaultSceneBinding uint16 = 44
 )

@@ -22,8 +22,12 @@ const (
 
 const (
 	TransportFrameSize = 64
-	MetersFrameSize    = 2 + 1 + limits.PortableMaxTracks*16 + 12
-	MaxMetersFrameSize = 2 + 1 + limits.NativeMaxTracks*16 + 12
+	// A meters frame ends with a nine-byte dynamics tail (compressor and
+	// limiter gain reduction, then the pre-limiter over flag). A decoder reads a
+	// shorter frame from an older sender with the tail fields at zero.
+	metersDynamicsSize = 9
+	MetersFrameSize    = 2 + 1 + limits.PortableMaxTracks*16 + 12 + metersDynamicsSize
+	MaxMetersFrameSize = 2 + 1 + limits.NativeMaxTracks*16 + 12 + metersDynamicsSize
 	HealthFrameSize    = 18
 )
 
@@ -45,8 +49,14 @@ type TransportFrame struct {
 // TrackMeter holds per-track stereo peak and RMS levels.
 type TrackMeter struct{ PeakL, PeakR, RMSL, RMSR float32 }
 
-// MasterMeter holds master loudness readings.
-type MasterMeter struct{ MomentaryLUFS, ShortTermLUFS, TruePeakDBTP float32 }
+// MasterMeter holds master loudness readings, the music-bus compressor and
+// master limiter gain reduction in dB (zero or more), and whether the mix
+// before the limiter peaked above -0.3 dBFS.
+type MasterMeter struct {
+	MomentaryLUFS, ShortTermLUFS, TruePeakDBTP float32
+	CompGRDB, LimiterGRDB                      float32
+	PreLimiterOver                             bool
+}
 
 // MetersFrame carries the native track meters and the master meter.
 // Sessions of sixteen tracks or fewer retain the version-1 wire layout; larger
@@ -133,7 +143,7 @@ func (f MetersFrame) Encode(dst []byte) int {
 	if f.TrackCount > limits.PortableMaxTracks {
 		capacity, version = limits.NativeMaxTracks, 2
 	}
-	size := 2 + 1 + capacity*16 + 12
+	size := 2 + 1 + capacity*16 + 12 + metersDynamicsSize
 	if int(f.TrackCount) > limits.NativeMaxTracks || len(dst) < size {
 		return 0
 	}
@@ -150,6 +160,9 @@ func (f MetersFrame) Encode(dst []byte) int {
 	putF32(dst[o:], f.Master.MomentaryLUFS)
 	putF32(dst[o+4:], f.Master.ShortTermLUFS)
 	putF32(dst[o+8:], f.Master.TruePeakDBTP)
+	putF32(dst[o+12:], f.Master.CompGRDB)
+	putF32(dst[o+16:], f.Master.LimiterGRDB)
+	putBool(&dst[o+20], f.Master.PreLimiterOver)
 	return size
 }
 
@@ -165,6 +178,7 @@ func DecodeMetersFrame(src []byte) (MetersFrame, error) {
 		return MetersFrame{}, fmt.Errorf("unknown telemetry meters version %d", src[0])
 	}
 	size := 2 + 1 + capacity*16 + 12
+	hasDynamics := len(src) >= size+metersDynamicsSize
 	if src[1] != byte(FrameMeters) || len(src) < size || int(src[2]) > capacity {
 		return MetersFrame{}, fmt.Errorf("invalid telemetry meters frame for %d tracks", src[2])
 	}
@@ -175,6 +189,9 @@ func DecodeMetersFrame(src []byte) (MetersFrame, error) {
 	}
 	o := 3 + capacity*16
 	f.Master = MasterMeter{MomentaryLUFS: getF32(src[o:]), ShortTermLUFS: getF32(src[o+4:]), TruePeakDBTP: getF32(src[o+8:])}
+	if hasDynamics {
+		f.Master.CompGRDB, f.Master.LimiterGRDB, f.Master.PreLimiterOver = getF32(src[o+12:]), getF32(src[o+16:]), src[o+20] != 0
+	}
 	return f, nil
 }
 
