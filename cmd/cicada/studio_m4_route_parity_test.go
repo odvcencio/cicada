@@ -158,7 +158,7 @@ func m4RouteCases() []m4RouteCase {
 
 func m4Session(t *testing.T, c m4RouteCase) (*studio, string) {
 	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	path := studioTestPath(t, c.source)
 	entry := path
 	if c.part {

@@ -85,7 +85,7 @@ func TestMixerEditsRefusedDuringCaptureOnEveryRoute(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			isolateState(t)
 			s := newTakeStudio(t, t.TempDir())
 			id := activeVocalCapture(t, s)
 			before := snapshotStudioState(t, s)
@@ -129,7 +129,7 @@ func studioCallRaw(t *testing.T, handler http.Handler, path, body string) *httpt
 func TestMixerProposalsRefusedDuringCapture(t *testing.T) {
 	level := `{"version":1,"revision":%q,"intents":[{"kind":"setparam","entity":"param:vox.level","value":-12}]}`
 	t.Run("stage during capture", func(t *testing.T) {
-		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		isolateState(t)
 		s := newTakeStudio(t, t.TempDir())
 		activeVocalCapture(t, s)
 		before := snapshotStudioState(t, s)
@@ -139,7 +139,7 @@ func TestMixerProposalsRefusedDuringCapture(t *testing.T) {
 		}
 	})
 	t.Run("accept during capture", func(t *testing.T) {
-		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		isolateState(t)
 		s := newTakeStudio(t, t.TempDir())
 		before := snapshotStudioState(t, s)
 		response := studioCallRaw(t, s.routes(), "/api/proposals", fmt.Sprintf(`{"envelope":`+level+`}`, studioRevision(before.source)))
@@ -199,7 +199,7 @@ func TestRouteGuardsMatchIntentsAndApply(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			isolateState(t)
 			dir := t.TempDir()
 			path := filepath.Join(dir, "score.cicada")
 			if err := os.WriteFile(path, []byte(c.score), 0600); err != nil {
@@ -281,7 +281,7 @@ func TestAutomationPointEditsRefusedDuringCaptureOnEveryPath(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			isolateState(t)
 			s := newTakeStudio(t, t.TempDir())
 			id := activeVocalCapture(t, s)
 			before := snapshotStudioState(t, s)
@@ -302,7 +302,7 @@ func TestAutomationPointEditsRefusedDuringCaptureOnEveryPath(t *testing.T) {
 		})
 	}
 	t.Run("accept during capture", func(t *testing.T) {
-		t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+		isolateState(t)
 		s := newTakeStudio(t, t.TempDir())
 		before := snapshotStudioState(t, s)
 		response := studioCallRaw(t, s.routes(), "/api/proposals", fmt.Sprintf(`{"envelope":{"version":1,"revision":%q,"intents":[`+set+`]}}`, studioRevision(before.source)))
@@ -344,7 +344,7 @@ func TestM10RoutesAndIntentsAgreeDuringCapture(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			status := func(route, body string) int {
-				t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+				isolateState(t)
 				s := newTakeStudio(t, t.TempDir())
 				if err := os.WriteFile(s.path, []byte(score), 0600); err != nil {
 					t.Fatal(err)

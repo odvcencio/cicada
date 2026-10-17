@@ -38,7 +38,7 @@ var arrangePeerCases = []struct {
 }
 
 func TestArrangeIntentsWithPeerFileDefinitionsThroughStudioAndApply(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for _, c := range arrangePeerCases {
 		want := strings.Replace(arrangePeerEntry, c.from, c.to, 1)
 		env := edits.Envelope{Version: 1, Revision: studioRevision([]byte(arrangePeerEntry)), Author: "tester", Intents: []edits.Intent{c.intent}}
