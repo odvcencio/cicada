@@ -181,7 +181,7 @@ func TestPublicIntentsRefuseMetadataTheReaderRejects(t *testing.T) {
 	}
 	for name, intent := range cases {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			isolateState(t)
 			s := newTakeStudio(t, t.TempDir())
 			source := []byte(strings.Replace(audioTakeScore, "cicada 2\n", "cicada 2\ntempo 120\n", 1))
 			if err := os.WriteFile(s.path, source, 0600); err != nil {

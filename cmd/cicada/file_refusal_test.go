@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	edits "m31labs.dev/cicada/edit"
+	"m31labs.dev/cicada/internal/isolatetest"
 )
 
 // A declared link may be loaded under its logical name, but a write must not
@@ -58,7 +59,7 @@ func TestScoreWritersRefuseUnsafeDeclaredLinks(t *testing.T) {
 				var err error
 				switch command {
 				case "studio":
-					t.Setenv("XDG_CONFIG_HOME", cfg)
+					isolatetest.Use(t, cfg)
 				default:
 					args := []string{"fix", link, "--all"}
 					switch command {
@@ -119,6 +120,6 @@ func buildCicadaForTest(t *testing.T) string {
 func commandWithEnv(bin, dir, config string, args ...string) *exec.Cmd {
 	command := exec.Command(bin, args...)
 	command.Dir = dir
-	command.Env = append(os.Environ(), "XDG_CONFIG_HOME="+config)
+	command.Env = append(os.Environ(), isolatetest.Env(config)...)
 	return command
 }

@@ -21,7 +21,7 @@ import (
 // Compare generated HTTP batches with sequential single-intent HTTP requests,
 // including repeated edits to each auxiliary path and exact undo/redo.
 func TestGeneratedIntentBatchesMatchSequentialHTTP(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	pack, err := recording.Build("captured", []recording.Hit{{Rate: 48000, Root: 60, Peak: .5, SourceSHA256: strings.Repeat("a", 64), PCM: []float32{0, .25, .5, .25, 0}}}, 1)
 	if err != nil {
 		t.Fatal(err)

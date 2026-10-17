@@ -45,7 +45,7 @@ func assertProposalResponseMatchesDisk(t *testing.T, path string, r *httptest.Re
 }
 
 func TestStudioProposalAuxiliaryOnlyAcceptUndoRedo(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	source := strings.Replace(studioScore, "track bass acid {}", "track bass acid { level = -6dB }", 1)
 	s, handler, path, manifest := proposalProject(t, source, 1)
 	originalManifest, _ := os.ReadFile(manifest)
@@ -77,7 +77,7 @@ func TestStudioProposalAuxiliaryOnlyAcceptUndoRedo(t *testing.T) {
 }
 
 func TestStudioProposalResponseMatchesFinalCumulativeSource(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	_, handler, path := proposalFixture(t, studioMixerScore)
 	final := strings.Replace(studioMixerScore, "level = -6dB", "level = -9dB", 1)
 	id := stageProposal(t, handler, studioMixerScore, "Final bass", &edits.SetParam{Entity: "param:bass.level", Value: json.RawMessage(`-3`)}, &edits.ReplaceText{Source: final})
@@ -88,7 +88,7 @@ func TestStudioProposalResponseMatchesFinalCumulativeSource(t *testing.T) {
 }
 
 func TestCommitTailCanonicalResponseOverridesMetadata(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for _, changed := range []bool{false, true} {
 		t.Run(fmt.Sprint(changed), func(t *testing.T) {
 			s, _, path := proposalFixture(t, studioMixerScore)
@@ -121,7 +121,7 @@ func stageHTTPProposal(t *testing.T, handler http.Handler, proposal edits.Propos
 // Compare HTTP staging and acceptance with sequential single-intent HTTP
 // commits. Every case has secondary sources; no test supplies edit options.
 func TestGeneratedProposalsAcceptFinalCumulativeResult(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	pack, err := recording.Build("captured", []recording.Hit{{Rate: 48000, Root: 60, Peak: .5, SourceSHA256: strings.Repeat("a", 64), PCM: []float32{0, .25, .5, .25, 0}}}, 1)
 	if err != nil {
 		t.Fatal(err)

@@ -169,7 +169,7 @@ func gridPatternRoute(t *testing.T, c gridPatternRouteCase) gridPatternRouteSnap
 
 func gridPatternRouteWithHandler(t *testing.T, c gridPatternRouteCase, factory func(string) (http.Handler, error)) gridPatternRouteSnapshot {
 	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	path := studioTestPath(t, c.source)
 	if c.edition != 0 {
 		if err := os.WriteFile(filepath.Join(filepath.Dir(path), "cicada.mod"), []byte(fmt.Sprintf("project edits\ncicada %d\n", c.edition)), 0600); err != nil {
@@ -319,7 +319,7 @@ func TestGridPatternRouteConflictParity(t *testing.T) {
 }
 
 func TestGridPatternRoutesCommitPublicIntents(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for _, c := range []struct {
 		route, kind, shared string
 		body                studioEdit

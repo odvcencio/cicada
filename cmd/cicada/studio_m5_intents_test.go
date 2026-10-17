@@ -32,7 +32,7 @@ func assertM5IntentLog(t *testing.T, path, kind, author, session string) {
 }
 
 func TestM5RoutesCommitAttributedIntents(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	t.Setenv("CICADA_LIBRARY", t.TempDir())
 	for _, c := range []struct {
 		route, source, kind string
@@ -76,7 +76,7 @@ func TestM5RoutesCommitAttributedIntents(t *testing.T) {
 }
 
 func TestPublishRecordedAndSelectTakeLogIntents(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	t.Run("publishrecorded", func(t *testing.T) {
 		path := studioTestPath(t, studioScore)
 		s, err := newStudio(path)
@@ -107,7 +107,7 @@ func TestPublishRecordedAndSelectTakeLogIntents(t *testing.T) {
 }
 
 func TestLibraryInsertValidatesPendingPinsBeforeCommit(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	h, path := libraryStudio(t)
 	pinsPath := filepath.Join(filepath.Dir(path), "cicada.sum")
 	original := studioCompile

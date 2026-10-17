@@ -29,12 +29,12 @@ func secondaryStudio(t *testing.T) (*studio, *liveplay.Player, string) {
 // production. Tests render the player to produce the landing events.
 func secondaryStudioFiles(t *testing.T, entryText, part string) (*studio, *liveplay.Player, string) {
 	t.Helper()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	return secondaryStudioIn(t, entryText, part)
 }
 
 // secondaryStudioIn leaves the environment alone so parallel subtests can use
-// it; their parent sets XDG_CONFIG_HOME once.
+// it; their parent calls isolateState once.
 func secondaryStudioIn(t *testing.T, entryText, part string) (*studio, *liveplay.Player, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -280,7 +280,7 @@ func TestRecordedTakeHandoffCoversOnlyTheNextPublication(t *testing.T) {
 // expects pending exactly when a publication has not landed.
 func TestPublicationLedgerGeneratedLifecycleAgainstRealPlayer(t *testing.T) {
 	titles := []string{"Studio", "Studio A", "Studio B", "Studio C"}
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for seed := int64(0); seed < 12; seed++ {
 		t.Run(fmt.Sprintf("seed=%d", seed), func(t *testing.T) { runPublicationLedgerSeed(t, seed, titles) })
 	}
@@ -434,7 +434,7 @@ func waitGoroutines(t *testing.T, want func(int) bool) int {
 // must close it, which joins its parallel workers.
 func TestPollClosesPreparedReplacementWhenPlaybackStopsBeforeOffer(t *testing.T) {
 	entry, part := wideProject()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	before := waitGoroutines(t, func(int) bool { return true })
 	s, _, dir := secondaryStudioIn(t, entry, part)
 	tr := s.transport
@@ -466,7 +466,7 @@ func TestPollClosesPreparedReplacementWhenPlaybackStopsBeforeOffer(t *testing.T)
 // must release the engine and join its workers, so callers never close twice.
 func TestOfferToClosedPlayerClosesTheRejectedEngine(t *testing.T) {
 	entry, part := wideProject()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	s, stream, _ := secondaryStudioIn(t, entry, part)
 	stream.Close()
 	base := waitGoroutines(t, func(int) bool { return true })
@@ -489,7 +489,7 @@ func TestOfferToClosedPlayerClosesTheRejectedEngine(t *testing.T) {
 // start (here: a sample-rate mismatch) must close the engine and its workers.
 func TestStartPreparedClosesTheScoreItRefuses(t *testing.T) {
 	entry, part := wideProject()
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	s, stream, _ := secondaryStudioIn(t, entry, part)
 	stream.Close()
 	s.transport.stopLocked()

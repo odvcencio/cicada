@@ -21,7 +21,7 @@ func TestScoreWritersPreserveSymlinkTargets(t *testing.T) {
 	for name, write := range writers {
 		for _, relative := range []bool{false, true} {
 			t.Run(name+map[bool]string{false: "/absolute", true: "/relative"}[relative], func(t *testing.T) {
-				t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+				isolateState(t)
 				dir := t.TempDir()
 				target := filepath.Join(dir, "target.cicada")
 				link := filepath.Join(dir, "link.cicada")
@@ -61,7 +61,7 @@ func TestScoreWritersRefuseDanglingLinks(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			isolateState(t)
 			link := filepath.Join(t.TempDir(), "link.cicada")
 			if err := os.Symlink("missing.cicada", link); err != nil {
 				t.Fatal(err)
@@ -115,7 +115,7 @@ func TestScoreWritersCreateThroughDirectorySymlink(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
-			t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+			isolateState(t)
 			dir := t.TempDir()
 			link := filepath.Join(t.TempDir(), "project")
 			if err := os.Symlink(dir, link); err != nil {

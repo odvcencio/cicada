@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"m31labs.dev/cicada/host/takejournal"
+	"m31labs.dev/cicada/internal/appdirs"
 	"m31labs.dev/cicada/internal/filetarget"
 )
 
@@ -192,11 +193,11 @@ func studioRecoveryDir(path string) (string, error) {
 		return "", err
 	}
 	path = target.Physical
-	base, err := os.UserConfigDir()
+	state, err := appdirs.StateDir()
 	if err != nil {
 		return "", err
 	}
-	dir := filepath.Join(base, "Cicada Studio", "revisions", studioRevision([]byte(path))[:16])
+	dir := filepath.Join(state, "revisions", studioRevision([]byte(path))[:16])
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return "", err
 	}
