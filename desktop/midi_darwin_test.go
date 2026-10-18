@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"os"
 	"reflect"
@@ -173,6 +174,70 @@ func TestNativeMIDIVirtualSource(t *testing.T) {
 			}
 		case <-deadline:
 			t.Fatal("private MIDI unplug did not update native inputs")
+		}
+	}
+}
+
+// TestNativeMIDIAppSource is a bounded sender for the packaged-app smoke test.
+// Its marker and .stop file live in a caller-created private temporary folder.
+// The matching native-midi-workflow.js listens only to this virtual endpoint.
+func TestNativeMIDIAppSource(t *testing.T) {
+	ready := os.Getenv("CICADA_TEST_MIDI_APP_SOURCE")
+	if ready == "" {
+		t.Skip("set CICADA_TEST_MIDI_APP_SOURCE to a private ready marker for the WKWebView MIDI smoke test")
+	}
+	a, err := loadCoreMIDI()
+	if err != nil {
+		t.Fatal(err)
+	}
+	nameText := fmt.Sprintf("Cicada private app MIDI %d", os.Getpid())
+	name := a.stringCreate(0, nameText, midiUTF8)
+	defer a.release(name)
+	var client, source uint32
+	if err := midiStatus("test create sender", a.clientCreate(name, 0, 0, &client)); err != nil {
+		t.Fatal(err)
+	}
+	defer a.clientDispose(client)
+	if err := midiStatus("test create source", a.sourceCreate(client, name, &source)); err != nil {
+		t.Fatal(err)
+	}
+	defer a.endpointDispose(source)
+	marker, err := os.OpenFile(ready, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = json.NewEncoder(marker).Encode(map[string]any{"name": nameText, "pid": os.Getpid()})
+	closeErr := marker.Close()
+	if err != nil || closeErr != nil {
+		t.Fatalf("write private MIDI marker: %v %v", err, closeErr)
+	}
+	t.Log("private virtual MIDI sender ready")
+	var buffer [1024]byte
+	base := uintptr(unsafe.Pointer(&buffer[0]))
+	packet := a.packetListInit(base)
+	for i, data := range [][]byte{{0x92, 60, 100}, {0xb2, 74, 88}, {0xe2, 0, 96}, {0xd2, 70}, {0x82, 60, 0}, {0xb2, 123, 0}} {
+		packet = a.packetListAdd(base, uintptr(len(buffer)), packet, uint64(i+1), uintptr(len(data)), &data[0])
+		if packet == 0 {
+			t.Fatal("could not build private app-test MIDI packet list")
+		}
+	}
+	ticker := time.NewTicker(300 * time.Millisecond)
+	defer ticker.Stop()
+	deadline := time.NewTimer(60 * time.Second)
+	defer deadline.Stop()
+	for {
+		select {
+		case <-deadline.C:
+			t.Log("private MIDI sender closed at bounded deadline")
+			return
+		case <-ticker.C:
+			if _, err := os.Stat(ready + ".stop"); err == nil {
+				t.Log("private MIDI sender closed on smoke completion")
+				return
+			}
+			if err := midiStatus("test send", a.received(source, base)); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 }
