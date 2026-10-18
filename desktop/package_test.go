@@ -132,6 +132,23 @@ func TestPackageDarwinIgnoresLocalWorkspace(t *testing.T) {
 			t.Fatalf("bundle file %s = %q, %v; want %q", file, contents, err, want)
 		}
 	}
+	plist, err := os.ReadFile(filepath.Join(app, "Contents", "Info.plist"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{
+		"<key>NSMicrophoneUsageDescription</key>",
+		"<key>CFBundleDocumentTypes</key>",
+		"<string>Editor</string>",
+		"<key>UTExportedTypeDeclarations</key>",
+		"<string>dev.cicada.score</string>",
+		"<key>public.filename-extension</key>",
+		"<array><string>cicada</string></array>",
+	} {
+		if !strings.Contains(string(plist), required) {
+			t.Errorf("macOS bundle is missing %s", required)
+		}
+	}
 	assertPackageCleanedUp(t, root)
 }
 

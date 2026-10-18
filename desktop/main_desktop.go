@@ -128,7 +128,7 @@ func run() error {
 	}
 
 	h.app, err = desktop.New(desktop.Options{
-		Title:            windowTitle(score),
+		Title:            "Cicada Studio",
 		Width:            1280,
 		Height:           840,
 		AppID:            appID,
@@ -140,19 +140,27 @@ func run() error {
 		DevTools:         *devTools,
 		SingleInstance:   *smokeOut == "",
 		OnSecondInstance: h.onSecondInstance,
-		OnWebMessage:     h.onSmokeMessage,
+		OnOpenFiles: func(paths []string) {
+			h.onSecondInstance(desktop.InstanceMessage{Args: paths})
+		},
+		OnWebMessage: h.onSmokeMessage,
 		OnNavigationCompleted: func(event desktop.NavigationCompleted) {
 			h.onNavigationCompleted(event)
 		},
 		// Start the audio engine once this process owns the window, while
 		// the web view starts. Starting it earlier would also start it in a
 		// second launch that only forwards its file and exits.
-		OnWindowCreated: func(*desktop.Window) { go h.open(score) },
+		OnWindowCreated: func(*desktop.Window) { h.open(score) },
 		OnClose:         h.shutdown,
 	})
 	if err != nil {
 		return err
 	}
+	closeMIDI, err := attachNativeMIDI(h.app)
+	if err != nil {
+		return fmt.Errorf("configure native MIDI: %w", err)
+	}
+	defer closeMIDI()
 	if err := h.optionalChrome("minimum window size", h.app.SetMinSize(800, 560)); err != nil {
 		return err
 	}
@@ -207,20 +215,30 @@ func (h *host) optionalChrome(what string, err error) error {
 	return err
 }
 
-// open stops the current Studio process, starts one for score, and shows it.
+// open reserves requests on the calling thread, then switches in the background.
+// Finder's first document must follow startup even if its goroutine runs first.
 func (h *host) open(score string) {
 	h.mu.Lock()
 	closing := h.closing
-	previous := h.proc
 	h.mu.Unlock()
 	if closing || !h.queue.request(score) {
 		return
 	}
-	defer func() {
-		if next := h.queue.done(); next != "" {
-			go h.open(next)
+	go func() {
+		for score != "" {
+			h.openScore(score)
+			score = h.queue.done()
 		}
 	}()
+}
+
+func (h *host) openScore(score string) {
+	h.mu.Lock()
+	closing, previous := h.closing, h.proc
+	h.mu.Unlock()
+	if closing {
+		return
+	}
 
 	if previous != nil {
 		_ = h.app.SetHTML(statusPage("Opening", filepath.Base(score)))
@@ -251,7 +269,7 @@ func (h *host) open(score string) {
 		fmt.Fprintf(h.logOut, "host: save state: %v\n", err)
 	}
 	_ = h.app.SetTitle(windowTitle(score))
-	if err := h.app.Navigate(proc.Ready()); err != nil {
+	if err := h.app.Navigate(strings.TrimRight(proc.Ready(), "/") + "/studio"); err != nil {
 		fmt.Fprintf(h.logOut, "host: navigate: %v\n", err)
 	}
 	go h.watch(proc, score)
@@ -348,13 +366,13 @@ func (h *host) menu() desktop.Menu {
 		recentItems = append(recentItems, desktop.MenuItem{
 			ID:      fmt.Sprintf("file.recent.%d", i),
 			Label:   fmt.Sprintf("&%d %s", i+1, file),
-			OnClick: func() { go h.open(file) },
+			OnClick: func() { h.open(file) },
 		})
 	}
 	if len(recentItems) == 0 {
 		recentItems = append(recentItems, desktop.MenuItem{ID: "file.recent.none", Label: "(none)", Disabled: true})
 	}
-	return desktop.Menu{Items: []desktop.MenuItem{
+	return platformMenu(h, desktop.Menu{Items: []desktop.MenuItem{
 		{ID: "file", Label: "&File", Submenu: &desktop.Menu{Items: []desktop.MenuItem{
 			{ID: "file.new", Label: "&New Project...", OnClick: h.newProjectDialog},
 			{ID: "file.open", Label: "&Open...", OnClick: h.openDialog},
@@ -365,12 +383,12 @@ func (h *host) menu() desktop.Menu {
 			{ID: "file.exit", Label: "E&xit", OnClick: func() { _ = h.app.Close() }},
 		}}},
 		{ID: "view", Label: "&View", Submenu: &desktop.Menu{Items: []desktop.MenuItem{
-			{ID: "view.reload", Label: "&Reload Studio", OnClick: func() { go h.open(h.currentScore()) }},
+			{ID: "view.reload", Label: "&Reload Studio", OnClick: func() { h.open(h.currentScore()) }},
 		}}},
 		{ID: "help", Label: "&Help", Submenu: &desktop.Menu{Items: []desktop.MenuItem{
 			{ID: "help.docs", Label: "Cicada &Documentation", OnClick: func() { _ = h.app.OpenURL("https://github.com/odvcencio/cicada#readme") }},
 		}}},
-	}}
+	}})
 }
 
 var scoreFilter = []desktop.FileFilter{{Name: "Cicada score (*.cicada)", Pattern: "*.cicada"}}
@@ -380,7 +398,11 @@ func (h *host) openDialog() {
 		Title: "Open Cicada score", Filters: scoreFilter, DefaultExt: "cicada",
 		InitialDir: filepath.Dir(h.currentScore()),
 	})
-	if err != nil || len(paths) == 0 {
+	if err != nil {
+		showError("Open failed", err.Error())
+		return
+	}
+	if len(paths) == 0 {
 		return
 	}
 	h.rememberAndOpen(paths[0])
@@ -395,7 +417,11 @@ func (h *host) saveAsDialog() {
 		Title: "Save Cicada score as", Filters: scoreFilter, DefaultExt: "cicada",
 		InitialDir: filepath.Dir(current), InitialFilename: filepath.Base(current), OverwritePrompt: true,
 	})
-	if err != nil || target == "" {
+	if err != nil {
+		showError("Save As failed", err.Error())
+		return
+	}
+	if target == "" {
 		return
 	}
 	if err := saveCopyWithAssets(h.cicada, current, target); err != nil {
@@ -412,7 +438,11 @@ func (h *host) newProjectDialog() {
 		Title: "New Cicada project (choose a folder name)", InitialDir: parent,
 		InitialFilename: nextProjectName(parent), OverwritePrompt: false,
 	})
-	if err != nil || target == "" {
+	if err != nil {
+		showError("New project failed", err.Error())
+		return
+	}
+	if target == "" {
 		return
 	}
 	name := strings.TrimSuffix(filepath.Base(target), filepath.Ext(target))
@@ -434,7 +464,7 @@ func (h *host) rememberAndOpen(score string) {
 	h.state.remember(score)
 	h.mu.Unlock()
 	_ = h.app.SetMenuBar(h.menu())
-	go h.open(score)
+	h.open(score)
 }
 
 func (h *host) onSecondInstance(message desktop.InstanceMessage) {

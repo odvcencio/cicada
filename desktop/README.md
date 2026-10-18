@@ -25,8 +25,21 @@ WebView2 profile is Windows-only; WKWebView keeps its website data in the
 default store keyed by the bundle identifier. New projects go to
 `Documents\Cicada` or `~/Documents/Cicada`.
 
-macOS currently plays through Oto using the system default output. This backend
-does not support native microphone recording or selecting audio devices yet.
+macOS uses CoreAudio for native playback and microphone recording, with input,
+output, and buffer selection in Studio's Audio settings. The first recording
+asks for microphone access; playback and device discovery do not. If access is
+denied, enable Cicada Studio under System Settings → Privacy & Security →
+Microphone, then try recording again. Run the packaged app for recording so
+the capture helper uses its microphone usage description and app identity.
+Oto remains available for playback through the system default output.
+
+The Mac File menu uses native Open and Save panels. Finder can open `.cicada`
+scores in the running window; Open Recent returns to your previous projects.
+Command-N creates a project, Command-O opens one, Command-Shift-S saves a copy
+with its audio assets, Command-R reloads Studio, and Command-W closes the window.
+The Edit menu supports native Cut, Copy, Paste, and Select All. Command-Z and
+Command-Shift-Z use song history outside text fields and typing history inside
+them. The application menu retains the standard Command-Q and Command-H actions.
 
 ## Build
 
@@ -87,6 +100,8 @@ Builds the three executables and the GoSX runtime, assembles `Cicada
 Studio.app` with the standard macOS layout, writes an `Info.plist`
 (`CFBundleIdentifier=dev.cicada.studio`, `LSMinimumSystemVersion=12.0`), and
 ad-hoc signs the bundle. Output goes to `dist/macos`.
+The bundle declares the `.cicada` score type and explains microphone access to
+macOS. Both the UI host and its bundled audio helper read that same metadata.
 
 The bundle is self-contained and builds from a clean checkout. The desktop
 host pins the published GoSX Darwin backend at

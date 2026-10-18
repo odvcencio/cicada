@@ -144,11 +144,17 @@ func TestOpenQueueKeepsTheLatestRequestDuringASwitch(t *testing.T) {
 	if next := q.done(); next != "c.cicada" {
 		t.Fatalf("done returned %q, want the latest request c.cicada", next)
 	}
-	if !q.request("c.cicada") {
-		t.Fatal("after done the queue must accept a new switch")
+	if q.request("d.cicada") {
+		t.Fatal("handoff must keep the worker reserved so a new Finder event waits")
+	}
+	if next := q.done(); next != "d.cicada" {
+		t.Fatalf("new request was overtaken during handoff: got %q", next)
 	}
 	if next := q.done(); next != "" {
 		t.Fatalf("nothing was requested during the second switch, got %q", next)
+	}
+	if !q.request("e.cicada") {
+		t.Fatal("an idle queue must accept another switch")
 	}
 }
 

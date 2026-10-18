@@ -204,14 +204,15 @@ func (q *openQueue) request(score string) bool {
 	return true
 }
 
-// done ends the running switch and returns the latest score requested meanwhile,
-// or an empty string. The caller then opens it.
+// done hands the worker the latest waiting score while keeping its reservation.
+// Releasing between switches would let an older queued request overtake a newer
+// Finder event. An empty result releases the worker.
 func (q *openQueue) done() string {
 	q.mu.Lock()
 	defer q.mu.Unlock()
-	q.busy = false
 	next := q.pending
 	q.pending = ""
+	q.busy = next != ""
 	return next
 }
 
