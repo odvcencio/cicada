@@ -136,8 +136,8 @@ what Live plays.
 
 ### Native audio
 
-On Windows and Linux, `cicada play` and Studio use Tymbal by default. Tymbal
-uses WASAPI shared mode on Windows and ALSA on Linux. If the device cannot
+On Windows, Linux, and macOS, `cicada play` and Studio use Tymbal by default. Tymbal
+uses WASAPI shared mode on Windows, ALSA on Linux, and CoreAudio on macOS. If the device cannot
 open, Cicada reports the error; it does not switch engines silently. Select
 Oto explicitly when you need its system-default device:
 
@@ -146,12 +146,13 @@ cicada play main.cicada --audio oto
 CICADA_AUDIO=oto cicada play main.cicada
 ```
 
-Use `--audio null` for real-time transport without an output device. macOS
-continues to use Oto by default.
+Use `--audio null` for real-time transport without an output device.
 
-On Windows, Studio can open WASAPI input and output together. Input monitoring
+On Windows and macOS, Studio can open native input and output together. Input monitoring
 starts muted. Change device selections while playback is stopped; Stop releases
 both endpoints.
+On Mac, enable input explicitly and allow the microphone permission request.
+See [Cicada Studio on Mac](macos.md) for setup and shortcuts.
 
 ### Loudness and WAV export
 
