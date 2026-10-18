@@ -1,7 +1,7 @@
 # Cicada Studio desktop (Windows, macOS)
 
 `cicada-studio` is Cicada Studio as a desktop app. It starts `cicada studio`
-as a helper process, so the native Tymbal audio engine keeps running in Go,
+as a helper process, so the native audio engine keeps running in Go,
 and shows the Studio page in a window hosted by the GoSX desktop runtime
 (Microsoft Edge WebView2 on Windows, WKWebView on macOS).
 
@@ -24,6 +24,9 @@ on Windows and `~/Library/Application Support/Cicada Studio` on macOS. The
 WebView2 profile is Windows-only; WKWebView keeps its website data in the
 default store keyed by the bundle identifier. New projects go to
 `Documents\Cicada` or `~/Documents/Cicada`.
+
+macOS currently plays through Oto using the system default output. This backend
+does not support native microphone recording or selecting audio devices yet.
 
 ## Build
 
