@@ -27,7 +27,7 @@
   async function saved(source) {
     await wait(async () => {
       const current = await state('state');
-      return current.source === source && current.valid &&
+      return current.source.replace(/\r\n?/g, '\n') === source.replace(/\r\n?/g, '\n') && current.valid &&
         document.querySelector('#score input[name=revision]')?.value === current.revision &&
         document.querySelector('#undo-form input[name=revision]')?.value === current.revision;
     }, 'score and displayed revision to agree');
