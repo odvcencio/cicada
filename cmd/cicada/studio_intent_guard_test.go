@@ -206,7 +206,11 @@ func TestRouteGuardsMatchIntentsAndApply(t *testing.T) {
 				t.Fatal(err)
 			}
 			if c.stray {
-				stray := filepath.Join(dir, strings.TrimSuffix(studioRecoveryPattern(path), "*")+"stray")
+				physical, err := filepath.EvalSymlinks(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				stray := filepath.Join(dir, strings.TrimSuffix(studioRecoveryPattern(physical), "*")+"stray")
 				if err := os.WriteFile(stray, []byte("late write"), 0600); err != nil {
 					t.Fatal(err)
 				}

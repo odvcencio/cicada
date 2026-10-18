@@ -120,6 +120,10 @@ func TestStudioOpenWriterDuringCommitIsRetained(t *testing.T) {
 
 func TestStudioRecoveryWithoutReceiptRefusesSave(t *testing.T) {
 	_, path := studioTestHandler(t)
+	path, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		t.Fatal(err)
+	}
 	recovery, err := os.CreateTemp(filepath.Dir(path), studioRecoveryPattern(path))
 	if err != nil {
 		t.Fatal(err)

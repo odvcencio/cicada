@@ -1,16 +1,37 @@
 #!/usr/bin/env bash
-# Build the Cicada Studio desktop app for Windows x64 and package it with
+# Build and package the Cicada Studio desktop app.
+#
+# --target picks the platform. The default follows the machine: darwin on macOS,
+# windows anywhere else.
+#
+# Windows x64: builds the executables and packages them with
 # `gosx desktop package` (Setup.exe, portable ZIP, signed latest.json).
 #
-# Usage:
-#   desktop/package.sh --version 0.1.0 --public-key <base64 Ed25519 public key> \
+#   desktop/package.sh [--target windows] --version 0.1.0 \
+#       --public-key <base64 Ed25519 public key> \
 #       --manifest-key <Ed25519 private key file> [--output dist/desktop] [--publisher NAME] \
 #       [--gosx PATH]
 #
-# --gosx selects a prebuilt gosx CLI; by default the script installs the gosx
-# version that desktop/go.mod requires into a temporary folder.
+#   --gosx selects a prebuilt gosx CLI; by default the script installs the gosx
+#   version that desktop/go.mod requires into a temporary folder.
 #
-# Needs: go, curl, unzip, sha256sum. Runs from any directory.
+#   Needs: go, curl, unzip, sha256sum.
+#
+# macOS: assembles "Cicada Studio.app" with the desktop host, the cicada CLI
+# sidecar, cicada-workstation, and the GoSX runtime (build.json, assets,
+# public), and signs it ad hoc (development builds; no Developer ID or
+# notarization). The host finds siblings in Contents/MacOS/ and the GoSX
+# runtime at Contents/MacOS/workstation/, so the bundle is self-contained.
+#
+#   desktop/package.sh [--target darwin] [--version 0.1.0] [--output dist/macos]
+#
+#   All builds use pinned modules with GOWORK=off, including the macOS host.
+#   Packaging checks backend availability before building the bundle.
+#
+#   Needs: go, tinygo (CI uses 0.41.1), wasm-opt (Binaryen), codesign, plutil.
+#   The last two ship with macOS. WASMOPT can select a wasm-opt executable.
+#
+# Runs from any directory.
 set -euo pipefail
 
 version=""
@@ -22,8 +43,10 @@ notes=""
 desktop_shortcut=false
 output=""
 gosx=""
+target=""
 while [[ $# -gt 0 ]]; do
 	case "$1" in
+	--target) target="$2"; shift 2 ;;
 	--version) version="$2"; shift 2 ;;
 	--public-key) public_key="$2"; shift 2 ;;
 	--manifest-key) manifest_key="$2"; shift 2 ;;
@@ -36,12 +59,151 @@ while [[ $# -gt 0 ]]; do
 	*) echo "unknown argument: $1" >&2; exit 2 ;;
 	esac
 done
-if [[ -z "$version" || -z "$public_key" || -z "$manifest_key" ]]; then
-	echo "usage: desktop/package.sh --version X.Y.Z --public-key KEY --manifest-key FILE [--output DIR] [--publisher NAME]" >&2
+if [[ -z "$target" ]]; then
+	case "$(uname -s)" in
+	Darwin) target=darwin ;;
+	*) target=windows ;;
+	esac
+fi
+case "$target" in
+windows | darwin) ;;
+*) echo "unknown --target: $target (use windows or darwin)" >&2; exit 2 ;;
+esac
+if [[ "$target" == windows && ( -z "$version" || -z "$public_key" || -z "$manifest_key" ) ]]; then
+	echo "usage: desktop/package.sh [--target windows] --version X.Y.Z --public-key KEY --manifest-key FILE [--output DIR] [--publisher NAME]" >&2
+	echo "       desktop/package.sh --target darwin [--version X.Y.Z] [--output DIR]" >&2
 	exit 2
 fi
 
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# A developer's workspace must not replace release dependencies with local code.
+export GOWORK=off
+
+# package_darwin assembles an ad-hoc-signed "Cicada Studio.app" around the host
+# executable. It uses no GNU-only tools, so it runs on the stock macOS userland.
+package_darwin() {
+	version="${version:-0.0.0-dev}"
+	if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z][0-9A-Za-z.+-]*)?$ ]]; then
+		echo "invalid --version: $version (use X.Y.Z with an optional prerelease or build suffix)" >&2
+		exit 2
+	fi
+	local tool
+	for tool in go tinygo "${WASMOPT:-wasm-opt}" codesign plutil; do
+		if ! command -v "$tool" >/dev/null 2>&1; then
+			echo "$tool not found: macOS packaging requires Go, TinyGo, wasm-opt (Binaryen), codesign, and plutil" >&2
+			exit 1
+		fi
+	done
+
+	work="$(mktemp -d)"
+	trap 'rm -rf -- "$work"' EXIT
+	cat >"$work/check-platform.go" <<'GO'
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"m31labs.dev/gosx/desktop"
+)
+
+func main() {
+	if err := desktop.Available(); err != nil {
+		fmt.Fprintf(os.Stderr, "macOS desktop backend unavailable: %v\nCheck the pinned GoSX dependency in desktop/go.mod.\n", err)
+		os.Exit(1)
+	}
+}
+GO
+	(cd "$repo/desktop" && GOOS=darwin CGO_ENABLED=0 go run "$work/check-platform.go")
+
+	local out app
+	out="${output:-$repo/dist/macos}"
+	mkdir -p -- "$out"
+	out="$(cd -- "$out" && pwd)"
+	app="$work/Cicada Studio.app"
+	mkdir -p -- "$app/Contents/MacOS"
+
+	# CFBundleVersion and CFBundleShortVersionString take digits and dots, so a
+	# pre-release suffix such as -dev stays in the binary's version only.
+	local plist_version="${version%%[-+]*}"
+	(cd "$repo/desktop" && GOOS=darwin CGO_ENABLED=0 go build -trimpath \
+		-ldflags="-s -w -X main.buildVersion=$version" \
+		-o "$app/Contents/MacOS/cicada-studio" .)
+	# Build the cicada CLI sidecar and the GoSX workstation. Both land next to
+	# the host in Contents/MacOS/ so findCicada and the sidecar can resolve
+	# them without PATH or extra flags.
+	(cd "$repo" && GOWORK=off GOOS=darwin CGO_ENABLED=0 go build -trimpath \
+		-ldflags="-s -w" \
+		-o "$app/Contents/MacOS/cicada" ./cmd/cicada)
+	# Build and install the GoSX runtime (build.json, hashed assets, public
+	# tree) alongside the workstation binary. runtimeRoot() in
+	# workstation/runtime.go checks Contents/MacOS/workstation/build.json
+	# first, so this path flips the page to bootstrapMode=full and loads the
+	# full GoSX runtime instead of falling back to raw browser form POSTs.
+	# Keep the CLI and generated runtime on the workstation's pinned GoSX
+	# version independently of the desktop host's dependency. Generate first
+	# so the workstation executable includes the same UI as its runtime assets.
+	# The production build also compiles the server with trimpath and the
+	# configured symbol stripping. Reuse it instead of compiling it twice.
+	(cd "$repo/workstation" && GOWORK=off GOOS=darwin CGO_ENABLED=0 go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .)
+	cp "$repo/workstation/dist/server/app" "$app/Contents/MacOS/cicada-workstation"
+	mkdir -p "$app/Contents/MacOS/workstation"
+	cp "$repo/workstation/dist/build.json" "$app/Contents/MacOS/workstation/"
+	cp -R "$repo/workstation/dist/assets" "$repo/workstation/dist/public" \
+		"$app/Contents/MacOS/workstation/"
+	cat >"$app/Contents/Info.plist" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleDisplayName</key>
+	<string>Cicada Studio</string>
+	<key>CFBundleExecutable</key>
+	<string>cicada-studio</string>
+	<key>CFBundleIdentifier</key>
+	<string>dev.cicada.studio</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>Cicada Studio</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$plist_version</string>
+	<key>CFBundleVersion</key>
+	<string>$plist_version</string>
+	<key>LSApplicationCategoryType</key>
+	<string>public.app-category.music</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>12.0</string>
+	<key>LSUIElement</key>
+	<false/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSPrincipalClass</key>
+	<string>NSApplication</string>
+</dict>
+</plist>
+PLIST
+	printf 'APPL????' >"$app/Contents/PkgInfo"
+	plutil -lint "$app/Contents/Info.plist" >/dev/null
+
+	codesign -s - --force --timestamp=none --deep "$app"
+	codesign --verify --deep --strict "$app"
+	# Keep the previous app intact until its replacement is built and verified.
+	rm -rf -- "$out/Cicada Studio.app"
+	mv -- "$app" "$out/"
+	echo "Cicada Studio $version packaged at $out/Cicada Studio.app"
+}
+
+if [[ "$target" == darwin ]]; then
+	package_darwin
+	exit 0
+fi
+
 output="$(realpath -m -- "${output:-$repo/dist/desktop}")"
 manifest_key="$(realpath -- "$manifest_key")"
 work="$(mktemp -d)"
@@ -66,7 +228,6 @@ cp "$work/sdk/runtimes/win-x64/native/WebView2Loader.dll" "$stage/"
 cp "$work/sdk/LICENSE.txt" "$stage/licenses/WebView2-SDK-LICENSE.txt"
 cp "$repo/LICENSE" "$stage/licenses/Cicada-LICENSE.txt"
 
-export GOWORK=off
 # Build the framework runtime on the host before cross-compiling executables.
 # Mutable scores, take journals, and settings never enter the GoSX bundle.
 (cd "$repo/workstation" && go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .)

@@ -1,6 +1,7 @@
 {
   "build": {
     "hooks": { "pre": ["go generate ./..."] },
+    "server": { "strip": true },
     "runtime": { "sourceMaps": false, "exclude": ["scene3d", "video", "payments", "relay"] }
   }
 }
