@@ -21,7 +21,7 @@ require (
 require (
 	github.com/ebitengine/purego v0.11.0 // indirect
 	github.com/jfreymuth/pulse v0.1.3 // indirect
-	m31labs.dev/tymbal v0.0.0-20260929091837-23968cefb0c6
+	m31labs.dev/tymbal v0.0.0-20261018223834-ea06558a52bd
 )
 
-replace m31labs.dev/tymbal => github.com/odvcencio/tymbal v0.0.0-20260929091837-23968cefb0c6
+replace m31labs.dev/tymbal => github.com/odvcencio/tymbal v0.0.0-20261018223834-ea06558a52bd

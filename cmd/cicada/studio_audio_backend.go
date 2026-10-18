@@ -20,8 +20,12 @@ func defaultStudioAudioOptions() studioAudioOptions {
 }
 
 func defaultStudioAudioOptionsFor(name audiobackend.Name) studioAudioOptions {
+	return defaultStudioAudioOptionsForOS(name, runtime.GOOS)
+}
+
+func defaultStudioAudioOptionsForOS(name audiobackend.Name, goos string) studioAudioOptions {
 	return studioAudioOptions{
-		InputEnabled: runtime.GOOS == "windows" && name == audiobackend.Tymbal,
+		InputEnabled: goos == "windows" && name == audiobackend.Tymbal,
 		MonitorMuted: true, MonitorGain: 0.5, MonitorMode: "stereo",
 		PeriodFrames: liveBlockFrames,
 	}
@@ -471,9 +475,16 @@ func (a *backendStudioAudio) Snapshot() studioAudioSnapshot {
 }
 
 func studioAudioBackendLabel(name audiobackend.Name) string {
+	return studioAudioBackendLabelForOS(name, runtime.GOOS)
+}
+
+func studioAudioBackendLabelForOS(name audiobackend.Name, goos string) string {
 	switch name {
 	case audiobackend.Tymbal:
-		if runtime.GOOS == "windows" {
+		switch goos {
+		case "darwin":
+			return "Tymbal CoreAudio"
+		case "windows":
 			return "Tymbal WASAPI shared mode"
 		}
 		return "Tymbal ALSA"
@@ -487,14 +498,20 @@ func studioAudioBackendLabel(name audiobackend.Name) string {
 }
 
 func studioAudioHost(name audiobackend.Name) string {
+	return studioAudioHostForOS(name, runtime.GOOS)
+}
+
+func studioAudioHostForOS(name audiobackend.Name, goos string) string {
 	if name != audiobackend.Tymbal {
 		return ""
 	}
-	if runtime.GOOS == "windows" {
+	switch goos {
+	case "windows":
 		return "wasapi"
-	}
-	if runtime.GOOS == "linux" {
+	case "linux":
 		return "alsa"
+	case "darwin":
+		return "coreaudio"
 	}
 	return ""
 }
