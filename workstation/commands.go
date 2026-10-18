@@ -22,7 +22,7 @@ func shellCommands() []command.Command {
 		{ID: "transport.toggle", Title: "Play or pause", Group: "Transport", Keys: []string{"Space"}, Action: transport("toggle", nil)},
 		{ID: "transport.resume", Title: "Resume from marker", Group: "Transport", Keys: []string{"Shift+Space"}, Reserved: true},
 		{ID: "transport.home", Title: "Return to start", Group: "Transport", Keys: []string{"Home"}, Action: transport("home", nil)},
-		{ID: "transport.record", Title: "Record", Group: "Transport", Keys: []string{"F9"}, Action: command.Action{Signal: "$record", Value: "toggle"}},
+		{ID: "transport.record", Title: "Record or finish take", Group: "Transport", Keys: []string{"F9", "Mod+Shift+R"}, Action: command.Action{Signal: "$record", Value: "toggle"}},
 		{ID: "transport.loop", Title: "Loop selection", Group: "Transport", Keys: []string{"Mod+L"}, Reserved: true},
 
 		// Alt+Shift+digit keeps Tab and Shift+Tab for focus traversal. It avoids
@@ -35,11 +35,11 @@ func shellCommands() []command.Command {
 		{ID: "dock.automation", Title: "Show Automation tab", Group: "View", Keys: []string{"Alt+Shift+6"}, Action: command.Action{Signal: "$dock", Value: "automation"}},
 		{ID: "palette.open", Title: "Show keyboard shortcuts", Group: "View", Keys: []string{"Mod+K", "?", "Shift+/"}, Action: command.Action{Open: "#palette"}},
 
-		// TODO(gosx-s0): the edit commands below submit managed forms. They stay
-		// Reserved until command.Action.Submit exists; then each becomes
-		// Action{Submit: "#undo-form"} and so on, and loses Reserved.
-		{ID: "edit.undo", Title: "Undo", Group: "Edit", Keys: []string{"Mod+Z"}, Reserved: true},
-		{ID: "edit.redo", Title: "Redo", Group: "Edit", Keys: []string{"Mod+Shift+Z"}, Reserved: true},
+		// The shell engine submits the existing managed forms, retaining their
+		// CSRF token, displayed revision, file and normal conflict handling.
+		{ID: "edit.save", Title: "Save score", Group: "Edit", Keys: []string{"Mod+S"}, AllowEditable: true, Action: command.Action{Signal: "$edit", Value: "save"}},
+		{ID: "edit.undo", Title: "Undo", Group: "Edit", Keys: []string{"Mod+Z"}, Action: command.Action{Signal: "$edit", Value: "undo"}},
+		{ID: "edit.redo", Title: "Redo", Group: "Edit", Keys: []string{"Mod+Shift+Z"}, Action: command.Action{Signal: "$edit", Value: "redo"}},
 		{ID: "edit.duplicate", Title: "Duplicate selection", Group: "Edit", Keys: []string{"Mod+D"}, Reserved: true},
 		{ID: "edit.split", Title: "Split clip", Group: "Edit", Keys: []string{"Mod+E"}, Reserved: true},
 		{ID: "edit.rename", Title: "Rename selection", Group: "Edit", Keys: []string{"Mod+R"}, Reserved: true},
@@ -67,7 +67,7 @@ func shellCommands() []command.Command {
 			Action: command.Action{Signal: "$selection", Value: map[string]any{"move": arrow.name}},
 		})
 	}
-	// Scene launch is live from S3; until the command relay (S2) the signal has no listener.
+	// Scene shortcuts submit the corresponding launch-matrix header button.
 	for scene := 1; scene <= 8; scene++ {
 		cmds = append(cmds, command.Command{
 			ID: "live.scene." + string(rune('0'+scene)), Title: "Launch scene " + string(rune('0'+scene)), Group: "Session", Keys: []string{"F" + string(rune('0'+scene))},

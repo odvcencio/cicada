@@ -46,12 +46,16 @@ async function sharedBrowser() {
   return shared;
 }
 
-async function openShell(search = '', viewport) {
+async function openShell(search = '', viewport, platform) {
   assert.ok(process.env.CICADA_STUDIO_URL, 'set CICADA_STUDIO_URL to a running Studio');
   const base = new URL(process.env.CICADA_STUDIO_URL);
   assert.ok(['127.0.0.1', 'localhost', '[::1]'].includes(base.hostname), 'use a local Studio');
   const {context} = await sharedBrowser();
   const page = await context.newPage();
+  if (platform) await page.addInitScript(value => {
+    Object.defineProperty(navigator, 'platform', {get: () => value});
+    Object.defineProperty(navigator, 'userAgentData', {get: () => ({platform: value})});
+  }, platform);
   page.setDefaultTimeout(15_000);
   if (viewport) await page.setViewportSize(viewport);
   const requests = [], errors = [];
@@ -67,6 +71,8 @@ async function openShell(search = '', viewport) {
 }
 
 const actionPosts = requests => requests.filter(request => request.startsWith('POST /__actions/'));
+const actionValues = async request => request.headers()['content-type']?.includes('application/json')
+  ? request.postDataJSON() : Object.fromEntries(await new Response(request.postDataBuffer(), {headers: {'Content-Type': request.headers()['content-type']}}).formData());
 
 test('shell renders every region without a page scrollbar', async () => {
   const {page, errors} = await openShell();
@@ -438,21 +444,93 @@ test('Alt+Shift+2 shows the Session view and Alt+Shift+5 the Device tab', {skip:
   await page.close();
 });
 
-test('Control+Z and Control+Shift+Z submit the undo and redo forms', {skip: 'pending S0'}, async () => {
-  const {page, requests} = await openShell();
-  await page.keyboard.press('Control+z');
-  await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/__actions/undo')));
-  assert.ok(actionPosts(requests).some(request => request.endsWith('/__actions/undo')));
-  await page.keyboard.press('Control+Shift+z');
-  await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/__actions/redo')));
+test('Mac Cmd save, undo and redo submit the current score forms and leave text undo to the editor', async () => {
+  const {page, requests} = await openShell('', undefined, 'MacIntel');
+  await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  await page.route('**/__actions/**', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
+  for (const [chord, action] of [['Meta+z', 'undo'], ['Meta+Shift+z', 'redo'], ['Meta+s', 'source']]) {
+    await page.locator('body').focus();
+    const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/' + action);
+    await page.keyboard.press(chord);
+    const data = await actionValues(await sent);
+    assert.ok(data.csrf_token, chord + ' retains the editor token');
+    assert.ok(data.revision, chord + ' retains the displayed revision');
+    assert.ok(Object.hasOwn(data, 'fileRevision'), chord + ' retains the file revision');
+  }
+  const editor = page.locator('#score textarea').first();
+  await editor.focus();
+  const before = actionPosts(requests).length;
+  await page.keyboard.press('Meta+z');
+  await page.keyboard.press('Meta+Shift+z');
+  await page.waitForTimeout(100);
+  assert.equal(actionPosts(requests).length, before, 'typing undo never undoes the saved project');
+  const saved = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/source');
+  await page.keyboard.press('Meta+s');
+  assert.ok(Object.hasOwn(await actionValues(await saved), 'content'), 'Cmd+S works while editing score text');
   await page.close();
 });
 
-test('Home posts the transport home action', {skip: 'pending S2: the command relay forwards the $command signal'}, async () => {
-  const {page, requests} = await openShell();
-  await page.keyboard.press('Home');
-  await page.waitForFunction(() => performance.getEntriesByType('resource').some(entry => entry.name.endsWith('/__actions/transport')));
-  assert.ok(actionPosts(requests).some(request => request.endsWith('/__actions/transport')));
+test('shell Space toggles actual playback, Home returns to start, and Audio unlocks after stop', async () => {
+  const {page} = await openShell();
+  await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  await page.locator('button[data-gosx-disclosure-target="#audio-dialog"]').click();
+  let playing = false;
+  await page.route('**/api/transport', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({playing, bar: 1, step: 1})}));
+  await page.route('**/api/audio/config?runtime=1', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({playing, runtime: {}, options: {periodFrames: 128}})}));
+  await page.route('**/__actions/transport', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
+  for (const [chord, action] of [['Space', 'play'], ['Space', 'pause'], ['Home', 'home']]) {
+    await page.locator('body').focus();
+    const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/transport');
+    await page.keyboard.press(chord);
+    assert.equal((await actionValues(await sent)).action, action);
+    if (action === 'play') {
+      playing = true;
+      await page.waitForFunction(() => document.querySelector('[data-audio-routing]').disabled);
+    }
+  }
+  playing = false;
+  await page.waitForFunction(() => !document.querySelector('[data-audio-routing]').disabled);
+  assert.ok(await page.locator('[data-audio-lock-notice]').isHidden());
+  await page.close();
+});
+
+test('Mac record shortcut starts and finishes the chosen vocal take', async () => {
+  const {page} = await openShell('', undefined, 'MacIntel');
+  await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  if (!(await page.locator('.vocal-record select[name=track] option[value=keyboard-vocal]').count())) {
+    const addTrack = page.locator('.vocal-setup form[action="/__actions/clip"]');
+    await addTrack.locator('input[name=newName]').fill('keyboard-vocal');
+    await addTrack.locator('button[type=submit]').click();
+    await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  }
+  await page.locator('.vocal-record select[name=track] option[value=keyboard-vocal]').waitFor({state: 'attached'});
+  await page.locator('.vocal-record select[name=track]').selectOption('keyboard-vocal');
+  let active = '';
+  await page.route('**/api/capture', route => route.fulfill({contentType: 'application/json', body: JSON.stringify({activeCapture: active, capture: active ? {recording: true} : null})}));
+  await page.route('**/__actions/take', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
+  for (const action of ['record', 'stop']) {
+    if (action === 'stop') {
+      active = 'keyboard-active';
+      await page.waitForFunction(() => !document.querySelector('.vocal-record [data-capture-control=stop]').disabled);
+    }
+    await page.locator('body').focus();
+    const sent = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/take');
+    await page.keyboard.press('Meta+Shift+r');
+    const data = await actionValues(await sent);
+    assert.equal(data.action, action);
+    if (action === 'record') assert.equal(data.track, 'keyboard-vocal');
+  }
+  await page.close();
+});
+
+test('shell scene keys submit the corresponding launch-matrix scene', async () => {
+  const {page} = await openShell('?tab=session');
+  await page.locator('#studio-shell[data-shell-actions=ready]').waitFor();
+  await page.route('**/__actions/launch', route => route.fulfill({status: 409, contentType: 'application/json', body: '{"ok":false,"message":"Keyboard dispatch checked."}'}));
+  const scene = page.waitForRequest(request => request.method() === 'POST' && new URL(request.url()).pathname === '/__actions/launch');
+  await page.locator('body').focus();
+  await page.keyboard.press('F2');
+  assert.deepEqual(JSON.parse((await actionValues(await scene)).command), {action: 'launch', scene: 'alternate'});
   await page.close();
 });
 

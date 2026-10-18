@@ -24,7 +24,7 @@ func TestAudioSetupRetainsDisconnectedDeviceAndReturnsToVocalTrack(t *testing.T)
 				json.NewDecoder(r.Body).Decode(&applied)
 				io.WriteString(w, `{}`)
 			} else {
-				io.WriteString(w, `{"inventory":{"supported":true,"backend":"Tymbal WASAPI shared mode","backendName":"tymbal","devices":[{"id":"mic-live","name":"Webcam microphone","inputs":1,"defaultInput":true},{"id":"speakers-live","name":"Headphones","outputs":2}]},"options":{"inputDevice":"mic-unplugged","outputDevice":"","inputEnabled":true,"monitorMuted":true,"monitorMode":"mono1","monitorGain":0.5,"recordingOffsetMS":17.5,"periodFrames":128},"runtime":{"requestedPeriodFrames":128,"periodFrames":240,"sampleRate":48000,"inputLatencyMs":3,"inputLatencyKnown":true,"outputLatencyMs":4,"outputLatencyKnown":true,"reportedRoundTripMs":7,"reportedRoundTripKnown":true,"audioPriority":"mmcss","deadlineKnown":true,"callbacks":42,"callbackMaxUs":2000,"callbackBudgetPercent":40,"warning":"Device negotiated 240 frames for the requested 128-frame buffer."}}`)
+				io.WriteString(w, `{"inventory":{"supported":true,"backend":"Tymbal CoreAudio","backendName":"tymbal","host":"coreaudio","devices":[{"id":"mic-live","name":"Webcam microphone","inputs":1,"defaultInput":true},{"id":"speakers-live","name":"Headphones","outputs":2}]},"options":{"inputDevice":"mic-unplugged","outputDevice":"","inputEnabled":true,"monitorMuted":true,"monitorMode":"mono1","monitorGain":0.5,"recordingOffsetMS":17.5,"periodFrames":128},"runtime":{"requestedPeriodFrames":128,"periodFrames":240,"sampleRate":48000,"inputLatencyMs":3,"inputLatencyKnown":true,"outputLatencyMs":4,"outputLatencyKnown":true,"reportedRoundTripMs":7,"reportedRoundTripKnown":true,"audioPriority":"mmcss","deadlineKnown":true,"callbacks":42,"callbackMaxUs":2000,"callbackBudgetPercent":40,"warning":"Device negotiated 240 frames for the requested 128-frame buffer."}}`)
 			}
 			return
 		}
@@ -41,7 +41,7 @@ func TestAudioSetupRetainsDisconnectedDeviceAndReturnsToVocalTrack(t *testing.T)
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	page := getPage(t, client, app.URL+"/?panel=audio&returnTo=session&vocalTrack=danilo")
-	for _, want := range []string{"Choose a playback output", "Headphones", "Webcam microphone", "Saved device (disconnected)", "Apply and return to Session", "Refresh devices", "Audio details", "Buffer size", "Requested buffer", "Granted buffer", "240 frames", "Reported round trip", "7.00 ms", "mmcss", "40.0%", "hardware loopback measurement", "Device negotiated 240 frames"} {
+	for _, want := range []string{"Choose a playback output", "Headphones", "Webcam microphone", "Saved device (disconnected)", "Apply and return to Session", "Refresh devices", "Audio details", "Buffer size", "Requested buffer", "Granted buffer", "240 frames", "Reported round trip", "7.00 ms", "mmcss", "40.0%", "hardware loopback measurement", "Device negotiated 240 frames", "macOS will ask for microphone access", "Privacy &amp; Security", "allow Cicada Studio"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("missing audio setup guidance %q", want)
 		}
