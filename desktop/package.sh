@@ -183,6 +183,8 @@ GO
 	<false/>
 	<key>NSHighResolutionCapable</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Cicada Studio uses microphone input to record voices, instruments, and samples into your project.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>
