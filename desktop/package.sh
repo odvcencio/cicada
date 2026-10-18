@@ -17,14 +17,14 @@
 #
 #   Needs: go, curl, unzip, sha256sum.
 #
-# macOS: assembles "Cicada Studio.app" with the desktop host as its executable
-# and signs it ad hoc (development builds; no Developer ID or notarization).
+# macOS: assembles "Cicada Studio.app" with the desktop host, the cicada CLI
+# sidecar, cicada-workstation, and the GoSX runtime (build.json, assets,
+# public), and signs it ad hoc (development builds; no Developer ID or
+# notarization). The host finds siblings in Contents/MacOS/ and the GoSX
+# runtime at Contents/MacOS/workstation/, so the bundle is self-contained.
 #
 #   desktop/package.sh [--target darwin] [--version 0.1.0] [--output dist/macos]
 #
-#   The bundle holds the host only. It does not yet bundle cicada,
-#   cicada-workstation, or the GoSX runtime, so the host finds them only
-#   beside the executable inside the bundle or on PATH.
 #   The build honors GOWORK. Until desktop/go.mod requires a GoSX release with
 #   the darwin desktop backend, point GOWORK at a go.work that uses a GoSX
 #   checkout that has it.
@@ -107,6 +107,25 @@ package_darwin() {
 	(cd "$repo/desktop" && GOOS=darwin CGO_ENABLED=0 go build -trimpath \
 		-ldflags="-s -w -X main.buildVersion=$version" \
 		-o "$app/Contents/MacOS/cicada-studio" .)
+	# Build the cicada CLI sidecar and the GoSX workstation. Both land next to
+	# the host in Contents/MacOS/ so findCicada and the sidecar can resolve
+	# them without PATH or extra flags.
+	(cd "$repo" && GOOS=darwin CGO_ENABLED=0 go build -trimpath \
+		-ldflags="-s -w" \
+		-o "$app/Contents/MacOS/cicada" ./cmd/cicada)
+	(cd "$repo/workstation" && GOOS=darwin CGO_ENABLED=0 go build -trimpath \
+		-ldflags="-s -w" \
+		-o "$app/Contents/MacOS/cicada-workstation" .)
+	# Build and install the GoSX runtime (build.json, hashed assets, public
+	# tree) alongside the workstation binary. runtimeRoot() in
+	# workstation/runtime.go checks Contents/MacOS/workstation/build.json
+	# first, so this path flips the page to bootstrapMode=full and loads the
+	# full GoSX runtime instead of falling back to raw browser form POSTs.
+	(cd "$repo/workstation" && go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .)
+	mkdir -p "$app/Contents/MacOS/workstation"
+	cp "$repo/workstation/dist/build.json" "$app/Contents/MacOS/workstation/"
+	cp -R "$repo/workstation/dist/assets" "$repo/workstation/dist/public" \
+		"$app/Contents/MacOS/workstation/"
 	cat >"$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -146,7 +165,7 @@ PLIST
 	printf 'APPL????' >"$app/Contents/PkgInfo"
 	plutil -lint "$app/Contents/Info.plist" >/dev/null
 
-	codesign -s - --force --timestamp=none "$app"
+	codesign -s - --force --timestamp=none --deep "$app"
 	codesign --verify --deep --strict "$app"
 	echo "Cicada Studio $version packaged at $app"
 }
