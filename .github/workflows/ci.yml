@@ -374,6 +374,8 @@ jobs:
       - name: Verify pinned dependencies and native tests
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
+          # Connect only the test-created CoreMIDI source; no audio or microphone.
+          CICADA_TEST_NATIVE_MIDI: '1'
         run: |
           set -euo pipefail
           test "$(go env GOWORK)" = off
