@@ -42,6 +42,7 @@ type host struct {
 	statePath   string
 	state       hostState
 	score       string
+	scoreKey    string
 	proc        *sidecar.Process
 	queue       openQueue
 	closing     bool
@@ -218,10 +219,22 @@ func (h *host) optionalChrome(what string, err error) error {
 // open reserves requests on the calling thread, then switches in the background.
 // Finder's first document must follow startup even if its goroutine runs first.
 func (h *host) open(score string) {
+	h.openRequested(score, false)
+}
+
+func (h *host) reload() {
+	h.openRequested(h.currentScore(), true)
+}
+
+func (h *host) openRequested(score string, reload bool) {
 	h.mu.Lock()
-	closing := h.closing
+	activeKey := ""
+	if h.proc != nil {
+		activeKey = h.scoreKey
+	}
+	start := !h.closing && h.queue.request(score, activeKey, reload)
 	h.mu.Unlock()
-	if closing || !h.queue.request(score) {
+	if !start {
 		return
 	}
 	go func() {
@@ -233,6 +246,7 @@ func (h *host) open(score string) {
 }
 
 func (h *host) openScore(score string) {
+	key := scorePathKey(score)
 	h.mu.Lock()
 	closing, previous := h.closing, h.proc
 	h.mu.Unlock()
@@ -262,6 +276,7 @@ func (h *host) openScore(score string) {
 		return
 	}
 	h.score = score
+	h.scoreKey = key
 	h.state.remember(score)
 	state := h.state
 	h.mu.Unlock()
@@ -383,7 +398,7 @@ func (h *host) menu() desktop.Menu {
 			{ID: "file.exit", Label: "E&xit", OnClick: func() { _ = h.app.Close() }},
 		}}},
 		{ID: "view", Label: "&View", Submenu: &desktop.Menu{Items: []desktop.MenuItem{
-			{ID: "view.reload", Label: "&Reload Studio", OnClick: func() { h.open(h.currentScore()) }},
+			{ID: "view.reload", Label: "&Reload Studio", OnClick: h.reload},
 		}}},
 		{ID: "help", Label: "&Help", Submenu: &desktop.Menu{Items: []desktop.MenuItem{
 			{ID: "help.docs", Label: "Cicada &Documentation", OnClick: func() { _ = h.app.OpenURL("https://github.com/odvcencio/cicada#readme") }},
