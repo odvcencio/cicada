@@ -53,6 +53,14 @@ phrases. These selections build the vocal comp; you can keep arranging and
 auditioning without typing bar positions. See [Studio](studio.md) for recording,
 punch ranges, and comp editing.
 
+## Play with a MIDI keyboard
+
+In Live, choose **Enable MIDI**, then select your keyboard or controller. The
+Mac app connects through CoreMIDI, including when the embedded browser does
+not provide Web MIDI. Connecting or disconnecting an input updates the list;
+unplugging an input releases its held notes. Note and controller input follow
+the selected Live instrument. SysEx is not supported.
+
 ## Everyday shortcuts
 
 | Shortcut | Action |
