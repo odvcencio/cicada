@@ -122,6 +122,10 @@
       progress.phase = 'imported';
       save();
       form.querySelector('button[type=submit]').click();
+      // This multipart form uses native navigation. Its old document's fetches
+      // can be aborted during unload, so resume verification only after the
+      // host reinjects this workflow into the redirected document.
+      await new Promise((_, reject) => setTimeout(() => reject(new Error('Import form did not navigate within fifteen seconds')), 15000));
     }
     if (progress.phase === 'imported') await verifyImport();
     if (progress.phase === 'pad-two') {
