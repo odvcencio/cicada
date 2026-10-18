@@ -1,4 +1,4 @@
-//go:build linux || windows
+//go:build linux || windows || darwin
 
 package audiobackend
 
@@ -99,6 +99,10 @@ func TestTymbalDeviceErrorLines(t *testing.T) {
 		{
 			name: "WASAPI failure", goos: "windows", direction: tymbal.Output, device: "Speakers",
 			err: errors.New("WASAPI activation failed\nHRESULT 0x80070005"), want: "Tymbal WASAPI device \"Speakers\" could not be opened; use --audio oto: WASAPI activation failed HRESULT 0x80070005",
+		},
+		{
+			name: "Core Audio failure", goos: "darwin", direction: tymbal.Output, device: "Studio headphones",
+			err: errors.New("device disconnected"), want: "Tymbal Core Audio device \"Studio headphones\" could not be opened; use --audio oto: device disconnected",
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

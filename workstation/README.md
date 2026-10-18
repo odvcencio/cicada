@@ -104,9 +104,13 @@ GoSX sessions, request limits, and loopback host checks apply before actions.
 
 ## Audio and compatibility boundaries
 
-Tymbal is the default on Windows (WASAPI) and Linux (ALSA). `--audio null` permits
+Tymbal is the default on macOS (Core Audio), Windows (WASAPI), and Linux (ALSA). `--audio null` permits
 device-free transport testing; it is not hardware qualification. The existing
-explicit Oto fallback remains available on other platforms.
+explicit Oto fallback remains available. The pinned Core Audio driver exposes
+native output selection, timing, and thread priority; recording input is not
+implemented there yet. Device discovery and recording support are separate
+capabilities: the Audio panel shows native microphones but disables recording
+controls when the driver cannot open an input stream.
 
 GoSX's production engine API supports canvas, fetch, signals, and Go/WASM.
 Automatic `//gosx:engine` discovery is a preview feature in this version; the

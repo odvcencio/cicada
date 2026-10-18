@@ -20,9 +20,12 @@ make build
 ```
 
 Open the printed loopback URL. Playback starts only when you select **Play**.
-`--audio null` exercises transport without an output device. On Windows and
-Linux, the default is Tymbal. Use **Audio** to select its devices and input
-monitoring settings while stopped.
+`--audio null` exercises transport without an output device. Tymbal is the
+default on Windows, Linux, and macOS. Use **Audio** to select devices while
+stopped. macOS uses Core Audio for selectable playback outputs and native
+timing reports; its current driver does not support recording input. Input
+controls remain disabled there rather than offering a recording path that
+cannot open. Windows and Linux expose native recording and monitoring.
 
 The null backend is silent. In WSL or on a Linux desktop using PulseAudio,
 select the system output explicitly with `--audio oto`. Rendered WAV and MP3

@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"m31labs.dev/gosx"
 )
 
 func TestAudioSetupRetainsDisconnectedDeviceAndReturnsToVocalTrack(t *testing.T) {
@@ -88,16 +90,42 @@ func TestRecordingReadinessDistinguishesMicOffMissingOutputAndSilentBackend(t *t
 	if r := recordingReadiness(s); r.Title != "Microphone off" || r.Ready {
 		t.Fatal(r)
 	}
+	if !strings.Contains(gosx.RenderHTML(audioConnections(s)), `data-input-ready="false"`) {
+		t.Fatal("disabled input was shown as a configured recording path")
+	}
 	s.Options.InputEnabled = true
 	if r := recordingReadiness(s); !r.Ready || r.Input != "Webcam" || r.Output != "Headphones" {
 		t.Fatal(r)
 	}
+	if !strings.Contains(gosx.RenderHTML(audioConnections(s)), `data-input-ready="true"`) {
+		t.Fatal("configured native input was not connected in the audio view")
+	}
 	s.Options.OutputDevice = "disconnected"
-	if r := recordingReadiness(s); r.Title != "Choose a playback output" || r.Ready {
+	if r := recordingReadiness(s); r.Title != "Choose a playback output" || r.Ready || r.PlaybackReady {
 		t.Fatal(r)
 	}
 	s.Inventory.BackendName = "null"
-	if r := recordingReadiness(s); r.Title != "Silent playback" || r.Ready {
+	if r := recordingReadiness(s); r.Title != "Silent playback" || r.Ready || r.PlaybackReady {
 		t.Fatal(r)
+	}
+}
+
+func TestOutputOnlyNativeDriverKeepsPlaybackSelectableWithoutPromisingRecording(t *testing.T) {
+	var state audioState
+	err := json.Unmarshal([]byte(`{"inventory":{"supported":true,"captureSupported":false,"backend":"Tymbal Core Audio","backendName":"tymbal","devices":[{"id":"mic","name":"Built-in microphone","inputs":1,"defaultInput":true},{"id":"out","name":"Studio headphones","outputs":2,"defaultOutput":true}]},"options":{"inputEnabled":false}}`), &state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := recordingReadiness(state)
+	if r.Ready || !r.PlaybackReady || r.Title != "Playback configured" || r.Output != "Studio headphones" || r.Input != "Recording unavailable" {
+		t.Fatalf("misleading readiness: %+v", r)
+	}
+	page := gosx.RenderHTML(audioConnections(state))
+	if !strings.Contains(page, `data-input-ready="false"`) || !strings.Contains(page, `data-output-ready="true"`) || !strings.Contains(page, "Studio headphones") || !strings.Contains(page, "Recording input is not available") {
+		t.Fatalf("connection graph misrepresents output-only driver: %s", page)
+	}
+	state.Options.InputEnabled = true
+	if recordingReadiness(state).Ready {
+		t.Fatal("saved input setting bypassed native capture capability")
 	}
 }

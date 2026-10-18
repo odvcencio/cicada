@@ -35,13 +35,14 @@ type studioAudioDeviceInfo struct {
 }
 
 type studioAudioInventory struct {
-	Supported     bool                    `json:"supported"`
-	Backend       string                  `json:"backend"`
-	BackendName   string                  `json:"backendName"`
-	Host          string                  `json:"host,omitempty"`
-	Message       string                  `json:"message,omitempty"`
-	Devices       []studioAudioDeviceInfo `json:"devices"`
-	BufferChoices []int                   `json:"bufferChoices"`
+	Supported        bool                    `json:"supported"`
+	CaptureSupported bool                    `json:"captureSupported"`
+	Backend          string                  `json:"backend"`
+	BackendName      string                  `json:"backendName"`
+	Host             string                  `json:"host,omitempty"`
+	Message          string                  `json:"message,omitempty"`
+	Devices          []studioAudioDeviceInfo `json:"devices"`
+	BufferChoices    []int                   `json:"bufferChoices"`
 }
 
 type studioAudioSnapshot struct {
@@ -368,6 +369,9 @@ func validateStudioAudioOptions(options studioAudioOptions) error {
 }
 
 func validateStudioAudioDevices(inventory studioAudioInventory, options studioAudioOptions) error {
+	if inventory.Host == "coreaudio" && !inventory.CaptureSupported && options.InputEnabled {
+		return fmt.Errorf("Core Audio recording input is not supported by this audio driver yet")
+	}
 	if !inventory.Supported {
 		if options.InputEnabled || options.InputDevice != "" || options.OutputDevice != "" {
 			return fmt.Errorf("this audio backend uses the system default output and does not expose selectable input devices")

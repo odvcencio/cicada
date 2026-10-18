@@ -36,7 +36,8 @@ func enumerateStudioAudio(backendName string) (studioAudioInventory, error) {
 	name := audiobackend.Name(backendName)
 	inventory := studioAudioInventory{
 		Backend: studioAudioBackendLabel(name), BackendName: string(name), Host: studioAudioHost(name), Supported: supported,
-		BufferChoices: []int{64, 128, 256, 512, 1024},
+		CaptureSupported: backend.CaptureSupported(),
+		BufferChoices:    []int{64, 128, 256, 512, 1024},
 	}
 	if err != nil {
 		return inventory, err
@@ -476,6 +477,9 @@ func studioAudioBackendLabel(name audiobackend.Name) string {
 		if runtime.GOOS == "windows" {
 			return "Tymbal WASAPI shared mode"
 		}
+		if runtime.GOOS == "darwin" {
+			return "Tymbal Core Audio"
+		}
 		return "Tymbal ALSA"
 	case audiobackend.Oto:
 		return "Oto"
@@ -495,6 +499,9 @@ func studioAudioHost(name audiobackend.Name) string {
 	}
 	if runtime.GOOS == "linux" {
 		return "alsa"
+	}
+	if runtime.GOOS == "darwin" {
+		return "coreaudio"
 	}
 	return ""
 }

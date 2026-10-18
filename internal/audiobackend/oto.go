@@ -17,6 +17,8 @@ type otoBackend struct{}
 
 func (otoBackend) Name() Name { return Oto }
 
+func (otoBackend) CaptureSupported() bool { return false }
+
 func (otoBackend) Devices() ([]Device, bool, error) { return nil, false, nil }
 
 func (otoBackend) SampleRate(config Config) (int, error) {

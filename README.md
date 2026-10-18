@@ -49,11 +49,14 @@ The gate also requires zero WASM render allocations or memory growth. Run
 `make test-parity` locally to compare the native and WASM kernels; CI supplies
 the amd64 PCM reference to the native arm64 run.
 
-On Windows and Linux, `cicada play` and Studio use Tymbal by default: WASAPI
-shared mode on Windows and ALSA on Linux. Cicada reports device errors and does
+`cicada play` and Studio use Tymbal by default: Core Audio on macOS, WASAPI
+shared mode on Windows, and ALSA on Linux. Cicada reports device errors and does
 not switch engines silently. Use `--audio oto` to select Oto explicitly, or
-`--audio null` for real-time transport without an output device. macOS uses Oto
-by default. `CICADA_AUDIO` selects a backend when `--audio` is omitted.
+`--audio null` for real-time transport without an output device.
+`CICADA_AUDIO` selects a backend when `--audio` is omitted. The current Core
+Audio driver supports output selection and native timing reports; macOS
+recording input is not implemented yet. Windows and Linux support recording
+through Tymbal's native input path.
 
 ## Learn Cicada
 

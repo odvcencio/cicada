@@ -1,4 +1,4 @@
-// Package audiobackend provides Cicada's native audio output backends.
+// Package audiobackend provides Cicada's native audio backends.
 package audiobackend
 
 import (
@@ -56,7 +56,7 @@ func DefaultFor(command string) Name {
 }
 
 func DefaultForOS(command, goos string) Name {
-	if (command == "play" || command == "studio") && (goos == "windows" || goos == "linux") {
+	if (command == "play" || command == "studio") && (goos == "windows" || goos == "linux" || goos == "darwin") {
 		return Tymbal
 	}
 	return Oto
@@ -146,6 +146,7 @@ type Stream interface {
 
 type Backend interface {
 	Name() Name
+	CaptureSupported() bool
 	Devices() ([]Device, bool, error)
 	SampleRate(Config) (int, error)
 	Open(Config, Callback) (Stream, error)

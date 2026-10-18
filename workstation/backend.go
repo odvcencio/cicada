@@ -176,12 +176,13 @@ type audioDevice struct {
 }
 type audioState struct {
 	Inventory struct {
-		Supported     bool          `json:"supported"`
-		Backend       string        `json:"backend"`
-		BackendName   string        `json:"backendName"`
-		Message       string        `json:"message"`
-		Devices       []audioDevice `json:"devices"`
-		BufferChoices []int         `json:"bufferChoices"`
+		Supported        bool          `json:"supported"`
+		CaptureSupported *bool         `json:"captureSupported"`
+		Backend          string        `json:"backend"`
+		BackendName      string        `json:"backendName"`
+		Message          string        `json:"message"`
+		Devices          []audioDevice `json:"devices"`
+		BufferChoices    []int         `json:"bufferChoices"`
 	} `json:"inventory"`
 	Options audioOptions         `json:"options"`
 	Runtime control.AudioRuntime `json:"runtime"`

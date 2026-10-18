@@ -1,4 +1,4 @@
-//go:build linux || windows
+//go:build linux || windows || darwin
 
 package audiobackend
 
@@ -25,6 +25,12 @@ func newTymbalBackend() (Backend, error) {
 
 func (tymbalBackend) Name() Name { return Tymbal }
 
+// The pinned Core Audio driver exposes hardware inputs in discovery, but
+// supports output streams only. Do not mistake a microphone for capture support.
+func (b tymbalBackend) CaptureSupported() bool {
+	return b.host.Name() != "" && b.host.Name() != "coreaudio"
+}
+
 func (b tymbalBackend) Devices() ([]Device, bool, error) {
 	native, err := b.host.Devices()
 	if err != nil {
@@ -44,6 +50,9 @@ func (b tymbalBackend) Devices() ([]Device, bool, error) {
 }
 
 func (b tymbalBackend) SampleRate(config Config) (int, error) {
+	if config.CaptureChannels > 0 && !b.CaptureSupported() {
+		return 0, fmt.Errorf("Core Audio recording input is not supported by this audio driver yet")
+	}
 	output, err := b.device(config.Device, tymbal.Output)
 	if err != nil {
 		return 0, err
@@ -78,6 +87,9 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 	}
 	if render == nil {
 		return nil, fmt.Errorf("audio render callback is required")
+	}
+	if config.CaptureChannels > 0 && !b.CaptureSupported() {
+		return nil, fmt.Errorf("Core Audio recording input is not supported by this audio driver yet")
 	}
 	output, err := b.device(config.Device, tymbal.Output)
 	if err != nil {
@@ -187,6 +199,8 @@ func tymbalDuplexDeviceErrorForOS(goos, outputDevice, captureDevice string, err 
 	backend := "WASAPI"
 	if goos == "linux" {
 		backend = "ALSA"
+	} else if goos == "darwin" {
+		backend = "Core Audio"
 	}
 	detail := oneLineAudioError(err.Error())
 	message := "could not be opened"
@@ -203,6 +217,8 @@ func tymbalDeviceErrorForOS(goos string, direction tymbal.Direction, device stri
 	backend := "WASAPI"
 	if goos == "linux" {
 		backend = "ALSA"
+	} else if goos == "darwin" {
+		backend = "Core Audio"
 	}
 	kind := "playback"
 	if direction == tymbal.Input {
