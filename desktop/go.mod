@@ -8,6 +8,6 @@ require (
 )
 
 // Pin the published Darwin backend until it is available in an upstream release.
-replace m31labs.dev/gosx => github.com/odvcencio/gosx v0.57.17-0.20261018223602-e08372afd14b
+replace m31labs.dev/gosx => github.com/odvcencio/gosx v0.57.17-0.20261018233127-670b577ea5bc
 
 require golang.org/x/sys v0.43.0 // indirect

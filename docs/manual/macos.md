@@ -53,6 +53,14 @@ phrases. These selections build the vocal comp; you can keep arranging and
 auditioning without typing bar positions. See [Studio](studio.md) for recording,
 punch ranges, and comp editing.
 
+## Import a sample
+
+Open **Sampler**, choose a **WAV file**, then use **Import and chop WAV**.
+The Mac file picker selects the source; Cicada keeps it with the project and
+fills the pad bank with chops. Use a pad's editor to adjust its range and sound.
+See [Studio](studio.md) for sampling Session placements and resampling a pad
+performance into the arrangement.
+
 ## Play with a MIDI keyboard
 
 In Live, choose **Enable MIDI**, then select your keyboard or controller. The

@@ -188,6 +188,7 @@ def main():
     parser.add_argument("--app", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--workflow", type=Path, default=Path(__file__).parent / "testdata/native-workflow.js")
+    parser.add_argument("--mode", choices=["all", "normal", "term", "int", "early-term", "early-int"], default="all")
     args = parser.parse_args()
     app = args.app.resolve()
     binary = app / "Contents/MacOS/cicada-studio"
@@ -200,7 +201,8 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     results = []
     with isolated_app(app, output) as binary:
-        for mode in ["normal", "term", "int", "early-term", "early-int"]:
+        modes = ["normal", "term", "int", "early-term", "early-int"] if args.mode == "all" else [args.mode]
+        for mode in modes:
             result = check_launch(binary, output, mode, workflow)
             results.append(result)
             (output / "report.json").write_text(json.dumps(results, indent=2) + "\n")
