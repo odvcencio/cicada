@@ -48,10 +48,11 @@ type host struct {
 	starting    sync.WaitGroup
 	startCancel context.CancelFunc
 
-	smokeOut  string
-	smokeHold time.Duration
-	started   time.Time
-	smoke     map[string]any
+	smokeOut    string
+	smokeHold   time.Duration
+	smokeScript string
+	started     time.Time
+	smoke       map[string]any
 }
 
 func main() {
@@ -71,8 +72,23 @@ func run() error {
 	devTools := flags.Bool("devtools", false, "enable developer tools (F12 on Windows, the context menu on macOS)")
 	smokeOut := flags.String("smoke-out", "", "write a startup report to this JSON file and exit once Studio loads (tests)")
 	smokeHold := flags.Duration("smoke-hold", 1500*time.Millisecond, "with --smoke-out, how long to keep Studio open after it loads")
+	smokeScript := flags.String("smoke-script", "", "with --smoke-out, run this JavaScript workflow and await its result (tests)")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
+	}
+	var script []byte
+	if *smokeScript != "" {
+		if *smokeOut == "" {
+			return fmt.Errorf("--smoke-script requires --smoke-out")
+		}
+		var err error
+		script, err = os.ReadFile(*smokeScript)
+		if err != nil {
+			return fmt.Errorf("read smoke script: %w", err)
+		}
+		if len(script) == 0 {
+			return fmt.Errorf("smoke script is empty")
+		}
 	}
 	if *dataDir == "" {
 		dir, err := defaultDataDir()
@@ -95,14 +111,15 @@ func run() error {
 		return err
 	}
 	h := &host{
-		cicada:    cicada,
-		audio:     *audio,
-		logOut:    logFile,
-		statePath: filepath.Join(*dataDir, "state.json"),
-		smokeOut:  *smokeOut,
-		smokeHold: *smokeHold,
-		started:   started,
-		smoke:     map[string]any{},
+		cicada:      cicada,
+		audio:       *audio,
+		logOut:      logFile,
+		statePath:   filepath.Join(*dataDir, "state.json"),
+		smokeOut:    *smokeOut,
+		smokeHold:   *smokeHold,
+		smokeScript: string(script),
+		started:     started,
+		smoke:       map[string]any{},
 	}
 	h.state = loadState(h.statePath)
 	score, err := resolveInitialScore(flags.Args(), h.state, cicada, filepath.Join(documentsDir(), "Cicada"))
@@ -123,6 +140,7 @@ func run() error {
 		DevTools:         *devTools,
 		SingleInstance:   *smokeOut == "",
 		OnSecondInstance: h.onSecondInstance,
+		OnWebMessage:     h.onSmokeMessage,
 		OnNavigationCompleted: func(event desktop.NavigationCompleted) {
 			h.onNavigationCompleted(event)
 		},
@@ -450,10 +468,34 @@ func (h *host) onNavigationCompleted(event desktop.NavigationCompleted) {
 	})
 	h.recordSmoke("score", h.currentScore())
 	h.recordSmoke("sidecarPID", proc.PID())
+	if h.smokeScript != "" {
+		if err := h.app.ExecuteScript(h.smokeScript); err != nil {
+			h.recordSmoke("frontend", map[string]any{"ok": false, "error": err.Error()})
+			go h.app.Close()
+		}
+		return
+	}
 	go func() {
 		time.Sleep(h.smokeHold)
 		_ = h.app.Close()
 	}()
+}
+
+func (h *host) onSmokeMessage(message string) {
+	if h.smokeOut == "" || h.smokeScript == "" {
+		return
+	}
+	var result struct {
+		Type   string   `json:"type"`
+		OK     bool     `json:"ok"`
+		Checks []string `json:"checks"`
+		Error  string   `json:"error,omitempty"`
+	}
+	if json.Unmarshal([]byte(message), &result) != nil || result.Type != "cicada-native-smoke" {
+		return
+	}
+	h.recordSmoke("frontend", result)
+	go h.app.Close()
 }
 
 func (h *host) recordSmoke(key string, value any) {
