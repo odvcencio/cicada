@@ -65,8 +65,10 @@ async function openShell(search = '', viewport, platform) {
   target.search = search;
   await page.goto(target.href);
   await page.locator('#studio-shell').waitFor();
-  // The workbench chunk registers the commands once it has loaded.
+  // Commands register in the JS workbench before the Go shell engine mounts.
+  // Wait for both before focusing controls or dispatching shell events.
   await page.waitForFunction(() => window.__gosx?.commands?.list?.().length > 0);
+  await page.locator('#studio-shell[data-shell-actions="ready"]').waitFor();
   return {page, requests, errors};
 }
 
@@ -92,7 +94,7 @@ test('shell keyboard: a reserved chord does nothing and is listed as unavailable
   const unavailable = page.evaluate(() => new Promise(resolve => document.addEventListener('gosx:command:unavailable', event => resolve(event.detail.id), {once: true})));
   await page.keyboard.press('Control+j');
   assert.equal(await unavailable, 'arrange.consolidate');
-  assert.deepEqual(requests.slice(before), [], 'a reserved chord sends nothing');
+  assert.deepEqual(actionPosts(requests.slice(before)), [], 'a reserved chord submits no action');
   // The Shortcuts button opens the same disclosure the palette chord does.
   await page.locator('button[data-gosx-disclosure-target="#palette"]').click();
   const dialog = page.locator('#palette');
@@ -238,7 +240,7 @@ test('a refresh request keeps unsaved Code lens text and shows a notice', async 
 // A select that renders no selected option shows its first one. Changing it and
 // changing it back leaves nothing unsaved, so a refresh request still reloads.
 test('changing a select and changing it back is clean', async () => {
-  const {page} = await openShell('?tab=session');
+  const {page, requests, errors} = await openShell('?tab=session');
   const select = page.locator('[data-live-target]');
   const values = await select.locator('option').evaluateAll(options => options.map(option => option.value));
   assert.ok(values.length >= 2, 'the learn-target select has options to change between');
@@ -247,9 +249,15 @@ test('changing a select and changing it back is clean', async () => {
   const other = values.find(value => value !== original);
   await select.selectOption(other);
   await select.selectOption(original);
-  const reloaded = page.waitForEvent('load');
+  await page.evaluate(() => { window.__alive = true; });
+  const documents = requests.filter(request => request === 'GET /studio').length;
   await page.evaluate(() => document.dispatchEvent(new Event('cicada:shell-refresh')));
-  await reloaded;
+  await page.waitForFunction(() => window.__alive !== true);
+  await page.locator('#studio-shell[data-shell-actions="ready"]').waitFor();
+  assert.equal(await page.evaluate(() => window.__alive === true), false, 'returning the select to its original value permits a real reload');
+  assert.ok(requests.filter(request => request === 'GET /studio').length > documents, 'the clean select allowed a new shell request');
+  assert.ok(!(await page.locator('#studio-refresh-notice').isVisible()), 'no unsaved-work notice after returning to the original value');
+  assert.deepEqual(errors, []);
   await page.close();
 });
 
