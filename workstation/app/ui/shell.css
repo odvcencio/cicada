@@ -1,0 +1,75 @@
+/* Studio shell. Every rule is scoped to .shell or a gsx- recipe class, so the
+   panel application served at / keeps its own layout. */
+html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
+.shell { --gsx-color-border:var(--border); --gsx-color-text:var(--text); --gsx-color-text-secondary:var(--muted); --gsx-color-accent:var(--amber); --gsx-color-focus:var(--amber); --gsx-space-xs:4px; --gsx-space-sm:8px; --gsx-font-body:system-ui,-apple-system,"Segoe UI",sans-serif; display:flex; flex-direction:column; height:100vh; height:100dvh; font-size:13px; line-height:1.4; overflow:hidden; }
+.shell > .gsx-dock { flex:1; min-height:0; }
+.shell .notice { margin:0; padding:6px 12px; background:var(--raised); border-bottom:1px solid var(--border); }
+.shell .skip { position:absolute; left:-9999px; }
+.shell .skip:focus { left:8px; top:8px; z-index:20; background:var(--bg); padding:6px 10px; }
+.shell button, .shell input, .shell select { min-height:30px; padding:3px 9px; }
+.shell h1 { font-size:15px; }
+.shell h2 { font-size:14px; }
+.shell h3 { font-size:13px; margin:0 0 8px; }
+
+.gsx-dock { display:grid; min-width:0; min-height:0; grid-template-columns:var(--gsx-dock-left,280px) minmax(0,1fr) var(--gsx-dock-right,360px); grid-template-rows:auto minmax(0,1fr) var(--gsx-dock-bottom,240px); grid-template-areas:"top top top" "left center right" "bottom bottom bottom"; }
+.gsx-dock > * { min-width:0; min-height:0; }
+.gsx-dock__top { grid-area:top; }
+.gsx-dock__left { grid-area:left; display:grid; grid-template-columns:minmax(0,1fr) auto; }
+.gsx-dock__center { grid-area:center; }
+.gsx-dock__right { grid-area:right; display:grid; grid-template-columns:auto minmax(0,1fr); }
+.gsx-dock__bottom { grid-area:bottom; display:grid; grid-template-rows:auto minmax(0,1fr); }
+.gsx-split__handle { touch-action:none; background:var(--border); }
+.gsx-split__handle[aria-orientation="vertical"] { width:8px; cursor:col-resize; }
+.gsx-split__handle[aria-orientation="horizontal"] { height:8px; cursor:row-resize; }
+
+.gsx-tabs__list { display:flex; gap:var(--gsx-space-xs); border-bottom:1px solid var(--border); padding:0 12px; }
+.gsx-tabs__tab { padding:var(--gsx-space-xs) var(--gsx-space-sm); color:var(--muted); text-decoration:none; border-bottom:2px solid transparent; }
+.gsx-tabs__tab[aria-current="page"] { color:var(--text); border-color:var(--amber); }
+.gsx-tabs__panel { min-width:0; padding-block:var(--gsx-space-sm); }
+.gsx-tabs__panel[hidden] { display:none; }
+.gsx-collapsible { border-block:1px solid var(--border); min-height:0; }
+.gsx-collapsible > summary { padding:var(--gsx-space-xs) var(--gsx-space-sm); cursor:pointer; }
+
+.shell-top { display:flex; flex-wrap:wrap; align-items:center; gap:10px 20px; padding:6px 12px; border-bottom:1px solid var(--border); background:#141d17; }
+.shell-top .brand { font-size:13px; }
+.shell-top .score-title { flex:1 1 160px; }
+.shell-top .score-title h1 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.shell-transport { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.shell-transport form { display:flex; gap:4px; margin:0; }
+.shell-transport .position { gap:8px; }
+.shell-transport .position b { font-size:14px; }
+.shell-transport .transport-capture-hint { margin:0; }
+.shell-region { min-height:0; min-width:0; overflow:hidden; background:var(--bg); }
+.shell-collapsible { display:flex; flex-direction:column; min-height:0; height:100%; }
+.shell-collapsible[open] > .shell-scroll { flex:1; }
+.shell-tabs { display:flex; flex-direction:column; min-height:0; height:100%; }
+.shell-scroll { overflow:auto; min-height:0; padding:8px 12px; }
+.shell-scroll .panel { padding:12px; margin-bottom:12px; }
+.shell-section { border-bottom:1px solid var(--border); }
+.shell-section > summary { cursor:pointer; padding:4px 0; color:var(--amber); }
+
+.shell-backdrop { position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:30; }
+.shell-backdrop[hidden], .shell-dialog[hidden] { display:none; }
+.shell-dialog { position:fixed; z-index:31; top:6vh; left:50%; transform:translateX(-50%); width:min(920px,96vw); max-height:88vh; display:flex; flex-direction:column; background:var(--panel); border:1px solid var(--border); border-radius:8px; }
+.shell-dialog__bar { display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid var(--border); }
+.shell-dialog__body { overflow:auto; padding:12px; }
+.shortcut-group ul { list-style:none; margin:0 0 12px; padding:0; }
+.shortcut-group li { display:flex; gap:12px; align-items:baseline; padding:2px 0; }
+.shortcut-title { flex:1; }
+.shell kbd { font:12px ui-monospace,monospace; color:var(--mint); }
+
+.shell-phone-nav { display:none; }
+@media (max-width:480px) {
+	.shell .gsx-dock { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); grid-template-areas:"top" "region"; }
+	.shell .gsx-dock__top { flex-direction:column; align-items:stretch; gap:6px; }
+	.shell .gsx-dock__left, .shell .gsx-dock__center, .shell .gsx-dock__right, .shell .gsx-dock__bottom { grid-area:region; display:none; }
+	.shell[data-phone-region="center"] .gsx-dock__center, .shell[data-phone-region="browser"] .gsx-dock__left, .shell[data-phone-region="detail"] .gsx-dock__bottom, .shell[data-phone-region="code"] .gsx-dock__right { display:grid; }
+	.shell[data-phone-region="center"] .gsx-dock__center { display:block; }
+	.shell .gsx-split__handle { display:none; }
+	.shell-phone-nav { display:flex; gap:4px; padding:4px 12px; border-bottom:1px solid var(--border); }
+	.shell-phone-nav a { flex:1; text-align:center; padding:6px 0; text-decoration:none; border-bottom:2px solid transparent; }
+	.shell-phone-nav a[aria-current="page"] { color:var(--amber); border-color:var(--amber); }
+	.shell .score-meta { flex-wrap:wrap; }
+	.shell .shell-dialog { top:2vh; max-height:96vh; }
+}
+.shell main { padding:0; }

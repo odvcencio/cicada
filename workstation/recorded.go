@@ -125,7 +125,7 @@ func (s *studioApp) importInstrument(w http.ResponseWriter, r *http.Request) {
 		_, _ = io.Copy(w, io.LimitReader(response.Body, 16<<10))
 		return
 	}
-	http.Redirect(w, r, "/?panel=instruments", http.StatusSeeOther)
+	http.Redirect(w, r, shellRedirect(r, "/?panel=instruments"), http.StatusSeeOther)
 }
 func (s *studioApp) instrumentMedia(w http.ResponseWriter, r *http.Request) {
 	path := "/api/instrument-hit?" + r.URL.RawQuery

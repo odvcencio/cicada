@@ -14,7 +14,7 @@ import (
 )
 
 func TestPublishRecordedAvoidsAuthoredPresetNames(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	for _, newline := range []string{"\n", "\r\n"} {
 		for _, location := range []string{"entry", "part"} {
 			t.Run(map[string]string{"\n": "lf", "\r\n": "crlf"}[newline]+"/"+location, func(t *testing.T) {

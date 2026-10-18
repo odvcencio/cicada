@@ -46,8 +46,8 @@ type Options struct {
 	// master insert chain. Loudness targeting uses it when the chain holds a
 	// limiter. Without a prepared master chain it equals MasterGainDB.
 	MasterInputGainDB float64
-	MasterBiasL       float32 // export DC correction after authored DSP, before export gain
-	MasterBiasR       float32 // export DC correction after authored DSP, before export gain
+	MasterBiasL       float32 // export DC correction after the master chain and all gain, before the limiter
+	MasterBiasR       float32 // export DC correction after the master chain and all gain, before the limiter
 	// NoteTap, when set, receives each note start (seq.NoteOn, drum hits
 	// included) and release (seq.NoteOff) that the render plays, in render
 	// order, from either render path. The events are the scheduler's own, so
@@ -1703,10 +1703,6 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 		if busState.masterMute {
 			left, right = 0, 0
 		}
-		if busState.masterProcessor == nil && (masterBiasL != 0 || masterBiasR != 0) {
-			left += masterBiasL
-			right += masterBiasR
-		}
 		if masterGain != 1 {
 			left *= masterGain
 			right *= masterGain
@@ -1719,8 +1715,13 @@ func renderBlock(w io.Writer, tracks []trackRuntime, delayA *fx.Delay, reverbB *
 			if busState.masterLimiter != nil {
 				report.noteMasterChainReduction(sample, busState.masterLimiter.LimiterGainReductionDB())
 			}
-			left = (left + masterBiasL) * busState.outputGain
-			right = (right + masterBiasR) * busState.outputGain
+			left *= busState.outputGain
+			right *= busState.outputGain
+		}
+		// Export DC correction: after the master chain and every gain stage.
+		if masterBiasL != 0 || masterBiasR != 0 {
+			left += masterBiasL
+			right += masterBiasR
 		}
 		if sample >= report.metricStart && sample < report.metricEnd {
 			if abs := float32(math.Max(math.Abs(float64(left)), math.Abs(float64(right)))); abs > report.Peak {

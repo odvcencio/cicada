@@ -303,6 +303,10 @@ func TestPatchCapacityBurstDefersWithoutFaultOrAllocation(t *testing.T) {
 	if p.LandedRevision() != 9 || arena.Free() != 16 {
 		t.Fatal("deferred patches did not land/recycle")
 	}
+	// Count the patch/render path without the off-thread loudness snapshots,
+	// which allocate while a slow or race-instrumented burst is measured.
+	// Read still publishes its audio blocks to the stopped meter's ring.
+	p.loudness.close()
 	base := uint64(9)
 	allocs := testing.AllocsPerRun(50, func() {
 		for revision := base + 1; revision <= base+9; revision++ {

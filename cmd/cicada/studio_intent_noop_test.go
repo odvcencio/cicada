@@ -127,7 +127,7 @@ func TestIntentRoutesKeepNoopResponsesAndEffects(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				roots := []string{filepath.Dir(path), os.Getenv("XDG_CONFIG_HOME"), library}
+				roots := []string{filepath.Dir(path), isolatedState(t), library}
 				files := noopFiles(t, roots...)
 				wantStatus := http.StatusOK
 				want := map[string]any{"revision": body.Revision, "valid": true, "source": string(current), "unchanged": true, "playingRevision": body.Revision}
@@ -170,7 +170,7 @@ func TestIntentRoutesKeepNoopResponsesAndEffects(t *testing.T) {
 // commit's own pre-swap seam, so it always follows the route's revision check
 // and always precedes the swap; no timing is involved.
 func TestRecordRouteRestoresCommitHookAfterConflict(t *testing.T) {
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	isolateState(t)
 	_, path, s := studioTestStudio(t)
 	defer s.shutdown()
 	s.history.expectRecordedTake("previous-recording")

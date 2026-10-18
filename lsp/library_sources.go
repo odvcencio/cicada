@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"m31labs.dev/cicada/internal/appdirs"
 	"m31labs.dev/cicada/notation"
 	"m31labs.dev/cicada/project"
 )
@@ -33,7 +34,7 @@ func librarySourceURI(lib *project.Library, file notation.SourceFile) (string, e
 	if lib == nil || lib.Kind != "std" {
 		return fileURI(file.Path), nil
 	}
-	cache, err := os.UserCacheDir()
+	cache, err := appdirs.CacheDir()
 	if err != nil {
 		return "", err
 	}
@@ -41,7 +42,7 @@ func librarySourceURI(lib *project.Library, file notation.SourceFile) (string, e
 	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
 		return "", fmt.Errorf("invalid embedded source path")
 	}
-	filename := filepath.Join(cache, "cicada", "lsp", lib.SHA256, filepath.FromSlash(lib.Path), relative)
+	filename := filepath.Join(cache, "lsp", lib.SHA256, filepath.FromSlash(lib.Path), relative)
 	if data, err := os.ReadFile(filename); err == nil && bytes.Equal(data, file.Source) {
 		return fileURI(filename), nil
 	}

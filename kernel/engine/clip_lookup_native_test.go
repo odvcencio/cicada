@@ -229,9 +229,10 @@ func TestClipSlotIndexWholeRenderLoopsAndSeekWithoutAllocating(t *testing.T) {
 	cfg.Clips[0].EndFrame = 101
 	cfg.Schedule = nil
 	cfg.LoopSong = true
-	// The default 100 ms floor faults a lane on a loaded machine; the test
-	// asserts zero faults and zero allocations, not lane latency.
-	cfg.ParallelWaitFloor = time.Second
+	// A 1 s floor still faults a lane when the machine runs far more processes
+	// than CPUs; the test asserts zero faults and zero allocations, not lane
+	// latency, so the floor is only an upper bound.
+	cfg.ParallelWaitFloor = 30 * time.Second
 	for slot := 0; slot < 256; slot++ {
 		cfg.Schedule = append(cfg.Schedule, ScheduleEvent{Tick: 0, EndTick: 240, Kind: ScheduleClip, Track: uint8(slot % 64), Index: 0, ID: uint32(slot + 1)})
 	}

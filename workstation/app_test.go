@@ -17,6 +17,12 @@ import (
 
 func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 	t.Helper()
+	return testAppWorkspace(t, nil)
+}
+
+// testAppWorkspace serves the given /api/workspace reply; nil means a valid test score.
+func testAppWorkspace(t *testing.T, reply *workspace) (string, *http.Client, *[]map[string]any) {
+	t.Helper()
 	var edits []map[string]any
 	audio := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -35,7 +41,15 @@ func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 			}
 			edits = append(edits, edit)
 			_, _ = io.WriteString(w, `{"revision":"current","bankRevision":"bank-current"}`)
+		case "/api/sampler/import":
+			_, _ = io.WriteString(w, `{}`)
+		case "/api/instrument-record":
+			_, _ = io.WriteString(w, `{}`)
 		case "/api/workspace":
+			if reply != nil {
+				_ = json.NewEncoder(w).Encode(*reply)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(workspace{Revision: "current", Filename: "test.cicada", Source: "title \"Test\"\n", Valid: true, Project: &project.Project{Title: "Test", TempoMilli: 130000, Key: project.Key{Scale: "minor"}}})
 		case "/api/transport":
 			if r.Method == http.MethodPost {
@@ -45,6 +59,11 @@ func testApp(t *testing.T) (string, *http.Client, *[]map[string]any) {
 			}
 			_ = json.NewEncoder(w).Encode(transport{Bar: 1, Step: 1})
 		case "/api/source", "/api/toggle", "/api/pattern", "/api/song", "/api/arrange", "/api/project", "/api/export", "/api/clip", "/api/automation":
+			if r.Method == http.MethodGet {
+				// The shell renders the export status; reads carry no edit.
+				_, _ = io.WriteString(w, `{}`)
+				return
+			}
 			var edit map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&edit); err != nil {
 				t.Error(err)

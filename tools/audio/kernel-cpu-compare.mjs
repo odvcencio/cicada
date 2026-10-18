@@ -2,6 +2,8 @@
 // Timing uses the same user CPU clock as the browser budget's Node fallback.
 import { readFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+// Status ring: engine.MessageCapacity (512) messages of 16 bytes; a Go test keeps this equal.
+const MESSAGE_BYTES = 512 * 16;
 
 const [baselinePath, candidatePath, imagePath, blocksText = '11264'] = process.argv.slice(2);
 const blocks = Number(blocksText), warmupBlocks = 256;
@@ -23,7 +25,7 @@ async function prepare(path) {
   return {
     x, binaryBytes: binary.length, binarySHA256: createHash('sha256').update(binary).digest('hex'),
     output: Buffer.from(x.memory.buffer, x.gosx_audio_out_ptr(), 256 * 4),
-    messages: new Uint8Array(x.memory.buffer, x.gosx_audio_msg_ptr(), 256 * 16),
+    messages: new Uint8Array(x.memory.buffer, x.gosx_audio_msg_ptr(), MESSAGE_BYTES),
     times: new Float64Array(blocks - warmupBlocks), hash: createHash('sha256'),
     memoryBytes: x.memory.buffer.byteLength, allocationBytes: x.gosx_audio_alloc_bytes(), faults: 0
   };

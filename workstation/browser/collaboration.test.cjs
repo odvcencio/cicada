@@ -78,7 +78,7 @@ test('shared score merges offline edits, retains per-user undo and rejects viewe
     pages[0].waitForResponse(response => new URL(response.url()).pathname === '/api/collaboration/save' && response.request().method() === 'POST'),
     pages[0].getByRole('button', {name: 'Save shared score'}).click(),
   ]);
-  assert.equal(saved.status(), 200, 'shared score save failed');
+  assert.equal(saved.status(), 200, `shared score save failed: ${await saved.text()}`);
   const persisted = await (await pages[0].request.get(base + '/api/state')).json();
   assert.equal(persisted.source, draft, 'shared draft was not saved');
   assert.equal(persisted.revision, createHash('sha256').update(draft).digest('hex'), 'persisted revision does not match the shared draft');
