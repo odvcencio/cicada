@@ -124,7 +124,7 @@ func TestNativeMIDIVirtualSource(t *testing.T) {
 	}
 	want := [][]int{{0x92, 60, 100}, {0xb2, 74, 88}, {0xe2, 0, 96}, {0xd2, 70}, {0x82, 60, 0}, {0xb2, 123, 0}}
 	var buffer [1024]byte
-	base := uintptr(unsafe.Pointer(&buffer[0]))
+	base := unsafe.Pointer(&buffer[0])
 	packet := a.packetListInit(base)
 	for i, message := range want {
 		data := make([]byte, len(message))
@@ -132,7 +132,7 @@ func TestNativeMIDIVirtualSource(t *testing.T) {
 			data[i] = byte(b)
 		}
 		packet = a.packetListAdd(base, uintptr(len(buffer)), packet, uint64(i+1), uintptr(len(data)), &data[0])
-		if packet == 0 {
+		if packet == nil {
 			t.Fatal("could not build private test packet list")
 		}
 	}
@@ -213,11 +213,11 @@ func TestNativeMIDIAppSource(t *testing.T) {
 	}
 	t.Log("private virtual MIDI sender ready")
 	var buffer [1024]byte
-	base := uintptr(unsafe.Pointer(&buffer[0]))
+	base := unsafe.Pointer(&buffer[0])
 	packet := a.packetListInit(base)
 	for i, data := range [][]byte{{0x92, 60, 100}, {0xb2, 74, 88}, {0xe2, 0, 96}, {0xd2, 70}, {0x82, 60, 0}, {0xb2, 123, 0}} {
 		packet = a.packetListAdd(base, uintptr(len(buffer)), packet, uint64(i+1), uintptr(len(data)), &data[0])
-		if packet == 0 {
+		if packet == nil {
 			t.Fatal("could not build private app-test MIDI packet list")
 		}
 	}

@@ -38,9 +38,9 @@ type coreMIDIAPI struct {
 	release          func(uintptr)
 	sourceCreate     func(uint32, uintptr, *uint32) int32
 	endpointDispose  func(uint32) int32
-	received         func(uint32, uintptr) int32
-	packetListInit   func(uintptr) uintptr
-	packetListAdd    func(uintptr, uintptr, uintptr, uint64, uintptr, *byte) uintptr
+	received         func(uint32, unsafe.Pointer) int32
+	packetListInit   func(unsafe.Pointer) unsafe.Pointer
+	packetListAdd    func(unsafe.Pointer, uintptr, unsafe.Pointer, uint64, uintptr, *byte) unsafe.Pointer
 }
 
 var coreMIDILibrary struct {
