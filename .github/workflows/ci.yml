@@ -327,6 +327,62 @@ jobs:
           name: gosx-workstation-build
           path: workstation/dist/build.json
 
+  macos-desktop:
+    name: macOS desktop (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: amd64
+    env:
+      GOWORK: 'off'
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version: '1.26.5'
+          cache: false
+      - uses: acifani/setup-tinygo@f51bf108c9895381060398804ce6cf6f62692106 # v3
+        with:
+          tinygo-version: '0.41.1'
+          install-binaryen: 'true'
+          binaryen-version: '133'
+      - name: Verify pinned dependencies and native tests
+        env:
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          test "$(go env GOWORK)" = off
+          test "$(go env GOARCH)" = "$EXPECTED_ARCH"
+          go version
+          tinygo version
+          wasm-opt --version
+          (cd desktop && go mod download && go mod verify && go test -race ./... && go vet ./...)
+          (cd workstation && go test -race ./... && go vet ./...)
+          go test ./cmd/cicada -run '^Test(ApplyRefusesConcurrentSaveAtExchange|StudioLateExternalWriteSurvivesSavesAndRestart|StudioOpenWriterDuringCommitIsRetained|StudioRecoveryWithoutReceiptRefusesSave|RouteGuardsMatchIntentsAndApply)$' -count=1
+      - name: Package and launch from a clean checkout
+        run: |
+          set -euo pipefail
+          desktop/package.sh --target darwin --version 0.0.0-ci --output build/macos
+          codesign --verify --deep --strict 'build/macos/Cicada Studio.app'
+          go version -m 'build/macos/Cicada Studio.app/Contents/MacOS/cicada-studio'
+          python3 desktop/smoke.py --app 'build/macos/Cicada Studio.app' --output build/macos-smoke
+          git diff --exit-code -- desktop/go.mod desktop/go.sum workstation/go.mod workstation/go.sum workstation/ui
+      - name: Save macOS smoke reports
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: macos-desktop-${{ matrix.arch }}-reports
+          if-no-files-found: warn
+          path: build/macos-smoke/
+
   m2-pr:
     name: M2 AudioWorklet gates
     # This job runs on the self-hosted reference machine, so a pull request from

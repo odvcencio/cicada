@@ -42,7 +42,7 @@ macOS (development):
 GOWORK=off make build-workstation-release
 (cd workstation && GOWORK=off CGO_ENABLED=0 go build -o ../build/cicada-workstation .)
 GOWORK=off CGO_ENABLED=0 go build -o build/cicada ./cmd/cicada
-(cd desktop && CGO_ENABLED=0 go build -o ../build/cicada-studio .)
+(cd desktop && GOWORK=off CGO_ENABLED=0 go build -o ../build/cicada-studio .)
 ```
 
 `cicada-studio.exe` looks for `cicada.exe` next to itself, then on `PATH`;
@@ -85,32 +85,30 @@ Studio.app` with the standard macOS layout, writes an `Info.plist`
 (`CFBundleIdentifier=dev.cicada.studio`, `LSMinimumSystemVersion=12.0`), and
 ad-hoc signs the bundle. Output goes to `dist/macos`.
 
-The bundle is self-contained. Building its desktop host currently requires
-a `go.work` that uses a local GoSX checkout with the Darwin backend, until
-`desktop/go.mod` can pin a published version containing it:
+The bundle is self-contained and builds from a clean checkout. The desktop
+host pins the published GoSX Darwin backend at
+[`efb6f4a234d8`](https://github.com/jvcencio/gosx/commit/efb6f4a234d89ec2f48e3ac360dd641f5de932ee)
+through a versioned replacement in `desktop/go.mod`. Go downloads and verifies
+it using `desktop/go.sum`; no local GoSX checkout or `go.work` is needed. This
+replacement can be removed once an upstream GoSX release includes the backend.
 
-```sh
-cd /path/to/cicada
-cat > go.work <<EOF
-go 1.26.5
-
-use (
-	.
-	./desktop
-	./workstation
-	/path/to/orchard-stack/gosx
-)
-EOF
-desktop/package.sh --target darwin
-```
-
-Packaging checks that the selected desktop backend is available before
-building the bundle. Without it, the script exits with instructions instead
-of producing an app that cannot open a window. The CLI, workstation, and
-runtime build with `GOWORK=off` so their pinned dependencies remain aligned.
+Packaging sets `GOWORK=off` for every executable and the runtime, so a local
+workspace cannot override release dependencies. It also checks desktop backend
+availability before building the bundle. The workstation runtime retains its
+own pinned GoSX version.
 An existing output app is replaced only after the new bundle passes signature
 verification. Packaging reuses the stripped workstation executable from the
 production runtime build, avoiding a second compilation.
+
+CI packages and launches the app on Apple Silicon and Intel macOS runners.
+Run the same native launch and shutdown checks locally with Python 3:
+
+```sh
+python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/macos-smoke
+```
+
+The smoke checks use disposable scores and the null audio backend. Reports
+and app logs are kept in the output directory.
 
 Development builds are ad-hoc signed (no Developer ID, no notarization), so
 Gatekeeper may ask the first time: right-click the bundle → **Open**.

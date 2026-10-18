@@ -25,10 +25,8 @@
 #
 #   desktop/package.sh [--target darwin] [--version 0.1.0] [--output dist/macos]
 #
-#   The desktop host honors GOWORK. Until desktop/go.mod requires a GoSX release
-#   with the darwin desktop backend, use a workspace with a GoSX checkout that
-#   has it. Packaging checks backend availability before building the bundle.
-#   The CLI, workstation, and runtime use their pinned modules with GOWORK=off.
+#   All builds use pinned modules with GOWORK=off, including the macOS host.
+#   Packaging checks backend availability before building the bundle.
 #
 #   Needs: go, tinygo (CI uses 0.41.1), wasm-opt (Binaryen), codesign, plutil.
 #   The last two ship with macOS. WASMOPT can select a wasm-opt executable.
@@ -79,6 +77,9 @@ fi
 
 repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# A developer's workspace must not replace release dependencies with local code.
+export GOWORK=off
+
 # package_darwin assembles an ad-hoc-signed "Cicada Studio.app" around the host
 # executable. It uses no GNU-only tools, so it runs on the stock macOS userland.
 package_darwin() {
@@ -109,7 +110,7 @@ import (
 
 func main() {
 	if err := desktop.Available(); err != nil {
-		fmt.Fprintf(os.Stderr, "macOS desktop backend unavailable: %v\nUse GOWORK with a GoSX checkout containing the Darwin backend; see desktop/README.md.\n", err)
+		fmt.Fprintf(os.Stderr, "macOS desktop backend unavailable: %v\nCheck the pinned GoSX dependency in desktop/go.mod.\n", err)
 		os.Exit(1)
 	}
 }
@@ -141,7 +142,7 @@ GO
 	# first, so this path flips the page to bootstrapMode=full and loads the
 	# full GoSX runtime instead of falling back to raw browser form POSTs.
 	# Keep the CLI and generated runtime on the workstation's pinned GoSX
-	# version, even when the host needs a local desktop backend. Generate first
+	# version independently of the desktop host's dependency. Generate first
 	# so the workstation executable includes the same UI as its runtime assets.
 	# The production build also compiles the server with trimpath and the
 	# configured symbol stripping. Reuse it instead of compiling it twice.
@@ -227,7 +228,6 @@ cp "$work/sdk/runtimes/win-x64/native/WebView2Loader.dll" "$stage/"
 cp "$work/sdk/LICENSE.txt" "$stage/licenses/WebView2-SDK-LICENSE.txt"
 cp "$repo/LICENSE" "$stage/licenses/Cicada-LICENSE.txt"
 
-export GOWORK=off
 # Build the framework runtime on the host before cross-compiling executables.
 # Mutable scores, take journals, and settings never enter the GoSX bundle.
 (cd "$repo/workstation" && go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .)

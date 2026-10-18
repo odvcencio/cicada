@@ -37,9 +37,8 @@ set -euo pipefail
 name="${0##*/}"
 case "$name" in
 go)
-  [[ "$GOOS" == darwin && "$CGO_ENABLED" == 0 ]] || exit 1
+  [[ "$GOOS" == darwin && "$CGO_ENABLED" == 0 && "$GOWORK" == off ]] || exit 1
   if [[ "$1" == run && "$2" == */check-platform.go ]]; then
-    [[ "$GOWORK" == "$EXPECTED_WORKSPACE" ]] || exit 1
     [[ "${FAIL_AT:-}" != backend ]] || exit 1
   elif [[ "$1" == run && "$2" == -mod=mod ]]; then
     [[ "$GOWORK" == off && "$3" == m31labs.dev/gosx/cmd/gosx ]] || exit 1
@@ -53,7 +52,7 @@ go)
     printf 'engine\n' > dist/public/engine.wasm
   elif [[ "$1" == build ]]; then
     case "$PWD" in
-      */desktop) [[ "$GOWORK" == "$EXPECTED_WORKSPACE" && "${FAIL_AT:-}" != host ]] || exit 1 ;;
+      */desktop) [[ "${FAIL_AT:-}" != host ]] || exit 1 ;;
       */workstation) echo 'unexpected second workstation compilation' >&2; exit 1 ;;
       *) [[ "$GOWORK" == off ]] || exit 1 ;;
     esac
@@ -84,7 +83,6 @@ esac
 	t.Setenv("PATH", filepath.Join(root, "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
 	t.Setenv("TMPDIR", filepath.Join(root, "tmp")+string(os.PathSeparator))
 	t.Setenv("GOWORK", filepath.Join(root, "go.work"))
-	t.Setenv("EXPECTED_WORKSPACE", filepath.Join(root, "go.work"))
 	t.Setenv("PREVIOUS_APP", filepath.Join(output, "Cicada Studio.app"))
 	t.Setenv("FAIL_AT", "")
 	t.Setenv("WASMOPT", filepath.Join(root, "bin", "wasm-opt"))
@@ -107,7 +105,7 @@ func assertPackageCleanedUp(t *testing.T, root string) {
 	}
 }
 
-func TestPackageDarwinUsesWorkspaceOnlyForHost(t *testing.T) {
+func TestPackageDarwinIgnoresLocalWorkspace(t *testing.T) {
 	root, output := packageFixture(t)
 	if log, err := runPackage(t, root, output, "1.2.3-rc.1+build.8"); err != nil {
 		t.Fatalf("package: %v\n%s", err, log)
