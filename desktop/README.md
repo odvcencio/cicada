@@ -1,38 +1,61 @@
-# Cicada Studio desktop (Windows)
+# Cicada Studio desktop (Windows, macOS)
 
-`cicada-studio.exe` is Cicada Studio as a desktop app. It starts
-`cicada studio` as a helper process, so the native Tymbal audio engine keeps
-running in Go, and shows the Studio page in a window hosted by the GoSX
-desktop runtime (Microsoft Edge WebView2).
+`cicada-studio` is Cicada Studio as a desktop app. It starts `cicada studio`
+as a helper process, so the native Tymbal audio engine keeps running in Go,
+and shows the Studio page in a window hosted by the GoSX desktop runtime
+(Microsoft Edge WebView2 on Windows, WKWebView on macOS).
 
 What the app adds over `cicada studio` in a browser:
 
 - File menu: New Project, Open, Save As, and Open Recent.
 - One window: opening a `.cicada` file while the app runs switches the
   running window to that file.
-- The helper process ends with the app, including after a crash.
-- An installer (`Cicada-Studio-Setup-<version>.exe`) and a portable ZIP. An
-  installed copy adds itself to Explorer's "Open with" list for `.cicada`
-  files (per user, under `HKCU\Software\Classes`).
+- The helper process ends with the app, including after a crash or a
+  SIGTERM.
+- Windows: an installer (`Cicada-Studio-Setup-<version>.exe`) and a portable
+  ZIP. An installed copy adds itself to Explorer's "Open with" list for
+  `.cicada` files (per user, under `HKCU\Software\Classes`).
+- macOS: an ad-hoc signed `Cicada Studio.app` bundle (`dev.cicada.studio`),
+  ready to drop in `~/Applications` or `/Applications`.
 
-Settings, logs (`logs\studio.log`), and the WebView2 profile live in
-`%LOCALAPPDATA%\Cicada Studio`. New projects go to `Documents\Cicada`.
+Settings and logs (`logs/studio.log`) live in `%LOCALAPPDATA%\Cicada Studio`
+on Windows and `~/Library/Application Support/Cicada Studio` on macOS. The
+WebView2 profile is Windows-only; WKWebView keeps its website data in the
+default store keyed by the bundle identifier. New projects go to
+`Documents\Cicada` or `~/Documents/Cicada`.
 
 ## Build
 
+Windows (development):
+
 ```sh
-# Development build next to a cicada.exe:
 make build-workstation-release
 (cd workstation && GOOS=windows GOARCH=amd64 go build -o ../build/cicada-workstation.exe .)
 GOOS=windows GOARCH=amd64 go build -o build/cicada.exe ./cmd/cicada
 (cd desktop && GOOS=windows GOARCH=amd64 go build -ldflags=-H=windowsgui -o ../build/cicada-studio.exe .)
 ```
 
+macOS (development):
+
+```sh
+make build-workstation-release
+(cd workstation && CGO_ENABLED=0 go build -o ../build/cicada-workstation .)
+CGO_ENABLED=0 go build -o build/cicada ./cmd/cicada
+(cd desktop && CGO_ENABLED=0 go build -o ../build/cicada-studio .)
+```
+
 `cicada-studio.exe` looks for `cicada.exe` next to itself, then on `PATH`;
 `--cicada <path>` overrides both. It also needs `cicada-workstation.exe`, the
 `workstation/` runtime bundle, and `WebView2Loader.dll` beside it.
 
+On macOS, the equivalent executables are `cicada-studio`, `cicada`, and
+`cicada-workstation`. The `workstation/` runtime bundle sits next to them in
+the `.app` bundle at `Contents/MacOS/workstation/`. No WebView loader is
+needed; WKWebView ships with the OS.
+
 ## Package
+
+### Windows
 
 ```sh
 desktop/package.sh --version 0.1.0 \
@@ -41,8 +64,41 @@ desktop/package.sh --version 0.1.0 \
 ```
 
 The script downloads the WebView2 SDK (pinned by SHA-256) for
-`WebView2Loader.dll`, builds the core, GoSX workstation, and desktop executables, and runs
-`gosx desktop package`. Output goes to `dist/desktop`.
+`WebView2Loader.dll`, builds the core, GoSX workstation, and desktop
+executables, and runs `gosx desktop package`. Output goes to `dist/desktop`.
+
+### macOS
+
+```sh
+desktop/package.sh --target darwin --version 0.1.0
+```
+
+Builds the three executables and the GoSX runtime, assembles `Cicada
+Studio.app` with the standard macOS layout, writes an `Info.plist`
+(`CFBundleIdentifier=dev.cicada.studio`, `LSMinimumSystemVersion=12.0`), and
+ad-hoc signs the bundle. Output goes to `dist/macos`.
+
+The bundle is self-contained once GoSX's darwin desktop backend is in a
+tagged release and `desktop/go.mod` points at it. Before that, build with a
+`go.work` that uses a local GoSX checkout:
+
+```sh
+cd /path/to/cicada
+cat > go.work <<EOF
+go 1.26.5
+
+use (
+	.
+	./desktop
+	./workstation
+	/path/to/orchard-stack/gosx
+)
+EOF
+desktop/package.sh --target darwin
+```
+
+Development builds are ad-hoc signed (no Developer ID, no notarization), so
+Gatekeeper may ask the first time: right-click the bundle → **Open**.
 
 ## Options
 
@@ -55,5 +111,6 @@ The script downloads the WebView2 SDK (pinned by SHA-256) for
 | `--mute` | Mute the page (tests) |
 | `--smoke-out <file>` | Write a startup report and exit once Studio loads (tests) |
 
-Linux and macOS: run `cicada studio` and open the printed address in a browser.
-The GoSX desktop runtime supports Windows only today.
+Linux: run `cicada studio` and open the printed address in a browser. The
+GoSX desktop runtime supports Windows and macOS natively; Linux stays on the
+browser path for now.
