@@ -34,17 +34,19 @@ const (
 var buildVersion = "dev"
 
 type host struct {
-	mu        sync.Mutex
-	app       *desktop.App
-	cicada    string
-	audio     string
-	logOut    io.Writer
-	statePath string
-	state     hostState
-	score     string
-	proc      *sidecar.Process
-	queue     openQueue
-	closing   bool
+	mu          sync.Mutex
+	app         *desktop.App
+	cicada      string
+	audio       string
+	logOut      io.Writer
+	statePath   string
+	state       hostState
+	score       string
+	proc        *sidecar.Process
+	queue       openQueue
+	closing     bool
+	starting    sync.WaitGroup
+	startCancel context.CancelFunc
 
 	smokeOut  string
 	smokeHold time.Duration
@@ -191,14 +193,11 @@ func (h *host) optionalChrome(what string, err error) error {
 func (h *host) open(score string) {
 	h.mu.Lock()
 	closing := h.closing
+	previous := h.proc
 	h.mu.Unlock()
 	if closing || !h.queue.request(score) {
 		return
 	}
-	h.mu.Lock()
-	previous := h.proc
-	h.proc = nil
-	h.mu.Unlock()
 	defer func() {
 		if next := h.queue.done(); next != "" {
 			go h.open(next)
@@ -206,20 +205,14 @@ func (h *host) open(score string) {
 	}()
 
 	if previous != nil {
-		_ = previous.Stop(3 * time.Second)
 		_ = h.app.SetHTML(statusPage("Opening", filepath.Base(score)))
 	}
-	fmt.Fprintf(h.logOut, "%s host: starting %s %s\n", time.Now().Format(time.RFC3339), h.cicada, strings.Join(studioArgs(score, h.audio), " "))
 	sidecarStart := time.Now()
-	proc, err := sidecar.Start(context.Background(), sidecar.Options{
-		Path:         h.cicada,
-		Args:         studioArgs(score, h.audio),
-		Dir:          filepath.Dir(score),
-		Output:       h.logOut,
-		ReadyLine:    studioReadyLine,
-		ReadyTimeout: 30 * time.Second,
-	})
+	proc, err := h.startSidecar(score)
 	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
 		fmt.Fprintf(h.logOut, "%s host: studio failed: %v\n", time.Now().Format(time.RFC3339), err)
 		_ = h.app.SetHTML(errorPage(filepath.Base(score), err))
 		h.recordSmoke("sidecarError", err.Error())
@@ -230,10 +223,8 @@ func (h *host) open(score string) {
 	h.mu.Lock()
 	if h.closing {
 		h.mu.Unlock()
-		_ = proc.Stop(time.Second)
 		return
 	}
-	h.proc = proc
 	h.score = score
 	h.state.remember(score)
 	state := h.state
@@ -246,6 +237,48 @@ func (h *host) open(score string) {
 		fmt.Fprintf(h.logOut, "host: navigate: %v\n", err)
 	}
 	go h.watch(proc, score)
+}
+
+// startSidecar keeps shutdown aware of a launch before readiness exposes its
+// Process. It must not call the UI: OnClose waits for this work on the UI thread.
+func (h *host) startSidecar(score string) (*sidecar.Process, error) {
+	h.mu.Lock()
+	if h.closing {
+		h.mu.Unlock()
+		return nil, context.Canceled
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	h.startCancel = cancel
+	h.starting.Add(1)
+	previous := h.proc
+	h.proc = nil
+	h.mu.Unlock()
+	defer h.starting.Done()
+	defer cancel()
+	if previous != nil {
+		_ = previous.Stop(3 * time.Second)
+	}
+	fmt.Fprintf(h.logOut, "%s host: starting %s %s\n", time.Now().Format(time.RFC3339), h.cicada, strings.Join(studioArgs(score, h.audio), " "))
+	proc, err := sidecar.Start(ctx, sidecar.Options{
+		Path:         h.cicada,
+		Args:         studioArgs(score, h.audio),
+		Dir:          filepath.Dir(score),
+		Output:       h.logOut,
+		ReadyLine:    studioReadyLine,
+		ReadyTimeout: 30 * time.Second,
+	})
+	if err != nil {
+		return nil, err
+	}
+	h.mu.Lock()
+	if h.closing {
+		h.mu.Unlock()
+		_ = proc.Stop(time.Second)
+		return nil, context.Canceled
+	}
+	h.proc = proc
+	h.mu.Unlock()
+	return proc, nil
 }
 
 // watch shows an error page if Studio exits while it is the current process.
@@ -268,12 +301,17 @@ func (h *host) watch(proc *sidecar.Process, score string) {
 func (h *host) shutdown() {
 	h.mu.Lock()
 	h.closing = true
+	cancel := h.startCancel
 	proc := h.proc
 	h.proc = nil
 	h.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	if proc != nil {
 		_ = proc.Stop(2 * time.Second)
 	}
+	h.starting.Wait()
 }
 
 func (h *host) currentScore() string {

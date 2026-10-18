@@ -25,11 +25,13 @@
 #
 #   desktop/package.sh [--target darwin] [--version 0.1.0] [--output dist/macos]
 #
-#   The build honors GOWORK. Until desktop/go.mod requires a GoSX release with
-#   the darwin desktop backend, point GOWORK at a go.work that uses a GoSX
-#   checkout that has it.
+#   The desktop host honors GOWORK. Until desktop/go.mod requires a GoSX release
+#   with the darwin desktop backend, use a workspace with a GoSX checkout that
+#   has it. Packaging checks backend availability before building the bundle.
+#   The CLI, workstation, and runtime use their pinned modules with GOWORK=off.
 #
-#   Needs: go, codesign, plutil (both ship with macOS).
+#   Needs: go, tinygo (CI uses 0.41.1), wasm-opt (Binaryen), codesign, plutil.
+#   The last two ship with macOS. WASMOPT can select a wasm-opt executable.
 #
 # Runs from any directory.
 set -euo pipefail
@@ -81,24 +83,44 @@ repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 # executable. It uses no GNU-only tools, so it runs on the stock macOS userland.
 package_darwin() {
 	version="${version:-0.0.0-dev}"
-	if ! [[ "$version" =~ ^[0-9A-Za-z._+-]+$ ]]; then
-		echo "invalid --version: $version" >&2
+	if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z][0-9A-Za-z.+-]*)?$ ]]; then
+		echo "invalid --version: $version (use X.Y.Z with an optional prerelease or build suffix)" >&2
 		exit 2
 	fi
 	local tool
-	for tool in go codesign plutil; do
+	for tool in go tinygo "${WASMOPT:-wasm-opt}" codesign plutil; do
 		if ! command -v "$tool" >/dev/null 2>&1; then
-			echo "$tool not found: the macOS app bundle is assembled on macOS" >&2
+			echo "$tool not found: macOS packaging requires Go, TinyGo, wasm-opt (Binaryen), codesign, and plutil" >&2
 			exit 1
 		fi
 	done
+
+	work="$(mktemp -d)"
+	trap 'rm -rf -- "$work"' EXIT
+	cat >"$work/check-platform.go" <<'GO'
+package main
+
+import (
+	"fmt"
+	"os"
+
+	"m31labs.dev/gosx/desktop"
+)
+
+func main() {
+	if err := desktop.Available(); err != nil {
+		fmt.Fprintf(os.Stderr, "macOS desktop backend unavailable: %v\nUse GOWORK with a GoSX checkout containing the Darwin backend; see desktop/README.md.\n", err)
+		os.Exit(1)
+	}
+}
+GO
+	(cd "$repo/desktop" && GOOS=darwin CGO_ENABLED=0 go run "$work/check-platform.go")
 
 	local out app
 	out="${output:-$repo/dist/macos}"
 	mkdir -p -- "$out"
 	out="$(cd -- "$out" && pwd)"
-	app="$out/Cicada Studio.app"
-	rm -rf -- "$app"
+	app="$work/Cicada Studio.app"
 	mkdir -p -- "$app/Contents/MacOS"
 
 	# CFBundleVersion and CFBundleShortVersionString take digits and dots, so a
@@ -110,18 +132,21 @@ package_darwin() {
 	# Build the cicada CLI sidecar and the GoSX workstation. Both land next to
 	# the host in Contents/MacOS/ so findCicada and the sidecar can resolve
 	# them without PATH or extra flags.
-	(cd "$repo" && GOOS=darwin CGO_ENABLED=0 go build -trimpath \
+	(cd "$repo" && GOWORK=off GOOS=darwin CGO_ENABLED=0 go build -trimpath \
 		-ldflags="-s -w" \
 		-o "$app/Contents/MacOS/cicada" ./cmd/cicada)
-	(cd "$repo/workstation" && GOOS=darwin CGO_ENABLED=0 go build -trimpath \
-		-ldflags="-s -w" \
-		-o "$app/Contents/MacOS/cicada-workstation" .)
 	# Build and install the GoSX runtime (build.json, hashed assets, public
 	# tree) alongside the workstation binary. runtimeRoot() in
 	# workstation/runtime.go checks Contents/MacOS/workstation/build.json
 	# first, so this path flips the page to bootstrapMode=full and loads the
 	# full GoSX runtime instead of falling back to raw browser form POSTs.
-	(cd "$repo/workstation" && go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .)
+	# Keep the CLI and generated runtime on the workstation's pinned GoSX
+	# version, even when the host needs a local desktop backend. Generate first
+	# so the workstation executable includes the same UI as its runtime assets.
+	# The production build also compiles the server with trimpath and the
+	# configured symbol stripping. Reuse it instead of compiling it twice.
+	(cd "$repo/workstation" && GOWORK=off GOOS=darwin CGO_ENABLED=0 go run -mod=mod m31labs.dev/gosx/cmd/gosx build --prod .)
+	cp "$repo/workstation/dist/server/app" "$app/Contents/MacOS/cicada-workstation"
 	mkdir -p "$app/Contents/MacOS/workstation"
 	cp "$repo/workstation/dist/build.json" "$app/Contents/MacOS/workstation/"
 	cp -R "$repo/workstation/dist/assets" "$repo/workstation/dist/public" \
@@ -167,7 +192,10 @@ PLIST
 
 	codesign -s - --force --timestamp=none --deep "$app"
 	codesign --verify --deep --strict "$app"
-	echo "Cicada Studio $version packaged at $app"
+	# Keep the previous app intact until its replacement is built and verified.
+	rm -rf -- "$out/Cicada Studio.app"
+	mv -- "$app" "$out/"
+	echo "Cicada Studio $version packaged at $out/Cicada Studio.app"
 }
 
 if [[ "$target" == darwin ]]; then

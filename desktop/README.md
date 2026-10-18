@@ -10,8 +10,9 @@ What the app adds over `cicada studio` in a browser:
 - File menu: New Project, Open, Save As, and Open Recent.
 - One window: opening a `.cicada` file while the app runs switches the
   running window to that file.
-- The helper process ends with the app, including after a crash or a
-  SIGTERM.
+- The helper process ends on normal quit, SIGTERM, and SIGINT, including
+  while it is still starting. Windows also stops it after a host crash;
+  macOS does not guarantee cleanup after a crash or SIGKILL.
 - Windows: an installer (`Cicada-Studio-Setup-<version>.exe`) and a portable
   ZIP. An installed copy adds itself to Explorer's "Open with" list for
   `.cicada` files (per user, under `HKCU\Software\Classes`).
@@ -38,9 +39,9 @@ GOOS=windows GOARCH=amd64 go build -o build/cicada.exe ./cmd/cicada
 macOS (development):
 
 ```sh
-make build-workstation-release
-(cd workstation && CGO_ENABLED=0 go build -o ../build/cicada-workstation .)
-CGO_ENABLED=0 go build -o build/cicada ./cmd/cicada
+GOWORK=off make build-workstation-release
+(cd workstation && GOWORK=off CGO_ENABLED=0 go build -o ../build/cicada-workstation .)
+GOWORK=off CGO_ENABLED=0 go build -o build/cicada ./cmd/cicada
 (cd desktop && CGO_ENABLED=0 go build -o ../build/cicada-studio .)
 ```
 
@@ -69,6 +70,12 @@ executables, and runs `gosx desktop package`. Output goes to `dist/desktop`.
 
 ### macOS
 
+Install [TinyGo](https://tinygo.org/getting-started/install/macos/) and
+[Binaryen](https://github.com/WebAssembly/binaryen/releases) (`wasm-opt`) on
+`PATH` for the production runtime build; CI uses TinyGo 0.41.1. `WASMOPT` can
+select a `wasm-opt` executable outside `PATH`. Go, `codesign`, and `plutil`
+must also be available.
+
 ```sh
 desktop/package.sh --target darwin --version 0.1.0
 ```
@@ -78,9 +85,9 @@ Studio.app` with the standard macOS layout, writes an `Info.plist`
 (`CFBundleIdentifier=dev.cicada.studio`, `LSMinimumSystemVersion=12.0`), and
 ad-hoc signs the bundle. Output goes to `dist/macos`.
 
-The bundle is self-contained once GoSX's darwin desktop backend is in a
-tagged release and `desktop/go.mod` points at it. Before that, build with a
-`go.work` that uses a local GoSX checkout:
+The bundle is self-contained. Building its desktop host currently requires
+a `go.work` that uses a local GoSX checkout with the Darwin backend, until
+`desktop/go.mod` can pin a published version containing it:
 
 ```sh
 cd /path/to/cicada
@@ -96,6 +103,14 @@ use (
 EOF
 desktop/package.sh --target darwin
 ```
+
+Packaging checks that the selected desktop backend is available before
+building the bundle. Without it, the script exits with instructions instead
+of producing an app that cannot open a window. The CLI, workstation, and
+runtime build with `GOWORK=off` so their pinned dependencies remain aligned.
+An existing output app is replaced only after the new bundle passes signature
+verification. Packaging reuses the stripped workstation executable from the
+production runtime build, avoiding a second compilation.
 
 Development builds are ad-hoc signed (no Developer ID, no notarization), so
 Gatekeeper may ask the first time: right-click the bundle → **Open**.

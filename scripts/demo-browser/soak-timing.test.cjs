@@ -19,7 +19,11 @@ test('demo bridge records shared host evidence and preserves correctness failure
     assert(sample.availableCPUCount > 0);
     assert(sample.sampledAt);
   }
-  assert.equal(result.timingVerdict, result.hostBusy ? 'inconclusive' : 'fail');
+  // Non-Linux hosts cannot read /proc/loadavg. Missing evidence must keep
+  // timing inconclusive while the correctness fault still fails the gate.
+  const loadUnavailable = result.hostLoadSamples.some(sample => sample.error);
+  assert.equal(result.timingVerdict, result.hostBusy || loadUnavailable ? 'inconclusive' : 'fail');
+  if (loadUnavailable) assert.match(result.timingReason, /incomplete load samples/);
 });
 
 test('demo sampler stops when the runner fails before its final report', {timeout: 30000}, async () => {
