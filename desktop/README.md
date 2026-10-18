@@ -110,8 +110,13 @@ Run the same native launch and shutdown checks locally with Python 3:
 python3 desktop/smoke.py --app 'dist/macos/Cicada Studio.app' --output build/macos-smoke
 ```
 
-The smoke checks use disposable scores and the null audio backend. Reports
-and app logs are kept in the output directory.
+The smoke checks copy the app into a temporary directory, assign a unique
+bundle identifier, and ad-hoc sign the copy. This isolates WKWebView's store
+from an installed or running Cicada app without changing the supplied bundle.
+Each case uses disposable scores, its own desktop data directory and
+`CICADA_STATE_DIR`, and the null audio backend. The copied app and its unique
+WebKit/cache directories are removed afterward. Reports, signing output, and
+app logs are kept in the output directory.
 
 Development builds are ad-hoc signed (no Developer ID, no notarization), so
 Gatekeeper may ask the first time: right-click the bundle → **Open**.
