@@ -29,7 +29,6 @@ import (
 	"m31labs.dev/cicada/host/recording"
 	"m31labs.dev/cicada/host/schedule"
 	"m31labs.dev/cicada/host/takejournal"
-	"m31labs.dev/cicada/internal/audiobackend"
 	"m31labs.dev/cicada/internal/filetarget"
 	"m31labs.dev/cicada/lsp"
 	"m31labs.dev/cicada/project"
@@ -76,7 +75,6 @@ func studioCommand(args []string) error {
 	seenPath := false
 	lspStdio := false
 	serviceOnly := false
-	audioNull := backendName == audiobackend.Null
 	for i := 0; i < len(args); i++ {
 		if args[i] == "--service" {
 			serviceOnly = true
@@ -125,9 +123,9 @@ func studioCommand(args []string) error {
 			fmt.Fprintln(os.Stderr, "Cicada take recovery:", err)
 		}
 	}()
-	studio.transport.audioNull = audioNull
-	studio.transport.audioBackend = string(backendName)
-	studio.transport.audioOptions = defaultStudioAudioOptionsFor(backendName)
+	if err := studio.transport.initializeAudio(backendName); err != nil {
+		fmt.Fprintln(os.Stderr, "Cicada audio setup:", err)
+	}
 	handler := studio.routes()
 	var serviceToken string
 	if !serviceOnly {

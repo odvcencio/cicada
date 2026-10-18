@@ -3,6 +3,7 @@ package main
 import (
 	_ "embed"
 	"encoding/json"
+	"errors"
 	"net/http"
 )
 
@@ -54,6 +55,9 @@ func (s *studio) audioConfig(w http.ResponseWriter, r *http.Request) {
 		status := http.StatusBadRequest
 		if err.Error() == "stop playback before changing audio devices" {
 			status = http.StatusConflict
+		}
+		if errors.Is(err, errStudioAudioSettings) {
+			status = http.StatusInternalServerError
 		}
 		studioJSON(w, status, map[string]string{"error": err.Error()})
 		return

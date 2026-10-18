@@ -85,11 +85,12 @@ type studioAudioSnapshot struct {
 }
 
 type studioAudioState struct {
-	Inventory studioAudioInventory `json:"inventory"`
-	Options   studioAudioOptions   `json:"options"`
-	Runtime   studioAudioSnapshot  `json:"runtime"`
-	Playing   bool                 `json:"playing"`
-	Status    string               `json:"status"`
+	Inventory       studioAudioInventory `json:"inventory"`
+	Options         studioAudioOptions   `json:"options"`
+	Runtime         studioAudioSnapshot  `json:"runtime"`
+	Playing         bool                 `json:"playing"`
+	Status          string               `json:"status"`
+	SettingsWarning string               `json:"settingsWarning,omitempty"`
 }
 
 // The active panel refreshes these reports without rediscovering endpoints.
@@ -154,7 +155,7 @@ func (t *studioTransport) audioState() studioAudioState {
 		options = defaultStudioAudioOptions()
 	}
 	options = normalizeStudioAudioOptions(options)
-	state := studioAudioState{Inventory: inventory, Options: options, Playing: t.playing}
+	state := studioAudioState{Inventory: inventory, Options: options, Playing: t.playing, SettingsWarning: t.audioSettingsWarning}
 	if t.audio != nil {
 		state.Runtime = t.audio.Snapshot()
 	} else {
@@ -276,6 +277,15 @@ func (t *studioTransport) configureAudio(options studioAudioOptions) error {
 	}
 	if t.audio != nil && t.audio.Armed() && options.RecordingOffsetMS != t.audioOptions.RecordingOffsetMS {
 		return fmt.Errorf("finish the take before changing recording timing correction")
+	}
+	if t.audioSettingsErr != nil {
+		return fmt.Errorf("%w: %v", errStudioAudioSettings, t.audioSettingsErr)
+	}
+	if t.audioSettingsPath != "" {
+		if err := saveStudioAudioSettings(t.audioSettingsPath, options); err != nil {
+			return fmt.Errorf("%w: %v", errStudioAudioSettings, err)
+		}
+		t.audioSettingsWarning = ""
 	}
 	t.audioOptions = options
 	if t.audio != nil {

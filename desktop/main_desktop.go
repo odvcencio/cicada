@@ -81,6 +81,11 @@ func run() error {
 		}
 		*dataDir = dir
 	}
+	absoluteDataDir, err := filepath.Abs(*dataDir)
+	if err != nil {
+		return err
+	}
+	*dataDir = absoluteDataDir
 	if err := os.MkdirAll(filepath.Join(*dataDir, "logs"), 0o755); err != nil {
 		return err
 	}
@@ -263,6 +268,7 @@ func (h *host) startSidecar(score string) (*sidecar.Process, error) {
 		Path:         h.cicada,
 		Args:         studioArgs(score, h.audio),
 		Dir:          filepath.Dir(score),
+		Env:          studioEnvironment(h.statePath),
 		Output:       h.logOut,
 		ReadyLine:    studioReadyLine,
 		ReadyTimeout: 30 * time.Second,

@@ -120,6 +120,13 @@ func studioArgs(score, audio string) []string {
 	return args
 }
 
+func studioEnvironment(statePath string) []string {
+	if statePath == "" {
+		return nil
+	}
+	return []string{"CICADA_AUDIO_SETTINGS_DIR=" + filepath.Join(filepath.Dir(statePath), "audio")}
+}
+
 // initialScore picks the score to open at launch: a .cicada argument, then
 // the last file if it still exists. Empty means "create a new project".
 func initialScore(args []string, state hostState) string {

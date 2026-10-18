@@ -112,6 +112,12 @@ implemented there yet. Device discovery and recording support are separate
 capabilities: the Audio panel shows native microphones but disables recording
 controls when the driver cannot open an input stream.
 
+The native service saves audio preferences per backend in the computer's app
+data. Desktop `--data-dir` isolates this setup along with the host state;
+`CICADA_AUDIO_SETTINGS_DIR` selects the CLI's settings folder. Restoring a
+setup never starts transport or capture, and monitoring starts muted. A save
+failure is returned to the form instead of acknowledging an unsaved change.
+
 GoSX's production engine API supports canvas, fetch, signals, and Go/WASM.
 Automatic `//gosx:engine` discovery is a preview feature in this version; the
 workstation uses the supported registration API. The current Tymbal pin does

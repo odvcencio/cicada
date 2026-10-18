@@ -27,6 +27,16 @@ timing reports; its current driver does not support recording input. Input
 controls remain disabled there rather than offering a recording path that
 cannot open. Windows and Linux expose native recording and monitoring.
 
+Audio device, input, buffer, and timing choices survive restarts and apply to
+other songs on the same computer. Each backend keeps its own setup. A missing
+saved device remains selected so playback cannot silently move to another
+output. New sessions start stopped with headphone monitoring muted.
+
+The desktop app stores these choices in the `audio` folder under its data
+directory (`--data-dir` selects a separate profile). For the CLI,
+`CICADA_AUDIO_SETTINGS_DIR` can select a different settings folder. Song files
+do not contain machine-specific device IDs.
+
 The null backend is silent. In WSL or on a Linux desktop using PulseAudio,
 select the system output explicitly with `--audio oto`. Rendered WAV and MP3
 files can also be played in your usual music player.

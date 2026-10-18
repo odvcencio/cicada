@@ -175,7 +175,8 @@ type audioDevice struct {
 	FundamentalPeriod int    `json:"fundamentalPeriod"`
 }
 type audioState struct {
-	Inventory struct {
+	SettingsWarning string `json:"settingsWarning"`
+	Inventory       struct {
 		Supported        bool          `json:"supported"`
 		CaptureSupported *bool         `json:"captureSupported"`
 		Backend          string        `json:"backend"`

@@ -13,6 +13,25 @@ import (
 	"time"
 )
 
+func TestSidecarReceivesChosenAudioSettingsFolder(t *testing.T) {
+	dir := t.TempDir()
+	helper := filepath.Join(dir, "cicada")
+	script := "#!/bin/sh\nprintf '%s' \"$CICADA_AUDIO_SETTINGS_DIR\" > \"${0%/*}/settings-path\"\necho 'Cicada Studio: http://127.0.0.1:12345/'\nexec sleep 60\n"
+	if err := os.WriteFile(helper, []byte(script), 0700); err != nil {
+		t.Fatal(err)
+	}
+	profile := filepath.Join(t.TempDir(), "Studio profile")
+	h := &host{cicada: helper, statePath: filepath.Join(profile, "state.json"), logOut: io.Discard}
+	t.Cleanup(h.shutdown)
+	if _, err := h.startSidecar(filepath.Join(dir, "main.cicada")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, "settings-path"))
+	if err != nil || string(got) != filepath.Join(profile, "audio") {
+		t.Fatalf("sidecar used a different settings folder: %q %v", got, err)
+	}
+}
+
 func TestShutdownStopsSidecarDuringAndAfterStartup(t *testing.T) {
 	for _, ready := range []bool{false, true} {
 		name := "waiting-for-readiness"

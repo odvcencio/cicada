@@ -213,10 +213,12 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 			checkbox("monitorMuted", "Mute monitoring", state.Options.MonitorMuted), field("Monitor gain", numberInput("monitorGain", strconv.FormatFloat(state.Options.MonitorGain, 'f', -1, 64), "0", "2")), field("Monitor mode", selectInput("monitorMode", state.Options.MonitorMode, []string{"stereo", "mono1", "mono2"}, "Monitor mode"))),
 		gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit")), gosx.Text(apply)))
 	form := ui.Form(ui.FormProps{Action: "/__actions/audio", CSRF: csrf, Revision: v.Revision, ReturnTo: returnTo, Class: "action-form"}, fields)
+	setup := gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Device, input, buffer, and timing choices are saved for this computer. New sessions start stopped, with headphone monitoring muted."))
+	settingsWarning := gosx.El("p", gosx.Attrs(gosx.Attr("class", "error"), gosx.Attr("role", "status"), gosx.Attr("hidden", state.SettingsWarning == "")), gosx.Text(state.SettingsWarning))
 	notice := gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-audio-lock-notice", ""), gosx.Attr("hidden", !locked)), gosx.Text("Stop playback or finish the take before changing audio devices or buffer size."))
 
 	refresh := gosx.El("a", gosx.Attrs(gosx.Attr("href", ctx.Request.URL.RequestURI()), gosx.Attr("data-workspace-refresh", ""), gosx.Attr("class", "button-link")), gosx.Text("Refresh devices"))
 	details := gosx.El("details", gosx.Attrs(gosx.Attr("class", "audio-details")), gosx.El("summary", gosx.Text("Audio details")), gosx.El("p", gosx.Text(state.Status)), gosx.El("p", gosx.Text(state.Inventory.Message)))
 	return ui.Panel(ui.PanelProps{ID: "audio", Title: "Audio connections", Description: "Bring sound in. Send your music out. Know what is connected."}, audioConnections(state), audioSummary(state),
-		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), refresh, gosx.El("a", gosx.Attrs(gosx.Attr("href", back)), gosx.Text("Back to Session"))), notice, form, audioPerformance(state), details)
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), refresh, gosx.El("a", gosx.Attrs(gosx.Attr("href", back)), gosx.Text("Back to Session"))), settingsWarning, setup, notice, form, audioPerformance(state), details)
 }

@@ -33,6 +33,17 @@ func TestStudioArgs(t *testing.T) {
 	}
 }
 
+func TestStudioEnvironmentKeepsAudioInChosenDataFolder(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "Studio profile")
+	got := studioEnvironment(filepath.Join(dir, "state.json"))
+	if len(got) != 1 || got[0] != "CICADA_AUDIO_SETTINGS_DIR="+filepath.Join(dir, "audio") {
+		t.Fatalf("audio settings escaped the chosen profile: %q", got)
+	}
+	if got := studioEnvironment(""); len(got) != 0 {
+		t.Fatalf("host without a data path changed the child environment: %q", got)
+	}
+}
+
 func TestStateRememberKeepsRecentOrderAndLimit(t *testing.T) {
 	var state hostState
 	for i := 0; i < maxRecentFiles+3; i++ {

@@ -67,6 +67,10 @@ type studioTransport struct {
 	telemetry         *liveplay.Publisher
 	pendingCapture    *capture.Calibration
 	listening         *studioListening
+
+	audioSettingsPath    string
+	audioSettingsErr     error
+	audioSettingsWarning string
 }
 
 type studioMeterSnapshot struct {
