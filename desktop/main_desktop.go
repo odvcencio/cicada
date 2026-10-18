@@ -15,9 +15,11 @@ import (
 	"html"
 	"io"
 	"os"
+	"os/signal"
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"m31labs.dev/gosx/desktop"
@@ -152,6 +154,19 @@ func run() error {
 			_ = h.app.Close()
 		}()
 	}
+	// Catch SIGTERM/SIGINT so a shell kill (or launchd quitting the bundle)
+	// closes the window through the UI backend, which runs OnClose and stops
+	// the sidecar. Without this, the Go runtime exits immediately on SIGTERM
+	// (exit 143) and the cicada + cicada-workstation children are orphaned.
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGTERM, syscall.SIGINT)
+	defer signal.Stop(signals)
+	go func() {
+		if _, ok := <-signals; ok {
+			fmt.Fprintf(h.logOut, "%s host: signal received, closing\n", time.Now().Format(time.RFC3339))
+			_ = h.app.Close()
+		}
+	}()
 	runErr := h.app.Run()
 	h.shutdown()
 	if h.smokeOut != "" {
