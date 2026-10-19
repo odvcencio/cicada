@@ -62,6 +62,7 @@ html:has(.shell), body:has(.shell) { height:100%; overflow:hidden; }
 @media (max-width:480px) {
 	.shell .gsx-dock { grid-template-columns:minmax(0,1fr); grid-template-rows:auto minmax(0,1fr); grid-template-areas:"top" "region"; }
 	.shell .gsx-dock__top { flex-direction:column; align-items:stretch; gap:6px; }
+	.shell .shell-top .score-title { flex:0 0 auto; }
 	.shell .gsx-dock__left, .shell .gsx-dock__center, .shell .gsx-dock__right, .shell .gsx-dock__bottom { grid-area:region; display:none; }
 	.shell[data-phone-region="center"] .gsx-dock__center, .shell[data-phone-region="browser"] .gsx-dock__left, .shell[data-phone-region="detail"] .gsx-dock__bottom, .shell[data-phone-region="code"] .gsx-dock__right { display:grid; }
 	.shell[data-phone-region="center"] .gsx-dock__center { display:block; }
