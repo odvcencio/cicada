@@ -80,7 +80,7 @@ func recordingReadiness(state audioState) audioReadiness {
 		return r
 	}
 
-	r.Title, r.Detail, r.Ready = "Microphone configured", "Record a pass in Session. Use headphones to keep the backing out of your microphone.", true
+	r.Title, r.Detail, r.Ready = "Microphone configured", "Record a vocal pass. Use headphones to keep the backing out of your microphone.", true
 	return r
 }
 
@@ -164,7 +164,7 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 		back += "&vocalTrack=" + url.QueryEscape(track)
 	}
 	if ctx.Request.URL.Query().Get("returnTo") == "session" {
-		returnTo, apply = back, "Apply and return to Session"
+		returnTo, apply = back, "Apply and return to recording"
 	}
 	locked := state.Playing || state.Runtime.Armed
 	fields := gosx.El("fieldset", gosx.Attrs(gosx.Attr("class", "audio-settings"), gosx.Attr("data-audio-routing", ""), gosx.Attr("disabled", locked)),
@@ -186,5 +186,5 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 		permission = gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("macOS will ask for microphone access when you enable input and apply. If access was denied, open System Settings → Privacy & Security → Microphone, allow Cicada Studio, then reopen the app. Use headphones while recording with the built-in microphone."))
 	}
 	return ui.Panel(ui.PanelProps{ID: "audio", Title: "Microphone and playback", Description: "Choose where you record and listen."}, audioSummary(state),
-		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), refresh, gosx.El("a", gosx.Attrs(gosx.Attr("href", back)), gosx.Text("Back to Session"))), notice, form, permission, audioPerformance(state), details)
+		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), refresh, gosx.El("a", gosx.Attrs(gosx.Attr("href", back)), gosx.Text("Back to recording"))), notice, form, permission, audioPerformance(state), details)
 }

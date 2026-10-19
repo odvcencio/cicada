@@ -41,7 +41,7 @@ func TestAudioSetupRetainsDisconnectedDeviceAndReturnsToVocalTrack(t *testing.T)
 	jar, _ := cookiejar.New(nil)
 	client := &http.Client{Jar: jar, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 	page := getPage(t, client, app.URL+"/?panel=audio&returnTo=session&vocalTrack=danilo")
-	for _, want := range []string{"Choose a playback output", "Headphones", "Webcam microphone", "Saved device (disconnected)", "Apply and return to Session", "Refresh devices", "Audio details", "Buffer size", "Requested buffer", "Granted buffer", "240 frames", "Reported round trip", "7.00 ms", "mmcss", "40.0%", "hardware loopback measurement", "Device negotiated 240 frames", "macOS will ask for microphone access", "Privacy &amp; Security", "allow Cicada Studio"} {
+	for _, want := range []string{"Choose a playback output", "Headphones", "Webcam microphone", "Saved device (disconnected)", "Apply and return to recording", "Back to recording", "Refresh devices", "Audio details", "Buffer size", "Requested buffer", "Granted buffer", "240 frames", "Reported round trip", "7.00 ms", "mmcss", "40.0%", "hardware loopback measurement", "Device negotiated 240 frames", "macOS will ask for microphone access", "Privacy &amp; Security", "allow Cicada Studio"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("missing audio setup guidance %q", want)
 		}

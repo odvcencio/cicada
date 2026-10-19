@@ -146,7 +146,7 @@ test('Producer workflow edits vocal timing, joins, effect chains and drawn autom
   await ready(page, false);
   await page.getByText('Recording timing', { exact: true }).click();
   await page.getByLabel('Recording timing correction (ms)', { exact: true }).fill('23.5');
-  await page.getByRole('button', { name: 'Apply and return to Session', exact: true }).click();
+  await page.getByRole('button', { name: 'Apply and return to recording', exact: true }).click();
   await ready(page);
   const audio = await json('/api/audio/config');
   assert.equal(audio.options.recordingOffsetMS, 23.5);

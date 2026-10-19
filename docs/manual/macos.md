@@ -15,6 +15,11 @@ The app includes its audio engine and interface; you do not need Go, TinyGo,
 or a terminal to use a packaged build. Developers can build it using the
 [desktop packaging instructions](../../desktop/README.md).
 
+Use **Arrange** for the song timeline, vocal recording, and automation;
+**Session** for the launch matrix and live playing; and **Mixer** for mix
+controls. **Sampler** is in the left Browser. The **Clip** detail tab edits
+patterns, and the **Code** lens shows the score.
+
 ## Set up playback and recording
 
 Open **Audio** in the transport toolbar. Mac builds use **Tymbal CoreAudio**.
@@ -23,10 +28,10 @@ as the input. Separate built-in, USB, and audio-interface inputs and outputs
 can be used together. The capture engine converts an input's sample rate to
 the playback rate without changing the device's system-wide rate.
 
-Enable **input**, apply the settings, then start a take in Session. The first
+Enable **input**, apply the settings, then start a take in **Arrange**. The first
 input request shows macOS's microphone permission dialog. Choose **Allow**.
 If access was denied, open **System Settings → Privacy & Security → Microphone**,
-allow Cicada Studio, then retry recording. Playback does not request microphone
+allow Cicada Studio, then reopen the app. Playback does not request microphone
 access when input is off.
 
 Use **128 frames** as a starting point for recording. If the audio performance
@@ -43,10 +48,10 @@ reconnect it or choose a replacement.
 
 ## Record and choose takes
 
-In **Session**, choose a vocal track or add one. Record over the full song, or
-set a punch range to replace a phrase. Command-Shift-R starts recording for
-the chosen vocal track and finishes an active take. The Record button provides
-the same action.
+In **Arrange → Record vocals**, choose a vocal track or add one. Record over
+the full song, or set a punch range to replace a phrase. Command-Shift-R starts
+recording for the chosen vocal track and finishes an active take. The Record
+button provides the same action.
 
 Keep several takes, then use the waveform take lanes to drag across the best
 phrases. These selections build the vocal comp; you can keep arranging and
@@ -58,7 +63,7 @@ punch ranges, and comp editing.
 Open **Sampler**, choose a **WAV file**, then use **Import and chop WAV**.
 The Mac file picker selects the source; Cicada keeps it with the project and
 fills the pad bank with chops. Use a pad's editor to adjust its range and sound.
-See [Studio](studio.md) for sampling Session placements and resampling a pad
+See [Studio](studio.md) for sampling arrangement placements and resampling a pad
 performance into the arrangement.
 
 ## Play with a MIDI keyboard
