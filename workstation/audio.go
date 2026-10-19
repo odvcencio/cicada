@@ -91,6 +91,15 @@ func recordingReadiness(state audioState) audioReadiness {
 		r.Title, r.Detail, r.Input = "Microphone off", "Choose your microphone and enable input before recording. Playback is available.", "Off"
 		return r
 	}
+	if access := state.Inventory.InputAccess; access != "" && access != "granted" {
+		r.Title, r.Detail = "Allow microphone access", "Enable input and apply the settings to allow microphone access. Playback is available."
+		if access == "denied" || access == "restricted" {
+			r.Detail = "Allow microphone access for Cicada Studio in System Settings > Privacy & Security > Microphone, then refresh devices. Playback is available."
+		} else if access == "unavailable" {
+			r.Title, r.Detail = "Input access unavailable", "Microphone permission could not be checked. Refresh devices and check Audio details. Playback is available."
+		}
+		return r
+	}
 	if !input {
 		r.Title, r.Detail = "Choose a microphone", "Connect your microphone, refresh devices, then choose it and apply the settings."
 		return r
@@ -112,6 +121,8 @@ func audioConnections(state audioState) gosx.Node {
 		input = "Recording input is not available with this driver."
 	} else if r.Ready {
 		input = "Configured for recording. Your raw takes are retained."
+	} else if state.Options.InputEnabled && state.Inventory.InputAccess != "" && state.Inventory.InputAccess != "granted" {
+		input = "Microphone permission is needed before recording."
 	}
 	return gosx.El("div", gosx.Attrs(gosx.Attr("class", "audio-connections"), gosx.Attr("aria-label", "Audio connections"), gosx.Attr("data-input-ready", r.Ready), gosx.Attr("data-output-ready", r.PlaybackReady)),
 		connection("INPUT", r.Input, input),
@@ -203,7 +214,8 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 	}
 	locked := state.Playing || state.Runtime.Armed
 	captureSettings := gosx.El("fieldset", gosx.Attrs(gosx.Attr("class", "audio-input-settings"), gosx.Attr("disabled", !audioCaptureSupported(state))),
-		gosx.El("legend", gosx.Text("Recording input")), field("Input", audioChoices(state, true)), checkbox("inputEnabled", "Enable input", state.Options.InputEnabled))
+		gosx.El("legend", gosx.Text("Recording input")), field("Input", audioChoices(state, true)), checkbox("inputEnabled", "Enable input", state.Options.InputEnabled),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Apply with input enabled to allow microphone access. Input stays closed until you play or record.")))
 	fields := gosx.El("fieldset", gosx.Attrs(gosx.Attr("class", "audio-settings"), gosx.Attr("data-audio-routing", ""), gosx.Attr("disabled", locked)),
 		gosx.El("legend", gosx.Text("Input and playback")), field("Output", audioChoices(state, false)), captureSettings,
 		field("Buffer size", audioBufferChoices(state)),
@@ -218,7 +230,7 @@ func (s *studioApp) audio(ctx *server.Context, v workspace, csrf string) gosx.No
 	notice := gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted"), gosx.Attr("data-audio-lock-notice", ""), gosx.Attr("hidden", !locked)), gosx.Text("Stop playback or finish the take before changing audio devices or buffer size."))
 
 	refresh := gosx.El("a", gosx.Attrs(gosx.Attr("href", ctx.Request.URL.RequestURI()), gosx.Attr("data-workspace-refresh", ""), gosx.Attr("class", "button-link")), gosx.Text("Refresh devices"))
-	details := gosx.El("details", gosx.Attrs(gosx.Attr("class", "audio-details")), gosx.El("summary", gosx.Text("Audio details")), gosx.El("p", gosx.Text(state.Status)), gosx.El("p", gosx.Text(state.Inventory.Message)))
+	details := gosx.El("details", gosx.Attrs(gosx.Attr("class", "audio-details")), gosx.El("summary", gosx.Text("Audio details")), gosx.El("p", gosx.Text(state.Status)), gosx.El("p", gosx.Text(state.Inventory.Message)), gosx.El("p", gosx.Text(state.Inventory.InputMessage)))
 	return ui.Panel(ui.PanelProps{ID: "audio", Title: "Audio connections", Description: "Bring sound in. Send your music out. Know what is connected."}, audioConnections(state), audioSummary(state),
 		gosx.El("div", gosx.Attrs(gosx.Attr("class", "actions")), refresh, gosx.El("a", gosx.Attrs(gosx.Attr("href", back)), gosx.Text("Back to Session"))), settingsWarning, setup, notice, form, audioPerformance(state), details)
 }

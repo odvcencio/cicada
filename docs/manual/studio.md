@@ -22,10 +22,21 @@ make build
 Open the printed loopback URL. Playback starts only when you select **Play**.
 `--audio null` exercises transport without an output device. Tymbal is the
 default on Windows, Linux, and macOS. Use **Audio** to select devices while
-stopped. macOS uses Core Audio for selectable playback outputs and native
-timing reports; its current driver does not support recording input. Input
-controls remain disabled there rather than offering a recording path that
-cannot open. Windows and Linux expose native recording and monitoring.
+stopped. macOS uses Core Audio for selectable inputs, playback outputs,
+and native timing reports. Windows and Linux also expose native recording
+and monitoring.
+
+On macOS, select **Enable input**, then **Apply audio settings** to request
+microphone access. Device discovery never requests permission or starts
+recording. Input stays closed until playback or a take starts. If access is
+denied, allow Cicada Studio in **System Settings → Privacy & Security →
+Microphone**, then refresh devices. Playback can continue without input;
+recording refuses to arm without microphone access.
+
+Development bundles are signed ad hoc. macOS can reject a microphone grant
+from a previous build when its signature changes, even while the saved
+permission switch remains on. A stable signing identity is needed to retain
+authorization across app updates.
 
 Audio device, input, buffer, and timing choices survive restarts and apply to
 other songs on the same computer. Each backend keeps its own setup. A missing

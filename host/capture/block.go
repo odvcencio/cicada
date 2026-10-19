@@ -17,6 +17,9 @@ const (
 	ReferenceUnknown TimestampReference = iota
 	ReferenceFirstFrame
 	ReferenceClockObservation
+	// ReferenceEstimatedFirstFrame already includes estimated output lead.
+	// Use it without subtracting reported latency a second time.
+	ReferenceEstimatedFirstFrame
 )
 
 type Timestamp struct {

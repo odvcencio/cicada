@@ -6,12 +6,12 @@ TinyGo/WebAssembly runtime. If you only want to write scores or use Studio, see
 
 ## Native Go
 
-On Windows and Linux, `cicada play` and Studio select Tymbal by default
-(`WASAPI` on Windows and `ALSA` on Linux). Cicada reports the selected backend
+`cicada play` and Studio select Tymbal by default (`Core Audio` on macOS,
+`WASAPI` on Windows, and `ALSA` on Linux). Cicada reports the selected backend
 and device when playback starts, and it does not fall back silently. Use
 `--audio oto` when you need Oto's system-default device, or set
 `CICADA_AUDIO=oto`. Use `--audio null` for real-time rendering without an
-audio device. macOS continues to use Oto by default.
+audio device.
 
 Parse and validate source on the host, convert it to a typed project, and
 compile the project before starting audio. `project.CompileEngine` creates an
@@ -38,8 +38,8 @@ validation, and engine construction happen outside the audio reader. A valid
 save replaces the active engine at a bar boundary and crossfades for five
 milliseconds. A failed compile leaves the last valid project playing.
 
-`cicada play` and Studio select Tymbal by default on Windows (WASAPI) and Linux
-(ALSA). macOS uses Oto until Tymbal supports CoreAudio. Tymbal does not fall
+`cicada play` and Studio select Tymbal by default on macOS (Core Audio),
+Windows (WASAPI), and Linux (ALSA). Tymbal does not fall
 back silently: if the selected device cannot open, `play` exits with a device
 error and Studio leaves transport stopped. Use `--audio oto` or
 `CICADA_AUDIO=oto` to choose Oto explicitly.

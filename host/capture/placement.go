@@ -38,6 +38,9 @@ func Place(b Block) Placement {
 		case ReferenceFirstFrame:
 			p.MappedEngineFrame += nanoFrames(in.Nano-out.Nano, b.SampleRate)
 			p.Confidence = TimingTimestamps
+		case ReferenceEstimatedFirstFrame:
+			p.MappedEngineFrame += nanoFrames(in.Nano-out.Nano, b.SampleRate)
+			p.Confidence = TimingReportedLatency
 		case ReferenceClockObservation:
 			if b.OutputLatencyValid {
 				p.MappedEngineFrame += nanoFrames(in.Nano-out.Nano-b.OutputLatencyNano, b.SampleRate)

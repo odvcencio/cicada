@@ -51,7 +51,7 @@ func (s *studio) audioConfig(w http.ResponseWriter, r *http.Request) {
 		studioJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if err := s.transport.configureAudio(options); err != nil {
+	if err := s.transport.configureAudioContext(r.Context(), options); err != nil {
 		status := http.StatusBadRequest
 		if err.Error() == "stop playback before changing audio devices" {
 			status = http.StatusConflict

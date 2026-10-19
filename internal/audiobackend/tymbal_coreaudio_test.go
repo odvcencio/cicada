@@ -11,20 +11,24 @@ import (
 	"time"
 )
 
-func TestCoreAudioDoesNotAdvertiseOrOpenUnsupportedCapture(t *testing.T) {
+func TestCoreAudioCaptureDiscoveryDoesNotRequestPermission(t *testing.T) {
 	b, err := New(Tymbal)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if b.CaptureSupported() {
-		t.Fatal("output-only Core Audio driver advertised recording")
+	if !b.CaptureSupported() {
+		t.Fatal("native Core Audio capture is unavailable")
+	}
+	access, err := QueryInputAccess(b)
+	if err != nil || access == "" {
+		t.Fatalf("read-only input permission query: %q %v", access, err)
 	}
 	cfg := Config{SampleRate: 48000, Channels: 2, FramesPerPeriod: 256, CaptureChannels: 1, Device: "not-a-device"}
-	if _, err := b.SampleRate(cfg); err == nil || !strings.Contains(err.Error(), "recording input") {
-		t.Fatalf("capture rate query did not fail before device lookup: %v", err)
+	if _, err := b.SampleRate(cfg); err == nil || strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("capture rate query did not validate the selected device: %v", err)
 	}
-	if _, err := b.Open(cfg, func(_, _ [][]float32) error { return nil }); err == nil || !strings.Contains(err.Error(), "recording input") {
-		t.Fatalf("capture open did not fail before device lookup: %v", err)
+	if _, err := b.Open(cfg, func(_, _ [][]float32) error { return nil }); err == nil || strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("capture open did not validate the selected device: %v", err)
 	}
 }
 

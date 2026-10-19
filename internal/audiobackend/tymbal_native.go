@@ -3,6 +3,7 @@
 package audiobackend
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"runtime"
@@ -25,10 +26,17 @@ func newTymbalBackend() (Backend, error) {
 
 func (tymbalBackend) Name() Name { return Tymbal }
 
-// The pinned Core Audio driver exposes hardware inputs in discovery, but
-// supports output streams only. Do not mistake a microphone for capture support.
 func (b tymbalBackend) CaptureSupported() bool {
-	return b.host.Name() != "" && b.host.Name() != "coreaudio"
+	return b.host.Name() != ""
+}
+
+func (b tymbalBackend) InputAccess() (InputAccess, error) {
+	access, err := b.host.InputAccess()
+	return InputAccess(access), err
+}
+
+func (b tymbalBackend) RequestInputAccess(ctx context.Context) error {
+	return b.host.RequestInputAccess(ctx)
 }
 
 func (b tymbalBackend) Devices() ([]Device, bool, error) {
@@ -50,9 +58,6 @@ func (b tymbalBackend) Devices() ([]Device, bool, error) {
 }
 
 func (b tymbalBackend) SampleRate(config Config) (int, error) {
-	if config.CaptureChannels > 0 && !b.CaptureSupported() {
-		return 0, fmt.Errorf("Core Audio recording input is not supported by this audio driver yet")
-	}
 	output, err := b.device(config.Device, tymbal.Output)
 	if err != nil {
 		return 0, err
@@ -87,9 +92,6 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 	}
 	if render == nil {
 		return nil, fmt.Errorf("audio render callback is required")
-	}
-	if config.CaptureChannels > 0 && !b.CaptureSupported() {
-		return nil, fmt.Errorf("Core Audio recording input is not supported by this audio driver yet")
 	}
 	output, err := b.device(config.Device, tymbal.Output)
 	if err != nil {
@@ -140,7 +142,7 @@ func (b tymbalBackend) Open(config Config, render Callback) (Stream, error) {
 	}
 	var nativeStream *tymbal.Stream
 	var openErr error
-	timing := &tymbalTiming{tap: config.Capture, epoch: deviceEpoch.Add(1)}
+	timing := &tymbalTiming{tap: config.Capture, epoch: deviceEpoch.Add(1), estimatedOutput: b.host.Name() == "coreaudio"}
 	for _, period := range periods {
 		cfg := tymbal.Config{
 			Output: &output, OutChannels: config.Channels,
@@ -243,9 +245,10 @@ func oneLineAudioError(value string) string {
 var deviceEpoch atomic.Uint64
 
 type tymbalTiming struct {
-	tap    func(capture.Block, [][]float32)
-	epoch  uint64
-	actual tymbal.Actual
+	tap             func(capture.Block, [][]float32)
+	epoch           uint64
+	actual          tymbal.Actual
+	estimatedOutput bool
 }
 
 func tymbalCallback(render Callback, callbackErr *atomic.Pointer[audioError]) tymbal.Callback {
@@ -279,6 +282,9 @@ func (s *tymbalTiming) block(t tymbal.Time, input, output [][]float32) capture.B
 		frames = len(input[0])
 	}
 	outRef := capture.ReferenceFirstFrame
+	if s.estimatedOutput {
+		outRef = capture.ReferenceEstimatedFirstFrame
+	}
 	// WASAPI exposes an audio-clock observation, not the queued render frame.
 	if t.OutputFrequency != 0 {
 		outRef = capture.ReferenceClockObservation

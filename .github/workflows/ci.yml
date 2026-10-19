@@ -366,8 +366,9 @@ jobs:
           wasm-opt --version
           (cd desktop && go mod download && go mod verify && go test -race ./... && go vet ./...)
           (cd workstation && go test -race ./... && go vet ./...)
-          go test -race ./internal/audiobackend -count=1
-          go test ./cmd/cicada -run '^Test(ApplyRefusesConcurrentSaveAtExchange|StudioLateExternalWriteSurvivesSavesAndRestart|StudioOpenWriterDuringCommitIsRetained|StudioRecoveryWithoutReceiptRefusesSave|RouteGuardsMatchIntentsAndApply|StudioNativeCaptureCapabilityCannotBeBypassedBySavedSettings|AudioSetup.*)$' -count=1
+          go test -race ./host/capture ./internal/audiobackend -count=1
+          go test -race ./cmd/cicada -run '^Test(ApplyRefusesConcurrentSaveAtExchange|StudioLateExternalWriteSurvivesSavesAndRestart|StudioOpenWriterDuringCommitIsRetained|StudioRecoveryWithoutReceiptRefusesSave|RouteGuardsMatchIntentsAndApply|StudioNativeCaptureCapabilityCannotBeBypassedBySavedSettings|AudioSetup.*|InputAuthorization.*|MissingInputPermission.*)$' -count=1
+          CICADA_AUDIO_CALLBACK_NOALLOC=1 go test ./cmd/cicada -run '^TestStudioAudioRenderCallbackDoesNotAllocate$' -count=1
       - name: Package and launch from a clean checkout
         run: |
           set -euo pipefail

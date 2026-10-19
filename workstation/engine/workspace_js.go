@@ -808,6 +808,9 @@ func (u *workspaceUI) runJob(client *http.Client, job workspaceJob) bool {
 	}
 	u.root.Call("setAttribute", "aria-busy", "true")
 	u.status.Set("Saving…")
+	if job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
+		u.status.Set("Checking microphone permission…")
+	}
 	projection, message, err := u.request(client, job)
 	if u.closed.Load() {
 		workspacePending(job, -1)
@@ -884,7 +887,15 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 		request.Header.Set("Content-Type", "application/json")
 		request.Header.Set("X-CSRF-Token", u.props.CSRF)
 	}
-	response, err := client.Do(request)
+	requestClient := client
+	if job.method == http.MethodPost && job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
+		// Native permission waits for a human response. Closing this workspace
+		// still cancels its context; ordinary edits retain their timeout.
+		permissionClient := *client
+		permissionClient.Timeout = 0
+		requestClient = &permissionClient
+	}
+	response, err := requestClient.Do(request)
 	if err != nil {
 		return projection, "", fmt.Errorf("The workspace request did not complete")
 	}

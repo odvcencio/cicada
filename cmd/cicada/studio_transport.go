@@ -31,6 +31,7 @@ type studioTransport struct {
 	audioBackend      string
 	mu                sync.Mutex
 	pollMu            sync.Mutex
+	audioConfigMu     sync.Mutex // serialize configuration while native permission waits
 	stream            *liveplay.Player
 	preview           *liveplay.Player
 	previewTimer      *time.Timer

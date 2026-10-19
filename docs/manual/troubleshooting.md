@@ -60,12 +60,12 @@ valid but still fail a name, type, unit, range, or engine check.
 
 ## No sound or unexpected sound
 
-- On Windows and Linux, `cicada play` and Studio use Tymbal by default: WASAPI
-  on Windows and ALSA on Linux. If Tymbal cannot open a device, Cicada names it
+- `cicada play` and Studio use Tymbal by default: Core Audio on macOS, WASAPI
+  on Windows, and ALSA on Linux. If Tymbal cannot open a device, Cicada names it
   and suggests `--audio oto`. On Linux, no ALSA default device or a device held
   by PipeWire or Pulse can cause this error. Use `--audio oto` or set
   `CICADA_AUDIO=oto` to select Oto explicitly. Use `--audio null` for real-time
-  transport without an output device. macOS uses Oto by default.
+  transport without an output device.
 - To check a score without live playback, render a WAV.
 - If WSL has no ALSA playback device, use a native Windows build with Tymbal
   and WASAPI to audition the instruments. Keep its editable score on a Windows

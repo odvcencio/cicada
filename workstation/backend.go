@@ -70,9 +70,14 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 		req.Header.Set("Authorization", "Bearer "+b.token)
 	}
 	client := b.client
-	if strings.HasPrefix(resource.Path, "/api/sampler") {
+	if strings.HasPrefix(resource.Path, "/api/sampler") || method == http.MethodPost && resource.Path == "/api/audio/config" {
 		copy := *client
 		copy.Timeout = 60 * time.Second
+		if resource.Path == "/api/audio/config" {
+			// Wait for the user's native permission response. The browser
+			// request context still cancels if its caller leaves.
+			copy.Timeout = 0
+		}
 		client = &copy
 	}
 	response, err := client.Do(req)
@@ -179,6 +184,8 @@ type audioState struct {
 	Inventory       struct {
 		Supported        bool          `json:"supported"`
 		CaptureSupported *bool         `json:"captureSupported"`
+		InputAccess      string        `json:"inputAccess"`
+		InputMessage     string        `json:"inputMessage"`
 		Backend          string        `json:"backend"`
 		BackendName      string        `json:"backendName"`
 		Message          string        `json:"message"`

@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/cookiejar"
@@ -9,9 +11,65 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"m31labs.dev/gosx"
 )
+
+func TestAudioPermissionWaitSurvivesOrdinaryTimeoutAndStillCancels(t *testing.T) {
+	for _, outcome := range []string{"granted", "canceled"} {
+		t.Run(outcome, func(t *testing.T) {
+			entered, release := make(chan struct{}), make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				close(entered)
+				select {
+				case <-release:
+					io.WriteString(w, `{}`)
+				case <-r.Context().Done():
+				}
+			}))
+			defer server.Close()
+			defer close(release)
+			b, err := newBackend(server.URL)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.client.Timeout = 20 * time.Millisecond
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				done <- b.call(ctx, http.MethodPost, "/api/audio/config", audioOptions{InputEnabled: true}, nil)
+			}()
+			select {
+			case <-entered:
+			case <-time.After(time.Second):
+				t.Fatal("configuration did not reach the service")
+			}
+			select {
+			case err := <-done:
+				t.Fatalf("permission wait ended before a human response: %v", err)
+			case <-time.After(100 * time.Millisecond):
+			}
+			if outcome == "canceled" {
+				cancel()
+			} else {
+				release <- struct{}{}
+			}
+			select {
+			case err := <-done:
+				if outcome == "canceled" && !errors.Is(err, context.Canceled) || outcome == "granted" && err != nil {
+					t.Fatalf("permission result lost: %v", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("configuration did not finish")
+			}
+			if b.client.Timeout != 20*time.Millisecond {
+				t.Fatal("permission wait changed ordinary request timeout")
+			}
+		})
+	}
+}
 
 func TestAudioSetupRetainsDisconnectedDeviceAndReturnsToVocalTrack(t *testing.T) {
 	var applied audioOptions
@@ -127,5 +185,24 @@ func TestOutputOnlyNativeDriverKeepsPlaybackSelectableWithoutPromisingRecording(
 	state.Options.InputEnabled = true
 	if recordingReadiness(state).Ready {
 		t.Fatal("saved input setting bypassed native capture capability")
+	}
+}
+
+func TestMicrophonePermissionNeverClaimsRecordingOrDisconnectsPlayback(t *testing.T) {
+	var state audioState
+	if err := json.Unmarshal([]byte(`{"inventory":{"supported":true,"captureSupported":true,"backendName":"tymbal","devices":[{"id":"mic","name":"Built-in microphone","inputs":1,"defaultInput":true},{"id":"out","name":"Studio headphones","outputs":2,"defaultOutput":true}]},"options":{"inputEnabled":true}}`), &state); err != nil {
+		t.Fatal(err)
+	}
+	for _, access := range []string{"prompt", "denied", "restricted", "unavailable"} {
+		state.Inventory.InputAccess = access
+		r := recordingReadiness(state)
+		page := gosx.RenderHTML(audioConnections(state))
+		if r.Ready || !r.PlaybackReady || !strings.Contains(page, `data-input-ready="false"`) || !strings.Contains(page, `data-output-ready="true"`) || strings.Contains(page, "Configured for recording") {
+			t.Fatalf("%s permission misrepresented: %+v %s", access, r, page)
+		}
+	}
+	state.Inventory.InputAccess = "granted"
+	if r := recordingReadiness(state); !r.Ready || !r.PlaybackReady {
+		t.Fatal(r)
 	}
 }

@@ -135,7 +135,7 @@ func (l *vocalLoopCapture) write(record capture.RecordedBlock, pcm [][]float32) 
 		if block.Timing.InputTime.Valid {
 			block.Timing.InputTime.Nano += advanceNano
 		}
-		if block.Timing.OutputTime.Valid && block.Timing.OutputTime.Reference == capture.ReferenceFirstFrame {
+		if block.Timing.OutputTime.Valid && (block.Timing.OutputTime.Reference == capture.ReferenceFirstFrame || block.Timing.OutputTime.Reference == capture.ReferenceEstimatedFirstFrame) {
 			block.Timing.OutputTime.Nano += advanceNano
 		}
 		block.Placement.RawEngineFrame += int64(at) - int64(l.index)*l.duration

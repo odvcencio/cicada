@@ -53,10 +53,10 @@ the amd64 PCM reference to the native arm64 run.
 shared mode on Windows, and ALSA on Linux. Cicada reports device errors and does
 not switch engines silently. Use `--audio oto` to select Oto explicitly, or
 `--audio null` for real-time transport without an output device.
-`CICADA_AUDIO` selects a backend when `--audio` is omitted. The current Core
-Audio driver supports output selection and native timing reports; macOS
-recording input is not implemented yet. Windows and Linux support recording
-through Tymbal's native input path.
+`CICADA_AUDIO` selects a backend when `--audio` is omitted. Tymbal supports
+native recording on macOS, Windows, and Linux. On macOS, enable input and
+apply the Audio settings to allow microphone access. Playback remains
+available when microphone permission is missing; recording requires access.
 
 ## Learn Cicada
 
