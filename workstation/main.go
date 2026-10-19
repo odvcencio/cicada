@@ -54,6 +54,7 @@ func run(args []string) error {
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	server.BaseContext = func(net.Listener) context.Context { return ctx }
 	if *watchParent {
 		go func() { _, _ = io.Copy(io.Discard, os.Stdin); stop() }()
 	}

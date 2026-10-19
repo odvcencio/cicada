@@ -33,6 +33,8 @@ func (s *studioApp) liveAction(ctx *action.Context) error {
 	p := map[string]any{"type": f["type"], "track": f["track"], "address": f["address"]}
 	switch f["type"] {
 	case "release":
+	case "heartbeat":
+		request["ping"] = true
 	case "note":
 		for _, key := range []string{"note", "velocity"} {
 			n, e := integer(f, key)
@@ -66,7 +68,7 @@ func (s *studioApp) liveAction(ctx *action.Context) error {
 	default:
 		return action.Validation("unsupported live command", nil, nil)
 	}
-	if f["type"] != "release" {
+	if f["type"] != "release" && f["type"] != "heartbeat" {
 		request["messages"] = []any{p}
 	}
 	if err := s.backend.call(ctx.Request.Context(), http.MethodPost, "/api/live", request, nil); err != nil {
@@ -237,7 +239,7 @@ func (s *studioApp) live(ctx *server.Context, v workspace, csrf string) gosx.Nod
 	// subtree when props are unchanged without retaining detached listeners.
 	content := gosx.Fragment(controls, gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-keyboard")), gosx.Fragment(keys...)), gosx.El("div", gosx.Attrs(gosx.Attr("class", "live-drums")), gosx.Fragment(pads...)), midi, gosx.El("p", gosx.Attrs(gosx.Attr("data-live-status", ""), gosx.Attr("role", "status")), gosx.Text("Live input requires a browser with WebAssembly enabled. Launch forms remain available.")), gosx.El("ul", gosx.Attrs(gosx.Attr("data-live-mappings", ""))))
 	surface := meterEngine(ctx, engine.Config{Name: "CicadaLive", Kind: engine.KindSurface, MountID: "cicada-live", Runtime: engine.RuntimeGoWASM, Props: props, Capabilities: []engine.Capability{engine.CapFetch, engine.CapKeyboard, engine.CapPointer, engine.CapStorage}, RequiredCapabilities: []engine.Capability{engine.CapWASM, engine.CapFetch}}, content)
-	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and Web MIDI play acid, modeled keyboards, authored instruments, and drums through Tymbal. Note patterns retain single-note takes; overlapping polyphonic takes need separate patterns."}, s.liveLaunch(v, csrf), surface, preview)
+	return ui.Panel(ui.PanelProps{ID: "live", Title: "Live performance", Description: "Keyboard and MIDI play acid, modeled keyboards, authored instruments, and drums through Tymbal. Note patterns retain single-note takes; overlapping polyphonic takes need separate patterns."}, s.liveLaunch(v, csrf), surface, preview)
 }
 
 type liveLaunchCommand struct {

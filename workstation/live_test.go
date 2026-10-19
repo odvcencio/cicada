@@ -100,18 +100,24 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	// New responses mask CSRF tokens independently. A held note and its
 	// release must retain the same service owner across requests and renders.
 	owner := command["owner"]
+	if r := jsonPost("/__actions/live", map[string]string{"type": "heartbeat", "lease": input["lease"], "sequence": "2"}, csrf); r.StatusCode != 200 {
+		t.Fatalf("heartbeat: %d", r.StatusCode)
+	}
+	if ping := <-commands; ping["owner"] != owner || ping["ping"] != true || ping["messages"] != nil {
+		t.Fatalf("heartbeat changed ownership or sent a note: %#v", ping)
+	}
 	freshCSRF := tokenFromPage(t, getPage(t, client, app.URL+"/?panel=live"))
 	if freshCSRF == csrf {
 		t.Fatal("CSRF token was not masked per response")
 	}
-	input["sequence"], input["on"] = "2", "false"
+	input["sequence"], input["on"] = "3", "false"
 	if r := jsonPost("/__actions/live", input, freshCSRF); r.StatusCode != 200 {
 		t.Fatalf("note off: %d", r.StatusCode)
 	}
 	if off := <-commands; off["owner"] != owner {
 		t.Fatal("note off changed the live mount owner")
 	}
-	input["sequence"], input["type"] = "3", "release"
+	input["sequence"], input["type"] = "4", "release"
 	if r := jsonPost("/__actions/live", input, freshCSRF); r.StatusCode != 200 {
 		t.Fatalf("release: %d", r.StatusCode)
 	}

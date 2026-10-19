@@ -2,6 +2,8 @@
 """Check a packaged macOS app without an audio device or a user's project."""
 
 import argparse
+from html.parser import HTMLParser
+from http.cookiejar import CookieJar
 import json
 import os
 from pathlib import Path
@@ -12,6 +14,17 @@ import subprocess
 import tempfile
 import time
 import urllib.request
+
+
+class CSRFInput(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.token = None
+
+    def handle_starttag(self, tag, attrs):
+        values = dict(attrs)
+        if tag == "input" and values.get("name") == "csrf_token":
+            self.token = values.get("value")
 
 
 def alive(pid):
@@ -56,6 +69,7 @@ def check_launch(binary, output, mode):
         args += ["--cicada", str(helper)]
     args.append(str(score))
     seen = set()
+    midi_stream = None
     with (folder / "stderr.log").open("w") as stderr:
         proc = subprocess.Popen(args, stdout=stderr, stderr=stderr)
         seen.add(proc.pid)
@@ -83,8 +97,23 @@ def check_launch(binary, output, mode):
                     for path in assets:
                         with urllib.request.urlopen(url.rstrip("/") + path, timeout=5) as response:
                             response.read()
+                    if mode == "midi-term":
+                        browser = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(CookieJar()))
+                        with browser.open(url + "?panel=live", timeout=5) as response:
+                            parser = CSRFInput()
+                            parser.feed(response.read().decode())
+                        if not parser.token:
+                            raise RuntimeError("native MIDI lifecycle test has no CSRF token")
+                        request = urllib.request.Request(
+                            url + "api/midi/input", data=b"{}", method="POST",
+                            headers={"Content-Type": "application/json", "X-CSRF-Token": parser.token, "Origin": url.rstrip("/")},
+                        )
+                        midi_stream = browser.open(request, timeout=5)
+                        event = json.loads(midi_stream.readline())
+                        if event.get("type") != "devices":
+                            raise RuntimeError(f"native MIDI did not connect: {event}")
                     if mode != "normal":
-                        proc.send_signal(signal.SIGTERM if mode == "term" else signal.SIGINT)
+                        proc.send_signal(signal.SIGTERM if mode in {"term", "midi-term"} else signal.SIGINT)
                     checked = True
                 time.sleep(0.1)
             proc.wait(timeout=5)
@@ -101,8 +130,10 @@ def check_launch(binary, output, mode):
                 raise RuntimeError(f"{mode}: failed startup: {startup}")
             if mode == "normal" and not startup.get("studioLoadedMs"):
                 raise RuntimeError(f"native window never loaded Studio: {startup}")
-            return {"mode": mode, "pids": sorted(seen), "startup": startup, "artifacts": str(folder)}
+            return {"mode": mode, "pids": sorted(seen), "startup": startup, "nativeMIDIConnected": mode == "midi-term", "artifacts": str(folder)}
         finally:
+            if midi_stream is not None:
+                midi_stream.close()
             if proc.poll() is None:
                 proc.terminate()
                 try:
@@ -129,7 +160,7 @@ def main():
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
     results = []
-    for mode in ["normal", "term", "int", "early-term", "early-int"]:
+    for mode in ["normal", "term", "int", "early-term", "early-int", "midi-term"]:
         result = check_launch(binary, output, mode)
         results.append(result)
         (output / "report.json").write_text(json.dumps(results, indent=2) + "\n")

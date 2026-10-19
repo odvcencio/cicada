@@ -70,6 +70,11 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 		req.Header.Set("Authorization", "Bearer "+b.token)
 	}
 	client := b.client
+	if method == http.MethodPost && resource.Path == "/api/midi/input" {
+		copy := *client
+		copy.Timeout = 0 // The mounted Live panel owns this input stream.
+		client = &copy
+	}
 	if strings.HasPrefix(resource.Path, "/api/sampler") || method == http.MethodPost && resource.Path == "/api/audio/config" {
 		copy := *client
 		copy.Timeout = 60 * time.Second

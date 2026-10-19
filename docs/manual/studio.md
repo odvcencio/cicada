@@ -224,14 +224,28 @@ The launch matrix queues scenes or individual slots with the selected timing;
 mint marks a playing slot and amber marks a queued slot. Its forms also work
 without browser scripting.
 
-**Enable MIDI** asks for browser permission without system-exclusive access.
-Live then reads Note On, Note Off, and Control Change messages from each
-connected input. Notes play the selected pitched track. On channel 10, General
+**Enable MIDI** connects the macOS app directly to CoreMIDI when Web MIDI is
+unavailable. Inputs appear automatically when connected and disappear when
+unplugged; their held notes are released. **Disconnect MIDI** closes the input
+port. Leaving Live or closing the app also closes it. Bluetooth MIDI inputs
+already connected in macOS appear through the same CoreMIDI path; Cicada does
+not pair Bluetooth devices.
+
+Held notes keep a short lease in the audio service. If the Live client crashes
+or stops responding, the service releases its notes after five seconds and
+rejects late commands from that client. Notes held by another connected Live
+client continue sounding.
+
+In browsers with Web MIDI, **Enable MIDI** asks for browser permission without
+system-exclusive access. Both paths read Note On, Note Off, and Control Change
+messages from connected inputs. Notes play the selected pitched track. On channel 10, General
 MIDI drum notes play the selected drum track and other notes are ignored. Live
-ignores every other message, including pitch bend, channel and polyphonic
+honors All Sound Off and All Notes Off for the sending device and channel.
+It ignores other messages, including sustain, pitch bend, channel and polyphonic
 pressure, and MPE zone setup, so an MPE controller plays plain notes without
-per-note expression. Web MIDI supplies MIDI 1 packets; this input does not
-decode MIDI 2 Universal MIDI Packets.
+per-note expression. The native input requests MIDI 1 protocol conversion
+from CoreMIDI; it does not claim MIDI 2 expression support. Web MIDI also
+supplies MIDI 1 packets. System-exclusive messages are ignored.
 
 #### Record and Arm
 

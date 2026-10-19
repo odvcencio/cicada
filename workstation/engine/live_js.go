@@ -28,12 +28,13 @@ type liveProps struct {
 	TrackPatterns map[string][]string `json:"trackPatterns"`
 }
 type liveMapping struct {
-	Device  string `json:"device"`
-	Channel int    `json:"channel"`
-	CC      *int   `json:"cc,omitempty"`
-	Note    *int   `json:"note,omitempty"`
-	Address string `json:"address,omitempty"`
-	Action  string `json:"action,omitempty"`
+	Device     string `json:"device"`
+	DeviceName string `json:"deviceName,omitempty"`
+	Channel    int    `json:"channel"`
+	CC         *int   `json:"cc,omitempty"`
+	Note       *int   `json:"note,omitempty"`
+	Address    string `json:"address,omitempty"`
+	Action     string `json:"action,omitempty"`
 }
 type liveHeld struct {
 	Track string
@@ -49,30 +50,33 @@ type liveEvent struct {
 	Callback js.Func
 }
 type liveUI struct {
-	root        js.Value
-	props       liveProps
-	lease       string
-	sequence    uint64
-	ctx         context.Context
-	cancel      context.CancelFunc
-	closed      atomic.Bool
-	jobs        chan liveJob
-	events      []liveEvent
-	status      *signal.Signal[string]
-	held        map[string]liveHeld
-	counts      map[liveHeld]int
-	active      map[string]int
-	takes       []control.Recording
-	recording   bool
-	bar, step   int64
-	playing     bool
-	sampled     time.Time
-	learning    bool
-	mappings    []liveMapping
-	descriptors map[string]control.Descriptor
-	addresses   map[string]string
-	midi        js.Value
-	midiEvents  []liveEvent
+	root                 js.Value
+	props                liveProps
+	lease                string
+	sequence             uint64
+	ctx                  context.Context
+	cancel               context.CancelFunc
+	closed               atomic.Bool
+	jobs                 chan liveJob
+	events               []liveEvent
+	status               *signal.Signal[string]
+	held                 map[string]liveHeld
+	counts               map[liveHeld]int
+	active               map[string]int
+	takes                []control.Recording
+	recording            bool
+	bar, step            int64
+	playing              bool
+	sampled              time.Time
+	learning             bool
+	mappings             []liveMapping
+	descriptors          map[string]control.Descriptor
+	addresses            map[string]string
+	midi                 js.Value
+	midiEvents           []liveEvent
+	nativeMIDICancel     context.CancelFunc
+	nativeMIDIGeneration uint64
+	midiNames            map[string]string
 }
 
 func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
@@ -87,6 +91,7 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	u := &liveUI{root: root, props: props, lease: js.Global().Get("crypto").Call("randomUUID").String(), ctx: ctx, cancel: cancel, jobs: make(chan liveJob, 128), status: signal.New("Press Play, then use the note keys or enable MIDI."), held: map[string]liveHeld{}, counts: map[liveHeld]int{}, active: map[string]int{}, descriptors: map[string]control.Descriptor{}, addresses: map[string]string{}, midi: js.Undefined()}
 	u.loadMappings()
+	u.midiNames = map[string]string{}
 	u.loadSettings()
 	u.refreshPatterns()
 	watch := signal.Watch(func() { root.Call("querySelector", "[data-live-status]").Set("textContent", u.status.Get()) })
@@ -106,6 +111,9 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 			return
 		}
 		u.closeNotes()
+		if u.nativeMIDICancel != nil {
+			u.nativeMIDICancel()
+		}
 		u.saveTake()
 		for _, e := range append(u.events, u.midiEvents...) {
 			e.Target.Call("removeEventListener", e.Name, e.Callback)
@@ -195,6 +203,9 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 		if result.Message == "" {
 			result.Message = fmt.Sprintf("Live action failed (%d)", resp.StatusCode)
 		}
+		if action == "live" && resp.StatusCode == http.StatusConflict {
+			result.Message += ". Reopen Live to resume."
+		}
 		return nil, fmt.Errorf("%s", result.Message)
 	}
 	return result.Data, nil
@@ -258,11 +269,16 @@ func (u *liveUI) poll() {
 	}
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
+	var heartbeat time.Time
 	for {
 		select {
 		case <-u.ctx.Done():
 			return
 		case <-ticker.C:
+		}
+		if len(u.held) > 0 && time.Since(heartbeat) >= time.Second {
+			u.queue("live", map[string]string{"type": "heartbeat"})
+			heartbeat = time.Now()
 		}
 		var t struct {
 			Bar          int64             `json:"bar"`
@@ -367,7 +383,9 @@ func (u *liveUI) noteOn(id, track string, note, velocity int) {
 		u.takes[i].Notes = append(u.takes[i].Notes, control.Note{Tick: tick, EndTick: tick, Note: note, Velocity: velocity})
 		u.active[id] = i*1024 + n
 		u.saveTake()
-		u.status.Set(fmt.Sprintf("Recording · %d notes", total+1))
+		label := "notes"
+		if total == 0 { label = "note" }
+		u.status.Set(fmt.Sprintf("Recording · %d %s", total+1, label))
 	}
 }
 func (u *liveUI) noteOff(id string) {
@@ -642,7 +660,11 @@ func (u *liveUI) renderMappings() {
 			input = "CC"
 			number = *m.CC
 		}
-		row.Set("textContent", fmt.Sprintf("%s · channel %d · %s %d → %s", m.Device, m.Channel+1, input, number, target))
+		device := m.DeviceName
+		if device == "" {
+			device = m.Device
+		}
+		row.Set("textContent", fmt.Sprintf("%s · channel %d · %s %d → %s", device, m.Channel+1, input, number, target))
 		list.Call("append", row)
 	}
 }
@@ -682,9 +704,17 @@ func awaitPromise(ctx context.Context, p js.Value) (js.Value, error) {
 	}
 }
 func (u *liveUI) enableMIDI() {
+	if u.nativeMIDICancel != nil {
+		u.nativeMIDICancel()
+		u.releaseMIDIPrefix("midi:native:")
+		u.query("[data-live-control=midi]").Set("textContent", "Disconnecting MIDI…")
+		u.query("[data-live-control=midi]").Set("disabled", true)
+		u.status.Set("Closing MIDI inputs…")
+		return
+	}
 	n := js.Global().Get("navigator")
 	if n.Get("requestMIDIAccess").Type() != js.TypeFunction {
-		u.status.Set("Web MIDI is unavailable. Keyboard and pointer notes remain available.")
+		u.enableNativeMIDI()
 		return
 	}
 	if !u.midi.IsUndefined() {
@@ -749,6 +779,10 @@ func (u *liveUI) midiMessage(device string, data js.Value) {
 	if !cc && !on && !off {
 		return
 	}
+	if cc && (a == 120 || a == 123) {
+		u.releaseMIDIPrefix(fmt.Sprintf("midi:%s:%d:", device, channel))
+		return
+	}
 	if u.learning && (cc || on) {
 		target := u.selected("[data-live-target]")
 		if cc && !strings.HasPrefix(target, "param:") {
@@ -759,7 +793,7 @@ func (u *liveUI) midiMessage(device string, data js.Value) {
 			u.status.Set("Use a CC input to learn a parameter.")
 			return
 		}
-		m := liveMapping{Device: device, Channel: channel}
+		m := liveMapping{Device: device, DeviceName: u.midiNames[device], Channel: channel}
 		if cc {
 			m.CC = &a
 			m.Address = strings.TrimPrefix(target, "param:")

@@ -56,6 +56,7 @@ type studio struct {
 	history             *studioHistory
 	exports             *studioExportController
 	liveControls        studioLiveControls
+	nativeMIDI          studioMIDIInput
 	sessionID           string
 	renderCheck         edits.RenderCheck // caches song-to-arrange renders by source revision
 	samplerUndo         []padsampler.Bank
@@ -143,6 +144,7 @@ func studioCommand(args []string) error {
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	server.BaseContext = func(net.Listener) context.Context { return ctx }
 	if lspStdio {
 		// Stdout is the LSP wire in this mode. The extension reads the Studio
 		// address from stderr and shows the same views as the browser frame.
@@ -154,6 +156,7 @@ func studioCommand(args []string) error {
 		}()
 	}
 	go studio.watchHistory(ctx)
+	go studio.watchLiveInputs(ctx)
 	finished := make(chan error, 1)
 	go func() { finished <- server.Serve(listener) }()
 	var appFinished <-chan error
@@ -187,6 +190,7 @@ func studioCommand(args []string) error {
 		defer cancel()
 		return server.Shutdown(shutdown)
 	case err := <-appFinished:
+		stop() // Cancel native input streams before waiting for HTTP shutdown.
 		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = server.Shutdown(shutdown)
@@ -282,6 +286,7 @@ func (s *studio) studioRoutes(qualification bool) http.Handler {
 	mux.HandleFunc("GET /studio-instrument-record.js", s.instrumentRecordScript)
 	mux.HandleFunc("POST /api/live", s.liveControl)
 	mux.HandleFunc("GET /api/live", s.liveSocket)
+	mux.HandleFunc("POST /api/midi/input", s.midiInput)
 	mux.HandleFunc("POST /api/loudness/reset", s.resetLiveLoudness)
 	mux.HandleFunc("POST /api/song", s.editSong)
 	mux.HandleFunc("POST /api/arrange", s.editArrangement)
