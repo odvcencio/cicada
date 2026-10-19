@@ -34,10 +34,10 @@ func validatePortablePerformances(cfg *engine.Config) error {
 		controllerTotal += controllers
 	}
 	if total > 128 {
-		return Error("performance density exceeds portable status capacity; use native playback or a longer loop")
+		return imageError("performance density exceeds portable status capacity; use native playback or a longer loop")
 	}
 	if controllerTotal > 256 {
-		return Error("performed controllers exceed event budget")
+		return imageError("performed controllers exceed event budget")
 	}
 	return nil
 }
@@ -52,7 +52,7 @@ func writePerformedExpressions(w *writer, cfg *engine.Config) error {
 				for _, note := range p.Notes {
 					if len(note.Expressions) > 0 {
 						if cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph {
-							return Error("gestures need acid or an authored synth")
+							return imageError("gestures need acid or an authored synth")
 						}
 						count++
 						points += len(note.Expressions)
@@ -62,7 +62,7 @@ func writePerformedExpressions(w *writer, cfg *engine.Config) error {
 		}
 	}
 	if points > seq.MaxPerformanceExpressions || count == 0 {
-		return Error("invalid performed gesture table size")
+		return imageError("invalid performed gesture table size")
 	}
 	w.u32(uint32(count))
 	for track := range cfg.Patterns {
@@ -95,7 +95,7 @@ func writePerformedExpressions(w *writer, cfg *engine.Config) error {
 func readPerformedExpressions(r *reader, cfg *engine.Config) error {
 	count, err := r.u32()
 	if err != nil || count == 0 || count > seq.MaxPerformanceExpressions {
-		return Error("invalid gesture data")
+		return imageError("invalid gesture data")
 	}
 	remaining := seq.MaxPerformanceExpressions
 	for entry := uint32(0); entry < count; entry++ {
@@ -112,15 +112,15 @@ func readPerformedExpressions(r *reader, cfg *engine.Config) error {
 			return err
 		}
 		if int(track) >= cfg.Tracks || slot >= 16 || (cfg.Track[track].Kind != engine.VoiceAcid && cfg.Track[track].Kind != engine.VoiceGraph) {
-			return Error("invalid gesture data")
+			return imageError("invalid gesture data")
 		}
 		performance := cfg.Patterns[track].Slots[slot].Performance
 		if performance == nil || int(index) >= len(performance.Notes) || performance.Notes[index].Expressions != nil {
-			return Error("invalid gesture data")
+			return imageError("invalid gesture data")
 		}
 		n, err := r.u32()
 		if err != nil || n == 0 || n > uint32(remaining) || int64(n)*28 > int64(len(r.data)-r.at) {
-			return Error("invalid gesture data")
+			return imageError("invalid gesture data")
 		}
 		remaining -= int(n)
 		note := &performance.Notes[index]
@@ -129,7 +129,7 @@ func readPerformedExpressions(r *reader, cfg *engine.Config) error {
 			point := &note.Expressions[i]
 			tick, err := r.u64()
 			if err != nil || tick > uint64(note.EndTick-note.Tick) {
-				return Error("invalid gesture data")
+				return imageError("invalid gesture data")
 			}
 			point.Tick, point.Params.Set = int64(tick), true
 			for _, field := range []*float32{&point.Params.PitchCents, &point.Params.Pressure, &point.Params.Timbre, &point.Params.VibratoRateHz, &point.Params.VibratoDepthCents} {
@@ -183,7 +183,7 @@ func writePerformances(w *writer, cfg *engine.Config) error {
 func readPerformances(r *reader, cfg *engine.Config) error {
 	count, err := r.u16()
 	if err != nil || int(count) > cfg.Tracks*16 {
-		return Error("invalid performance table count")
+		return imageError("invalid performance table count")
 	}
 	for i := 0; i < int(count); i++ {
 		track, err := r.byte()
@@ -192,29 +192,29 @@ func readPerformances(r *reader, cfg *engine.Config) error {
 		}
 		slot, err := r.byte()
 		if err != nil || int(track) >= cfg.Tracks || slot >= 16 {
-			return Error("invalid performance pattern target")
+			return imageError("invalid performance pattern target")
 		}
 		target := &cfg.Patterns[track].Slots[slot]
 		if target.Performance != nil || target.Len != 1 {
-			return Error("duplicate or empty performance target")
+			return imageError("duplicate or empty performance target")
 		}
 		length, err := r.u64()
 		if err != nil || length < 30 || length > 1<<40 {
-			return Error("invalid performance length")
+			return imageError("invalid performance length")
 		}
 		notes, err := r.u16()
 		if err != nil || notes < 1 || notes > seq.MaxPerformanceNotes {
-			return Error("invalid performed note count")
+			return imageError("invalid performed note count")
 		}
 		p := &seq.Performance{LengthTicks: int64(length), Notes: make([]seq.PerformedNote, int(notes))}
 		for n := range p.Notes {
 			at, err := r.u64()
 			if err != nil || at > length {
-				return Error("invalid performed note start")
+				return imageError("invalid performed note start")
 			}
 			end, err := r.u64()
 			if err != nil || end > length {
-				return Error("invalid performed note end")
+				return imageError("invalid performed note end")
 			}
 			pitch, err := r.byte()
 			if err != nil {

@@ -17,6 +17,40 @@ func savedNoteFixture() savedNotes {
 	return savedNotes{ID: strings.Repeat("a", 32), Sequence: 1, Revision: "score-at-recording", State: "recording", Takes: []control.Recording{{Track: "keys", Pattern: "phrase", Notes: []control.Note{{Tick: 3857, EndTick: 4110, Note: 64, Velocity: 105, EndEstimated: true, Input: &midi.NoteTiming{HostNanos: 1000000, Source: "source", ClockEpoch: 7, Estimated: true}}}}}}
 }
 
+func TestSavedNotesRetainFullGestureBudgetAcrossRestart(t *testing.T) {
+	dir := t.TempDir()
+	store, _, err := openNoteStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved := savedNoteFixture()
+	note := &saved.Takes[0].Notes[0]
+	note.NoteID, note.Channel = 42, 9
+	for i := range control.MaxExpressionPoints {
+		note.AddExpression(control.NoteExpression{Tick: note.Tick + int64(i), PitchCents: float64(i%9600) + .125, Pressure: .123456789, Timbre: .987654321})
+	}
+	if _, err = store.save("player", saved); err != nil {
+		t.Fatal(err)
+	}
+	store, _, err = openNoteStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := store.get("player", saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := got.Takes[0].Notes[0]
+	if len(n.Expressions) != control.MaxExpressionPoints || n.Expressions[len(n.Expressions)-1] != note.Expressions[len(note.Expressions)-1] || n.NoteID != 42 || n.Channel != 9 {
+		t.Fatal("recovery changed gesture data")
+	}
+	note.AddExpression(control.NoteExpression{Tick: note.EndTick, Timbre: .5})
+	saved.Sequence++
+	if _, err = store.save("player", saved); err == nil {
+		t.Fatal("over-budget raw take replaced saved performance")
+	}
+}
+
 func TestSavedNotesSurviveRestartAndRejectLateWriters(t *testing.T) {
 	dir := t.TempDir()
 	s, key, err := openNoteStore(dir)

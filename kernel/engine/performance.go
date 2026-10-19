@@ -41,15 +41,15 @@ func (e *Engine) preparePerformedTrack(track int, pattern *seq.Pattern) error {
 	case v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys:
 	case v.kind == VoiceAcid || v.kind == VoiceGraph || v.kind == VoiceGraphPoly:
 	default:
-		return Error("performed notes need a pitched live-note voice")
+		return engineError("performed notes need a pitched live-note voice")
 	}
 	for _, note := range pattern.Performance.Notes {
 		if len(note.Expressions) > 0 && v.kind != VoiceAcid && v.kind != VoiceGraph {
-			return Error("gestures need acid or an authored synth")
+			return engineError("gestures need acid or an authored synth")
 		}
 		pitch := int(note.Note) + int(pattern.Transpose)
 		if (v.kind == VoicePiano || keysEnabled && v.kind == VoiceKeys) && (pitch < keyboard.MinNote || pitch > keyboard.MaxNote) {
-			return Error("performed keyboard notes must stay in MIDI range 21 to 108")
+			return engineError("performed keyboard notes must stay in MIDI range 21 to 108")
 		}
 	}
 	// Admit enough events for any legal tempo and this configured block size,
@@ -79,7 +79,7 @@ func (e *Engine) preparePerformedTrack(track int, pattern *seq.Pattern) error {
 			}
 		}
 		if total > 256 {
-			return Error("performed controllers exceed event budget")
+			return engineError("performed controllers exceed event budget")
 		}
 	}
 	if len(p.performed.events) < capacity {

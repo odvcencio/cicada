@@ -68,46 +68,46 @@ func (e *Engine) validateSchedule() error {
 	var previous int64
 	for i, v := range e.schedule {
 		if v.Tick < 0 || i > 0 && v.Tick < previous || v.EndTick < v.Tick || v.EndTick > 1<<53-1 || v.Kind > ScheduleClipEnd {
-			return Error("schedule event is out of range")
+			return engineError("schedule event is out of range")
 		}
 		previous = v.Tick
 		e.scheduleDuration = max(e.scheduleDuration, v.Tick, v.EndTick)
 		if v.Kind == ScheduleScene {
 			scenes++
 			if int(v.Scene) >= len(e.scenes) || v.EndTick <= v.Tick {
-				return Error("schedule scene is invalid")
+				return engineError("schedule scene is invalid")
 			}
 			continue
 		}
 		e.placementSchedule = true
 		if int(v.Track) >= e.tracks || v.ID == 0 {
-			return Error("placement track or identity is invalid")
+			return engineError("placement track or identity is invalid")
 		}
 		switch v.Kind {
 		case SchedulePattern:
 			if v.Index >= 16 || e.patterns[v.Track].slots[v.Index].Len == 0 || v.Tick%seq.TicksPerStep != 0 || v.EndTick <= v.Tick || e.voices[v.Track].kind == VoiceAudio {
-				return Error("placement pattern is invalid")
+				return engineError("placement pattern is invalid")
 			}
 		case ScheduleClip:
 			if int(v.Index) >= len(e.clipTemplates) || e.voices[v.Track].kind != VoiceAudio || v.EndTick <= v.Tick {
-				return Error("placement clip is invalid")
+				return engineError("placement clip is invalid")
 			}
 		}
 		if v.Kind == SchedulePattern || v.Kind == ScheduleClip {
 			if _, exists := starts[v.ID]; exists {
-				return Error("duplicate placement identity")
+				return engineError("duplicate placement identity")
 			}
 			starts[v.ID] = v
 			if v.Kind == ScheduleClip {
 				activeClips++
 				if activeClips > e.clipLimit {
-					return Error("schedule exceeds clip voice capacity")
+					return engineError("schedule exceeds clip voice capacity")
 				}
 			}
 		} else {
 			start, exists := starts[v.ID]
 			if !exists || ends[v.ID] || start.Track != v.Track || start.EndTick != v.Tick || v.Kind != start.Kind+1 || v.EndTick != v.Tick {
-				return Error("unmatched placement release")
+				return engineError("unmatched placement release")
 			}
 			ends[v.ID] = true
 			if v.Kind == ScheduleClipEnd {
@@ -116,13 +116,13 @@ func (e *Engine) validateSchedule() error {
 		}
 	}
 	if e.placementSchedule && (scenes > 0 || len(starts) != len(ends)) {
-		return Error("invalid placement schedule authority or releases")
+		return engineError("invalid placement schedule authority or releases")
 	}
 	if !e.placementSchedule {
 		var end int64
 		for _, v := range e.schedule {
 			if v.Tick != end {
-				return Error("song schedule must be contiguous")
+				return engineError("song schedule must be contiguous")
 			}
 			end = v.EndTick
 		}
@@ -210,6 +210,7 @@ func (e *Engine) advancePlacementSchedule() {
 		e.setNextScheduleTick()
 	}
 }
+
 // patternHandoff reports whether another pattern placement takes over the
 // track at the release tick, so notes and tails carry across like a scene
 // change. A release followed by a gap still releases. The last release of a

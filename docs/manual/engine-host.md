@@ -117,7 +117,27 @@ cannot change its replacement. Identity zero preserves the legacy path, and
 Graph instruments expose `pitch_bend` in cents and normalized `pressure` and
 `timbre`. The existing `pitch` input includes bend and score vibrato. Built-in
 acid voices apply pitch expression; pressure and timbre need a graph that uses
-those inputs. Live expression targets monophonic tracks. [`host/midi`](../../host/midi) retains
+those inputs. Authored four-voice pools and eight-voice graphs also support
+independent live notes. Negotiate `CapabilityLiveIdentity` (bit 20) before
+sending note-on/off with `Arg1=1`; `Index` then names a live owner 1…65534,
+separate from sequenced cohorts. An identity-mode off with index 65535
+releases only live owners. Score switches preserve held live voices, subject
+to the shared voice limit and stealing; transport Stop releases all voices.
+Do not use the slide bit with identity-mode note-on.
+
+GoSX Live records MIDI 1 bend, channel/poly pressure and CC74 snapshots with
+their input ticks and note identity. Ordinary channels default to ±2 semitones;
+RPN 0 sets sensitivity and RPN 6 configures lower/upper MPE zones. Manual zone
+selection supports controllers that omit setup messages. Sustain retains gates
+until pedal release. Member values freeze under sustain after key release;
+zone controls still affect held gates. Master controls do not yet update audio
+release tails after their gate has ended. Modeled keyboards, piano, drums and
+samplers still lack gesture monitoring; retained unsupported gestures are
+refused on apply. Raw takes retain up to 65,536 snapshots, including equal-tick
+samples, before the edit service derives playable points. Live sends coalesce
+controller snapshots between gate/action barriers and batch up to 64 messages.
+
+[`host/midi`](../../host/midi) retains
 32-bit MIDI 2.0 pressure and timbre until normalization to the float32 ABI.
 It supplies pitch-sensitivity conversion, without a UMP transport or device
 negotiation layer. MIDI 2.0 defines high-resolution controllers and per-note

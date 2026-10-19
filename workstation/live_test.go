@@ -125,6 +125,23 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	// New responses mask CSRF tokens independently. A held note and its
 	// release must retain the same service owner across requests and renders.
 	owner := command["owner"]
+	batch, _ := json.Marshal([]map[string]string{
+		{"type": "note", "track": "bass", "note": "60", "velocity": "100", "on": "true", "noteId": "7"},
+		{"type": "note-expression", "track": "bass", "noteId": "7", "pitchCents": "25.125", "pressure": "0.8", "timbre": "0.5"},
+		{"type": "note", "track": "bass", "note": "60", "velocity": "0", "on": "false", "noteId": "7"},
+	})
+	if r := jsonPost("/__actions/live", map[string]string{"type": "input-batch", "lease": input["lease"], "sequence": "1", "messages": string(batch)}, csrf); r.StatusCode != 200 {
+		t.Fatal("live batch", r.StatusCode)
+	}
+	batched := <-commands
+	values := batched["messages"].([]any)
+	if batched["owner"] != owner || len(values) != 3 || values[1].(map[string]any)["pitchCents"] != 25.125 || values[0].(map[string]any)["noteId"] != float64(7) {
+		t.Fatal("batch lost ordering, identity or controller precision", batched)
+	}
+	invalid := strings.Replace(string(batch), "25.125", "NaN", 1)
+	if r := jsonPost("/__actions/live", map[string]string{"type": "input-batch", "lease": input["lease"], "sequence": "1", "messages": invalid}, csrf); r.StatusCode == 200 || len(commands) != 0 {
+		t.Fatal("invalid batch was partly sent to audio")
+	}
 	if r := jsonPost("/__actions/live", map[string]string{"type": "heartbeat", "lease": input["lease"], "sequence": "2"}, csrf); r.StatusCode != 200 {
 		t.Fatalf("heartbeat: %d", r.StatusCode)
 	}
@@ -149,8 +166,28 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 	if release := <-commands; release["owner"] != owner || release["release"] != true {
 		t.Fatal("release did not target the live mount owner")
 	}
-	if r := jsonPost("/__actions/note-preview", map[string]string{"revision": "initial", "recordings": `[{"track":"bass","pattern":"pulse","notes":[{"tick":0,"endTick":120,"note":60,"velocity":100}]}]`}, csrf); r.StatusCode != 200 {
-		t.Fatalf("preview: %d", r.StatusCode)
+	origin, _ := url.Parse(app.URL)
+	beforePreview := jar.Cookies(origin)
+	previewResponse := jsonPost("/__actions/note-preview", map[string]string{"revision": "initial", "recordings": `[{"track":"bass","pattern":"pulse","notes":[{"tick":0,"endTick":120,"note":60,"velocity":100}]}]`}, csrf)
+	if previewResponse.StatusCode != 200 {
+		t.Fatalf("preview: %d", previewResponse.StatusCode)
+	}
+	var receipt struct {
+		Data struct {
+			TakeID string `json:"takeId"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(previewResponse.Body).Decode(&receipt); err != nil || len(receipt.Data.TakeID) != 32 {
+		t.Fatal("missing explicit review receipt", err)
+	}
+	// A streaming/poll response may restore the cookie captured before Finish.
+	// The returned receipt must still identify this tab's exact private take.
+	staleJar, _ := cookiejar.New(nil)
+	staleJar.SetCookies(origin, beforePreview)
+	staleClient := &http.Client{Jar: staleJar}
+	reviewURL := app.URL + "/?panel=live&notePreview=" + receipt.Data.TakeID
+	if page := getPage(t, staleClient, reviewURL); !strings.Contains(page, "Retained note take") || !strings.Contains(page, `name="takeId" value="`+receipt.Data.TakeID+`"`) {
+		t.Fatal("review depended on a newer cookie snapshot")
 	}
 	if len(commands) != 0 {
 		t.Fatal("preview wrote notes before commit")
@@ -159,11 +196,11 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 		t.Fatal("preview skipped the native pattern check")
 	}
 	otherJar, _ := cookiejar.New(nil)
-	if strings.Contains(getPage(t, &http.Client{Jar: otherJar}, app.URL+"/?panel=live"), "Retained note take") {
+	if strings.Contains(getPage(t, &http.Client{Jar: otherJar}, reviewURL), "Retained note take") {
 		t.Fatal("take leaked to another session")
 	}
 	revision.Store("newer")
-	form := url.Values{"csrf_token": {csrf}, "revision": {"newer"}, "intent": {"commit"}, "__gosx_return_to": {"/?panel=live"}}
+	form := url.Values{"csrf_token": {csrf}, "revision": {"newer"}, "intent": {"commit"}, "takeId": {receipt.Data.TakeID}, "__gosx_return_to": {"/?panel=live"}}
 	r := post(t, client, app.URL+"/__actions/note-commit", form, true, app.URL)
 	r.Body.Close()
 	if r.StatusCode != 409 {
@@ -186,6 +223,7 @@ func TestJSONLiveActionsKeepNotesPrivateAndCheckRevision(t *testing.T) {
 		t.Fatal("committed note take remained active")
 	}
 	refuseCheck.Store(true)
+	form.Del("takeId") // A new review form replaces the previous receipt.
 	if r := jsonPost("/__actions/note-preview", map[string]string{"revision": "newer", "recordings": `[{"track":"bass","pattern":"pulse","notes":[{"tick":20,"endTick":180,"note":64,"velocity":100}]}]`}, csrf); r.StatusCode != 200 {
 		t.Fatalf("failed check discarded take: %d", r.StatusCode)
 	}

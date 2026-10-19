@@ -1,15 +1,99 @@
 package liveplay
 
 import (
+	"fmt"
 	"math"
-	"strings"
 	"testing"
 
+	"m31labs.dev/cicada/kernel/cmd"
 	"m31labs.dev/cicada/kernel/engine"
 	"m31labs.dev/cicada/kernel/graph"
 )
 
-func TestPolyLiveExpressionReturnsExplicitUnsupportedError(t *testing.T) {
+func TestLiveIdentityNamespacesAndBurstReduction(t *testing.T) {
+	for _, voices := range []int{4, 8} {
+		cfg := engine.Config{SampleRate: 48000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: voices, BPMMilli: 120000}
+		cfg.Track[0] = engine.TrackConfig{Kind: engine.VoiceGraph, Polyphony: 4, Graph: graph.Program{Len: 1, Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Pressure}}}}
+		if voices == 8 {
+			cfg.Track[0].Kind = engine.VoiceGraphPoly
+			cfg.Track[0].Polyphony = 0
+		}
+		e, err := engine.New(cfg)
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err := New(Score{Engine: e, SampleRate: 48000, BPMMilli: 120000, Tracks: []TrackSlots{{ID: "voice", Kind: "custom", Pitched: true}}}, 48000)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer p.Close()
+		var pcm [blockFrames * 8]byte
+		read := func() {
+			t.Helper()
+			if _, err := p.Read(pcm[:]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for _, owner := range []string{"window-a", "window-b"} {
+			if err := p.NoteOwnerID("voice", 60, 100, true, owner, 7); err != nil {
+				t.Fatal(err)
+			}
+		}
+		p.NoteExpressionOwner("voice", 7, "window-a", 25, .2, .5)
+		p.NoteExpressionOwner("voice", 7, "window-b", -100, .8, .5)
+		p.NoteExpressionOwner("voice", 7, "foreign-window", 9600, 1, 1)
+		read()
+		if p.ownedFinalCount != 2 || p.ownedFinal[0].gate.Index == p.ownedFinal[1].gate.Index {
+			t.Fatal("clients shared kernel identity", p.ownedFinalCount)
+		}
+		if math.Float32frombits(p.ownedFinal[0].controls.Arg1) != .2 || math.Float32frombits(p.ownedFinal[1].controls.Arg1) != .8 {
+			t.Fatal("controllers crossed session namespaces")
+		}
+		for range 128 {
+			if err := p.NoteExpressionOwner("voice", 7, "window-a", 50, .9, .5); err != nil {
+				t.Fatal(err)
+			}
+		}
+		p.NoteOwnerID("voice", 60, 0, false, "window-a", 7)
+		read()
+		if p.ownedFinalCount != 1 || p.ownedFinal[0].gate.Op != cmd.OpNoteOff {
+			t.Fatal("burst release reopened its owner")
+		}
+		p.NoteOwnerID("voice", 60, 0, false, "window-b", 7)
+		read()
+		// Maximum held ownership remains bounded even when all voices are stolen.
+		for i := range 128 {
+			owner := fmt.Sprintf("held-%d", i)
+			if err := p.NoteOwnerID("voice", 60, 100, true, owner, uint16(i+1)); err != nil {
+				t.Fatal(err)
+			}
+			if err := p.NoteExpressionOwner("voice", uint16(i+1), owner, 0, .3, .5); err != nil {
+				t.Fatal(err)
+			}
+		}
+		read()
+		for i := range 128 {
+			if err := p.NoteOwnerID("voice", 60, 0, false, fmt.Sprintf("held-%d", i), uint16(i+1)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for i := range 128 {
+			if err := p.NoteOwnerID("voice", 64, 100, true, fmt.Sprintf("new-%d", i), uint16(i+1)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		read()
+		if p.ownedFinalCount != 256 {
+			t.Fatal("full ownership turnover was not retained", p.ownedFinalCount)
+		}
+		for i := range 128 {
+			p.NoteOwnerID("voice", 64, 0, false, fmt.Sprintf("new-%d", i), uint16(i+1))
+		}
+		read()
+	}
+}
+
+func TestPolyLiveExpressionAcceptsOwnedControllers(t *testing.T) {
 	cfg := engine.Config{SampleRate: 48000, MaxBlock: blockFrames, Tracks: 1, MaxVoices: 4, BPMMilli: 120000}
 	cfg.Track[0] = engine.TrackConfig{Kind: engine.VoiceGraph, Polyphony: 4, Graph: graph.Program{Len: 2, Output: 1, Nodes: [graph.MaxNodes]graph.Node{{Op: graph.Pitch}, {Op: graph.Sine, A: 0}}}}
 	e, err := engine.New(cfg)
@@ -21,9 +105,17 @@ func TestPolyLiveExpressionReturnsExplicitUnsupportedError(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.Close()
-	if err := p.NoteExpression("keys", 7, 25, .5, .75); err == nil || !strings.Contains(err.Error(), "handle-aware") {
-		t.Fatalf("unclear poly expression error: %v", err)
+	if err := p.NoteWithID("keys", 60, 100, true, 7); err != nil {
+		t.Fatal(err)
 	}
+	if err := p.NoteExpression("keys", 7, 25, .5, .75); err != nil {
+		t.Fatal(err)
+	}
+	var pcm [blockFrames * 8]byte
+	if _, err := p.Read(pcm[:]); err != nil {
+		t.Fatal(err)
+	}
+
 }
 
 func TestLiveExpressionQueuesIdentityAndFullResolution(t *testing.T) {

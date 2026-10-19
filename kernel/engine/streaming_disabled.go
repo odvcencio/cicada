@@ -9,7 +9,7 @@ type StreamingRuntime struct{}
 
 func (e *Engine) initStreaming(cfg *Config) error {
 	if cfg.Streaming != nil {
-		return Error("native streamed assets cannot run in the audio worklet")
+		return engineError("native streamed assets cannot run in the audio worklet")
 	}
 	return nil
 }
@@ -17,7 +17,7 @@ func (e *Engine) prepareStreamWindows(frames int) int { return frames }
 func (e *Engine) copyClipAssets(*Config)              {}
 func prepareClipVoice(cfg *Config, a AudioAsset, c ClipConfig, region sample.Region) (*sample.Voice, error) {
 	if a.StreamID != 0 {
-		return nil, Error("audio worklet requires resident clip PCM")
+		return nil, engineError("audio worklet requires resident clip PCM")
 	}
 	return sample.New(cfg.SampleRate, region)
 }

@@ -5,6 +5,9 @@ import "m31labs.dev/cicada/kernel/expression"
 // MaxPolyphony is the experimental per-track limit. Storage is fixed at load.
 const MaxPolyphony = 4
 
+// LiveGeneration is disjoint from the sequencer's uint32 pattern generations.
+const LiveGeneration uint64 = 1 << 63
+
 // Cohort identifies one sequencer onset across pattern generations.
 // All pitches share a gate. A stale release cannot affect a replacement onset.
 type Cohort struct {
@@ -189,6 +192,22 @@ func (p *Pool) SetExpression(cohort Cohort, params expression.Params) bool {
 func (p *Pool) ReleaseAll() {
 	for i := range p.slots {
 		p.NoteOff(Handle{Slot: uint8(i), ID: p.slots[i].id})
+	}
+}
+
+func (p *Pool) ReleaseLive() {
+	for i := range p.slots {
+		if p.slots[i].cohort.Generation == LiveGeneration {
+			p.NoteOff(Handle{Slot: uint8(i), ID: p.slots[i].id})
+		}
+	}
+}
+
+func (p *Pool) ReleaseSequenced() {
+	for i := range p.slots {
+		if p.slots[i].cohort.Generation != LiveGeneration {
+			p.NoteOff(Handle{Slot: uint8(i), ID: p.slots[i].id})
+		}
 	}
 }
 func (p *Pool) ActiveVoices() int {

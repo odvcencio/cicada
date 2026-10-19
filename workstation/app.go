@@ -122,6 +122,9 @@ func newConfiguredApp(b *backend, options workspaceOptions) (http.Handler, error
 	app.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			limit := int64(2 << 20)
+			if r.URL.Path == "/__actions/note-checkpoint" || r.URL.Path == "/__actions/note-preview" {
+				limit = 32 << 20
+			}
 			if r.URL.Path == "/__instrument/import" || r.URL.Path == "/__sampler/import" {
 				limit = 65 << 20
 			}

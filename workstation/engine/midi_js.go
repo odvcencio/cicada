@@ -21,6 +21,7 @@ func (u *liveUI) releaseMIDIPrefix(prefix string) {
 }
 
 func (u *liveUI) releaseMIDIPrefixAt(prefix string, at *control.NoteTime) {
+	u.midiNotes.DisconnectPrefix(strings.TrimPrefix(prefix, "midi:"))
 	for id := range u.held {
 		if strings.HasPrefix(id, prefix) {
 			u.noteOffAt(id, at)

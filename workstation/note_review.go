@@ -14,12 +14,15 @@ import (
 	"m31labs.dev/gosx"
 )
 
-func (s *studioApp) noteTakeReview(v workspace, csrf string, d draft) gosx.Node {
+func (s *studioApp) noteTakeReview(v workspace, csrf, key string, d draft) gosx.Node {
 	var takes []control.Recording
 	if json.Unmarshal([]byte(d.Source), &takes) != nil || control.ValidateRecordings(takes) != nil {
 		return failure(fmt.Errorf("this retained note take could not be read"))
 	}
 	count := 0
+	form := func(nodes ...gosx.Node) gosx.Node {
+		return s.form(v, csrf, "live", "note-commit", append([]gosx.Node{hidden("takeId", key)}, nodes...)...)
+	}
 	for _, take := range takes {
 		count += len(take.Notes)
 	}
@@ -42,7 +45,7 @@ func (s *studioApp) noteTakeReview(v workspace, csrf string, d draft) gosx.Node 
 	if playedBlocked {
 		children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check take-check-error")), gosx.Text("Played timing: "+d.PlayedCheckError+" Your performance is still retained.")))
 	}
-	children = append(children, s.form(v, csrf, "live", "note-commit", gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "intent"), gosx.Attr("value", "played"), gosx.Attr("disabled", playedBlocked)), gosx.Text("Keep played timing"))))
+	children = append(children, form(gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "intent"), gosx.Attr("value", "played"), gosx.Attr("disabled", playedBlocked)), gosx.Text("Keep played timing"))))
 	children = append(children, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Replaces the destination patterns. Their current sounds and scene assignments stay in use; song and placement lengths stay as authored. Use the pattern view to play the full loop. Undo restores the previous patterns.")))
 	intent, label := "commit", "Commit notes to patterns"
 	if d.Revision != v.Revision {
@@ -61,7 +64,7 @@ func (s *studioApp) noteTakeReview(v workspace, csrf string, d draft) gosx.Node 
 		gridCheck = gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-check")), gosx.Text("Pattern check passed. The score is unchanged until you apply. Undo restores the previous patterns."))
 	}
 	apply := gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "intent"), gosx.Attr("value", intent), gosx.Attr("disabled", blocked)), gosx.Text(label))
-	children = append(children, gosx.El("details", gosx.El("summary", gosx.Text("Snap to the existing step grid")), gridCheck, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Snaps starts to the destination grid and repeats at its saved length. Held lengths and overlapping notes may need a played-timing pattern instead.")), s.form(v, csrf, "live", "note-commit", apply)), s.form(v, csrf, "live", "note-commit", submit("intent", "check", "Check current patterns"), submit("intent", "discard", "Discard note take")))
+	children = append(children, gosx.El("details", gosx.El("summary", gosx.Text("Snap to the existing step grid")), gridCheck, gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Snaps starts to the destination grid and repeats at its saved length. Held lengths and overlapping notes may need a played-timing pattern instead.")), form(apply)), form(submit("intent", "check", "Check current patterns"), submit("intent", "discard", "Discard note take")))
 	return gosx.El("section", gosx.Attrs(gosx.Attr("class", "note-preview"), gosx.Attr("aria-label", "Retained note take")), gosx.Fragment(children...))
 }
 
@@ -146,13 +149,13 @@ func noteRecordingReview(take control.Recording, pattern *project.Pattern) gosx.
 			class = "take-collision"
 		}
 		var cells []gosx.Node
-		for _, text := range []string{performancePitch(n.Note), performancePosition(n.Tick), duration, strconv.Itoa(n.Velocity), placement} {
+		for _, text := range []string{performancePitch(n.Note), performancePosition(n.Tick), duration, strconv.Itoa(n.Velocity), strconv.Itoa(len(n.Expressions)), placement} {
 			cells = append(cells, gosx.El("td", gosx.Text(text)))
 		}
 		rows = append(rows, gosx.El("tr", gosx.Attrs(gosx.Attr("class", class)), gosx.Fragment(cells...)))
 	}
 	var heads []gosx.Node
-	for _, text := range []string{"Note", "Played at", "Held for", "Velocity", "Pattern destination"} {
+	for _, text := range []string{"Note", "Played at", "Held for", "Velocity", "Gesture points", "Pattern destination"} {
 		heads = append(heads, gosx.El("th", gosx.Attrs(gosx.Attr("scope", "col")), gosx.Text(text)))
 	}
 	destination := "Target pattern is no longer available."

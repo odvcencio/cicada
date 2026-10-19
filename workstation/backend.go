@@ -70,6 +70,11 @@ func (b *backend) request(ctx context.Context, method, path string, input any) (
 		req.Header.Set("Authorization", "Bearer "+b.token)
 	}
 	client := b.client
+	if method == http.MethodPost && (path == "/api/record" || path == "/api/intents") {
+		copy := *client
+		copy.Timeout = 30 * time.Second // large retained gesture takes compile before acknowledgment
+		client = &copy
+	}
 	if method == http.MethodPost && resource.Path == "/api/midi/input" {
 		copy := *client
 		copy.Timeout = 0 // The mounted Live panel owns this input stream.
@@ -98,12 +103,16 @@ func (b *backend) call(ctx context.Context, method, path string, input, output a
 		return err
 	}
 	defer response.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(response.Body, 8<<20+1))
+	limit := int64(8 << 20)
+	if path == "/api/workspace" || path == "/api/intents" || path == "/api/record" {
+		limit = 32 << 20
+	}
+	data, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
 	if err != nil {
 		return err
 	}
-	if len(data) > 8<<20 {
-		return fmt.Errorf("audio service response exceeds 8 MiB")
+	if int64(len(data)) > limit {
+		return fmt.Errorf("audio service response exceeds %d MiB", limit>>20)
 	}
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
 		var failure struct {

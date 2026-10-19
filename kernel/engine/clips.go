@@ -45,14 +45,14 @@ type clipPlayback struct {
 
 func (e *Engine) prepareClips(cfg *Config) error {
 	if len(cfg.Clips) > 65535 || len(cfg.Assets) > 65535 {
-		return Error("clip table exceeds index range")
+		return engineError("clip table exceeds index range")
 	}
 	e.clipTemplates = make([]sample.Voice, len(cfg.Clips))
 	e.clipSpecs = append([]ClipConfig(nil), cfg.Clips...)
 	e.copyClipAssets(cfg)
 	for i, c := range cfg.Clips {
 		if int(c.Asset) >= len(cfg.Assets) || c.StartFrame < 0 || c.EndFrame <= c.StartFrame || c.EndFrame > 1<<30 || c.FadeInFrames < 0 || c.FadeOutFrames < 0 || c.FadeInFrames > c.EndFrame-c.StartFrame || c.FadeOutFrames > c.EndFrame-c.StartFrame || math.IsNaN(c.GainDB) || math.IsInf(c.GainDB, 0) || c.GainDB < -60 || c.GainDB > 24 {
-			return Error("clip region is invalid")
+			return engineError("clip region is invalid")
 		}
 		a := cfg.Assets[c.Asset]
 		region := sample.Region{Left: a.Left, Right: a.Right, SampleRate: a.SampleRate, RootKey: 60, Start: int(c.StartFrame), End: int(c.EndFrame)}

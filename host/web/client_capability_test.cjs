@@ -76,6 +76,14 @@ async function start(harness) {
   const before = legacy.stats.posted.length;
   assert.throws(() => legacy.client.sendCommands([{ op: 2 }, { op: 22 }]), /chord opcode22/);
   assert.equal(legacy.stats.posted.length, before, 'client partly posted a rejected command batch');
+  assert.throws(() => legacy.client.sendCommands([{op:12,index:7,arg0:60|(100<<8),arg1:1}]), /Independent live notes.*updated audio kernel/);
+  assert.equal(legacy.stats.posted.length,before,'cached kernel partly received an owned note');
+  legacy.client.capabilities |= 1048576;
+  legacy.client.sendCommands([{op:12,index:7,arg0:60|(100<<8),arg1:1}]);
+  const owned = new DataView(legacy.stats.posted.at(-1).bytes.buffer);
+  assert.equal(owned.getUint16(2,true),7); assert.equal(owned.getUint32(8,true),1);
+	legacy.stats.posted.pop(); legacy.client.capabilities &= ~1048576;
+
   for (const version of [14, 15, 16, 17]) {
     legacy.setImage(version);
     await assert.rejects(legacy.client.stageCurrentScore('edited'), version === 14 ? /Ambiguous.*image14/ : /image15.*CapabilityUnifiedImage/);

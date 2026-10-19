@@ -160,7 +160,7 @@ probe-wasm:
 build-kernel-wasm:
 	mkdir -p build
 	@python3 scripts/run-with-timeout.py --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
-		tinygo build -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm && \
+		tinygo build -tags cicada_reactor -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-kernel.wasm ./cmd/cicada-kernel-wasm && \
 		sh scripts/wasm-opt.sh -Oz build/cicada-kernel.wasm -o build/cicada-kernel.optimized.wasm && \
 		mv build/cicada-kernel.optimized.wasm build/cicada-kernel.wasm' || { \
 		status=$$?; \
@@ -176,7 +176,7 @@ build-kernel-wasm:
 build-vocals-wasm:
 	mkdir -p build
 	@python3 scripts/run-with-timeout.py --kill-after=5s $(KERNEL_WASM_BUILD_TIMEOUT) env GOFLAGS=-buildvcs=false sh -c '\
-		tinygo build -tags trackfx -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-vocals.wasm ./cmd/cicada-kernel-wasm && \
+		tinygo build -tags trackfx,cicada_reactor -target=wasm-unknown $(if $(KERNEL_WASM_LLVM_FEATURES),-llvm-features=$(KERNEL_WASM_LLVM_FEATURES)) -opt=$(KERNEL_WASM_OPT) -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-vocals.wasm ./cmd/cicada-kernel-wasm && \
 		sh scripts/wasm-opt.sh -Oz build/cicada-vocals.wasm -o build/cicada-vocals.optimized.wasm && \
 		mv build/cicada-vocals.optimized.wasm build/cicada-vocals.wasm'
 	go run ./cmd/cicada-wasm-size --report-only build/cicada-vocals.wasm
@@ -188,7 +188,7 @@ build-loudness-wasm:
 # Optional keyboard module; same ABI and AudioWorklet, loaded only for keys.
 build-keys-wasm:
 	mkdir -p build
-	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags 'keys trackfx' -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
+	GOWORK=off GOFLAGS=-buildvcs=false tinygo build -p=2 -tags 'keys trackfx cicada_reactor' -target=wasm-unknown -opt=z -panic=trap -no-debug -gc=leaking -scheduler=none -o build/cicada-keys.wasm ./cmd/cicada-kernel-wasm
 	sh scripts/wasm-opt.sh -Oz build/cicada-keys.wasm -o build/cicada-keys.optimized.wasm
 	mv build/cicada-keys.optimized.wasm build/cicada-keys.wasm
 	go run ./cmd/cicada-wasm-size --report-only build/cicada-keys.wasm

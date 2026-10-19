@@ -13,7 +13,7 @@ func (e *Engine) configureParallel(*Config) error { return nil }
 
 func (e *Engine) EnableParallel(workers int) error {
 	if workers < 0 || workers > 4 {
-		return Error("parallel DSP requires zero to four render lanes")
+		return engineError("parallel DSP requires zero to four render lanes")
 	}
 	return nil
 }

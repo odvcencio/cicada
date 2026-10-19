@@ -30,6 +30,9 @@ func NativeNoteTime(event midi.Event, epoch uint64, fallbackTick int64) (NoteTim
 // explicitly mark their missing native release time instead of inventing one.
 func (n *Note) End(at NoteTime) {
 	n.EndTick = max(n.Tick, at.Tick)
+	if len(n.Expressions) > 0 {
+		n.EndTick = max(n.EndTick, n.Expressions[len(n.Expressions)-1].Tick)
+	}
 	if n.Input == nil {
 		return
 	}

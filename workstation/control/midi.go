@@ -61,6 +61,9 @@ type Note struct {
 	EndTick      int64            `json:"endTick"`
 	Note         int              `json:"note"`
 	Velocity     int              `json:"velocity"`
+	NoteID       uint16           `json:"noteId,omitempty"`
+	Channel      uint8            `json:"channel,omitempty"`
+	Expressions  []NoteExpression `json:"expressions,omitempty"`
 	Input        *midi.NoteTiming `json:"input,omitempty"`
 	EndEstimated bool             `json:"endEstimated,omitempty"`
 }
@@ -75,15 +78,24 @@ func ValidateRecordings(takes []Recording) error {
 		return fmt.Errorf("a take needs 1 to 32 track/pattern recordings")
 	}
 	count := 0
+	points := 0
 	for _, take := range takes {
 		if take.Track == "" || take.Pattern == "" || len(take.Notes) == 0 {
 			return fmt.Errorf("each recording needs a track, pattern, and notes")
 		}
 		count += len(take.Notes)
 		for _, n := range take.Notes {
-			if n.Tick < 0 || n.EndTick < n.Tick || n.EndTick > 1<<60 || n.Note < 0 || n.Note > 127 || n.Velocity < 1 || n.Velocity > 127 {
+			if n.Tick < 0 || n.EndTick < n.Tick || n.EndTick > 1<<60 || n.Note < 0 || n.Note > 127 || n.Velocity < 1 || n.Velocity > 127 || n.NoteID == 65535 || n.Channel > 15 {
 				return fmt.Errorf("recorded note range or timing is invalid")
 			}
+			previous := n.Tick
+			for _, expression := range n.Expressions {
+				if expression.Tick < previous || expression.Tick > n.EndTick || !expression.Valid() {
+					return fmt.Errorf("recorded gestures must be ordered within their note, with finite bend, pressure and timbre")
+				}
+				previous = expression.Tick
+			}
+			points += len(n.Expressions)
 			if n.Input != nil && (n.Input.HostNanos <= 0 || n.Input.EndHostNanos != 0 && n.Input.EndHostNanos < n.Input.HostNanos || n.Input.Source != "source" && n.Input.Source != "arrival" || n.Input.EndSource != "" && n.Input.EndSource != "source" && n.Input.EndSource != "arrival") {
 				return fmt.Errorf("recorded input timing is invalid")
 			}
@@ -91,6 +103,9 @@ func ValidateRecordings(takes []Recording) error {
 	}
 	if count > 512 {
 		return fmt.Errorf("a take may contain at most 512 notes")
+	}
+	if points > MaxExpressionPoints {
+		return fmt.Errorf("a take may contain at most %d gesture points", MaxExpressionPoints)
 	}
 	return nil
 }

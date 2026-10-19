@@ -888,6 +888,11 @@ func (u *workspaceUI) request(client *http.Client, job workspaceJob) (workspaceP
 		request.Header.Set("X-CSRF-Token", u.props.CSRF)
 	}
 	requestClient := client
+	if job.method == http.MethodPost && job.target == "/__actions/note-commit" {
+		copy := *client
+		copy.Timeout = 60 * time.Second // native apply plus the confirmed workspace projection
+		requestClient = &copy
+	}
 	if job.method == http.MethodPost && job.target == "/__actions/audio" && job.values["inputEnabled"] == "on" {
 		// Native permission waits for a human response. Closing this workspace
 		// still cancels its context; ordinary edits retain their timeout.

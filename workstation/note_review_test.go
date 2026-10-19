@@ -44,7 +44,7 @@ func TestNoteReviewKeepsFailedCheckVisibleAndBlocksApply(t *testing.T) {
 	takes, _ := json.Marshal([]control.Recording{{Track: "keys", Pattern: "phrase", Notes: []control.Note{{Note: 60, Velocity: 100}}}})
 	v := workspace{Revision: "current", Project: &project.Project{Patterns: []project.Pattern{{ID: "phrase", Steps: 16}}}}
 	d := draft{Source: string(takes), Revision: "current", CheckRevision: "current", CheckError: "Multiple notes share step 1."}
-	html := gosx.RenderHTML((&studioApp{}).noteTakeReview(v, "csrf", d))
+	html := gosx.RenderHTML((&studioApp{}).noteTakeReview(v, "csrf", "private-preview", d))
 	for _, want := range []string{"C4", "Multiple notes share step 1.", "Your performance is still retained.", "Check current patterns", `value="commit" disabled`} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("failed review omitted %q", want)
@@ -59,12 +59,12 @@ func TestPlayedTimingCheckIsIndependentOfGridCollisions(t *testing.T) {
 	takes, _ := json.Marshal([]control.Recording{{Track: "keys", Pattern: "phrase", Notes: []control.Note{{Tick: 17, EndTick: 720, Note: 60, Velocity: 82}, {Tick: 19, EndTick: 1220, Note: 64, Velocity: 105}}}})
 	v := workspace{Revision: "current", Project: &project.Project{Patterns: []project.Pattern{{ID: "phrase", Steps: 16}}}}
 	d := draft{Source: string(takes), Revision: "current", CheckRevision: "current", CheckError: "Multiple notes share step 1.", PlayedCheckRevision: "current"}
-	html := gosx.RenderHTML((&studioApp{}).noteTakeReview(v, "csrf", d))
+	html := gosx.RenderHTML((&studioApp{}).noteTakeReview(v, "csrf", "private-preview", d))
 	if !strings.Contains(html, `value="played">Keep played timing`) || !strings.Contains(html, `value="commit" disabled`) {
 		t.Fatal("a grid collision blocked keeping the original performance")
 	}
 	d.PlayedCheckError = "per-note expression is not supported"
-	html = gosx.RenderHTML((&studioApp{}).noteTakeReview(v, "csrf", d))
+	html = gosx.RenderHTML((&studioApp{}).noteTakeReview(v, "csrf", "private-preview", d))
 	if !strings.Contains(html, `value="played" disabled`) || !strings.Contains(html, "per-note expression is not supported") {
 		t.Fatal("unrepresentable timing was presented as playable")
 	}

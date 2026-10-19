@@ -14,6 +14,82 @@ import (
 	"m31labs.dev/cicada/host/liveplay"
 )
 
+func TestGoSXLiveIdentitiesStayPrivateAcrossLeaseExpiry(t *testing.T) {
+	score, err := compileLiveScore(studioTestPath(t, authoredLiveScore))
+	if err != nil {
+		t.Fatal(err)
+	}
+	stream, err := liveplay.New(score, liveSampleRate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer stream.Close()
+	s := &studio{transport: &studioTransport{stream: stream, playing: true, audioNull: true}}
+	h := s.domainRoutes()
+	on, velocity, note := true, 100, 60
+	message := audioClientMessage{Type: "note", Track: "keys", Note: &note, Velocity: &velocity, On: &on, NoteID: float64(7)}
+	key, _, err := audioNoteKey(message)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, owner := range []string{"first-owned-window", "second-owned-window"} {
+		if r := studioCall(t, h, "/api/live", studioLiveRequest{Owner: owner, Sequence: 1, Messages: []audioClientMessage{message}}); r.Code != 200 {
+			t.Fatal(r.Code, r.Body.String())
+		}
+	}
+	a := s.liveControls.leases["first-owned-window"].Notes[key]
+	b := s.liveControls.leases["second-owned-window"].Notes[key]
+	if a.owner == b.owner || a.owner == "" || b.owner == "" {
+		t.Fatal("leases shared an expressive owner")
+	}
+	cents, pressure, timbre := float32(212.5), float32(.8), float32(.5)
+	expression := audioClientMessage{Type: "note-expression", Track: "keys", NoteID: float64(7), PitchCents: &cents, Pressure: &pressure, Timbre: &timbre}
+	for _, owner := range []string{"foreign-owned-window", "first-owned-window", "second-owned-window"} {
+		if r := studioCall(t, h, "/api/live", studioLiveRequest{Owner: owner, Sequence: 2, Messages: []audioClientMessage{expression}}); r.Code != 200 {
+			t.Fatal(r.Code, r.Body.String())
+		}
+	}
+	if len(s.liveControls.leases["foreign-owned-window"].Notes) != 0 {
+		t.Fatal("controller created a foreign held note")
+	}
+	// Numeric expressive IDs and legacy string owners have separate namespaces.
+	legacy := message
+	legacy.NoteID = "7"
+	legacyKey, _, _ := audioNoteKey(legacy)
+	if legacyKey == key {
+		t.Fatal("string owner aliases numeric note ID")
+	}
+	var buffer [liveBlockFrames * 8]byte
+	read := func() float64 {
+		t.Helper()
+		var power float64
+		for range 256 {
+			if _, err := io.ReadFull(stream, buffer[:]); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for i := 0; i < len(buffer); i += 4 {
+			v := float64(math.Float32frombits(binary.LittleEndian.Uint32(buffer[i:])))
+			power += v * v
+		}
+		return power
+	}
+	if read() == 0 {
+		t.Fatal("held owned notes are silent")
+	}
+	s.liveControls.leases["first-owned-window"].Seen = time.Now().Add(-2 * studioLiveLeaseTimeout)
+	s.expireLiveInputs(time.Now())
+	if !s.liveControls.leases["first-owned-window"].Closed || len(s.liveControls.leases["second-owned-window"].Notes) != 1 || read() == 0 {
+		t.Fatal("expired lease released another window")
+	}
+	if r := studioCall(t, h, "/api/live", studioLiveRequest{Owner: "second-owned-window", Sequence: 3, Release: true}); r.Code != 200 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	if read() > 1e-12 {
+		t.Fatal("last owned gate remained after lease release")
+	}
+}
+
 func TestGoSXLiveSharedPolyphonicPitchFallsSilentAfterRelease(t *testing.T) {
 	for _, release := range []bool{false, true} {
 		t.Run(fmt.Sprintf("lease-release=%v", release), func(t *testing.T) {

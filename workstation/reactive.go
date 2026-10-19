@@ -126,6 +126,9 @@ func (w *actionCapture) Write(data []byte) (int, error) {
 
 func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name string, handler action.Handler) {
 	options := action.ServeHandlerOptions{MaxBodyBytes: 2 << 20}
+	if name == "note-checkpoint" || name == "note-preview" {
+		options.MaxBodyBytes = 32 << 20
+	}
 	if r.Header.Get("X-Cicada-Reactive") != "1" || !action.WantsJSON(r) {
 		action.ServeHandlerWithOptions(w, r, handler, options)
 		return

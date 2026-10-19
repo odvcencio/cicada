@@ -72,6 +72,11 @@ rather than assuming that examples on `main` are supported by the pinned version
   Session-owned note previews require explicit commit and retain revision
   conflicts. Native sample audition stays a private, no-store WAV stream,
   rendered by the existing sample voice. GoSX disposal stops its media element.
+  Bend, pressure and timbre retain per-note identity through live polyphonic
+  playing, sustain, take checkpoints and played-timing edits. MIDI 1 input
+  follows RPN bend ranges and MPE zones; a manual zone selector supports
+  controllers without setup messages. Controller sends batch between gates,
+  while raw recordings retain every received snapshot.
   Live performance controls retain their engine mount across workspace edits;
   launch forms and retained-note previews receive canonical projections beside
   it. Takes projects its forms while keeping mounted media and capture polling.

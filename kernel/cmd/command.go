@@ -14,6 +14,11 @@ const (
 	MessageSize = 16
 )
 
+// LiveIdentity opts OpNoteOn/OpNoteOff into independent live-note ownership.
+// Arg1=0 retains the legacy routing. In this mode Index is 1..65534, with
+// 65535 on NoteOff releasing live notes only. Hosts negotiate bit 20 first.
+const LiveIdentity uint32 = 1
+
 type Error string
 
 func (e Error) Error() string { return string(e) }
@@ -273,7 +278,11 @@ func (c Command) Validate(tracks uint8) error {
 			return Error("chain entry is out of range")
 		}
 	case OpNoteOn:
-		if c.Arg0&0xff >= 128 || c.Arg0>>8&0xff >= 128 || c.Arg0>>18 != 0 {
+		if c.Arg0&0xff >= 128 || c.Arg0>>8&0xff >= 128 || c.Arg0>>18 != 0 || c.Arg1 > LiveIdentity || c.Arg1 == LiveIdentity && (c.Index == 0 || c.Index == 65535 || c.Arg0&(1<<17) != 0) {
+			return Error("live note is out of range")
+		}
+	case OpNoteOff:
+		if c.Arg1 > LiveIdentity || c.Arg1 == LiveIdentity && (c.Index == 0 || c.Arg0 != 0) {
 			return Error("live note is out of range")
 		}
 	case OpNoteExpression:

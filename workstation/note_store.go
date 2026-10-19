@@ -18,7 +18,7 @@ import (
 	"m31labs.dev/cicada/workstation/control"
 )
 
-const noteFileLimit = 512 << 10
+const noteFileLimit = 16 << 20
 
 var errNoteCheckpoint = errors.New("a newer or finished copy of this performance is already saved")
 

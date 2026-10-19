@@ -29,6 +29,7 @@ func (u *liveUI) checkpointSnapshot() []control.Recording {
 	for i := range copy {
 		copy[i].Notes = append([]control.Note(nil), copy[i].Notes...)
 		for j := range copy[i].Notes {
+			copy[i].Notes[j].Expressions = append([]control.NoteExpression(nil), copy[i].Notes[j].Expressions...)
 			if input := copy[i].Notes[j].Input; input != nil {
 				value := *input
 				copy[i].Notes[j].Input = &value
@@ -81,6 +82,9 @@ func (u *liveUI) checkpointNotes() {
 		}
 		u.takeDirty = false
 		u.persistTakeStorage()
+		if !u.props.PersistentNotes {
+			continue
+		}
 		_, err = u.post(u.ctx, "note-checkpoint", map[string]string{"takeId": id, "sequence": strconv.FormatUint(sequence, 10), "revision": u.takeBaseRevision(), "recordings": string(data)})
 		if u.closed.Load() || u.takeID != id || u.finishing {
 			continue
@@ -129,7 +133,7 @@ func (u *liveUI) checkRestoredTake() error {
 		Sequence uint64              `json:"sequence"`
 		Takes    []control.Recording `json:"takes"`
 	}
-	if err = json.NewDecoder(io.LimitReader(response.Body, 1<<20)).Decode(&saved); err != nil {
+	if err = json.NewDecoder(io.LimitReader(response.Body, 16<<20)).Decode(&saved); err != nil {
 		return err
 	}
 	if u.closed.Load() || u.takeID != id {
@@ -152,6 +156,9 @@ func (u *liveUI) checkRestoredTake() error {
 		u.takeSequence = 0
 		u.persistTakeStorage()
 		u.status.Set("Your saved performance is already retained or handled. Saved note performances contains any unapplied copy.")
+		if saved.State == "ready" {
+			u.status.Set("Note take retained for review. Commit it to patterns, or discard it.")
+		}
 		workspaceRefreshRequested.Set(workspaceRefreshRequested.Get() + 1)
 	} else {
 		if saved.Sequence > u.takeSequence {

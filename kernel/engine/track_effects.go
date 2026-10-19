@@ -35,7 +35,7 @@ func (p TrackEffectConfig) Validate(rate int) error {
 		}
 	}
 	if count != 1 {
-		return Error("track effect requires exactly one parameter set")
+		return engineError("track effect requires exactly one parameter set")
 	}
 	switch p.Kind {
 	case TrackEffectDrive:
@@ -46,7 +46,7 @@ func (p TrackEffectConfig) Validate(rate int) error {
 		if p.EQ != nil {
 			q := p.EQ
 			if math.IsNaN(q.FrequencyHz) || math.IsInf(q.FrequencyHz, 0) || math.IsNaN(q.Q) || math.IsInf(q.Q, 0) || math.IsNaN(q.GainDB) || math.IsInf(q.GainDB, 0) || q.Type > pro.Lowpass || q.FrequencyHz < 10 || q.FrequencyHz > .45*float64(rate) || q.Q < .1 || q.Q > 20 || q.GainDB < -24 || q.GainDB > 24 {
-				return Error("track EQ parameter is invalid or out of range")
+				return engineError("track EQ parameter is invalid or out of range")
 			}
 			return nil
 		}
@@ -59,7 +59,7 @@ func (p TrackEffectConfig) Validate(rate int) error {
 			return p.Deesser.Validate()
 		}
 	}
-	return Error("track effect kind and parameters do not match")
+	return engineError("track effect kind and parameters do not match")
 }
 
 func trackInsertLatency(p *TrackConfig) int {

@@ -86,7 +86,7 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 	if request.Release {
 		lease.Closed = true
 		for key, note := range lease.Notes {
-			if s.liveControls.heldByAnother(request.Owner, key) {
+			if note.NoteID == nil && s.liveControls.heldByAnother(request.Owner, key) {
 				continue
 			}
 			off, velocity := false, 0
@@ -99,17 +99,50 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 	}
 	for _, message := range request.Messages {
 		key := ""
+		if message.Type == "note-expression" {
+			identity, id, err := audioNoteKey(message)
+			if err != nil || id == 0 {
+				studioJSON(w, 422, map[string]any{"error": "expression needs a valid note identity"})
+				return
+			}
+			key = identity
+			held, owned := lease.Notes[key]
+			if !owned {
+				continue
+			} // Late or foreign controls cannot address another lease.
+			message.owner = held.owner
+			if err := s.applyAudioMessage(message); err != nil {
+				studioJSON(w, 422, map[string]any{"error": err.Error()})
+				return
+			}
+			continue
+		}
 		if message.Type == "note" {
 			if err := validateAudioNote(message); err != nil {
 				studioJSON(w, 422, map[string]any{"error": err.Error()})
 				return
 			}
 			key = fmt.Sprintf("%s:%d", message.Track, *message.Note)
+			identity, _, err := audioNoteIdentity(message.NoteID)
+			if err != nil {
+				studioJSON(w, 422, map[string]any{"error": err.Error()})
+				return
+			}
+			if identity != "" {
+				key, _, _ = audioNoteKey(message)
+				message.owner = "live:" + request.Owner + ":" + key
+				if held, ok := lease.Notes[key]; ok && *held.Note != *message.Note {
+					studioJSON(w, 422, map[string]any{"error": "release the original pitch before reusing its note identity"})
+					return
+				}
+			} else {
+				message.NoteID = nil
+			}
 			if !*message.On {
 				if _, owned := lease.Notes[key]; !owned {
 					continue
 				}
-				if s.liveControls.heldByAnother(request.Owner, key) {
+				if message.NoteID == nil && s.liveControls.heldByAnother(request.Owner, key) {
 					delete(lease.Notes, key)
 					continue
 				}
@@ -122,7 +155,7 @@ func (s *studio) liveControl(w http.ResponseWriter, r *http.Request) {
 			}
 			if *message.On {
 				_, held := lease.Notes[key]
-				if held || s.liveControls.heldByAnother(request.Owner, key) {
+				if held || message.NoteID == nil && s.liveControls.heldByAnother(request.Owner, key) {
 					// One sounding voice represents all leases holding this pitch.
 					// Only the final owner sends its matching note-off.
 					lease.Notes[key] = message
@@ -175,12 +208,15 @@ func (s *studio) expireLiveInputs(now time.Time) int {
 		lease.Closed, lease.Seen = true, now
 		expired++
 		for key, note := range lease.Notes {
+			if note.NoteID != nil {
+				key = note.owner + ":" + key
+			}
 			notes[key] = note
 		}
 		lease.Notes = nil
 	}
 	for key, note := range notes {
-		if c.heldByAnother("", key) {
+		if note.NoteID == nil && c.heldByAnother("", key) {
 			continue
 		}
 		off, velocity := false, 0

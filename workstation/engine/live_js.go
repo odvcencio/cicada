@@ -16,17 +16,20 @@ import (
 	"syscall/js"
 	"time"
 
+	"m31labs.dev/cicada/host/midi"
 	"m31labs.dev/cicada/workstation/control"
 	enginewasm "m31labs.dev/gosx/engine/wasm"
 	"m31labs.dev/gosx/signal"
 )
 
 type liveProps struct {
-	CSRF            string              `json:"csrf"`
-	Revision        string              `json:"revision"`
-	BPM             float64             `json:"bpm"`
-	TrackPatterns   map[string][]string `json:"trackPatterns"`
-	PersistentNotes bool                `json:"persistentNotes"`
+	CSRF             string              `json:"csrf"`
+	Revision         string              `json:"revision"`
+	BPM              float64             `json:"bpm"`
+	TrackPatterns    map[string][]string `json:"trackPatterns"`
+	ExpressionTracks map[string]bool     `json:"expressionTracks"`
+	NativeMIDI       bool                `json:"nativeMIDI"`
+	PersistentNotes  bool                `json:"persistentNotes"`
 }
 type liveMapping struct {
 	Device     string `json:"device"`
@@ -66,7 +69,11 @@ type liveUI struct {
 	ctx                  context.Context
 	cancel               context.CancelFunc
 	closed               atomic.Bool
-	jobs                 chan liveJob
+	jobs                 chan *liveJob
+	expressionJobs       map[string]*liveJob
+	midiNotes            midi.NoteInput
+	wireIDs              map[string]uint16
+	gesturePoints        int
 	events               []liveEvent
 	status               *signal.Signal[string]
 	held                 map[string]liveHeld
@@ -106,11 +113,12 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 		return nil, fmt.Errorf("live panel is missing")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	u := &liveUI{root: root, props: props, lease: js.Global().Get("crypto").Call("randomUUID").String(), ctx: ctx, cancel: cancel, jobs: make(chan liveJob, 128), status: signal.New("Press Play, then use the note keys or enable MIDI."), held: map[string]liveHeld{}, counts: map[liveHeld]int{}, active: map[string]int{}, descriptors: map[string]control.Descriptor{}, addresses: map[string]string{}, midi: js.Undefined()}
+	u := &liveUI{root: root, props: props, lease: js.Global().Get("crypto").Call("randomUUID").String(), ctx: ctx, cancel: cancel, jobs: make(chan *liveJob, 128), expressionJobs: map[string]*liveJob{}, wireIDs: map[string]uint16{}, status: signal.New("Press Play, then use the note keys or enable MIDI."), held: map[string]liveHeld{}, counts: map[liveHeld]int{}, active: map[string]int{}, descriptors: map[string]control.Descriptor{}, addresses: map[string]string{}, midi: js.Undefined()}
 	u.loadMappings()
 	u.midiNames = map[string]string{}
 	u.checkpointWake = make(chan struct{}, 1)
 	u.loadSettings()
+	u.midiNotes.Mode = u.selected("[data-live-midimode]")
 	u.refreshPatterns()
 	watch := signal.Watch(func() { root.Call("querySelector", "[data-live-status]").Set("textContent", u.status.Get()) })
 	revisionWatch := signal.Watch(func() {
@@ -124,9 +132,7 @@ func mountLive(host enginewasm.Context) (enginewasm.Handle, error) {
 	u.syncControls()
 	go u.runCommands()
 	go u.poll()
-	if u.props.PersistentNotes {
-		go u.checkpointNotes()
-	}
+	go u.checkpointNotes()
 	return enginewasm.HandleFunc(func() {
 		if u.closed.Swap(true) {
 			return
@@ -174,8 +180,21 @@ func (u *liveUI) queue(action string, values map[string]string) bool {
 		values["lease"] = u.lease
 		values["sequence"] = strconv.FormatUint(u.sequence, 10)
 	}
+	job := &liveJob{action, values}
+	if action == "live" && values["type"] == "note-expression" {
+		key := values["track"] + ":" + values["noteId"]
+		if previous := u.expressionJobs[key]; previous != nil {
+			values["sequence"] = previous.Values["sequence"]
+			previous.Values = values
+			return true
+		}
+		u.expressionJobs[key] = job
+	} else {
+		// A gate or action is an ordering barrier for controller reduction.
+		clear(u.expressionJobs)
+	}
 	select {
-	case u.jobs <- liveJob{action, values}:
+	case u.jobs <- job:
 		return true
 	default:
 		u.status.Set("Live command queue is full. Reopen Live to resume.")
@@ -191,6 +210,14 @@ func (u *liveUI) releaseMount() {
 		defer cancel()
 		_, _ = u.post(ctx, "live", map[string]string{"type": "release", "lease": u.lease, "sequence": strconv.FormatUint(seq, 10)})
 	}()
+	for id, encoded := range u.active {
+		i, n := encoded/1024, encoded%1024
+		u.takes[i].Notes[n].End(control.NoteTime{Tick: u.tick()})
+		delete(u.active, id)
+	}
+	u.midiNotes.Reset(u.midiNotes.Mode)
+	u.saveTake()
+	u.wireIDs = map[string]uint16{}
 	u.held = map[string]liveHeld{}
 	u.counts = map[liveHeld]int{}
 }
@@ -209,7 +236,11 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("X-CSRF-Token", u.props.CSRF)
-	resp, err := (&http.Client{Timeout: 2 * time.Second}).Do(req)
+	timeout := 2 * time.Second
+	if action == "note-preview" {
+		timeout = 90 * time.Second
+	} // two native pattern checks plus durable recovery IO
+	resp, err := (&http.Client{Timeout: timeout}).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -234,16 +265,53 @@ func (u *liveUI) post(ctx context.Context, action string, values map[string]stri
 	return result.Data, nil
 }
 func (u *liveUI) runCommands() {
+	var pending *liveJob
 	for {
-		select {
-		case <-u.ctx.Done():
-			return
-		case job := <-u.jobs:
-			_, err := u.post(u.ctx, job.Action, job.Values)
+		job := pending
+		pending = nil
+		if job == nil {
+			select {
+			case <-u.ctx.Done():
+				return
+			case job = <-u.jobs:
+			}
+		}
+		{
+			if job.Action == "live" && job.Values["type"] != "heartbeat" && job.Values["type"] != "release" {
+				messages := []map[string]string{job.Values}
+				last := job.Values["sequence"]
+				u.consumeExpression(job)
+			drain:
+				for len(messages) < 64 {
+					select {
+					case next := <-u.jobs:
+						if next.Action != "live" || next.Values["type"] == "heartbeat" || next.Values["type"] == "release" {
+							pending = next
+							break drain
+						}
+						u.consumeExpression(next)
+						messages = append(messages, next.Values)
+						last = next.Values["sequence"]
+					default:
+						break drain
+					}
+				}
+				data, _ := json.Marshal(messages)
+				job = &liveJob{Action: "live", Values: map[string]string{"type": "input-batch", "messages": string(data), "lease": u.lease, "sequence": last}}
+			}
+			data, err := u.post(u.ctx, job.Action, job.Values)
 			if err != nil && !u.closed.Load() {
 				u.status.Set(err.Error())
 			}
 			if err == nil && job.Action == "note-preview" && !u.closed.Load() {
+				var retained struct {
+					TakeID string `json:"takeId"`
+				}
+				if json.Unmarshal(data, &retained) == nil && retained.TakeID != "" {
+					location := js.Global().Get("URL").New(js.Global().Get("location").Get("href"))
+					location.Get("searchParams").Call("set", "notePreview", retained.TakeID)
+					js.Global().Get("history").Call("replaceState", nil, "", location.Get("href"))
+				}
 				u.takes = nil
 				u.takeID, u.takeRevision = "", ""
 				u.takeSequence, u.takeDirty, u.finishing = 0, false, false
@@ -263,6 +331,13 @@ func (u *liveUI) runCommands() {
 		}
 	}
 }
+func (u *liveUI) consumeExpression(job *liveJob) {
+	key := job.Values["track"] + ":" + job.Values["noteId"]
+	if u.expressionJobs[key] == job {
+		delete(u.expressionJobs, key)
+	}
+}
+
 func (u *liveUI) poll() {
 	client := &http.Client{Timeout: 2 * time.Second}
 	origin := js.Global().Get("location").Get("origin").String()
@@ -390,6 +465,9 @@ func (u *liveUI) noteOn(id, track string, note, velocity int) {
 }
 
 func (u *liveUI) noteOnAt(id, track string, note, velocity int, at *control.NoteTime) {
+	u.noteInputOnAt(id, track, note, velocity, 0, 0, at)
+}
+func (u *liveUI) noteInputOnAt(id, track string, note, velocity int, wireID uint16, channel uint8, at *control.NoteTime) {
 	if track == "" || !u.playing {
 		u.status.Set("Select a track and press Play before sending notes.")
 		return
@@ -401,8 +479,15 @@ func (u *liveUI) noteOnAt(id, track string, note, velocity int, at *control.Note
 	h := liveHeld{track, note}
 	u.held[id] = h
 	u.counts[h]++
-	if u.counts[h] == 1 {
-		u.queue("live", map[string]string{"type": "note", "track": track, "note": strconv.Itoa(note), "velocity": strconv.Itoa(velocity), "on": "true"})
+	if wireID != 0 {
+		u.wireIDs[id] = wireID
+	}
+	if wireID != 0 || u.legacyHeld(h) == 1 {
+		message := map[string]string{"type": "note", "track": track, "note": strconv.Itoa(note), "velocity": strconv.Itoa(velocity), "on": "true"}
+		if wireID != 0 {
+			message["noteId"] = strconv.Itoa(int(wireID))
+		}
+		u.queue("live", message)
 	}
 	if u.recording {
 		pattern := u.selected("[data-live-pattern]")
@@ -435,7 +520,7 @@ func (u *liveUI) noteOnAt(id, track string, note, velocity int, at *control.Note
 			timing = *at
 		}
 		n := len(u.takes[i].Notes)
-		u.takes[i].Notes = append(u.takes[i].Notes, control.Note{Tick: timing.Tick, EndTick: timing.Tick, Note: note, Velocity: velocity, Input: timing.Input})
+		u.takes[i].Notes = append(u.takes[i].Notes, control.Note{Tick: timing.Tick, EndTick: timing.Tick, Note: note, Velocity: velocity, NoteID: wireID, Channel: channel, Input: timing.Input})
 		u.active[id] = i*1024 + n
 		u.saveTake()
 		label := "notes"
@@ -457,9 +542,17 @@ func (u *liveUI) noteOffAt(id string, at *control.NoteTime) {
 	defer u.syncControls()
 	delete(u.held, id)
 	u.counts[h]--
+	wireID := u.wireIDs[id]
+	delete(u.wireIDs, id)
 	if u.counts[h] <= 0 {
 		delete(u.counts, h)
-		u.queue("live", map[string]string{"type": "note", "track": h.Track, "note": strconv.Itoa(h.Note), "velocity": "0", "on": "false"})
+	}
+	if wireID != 0 || u.legacyHeld(h) == 0 {
+		message := map[string]string{"type": "note", "track": h.Track, "note": strconv.Itoa(h.Note), "velocity": "0", "on": "false"}
+		if wireID != 0 {
+			message["noteId"] = strconv.Itoa(int(wireID))
+		}
+		u.queue("live", message)
 	}
 	if encoded, ok := u.active[id]; ok {
 		i, n := encoded/1024, encoded%1024
@@ -476,6 +569,7 @@ func (u *liveUI) noteOffAt(id string, at *control.NoteTime) {
 	}
 }
 func (u *liveUI) closeNotes() {
+	u.midiNotes.Reset(u.midiNotes.Mode)
 	for id := range u.held {
 		u.noteOff(id)
 	}
@@ -563,9 +657,10 @@ func (u *liveUI) bindControls() {
 		u.on(b, "pointercancel", func(e js.Value) { u.noteOff("pointer:" + e.Get("pointerId").String()) })
 		u.on(b, "lostpointercapture", func(e js.Value) { u.noteOff("pointer:" + e.Get("pointerId").String()) })
 	}
-	for _, selector := range []string{"[data-live-acid]", "[data-live-drums]", "[data-live-pattern]", "[data-live-drumpattern]", "[data-live-quantize]"} {
+	for _, selector := range []string{"[data-live-acid]", "[data-live-drums]", "[data-live-pattern]", "[data-live-drumpattern]", "[data-live-quantize]", "[data-live-midimode]"} {
 		u.on(u.query(selector), "change", func(js.Value) {
 			u.closeNotes()
+			u.midiNotes.Mode = u.selected("[data-live-midimode]")
 			u.recording = false
 			u.refreshPatterns()
 			u.syncControls()
@@ -587,6 +682,7 @@ func (u *liveUI) bindControls() {
 			return
 		}
 		u.recording = true
+		u.gesturePoints = 0
 		u.takeID = strings.ReplaceAll(js.Global().Get("crypto").Call("randomUUID").String(), "-", "")
 		u.takeRevision, u.takeSequence = u.props.Revision, 0
 		u.syncControls()
@@ -614,10 +710,17 @@ func (u *liveUI) bindControls() {
 	})
 	button("midi", u.enableMIDI)
 	button("learn", func() {
+		u.closeNotes()
 		u.learning = true
 		u.status.Set("Waiting for a MIDI CC or note for " + u.selected("[data-live-target]"))
 	})
-	button("clear", func() { u.mappings = nil; u.saveMappings(); u.renderMappings(); u.status.Set("MIDI mappings cleared.") })
+	button("clear", func() {
+		u.closeNotes()
+		u.mappings = nil
+		u.saveMappings()
+		u.renderMappings()
+		u.status.Set("MIDI mappings cleared.")
+	})
 }
 
 func (u *liveUI) storage() js.Value {
@@ -657,11 +760,12 @@ func (u *liveUI) loadSettings() {
 		Acid     string `json:"acidTrack"`
 		Drums    string `json:"drumTrack"`
 		Quantize int    `json:"quantize"`
+		MIDIMode string `json:"midiMode"`
 	}
 	if json.Unmarshal([]byte(v.String()), &saved) != nil {
 		return
 	}
-	for _, p := range [][2]string{{"[data-live-acid]", saved.Acid}, {"[data-live-drums]", saved.Drums}, {"[data-live-quantize]", strconv.Itoa(saved.Quantize)}} {
+	for _, p := range [][2]string{{"[data-live-acid]", saved.Acid}, {"[data-live-drums]", saved.Drums}, {"[data-live-quantize]", strconv.Itoa(saved.Quantize)}, {"[data-live-midimode]", saved.MIDIMode}} {
 		s := u.query(p[0])
 		options := s.Get("options")
 		for i := 0; i < options.Length(); i++ {
@@ -675,7 +779,7 @@ func (u *liveUI) loadSettings() {
 func (u *liveUI) saveSettings() {
 	defer func() { _ = recover() }()
 	q, _ := strconv.Atoi(u.selected("[data-live-quantize]"))
-	data, _ := json.Marshal(map[string]any{"acidTrack": u.selected("[data-live-acid]"), "drumTrack": u.selected("[data-live-drums]"), "quantize": q})
+	data, _ := json.Marshal(map[string]any{"acidTrack": u.selected("[data-live-acid]"), "drumTrack": u.selected("[data-live-drums]"), "quantize": q, "midiMode": u.selected("[data-live-midimode]")})
 	u.storage().Call("setItem", "cicada.live.settings.v1", string(data))
 }
 
@@ -729,6 +833,11 @@ func (u *liveUI) restoreTake() {
 	}
 	if json.Unmarshal([]byte(v.String()), &saved) == nil && control.ValidateRecordings(saved.Takes) == nil {
 		u.takes = saved.Takes
+		for _, take := range u.takes {
+			for _, note := range take.Notes {
+				u.gesturePoints += len(note.Expressions)
+			}
+		}
 		u.takeRevision, u.takeID, u.takeSequence = saved.Revision, saved.ID, saved.Sequence
 		if u.takeID == "" {
 			u.takeID = strings.ReplaceAll(js.Global().Get("crypto").Call("randomUUID").String(), "-", "")
@@ -808,6 +917,10 @@ func (u *liveUI) enableMIDI() {
 		u.status.Set("Closing MIDI inputs…")
 		return
 	}
+	if u.props.NativeMIDI {
+		u.enableNativeMIDI()
+		return
+	}
 	n := js.Global().Get("navigator")
 	if n.Get("requestMIDIAccess").Type() != js.TypeFunction {
 		u.enableNativeMIDI()
@@ -849,10 +962,8 @@ func (u *liveUI) bindMIDI() {
 			break
 		}
 		input := next.Get("value")
-		device := input.Get("name").String()
-		if device == "" {
-			device = input.Get("id").String()
-		}
+		device := "web:" + input.Get("id").String()
+		u.midiNames[device] = input.Get("name").String()
 		count++
 		f := js.FuncOf(func(_ js.Value, args []js.Value) any {
 			if !u.closed.Load() && len(args) > 0 {
@@ -870,17 +981,28 @@ func (u *liveUI) midiMessage(device string, data js.Value) {
 }
 
 func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTime) {
-	if data.Length() < 3 {
+	if data.Length() < 2 || data.Length() > 3 {
 		return
 	}
-	status, a, b := data.Index(0).Int(), data.Index(1).Int(), data.Index(2).Int()
+	status, a, b := data.Index(0).Int(), data.Index(1).Int(), 0
+	if data.Length() == 3 {
+		b = data.Index(2).Int()
+	}
 	channel, command := status&15, status&240
 	cc, on, off := command == 176, command == 144 && b > 0, command == 128 || command == 144 && b == 0
-	if !cc && !on && !off {
-		return
-	}
-	if cc && (a == 120 || a == 123) {
-		u.releaseMIDIPrefixAt(fmt.Sprintf("midi:%s:%d:", device, channel), at)
+	// Release the original input even if a mapping changed after its press.
+	if off {
+		if data.Length() != 3 {
+			return
+		}
+		events, err := u.midiNotes.Process(device, []byte{byte(status), byte(a), byte(b)})
+		if err != nil {
+			u.status.Set(err.Error())
+			return
+		}
+		for _, event := range events {
+			u.midiNote(event, at)
+		}
 		return
 	}
 	if u.learning && (cc || on) {
@@ -941,28 +1063,24 @@ func (u *liveUI) midiMessageAt(device string, data js.Value, at *control.NoteTim
 			u.queue("live", map[string]string{"type": "param", "address": m.Address, "value": value})
 			return
 		}
-		if !cc && m.Note != nil && *m.Note == a {
+		if (on || off) && m.Note != nil && *m.Note == a {
 			if on {
 				u.mappedAction(m.Action)
 			}
 			return
 		}
 	}
-	if cc {
+	bytes := []byte{byte(status), byte(a)}
+	if data.Length() == 3 {
+		bytes = append(bytes, byte(b))
+	}
+	events, err := u.midiNotes.Process(device, bytes)
+	if err != nil {
+		u.status.Set(err.Error())
 		return
 	}
-	track := u.selected("[data-live-acid]")
-	if channel == 9 {
-		track = u.selected("[data-live-drums]")
-		if !control.GMDrum(a) {
-			return
-		}
-	}
-	id := fmt.Sprintf("midi:%s:%d:%d", device, channel, a)
-	if on {
-		u.noteOnAt(id, track, a, b, at)
-	} else if off {
-		u.noteOffAt(id, at)
+	for _, event := range events {
+		u.midiNote(event, at)
 	}
 }
 func (u *liveUI) mappedAction(target string) {

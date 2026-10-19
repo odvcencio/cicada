@@ -636,7 +636,7 @@ func (e *Engine) processPatternEvents(kind seq.EventKind) {
 			case VoiceGraph:
 				if pool := e.voices[track].poly; pool != nil {
 					if !event.Slide {
-						pool.ReleaseAll()
+						pool.ReleaseSequenced()
 					}
 					notes, count := event.Notes, event.NoteCount
 					if count == 0 {

@@ -233,7 +233,7 @@ func (s *studio) intents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var env edits.Envelope
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
+	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<20))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(&env); err != nil {
 		studioJSON(w, http.StatusBadRequest, map[string]any{"error": err.Error()})

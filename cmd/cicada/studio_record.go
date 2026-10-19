@@ -34,7 +34,7 @@ type studioTakeRecording struct {
 }
 
 func (s *studio) recordTake(w http.ResponseWriter, r *http.Request) {
-	edit, ok := studioRequest(w, r)
+	edit, ok := studioRequestLimit(w, r, 16<<20)
 	if !ok {
 		return
 	}
