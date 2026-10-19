@@ -26,6 +26,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		return nil, fmt.Errorf("Studio shell is missing")
 	}
 	ctx, cancel := context.WithCancel(context.Background())
+	releasePlacementCommands := watchPlacementCommands(host, root)
 	var busy atomic.Bool
 	command := js.FuncOf(func(_ js.Value, args []js.Value) any {
 		if len(args) == 0 || ctx.Err() != nil {
@@ -33,7 +34,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		}
 		id := workspaceString(args[0].Get("detail"), "id")
 		switch id {
-		case "transport.toggle", "transport.home", "transport.record", "edit.undo", "edit.redo", "edit.save":
+		case "transport.toggle", "transport.home", "transport.record", "transport.loop", "edit.undo", "edit.redo", "edit.save", "edit.duplicate", "edit.delete":
 		default:
 			if !strings.HasPrefix(id, "live.scene.") {
 				return nil
@@ -44,6 +45,10 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 		}
 		go func() {
 			defer busy.Store(false)
+			if id == "transport.loop" || id == "edit.duplicate" || id == "edit.delete" {
+				submitPlacementCommand(ctx, root, id)
+				return
+			}
 			selector := ""
 			switch id {
 			case "transport.toggle":
@@ -95,6 +100,7 @@ func mountShell(host enginewasm.Context) (enginewasm.Handle, error) {
 	releaseCapture := capturePublisher.acquire()
 	return enginewasm.HandleFunc(func() {
 		cancel()
+		releasePlacementCommands()
 		releaseAudio()
 		releaseCapture()
 		root.Call("removeAttribute", "data-shell-actions")

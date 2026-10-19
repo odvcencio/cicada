@@ -23,7 +23,7 @@ func shellCommands() []command.Command {
 		{ID: "transport.resume", Title: "Resume from marker", Group: "Transport", Keys: []string{"Shift+Space"}, Reserved: true},
 		{ID: "transport.home", Title: "Return to start", Group: "Transport", Keys: []string{"Home"}, Action: transport("home", nil)},
 		{ID: "transport.record", Title: "Record or finish take", Group: "Transport", Keys: []string{"F9", "Mod+Shift+R"}, Action: command.Action{Signal: "$record", Value: "toggle"}},
-		{ID: "transport.loop", Title: "Loop selection", Group: "Transport", Keys: []string{"Mod+L"}, Reserved: true},
+		{ID: "transport.loop", Title: "Toggle selected placement loop", Group: "Transport", Keys: []string{"Mod+L"}, When: map[string]any{"$view": "arrange", "$placementSelectionActive": true}, Action: transport("loop", nil)},
 
 		// Alt+Shift+digit keeps Tab and Shift+Tab for focus traversal. It avoids
 		// the browser tab-switch chords (Ctrl/Alt+digit) and screen-reader keys.
@@ -40,10 +40,10 @@ func shellCommands() []command.Command {
 		{ID: "edit.save", Title: "Save score", Group: "Edit", Keys: []string{"Mod+S"}, AllowEditable: true, Action: command.Action{Signal: "$edit", Value: "save"}},
 		{ID: "edit.undo", Title: "Undo", Group: "Edit", Keys: []string{"Mod+Z"}, Action: command.Action{Signal: "$edit", Value: "undo"}},
 		{ID: "edit.redo", Title: "Redo", Group: "Edit", Keys: []string{"Mod+Shift+Z"}, Action: command.Action{Signal: "$edit", Value: "redo"}},
-		{ID: "edit.duplicate", Title: "Duplicate selection", Group: "Edit", Keys: []string{"Mod+D"}, Reserved: true},
+		{ID: "edit.duplicate", Title: "Duplicate selected placement", Group: "Edit", Keys: []string{"Mod+D"}, When: map[string]any{"$view": "arrange", "$placementSelectionActive": true}, Action: command.Action{Signal: "$edit", Value: "duplicate"}},
 		{ID: "edit.split", Title: "Split clip", Group: "Edit", Keys: []string{"Mod+E"}, Reserved: true},
 		{ID: "edit.rename", Title: "Rename selection", Group: "Edit", Keys: []string{"Mod+R"}, Reserved: true},
-		{ID: "edit.delete", Title: "Delete selection", Group: "Edit", Keys: []string{"Delete"}, Reserved: true},
+		{ID: "edit.delete", Title: "Remove selected placement", Group: "Edit", Keys: []string{"Delete", "Backspace"}, When: map[string]any{"$view": "arrange", "$placementSelectionActive": true}, Action: command.Action{Signal: "$edit", Value: "delete"}},
 
 		{ID: "tool.draw", Title: "Switch between Select and Draw", Group: "Tools", Keys: []string{"B"}, When: map[string]any{"$tool": "select"}, Action: command.Action{Signal: "$tool", Value: "draw"}},
 		{ID: "tool.select", Title: "Switch between Select and Draw", Group: "Tools", Keys: []string{"B"}, When: map[string]any{"$tool": "draw"}, Action: command.Action{Signal: "$tool", Value: "select"}},

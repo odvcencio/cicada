@@ -49,11 +49,12 @@ type host struct {
 	starting    sync.WaitGroup
 	startCancel context.CancelFunc
 
-	smokeOut    string
-	smokeHold   time.Duration
-	smokeScript string
-	started     time.Time
-	smoke       map[string]any
+	smokeOut     string
+	smokeHold    time.Duration
+	smokeTimeout time.Duration
+	smokeScript  string
+	started      time.Time
+	smoke        map[string]any
 }
 
 func main() {
@@ -73,9 +74,13 @@ func run() error {
 	devTools := flags.Bool("devtools", false, "enable developer tools (F12 on Windows, the context menu on macOS)")
 	smokeOut := flags.String("smoke-out", "", "write a startup report to this JSON file and exit once Studio loads (tests)")
 	smokeHold := flags.Duration("smoke-hold", 1500*time.Millisecond, "with --smoke-out, how long to keep Studio open after it loads")
+	smokeTimeout := flags.Duration("smoke-timeout", 60*time.Second, "with --smoke-out, maximum time to await the workflow result (tests)")
 	smokeScript := flags.String("smoke-script", "", "with --smoke-out, run this JavaScript workflow and await its result (tests)")
 	if err := flags.Parse(os.Args[1:]); err != nil {
 		return err
+	}
+	if *smokeTimeout <= 0 {
+		return fmt.Errorf("--smoke-timeout must be positive")
 	}
 	var script []byte
 	if *smokeScript != "" {
@@ -112,15 +117,16 @@ func run() error {
 		return err
 	}
 	h := &host{
-		cicada:      cicada,
-		audio:       *audio,
-		logOut:      logFile,
-		statePath:   filepath.Join(*dataDir, "state.json"),
-		smokeOut:    *smokeOut,
-		smokeHold:   *smokeHold,
-		smokeScript: string(script),
-		started:     started,
-		smoke:       map[string]any{},
+		cicada:       cicada,
+		audio:        *audio,
+		logOut:       logFile,
+		statePath:    filepath.Join(*dataDir, "state.json"),
+		smokeOut:     *smokeOut,
+		smokeHold:    *smokeHold,
+		smokeTimeout: *smokeTimeout,
+		smokeScript:  string(script),
+		started:      started,
+		smoke:        map[string]any{"timeoutSeconds": smokeTimeout.Seconds()},
 	}
 	h.state = loadState(h.statePath)
 	score, err := resolveInitialScore(flags.Args(), h.state, cicada, filepath.Join(documentsDir(), "Cicada"))
@@ -178,7 +184,7 @@ func run() error {
 	}
 	if h.smokeOut != "" {
 		go func() {
-			time.Sleep(60 * time.Second)
+			time.Sleep(h.smokeTimeout)
 			h.recordSmoke("timeout", true)
 			_ = h.app.Close()
 		}()

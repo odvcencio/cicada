@@ -141,12 +141,12 @@ func TestShellRegistersEveryCommandInTheTable(t *testing.T) {
 			t.Errorf("command %s keys=%v, want %s", id, got[id].Keys, keys)
 		}
 	}
-	for _, id := range []string{"transport.resume", "transport.loop", "edit.split", "zoom.selection", "grid.snap", "arrange.consolidate", "arrange.group", "notes.quantize"} {
+	for _, id := range []string{"transport.resume", "edit.split", "zoom.selection", "grid.snap", "arrange.consolidate", "arrange.group", "notes.quantize"} {
 		if !got[id].Reserved {
 			t.Errorf("command %s must stay reserved", id)
 		}
 	}
-	for _, id := range []string{"edit.save", "edit.undo", "edit.redo"} {
+	for _, id := range []string{"edit.save", "edit.undo", "edit.redo", "edit.duplicate", "edit.delete", "transport.loop"} {
 		if got[id].Reserved {
 			t.Errorf("command %s must submit its working form", id)
 		}

@@ -115,8 +115,13 @@ func (s *studioApp) placementEditors(v workspace, csrf string, placements []proj
 			field("Track", selectInput("track", placement.Track, tracks)), field("Pattern or clip", selectInput("content", placement.Content, contents)),
 			field("Start", textInput("at", placementLiteral(placement.AtTick, true))), field("Length", textInput("length", placementLiteral(placement.LengthTicks, false))), submit("", "", "Update placement"))
 		duplicate := s.placementForm(v, csrf, placement.ID, hidden("action", "duplicate"), hidden("name", placement.ID),
-			field("Copy name", textInput("newName", newName(placement.ID+"-copy"))), field("Copy start", textInput("at", placementLiteral(copyStart, true))), submit("", "", "Duplicate placement"))
-		remove := s.placementForm(v, csrf, "", hidden("name", placement.ID), submit("action", "delete", "Remove placement"))
+			field("Copy name", textInput("newName", newName(placement.ID+"-copy"))), field("Copy start", textInput("at", placementLiteral(copyStart, true))),
+			gosx.El("button", gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("data-placement-command", "duplicate")), gosx.Text("Duplicate placement")))
+		removeAttrs := gosx.Attrs(gosx.Attr("type", "submit"), gosx.Attr("name", "action"), gosx.Attr("value", "delete"), gosx.Attr("data-placement-command", "delete"))
+		if len(placements) == 1 {
+			removeAttrs = append(removeAttrs, gosx.BoolAttr("disabled"), gosx.Attr("title", "Keep at least one placement in the arrangement"))
+		}
+		remove := s.placementForm(v, csrf, "", hidden("name", placement.ID), gosx.El("button", removeAttrs, gosx.Text("Remove placement")))
 		attrs := gosx.Attrs(gosx.Attr("class", "placement-inspector"), gosx.Attr("data-placement-inspector", placement.ID), gosx.Attr("id", "placement-"+placement.ID))
 		if placement.ID == selected {
 			attrs = append(attrs, gosx.BoolAttr("open"))
