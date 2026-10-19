@@ -17,6 +17,7 @@ const (
 	writing     = uint32(1)
 	ready       = uint32(2)
 	pin         = uint32(4)
+	stateMask   = pin - 1
 )
 
 type Error string
@@ -39,6 +40,8 @@ type Config struct {
 }
 
 type page struct {
+	// Low bits are publication state; upper bits count pins, including late
+	// probes that must release without changing the current publication state.
 	state       atomic.Uint32
 	asset       uint32
 	index       int64
@@ -166,17 +169,21 @@ func (w Work) Publish() bool {
 	}
 	w.cache.clock++
 	w.page.used = w.cache.clock
-	w.page.state.Store(ready)
+	// A reader may have observed the previous ready generation immediately
+	// before this worker claimed it. Preserve its transient pin until that
+	// reader observes writing/empty and releases it; replacing the whole word
+	// would let the late release corrupt this publication's ownership count.
+	w.page.state.Add(ready - writing)
 	w.cache.loaded.Add(1)
 	return true
 }
-func (w Work) Cancel() { w.page.state.Store(empty); w.cache.cancelled.Add(1) }
-func (w Work) Fail()   { w.page.state.Store(empty); w.cache.errors.Add(1) }
+func (w Work) Cancel() { w.page.state.Add(^uint32(writing - 1)); w.cache.cancelled.Add(1) }
+func (w Work) Fail()   { w.page.state.Add(^uint32(writing - 1)); w.cache.errors.Add(1) }
 
 func (c *Cache) present(asset uint32, index int64) bool {
 	for i := range c.pages {
 		p := &c.pages[i]
-		if p.state.Load() != empty && p.asset == asset && p.index == index {
+		if p.state.Load()&stateMask != empty && p.asset == asset && p.index == index {
 			return true
 		}
 	}
@@ -188,7 +195,7 @@ func (c *Cache) reserve(a Asset, index int64) (Work, bool) {
 	for i := range c.pages {
 		p := &c.pages[i]
 		state := p.state.Load()
-		if state == empty {
+		if state&stateMask == empty {
 			victim = p
 			break
 		}
@@ -200,7 +207,10 @@ func (c *Cache) reserve(a Asset, index int64) (Work, bool) {
 		return Work{}, false
 	}
 	state := victim.state.Load()
-	if (state != empty && state != ready) || !victim.state.CompareAndSwap(state, writing) {
+	// An empty slot can retain unsuccessful reader probes, which never read
+	// its metadata or PCM. Reuse preserves those counts. A ready slot can be
+	// reclaimed only when every actual reader has released it.
+	if (state&stateMask != empty && state != ready) || !victim.state.CompareAndSwap(state, state&^stateMask|writing) {
 		return Work{}, false
 	}
 	if state == ready {
@@ -271,32 +281,20 @@ func (c *Cache) Ready(asset uint32, index int64) bool {
 	return true
 }
 
-// pinRetries caps the failed CASes tolerated on one slot per acquire call.
-const pinRetries = 1024
-
-// casPin is the pin attempt. Tests replace it to force contention.
-var casPin = func(s *atomic.Uint32, old, next uint32) bool { return s.CompareAndSwap(old, next) }
-
 // acquire pins the ready page for (asset, index), or returns nil.
 //
-// Pinning is lock-free: a failed CAS means another reader pinned or released
-// the same slot and made progress, so the slot is reloaded and tried again. At
-// most pinRetries consecutive CASes may fail on one slot; after that the slot
-// counts as not found and the caller records a miss. Parallel render lanes
-// pin the same shared page at once, and without retries the loser would
-// report a resident page as missing and fade the track out.
+// Other readers cannot make the increment fail. The worker can claim only an
+// unpinned ready page; if it wins between the load and increment, the returned
+// state identifies an unpublished generation and the reader releases its probe.
+// No retry loop, waiting, or descriptor/PCM access occurs while a worker owns it.
 func (c *Cache) acquire(asset uint32, index int64) *page {
 	for i := range c.pages {
 		p := &c.pages[i]
-		state := p.state.Load()
-		failed := 0
-		for state >= ready && !casPin(&p.state, state, state+pin) {
-			if failed++; failed > pinRetries {
-				break
-			}
-			state = p.state.Load()
+		if p.state.Load()&stateMask != ready {
+			continue
 		}
-		if state < ready || failed > pinRetries {
+		if p.state.Add(pin)&stateMask != ready {
+			p.state.Add(^uint32(pin - 1))
 			continue
 		}
 		if p.asset == asset && p.index == index {
