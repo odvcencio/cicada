@@ -166,7 +166,7 @@ func (s *studioApp) serveAction(w http.ResponseWriter, r *http.Request, name str
 				location = target
 			}
 		}
-		followPattern := fields["action"] == "step" || fields["action"] == "pitch" || fields["action"] == "toggle" || fields["action"] == "duplicate"
+		followPattern := fields["action"] == "step" || fields["action"] == "pitch" || fields["action"] == "toggle" || fields["action"] == "duplicate" || fields["action"] == "performed-gesture"
 		if name == "pattern" && followPattern && result.Redirect != "" {
 			location = result.Redirect
 		}

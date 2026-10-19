@@ -25,8 +25,8 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 	if catalog.Format != "cicada.fields/2" || len(catalog.Fields) < 70 {
 		t.Fatalf("incomplete field catalog: %s, %d fields", catalog.Format, len(catalog.Fields))
 	}
-	if len(catalog.Constructs) != 39 {
-		t.Fatalf("expected 39 semantic constructs, got %d", len(catalog.Constructs))
+	if len(catalog.Constructs) != 40 {
+		t.Fatalf("expected 40 semantic constructs, got %d", len(catalog.Constructs))
 	}
 	arrangementConstructs := map[string]bool{"arrangement": false, "placement": false, "marker": false}
 	for _, construct := range catalog.Constructs {
@@ -94,6 +94,12 @@ func TestFieldCatalogMatchesCheckedInArtifact(t *testing.T) {
 		if field.Construct == "pattern" && (field.Name == "expression" || field.Name == "performance") {
 			if field.Required {
 				t.Error("pattern expression and performance must remain optional for existing projects")
+			}
+			continue
+		}
+		if field.Construct == "performed_note" && field.Name == "expressions" {
+			if field.Required || field.Range == nil || *field.Range != "0..65536" {
+				t.Errorf("gesture samples must remain optional and bounded: %+v", field)
 			}
 			continue
 		}

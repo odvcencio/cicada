@@ -563,7 +563,20 @@ func parsePattern(w *loweringWalker, n *gts.Node) Pattern {
 				*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-PERFORMANCE", Severity: "error", Message: "performed note needs a MIDI pitch, velocity 1 to 127 and valid tick positions", Position: w.position(c)})
 				continue
 			}
-			p.Performance.Notes = append(p.Performance.Notes, seq.PerformedNote{Tick: at, EndTick: at + length, Note: uint8(pitch), Velocity: uint8(velocity)})
+			note := seq.PerformedNote{Tick: at, EndTick: at + length, Note: uint8(pitch), Velocity: uint8(velocity)}
+			for j := 0; j < c.NamedChildCount(); j++ {
+				point := c.NamedChild(j)
+				if w.Type(point) != "performed_expression" {
+					continue
+				}
+				value, err := parsePerformedExpression(w, point)
+				if err != nil {
+					*w.diagnostics = append(*w.diagnostics, Diagnostic{Code: "CICADA-PERFORMANCE", Severity: "error", Message: err.Error(), Position: w.position(point)})
+					continue
+				}
+				note.Expressions = append(note.Expressions, value)
+			}
+			p.Performance.Notes = append(p.Performance.Notes, note)
 		case "acid_step":
 			if w.Text(c) != "|" {
 				step := parseStepToken(w, c)

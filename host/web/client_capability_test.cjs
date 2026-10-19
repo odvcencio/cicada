@@ -55,7 +55,7 @@ async function start(harness) {
     assert.ok((await start(legacy)).result);
     assert.equal(legacy.client.capabilities, 0);
   }
-  for (const version of [14, 17, 65535]) {
+  for (const version of [14, 18, 65535]) {
     const invalid = setup(version);
     assert.match((await start(invalid)).error.message, version === 14 ? /Ambiguous.*image14.*recompile/ : /Unsupported image version/);
     assert.equal(invalid.stats.nodes, 0, 'invalid image reached the worklet');
@@ -76,7 +76,7 @@ async function start(harness) {
   const before = legacy.stats.posted.length;
   assert.throws(() => legacy.client.sendCommands([{ op: 2 }, { op: 22 }]), /chord opcode22/);
   assert.equal(legacy.stats.posted.length, before, 'client partly posted a rejected command batch');
-  for (const version of [14, 15, 16]) {
+  for (const version of [14, 15, 16, 17]) {
     legacy.setImage(version);
     await assert.rejects(legacy.client.stageCurrentScore('edited'), version === 14 ? /Ambiguous.*image14/ : /image15.*CapabilityUnifiedImage/);
     assert.equal(legacy.stats.posted.length, before, 'client posted an incompatible staged image');
@@ -101,6 +101,15 @@ async function start(harness) {
   assert.equal(unified.stats.posted.length, performedPosts);
   const performed = setup(16, { t: 'r', p: 65536 | 262144, c: true });
   assert.ok((await start(performed)).result);
+  const cachedGestures = setup(17, { t: 'r', p: 65536 | 262144, c: true });
+  assert.match((await start(cachedGestures)).error.message, /CapabilityGestures/);
+  assert.equal(cachedGestures.stats.disconnected, 1);
+  performed.setImage(17);
+  const gesturePosts = performed.stats.posted.length;
+  await assert.rejects(performed.client.stageCurrentScore('edited'), /CapabilityGestures/);
+  assert.equal(performed.stats.posted.length, gesturePosts);
+  const gestural = setup(17, { t: 'r', p: 65536 | 262144 | 524288, c: true });
+  assert.ok((await start(gestural)).result);
   unified.client.sendCommands([{ op: 22 }]);
   assert.equal(unified.stats.posted.at(-1).t, 'c');
   unified.setImage(15);

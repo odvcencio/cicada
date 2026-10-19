@@ -741,6 +741,9 @@ func (e *Engine) loadPatterns(cfg *Config) error {
 			if pattern.Performance != nil {
 				cloned := *pattern.Performance
 				cloned.Notes = append([]seq.PerformedNote(nil), pattern.Performance.Notes...)
+				for i := range cloned.Notes {
+					cloned.Notes[i].Expressions = append([]seq.PerformedExpression(nil), cloned.Notes[i].Expressions...)
+				}
 				loaded.Performance = &cloned
 			}
 			// Copy expression once before rendering. Internal pattern revisions and

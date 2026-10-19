@@ -66,3 +66,38 @@ song { main }
 		t.Fatal("take Undo did not restore the exact original source")
 	}
 }
+
+func TestStudioGestureEditUsesRevisionAndUndo(t *testing.T) {
+	source := `track lead acid {}
+pattern phrase performance length=3840ticks {
+ note 60 at=17ticks length=703ticks velocity=82 {
+  gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5;
+ }
+}
+scene main { lead=phrase }
+song { main }
+`
+	_, handler, path := proposalFixture(t, source)
+	change := studioEdit{Revision: studioRevision([]byte(source)), Action: "performed-gesture", Pattern: "phrase", PerformanceExpression: &edit.SetPerformedExpression{Entity: "wrong-pattern", NoteIndex: 0, Index: 1, Tick: 123, PitchCents: -123.5, Pressure: .7, Timbre: .8, VibratoRateHz: 7.25, VibratoDepthCents: 14.5}}
+	if r := studioCall(t, handler, "/api/pattern", change); r.Code != 200 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	edited, _ := os.ReadFile(path)
+	p, err := compileStudioSource(path, edited)
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := p.Patterns[0].Performance.Notes[0].Expressions
+	if len(points) != 2 || points[1].Tick != 123 || points[1].VibratoRateHz != 7.25 {
+		t.Fatal("gesture changed precision or escaped pattern target", points)
+	}
+	if r := studioCall(t, handler, "/api/pattern", change); r.Code != 409 {
+		t.Fatal("stale gesture accepted", r.Code)
+	}
+	if r := studioCall(t, handler, "/api/undo", studioEdit{Revision: studioRevision(edited)}); r.Code != 200 {
+		t.Fatal(r.Code, r.Body.String())
+	}
+	if b, _ := os.ReadFile(path); string(b) != source {
+		t.Fatal("gesture Undo failed to restore exact source")
+	}
+}

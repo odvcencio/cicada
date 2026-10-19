@@ -79,7 +79,8 @@ func (s *studioApp) performanceEditor(ctx *server.Context, v workspace, csrf str
 			gosx.El("div", gosx.Attrs(gosx.Attr("class", "take-table-scroll"), gosx.Attr("tabindex", "0"), gosx.Attr("role", "region"), gosx.Attr("aria-label", "Performed notes")),
 				gosx.El("table", gosx.El("thead", gosx.El("tr", gosx.Fragment(heads...))), gosx.El("tbody", gosx.Fragment(rows...))),
 				gosx.El("a", gosx.Attrs(gosx.Attr("href", patternURL(p.ID, 1, "", "")+"&note="+strconv.Itoa(len(notes)))), gosx.Text("Add a note"))), inspector),
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("960 ticks per beat. Each note keeps its own gate and velocity; changes are saved in the score with Undo. Notes of the same pitch need separate tracks when their gates overlap.")),
+		s.performanceGestures(ctx, v, csrf, p, selected),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("960 ticks per beat. Each note keeps its own gate, velocity and gestures; changes are saved in the score with Undo. Notes of the same pitch need separate tracks when their gates overlap.")),
 		gosx.El("details", gosx.El("summary", gosx.Text("Loop length")), form(hidden("action", "performance-length"), field("Length in ticks", number("length_ticks", performance.LengthTicks, 30, 1<<40)), submit("", "", "Save loop length")), gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("The loop must include every note’s end. Shortening refuses to discard notes."))))
 	return ui.Panel(ui.PanelProps{ID: "patterns", Title: "Pattern editor", Description: "Played timing, independent gates, and a score you can edit."}, gosx.El("div", gosx.Attrs(gosx.Attr("class", "pattern-editor")), gosx.El("nav", gosx.Attrs(gosx.Attr("class", "pattern-library"), gosx.Attr("aria-label", "Pattern library")), gosx.Fragment(library...)), workspace))
 }

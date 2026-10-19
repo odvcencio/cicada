@@ -401,3 +401,46 @@ song { verse }
 **Example:** [Preset circuit](../../examples/presets/main.cicada) binds authored, acid, and imported presets and overrides a value on the track and in a scene. The imported library is vendored from the [library example](../../examples/libraries/main.cicada), with an added mixer preset.
 
 **Limits:** An authored kit lane cannot apply numeric settings to a built-in recipe through the kit binding; use a `drums` track's lane values or a `builtin.bd` preset instead. Existing limits on effect instances still apply. Studio continues to refuse multi-file editing and has no preset save action in this version. Semantic JSON and generated source contain resolved values; formatting the original source retains preset declarations.
+
+## Performed timing and note gestures
+
+**Status:** Implemented in source editions 1 and 2 and semantic formats /1 and /2.
+
+```cicada
+cicada 2
+track lead acid {}
+pattern phrase performance length=3840ticks {
+  note 60 at=17ticks length=703ticks velocity=82 {
+    gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5;
+    gesture at=123ticks bend=127.5ct pressure=0.7 timbre=0.9 vibrato=14ct rate=7.25Hz;
+  }
+  note 64 at=19ticks length=1201ticks velocity=105;
+}
+scene main { lead=phrase }
+song { main*2 }
+```
+
+**Meaning:** Each note has an independent start, held length, MIDI pitch, and
+velocity. Optional gesture points are relative to its start and hold their
+values until the next point. Moving a note carries its gesture. A plain note
+may end with a semicolon instead of a gesture block. There are 960 ticks per
+beat. Source order does not quantize the performance.
+
+**Defaults:** Bend, pressure, and vibrato depth start at zero; timbre starts at
+0.5. A gesture states `at`, `bend`, `pressure`, and `timbre` in that order.
+`vibrato` and `rate` are optional. Vibrato with no rate uses 5 Hz; an explicit
+zero rate pauses vibrato. A new note starts a fresh vibrato phase.
+
+**Bounds:** A loop is 30…2^40 ticks with 1…512 notes and at most 65,536 gesture
+points. Pitch is MIDI 0…127, velocity 1…127, bend −9600…9600 cents, pressure and
+timbre 0…1, depth 0…9600 cents, and rate 0…100 Hz. Gesture ticks increase
+strictly from zero through the held length. Gates of the same pitch cannot
+overlap in one pattern. Playback also admits controller density before
+rendering; [image version 17](kernel-image-v17.md) specifies the portable limit.
+
+**Voice support:** Acid applies bend and vibrato. Authored synths also expose
+pressure and timbre to their graphs, retaining mono priority or four-voice
+polyphony. Modeled keys and piano accept performed notes without gestures.
+Drum and sampler performances remain unsupported. Unsupported voices,
+non-finite controls, duplicate ticks, and edits that discard held data report
+errors. Studio keeps the raw captured take available when an edit is refused.

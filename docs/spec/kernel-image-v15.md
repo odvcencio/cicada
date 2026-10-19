@@ -7,7 +7,7 @@ Version 15 extends the `CIC1` format with placements, prepared planar audio, and
 The magic is `CIC1`. All integers and IEEE floating-point fields use little
 endian. Version 16 appends an independent-gate table to this layout; see
 [kernel image version 16](kernel-image-v16.md). Accepted versions are 8–13,
-15 and 16. Existing
+15, 16 and [17](kernel-image-v17.md). Existing
 8–13 readers retain their validation and layouts. Configurations needing none
 of the new fields are still written as **byte-identical version 13**.
 

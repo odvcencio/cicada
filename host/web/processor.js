@@ -3,7 +3,7 @@ class CicadaKernel extends AudioWorkletProcessor {
     super();
     const port = this.port;
     const post = port.postMessage.bind(port);
-    const CapabilityChords = 1, CapabilityUnifiedImage = 65536, CapabilityPerformance = 262144;
+    const CapabilityChords = 1, CapabilityUnifiedImage = 65536, CapabilityPerformance = 262144, CapabilityGestures = 524288;
     const invalid = message => { throw new Error(message); };
     // Keep render state in constructor-scoped bindings so process reuses it.
     let capture, module = o.m, active, previous, pending, bankCopy, playing = false, deferred, deferredCount = 0, rate = sampleRate, bank, clock, preciseClock, underruns = 0, timingHistogram = new Uint32Array(256), durationLimit, latency, quantumMs, lastStart = 0, callbacks = 0, view, message, transfer, ready = true, swap, swapView, faultMessage = { t: 'f', a: 0 }, stoppedMessage = { t: 's', p: false }, fadeTotal = rate / 200 | 0, fadeLeft = 0, engineSample = 0, anchorSample = 0, anchorTick = 0, bpm = 120000, nextBarTick = 3840, stallNext = false, memoryPeak = 0;
@@ -23,7 +23,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       if (bytes.length < 32 || header.getUint32(0) !== 0x43494331) invalid('Invalid CIC1 header');
       const version = bytes[4] | bytes[5] << 8;
       if (version === 14) invalid('Ambiguous image14; recompile');
-      if (version < 8 || version > 16) invalid(`Unsupported image version ${version}`);
+      if (version < 8 || version > 17) invalid(`Unsupported image ${version}`);
       const instance = await WebAssembly.instantiate(module);
       const exports = instance.exports;
       let slot = 0;
@@ -33,16 +33,16 @@ class CicadaKernel extends AudioWorkletProcessor {
       try {
         // TinyGo reactor exports require actual runtime initialization, including
         // the capability query. No image/bank upload occurs before negotiation.
-        if (typeof exports._initialize !== 'function') invalid('Reactor initializer missing');
+        if (typeof exports._initialize !== 'function') invalid('Missing audio init');
         exports._initialize();
         // Short local aliases reduce downloads without changing the export ABI.
         // These are the original exports, never wrappers around realtime calls.
         const x = {};
         for (const name in exports) x[name.replace('gosx_audio_', '')] = exports[name];
-        if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability export');
+        if (x.capabilities !== undefined && typeof x.capabilities !== 'function') invalid('Invalid capability');
         const capability = x.capabilities ? x.capabilities() : 0;
-        if ((capability & 0x7efff) !== capability) invalid('Invalid capabilities');
-        const missing = version >= 15 && !(capability & CapabilityUnifiedImage) ? 'UnifiedImage' : version === 16 && !(capability & CapabilityPerformance) ? 'Performance' : '';
+        if ((capability & 0xfefff) !== capability) invalid('Invalid capabilities');
+        const missing = version >= 15 && !(capability & CapabilityUnifiedImage) ? 'UnifiedImage' : version >= 16 && !(capability & CapabilityPerformance) ? 'Performance' : version === 17 && !(capability & CapabilityGestures) ? 'Gestures' : '';
         if (missing) invalid(`image${version} needs Capability${missing}`);
         if (bank) {
           const bankPtr = x.bank_alloc(bank.byteLength);
@@ -114,7 +114,7 @@ class CicadaKernel extends AudioWorkletProcessor {
       }
       if (data.t === 'c') return commit(active, data.bytes);
       if (data.t === 'i') {
-        if (pending === true) return reject('Image load in progress', data.r);
+        if (pending === true) return reject('Image loading', data.r);
         const staged = pending;
         pending = true;
         create(data.i).then(next => {

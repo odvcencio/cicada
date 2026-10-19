@@ -91,7 +91,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 	}
 	if p.Arrange != nil {
 		appendPlacements(&file, p, &cfg, channels, endTick)
-		return file, nil
+		return prepareGestureMIDI(file)
 	}
 	var slots [engine.MaxTracks]int
 	for i := range slots {
@@ -193,7 +193,7 @@ func fromProject(p *project.Project, bars int, identity *probabilityIdentity) (F
 			break
 		}
 	}
-	return file, nil
+	return prepareGestureMIDI(file)
 }
 
 // FromPattern exports a selected pattern with its first compatible track.

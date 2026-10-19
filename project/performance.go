@@ -15,10 +15,17 @@ type Performance struct {
 }
 
 type PerformedNote struct {
-	Tick     int64 `json:"tick" cicada:"Inclusive note start" unit:"ticks" range:"0..1099511627775"`
-	EndTick  int64 `json:"end_tick" cicada:"Exclusive note end" unit:"ticks" range:"1..1099511627776"`
-	Note     uint8 `json:"note" cicada:"MIDI pitch" range:"0..127"`
-	Velocity uint8 `json:"velocity" cicada:"Played note velocity" range:"1..127"`
+	Tick        int64                 `json:"tick" cicada:"Inclusive note start" unit:"ticks" range:"0..1099511627775"`
+	EndTick     int64                 `json:"end_tick" cicada:"Exclusive note end" unit:"ticks" range:"1..1099511627776"`
+	Note        uint8                 `json:"note" cicada:"MIDI pitch" range:"0..127"`
+	Velocity    uint8                 `json:"velocity" cicada:"Played note velocity" range:"1..127"`
+	Expressions []PerformedExpression `json:"expressions,omitempty" cicada:"Played controller samples relative to this note" range:"0..65536"`
+}
+
+type PerformedExpression struct {
+	Tick          int64          `json:"tick" cicada:"Controller offset from the note onset" unit:"ticks" range:"0..1099511627776"`
+	Value         NoteExpression `json:"value" cicada:"Pitch, pressure, timbre, and vibrato at this position"`
+	VibratoRateHz float32        `json:"vibrato_rate_hz" cicada:"Per-note vibrato rate; zero pauses its phase" unit:"Hz" range:"0..100"`
 }
 
 func (p *Performance) Kernel() *seq.Performance {
@@ -28,6 +35,11 @@ func (p *Performance) Kernel() *seq.Performance {
 	out := &seq.Performance{LengthTicks: p.LengthTicks, Notes: make([]seq.PerformedNote, len(p.Notes))}
 	for i, note := range p.Notes {
 		out.Notes[i] = seq.PerformedNote{Tick: note.Tick, EndTick: note.EndTick, Note: note.Note, Velocity: note.Velocity}
+		for _, point := range note.Expressions {
+			value := point.Value
+			params := seq.Expression{Set: true, PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre, VibratoDepthCents: value.VibratoDepthCents, VibratoRateHz: point.VibratoRateHz}
+			out.Notes[i].Expressions = append(out.Notes[i].Expressions, seq.PerformedExpression{Tick: point.Tick, Params: params})
+		}
 	}
 	return out
 }
@@ -39,6 +51,10 @@ func projectPerformance(p *seq.Performance) *Performance {
 	out := &Performance{LengthTicks: p.LengthTicks, Notes: make([]PerformedNote, len(p.Notes))}
 	for i, note := range p.Notes {
 		out.Notes[i] = PerformedNote{Tick: note.Tick, EndTick: note.EndTick, Note: note.Note, Velocity: note.Velocity}
+		for _, point := range note.Expressions {
+			value := point.Params
+			out.Notes[i].Expressions = append(out.Notes[i].Expressions, PerformedExpression{Tick: point.Tick, Value: NoteExpression{PitchCents: value.PitchCents, Pressure: value.Pressure, Timbre: value.Timbre, VibratoDepthCents: value.VibratoDepthCents}, VibratoRateHz: value.VibratoRateHz})
+		}
 	}
 	return out
 }
@@ -94,8 +110,8 @@ func performanceSource(pattern Pattern, slot int, assigned bool, projectSeed uin
 		fmt.Fprintf(&out, " slot=%d", slot)
 	}
 	out.WriteString(" {\n")
-	for _, note := range pattern.Performance.Notes {
-		fmt.Fprintf(&out, "  note %d at=%dticks length=%dticks velocity=%d;\n", note.Note, note.Tick, note.EndTick-note.Tick, note.Velocity)
+	for _, note := range pattern.Performance.Kernel().Notes {
+		out.WriteString(notation.PerformedNoteSource(note))
 	}
 	out.WriteString("}\n")
 	return out.String()
@@ -124,6 +140,19 @@ func validatePerformedTrack(p *Project, track Track, pattern Pattern) error {
 	}
 	if !pitched {
 		return fmt.Errorf("performed notes need a pitched instrument on track %s", track.ID)
+	}
+	if track.Kind != "acid" {
+		authored := false
+		for _, instrument := range p.Instruments {
+			authored = authored || instrument.ID == track.Kind
+		}
+		if !authored {
+			for _, note := range pattern.Performance.Notes {
+				if len(note.Expressions) != 0 {
+					return fmt.Errorf("CICADA-UNSUPPORTED: performed expression needs an acid or authored synth voice on track %s", track.ID)
+				}
+			}
+		}
 	}
 	if modeled {
 		for _, note := range pattern.Performance.Notes {

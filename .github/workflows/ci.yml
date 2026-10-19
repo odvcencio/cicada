@@ -354,6 +354,9 @@ jobs:
           tinygo-version: '0.41.1'
           install-binaryen: 'true'
           binaryen-version: '133'
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.23.2'
       - name: Verify pinned dependencies and native tests
         env:
           EXPECTED_ARCH: ${{ matrix.arch }}
@@ -377,6 +380,13 @@ jobs:
           make test-build-tools
           go test ./kernel/amp ./kernel/dsp/halfband ./kernel/graph ./kernel/voice/ep -count=1 -v | tee build/native-audio-determinism.log
           go test -tags ep_wasm ./kernel/voice/ep -run '^TestEpNativeWASMDeterminism$' -count=1 -v | tee build/ep-wasm-determinism.log
+      - name: Verify performed gestures in native and browser audio
+        run: |
+          set -euo pipefail
+          go test ./kernel/seq ./kernel/engine ./host/kernelimage -run 'Performed|Performance' -count=1 -v | tee build/performed-gesture-native.log
+          go test -race ./cmd/cicada -run '^TestStudio(Gesture|PlayedTake)' -count=1 -v | tee build/performed-gesture-studio.log
+          make build-kernel-wasm
+          CICADA_CHORD_WASM_PATH="$PWD/build/cicada-kernel.wasm" go test -timeout=3m -tags chord_wasm ./cmd/cicada-kernel-wasm -run '^TestChordWASMPer' -count=1 -v | tee build/performed-gesture-wasm.log
       - name: Package and launch from a clean checkout
         run: |
           set -euo pipefail
@@ -395,6 +405,9 @@ jobs:
             build/macos-smoke/
             build/native-audio-determinism.log
             build/ep-wasm-determinism.log
+            build/performed-gesture-native.log
+            build/performed-gesture-studio.log
+            build/performed-gesture-wasm.log
 
   m2-pr:
     name: M2 AudioWorklet gates

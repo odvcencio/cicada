@@ -17,7 +17,7 @@ func appendPerformedRange(track *TrackChunk, pattern *seq.Pattern, origin, from,
 			if at < from || at >= to || off <= at {
 				continue
 			}
-			track.Notes = append(track.Notes, Note{Track: trackIndex + 1, Tick: at, Dur: off - at, Note: uint8(int(note.Note) + int(pattern.Transpose)), Vel: note.Velocity, Chan: channel})
+			track.Notes = append(track.Notes, Note{Track: trackIndex + 1, Tick: at, Dur: off - at, Note: uint8(int(note.Note) + int(pattern.Transpose)), Vel: note.Velocity, Chan: channel, Gesture: performedMIDIGesture(note, 0, off-at)})
 		}
 	}
 }
@@ -27,6 +27,13 @@ func closePerformedAt(track *TrackChunk, tick int64) {
 		note := &track.Notes[i]
 		if note.Tick < tick && note.Tick+note.Dur > tick {
 			note.Dur = tick - note.Tick
+			if note.Gesture != nil {
+				end := len(note.Gesture.Points)
+				for end > 0 && note.Gesture.Points[end-1].Tick > note.Dur {
+					end--
+				}
+				note.Gesture.Points = note.Gesture.Points[:end]
+			}
 		}
 	}
 }
@@ -38,9 +45,34 @@ func appendPerformedChase(track *TrackChunk, pattern *seq.Pattern, origin, tick,
 	base := origin + (tick-origin)/p.LengthTicks*p.LengthTicks
 	for _, note := range p.Notes {
 		if base+note.Tick < tick && base+note.EndTick > tick {
-			track.Notes = append(track.Notes, Note{Track: trackIndex + 1, Tick: tick, Dur: min(base+note.EndTick, end) - tick, Note: uint8(int(note.Note) + int(pattern.Transpose)), Vel: note.Velocity, Chan: channel})
+			duration := min(base+note.EndTick, end) - tick
+			track.Notes = append(track.Notes, Note{Track: trackIndex + 1, Tick: tick, Dur: duration, Note: uint8(int(note.Note) + int(pattern.Transpose)), Vel: note.Velocity, Chan: channel, Gesture: performedMIDIGesture(note, tick-base-note.Tick, duration)})
 		}
 	}
+}
+
+func performedMIDIGesture(note seq.PerformedNote, skip, duration int64) *NoteGesture {
+	if len(note.Expressions) == 0 {
+		return nil
+	}
+	var points []seq.PerformedExpression
+	for _, point := range note.Expressions {
+		if point.Tick <= skip {
+			point.Tick = 0
+			if len(points) == 0 {
+				points = append(points, point)
+			} else {
+				points[0] = point
+			}
+		} else if point.Tick < skip+duration {
+			point.Tick -= skip
+			points = append(points, point)
+		}
+	}
+	if len(points) == 0 {
+		return nil
+	}
+	return &NoteGesture{Points: points}
 }
 
 // Scene transitions precede chain advances at a shared boundary, so callers

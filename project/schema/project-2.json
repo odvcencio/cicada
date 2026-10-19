@@ -743,6 +743,13 @@
           "type": "integer",
           "minimum": 1,
           "maximum": 127
+        },
+        "expressions": {
+          "type": "array",
+          "maxItems": 65536,
+          "items": {
+            "$ref": "#/$defs/performed_expression"
+          }
         }
       }
     },
@@ -2059,6 +2066,30 @@
           "type": "number",
           "minimum": -8,
           "maximum": 8
+        }
+      }
+    },
+    "performed_expression": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tick",
+        "value",
+        "vibrato_rate_hz"
+      ],
+      "properties": {
+        "tick": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 1099511627776
+        },
+        "value": {
+          "$ref": "#/$defs/note_expression"
+        },
+        "vibrato_rate_hz": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100
         }
       }
     }

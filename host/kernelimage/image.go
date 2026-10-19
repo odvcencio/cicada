@@ -37,6 +37,7 @@ const MaxImageBytes = 2 << 20
 const guitarImageVersion = 15      // experimental guitar in the unified image layout
 const UnifiedImageVersion = 15     // unified chords, schedules, guitar and resident audio
 const PerformanceImageVersion = 16 // additive independent note gates after the unified payload
+const GestureImageVersion = 17     // additive note-owned controller samples after performance gates
 const ChordImageVersion = UnifiedImageVersion
 const qualityImageVersion = 14 // internal graph decoder only; complete image14 is rejected
 const masterSoloImageVersion = 13
@@ -197,7 +198,12 @@ func Encode(cfg engine.Config) ([]byte, error) {
 		if len(cfg.Patterns) > 0 {
 			for _, pattern := range cfg.Patterns[track].Slots {
 				if pattern.Performance != nil {
-					version = PerformanceImageVersion
+					version = max(version, uint16(PerformanceImageVersion))
+					for _, note := range pattern.Performance.Notes {
+						if len(note.Expressions) > 0 {
+							version = GestureImageVersion
+						}
+					}
 				}
 				if pattern.Len == 0 && (pattern.Performance != nil || pattern.Chords != [64]seq.ChordStep{}) {
 					return nil, Error("unused slot contains chord payload")
@@ -678,8 +684,13 @@ func Encode(cfg engine.Config) ([]byte, error) {
 			return nil, err
 		}
 	}
-	if version == PerformanceImageVersion {
+	if version >= PerformanceImageVersion {
 		if err := writePerformances(&w, &cfg); err != nil {
+			return nil, err
+		}
+	}
+	if version == GestureImageVersion {
+		if err := writePerformedExpressions(&w, &cfg); err != nil {
 			return nil, err
 		}
 	}
@@ -725,7 +736,7 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 	scenes, _ := r.u16()
 	entries, _ := r.u16()
 	reserved, _ := r.u16()
-	if (version != PerformanceImageVersion && version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
+	if (version != GestureImageVersion && version != PerformanceImageVersion && version != guitarImageVersion && version != ChordImageVersion && version != imageVersion && version != busMixerImageVersion && version != sendTapImageVersion && version != sceneSettingsImageVersion && version != priorImageVersion && version != legacyImageVersion) || tracks < 1 || tracks > 16 || voices < 1 || voices > 32 || flags&^uint32(1) != 0 || reserved & ^(SupportedCapabilities|keysImageCapability) != 0 || reserved != 0 && version < imageVersion || rate != uint32(sampleRate) || block != uint16(maxBlock) {
 		return Error("project image header is incompatible")
 	}
 	*cfg = engine.Config{
@@ -1313,8 +1324,13 @@ func DecodeInto(data []byte, sampleRate, maxBlock int, cfg *engine.Config) error
 			return err
 		}
 	}
-	if version == PerformanceImageVersion {
+	if version >= PerformanceImageVersion {
 		if err := readPerformances(&r, cfg); err != nil {
+			return err
+		}
+	}
+	if version == GestureImageVersion {
+		if err := readPerformedExpressions(&r, cfg); err != nil {
 			return err
 		}
 	}

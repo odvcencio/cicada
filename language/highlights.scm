@@ -309,3 +309,5 @@
 
 (performed_note pitch: (integer) @number)
 (performed_note velocity: (integer) @number)
+(performed_expression "gesture" @keyword)
+(performed_expression ["at" "bend" "pressure" "timbre" "vibrato" "rate"] @attribute)

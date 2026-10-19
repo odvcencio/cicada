@@ -80,9 +80,9 @@ async function setup(asset, capture, version, capability, options = {}) {
       assert.match(old.messages.find(m => m.t === 'e')?.e || '', /Ambiguous.*image14.*recompile/);
       assert.equal(old.instances.length, 0, 'ambiguous image instantiated a kernel');
     }
-    for (const version of [0, 7, 17, 255, 65535]) {
+    for (const version of [0, 7, 18, 255, 65535]) {
       const unknown = await setup(asset, capture, version, 3);
-      assert.match(unknown.messages.find(m => m.t === 'e')?.e || '', /Unsupported image version/);
+      assert.match(unknown.messages.find(m => m.t === 'e')?.e || '', /Unsupported image /);
       assert.equal(unknown.instances.length, 0);
     }
     for (const capability of [null, 0, 1, 2, 3]) {
@@ -102,15 +102,20 @@ async function setup(asset, capture, version, capability, options = {}) {
     }
     const performed = await setup(asset, capture, 16, 65536 | 262144);
     assert.ok(performed.messages.some(m => m.t === 'r' && m.p === (65536 | 262144)));
+    const missingGestures = await setup(asset, capture, 17, 65536 | 262144);
+    assert.match(missingGestures.messages.find(m => m.t === 'e')?.e || '', /image17.*CapabilityGestures/);
+    assert.equal(missingGestures.counts.projectAllocs, 0, 'unnegotiated gestures mutated the kernel');
+    const gestural = await setup(asset, capture, 17, 65536 | 262144 | 524288);
+    assert.ok(gestural.messages.some(m => m.t === 'r' && m.p === (65536 | 262144 | 524288)));
     for (const capability of [undefined, -1, 1.5, NaN, Infinity, 4096, 0x100000000]) {
       const malformed = await setup(asset, capture, 13, capability);
       assert.match(malformed.messages.find(m => m.t === 'e')?.e || '', /Invalid capabilities/);
       assert.equal(malformed.counts.projectAllocs, 0);
     }
     for (const [options, diagnostic] of [
-      [{ missingInitializer: true }, /[Rr]eactor initializer missing/],
+      [{ missingInitializer: true }, /Missing audio init/],
       [{ throwInitializer: true }, /reactor initialization failed/],
-      [{ malformedExport: true }, /Invalid capability export/],
+      [{ malformedExport: true }, /Invalid capability/],
       [{ image: new ArrayBuffer(5) }, /Invalid CIC1 header/],
       [{ image: new ArrayBuffer(32) }, /Invalid CIC1 header/]
     ]) {
@@ -156,7 +161,7 @@ async function setup(asset, capture, version, capability, options = {}) {
     // load must not steal that copy or leave its staging promise unresolved.
     staged.port.onmessage({ data: { t: 'i', i: image(15), r: 'concurrent' } });
     await settle();
-    assert.match(staged.messages.find(m => m.r === 'concurrent')?.e || '', /Image load in progress/);
+    assert.match(staged.messages.find(m => m.r === 'concurrent')?.e || '', /Image loading/);
     staged.render();
     await settle();
     assert.ok(staged.messages.some(m => m.t === 't'));

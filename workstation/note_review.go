@@ -26,7 +26,7 @@ func (s *studioApp) noteTakeReview(v workspace, csrf string, d draft) gosx.Node 
 	children := []gosx.Node{
 		gosx.El("h3", gosx.Text("Retained note take")),
 		gosx.El("p", gosx.Attrs(gosx.Attr("class", "take-summary")), gosx.Text(fmt.Sprintf("%s · %s", noteCount(count), destinationCount(len(takes))))),
-		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Keep played timing preserves individual starts, held lengths, pitches, and velocities in a looping performance pattern. Every destination shares the first played bar as its origin and the final release rounds the loop up to a whole bar. Zero-length hits use a one-tick gate.")),
+		gosx.El("p", gosx.Attrs(gosx.Attr("class", "muted")), gosx.Text("Keep played timing preserves individual starts, held lengths, pitches, velocities and supported note gestures in a looping performance pattern. Acid and authored synths keep bend, pressure, timbre and vibrato. Every destination shares the first played bar as its origin and the final release rounds the loop up to a whole bar. Zero-length hits use a one-tick gate.")),
 	}
 	for _, take := range takes {
 		var pattern *project.Pattern

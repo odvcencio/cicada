@@ -1,0 +1,10 @@
+cicada 2
+track lead acid {}
+pattern phrase performance length=3840ticks {
+ note 60 at=17ticks length=703ticks velocity=82 {
+  gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5;
+  gesture at=123ticks bend=127.5ct pressure=0.7 timbre=0.9 vibrato=14ct rate=7.25Hz;
+ }
+}
+scene main { lead=phrase }
+song { main*2 }

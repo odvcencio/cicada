@@ -235,12 +235,22 @@ func Cicada() *grammargen.Grammar {
 		str("note"), field("pitch", sym("integer")),
 		str("at"), str("="), field("at", sym("tick_count")),
 		str("length"), str("="), field("length", sym("tick_count")),
-		str("velocity"), str("="), field("velocity", sym("integer")), optional(str(";")),
+		str("velocity"), str("="), field("velocity", sym("integer")),
+		optional(choice(str(";"), seq(str("{"), sym("performed_expression"), repeat(sym("performed_expression")), str("}")))),
+	))
+	g.Define("performed_expression", seq(
+		str("gesture"), str("at"), str("="), field("at", sym("tick_count")),
+		str("bend"), str("="), field("bend", sym("expression_number")),
+		str("pressure"), str("="), field("pressure", sym("expression_number")),
+		str("timbre"), str("="), field("timbre", sym("expression_number")),
+		optional(seq(str("vibrato"), str("="), field("vibrato", sym("expression_number")))),
+		optional(seq(str("rate"), str("="), field("rate", sym("number")))), optional(str(";")),
 	))
 
 	g.SetExtras(pat(`[ \t\r\n]+`), sym("comment"))
 	g.SetWord("identifier")
 	g.Test("performed gates", "pattern played performance length=7680ticks { note 60 at=17ticks length=703ticks velocity=82; note 64 at=19ticks length=1201ticks velocity=105; }", "")
+	g.Test("performed gestures", "pattern played performance length=3840ticks { note 60 at=17ticks length=703ticks velocity=82 { gesture at=0ticks bend=0ct pressure=0.2 timbre=0.5; gesture at=600ticks bend=123.5ct pressure=0.7 timbre=0.9 vibrato=5ct; } }", "")
 
 	g.Test("dense drum rows", "cicada 1 pattern beat drums { bd: Xx..x1x9*2%50; }",
 		"(source_file (integer) (drum_pattern (identifier) (drum_lane (drum_lane_label) (drum_hit (accent_hit)) (drum_hit (hit)) (drum_hit) (drum_hit) (drum_hit (velocity_hit)) (drum_hit (velocity_hit) (ratchet (integer)) (probability (integer))))))")

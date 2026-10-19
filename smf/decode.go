@@ -166,6 +166,8 @@ func decodeTrack(data []byte, trackIndex uint8) (TrackChunk, uint32, error) {
 				return track, 0, fmt.Errorf("nonpositive note duration")
 			}
 			track.Notes = append(track.Notes, Note{Track: trackIndex, Tick: on.tick, Dur: tick - on.tick, Note: first, Vel: on.vel, Chan: channel})
+		} else {
+			track.Events = append(track.Events, ChannelEvent{Tick: tick, Status: status, Data1: first, Data2: second})
 		}
 	}
 	if !ended {

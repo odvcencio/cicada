@@ -62,6 +62,8 @@ Legacy projects encode as version 13. Graph chords, schedules, prepared audio,
 and the experimental guitar use version 15. Independent performed note gates
 use [version 16](../spec/kernel-image-v16.md) and require
 `CapabilityPerformance` (bit 18), together with `CapabilityUnifiedImage`.
+Performed controller gestures use [version 17](../spec/kernel-image-v17.md)
+and additionally require `CapabilityGestures` (bit 19).
 Versions 8–13 remain readable;
 version 14 is rejected. See the [image format](../spec/kernel-image-v15.md). The little-endian image carries
 mixer routing, effects, instrument graphs, authored kits, patterns, scenes,

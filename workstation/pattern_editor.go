@@ -24,6 +24,39 @@ func (s *studioApp) patternAction(ctx *action.Context) error {
 	err := s.mutation("/api/pattern", func(f map[string]string) (any, error) {
 		p := map[string]any{"revision": f["revision"], "action": f["action"], "pattern": f["pattern"]}
 		switch f["action"] {
+		case "performed-gesture":
+			n := map[string]any{"remove": f["intent"] == "remove"}
+			keys := []string{"note_index", "index"}
+			if f["intent"] != "remove" {
+				keys = append(keys, "tick")
+			}
+			for _, key := range keys {
+				value, err := strconv.ParseInt(f[key], 10, 64)
+				if err != nil {
+					return nil, fmt.Errorf("%s must be a whole number", key)
+				}
+				n[key] = value
+			}
+			// Native GoSX forms consume the reserved return field before this
+			// handler. Derive the selection from the typed edit itself.
+			target, _ := url.Parse(patternURL(f["pattern"], 1, "", ""))
+			query := target.Query()
+			query.Set("note", f["note_index"])
+			query.Set("gesture", f["index"])
+			if f["intent"] != "remove" {
+				for _, key := range []string{"pitch_cents", "pressure", "timbre", "vibrato_depth_cents", "vibrato_rate_hz"} {
+					value, err := finiteNumber(f, key)
+					if err != nil {
+						return nil, err
+					}
+					n[key] = value
+				}
+				query.Set("gesture_tick", f["tick"])
+				query.Del("gesture")
+			}
+			target.RawQuery, target.Fragment = query.Encode(), "note-gestures"
+			destination = target.String()
+			p["performanceExpression"] = n
 		case "performed-note":
 			n := map[string]any{"remove": f["intent"] == "remove"}
 			keys := []string{"index"}

@@ -115,7 +115,12 @@ chord_pitch ::= pitch , { octave_shift } ;
 performance_pattern ::= "pattern" , _name , "performance" , { pattern_attr } , "{" ,
                         { pattern_attr | performed_note } , "}" ;
 performed_note ::= "note" , integer , "at" , "=" , tick_count , "length" , "=" , tick_count ,
-                   "velocity" , "=" , integer , [ ";" ] ;
+                   "velocity" , "=" , integer ,
+                   [ ";" | "{" , performed_expression , { performed_expression } , "}" ] ;
+performed_expression ::= "gesture" , "at" , "=" , tick_count , "bend" , "=" , expression_number ,
+                         "pressure" , "=" , expression_number , "timbre" , "=" , expression_number ,
+                         [ "vibrato" , "=" , expression_number ] , [ "rate" , "=" , number ] ,
+                         [ ";" ] ;
 live_state ::= "state" , identifier , "=" , identifier , [ ";" ] ;
 live_stinger ::= "stinger" , identifier , "=" , identifier , "." , identifier ,
                  [ "quantize" , identifier ] , [ "crossfade" , number ] , [ ";" ] ;

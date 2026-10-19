@@ -1,15 +1,16 @@
 (() => {
-  const CapabilityChords = 1, CapabilityUnifiedImage = 65536, CapabilityPerformance = 262144;
+  const CapabilityChords = 1, CapabilityUnifiedImage = 65536, CapabilityPerformance = 262144, CapabilityGestures = 524288;
   // Match the worklet allowlist, including when an older cached worklet runs.
   const imageInfo = (image, capabilities) => {
     const bytes = new Uint8Array(image);
     if (bytes.length < 32 || bytes[0] !== 67 || bytes[1] !== 73 || bytes[2] !== 67 || bytes[3] !== 49) throw new Error('Invalid CIC1 image header');
     const version = bytes[4] | bytes[5] << 8;
     if (version === 14) throw new Error('Ambiguous development image14; recompile source for unified image15');
-    if (![8, 9, 10, 11, 12, 13, 15, 16].includes(version)) throw new Error(`Unsupported image version ${version}`);
+    if (![8, 9, 10, 11, 12, 13, 15, 16, 17].includes(version)) throw new Error(`Unsupported image version ${version}`);
     if (version>=13 && capabilities!==undefined && (new DataView(image).getUint16(30,true)&2048) && !(capabilities&2048)) throw new Error("Track inserts require the vocal audio module; update the audio kernel");
     if (version >= 15 && capabilities !== undefined && !(capabilities & CapabilityUnifiedImage)) throw new Error('Unified image15 requires CapabilityUnifiedImage (bit16); update the audio kernel');
-    if (version === 16 && capabilities !== undefined && !(capabilities & CapabilityPerformance)) throw new Error('Played timing requires CapabilityPerformance (bit18); update the audio kernel');
+    if (version >= 16 && capabilities !== undefined && !(capabilities & CapabilityPerformance)) throw new Error('Played timing requires CapabilityPerformance (bit18); update the audio kernel');
+    if (version === 17 && capabilities !== undefined && !(capabilities & CapabilityGestures)) throw new Error('Played expression requires CapabilityGestures (bit19); update the audio kernel');
     return new DataView(image).getUint32(12, true);
   };
   const audioFault = code => new Error(code === 20 ? "Polyphonic tracks require handle-aware live commands; legacy NoteOn/NoteOff are unsupported" : `Audio fault ${code}`);

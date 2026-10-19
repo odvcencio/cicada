@@ -88,6 +88,27 @@ Import supports fixed tempo, 4/4 meter, 60–960 ticks per cell, at most 64
 tracks within the 256-voice native budget, 256 bars, and 16 distinct bar patterns per track. Pitch spellings
 support MIDI 12–95; the modeled piano supports 21–95 in imported scores.
 Controller, program and expression events are outside this note importer.
+Files containing them are refused instead of importing a performance that
+silently loses those messages. Keep the source MIDI or render it to audio.
+
+Performed gestures export bend, channel pressure, and CC74 timbre on separate
+MPE member channels. Each expressive track uses named logical devices; more
+than 15 simultaneous notes creates additional named devices and chunks.
+Route these to separate MPE instances when importing into another DAW.
+Exports include standard Device Name metadata and the widely supported
+nonstandard numeric MIDI Port metadata. A receiver that merges those devices
+onto one port cannot keep their gestures independent.
+
+The file uses the highest exact integer multiple of its original PPQ below
+32768, so authored note and controller ticks stay exact. MIDI 1 pressure and
+timbre have 7-bit precision, and bend has 14-bit precision. Vibrato is rendered
+to pitch messages in real time across tempo changes, at least 240 samples per
+second and 32 samples per cycle. Export refuses envelopes exceeding 96
+semitones, conflicting pre-routed channel data, or more than 1,048,576
+controller samples. WAV and stems retain the engine's rendered sound.
+
+The routing follows the MIDI Association's [MPE specification](https://midi.org/mpe-midi-polyphonic-expression)
+and [SMF Device Name recommendation](https://midi.org/smf-device-name-and-program-name-meta-events).
 Variable tempo or meter and unsupported drum pitches are rejected.
 The output path must be new, so an import cannot replace an existing score.
 

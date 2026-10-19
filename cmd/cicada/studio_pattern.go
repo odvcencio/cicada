@@ -49,6 +49,14 @@ func (s *studio) editPattern(w http.ResponseWriter, r *http.Request) {
 	env := edits.Envelope{}
 	var intent edits.Intent
 	switch edit.Action {
+	case "performed-gesture":
+		if edit.PerformanceExpression == nil {
+			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a performed gesture sample is required"})
+			return
+		}
+		in := *edit.PerformanceExpression
+		in.Entity = entity
+		intent = &in
 	case "performed-note":
 		if edit.PerformanceNote == nil {
 			studioJSON(w, http.StatusBadRequest, map[string]string{"error": "a performed note is required"})

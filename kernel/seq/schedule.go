@@ -11,21 +11,22 @@ const (
 )
 
 type Event struct {
-	Kind         EventKind
-	NoteID       int64
-	Tick         int64
-	Sample       int64
-	Offset       int32
-	Track        uint8
-	Slot         uint8
-	StepIndex    uint8
-	RatchetIndex uint8
-	Note         uint8
-	Notes        [4]uint8
-	NoteCount    uint8 // zero means the unchanged mono Note field
-	Velocity     uint8
-	Accent       bool
-	Slide        bool
+	Kind            EventKind
+	NoteID          int64
+	Tick            int64
+	Sample          int64
+	Offset          int32
+	Track           uint8
+	Slot            uint8
+	StepIndex       uint8
+	RatchetIndex    uint8
+	Note            uint8
+	Notes           [4]uint8
+	NoteCount       uint8 // zero means the unchanged mono Note field
+	Velocity        uint8
+	Accent          bool
+	Slide           bool
+	ExpressionIndex uint16 // point within a performed note; ordinary steps use StepIndex
 }
 
 // SwingDelayTicks returns the delay of an odd grid step. For example,

@@ -84,3 +84,34 @@ func TestRecordedPerformanceRefusesUnsupportedOrCollidingDataAtomically(t *testi
 		}
 	}
 }
+
+func TestRecordedGesturesStayWithTheirNoteThroughTypedEdits(t *testing.T) {
+	source := []byte("track lead acid {}\npattern take { . . . . }\nscene main { lead=take }\nsong { main*4 }\n")
+	result, err := applyM5(t, source, &edit.RecordTake{Timing: "played", Recordings: []edit.Recording{{Track: "lead", Pattern: "take", Notes: []edit.TakeNote{{Tick: 3857, EndTick: 4557, Note: 60, Velocity: 90, Expressions: []edit.TakeExpression{
+		{Tick: 3857, PitchCents: 25, Pressure: .2, Timbre: .5},
+		{Tick: 3977, PitchCents: 30, Pressure: .4, Timbre: .7},
+		{Tick: 3977, PitchCents: 30, Pressure: .8, Timbre: .7},
+	}}}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := result.Plan.Patterns[0].Performance
+	if p == nil || p.Notes[0].Tick != 17 || len(p.Notes[0].Expressions) != 2 || p.Notes[0].Expressions[1].Tick != 120 || p.Notes[0].Expressions[1].Params.Pressure != .8 {
+		t.Fatal("capture flattened or misplaced gestures", p)
+	}
+	edited, err := applyM5(t, result.Source, &edit.SetPerformedExpression{Entity: "pattern:take", NoteIndex: 0, Index: 1, Tick: 66, PitchCents: -12.5, Pressure: .6, Timbre: .9, VibratoDepthCents: 8, VibratoRateHz: 7})
+	if err != nil {
+		t.Fatal(err)
+	}
+	moved, err := applyM5(t, edited.Source, &edit.SetPerformedNote{Entity: "pattern:take", Index: 0, Tick: 117, EndTick: 817, Pitch: 62, Velocity: 99})
+	if err != nil {
+		t.Fatal(err)
+	}
+	point := moved.Plan.Patterns[0].Performance.Notes[0].Expressions[1]
+	if point.Tick != 66 || point.Params.PitchCents != -12.5 || point.Params.Pressure != .6 || point.Params.Timbre != .9 || point.Params.VibratoRateHz != 7 {
+		t.Fatal("moving a note changed its gesture", point)
+	}
+	if _, err := applyM5(t, moved.Source, &edit.SetPerformedNote{Entity: "pattern:take", Index: 0, Tick: 117, EndTick: 118, Pitch: 62, Velocity: 99}); err == nil {
+		t.Fatal("shortening a note discarded a gesture")
+	}
+}

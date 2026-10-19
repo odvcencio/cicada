@@ -262,8 +262,9 @@ review. The trace shows original note starts, held lengths, and velocities;
 are marked. A local desktop profile also keeps interrupted takes and recovery
 copies across restarts; closing a browser tab does not apply a take to the score.
 
-**Keep played timing** writes independent note starts, releases, and velocities
-as a performance pattern. Chords can have different starts and held lengths.
+**Keep played timing** writes independent note starts, releases, velocities,
+and supported controller gestures as a performance pattern. Chords can have
+different starts, held lengths, bends, pressure, and timbre.
 All destinations use the first played bar as a common origin, and the final
 release rounds the loop up to a whole bar. A zero-length hit gets a one-tick
 gate. Existing pattern transpose, swing, and gate settings do not alter the
@@ -272,18 +273,32 @@ authored; a short song block can end before a long performance finishes.
 
 In **Patterns**, select the performance to inspect its trace, edit each note's
 MIDI pitch, start tick, end tick, and velocity, add or remove notes, or change
-the loop length. Shortening refuses to discard held notes. **Loop this
+the loop length. **Note gestures** shows the selected note's held controller
+values. Select a point to edit its tick after the note starts, bend in cents,
+pressure, timbre, vibrato depth, and rate. Add or remove points with Undo.
+Large takes use a paged table; the overview retains local extrema without
+changing the recorded data. Moving a note carries its gesture offsets.
+Shortening refuses to discard held notes or gesture points. **Loop this
 performance** auditions its full loop independently of the arrangement. It
 uses the first track assigned to the pattern. Each edit has Undo. WAV, stems,
 MIDI, and the portable audio kernel retain the performed gates and velocities.
+WAV and stems render the gestures. MIDI exports them as independent MPE
+channels with MIDI 1 controller precision; see [MIDI export](exporting.md).
 
 Played timing supports acid, modeled keyboards and piano, and authored pitched
 instruments, using each instrument's existing mono or polyphonic voice policy.
-It supports up to 512 notes. Pattern actions edit the open entry score; edit
+It supports up to 512 notes and 65,536 gesture samples per pattern, subject
+to playback density limits. Acid keeps pitch and vibrato; authored synths
+also expose pressure and timbre to their graph. Polyphonic authored synths
+with gestures use the four-voice pool and its existing stealing policy.
+Modeled piano and keyboard voices currently accept notes without gestures.
+Pattern actions edit the open entry score; edit
 the owning file for imported patterns. Library sources remain read-only.
 Overlapping gates of the same pitch need separate
-tracks. Drum, sampler, and per-note expression performances are refused by this
-mode with the retained take intact. For step patterns, expand **Snap to the
+tracks. Drum, sampler, and unsupported expression performances are refused
+with the retained take intact. Values hold between gesture points. Capture
+coalesces samples at the same musical tick to their final state while the
+private raw take keeps every original sample. For step patterns, expand **Snap to the
 existing step grid** and choose **Commit notes to patterns**. This quantizes
 starts, uses the destination's saved length, and checks for collisions before
 writing. Drum hits retain their separate lanes in this grid workflow.

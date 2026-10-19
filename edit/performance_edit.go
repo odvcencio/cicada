@@ -2,6 +2,8 @@ package edit
 
 import (
 	"fmt"
+	"math"
+	"sort"
 
 	"m31labs.dev/cicada/kernel/seq"
 )
@@ -27,11 +29,30 @@ type ResizePerformance struct {
 
 func (ResizePerformance) Kind() string { return "resizeperformance" }
 
+// SetPerformedExpression edits one note-owned controller sample. Index equal
+// to the sample count appends; edits preserve every other note and gesture.
+type SetPerformedExpression struct {
+	Entity            EntityID `json:"entity"`
+	NoteIndex         int      `json:"note_index"`
+	Index             int      `json:"index"`
+	Tick              int64    `json:"tick"`
+	PitchCents        float64  `json:"pitch_cents"`
+	Pressure          float64  `json:"pressure"`
+	Timbre            float64  `json:"timbre"`
+	VibratoDepthCents float64  `json:"vibrato_depth_cents"`
+	VibratoRateHz     float64  `json:"vibrato_rate_hz"`
+	Remove            bool     `json:"remove,omitempty"`
+}
+
+func (SetPerformedExpression) Kind() string { return "setperformedexpression" }
+
 func init() {
 	Register("setperformednote", func() Intent { return &SetPerformedNote{} })
 	Register("resizeperformance", func() Intent { return &ResizePerformance{} })
+	Register("setperformedexpression", func() Intent { return &SetPerformedExpression{} })
 	Handle("setperformednote", editPerformance)
 	Handle("resizeperformance", editPerformance)
+	Handle("setperformedexpression", editPerformance)
 }
 
 func editPerformance(ctx *Context, intent Intent) error {
@@ -40,6 +61,8 @@ func editPerformance(ctx *Context, intent Intent) error {
 	case *SetPerformedNote:
 		entity = in.Entity
 	case *ResizePerformance:
+		entity = in.Entity
+	case *SetPerformedExpression:
 		entity = in.Entity
 	}
 	id, err := patternTarget(entity)
@@ -55,6 +78,9 @@ func editPerformance(ctx *Context, intent Intent) error {
 		if pattern.ID == id && pattern.Performance != nil {
 			copy := *pattern.Performance
 			copy.Notes = append([]seq.PerformedNote(nil), copy.Notes...)
+			for i := range copy.Notes {
+				copy.Notes[i].Expressions = append([]seq.PerformedExpression(nil), copy.Notes[i].Expressions...)
+			}
 			performance = &copy
 			break
 		}
@@ -63,6 +89,33 @@ func editPerformance(ctx *Context, intent Intent) error {
 		return fmt.Errorf("pattern %q is not a played-timing performance", id)
 	}
 	switch in := intent.(type) {
+	case *SetPerformedExpression:
+		if in.NoteIndex < 0 || in.NoteIndex >= len(performance.Notes) {
+			return fmt.Errorf("performed gesture note is out of range")
+		}
+		note := &performance.Notes[in.NoteIndex]
+		if in.Index < 0 || in.Index > len(note.Expressions) || in.Remove && in.Index == len(note.Expressions) {
+			return fmt.Errorf("performed gesture sample is out of range")
+		}
+		if in.Remove {
+			note.Expressions = append(note.Expressions[:in.Index], note.Expressions[in.Index+1:]...)
+		} else {
+			raw := TakeExpression{Tick: in.Tick, PitchCents: in.PitchCents, Pressure: in.Pressure, Timbre: in.Timbre, VibratoDepthCents: &in.VibratoDepthCents}
+			if err := validateTakeExpression(TakeNote{EndTick: note.EndTick - note.Tick, Expressions: []TakeExpression{raw}}); err != nil {
+				return err
+			}
+			point := seq.PerformedExpression{Tick: in.Tick, Params: seq.Expression{Set: true, PitchCents: float32(in.PitchCents), Pressure: float32(in.Pressure), Timbre: float32(in.Timbre), VibratoDepthCents: float32(in.VibratoDepthCents)}}
+			if math.IsNaN(in.VibratoRateHz) || math.IsInf(in.VibratoRateHz, 0) || in.VibratoRateHz < 0 || in.VibratoRateHz > 100 {
+				return fmt.Errorf("gesture vibrato rate must be 0 to 100Hz")
+			}
+			point.Params.VibratoRateHz = float32(in.VibratoRateHz)
+			if in.Index == len(note.Expressions) {
+				note.Expressions = append(note.Expressions, point)
+			} else {
+				note.Expressions[in.Index] = point
+			}
+			sort.Slice(note.Expressions, func(i, j int) bool { return note.Expressions[i].Tick < note.Expressions[j].Tick })
+		}
 	case *ResizePerformance:
 		performance.LengthTicks = in.LengthTicks
 	case *SetPerformedNote:
@@ -79,6 +132,7 @@ func editPerformance(ctx *Context, intent Intent) error {
 			if in.Index == len(performance.Notes) {
 				performance.Notes = append(performance.Notes, note)
 			} else {
+				note.Expressions = performance.Notes[in.Index].Expressions
 				performance.Notes[in.Index] = note
 			}
 		}

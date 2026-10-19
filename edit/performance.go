@@ -24,8 +24,8 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 			if note.Tick < 0 || note.EndTick < note.Tick || note.EndTick > 1<<60 || note.Note < 0 || note.Note > 127 || note.Velocity < 1 || note.Velocity > 127 || note.Channel > 15 || note.NoteID == 65535 {
 				return fmt.Errorf("performed note range or timing is invalid")
 			}
-			if len(note.Expressions) > 0 {
-				return fmt.Errorf("played-timing patterns do not support per-note expression yet; the take is unchanged")
+			if err := validateTakeExpression(note); err != nil {
+				return err
 			}
 			origin, end = min(origin, note.Tick), max(end, max(note.EndTick, note.Tick+1))
 			count++
@@ -42,7 +42,19 @@ func recordPerformedTake(ctx *Context, recordings []Recording) error {
 	for _, recording := range recordings {
 		performance := &seq.Performance{LengthTicks: length}
 		for _, note := range recording.Notes {
-			performance.Notes = append(performance.Notes, seq.PerformedNote{Tick: note.Tick - origin, EndTick: max(note.EndTick, note.Tick+1) - origin, Note: uint8(note.Note), Velocity: uint8(note.Velocity)})
+			performed := seq.PerformedNote{Tick: note.Tick - origin, EndTick: max(note.EndTick, note.Tick+1) - origin, Note: uint8(note.Note), Velocity: uint8(note.Velocity)}
+			for _, point := range note.Expressions {
+				value := seq.PerformedExpression{Tick: point.Tick - note.Tick, Params: seq.Expression{Set: true, PitchCents: float32(point.PitchCents), Pressure: float32(point.Pressure), Timbre: float32(point.Timbre)}}
+				if point.VibratoDepthCents != nil && *point.VibratoDepthCents != 0 {
+					value.Params.VibratoDepthCents, value.Params.VibratoRateHz = float32(*point.VibratoDepthCents), 5
+				}
+				if last := len(performed.Expressions) - 1; last >= 0 && performed.Expressions[last].Tick == value.Tick {
+					performed.Expressions[last] = value
+				} else {
+					performed.Expressions = append(performed.Expressions, value)
+				}
+			}
+			performance.Notes = append(performance.Notes, performed)
 		}
 		if err := performance.Validate(); err != nil {
 			return err
@@ -149,7 +161,7 @@ func replacePerformedPattern(ctx *Context, id string, performance *seq.Performan
 	}
 	comments(document.Root)
 	for _, note := range performance.Notes {
-		fmt.Fprintf(&replacement, "  note %d at=%dticks length=%dticks velocity=%d;\n", note.Note, note.Tick, note.EndTick-note.Tick, note.Velocity)
+		replacement.WriteString(notation.PerformedNoteSource(note))
 	}
 	replacement.WriteString("}")
 	text := strings.ReplaceAll(replacement.String(), "\n", Newline(before))

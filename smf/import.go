@@ -57,6 +57,9 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 	end := int64(0)
 	grid := int64(960)
 	for _, track := range file.Tracks {
+		if len(track.Events) != 0 {
+			return fail("controller and program messages cannot yet be imported without loss; keep the source MIDI or render audio")
+		}
 		if track.EndTick < 0 || track.EndTick > int64(file.PPQ)*4*256 {
 			return fail("song exceeds 256 bars")
 		}
@@ -70,6 +73,9 @@ func ImportSource(file File, options ImportOptions) ([]byte, ImportReport, error
 			}
 		}
 		for _, original := range track.Notes {
+			if original.Gesture != nil {
+				return fail("note-owned gestures cannot yet be imported without loss; keep the source MIDI or render audio")
+			}
 			if original.Note < 12 || original.Note > 95 || original.Chan > 15 || original.Vel < 1 || original.Vel > 127 || original.Tick < 0 || original.Dur < 1 || original.Tick > 1<<40 || original.Dur > 1<<40 {
 				return fail("note pitch, velocity or interval is outside score limits")
 			}
